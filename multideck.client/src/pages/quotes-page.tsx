@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
 import "@/quotes-transfer.css"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   CalendarDays,
   ChartAnalysis,
+  ChevronDown,
   CircleDollarSign,
   Clock3,
   Copy,
@@ -40,8 +41,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
-import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/components/multideck/document-workspace"
-import { AuditWorkspace, QUOTE_AUDIT_SAMPLE_DATA } from "@/components/multideck/audit-workspace"
+import { DocumentWorkspace } from "@/components/multideck/document-workspace"
+import { AuditWorkspace, type QuoteAuditRecord } from "@/components/multideck/audit-workspace"
 import {
   UnifiedQuoteChargesWorkspace,
   type QuoteChargeCurrency,
@@ -65,6 +66,16 @@ import {
 import { useLanguage } from "@/i18n/language-provider"
 import { systemPeople, type StatusTone } from "@/data/multideck-data"
 import { quoteRegisterRecords, type QuoteRegisterRecord } from "@/data/quote-register-data"
+import {
+  getQuoteSources,
+  getQuoteWorkflow,
+  saveQuoteWorkflow,
+  transitionQuoteWorkflow,
+  type QuoteSavePayload,
+  type QuoteWorkflowCharge,
+  type QuoteWorkflowSources,
+  type QuoteWorkflowWorkspace,
+} from "@/lib/quote-workflow-api"
 
 type QuoteParty = {
   label: string
@@ -133,17 +144,21 @@ type QuoteRecord = {
   revisionReason?: string
   createdAt?: string
   customer: string
+  customerId?: string
   clientCode?: string
+  contactId?: string
   customerAddress?: string
   customerContact?: string
   customerEmail?: string
   shipperCode?: string
+  shipperOrgId?: string
   shipperName?: string
   shipperAddress?: string
   shipperContact?: string
   shipperAddressOverride?: string
   collectionAddress?: string
   consigneeCode?: string
+  consigneeOrgId?: string
   consigneeName?: string
   consigneeAddress?: string
   consigneeAddressOverride?: string
@@ -167,12 +182,17 @@ type QuoteRecord = {
   frequency?: string
   shipmentType?: string
   carrier?: string
+  carrierId?: string
   carrierOffice?: string
   supplier?: string
+  supplierId?: string
   supplierOffice?: string
   branch?: string
+  officeId?: string
   department?: string
+  departmentId?: string
   salesRep?: string
+  salesOwnerId?: string
   opsRep?: string
   jobStatus?: string
   goodsValue?: string
@@ -187,7 +207,7 @@ type QuoteRecord = {
   profit: number
   cost: number
   revenue: number
-  currency: QuoteCurrency
+  currency: QuoteCurrency | ""
   baseRoe?: number
   costRoe?: number
   revenueRoe?: number
@@ -196,24 +216,6 @@ type QuoteRecord = {
 }
 
 type QuotePageVariant = "operator" | "ai" | "cargowise"
-
-const initialSavedPartyAddresses: SavedPartyAddress[] = [
-  {
-    id: "harbourworks-main",
-    address: "RIVERGATE WORKS, BRISTOL, UNITED KINGDOM",
-    type: "Main office",
-  },
-  {
-    id: "harbourworks-collection",
-    address: "RIVERGATE WORKS, NORTH QUAY INDUSTRIAL ESTATE, BRISTOL, UNITED KINGDOM",
-    type: "Collection address",
-  },
-  {
-    id: "kobe-delivery",
-    address: "KOBE DISTRIBUTION CENTRE, PORT ISLAND, KOBE, JAPAN",
-    type: "Delivery address",
-  },
-]
 
 const quoteQueue: QuoteRecord[] = [
   {
@@ -346,22 +348,23 @@ const quoteQueue: QuoteRecord[] = [
 ]
 
 const newQuoteDraft: QuoteRecord = {
-  ...quoteQueue[0],
   id: "NEW",
   status: "Draft",
   statusTone: "neutral",
   localRef: "",
-  source: "Manual",
-  workflowStatus: "Draft",
-  holdReason: "None",
+  quoteType: "",
+  source: "",
+  workflowStatus: "",
+  priority: "",
+  holdReason: "",
   customerPO: "",
   shipperReference: "",
   agentReference: "",
   carrierReference: "",
-  docsStatus: "Draft",
-  workflow: "Intake",
+  docsStatus: "",
+  workflow: "",
   revisionReason: "",
-  createdAt: "Now",
+  createdAt: "",
   customer: "",
   clientCode: "",
   customerAddress: "",
@@ -371,26 +374,63 @@ const newQuoteDraft: QuoteRecord = {
   shipperName: "",
   shipperAddress: "",
   shipperContact: "",
+  shipperAddressOverride: "No",
   collectionAddress: "",
   consigneeCode: "",
   consigneeName: "",
   consigneeAddress: "",
+  consigneeAddressOverride: "No",
   deliveryAddress: "",
   route: "",
+  mode: "",
+  container: "",
+  incoterm: "",
+  incotermPlace: "",
   origin: "",
   destination: "",
   via: "",
-  margin: "0.00%",
+  startDate: "",
+  endDate: "",
+  validity: "",
+  direction: "",
+  serviceLevel: "",
+  rateSource: "",
+  hblMode: "",
+  transitDays: "",
+  frequency: "",
+  shipmentType: "",
+  carrier: "",
+  carrierOffice: "",
+  supplier: "",
+  supplierOffice: "",
+  branch: "",
+  department: "",
+  salesRep: "",
+  opsRep: "",
+  jobStatus: "",
+  goodsValue: "",
+  insuranceValue: "",
+  entries: "",
+  invoiceLines: "",
+  commodity: "",
+  co2e: "",
+  knownCargo: "",
+  fmcTid: "",
+  margin: "",
   profit: 0,
   cost: 0,
   revenue: 0,
+  currency: "",
+  jobRoes: [],
+  details: {},
 }
 
 const salesRepresentativeOptions = systemPeople
   .filter((person) => person.roles.includes("sales"))
   .map((person) => `${person.code} - ${person.name}`)
 
-function salesRepresentativeValue(salesRep = "AM1") {
+function salesRepresentativeValue(salesRep?: string, emptyWhenMissing = false) {
+  if (!salesRep?.trim()) return emptyWhenMissing ? "" : salesRepresentativeOptions[0]
   return salesRepresentativeOptions.find((option) => option.startsWith(`${salesRep} - `))
     ?? salesRepresentativeOptions[0]
 }
@@ -533,6 +573,20 @@ function formatLocation(code: string, location: string) {
   return code.trim() ? `${code} - ${location}` : ""
 }
 
+function quoteDateInputValue(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return ""
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
+
+  const parsed = new Date(trimmed)
+  if (Number.isNaN(parsed.getTime())) return ""
+  return getDateInputValue(parsed)
+}
+
+function getDateInputValue(date: Date) {
+  return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, "0")}-${`${date.getDate()}`.padStart(2, "0")}`
+}
+
 const transportModeOptions = ["Sea FCL", "Sea LCL", "Air", "Road", "Rail"]
 
 const cargoWiseModeOptions = ["Air", "Sea", "Road", "Rail"]
@@ -549,8 +603,9 @@ function shipmentTypeOptions(mode: string) {
 }
 
 function shipmentTypeValue(mode: string, value?: string) {
+  if (!mode.trim() || !value?.trim()) return ""
   const options = shipmentTypeOptions(mode)
-  return value && options.includes(value) ? value : options[0]
+  return options.includes(value) ? value : ""
 }
 
 function parseTransportModes(value: string) {
@@ -1901,6 +1956,7 @@ function CargoWiseField({
   onChange?: (value: string) => void
 }) {
   const { t } = useLanguage()
+  const inputId = useId()
 
   return (
     <div className={cn(
@@ -1915,9 +1971,10 @@ function CargoWiseField({
       span && "md:col-span-2",
       className,
     )}>
-      <span className={cn("min-w-0 whitespace-normal break-words text-[11px] font-medium leading-[1.15] text-[var(--md-text)]", compactLabel === "content" ? "text-start" : "text-end")}>{t(label)}</span>
+      <label htmlFor={inputId} className={cn("min-w-0 whitespace-normal break-words text-[11px] font-medium leading-[1.15] text-[var(--md-text)]", compactLabel === "content" ? "text-start" : "text-end")}>{t(label)}</label>
       <div className={cn("grid min-w-0", action && "grid-cols-[minmax(0,1fr)_auto] gap-0.5")}>
         {editable ? <input
+          id={inputId}
           data-i18n-skip
           dir="auto"
           value={value}
@@ -1927,7 +1984,7 @@ function CargoWiseField({
             compact ? "min-h-7 px-1.5 py-1 leading-5" : "min-h-8 px-2 py-1.5 leading-5",
             fitValue && "w-fit max-w-full",
           )}
-        /> : <span data-i18n-skip dir="auto" className={cn(
+        /> : <span id={inputId} data-i18n-skip dir="auto" className={cn(
           "min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
           compact
             ? compactPadding === "square"
@@ -1968,7 +2025,17 @@ function CargoWiseLookupField({
   onChange?: (value: string) => void
 }) {
   const { t } = useLanguage()
+  const inputId = useId()
+  const dateInputRef = useRef<HTMLInputElement>(null)
   const Icon = action === "date" ? CalendarDays : action === "more" ? MoreHorizontal : Search
+  const isDateField = action === "date"
+
+  function openDatePicker() {
+    const input = dateInputRef.current
+    if (!input) return
+    if (typeof input.showPicker === "function") input.showPicker()
+    else input.focus()
+  }
 
   return (
     <div className={cn(
@@ -1977,12 +2044,15 @@ function CargoWiseLookupField({
       span && "md:col-span-2",
       className,
     )}>
-      <span className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</span>
+      <label htmlFor={inputId} className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</label>
       {editable ? (
         <input
+          ref={isDateField ? dateInputRef : undefined}
+          id={inputId}
           data-i18n-skip
-          dir="auto"
-          value={value}
+          dir={isDateField ? "ltr" : "auto"}
+          type={isDateField ? "date" : "text"}
+          value={isDateField ? quoteDateInputValue(value) : value}
           maxLength={maxLength}
           required={required}
           aria-required={required}
@@ -1992,11 +2062,12 @@ function CargoWiseLookupField({
           className={cn(
             "min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
             compact ? "min-h-7 px-1.5 py-1 leading-5" : "min-h-8 px-2 py-1.5 leading-5",
+            isDateField && "appearance-none [&::-webkit-calendar-picker-indicator]:hidden",
             invalid && "ring-1 ring-[var(--md-red)]",
           )}
         />
       ) : (
-        <span data-i18n-skip dir="auto" className={cn(
+        <span id={inputId} data-i18n-skip dir="auto" className={cn(
           "min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
           compact ? "min-h-7 px-1.5 py-1 leading-5" : "min-h-8 px-2 py-1.5 leading-5",
           invalid && "ring-1 ring-[var(--md-red)]",
@@ -2004,9 +2075,92 @@ function CargoWiseLookupField({
           {value || "—"}
         </span>
       )}
-      <Button type="button" variant="ghost" disabled={!editable} className={cn("rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] p-0 text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)]", compact ? "size-7" : "size-8")} aria-label={t(`Search ${label}`)}>
+      <Button
+        type="button"
+        variant="ghost"
+        disabled={!editable}
+        onClick={isDateField ? openDatePicker : undefined}
+        className={cn("rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] p-0 text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)]", compact ? "size-7" : "size-8")}
+        aria-label={t(isDateField ? `Choose ${label} date` : `Search ${label}`)}
+      >
         <Icon className="size-3.5" strokeWidth={1.4} />
       </Button>
+    </div>
+  )
+}
+
+type CargoWiseSelectOption = string | { value: string; label: string }
+
+function CargoWiseSearchSelectField({
+  label,
+  value,
+  options,
+  editable = false,
+  onChange,
+}: {
+  label: string
+  value: string
+  options: Array<{ value: string; label: string }>
+  editable?: boolean
+  onChange?: (value: string) => void
+}) {
+  const { t } = useLanguage()
+  const triggerId = useId()
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState("")
+  const selectedOption = options.find((option) => option.value === value)
+  const filteredOptions = options.filter((option) => `${option.value} ${option.label}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
+
+  useEffect(() => {
+    if (open) window.setTimeout(() => searchInputRef.current?.focus(), 0)
+    else setSearch("")
+  }, [open])
+
+  return (
+    <div className="grid min-w-0 grid-cols-[64px_minmax(0,1fr)] items-center gap-1.5">
+      <label htmlFor={triggerId} className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</label>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            id={triggerId}
+            type="button"
+            variant="ghost"
+            disabled={!editable}
+            role="combobox"
+            aria-expanded={open}
+            aria-controls={`${triggerId}-options`}
+            className="h-8 w-full min-w-0 justify-between rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2.5 text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)]"
+          >
+            <span className="truncate">{selectedOption?.label || t("Select")}</span>
+            <ChevronDown className="size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent id={`${triggerId}-options`} align="start" sideOffset={5} className="w-[var(--radix-popover-trigger-width)] min-w-[220px] rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] p-1.5 shadow-[var(--md-shadow-lift)]">
+          <div className="relative mb-1.5">
+            <Search className="pointer-events-none absolute start-2 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
+            <Input
+              ref={searchInputRef}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={t("Type customer code")}
+              aria-label={t("Search customer code")}
+              className="h-8 rounded-[var(--md-radius-md)] ps-7 text-[12px]"
+            />
+          </div>
+          <div className="max-h-56 overflow-y-auto" role="listbox">
+            <button type="button" role="option" aria-selected={!value} className="md-dropdown-option flex min-h-8 w-full items-center rounded-[var(--md-radius-md)] px-2 text-start text-[12px] text-[var(--md-text)]" onClick={() => { onChange?.(""); setOpen(false) }}>
+              {t("Select")}
+            </button>
+            {filteredOptions.map((option) => (
+              <button key={option.value} type="button" role="option" aria-selected={option.value === value} className="md-dropdown-option flex min-h-8 w-full items-center rounded-[var(--md-radius-md)] px-2 text-start text-[12px] text-[var(--md-text)]" onClick={() => { onChange?.(option.value); setOpen(false) }}>
+                <span className="truncate">{option.label}</span>
+              </button>
+            ))}
+            {!filteredOptions.length && <p className="px-2 py-2 text-[12px] text-[var(--md-subtle)]">{t("No matching customer codes")}</p>}
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   )
 }
@@ -2027,7 +2181,7 @@ function CargoWiseSelectField({
 }: {
   label: string
   value: string
-  options: string[]
+  options: CargoWiseSelectOption[]
   span?: boolean
   compact?: boolean
   required?: boolean
@@ -2039,6 +2193,11 @@ function CargoWiseSelectField({
   onChange?: (value: string) => void
 }) {
   const { t } = useLanguage()
+  const triggerId = useId()
+  const emptyValue = "__multideck_select_empty__"
+  const normalizedOptions = options.map((option) => typeof option === "string"
+    ? { value: option, label: option }
+    : option)
 
   return (
     <div className={cn(
@@ -2048,9 +2207,10 @@ function CargoWiseSelectField({
         : action ? "grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)_32px] gap-1.5" : "grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] gap-1.5",
       span && "md:col-span-2",
     )}>
-      <span className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</span>
-      <Select value={value} onValueChange={onChange} required={required} disabled={!editable}>
+      <label htmlFor={triggerId} className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</label>
+      <Select value={value || emptyValue} onValueChange={(nextValue) => onChange?.(nextValue === emptyValue ? "" : nextValue)} required={required} disabled={!editable}>
         <SelectTrigger
+          id={triggerId}
           data-i18n-skip={dataOptions || undefined}
           dir={dataOptions ? "auto" : undefined}
           aria-required={required || undefined}
@@ -2062,12 +2222,13 @@ function CargoWiseSelectField({
           )}
         >
           {ValueIcon ? <ValueIcon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" /> : null}
-          <SelectValue />
+          <SelectValue placeholder={t("Select")} />
         </SelectTrigger>
         <SelectContent className="rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
-          {options.map((option) => (
-            <SelectItem key={option} value={option} data-i18n-skip={dataOptions || undefined} dir={dataOptions ? "auto" : undefined} className="text-[12px]">
-              {dataOptions ? option : t(option)}
+          <SelectItem value={emptyValue} className="text-[12px]">{t("Select")}</SelectItem>
+          {normalizedOptions.map((option) => (
+            <SelectItem key={option.value} value={option.value} data-i18n-skip={dataOptions || undefined} dir={dataOptions ? "auto" : undefined} className="text-[12px]">
+              {dataOptions ? option.label : t(option.label)}
             </SelectItem>
           ))}
         </SelectContent>
@@ -2126,17 +2287,20 @@ function CargoWiseGroup({
 }
 
 function QuoteCargoWiseOverviewPanel({ quote }: { quote: QuoteRecord }) {
+  const { t } = useLanguage()
+  const currency = quote.currency || ""
+  const displayMoney = (value: number) => currency ? money(value, currency) : value.toFixed(2)
+  const incoterm = [quote.incoterm, quote.incotermPlace].filter(Boolean).join(" · ")
+
   return (
     <div className="md-quote-cargowise-overview grid gap-2">
-      <QuoteOverviewSignals quote={quote} compact />
-
       <div className="grid gap-2 lg:grid-cols-[1fr_1fr_0.9fr]">
         <CargoWiseGroup title="Quote header" compact>
           <div className="grid gap-1 md:grid-cols-2">
-            <CargoWiseField label="Type" value={quote.quoteType ?? "Local client"} compact />
-            <CargoWiseField label="Source" value={quote.source ?? "NEW - New Shipper"} compact />
+            <CargoWiseField label="Type" value={quote.quoteType ?? ""} compact />
+            <CargoWiseField label="Source" value={quote.source ?? ""} compact />
             <CargoWiseField label="Client" value={`${quote.clientCode ?? ""} / ${quote.customer}`} fitValue compact />
-            <CargoWiseField label="Local ref" value={quote.localRef ?? "SPQ-74218"} compact />
+            <CargoWiseField label="Local ref" value={quote.localRef ?? ""} compact />
             <CargoWiseField label="Start date" value={quote.startDate ?? ""} compact />
             <CargoWiseField label="End date" value={quote.endDate ?? ""} compact />
           </div>
@@ -2144,33 +2308,35 @@ function QuoteCargoWiseOverviewPanel({ quote }: { quote: QuoteRecord }) {
 
         <CargoWiseGroup title="Routing" compact>
           <div className="grid gap-1 md:grid-cols-2">
-            <CargoWiseField label="Transport" value="SEA - Sea Freight" compact />
-            <CargoWiseField label="Container" value="FCL - Full Container Load" compact />
-            <CargoWiseField label="Incoterm" value={`${quote.incoterm} - Delivered At Place`} span compact />
-            <CargoWiseField label="Origin" value={formatLocation(quote.origin, "Bristol")} compact compactPadding="square" />
-            <CargoWiseField label="Destination" value={formatLocation(quote.destination, "Kobe")} compact />
-            <CargoWiseField label="Via" value={`${quote.via} - Singapore`} compact />
-            <CargoWiseField label="Transit" value={`${quote.transitDays ?? "55"} days`} compact />
-            <CargoWiseField label="HBL mode" value={quote.hblMode ?? "CY/CFS"} compact />
-            <CargoWiseField label="Direction" value={quote.direction ?? "Export"} compact />
+            <CargoWiseField label="Transport" value={quote.mode} compact />
+            <CargoWiseField label="Shipment type" value={quote.shipmentType ?? quote.container} compact />
+            <CargoWiseField label="Incoterm" value={incoterm} span compact />
+            <CargoWiseField label="Origin" value={quote.origin} compact compactPadding="square" />
+            <CargoWiseField label="Destination" value={quote.destination} compact />
+            <CargoWiseField label="Via" value={quote.via} compact />
+            <CargoWiseField label="Transit" value={quote.transitDays ? `${quote.transitDays} days` : ""} compact />
+            <CargoWiseField label="HBL mode" value={quote.hblMode ?? ""} compact />
+            <CargoWiseField label="Direction" value={quote.direction ?? ""} compact />
           </div>
         </CargoWiseGroup>
 
         <CargoWiseGroup title="Totals" compact>
           <div className="grid gap-1 md:grid-cols-2">
-            <CargoWiseField label="Cost" value={money(quote.cost)} compact compactLabel="tight" />
-            <CargoWiseField label="Revenue" value={money(quote.revenue)} compact compactLabel="tight" />
-            <CargoWiseField label="Profit" value={money(quote.profit)} compact compactLabel="tight" />
-            <CargoWiseField label="Margin" value={quote.margin} compact compactLabel="tight" />
+            <CargoWiseField label="Cost" value={displayMoney(quote.cost)} compact compactLabel="tight" />
+            <CargoWiseField label="Revenue" value={displayMoney(quote.revenue)} compact compactLabel="tight" />
+            <CargoWiseField label="Profit" value={displayMoney(quote.profit)} compact compactLabel="tight" />
+            <CargoWiseField label="Margin" value={quote.margin || "—"} compact compactLabel="tight" />
             <CargoWiseField label="Status" value={quote.jobStatus ?? quote.status} span compact compactLabel="tight" />
           </div>
         </CargoWiseGroup>
       </div>
 
-      <div className="grid gap-2 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-        <ClientPricingIntelligence />
-        <RecentQuotesSummary quote={quote} />
-      </div>
+      <Surface padding="sm" className="rounded-[var(--md-radius-xl)]">
+        <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Quote intelligence")}</p>
+        <p className="mt-1 text-[11px] leading-4 text-[var(--md-text)]">
+          {t("Pricing and win-rate insights will appear here when this quote has real customer and rate history.")}
+        </p>
+      </Surface>
     </div>
   )
 }
@@ -2178,34 +2344,58 @@ function QuoteCargoWiseOverviewPanel({ quote }: { quote: QuoteRecord }) {
 function QuoteCargoWiseDetailsPanel({
   quote,
   editable,
+  requireCoreFields = true,
   validationAttempted,
   onQuoteChange,
   onCustomerCreate,
+  lookups,
 }: {
   quote: QuoteRecord
   editable: boolean
+  requireCoreFields?: boolean
   validationAttempted: boolean
   onQuoteChange: (field: keyof QuoteRecord, value: string) => void
   onCustomerCreate: (name: string, code: string) => void
+  lookups?: QuoteWorkflowSources | null
 }) {
   const { direction, t } = useLanguage()
   const reduceMotion = useReducedMotion()
   const [customerDialogOpen, setCustomerDialogOpen] = useState(false)
   const [newCustomerName, setNewCustomerName] = useState("")
   const [newCustomerCode, setNewCustomerCode] = useState("")
-  const [savedPartyAddresses, setSavedPartyAddresses] = useState<SavedPartyAddress[]>(initialSavedPartyAddresses)
+  const [savedPartyAddresses, setSavedPartyAddresses] = useState<SavedPartyAddress[]>([])
   const [addressDialogOpen, setAddressDialogOpen] = useState(false)
   const [addressDialogTarget, setAddressDialogTarget] = useState<"collection" | "delivery">("collection")
   const [newSavedAddress, setNewSavedAddress] = useState("")
   const [newSavedAddressType, setNewSavedAddressType] = useState<SavedPartyAddress["type"]>("Collection address")
   const [emailCopied, setEmailCopied] = useState(false)
   const emailCopyResetTimerRef = useRef<number | null>(null)
-  const selectedCarrier = quote.carrier && carrierOfficeOptions[quote.carrier] ? quote.carrier : carrierOptions[0]
-  const selectedCarrierOffices = carrierOfficeOptions[selectedCarrier]
-  const selectedCarrierOffice = quote.carrierOffice && selectedCarrierOffices.includes(quote.carrierOffice) ? quote.carrierOffice : selectedCarrierOffices[0]
-  const selectedSupplier = quote.supplier && supplierOfficeOptions[quote.supplier] ? quote.supplier : supplierOptions[0]
-  const selectedSupplierOffices = supplierOfficeOptions[selectedSupplier]
-  const selectedSupplierOffice = quote.supplierOffice && selectedSupplierOffices.includes(quote.supplierOffice) ? quote.supplierOffice : selectedSupplierOffices[0]
+  const carrierChoices = lookups?.carriers.map((option) => option.name) ?? carrierOptions
+  const supplierChoices = lookups?.suppliers.map((option) => option.name) ?? supplierOptions
+  const selectedCarrier = quote.carrier && carrierChoices.includes(quote.carrier) ? quote.carrier : ""
+  const selectedCarrierOrganisation = lookups?.organisations.find((option) => option.id === quote.carrierId || option.name === selectedCarrier)
+  const selectedCarrierOffices = selectedCarrierOrganisation?.addresses.map((address) => address.label) ?? (selectedCarrier ? carrierOfficeOptions[selectedCarrier] ?? [] : [])
+  const selectedCarrierOffice = quote.carrierOffice && selectedCarrierOffices.includes(quote.carrierOffice) ? quote.carrierOffice : ""
+  const selectedSupplier = quote.supplier && supplierChoices.includes(quote.supplier) ? quote.supplier : ""
+  const selectedSupplierOrganisation = lookups?.organisations.find((option) => option.id === quote.supplierId || option.name === selectedSupplier)
+  const selectedSupplierOffices = selectedSupplierOrganisation?.addresses.map((address) => address.label) ?? (selectedSupplier ? supplierOfficeOptions[selectedSupplier] ?? [] : [])
+  const selectedSupplierOffice = quote.supplierOffice && selectedSupplierOffices.includes(quote.supplierOffice) ? quote.supplierOffice : ""
+  const customerChoices = lookups?.organisations.map((option) => ({
+    value: option.code || option.name,
+    label: option.code || option.name,
+  })) ?? []
+  const officeChoices = lookups?.offices.map((option) => option.code || option.name) ?? []
+  const departmentChoices = lookups?.departments.map((option) => option.name) ?? []
+  const salesChoices = lookups?.users.reduce<Array<{ value: string; label: string }>>((choices, option) => {
+    const label = option.name.trim()
+    if (!label || choices.some((choice) => choice.label.localeCompare(label, undefined, { sensitivity: "accent" }) === 0)) return choices
+    choices.push({ value: option.id, label })
+    return choices
+  }, []) ?? salesRepresentativeOptions
+  const selectedSalesOwnerId = quote.salesOwnerId || lookups?.users.find((option) => option.name === quote.salesRep)?.id || ""
+  const modeChoices = lookups?.modes.map((option) => option.name) ?? cargoWiseModeOptions
+  const shipmentTypeChoices = lookups?.shipmentTypes.map((option) => `${option.code} - ${option.name}`) ?? shipmentTypeOptions(quote.mode)
+  const currencyChoices = lookups?.currencies.map((option) => option.code) ?? ["GBP", "EUR", "USD"]
 
   useEffect(() => () => {
     if (emailCopyResetTimerRef.current !== null) window.clearTimeout(emailCopyResetTimerRef.current)
@@ -2228,7 +2418,7 @@ function QuoteCargoWiseDetailsPanel({
     }
   }
 
-  const customerEmail = quote.customerEmail ?? "rates@harbourworks.example"
+  const customerEmail = quote.customerEmail ?? ""
   const customerEmailActions = (
     <div className="flex shrink-0 items-center gap-0.5">
       <Tooltip>
@@ -2265,13 +2455,28 @@ function QuoteCargoWiseDetailsPanel({
   )
 
   function updateCarrier(company: string) {
+    const organisation = lookups?.carriers.find((option) => option.name === company)
     onQuoteChange("carrier", company)
-    onQuoteChange("carrierOffice", carrierOfficeOptions[company][0])
+    onQuoteChange("carrierId", organisation?.id ?? "")
+    onQuoteChange("carrierOffice", "")
   }
 
   function updateSupplier(company: string) {
+    const organisation = lookups?.suppliers.find((option) => option.name === company)
     onQuoteChange("supplier", company)
-    onQuoteChange("supplierOffice", supplierOfficeOptions[company][0])
+    onQuoteChange("supplierId", organisation?.id ?? "")
+    onQuoteChange("supplierOffice", "")
+  }
+
+  function selectCustomer(codeOrName: string) {
+    const organisation = lookups?.organisations.find((option) => (option.code || option.name) === codeOrName)
+    onQuoteChange("customerId", organisation?.id ?? "")
+    onQuoteChange("clientCode", organisation?.code ?? codeOrName)
+    onQuoteChange("customer", organisation?.name ?? "")
+    onQuoteChange("customerAddress", organisation?.addresses[0]?.address ?? "")
+    onQuoteChange("contactId", "")
+    onQuoteChange("customerContact", "")
+    onQuoteChange("customerEmail", "")
   }
 
   function openCustomerDialog() {
@@ -2314,9 +2519,16 @@ function QuoteCargoWiseDetailsPanel({
     setAddressDialogOpen(false)
   }
 
-  const addressesFor = (target: "collection" | "delivery") => savedPartyAddresses
-    .filter(({ type }) => type === "Main office" || type === (target === "collection" ? "Collection address" : "Delivery address"))
-    .map(({ address }) => address)
+  const addressesFor = (target: "collection" | "delivery") => {
+    const selectedOrganisationIds = [quote.customerId, quote.shipperOrgId, quote.consigneeOrgId].filter(Boolean)
+    const organisationAddresses = (lookups?.organisations ?? [])
+      .filter((organisation) => selectedOrganisationIds.includes(organisation.id))
+      .flatMap((organisation) => organisation.addresses.map((address) => address.address))
+    const quoteAddresses = savedPartyAddresses
+      .filter(({ type }) => type === "Main office" || type === (target === "collection" ? "Collection address" : "Delivery address"))
+      .map(({ address }) => address)
+    return [...new Set([...organisationAddresses, ...quoteAddresses].filter(Boolean))]
+  }
 
   function changeMode(mode: string) {
     onQuoteChange("mode", mode)
@@ -2338,7 +2550,7 @@ function QuoteCargoWiseDetailsPanel({
           <Plus className="size-3.5" strokeWidth={1.4} />
         </Button>
       </TooltipTrigger>
-      <TooltipContent>{t("Add saved address")}</TooltipContent>
+      <TooltipContent>{t("Use quote address")}</TooltipContent>
     </Tooltip>
   )
 
@@ -2412,41 +2624,53 @@ function QuoteCargoWiseDetailsPanel({
           <div className="grid content-start gap-1.5">
             <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Quote control")}</h4>
             <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <CargoWiseLookupField label="Customer ref" value={quote.localRef ?? "SPQ-74218"} action="more" compact editable={editable} onChange={(value) => onQuoteChange("localRef", value)} />
-              <CargoWiseSelectField label="Status" value={quote.workflowStatus ?? "WRK - Working"} options={["DRF - Draft/WIP", "RTG - Rating", "REV - Review", "SNT - Sent", "FLW - Followed-up", "WRK - Working"]} compact editable={editable} onChange={(value) => onQuoteChange("workflowStatus", value)} />
-              <CargoWiseLookupField label="Valid from" value={quote.startDate ?? "08 Jan 2026"} action="date" compact editable={editable} onChange={(value) => onQuoteChange("startDate", value)} />
-              <CargoWiseLookupField label="Valid to" value={quote.endDate ?? "31 Jan 2026"} action="date" compact editable={editable} onChange={(value) => onQuoteChange("endDate", value)} />
-              <CargoWiseSelectField label="Source" value={quote.source ?? "NEW - New Shipper"} options={["NEW - New Shipper", "REN - Renewal", "REP - Repeat lane", "TND - Tender"]} compact editable={editable} onChange={(value) => onQuoteChange("source", value)} />
-              <CargoWiseSelectField label="Mode" value={quote.mode} options={cargoWiseModeOptions} compact editable={editable} required invalid={validationAttempted && !quote.mode.trim()} onChange={changeMode} />
+              <CargoWiseLookupField label="Customer ref" value={quote.localRef ?? ""} action="more" compact editable={editable} onChange={(value) => onQuoteChange("localRef", value)} />
+              <CargoWiseSelectField label="Status" value={quote.workflowStatus ?? ""} options={["DRF - Draft/WIP", "RTG - Rating", "REV - Review", "SNT - Sent", "FLW - Followed-up", "WRK - Working"]} compact editable={editable} onChange={(value) => onQuoteChange("workflowStatus", value)} />
+              <CargoWiseLookupField label="Valid from" value={quote.startDate ?? ""} action="date" compact editable={editable} onChange={(value) => onQuoteChange("startDate", value)} />
+              <CargoWiseLookupField label="Valid to" value={quote.endDate ?? ""} action="date" compact editable={editable} onChange={(value) => onQuoteChange("endDate", value)} />
+              <CargoWiseSelectField label="Source" value={quote.source ?? ""} options={["NEW - New Shipper", "REN - Renewal", "REP - Repeat lane", "TND - Tender"]} compact editable={editable} onChange={(value) => onQuoteChange("source", value)} />
+              <CargoWiseSelectField label="Mode" value={quote.mode} options={modeChoices} compact editable={editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.mode.trim()} onChange={changeMode} />
             </div>
           </div>
           <div className="grid content-start gap-1.5">
             <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Ownership")}</h4>
             <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <CargoWiseLookupField label="Branch" value={quote.branch ?? "BR1"} compact editable={editable} onChange={(value) => onQuoteChange("branch", value)} />
-              <CargoWiseLookupField label="Dept" value={quote.department ?? "SEA"} compact editable={editable} onChange={(value) => onQuoteChange("department", value)} />
+              <CargoWiseSelectField label="Branch" value={quote.branch ?? ""} options={officeChoices} compact editable={editable} dataOptions onChange={(value) => {
+                const office = lookups?.offices.find((option) => (option.code || option.name) === value)
+                onQuoteChange("branch", value)
+                onQuoteChange("officeId", office?.id ?? "")
+              }} />
+              <CargoWiseSelectField label="Dept" value={quote.department ?? ""} options={departmentChoices} compact editable={editable} dataOptions onChange={(value) => {
+                const department = lookups?.departments.find((option) => option.name === value)
+                onQuoteChange("department", value)
+                onQuoteChange("departmentId", department?.id ?? "")
+              }} />
               <CargoWiseSelectField
                 label="Sales rep"
-                value={salesRepresentativeValue(quote.salesRep)}
-                options={salesRepresentativeOptions}
+                value={selectedSalesOwnerId}
+                options={salesChoices}
                 compact
                 editable={editable}
                 dataOptions
-                onChange={(value) => onQuoteChange("salesRep", value.split(" - ", 1)[0])}
+                onChange={(userId) => {
+                  const user = lookups?.users.find((option) => option.id === userId)
+                  onQuoteChange("salesRep", user?.name ?? "")
+                  onQuoteChange("salesOwnerId", userId)
+                }}
               />
-              <CargoWiseSelectField label="Priority" value={quote.priority ?? "Standard"} options={["Low", "Standard", "High", "Tender"]} compact editable={editable} onChange={(value) => onQuoteChange("priority", value)} />
-              <CargoWiseSelectField label="Hold reason" value={quote.holdReason ?? "None"} options={["None", "Missing carrier", "Missing consignee", "Margin review", "Credit check"]} compact editable={editable} onChange={(value) => onQuoteChange("holdReason", value)} />
+              <CargoWiseSelectField label="Priority" value={quote.priority ?? ""} options={["Low", "Standard", "High", "Tender"]} compact editable={editable} onChange={(value) => onQuoteChange("priority", value)} />
+              <CargoWiseSelectField label="Hold reason" value={quote.holdReason ?? ""} options={["None", "Missing carrier", "Missing consignee", "Margin review", "Credit check"]} compact editable={editable} onChange={(value) => onQuoteChange("holdReason", value)} />
             </div>
           </div>
           <div className="grid content-start gap-1.5">
             <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("References")}</h4>
             <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <CargoWiseLookupField label="Customer PO" value={quote.customerPO ?? "PO-48319"} compact editable={editable} onChange={(value) => onQuoteChange("customerPO", value)} />
-              <CargoWiseLookupField label="Shipper ref" value={quote.shipperReference ?? "HW-SEA-1184"} compact editable={editable} onChange={(value) => onQuoteChange("shipperReference", value)} />
-              <CargoWiseLookupField label="Agent ref" value={quote.agentReference ?? "Pending"} compact editable={editable} onChange={(value) => onQuoteChange("agentReference", value)} />
-              <CargoWiseLookupField label="Carrier ref" value={quote.carrierReference ?? "Pending"} compact editable={editable} onChange={(value) => onQuoteChange("carrierReference", value)} />
-              <CargoWiseSelectField label="Docs" value={quote.docsStatus ?? "Draft"} options={["Draft", "Ready", "Sent", "Signed"]} compact editable={editable} onChange={(value) => onQuoteChange("docsStatus", value)} />
-              <CargoWiseSelectField label="Workflow" value={quote.workflow ?? "Review"} options={["Draft/WIP", "Rating", "Review", "Sent", "Followed-up", "Won", "Lost"]} compact editable={editable} onChange={(value) => onQuoteChange("workflow", value)} />
+              <CargoWiseLookupField label="Customer PO" value={quote.customerPO ?? ""} compact editable={editable} onChange={(value) => onQuoteChange("customerPO", value)} />
+              <CargoWiseLookupField label="Shipper ref" value={quote.shipperReference ?? ""} compact editable={editable} onChange={(value) => onQuoteChange("shipperReference", value)} />
+              <CargoWiseLookupField label="Agent ref" value={quote.agentReference ?? ""} compact editable={editable} onChange={(value) => onQuoteChange("agentReference", value)} />
+              <CargoWiseLookupField label="Carrier ref" value={quote.carrierReference ?? ""} compact editable={editable} onChange={(value) => onQuoteChange("carrierReference", value)} />
+              <CargoWiseSelectField label="Docs" value={quote.docsStatus ?? ""} options={["Draft", "Ready", "Sent", "Signed"]} compact editable={editable} onChange={(value) => onQuoteChange("docsStatus", value)} />
+              <CargoWiseSelectField label="Workflow" value={quote.workflow ?? ""} options={["Draft/WIP", "Rating", "Review", "Sent", "Followed-up", "Won", "Lost"]} compact editable={editable} onChange={(value) => onQuoteChange("workflow", value)} />
             </div>
           </div>
         </div>
@@ -2466,22 +2690,22 @@ function QuoteCargoWiseDetailsPanel({
                     variant="ghost"
                     size="icon-sm"
                     className="size-6 rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] hover:bg-[var(--md-surface-soft)] hover:text-[var(--md-ink)]"
-                    aria-label={t("Create customer")}
+                    aria-label={t("Use one-off customer")}
                     onClick={openCustomerDialog}
                   >
                     <Plus className="size-3.5" strokeWidth={1.5} />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{t("Create customer")}</TooltipContent>
+                <TooltipContent>{t("Use one-off customer")}</TooltipContent>
               </Tooltip>
             )}
           >
             <div className="grid min-w-0 gap-2 md:col-span-2 md:grid-cols-[minmax(160px,0.76fr)_minmax(0,1.24fr)]">
-              <CargoWiseLookupField label="Code" value={quote.clientCode ?? "HWSBRI"} maxLength={12} editable={editable} onChange={(value) => onQuoteChange("clientCode", value)} />
+              <CargoWiseSearchSelectField label="Code" value={quote.clientCode ?? ""} options={customerChoices} editable={editable} onChange={selectCustomer} />
               <CargoWiseField label="Name" value={quote.customer} editable={editable} onChange={(value) => onQuoteChange("customer", value)} />
             </div>
-            <CargoWiseField label="Address" value={quote.customerAddress ?? "RIVERGATE WORKS, BRISTOL, UNITED KINGDOM"} span editable={editable} onChange={(value) => onQuoteChange("customerAddress", value)} />
-            <CargoWiseLookupField label="Contact" value={quote.customerContact ?? "Nora Vale - Logistics Lead"} className="[--md-field-label-width:46px]" editable={editable} onChange={(value) => onQuoteChange("customerContact", value)} />
+            <CargoWiseField label="Address" value={quote.customerAddress ?? ""} span editable={editable} onChange={(value) => onQuoteChange("customerAddress", value)} />
+            <CargoWiseLookupField label="Contact" value={quote.customerContact ?? ""} className="[--md-field-label-width:46px]" editable={editable} onChange={(value) => onQuoteChange("customerContact", value)} />
             <CargoWiseField label="Email" value={customerEmail} className="[--md-field-label-width:38px]" action={customerEmailActions} editable={editable} onChange={(value) => onQuoteChange("customerEmail", value)} />
           </CargoWiseGroup>
 
@@ -2492,20 +2716,20 @@ function QuoteCargoWiseDetailsPanel({
             headerAction={partyHeaderActions("Shipper")}
           >
             <div className="grid min-w-0 gap-2 md:col-span-2 md:grid-cols-[minmax(160px,0.76fr)_minmax(0,1.24fr)]">
-              <CargoWiseLookupField label="Code" value={quote.shipperCode ?? "HWSBRI"} maxLength={12} editable={editable} onChange={(value) => onQuoteChange("shipperCode", value)} />
-              <CargoWiseField label="Name" value={quote.shipperName ?? "HarbourWorks Safety"} editable={editable} onChange={(value) => onQuoteChange("shipperName", value)} />
+              <CargoWiseLookupField label="Code" value={quote.shipperCode ?? ""} maxLength={12} editable={editable} onChange={(value) => onQuoteChange("shipperCode", value)} />
+              <CargoWiseField label="Name" value={quote.shipperName ?? ""} editable={editable} onChange={(value) => onQuoteChange("shipperName", value)} />
             </div>
             <CargoWiseField
               label="Address"
-              value={quote.shipperAddress ?? "RIVERGATE WORKS, NORTH QUAY INDUSTRIAL ESTATE"}
+              value={quote.shipperAddress ?? ""}
               span
-              editable={quote.shipperAddressOverride === "Yes"}
+              editable={editable && (!quote.shipperAddress || quote.shipperAddressOverride === "Yes")}
               onChange={(value) => onQuoteChange("shipperAddress", value)}
             />
-            <CargoWiseLookupField label="Contact" value={quote.shipperContact ?? "Dispatch desk"} className="[--md-field-label-width:46px]" editable={editable} onChange={(value) => onQuoteChange("shipperContact", value)} />
+            <CargoWiseLookupField label="Contact" value={quote.shipperContact ?? ""} className="[--md-field-label-width:46px]" editable={editable} onChange={(value) => onQuoteChange("shipperContact", value)} />
             <CargoWiseSelectField
               label="Collection"
-              value={quote.collectionAddress ?? "RIVERGATE WORKS, NORTH QUAY INDUSTRIAL ESTATE, BRISTOL, UNITED KINGDOM"}
+              value={quote.collectionAddress ?? ""}
               options={addressesFor("collection")}
               editable={editable}
               dataOptions
@@ -2521,8 +2745,8 @@ function QuoteCargoWiseDetailsPanel({
             headerAction={partyHeaderActions("Consignee")}
           >
             <div className="grid min-w-0 gap-2 md:col-span-2 md:grid-cols-[minmax(160px,0.76fr)_minmax(0,1.24fr)]">
-              <CargoWiseLookupField label="Code" value={quote.consigneeCode ?? "Not selected"} maxLength={12} editable={editable} onChange={(value) => onQuoteChange("consigneeCode", value)} />
-              <CargoWiseField label="Name" value={quote.consigneeName ?? "No organisation selected"} editable={editable} onChange={(value) => onQuoteChange("consigneeName", value)} />
+              <CargoWiseLookupField label="Code" value={quote.consigneeCode ?? ""} maxLength={12} editable={editable} onChange={(value) => onQuoteChange("consigneeCode", value)} />
+              <CargoWiseField label="Name" value={quote.consigneeName ?? ""} editable={editable} onChange={(value) => onQuoteChange("consigneeName", value)} />
             </div>
             {quote.consigneeAddress || quote.consigneeAddressOverride === "Yes" ? (
               <CargoWiseField
@@ -2533,10 +2757,9 @@ function QuoteCargoWiseDetailsPanel({
                 onChange={(value) => onQuoteChange("consigneeAddress", value)}
               />
             ) : null}
-            {quote.consigneeCode === "Not selected" ? <CargoWiseField label="Action" value="Add consignee before customer copy" span /> : null}
             <CargoWiseSelectField
               label="Delivery"
-              value={quote.deliveryAddress ?? "KOBE DISTRIBUTION CENTRE, PORT ISLAND, KOBE, JAPAN"}
+              value={quote.deliveryAddress ?? ""}
               options={addressesFor("delivery")}
               editable={editable}
               dataOptions
@@ -2556,33 +2779,33 @@ function QuoteCargoWiseDetailsPanel({
               <CargoWiseSelectField
                 label="Shipment type"
                 value={shipmentTypeValue(quote.mode, quote.shipmentType)}
-                options={shipmentTypeOptions(quote.mode)}
+                options={shipmentTypeChoices}
                 editable={editable}
                 onChange={(value) => onQuoteChange("shipmentType", value)}
               />
               <div className="grid min-w-0 gap-1 md:col-span-2 md:grid-cols-2 xl:col-span-2">
-                <CargoWiseSelectField label="Incoterms" value={quote.incoterm} options={["EXW", "FCA", "FOB", "CIF", "DAP", "DDP"]} editable={editable} required invalid={validationAttempted && !quote.incoterm.trim()} onChange={(value) => onQuoteChange("incoterm", value)} />
+                <CargoWiseSelectField label="Incoterms" value={quote.incoterm} options={["EXW", "FCA", "FOB", "CIF", "DAP", "DDP"]} editable={editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.incoterm.trim()} onChange={(value) => onQuoteChange("incoterm", value)} />
                 <CargoWiseField label="Named place" value={quote.incotermPlace ?? ""} editable={editable} onChange={(value) => onQuoteChange("incotermPlace", value)} />
               </div>
-              <CargoWiseSelectField label="HBL mode" value={quote.hblMode ?? "CY/CFS"} options={["CY/CFS", "CY/CY", "CFS/CFS", "Door/Door"]} editable={editable} onChange={(value) => onQuoteChange("hblMode", value)} />
-              <CargoWiseLookupField label="From" value={quote.origin} editable={editable} required invalid={validationAttempted && !quote.origin.trim()} onChange={(value) => onQuoteChange("origin", value)} />
-              <CargoWiseLookupField label="To" value={quote.destination} editable={editable} required invalid={validationAttempted && !quote.destination.trim()} onChange={(value) => onQuoteChange("destination", value)} />
+              <CargoWiseSelectField label="HBL mode" value={quote.hblMode ?? ""} options={["CY/CFS", "CY/CY", "CFS/CFS", "Door/Door"]} editable={editable} onChange={(value) => onQuoteChange("hblMode", value)} />
+              <CargoWiseLookupField label="From" value={quote.origin} editable={editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} onChange={(value) => onQuoteChange("origin", value)} />
+              <CargoWiseLookupField label="To" value={quote.destination} editable={editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} onChange={(value) => onQuoteChange("destination", value)} />
               <CargoWiseLookupField label="Via" value={quote.via} editable={editable} onChange={(value) => onQuoteChange("via", value)} />
-              <CargoWiseField label="Transit" value={quote.transitDays ?? "55"} editable={editable} onChange={(value) => onQuoteChange("transitDays", value)} />
-              <CargoWiseSelectField label="Frequency" value={quote.frequency ?? "0 - Ad hoc"} options={["0 - Ad hoc", "1 - Weekly", "2 - Twice weekly", "3 - Daily"]} editable={editable} onChange={(value) => onQuoteChange("frequency", value)} />
-              <CargoWiseSelectField label="Direction" value={quote.direction ?? ""} options={["Export", "Import", "Domestic", "Cross trade"]} editable={editable} required invalid={validationAttempted && !quote.direction?.trim()} onChange={(value) => onQuoteChange("direction", value)} />
-              <CargoWiseSelectField label="Currency" value={quote.currency} options={["GBP", "EUR", "USD"]} editable={editable} required invalid={validationAttempted && !quote.currency.trim()} onChange={(value) => onQuoteChange("currency", value)} />
+              <CargoWiseField label="Transit" value={quote.transitDays ?? ""} editable={editable} onChange={(value) => onQuoteChange("transitDays", value)} />
+              <CargoWiseSelectField label="Frequency" value={quote.frequency ?? ""} options={["0 - Ad hoc", "1 - Weekly", "2 - Twice weekly", "3 - Daily"]} editable={editable} onChange={(value) => onQuoteChange("frequency", value)} />
+              <CargoWiseSelectField label="Direction" value={quote.direction ?? ""} options={["Export", "Import", "Domestic", "Cross trade"]} editable={editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.direction?.trim()} onChange={(value) => onQuoteChange("direction", value)} />
+              <CargoWiseSelectField label="Currency" value={quote.currency} options={currencyChoices} editable={editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.currency.trim()} onChange={(value) => onQuoteChange("currency", value)} />
             </div>
           </div>
           <div className="grid content-start gap-1.5">
             <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Carrier & supplier")}</h4>
             <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <CargoWiseSelectField label="Carrier" value={selectedCarrier} options={carrierOptions} editable={editable} dataOptions onChange={updateCarrier} />
+              <CargoWiseSelectField label="Carrier" value={selectedCarrier} options={carrierChoices} editable={editable} dataOptions onChange={updateCarrier} />
               <CargoWiseSelectField label="Carrier office" value={selectedCarrierOffice} options={selectedCarrierOffices} editable={editable} dataOptions onChange={(value) => onQuoteChange("carrierOffice", value)} />
-              <CargoWiseSelectField label="Supplier" value={selectedSupplier} options={supplierOptions} editable={editable} dataOptions onChange={updateSupplier} />
+              <CargoWiseSelectField label="Supplier" value={selectedSupplier} options={supplierChoices} editable={editable} dataOptions onChange={updateSupplier} />
               <CargoWiseSelectField label="Supplier office" value={selectedSupplierOffice} options={selectedSupplierOffices} editable={editable} dataOptions onChange={(value) => onQuoteChange("supplierOffice", value)} />
-              <CargoWiseSelectField label="Rate source" value={quote.rateSource ?? "Manual"} options={["Manual", "Tariff", "Carrier portal", "Historic quote"]} editable={editable} onChange={(value) => onQuoteChange("rateSource", value)} />
-              <CargoWiseSelectField label="Service level" value={quote.serviceLevel ?? "Not selected"} options={["Not selected", "Economy", "Standard", "Express"]} editable={editable} onChange={(value) => onQuoteChange("serviceLevel", value)} />
+              <CargoWiseSelectField label="Rate source" value={quote.rateSource ?? ""} options={["Manual", "Tariff", "Carrier portal", "Historic quote"]} editable={editable} onChange={(value) => onQuoteChange("rateSource", value)} />
+              <CargoWiseSelectField label="Service level" value={quote.serviceLevel ?? ""} options={["Economy", "Standard", "Express"]} editable={editable} onChange={(value) => onQuoteChange("serviceLevel", value)} />
             </div>
           </div>
         </div>
@@ -2590,14 +2813,14 @@ function QuoteCargoWiseDetailsPanel({
 
       <CargoWiseGroup title="Goods">
         <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-4">
-          <CargoWiseField label="Goods value" value={quote.goodsValue ?? "0.00 GBP"} editable={editable} onChange={(value) => onQuoteChange("goodsValue", value)} />
-          <CargoWiseField label="Ins value" value={quote.insuranceValue ?? "0.00 GBP"} editable={editable} onChange={(value) => onQuoteChange("insuranceValue", value)} />
-          <CargoWiseLookupField label="Commodity" value={quote.commodity ?? "Not selected"} editable={editable} onChange={(value) => onQuoteChange("commodity", value)} />
-          <CargoWiseField label="CO2e" value={quote.co2e ?? "Pending"} editable={editable} onChange={(value) => onQuoteChange("co2e", value)} />
-          <CargoWiseField label="Entries" value={quote.entries ?? "1"} editable={editable} onChange={(value) => onQuoteChange("entries", value)} />
-          <CargoWiseField label="Lines" value={quote.invoiceLines ?? "1"} editable={editable} onChange={(value) => onQuoteChange("invoiceLines", value)} />
-          <CargoWiseSelectField label="Known cargo" value={quote.knownCargo ?? "General merchandise"} options={["General merchandise", "Hazardous", "Temperature controlled", "Oversized"]} editable={editable} onChange={(value) => onQuoteChange("knownCargo", value)} span />
-          <CargoWiseSelectField label="FMC TID" value={quote.fmcTid ?? "Not required"} options={["Not required", "Required", "Pending"]} editable={editable} onChange={(value) => onQuoteChange("fmcTid", value)} span />
+          <CargoWiseField label="Goods value" value={quote.goodsValue ?? ""} editable={editable} onChange={(value) => onQuoteChange("goodsValue", value)} />
+          <CargoWiseField label="Ins value" value={quote.insuranceValue ?? ""} editable={editable} onChange={(value) => onQuoteChange("insuranceValue", value)} />
+          <CargoWiseLookupField label="Commodity" value={quote.commodity ?? ""} editable={editable} onChange={(value) => onQuoteChange("commodity", value)} />
+          <CargoWiseField label="CO2e" value={quote.co2e ?? ""} editable={editable} onChange={(value) => onQuoteChange("co2e", value)} />
+          <CargoWiseField label="Entries" value={quote.entries ?? ""} editable={editable} onChange={(value) => onQuoteChange("entries", value)} />
+          <CargoWiseField label="Lines" value={quote.invoiceLines ?? ""} editable={editable} onChange={(value) => onQuoteChange("invoiceLines", value)} />
+          <CargoWiseSelectField label="Known cargo" value={quote.knownCargo ?? ""} options={["General merchandise", "Hazardous", "Temperature controlled", "Oversized"]} editable={editable} onChange={(value) => onQuoteChange("knownCargo", value)} span />
+          <CargoWiseSelectField label="FMC TID" value={quote.fmcTid ?? ""} options={["Not required", "Required", "Pending"]} editable={editable} onChange={(value) => onQuoteChange("fmcTid", value)} span />
         </div>
       </CargoWiseGroup>
 
@@ -2608,9 +2831,9 @@ function QuoteCargoWiseDetailsPanel({
           className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-sidebar-bg)] shadow-[var(--md-shadow-lift)] sm:max-w-[420px]"
         >
           <DialogHeader className="text-start">
-            <DialogTitle className="text-[16px] font-medium">{t("New customer")}</DialogTitle>
+            <DialogTitle className="text-[16px] font-medium">{t("One-off customer")}</DialogTitle>
             <DialogDescription className="text-[13px] leading-5 text-[var(--md-text)]">
-              {t("Create a customer and use it on this quote.")}
+              {t("Use customer details on this quote without creating a CRM account.")}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
@@ -2643,7 +2866,7 @@ function QuoteCargoWiseDetailsPanel({
               {t("Cancel")}
             </Button>
             <Button type="button" disabled={!newCustomerName.trim()} onClick={createCustomer}>
-              {t("Create customer")}
+              {t("Use customer")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2656,9 +2879,9 @@ function QuoteCargoWiseDetailsPanel({
           className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-sidebar-bg)] shadow-[var(--md-shadow-lift)] sm:max-w-[440px]"
         >
           <DialogHeader className="text-start">
-            <DialogTitle className="text-[16px] font-medium">{t("Add saved address")}</DialogTitle>
+            <DialogTitle className="text-[16px] font-medium">{t("Use quote address")}</DialogTitle>
             <DialogDescription className="text-[13px] leading-5 text-[var(--md-text)]">
-              {t("Save a company address and classify where it can be used.")}
+              {t("Use an address on this quote without changing the organisation record.")}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
@@ -2694,7 +2917,7 @@ function QuoteCargoWiseDetailsPanel({
               {t("Cancel")}
             </Button>
             <Button type="button" disabled={!newSavedAddress.trim()} onClick={savePartyAddress}>
-              {t("Save address")}
+              {t("Use address")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2883,7 +3106,7 @@ function QuoteWorkspaceContext({
       items: [["Customer", quote.customer], ["Route", `${formatLocation(quote.origin, "—")} → ${formatLocation(quote.destination, "—")}`], ["Margin", quote.margin], ["Status", quote.jobStatus ?? quote.status]],
     },
     details: {
-      items: [["Customer ref", quote.localRef ?? "—"], ["Branch / Dept", `${quote.branch ?? "—"} / ${quote.department ?? "—"}`], ["Sales rep", salesRepresentativeValue(quote.salesRep)], ["Priority", quote.priority ?? "Standard"]],
+      items: [["Customer ref", quote.localRef ?? "—"], ["Branch / Dept", [quote.branch, quote.department].filter(Boolean).join(" / ") || (quote.id === "NEW" ? "" : "— / —")], ["Sales rep", salesRepresentativeValue(quote.salesRep, quote.id === "NEW")], ["Priority", quote.priority ?? "Standard"]],
     },
     documents: {
       items: [["Quote", quote.id], ["Customer", quote.customer], ["Document status", quote.docsStatus ?? "Draft"], ["Workflow", quote.workflow ?? "Review"]],
@@ -2959,22 +3182,320 @@ function getInitialQuoteRecord(quoteId?: string) {
   return registerQuote ? quoteRecordFromRegister(registerQuote) : quoteQueue[0]
 }
 
-export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: QuotePageVariant; quoteId?: string }) {
+function quoteLifecyclePresentation(lifecycle: string): { status: string; tone: StatusTone } {
+  const status = lifecycle ? lifecycle.charAt(0).toUpperCase() + lifecycle.slice(1) : "Draft"
+  if (lifecycle === "accepted") return { status, tone: "green" }
+  if (lifecycle === "declined") return { status, tone: "red" }
+  if (lifecycle === "sent") return { status, tone: "blue" }
+  return { status, tone: lifecycle === "ghosted" ? "neutral" : "amber" }
+}
+
+function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: QuoteWorkflowSources): QuoteRecord {
+  const record = workspace.quote
+  const facts = record.shipmentFacts ?? {}
+  const fact = (key: string) => typeof facts[key] === "string" ? String(facts[key]) : ""
+  const customer = lookups.organisations.find((option) => option.id === record.customerId)
+  const contact = customer?.contacts.find((option) => option.id === record.contactId)
+  const office = lookups.offices.find((option) => option.id === record.officeId)
+  const department = lookups.departments.find((option) => option.id === record.departmentId)
+  const salesOwner = lookups.users.find((option) => option.id === record.salesOwnerId)
+  const mode = lookups.modes.find((option) => option.code === record.mode)
+  const shipmentType = lookups.shipmentTypes.find((option) => option.code === record.shipmentType)
+  const presentation = quoteLifecyclePresentation(record.lifecycle)
+  return {
+    ...newQuoteDraft,
+    id: record.reference,
+    status: presentation.status,
+    statusTone: presentation.tone,
+    localRef: record.customerReference ?? "",
+    quoteType: fact("quoteType"),
+    source: fact("source"),
+    workflowStatus: fact("workflowStatus") || presentation.status,
+    priority: fact("priority"),
+    holdReason: fact("holdReason"),
+    customerPO: fact("customerPO"),
+    shipperReference: fact("shipperReference"),
+    agentReference: fact("agentReference"),
+    carrierReference: fact("carrierReference"),
+    docsStatus: fact("docsStatus"),
+    workflow: fact("workflow") || presentation.status,
+    revisionReason: fact("revisionReason"),
+    customer: record.customerName,
+    customerId: record.customerId,
+    clientCode: customer?.code ?? fact("clientCode"),
+    customerAddress: customer?.addresses[0]?.address ?? fact("customerAddress"),
+    contactId: record.contactId ?? "",
+    customerContact: record.contactName ?? contact?.name ?? "",
+    customerEmail: record.contactEmail ?? contact?.email ?? "",
+    shipperOrgId: record.shipper?.orgId ? String(record.shipper.orgId) : "",
+    shipperCode: fact("shipperCode"),
+    shipperName: record.shipper?.name ?? "",
+    shipperAddress: record.shipper?.address ?? "",
+    shipperContact: record.shipper?.contact ?? "",
+    shipperAddressOverride: fact("shipperAddressOverride"),
+    collectionAddress: record.collectionAddress ?? "",
+    consigneeOrgId: record.consignee?.orgId ? String(record.consignee.orgId) : "",
+    consigneeCode: fact("consigneeCode"),
+    consigneeName: record.consignee?.name ?? "",
+    consigneeAddress: record.consignee?.address ?? "",
+    consigneeAddressOverride: fact("consigneeAddressOverride"),
+    deliveryAddress: record.deliveryAddress ?? "",
+    route: [record.loadingPoint, record.dischargePoint].filter(Boolean).join(" to "),
+    mode: mode?.name ?? record.mode ?? "",
+    container: fact("container"),
+    incoterm: record.incoterm ?? "",
+    incotermPlace: fact("namedPlace"),
+    origin: record.loadingPoint ?? "",
+    destination: record.dischargePoint ?? "",
+    via: fact("routingVia"),
+    startDate: record.validFrom ?? "",
+    endDate: record.validTo ?? "",
+    validity: record.validTo ?? "",
+    direction: record.direction ? record.direction.charAt(0).toUpperCase() + record.direction.slice(1) : "",
+    serviceLevel: record.serviceLevel ?? "",
+    rateSource: record.rateSourceLabel ?? record.rateSourceType ?? "",
+    hblMode: fact("hblMode"),
+    transitDays: fact("transitDays"),
+    frequency: fact("frequency"),
+    shipmentType: shipmentType ? `${shipmentType.code} - ${shipmentType.name}` : record.shipmentType ?? "",
+    carrier: record.carrierName ?? "",
+    carrierId: record.carrierId ? String(record.carrierId) : "",
+    carrierOffice: fact("carrierOffice"),
+    supplier: record.supplierName ?? "",
+    supplierId: record.supplierId ? String(record.supplierId) : "",
+    supplierOffice: fact("supplierOffice"),
+    branch: office?.code || office?.name || fact("branch"),
+    officeId: record.officeId ? String(record.officeId) : "",
+    department: department?.name ?? fact("department"),
+    departmentId: record.departmentId ? String(record.departmentId) : "",
+    salesRep: salesOwner?.name ?? fact("salesRep"),
+    salesOwnerId: record.salesOwnerId ? String(record.salesOwnerId) : "",
+    opsRep: fact("opsRep"),
+    jobStatus: presentation.status,
+    goodsValue: fact("goodsValue"),
+    insuranceValue: fact("insuranceValue"),
+    entries: fact("entries"),
+    invoiceLines: fact("invoiceLines"),
+    commodity: fact("commodity"),
+    co2e: fact("co2e"),
+    knownCargo: fact("knownCargo"),
+    fmcTid: fact("fmcTid"),
+    margin: workspace.totals.marginPct === null ? "" : `${workspace.totals.marginPct.toFixed(2)}%`,
+    profit: workspace.totals.profit,
+    cost: workspace.totals.cost,
+    revenue: workspace.totals.sell,
+    currency: (record.currency || "") as QuoteCurrency | "",
+    jobRoes: Array.isArray(facts.jobRoes) ? facts.jobRoes as JobRoe[] : [],
+  }
+}
+
+function quoteChargesFromWorkspace(workspace: QuoteWorkflowWorkspace): QuoteCharge[] {
+  return workspace.charges.map((line) => ({
+    id: line.id,
+    code: "",
+    description: line.description,
+    creditor: line.sourceLabel || "",
+    supplierId: line.supplierId,
+    costCurrency: (line.costCurrency || "GBP") as QuoteCurrency,
+    costAmount: line.costAmount,
+    localCost: line.costLocal,
+    sellCurrency: (line.sellCurrency || "GBP") as QuoteCurrency,
+    sellAmount: line.sellAmount,
+    localSell: line.sellLocal,
+    costExchange: line.costRoe,
+    sellExchange: line.sellRoe,
+    costRoeSource: "job",
+    sellRoeSource: "job",
+    department: "",
+    internalNotes: line.internalNotes ?? "",
+    additionalDetail: line.customerNotes ?? "",
+  }))
+}
+
+function compactQuoteFacts(values: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(values).filter(([, value]) => {
+    if (value === null || value === undefined) return false
+    if (typeof value === "string") return Boolean(value.trim())
+    if (Array.isArray(value)) return value.length > 0
+    return true
+  }))
+}
+
+function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: QuoteWorkflowSources | null): QuoteSavePayload {
+  const mode = lookups?.modes.find((option) => option.name === quote.mode)?.code ?? quote.mode
+  const shipmentTypeLabel = quote.shipmentType?.split(" - ", 1)[0] ?? ""
+  const shipmentType = lookups?.shipmentTypes.find((option) => option.code === shipmentTypeLabel || option.name === quote.shipmentType)?.code ?? shipmentTypeLabel
+  const mappedCharges: QuoteWorkflowCharge[] = charges.map((line) => ({
+    id: line.id ?? crypto.randomUUID(),
+    description: line.description || line.code,
+    supplierId: line.supplierId,
+    costCurrency: line.costCurrency,
+    costAmount: line.costAmount,
+    costLocal: line.localCost,
+    costRoe: line.costExchange,
+    sellCurrency: line.sellCurrency,
+    sellAmount: line.sellAmount,
+    sellLocal: line.localSell,
+    sellRoe: line.sellExchange,
+    calculationBasis: "fixed",
+    quantity: 1,
+    sourceLabel: line.creditor,
+    internalNotes: line.internalNotes,
+    customerNotes: line.additionalDetail,
+    showToCustomer: true,
+  }))
+  return {
+    sourceType: "account",
+    sourceId: quote.customerId ?? "",
+    customerId: quote.customerId ?? "",
+    customerName: quote.customer,
+    contactId: quote.contactId ?? "",
+    contactName: quote.customerContact ?? "",
+    contactEmail: quote.customerEmail ?? "",
+    customerReference: quote.localRef ?? "",
+    officeId: quote.officeId ?? "",
+    departmentId: quote.departmentId ?? "",
+    salesOwnerId: quote.salesOwnerId ?? "",
+    direction: quote.direction ?? "",
+    mode,
+    shipmentType,
+    serviceLevel: quote.serviceLevel ?? "",
+    currency: quote.currency,
+    collectionAddress: quote.collectionAddress ?? "",
+    loadingPoint: quote.origin,
+    dischargePoint: quote.destination,
+    deliveryAddress: quote.deliveryAddress ?? "",
+    incoterm: quote.incoterm,
+    validFrom: quote.startDate ?? "",
+    validTo: quote.endDate ?? "",
+    supplierId: quote.supplierId ?? "",
+    supplierName: quote.supplier ?? "",
+    carrierId: quote.carrierId ?? "",
+    carrierName: quote.carrier ?? "",
+    shipmentFacts: compactQuoteFacts({
+      quoteType: quote.quoteType,
+      source: quote.source,
+      workflowStatus: quote.workflowStatus,
+      priority: quote.priority,
+      holdReason: quote.holdReason,
+      customerPO: quote.customerPO,
+      shipperReference: quote.shipperReference,
+      agentReference: quote.agentReference,
+      carrierReference: quote.carrierReference,
+      docsStatus: quote.docsStatus,
+      workflow: quote.workflow,
+      revisionReason: quote.revisionReason,
+      clientCode: quote.clientCode,
+      customerAddress: quote.customerAddress,
+      shipperCode: quote.shipperCode,
+      shipperAddressOverride: quote.shipperAddressOverride === "Yes" ? "Yes" : "",
+      consigneeCode: quote.consigneeCode,
+      consigneeAddressOverride: quote.consigneeAddressOverride === "Yes" ? "Yes" : "",
+      namedPlace: quote.incotermPlace,
+      routingVia: quote.via,
+      hblMode: quote.hblMode,
+      transitDays: quote.transitDays,
+      frequency: quote.frequency,
+      container: quote.container,
+      carrierOffice: quote.carrierOffice,
+      supplierOffice: quote.supplierOffice,
+      branch: quote.branch,
+      department: quote.department,
+      salesRep: quote.salesRep,
+      opsRep: quote.opsRep,
+      goodsValue: quote.goodsValue,
+      insuranceValue: quote.insuranceValue,
+      entries: quote.entries,
+      invoiceLines: quote.invoiceLines,
+      commodity: quote.commodity,
+      co2e: quote.co2e,
+      knownCargo: quote.knownCargo,
+      fmcTid: quote.fmcTid,
+      jobRoes: quote.jobRoes,
+    }),
+    customerNotes: "",
+    internalNotes: "",
+    terms: "",
+    rateSourceType: quote.rateSource ?? "",
+    rateSourceLabel: quote.rateSource ?? "",
+    defaultMarkupPct: 15,
+    markupOverrideReason: "",
+    followUpAt: "",
+    shipper: {
+      orgId: quote.shipperOrgId ?? "",
+      name: quote.shipperName ?? "",
+      address: quote.shipperAddress ?? "",
+      contact: quote.shipperContact ?? "",
+    },
+    consignee: {
+      orgId: quote.consigneeOrgId ?? "",
+      name: quote.consigneeName ?? "",
+      address: quote.consigneeAddress ?? "",
+      contact: "",
+    },
+    charges: mappedCharges,
+  }
+}
+
+function quoteAuditRecords(workspace: QuoteWorkflowWorkspace | null): QuoteAuditRecord[] {
+  if (!workspace) return []
+  return workspace.events.map((event) => {
+    const actor = event.cmp_Users
+    const actorName = [actor?.User_Firstname, actor?.User_Lastname].filter(Boolean).join(" ") || "Multideck"
+    const eventType = event.CusQuoteEvent_TypeCode === "calculated"
+      ? "pricing"
+      : event.CusQuoteEvent_TypeCode === "sent"
+        ? "communication"
+        : ["accepted", "declined", "ghosted"].includes(event.CusQuoteEvent_TypeCode)
+          ? "approval"
+          : "record"
+    return {
+      id: event.CusQuoteEvent_ID,
+      timestamp: event.CusQuoteEvent_OccurredAt,
+      actor: actorName,
+      action: event.CusQuoteEvent_Summary,
+      detail: event.CusQuoteEvent_Summary,
+      eventType,
+      field: "Quote",
+      oldValue: "",
+      newValue: event.CusQuoteEvent_TypeCode,
+      source: "Quote workspace",
+      state: "completed",
+    }
+  })
+}
+
+export function QuoteDetailPage({
+  variant = "operator",
+  quoteId,
+  navigate,
+}: {
+  variant?: QuotePageVariant
+  quoteId?: string
+  navigate?: (path: string) => void
+}) {
   const { t, direction } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const initialQuote = getInitialQuoteRecord(quoteId)
-  const [activeTab, setActiveTab] = useState<QuoteWorkspaceTab>("overview")
+  const isNewQuote = quoteId?.toUpperCase() === "NEW"
+  const initialCharges = isNewQuote ? [] : quoteCharges
+  const [activeTab, setActiveTab] = useState<QuoteWorkspaceTab>(isNewQuote ? "details" : "overview")
   const [tabTravelDirection, setTabTravelDirection] = useState(1)
   const [savedQuote, setSavedQuote] = useState<QuoteRecord>(initialQuote)
   const [draftQuote, setDraftQuote] = useState<QuoteRecord>(initialQuote)
-  const [savedCharges, setSavedCharges] = useState<QuoteCharge[]>(quoteCharges)
-  const [draftCharges, setDraftCharges] = useState<QuoteCharge[]>(quoteCharges)
+  const [savedCharges, setSavedCharges] = useState<QuoteCharge[]>(initialCharges)
+  const [draftCharges, setDraftCharges] = useState<QuoteCharge[]>(initialCharges)
   const [quoteRefCopied, setQuoteRefCopied] = useState(false)
   const [saveFeedbackVisible, setSaveFeedbackVisible] = useState(false)
-  const [bookingConfirmationPending, setBookingConfirmationPending] = useState(false)
-  const [bookingNotReadyVisible, setBookingNotReadyVisible] = useState(false)
   const [validationAttempted, setValidationAttempted] = useState(false)
   const [dexterOpen, setDexterOpen] = useState(false)
+  const [lookups, setLookups] = useState<QuoteWorkflowSources | null>(null)
+  const [workspace, setWorkspace] = useState<QuoteWorkflowWorkspace | null>(null)
+  const [currentQuoteId, setCurrentQuoteId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [transitioning, setTransitioning] = useState(false)
+  const [workflowError, setWorkflowError] = useState("")
   const quoteCopyResetTimerRef = useRef<number | null>(null)
   const saveFeedbackTimerRef = useRef<number | null>(null)
 
@@ -2982,6 +3503,42 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
     if (quoteCopyResetTimerRef.current !== null) window.clearTimeout(quoteCopyResetTimerRef.current)
     if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current)
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setWorkflowError("")
+    void (async () => {
+      try {
+        const sourcesPromise = getQuoteSources()
+        if (isNewQuote) {
+          const sources = await sourcesPromise
+          if (!cancelled) setLookups(sources)
+          return
+        }
+        const reference = quoteId?.toUpperCase() ?? ""
+        const [sources, loadedWorkspace] = await Promise.all([sourcesPromise, getQuoteWorkflow(reference)])
+        if (cancelled) return
+        const loadedQuote = quoteRecordFromWorkspace(loadedWorkspace, sources)
+        const loadedCharges = quoteChargesFromWorkspace(loadedWorkspace)
+        setLookups(sources)
+        setWorkspace(loadedWorkspace)
+        setCurrentQuoteId(loadedWorkspace.quote.id)
+        setSavedQuote(loadedQuote)
+        setDraftQuote(loadedQuote)
+        setSavedCharges(loadedCharges)
+        setDraftCharges(loadedCharges)
+        setActiveTab("overview")
+      } catch (error) {
+        if (!cancelled) setWorkflowError(error instanceof Error ? error.message : "The quote could not be loaded.")
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isNewQuote, quoteId])
 
   const activeCharges = draftCharges
   const activeTotals = useMemo(() => getChargeTotals(activeCharges), [activeCharges])
@@ -2994,9 +3551,6 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
   }
   const isDirty = JSON.stringify(draftQuote) !== JSON.stringify(savedQuote) || JSON.stringify(draftCharges) !== JSON.stringify(savedCharges)
   const heading = variant === "ai" ? "AI spot quote command" : "Spot quote"
-  const missingRequiredFields = [draftQuote.origin, draftQuote.destination, draftQuote.direction, draftQuote.mode, draftQuote.incoterm, draftQuote.currency]
-    .filter((value) => !value?.trim()).length
-  const bookingBlocked = missingRequiredFields > 0
   const visualTabTravelDirection = shouldReduceMotion
     ? 0
     : tabTravelDirection * (direction === "rtl" ? -1 : 1)
@@ -3155,31 +3709,79 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
     setDraftQuote((current) => ({ ...current, jobRoes: (current.jobRoes ?? []).filter((roe) => roe.currency !== currency) }))
   }
 
-  function saveChanges() {
-    if (missingRequiredFields > 0) {
-      setValidationAttempted(true)
-      return
-    }
+  function applyLoadedWorkspace(loadedWorkspace: QuoteWorkflowWorkspace, sources: QuoteWorkflowSources) {
+    const loadedQuote = quoteRecordFromWorkspace(loadedWorkspace, sources)
+    const loadedCharges = quoteChargesFromWorkspace(loadedWorkspace)
+    setWorkspace(loadedWorkspace)
+    setCurrentQuoteId(loadedWorkspace.quote.id)
+    setSavedQuote(loadedQuote)
+    setDraftQuote(loadedQuote)
+    setSavedCharges(loadedCharges)
+    setDraftCharges(loadedCharges)
+  }
 
-    const totals = getChargeTotals(draftCharges)
-    const nextQuote = {
-      ...draftQuote,
-      cost: totals.cost,
-      revenue: totals.revenue,
-      profit: totals.profit,
-      margin: totals.margin,
+  async function saveChanges() {
+    if (saving) return
+    setSaving(true)
+    setWorkflowError("")
+    try {
+      const payload = quoteSavePayload(draftQuote, draftCharges, lookups)
+      const result = await saveQuoteWorkflow(currentQuoteId, payload)
+      const sources = lookups ?? await getQuoteSources()
+      const loadedWorkspace = await getQuoteWorkflow(result.reference)
+      setLookups(sources)
+      applyLoadedWorkspace(loadedWorkspace, sources)
+      setValidationAttempted(false)
+      setSaveFeedbackVisible(true)
+      if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current)
+      saveFeedbackTimerRef.current = window.setTimeout(() => {
+        setSaveFeedbackVisible(false)
+        saveFeedbackTimerRef.current = null
+      }, 1800)
+      if (isNewQuote) navigate?.(`/quotes/${result.reference}`)
+    } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "The quote could not be saved.")
+    } finally {
+      setSaving(false)
     }
+  }
 
-    setSavedQuote(nextQuote)
-    setDraftQuote(nextQuote)
-    setSavedCharges(draftCharges)
-    setValidationAttempted(false)
-    setSaveFeedbackVisible(true)
-    if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current)
-    saveFeedbackTimerRef.current = window.setTimeout(() => {
-      setSaveFeedbackVisible(false)
-      saveFeedbackTimerRef.current = null
-    }, 1800)
+  const lifecycle = workspace?.quote.lifecycle ?? (currentQuoteId ? "draft" : "")
+  const nextLifecycle = lifecycle === "draft" || lifecycle === "revised"
+    ? "calculated"
+    : lifecycle === "calculated"
+      ? "sent"
+      : lifecycle === "sent"
+        ? "accepted"
+        : lifecycle === "declined" || lifecycle === "ghosted"
+          ? "revised"
+          : null
+  const nextLifecycleLabel = nextLifecycle === "calculated"
+    ? "Mark calculated"
+    : nextLifecycle === "sent"
+      ? "Mark sent"
+      : nextLifecycle === "accepted"
+        ? "Accept quote"
+        : nextLifecycle === "revised"
+          ? "Revise quote"
+          : "Accepted"
+
+  async function runNextLifecycleAction() {
+    if (!currentQuoteId || !nextLifecycle || transitioning || isDirty) return
+    setTransitioning(true)
+    setWorkflowError("")
+    try {
+      await transitionQuoteWorkflow(currentQuoteId, nextLifecycle)
+      const sources = lookups ?? await getQuoteSources()
+      const reference = workspace?.quote.reference ?? savedQuote.id
+      const loadedWorkspace = await getQuoteWorkflow(reference)
+      setLookups(sources)
+      applyLoadedWorkspace(loadedWorkspace, sources)
+    } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "The quote status could not be changed.")
+    } finally {
+      setTransitioning(false)
+    }
   }
 
   function discardChanges() {
@@ -3198,7 +3800,7 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
 
     if (activeTab === "details") {
       if (variant === "cargowise") {
-        return <QuoteCargoWiseDetailsPanel quote={activeQuote} editable onQuoteChange={updateDraftQuote} onCustomerCreate={createAndAssignCustomer} validationAttempted={validationAttempted} />
+        return <QuoteCargoWiseDetailsPanel quote={activeQuote} editable requireCoreFields={false} onQuoteChange={updateDraftQuote} onCustomerCreate={createAndAssignCustomer} validationAttempted={validationAttempted} lookups={lookups} />
       }
 
       return <QuoteSetupPanel quote={activeQuote} editable onQuoteChange={updateDraftQuote} onJobRoeChange={updateJobRoe} validationAttempted={validationAttempted} />
@@ -3215,15 +3817,25 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
       )
     }
 
-    if (activeTab === "documents") return <DocumentWorkspace documents={documentWorkspaceSampleDocuments} />
-    return <AuditWorkspace records={QUOTE_AUDIT_SAMPLE_DATA} />
+    if (activeTab === "documents") return <DocumentWorkspace documents={[]} />
+    return <AuditWorkspace records={quoteAuditRecords(workspace)} />
   }
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={`${t("Quote")} ${activeQuote.id}`}>
       <main className="min-h-full bg-[var(--md-analytics-bg)] px-4 py-4 sm:px-5">
         <div className="grid w-full gap-2">
-          <Tabs value={activeTab} onValueChange={(value) => changeWorkspaceTab(value as QuoteWorkspaceTab)} className="gap-2">
+          {workflowError ? (
+            <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_8%,var(--md-surface))] px-3 py-2 text-[12px] font-medium text-[var(--md-red)] shadow-[var(--md-shadow-line)]">
+              {t(workflowError)}
+            </div>
+          ) : null}
+          {loading ? (
+            <div role="status" aria-live="polite" className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-4 py-6 text-center text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+              {t("Loading quote…")}
+            </div>
+          ) : null}
+          <Tabs value={activeTab} onValueChange={(value) => changeWorkspaceTab(value as QuoteWorkspaceTab)} className={cn("gap-2", loading && "pointer-events-none opacity-40")}>
             <div className="relative">
               <div className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
                 <div className="grid min-w-0 grid-rows-[auto_auto] gap-1.5">
@@ -3278,9 +3890,9 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
                       <RotateCcw data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
                       {t("Discard")}
                     </Button>
-                    <Button type="button" onClick={saveChanges} className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]">
+                    <Button type="button" onClick={() => void saveChanges()} disabled={saving} className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]">
                       <Save data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
-                      {t("Save")}
+                      {t(saving ? "Saving…" : "Save")}
                     </Button>
                   </motion.div>
                 ) : saveFeedbackVisible ? (
@@ -3304,58 +3916,21 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
                   className="h-8 min-w-[102px] rounded-[var(--md-radius-lg)] px-2.5 text-[11px]"
                   onClick={() => setDexterOpen(true)}
                 />
-                <Button type="button" variant="ghost" className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2 text-[11px] shadow-[var(--md-shadow-line)]">
+                <Button type="button" variant="ghost" onClick={() => window.print()} className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2 text-[11px] shadow-[var(--md-shadow-line)]">
                   <Printer data-icon="inline-start" className="size-4" strokeWidth={1.4} />
                   {t("Print")}
                 </Button>
                 <Button
                   type="button"
-                  aria-label={bookingBlocked ? `${t("Convert to booking")}: ${t("Not ready")}` : t(bookingConfirmationPending ? "Confirm" : "Convert to booking")}
-                  aria-disabled={bookingBlocked}
-                  className={cn(
-                    "h-8 min-w-[145px] shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px]",
-                    bookingBlocked && "cursor-not-allowed active:scale-100",
-                    bookingBlocked && !bookingNotReadyVisible && "opacity-50",
-                    bookingBlocked && bookingNotReadyVisible && "gap-0 border-[color-mix(in_srgb,var(--md-amber)_24%,transparent)] bg-[color-mix(in_srgb,var(--md-amber)_14%,var(--md-surface))] text-[var(--md-amber-strong)] opacity-100 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--md-amber)_18%,transparent)] hover:bg-[color-mix(in_srgb,var(--md-amber)_14%,var(--md-surface))] focus-visible:border-[color-mix(in_srgb,var(--md-amber)_42%,transparent)] focus-visible:ring-[color-mix(in_srgb,var(--md-amber)_18%,transparent)]",
-                  )}
-                  title={bookingBlocked ? t("Complete required fields before converting") : undefined}
-                  onMouseEnter={() => {
-                    if (bookingBlocked) setBookingNotReadyVisible(true)
-                  }}
-                  onMouseLeave={() => setBookingNotReadyVisible(false)}
-                  onFocus={() => {
-                    if (bookingBlocked) setBookingNotReadyVisible(true)
-                  }}
-                  onBlur={() => setBookingNotReadyVisible(false)}
-                  onClick={() => {
-                    if (bookingBlocked) {
-                      setBookingNotReadyVisible(true)
-                      return
-                    }
-                    setBookingConfirmationPending((pending) => !pending)
-                  }}
+                  disabled={!currentQuoteId || !nextLifecycle || transitioning || isDirty}
+                  aria-label={t(nextLifecycleLabel)}
+                  className="h-8 min-w-[132px] shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px]"
+                  onClick={() => void runNextLifecycleAction()}
                 >
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "relative h-4 w-4 shrink-0 overflow-hidden opacity-100 transition-[width,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                      bookingBlocked && bookingNotReadyVisible && "w-0 -translate-y-1 scale-75 opacity-0",
-                    )}
-                  >
-                    <Send data-icon="inline-start" className={cn("absolute inset-0 size-4 transition-[opacity,transform] duration-200", bookingConfirmationPending ? "-translate-y-1 scale-75 opacity-0" : "translate-y-0 scale-100 opacity-100")} strokeWidth={1.4} />
-                    <CheckCircle2 data-icon="inline-start" className={cn("absolute inset-0 size-4 transition-[opacity,transform] duration-200", bookingConfirmationPending ? "translate-y-0 scale-100 opacity-100" : "translate-y-1 scale-75 opacity-0")} strokeWidth={1.7} />
-                  </span>
-                  <CopyFeedbackTransition
-                    value={t("Convert to booking")}
-                    copiedValue={t(bookingBlocked ? "Not ready" : "Confirm")}
-                    active={bookingBlocked ? bookingNotReadyVisible : bookingConfirmationPending}
-                    effect="slot"
-                    inline
-                    ariaHidden
-                    className="md-booking-confirm-label h-[1em] leading-none"
-                    originalDirection={direction}
-                    copiedDirection={direction}
-                  />
+                  {nextLifecycle === "accepted"
+                    ? <CheckCircle2 data-icon="inline-start" className="size-4" strokeWidth={1.7} />
+                    : <Send data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
+                  {t(transitioning ? "Updating…" : nextLifecycleLabel)}
                 </Button>
               </motion.div>
             </LayoutGroup>

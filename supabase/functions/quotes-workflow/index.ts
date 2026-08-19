@@ -1,4 +1,4 @@
-import { authenticateRequest, corsHeaders, jsonResponse, signedUrlLifetimeSeconds } from "../_shared/document-functions.ts"
+import { authenticateRequest, corsHeaders, jsonResponse } from "../_shared/document-functions.ts"
 import {
   optionalText,
   parseAction,
@@ -15,7 +15,7 @@ type Row = Record<string, unknown>
 async function operatorContext(admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"], authUserId: string) {
   const [{ data, error }, permissionResult] = await Promise.all([
     admin.from("cmp_Users").select("User_ID,Company_ID,User_AccessStatus").eq("Auth_User_ID", authUserId).single(),
-    admin.schema("quote_api").rpc("has_permission", { caller_auth_user_id: authUserId, permission_value: "Quotes.Read" }),
+    admin.rpc("quote_workflow_has_permission", { caller_auth_user_id: authUserId, permission_value: "Quotes.Read" }),
   ])
   if (error || !data?.Company_ID || data.User_AccessStatus !== "active") throw error ?? new QuoteWorkflowError(403, "Your workspace identity is incomplete.")
   if (permissionResult.error || permissionResult.data !== true) throw new QuoteWorkflowError(403, "You are not authorised to view quotes.")
@@ -25,8 +25,8 @@ async function operatorContext(admin: Awaited<ReturnType<typeof authenticateRequ
 async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"], authUserId: string) {
   const operator = await operatorContext(admin, authUserId)
   const [{ data: offices, error: officeError }, { data: users, error: userError }] = await Promise.all([
-    admin.from("cmp_Offices").select("Office_ID").eq("Company_ID", operator.companyId),
-    admin.from("cmp_Users").select("User_ID").eq("Company_ID", operator.companyId),
+    admin.from("cmp_Offices").select("Office_ID,Office_Code,Office_Name").eq("Company_ID", operator.companyId).eq("Office_IsActive", true).order("Office_Name"),
+    admin.from("cmp_Users").select("User_ID,User_Firstname,User_Lastname,User_Email").eq("Company_ID", operator.companyId).eq("User_AccessStatus", "active").order("User_Firstname"),
   ])
   if (officeError || userError) throw officeError ?? userError
   const officeIds = (offices ?? []).map((row) => String(row.Office_ID))
@@ -40,22 +40,88 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
     userIds.length ? `CRMAccount_OwnerUserID.in.(${userIds.join(",")})` : null,
     officeIds.length ? `CRMAccount_OrgOfficeID.in.(${officeIds.join(",")})` : null,
   ].filter(Boolean).join(",")
-  const [leadResult, accountResult, supplierResult] = await Promise.all([
+  const [
+    leadResult,
+    accountResult,
+    organisationResult,
+    addressResult,
+    contactResult,
+    emailResult,
+    organisationTypeResult,
+    typeResult,
+    departmentResult,
+    modeResult,
+    shipmentTypeResult,
+    currencyResult,
+    commodityResult,
+  ] = await Promise.all([
     leadFilter
       ? admin.from("CRM_Leads").select("CRMLead_ID,CRMLead_CompanyName,CRMLead_PersonName,CRMLead_Email,CRMLead_ModeCode,CRMLead_DirectionCode,CRMLead_TradeLane").or(leadFilter).eq("CRMLead_IsDeleted", false).neq("CRMLead_StatusCode", "converted").order("CRMLead_UpdatedAt", { ascending: false }).limit(100)
       : Promise.resolve({ data: [], error: null }),
     accountFilter
       ? admin.from("CRM_AccountProfiles").select("CRMAccount_OrgID,CRMAccount_PrimaryModeCode,CRMAccount_PrimaryTradeLane").or(accountFilter).order("CRMAccount_UpdatedAt", { ascending: false }).limit(100)
       : Promise.resolve({ data: [], error: null }),
-    admin.from("Org_Master").select("Org_id,Org_Name").order("Org_Name").limit(250),
+    admin.from("Org_Master").select("Org_id,Org_Name,Org_AccCode").order("Org_Name").limit(500),
+    admin.from("Org_Addresses").select("OrgAdd_ID,Org_ID,Org_NameOverride,OrgAdd_Line1,OrgAdd_Line2,OrgAdd_TownCity,OrgAdd_CountyState,OrgAdd_PostZipCode,OrgAdd_Country,OrgAdd_UNLOCODE,OrgAdd_MainEmail,OrgAdd_MainPhone").limit(1500),
+    admin.from("Org_Contacts").select("OrgContact_ID,Org_ID,OrgContact_FirstName,OrgContact_LastName").limit(1500),
+    admin.from("OrgContact_Emails").select("OrgContact_ID,OrgContactEmail_Email").limit(1500),
+    admin.from("Org_Master_Type").select("Org_ID,OrgType_ID").limit(2000),
+    admin.from("Org_Types").select("OrgType_ID,OrgType_Name").order("OrgType_Order"),
+    admin.from("cmp_Departments").select("Department_ID,Department_Name").eq("Company_ID", operator.companyId).eq("Department_IsActive", true).order("Department_Name"),
+    admin.from("sys_CusQuoteShipmentModes").select("CQSM_Code,CQSM_Name").eq("CQSM_IsActive", true).order("CQSM_SortOrder"),
+    admin.from("sys_CusQuoteShipmentTypes").select("CQST_Code,CQST_Name").eq("CQST_IsActive", true).order("CQST_SortOrder"),
+    admin.from("sys_Currency").select("Currency_ID,Currency_Code,Currency_Name").not("Currency_Code", "is", null).order("Currency_Code"),
+    admin.from("sys_CommodityCode").select("RH_PK,RH_Code,RH_Description").eq("RH_IsActive", true).order("RH_Description").limit(500),
   ])
-  if (leadResult.error || accountResult.error || supplierResult.error) throw leadResult.error ?? accountResult.error ?? supplierResult.error
-  const accountIds = (accountResult.data ?? []).map((row) => String(row.CRMAccount_OrgID))
-  const { data: organisations, error: organisationError } = accountIds.length
-    ? await admin.from("Org_Master").select("Org_id,Org_Name").in("Org_id", accountIds)
-    : { data: [], error: null }
-  if (organisationError) throw organisationError
-  const organisationNames = new Map((organisations ?? []).map((row) => [String(row.Org_id), String(row.Org_Name)]))
+  const firstError = leadResult.error || accountResult.error || organisationResult.error
+    || addressResult.error || contactResult.error || emailResult.error
+    || organisationTypeResult.error || typeResult.error || departmentResult.error
+    || modeResult.error || shipmentTypeResult.error || currencyResult.error || commodityResult.error
+  if (firstError) throw firstError
+  const organisationNames = new Map((organisationResult.data ?? []).map((row) => [String(row.Org_id), String(row.Org_Name)]))
+  const emailsByContact = new Map<string, string>()
+  for (const row of emailResult.data ?? []) {
+    const contactId = String(row.OrgContact_ID)
+    if (!emailsByContact.has(contactId)) emailsByContact.set(contactId, String(row.OrgContactEmail_Email))
+  }
+  const addressesByOrganisation = new Map<string, Row[]>()
+  for (const row of addressResult.data ?? []) {
+    const organisationId = String(row.Org_ID)
+    addressesByOrganisation.set(organisationId, [...(addressesByOrganisation.get(organisationId) ?? []), row])
+  }
+  const contactsByOrganisation = new Map<string, Row[]>()
+  for (const row of contactResult.data ?? []) {
+    const organisationId = String(row.Org_ID)
+    contactsByOrganisation.set(organisationId, [...(contactsByOrganisation.get(organisationId) ?? []), row])
+  }
+  const typeNames = new Map((typeResult.data ?? []).map((row) => [String(row.OrgType_ID), String(row.OrgType_Name)]))
+  const typesByOrganisation = new Map<string, string[]>()
+  for (const row of organisationTypeResult.data ?? []) {
+    const organisationId = String(row.Org_ID)
+    const typeName = typeNames.get(String(row.OrgType_ID))
+    if (typeName) typesByOrganisation.set(organisationId, [...(typesByOrganisation.get(organisationId) ?? []), typeName])
+  }
+  const organisations = (organisationResult.data ?? []).map((row) => {
+    const id = String(row.Org_id)
+    return {
+      id,
+      code: String(row.Org_AccCode || ""),
+      name: String(row.Org_Name),
+      types: typesByOrganisation.get(id) ?? [],
+      addresses: (addressesByOrganisation.get(id) ?? []).map((address) => ({
+        id: String(address.OrgAdd_ID),
+        label: String(address.Org_NameOverride || address.OrgAdd_UNLOCODE || address.OrgAdd_TownCity || "Address"),
+        address: [address.OrgAdd_Line1, address.OrgAdd_Line2, address.OrgAdd_TownCity, address.OrgAdd_CountyState, address.OrgAdd_PostZipCode, address.OrgAdd_Country].filter(Boolean).join(", "),
+        email: address.OrgAdd_MainEmail ? String(address.OrgAdd_MainEmail) : null,
+        phone: address.OrgAdd_MainPhone ? String(address.OrgAdd_MainPhone) : null,
+      })),
+      contacts: (contactsByOrganisation.get(id) ?? []).map((contact) => ({
+        id: String(contact.OrgContact_ID),
+        name: [contact.OrgContact_FirstName, contact.OrgContact_LastName].filter(Boolean).join(" "),
+        email: emailsByContact.get(String(contact.OrgContact_ID)) ?? null,
+      })),
+    }
+  })
   return {
     sources: [
       ...(accountResult.data ?? []).map((row) => ({
@@ -68,7 +134,16 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
         contactName: row.CRMLead_PersonName, contactEmail: row.CRMLead_Email,
       })),
     ],
-    suppliers: (supplierResult.data ?? []).map((row) => ({ id: String(row.Org_id), name: String(row.Org_Name) })),
+    organisations,
+    suppliers: organisations.filter((row) => row.types.some((type) => /supplier|carrier|shipping line|haulier|freight forwarder/i.test(type))),
+    carriers: organisations.filter((row) => row.types.some((type) => /carrier|shipping line|haulier|freight forwarder/i.test(type))),
+    offices: (offices ?? []).map((row) => ({ id: String(row.Office_ID), code: String(row.Office_Code || ""), name: String(row.Office_Name) })),
+    departments: (departmentResult.data ?? []).map((row) => ({ id: String(row.Department_ID), name: String(row.Department_Name) })),
+    users: (users ?? []).map((row) => ({ id: String(row.User_ID), name: [row.User_Firstname, row.User_Lastname].filter(Boolean).join(" ") || String(row.User_Email), email: String(row.User_Email) })),
+    modes: (modeResult.data ?? []).map((row) => ({ code: String(row.CQSM_Code), name: String(row.CQSM_Name) })),
+    shipmentTypes: (shipmentTypeResult.data ?? []).map((row) => ({ code: String(row.CQST_Code), name: String(row.CQST_Name) })),
+    currencies: (currencyResult.data ?? []).map((row) => ({ id: String(row.Currency_ID), code: String(row.Currency_Code), name: String(row.Currency_Name || row.Currency_Code) })),
+    commodities: (commodityResult.data ?? []).map((row) => ({ id: String(row.RH_PK || ""), code: String(row.RH_Code || ""), name: String(row.RH_Description || row.RH_Code || "") })),
   }
 }
 
@@ -81,11 +156,12 @@ async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateReque
   const officeId = String(quote.CusQuoteHeader_OrgOfficeID || quote.OrgOffice_ID || "")
   const { data: office, error: officeError } = await admin.from("cmp_Offices").select("Company_ID").eq("Office_ID", officeId).maybeSingle()
   if (officeError || !office || String(office.Company_ID) !== operator.companyId) throw new QuoteWorkflowError(403, "That quote is outside this workspace.")
+  const customerId = quote.CusQuoteHeader_CustomerID ? String(quote.CusQuoteHeader_CustomerID) : ""
   const [customerResult, chargeResult, partyResult, versionResult, eventResult] = await Promise.all([
-    admin.from("Org_Master").select("Org_id,Org_Name").eq("Org_id", quote.CusQuoteHeader_CustomerID).maybeSingle(),
+    customerId ? admin.from("Org_Master").select("Org_id,Org_Name").eq("Org_id", customerId).maybeSingle() : Promise.resolve({ data: null, error: null }),
     admin.from("CusQuote_Lines").select("*").eq("CusQuoteHeader_ID", quote.CusQuoteHeader_ID).order("CusQuoteLine_Number"),
     admin.from("CusQuote_Parties").select("*").eq("CusQuoteHeader_ID", quote.CusQuoteHeader_ID),
-    admin.from("CusQuote_Versions").select("*,DOCB_GeneratedDocuments(DOCBGD_ID,DOCBGD_FileName,DOCBGD_MimeType,DOCBGD_FileSizeBytes,DOCBGD_OutputFormatCode,DOCBGD_CreatedAt)").eq("CusQuoteHeader_ID", quote.CusQuoteHeader_ID).order("CusQuoteVersion_Number", { ascending: false }),
+    admin.from("CusQuote_Versions").select("*").eq("CusQuoteHeader_ID", quote.CusQuoteHeader_ID).order("CusQuoteVersion_Number", { ascending: false }),
     admin.from("CusQuote_Events").select("*,cmp_Users(User_Firstname,User_Lastname)").eq("CusQuoteHeader_ID", quote.CusQuoteHeader_ID).order("CusQuoteEvent_OccurredAt", { ascending: false }).limit(100),
   ])
   const firstError = customerResult.error || chargeResult.error || partyResult.error || versionResult.error || eventResult.error
@@ -109,9 +185,14 @@ async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateReque
   return {
     quote: {
       id: String(quote.CusQuoteHeader_ID), reference, lifecycle: String(quote.CusQuoteHeader_LifecycleCode || "draft"),
-      sourceType: String(quote.CusQuoteHeader_SourceTypeCode || "account"), sourceId: String(quote.CusQuoteHeader_SourceLeadID || quote.CusQuoteHeader_CustomerID),
-      customerId: String(quote.CusQuoteHeader_CustomerID), customerName: String(customerResult.data?.Org_Name || "Customer"),
+      sourceType: String(quote.CusQuoteHeader_SourceTypeCode || "account"), sourceId: quote.CusQuoteHeader_SourceLeadID || quote.CusQuoteHeader_CustomerID ? String(quote.CusQuoteHeader_SourceLeadID || quote.CusQuoteHeader_CustomerID) : "",
+      customerId, customerName: String(customerResult.data?.Org_Name || quote.CusQuoteHeader_CustomerNameSnapshot || ""),
+      contactId: quote.CusQuoteHeader_CustomerContact ? String(quote.CusQuoteHeader_CustomerContact) : "",
       contactName: quote.CusQuoteHeader_ContactNameSnapshot, contactEmail: quote.CusQuoteHeader_ContactEmailSnapshot,
+      customerReference: quote.CusQuoteHeader_CustomerReference,
+      officeId: quote.CusQuoteHeader_OrgOfficeID || quote.OrgOffice_ID,
+      departmentId: quote.CusQuoteHeader_DepartmentID,
+      salesOwnerId: quote.CusQuoteHeader_SalesOwnerID,
       direction: quote.CusQuoteHeader_Direction, mode: quote.CusQuoteHeader_ModeCode, shipmentType: quote.CusQuoteHeader_ShipmentTypeCode,
       serviceLevel: quote.CusQuoteHeader_ServiceLevel, currency: quote.CusQuoteHeader_CurrencyCode,
       collectionAddress: quote.CusQuoteHeader_CollectionAddress, loadingPoint: quote.CusQuoteHeader_LoadingPoint,
@@ -119,12 +200,12 @@ async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateReque
       incoterm: quote.CusQuoteHeader_Incoterm, validFrom: quote.CusQuoteHeader_ValidFrom, validTo: quote.CusQuoteHeader_ValidTo,
       deadline: quote.CusQuoteHeader_Deadline, supplierId: quote.CusQuoteHeader_SupplierID,
       supplierName: quote.CusQuoteHeader_SupplierNameSnapshot, shipmentFacts: quote.CusQuoteHeader_ShipmentFactsJSON || {},
+      carrierId: quote.CusQuoteHeader_CarrierID, carrierName: quote.CusQuoteHeader_CarrierNameSnapshot,
       customerNotes: quote.CusQuoteHeader_CustomerNotes, internalNotes: quote.CusQuoteHeader_InternalNotes,
       terms: quote.CusQuoteHeader_TermsText, rateSourceType: quote.CusQuoteHeader_RateSourceTypeCode,
       rateSourceLabel: quote.CusQuoteHeader_RateSourceLabel, defaultMarkupPct: Number(quote.CusQuoteHeader_DefaultMarkupPct || 15),
       markupOverrideReason: quote.CusQuoteHeader_MarkupOverrideReason, followUpAt: quote.CusQuoteHeader_FollowUpAt,
       outcomeNotes: quote.CusQuoteHeader_OutcomeNotes, acceptedVersionId: quote.CusQuoteHeader_AcceptedVersionID,
-      convertedBookingId: quote.CusQuoteHeader_JobID,
       shipper: parties.get("shipper") ? { orgId: parties.get("shipper")?.CusQuoteParty_OrgID, name: parties.get("shipper")?.CusQuoteParty_NameSnapshot, address: parties.get("shipper")?.CusQuoteParty_AddressSnapshot, contact: parties.get("shipper")?.CusQuoteParty_ContactSnapshot } : null,
       consignee: parties.get("consignee") ? { orgId: parties.get("consignee")?.CusQuoteParty_OrgID, name: parties.get("consignee")?.CusQuoteParty_NameSnapshot, address: parties.get("consignee")?.CusQuoteParty_AddressSnapshot, contact: parties.get("consignee")?.CusQuoteParty_ContactSnapshot } : null,
     },
@@ -146,46 +227,21 @@ Deno.serve(async (request) => {
     if (action === "save") {
       const payload = validateSavePayload(body.quote)
       const quoteId = body.quoteId ? parseUuid(body.quoteId, "Quote") : null
-      const { data, error } = await admin.schema("quote_api").rpc("save_quote", { caller_auth_user_id: userId, requested_quote_id: quoteId, payload })
+      const { data, error } = await admin.rpc("quote_workflow_save_quote", { caller_auth_user_id: userId, requested_quote_id: quoteId, payload })
       if (error || !data) throw error ?? new Error("Quote save returned no result")
       return jsonResponse(request, data)
     }
     if (action === "transition") {
       const quoteId = parseUuid(body.quoteId, "Quote")
       const transition = parseLifecycleAction(body.transition)
-      const { data, error } = await admin.schema("quote_api").rpc("transition_quote", {
+      const { data, error } = await admin.rpc("quote_workflow_transition_quote", {
         caller_auth_user_id: userId, requested_quote_id: quoteId, requested_transition: transition,
         requested_note: optionalText(body.note, 1000), requested_follow_up_at: optionalText(body.followUpAt, 80),
       })
       if (error || !data) throw error ?? new Error("Quote transition returned no result")
       return jsonResponse(request, data)
     }
-    if (action === "convert") {
-      const quoteId = parseUuid(body.quoteId, "Quote")
-      const idempotencyKey = parseUuid(body.idempotencyKey, "Conversion key")
-      const readiness = body.readiness && typeof body.readiness === "object" && !Array.isArray(body.readiness) ? body.readiness : {}
-      const { data, error } = await admin.schema("quote_api").rpc("convert_to_booking", {
-        caller_auth_user_id: userId, requested_quote_id: quoteId, idempotency_key: idempotencyKey, readiness,
-      })
-      if (error || !data) throw error ?? new Error("Quote conversion returned no result")
-      return jsonResponse(request, data)
-    }
-    const generatedDocumentId = parseUuid(body.generatedDocumentId, "Generated document")
-    const operator = await operatorContext(admin, userId)
-    const { data: generated, error: generatedError } = await admin.from("DOCB_GeneratedDocuments")
-      .select("DOCBGD_FileName,DOCBGD_StorageBucket,DOCBGD_StoragePath,DOCB_RenderJobs!inner(DOCBRJ_TargetID,DOCBRJ_TargetTable)")
-      .eq("DOCBGD_ID", generatedDocumentId).maybeSingle()
-    const renderRelation = generated?.DOCB_RenderJobs
-    const renderJob = (Array.isArray(renderRelation) ? renderRelation[0] : renderRelation) as Row | undefined
-    if (generatedError || !generated || renderJob?.DOCBRJ_TargetTable !== "CusQuote_Header") throw new QuoteWorkflowError(404, "That quote document could not be found.")
-    const quoteId = String(renderJob.DOCBRJ_TargetID)
-    const { data: quote, error: quoteError } = await admin.from("CusQuote_Header").select("CusQuoteHeader_OrgOfficeID,OrgOffice_ID").eq("CusQuoteHeader_ID", quoteId).maybeSingle()
-    if (quoteError || !quote) throw new QuoteWorkflowError(404, "That quote document could not be found.")
-    const { data: office } = await admin.from("cmp_Offices").select("Company_ID").eq("Office_ID", quote.CusQuoteHeader_OrgOfficeID || quote.OrgOffice_ID).maybeSingle()
-    if (!office || String(office.Company_ID) !== operator.companyId) throw new QuoteWorkflowError(403, "That quote document is outside this workspace.")
-    const { data: signed, error: signedError } = await admin.storage.from(String(generated.DOCBGD_StorageBucket)).createSignedUrl(String(generated.DOCBGD_StoragePath), signedUrlLifetimeSeconds, { download: String(generated.DOCBGD_FileName) })
-    if (signedError || !signed?.signedUrl) throw signedError ?? new Error("Signed URL was not returned")
-    return jsonResponse(request, { signedUrl: signed.signedUrl, fileName: generated.DOCBGD_FileName, expiresAt: new Date(Date.now() + signedUrlLifetimeSeconds * 1000).toISOString() })
+    throw new QuoteWorkflowError(400, "Choose a supported quote action.")
   } catch (error) {
     const safe = toClientError(error)
     console.error("Quote workflow failed", { status: safe.status, reason: safe.auditMessage })

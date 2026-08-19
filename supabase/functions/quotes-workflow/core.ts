@@ -1,4 +1,4 @@
-export type QuoteWorkflowAction = "sources" | "workspace" | "save" | "transition" | "convert" | "download"
+export type QuoteWorkflowAction = "sources" | "workspace" | "save" | "transition"
 
 export const quoteLifecycleActions = ["calculated", "sent", "revised", "accepted", "declined", "ghosted"] as const
 export type QuoteLifecycleAction = (typeof quoteLifecycleActions)[number]
@@ -33,7 +33,7 @@ export function parseUuid(value: unknown, label: string) {
 }
 
 export function parseAction(value: unknown): QuoteWorkflowAction {
-  if (["sources", "workspace", "save", "transition", "convert", "download"].includes(String(value))) {
+  if (["sources", "workspace", "save", "transition"].includes(String(value))) {
     return value as QuoteWorkflowAction
   }
   throw new QuoteWorkflowError(400, "Choose a supported quote action.")
@@ -47,12 +47,37 @@ export function parseLifecycleAction(value: unknown): QuoteLifecycleAction {
 export function validateSavePayload(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new QuoteWorkflowError(400, "Quote details are required.")
   const payload = value as Record<string, unknown>
-  if (payload.sourceType !== "lead" && payload.sourceType !== "account") {
+  if (payload.sourceType !== undefined && payload.sourceType !== "lead" && payload.sourceType !== "account") {
     throw new QuoteWorkflowError(400, "Choose a lead or account.")
   }
-  parseUuid(payload.sourceId, "Lead or account")
+  if (payload.sourceId !== undefined && payload.sourceId !== null && String(payload.sourceId).trim()) parseUuid(payload.sourceId, "Lead or account")
   if (payload.charges !== undefined && !Array.isArray(payload.charges)) throw new QuoteWorkflowError(400, "Quote charges are invalid.")
   if (Array.isArray(payload.charges) && payload.charges.length > 200) throw new QuoteWorkflowError(400, "A quote can contain up to 200 charge lines.")
+  const ignoredKeys = new Set(["sourceType", "defaultMarkupPct", "workflowVersion", "officeId", "departmentId", "salesOwnerId"])
+  const hasContent = (candidate: unknown): boolean => {
+    if (candidate === null || candidate === undefined) return false
+    if (typeof candidate === "string") return Boolean(candidate.trim())
+    if (typeof candidate === "number" || typeof candidate === "boolean") return true
+    if (Array.isArray(candidate)) return candidate.some(hasContent)
+    if (typeof candidate === "object") {
+      return Object.entries(candidate as Record<string, unknown>)
+        .some(([key, child]) => !ignoredKeys.has(key) && hasContent(child))
+    }
+    return false
+  }
+  const { charges, ...quoteFields } = payload
+  const chargeDefaults = new Set(["showToCustomer", "quantity", "costRoe", "sellRoe", "costLocal", "sellLocal", "defaultMarkupPct"])
+  const hasMeaningfulCharge = Array.isArray(charges) && charges.some((charge) => {
+    if (!charge || typeof charge !== "object" || Array.isArray(charge)) return false
+    return Object.entries(charge as Record<string, unknown>).some(([key, child]) => {
+      if (chargeDefaults.has(key)) return false
+      if ((key === "costAmount" || key === "sellAmount") && Number(child) === 0) return false
+      return hasContent(child)
+    })
+  })
+  if (!hasContent(quoteFields) && !hasMeaningfulCharge) {
+    throw new QuoteWorkflowError(400, "Add at least one quote detail before saving.")
+  }
   return payload
 }
 

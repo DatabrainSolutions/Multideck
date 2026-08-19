@@ -10,6 +10,14 @@ export type QuoteSourceOption = {
 }
 
 export type QuoteSupplierOption = { id: string; name: string }
+export type QuoteOrganisationOption = QuoteSupplierOption & {
+  code: string
+  types: string[]
+  addresses: Array<{ id: string; label: string; address: string; email?: string | null; phone?: string | null }>
+  contacts: Array<{ id: string; name: string; email?: string | null }>
+}
+export type QuoteLookupOption = { id: string; name: string; code?: string }
+export type QuoteCodeOption = { code: string; name: string }
 export type QuotePartyDraft = { orgId?: string | null; name: string; address?: string | null; contact?: string | null }
 
 export type QuoteWorkflowCharge = {
@@ -44,8 +52,13 @@ export type QuoteWorkflowRecord = {
   sourceId: string
   customerId: string
   customerName: string
+  contactId?: string | null
   contactName?: string | null
   contactEmail?: string | null
+  customerReference?: string | null
+  officeId?: string | null
+  departmentId?: string | null
+  salesOwnerId?: string | null
   direction?: string | null
   mode?: string | null
   shipmentType?: string | null
@@ -61,6 +74,8 @@ export type QuoteWorkflowRecord = {
   deadline?: string | null
   supplierId?: string | null
   supplierName?: string | null
+  carrierId?: string | null
+  carrierName?: string | null
   shipmentFacts: Record<string, unknown>
   customerNotes?: string | null
   internalNotes?: string | null
@@ -72,7 +87,6 @@ export type QuoteWorkflowRecord = {
   followUpAt?: string | null
   outcomeNotes?: string | null
   acceptedVersionId?: string | null
-  convertedBookingId?: string | null
   shipper?: QuotePartyDraft | null
   consignee?: QuotePartyDraft | null
 }
@@ -82,8 +96,9 @@ export type QuoteWorkflowVersion = {
   CusQuoteVersion_Number: number
   CusQuoteVersion_StatusCode: string
   CusQuoteVersion_IsCurrent: boolean
-  CusQuoteVersion_IssuedAt: string | null
-  CusQuoteVersion_GeneratedDocumentID: string | null
+  CusQuoteVersion_CreatedAt: string
+  CusQuoteVersion_IssuedAt?: string | null
+  CusQuoteVersion_GeneratedDocumentID?: string | null
   DOCB_GeneratedDocuments?: {
     DOCBGD_ID: string
     DOCBGD_FileName: string
@@ -110,8 +125,23 @@ export type QuoteWorkflowWorkspace = {
   events: QuoteWorkflowEvent[]
 }
 
-export type QuoteSavePayload = Omit<QuoteWorkflowRecord, "id" | "reference" | "lifecycle" | "customerId" | "customerName" | "acceptedVersionId" | "convertedBookingId" | "outcomeNotes"> & {
+export type QuoteSavePayload = Omit<QuoteWorkflowRecord, "id" | "reference" | "lifecycle" | "customerId" | "acceptedVersionId" | "outcomeNotes"> & {
+  customerId?: string
   charges: QuoteWorkflowCharge[]
+}
+
+export type QuoteWorkflowSources = {
+  sources: QuoteSourceOption[]
+  organisations: QuoteOrganisationOption[]
+  suppliers: QuoteSupplierOption[]
+  carriers: QuoteSupplierOption[]
+  offices: QuoteLookupOption[]
+  departments: QuoteLookupOption[]
+  users: Array<QuoteLookupOption & { email: string }>
+  modes: QuoteCodeOption[]
+  shipmentTypes: QuoteCodeOption[]
+  currencies: Array<QuoteCodeOption & { id: string }>
+  commodities: Array<QuoteCodeOption & { id: string }>
 }
 
 function requireClient() {
@@ -140,7 +170,7 @@ async function invoke<T>(body: Record<string, unknown>, fallback: string) {
 }
 
 export function getQuoteSources() {
-  return invoke<{ sources: QuoteSourceOption[]; suppliers: QuoteSupplierOption[] }>({ action: "sources" }, "Quote sources could not be loaded.")
+  return invoke<QuoteWorkflowSources>({ action: "sources" }, "Quote sources could not be loaded.")
 }
 
 export function getQuoteWorkflow(reference: string) {
@@ -155,10 +185,12 @@ export function transitionQuoteWorkflow(quoteId: string, transition: "calculated
   return invoke<{ quoteId: string; lifecycle: string; versionId?: string | null }>({ action: "transition", quoteId, transition, note, followUpAt }, "The quote action could not be completed.")
 }
 
-export function convertQuoteWorkflow(quoteId: string, readiness: { shipperId?: string; shipperName: string; consigneeId?: string; consigneeName: string; operationalNotes?: string }, idempotencyKey = crypto.randomUUID()) {
-  return invoke<{ quoteId: string; bookingId: string; bookingReference: string; reused: boolean }>({ action: "convert", quoteId, readiness, idempotencyKey }, "The booking could not be created.")
+/** @deprecated Quote-to-booking is the next delivery phase and is not active. */
+export function convertQuoteWorkflow(_quoteId: string, _readiness: { shipperId?: string; shipperName: string; consigneeId?: string; consigneeName: string; operationalNotes?: string }, _idempotencyKey = crypto.randomUUID()): Promise<{ quoteId: string; bookingId: string; bookingReference: string; reused: boolean }> {
+  return Promise.reject(new Error("Quote-to-booking is not active yet."))
 }
 
-export function downloadQuoteDocument(generatedDocumentId: string) {
-  return invoke<{ signedUrl: string; fileName: string; expiresAt: string }>({ action: "download", generatedDocumentId }, "The quote document could not be downloaded.")
+/** @deprecated Quote document generation remains owned by the document-builder workflow. */
+export function downloadQuoteDocument(_generatedDocumentId: string): Promise<{ signedUrl: string; fileName: string; expiresAt: string }> {
+  return Promise.reject(new Error("Quote document generation is not active in this workspace yet."))
 }

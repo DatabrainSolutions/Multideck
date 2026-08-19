@@ -433,3 +433,61 @@ Findings:
 - No P3 visual finding is being carried.
 
 final result: passed
+
+---
+
+# Design QA — Existing Quotes Details UI reused for new quotes
+
+## Source of truth
+
+- Reference: `/var/folders/04/gmvqjprd4v787c8s72rprxk80000gn/T/TemporaryItems/NSIRD_screencaptureui_otPmJB/Screenshot 2026-08-18 at 15.44.09.png`
+- Reference size: 1652 × 855
+- Implemented route: `http://localhost:3000/quotes/new`
+- Implementation capture: `/tmp/multideck-existing-quote-ui-blank.jpg`
+- Implementation viewport and pixels: 1652 × 855 CSS px at browser density 1, captured at 1652 × 855 pixels
+- Comparison image: `/tmp/multideck-existing-quote-ui-comparison.png`
+- State compared: a fresh, unsaved quote with the Details tab active
+
+## Comparison evidence
+
+The full reference and implementation captures were combined in one comparison image at identical 1652 × 855 dimensions and inspected together. Focused region captures were not required because every field group and control is readable in the complete matched-size comparison.
+
+## Findings and resolution history
+
+1. **P1 — replacement layout instead of existing product UI:** The first implementation recreated the screenshot inside `QuoteWorkflowPage`, which changed the established Quotes screen and did not preserve its complete interaction model. That replacement was removed. `/quotes/new` now renders the existing `QuoteDetailPage` with its existing CargoWise Details panel and shared Quotes controls.
+2. **P2 — default values leaking into a new quote:** The existing Details panel supplied example fallbacks for populated quote records. The dedicated `NEW` draft now explicitly clears those values, prevents carrier/supplier and sales-owner fallback selection, and exposes `Select` through the existing select primitive.
+3. **P2 — required state leaking into the blank draft:** Six controls initially retained required attributes. New quotes now pass the original panel a no-required-fields state; browser inspection confirms zero `required` or `aria-required=true` controls.
+4. **Intentional difference — application shell:** The implementation retains Multideck's existing navigation/sidebar; the reference image is cropped to the quote workspace only.
+5. **Intentional difference — field values:** The reference contains example operational data. The new quote deliberately contains no example data.
+
+## Fidelity surfaces
+
+- **Typography:** Unchanged from the existing Quotes screen; the Multideck sans-serif stack, compact field labels, weights, and language layer are reused directly.
+- **Spacing and layout:** Unchanged from the existing Quotes screen. The original quote header, tabs, context summary, Job data, party, Service & carrier, and Goods groups are rendered by the existing components.
+- **Colour and depth:** Existing Multideck tokens, field surfaces, radii, and shadows are retained without replacement styling.
+- **Icons and assets:** The existing Hugeicons-based controls and Dexter treatment are reused. The target contains no separate raster asset that needs recreation.
+- **Content:** All existing Details fields remain. Browser inspection found 31 inputs with no non-blank values and 24 dropdowns all displaying `Select`.
+- **Interaction:** The top-bar New quote action opens Details. All five tabs work. Editing reveals and operates the original Save/Discard state. The customer dialog opens. Print calls the browser print flow. Convert to booking uses the existing confirmation interaction and opens `/bookings/new`.
+
+## Verification
+
+- New quote button → `/quotes/new` → Details: passed
+- Existing Quotes UI/component reuse: passed
+- Desktop comparison at reference viewport: passed
+- Tablet layout at 1024px with no document overflow: passed
+- Mobile layout at 390px with no document overflow: passed
+- Blank inputs: 31/31 passed
+- Dropdown placeholders: 24/24 passed
+- Required controls: 0 passed
+- Save/Discard state: passed
+- Customer dialog: passed
+- Booking handoff: passed
+- Fresh browser console: no errors
+- Production frontend build: passed
+- Quote workflow contract tests: 6/6 passed
+- SQL migration parse: 56 statements passed
+- Diff whitespace check: passed
+
+## Final result
+
+passed

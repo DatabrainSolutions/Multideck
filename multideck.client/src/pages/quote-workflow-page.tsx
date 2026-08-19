@@ -289,6 +289,7 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
     return {
       sourceType: record.sourceType,
       sourceId: record.sourceId,
+      customerName: record.customerName,
       contactName: record.contactName,
       contactEmail: record.contactEmail,
       direction: record.direction,
