@@ -35,6 +35,7 @@ const CustomersPage = lazy(() => import("@/pages/customers-page").then((module) 
 const InboxPage = lazy(() => import("@/pages/inbox-page").then((module) => ({ default: module.InboxPage })))
 const DocumentsPage = lazy(() => import("@/pages/documents-page").then((module) => ({ default: module.DocumentsPage })))
 const CustomsDeclarationsPage = lazy(() => import("@/pages/customs-declarations-page").then((module) => ({ default: module.CustomsDeclarationsPage })))
+const ScreeningPage = lazy(() => import("@/pages/screening-page").then((module) => ({ default: module.ScreeningPage })))
 const ReportsPage = lazy(() => import("@/pages/reports-page").then((module) => ({ default: module.ReportsPage })))
 const PaperTrayPage = lazy(() => import("@/pages/paper-tray-page").then((module) => ({ default: module.PaperTrayPage })))
 const NavigationLabPage = lazy(() => import("@/pages/navigation-lab-page").then((module) => ({ default: module.NavigationLabPage })))
@@ -125,6 +126,7 @@ const validRoutes = new Set([
   "/customs/standalone/import/new",
   "/customs/job-related/export",
   "/customs/job-related/import",
+  "/compliance/screening",
   "/paper-tray",
   "/playground/navigation",
   "/quotes",
@@ -630,6 +632,7 @@ export default function App() {
                   {route === "/inbox" ? <InboxPage navigate={navigate} /> : null}
                   {route === "/documents" || route === "/documents/templates" ? <DocumentsPage navigate={navigate} /> : null}
                   {route.startsWith("/customs/") ? <CustomsDeclarationsPage route={route} navigate={navigate} currentUser={currentUser} /> : null}
+                  {route === "/compliance/screening" ? <ScreeningPage /> : null}
                   {route === "/paper-tray" ? <PaperTrayPage /> : null}
                   {route === "/playground/navigation" ? <NavigationLabPage /> : null}
                   {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} /> : null}

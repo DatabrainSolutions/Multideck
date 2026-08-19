@@ -12,6 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner"
 import { useLanguage } from "@/i18n/language-provider"
 import { getCustomer, getCustomerDocumentUrl, listCustomerDocuments, type ApiCustomerDetail, type ApiCustomerDocument, type ApiCustomerDocumentListing } from "@/lib/customer-api"
+import { getScreeningCheck, getScreeningWorkspace, runScreeningCheck, type ScreeningCheck } from "@/lib/screening-api"
+import { ScreeningMatchRow, ScreeningOutcomePill } from "@/components/multideck/screening-components"
 import { setMarketingOptIn, type MarketingConsentRecordType } from "@/lib/marketing-consent-api"
 import { getWarehousePortalReference, inviteWarehousePortalUser, listWarehousePortalUsers, revokeWarehousePortalUser, sendWarehousePortalAccessLink, updateWarehousePortalUser, type WarehousePortalReference, type WarehousePortalUser } from "@/lib/warehouse"
 
@@ -110,6 +112,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
       {customer.summary ? <Surface className="rounded-[var(--md-radius-xl)]" padding="lg"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Account summary")}</h2><p className="mt-3 text-[14px] leading-6 text-[var(--md-text)]">{customer.summary}</p></Surface> : null}
 
       <CustomerWarehouseAccess customerId={customer.id} />
+      <CustomerScreening customerId={customer.id} customerName={customer.name} />
 
       <div className="md-panel-grid xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="md-panel-column">
@@ -283,6 +286,70 @@ export function CustomerWarehouseAccess({
       <DialogFooter><Button type="button" variant="ghost" onClick={() => setOpen(false)}>{t("Cancel")}</Button><Button type="button" disabled={saving || facilityIds.length === 0 || (!editing && !email.trim())} onClick={() => void save()} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{t(editing ? "Save access" : "Send invitation")}</Button></DialogFooter>
     </DialogContent></Dialog>
   </>
+}
+
+function CustomerScreening({ customerId, customerName }: { customerId: string; customerName: string }) {
+  const { t } = useLanguage()
+  const [check, setCheck] = useState<ScreeningCheck | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [running, setRunning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    getScreeningWorkspace(customerId)
+      .then(async (workspace) => {
+        if (!active) return
+        const latest = workspace.checks[0]
+        if (!latest) {
+          setCheck(null)
+          setError(null)
+          return
+        }
+        setCheck(latest.matches ? latest : await getScreeningCheck(latest.id))
+        setError(null)
+      })
+      .catch((cause) => active && setError(cause instanceof Error ? cause.message : t("Party screening could not be loaded.")))
+      .finally(() => active && setLoading(false))
+    return () => { active = false }
+  }, [customerId, t])
+
+  async function screenCustomer() {
+    setRunning(true)
+    setError(null)
+    try {
+      setCheck(await runScreeningCheck({ subjectName: customerName, orgId: customerId }))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("The name could not be screened."))
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <Surface className="overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
+      <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="size-4 text-[var(--md-accent)]" />
+            <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Party screening")}</h2>
+            {check ? <ScreeningOutcomePill outcome={check.outcome} stale={check.listStale} /> : null}
+          </div>
+          <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Screen this customer against the UK OFSI list stored in this workspace.")}</p>
+        </div>
+        <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-lg)]" onClick={() => void screenCustomer()} disabled={running}>
+          {running ? <LoaderCircle className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
+          {t("Screen this customer")}
+        </Button>
+      </div>
+      {error ? <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-3 text-[12px] text-[var(--md-red)]">{error}</p> : null}
+      {loading ? <div className="grid min-h-16 place-items-center border-t border-[rgba(11,20,19,0.06)]"><LoaderCircle className="size-4 animate-spin text-[var(--md-accent)]" /></div> : null}
+      {!loading && check?.matches?.length ? check.matches.map((match) => <ScreeningMatchRow key={`${match.groupId}-${match.listedName}`} match={match} />) : null}
+      {!loading && check && !check.matches?.length ? <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-text)]">{t("No listed names matched this search.")}</p> : null}
+      {!loading && !check && !error ? <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-text)]">{t("No screening has been run for this customer yet.")}</p> : null}
+    </Surface>
+  )
 }
 
 function Metric({ label, value, icon }: { label: string; value: string; icon?: ReactNode }) { return <Surface className="rounded-[var(--md-radius-xl)]" padding="md"><p className="flex items-center gap-1.5 text-[13px] text-[var(--md-text)]">{icon}{label}</p><p className="mt-4 text-[28px] font-medium text-[var(--md-ink)]">{value}</p></Surface> }

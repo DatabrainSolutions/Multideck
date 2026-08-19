@@ -205,7 +205,7 @@ export const sidebarAreas: SidebarArea[] = [
       { id: "standalone-declarations", label: "Stand Alone Declarations", icon: ClipboardCheck, route: "/customs/standalone/export" },
       { id: "job-related-declarations", label: "Job Related Declarations", icon: Ship, route: "/customs/job-related/export" },
       { id: "classification-licences", label: "Classification & licences", icon: ScanText },
-      { id: "compliance-controls", label: "Compliance controls", icon: BadgeCheck },
+      { id: "compliance-controls", label: "Compliance controls", icon: BadgeCheck, route: "/compliance/screening" },
     ],
   },
   {

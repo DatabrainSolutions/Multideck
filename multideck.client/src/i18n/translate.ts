@@ -1,5 +1,6 @@
 import type { LanguageCode } from "./languages"
 import { customsDeclarationPhrases } from "./customs-declaration-phrases"
+import { screeningPhrases } from "./screening-phrases"
 import { purchaseOrderPhrases } from "./purchase-order-phrases"
 import { ratesPhrases } from "./rates-phrases"
 import { reportingPhrases } from "./reporting-phrases"
@@ -790,6 +791,7 @@ const phrases: PhraseDictionary = {
   ...documentBuilderPhrases,
   ...bookingWorkspacePhrases,
   ...customsDeclarationPhrases,
+  ...screeningPhrases,
   ...purchaseOrderPhrases,
   ...crmAccountContactPhrases,
   ...dexterWritingProfilePhrases,

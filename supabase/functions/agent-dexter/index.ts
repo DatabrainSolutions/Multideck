@@ -80,7 +80,7 @@ const MAX_PROMPT_CHARACTERS = 4_000
 const MAX_HISTORY_MESSAGES = 30
 const MAX_TOOL_ROUNDS = 4
 const MAX_TOOL_CALLS = 6
-const PROMPT_VERSION = "freight-coworker-2026-08-11-warehouse-capabilities"
+const PROMPT_VERSION = "freight-coworker-2026-08-19-party-screening"
 const EMAIL_STYLE_TOOL = "load_operator_email_style"
 const PREPARE_EMAIL_DRAFT_TOOL = "prepare_email_draft"
 const DEXTER_SCOPE_REDIRECT_TOOL = "redirect_off_topic_request"
@@ -1147,6 +1147,9 @@ function watchCandidates(capability: string, value: unknown): JsonObject[] {
     return [data.orders, data.inventory, data.handlingUnits, data.exceptions]
       .flatMap((records) => Array.isArray(records) ? records.filter(isObject) : [])
   }
+  if (capability === "screening" && isObject(data)) {
+    return Array.isArray(data.checks) ? data.checks.filter(isObject) : []
+  }
   return Array.isArray(data) ? data.filter(isObject) : []
 }
 
@@ -1161,9 +1164,11 @@ function watchTargetLabel(capability: string, record: JsonObject) {
           ? ["bookingReference", "jobReference", "customerReference"]
           : capability === "rates"
             ? ["rateCode", "name"]
-            : capability === "customs_declarations"
-              ? ["reference", "traderReference", "customsReference", "mrn"]
-              : ["orderNumber", "customerReference", "containerNumber", "handlingUnitCode", "code", "sku", "title", "locationCode"]
+        : capability === "customs_declarations"
+          ? ["reference", "traderReference", "customsReference", "mrn"]
+          : capability === "screening"
+            ? ["subjectName", "outcome"]
+            : ["orderNumber", "customerReference", "containerNumber", "handlingUnitCode", "code", "sku", "title", "locationCode"]
   return keys.map((key) => cleanString(record[key], 240)).find(Boolean) ?? "Watched record"
 }
 
@@ -1308,6 +1313,29 @@ function addDomainCitations(domain: string, value: unknown) {
           )
           : record
       }),
+    }
+  }
+
+  if (domain === "screening" && isObject(data)) {
+    const checks = Array.isArray(data.checks)
+      ? data.checks.map((record) => {
+          if (!isObject(record)) return record
+          const recordId = cleanString(record.recordId, 80)
+          const title = cleanString(record.subjectName, 240) || "Party screening"
+          return recordId
+            ? addRecordCitation(record, title, `/compliance/screening?check=${encodeURIComponent(recordId)}`, "Party screening result")
+            : record
+        })
+      : data.checks
+    return {
+      ...value,
+      data: {
+        ...data,
+        list: isObject(data.list)
+          ? addRecordCitation(data.list, "UK OFSI consolidated list", "/compliance/screening", "Workspace copy of the UK OFSI sanctions list")
+          : data.list,
+        checks,
+      },
     }
   }
 
@@ -1461,6 +1489,7 @@ Name the relevant jurisdiction when it is known. Treat legal, tax, sanctions, da
 The dedicated commercial-invoice importer remains the safest route when item lines must be overlaid on the exact prepared PDF and individually reviewed before they change a customs declaration. It accepts PDF, Excel, CSV, Word, OpenDocument and image invoices through the same content-safe document normaliser used by Dexter. Dexter chat can also extract read-only evidence from those operator-uploaded formats with its listed document tool, then use only an available allowlisted workspace action. It cannot bypass declaration review or claim a destination change succeeded without a successful action result. Temporary upload, conversion and OCR states are explicitly not meaningful watch events; Watching for you follows the destination record only after an applied change emits its normal deterministic event.
 Customs declaration records and their latest recorded iCustoms submission state are connected through the customs_declarations data domain. Dexter may inspect, create and edit operator-owned UK CDS import and export drafts through its listed actions, and watch one exact declaration. Creating a declaration also creates its editable iCustoms draft; it does not submit anything to HMRC. For a create or edit action, put every known header and goods-line field into draft_json as one valid JSON object; use only source-backed values, preserve unknown fields when editing, and never invent a commodity code, customs value, party identifier, licence or previous-document reference. Dexter can validate and save an exact current declaration as an iCustoms draft. In Approve mode it prepares one exact submission for review. In Full access it may submit once without another prompt only when the operator's current clean request explicitly asks to file or submit that declaration. Deleting a Customs draft is intentionally not available to Dexter: direct the operator to the declaration register, where destructive inline confirmation is required. Deleting an abandoned, unsubmitted draft is not a meaningful Watching for you event. Never imply that saving an iCustoms draft, seeing a queued submission, or submitting it proves the declaration was accepted.
 Live iCustoms commodity suggestions, tariff measures and certificate options deliberately require operator review in the goods-line Commodity assistant and are not callable from Dexter. If asked to run that lookup, say so clearly and direct the operator to Find commodity code on the exact goods line; do not guess or reproduce a stale result. The lookup itself creates no persisted business event, so Watching for you begins only after the operator applies and saves the declaration change through the normal Customs workflow.
+Party screening against the UK OFSI consolidated list is connected through the screening data domain. Query it for list freshness and completed results. Use run_screening_check to screen one exact name against the workspace copy of that list; never invent a sanctions status. A match or possible match is an operational review item, not legal certainty. Watching for you can follow a new screening outcome or an OFSI list refresh. If the list is stale or unloaded, say so and direct the operator to Compliance controls to refresh it.
 Structure substantial answers as current position, blocker or exposure, evidence needed, then safest next operational step.`,
   ops: `## Operations and exceptions specialist
 Act like an experienced forwarding operations controller. Prioritise what needs attention now and who should do what next.
@@ -1584,6 +1613,7 @@ ${emailSummary}
 Use query_data_domain whenever the operator asks about company records or metrics. Use only the listed domain codes.
 Use the bookings domain for freight bookings and jobs. Dexter may create and edit a booking only through the listed canonical booking actions. Use warehouse for warehouse summaries, inventory balances, handling units and warehouse exceptions; warehouse_orders for exact inbound and outbound order lines, receipt history and dispatch history before any goods-in or goods-out action; warehouse_reference to resolve facilities, offices, locations and items before a warehouse create or edit; and warehouse_calendar only to read the derived warehouse schedule. Never substitute one for the other when a domain returns no records.
 Use customs_declarations for declaration drafts, filing references and recorded iCustoms submission states. Do not use warehouse customs fields as a substitute for a declaration record.
+Use screening for UK OFSI list freshness and completed party-screening results. Screen a name only through run_screening_check against the workspace copy of that list. Never invent a sanctions status, never scrape the government website live, and treat a match or possible match as an operational review item rather than legal certainty.
 For a named workspace record, search with the strongest concise name, reference, email, SKU, container number, location or lane from the request. Do not pass the whole conversational sentence as the search value.
 Workspace search results can include searchEvidence. exact_identifier, exact_text, exact_phrase and all_terms are evidence-backed matches. corrected_text is only a likely spelling correction: compare its matchedValue with the returned record's other identifying fields, state the actual name or reference you found, and do not describe it as confirmed when another candidate is plausible. Never substitute a different named company, person, reference or record type.
 If a workspace search returns no matching records, retry at most twice: first remove filler or status wording, then use one stable identifier fragment. Do not remove every identifying clue. After those checks, say what was not found and ask for one useful clue. Never fill the gap from conversation history or general knowledge.

@@ -87,6 +87,7 @@ import { ThreadSummary } from "@/components/multideck/thread-summary"
 import type { InboxThreadListItem, Mailbox, MailProvider, ThreadSummaryState } from "@/lib/inbox-api"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, TablePillKindContext, toneToVar } from "@/components/multideck/status-pill"
+import { ScreeningListFreshness, ScreeningMatchRow, ScreeningOutcomePill } from "@/components/multideck/screening-components"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
 import { AuthIdentityManager, AuthProviderSelector } from "@/components/multideck/auth-provider-selector"
 import { DashboardPriorityQueue } from "@/components/multideck/dashboard-priority-queue"
@@ -241,7 +242,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row"],
   },
   {
     label: "CRM",
@@ -1380,6 +1381,30 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="grid w-full max-w-[640px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Workflow statuses</p><TablePillKindContext.Provider value="status"><div className="flex flex-wrap gap-2"><StatusPill tone="purple">New</StatusPill><StatusPill tone="orange">Contacted</StatusPill><StatusPill tone="blue">Qualified</StatusPill><StatusPill tone="amber">Nurturing</StatusPill><StatusPill tone="green">Converted</StatusPill><StatusPill tone="red">Disqualified</StatusPill></div></TablePillKindContext.Provider></div>
           <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Descriptive attributes</p><TablePillKindContext.Provider value="attribute"><div className="flex flex-wrap gap-2"><StatusPill tone="teal">Ocean</StatusPill><StatusPill tone="blue">Customer</StatusPill><StatusPill tone="amber">Express</StatusPill><StatusPill tone="neutral">Standard</StatusPill></div></TablePillKindContext.Provider></div>
+        </div>
+      ) : null}
+
+      {id === "screening-outcome-pill" ? (
+        <div className="flex w-full max-w-[560px] flex-wrap items-center justify-center gap-2 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <ScreeningOutcomePill outcome="clear" />
+          <ScreeningOutcomePill outcome="possible_match" />
+          <ScreeningOutcomePill outcome="match" stale />
+        </div>
+      ) : null}
+
+      {id === "screening-list-freshness" ? (
+        <div className="w-full max-w-[640px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <ScreeningListFreshness
+            list={{ loaded: true, sourceName: "UK OFSI consolidated list", publisher: "UK Office of Financial Sanctions Implementation", entryCount: 18420, downloadedAt: new Date().toISOString(), stale: false }}
+            action={<Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-md)]">Refresh list</Button>}
+          />
+        </div>
+      ) : null}
+
+      {id === "screening-match-row" ? (
+        <div className="w-full max-w-[640px] overflow-hidden rounded-[var(--md-radius-xl)] bg-white/60 shadow-[var(--md-shadow-line)]">
+          <ScreeningMatchRow match={{ groupId: "G-88", listedName: "ALFA SHIPPING LTD", matchKind: "exact", score: 1, regime: "Russia", groupType: "Entity", listedOn: "2022-03-01", ukRef: "RUS1234", country: "IR" }} />
+          <ScreeningMatchRow match={{ groupId: "G-88", listedName: "ALPHA SHIPPING", matchKind: "similar", score: 0.86, regime: "Russia", groupType: "Entity", listedOn: "2022-03-01", ukRef: "RUS1234", country: "IR" }} />
         </div>
       ) : null}
 

@@ -472,6 +472,14 @@ verify_jwt = false
 [functions.icustoms-api]
 verify_jwt = true
 
+[functions.screening]
+verify_jwt = true
+
+# Invoked by tenant-local pg_cron. The function validates a separate random
+# Vault-backed secret before it downloads the government list.
+[functions.screening-list-worker]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 

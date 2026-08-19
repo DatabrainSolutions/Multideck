@@ -2119,7 +2119,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "Compact semantic pills for every workflow status and descriptive attribute shown in a table.",
     details: "Every pill rendered inside an operator table uses the filled green, yellow, red, blue, orange, or purple semantic palette. The cyan information family uses a quieter, lower-saturation treatment in light mode, while dark mode retains the approved deep cyan pair. Pills outside tables keep the quieter surface shell and leading dot.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n  const filledTablePill = tableKind !== null || kind === "status"\n\n  return (\n    <Badge\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill={filledTablePill ? "true" : undefined}\n      className={cn(baseClass, filledTablePill && filledTableClass, filledTablePill && tableToneClass[tone], className)}\n    >\n      {indicator ?? (!filledTablePill ? <span className="size-1.5 rounded-full" style={{ backgroundColor: toneToVar(tone) }} /> : null)}\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill kind="status" tone="purple">New</StatusPill>\n<StatusPill kind="status" tone="orange">Contacted</StatusPill>\n<StatusPill kind="status" tone="blue">Qualified</StatusPill>\n<StatusPill kind="status" tone="amber">Nurturing</StatusPill>\n<StatusPill kind="status" tone="green">Converted</StatusPill>\n<StatusPill kind="status" tone="red">Disqualified</StatusPill>\n\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
   },
@@ -4619,6 +4619,36 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     componentCode: `export function MarketingOptInControl({ checked, source, updatedAt, onCheckedChange }) {\n  return (\n    <div>\n      <div>\n        <p>Opt-in marketing</p>\n        <p>{checked ? "Can receive marketing updates." : "No marketing updates will be sent."}</p>\n        <small>{source} · {updatedAt}</small>\n      </div>\n      <Switch checked={checked} onCheckedChange={onCheckedChange} />\n    </div>\n  )\n}`,
     usageCode: `<MarketingOptInControl\n  checked={lead.marketingOptIn}\n  source={lead.marketingConsentSource}\n  updatedAt={lead.marketingConsentUpdatedAt}\n  onCheckedChange={(checked) => setMarketingOptIn("lead", lead.id, checked)}\n/>`,
   },
+  {
+    id: "screening-outcome-pill",
+    name: "Screening Outcome Pill",
+    category: "Operations",
+    description: "Compact party-screening language for no match, possible match, match, and a stale government list.",
+    details: "Use on Compliance controls, customer records, and anywhere a completed sanctions screen needs to be scanned without turning the result into legal certainty.",
+    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Customer detail", route: "/customers" }, { label: "Components", route: "/components?component=screening-outcome-pill" }],
+    componentCode: `export function ScreeningOutcomePill({ outcome, stale = false }) {\n  return (\n    <span className="inline-flex flex-wrap items-center gap-1.5">\n      <StatusPill tone={outcomeTone[outcome]}>{outcomeLabel[outcome]}</StatusPill>\n      {stale ? <StatusPill tone="amber">List stale</StatusPill> : null}\n    </span>\n  )\n}`,
+    usageCode: `<ScreeningOutcomePill outcome={check.outcome} stale={check.listStale} />`,
+  },
+  {
+    id: "screening-list-freshness",
+    name: "Screening List Freshness",
+    category: "Operations",
+    description: "Shows whether the workspace copy of the UK OFSI list is loaded, current, or due a refresh.",
+    details: "Use above a screening form so operators can see the list publisher, name count, and last update before they rely on a no-match result.",
+    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Components", route: "/components?component=screening-list-freshness" }],
+    componentCode: `export function ScreeningListFreshness({ list, action }) {\n  return (\n    <div className="flex items-start justify-between gap-3">\n      <div>\n        <p>{list.sourceName}</p>\n        <StatusPill>{list.stale ? "Needs refresh" : "Current"}</StatusPill>\n        <p>{list.entryCount} names · Updated {list.downloadedAt}</p>\n      </div>\n      {action}\n    </div>\n  )\n}`,
+    usageCode: `<ScreeningListFreshness\n  list={workspace.list}\n  action={<Button onClick={refreshList}>Refresh list</Button>}\n/>`,
+  },
+  {
+    id: "screening-match-row",
+    name: "Screening Match Row",
+    category: "Operations",
+    description: "One government-list name that matched a screened party, with regime and exact-or-similar evidence.",
+    details: "Use under a screening result. Keep listed names readable in both left-to-right and right-to-left layouts; identifiers stay in their original form.",
+    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Customer detail", route: "/customers" }, { label: "Components", route: "/components?component=screening-match-row" }],
+    componentCode: `export function ScreeningMatchRow({ match }) {\n  return (\n    <div className="grid gap-1 sm:grid-cols-[minmax(0,1fr)_auto]">\n      <div>\n        <p>{match.listedName}</p>\n        <p>{[match.groupType, match.regime, match.country].filter(Boolean).join(" · ")}</p>\n      </div>\n      <StatusPill tone={match.matchKind === "exact" ? "red" : "amber"}>\n        {match.matchKind === "exact" ? "Exact name" : "Similar name"}\n      </StatusPill>\n    </div>\n  )\n}`,
+    usageCode: `{check.matches.map((match) => (\n  <ScreeningMatchRow key={match.groupId + match.listedName} match={match} />\n))}`,
+  },
 ]
 
 export const galleryCategories = ["All", "Design System", "Foundation", "Controls", "Navigation", "Data", "Visualizations", "Feedback", "Operations", "CRM", "Agent Dexter"]
@@ -4745,4 +4775,7 @@ export const galleryIcons = {
   "contact-card-social-links-editor": Users,
   "automation-run-history": Workflow,
   "marketing-opt-in-control": BadgeCheck,
+  "screening-outcome-pill": ShieldCheck,
+  "screening-list-freshness": ShieldCheck,
+  "screening-match-row": ShieldCheck,
 } satisfies Record<string, LucideIcon>
