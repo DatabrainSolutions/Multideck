@@ -85,15 +85,15 @@ security definer
 set search_path = ''
 as $$
 declare
-  company_id uuid;
+  workspace_company_id uuid;
   result record;
 begin
-  select "Company_ID" into company_id from public."cmp_Users"
+  select "Company_ID" into workspace_company_id from public."cmp_Users"
   where "Auth_User_ID" = caller_auth_user_id and "User_AccessStatus" = 'active';
-  if company_id is null then raise exception 'User identity is incomplete.' using errcode = '42501'; end if;
+  if workspace_company_id is null then raise exception 'User identity is incomplete.' using errcode = '42501'; end if;
   select quote_api.clean_reference_prefix(coalesce(settings.quote_prefix, 'Q'), 'Q') as quote_prefix,
     quote_api.clean_reference_prefix(coalesce(settings.booking_prefix, 'B'), 'B') as booking_prefix
-  into result from quote_api.reference_settings settings where settings.company_id = company_id;
+  into result from quote_api.reference_settings settings where settings.company_id = workspace_company_id;
   return jsonb_build_object('quotePrefix', coalesce(result.quote_prefix, 'Q'), 'bookingPrefix', coalesce(result.booking_prefix, 'B'));
 end;
 $$;
