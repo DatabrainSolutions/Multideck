@@ -52,7 +52,7 @@ export function conversationBranchFor<TMessage extends DexterBranchMessage>(
   const parentResponseByUserId = new Map<string, string | null>()
 
   userMessages.forEach((message, userIndex) => {
-    if (message.parentResponseMessageId) {
+    if (message.parentResponseMessageId && pairedAssistantIds.has(message.parentResponseMessageId)) {
       parentResponseByUserId.set(message.id, message.parentResponseMessageId)
       return
     }

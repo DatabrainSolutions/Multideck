@@ -1,6 +1,7 @@
 import type { StatusTone } from "@/data/multideck-data"
 import type { DomesticRoadJob, RoadJobStageId } from "@/components/multideck/domestic-road-components"
-import { supabase } from "@/lib/supabase"
+import { createEmptyFilterQuery, filterQueryIsEmpty, type FilterQuery } from "@/lib/advanced-filters"
+import { getSupabaseSession, supabase } from "@/lib/supabase"
 
 type BookingMode = "OCEAN" | "AIR" | "ROAD" | "MULTIMODAL" | "FAS" | "FSA"
 type BookingStatus = "On track" | "Delayed" | "Exception"
@@ -41,97 +42,152 @@ export type LiveBooking = {
   updatedAt: string
 }
 
-export type LiveReport = {
-  id: string
-  title: string
-  customer: string | null
-  type: string
-  status: string
-  tone: StatusTone
-  period: string
-  generatedAt: string | null
-  scheduledFor: string | null
-  summary: string
+export type RegisterSort = { id: string; direction: "asc" | "desc" }
+
+export type BookingRegisterSummary = {
+  active: number
+  inTransit: number
+  atDestination: number
+  exceptions: number
+  complete: number
+  total: number
 }
 
-export type LiveCrmOpportunity = {
-  id: string
-  account: string
-  contact: string | null
-  stage: string
-  value: number
-  currency: string
-  probability: number
-  owner: string
-  nextAction: string
-  dueAt: string | null
-  source: string
-  tone: StatusTone
+export type BookingRegisterPage = {
+  rows: LiveBooking[]
+  total: number
+  summary: BookingRegisterSummary
 }
 
-export type LiveCrmActivity = {
-  id: string
-  opportunityId: string | null
-  account: string
-  type: string
-  subject: string
-  summary: string
-  owner: string
-  occurredAt: string
-  tone: StatusTone
+export type BookingRegisterInput = {
+  search?: string
+  scope: "All Jobs" | "My Jobs" | "Staged Jobs"
+  operatorCode?: string
+  direction?: string
+  mode?: string
+  shipmentType?: string
+  filterQuery: FilterQuery
+  sort?: RegisterSort | null
+  limit: number
+  offset: number
 }
 
-export type LiveCrmCampaign = {
-  id: string
-  name: string
-  status: string
-  audience: number
-  delivered: number
-  opened: number
-  clicked: number
-  sentAt: string | null
-  tone: StatusTone
+type RegisterCacheEntry<T> = {
+  value?: T
+  expiresAt: number
+  inFlight?: Promise<T>
+  controller?: AbortController
+  consumers: Set<symbol>
+  lastAccessedAt: number
 }
 
-export type LiveCrmContact = {
-  id: string
-  account: string
-  name: string
-  jobTitle: string
-  email: string
-  phone: string
-  owner: string
-  status: string
-  tone: StatusTone
-  lastContactAt: string | null
+const REGISTER_CACHE_TTL_MS = 15_000
+const REGISTER_CACHE_MAX_ENTRIES = 64
+const registerPageCache = new Map<string, RegisterCacheEntry<unknown>>()
+
+function registerAbortError() {
+  return typeof DOMException === "undefined"
+    ? Object.assign(new Error("The register request was cancelled."), { name: "AbortError" })
+    : new DOMException("The register request was cancelled.", "AbortError")
 }
 
-export type LivePaperTrayItem = {
-  id: string
-  fileName: string
-  documentType: string
-  customer: string | null
-  bookingReference: string | null
-  status: string
-  tone: StatusTone
-  receivedAt: string
-  confidence: number | null
-  pageCount: number
-  reviewNote: string | null
-  mimeType: string
-  fileSizeBytes: number
-  url: string | null
+function pruneRegisterPageCache() {
+  const completed = [...registerPageCache.entries()]
+    .filter(([, entry]) => !entry.inFlight)
+    .sort((left, right) => left[1].lastAccessedAt - right[1].lastAccessedAt)
+  for (const [key] of completed.slice(0, Math.max(0, completed.length - REGISTER_CACHE_MAX_ENTRIES))) {
+    registerPageCache.delete(key)
+  }
 }
 
-export type LiveDexterContext = {
-  id: string
-  type: string
-  title: string
-  summary: string
-  relatedReference: string | null
-  status: string
-  tone: StatusTone
-  updatedAt: string
+/** Shares identical bounded reads while keeping abort ownership with active consumers. */
+export function readCachedRegisterPage<T>(
+  scope: string,
+  resource: string,
+  load: (signal: AbortSignal) => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (signal?.aborted) return Promise.reject(registerAbortError())
+
+  const key = `${scope}\u0000${resource}`
+  const now = Date.now()
+  let entry = registerPageCache.get(key) as RegisterCacheEntry<T> | undefined
+  if (entry?.value !== undefined && entry.expiresAt > now) {
+    entry.lastAccessedAt = now
+    return Promise.resolve(entry.value)
+  }
+
+  if (!entry?.inFlight) {
+    const controller = new AbortController()
+    const next: RegisterCacheEntry<T> = { expiresAt: 0, controller, consumers: new Set(), lastAccessedAt: now }
+    const timeoutId = globalThis.setTimeout(() => controller.abort(), 15_000)
+    const inFlight = load(controller.signal)
+      .then((value) => {
+        globalThis.clearTimeout(timeoutId)
+        if (registerPageCache.get(key) === next) {
+          registerPageCache.set(key, {
+            value,
+            expiresAt: Date.now() + REGISTER_CACHE_TTL_MS,
+            consumers: new Set(),
+            lastAccessedAt: Date.now(),
+          })
+          pruneRegisterPageCache()
+        }
+        return value
+      })
+      .catch((error) => {
+        globalThis.clearTimeout(timeoutId)
+        if (registerPageCache.get(key) === next) registerPageCache.delete(key)
+        throw error
+      })
+    next.inFlight = inFlight
+    registerPageCache.set(key, next)
+    entry = next
+  }
+
+  const activeEntry = entry
+  const consumer = Symbol(resource)
+  activeEntry.consumers.add(consumer)
+
+  return new Promise<T>((resolve, reject) => {
+    let settled = false
+    const release = () => {
+      activeEntry.consumers.delete(consumer)
+      signal?.removeEventListener("abort", abort)
+    }
+    const abort = () => {
+      if (settled) return
+      settled = true
+      release()
+      queueMicrotask(() => {
+        if (activeEntry.inFlight && activeEntry.consumers.size === 0) activeEntry.controller?.abort()
+      })
+      reject(registerAbortError())
+    }
+    signal?.addEventListener("abort", abort, { once: true })
+    activeEntry.inFlight!.then(
+      (value) => {
+        if (settled) return
+        settled = true
+        release()
+        resolve(value)
+      },
+      (error) => {
+        if (settled) return
+        settled = true
+        release()
+        reject(error)
+      },
+    )
+  })
+}
+
+export function invalidateRegisterPages(resourcePrefix: string) {
+  for (const [key, entry] of registerPageCache) {
+    if (!key.split("\u0000", 2)[1]?.startsWith(resourcePrefix)) continue
+    entry.controller?.abort()
+    registerPageCache.delete(key)
+  }
 }
 
 export type LiveNotification = { id: string; title: string; description: string; tone: StatusTone; occurredAt: string; readAt: string | null }
@@ -237,10 +293,79 @@ function toLiveBooking(row: Record<string, unknown>): LiveBooking {
   }
 }
 
-export async function listLiveBookings(): Promise<LiveBooking[]> {
-  const { data, error } = await requireClient().from("App_Live_Bookings").select("*").order("Updated_At", { ascending: false })
+const dashboardBookingCompatibilityColumns = [
+  "Job_ID", "Booking_Reference", "Customer_Name", "Route", "Carrier", "Equipment", "Mode",
+  "Value_Display", "Eta_Display", "Time_Display", "Status", "Progress", "Owner_Code", "Tone",
+  "Invoice_Reference", "Job_Reference", "Customer_Reference", "Supplier_Reference", "Origin",
+  "Destination", "Vessel", "Departure_Date", "Arrival_Date", "Departure_At", "Arrival_At", "Vin",
+  "Direction", "Shipment_Type", "Is_Favourite", "Custom_Fields", "Updated_At",
+].join(",")
+
+/**
+ * Migration-drift bridge for the dashboard only. It deliberately asks for one
+ * row beyond the 50-row dashboard ceiling so callers can refuse to calculate
+ * misleading totals without ever downloading a complete booking register.
+ */
+export async function listLiveBookingsCompatibilitySample(signal?: AbortSignal): Promise<LiveBooking[]> {
+  const session = await getSupabaseSession()
+  if (!session?.user) throw new Error("Sign in again to view bookings.")
+  let query = requireClient()
+    .from("App_Live_Bookings")
+    .select(dashboardBookingCompatibilityColumns)
+    .order("Updated_At", { ascending: false, nullsFirst: false })
+    .limit(51)
+  if (signal) query = query.abortSignal(signal)
+  const { data, error } = await query
   if (error) throw error
-  return (data ?? []).map((row) => toLiveBooking(row as Record<string, unknown>))
+  return (data ?? []).map((row) => toLiveBooking(row as unknown as Record<string, unknown>))
+}
+
+export async function listLiveBookingsPage(input: BookingRegisterInput, signal?: AbortSignal): Promise<BookingRegisterPage> {
+  const session = await getSupabaseSession()
+  if (!session?.user) throw new Error("Sign in again to view bookings.")
+
+  const normalizedInput = {
+    ...input,
+    search: input.search?.trim() || undefined,
+    direction: input.direction?.trim() || undefined,
+    mode: input.mode?.trim() || undefined,
+    shipmentType: input.shipmentType?.trim() || undefined,
+    filterQuery: filterQueryIsEmpty(input.filterQuery) ? null : input.filterQuery,
+    limit: Math.max(1, Math.min(input.limit, 50)),
+    offset: Math.max(0, input.offset),
+  }
+  const resource = `bookings:page:${JSON.stringify(normalizedInput)}`
+  return readCachedRegisterPage(session.user.id, resource, async (requestSignal) => {
+    const { data, error } = await requireClient().rpc("multideck_booking_register_page", {
+      p_search: normalizedInput.search ?? null,
+      p_scope: normalizedInput.scope,
+      p_operator_code: normalizedInput.operatorCode?.trim() || null,
+      p_direction: normalizedInput.direction ?? null,
+      p_mode: normalizedInput.mode ?? null,
+      p_shipment_type: normalizedInput.shipmentType ?? null,
+      p_filter_query: normalizedInput.filterQuery,
+      p_sort: normalizedInput.sort?.id ?? "customerCargo",
+      p_sort_direction: normalizedInput.sort?.direction ?? "asc",
+      p_limit: normalizedInput.limit,
+      p_offset: normalizedInput.offset,
+    }).abortSignal(requestSignal)
+    if (error) throw error
+
+    const response = (data ?? {}) as Record<string, unknown>
+    const summary = (response.summary ?? {}) as Record<string, unknown>
+    return {
+      rows: Array.isArray(response.rows) ? response.rows.map((row) => toLiveBooking(row as Record<string, unknown>)) : [],
+      total: Number(response.total ?? 0),
+      summary: {
+        active: Number(summary.active ?? 0),
+        inTransit: Number(summary.inTransit ?? 0),
+        atDestination: Number(summary.atDestination ?? 0),
+        exceptions: Number(summary.exceptions ?? 0),
+        complete: Number(summary.complete ?? 0),
+        total: Number(summary.total ?? 0),
+      },
+    }
+  }, signal)
 }
 
 export async function getLiveBooking(reference: string): Promise<LiveBooking | null> {
@@ -297,29 +422,167 @@ export async function createLiveBooking(input: CreateLiveBookingInput) {
     Custom_Fields: input.provisional ? [{ label: "Workflow", value: "Provisional booking" }] : [],
   })
   if (error) throw error
+  invalidateRegisterPages("bookings:")
+  invalidateRegisterPages("dashboard:")
 }
 
-export async function listLiveRoadJobs(): Promise<DomesticRoadJob[]> {
-  const { data, error } = await requireClient().from("App_Live_Bookings").select("*").eq("Mode", "ROAD").order("Updated_At", { ascending: false })
-  if (error) throw error
-  return (data ?? []).map((row) => ({
+export type RoadControlCounts = Record<RoadJobStageId, number>
+
+export type RoadControlPage = {
+  rows: DomesticRoadJob[]
+  counts: RoadControlCounts
+  total: number
+  filteredTotal: number
+  limit: number
+  offset: number
+  favouriteBookingIds: string[]
+}
+
+export type RoadControlInput = {
+  scope: "All Jobs" | "My Jobs" | "Starred Jobs"
+  operatorCode?: string
+  stage?: RoadJobStageId
+  limit?: number
+  offset?: number
+}
+
+function roadStage(progress: unknown): RoadJobStageId {
+  const value = Number(progress ?? 0)
+  return value < 30 ? "intake" : value < 50 ? "ready" : value < 60 ? "carrier" : value < 90 ? "live" : "close"
+}
+
+function toDomesticRoadJob(row: Record<string, unknown>): DomesticRoadJob {
+  return {
     id: `RD-${String(row.Booking_Reference).replace(/\D/g, "").slice(-5)}`,
-    bookingId: row.Booking_Reference,
-    owner: row.Owner_Code,
+    bookingId: String(row.Booking_Reference ?? ""),
+    owner: String(row.Owner_Code ?? ""),
     office: "Development",
-    stage: (Number(row.Progress) < 30 ? "intake" : Number(row.Progress) < 50 ? "ready" : Number(row.Progress) < 60 ? "carrier" : Number(row.Progress) < 90 ? "live" : "close") as RoadJobStageId,
-    customer: row.Customer_Name,
-    reference: row.Customer_Reference,
-    collection: row.Origin,
-    delivery: row.Destination,
-    timing: row.Eta_Display,
-    service: row.Shipment_Type,
-    carrier: row.Carrier,
-    status: row.Status,
+    stage: (row.road_stage as RoadJobStageId | undefined) ?? roadStage(row.Progress),
+    customer: String(row.Customer_Name ?? ""),
+    reference: String(row.Customer_Reference ?? ""),
+    collection: String(row.Origin ?? ""),
+    delivery: String(row.Destination ?? ""),
+    timing: String(row.Eta_Display ?? ""),
+    service: String(row.Shipment_Type ?? ""),
+    carrier: String(row.Carrier ?? ""),
+    status: String(row.Status ?? ""),
     tone: tone(row.Tone),
     margin: "",
     blocker: row.Status === "Exception" ? "Operator review required" : undefined,
-  }))
+  }
+}
+
+function missingRoadControlReadModel(error: { code?: string; message?: string } | null) {
+  if (!error) return false
+  if (error.code === "42883" || error.code === "PGRST202") return true
+  const message = (error.message ?? "").toLowerCase()
+  return message.includes("multideck_road_control_page") && (message.includes("does not exist") || message.includes("schema cache"))
+}
+
+function emptyRoadCounts(): RoadControlCounts {
+  return { intake: 0, ready: 0, carrier: 0, live: 0, close: 0 }
+}
+
+const roadControlCompatibilityFilterQuery = createEmptyFilterQuery()
+const roadControlCompatibilityLimit = 50
+
+async function legacyRoadControlPage(input: Required<Pick<RoadControlInput, "scope" | "limit" | "offset">> & RoadControlInput, signal: AbortSignal): Promise<RoadControlPage> {
+  const page = await listLiveBookingsPage({
+    scope: input.scope === "My Jobs" ? "My Jobs" : "All Jobs",
+    operatorCode: input.operatorCode,
+    mode: "ROAD",
+    filterQuery: roadControlCompatibilityFilterQuery,
+    sort: { id: "ownerActivity", direction: "desc" },
+    limit: roadControlCompatibilityLimit,
+    offset: 0,
+  }, signal)
+
+  if (page.total > page.rows.length) {
+    throw new Error("Road Control needs its bounded read-model update before this workspace can safely load more than 50 road bookings.")
+  }
+
+  const scoped = page.rows.filter((row) => {
+    if (input.scope === "My Jobs") return row.owner === (input.operatorCode?.trim() ?? "")
+    if (input.scope === "Starred Jobs") return row.isFavourite
+    return true
+  })
+  const counts = emptyRoadCounts()
+  for (const row of scoped) counts[roadStage(row.progress)] += 1
+  const selected = input.stage
+    ? scoped.filter((row) => roadStage(row.progress) === input.stage).slice(input.offset, input.offset + input.limit)
+    : Object.keys(counts).flatMap((stage) => scoped.filter((row) => roadStage(row.progress) === stage).slice(0, input.limit))
+
+  return {
+    rows: selected.map((row) => toDomesticRoadJob({
+      Booking_Reference: row.id,
+      Owner_Code: row.owner,
+      road_stage: roadStage(row.progress),
+      Customer_Name: row.customer,
+      Customer_Reference: row.customerRef,
+      Origin: row.origin,
+      Destination: row.destination,
+      Eta_Display: row.eta,
+      Shipment_Type: row.shipmentType,
+      Carrier: row.carrier,
+      Status: row.status,
+      Tone: row.tone,
+    })),
+    counts,
+    total: scoped.length,
+    filteredTotal: input.stage ? counts[input.stage] : scoped.length,
+    limit: input.limit,
+    offset: input.stage ? input.offset : 0,
+    favouriteBookingIds: selected.filter((row) => row.isFavourite).map((row) => row.id),
+  }
+}
+
+export async function listRoadControlPage(input: RoadControlInput, signal?: AbortSignal): Promise<RoadControlPage> {
+  const session = await getSupabaseSession()
+  if (!session?.user) throw new Error("Sign in again to view road jobs.")
+
+  const normalizedInput = {
+    ...input,
+    scope: input.scope,
+    operatorCode: input.operatorCode?.trim() || undefined,
+    limit: Math.max(1, Math.min(input.limit ?? 20, 50)),
+    offset: Math.max(0, input.offset ?? 0),
+  }
+  const resource = `road-control:page:${JSON.stringify(normalizedInput)}`
+  return readCachedRegisterPage(session.user.id, resource, async (requestSignal) => {
+    const { data, error } = await requireClient().rpc("multideck_road_control_page", {
+      p_scope: normalizedInput.scope,
+      p_operator_code: normalizedInput.operatorCode ?? null,
+      p_stage: normalizedInput.stage ?? null,
+      p_limit: normalizedInput.limit,
+      p_offset: normalizedInput.offset,
+    }).abortSignal(requestSignal)
+
+    if (error) {
+      if (!missingRoadControlReadModel(error)) throw error
+      // A narrowly gated compatibility path keeps a frontend-first rollout usable.
+      // It disappears automatically as soon as the bounded RPC reaches the tenant.
+      return legacyRoadControlPage(normalizedInput, requestSignal)
+    }
+
+    const response = (data ?? {}) as Record<string, unknown>
+    const counts = (response.counts ?? {}) as Record<string, unknown>
+    const sourceRows = Array.isArray(response.rows) ? response.rows as Record<string, unknown>[] : []
+    return {
+      rows: sourceRows.map(toDomesticRoadJob),
+      counts: {
+        intake: Number(counts.intake ?? 0),
+        ready: Number(counts.ready ?? 0),
+        carrier: Number(counts.carrier ?? 0),
+        live: Number(counts.live ?? 0),
+        close: Number(counts.close ?? 0),
+      },
+      total: Number(response.total ?? 0),
+      filteredTotal: Number(response.filteredTotal ?? 0),
+      limit: Number(response.limit ?? normalizedInput.limit),
+      offset: Number(response.offset ?? normalizedInput.offset),
+      favouriteBookingIds: sourceRows.filter((row) => Boolean(row.Is_Favourite)).map((row) => String(row.Booking_Reference ?? "")),
+    }
+  }, signal)
 }
 
 export type CreateLiveRoadJobInput = {
@@ -371,76 +634,6 @@ export async function updateLiveRoadJobStage(reference: string, stage: RoadJobSt
     .update({ Stage: stage, Status: presentation.status, Tone: presentation.tone, Updated_At: new Date().toISOString() })
     .eq("Road_Job_Reference", reference)
   if (error) throw error
-}
-
-export async function listLiveReports(): Promise<LiveReport[]> {
-  const { data, error } = await requireClient().from("RPT_ReportRuns").select("RPTReportRun_ID,RPTReportRun_StatusCode,RPTReportRun_ParametersJSON,RPTReportRun_StartedAt,RPTReportRun_FinishedAt,RPTReportRun_CreatedAt,RPT_ReportDefinitions(RPTReport_Name,RPTReport_ModuleCode,RPTReport_Description)").order("RPTReportRun_CreatedAt", { ascending: false })
-  if (error) throw error
-  return (data ?? []).map((row) => { const definition = Array.isArray(row.RPT_ReportDefinitions) ? row.RPT_ReportDefinitions[0] : row.RPT_ReportDefinitions; const status = String(row.RPTReportRun_StatusCode).replaceAll("_", " "); return ({ id: row.RPTReportRun_ID, title: definition?.RPTReport_Name ?? "Report", customer: null, type: definition?.RPTReport_ModuleCode ?? "Workspace", status, tone: status === "completed" ? "green" : status === "queued" ? "blue" : "amber", period: row.RPTReportRun_ParametersJSON?.period ?? "Current period", generatedAt: row.RPTReportRun_FinishedAt, scheduledFor: status === "queued" ? row.RPTReportRun_CreatedAt : null, summary: definition?.RPTReport_Description ?? "" }) })
-}
-
-export async function listLiveReportTemplates() {
-  const { data, error } = await requireClient().from("RPT_ReportDefinitions").select("*").eq("RPTReport_IsActive", true).order("RPTReport_CreatedAt")
-  if (error) throw error
-  return (data ?? []).map((row) => ({
-    id: String(row.RPTReport_Code).toLowerCase().replaceAll("_", "-"),
-    title: row.RPTReport_Name,
-    description: row.RPTReport_Description ?? "",
-    cadence: "On demand",
-    format: "PDF",
-    chart: "kpi" as const,
-  }))
-}
-
-export async function loadLiveCrm() {
-  const client = requireClient()
-  const [opportunities, activities, campaigns, contacts] = await Promise.all([
-    client.from("CRM_Opportunities").select("*").order("Updated_At", { ascending: false }),
-    client.from("CRM_Activities").select("*").order("Occurred_At", { ascending: false }),
-    client.from("CRM_Campaigns").select("*").order("Sent_At", { ascending: false, nullsFirst: true }),
-    client.from("CRM_Contacts").select("*").order("Last_Contact_At", { ascending: false, nullsFirst: true }),
-  ])
-  if (opportunities.error) throw opportunities.error
-  if (activities.error) throw activities.error
-  if (campaigns.error) throw campaigns.error
-  if (contacts.error) throw contacts.error
-  return {
-    opportunities: (opportunities.data ?? []).map((row): LiveCrmOpportunity => ({ id: row.Opportunity_Reference, account: row.Account_Name, contact: row.Contact_Name, stage: row.Stage, value: Number(row.Value_Amount), currency: row.Currency, probability: Number(row.Probability), owner: row.Owner_Name, nextAction: row.Next_Action, dueAt: row.Due_At, source: row.Source, tone: tone(row.Status_Tone) })),
-    activities: (activities.data ?? []).map((row): LiveCrmActivity => ({ id: row.Activity_Reference, opportunityId: row.Opportunity_Reference, account: row.Account_Name, type: row.Activity_Type, subject: row.Subject, summary: row.Summary, owner: row.Owner_Name, occurredAt: row.Occurred_At, tone: tone(row.Tone) })),
-    campaigns: (campaigns.data ?? []).map((row): LiveCrmCampaign => ({ id: row.Campaign_Reference, name: row.Name, status: row.Status, audience: Number(row.Audience_Count), delivered: Number(row.Delivered_Count), opened: Number(row.Opened_Count), clicked: Number(row.Clicked_Count), sentAt: row.Sent_At, tone: tone(row.Tone) })),
-    contacts: (contacts.data ?? []).map((row): LiveCrmContact => ({ id: row.Contact_Reference, account: row.Account_Name, name: row.Contact_Name, jobTitle: row.Job_Title, email: row.Email, phone: row.Phone, owner: row.Owner_Name, status: row.Status, tone: tone(row.Tone), lastContactAt: row.Last_Contact_At })),
-  }
-}
-
-export async function listLivePaperTrayItems(): Promise<LivePaperTrayItem[]> {
-  const client = requireClient()
-  const { data, error } = await client.from("DOC_StoredObjects").select("*").is("DOCStoredObject_DeletedAt", null).order("DOCStoredObject_CreatedAt", { ascending: false })
-  if (error) throw error
-  return Promise.all((data ?? []).map(async (row): Promise<LivePaperTrayItem> => {
-    const signedUrl = await client.storage.from(row.DOCStoredObject_Container).createSignedUrl(row.DOCStoredObject_BlobName, 60 * 60)
-    return {
-      id: row.DOCStoredObject_ID,
-      fileName: row.DOCStoredObject_OriginalFileName,
-      documentType: row.DOCStoredObject_AggregateType ?? "Document",
-      customer: null,
-      bookingReference: null,
-      status: row.DOCStoredObject_StatusCode ?? "active",
-      tone: row.DOCStoredObject_StatusCode === "quarantined" ? "amber" : "teal",
-      receivedAt: row.DOCStoredObject_CreatedAt,
-      confidence: null,
-      pageCount: 1,
-      reviewNote: null,
-      mimeType: row.DOCStoredObject_MimeType,
-      fileSizeBytes: Number(row.DOCStoredObject_FileSizeBytes),
-      url: signedUrl.error ? null : signedUrl.data.signedUrl,
-    }
-  }))
-}
-
-export async function listLiveDexterContext(): Promise<LiveDexterContext[]> {
-  const { data, error } = await requireClient().from("AI_Dexter_Context_Items").select("*").order("Updated_At", { ascending: false })
-  if (error) throw error
-  return (data ?? []).map((row) => ({ id: row.Context_Reference, type: row.Context_Type, title: row.Title, summary: row.Summary, relatedReference: row.Related_Reference, status: row.Status, tone: tone(row.Tone), updatedAt: row.Updated_At }))
 }
 
 export async function listLiveNotifications(): Promise<LiveNotification[]> {

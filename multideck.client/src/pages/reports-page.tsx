@@ -326,19 +326,21 @@ function ReportsHistory() {
           {historyState === "loading" ? <ReportHistoryLoading /> : <ReportHistoryError />}
         </div>
       ) : (
-        <DataTable
-          ariaLabel="Report history"
-          columnsButtonLabel="Manage report columns"
-          toolbarLeading={<ReportingPageHeader title="Reports" />}
-          contentBeforeTable={reportFeedback}
-          columns={columns}
-          rows={rows}
-          getRowKey={(row) => row.id}
-          storageKey="report-history-ui"
-          rowClassName="h-[72px]"
-          minimumWidth={1045}
-          emptyState={<ReportHistoryEmpty />}
-        />
+        <div className="grid gap-3">
+          <ReportingPageHeader title="Reports" />
+          <DataTable
+            ariaLabel="Report history"
+            columnsButtonLabel="Manage report columns"
+            contentBeforeTable={reportFeedback}
+            columns={columns}
+            rows={rows}
+            getRowKey={(row) => row.id}
+            storageKey="report-history-ui"
+            rowClassName="h-[72px]"
+            minimumWidth={1045}
+            emptyState={<ReportHistoryEmpty />}
+          />
+        </div>
       )}
     </div>
   )
@@ -575,7 +577,10 @@ function ScheduledReports() {
           {scheduleState === "loading" ? <ScheduledReportsLoading /> : <ScheduledReportsError />}
         </div>
       ) : (
-        <DataTable ariaLabel="Scheduled reports" columnsButtonLabel="Manage scheduled report columns" toolbarLeading={scheduleHeader} contentBeforeTable={scheduleFeedback} columns={columns} rows={scheduleState === "empty" ? [] : scheduledReports} getRowKey={(row) => row.id} storageKey="scheduled-report-history-ui" rowClassName="h-[72px]" minimumWidth={1110} emptyState={<ScheduledReportsEmpty onCreate={() => openWizard()} />} />
+        <div className="grid gap-3">
+          {scheduleHeader}
+          <DataTable ariaLabel="Scheduled reports" columnsButtonLabel="Manage scheduled report columns" contentBeforeTable={scheduleFeedback} columns={columns} rows={scheduleState === "empty" ? [] : scheduledReports} getRowKey={(row) => row.id} storageKey="scheduled-report-history-ui" rowClassName="h-[72px]" minimumWidth={1110} emptyState={<ScheduledReportsEmpty onCreate={() => openWizard()} />} />
+        </div>
       )}
 
       <WizardDialog

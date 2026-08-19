@@ -96,22 +96,23 @@ Deno.serve(async (request) => {
       return json({ code: "worker_unauthorized" }, 401)
     }
 
-    const { data: connectionRows, error: connectionsError } = await admin
-      .from("Comm_ProviderConnections")
-      .select("CommConn_UserID")
-      .eq("CommConn_StatusCode", "active")
-      .eq("CommConn_InboundEnabled", true)
-      .eq("CommConn_IsDeleted", false)
-    if (connectionsError) throw connectionsError
-
+    const workerLeaseToken = crypto.randomUUID()
+    const ownerLimit = mode === "backfill" ? 2 : 5
+    const { data: ownerRows, error: ownersError } = await admin.rpc("comm_claim_email_watch_owners", {
+      p_mode: mode,
+      p_lease_token: workerLeaseToken,
+      p_limit: ownerLimit,
+    })
+    if (ownersError) throw ownersError
     const owners = new Set<string>()
-    for (const row of connectionRows ?? []) {
-      const userId = cleanString(row.CommConn_UserID, 80)
+    for (const row of ownerRows ?? []) {
+      const userId = cleanString(row.owner_user_id, 80)
       if (userId) owners.add(userId)
     }
 
     const results: Array<Record<string, unknown>> = []
     for (const ownerUserId of owners) {
+      try {
       const { data: profile, error: profileError } = await admin
         .from("cmp_Users")
         .select("User_ID,Auth_User_ID,Company_ID,User_Email,User_Firstname,User_Lastname")
@@ -244,6 +245,14 @@ Deno.serve(async (request) => {
         failedMailboxes: failures.length,
         mailboxes: mailboxResults,
       })
+      } finally {
+        const { error: releaseError } = await admin.rpc("comm_release_email_watch_owner", {
+          p_mode: mode,
+          p_owner_user_id: ownerUserId,
+          p_lease_token: workerLeaseToken,
+        })
+        if (releaseError) console.error("email-watch-worker owner lease release failed", ownerUserId)
+      }
     }
 
     return json({ ok: true, mode, owners: results.length, results })

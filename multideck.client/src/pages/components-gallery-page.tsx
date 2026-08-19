@@ -87,6 +87,7 @@ import { ThreadSummary } from "@/components/multideck/thread-summary"
 import type { InboxThreadListItem, Mailbox, MailProvider, ThreadSummaryState } from "@/lib/inbox-api"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, TablePillKindContext, toneToVar } from "@/components/multideck/status-pill"
+import { ScreeningListFreshness, ScreeningMatchRow, ScreeningOutcomePill } from "@/components/multideck/screening-components"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
 import { AuthIdentityManager, AuthProviderSelector } from "@/components/multideck/auth-provider-selector"
 import { DashboardPriorityQueue } from "@/components/multideck/dashboard-priority-queue"
@@ -191,12 +192,10 @@ import { UnifiedQuoteChargesWorkspace, type UnifiedQuoteChargeRow } from "@/comp
 import { quoteMatchesSearch, quoteSearchFieldOptions, type QuoteSearchQuery } from "@/lib/quote-filters"
 import { matchesFilterQuery, type FilterFieldOption, type FilterQuery } from "@/lib/advanced-filters"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
-import { DocumentViewer, PaperTrayStack } from "@/components/multideck/paper-tray"
 import { DocumentEvidenceViewer } from "@/components/multideck/document-evidence-viewer"
 import { PdfDocumentViewerDialog } from "@/components/multideck/pdf-document-viewer-dialog"
 import { DocumentExtractionProgress } from "@/components/multideck/document-extraction-progress"
 import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/components/multideck/document-workspace"
-import { createInitialPaperTrays } from "@/data/paper-tray-data"
 import { useLanguage } from "@/i18n/language-provider"
 
 type GalleryIconKey = keyof typeof galleryIcons
@@ -241,7 +240,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row"],
   },
   {
     label: "CRM",
@@ -288,8 +287,6 @@ const previewPerformanceTrends: Record<string, DashboardTrendPoint[]> = Object.f
     (kpi.series ?? []).map((value, index) => ({ period: `W${index + 1}`, value })),
   ]),
 )
-
-const previewPaperTrays = createInitialPaperTrays()
 
 const previewBookingDateFields = new Set(["date", "departure", "arrival"])
 
@@ -433,6 +430,7 @@ const previewDriveFiles: DriveFile[] = [
 const previewCrmLeads: ApiLead[] = [
   {
     id: "lead-northstar",
+    editVersion: 1,
     companyName: "Northstar Components",
     initials: "NC",
     primaryContactName: "Amelia Hart",
@@ -466,6 +464,7 @@ const previewCrmLeads: ApiLead[] = [
   },
   {
     id: "lead-atlas",
+    editVersion: 1,
     companyName: "Atlas Retail Supply",
     initials: "AR",
     primaryContactName: "Ravi Shah",
@@ -1243,12 +1242,9 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewCrmContactEmail, setPreviewCrmContactEmail] = useState(crmContacts[0].email)
   const [previewContactCreateOpen, setPreviewContactCreateOpen] = useState(false)
   const [previewDriveRenamingId, setPreviewDriveRenamingId] = useState<string | null>(null)
-  const [previewPaperDocumentId, setPreviewPaperDocumentId] = useState<string | null>(null)
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
   const previewNow = useLiveNow()
-  const previewPaperDocument = previewPaperTrays.flatMap((tray) => tray.documents).find((document) => document.id === previewPaperDocumentId) ?? null
-  const previewPaperDocumentTrayId = previewPaperTrays.find((tray) => tray.documents.some((document) => document.id === previewPaperDocumentId))?.id ?? null
   const countPreviewBookingMatches = useCallback((query: FilterQuery) => (
     bookings.filter((booking) => matchesFilterQuery(booking, query, previewBookingFilterValue)).length
   ), [])
@@ -1380,6 +1376,30 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="grid w-full max-w-[640px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Workflow statuses</p><TablePillKindContext.Provider value="status"><div className="flex flex-wrap gap-2"><StatusPill tone="purple">New</StatusPill><StatusPill tone="orange">Contacted</StatusPill><StatusPill tone="blue">Qualified</StatusPill><StatusPill tone="amber">Nurturing</StatusPill><StatusPill tone="green">Converted</StatusPill><StatusPill tone="red">Disqualified</StatusPill></div></TablePillKindContext.Provider></div>
           <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Descriptive attributes</p><TablePillKindContext.Provider value="attribute"><div className="flex flex-wrap gap-2"><StatusPill tone="teal">Ocean</StatusPill><StatusPill tone="blue">Customer</StatusPill><StatusPill tone="amber">Express</StatusPill><StatusPill tone="neutral">Standard</StatusPill></div></TablePillKindContext.Provider></div>
+        </div>
+      ) : null}
+
+      {id === "screening-outcome-pill" ? (
+        <div className="flex w-full max-w-[560px] flex-wrap items-center justify-center gap-2 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <ScreeningOutcomePill outcome="clear" />
+          <ScreeningOutcomePill outcome="possible_match" />
+          <ScreeningOutcomePill outcome="match" stale />
+        </div>
+      ) : null}
+
+      {id === "screening-list-freshness" ? (
+        <div className="w-full max-w-[640px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <ScreeningListFreshness
+            list={{ loaded: true, sourceName: "UK OFSI consolidated list", publisher: "UK Office of Financial Sanctions Implementation", entryCount: 18420, downloadedAt: new Date().toISOString(), stale: false }}
+            action={<Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-md)]">Refresh list</Button>}
+          />
+        </div>
+      ) : null}
+
+      {id === "screening-match-row" ? (
+        <div className="w-full max-w-[640px] overflow-hidden rounded-[var(--md-radius-xl)] bg-white/60 shadow-[var(--md-shadow-line)]">
+          <ScreeningMatchRow match={{ groupId: "G-88", listedName: "ALFA SHIPPING LTD", matchKind: "exact", score: 1, regime: "Russia", groupType: "Entity", listedOn: "2022-03-01", ukRef: "RUS1234", country: "IR" }} />
+          <ScreeningMatchRow match={{ groupId: "G-88", listedName: "ALPHA SHIPPING", matchKind: "similar", score: 0.86, regime: "Russia", groupType: "Entity", listedOn: "2022-03-01", ukRef: "RUS1234", country: "IR" }} />
         </div>
       ) : null}
 
@@ -1749,34 +1769,6 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "theme-toggle" ? (
         <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
           <ThemeToggle className="bg-[var(--md-glass)]" />
-        </div>
-      ) : null}
-
-      {id === "paper-tray-stack" ? (
-        <div className="w-full max-w-[920px] overflow-hidden py-2">
-          <PaperTrayStack
-            trays={previewPaperTrays.slice(0, 2)}
-            selectedDocumentId={previewPaperDocumentId}
-            mobileTrayId={previewPaperTrays[0].id}
-            onSelectDocument={(document) => setPreviewPaperDocumentId(document.id)}
-            onFilesAdded={(_, files) => toast.success(`${files.length} file${files.length === 1 ? "" : "s"} ready to add`)}
-            onMoveDocument={() => toast.success("Document moved in preview")}
-          />
-        </div>
-      ) : null}
-
-      {id === "document-viewer" ? (
-        <div className="grid min-h-[320px] w-full max-w-[520px] place-items-center rounded-[var(--md-radius-xl)] bg-white/55 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
-          <Button onClick={() => setPreviewPaperDocumentId(previewPaperTrays[0].documents[0].id)}>Open document viewer</Button>
-          <DocumentViewer
-            item={previewPaperDocument}
-            trays={previewPaperTrays}
-            currentTrayId={previewPaperDocumentTrayId}
-            onClose={() => setPreviewPaperDocumentId(null)}
-            onMove={(trayId) => toast.success(`Would move to ${previewPaperTrays.find((tray) => tray.id === trayId)?.name ?? "tray"}`)}
-            onRemove={() => setPreviewPaperDocumentId(null)}
-            onDownload={() => toast.success("Download preview started")}
-          />
         </div>
       ) : null}
 
@@ -2289,9 +2281,13 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="w-full max-w-[980px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
           <PurchaseOrderLineEditor
             lines={previewPurchaseOrderLines}
-            reference={previewPurchaseOrderReference}
+            items={previewPurchaseOrderReference.items}
             facilityId="gallery-facility"
             customerOrgId="gallery-customer"
+            itemLoading={false}
+            itemsHaveMore={false}
+            onItemSearch={() => undefined}
+            onItemSelected={() => undefined}
             onChange={setPreviewPurchaseOrderLines}
           />
         </div>

@@ -31,9 +31,10 @@ test("the client uses the authenticated Supabase CRM contracts", () => {
   const dealApi = read(crmClientFiles[1])
   const pipelineApi = read(crmClientFiles[2])
 
-  assert.match(leadApi, /multideck_crm_list_leads/)
-  assert.match(leadApi, /multideck_crm_get_lead/)
-  assert.match(dealApi, /multideck_crm_list_deals/)
+  assert.match(leadApi, /multideck_crm_lead_register_page/)
+  assert.match(leadApi, /multideck_crm_get_lead_essential/)
+  assert.match(dealApi, /multideck_crm_deal_register_page/)
+  assert.match(dealApi, /multideck_crm_get_deal_essential/)
   assert.match(dealApi, /multideck_crm_move_deal_stage/)
   assert.match(dealApi, /multideck_crm_convert_lead/)
   assert.match(pipelineApi, /multideck_crm_pipeline_settings/)

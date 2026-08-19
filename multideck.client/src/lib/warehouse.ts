@@ -36,6 +36,8 @@ export type WarehouseWorkspaceData = {
   calendar: {
     customers: WarehouseCalendarCustomer[]
     events: WarehouseCalendarEvent[]
+    total: number
+    limit: number
   }
 }
 
@@ -153,6 +155,7 @@ export type WarehouseItemUom = {
 export type WarehouseItemReference = {
   customers: { id: string; name: string }[]
   facilities: { id: string; code: string; name: string }[]
+  customersDeferred?: boolean
 }
 
 type WarehouseItemAttributes = {
@@ -193,7 +196,7 @@ export type UpdateWarehouseItemInput = WarehouseItemAttributes & {
   isActive: boolean
 }
 
-async function requestWarehouse<T>(path: string, method: string, body?: unknown): Promise<T> {
+async function requestWarehouse<T>(path: string, method: string, body?: unknown, options: { readOnly?: boolean } = {}): Promise<T> {
   const session = await getSupabaseSession()
   if (!session?.access_token) {
     throw new WarehouseApiError("Sign in again to manage the warehouse.")
@@ -232,7 +235,7 @@ async function requestWarehouse<T>(path: string, method: string, body?: unknown)
   if (method === "GET") return readCachedWarehouseResource(scope, path, load)
 
   const result = await load()
-  invalidateWarehouseResources(scope)
+  if (!options.readOnly) invalidateWarehouseResources(scope)
   return result
 }
 
@@ -245,7 +248,7 @@ function warehouseReadScope(userId: string) {
   return `${supabaseFunctionsUrl}:${userId}`
 }
 
-function toQuery(params: Record<string, string | boolean | undefined>) {
+function toQuery(params: Record<string, string | number | boolean | undefined>) {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === "" || value === false) continue
@@ -255,10 +258,47 @@ function toQuery(params: Record<string, string | boolean | undefined>) {
   return query ? `?${query}` : ""
 }
 
-export function listWarehouseFacilities(options: { search?: string; includeInactive?: boolean } = {}) {
-  return requestWarehouse<WarehouseFacility[]>(
-    `/facilities${toQuery({ search: options.search, includeInactive: options.includeInactive })}`,
-    "GET",
+export type WarehouseRegisterSort = { id: string; direction: "asc" | "desc" }
+
+export type WarehouseRegisterPage<Row> = {
+  rows: Row[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type WarehouseFacetedRegisterPage<Row> = WarehouseRegisterPage<Row> & {
+  facets: string[]
+}
+
+async function requestWarehouseRegisterPage<Row>(path: string): Promise<WarehouseRegisterPage<Row>> {
+  const result = await requestWarehouse<unknown>(path, "GET")
+  if (!result || Array.isArray(result) || typeof result !== "object" || !Array.isArray((result as { rows?: unknown }).rows)) {
+    throw new WarehouseApiError("Warehouse paging is still being prepared. Try again shortly.")
+  }
+  return result as WarehouseRegisterPage<Row>
+}
+
+async function requestWarehouseFacetedRegisterPage<Row>(path: string): Promise<WarehouseFacetedRegisterPage<Row>> {
+  const result = await requestWarehouseRegisterPage<Row>(path)
+  if (!Array.isArray((result as Partial<WarehouseFacetedRegisterPage<Row>>).facets)) {
+    throw new WarehouseApiError("Warehouse paging is still being prepared. Try again shortly.")
+  }
+  return result as WarehouseFacetedRegisterPage<Row>
+}
+
+export async function listWarehouseFacilitiesPage(options: { search?: string; includeInactive?: boolean; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouseRegisterPage<WarehouseFacility>(
+    `/facilities${toQuery({
+      search: options.search,
+      includeInactive: options.includeInactive,
+      sort: options.sort?.id,
+      direction: options.sort?.direction,
+      limit,
+      offset,
+    })}`,
   )
 }
 
@@ -278,15 +318,37 @@ export function deleteWarehouseFacility(id: string) {
   return requestWarehouse<void>(`/facilities/${id}`, "DELETE")
 }
 
-export function listWarehouseItems(options: { facilityId?: string; search?: string; includeInactive?: boolean } = {}) {
-  return requestWarehouse<WarehouseItem[]>(
-    `/items${toQuery({ facilityId: options.facilityId, search: options.search, includeInactive: options.includeInactive })}`,
-    "GET",
+export function getWarehouseItemBySku(sku: string) {
+  return requestWarehouse<WarehouseItem>(`/items/detail${toQuery({ sku })}`, "GET")
+}
+
+export async function listWarehouseItemsPage(options: { facilityId?: string; search?: string; includeInactive?: boolean; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouseRegisterPage<WarehouseItem>(
+    `/items${toQuery({
+      facilityId: options.facilityId,
+      search: options.search,
+      includeInactive: options.includeInactive,
+      sort: options.sort?.id,
+      direction: options.sort?.direction,
+      limit,
+      offset,
+    })}`,
   )
 }
 
 export function getWarehouseItemReference() {
-  return requestWarehouse<WarehouseItemReference>("/items/reference", "GET")
+  return requestWarehouse<WarehouseItemReference>("/items/reference?scope=facilities", "GET")
+}
+
+export async function listWarehouseItemCustomersPage(options: { search?: string; limit?: number; offset?: number } = {}): Promise<WarehouseRegisterPage<{ id: string; name: string }>> {
+  const limit = Math.max(1, Math.min(options.limit ?? 25, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouse<WarehouseRegisterPage<{ id: string; name: string }>>(
+    `/items/reference/customers${toQuery({ search: options.search?.trim(), limit, offset })}`,
+    "GET",
+  )
 }
 
 export function createWarehouseItem(input: CreateWarehouseItemInput) {
@@ -425,10 +487,18 @@ export type WarehouseLocationInput = {
   isActive?: boolean
 }
 
-export function listWarehouseLocations(facilityId: string, options: { search?: string; includeInactive?: boolean } = {}) {
-  return requestWarehouse<WarehouseLocation[]>(
-    `/facilities/${facilityId}/locations${toQuery({ search: options.search, includeInactive: options.includeInactive })}`,
-    "GET",
+export async function listWarehouseLocationsPage(facilityId: string, options: { search?: string; includeInactive?: boolean; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouseRegisterPage<WarehouseLocation>(
+    `/facilities/${facilityId}/locations${toQuery({
+      search: options.search,
+      includeInactive: options.includeInactive,
+      sort: options.sort?.id,
+      direction: options.sort?.direction,
+      limit,
+      offset,
+    })}`,
   )
 }
 
@@ -485,6 +555,34 @@ export type WarehouseInventoryBalance = {
   firstReceiptAt: string | null
   lastMovementAt: string | null
   updatedAt: string
+}
+
+export type WarehouseOrderAvailability = {
+  id: string
+  itemId: string
+  locationId: string | null
+  locationCode: string | null
+  lotId: string | null
+  lotNumber: string | null
+  batchNumber: string | null
+  customsStatusCode: string
+  uomCode: string
+  availableQuantity: number
+}
+
+export type WarehouseDraftAvailabilityQuery = {
+  key: string
+  itemId: string
+  locationId: string | null
+  lotNumber: string | null
+  customsStatusCode: string
+  uomCode: string
+}
+
+export type WarehouseDraftAvailabilityResult = {
+  key: string
+  available: number
+  uomCode: string
 }
 
 export type WarehouseInventoryMovement = {
@@ -572,18 +670,28 @@ export type WarehouseOperationalOrder = {
 type WarehouseDashboardSnapshot = {
   orders: WarehouseOperationalOrder[]
   metrics: {
-    onHandSkus: number
-    availableSkus: number
-    heldBalances: number
+    onHandSkus?: number
+    availableSkus?: number
+    heldBalances?: number
+    readyToReceive?: number
+    readyToDispatch?: number
+    stockHolds?: number
+    pastDue?: number
+    bookedToday?: number
   }
   movements: WarehouseInventoryMovement[]
+  calendarTotal?: number
+  calendarLimit?: number
 }
 
 export type WarehouseOrderReference = {
   facilities: { id: string; officeId: string | null; code: string; name: string }[]
   customers: { id: string; name: string }[]
+  customersDeferred?: boolean
   items: { id: string; customerOrgId: string; facilityId: string | null; sku: string; description: string; uomCode: string; requiresLot: boolean; requiresExpiry: boolean }[]
-  locations: { id: string; facilityId: string; code: string; zoneName: string | null }[]
+  itemsDeferred?: boolean
+  locations: { id: string; facilityId: string; code: string; zoneName: string | null; statusCode?: string; typeCode?: string }[]
+  locationsDeferred?: boolean
   types: { code: string; name: string; directionCode: string | null }[]
   statuses: { code: string; name: string; isOpen: boolean; isFinal: boolean }[]
   customsStatuses: { code: string; name: string; isDutySuspended: boolean }[]
@@ -679,6 +787,7 @@ export type WarehouseHandlingUnit = {
 export type WarehouseHandlingUnitReference = {
   types: { code: string; name: string; isContainer: boolean }[]
   locations: { id: string; facilityId: string; code: string; statusCode: string; typeCode: string }[]
+  locationsDeferred?: boolean
   statuses: { code: string; name: string; available: boolean }[]
 }
 
@@ -721,30 +830,40 @@ export type DispatchWarehouseOrderInput = {
   lines: { orderLineId: string; quantity: number; sourceLocationId: string | null; lotId: string | null }[]
 }
 
-export function listWarehouseInventory(options: { facilityId?: string; itemId?: string; search?: string; includeZero?: boolean } = {}) {
-  return requestWarehouse<WarehouseInventoryBalance[]>(
-    `/inventory${toQuery({ facilityId: options.facilityId, itemId: options.itemId, search: options.search, includeZero: options.includeZero })}`,
-    "GET",
+export async function listWarehouseInventoryPage(options: { facilityId?: string; itemId?: string; search?: string; includeZero?: boolean; facet?: string; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouseFacetedRegisterPage<WarehouseInventoryBalance>(
+    `/inventory${toQuery({ facilityId: options.facilityId, itemId: options.itemId, search: options.search, includeZero: options.includeZero, facet: options.facet, sort: options.sort?.id, direction: options.sort?.direction, limit, offset })}`,
   )
 }
 
-export function listWarehouseInventoryMovements(options: { facilityId?: string; itemId?: string; search?: string; take?: number } = {}) {
-  return requestWarehouse<WarehouseInventoryMovement[]>(
-    `/inventory/movements${toQuery({ facilityId: options.facilityId, itemId: options.itemId, search: options.search, take: options.take === undefined ? undefined : String(options.take) })}`,
-    "GET",
+export async function listWarehouseInventoryMovementsPage(options: { facilityId?: string; itemId?: string; search?: string; facet?: string; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouseFacetedRegisterPage<WarehouseInventoryMovement>(
+    `/inventory/movements${toQuery({ facilityId: options.facilityId, itemId: options.itemId, search: options.search, facet: options.facet, sort: options.sort?.id, direction: options.sort?.direction, limit, offset, take: Math.min(offset + limit, 250) })}`,
   )
 }
 
-export function listWarehouseHandlingUnits(options: { facilityId?: string; search?: string; includeConsumed?: boolean } = {}) {
-  return requestWarehouse<WarehouseHandlingUnit[]>(`/handling-units${toQuery(options)}`, "GET")
+export async function listWarehouseHandlingUnitsPage(options: { facilityId?: string; customerOrgId?: string; search?: string; includeConsumed?: boolean; facet?: string; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouseFacetedRegisterPage<WarehouseHandlingUnit>(
+    `/handling-units${toQuery({ facilityId: options.facilityId, customerOrgId: options.customerOrgId, search: options.search, includeConsumed: options.includeConsumed, facet: options.facet, sort: options.sort?.id, direction: options.sort?.direction, limit, offset })}`,
+  )
 }
 
 export function getWarehouseHandlingUnitReference(facilityId?: string) {
   return requestWarehouse<WarehouseHandlingUnitReference>(`/handling-units/reference${toQuery({ facilityId })}`, "GET")
 }
 
-export function listWarehouseInventoryExceptions(options: { facilityId?: string; search?: string; openOnly?: boolean; statusCode?: string } = {}) {
-  return requestWarehouse<WarehouseInventoryException[]>(`/inventory/exceptions${toQuery(options)}`, "GET")
+export async function listWarehouseInventoryExceptionsPage(options: { facilityId?: string; search?: string; openOnly?: boolean; statusCode?: string; facet?: string; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouseFacetedRegisterPage<WarehouseInventoryException>(
+    `/inventory/exceptions${toQuery({ facilityId: options.facilityId, search: options.search, openOnly: options.openOnly, statusCode: options.statusCode, facet: options.facet, sort: options.sort?.id, direction: options.sort?.direction, limit, offset })}`,
+  )
 }
 
 function inventoryAction<T extends Record<string, unknown>>(action: string, input: T) {
@@ -783,19 +902,85 @@ export function resolveWarehouseLocationException(input: { facilityId: string; e
   return inventoryAction("resolve_location_exception", input)
 }
 
-export function listOperationalWarehouseOrders(options: { facilityId?: string; typeCode?: string; statusCode?: string; openOnly?: boolean; search?: string } = {}) {
-  return requestWarehouse<WarehouseOperationalOrder[]>(
-    `/orders${toQuery({ facilityId: options.facilityId, typeCode: options.typeCode, statusCode: options.statusCode, openOnly: options.openOnly, search: options.search })}`,
+export function getOperationalWarehouseOrderByNumber(orderNumber: string) {
+  return requestWarehouse<WarehouseOperationalOrder>(`/orders/detail${toQuery({ number: orderNumber })}`, "GET")
+}
+
+export function getOperationalWarehouseOrderAvailability(orderId: string, _facilityId: string) {
+  return requestWarehouse<WarehouseOrderAvailability[]>(`/orders/${orderId}/availability`, "GET")
+}
+
+export function checkOperationalWarehouseOrderDraftAvailability(input: { facilityId: string; customerOrgId: string; queries: WarehouseDraftAvailabilityQuery[] }) {
+  return requestWarehouse<WarehouseDraftAvailabilityResult[]>("/orders/availability-check", "POST", input, { readOnly: true })
+}
+
+export async function listOperationalWarehouseOrdersPage(options: { facilityId?: string; typeCode?: string; status?: string; openOnly?: boolean; search?: string; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouseFacetedRegisterPage<WarehouseOperationalOrder>(
+    `/orders${toQuery({ facilityId: options.facilityId, typeCode: options.typeCode, status: options.status, openOnly: options.openOnly, search: options.search, sort: options.sort?.id, direction: options.sort?.direction, limit, offset })}`,
+  )
+}
+
+function getWarehouseDashboardSnapshot(options: { mode?: "overview" | "calendar"; start?: string; end?: string } = {}) {
+  return requestWarehouse<WarehouseDashboardSnapshot>(`/dashboard${toQuery(options)}`, "GET")
+}
+
+type WarehouseDashboardSummary = {
+  readyToReceive: number
+  readyToDispatch: number
+  stockHolds: number
+}
+
+/** Three exact counts for register headers, without transferring dashboard rows. */
+export async function getWarehouseHeaderActions(locale = "en-GB"): Promise<WarehouseHeaderAction[]> {
+  const response = await requestWarehouse<WarehouseDashboardSummary | WarehouseDashboardSnapshot>("/dashboard/summary", "GET")
+  if (!("readyToReceive" in response)) throw new WarehouseApiError("Warehouse header counts are still being prepared. Try again shortly.")
+  const summary: WarehouseDashboardSummary = response
+  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 })
+  return [
+    { label: "Ready to receive", value: number.format(summary.readyToReceive), icon: ArrowDownToLine, tone: summary.readyToReceive ? "amber" : "neutral", route: warehouseMetricRoutes["Ready to receive"] },
+    { label: "Ready to dispatch", value: number.format(summary.readyToDispatch), icon: ArrowUpFromLine, tone: summary.readyToDispatch ? "blue" : "neutral", route: warehouseMetricRoutes["Ready to dispatch"] },
+    { label: "Stock holds", value: number.format(summary.stockHolds), icon: ShieldAlert, tone: summary.stockHolds ? "red" : "teal", route: warehouseMetricRoutes["Stock holds"] },
+  ]
+}
+
+export type WarehouseSelectorPage<Row> = {
+  rows: Row[]
+  limit: number
+  offset: number
+  hasMore: boolean
+}
+
+export function getWarehouseOrderReference() {
+  return requestWarehouse<WarehouseOrderReference>("/orders/reference?scope=setup", "GET")
+}
+
+export async function listWarehouseOrderCustomersPage(options: { search?: string; limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 25, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return await requestWarehouse<WarehouseSelectorPage<WarehouseOrderReference["customers"][number]>>(
+    `/orders/reference/customers${toQuery({ search: options.search, limit, offset })}`,
     "GET",
   )
 }
 
-function getWarehouseDashboardSnapshot() {
-  return requestWarehouse<WarehouseDashboardSnapshot>("/dashboard", "GET")
+export async function listWarehouseOrderItemsPage(options: { facilityId: string; customerOrgId: string; search?: string; limit?: number; offset?: number }) {
+  const limit = Math.max(1, Math.min(options.limit ?? 25, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return await requestWarehouse<WarehouseSelectorPage<WarehouseOrderReference["items"][number]>>(
+    `/orders/reference/items${toQuery({ facilityId: options.facilityId, customerOrgId: options.customerOrgId, search: options.search, limit, offset })}`,
+    "GET",
+  )
 }
 
-export function getWarehouseOrderReference() {
-  return requestWarehouse<WarehouseOrderReference>("/orders/reference", "GET")
+export async function listWarehouseOrderLocationsPage(options: { facilityId: string; search?: string; limit?: number; offset?: number }) {
+  const limit = Math.max(1, Math.min(options.limit ?? 25, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return await requestWarehouse<WarehouseSelectorPage<WarehouseOrderReference["locations"][number]>>(
+    `/orders/reference/locations${toQuery({ facilityId: options.facilityId, search: options.search, limit, offset })}`,
+    "GET",
+  )
 }
 
 export function createOperationalWarehouseOrder(input: CreateWarehouseOrderInput) {
@@ -835,8 +1020,17 @@ export type WarehouseOrderDocument = {
   createdAt: string
 }
 
-export function listWarehouseOrderDocuments(orderId: string) {
-  return requestWarehouse<WarehouseOrderDocument[]>(`/orders/${orderId}/documents`, "GET")
+export type WarehouseOrderDocumentPage = {
+  rows: WarehouseOrderDocument[]
+  limit: number
+  offset: number
+  hasMore: boolean
+}
+
+export function listWarehouseOrderDocuments(orderId: string, options: { limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouse<WarehouseOrderDocumentPage>(`/orders/${orderId}/documents${toQuery({ limit, offset })}`, "GET")
 }
 
 export async function uploadWarehouseOrderDocument(orderId: string, file: File, documentType = "customer_document") {
@@ -900,8 +1094,10 @@ export function getWarehousePortalReference() {
   return requestWarehouse<WarehousePortalReference>("/portal/reference", "GET")
 }
 
-export function listWarehousePortalUsers(customerOrgId: string) {
-  return requestWarehouse<WarehousePortalUser[]>(`/portal/customers/${customerOrgId}/users`, "GET")
+export function listWarehousePortalUsersPage(customerOrgId: string, options: { limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouseRegisterPage<WarehousePortalUser>(`/portal/customers/${customerOrgId}/users${toQuery({ limit, offset })}`)
 }
 
 export function inviteWarehousePortalUser(input: { customerOrgId: string; email: string; displayName: string | null; roleCode: string; facilityIds: string[] }) {
@@ -1017,7 +1213,7 @@ function dashboardMovement(movement: WarehouseInventoryMovement, locale: string)
   }
 }
 
-function calendarData(orders: WarehouseOperationalOrder[]): WarehouseWorkspaceData["calendar"] {
+function calendarData(orders: WarehouseOperationalOrder[], total = orders.length, limit = orders.length): WarehouseWorkspaceData["calendar"] {
   const scheduledOrders = orders.filter((order) => order.statusCode !== "cancelled" && (order.appointmentStartAt || order.requestedDate))
   const customerIds = [...new Set(scheduledOrders.map((order) => order.customerOrgId))]
   const customers = customerIds.map<WarehouseCalendarCustomer>((customerId, index) => {
@@ -1052,7 +1248,7 @@ function calendarData(orders: WarehouseOperationalOrder[]): WarehouseWorkspaceDa
     }
   })
 
-  return { customers, events }
+  return { customers, events, total, limit }
 }
 
 /** The day an order is expected, whether it was booked into a slot or only dated. */
@@ -1061,8 +1257,16 @@ function orderExpectedDate(order: WarehouseOperationalOrder) {
   return value ? parseWarehouseDate(value) : null
 }
 
-export async function getWarehouseWorkspaceData(locale = "en-GB"): Promise<WarehouseWorkspaceData> {
-  const { orders, metrics: snapshotMetrics, movements } = await getWarehouseDashboardSnapshot()
+export async function getWarehouseWorkspaceData(locale = "en-GB", options: { mode?: "overview" | "calendar"; start?: string; end?: string } = {}): Promise<WarehouseWorkspaceData> {
+  const snapshot = await getWarehouseDashboardSnapshot(options)
+  const { metrics: snapshotMetrics, movements } = snapshot
+  const orders = options.mode === "calendar" && options.start && options.end
+    ? snapshot.orders.filter((order) => {
+      const expected = orderExpectedDate(order)
+      const expectedKey = expected ? dateKey(expected) : null
+      return expectedKey !== null && expectedKey >= options.start! && expectedKey < options.end!
+    })
+    : snapshot.orders
 
   const openOrders = orders.filter((order) => !finalOrderStatuses.has(order.statusCode))
   const inboundOrders = openOrders.filter((order) => order.typeCode === "inbound")
@@ -1087,13 +1291,13 @@ export async function getWarehouseWorkspaceData(locale = "en-GB"): Promise<Wareh
   // outbound order counts under two names each, which spent two tiles restating a
   // number the operator had already read.
   const metrics: WarehouseMetric[] = [
-    { label: "Ready to receive", value: number.format(inboundOrders.length), detail: "Inbound orders with lines still to book in.", tone: inboundOrders.length ? "amber" : "neutral", icon: ArrowDownToLine },
-    { label: "Ready to dispatch", value: number.format(outboundOrders.length), detail: "Outbound orders with lines still to pick and load.", tone: outboundOrders.length ? "blue" : "neutral", icon: ArrowUpFromLine },
-    { label: "Stock holds", value: number.format(snapshotMetrics.heldBalances), detail: "Stock lines held in quarantine, damage or investigation.", tone: snapshotMetrics.heldBalances ? "red" : "teal", icon: ShieldAlert },
-    { label: "Past due", value: number.format(pastDue.length), detail: "Open orders whose expected day has already passed.", tone: pastDue.length ? "red" : "green", icon: AlarmClock },
-    { label: "Booked today", value: number.format(bookedToday.length), detail: "Orders expected on the dock today.", tone: "teal", icon: Clock3 },
-    { label: "SKUs on hand", value: number.format(snapshotMetrics.onHandSkus), detail: "Distinct items with physical stock in the warehouse.", tone: "neutral", icon: Boxes },
-    { label: "Available SKUs", value: number.format(snapshotMetrics.availableSkus), detail: "Distinct items free to allocate to an order.", tone: "green", icon: PackageCheck },
+    { label: "Ready to receive", value: number.format(snapshotMetrics.readyToReceive ?? inboundOrders.length), detail: "Inbound orders with lines still to book in.", tone: (snapshotMetrics.readyToReceive ?? inboundOrders.length) ? "amber" : "neutral", icon: ArrowDownToLine },
+    { label: "Ready to dispatch", value: number.format(snapshotMetrics.readyToDispatch ?? outboundOrders.length), detail: "Outbound orders with lines still to pick and load.", tone: (snapshotMetrics.readyToDispatch ?? outboundOrders.length) ? "blue" : "neutral", icon: ArrowUpFromLine },
+    { label: "Stock holds", value: number.format(snapshotMetrics.stockHolds ?? snapshotMetrics.heldBalances ?? 0), detail: "Stock lines held in quarantine, damage or investigation.", tone: (snapshotMetrics.stockHolds ?? snapshotMetrics.heldBalances ?? 0) ? "red" : "teal", icon: ShieldAlert },
+    { label: "Past due", value: number.format(snapshotMetrics.pastDue ?? pastDue.length), detail: "Open orders whose expected day has already passed.", tone: (snapshotMetrics.pastDue ?? pastDue.length) ? "red" : "green", icon: AlarmClock },
+    { label: "Booked today", value: number.format(snapshotMetrics.bookedToday ?? bookedToday.length), detail: "Orders expected on the dock today.", tone: "teal", icon: Clock3 },
+    { label: "SKUs on hand", value: number.format(snapshotMetrics.onHandSkus ?? 0), detail: "Distinct items with physical stock in the warehouse.", tone: "neutral", icon: Boxes },
+    { label: "Available SKUs", value: number.format(snapshotMetrics.availableSkus ?? 0), detail: "Distinct items free to allocate to an order.", tone: "green", icon: PackageCheck },
   ]
 
   return {
@@ -1114,7 +1318,7 @@ export async function getWarehouseWorkspaceData(locale = "en-GB"): Promise<Wareh
         .map((order) => dashboardOrder(order, locale)),
       movements: movements.map((movement) => dashboardMovement(movement, locale)),
     },
-    calendar: calendarData(orders),
+    calendar: calendarData(orders, snapshot.calendarTotal ?? orders.length, snapshot.calendarLimit ?? orders.length),
   }
 }
 
@@ -1170,6 +1374,7 @@ export type WarehousePurchaseOrder = WarehousePurchaseOrderInput & {
   taxAmount: number
   totalAmount: number
   version: number
+  lineCount?: number
   createdAt: string
   updatedAt: string
   events: Array<{
@@ -1186,6 +1391,7 @@ export type WarehousePurchaseOrder = WarehousePurchaseOrderInput & {
 export type WarehousePurchaseOrderReference = {
   facilities: { id: string; code: string; name: string }[]
   organisations: { id: string; name: string }[]
+  organisationsDeferred?: boolean
   items: {
     id: string
     customerOrgId: string
@@ -1196,19 +1402,42 @@ export type WarehousePurchaseOrderReference = {
     quantityBasisCode: "count" | "weight" | "volume"
     allowsFractionalQuantity: boolean
   }[]
+  itemsDeferred?: boolean
   currencies: string[]
 }
 
 export function getWarehousePurchaseOrderReference() {
-  return requestWarehouse<WarehousePurchaseOrderReference>("/purchase-orders/reference", "GET")
+  return requestWarehouse<WarehousePurchaseOrderReference>("/purchase-orders/reference?scope=setup", "GET")
+}
+
+export async function listWarehousePurchaseOrderOrganisationsPage(options: { search?: string; limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 25, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return await requestWarehouse<WarehouseSelectorPage<WarehousePurchaseOrderReference["organisations"][number]>>(
+    `/purchase-orders/reference/organisations${toQuery({ search: options.search, limit, offset })}`,
+    "GET",
+  )
+}
+
+export async function listWarehousePurchaseOrderItemsPage(options: { facilityId: string; customerOrgId: string; search?: string; limit?: number; offset?: number }) {
+  const limit = Math.max(1, Math.min(options.limit ?? 25, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return await requestWarehouse<WarehouseSelectorPage<WarehousePurchaseOrderReference["items"][number]>>(
+    `/purchase-orders/reference/items${toQuery({ facilityId: options.facilityId, customerOrgId: options.customerOrgId, search: options.search, limit, offset })}`,
+    "GET",
+  )
 }
 
 export function getNextWarehousePurchaseOrderNumber(facilityId: string) {
   return requestWarehouse<{ number: string }>(`/purchase-orders/next-number${toQuery({ facilityId })}`, "GET")
 }
 
-export function listWarehousePurchaseOrders(options: { facilityId?: string; statusCode?: string; search?: string } = {}) {
-  return requestWarehouse<WarehousePurchaseOrder[]>(`/purchase-orders${toQuery(options)}`, "GET")
+export async function listWarehousePurchaseOrdersPage(options: { facilityId?: string; status?: string; openOnly?: boolean; search?: string; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouseFacetedRegisterPage<WarehousePurchaseOrder>(
+    `/purchase-orders${toQuery({ facilityId: options.facilityId, status: options.status, openOnly: options.openOnly, search: options.search, sort: options.sort?.id, direction: options.sort?.direction, limit, offset })}`,
+  )
 }
 
 export function getWarehousePurchaseOrder(id: string) {

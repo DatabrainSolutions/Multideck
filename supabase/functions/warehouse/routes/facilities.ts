@@ -4,6 +4,7 @@ import {
   BUCKET,
   HttpError,
   allowedExtensions,
+  boundedPage,
   bodyObject,
   bool,
   clean,
@@ -14,6 +15,7 @@ import {
   numberOrNull,
   one,
   oneOrNull,
+  postgrestSearchPattern,
   requireCapability,
   requireCustomerScope,
   requireInternal,
@@ -45,13 +47,8 @@ function mapFacility(row, typeNames, officeNames) {
     updatedAt: row.WMSFacility_UpdatedAt
   };
 }
-async function facilityRows(admin, actor) {
-  requireInternal(actor);
-  const ids = await companyFacilityIds(admin, actor);
-  return ids.length ? await many(admin.from("WMS_Facilities").select("*").in("WMSFacility_ID", ids).eq("WMSFacility_IsDeleted", false)) : [];
-}
 export async function handleFacilities(request, path, url, admin, actor) {
-  const rows = await facilityRows(admin, actor);
+  requireInternal(actor);
   const types = await many(admin.from("sys_WMSFacilityTypes").select("*").eq("WMSFacilityType_IsActive", true));
   const offices = await many(admin.from("cmp_Offices").select("Office_ID,Office_Name,Office_Address,Company_ID").eq("Company_ID", actor.companyId));
   const typeNames = new Map(types.map((row)=>[
@@ -62,6 +59,37 @@ export async function handleFacilities(request, path, url, admin, actor) {
       row.Office_ID,
       row.Office_Name
     ]));
+  if (request.method === "GET" && path.length === 1 && url.searchParams.has("limit")) {
+    requireInternal(actor);
+    const facilityIds = await companyFacilityIds(admin, actor);
+    const { limit, offset } = boundedPage(url);
+    if (!facilityIds.length) return { rows: [], total: 0, limit, offset };
+
+    let query = admin.from("WMS_Facilities")
+      .select("*", { count: "exact" })
+      .in("WMSFacility_ID", facilityIds)
+      .eq("WMSFacility_IsDeleted", false);
+    if (url.searchParams.get("includeInactive") !== "true") query = query.eq("WMSFacility_IsActive", true);
+    const pattern = postgrestSearchPattern(url.searchParams.get("search"));
+    if (pattern) query = query.or([
+      `WMSFacility_Code.ilike.${pattern}`,
+      `WMSFacility_Name.ilike.${pattern}`,
+      `WMSFacility_TownCity.ilike.${pattern}`,
+      `WMSFacility_CountryCode.ilike.${pattern}`,
+      `WMSFacility_UNLOCODE.ilike.${pattern}`,
+      `WMSFacility_PostZipCode.ilike.${pattern}`,
+      `WMSFacility_Address1.ilike.${pattern}`
+    ].join(","));
+    const sortColumns = { code: "WMSFacility_Code", facility: "WMSFacility_Name", location: "WMSFacility_TownCity", bonded: "WMSFacility_IsBonded", status: "WMSFacility_IsActive" };
+    const sortColumn = sortColumns[clean(url.searchParams.get("sort"), 40)] ?? "WMSFacility_Name";
+    const ascending = url.searchParams.get("direction") !== "desc";
+    const { data, error, count } = await query
+      .order(sortColumn, { ascending, nullsFirst: false })
+      .order("WMSFacility_ID", { ascending: true })
+      .range(offset, offset + limit - 1);
+    if (error) throw new HttpError(500, error.message);
+    return { rows: (data ?? []).map((row)=>mapFacility(row, typeNames, officeNames)), total: count ?? 0, limit, offset };
+  }
   if (request.method === "GET" && path[1] === "reference") {
     const customs = await many(admin.from("sys_WMSCustomsStatuses").select("*").eq("WMSCustomsStatus_IsActive", true));
     return {
@@ -83,26 +111,24 @@ export async function handleFacilities(request, path, url, admin, actor) {
     };
   }
   if (request.method === "GET" && path.length === 1) {
-    const term = clean(url.searchParams.get("search"))?.toLowerCase();
-    return rows.filter((row)=>url.searchParams.get("includeInactive") === "true" || row.WMSFacility_IsActive).filter((row)=>!term || [
-        row.WMSFacility_Code,
-        row.WMSFacility_Name,
-        row.WMSFacility_TownCity,
-        row.WMSFacility_CountryCode,
-        row.WMSFacility_UNLOCODE,
-        row.WMSFacility_PostZipCode,
-        row.WMSFacility_Address1
-      ].some((value)=>String(value ?? "").toLowerCase().includes(term))).sort((a, b)=>a.WMSFacility_Name.localeCompare(b.WMSFacility_Name)).map((row)=>mapFacility(row, typeNames, officeNames));
+    throw new HttpError(400, "Warehouse facility lists require bounded paging.");
   }
   const facilityId = path[1] ? uuid(path[1], "facility") : null;
+  const facilityIds = facilityId ? await companyFacilityIds(admin, actor) : [];
+  const existing = facilityId && facilityIds.includes(facilityId) ? await oneOrNull(admin.from("WMS_Facilities")
+    .select("*")
+    .eq("WMSFacility_ID", facilityId)
+    .eq("WMSFacility_IsDeleted", false)
+    .limit(1)
+    .maybeSingle()) : null;
   if (request.method === "GET" && facilityId) {
-    const row = rows.find((value)=>value.WMSFacility_ID === facilityId);
-    if (!row) {
+    if (!existing) {
       throw new HttpError(404, "This facility does not exist in your workspace.");
     }
-    return mapFacility(row, typeNames, officeNames);
+    return mapFacility(existing, typeNames, officeNames);
   }
   if (request.method === "DELETE" && facilityId) {
+    if (!existing) throw new HttpError(404, "This facility does not exist in your workspace.");
     const hasItems = await oneOrNull(admin.from("WMS_Items").select("WMSItem_ID").eq("WMSItem_DefaultFacilityID", facilityId).eq("WMSItem_IsDeleted", false).limit(1).maybeSingle());
     const hasStock = await oneOrNull(admin.from("WMS_InventoryBalances").select("WMSBalance_ID").eq("WMSBalance_FacilityID", facilityId).neq("WMSBalance_OnHandQuantity", 0).limit(1).maybeSingle());
     const openOrder = await oneOrNull(admin.from("WMS_Orders").select("WMSOrder_ID").eq("WMSOrder_FacilityID", facilityId).eq("WMSOrder_IsDeleted", false).not("WMSOrder_StatusCode", "in", '("complete","cancelled")').limit(1).maybeSingle());
@@ -120,6 +146,7 @@ export async function handleFacilities(request, path, url, admin, actor) {
   if (request.method !== "POST" && request.method !== "PUT") {
     throw new HttpError(405, "Method not allowed.");
   }
+  if (request.method === "PUT" && !existing) throw new HttpError(404, "This facility does not exist in your workspace.");
   const input = bodyObject(await request.json());
   const code = required(input.code, "Enter a facility code.", "code", 40);
   const name = required(input.name, "Enter a facility name.", "name", 180);
@@ -155,6 +182,6 @@ export async function handleFacilities(request, path, url, admin, actor) {
     WMSFacility_ID: id(),
     ...payload,
     WMSFacility_CreatedBy: actor.userId
-  }).select().single(), "Could not create the facility.") : await one(admin.from("WMS_Facilities").update(payload).eq("WMSFacility_ID", facilityId).in("WMSFacility_ID", rows.map((row)=>row.WMSFacility_ID)).select().single(), "This facility does not exist in your workspace.");
+  }).select().single(), "Could not create the facility.") : await one(admin.from("WMS_Facilities").update(payload).eq("WMSFacility_ID", facilityId).select().single(), "This facility does not exist in your workspace.");
   return mapFacility(saved, typeNames, officeNames);
 }

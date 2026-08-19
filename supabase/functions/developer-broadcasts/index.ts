@@ -5,6 +5,17 @@ import { audienceSummary, cleanText, normaliseAudience, resolveAudience, type Au
 
 type JsonObject = Record<string, unknown>
 
+const broadcastHistoryColumns = "Broadcast_ID,Broadcast_Subject,Broadcast_Body,Broadcast_AudienceMode,Broadcast_AudienceJSON,Broadcast_StatusCode,Broadcast_IdempotencyKey,Broadcast_RecipientCount,Broadcast_ExcludedCount,Broadcast_DeliveredCount,Broadcast_FailedCount,Broadcast_DeliveryMode,Broadcast_Error,Broadcast_CreatedAt,Broadcast_SentAt"
+
+function pageNumber(value: string | null, fallback: number, minimum: number, maximum: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.min(Math.max(Math.trunc(parsed), minimum), maximum) : fallback
+}
+
+function missingBroadcastUsersPage(error: unknown) {
+  return Boolean(error && typeof error === "object" && "code" in error && ((error as { code?: string }).code === "42883" || (error as { code?: string }).code === "PGRST202"))
+}
+
 function outputText(payload: JsonObject) {
   const direct = cleanText(payload.output_text, 24_000)
   if (direct) return direct
@@ -21,36 +32,56 @@ function outputText(payload: JsonObject) {
   return ""
 }
 
-async function workspaceState(admin: any, current: any) {
-  const [{ data: departments, error: departmentError }, { data: users, error: userError }] = await Promise.all([
-    admin.from("cmp_Departments").select("Department_ID,Department_Name,Department_IsActive").eq("Company_ID", current.Company_ID).order("Department_Name"),
-    admin.from("cmp_Users").select("User_ID,User_Email,User_Firstname,User_Lastname,Auth_User_ID,User_AccessStatus").eq("Company_ID", current.Company_ID).order("User_Firstname").order("User_Lastname"),
-  ])
-  if (departmentError) throw new HttpError(500, departmentError.message)
+async function listDepartments(admin: any, current: any) {
+  const { data, error } = await admin.from("cmp_Departments")
+    .select("Department_ID,Department_Name,Department_IsActive")
+    .eq("Company_ID", current.Company_ID)
+    .order("Department_Name")
+  if (error) throw new HttpError(500, error.message)
+  return (data ?? []).map((department: any) => ({ id: department.Department_ID, name: department.Department_Name, isActive: department.Department_IsActive }))
+}
+
+async function workspaceState(admin: any, current: any, selectedUserIds: string[] | null = null) {
+  const departmentsPromise = listDepartments(admin, current)
+  let usersQuery = admin.from("cmp_Users")
+    .select("User_ID,User_Email,User_Firstname,User_Lastname,Auth_User_ID,User_AccessStatus")
+    .eq("Company_ID", current.Company_ID)
+    .order("User_Firstname")
+    .order("User_Lastname")
+  const usersPromise = selectedUserIds
+    ? selectedUserIds.length ? usersQuery.in("User_ID", selectedUserIds) : Promise.resolve({ data: [], error: null })
+    : usersQuery
+  const [departmentDtos, { data: users, error: userError }] = await Promise.all([departmentsPromise, usersPromise])
   if (userError) throw new HttpError(500, userError.message)
   const userIds = (users ?? []).map((user: any) => user.User_ID)
   const { data: links, error: linkError } = userIds.length
     ? await admin.from("cmp_Users_Departments").select("User_ID,Department_ID").in("User_ID", userIds)
     : { data: [], error: null }
   if (linkError) throw new HttpError(500, linkError.message)
-  const departmentDtos = (departments ?? []).map((department: any) => ({ id: department.Department_ID, name: department.Department_Name, isActive: department.Department_IsActive }))
   const departmentMap = new Map(departmentDtos.map((department: any) => [department.id, department]))
+  const departmentsByUser = new Map<string, any[]>()
+  for (const link of links ?? []) {
+    const department = departmentMap.get(link.Department_ID)
+    if (!department) continue
+    departmentsByUser.set(link.User_ID, [...(departmentsByUser.get(link.User_ID) ?? []), department])
+  }
   const userDtos: AudienceUser[] = (users ?? []).map((user: any) => ({
     id: user.User_ID,
     email: user.User_Email ?? "",
     name: [user.User_Firstname, user.User_Lastname].filter(Boolean).join(" ") || user.User_Email || "Unnamed user",
     authUserId: user.Auth_User_ID,
     accessStatus: user.User_AccessStatus ?? "active",
-    departments: (links ?? []).filter((link: any) => link.User_ID === user.User_ID).map((link: any) => departmentMap.get(link.Department_ID)).filter(Boolean),
+    departments: departmentsByUser.get(user.User_ID) ?? [],
   }))
   return { departments: departmentDtos, users: userDtos }
 }
 
 async function previewAudience(admin: any, current: any, payload: JsonObject) {
-  const state = await workspaceState(admin, current)
   let selection
   try { selection = normaliseAudience(payload.audience) }
   catch (error) { throw new HttpError(400, error instanceof Error ? error.message : "Choose a valid broadcast audience.") }
+  if (selection.mode === "users" && selection.userIds.length > 500) throw new HttpError(400, "Choose up to 500 individual users, or use an all-users or department audience.")
+  const state = await workspaceState(admin, current, selection.mode === "users" ? selection.userIds : null)
   if (selection.mode === "departments") {
     const allowed = new Set(state.departments.filter((department: any) => department.isActive).map((department: any) => department.id))
     if (selection.departmentIds.some((id: string) => !allowed.has(id))) throw new HttpError(400, "Choose active departments in this workspace.")
@@ -70,10 +101,8 @@ async function previewAudience(admin: any, current: any, payload: JsonObject) {
   }
 }
 
-async function listHistory(admin: any, current: any) {
-  const { data, error } = await admin.from("DEV_Broadcasts").select("*").eq("Company_ID", current.Company_ID).order("Broadcast_CreatedAt", { ascending: false }).limit(50)
-  if (error) throw new HttpError(500, error.message)
-  return (data ?? []).map((row: any) => ({
+function historyItem(row: any) {
+  return {
     id: row.Broadcast_ID, subject: row.Broadcast_Subject, body: row.Broadcast_Body,
     audienceMode: row.Broadcast_AudienceMode, audience: row.Broadcast_AudienceJSON,
     status: row.Broadcast_StatusCode, idempotencyKey: row.Broadcast_IdempotencyKey,
@@ -81,7 +110,39 @@ async function listHistory(admin: any, current: any) {
     deliveredCount: row.Broadcast_DeliveredCount, failedCount: row.Broadcast_FailedCount,
     deliveryMode: row.Broadcast_DeliveryMode, error: row.Broadcast_Error,
     createdAt: row.Broadcast_CreatedAt, sentAt: row.Broadcast_SentAt,
-  }))
+  }
+}
+
+async function listHistory(admin: any, current: any, limit = 20, offset = 0) {
+  const { data, error, count } = await admin.from("DEV_Broadcasts")
+    .select(broadcastHistoryColumns, { count: "exact" })
+    .eq("Company_ID", current.Company_ID)
+    .order("Broadcast_CreatedAt", { ascending: false })
+    .order("Broadcast_ID", { ascending: false })
+    .range(offset, offset + limit - 1)
+  if (error) throw new HttpError(500, error.message)
+  const rows = (data ?? []).map(historyItem)
+  const total = count ?? rows.length
+  return { rows, total, offset, limit, hasMore: offset + rows.length < total }
+}
+
+async function listBroadcastUsers(admin: any, current: any, query: string, limit: number, offset: number) {
+  const { data, error } = await admin.rpc("multideck_developer_broadcast_users_page", {
+    p_company_id: current.Company_ID,
+    p_query: query || null,
+    p_limit: limit,
+    p_offset: offset,
+  })
+  if (!error && data && typeof data === "object") return data
+  if (!missingBroadcastUsersPage(error)) throw new HttpError(500, error?.message || "Broadcast users could not be loaded.")
+  throw new HttpError(503, "Broadcast user paging is still being prepared. Try again shortly.")
+}
+
+function clientAudiencePreview(preview: Awaited<ReturnType<typeof previewAudience>>) {
+  return {
+    ...preview,
+    recipients: preview.recipients.filter((recipient) => recipient.status === "excluded").slice(0, 50),
+  }
 }
 
 async function audit(admin: any, current: any, broadcastId: string | null, event: string, metadata: JsonObject = {}) {
@@ -142,7 +203,7 @@ async function saveDraft(admin: any, current: any, payload: JsonObject) {
     throw new HttpError(500, recipientError.message)
   }
   await audit(admin, current, draft.Broadcast_ID, suppliedId ? "draft_updated" : "draft_created", { audience: preview.audience })
-  return { draft: (await listHistory(admin, current)).find((item: any) => item.id === draft.Broadcast_ID), preview }
+  return { draft: historyItem(draft), preview: clientAudiencePreview(preview) }
 }
 
 async function draftWithAI(admin: any, current: any, payload: JsonObject) {
@@ -216,7 +277,7 @@ async function sendBroadcast(admin: any, current: any, id: string, payload: Json
   if (!locked) {
     const { data: existing } = await admin.from("DEV_Broadcasts").select("*").eq("Broadcast_ID", id).eq("Company_ID", current.Company_ID).maybeSingle()
     if (existing?.Broadcast_IdempotencyKey === key && existing.Broadcast_StatusCode === "sending") locked = existing
-    else if (existing?.Broadcast_IdempotencyKey === key && existing.Broadcast_StatusCode !== "draft") return { alreadyProcessed: true, broadcast: (await listHistory(admin, current)).find((item: any) => item.id === id) }
+    else if (existing?.Broadcast_IdempotencyKey === key && existing.Broadcast_StatusCode !== "draft") return { alreadyProcessed: true, broadcast: historyItem(existing) }
     else throw new HttpError(409, "This draft changed after review. Review it again before sending.")
   }
   if (newlyLocked) {
@@ -251,10 +312,10 @@ async function sendBroadcast(admin: any, current: any, id: string, payload: Json
     delivered += 1
   }
   const status = failed === 0 ? "sent" : delivered ? "partially_failed" : "failed"
-  const { error: finalError } = await admin.from("DEV_Broadcasts").update({ Broadcast_StatusCode: status, Broadcast_DeliveredCount: delivered, Broadcast_FailedCount: failed, Broadcast_SentAt: new Date().toISOString(), Broadcast_Error: failed ? `${failed} recipient deliveries failed.` : null, Broadcast_UpdatedAt: new Date().toISOString() }).eq("Broadcast_ID", id).eq("Broadcast_StatusCode", "sending")
+  const { data: finalBroadcast, error: finalError } = await admin.from("DEV_Broadcasts").update({ Broadcast_StatusCode: status, Broadcast_DeliveredCount: delivered, Broadcast_FailedCount: failed, Broadcast_SentAt: new Date().toISOString(), Broadcast_Error: failed ? `${failed} recipient deliveries failed.` : null, Broadcast_UpdatedAt: new Date().toISOString() }).eq("Broadcast_ID", id).eq("Broadcast_StatusCode", "sending").select(broadcastHistoryColumns).single()
   if (finalError) throw new HttpError(500, finalError.message)
   await audit(admin, current, id, "dispatch_completed", { provider: "resend", accepted: delivered, failed })
-  return { alreadyProcessed: false, broadcast: (await listHistory(admin, current)).find((item: any) => item.id === id) }
+  return { alreadyProcessed: false, broadcast: historyItem(finalBroadcast) }
 }
 
 Deno.serve(async (request) => {
@@ -265,11 +326,37 @@ Deno.serve(async (request) => {
     const parts = routeParts(request, "developer-broadcasts")
     if (request.method === "GET" && !parts.length) {
       await requirePermission(admin, current.User_ID, "Broadcasts.Read")
-      const state = await workspaceState(admin, current)
-      return json(request, { ...state, history: await listHistory(admin, current), deliveryProvider: "resend", deliveryConfigured: Boolean(Deno.env.get("RESEND_API_KEY")?.trim()), sender: { from: MULTIDECK_EMAIL_FROM, replyTo: MULTIDECK_EMAIL_REPLY_TO } })
+      const search = new URL(request.url).searchParams
+      const historyLimit = pageNumber(search.get("historyLimit"), 20, 1, 50)
+      const historyOffset = pageNumber(search.get("historyOffset"), 0, 0, 1_000_000)
+      const [departments, historyPage] = await Promise.all([
+        listDepartments(admin, current),
+        listHistory(admin, current, historyLimit, historyOffset),
+      ])
+      return json(request, {
+        departments,
+        users: [],
+        usersDeferred: true,
+        history: historyPage.rows,
+        historyTotal: historyPage.total,
+        historyOffset: historyPage.offset,
+        historyLimit: historyPage.limit,
+        historyHasMore: historyPage.hasMore,
+        deliveryProvider: "resend",
+        deliveryConfigured: Boolean(Deno.env.get("RESEND_API_KEY")?.trim()),
+        sender: { from: MULTIDECK_EMAIL_FROM, replyTo: MULTIDECK_EMAIL_REPLY_TO },
+      })
+    }
+    if (request.method === "GET" && parts[0] === "users") {
+      await requirePermission(admin, current.User_ID, "Broadcasts.Read")
+      const search = new URL(request.url).searchParams
+      const query = cleanText(search.get("query"), 200)
+      const limit = pageNumber(search.get("limit"), 25, 1, 50)
+      const offset = pageNumber(search.get("offset"), 0, 0, 1_000_000)
+      return json(request, { userPage: await listBroadcastUsers(admin, current, query, limit, offset) })
     }
     const payload = await body<JsonObject>(request)
-    if (request.method === "POST" && parts[0] === "preview") { await requirePermission(admin, current.User_ID, "Broadcasts.Read"); return json(request, await previewAudience(admin, current, payload)) }
+    if (request.method === "POST" && parts[0] === "preview") { await requirePermission(admin, current.User_ID, "Broadcasts.Read"); return json(request, clientAudiencePreview(await previewAudience(admin, current, payload))) }
     if (request.method === "POST" && parts[0] === "ai-draft") { await requirePermission(admin, current.User_ID, "Broadcasts.Manage"); return json(request, await draftWithAI(admin, current, payload)) }
     if (request.method === "POST" && parts[0] === "drafts") { await requirePermission(admin, current.User_ID, "Broadcasts.Manage"); return json(request, await saveDraft(admin, current, payload), 201) }
     if (request.method === "POST" && parts[0] === "send" && parts[1]) { await requirePermission(admin, current.User_ID, "Broadcasts.Send"); return json(request, await sendBroadcast(admin, current, parts[1], payload)) }

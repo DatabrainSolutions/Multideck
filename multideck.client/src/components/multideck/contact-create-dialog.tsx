@@ -46,7 +46,7 @@ export function ContactCreateDialog({
   onCreated: (contact: ApiCustomerContact) => void
 }) {
   const { t } = useLanguage()
-  const defaultAccountId = fixedAccountId ?? accounts[0]?.id ?? ""
+  const defaultAccountId = fixedAccountId ?? ""
   const accountIds = accounts.map((account) => account.id).join("|")
   const [draft, setDraft] = useState<ContactDraft>(() => emptyDraft(defaultAccountId))
   const [creating, setCreating] = useState(false)
@@ -82,7 +82,7 @@ export function ContactCreateDialog({
         marketingConsentReason: draft.marketingConsentReason || null,
       })
       toast.success(t("Contact created"))
-      setDraft(emptyDraft(fixedAccountId ?? draft.accountId))
+      setDraft(emptyDraft(fixedAccountId ?? ""))
       onOpenChange(false)
       onCreated(contact)
     } catch (error) {
@@ -131,6 +131,7 @@ export function ContactCreateDialog({
               {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
             </select>
           </label>
+          {!fixedAccountId && accounts.length === 0 ? <p role="status" className="text-[12px] leading-5 text-[var(--md-text)]">{t("Create an account before adding a contact. Every contact needs an account so its history and permissions stay clear.")}</p> : null}
         </div>
       ) : null}
       {section === "contact" ? (
@@ -157,9 +158,9 @@ export function ContactCreateDialog({
             </span>
           </label>
           {draft.marketingOptIn ? <ContactField label={t("Consent source or evidence")} required value={draft.marketingConsentReason} onChange={(value) => setDraft((current) => ({ ...current, marketingConsentReason: value }))} /> : null}
-          {createError ? <p role="alert" className="text-[13px] text-[var(--md-red)]">{createError}</p> : null}
         </div>
       ) : null}
+      {createError ? <p role="alert" className="text-[13px] text-[var(--md-red)]">{t(createError)}</p> : null}
     </WizardDialog>
   )
 }

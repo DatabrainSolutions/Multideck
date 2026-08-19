@@ -36,7 +36,7 @@ import {
 } from "@/lib/inbox-provider-preference"
 
 export type InboxNavigationView = "all" | "shared" | "sent" | "drafts" | "archive" | "spam" | "trash"
-export type InboxAccountLoadState = "loading" | "ready" | "error"
+export type InboxAccountLoadState = "idle" | "loading" | "ready" | "error"
 
 type InboxWorkspaceValue = {
   connections: InboxConnection[]
@@ -52,10 +52,12 @@ type InboxWorkspaceValue = {
   view: InboxNavigationView
   threadCache: Record<string, ThreadCacheEntry>
   setThreadCache: Dispatch<SetStateAction<Record<string, ThreadCacheEntry>>>
+  prepareAccounts: () => Promise<Mailbox[] | null>
   refreshAccounts: () => Promise<Mailbox[] | null>
   fetchThreadPage: (request: ThreadQuery, append?: boolean, force?: boolean) => Promise<ThreadPage>
   readThreadDetail: (threadId: string) => InboxThreadDetail | null
   fetchThreadDetail: (threadId: string, force?: boolean) => Promise<InboxThreadDetail>
+  fetchOlderThreadMessages: (threadId: string, offset: number) => Promise<InboxThreadDetail>
   prefetchThreadDetail: (threadId: string) => void
   rememberThreadDetail: (detail: InboxThreadDetail) => void
   selectProvider: (provider: MailProvider) => void
@@ -130,12 +132,20 @@ function writeSelection(provider: MailProvider | null, mailboxId: string | null,
   window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)
 }
 
-export function InboxWorkspaceProvider({ children, cacheScope }: { children: ReactNode; cacheScope: string | null }) {
+export function InboxWorkspaceProvider({
+  children,
+  cacheScope,
+  active,
+}: {
+  children: ReactNode
+  cacheScope: string | null
+  active: boolean
+}) {
   const initial = useMemo(readInitialSelection, [])
   const [connections, setConnections] = useState<InboxConnection[]>([])
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([])
   const [folders, setFolders] = useState<MailboxFolder[]>([])
-  const [accountState, setAccountState] = useState<InboxAccountLoadState>("loading")
+  const [accountState, setAccountState] = useState<InboxAccountLoadState>("idle")
   const [accountError, setAccountError] = useState<string | null>(null)
   const [defaultProvider, setDefaultProvider] = useState<MailProvider | null>(null)
   const [provider, setProvider] = useState<MailProvider | null>(initial.provider)
@@ -147,53 +157,89 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
   const threadDetailsRef = useRef(new Map<string, { detail: InboxThreadDetail; cachedAt: number }>())
   const threadPageRequestsRef = useRef(new Map<string, Promise<ThreadPage>>())
   const threadDetailRequestsRef = useRef(new Map<string, Promise<InboxThreadDetail>>())
+  const olderThreadRequestsRef = useRef(new Map<string, Promise<InboxThreadDetail>>())
+  const accountRequestRef = useRef<{ scope: string; promise: Promise<Mailbox[] | null> } | null>(null)
+  const accountStateRef = useRef<InboxAccountLoadState>(accountState)
+  const mailboxesRef = useRef(mailboxes)
+  const accountScopeRef = useRef(cacheScope)
+
+  accountStateRef.current = accountState
+  mailboxesRef.current = mailboxes
+  accountScopeRef.current = cacheScope
 
   useEffect(() => {
     threadCacheRef.current = threadCache
   }, [threadCache])
 
-  const refreshAccounts = useCallback(async () => {
-    if (!cacheScope) return null
+  const loadAccounts = useCallback((force: boolean) => {
+    const requestScope = cacheScope
+    if (!requestScope) return Promise.resolve(null)
+    const pending = accountRequestRef.current
+    if (pending?.scope === requestScope) return pending.promise
+    if (!force && accountStateRef.current === "ready") return Promise.resolve(mailboxesRef.current)
+
+    accountStateRef.current = "loading"
     setAccountState("loading")
     setAccountError(null)
-    try {
-      const [workspace, savedDefaultProvider] = await Promise.all([
-        loadInboxWorkspace(),
-        loadDefaultInboxProvider().catch((error: unknown) => {
-          console.warn("Your default inbox provider could not be loaded from your profile.", error)
-          return null
-        }),
-      ])
-      setConnections(workspace.connections)
-      setMailboxes(workspace.mailboxes)
-      setFolders(workspace.folders)
-      setDefaultProvider(savedDefaultProvider)
-      setAccountState("ready")
-      return workspace.mailboxes
-    } catch (error) {
-      setAccountError(error instanceof Error ? error.message : "Unable to load your mail connections.")
-      setAccountState("error")
-      return null
-    }
+    const request = Promise.all([
+      loadInboxWorkspace(),
+      loadDefaultInboxProvider().catch((error: unknown) => {
+        console.warn("Your default inbox provider could not be loaded from your profile.", error)
+        return null
+      }),
+    ])
+      .then(([workspace, savedDefaultProvider]) => {
+        if (accountScopeRef.current !== requestScope) return null
+        mailboxesRef.current = workspace.mailboxes
+        accountStateRef.current = "ready"
+        setConnections(workspace.connections)
+        setMailboxes(workspace.mailboxes)
+        setFolders(workspace.folders)
+        setDefaultProvider(savedDefaultProvider)
+        setAccountState("ready")
+        return workspace.mailboxes
+      })
+      .catch((error: unknown) => {
+        if (accountScopeRef.current === requestScope) {
+          accountStateRef.current = "error"
+          setAccountError(error instanceof Error ? error.message : "Unable to load your mail connections.")
+          setAccountState("error")
+        }
+        return null
+      })
+      .finally(() => {
+        if (accountRequestRef.current?.promise === request) accountRequestRef.current = null
+      })
+    accountRequestRef.current = { scope: requestScope, promise: request }
+    return request
   }, [cacheScope])
+
+  const prepareAccounts = useCallback(() => loadAccounts(false), [loadAccounts])
+  const refreshAccounts = useCallback(() => loadAccounts(true), [loadAccounts])
 
   useEffect(() => {
     setConnections([])
     setMailboxes([])
     setFolders([])
     setDefaultProvider(null)
+    setAccountError(null)
+    setAccountState("idle")
+    accountStateRef.current = "idle"
+    mailboxesRef.current = []
+    accountRequestRef.current = null
     setThreadCache({})
     threadCacheRef.current = {}
     threadDetailsRef.current.clear()
     threadPageRequestsRef.current.clear()
     threadDetailRequestsRef.current.clear()
+    olderThreadRequestsRef.current.clear()
     clearInlineAttachmentBlobCache()
-    if (!cacheScope) {
-      setAccountState("loading")
-      return
-    }
-    void refreshAccounts()
-  }, [cacheScope, refreshAccounts])
+  }, [cacheScope])
+
+  useEffect(() => {
+    if (!active || !cacheScope) return
+    void prepareAccounts()
+  }, [active, cacheScope, prepareAccounts])
 
   useEffect(() => {
     function rememberDefaultProvider(event: Event) {
@@ -261,6 +307,44 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     if (readThreadDetail(threadId) || threadDetailRequestsRef.current.has(threadId)) return
     void fetchThreadDetail(threadId).catch(() => undefined)
   }, [fetchThreadDetail, readThreadDetail])
+  const fetchOlderThreadMessages = useCallback(async (threadId: string, offset: number) => {
+    const safeOffset = Math.max(0, Math.floor(offset))
+    const requestKey = `${threadId}:${safeOffset}`
+    const pending = olderThreadRequestsRef.current.get(requestKey)
+    if (pending) return pending
+
+    const next = getThread(threadId, { offset: safeOffset, limit: 25 })
+      .then(async (page) => {
+        await prefetchThreadInlineAttachmentBlobUrls(page)
+        const current = readThreadDetail(threadId)
+        if (!current) {
+          rememberThreadDetail(page)
+          return page
+        }
+        const seen = new Set<string>()
+        const messages = [...page.messages, ...current.messages].filter((message) => {
+          if (seen.has(message.id)) return false
+          seen.add(message.id)
+          return true
+        })
+        const detail: InboxThreadDetail = {
+          ...current,
+          unreadCount: page.unreadCount,
+          readOnly: page.readOnly,
+          messageTotal: page.messageTotal,
+          messageOffset: 0,
+          messageLimit: messages.length,
+          hasOlderMessages: page.hasOlderMessages,
+          messages,
+          summary: page.summary,
+        }
+        rememberThreadDetail(detail)
+        return detail
+      })
+      .finally(() => olderThreadRequestsRef.current.delete(requestKey))
+    olderThreadRequestsRef.current.set(requestKey, next)
+    return next
+  }, [readThreadDetail, rememberThreadDetail])
 
   // Resolve URL state only after the authenticated mailbox list arrives. Invalid
   // or stale mailbox ids fail closed to a mailbox the signed-in user can access.
@@ -285,20 +369,15 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     writeSelection(nextProvider, nextMailbox?.id ?? null, nextView, nextFolderId)
   }, [accountState, defaultProvider, folderId, folders, mailboxId, mailboxes, provider, view])
 
-  // Warm the first visible page as soon as the account bootstrap resolves.
-  // This runs behind the rest of the app and is shared with InboxPage, so an
-  // operator arriving a moment later sees rows without starting another call.
+  // Warm only the first visible list page after account bootstrap. Conversation
+  // bodies and private inline images stay intent-driven through row hover/focus
+  // or selection, so the rest of Multideck never downloads email bodies merely
+  // because the authenticated shell mounted.
   useEffect(() => {
-    if (accountState !== "ready" || !mailboxId) return
+    if (!active || accountState !== "ready" || !mailboxId) return
     void fetchThreadPage({ mailboxId, folder: folderForView(view), folderId, limit: 25 })
-      .then((page) => {
-        // The first conversations are the most likely next click. Warming only
-        // three keeps bandwidth restrained while making the visible top of the
-        // mailbox open from memory instead of starting work after selection.
-        for (const thread of page.items.slice(0, 3)) prefetchThreadDetail(thread.id)
-      })
       .catch(() => undefined)
-  }, [accountState, fetchThreadPage, folderId, mailboxId, prefetchThreadDetail, view])
+  }, [accountState, active, fetchThreadPage, folderId, mailboxId, view])
 
   const applySelection = useCallback((nextProvider: MailProvider, nextView: InboxNavigationView, currentMailboxId: string | null) => {
     const nextMailbox = preferredMailbox(mailboxes, nextProvider, nextView, currentMailboxId)
@@ -361,10 +440,12 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     view,
     threadCache,
     setThreadCache,
+    prepareAccounts,
     refreshAccounts,
     fetchThreadPage,
     readThreadDetail,
     fetchThreadDetail,
+    fetchOlderThreadMessages,
     prefetchThreadDetail,
     rememberThreadDetail,
     selectProvider,
@@ -378,11 +459,13 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     adjustMailboxUnread,
     connections,
     fetchThreadDetail,
+    fetchOlderThreadMessages,
     fetchThreadPage,
     folderId,
     folders,
     mailboxId,
     mailboxes,
+    prepareAccounts,
     provider,
     prefetchThreadDetail,
     readThreadDetail,

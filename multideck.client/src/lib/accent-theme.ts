@@ -1,7 +1,9 @@
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { animate } from "motion/react"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { getApiWorkspacePreferences } from "@/lib/api"
 import { supabase } from "@/lib/supabase"
+import { updateWorkspaceBootstrapPreferences } from "@/lib/workspace-bootstrap"
 
 /**
  * The product reads its accent from one place. Every accent surface in the app —
@@ -554,11 +556,12 @@ let loadPromise: Promise<void> | null = null
 let pendingSave: Promise<void> = Promise.resolve()
 let hasLocalEdit = false
 let watchingAuth = false
+let canPersistProfileAccent = true
 
-async function currentUserId(client: SupabaseClient) {
+async function currentSession(client: SupabaseClient) {
   const { data, error } = await client.auth.getSession()
   if (error) throw error
-  return data.session?.user.id ?? null
+  return data.session
 }
 
 function applySavedAccent(id: AccentPresetId) {
@@ -574,7 +577,7 @@ function applySavedAccent(id: AccentPresetId) {
 function saveRemoteAccent(id: AccentPresetId) {
   const client = supabase
   const userId = loadedUserId
-  if (!client || !userId) return pendingSave
+  if (!client || !userId || !canPersistProfileAccent) return pendingSave
 
   pendingSave = pendingSave
     .then(async () => {
@@ -585,6 +588,7 @@ function saveRemoteAccent(id: AccentPresetId) {
 
       const { error } = await client.rpc("set_current_user_accent_preference", { p_accent_preset: id })
       if (error) throw error
+      updateWorkspaceBootstrapPreferences({ accentPreset: id })
     })
     .catch((error: unknown) => {
       console.warn("Your accent colour could not be saved to your profile.", error)
@@ -599,15 +603,28 @@ async function pushAccentPreference(id: AccentPresetId) {
 }
 
 async function loadAccentPreference(client: SupabaseClient) {
-  const userId = await currentUserId(client)
+  const session = await currentSession(client)
+  const userId = session?.user.id ?? null
   loadedUserId = userId
   if (!userId) return
 
-  const { data, error } = await client.rpc("get_current_user_accent_preference")
-  if (error) throw error
+  const workspacePreferences = session?.access_token
+    ? await getApiWorkspacePreferences(session.access_token)
+    : null
+  if (workspacePreferences === null) {
+    canPersistProfileAccent = false
+    return
+  }
+  canPersistProfileAccent = true
+
+  let value: unknown = workspacePreferences?.accentPreset ?? null
+  if (workspacePreferences === undefined) {
+    const { data, error } = await client.rpc("get_current_user_accent_preference")
+    if (error) throw error
+    value = Array.isArray(data) ? data[0]?.accent_preset : data?.accent_preset
+  }
   if (hasLocalEdit) return
 
-  const value = Array.isArray(data) ? data[0]?.accent_preset : data?.accent_preset
   if (isAccentPresetId(value)) {
     applySavedAccent(value)
     return
@@ -631,6 +648,7 @@ function watchAccentAuth(client: SupabaseClient) {
       loadedUserId = null
       loadPromise = null
       hasLocalEdit = false
+      canPersistProfileAccent = true
       void ensureAccentPreferenceLoaded()
     })
   })

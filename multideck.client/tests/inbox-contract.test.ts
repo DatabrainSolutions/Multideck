@@ -106,6 +106,7 @@ test("new composers track opens by default and keep an explicit opt-out", () => 
 test("outbound delivery evidence is normalised without adding it to inbound mail", () => {
   const detail = normalizeThreadDetail({
     id: "thread-1",
+    messageTotal: 2,
     messages: [
       {
         id: "outbound-1",
@@ -145,6 +146,7 @@ test("outbound delivery evidence is normalised without adding it to inbound mail
 test("automated delivery receipts cannot hijack a reply composer", () => {
   const detail = normalizeThreadDetail({
     id: "thread-1",
+    messageTotal: 2,
     messages: [
       { id: "recipient-message", direction: "inbound", replyEligible: true },
       { id: "delivery-receipt", direction: "inbound", replyEligible: false },
@@ -615,19 +617,44 @@ test("sanitised html is read from the server's field and never invented", () => 
     {
       id: "t1",
       subject: "Customs hold",
+      messageTotal: 1,
       messages: [{ id: "m1", direction: "inbound", safeBodyHtml: "<p>Sanitised</p>", bodyText: "Sanitised" }],
     },
     "t1",
   )
 
   assert.equal(detail.messages[0].sanitizedHtml, "<p>Sanitised</p>")
-  assert.equal(normalizeThreadDetail({ id: "t1", messages: [{ id: "m1" }] }, "t1").messages[0].sanitizedHtml, null)
+  assert.equal(normalizeThreadDetail({ id: "t1", messageTotal: 1, messages: [{ id: "m1" }] }, "t1").messages[0].sanitizedHtml, null)
 })
 
 test("a thread detail keeps the requested id when the response omits it", () => {
-  const detail = normalizeThreadDetail({ subject: "No id", messages: [] }, "t-requested")
+  const detail = normalizeThreadDetail({ subject: "No id", messageTotal: 0, messages: [] }, "t-requested")
 
   assert.equal(detail.id, "t-requested")
+})
+
+test("a legacy full-thread response fails clearly until bounded paging is deployed", () => {
+  assert.throws(
+    () => normalizeThreadDetail({ id: "t1", messages: [] }, "t1", { limit: 25, offset: 0 }),
+    /Inbox message paging is still being prepared/,
+  )
+})
+
+test("a bounded thread page keeps exact server paging metadata", () => {
+  const detail = normalizeThreadDetail({
+    id: "t1",
+    messages: [{ id: "m36" }, { id: "m37" }],
+    messageTotal: 60,
+    messageOffset: 0,
+    messageLimit: 25,
+    hasOlderMessages: true,
+  }, "t1")
+
+  assert.equal(detail.messages.length, 2)
+  assert.equal(detail.messageTotal, 60)
+  assert.equal(detail.messageOffset, 0)
+  assert.equal(detail.messageLimit, 25)
+  assert.equal(detail.hasOlderMessages, true)
 })
 
 test("a summary given as bare prose is treated as ready", () => {
@@ -644,8 +671,8 @@ test("an absent summary is none rather than a silently empty ready state", () =>
 })
 
 test("a read-only shared mailbox is reported as read-only", () => {
-  assert.equal(normalizeThreadDetail({ id: "t1", isReadOnly: true, messages: [] }, "t1").readOnly, true)
-  assert.equal(normalizeThreadDetail({ id: "t1", messages: [] }, "t1").readOnly, false)
+  assert.equal(normalizeThreadDetail({ id: "t1", isReadOnly: true, messageTotal: 0, messages: [] }, "t1").readOnly, true)
+  assert.equal(normalizeThreadDetail({ id: "t1", messageTotal: 0, messages: [] }, "t1").readOnly, false)
 })
 
 /* ---------------------------------------------------------------- attachments */

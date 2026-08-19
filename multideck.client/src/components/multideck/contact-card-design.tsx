@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
-import { QrCodeImage } from "@/components/multideck/contact-card-components"
+import { QrCodeImage, qrContrastRatio } from "@/components/multideck/contact-card-components"
 import { ContactSocialMark } from "@/components/multideck/contact-social-mark"
 import {
   EMPTY_PUBLIC_FORM,
@@ -23,8 +23,8 @@ import { bestInkContrast, accentCanCarryActions } from "@/lib/color"
 import { resolveCardTheme } from "@/lib/card-theme"
 import { CARD_LAYOUT_SPECS } from "@/lib/card-layout"
 import { cardPublicUrl, readLogoFile, updateBranding, MAX_LOGO_BYTES } from "@/lib/contact-card-store"
-import { CARD_SOCIAL_LABELS, type CardHeaderStyle, type CardLayout, type CardSocialKind, type CardSocialLink, type CardTheme, type ContactCard } from "@/data/contact-card-data"
-import type { QrEyeStyle, QrModuleStyle } from "@/lib/qr-code"
+import { CARD_SOCIAL_LABELS, type CardLayout, type CardSocialKind, type CardSocialLink, type CardTheme, type ContactCard, type QrLogoSize, type QrQuietZone } from "@/data/contact-card-data"
+import type { EccLevel, QrEyeStyle, QrModuleStyle } from "@/lib/qr-code"
 import { cn } from "@/lib/utils"
 
 const ACCENT_PRESETS = [
@@ -37,6 +37,23 @@ const ACCENT_PRESETS = [
   "#b8862b",
   "#2b2f2e",
 ]
+
+const QR_PRESETS = [
+  { id: "classic", label: "Classic", moduleStyle: "square", eyeStyle: "square", dark: "#0b1413", light: "#ffffff" },
+  { id: "soft", label: "Soft", moduleStyle: "rounded", eyeStyle: "rounded", dark: "#0b1413", light: "#ffffff" },
+  { id: "dot", label: "Dot", moduleStyle: "dots", eyeStyle: "circle", dark: "#2f6f3f", light: "#ffffff" },
+] as const satisfies ReadonlyArray<{
+  id: string
+  label: string
+  moduleStyle: QrModuleStyle
+  eyeStyle: QrEyeStyle
+  dark: string
+  light: string
+}>
+
+const QR_ERROR_OPTIONS = ["M", "Q", "H"] as const satisfies readonly EccLevel[]
+const QR_LOGO_SIZE_OPTIONS = ["small", "medium", "large"] as const satisfies readonly QrLogoSize[]
+const QR_QUIET_ZONE_OPTIONS = ["4", "6", "8"] as const
 
 /* -------------------------------------------------------------------------- */
 /* Layout picker                                                               */
@@ -198,7 +215,7 @@ export function ContactCardSocialLinksEditor({ links, onChange }: { links: CardS
       {links.map((link, index) => {
         const label = CARD_SOCIAL_LABELS[link.kind]
         return (
-          <div key={link.id} className="grid items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-2 sm:grid-cols-[36px_minmax(0,1fr)_auto]">
+          <div key={link.id} className="grid items-center gap-2 border-b border-[var(--md-line)] py-2 last:border-0 first:pt-0 last:pb-0 sm:grid-cols-[36px_minmax(0,1fr)_auto]">
             <span className="grid size-9 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]" aria-hidden="true">
               <ContactSocialMark kind={link.kind} className="size-4" />
             </span>
@@ -287,7 +304,7 @@ function LogoControl({ card }: { card: ContactCard }) {
     try {
       const dataUrl = await readLogoFile(file)
       updateBranding(card.id, { logoDataUrl: dataUrl })
-      toast.success(t("Logo updated"))
+      toast.message(t("Logo changed. Saving…"))
     } catch (error) {
       const reason = error instanceof Error ? error.message : "unreadable"
       toast.error(
@@ -436,13 +453,21 @@ function CardPreview({ card }: { card: ContactCard }) {
 /* Panel                                                                       */
 /* -------------------------------------------------------------------------- */
 
-export function CardDesignPanel({ card }: { card: ContactCard }) {
+export function CardDesignPanel({ card, profilePhotoUrl }: { card: ContactCard; profilePhotoUrl?: string | null }) {
   const { t } = useLanguage()
   const { branding } = card
+  const [qrFineTuneOpen, setQrFineTuneOpen] = useState(false)
   const theme = useMemo(() => resolveCardTheme(branding), [branding])
   const accentSafe = accentCanCarryActions(branding.accent, theme.pageBg)
   const contrast = useMemo(() => bestInkContrast(branding.accent), [branding.accent])
+  const qrContrast = useMemo(() => qrContrastRatio(branding.qrDark, branding.qrLight), [branding.qrDark, branding.qrLight])
   const url = cardPublicUrl(card)
+  // The signed workspace photo is intentionally preview-only. Public cards
+  // obtain the same image through their tenant-safe published-profile endpoint,
+  // while the card record never stores a short-lived signed URL.
+  const previewCard = useMemo(() => profilePhotoUrl
+    ? { ...card, person: { ...card.person, profileImageDataUrl: profilePhotoUrl } }
+    : card, [card, profilePhotoUrl])
 
   return (
     <div className="grid items-start gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_400px]">
@@ -549,16 +574,6 @@ export function CardDesignPanel({ card }: { card: ContactCard }) {
               />
             </ControlRow>
 
-            <ControlRow label={t("Header")}>
-              <SegmentedControl
-                options={["none", "bar", "band", "cover"] as const satisfies readonly CardHeaderStyle[]}
-                value={branding.headerStyle}
-                onChange={(headerStyle) => updateBranding(card.id, { headerStyle })}
-                ariaLabel={t("Header")}
-                renderOption={(option) => t(option === "none" ? "None" : option === "bar" ? "Bar" : option === "band" ? "Band" : "Cover")}
-              />
-            </ControlRow>
-
             <ControlRow label={t("Layout preset")} hint={t("Choose the arrangement first, then tune the colours and code.")} stacked>
               <ContactCardLayoutPicker value={branding.layout} onChange={(layout) => updateBranding(card.id, { layout })} />
             </ControlRow>
@@ -576,36 +591,123 @@ export function CardDesignPanel({ card }: { card: ContactCard }) {
         </Surface>
 
         <Surface padding="md" className="p-5">
-          <SectionHeader title={t("Code style")} meta={t("Changes apply to the on-screen code and to both downloads.")} />
+          <SectionHeader title={t("QR appearance")} meta={t("Choose a look first, then fine-tune the details when you need them.")} />
 
           <div className="mt-4 grid gap-6 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-start">
             <div className="divide-y divide-[rgba(11,20,19,0.06)]">
-              <ControlRow label={t("Modules")} stacked>
-                <SegmentedControl
-                  options={["square", "rounded", "dots"] as const satisfies readonly QrModuleStyle[]}
-                  value={branding.qrModuleStyle}
-                  onChange={(qrModuleStyle) => updateBranding(card.id, { qrModuleStyle })}
-                  ariaLabel={t("Module style")}
-                  renderOption={(option) => t(option === "square" ? "Square" : option === "rounded" ? "Rounded" : "Dots")}
-                />
-              </ControlRow>
-
-              <ControlRow label={t("Corner eyes")} stacked>
-                <SegmentedControl
-                  options={["square", "rounded", "circle"] as const satisfies readonly QrEyeStyle[]}
-                  value={branding.qrEyeStyle}
-                  onChange={(qrEyeStyle) => updateBranding(card.id, { qrEyeStyle })}
-                  ariaLabel={t("Eye style")}
-                  renderOption={(option) => t(option === "square" ? "Square" : option === "rounded" ? "Rounded" : "Circle")}
-                />
-              </ControlRow>
-
-              <ControlRow label={t("Colours")} hint={t("Keep the code dark on light. Inverting it stops many scanners working.")} stacked>
-                <div className="flex flex-wrap gap-2">
-                  <ColourField label={t("Code colour")} value={branding.qrDark} onChange={(value) => updateBranding(card.id, { qrDark: value })} />
-                  <ColourField label={t("Code background")} value={branding.qrLight} onChange={(value) => updateBranding(card.id, { qrLight: value })} />
+              <ControlRow label={t("Style")} hint={t("Curated combinations keep the code distinctive and scannable.")} stacked>
+                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={t("QR appearance preset")}>
+                  {QR_PRESETS.map((preset) => {
+                    const selected = branding.qrModuleStyle === preset.moduleStyle
+                      && branding.qrEyeStyle === preset.eyeStyle
+                      && branding.qrDark.toLowerCase() === preset.dark.toLowerCase()
+                      && branding.qrLight.toLowerCase() === preset.light.toLowerCase()
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => updateBranding(card.id, { qrModuleStyle: preset.moduleStyle, qrEyeStyle: preset.eyeStyle, qrDark: preset.dark, qrLight: preset.light })}
+                        className={cn(
+                          "grid min-h-[54px] gap-1 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-2 py-2 text-start shadow-[var(--md-shadow-line)] transition-[background-color,transform] duration-150 hover:bg-[var(--md-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]",
+                          selected && "bg-[var(--md-selected-bg)] ring-1 ring-[var(--md-accent)]",
+                        )}
+                      >
+                        <span className="flex items-center gap-1.5" aria-hidden="true">
+                          <span className="grid size-5 place-items-center rounded-[4px] bg-[var(--md-surface)]">
+                            <span className={cn("size-3 bg-[var(--md-ink)]", preset.moduleStyle === "rounded" && "rounded-[3px]", preset.moduleStyle === "dots" && "rounded-full")} />
+                          </span>
+                          <span className="grid size-4 place-items-center rounded-[3px] border-2 border-[var(--md-ink)]">
+                            <span className={cn("size-1.5 bg-[var(--md-ink)]", preset.eyeStyle === "rounded" && "rounded-[2px]", preset.eyeStyle === "circle" && "rounded-full")} />
+                          </span>
+                        </span>
+                        <span className="text-[12px] font-medium text-[var(--md-ink)]">{t(preset.label)}</span>
+                      </button>
+                    )
+                  })}
                 </div>
               </ControlRow>
+
+              <div className="py-3">
+                <button
+                  type="button"
+                  aria-expanded={qrFineTuneOpen}
+                  onClick={() => setQrFineTuneOpen((open) => !open)}
+                  className="flex min-h-9 w-full items-center justify-between rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 text-start text-[13px] font-medium text-[var(--md-ink)] transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]"
+                >
+                  <span>{t("Fine tune appearance")}</span>
+                  <span className="text-[12px] font-normal text-[var(--md-subtle)]">{qrFineTuneOpen ? t("Hide") : t("Customise")}</span>
+                </button>
+              </div>
+
+              {qrFineTuneOpen ? (
+                <div className="divide-y divide-[rgba(11,20,19,0.06)]">
+                  <ControlRow label={t("Modules")} stacked>
+                    <SegmentedControl
+                      options={["square", "rounded", "dots"] as const satisfies readonly QrModuleStyle[]}
+                      value={branding.qrModuleStyle}
+                      onChange={(qrModuleStyle) => updateBranding(card.id, { qrModuleStyle })}
+                      ariaLabel={t("Module style")}
+                      renderOption={(option) => t(option === "square" ? "Square" : option === "rounded" ? "Rounded" : "Dots")}
+                    />
+                  </ControlRow>
+
+                  <ControlRow label={t("Corner eyes")} stacked>
+                    <SegmentedControl
+                      options={["square", "rounded", "circle"] as const satisfies readonly QrEyeStyle[]}
+                      value={branding.qrEyeStyle}
+                      onChange={(qrEyeStyle) => updateBranding(card.id, { qrEyeStyle })}
+                      ariaLabel={t("Eye style")}
+                      renderOption={(option) => t(option === "square" ? "Square" : option === "rounded" ? "Rounded" : "Circle")}
+                    />
+                  </ControlRow>
+
+                  <ControlRow label={t("Colours")} hint={t("Keep the code dark on light. Inverting it stops many scanners working.")} stacked>
+                    <div className="flex flex-wrap gap-2">
+                      <ColourField label={t("Code colour")} value={branding.qrDark} onChange={(value) => updateBranding(card.id, { qrDark: value })} />
+                      <ColourField label={t("Code background")} value={branding.qrLight} onChange={(value) => updateBranding(card.id, { qrLight: value })} />
+                    </div>
+                    {qrContrast < 3 ? (
+                      <p role="status" className="mt-2 rounded-[var(--md-radius-md)] bg-[rgba(221,138,43,0.1)] px-3 py-2 text-[12px] leading-5 text-[var(--md-text)]">
+                        {t("These colours are too close for reliable scanning. The preview and downloads will use a safe black-and-white code until contrast improves.")}
+                      </p>
+                    ) : null}
+                  </ControlRow>
+
+                  <ControlRow label={t("Reliability")} hint={branding.logoInQr && branding.logoDataUrl ? t("Logo mode uses Maximum automatically to protect scanning.") : t("Higher levels help when the code is printed small or has a logo.")} stacked>
+                    <SegmentedControl
+                      options={QR_ERROR_OPTIONS}
+                      value={branding.logoInQr && branding.logoDataUrl ? "H" : branding.qrErrorCorrection ?? "M"}
+                      onChange={(qrErrorCorrection) => updateBranding(card.id, { qrErrorCorrection })}
+                      ariaLabel={t("Error correction")}
+                      disabled={Boolean(branding.logoInQr && branding.logoDataUrl)}
+                      renderOption={(option) => t(option === "M" ? "Standard" : option === "Q" ? "Balanced" : "Maximum")}
+                    />
+                  </ControlRow>
+
+                  <ControlRow label={t("Logo size")} hint={!branding.logoDataUrl ? t("Add a logo above to use it in the code.") : t("The larger the logo, the more correction the code uses automatically.")} stacked>
+                    <SegmentedControl
+                      options={QR_LOGO_SIZE_OPTIONS}
+                      value={branding.qrLogoSize ?? "medium"}
+                      onChange={(qrLogoSize) => updateBranding(card.id, { qrLogoSize })}
+                      ariaLabel={t("Logo size")}
+                      disabled={!branding.logoInQr || !branding.logoDataUrl}
+                      renderOption={(option) => t(option === "small" ? "Small" : option === "medium" ? "Medium" : "Large")}
+                    />
+                  </ControlRow>
+
+                  <ControlRow label={t("Quiet zone")} hint={t("The clear edge helps cameras recognise the code on busy backgrounds.")} stacked>
+                    <SegmentedControl
+                      options={QR_QUIET_ZONE_OPTIONS}
+                      value={String(branding.qrQuietZone ?? 4) as (typeof QR_QUIET_ZONE_OPTIONS)[number]}
+                      onChange={(value) => updateBranding(card.id, { qrQuietZone: Number(value) as QrQuietZone })}
+                      ariaLabel={t("Quiet zone")}
+                      renderOption={(option) => t(option === "4" ? "Tight" : option === "6" ? "Balanced" : "Generous")}
+                    />
+                  </ControlRow>
+                </div>
+              ) : null}
             </div>
 
             <div className="grid gap-3">
@@ -628,7 +730,7 @@ export function CardDesignPanel({ card }: { card: ContactCard }) {
       {/* Sticky so the preview stays beside the control being changed. */}
       <div className="xl:sticky xl:top-[var(--md-page-stack-gap)]">
         <Surface padding="md" className="p-5">
-          <CardPreview card={card} />
+          <CardPreview card={previewCard} />
         </Surface>
       </div>
     </div>

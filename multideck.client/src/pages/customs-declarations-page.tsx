@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, Eye, FileCheck2, FileText, Plus, RefreshCw, Save, ScanText, Search, Send, Trash2 } from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
-import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -12,14 +11,16 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { PdfDocumentViewerDialog } from "@/components/multideck/pdf-document-viewer-dialog"
 import { RegisterFacetSelect, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { Surface } from "@/components/multideck/surface"
-import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
+import { StatusPill } from "@/components/multideck/status-pill"
 import { SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
 import { CustomsInvoiceImportWorkspace } from "@/pages/customs-invoice-import-workspace"
 import { useLanguage } from "@/i18n/language-provider"
 import type { AuthUserSummary } from "@/lib/auth-user"
+import type { RegisterSort } from "@/lib/application-data-api"
 import { cn } from "@/lib/utils"
 import {
   createExportDeclarationItem,
@@ -31,7 +32,7 @@ import {
   type StandaloneExportDraft,
 } from "@/lib/customs-declaration"
 import { createEmptyCustomsReferenceData, useCustomsReferenceData, type CustomsCatalogCode, type CustomsReferenceData } from "@/lib/customs-reference-data"
-import { listJobRelatedDeclarationDrafts, listStandaloneDeclarationDrafts, loadStandaloneDeclarationDraft, reopenRejectedCustomsDeclaration, saveStandaloneDeclarationDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
+import { invalidateCustomsDeclarationPages, listCustomsDeclarationDraftsPage, loadStandaloneDeclarationDraft, reopenRejectedCustomsDeclaration, saveStandaloneDeclarationDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
 import { hasCustomsInvoiceImportRecovery, moveCustomsInvoiceImportRecovery } from "@/lib/customs-invoice-import-recovery"
 import { fetchCustomsDeclarationPdf, getCustomsDeclarationDocument, type CustomsDeclarationDocument } from "@/lib/customs-declaration-document-api"
 import { customsStatusPollDelay, isTerminalCustomsStatus, shouldPollCustomsStatus, shouldPollCustomsSubmission } from "@/lib/customs-status-lifecycle"
@@ -52,6 +53,18 @@ const defaultDeclarationFieldVisibility: DeclarationFieldVisibility = {
   optionalFields: false,
 }
 const declarationFieldVisibilityStorageKey = "multideck.customs.declaration-field-visibility"
+const customsRegisterPageSize = 50
+
+function customsExportCategory(path: readonly string[]) {
+  const field = path[0] ?? ""
+  if (field === "items") return "Goods items"
+  if (/^(exporter|importer|seller|buyer|consignee|carrier|declarant|representative|representation|authorisation)/.test(field)) return "Parties"
+  if (/^(exportCountry|destinationCountry|border|inland|departure|arrival|goodsLocation|freightPayment|isContainerised|gvms|container|seal|routing)/.test(field)) return "Transport"
+  if (/^(previousDocument|headerAdditionalInformation)/.test(field)) return "Documents"
+  if (/^(total|currency|transactionNature|exchangeRate|tradeTerms|customsValuation|primaryDeferment|secondaryDeferment|freightCharge)/.test(field)) return "Valuation"
+  if (/^(exitOffice|supervisingOffice|presentationOffice|warehouse|guarantee)/.test(field)) return "Offices and guarantees"
+  return "Declaration"
+}
 
 let repeatableCustomsEntrySequence = 0
 
@@ -119,14 +132,20 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
   currentUser?: AuthUserSummary | null
   t: (text: string) => string
 }) {
-  const { direction } = useLanguage()
   const shouldReduceMotion = Boolean(useReducedMotion())
   const [drafts, setDrafts] = useState<CustomsDraftSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [destinationFilter, setDestinationFilter] = useState("")
+  const [offset, setOffset] = useState(0)
+  const [total, setTotal] = useState(0)
+  const [availableTotal, setAvailableTotal] = useState(0)
+  const [facets, setFacets] = useState<{ statuses: string[]; destinations: string[] }>({ statuses: [], destinations: [] })
+  const [sort, setSort] = useState<RegisterSort | null>({ id: "lastSaved", direction: "desc" })
+  const [reloadToken, setReloadToken] = useState(0)
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null)
   const [contextDeleteDraft, setContextDeleteDraft] = useState<CustomsDraftSummary | null>(null)
@@ -136,7 +155,11 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
     setDeletingDraftId(draft.id)
     try {
       await deleteICustomsProviderDraft(draft.id)
+      invalidateCustomsDeclarationPages()
       setDrafts((current) => current.filter((candidate) => candidate.id !== draft.id))
+      setTotal((current) => Math.max(current - 1, 0))
+      setAvailableTotal((current) => Math.max(current - 1, 0))
+      setReloadToken((current) => current + 1)
       setConfirmingDeleteId(null)
       setContextDeleteDraft(null)
       toast.success(t("Draft deleted"), { description: draft.reference })
@@ -160,23 +183,40 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
   }, [confirmingDeleteId, deleteDraft, deletingDraftId])
 
   useEffect(() => {
-    let cancelled = false
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250)
+    return () => window.clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => setOffset(0), [debouncedSearch, destinationFilter, jobRelated, kind, statusFilter])
+
+  useEffect(() => {
+    const controller = new AbortController()
     setLoading(true)
     setLoadError(null)
-    const loadDeclarations = jobRelated ? listJobRelatedDeclarationDrafts : listStandaloneDeclarationDrafts
-    loadDeclarations(kind)
-      .then((savedDrafts) => {
-        if (!cancelled) setDrafts(savedDrafts)
+    listCustomsDeclarationDraftsPage(kind, jobRelated ? "job-related" : "standalone", {
+      search: debouncedSearch,
+      status: statusFilter,
+      destination: destinationFilter,
+      sort,
+      limit: customsRegisterPageSize,
+      offset,
+    }, controller.signal)
+      .then((page) => {
+        setDrafts(page.rows)
+        setTotal(page.total)
+        setAvailableTotal(page.availableTotal)
+        setFacets(page.facets)
       })
       .catch((reason: unknown) => {
+        if (reason instanceof Error && reason.name === "AbortError") return
         console.error("Customs drafts could not be loaded.", reason)
-        if (!cancelled) setLoadError(reason instanceof Error ? reason.message : "Customs drafts could not be loaded.")
+        setLoadError(reason instanceof Error ? reason.message : "Customs drafts could not be loaded.")
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (!controller.signal.aborted) setLoading(false)
       })
-    return () => { cancelled = true }
-  }, [jobRelated, kind])
+    return () => controller.abort()
+  }, [debouncedSearch, destinationFilter, jobRelated, kind, offset, reloadToken, sort, statusFilter])
 
   const columns = useMemo<DataTableColumn<CustomsDraftSummary>[]>(() => [
     {
@@ -300,18 +340,8 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
     },
   ], [confirmingDeleteId, currentUser, deletingDraftId, jobRelated, requestDelete, shouldReduceMotion, t])
 
-  const statuses = useMemo(() => [...new Set(drafts.map((draft) => draft.status).filter(Boolean))].sort(), [drafts])
-  const destinations = useMemo(() => [...new Set(drafts.map((draft) => draft.destinationCountry).filter((value): value is string => Boolean(value)))].sort(), [drafts])
-  const filteredDrafts = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase()
-    return drafts.filter((draft) => {
-      if (statusFilter && draft.status !== statusFilter) return false
-      if (destinationFilter && draft.destinationCountry !== destinationFilter) return false
-      if (!query) return true
-      return [draft.reference, draft.jobReference, draft.bookingReference, draft.customerName, draft.route, draft.traderReference, draft.status, draft.destinationCountry, draft.currency, draft.amount]
-        .some((value) => String(value ?? "").toLocaleLowerCase().includes(query))
-    })
-  }, [destinationFilter, drafts, search, statusFilter])
+  const statuses = facets.statuses
+  const destinations = facets.destinations
 
   return (
     <div className="space-y-5">
@@ -330,27 +360,60 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
         ariaLabel={t("Declaration register")}
         columnsButtonLabel={t("Manage declaration columns")}
         columns={columns}
-        rows={loading || loadError ? [] : filteredDrafts}
+        rows={loadError ? [] : drafts}
         getRowKey={(draft) => draft.id}
         storageKey={`customs-${jobRelated ? "job-related" : "standalone"}-${kind}-register-v3`}
         rowClassName="hover:bg-[var(--md-hover)]"
         onRowClick={!jobRelated ? (draft) => navigate(`/customs/standalone/${kind}/${draft.id}`) : undefined}
-        wrapRow={(draft, row) => <ContextMenuPrimitive.Root dir={direction}>
-          <ContextMenuPrimitive.Trigger asChild>{row}</ContextMenuPrimitive.Trigger>
-          <ContextMenuPrimitive.Portal>
-            <ContextMenuPrimitive.Content collisionPadding={14} className="md-sidebar-menu premium-stroke z-50 origin-(--radix-context-menu-content-transform-origin) rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_96%,transparent)] p-1 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] backdrop-blur-xl">
-              <ContextMenuPrimitive.Item
-                disabled={draft.status.toLocaleLowerCase() !== "draft" || deletingDraftId === draft.id}
-                className="md-sidebar-menu-item group/menu flex h-9 cursor-default select-none items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] data-[disabled]:opacity-40 data-[highlighted]:bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] data-[highlighted]:text-[var(--md-red)]"
-                onSelect={() => setContextDeleteDraft(draft)}
-              >
-                <span className="md-sidebar-menu-item__icon grid size-5 shrink-0 place-items-center text-[var(--md-subtle)] transition-colors duration-150 group-data-[highlighted]/menu:text-[var(--md-red)]"><Trash2 className="size-4" strokeWidth={1.3} /></span>
-                <span className="min-w-0 flex-1 truncate text-start">{t("Delete draft")}</span>
-                <span className="shrink-0 text-[11px] font-normal text-[var(--md-subtle)]">{t(draft.status.toLocaleLowerCase() === "draft" ? "Confirmation required" : "Drafts only")}</span>
-              </ContextMenuPrimitive.Item>
-            </ContextMenuPrimitive.Content>
-          </ContextMenuPrimitive.Portal>
-        </ContextMenuPrimitive.Root>}
+        rowAriaLabel={(draft) => draft.reference}
+        serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "lastSaved", direction: "desc" }); setOffset(0) } }}
+        pagination={{ offset, limit: customsRegisterPageSize, total, loading, onOffsetChange: setOffset }}
+        rowContextActions={(draft) => [{
+          id: "delete-draft",
+          label: "Delete draft",
+          hint: draft.status.toLocaleLowerCase() === "draft" ? "Confirmation required" : "Drafts only",
+          icon: Trash2,
+          tone: "destructive",
+          disabled: draft.status.toLocaleLowerCase() !== "draft" || deletingDraftId === draft.id,
+          onSelect: setContextDeleteDraft,
+        }]}
+        exportConfig={{
+          fileName: `customs-${kind}-declarations`,
+          recordCategory: "Declaration",
+          categoryForPath: customsExportCategory,
+          loadRecords: (selectedDrafts) => Promise.all(selectedDrafts.map(async (draft) => ({
+            ...draft,
+            ...await loadStandaloneDeclarationDraft(draft.id, kind, jobRelated ? "job-related" : "standalone"),
+          }))),
+        }}
+        bulkDelete={{
+          canDelete: (draft) => draft.status.toLocaleLowerCase() === "draft",
+          disabledReason: "Only draft declarations can be deleted",
+          title: "Delete selected declarations?",
+          description: (selectedDrafts) => t("This permanently deletes {count} selected draft declarations from Multideck and iCustoms. This action cannot be undone.").replace("{count}", String(selectedDrafts.length)),
+          confirmLabel: "Delete declarations",
+          onConfirm: async (selectedDrafts) => {
+            const deletedDrafts: CustomsDraftSummary[] = []
+            let firstFailure: unknown = null
+            for (const selectedDraft of selectedDrafts) {
+              try {
+                await deleteICustomsProviderDraft(selectedDraft.id)
+                deletedDrafts.push(selectedDraft)
+              } catch (reason) {
+                firstFailure ??= reason
+              }
+            }
+            if (deletedDrafts.length) {
+              invalidateCustomsDeclarationPages()
+              setDrafts((current) => current.filter((candidate) => !deletedDrafts.some((deletedDraft) => deletedDraft.id === candidate.id)))
+              setTotal((current) => Math.max(current - deletedDrafts.length, 0))
+              setAvailableTotal((current) => Math.max(current - deletedDrafts.length, 0))
+              setReloadToken((current) => current + 1)
+            }
+            if (firstFailure) throw new Error(t("{deleted} of {selected} declarations were deleted. Try the remaining rows again.").replace("{deleted}", String(deletedDrafts.length)).replace("{selected}", String(selectedDrafts.length)), { cause: firstFailure })
+            toast.success(t("Selected declarations deleted"), { description: `${selectedDrafts.length} ${t(selectedDrafts.length === 1 ? "draft removed" : "drafts removed")}` })
+          },
+        }}
         toolbarTabs={(
           <RegisterViewSwitch
             options={["Export", "Import"] as const}
@@ -383,14 +446,15 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
         )}
         compactToolbar
         emptyState={loading ? (
-          <div className="mx-auto py-8 text-center text-[13px] text-[var(--md-text)]">{t("Loading saved declarations")}</div>
+          <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading saved declarations" /></div>
         ) : loadError ? (
           <div role="alert" className="mx-auto max-w-[520px] py-8 text-center">
             <CircleAlert className="mx-auto size-6 text-[var(--md-red)]" />
             <h3 className="mt-3 text-[15px] font-medium text-[var(--md-ink)]">{t("Saved declarations unavailable")}</h3>
-            <p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Refresh the page to try loading the declaration register again.")}</p>
+            <p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Try loading the declaration register again.")}</p>
+            <Button type="button" variant="outline" className="mt-4" onClick={() => setReloadToken((current) => current + 1)}>{t("Try again")}</Button>
           </div>
-        ) : drafts.length && !filteredDrafts.length ? (
+        ) : availableTotal > 0 && total === 0 ? (
           <div className="mx-auto max-w-[440px] py-8 text-center">
             <h3 className="text-[15px] font-medium text-[var(--md-ink)]">{t("No declarations match these filters")}</h3>
             <p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Change or clear a filter to see more declarations.")}</p>
@@ -1264,11 +1328,11 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
             <span
               role="status"
               aria-label={`${t("Declaration status")}: ${t(titleCase(customsStatus))}`}
-              className="relative inline-flex h-9 shrink-0 items-center gap-2 px-1.5 text-[12px] font-medium text-[var(--md-ink)]"
-              style={{ borderBlockEnd: `2px solid ${toneToVar(customsStatusTone(customsStatus))}` }}
+              className="inline-flex shrink-0"
             >
-              <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: toneToVar(customsStatusTone(customsStatus)) }} />
-              {t(titleCase(customsStatus))}
+              <StatusPill kind="status" tone={customsStatusTone(customsStatus)} className="h-7 px-2.5 text-[11.5px] font-medium">
+                {t(titleCase(customsStatus))}
+              </StatusPill>
             </span>
             <SegmentedControl
               options={["tabs", "form"] as const}
@@ -1707,23 +1771,22 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
             onFocus: (event) => { if (!(event.target as HTMLElement).closest("[data-item-disclosure]")) onSelectItem(item.id) },
             onContextMenu: () => onSelectItem(item.id),
           })}
-          wrapRow={(item, row) => <ContextMenuPrimitive.Root dir={direction}>
-            <ContextMenuPrimitive.Trigger asChild>{row}</ContextMenuPrimitive.Trigger>
-            <ContextMenuPrimitive.Portal>
-              <ContextMenuPrimitive.Content collisionPadding={14} className="md-sidebar-menu premium-stroke z-50 origin-(--radix-context-menu-content-transform-origin) rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_96%,transparent)] p-1 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] backdrop-blur-xl">
-                <ContextMenuPrimitive.Item className="md-sidebar-menu-item group/menu flex h-9 cursor-default select-none items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] data-[highlighted]:bg-[var(--md-hover)] data-[highlighted]:text-[var(--md-ink)]" onSelect={() => onDuplicate(item.id)}>
-                  <span className="md-sidebar-menu-item__icon grid size-5 shrink-0 place-items-center text-[var(--md-subtle)] transition-colors duration-150 group-data-[highlighted]/menu:text-[var(--md-accent)]"><Copy className="size-4" strokeWidth={1.3} /></span>
-                  <span className="min-w-0 flex-1 truncate text-start">{t("Duplicate")}</span>
-                  <span className="shrink-0 text-[11px] font-normal text-[var(--md-subtle)]">{t("Create a copy")}</span>
-                </ContextMenuPrimitive.Item>
-                <ContextMenuPrimitive.Item disabled={items.length === 1} className="md-sidebar-menu-item group/menu flex h-9 cursor-default select-none items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] data-[disabled]:opacity-40 data-[highlighted]:bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] data-[highlighted]:text-[var(--md-red)]" onSelect={() => onRemove(item.id)}>
-                  <span className="md-sidebar-menu-item__icon grid size-5 shrink-0 place-items-center text-[var(--md-subtle)] transition-colors duration-150 group-data-[highlighted]/menu:text-[var(--md-red)]"><Trash2 className="size-4" strokeWidth={1.3} /></span>
-                  <span className="min-w-0 flex-1 truncate text-start">{t("Delete")}</span>
-                  <span className="shrink-0 text-[11px] font-normal text-[var(--md-subtle)]">{t(items.length === 1 ? "Keep one line" : "Remove line")}</span>
-                </ContextMenuPrimitive.Item>
-              </ContextMenuPrimitive.Content>
-            </ContextMenuPrimitive.Portal>
-          </ContextMenuPrimitive.Root>}
+          rowContextActions={(item) => [{
+            id: "duplicate-item",
+            label: "Duplicate",
+            hint: "Create a copy",
+            icon: Copy,
+            onSelect: () => onDuplicate(item.id),
+          }, {
+            id: "delete-item",
+            label: "Delete",
+            hint: items.length === 1 ? "Keep one line" : "Remove line",
+            icon: Trash2,
+            tone: "destructive",
+            disabled: items.length === 1,
+            onSelect: () => onRemove(item.id),
+          }]}
+          exportConfig={{ fileName: `${declarationDirection}-declaration-goods-items`, recordCategory: "Goods item" }}
           renderAfterRow={(item, visibleColumnCount) => {
             const index = items.findIndex((candidate) => candidate.id === item.id)
             const expanded = item.id === expandedItemId

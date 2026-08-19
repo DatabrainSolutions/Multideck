@@ -34,21 +34,26 @@ import {
   emptyDriveFolderStats,
   listDriveFiles,
   listDriveFolders,
+  loadDriveFolderPath,
   loadDriveFolderStats,
   nextUntitledFolderName,
   primeDriveThumbnail,
   renameDriveFile,
+  retryPendingDriveCleanup,
   updateDriveFolder,
   uploadDriveFile,
+  type DriveCursor,
   type DriveFile,
   type DriveFolder,
   type DriveFolderStats,
 } from "@/lib/drive-api"
 import { createDrivePreview, type DrivePreview } from "@/lib/drive-thumbnail"
 import { mdMotion, staggerRamp } from "@/lib/motion"
+import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 
 /** Three at a time keeps each progress ring honest and the network unsaturated. */
 const uploadConcurrency = 3
+const driveListLimit = 48
 
 type PendingUpload = {
   id: string
@@ -58,11 +63,20 @@ type PendingUpload = {
   folderId: string | null
   preview: DrivePreview
   progress: number
+  file: File
+  error: string | null
 }
 
 type RemovalTarget =
   | { kind: "folder"; folder: DriveFolder; stats: DriveFolderStats }
   | { kind: "file"; file: DriveFile }
+
+type DrivePageState = {
+  cursor: DriveCursor | null
+  hasMore: boolean
+  totalCount: number
+  loading: boolean
+}
 
 function readFolderIdFromUrl() {
   return new URLSearchParams(window.location.search).get("folder")
@@ -83,12 +97,15 @@ function errorMessage(cause: unknown, fallback: string) {
   return cause instanceof Error && cause.message ? cause.message : fallback
 }
 
-export function CrmDrivePage() {
+export function CrmDrivePage({ currentUser }: { currentUser: AuthUserSummary | null }) {
   const { t } = useLanguage()
+  const canWriteDrive = hasPermission(currentUser, "CRM.Drive.Write")
 
   const [folders, setFolders] = useState<DriveFolder[]>([])
   const [folderId, setFolderId] = useState<string | null>(readFolderIdFromUrl)
   const [filesByFolder, setFilesByFolder] = useState<Record<string, DriveFile[]>>({})
+  const [folderPages, setFolderPages] = useState<Record<string, DrivePageState>>({})
+  const [filePages, setFilePages] = useState<Record<string, DrivePageState>>({})
   const [statsByParent, setStatsByParent] = useState<Record<string, Map<string, DriveFolderStats>>>({})
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -116,6 +133,8 @@ export function CrmDrivePage() {
 
   const files = filesByFolder[folderKey] ?? []
   const childFolders = useMemo(() => driveChildFolders(folders, folderId), [folders, folderId])
+  const folderPage = folderPages[folderKey]
+  const filePage = filePages[folderKey]
   const stats = statsByParent[folderKey]
   const path = useMemo(() => driveFolderPath(folders, folderId), [folders, folderId])
   const visibleUploads = useMemo(() => uploads.filter((upload) => upload.folderId === folderId), [uploads, folderId])
@@ -124,19 +143,95 @@ export function CrmDrivePage() {
 
   const loadFolderContents = useCallback(async (targetFolderId: string | null) => {
     const key = targetFolderId ?? "root"
-    const [nextFiles, nextStats] = await Promise.all([listDriveFiles(targetFolderId), loadDriveFolderStats(targetFolderId)])
-    setFilesByFolder((current) => ({ ...current, [key]: nextFiles }))
+    const [nextFolders, nextFiles, nextStats, nextPath] = await Promise.all([
+      listDriveFolders(targetFolderId, { limit: driveListLimit }),
+      listDriveFiles(targetFolderId, { limit: driveListLimit }),
+      loadDriveFolderStats(targetFolderId),
+      loadDriveFolderPath(targetFolderId),
+    ])
+    setFolders((current) => {
+      const byId = new Map(current.filter((folder) => folder.parentId !== targetFolderId).map((folder) => [folder.id, folder]))
+      for (const folder of nextPath) byId.set(folder.id, folder)
+      for (const folder of nextFolders.items) byId.set(folder.id, folder)
+      return [...byId.values()]
+    })
+    setFilesByFolder((current) => ({ ...current, [key]: nextFiles.items }))
+    setFolderPages((current) => ({
+      ...current,
+      [key]: { cursor: nextFolders.nextCursor, hasMore: nextFolders.hasMore, totalCount: nextFolders.totalCount, loading: false },
+    }))
+    setFilePages((current) => ({
+      ...current,
+      [key]: { cursor: nextFiles.nextCursor, hasMore: nextFiles.hasMore, totalCount: nextFiles.totalCount, loading: false },
+    }))
     setStatsByParent((current) => ({ ...current, [key]: nextStats }))
   }, [])
+
+  const loadMoreFolders = useCallback(async () => {
+    const currentPage = folderPages[folderKey]
+    if (!currentPage?.hasMore || currentPage.loading) return
+    setFolderPages((current) => ({ ...current, [folderKey]: { ...currentPage, loading: true } }))
+    try {
+      const nextPage = await listDriveFolders(folderId, { cursor: currentPage.cursor, limit: driveListLimit })
+      setFolders((current) => {
+        const byId = new Map(current.map((folder) => [folder.id, folder]))
+        for (const folder of nextPage.items) byId.set(folder.id, folder)
+        return [...byId.values()]
+      })
+      setFolderPages((current) => ({
+        ...current,
+        [folderKey]: { cursor: nextPage.nextCursor, hasMore: nextPage.hasMore, totalCount: nextPage.totalCount, loading: false },
+      }))
+    } catch (cause) {
+      setFolderPages((current) => ({ ...current, [folderKey]: { ...currentPage, loading: false } }))
+      toast.error(errorMessage(cause, t("More folders could not be loaded.")))
+    }
+  }, [folderId, folderKey, folderPages, t])
+
+  const loadMoreFiles = useCallback(async () => {
+    const currentPage = filePages[folderKey]
+    if (!currentPage?.hasMore || currentPage.loading) return
+    setFilePages((current) => ({ ...current, [folderKey]: { ...currentPage, loading: true } }))
+    try {
+      const nextPage = await listDriveFiles(folderId, { cursor: currentPage.cursor, limit: driveListLimit })
+      setFilesByFolder((current) => ({
+        ...current,
+        [folderKey]: [...(current[folderKey] ?? []), ...nextPage.items.filter((file) => !(current[folderKey] ?? []).some((entry) => entry.id === file.id))],
+      }))
+      setFilePages((current) => ({
+        ...current,
+        [folderKey]: { cursor: nextPage.nextCursor, hasMore: nextPage.hasMore, totalCount: nextPage.totalCount, loading: false },
+      }))
+    } catch (cause) {
+      setFilePages((current) => ({ ...current, [folderKey]: { ...currentPage, loading: false } }))
+      toast.error(errorMessage(cause, t("More files could not be loaded.")))
+    }
+  }, [filePages, folderId, folderKey, t])
 
   useEffect(() => {
     let active = true
 
-    Promise.all([listDriveFolders(), listDriveFiles(folderId), loadDriveFolderStats(folderId)])
-      .then(([nextFolders, nextFiles, nextStats]) => {
+    if (canWriteDrive) {
+      void retryPendingDriveCleanup().then(({ storageCleanupPending }) => {
+        if (active && storageCleanupPending) {
+          toast.warning(t("A previous deletion is still waiting for secure storage cleanup."))
+        }
+      }).catch(() => {
+        // The durable queue remains available for the next authorised attempt.
+      })
+    }
+
+    Promise.all([listDriveFolders(folderId, { limit: driveListLimit }), listDriveFiles(folderId, { limit: driveListLimit }), loadDriveFolderStats(folderId), loadDriveFolderPath(folderId)])
+      .then(([nextFolders, nextFiles, nextStats, nextPath]) => {
         if (!active) return
-        setFolders(nextFolders)
-        setFilesByFolder({ [folderKey]: nextFiles })
+        setFolders(Array.from(new Map([...nextPath, ...nextFolders.items].map((folder) => [folder.id, folder])).values()))
+        setFilesByFolder({ [folderKey]: nextFiles.items })
+        setFolderPages({
+          [folderKey]: { cursor: nextFolders.nextCursor, hasMore: nextFolders.hasMore, totalCount: nextFolders.totalCount, loading: false },
+        })
+        setFilePages({
+          [folderKey]: { cursor: nextFiles.nextCursor, hasMore: nextFiles.hasMore, totalCount: nextFiles.totalCount, loading: false },
+        })
         setStatsByParent({ [folderKey]: nextStats })
         setLoadError(null)
       })
@@ -176,6 +271,7 @@ export function CrmDrivePage() {
     if (loading) return
     let active = true
 
+    if (folderPages[folderKey] || filePages[folderKey]) return
     void loadFolderContents(folderId).catch((cause: unknown) => {
       if (active) toast.error(errorMessage(cause, t("This folder could not be refreshed.")))
     })
@@ -183,7 +279,7 @@ export function CrmDrivePage() {
     return () => {
       active = false
     }
-  }, [folderId, loading, loadFolderContents, t])
+  }, [folderId, folderKey, folderPages, filePages, loading, loadFolderContents, t])
 
   /** One signing request per folder, for every thumbnail it is missing. */
   useEffect(() => {
@@ -254,6 +350,10 @@ export function CrmDrivePage() {
           const next = new Map(current[folderKey] ?? [])
           next.set(created.id, emptyDriveFolderStats)
           return { ...current, [folderKey]: next }
+        })
+        setFolderPages((current) => {
+          const page = current[folderKey]
+          return page ? { ...current, [folderKey]: { ...page, totalCount: page.totalCount + 1 } } : current
         })
       } else if (folderEditor.targetId) {
         const saved = await updateDriveFolder(folderEditor.targetId, folderEditor.draft)
@@ -342,7 +442,7 @@ export function CrmDrivePage() {
 
     try {
       if (removal.kind === "folder") {
-        await deleteDriveFolder(removal.folder.id)
+        const { storageCleanupPending } = await deleteDriveFolder(removal.folder.id)
         const removedIds = new Set<string>()
         const collect = (id: string) => {
           removedIds.add(id)
@@ -359,15 +459,33 @@ export function CrmDrivePage() {
           next.delete(removal.folder.id)
           return { ...current, [folderKey]: next }
         })
-        toast.success(t("Folder deleted"))
+        setFolderPages((current) => {
+          const page = current[folderKey]
+          if (!page) return current
+          const removedDirectChildren = folders.filter((folder) => folder.parentId === folderId && removedIds.has(folder.id)).length
+          return { ...current, [folderKey]: { ...page, totalCount: Math.max(0, page.totalCount - removedDirectChildren) } }
+        })
+        if (storageCleanupPending) {
+          toast.warning(t("Folder deleted. Secure storage cleanup remains queued for the next authorised Drive visit."))
+        } else {
+          toast.success(t("Folder deleted"))
+        }
       } else {
-        await deleteDriveFile(removal.file)
+        const { storageCleanupPending } = await deleteDriveFile(removal.file)
         setFilesByFolder((current) => ({
           ...current,
           [folderKey]: (current[folderKey] ?? []).filter((entry) => entry.id !== removal.file.id),
         }))
+        setFilePages((current) => {
+          const page = current[folderKey]
+          return page ? { ...current, [folderKey]: { ...page, totalCount: Math.max(0, page.totalCount - 1) } } : current
+        })
         if (previewFile?.id === removal.file.id) setPreviewOpen(false)
-        toast.success(t("File deleted"))
+        if (storageCleanupPending) {
+          toast.warning(t("File deleted. Secure storage cleanup remains queued for the next authorised Drive visit."))
+        } else {
+          toast.success(t("File deleted"))
+        }
       }
 
       setRemovalOpen(false)
@@ -407,8 +525,26 @@ export function CrmDrivePage() {
     [],
   )
 
+  const processUpload = useCallback(async (upload: PendingUpload) => {
+    setUploads((current) => current.map((entry) => (
+      entry.id === upload.id ? { ...entry, error: null, progress: 0 } : entry
+    )))
+
+    try {
+      await runUpload(upload.id, upload.file, upload.folderId)
+      setUploads((current) => current.filter((entry) => entry.id !== upload.id))
+    } catch (cause) {
+      setUploads((current) => current.map((entry) => (
+        entry.id === upload.id
+          ? { ...entry, error: errorMessage(cause, t("That file could not be uploaded.")) }
+          : entry
+      )))
+    }
+  }, [runUpload, t])
+
   const handleFiles = useCallback(
     (incoming: FileList | null) => {
+      if (!canWriteDrive) return
       if (!incoming || incoming.length === 0) return
 
       const accepted: { id: string; file: File }[] = []
@@ -433,6 +569,8 @@ export function CrmDrivePage() {
           folderId: targetFolderId,
           preview: { thumbnail: null, seed: null, width: null, height: null },
           progress: 0,
+          file,
+          error: null,
         })),
       ])
 
@@ -442,19 +580,23 @@ export function CrmDrivePage() {
           const next = queue.shift()
           if (!next) return
 
-          try {
-            await runUpload(next.id, next.file, targetFolderId)
-          } catch (cause) {
-            toast.error(errorMessage(cause, t("That file could not be uploaded.")))
-          } finally {
-            setUploads((current) => current.filter((upload) => upload.id !== next.id))
-          }
+          await processUpload({
+            id: next.id,
+            name: next.file.name,
+            mimeType: next.file.type,
+            sizeBytes: next.file.size,
+            folderId: targetFolderId,
+            preview: { thumbnail: null, seed: null, width: null, height: null },
+            progress: 0,
+            file: next.file,
+            error: null,
+          })
         }
       }
 
       void Promise.all(Array.from({ length: Math.min(uploadConcurrency, queue.length) }, worker))
     },
-    [folderId, runUpload, t],
+    [canWriteDrive, folderId, processUpload, t],
   )
 
   /* -------------------------------------------------------------------- drops */
@@ -462,6 +604,7 @@ export function CrmDrivePage() {
   const dragCarriesFiles = (event: DragEvent) => event.dataTransfer?.types?.includes("Files") ?? false
 
   function onDragEnter(event: DragEvent) {
+    if (!canWriteDrive) return
     if (!dragCarriesFiles(event)) return
     event.preventDefault()
     dragDepth.current += 1
@@ -469,6 +612,7 @@ export function CrmDrivePage() {
   }
 
   function onDragOver(event: DragEvent) {
+    if (!canWriteDrive) return
     if (!dragCarriesFiles(event)) return
     event.preventDefault()
     event.dataTransfer.dropEffect = "copy"
@@ -483,6 +627,7 @@ export function CrmDrivePage() {
   }
 
   function onDrop(event: DragEvent) {
+    if (!canWriteDrive) return
     if (!dragCarriesFiles(event)) return
     event.preventDefault()
     dragDepth.current = 0
@@ -499,7 +644,7 @@ export function CrmDrivePage() {
     <div className="md-page md-page-stack">
       <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t("Drive")}</h1>
-        <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-self-end">
+        {canWriteDrive ? <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-self-end">
           <Button
             variant="ghost"
             className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,transform] duration-160 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-field-bg-hover)] active:scale-[0.98]"
@@ -515,10 +660,10 @@ export function CrmDrivePage() {
             <UploadCloud data-icon="inline-start" strokeWidth={1.3} />
             {t("Upload")}
           </Button>
-        </div>
+        </div> : null}
       </div>
 
-      <input
+      {canWriteDrive ? <input
         ref={fileInputRef}
         type="file"
         multiple
@@ -527,17 +672,17 @@ export function CrmDrivePage() {
           handleFiles(event.target.files)
           event.target.value = ""
         }}
-      />
+      /> : null}
 
-      <DriveSurfaceContextMenu onCreateFolder={startCreateFolder} onUpload={() => fileInputRef.current?.click()}>
+      <DriveSurfaceContextMenu canEdit={canWriteDrive} onCreateFolder={startCreateFolder} onUpload={() => fileInputRef.current?.click()}>
         <Surface
           padding="none"
           className="md-drive-dropzone overflow-hidden rounded-[var(--md-radius-2xl)]"
           data-dragging={dragging ? "true" : undefined}
-          onDragEnter={onDragEnter}
-          onDragOver={onDragOver}
-          onDragLeave={onDragLeave}
-          onDrop={onDrop}
+          onDragEnter={canWriteDrive ? onDragEnter : undefined}
+          onDragOver={canWriteDrive ? onDragOver : undefined}
+          onDragLeave={canWriteDrive ? onDragLeave : undefined}
+          onDrop={canWriteDrive ? onDrop : undefined}
         >
           {path.length > 0 || dragging ? (
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
@@ -578,8 +723,8 @@ export function CrmDrivePage() {
             ) : isEmpty ? (
               <DriveEmptyState
                 title={folderId ? t("This folder is empty") : t("Nothing in Drive yet")}
-                hint={t("Drag files in, or create a folder to organise them first.")}
-                action={
+                hint={t(canWriteDrive ? "Drag files in, or create a folder to organise them first." : "No files or folders are available here.")}
+                action={canWriteDrive ? (
                   <div className="flex flex-wrap items-center justify-center gap-2">
                     <Button
                       variant="ghost"
@@ -597,13 +742,13 @@ export function CrmDrivePage() {
                       {t("Upload")}
                     </Button>
                   </div>
-                }
+                ) : undefined}
               />
             ) : (
               <>
                 {childFolders.length > 0 ? (
                   <section className="grid gap-2">
-                    <DriveSectionLabel count={childFolders.length}>{t("Folders")}</DriveSectionLabel>
+                    <DriveSectionLabel count={folderPage?.totalCount ?? childFolders.length}>{t("Folders")}</DriveSectionLabel>
                     <div className="md-drive-grid">
                       <AnimatePresence initial={false} mode="popLayout">
                         {childFolders.map((folder, index) => (
@@ -622,17 +767,30 @@ export function CrmDrivePage() {
                                 folder: target,
                                 stats: stats?.get(target.id) ?? emptyDriveFolderStats,
                               })}
+                              canEdit={canWriteDrive}
                             />
                           </DriveGridItem>
                         ))}
                       </AnimatePresence>
                     </div>
+                    {folderPage?.hasMore ? (
+                      <div className="flex justify-center pt-1">
+                        <Button
+                          variant="ghost"
+                          className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] hover:bg-[var(--md-field-bg-hover)]"
+                          onClick={() => void loadMoreFolders()}
+                          disabled={folderPage.loading}
+                        >
+                          {folderPage.loading ? t("Loading…") : t("Load more folders")}
+                        </Button>
+                      </div>
+                    ) : null}
                   </section>
                 ) : null}
 
                 {files.length > 0 || visibleUploads.length > 0 ? (
                   <section className="grid gap-2">
-                    <DriveSectionLabel count={files.length + visibleUploads.length}>{t("Files")}</DriveSectionLabel>
+                    <DriveSectionLabel count={(filePage?.totalCount ?? files.length) + visibleUploads.length}>{t("Files")}</DriveSectionLabel>
                     <div className="md-drive-grid">
                       <AnimatePresence initial={false} mode="popLayout">
                         {[
@@ -663,6 +821,7 @@ export function CrmDrivePage() {
                                 thumbnailUrl={file.thumbnailPath ? thumbnailUrls[file.thumbnailPath] : null}
                                 pending={Boolean(upload)}
                                 progress={upload?.progress}
+                                pendingError={upload?.error}
                                 renaming={renamingId === file.id}
                                 onOpen={openPreview}
                                 onRename={renameFile}
@@ -670,11 +829,29 @@ export function CrmDrivePage() {
                                 onCancelRename={() => setRenamingId(null)}
                                 onDownload={download}
                                 onDelete={(target) => openRemoval({ kind: "file", file: target })}
+                                canEdit={canWriteDrive}
+                                onRetry={(target) => {
+                                  const pending = uploads.find((entry) => entry.id === target.id)
+                                  if (pending) void processUpload(pending)
+                                }}
+                                onDismiss={(target) => setUploads((current) => current.filter((entry) => entry.id !== target.id))}
                               />
                             </DriveGridItem>
                           ))}
                       </AnimatePresence>
                     </div>
+                    {filePage?.hasMore ? (
+                      <div className="flex justify-center pt-1">
+                        <Button
+                          variant="ghost"
+                          className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] hover:bg-[var(--md-field-bg-hover)]"
+                          onClick={() => void loadMoreFiles()}
+                          disabled={filePage.loading}
+                        >
+                          {filePage.loading ? t("Loading…") : t("Load more files")}
+                        </Button>
+                      </div>
+                    ) : null}
                   </section>
                 ) : null}
               </>
@@ -702,6 +879,7 @@ export function CrmDrivePage() {
         onOpenChange={setPreviewOpen}
         onDownload={(file) => void download(file)}
         onDelete={(file) => openRemoval({ kind: "file", file })}
+        canDelete={canWriteDrive}
       />
 
       <Dialog

@@ -11,6 +11,7 @@ import {
   Clock3,
   Cloud,
   Component,
+  CreditCard,
   FileText,
   Forklift,
   Funnel,
@@ -26,6 +27,7 @@ import {
   ListOrdered,
   Mail,
   MapPin,
+  Megaphone,
   MessageCircle,
   Package,
   PackageCheck,
@@ -113,7 +115,6 @@ export const sidebarAreas: SidebarArea[] = [
         children: [
           { label: "Bookings overview", icon: LayoutDashboard, route: "/bookings" },
           { label: "Road control", icon: Truck, route: "/road-control" },
-          { label: "New booking", icon: PackageCheck, route: "/bookings/new" },
           { label: "Provisional booking", icon: Clock3, route: "/bookings/provisional" },
         ],
       },
@@ -135,18 +136,9 @@ export const sidebarAreas: SidebarArea[] = [
         label: "Leads & opportunities",
         icon: Funnel,
         children: [
-          { label: "Leads", value: "39", icon: Users, route: "/crm/leads" },
+          { label: "Leads", icon: Users, route: "/crm/leads" },
           { label: "Contact cards", icon: IdCard, route: "/crm/contact-cards" },
           { label: "Deals", icon: BriefcaseBusiness, route: "/crm/deals" },
-        ],
-      },
-      {
-        id: "crm-marketing",
-        label: "Marketing",
-        icon: Palette,
-        children: [
-          { label: "Email marketing", icon: Mail, route: "/crm/emails" },
-          { label: "Drive", icon: HardDrive, route: "/crm/drive" },
         ],
       },
       {
@@ -158,12 +150,8 @@ export const sidebarAreas: SidebarArea[] = [
           { label: "Contacts", icon: Users, route: "/crm/contacts" },
         ],
       },
-      { id: "crm-activity", label: "CRM activity", icon: Clock3, route: "/crm/activity" },
-      { id: "crm-forms", label: "Forms", icon: FileText, route: "/crm/forms" },
+      { id: "crm-drive", label: "Drive", icon: HardDrive, route: "/crm/drive" },
       { id: "quotes", label: "Quotes", icon: ReceiptText, route: "/quotes" },
-      { id: "sales-activities", label: "Activities", icon: Clock3 },
-      { id: "sales-follow-ups", label: "Follow-ups", icon: BadgeCheck },
-      { id: "sales-overview", label: "Sales overview", icon: LayoutDashboard },
     ],
   },
   {
@@ -205,7 +193,7 @@ export const sidebarAreas: SidebarArea[] = [
       { id: "standalone-declarations", label: "Stand Alone Declarations", icon: ClipboardCheck, route: "/customs/standalone/export" },
       { id: "job-related-declarations", label: "Job Related Declarations", icon: Ship, route: "/customs/job-related/export" },
       { id: "classification-licences", label: "Classification & licences", icon: ScanText },
-      { id: "compliance-controls", label: "Compliance controls", icon: BadgeCheck },
+      { id: "compliance-controls", label: "Compliance controls", icon: BadgeCheck, route: "/compliance/screening" },
     ],
   },
   {
@@ -230,14 +218,15 @@ export const sidebarAreas: SidebarArea[] = [
   },
   {
     id: "administration",
-    label: "Administration",
+    label: "Admin",
     icon: Settings2,
     destinations: [
-      { id: "organisation-offices", label: "Organisation & offices", icon: Globe2, route: "/settings" },
-      { id: "users-roles-permissions", label: "Users, roles & permissions", icon: Users },
-      { id: "integrations", label: "Integrations", icon: Cloud },
-      { id: "subscription-feature-flags", label: "Subscription & feature flags", icon: SlidersHorizontal },
-      { id: "security-audit-retention", label: "Security, audit & retention", icon: KeyRound },
+      { id: "admin-users", label: "Users", icon: Users, route: "/admin/users" },
+      { id: "admin-ai-usage", label: "AI usage", icon: ChartAnalysis, route: "/admin/ai-usage" },
+      { id: "admin-broadcast", label: "Broadcast", icon: Megaphone, route: "/admin/broadcast" },
+      { id: "admin-billing", label: "Billing", icon: CreditCard, route: "/admin/billing" },
+      { id: "admin-activity-log", label: "Active log", icon: Clock3, route: "/admin/activity" },
+      { id: "admin-detailed-log", label: "Detailed log", icon: ListOrdered, route: "/admin/detailed-log" },
     ],
   },
 ]
@@ -247,7 +236,6 @@ export const sidebarPrimary: NavItem[] = [
   { label: "Warehouse", value: "12", icon: Forklift, route: "/warehouse" },
   { label: "Customers", value: "39", icon: Users, route: "/customers" },
   { label: "CRM", value: "9", icon: BriefcaseBusiness, route: "/crm" },
-  { label: "Paper Tray", value: "184", icon: FileText, route: "/paper-tray" },
   { label: "Exceptions", value: "2", icon: TriangleAlert },
 ]
 
@@ -262,13 +250,9 @@ export const sidebarSecondary: NavItem[] = [
 
 export const crmSidebarItems: NavItem[] = [
   { label: "CRM overview", value: "Live", icon: LayoutDashboard, route: "/crm" },
-  { label: "Leads", value: "39", icon: Users, route: "/crm/leads" },
+  { label: "Leads", icon: Users, route: "/crm/leads" },
   { label: "Contact cards", icon: IdCard, route: "/crm/contact-cards" },
   { label: "Contacts", icon: Mail, route: "/crm/contacts" },
   { label: "Deals", icon: BriefcaseBusiness, route: "/crm/deals" },
-  { label: "Forms", icon: FileText, route: "/crm/forms" },
-  { label: "Emails", icon: Mail, route: "/crm/emails" },
-  { label: "Lists", icon: ListOrdered, route: "/crm/lists" },
   { label: "Drive", icon: HardDrive, route: "/crm/drive" },
-  { label: "Activity", value: "24h", icon: Clock3, route: "/crm/activity" },
 ]

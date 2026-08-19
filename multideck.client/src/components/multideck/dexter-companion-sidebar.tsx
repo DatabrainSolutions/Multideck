@@ -18,9 +18,9 @@ import {
   mergeDexterMentionItems,
 } from "@/data/dexter-mentions"
 import { useLanguage } from "@/i18n/language-provider"
-import { listCustomers } from "@/lib/customer-api"
-import { listDeals } from "@/lib/deal-api"
-import { listLeads } from "@/lib/lead-api"
+import { listAccountsPage } from "@/lib/customer-api"
+import { listDealsPage } from "@/lib/deal-api"
+import { listLeadsPage } from "@/lib/lead-api"
 import { mdMotion } from "@/lib/motion"
 import { useAiAgentName } from "@/lib/user-preferences"
 import { cn } from "@/lib/utils"
@@ -81,17 +81,21 @@ export function DexterCompanionSidebar({
     if (!open) return
     let active = true
 
-    Promise.allSettled([listCustomers(), listLeads(), listDeals()]).then(([customerResult, leadResult, dealResult]) => {
+    Promise.allSettled([
+      listAccountsPage({ limit: 25, offset: 0 }),
+      listLeadsPage({ limit: 25, offset: 0 }),
+      listDealsPage({ limit: 25, offset: 0 }),
+    ]).then(([customerResult, leadResult, dealResult]) => {
       if (!active) return
       setContextCounts({
-        accounts: customerResult.status === "fulfilled" ? customerResult.value.length : 0,
-        leads: leadResult.status === "fulfilled" ? leadResult.value.length : 0,
-        deals: dealResult.status === "fulfilled" ? dealResult.value.length : 0,
+        accounts: customerResult.status === "fulfilled" ? customerResult.value.total : 0,
+        leads: leadResult.status === "fulfilled" ? leadResult.value.total : 0,
+        deals: dealResult.status === "fulfilled" ? dealResult.value.total : 0,
       })
       setMentionItems(mergeDexterMentionItems(
-        customerResult.status === "fulfilled" ? customerMentionItems(customerResult.value) : [],
-        leadResult.status === "fulfilled" ? leadMentionItems(leadResult.value) : [],
-        dealResult.status === "fulfilled" ? dealMentionItems(dealResult.value) : [],
+        customerResult.status === "fulfilled" ? customerMentionItems(customerResult.value.rows) : [],
+        leadResult.status === "fulfilled" ? leadMentionItems(leadResult.value.rows) : [],
+        dealResult.status === "fulfilled" ? dealMentionItems(dealResult.value.rows) : [],
         defaultDexterMentionItems,
       ))
     })

@@ -1,10 +1,10 @@
-import { useEffect, useId, useMemo, useState, type ReactNode } from "react"
-import { ArrowRight, Building2, LoaderCircle, RefreshCw } from "@/components/icons/hugeicons"
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
+import { ArrowRight, Building2, RefreshCw } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
-import { CustomerAvatar } from "@/components/multideck/customer-components"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { RegisterFacetSelect, RegisterRevalidatingMark, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
@@ -13,7 +13,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useLanguage } from "@/i18n/language-provider"
-import { createCustomer, getCustomerReference, listCustomers, type ApiCustomer, type CreateCustomerInput, type CustomerReference } from "@/lib/customer-api"
+import type { AuthUserSummary } from "@/lib/auth-user"
+import { createCustomer, getCustomer, getCustomerReference, listAccountsPage, type AccountRegisterPage, type ApiCustomer, type CreateCustomerInput, type CustomerReference, type RegisterSort } from "@/lib/customer-api"
+import { engagementTemperatureTone, fallbackEngagementSignal } from "@/lib/crm-engagement"
 import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 
 const emptyAccount = (orgTypeId = ""): CreateCustomerInput => ({
@@ -21,74 +23,120 @@ const emptyAccount = (orgTypeId = ""): CreateCustomerInput => ({
   contactFirstName: null, contactLastName: null, contactEmail: null,
 })
 
-const marketingScopes = ["All", "Opted in", "Opted out"] as const
-type MarketingScope = typeof marketingScopes[number]
+const accountScopes = ["All", "Mine"] as const
+type AccountScope = typeof accountScopes[number]
+const accountPageSize = 50
+const emptyAccountSummary: AccountRegisterPage["summary"] = { accounts: 0, contacts: 0, needsAttention: 0, marketingOptedIn: 0, unassigned: 0, healthy: 0 }
+const emptyAccountFacets: AccountRegisterPage["facets"] = { relationships: [], owners: [], hasUnassigned: false }
 
-export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void }) {
+export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: string) => void; currentUser?: AuthUserSummary | null }) {
   const { language, t } = useLanguage()
   const [accounts, setAccounts] = useState<ApiCustomer[]>([])
   const [query, setQuery] = useState("")
-  const [marketingScope, setMarketingScope] = useState<MarketingScope>("All")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+  const [accountScope, setAccountScope] = useState<AccountScope>("All")
   const [relationshipFilter, setRelationshipFilter] = useState("")
   const [ownerFilter, setOwnerFilter] = useState("")
   const [state, setState] = useState<"loading" | "ready" | "error">("loading")
   const [reloadToken, setReloadToken] = useState(0)
+  const lastConsumedReloadToken = useRef(0)
   const [dexterOpen, setDexterOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [createSection, setCreateSection] = useState("account")
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [reference, setReference] = useState<CustomerReference | null>(null)
+  const [referenceState, setReferenceState] = useState<"idle" | "loading" | "ready" | "error">("idle")
+  const [referenceReloadToken, setReferenceReloadToken] = useState(0)
   const [draft, setDraft] = useState<CreateCustomerInput>(emptyAccount())
+  const [offset, setOffset] = useState(0)
+  const [total, setTotal] = useState(0)
+  const [summary, setSummary] = useState(emptyAccountSummary)
+  const [facets, setFacets] = useState(emptyAccountFacets)
+  const [sort, setSort] = useState<RegisterSort | null>({ id: "account", direction: "asc" })
+  const currentOwnerId = currentUser?.internalUserId ?? null
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250)
+    return () => window.clearTimeout(timer)
+  }, [query])
+
+  useEffect(() => setOffset(0), [query, accountScope, relationshipFilter, ownerFilter])
 
   useEffect(() => {
     let active = true
+    const forceRefresh = reloadToken !== lastConsumedReloadToken.current
+    lastConsumedReloadToken.current = reloadToken
     setState("loading")
-    listCustomers(undefined, { forceRefresh: reloadToken > 0 })
-      .then((data) => { if (active) { setAccounts(data); setState("ready") } })
+    listAccountsPage({
+      search: debouncedQuery,
+      marketingScope: "all",
+      relationship: relationshipFilter,
+      owner: accountScope === "Mine" ? currentOwnerId ?? "__no_current_user__" : ownerFilter,
+      sort,
+      limit: accountPageSize,
+      offset,
+    }, { forceRefresh })
+      .then((data) => {
+        if (!active) return
+        setAccounts(data.rows)
+        setTotal(data.total)
+        setSummary(data.summary)
+        setFacets(data.facets)
+        setState("ready")
+      })
       .catch((error) => { console.error("Accounts could not be loaded.", error); if (active) setState("error") })
     return () => { active = false }
-  }, [reloadToken])
+  }, [accountScope, currentOwnerId, debouncedQuery, offset, ownerFilter, relationshipFilter, reloadToken, sort])
 
   useEffect(() => {
+    if (!createOpen || reference) return
+    let active = true
+    setReferenceState("loading")
     getCustomerReference().then((data) => {
+      if (!active) return
       setReference(data)
       setDraft((current) => current.orgTypeId ? current : { ...current, orgTypeId: data.organisationTypes[0]?.id ?? "" })
-    }).catch((error) => console.error("Account reference data could not be loaded.", error))
-  }, [])
+      setReferenceState("ready")
+    }).catch((error) => {
+      console.error("Account reference data could not be loaded.", error)
+      if (active) setReferenceState("error")
+    })
+    return () => { active = false }
+  }, [createOpen, reference, referenceReloadToken])
 
   useEffect(() => subscribeTopBarAction(topBarActionEvents.createCrmAccount, openCreate), [])
 
-  const filtered = useMemo(() => {
-    const term = query.trim().toLowerCase()
-    return accounts.filter((account) => {
-      if (marketingScope === "Opted in" && !account.marketingOptIn) return false
-      if (marketingScope === "Opted out" && account.marketingOptIn) return false
-      if (relationshipFilter && account.relationshipStatus !== relationshipFilter) return false
-      if (ownerFilter === "__unassigned__" && account.ownerId) return false
-      if (ownerFilter && ownerFilter !== "__unassigned__" && account.ownerId !== ownerFilter) return false
-      return !term || [account.name, account.location, account.industry, account.ownerName, account.relationshipStatus].some((value) => value?.toLowerCase().includes(term))
-    })
-  }, [accounts, marketingScope, ownerFilter, query, relationshipFilter])
-  const needsAttention = accounts.filter((account) => account.nextActionDueAt && new Date(account.nextActionDueAt) <= new Date()).length
-  const contactTotal = accounts.reduce((total, account) => total + account.contactCount, 0)
-  const marketingOptIns = accounts.filter((account) => account.marketingOptIn).length
-  const unassignedAccounts = accounts.filter((account) => !account.ownerId).length
-  const healthyAccounts = accounts.filter((account) => account.healthScore !== null && account.healthScore >= 70).length
-  const accountFiltersActive = Boolean(query || relationshipFilter || ownerFilter || marketingScope !== "All")
-  const relationshipOptions = useMemo(() => [...new Set(accounts.map((account) => account.relationshipStatus).filter(Boolean))].sort().map((value) => ({ value, label: humanize(value) })), [accounts])
+  const needsAttention = summary.needsAttention
+  const contactTotal = summary.contacts
+  const marketingOptIns = summary.marketingOptedIn
+  const unassignedAccounts = summary.unassigned
+  const healthyAccounts = summary.healthy
+  const accountFiltersActive = Boolean(query || relationshipFilter || ownerFilter || accountScope !== "All")
+  const relationshipOptions = useMemo(() => facets.relationships.map((value) => ({ value, label: humanize(value) })), [facets.relationships])
   const ownerOptions = useMemo(() => {
-    const assigned = [...new Map(accounts.filter((account) => account.ownerId && account.ownerName).map((account) => [account.ownerId as string, account.ownerName as string])).entries()]
-      .map(([value, label]) => ({ value, label }))
-      .sort((left, right) => left.label.localeCompare(right.label))
-    return accounts.some((account) => !account.ownerId) ? [...assigned, { value: "__unassigned__", label: "Unassigned" }] : assigned
-  }, [accounts])
+    const assigned = facets.owners.map((owner) => ({ value: owner.id, label: owner.name }))
+    return facets.hasUnassigned ? [...assigned, { value: "__unassigned__", label: "Unassigned" }] : assigned
+  }, [facets])
 
   const accountColumns = useMemo<DataTableColumn<ApiCustomer>[]>(() => [
     {
       id: "account", label: "Account", width: 300, minWidth: 230, maxWidth: 430, canHide: false, resizable: true,
       sortValue: (account) => account.name,
-      cell: (account) => <div className="flex min-h-11 items-center gap-3"><CustomerAvatar initials={account.initials} tone="teal" /><span className="min-w-0"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{account.name}</span><span className="mt-0.5 block truncate text-[12px] text-[var(--md-text)]">{[account.industry, account.location].filter(Boolean).join(" · ") || t("No location recorded")}</span></span></div>,
+      cell: (account) => <div className="grid min-h-11 min-w-0 content-center"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{account.name}</span><span className="mt-0.5 block truncate text-[12px] text-[var(--md-text)]">{[account.industry, account.location].filter(Boolean).join(" · ") || t("No location recorded")}</span></div>,
+    },
+    {
+      id: "temperature", label: "Temperature", kind: "status", width: 128, minWidth: 112, maxWidth: 160, resizable: true,
+      cellTitle: (account) => {
+        const signal = account.engagementSignal ?? fallbackEngagementSignal(account.id, account.lastContactAt)
+        return signal.calculatedFromSources
+          ? `${signal.temperature} · ${signal.activityCount30d} ${t("activities")} · ${signal.emailCount30d} ${t("emails in 30 days")}`
+          : `${signal.temperature} · ${t("Based on the last recorded engagement")}`
+      },
+      cell: (account) => {
+        const signal = account.engagementSignal ?? fallbackEngagementSignal(account.id, account.lastContactAt)
+        return <StatusPill tone={engagementTemperatureTone(signal.temperature)}>{t(signal.temperature)}</StatusPill>
+      },
     },
     { id: "relationship", label: "Relationship", kind: "status", width: 160, minWidth: 130, resizable: true, sortValue: (account) => account.relationshipStatus || account.status, cell: (account) => <StatusPill tone={account.healthScore != null && account.healthScore < 50 ? "amber" : "neutral"}>{humanize(account.relationshipStatus || account.status)}</StatusPill> },
     { id: "owner", label: "Owner", width: 160, minWidth: 130, resizable: true, sortValue: (account) => account.ownerName, cellClassName: "text-[13px] text-[var(--md-text)]", cell: (account) => account.ownerName || t("Unassigned") },
@@ -100,7 +148,7 @@ export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void
 
   function clearAccountFilters() {
     setQuery("")
-    setMarketingScope("All")
+    setAccountScope("All")
     setRelationshipFilter("")
     setOwnerFilter("")
   }
@@ -158,7 +206,7 @@ export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
         {[
-          [t("Total accounts"), accounts.length, t("all customer organisations")],
+          [t("Total accounts"), summary.accounts, t("all customer organisations")],
           [t("Contacts"), contactTotal, t("recorded contacts")],
           [t("Needs attention"), needsAttention, t("need attention now")],
           [t("Marketing opted in"), marketingOptIns, t("with marketing consent")],
@@ -180,16 +228,24 @@ export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void
       </div>
 
       <DataTable
+        key="crm-accounts-v4"
         ariaLabel="Account directory"
         columnsButtonLabel="Manage account columns"
-        storageKey="crm-accounts"
+        storageKey="crm-accounts-v4"
         columns={accountColumns}
-        rows={state === "ready" ? filtered : []}
+        rows={accounts}
         getRowKey={(account) => account.id}
+        exportConfig={{
+          fileName: "crm-accounts",
+          recordCategory: "Account details",
+          loadRecords: (selectedAccounts) => Promise.all(selectedAccounts.map((account) => getCustomer(account.id))),
+        }}
         onRowClick={(account) => navigate(`/crm/accounts/${account.id}`)}
         rowClassName="group hover:bg-[var(--md-hover)]"
+        serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "account", direction: "asc" }); setOffset(0) } }}
+        pagination={{ offset, limit: accountPageSize, total, loading: state === "loading", onOffsetChange: setOffset }}
         compactToolbar
-        toolbarTabs={<RegisterViewSwitch options={marketingScopes} value={marketingScope} onChange={setMarketingScope} counts={{ All: accounts.length, "Opted in": marketingOptIns, "Opted out": accounts.length - marketingOptIns }} ariaLabel="Marketing consent filter" compact />}
+        toolbarTabs={<RegisterViewSwitch options={accountScopes} value={accountScope} onChange={setAccountScope} counts={{ All: accountScope === "All" ? summary.accounts : undefined, Mine: accountScope === "Mine" ? summary.accounts : undefined }} ariaLabel="Account ownership filter" compact />}
         toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search accounts" placeholder="Search accounts…" className="sm:w-[180px]" />}
         toolbarFilters={<>
           <RegisterFacetSelect label="Relationship status" allLabel="All relationships" value={relationshipFilter} options={relationshipOptions} onChange={setRelationshipFilter} className="w-[132px]" />
@@ -197,7 +253,7 @@ export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void
         </>}
         toolbarOptions={<RegisterRevalidatingMark active={state === "loading" && accounts.length > 0} />}
         emptyState={state === "loading"
-          ? <RecordState icon={<LoaderCircle className="size-5 animate-spin" />} title={t("Loading accounts…")} />
+          ? <RecordState icon={<DotGridLoader size="sm" decorative />} title={t("Loading accounts…")} />
           : state === "error"
             ? <RecordState icon={<RefreshCw className="size-5" />} title={t("Accounts could not be loaded.")} detail={t("Check your connection and try again.")} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} />
             : <RecordState icon={<Building2 className="size-5" />} title={accountFiltersActive ? t("No accounts match these filters.") : t("No accounts yet.")} detail={accountFiltersActive ? t("Clear a filter or try another name, location, owner or relationship status.") : t("Create the first account to keep contacts and customer work together.")} action={accountFiltersActive ? <Button variant="outline" onClick={clearAccountFilters}>{t("Clear filters")}</Button> : <Button onClick={openCreate}>{t("New account")}</Button>} />}
@@ -231,6 +287,12 @@ export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void
                   {reference?.organisationTypes.map((type) => <SelectItem key={type.id} value={type.id}>{type.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {referenceState === "error" ? (
+                <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] px-3 py-2.5 text-[12px] font-normal text-[var(--md-text)]">
+                  <span>{t("Organisation types could not be loaded. Try again before creating this account.")}</span>
+                  <Button type="button" variant="outline" className="h-8" onClick={() => setReferenceReloadToken((value) => value + 1)}>{t("Try again")}</Button>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -244,9 +306,9 @@ export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void
           <div className="grid gap-4">
             <div className="grid gap-4 sm:grid-cols-2"><Field label={t("First name")} value={draft.contactFirstName ?? ""} onChange={(value) => update("contactFirstName", value || null)} /><Field label={t("Last name")} value={draft.contactLastName ?? ""} onChange={(value) => update("contactLastName", value || null)} /></div>
             <Field label={t("Email")} type="email" value={draft.contactEmail ?? ""} onChange={(value) => update("contactEmail", value || null)} />
-            {createError ? <p role="alert" className="text-[13px] text-[var(--md-red)]">{createError}</p> : null}
           </div>
         ) : null}
+        {createError ? <p role="alert" className="text-[13px] text-[var(--md-red)]">{createError}</p> : null}
       </WizardDialog>
     </DexterDockedPage>
   )

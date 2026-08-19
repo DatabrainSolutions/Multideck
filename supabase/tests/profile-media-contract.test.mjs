@@ -32,12 +32,15 @@ test("cover photo RPCs validate ownership and uploaded storage objects", () => {
   assert.match(migration, /grant execute on function public\.set_current_user_cover_photo.*authenticated/s)
 })
 
-test("the sidebar receives a signed URL before authenticated content mounts", () => {
+test("the sidebar receives the bootstrap signed URL without a second storage request", () => {
   const app = read("multideck.client/src/App.tsx")
   const sidebar = read("multideck.client/src/components/multideck/app-sidebar.tsx")
+  const bootstrap = read("supabase/functions/_shared/workspace-bootstrap.ts")
 
-  assert.match(app, /await preloadImage\(signedUrl\)\s+nextUser\.profilePhotoUrl = signedUrl/)
+  assert.match(bootstrap, /createSignedUrls\(paths, mediaUrlLifetimeSeconds\)/)
+  assert.match(app, /const bootstrapMedia = apiSession\?\.workspace\?\.profileMedia[\s\S]*?nextUser\.profilePhotoUrl = bootstrapMedia\.profilePhotoUrl/)
   assert.match(app, /setCurrentUser\(nextUser\)\s+setAuthStatus\("authenticated"\)/)
+  assert.match(app, /createProfilePhotoSignedUrls\(photos\)/)
   assert.match(sidebar, /currentUser\?\.profilePhotoUrl/)
   assert.match(sidebar, /currentUser\?\.profilePhoto \? null : accountInitials/)
 })

@@ -1,0 +1,100 @@
+import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
+import test from "node:test"
+
+const repoRoot = resolve(import.meta.dirname, "../..")
+const read = (path) => readFileSync(resolve(repoRoot, path), "utf8")
+const migration = read("supabase/migrations/20260819090000_team_users_bounded_register.sql")
+const teamFunction = read("supabase/functions/team/index.ts")
+const teamReadModel = read("supabase/functions/_shared/team-read-model.ts")
+const clientApi = read("multideck.client/src/lib/api.ts")
+const settingsPage = read("multideck.client/src/pages/settings-page.tsx")
+const contactCardsPage = read("multideck.client/src/pages/contact-cards-page.tsx")
+const crmPage = read("multideck.client/src/pages/crm-page.tsx")
+const profilePhoto = read("multideck.client/src/lib/profile-photo.ts")
+const benchmark = read("multideck.client/benchmarks/settings-users-paging.mjs")
+
+test("Admin Users is a maximum-50-row service-role read rather than a browser auth catalogue dump", () => {
+  assert.match(migration, /multideck_team_users_register_page/)
+  assert.match(migration, /least\(greatest\(coalesce\(p_limit, 20\), 1\), 50\)/)
+  assert.match(migration, /'total', \(select count\(\*\) from filtered\)/)
+  assert.match(migration, /where workspace_user\."Company_ID" = p_company_id/)
+  assert.match(migration, /left join auth\.users auth_user/)
+  assert.match(migration, /revoke all on function public\.multideck_team_users_register_page[\s\S]*from public, anon, authenticated/)
+  assert.match(migration, /grant execute on function public\.multideck_team_users_register_page[\s\S]*to service_role/)
+  assert.doesNotMatch(migration, /grant execute[\s\S]*to authenticated/)
+  assert.doesNotMatch(migration, /insert into|update public\.|delete from public\./i)
+})
+
+test("the Team endpoint checks permission, bounds inputs and returns only catalogue metadata beside the requested page", () => {
+  assert.match(teamFunction, /parts\.length === 1 && parts\[0\] === "page"/)
+  assert.match(teamFunction, /requirePermission\(admin, current\.User_ID, "Users\.Read"\)/)
+  assert.match(teamFunction, /boundedInteger\(url\.searchParams\.get\("limit"\), 20, 1, 50\)/)
+  assert.match(teamFunction, /admin\.rpc\("multideck_team_users_register_page"/)
+  assert.match(teamFunction, /teamCatalogueReadModel\(admin, current\.Company_ID\)/)
+  assert.match(teamFunction, /authorizationCatalogueReadModel\(admin\)/)
+  assert.match(teamReadModel, /export async function teamCatalogueReadModel/)
+  assert.match(teamReadModel, /export async function authorizationCatalogueReadModel/)
+  assert.match(teamReadModel, /userRoles: \[\]/)
+})
+
+test("desktop and mobile Users views share debounced server paging, sorting and one photo-signing batch", () => {
+  assert.match(settingsPage, /getApiTeamUsersPage\(session\.access_token/)
+  assert.match(settingsPage, /setTimeout\(\(\) => \{[\s\S]*setDebouncedSearchQuery\(searchQuery\.trim\(\)\)[\s\S]*\}, 250\)/)
+  assert.match(settingsPage, /serverSorting=\{\{ value: userSort/)
+  assert.match(settingsPage, /pagination=\{\{ offset: userOffset, limit: 20, total: totalUsers/)
+  assert.match(settingsPage, /<Pagination[\s\S]*pageCount=\{Math\.max\(1, Math\.ceil\(totalUsers \/ 20\)\)\}/)
+  assert.match(settingsPage, /createProfilePhotoSignedUrls\(photos\)/)
+  assert.match(profilePhoto, /export async function createProfilePhotoSignedUrls/)
+  assert.doesNotMatch(settingsPage, /Promise\.all\(\(team\?\.users/)
+  assert.match(settingsPage, /setAuthorizationError/)
+  assert.match(settingsPage, /Users loaded, but roles could not be loaded\./)
+  assert.doesNotMatch(settingsPage.slice(settingsPage.indexOf("const loadAuthorization"), settingsPage.indexOf("useEffect(() =>", settingsPage.indexOf("const loadAuthorization"))), /setLoadError/)
+})
+
+test("rollout drift fails clearly instead of downloading the full auth directory", () => {
+  assert.match(clientApi, /edgeFetch\("team", `\/page\?\$\{query\}`/)
+  assert.match(clientApi, /multideck_team_users_register_page/)
+  assert.match(clientApi, /Workspace user paging is still being prepared/)
+  assert.match(clientApi, /The workspace role catalogue is still being prepared/)
+  assert.doesNotMatch(clientApi, /export async function getApiTeamUsers\b|const legacy = await getApiTeamUsers/)
+  assert.match(clientApi, /readCachedRegisterPage\(accessToken, resource/)
+  assert.match(clientApi, /invalidateRegisterPages\("team-users:"\)/)
+})
+
+test("deletion reassignment searches a bounded option endpoint instead of embedding every eligible user", () => {
+  assert.match(migration, /multideck_team_user_replacement_options/)
+  assert.match(migration, /least\(greatest\(coalesce\(p_limit, 50\), 1\), 50\)/)
+  assert.match(teamFunction, /parts\.length === 2 && parts\[1\] === "replacement-options"/)
+  assert.match(teamFunction, /return json\(request, \{ \.\.\.impact, eligibleUsers: \[\] \}\)/)
+  assert.match(settingsPage, /getApiTeamUserReplacementOptions\(session\.access_token/)
+  assert.match(settingsPage, /replacementSearch \? 250 : 0/)
+  assert.match(clientApi, /Replacement user search is still being prepared/)
+  assert.doesNotMatch(clientApi, /legacy\.users[\s\S]*replacement/)
+})
+
+test("page-level avatars resolve only the exact visible owners instead of loading the whole team", () => {
+  assert.match(teamFunction, /parts\.length === 1 && parts\[0\] === "lookup"/)
+  assert.match(teamFunction, /requirePermission\(admin, current\.User_ID, "Users\.Read"\)/)
+  assert.match(teamFunction, /ids\.length > 50/)
+  assert.match(teamFunction, /Choose up to 50 valid team users/)
+  assert.match(teamReadModel, /export async function teamUsersByIdsReadModel/)
+  assert.match(teamReadModel, /\.in\("User_ID", userIds\.slice\(0, 50\)\)/)
+  assert.match(teamReadModel, /\.limit\(50\)/)
+  assert.match(clientApi, /export function getApiTeamUsersByIds/)
+  assert.match(clientApi, /team-users:lookup:/)
+  assert.match(clientApi, /edgeFetch\("team", `\/lookup\?\$\{query\}`/)
+  assert.match(contactCardsPage, /getApiTeamUsersByIds\(session\.access_token, ownerIds\)/)
+  assert.match(crmPage, /getApiTeamUsersByIds\(session\.access_token, ownerIds\)/)
+  assert.doesNotMatch(contactCardsPage, /getApiTeamUsers\(/)
+  assert.doesNotMatch(crmPage, /getApiTeamUsers\(/)
+})
+
+test("the 100,000-user proof fixture performs no Supabase writes", () => {
+  assert.match(benchmark, /const userCount = 100_000/)
+  assert.match(benchmark, /const warmups = 2/)
+  assert.match(benchmark, /const runs = 9/)
+  assert.match(benchmark, /supabase_writes: 0/)
+  assert.doesNotMatch(benchmark, /from\("|\.insert\(|\.update\(|\.delete\(/)
+})

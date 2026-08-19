@@ -823,6 +823,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
     fetchThreadPage,
     readThreadDetail,
     fetchThreadDetail,
+    fetchOlderThreadMessages,
     prefetchThreadDetail,
     rememberThreadDetail,
   } = useInboxWorkspace()
@@ -842,6 +843,8 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
   const [thread, setThread] = useState<InboxThreadDetail | null>(null)
   const [threadState, setThreadState] = useState<LoadState>("idle")
   const [threadError, setThreadError] = useState<string | null>(null)
+  const [olderMessagesLoading, setOlderMessagesLoading] = useState(false)
+  const [olderMessagesError, setOlderMessagesError] = useState<string | null>(null)
   const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(new Set())
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const [summaryVisibleThreadId, setSummaryVisibleThreadId] = useState<string | null>(null)
@@ -1136,6 +1139,8 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
   /* ----------------------------------------------------------- thread detail */
 
   useEffect(() => {
+    setOlderMessagesLoading(false)
+    setOlderMessagesError(null)
     if (!selectedThreadId) {
       setThread(null)
       setThreadState("idle")
@@ -1175,6 +1180,21 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
         setThreadState("error")
       })
   }, [fetchThreadDetail, readThreadDetail, selectedThreadId, t])
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!thread || !thread.hasOlderMessages || olderMessagesLoading) return
+    const targetThreadId = thread.id
+    setOlderMessagesLoading(true)
+    setOlderMessagesError(null)
+    try {
+      const detail = await fetchOlderThreadMessages(targetThreadId, thread.messages.length)
+      setThread((current) => current?.id === targetThreadId ? detail : current)
+    } catch (error) {
+      setOlderMessagesError(errorMessageFor(error, t("Unable to load older messages.")))
+    } finally {
+      setOlderMessagesLoading(false)
+    }
+  }, [fetchOlderThreadMessages, olderMessagesLoading, t, thread])
 
   // Open pixels update Multideck directly rather than the mailbox provider, so
   // provider delta sync alone cannot refresh a visible status. Poll only the
@@ -1741,7 +1761,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       }))
   }, [t, thread])
 
-  if (accountState === "loading") {
+  if (accountState === "idle" || accountState === "loading") {
     return (
       <div className="grid h-full place-items-center">
         <p className="flex items-center gap-2 text-[13px] text-[var(--md-text)]">
@@ -2341,6 +2361,22 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
             ) : null}
 
             <div className={cn("flex flex-col gap-2", summaryVisibleThreadId === thread.id ? "mt-3" : "mt-0")}>
+              {thread.hasOlderMessages ? (
+                <div className="flex flex-col items-center gap-1.5 py-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-8 rounded-full px-3 text-[12px] font-medium text-[var(--md-text)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"
+                    disabled={olderMessagesLoading}
+                    onClick={() => void loadOlderMessages()}
+                  >
+                    {olderMessagesLoading ? t("Loading older messages…") : t("Load older messages")}
+                  </Button>
+                  {olderMessagesError ? (
+                    <p role="alert" className="text-[11.5px] text-[var(--md-red)]">{olderMessagesError}</p>
+                  ) : null}
+                </div>
+              ) : null}
               {thread.messages.map((message) => (
                 <MessageCard
                   key={message.id}

@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   CircleDollarSign,
   LoaderCircle,
+  RefreshCw,
   Route,
   Sparkles,
 } from "@/components/icons/hugeicons"
@@ -88,7 +89,9 @@ function initialData(lead: ApiLeadDetail, options: ApiDealConversionOptions): Wi
   return {
     name: `${lead.companyName} — ${lead.serviceInterest || "new opportunity"}`,
     opportunityTypeCode: options.opportunityTypes[0]?.code ?? "",
-    primaryContactId: lead.contacts.find((contact) => contact.isPrimary)?.id ?? "",
+    primaryContactId: lead.company.organisationId
+      ? lead.contacts.find((contact) => contact.isPrimary)?.id ?? ""
+      : "",
     expectedCloseDate: toDateInput(closeDate),
     expectedValueAmount: lead.valueAmount?.toString() ?? "",
     expectedMarginAmount: "",
@@ -213,12 +216,15 @@ export function LeadConversionPage({
   const [data, setData] = useState<WizardData | null>(null)
   const [activeStep, setActiveStep] = useState(0)
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
+  const [reloadToken, setReloadToken] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [createdDeal, setCreatedDeal] = useState<ApiDeal | null>(null)
 
   useEffect(() => {
     let active = true
+    setLoadState("loading")
+    setError(null)
     Promise.all([getLead(leadId), getDealConversionOptions()])
       .then(([nextLead, nextOptions]) => {
         if (!active) return
@@ -235,7 +241,7 @@ export function LeadConversionPage({
     return () => {
       active = false
     }
-  }, [leadId, t])
+  }, [leadId, reloadToken, t])
 
   const missing = useMemo(() => data ? missingForStep(activeStep, data) : [], [activeStep, data])
 
@@ -267,7 +273,7 @@ export function LeadConversionPage({
     const payload: ConvertLeadToDealInput = {
       name: data.name.trim(),
       opportunityTypeCode: data.opportunityTypeCode,
-      primaryContactId: data.primaryContactId || null,
+      primaryContactId: lead.company.organisationId ? data.primaryContactId || null : null,
       expectedCloseDate: data.expectedCloseDate,
       expectedValueAmount: parseOptionalNumber(data.expectedValueAmount),
       expectedMarginAmount: parseOptionalNumber(data.expectedMarginAmount),
@@ -316,12 +322,16 @@ export function LeadConversionPage({
   if (loadState === "error" || !lead || !options || !data) {
     return (
       <div className="md-page md-page-stack">
-        <Button variant="ghost" className="w-fit" onClick={() => navigate(`/crm/leads/${leadId}`)}>
-          <ArrowLeft data-icon="inline-start" />{t("Back to lead")}
+        <Button variant="ghost" className="w-fit" onClick={() => navigate("/crm/leads")}>
+          <ArrowLeft data-icon="inline-start" />{t("Back to leads")}
         </Button>
         <Surface padding="lg" className="rounded-[var(--md-radius-xl)]" role="alert">
           <h1 className="text-[18px] font-medium text-[var(--md-ink)]">{t("The conversion wizard could not be loaded.")}</h1>
-          <p className="mt-2 text-[13px] text-[var(--md-text)]">{error}</p>
+          <p className="mt-2 text-[13px] text-[var(--md-text)]" dir="auto">{t(error ?? "This lead may have been removed or you may no longer have access.")}</p>
+          <Button type="button" variant="outline" className="mt-4" onClick={() => setReloadToken((token) => token + 1)}>
+            <RefreshCw data-icon="inline-start" strokeWidth={1.2} />
+            {t("Try again")}
+          </Button>
         </Surface>
       </div>
     )
@@ -363,7 +373,14 @@ export function LeadConversionPage({
     )
   }
 
-  const primaryContact = lead.contacts.find((contact) => contact.id === data.primaryContactId)
+  const isOrganisationBacked = Boolean(lead.company.organisationId)
+  const primaryContact = isOrganisationBacked
+    ? lead.contacts.find((contact) => contact.id === data.primaryContactId)
+    : null
+  const leadNativeContact = lead.primaryContactName || lead.primaryContactEmail
+  const primaryContactSummary = isOrganisationBacked
+    ? primaryContact?.name || primaryContact?.email || t("Not recorded")
+    : leadNativeContact || t("No contact details recorded")
   const value = parseOptionalNumber(data.expectedValueAmount)
   const currencyFormatter = value === null
     ? null
@@ -416,15 +433,27 @@ export function LeadConversionPage({
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label={t("Primary contact")} hint={t("Optional when the buying contact is not known yet.")}>
-                  <Select value={data.primaryContactId || "__none"} onValueChange={(value) => update("primaryContactId", value === "__none" ? "" : value)}>
-                    <SelectTrigger className={selectClass}><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none">{t("No primary contact")}</SelectItem>
-                      {lead.contacts.map((contact) => <SelectItem key={contact.id} value={contact.id}>{contact.name || contact.email || t("Unnamed contact")}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </Field>
+                {isOrganisationBacked ? (
+                  <Field label={t("Primary contact")} hint={t("Optional when the buying contact is not known yet.")}>
+                    <Select value={data.primaryContactId || "__none"} onValueChange={(value) => update("primaryContactId", value === "__none" ? "" : value)}>
+                      <SelectTrigger className={selectClass}><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none">{t("No primary contact")}</SelectItem>
+                        {lead.contacts.map((contact) => <SelectItem key={contact.id} value={contact.id}>{contact.name || contact.email || t("Unnamed contact")}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                ) : (
+                  <Field label={t("Contact from this lead")} hint={t("This lead is not linked to an account yet. Its contact details will be used to create the primary contact during conversion.")}>
+                    <div className="flex min-h-10 min-w-0 items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-white/70 px-3 py-2 shadow-[var(--md-shadow-line)]">
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{lead.primaryContactName || lead.primaryContactEmail || t("No contact details recorded")}</p>
+                        {lead.primaryContactName && lead.primaryContactEmail ? <p className="mt-0.5 truncate text-[10.5px] text-[var(--md-subtle)]" dir="ltr">{lead.primaryContactEmail}</p> : null}
+                      </div>
+                      {leadNativeContact ? <StatusPill tone="teal">{t("Created during conversion")}</StatusPill> : null}
+                    </div>
+                  </Field>
+                )}
               </div>
             ) : null}
 
@@ -507,7 +536,7 @@ export function LeadConversionPage({
                 {[
                   [t("Deal"), data.name],
                   [t("Company"), lead.companyName],
-                  [t("Primary contact"), primaryContact?.name || primaryContact?.email || t("Not recorded")],
+                  [t(isOrganisationBacked ? "Primary contact" : "Contact created from lead"), primaryContactSummary],
                   [t("Expected close"), new Intl.DateTimeFormat(language, { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${data.expectedCloseDate}T12:00:00`))],
                   [t("Expected value"), currencyFormatter && value !== null ? currencyFormatter.format(value) : t("Not recorded")],
                   [t("Probability"), `${data.probabilityPct}%`],

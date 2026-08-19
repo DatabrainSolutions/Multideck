@@ -63,14 +63,23 @@ export function RegisterViewSwitch<T extends string>({
       className={cn("p-[3px]", compact && "h-8 p-0.5 [&>button]:h-7 [&>button]:rounded-[calc(var(--md-radius-lg)-2px)] [&>button]:px-2 [&>button]:text-[12px] [&>button>span]:gap-1")}
       renderOption={(option) => {
         const count = counts?.[option]
+        const reservesCountSpace = counts !== undefined
         return (
           <>
             <span>{t(option)}</span>
-            {count === undefined ? null : (
-              <span data-i18n-skip dir="ltr" className={cn("text-[10.5px] tabular-nums transition-opacity duration-200", value === option ? "opacity-70" : "opacity-45")}>
-                {count}
+            {reservesCountSpace ? (
+              <span
+                data-i18n-skip
+                dir="ltr"
+                aria-hidden={count === undefined ? true : undefined}
+                className={cn(
+                  "inline-block min-w-[2ch] text-center text-[10.5px] tabular-nums transition-opacity duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                  count === undefined ? "opacity-0" : value === option ? "opacity-70" : "opacity-45",
+                )}
+              >
+                {count ?? 0}
               </span>
-            )}
+            ) : null}
           </>
         )
       }}

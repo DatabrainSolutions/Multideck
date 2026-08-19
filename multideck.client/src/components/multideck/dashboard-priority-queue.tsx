@@ -174,12 +174,18 @@ const QueueRow = memo(function QueueRow({
  */
 export function DashboardPriorityQueue({
   items,
+  mineItems,
+  totalItems = items.length,
+  mineTotalItems,
   operatorName,
   onOpenItem,
   onHandOverToDexter,
   className,
 }: {
   items: DashboardPriorityItem[]
+  mineItems?: DashboardPriorityItem[]
+  totalItems?: number
+  mineTotalItems?: number
   operatorName: string
   onOpenItem?: (item: DashboardPriorityItem) => void
   onHandOverToDexter?: (item: DashboardPriorityItem) => void
@@ -196,7 +202,7 @@ export function DashboardPriorityQueue({
   useEffect(() => {
     setStriking([])
     setCleared([])
-  }, [items])
+  }, [items, mineItems])
 
   useEffect(() => {
     const timers = timersRef.current
@@ -227,15 +233,19 @@ export function DashboardPriorityQueue({
     [restore, shouldReduceMotion, t],
   )
 
-  const mineCount = useMemo(
-    () => items.filter((item) => operatorName && item.owner === operatorName).length,
-    [items, operatorName],
+  const resolvedMineItems = useMemo(
+    () => mineItems ?? items.filter((item) => operatorName && item.owner === operatorName),
+    [items, mineItems, operatorName],
   )
+  const mineCount = mineTotalItems ?? resolvedMineItems.length
+  const selectedItems = scope === "mine" && operatorName ? resolvedMineItems : items
+  const selectedTotal = scope === "mine" && operatorName ? mineCount : totalItems
 
   const visible = useMemo(() => {
-    const scoped = scope === "mine" && operatorName ? items.filter((item) => item.owner === operatorName) : items
-    return scoped.filter((item) => !cleared.includes(item.id))
-  }, [cleared, items, operatorName, scope])
+    return selectedItems.filter((item) => !cleared.includes(item.id))
+  }, [cleared, selectedItems])
+  const clearedInScope = cleared.filter((id) => selectedItems.some((item) => item.id === id)).length
+  const openTotal = Math.max(selectedTotal - clearedInScope, 0)
 
   const groups = useMemo(() => {
     const nowMs = now.getTime()
@@ -259,9 +269,9 @@ export function DashboardPriorityQueue({
         <div className="min-w-0 flex-1">
           <h2 className="md-panel-title">{t("Needs you now")}</h2>
           <p className="md-panel-meta">
-            {visible.length} {t("open")}
+            {openTotal} {t("open")}
             {overdue ? ` · ${overdue} ${t("overdue")}` : ""}
-            {cleared.length ? ` · ${cleared.length} ${t("cleared")}` : ""}
+            {clearedInScope ? ` · ${clearedInScope} ${t("cleared")}` : ""}
           </p>
         </div>
 
@@ -278,7 +288,7 @@ export function DashboardPriorityQueue({
               value={scope}
               onChange={setScope}
               ariaLabel={t("Queue owner")}
-              renderOption={(option) => (option === "mine" ? `${t("Mine")} ${mineCount}` : `${t("All")} ${items.length}`)}
+              renderOption={(option) => (option === "mine" ? `${t("Mine")} ${mineCount}` : `${t("All")} ${totalItems}`)}
               className="[&_button]:h-7 [&_button]:px-2.5 [&_button]:text-[12px]"
             />
           ) : null}
@@ -343,7 +353,7 @@ export function DashboardPriorityQueue({
             animate={{ opacity: 1, y: 0 }}
             transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.enter)}
           >
-            {scope === "mine" && items.length
+            {scope === "mine" && totalItems
               ? t("Nothing assigned to you is open. Switch to All to see the team's queue.")
               : t("Nothing is waiting on you. Exceptions and quote work will appear here as they open.")}
           </motion.p>

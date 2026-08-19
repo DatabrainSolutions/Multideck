@@ -70,7 +70,9 @@ test("Inbox startup and thread detail avoid database waterfalls", () => {
   assert.match(runtime, /export async function inboxWorkspace/)
   assert.match(mailboxList, /comm_inbox_mailbox_unread_counts/)
   assert.doesNotMatch(mailboxList, /CommMessage_MessageDate,CommMessage_ReceivedAt,CommMessage_CreatedAt/)
-  assert.match(threadDetail, /admin\.rpc\("comm_inbox_thread_snapshot"/)
+  assert.match(threadDetail, /admin\.rpc\("comm_inbox_thread_page"/)
+  assert.match(threadDetail, /thread_paging_unavailable/)
+  assert.doesNotMatch(threadDetail, /comm_inbox_thread_snapshot|legacyThreadPage/)
   assert.match(runtime, /admin\.rpc\("comm_inbox_thread_page"/)
   assert.match(threadPageMigration, /permissionGranted/)
   assert.match(threadPageMigration, /CommMailboxAccess_CanRead/)
@@ -342,13 +344,13 @@ test("inline message images repair legacy content IDs and use the private attach
   assert.match(index, /inline \? "inline" : "attachment"/)
 })
 
-test("real mailbox lists avoid full-body reads and batch large database filters", () => {
-  const listThreads = runtime.slice(runtime.indexOf("export async function listThreads"), runtime.indexOf("async function mailboxProviderMap"))
+test("real mailbox lists use bounded database pages without full-body reads", () => {
+  const listThreads = runtime.slice(runtime.indexOf("export async function listThreads"), runtime.indexOf("async function hydrateOutlookInlineContentIds"))
   assert.doesNotMatch(listThreads, /from\("Comm_Messages"\)\.select\("\*"\)/)
-  assert.match(listThreads, /CommMessage_BodyPreview/)
-  assert.match(listThreads, /readInBatches<Row>\(messages\.map/)
-  assert.match(listThreads, /readInBatches<Row>\(threadIds/)
-  assert.match(listThreads, /readInBatches<Row>\(pageMessageIds/)
+  assert.match(listThreads, /comm_inbox_thread_slice_page/)
+  assert.match(listThreads, /comm_inbox_thread_page/)
+  assert.match(listThreads, /mailbox_required/)
+  assert.doesNotMatch(listThreads, /\.limit\(1000\)|readInBatches|mailboxProviderMap/)
 })
 
 test("send path has an atomic idempotency claim and all response modes", () => {
@@ -370,7 +372,8 @@ test("CORS, HTML and attachment hardening remain fail closed", () => {
 
 test("real mail previews decode entities and Gmail encodes international headers", () => {
   assert.match(core, /export function decodeHtmlEntities/)
-  assert.match(runtime, /preview: decodeHtmlEntities\(latest\.CommMessage_BodyPreview/)
+  assert.match(runtime, /preview: decodeHtmlEntities\(row\.preview/)
+  assert.match(threadPageMigration, /latest\."CommMessage_BodyPreview"/)
   assert.match(core, /export function encodeHeaderValue/)
   assert.match(core, /Subject: \$\{encodeHeaderValue\(input\.subject\)\}/)
 })

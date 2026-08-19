@@ -65,7 +65,7 @@ test("wizard validation uses the same field marker and focuses the first missing
   assert.match(bookingWizard, /data-field-invalid=\{missing \|\| undefined\}/u)
   assert.match(bookingWizard, /This field is required\./u)
   assert.match(bookingWizard, /setFocusFieldLabel\(missingCurrent\[0\]\)/u)
-  assert.match(customs, /SelectTrigger aria-invalid=\{invalid \|\| undefined\}/u)
+  assert.match(customs, /function CustomsReferenceCombobox[\s\S]*aria-invalid=\{invalid \|\| undefined\}/u)
 })
 
 test("new validation guidance is localised including Arabic", () => {

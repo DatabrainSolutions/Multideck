@@ -21,6 +21,7 @@ const edgeFiles = [
 const edgeSource = (await Promise.all(edgeFiles.map((file) => readFile(new URL(file, root), "utf8")))).join("\n")
 const migration = await readFile(new URL("migrations/202608020001_warehouse_edge_functions.sql", root), "utf8")
 const dashboardMigration = await readFile(new URL("migrations/20260802213000_warehouse_dashboard_snapshot.sql", root), "utf8")
+const ordersPagingMigration = await readFile(new URL("migrations/20260819103000_warehouse_orders_register_paging.sql", root), "utf8")
 const portalInviteFixMigration = await readFile(new URL("migrations/20260804100000_fix_warehouse_customer_invites.sql", root), "utf8")
 const portalAccessLinkAuditMigration = await readFile(new URL("migrations/20260804110000_warehouse_portal_access_link_audit.sql", root), "utf8")
 const portalRoleReactivationMigration = await readFile(new URL("migrations/20260804120000_fix_warehouse_portal_role_reactivation.sql", root), "utf8")
@@ -177,22 +178,27 @@ test("warehouse runtime targets the current WMS schema", () => {
     "WMS_Facilities",
     "WMS_Locations",
     "WMS_InventoryBalances",
-    "WMS_InventoryTransactions",
     "WMS_Documents",
   ]) {
     assert.match(edgeSource, new RegExp(table))
   }
   assert.doesNotMatch(edgeSource, /Org_Master"\)\.select\("Org_ID/)
   assert.match(edgeSource, /Org_Master"\)\.select\("Org_id,Org_Name"/)
+  assert.match(edgeSource, /rpc\("warehouse_edge_inventory_page"/)
 })
 
-test("warehouse dashboard loads through one aggregated database call", () => {
-  assert.match(clientSource, /requestWarehouse<WarehouseDashboardSnapshot>\("\/dashboard", "GET"\)/)
+test("warehouse dashboard loads through small bounded database read models", () => {
+  assert.match(clientSource, /requestWarehouse<WarehouseDashboardSnapshot>\(`\/dashboard\$\{toQuery\(options\)\}`, "GET"\)/)
   assert.doesNotMatch(clientSource, /const \[orders, balances, movements\] = await Promise\.all/)
-  assert.match(edgeSource, /rpc\("warehouse_edge_dashboard"/)
+  assert.match(edgeSource, /rpc\("warehouse_edge_dashboard_summary"/)
+  assert.match(edgeSource, /rpc\("warehouse_edge_orders_page"[\s\S]*p_limit: 5/)
+  assert.match(edgeSource, /rpc\("warehouse_edge_inventory_page"[\s\S]*p_limit: 50/)
+  assert.match(edgeSource, /rpc\("warehouse_edge_calendar_page"[\s\S]*p_limit: 500/)
+  assert.doesNotMatch(edgeSource, /rpc\("warehouse_edge_dashboard"/)
   assert.match(dashboardMigration, /create or replace function public\.warehouse_edge_dashboard/)
-  assert.match(dashboardMigration, /revoke all on function public\.warehouse_edge_dashboard[\s\S]*from public, anon, authenticated/)
-  assert.match(dashboardMigration, /grant execute on function public\.warehouse_edge_dashboard[\s\S]*to service_role/)
+  assert.match(ordersPagingMigration, /create or replace function public\.warehouse_edge_dashboard_summary/)
+  assert.match(ordersPagingMigration, /revoke all on function public\.warehouse_edge_dashboard_summary[\s\S]*from public, anon, authenticated/)
+  assert.match(ordersPagingMigration, /grant execute on function public\.warehouse_edge_dashboard_summary[\s\S]*to service_role/)
 })
 
 test("the Edge Function authenticates users and resolves internal or portal scope before using the service role", () => {
@@ -244,10 +250,12 @@ test("warehouse customer roles reactivate after revocation without duplicate key
   assert.match(baseline, roleConflict)
 })
 
-test("warehouse portal access reuses the scoped order context", () => {
-  assert.match(orderSource, /export async function orderContext/)
-  assert.match(portalSource, /import \{ orderContext \} from "\.\/orders\.ts"/)
-  assert.match(portalSource, /await orderContext\(admin, actor\)/)
+test("warehouse portal access loads only its bounded facility catalogue", () => {
+  assert.doesNotMatch(orderSource, /orderContext|loadOrders/)
+  assert.doesNotMatch(portalSource, /import \{ orderContext \}/)
+  assert.match(portalSource, /companyFacilityIds\(admin, actor\)/)
+  assert.match(portalSource, /select\("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name"\)/)
+  assert.doesNotMatch(portalSource, /Org_Master|WMS_Items|WMS_Locations/)
 })
 
 test("warehouse customer access links are tenant-scoped, invite-only, and audited", () => {

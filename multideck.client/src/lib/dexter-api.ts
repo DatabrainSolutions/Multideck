@@ -1,5 +1,6 @@
 import type { DexterModelId } from "@/data/dexter-models"
 import type { AutomationAction, AutomationCondition } from "@/data/contact-card-data"
+import { invalidateRegisterPages, readCachedRegisterPage } from "@/lib/application-data-api"
 import { retainStreamedEmailAttachments } from "@/lib/dexter-streamed-attachments"
 import {
   getSupabaseSession,
@@ -113,6 +114,20 @@ export type DexterActionChange = {
 
 export type DexterConversation = DexterConversationSummary & {
   messages: DexterMessage[]
+  messageTotal?: number
+  messageOffset?: number
+  messageLimit?: number
+  hasOlderMessages?: boolean
+  compatibilityMode?: boolean
+}
+
+export type DexterConversationPage = {
+  rows: DexterConversationSummary[]
+  total: number
+  offset: number
+  limit: number
+  hasMore: boolean
+  compatibilityMode?: boolean
 }
 
 export type DexterUsageTrendPoint = {
@@ -167,6 +182,15 @@ export type DexterUsage = {
   modelBreakdown: DexterModelUsage[]
   trend: DexterUsageTrendPoint[]
   recentEntries: DexterUsageEntry[]
+}
+
+export type DexterUsageHistoryPage = {
+  rows: DexterUsageEntry[]
+  total: number
+  offset: number
+  limit: number
+  sort: "newest" | "heaviest"
+  compatibilityMode?: boolean
 }
 
 export type DexterMessageAttachment = {
@@ -350,31 +374,79 @@ async function dexterFunctionError(error: unknown, fallback: string) {
   return new DexterApiError(message)
 }
 
-async function invokeDexter<T>(body: Record<string, unknown>, fallback: string): Promise<T> {
+async function invokeDexter<T>(body: Record<string, unknown>, fallback: string, signal?: AbortSignal): Promise<T> {
   if (!supabase) {
     throw new DexterApiError("Agent Dexter is not connected to this workspace.")
   }
 
-  const { data, error } = await supabase.functions.invoke<T>("agent-dexter", { body })
+  const { data, error } = await supabase.functions.invoke<T>("agent-dexter", { body, signal })
   if (error) throw await dexterFunctionError(error, fallback)
   if (data === null || data === undefined) throw new DexterApiError(fallback)
   return data
 }
 
-export async function listDexterConversations() {
-  const result = await invokeDexter<{ conversations: DexterConversationSummary[] }>(
-    { operation: "list-conversations" },
-    "Dexter's conversation history is unavailable.",
-  )
-  return result.conversations
+export async function listDexterConversationsPage(
+  input: { query?: string; limit?: number; offset?: number } = {},
+  signal?: AbortSignal,
+) {
+  const session = await getSupabaseSession()
+  if (!session?.user) throw new DexterApiError("Sign in again to view Dexter's conversation history.")
+  const query = input.query?.trim().slice(0, 200) ?? ""
+  const limit = Math.max(1, Math.min(Math.trunc(input.limit ?? 25), 50))
+  const offset = Math.max(0, Math.min(Math.trunc(input.offset ?? 0), 1_000_000))
+  const resource = `dexter:conversation-list:${query.toLocaleLowerCase()}:${limit}:${offset}`
+
+  return readCachedRegisterPage(session.user.id, resource, async (requestSignal) => {
+    const result = await invokeDexter<{
+      conversationPage?: DexterConversationPage
+      conversations?: DexterConversationSummary[]
+    }>(
+      { operation: "list-conversations", query, limit, offset },
+      "Dexter's conversation history is unavailable.",
+      requestSignal,
+    )
+    if (result.conversationPage) {
+      const rows = Array.isArray(result.conversationPage.rows) ? result.conversationPage.rows : []
+      return {
+        ...result.conversationPage,
+        rows,
+        total: Math.max(rows.length, Number(result.conversationPage.total) || 0),
+        offset: Number.isFinite(Number(result.conversationPage.offset)) ? Math.max(0, Number(result.conversationPage.offset)) : offset,
+        limit: Number.isFinite(Number(result.conversationPage.limit)) ? Math.max(1, Number(result.conversationPage.limit)) : limit,
+        hasMore: result.conversationPage.hasMore === true,
+      }
+    }
+
+    throw new DexterApiError("Dexter's paged conversation history is still being prepared. Try again shortly.")
+  }, signal)
 }
 
-export async function getDexterConversation(conversationId: string) {
+export async function listDexterConversations() {
+  return (await listDexterConversationsPage({ limit: 50 })).rows
+}
+
+export async function getDexterConversation(
+  conversationId: string,
+  input: { limit?: number; offset?: number } = {},
+) {
+  const limit = Math.max(1, Math.min(Math.trunc(input.limit ?? 50), 100))
+  const offset = Math.max(0, Math.min(Math.trunc(input.offset ?? 0), 1_000_000))
   const result = await invokeDexter<{ conversation: DexterConversation }>(
-    { operation: "get-conversation", conversationId },
+    { operation: "get-conversation", conversationId, limit, offset },
     "This conversation could not be loaded.",
   )
-  return result.conversation
+  const messages = Array.isArray(result.conversation.messages) ? result.conversation.messages : []
+  if (Number.isFinite(Number(result.conversation.messageTotal))) {
+    return {
+      ...result.conversation,
+      messages,
+      messageTotal: Math.max(messages.length, Number(result.conversation.messageTotal)),
+      messageOffset: Number.isFinite(Number(result.conversation.messageOffset)) ? Math.max(0, Number(result.conversation.messageOffset)) : offset,
+      messageLimit: Number.isFinite(Number(result.conversation.messageLimit)) ? Math.max(1, Number(result.conversation.messageLimit)) : limit,
+      hasOlderMessages: result.conversation.hasOlderMessages === true,
+    }
+  }
+  throw new DexterApiError("Dexter's paged conversation messages are still being prepared. Try again shortly.")
 }
 
 export async function getDexterUsage() {
@@ -385,11 +457,40 @@ export async function getDexterUsage() {
   return result.usage
 }
 
+export async function getDexterUsageHistory(
+  input: { sort: "newest" | "heaviest"; limit: number; offset: number },
+  signal?: AbortSignal,
+) {
+  const session = await getSupabaseSession()
+  if (!session?.user) throw new DexterApiError("Sign in again to view Dexter usage history.")
+  const normalized = {
+    sort: input.sort === "heaviest" ? "heaviest" as const : "newest" as const,
+    limit: Math.max(1, Math.min(Math.trunc(input.limit), 50)),
+    offset: Math.max(0, Math.min(Math.trunc(input.offset), 1_000_000)),
+  }
+  const resource = `dexter:usage-history:${normalized.sort}:${normalized.limit}:${normalized.offset}`
+  return readCachedRegisterPage(session.user.id, resource, async () => {
+    const result = await invokeDexter<{ usageHistory: DexterUsageHistoryPage }>(
+      { operation: "usage-history", ...normalized },
+      "Dexter usage history is unavailable.",
+    )
+    return {
+      ...result.usageHistory,
+      rows: Array.isArray(result.usageHistory.rows) ? result.usageHistory.rows : [],
+      total: Math.max(0, Number(result.usageHistory.total) || 0),
+      offset: Number.isFinite(Number(result.usageHistory.offset)) ? Math.max(0, Number(result.usageHistory.offset)) : normalized.offset,
+      limit: Number.isFinite(Number(result.usageHistory.limit)) ? Math.max(1, Number(result.usageHistory.limit)) : normalized.limit,
+      sort: result.usageHistory.sort === "heaviest" ? "heaviest" as const : "newest" as const,
+    }
+  }, signal)
+}
+
 export async function renameDexterConversation(conversationId: string, title: string) {
   const result = await invokeDexter<{ conversation: DexterConversationSummary }>(
     { operation: "rename-conversation", conversationId, title },
     "This conversation could not be renamed.",
   )
+  invalidateRegisterPages("dexter:conversation-list:")
   return result.conversation
 }
 
@@ -398,6 +499,7 @@ export async function deleteDexterConversation(conversationId: string) {
     { operation: "delete-conversation", conversationId },
     "This conversation could not be deleted.",
   )
+  invalidateRegisterPages("dexter:conversation-list:")
 }
 
 export async function setDexterAccessMode(input: {
@@ -574,6 +676,7 @@ export async function sendDexterMessage(input: SendDexterMessageInput) {
     { operation: "message", ...input },
     "Dexter could not answer this request.",
   )
+  invalidateRegisterPages("dexter:conversation-list:")
   return result.conversation
 }
 
@@ -736,6 +839,7 @@ export async function streamDexterMessage(
     if (!completed) {
       throw new DexterApiError("Dexter's response ended before it was saved.")
     }
+    invalidateRegisterPages("dexter:conversation-list:")
     return completed
   } catch (error) {
     if (signal?.aborted) throw new DOMException("The Dexter request was cancelled.", "AbortError")

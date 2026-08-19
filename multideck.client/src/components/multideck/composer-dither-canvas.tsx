@@ -59,6 +59,7 @@ export type ComposerDitherCanvasProps = {
   waveBias?: number
   /** Radius of the cursor's influence, in aspect-corrected canvas units. */
   mouseRadius?: number
+  onReady?: () => void
 }
 
 const vertexShader = /* glsl */ `
@@ -208,9 +209,10 @@ const mouseRelease = 3.4
 /** Seconds after which the ring has left the band and decayed below one step. */
 const pulseLifetime = 1.2
 
-type DitheredWavesProps = Required<Omit<ComposerDitherCanvasProps, "pulseOrigin" | "pointer">> & {
+type DitheredWavesProps = Required<Omit<ComposerDitherCanvasProps, "pulseOrigin" | "pointer" | "onReady">> & {
   pulseOrigin: { x: number; y: number }
   pointer?: RefObject<ComposerPointer>
+  onReady?: () => void
 }
 
 function DitheredWaves({
@@ -229,11 +231,13 @@ function DitheredWaves({
   patternScale,
   waveBias,
   mouseRadius,
+  onReady,
 }: DitheredWavesProps) {
   const { size, gl, viewport } = useThree()
   // Wall-clock start of the current ripple, or null between ripples.
   const pulseStartRef = useRef<number | null>(null)
   const seenTokenRef = useRef(pulseToken)
+  const readyRef = useRef(false)
 
   // Seeded from the first measurement rather than left to the resize effect. The
   // Canvas only mounts children once it has measured, so the real size is
@@ -295,6 +299,11 @@ function DitheredWaves({
   }, [pulseOrigin.x, pulseOrigin.y, uniforms])
 
   useFrame(({ clock }, delta) => {
+    if (!readyRef.current) {
+      readyRef.current = true
+      onReady?.()
+    }
+
     if (animated) uniforms.time.value = clock.getElapsedTime()
 
     // Eased rather than switched, and eased faster in than out, so the swell
@@ -351,6 +360,7 @@ const ComposerDitherCanvas = memo(function ComposerDitherCanvas({
   patternScale = 1.5,
   waveBias = 0.44,
   mouseRadius = 0.3,
+  onReady,
 }: ComposerDitherCanvasProps) {
   return (
     <Canvas
@@ -378,6 +388,7 @@ const ComposerDitherCanvas = memo(function ComposerDitherCanvas({
         patternScale={patternScale}
         waveBias={waveBias}
         mouseRadius={mouseRadius}
+        onReady={onReady}
       />
     </Canvas>
   )

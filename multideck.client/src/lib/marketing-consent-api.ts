@@ -1,4 +1,4 @@
-import { callCrmRpc } from "@/lib/crm-supabase"
+import { callCrmMutation } from "@/lib/crm-supabase"
 
 export type MarketingConsentRecordType = "lead" | "contact" | "customer"
 
@@ -16,7 +16,7 @@ export async function setMarketingOptIn(
   optedIn: boolean,
   reason?: string,
 ) {
-  return callCrmRpc<MarketingConsentResult>(
+  return callCrmMutation<MarketingConsentResult>(
     "multideck_crm_set_marketing_opt_in",
     {
       p_record_type: recordType,

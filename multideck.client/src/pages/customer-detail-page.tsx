@@ -3,6 +3,7 @@ import { Download, FileText, Health, LoaderCircle, Mail, Plus, RefreshCw, Shield
 import { CustomerAvatar } from "@/components/multideck/customer-components"
 import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
+import { Pagination } from "@/components/multideck/pagination"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
@@ -11,9 +12,11 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
 import { useLanguage } from "@/i18n/language-provider"
-import { getCustomer, getCustomerDocumentUrl, listCustomerDocuments, type ApiCustomerDetail, type ApiCustomerDocument, type ApiCustomerDocumentListing } from "@/lib/customer-api"
+import { getScreeningCheck, getScreeningWorkspace, runScreeningCheck, type ScreeningCheck } from "@/lib/screening-api"
+import { ScreeningMatchRow, ScreeningOutcomePill } from "@/components/multideck/screening-components"
+import { getCustomer, getCustomerDocumentUrl, listContactsPage, listCustomerDocuments, type ApiCustomerDetail, type ApiCustomerDocument, type ApiCustomerDocumentListing, type ContactRegisterPage } from "@/lib/customer-api"
 import { setMarketingOptIn, type MarketingConsentRecordType } from "@/lib/marketing-consent-api"
-import { getWarehousePortalReference, inviteWarehousePortalUser, listWarehousePortalUsers, revokeWarehousePortalUser, sendWarehousePortalAccessLink, updateWarehousePortalUser, type WarehousePortalReference, type WarehousePortalUser } from "@/lib/warehouse"
+import { getWarehousePortalReference, inviteWarehousePortalUser, listWarehousePortalUsersPage, revokeWarehousePortalUser, sendWarehousePortalAccessLink, updateWarehousePortalUser, type WarehousePortalReference, type WarehousePortalUser } from "@/lib/warehouse"
 
 export function CustomerDetailPage({ customerId }: { customerId: string }) {
   const [customer, setCustomer] = useState<ApiCustomerDetail | null>(null)
@@ -21,6 +24,11 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
   const [documentListing, setDocumentListing] = useState<ApiCustomerDocumentListing | null>(null)
   const [documentsError, setDocumentsError] = useState<string | null>(null)
   const [documentsLoading, setDocumentsLoading] = useState(true)
+  const [documentPage, setDocumentPage] = useState(1)
+  const [contactListing, setContactListing] = useState<ContactRegisterPage | null>(null)
+  const [contactsLoading, setContactsLoading] = useState(true)
+  const [contactsError, setContactsError] = useState<string | null>(null)
+  const [contactPage, setContactPage] = useState(1)
   const [reloadToken, setReloadToken] = useState(0)
   const { t } = useLanguage()
 
@@ -28,18 +36,40 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
     let active = true
     setCustomer(null)
     setError(null)
-    setDocumentListing(null)
-    setDocumentsError(null)
-    setDocumentsLoading(true)
     getCustomer(customerId)
       .then((data) => active && setCustomer(data))
       .catch((loadError) => active && setError(loadError instanceof Error ? loadError.message : t("Unable to load this customer. Check your connection and try again.")))
-    listCustomerDocuments(customerId)
+    return () => { active = false }
+  }, [customerId, reloadToken, t])
+
+  useEffect(() => { setDocumentPage(1); setContactPage(1) }, [customerId])
+
+  useEffect(() => {
+    let active = true
+    setDocumentsError(null)
+    setDocumentsLoading(true)
+    listCustomerDocuments(customerId, { limit: 20, offset: (documentPage - 1) * 20 })
       .then((listing) => active && setDocumentListing(listing))
       .catch((loadError) => active && setDocumentsError(loadError instanceof Error ? loadError.message : t("Customer documents are unavailable.")))
       .finally(() => active && setDocumentsLoading(false))
     return () => { active = false }
-  }, [customerId, reloadToken, t])
+  }, [customerId, documentPage, reloadToken, t])
+
+  useEffect(() => {
+    let active = true
+    setContactsError(null)
+    setContactsLoading(true)
+    listContactsPage({
+      accountId: customerId,
+      sort: { id: "contact", direction: "asc" },
+      limit: 20,
+      offset: (contactPage - 1) * 20,
+    })
+      .then((listing) => active && setContactListing(listing))
+      .catch((loadError) => active && setContactsError(loadError instanceof Error ? loadError.message : t("Customer contacts are unavailable.")))
+      .finally(() => active && setContactsLoading(false))
+    return () => { active = false }
+  }, [contactPage, customerId, reloadToken, t])
 
   if (error) return <div className="md-page md-page-stack">
     <section>
@@ -47,7 +77,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
       <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{t("The customer profile is temporarily unavailable. Supabase documents remain available below.")}</p>
     </section>
     <CustomerLoadState message={error} onRetry={() => setReloadToken((value) => value + 1)} />
-    <CustomerDocuments customerId={customerId} documents={documentListing?.documents ?? []} loading={documentsLoading} error={documentsError} />
+    <CustomerDocuments customerId={customerId} documents={documentListing?.documents ?? []} total={documentListing?.total ?? 0} limit={documentListing?.limit ?? 20} offset={documentListing?.offset ?? 0} onOffsetChange={(offset) => setDocumentPage(Math.floor(offset / 20) + 1)} loading={documentsLoading} error={documentsError} />
   </div>
   if (!customer) return <div className="md-page grid min-h-[360px] place-items-center"><LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" /></div>
 
@@ -72,6 +102,17 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
           } : contact),
         }
       })
+      if (recordType === "contact") {
+        setContactListing((current) => current ? {
+          ...current,
+          rows: current.rows.map((contact) => contact.id === recordId ? {
+            ...contact,
+            consentMarketing: result.marketingOptIn,
+            marketingConsentSource: result.marketingConsentSource,
+            marketingConsentUpdatedAt: result.marketingConsentUpdatedAt,
+          } : contact),
+        } : current)
+      }
       toast.success(t(optedIn ? "Marketing opt-in recorded" : "Marketing opt-out recorded"))
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : t("Marketing consent could not be updated."))
@@ -101,7 +142,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
       </section>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label={t("Contacts")} value={String(customer.contacts.length)} />
+        <Metric label={t("Contacts")} value={String(contactListing?.summary.contacts ?? customer.contactCount)} />
         <Metric label={t("Active shipments")} value={String(customer.activeShipments.length)} />
         <Metric label={t("Open exceptions")} value={String(customer.activeShipments.reduce((total, shipment) => total + shipment.openExceptionCount, 0))} />
         <Metric label={t("Account health")} value={customer.healthScore == null ? "—" : `${Math.round(customer.healthScore)}%`} icon={<Health className="size-3.5" strokeWidth={1.4} aria-hidden="true" />} />
@@ -110,6 +151,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
       {customer.summary ? <Surface className="rounded-[var(--md-radius-xl)]" padding="lg"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Account summary")}</h2><p className="mt-3 text-[14px] leading-6 text-[var(--md-text)]">{customer.summary}</p></Surface> : null}
 
       <CustomerWarehouseAccess customerId={customer.id} />
+      <CustomerScreening customerId={customer.id} customerName={customer.name} />
 
       <div className="md-panel-grid xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="md-panel-column">
@@ -117,7 +159,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
             <PanelTitle title={t("Active shipments")} meta={String(customer.activeShipments.length)} />
             {customer.activeShipments.length ? customer.activeShipments.map((shipment) => <div key={shipment.id} className="grid grid-cols-[minmax(110px,150px)_1fr_auto] gap-4 border-t border-[rgba(11,20,19,0.06)] px-5 py-4"><p className="text-[13px] font-medium text-[var(--md-text)]">{shipment.reference}</p><div className="min-w-0"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{shipment.route || t("Route not recorded")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{[shipment.mode, shipment.status, shipment.eta ? `${t("ETA")} ${formatDate(shipment.eta)}` : null].filter(Boolean).join(" · ")}</p></div>{shipment.openExceptionCount ? <StatusPill tone="amber">{shipment.openExceptionCount} {t("exceptions")}</StatusPill> : <StatusPill tone="green">{t("On track")}</StatusPill>}</div>) : <EmptyRow text={t("No active shipments are recorded for this customer.")} />}
           </Surface>
-          <CustomerDocuments customerId={customer.id} documents={documentListing?.documents ?? []} loading={documentsLoading} error={documentsError} />
+          <CustomerDocuments customerId={customer.id} documents={documentListing?.documents ?? []} total={documentListing?.total ?? 0} limit={documentListing?.limit ?? 20} offset={documentListing?.offset ?? 0} onOffsetChange={(offset) => setDocumentPage(Math.floor(offset / 20) + 1)} loading={documentsLoading} error={documentsError} />
           <Surface className="overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
             <PanelTitle title={t("Activity")} meta={t("Latest")} />
             {customer.activities.length ? customer.activities.map((activity) => <div key={activity.id} className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4"><div className="flex items-center justify-between gap-4"><p className="text-[14px] font-medium text-[var(--md-ink)]">{activity.subject}</p><p className="shrink-0 text-[12px] text-[var(--md-text)]">{formatDate(activity.occurredAt)}</p></div>{activity.summary ? <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{activity.summary}</p> : null}</div>) : <EmptyRow text={t("No account activity has been recorded yet.")} />}
@@ -125,8 +167,8 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
         </div>
         <div className="md-panel-column">
           <Surface className="overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
-            <PanelTitle title={t("Contacts")} meta={String(customer.contacts.length)} />
-            {customer.contacts.length ? customer.contacts.map((contact) => <div key={contact.id} className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4"><div className="flex gap-3"><CustomerAvatar initials={contact.initials || "?"} tone="blue" /><div className="min-w-0 flex-1"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name || t("Unnamed contact")}</p><p className="truncate text-[12px] text-[var(--md-text)]">{contact.role || t("No role recorded")}</p>{contact.email ? <a className="mt-1 block truncate text-[12px] text-[var(--md-accent)]" href={`mailto:${contact.email}`}>{contact.email}</a> : null}</div></div><MarketingOptInControl compact className="mt-3 pt-3 shadow-[var(--md-stroke-top)]" checked={contact.consentMarketing} source={contact.marketingConsentSource} updatedAt={contact.marketingConsentUpdatedAt} onCheckedChange={(optedIn) => changeMarketingOptIn("contact", contact.id, optedIn)} /></div>) : <EmptyRow text={t("No contacts are recorded for this customer.")} />}
+            <PanelTitle title={t("Contacts")} meta={String(contactListing?.total ?? customer.contactCount)} />
+            {contactsLoading ? <div className="grid min-h-24 place-items-center border-t border-[rgba(11,20,19,0.06)]"><LoaderCircle className="size-4 animate-spin text-[var(--md-accent)]" /></div> : contactsError ? <p role="alert" className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-red)]">{contactsError}</p> : contactListing?.rows.length ? <>{contactListing.rows.map((contact) => <div key={contact.id} className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4"><div className="flex gap-3"><CustomerAvatar initials={contact.initials || "?"} tone="blue" /><div className="min-w-0 flex-1"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name || t("Unnamed contact")}</p><p className="truncate text-[12px] text-[var(--md-text)]">{contact.role || t("No role recorded")}</p>{contact.email ? <a className="mt-1 block truncate text-[12px] text-[var(--md-accent)]" href={`mailto:${contact.email}`}>{contact.email}</a> : null}</div></div><MarketingOptInControl compact className="mt-3 pt-3 shadow-[var(--md-stroke-top)]" checked={contact.consentMarketing} source={contact.marketingConsentSource} updatedAt={contact.marketingConsentUpdatedAt} onCheckedChange={(optedIn) => changeMarketingOptIn("contact", contact.id, optedIn)} /></div>)}{contactListing.total > 20 ? <div className="border-t border-[rgba(11,20,19,0.06)] p-3"><Pagination page={contactPage} pageCount={Math.max(1, Math.ceil(contactListing.total / 20))} totalItems={contactListing.total} pageSize={20} onPageChange={setContactPage} itemLabel="contacts" /></div> : null}</> : <EmptyRow text={t("No contacts are recorded for this customer.")} />}
           </Surface>
           <Surface className="rounded-[var(--md-radius-xl)]" padding="none"><PanelTitle title={t("Account")} /><div className="px-5 py-4 shadow-[var(--md-stroke-top)]"><MarketingOptInControl checked={Boolean(customer.marketingOptIn)} source={customer.marketingConsentSource} updatedAt={customer.marketingConsentUpdatedAt} onCheckedChange={(optedIn) => changeMarketingOptIn("customer", customer.id, optedIn)} /></div>{accountFacts.length ? <div className="px-5 pb-5">{accountFacts.map(([label, value]) => <div key={label} className="grid grid-cols-[120px_1fr] gap-4 border-t border-[rgba(11,20,19,0.06)] py-3"><p className="text-[13px] text-[var(--md-text)]">{label}</p><p className="text-right text-[13px] font-medium text-[var(--md-ink)]">{value}</p></div>)}</div> : <EmptyRow text={t("No additional account details are recorded.")} />}</Surface>
         </div>
@@ -135,7 +177,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
   )
 }
 
-function CustomerDocuments({ customerId, documents, loading = false, error = null }: { customerId: string; documents: ApiCustomerDocument[]; loading?: boolean; error?: string | null }) {
+function CustomerDocuments({ customerId, documents, total, limit, offset, onOffsetChange, loading = false, error = null }: { customerId: string; documents: ApiCustomerDocument[]; total: number; limit: number; offset: number; onOffsetChange: (offset: number) => void; loading?: boolean; error?: string | null }) {
   const { t } = useLanguage()
   const [openingId, setOpeningId] = useState<string | null>(null)
 
@@ -158,8 +200,8 @@ function CustomerDocuments({ customerId, documents, loading = false, error = nul
   }
 
   return <Surface className="overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
-    <PanelTitle title={t("Documents")} meta={String(documents.length)} />
-    {loading ? <div className="grid min-h-24 place-items-center border-t border-[rgba(11,20,19,0.06)]"><LoaderCircle className="size-4 animate-spin text-[var(--md-accent)]" /></div> : error ? <p role="alert" className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-red)]">{error}</p> : documents.length ? documents.map((document) => {
+    <PanelTitle title={t("Documents")} meta={String(total)} />
+    {loading ? <div className="grid min-h-24 place-items-center border-t border-[rgba(11,20,19,0.06)]"><LoaderCircle className="size-4 animate-spin text-[var(--md-accent)]" /></div> : error ? <p role="alert" className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-red)]">{error}</p> : documents.length ? <>{documents.map((document) => {
       const pending = document.status === "pending_review" || document.safetyStatus === "unscanned"
       return <div key={document.id} className="flex flex-col gap-3 border-t border-[rgba(11,20,19,0.06)] px-5 py-4 sm:flex-row sm:items-center">
         <span className="grid size-10 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-white/58 text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><FileText className="size-4" /></span>
@@ -173,7 +215,7 @@ function CustomerDocuments({ customerId, documents, loading = false, error = nul
           {t("Open")}
         </Button>
       </div>
-    }) : <EmptyRow text={t("No customer documents have been saved yet.")} />}
+    })}{total > limit ? <div className="border-t border-[rgba(11,20,19,0.06)] p-3"><Pagination page={Math.floor(offset / limit) + 1} pageCount={Math.max(1, Math.ceil(total / limit))} totalItems={total} pageSize={limit} onPageChange={(page) => onOffsetChange((page - 1) * limit)} itemLabel="documents" /></div> : null}</> : <EmptyRow text={t("No customer documents have been saved yet.")} />}
   </Surface>
 }
 
@@ -189,6 +231,8 @@ export function CustomerWarehouseAccess({
   const { t } = useLanguage()
   const [reference, setReference] = useState<WarehousePortalReference | null>(null)
   const [users, setUsers] = useState<WarehousePortalUser[] | null>(null)
+  const [userTotal, setUserTotal] = useState(0)
+  const [userOffset, setUserOffset] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<WarehousePortalUser | null>(null)
@@ -202,16 +246,19 @@ export function CustomerWarehouseAccess({
   async function refresh() {
     setError(null)
     try {
-      const [nextReference, nextUsers] = await Promise.all([getWarehousePortalReference(), listWarehousePortalUsers(customerId)])
+      const [nextReference, nextUsers] = await Promise.all([getWarehousePortalReference(), listWarehousePortalUsersPage(customerId, { limit: 20, offset: userOffset })])
       setReference(nextReference)
-      setUsers(nextUsers)
+      setUsers(nextUsers.rows)
+      setUserTotal(nextUsers.total)
     } catch (cause) {
       setUsers([])
+      setUserTotal(0)
       setError(cause instanceof Error ? cause.message : String(cause))
     }
   }
 
-  useEffect(() => { void refresh() }, [customerId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setUserOffset(0) }, [customerId])
+  useEffect(() => { void refresh() }, [customerId, userOffset]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function showInvite() {
     setEditing(null); setDisplayName(""); setEmail(""); setRoleCode("warehouse_operator")
@@ -264,13 +311,13 @@ export function CustomerWarehouseAccess({
         <Button type="button" onClick={showInvite} disabled={!reference?.facilities.length} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[var(--md-accent-ink)]"><Plus className="size-4" />{t("Invite user")}</Button>
       </div>
       {error && !open ? <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-3 text-[12px] text-[var(--md-red)]">{error}</p> : null}
-      {users === null ? <div className="grid min-h-24 place-items-center border-t border-[rgba(11,20,19,0.06)]"><LoaderCircle className="size-4 animate-spin text-[var(--md-accent)]" /></div> : users.length ? users.map((user) => <div key={user.id} className="flex flex-col gap-3 border-t border-[rgba(11,20,19,0.06)] px-5 py-4 sm:flex-row sm:items-center">
+      {users === null ? <div className="grid min-h-24 place-items-center border-t border-[rgba(11,20,19,0.06)]"><LoaderCircle className="size-4 animate-spin text-[var(--md-accent)]" /></div> : users.length ? <>{users.map((user) => <div key={user.id} className="flex flex-col gap-3 border-t border-[rgba(11,20,19,0.06)] px-5 py-4 sm:flex-row sm:items-center">
         <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-white/58 text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><Mail className="size-4" /></span>
         <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{user.displayName}</p>{isCurrentUser(user) ? <StatusPill tone="neutral">{t("You")}</StatusPill> : null}</div><p dir="ltr" className="truncate text-start text-[12px] text-[var(--md-text)]">{user.email}</p></div>
         <StatusPill tone={user.status === "active" ? "green" : "amber"}>{t(user.status)}</StatusPill>
         <p className="min-w-[190px] text-[12px] text-[var(--md-text)]">{t(roleName(user.roleCode))}</p>
         {!isCurrentUser(user) ? <div className="flex flex-wrap gap-1">{!user.lastLoginAt ? <Button type="button" variant="ghost" disabled={sendingAccessLinkUserId === user.id} onClick={() => void sendAccessLink(user)} className="h-9 rounded-[var(--md-radius-lg)]">{sendingAccessLinkUserId === user.id ? <LoaderCircle className="size-4 animate-spin" /> : <Mail className="size-4" />}{t("Send access link")}</Button> : null}<Button type="button" variant="ghost" onClick={() => showEdit(user)} className="h-9 rounded-[var(--md-radius-lg)]">{t("Edit access")}</Button><Button type="button" variant="ghost" size="icon" aria-label={t("Revoke access")} onClick={() => void revoke(user)} className="size-9 rounded-[var(--md-radius-lg)] text-[var(--md-red)]"><Trash2 className="size-4" /></Button></div> : null}
-      </div>) : <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-6 text-[13px] text-[var(--md-text)]">{t("No customer users have warehouse access yet.")}</p>}
+      </div>)}{userTotal > 20 ? <div className="border-t border-[rgba(11,20,19,0.06)] p-3"><Pagination page={Math.floor(userOffset / 20) + 1} pageCount={Math.max(1, Math.ceil(userTotal / 20))} totalItems={userTotal} pageSize={20} onPageChange={(page) => setUserOffset((page - 1) * 20)} itemLabel={t("users")} /></div> : null}</> : <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-6 text-[13px] text-[var(--md-text)]">{t("No customer users have warehouse access yet.")}</p>}
     </Surface>
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className="border-0 bg-[var(--md-surface)] sm:max-w-[560px]">
       <DialogHeader><DialogTitle>{t(editing ? "Edit warehouse access" : "Invite customer user")}</DialogTitle><DialogDescription>{t(editing && selfService ? "Change this user’s role. Warehouse access is inherited from the organisation." : editing ? "Change this user’s role and warehouse access." : "They will receive an email invitation to the customer warehouse portal.")}</DialogDescription></DialogHeader>
@@ -283,6 +330,70 @@ export function CustomerWarehouseAccess({
       <DialogFooter><Button type="button" variant="ghost" onClick={() => setOpen(false)}>{t("Cancel")}</Button><Button type="button" disabled={saving || facilityIds.length === 0 || (!editing && !email.trim())} onClick={() => void save()} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{t(editing ? "Save access" : "Send invitation")}</Button></DialogFooter>
     </DialogContent></Dialog>
   </>
+}
+
+function CustomerScreening({ customerId, customerName }: { customerId: string; customerName: string }) {
+  const { t } = useLanguage()
+  const [check, setCheck] = useState<ScreeningCheck | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [running, setRunning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    getScreeningWorkspace(customerId)
+      .then(async (workspace) => {
+        if (!active) return
+        const latest = workspace.checks[0]
+        if (!latest) {
+          setCheck(null)
+          setError(null)
+          return
+        }
+        setCheck(latest.matches ? latest : await getScreeningCheck(latest.id))
+        setError(null)
+      })
+      .catch((cause) => active && setError(cause instanceof Error ? cause.message : t("Party screening could not be loaded.")))
+      .finally(() => active && setLoading(false))
+    return () => { active = false }
+  }, [customerId, t])
+
+  async function screenCustomer() {
+    setRunning(true)
+    setError(null)
+    try {
+      setCheck(await runScreeningCheck({ subjectName: customerName, orgId: customerId }))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("The name could not be screened."))
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <Surface className="overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
+      <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="size-4 text-[var(--md-accent)]" />
+            <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Party screening")}</h2>
+            {check ? <ScreeningOutcomePill outcome={check.outcome} stale={check.listStale} /> : null}
+          </div>
+          <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Screen this customer against the UK OFSI list stored in this workspace.")}</p>
+        </div>
+        <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-lg)]" onClick={() => void screenCustomer()} disabled={running}>
+          {running ? <LoaderCircle className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
+          {t("Screen this customer")}
+        </Button>
+      </div>
+      {error ? <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-3 text-[12px] text-[var(--md-red)]">{error}</p> : null}
+      {loading ? <div className="grid min-h-16 place-items-center border-t border-[rgba(11,20,19,0.06)]"><LoaderCircle className="size-4 animate-spin text-[var(--md-accent)]" /></div> : null}
+      {!loading && check?.matches?.length ? check.matches.map((match) => <ScreeningMatchRow key={`${match.groupId}-${match.listedName}`} match={match} />) : null}
+      {!loading && check && !check.matches?.length ? <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-text)]">{t("No listed names matched this search.")}</p> : null}
+      {!loading && !check && !error ? <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-text)]">{t("No screening has been run for this customer yet.")}</p> : null}
+    </Surface>
+  )
 }
 
 function Metric({ label, value, icon }: { label: string; value: string; icon?: ReactNode }) { return <Surface className="rounded-[var(--md-radius-xl)]" padding="md"><p className="flex items-center gap-1.5 text-[13px] text-[var(--md-text)]">{icon}{label}</p><p className="mt-4 text-[28px] font-medium text-[var(--md-ink)]">{value}</p></Surface> }

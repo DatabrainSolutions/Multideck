@@ -2548,7 +2548,19 @@
      cards on one page reads as clutter rather than depth. */
 
   .md-crm-dashboard {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: clip;
     container: md-dash / inline-size;
+  }
+
+  .md-crm-dashboard > *,
+  .md-crm-dashboard .md-crm-lead,
+  .md-crm-dashboard .md-crm-trio,
+  .md-crm-dashboard .md-kpi-strip {
+    min-width: 0;
+    max-width: 100%;
   }
 
   .md-crm-dashboard .md-kpi-cell-button,
@@ -2826,13 +2838,31 @@
     cursor: pointer;
   }
 
-  .md-crm-row:hover {
-    background: var(--md-dashboard-hush);
+  .md-crm-row-open-target {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+    outline: none;
   }
 
-  .md-crm-row:focus-visible {
-    outline: none;
+  .md-crm-row-open-target:focus-visible {
     box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-crm-row[data-openable="true"] > :not(.md-crm-row-open-target) {
+    position: relative;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .md-crm-row[data-openable="true"] > .md-crm-row-side[data-interactive="true"] {
+    z-index: 2;
+    pointer-events: auto;
+  }
+
+  .md-crm-row:hover {
+    background: var(--md-dashboard-hush);
   }
 
   .md-crm-row-glyph {
@@ -2980,7 +3010,7 @@
   }
 
   .md-crm-row[data-openable="true"]:hover .md-crm-row-arrow,
-  .md-crm-row[data-openable="true"]:focus-visible .md-crm-row-arrow {
+  .md-crm-row[data-openable="true"]:has(.md-crm-row-open-target:focus-visible) .md-crm-row-arrow {
     opacity: 1;
     translate: 0 0;
   }
@@ -3407,7 +3437,7 @@
   /* The arrow and the reason edge still respond to hover — only their travel
      is removed, so the row keeps its static cue. */
   .md-crm-row[data-openable="true"]:hover .md-crm-row-arrow,
-  .md-crm-row[data-openable="true"]:focus-visible .md-crm-row-arrow {
+  .md-crm-row[data-openable="true"]:has(.md-crm-row-open-target:focus-visible) .md-crm-row-arrow {
     opacity: 1;
   }
 }

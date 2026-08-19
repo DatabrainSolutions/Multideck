@@ -82,6 +82,58 @@
     height: 100% !important;
   }
 
+  .md-bloom-fallback {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse at 90% 112%, var(--md-bloom-b) 0%, var(--md-bloom-a) 22%, transparent 58%),
+      linear-gradient(118deg, var(--md-bloom-a), var(--md-bloom-c) 72%);
+  }
+
+  .md-bloom-fallback__glow,
+  .md-bloom-fallback__rays {
+    position: absolute;
+    pointer-events: none;
+  }
+
+  .md-bloom-fallback__glow {
+    inset: -42% -8% -75% 34%;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at center, color-mix(in oklab, var(--md-bloom-b) 78%, white) 0%, var(--md-bloom-a) 26%, transparent 68%);
+    filter: blur(2px);
+    opacity: 0.84;
+    animation: md-bloom-fallback-breathe 5.4s ease-in-out infinite alternate;
+  }
+
+  .md-bloom-fallback__rays {
+    width: max(58%, 190px);
+    aspect-ratio: 1;
+    inset-inline-end: -12%;
+    bottom: -210%;
+    border-radius: 50%;
+    background: repeating-conic-gradient(
+      from 8deg,
+      color-mix(in oklab, var(--md-bloom-b) 76%, white) 0deg 3.5deg,
+      color-mix(in oklab, var(--md-bloom-a) 82%, transparent) 3.5deg 7deg,
+      transparent 7deg 13deg
+    );
+    filter: blur(0.55px) saturate(1.08);
+    mask-image: radial-gradient(circle, black 0 48%, transparent 74%);
+    opacity: 0.68;
+    transform-origin: 50% 50%;
+    animation: md-bloom-fallback-turn 18s linear infinite;
+    -webkit-mask-image: radial-gradient(circle, black 0 48%, transparent 74%);
+  }
+
+  @keyframes md-bloom-fallback-turn {
+    to { transform: rotate(1turn); }
+  }
+
+  @keyframes md-bloom-fallback-breathe {
+    to { opacity: 1; transform: translate3d(-2%, -3%, 0) scale(1.08); }
+  }
+
   .md-dexter-pill:hover .md-dexter-pill__shader,
   .md-dexter-pill:focus-visible .md-dexter-pill__shader {
     transform: scale(1.1);
@@ -185,6 +237,11 @@
     .md-dexter-pill:hover .md-dexter-pill__shader,
     .md-dexter-pill:focus-visible .md-dexter-pill__shader {
       transform: scale(1.04);
+    }
+
+    .md-bloom-fallback__glow,
+    .md-bloom-fallback__rays {
+      animation: none;
     }
   }
 }

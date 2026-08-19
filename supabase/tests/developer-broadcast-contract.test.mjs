@@ -70,7 +70,8 @@ test("recipient exclusions and review evidence are visible", () => {
 test("history owns the full page width and adapts without a delivery sidebar", () => {
   assert.match(client, /function BroadcastHistory/)
   assert.match(client, /sm:hidden/)
-  assert.match(client, /hidden overflow-x-auto sm:block/)
+  assert.match(client, /className="hidden sm:block/)
+  assert.match(client, /minimumWidth=\{760\}/)
   assert.match(client, /deliveredCount/)
   assert.match(client, /failedCount/)
   assert.doesNotMatch(client, /Resend delivery|xl:grid-cols-\[minmax\(0,1fr\)_320px\]/)

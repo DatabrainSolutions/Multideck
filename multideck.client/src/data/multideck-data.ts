@@ -2119,7 +2119,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "Compact semantic pills for every workflow status and descriptive attribute shown in a table.",
     details: "Every pill rendered inside an operator table uses the filled green, yellow, red, blue, orange, or purple semantic palette. The cyan information family uses a quieter, lower-saturation treatment in light mode, while dark mode retains the approved deep cyan pair. Pills outside tables keep the quieter surface shell and leading dot.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n  const filledTablePill = tableKind !== null || kind === "status"\n\n  return (\n    <Badge\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill={filledTablePill ? "true" : undefined}\n      className={cn(baseClass, filledTablePill && filledTableClass, filledTablePill && tableToneClass[tone], className)}\n    >\n      {indicator ?? (!filledTablePill ? <span className="size-1.5 rounded-full" style={{ backgroundColor: toneToVar(tone) }} /> : null)}\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill kind="status" tone="purple">New</StatusPill>\n<StatusPill kind="status" tone="orange">Contacted</StatusPill>\n<StatusPill kind="status" tone="blue">Qualified</StatusPill>\n<StatusPill kind="status" tone="amber">Nurturing</StatusPill>\n<StatusPill kind="status" tone="green">Converted</StatusPill>\n<StatusPill kind="status" tone="red">Disqualified</StatusPill>\n\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
   },
@@ -2343,7 +2343,6 @@ export const galleryComponents = [
       { label: "CRM leads", route: "/crm/leads" },
       { label: "CRM contacts", route: "/crm/contacts" },
       { label: "CRM deals", route: "/crm/deals" },
-      { label: "CRM lists", route: "/crm/lists" },
       { label: "Inbox", route: "/inbox" },
       { label: "Components", route: "/components?component=dexter-action-pill" },
     ],
@@ -2363,7 +2362,6 @@ export const galleryComponents = [
       { label: "CRM leads", route: "/crm/leads" },
       { label: "CRM contacts", route: "/crm/contacts" },
       { label: "CRM deals", route: "/crm/deals" },
-      { label: "CRM lists", route: "/crm/lists" },
       { label: "Components", route: "/components?component=dexter-companion-sidebar" },
     ],
     componentCode: `export function DexterCompanionSidebar({ open, onClose, contextLabel = "Customers" }) {\n  const [prompt, setPrompt] = useState("")\n  const [mentions, setMentions] = useState([])\n\n  return (\n    <AnimatePresence>\n      {open ? (\n        <motion.aside className="md-dexter-companion-panel" role="dialog" aria-label="Dexter companion">\n          <h2>Ask Dexter</h2>\n          <p>Current page context loaded from {contextLabel}.</p>\n          <DexterMentionInput\n            value={prompt}\n            items={mentionItems}\n            selectedMentions={mentions}\n            onChange={setPrompt}\n            onMentionsChange={setMentions}\n            onSend={sendPrompt}\n          />\n        </motion.aside>\n      ) : null}\n    </AnimatePresence>\n  )\n}`,
@@ -2690,26 +2688,6 @@ export const galleryComponents = [
     usageCode: `const [expiryDate, setExpiryDate] = useState("2026-06-04")\nconst [appointment, setAppointment] = useState("2026-06-04T09:30")\n\n<MultideckDatePicker\n  value={expiryDate}\n  onChange={(date) => setExpiryDate(date ?? "")}\n  title="Expiry date"\n/>\n\n<MultideckDateTimePicker\n  value={appointment}\n  onChange={setAppointment}\n  title="Appointment"\n/>`,
   },
   {
-    id: "paper-tray-stack",
-    name: "Digital Paper Tray",
-    category: "Operations",
-    description: "A shelf-based document workspace with focused previews, linked shipment context, tray colours, and clear document actions.",
-    details: "Use when operators need to sort, inspect, move, and open working documents without leaving the freight workflow.",
-    foundOn: [{ label: "Paper Tray", route: "/paper-tray" }, { label: "Components", route: "/components?component=paper-tray-stack" }],
-    componentCode: `export function PaperTrayStack({ trays, selectedDocumentId, onSelectDocument, onFilesAdded, onMoveDocument }) {\n  return (\n    <div className="md-paper-tray-shell">\n      {trays.map((tray) => (\n        <PaperShelfDocumentWheel key={tray.id} tray={tray} onSelectDocument={onSelectDocument} />\n      ))}\n    </div>\n  )\n}`,
-    usageCode: `<PaperTrayStack\n  trays={paperTrays}\n  selectedDocumentId={selectedDocumentId}\n  onSelectDocument={openDocument}\n  onFilesAdded={addFiles}\n  onMoveDocument={moveDocument}\n/>`,
-  },
-  {
-    id: "document-viewer",
-    name: "Document Viewer",
-    category: "Operations",
-    description: "A focused reader for PDF, image, sample-document, download, move, remove, and fullscreen states.",
-    details: "Use with Digital Paper Tray or another document source when an operator needs to inspect and act on one document.",
-    foundOn: [{ label: "Paper Tray", route: "/paper-tray" }, { label: "Components", route: "/components?component=document-viewer" }],
-    componentCode: `export function DocumentViewer({ item, trays, currentTrayId, onClose, onMove, onRemove, onDownload }) {\n  return item ? (\n    <motion.section role="dialog" aria-modal="true">\n      <DocumentToolbar item={item} onClose={onClose} onDownload={onDownload} />\n      <DocumentCanvas item={item} />\n    </motion.section>\n  ) : null\n}`,
-    usageCode: `<DocumentViewer\n  item={selectedDocument}\n  trays={paperTrays}\n  currentTrayId={selectedTrayId}\n  onClose={closeDocument}\n  onMove={moveDocument}\n  onRemove={removeDocument}\n  onDownload={downloadDocument}\n/>`,
-  },
-  {
     id: "pdf-document-viewer-dialog",
     name: "PDF Document Viewer Dialog",
     category: "Operations",
@@ -2876,7 +2854,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "The product's one waiting state: twenty-five cells lit as a travelling square spiral.",
     details: "Use it for every wait long enough to need a mark — a route still downloading, a register still fetching rows, a panel still resolving a document list. One object across the whole product means a wait never looks like a different feature loading. It animates only opacity and transform, so it can sit inside the box the loaded content will occupy without moving anything around it, and it reserves its own size so rows arriving cannot shift the page. `size=\"sm\"` fits a 32px toolbar; `decorative` drops the status role where the surrounding block already announces the wait in words. Reduced-motion mode holds the centre cell lit instead of cycling.",
-    foundOn: [{ label: "Every route", route: "/" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }],
+    foundOn: [{ label: "Every route", route: "/" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }],
     componentCode: `const spiralOrder = [
   0, 1, 2, 3, 4,
   15, 16, 17, 18, 5,
@@ -2916,7 +2894,7 @@ export const DotGridLoader = memo(function DotGridLoader({ label, size = "md", d
     category: "Operations",
     description: "View tabs on the left and right-aligned search, filters, options, and Columns above a register table.",
     details: "Every register puts one transparent control row on the page background above the rounded table surface. Only view tabs belong on the left. Search, filters, and secondary options stay on the right, with the icon-only Columns control fixed as the final option at the far logical edge. Facet options are built from the rows actually in hand, so a menu cannot offer a value that returns nothing, and an active trigger takes the accent colour. Search narrows loaded rows immediately and only asks the server once the operator stops typing. Controls share the tabs' corner radius; on narrow screens the right-side controls collapse into Controls while Columns remains the final standalone option.",
-    foundOn: [{ label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Items", route: "/warehouse/items" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Purchase orders", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=register-toolbar" }],
+    foundOn: [{ label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Items", route: "/warehouse/items" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Purchase orders", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=register-toolbar" }],
     componentCode: `export function RegisterViewSwitch({ options, value, onChange, counts, ariaLabel }) {
   const { t } = useLanguage()
 
@@ -3282,7 +3260,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Navigation",
     description: "A compact mode switch with one spring-animated selection pill for two to four exclusive choices.",
     details: "Use for short mutually exclusive view modes. The selected pill preserves spatial continuity, respects reduced motion, and stays visually identical across settings, dashboards, registers, and workflows.",
-    foundOn: [{ label: "Paper Tray", route: "/paper-tray" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Rates & contracts", route: "/rates" }, { label: "Inbox", route: "/inbox" }, { label: "Purchase orders", route: "/warehouse/purchase-orders" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Rates & contracts", route: "/rates" }, { label: "Inbox", route: "/inbox" }, { label: "Purchase orders", route: "/warehouse/purchase-orders" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
     componentCode: `export function SegmentedControl({ options, value, onChange }) {\n  const controlId = useId()\n  const shouldReduceMotion = useReducedMotion()\n\n  return (\n    <div role="group" className="relative isolate inline-flex rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1">\n      {options.map((option) => (\n        <button key={option} aria-pressed={value === option} onClick={() => onChange(option)}>\n          {value === option ? (\n            <motion.span layoutId={controlId + "-active"} transition={reduceMotion(shouldReduceMotion, mdMotion.spring)} />\n          ) : null}\n          {option}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<SegmentedControl\n  options={["Table", "Board"]}\n  value={viewMode}\n  onChange={setViewMode}\n/>`,
   },
@@ -3320,11 +3298,11 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "data-table",
     name: "Data Table",
     category: "Data",
-    description: "The canonical Multideck table for registers, compact summaries, editable grids, and operational history.",
-    details: "Declare each column's data kind so numeric alignment, long text, statuses, and attributes stay consistent. The transparent toolbar sits on the page background above the rounded table surface: a page heading or toggles may lead, followed by search, filters, options, and Columns on the right. Mobile collapses that right cluster first.",
-    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Bookings", route: "/bookings" }, { label: "Rates & contracts", route: "/rates" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Users", route: "/settings?tab=users" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Purchase orders", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components" }],
-    componentCode: `export function DataTable({ columns, rows, toolbarLeading, toolbarTabs, toolbarSearch, toolbarFilters, toolbarOptions }) {\n  return (\n    <section>\n      <TableToolbar leading={toolbarLeading ?? toolbarTabs} search={toolbarSearch} filters={toolbarFilters} options={toolbarOptions} columnsLast />\n      <TableSurface>\n        <Table>{/* semantic columns, persisted layout, accessible interactions */}</Table>\n      </TableSurface>\n    </section>\n  )\n}`,
-    usageCode: `<DataTable\n  ariaLabel="Supplier charges"\n  columns={chargeColumns}\n  rows={charges}\n  getRowKey={(charge) => charge.id}\n  storageKey="quote-charges-in"\n  onRowClick={selectCharge}\n/>`,
+    description: "The canonical Multideck table with persisted layout, right-click row selection, and field-aware CSV export.",
+    details: "Declare each column's data kind so alignment and status treatments stay consistent. Right-click any row and choose Select to reveal the sticky checkbox column; operators can select several rows, then use the CSV action to choose displayed columns or expand hairline record sections for hidden fields. Register endpoints stay lean: pass exportConfig.loadRecords when full detail such as lead contacts, account addresses, or Customs parties should be loaded only after export is requested. Existing row actions such as Duplicate or Delete belong in rowContextActions so they share the same animated menu.",
+    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Bookings", route: "/bookings" }, { label: "Customs declarations", route: "/customs/standalone/export" }, { label: "Rates & contracts", route: "/rates" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Users", route: "/admin/users" }, { label: "Active log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Broadcast history", route: "/admin/broadcast" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Purchase orders", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=data-table" }],
+    componentCode: `export function DataTable({ columns, rows, getRowKey, exportConfig, rowContextActions }) {\n  const [selectionMode, setSelectionMode] = useState(false)\n  const [selectedRowKeys, setSelectedRowKeys] = useState(new Set())\n\n  return (\n    <section>\n      <TableToolbar selection={selectionMode ? <SelectionExportActions selectedRowKeys={selectedRowKeys} /> : null} columnsLast />\n      <TableSurface>\n        <Table>{/* sticky selection column, semantic cells, persisted layout */}</Table>\n      </TableSurface>\n      <TableCsvExportDialog config={exportConfig} />\n      <AnimatedRowContextMenu actions={rowContextActions} onSelect={() => setSelectionMode(true)} />\n    </section>\n  )\n}`,
+    usageCode: `<DataTable\n  ariaLabel="CRM leads"\n  columns={leadColumns}\n  rows={leads}\n  getRowKey={(lead) => lead.id}\n  storageKey="crm-leads"\n  exportConfig={{\n    fileName: "crm-leads",\n    recordCategory: "Lead details",\n    loadRecords: (selected) => Promise.all(selected.map((lead) => getLead(lead.id))),\n  }}\n  onRowClick={openLead}\n/>`,
   },
   {
     id: "unified-quote-charges-workspace",
@@ -3394,15 +3372,18 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Purchase Order Line Editor",
     category: "Operations",
     description: "A structured line editor for entered or document-extracted purchase-order goods, with item matching, quantities, UOM, price, tax and delivery date.",
-    details: "Use when an operator creates or reviews a purchase order. Extracted supplier text stays editable and visibly unmatched until the operator links each line to the correct warehouse item; issuing remains blocked while any line is unmatched.",
+    details: "Use when an operator creates or reviews a purchase order. Item options arrive as a bounded server-search page for the selected warehouse and stock owner, so very large catalogues stay fast. Extracted supplier text remains editable and issuing stays blocked while any line is unmatched.",
     foundOn: [{ label: "New purchase order", route: "/warehouse/purchase-orders/new" }, { label: "Purchase order detail", route: "/warehouse/purchase-orders/d0c00000-0000-4000-8000-000000000001" }, { label: "Components", route: "/components?component=purchase-order-line-editor" }],
-    componentCode: `export function PurchaseOrderLineEditor({ lines, reference, facilityId, customerOrgId, disabled, onChange }) {
-  const items = reference.items.filter((item) => item.facilityId === facilityId && item.customerOrgId === customerOrgId)
+    componentCode: `export function PurchaseOrderLineEditor({ lines, items, facilityId, customerOrgId, itemLoading, itemsHaveMore, onItemSearch, onItemSelected, disabled, onChange }) {
   return lines.map((line, index) => (
     <PurchaseOrderLine
       key={line.id ?? index}
       line={line}
       items={items}
+      loading={itemLoading}
+      hasMore={itemsHaveMore}
+      onSearch={onItemSearch}
+      onItemSelected={onItemSelected}
       disabled={disabled}
       onChange={(changes) => onChange(lines.map((item, lineIndex) => lineIndex === index ? { ...item, ...changes } : item))}
     />
@@ -3410,9 +3391,13 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
 }`,
     usageCode: `<PurchaseOrderLineEditor
   lines={form.lines}
-  reference={reference}
+  items={itemPage.rows}
   facilityId={form.facilityId}
   customerOrgId={form.customerOrgId}
+  itemLoading={itemPage.loading}
+  itemsHaveMore={itemPage.hasMore}
+  onItemSearch={setItemSearch}
+  onItemSelected={rememberItem}
   onChange={(lines) => setForm((current) => ({ ...current, lines }))}
 />`,
   },
@@ -3744,7 +3729,6 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
       { label: "CRM leads", route: "/crm/leads" },
       { label: "CRM contacts", route: "/crm/contacts" },
       { label: "CRM deals", route: "/crm/deals" },
-      { label: "CRM lists", route: "/crm/lists" },
       { label: "Components", route: "/components?component=dexter-mention-input" },
     ],
     componentCode: `export function DexterMentionInput({ value, items, selectedMentions, onChange, onMentionsChange, onSend }) {\n  return (\n    <div className="relative">\n      <AnimatePresence initial={false}>\n        {mentionQuery !== null ? (\n          <motion.div role="listbox" className="md-dexter-mention-menu">\n            {results.map((item) => (\n              <button key={item.id} role="option" onMouseDown={(event) => event.preventDefault()} onClick={() => selectMention(item)}>\n                <item.icon />\n                <span>{item.title}</span>\n                <span>{item.type}</span>\n              </button>\n            ))}\n          </motion.div>\n        ) : null}\n      </AnimatePresence>\n      <div\n        contentEditable\n        role="combobox"\n        aria-autocomplete="list"\n        aria-expanded={mentionQuery !== null}\n        data-placeholder="Ask anything, @ a record, or / for a command"\n        className="md-dexter-mention-editor"\n        onInput={handleInput}\n        onKeyDown={handleKeyDown}\n      />\n    </div>\n  )\n}`,
@@ -4265,7 +4249,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "CRM",
     description: "A relationship timeline that blends email, AI signals, quotes, booking exceptions, and account notes.",
     details: "Use when the operator needs to understand what changed across leads. It adapts the shared Audit Timeline so chronology, interaction, accessibility, and responsive behaviour stay consistent with Core activity. Compact mode is useful beside another primary workflow.",
-    foundOn: [{ label: "CRM", route: "/crm" }, { label: "CRM activity", route: "/crm/activity" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "CRM", route: "/crm" }, { label: "Components", route: "/components" }],
     componentCode: `export function CrmActivityTimeline({ activities = crmActivities, compact, loading, error, onRetry, onOpenContext }) {\n  const timelineEvents = activities.map(toAuditTimelineEvent)\n\n  return (\n    <AuditTimeline\n      events={timelineEvents}\n      title="Relationship activity"\n      description={compact ? "Latest customer signals" : "AI, email, sales, and booking events"}\n      loading={loading}\n      error={error}\n      emptyMessage="No relationship activity yet."\n      onRetry={onRetry}\n      onContextSelect={(event) => onOpenContext?.(event.contextRoute)}\n      groupConsecutiveDates\n      showCompletedCheck={false}\n      compact={compact}\n    />\n  )\n}`,
     usageCode: `<CrmActivityTimeline onOpenContext={navigate} />\n<CrmActivityTimeline activities={crmActivities.slice(0, 3)} compact />\n<CrmActivityTimeline activities={[]} />`,
   },
@@ -4275,7 +4259,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "CRM",
     description: "A ranked lead signal list for expansion, watch, and risk moments.",
     details: "Use beside CRM workflows when AI or account data points to a relationship issue worth acting on.",
-    foundOn: [{ label: "CRM", route: "/crm" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM activity", route: "/crm/activity" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "CRM", route: "/crm" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Components", route: "/components" }],
     componentCode: `export function CrmLeadSignalList({ signals = crmAccountSignals, onOpenLead }) {\n  return (\n    <Surface padding="none">\n      <SectionHeader title="Lead signals" meta="ranked by commercial impact" />\n      {signals.map((signal) => (\n        <button key={signal.account} onClick={() => onOpenLead?.(signal)}>\n          <CustomerAvatar initials={signal.initials} tone={signal.tone} />\n          <span>{signal.account}</span>\n          <span>{signal.signal}</span>\n          <StatusPill tone={signal.statusTone}>{signal.status}</StatusPill>\n        </button>\n      ))}\n    </Surface>\n  )\n}`,
     usageCode: `<CrmLeadSignalList\n  signals={crmAccountSignals}\n  onOpenLead={(signal) => navigate("/crm/leads")}\n/>`,
   },
@@ -4413,7 +4397,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     foundOn: [
       { label: "Profile", route: "/settings" },
       { label: "Security", route: "/settings?tab=security" },
-      { label: "AI usage", route: "/settings?tab=ai-usage" },
+      { label: "AI usage", route: "/admin/ai-usage" },
       { label: "Components", route: "/components?component=settings-progress-ring" },
     ],
     componentCode: `export function SettingsProgressRing({ value, label, detail, tone = "accent" }) {
@@ -4619,6 +4603,36 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     componentCode: `export function MarketingOptInControl({ checked, source, updatedAt, onCheckedChange }) {\n  return (\n    <div>\n      <div>\n        <p>Opt-in marketing</p>\n        <p>{checked ? "Can receive marketing updates." : "No marketing updates will be sent."}</p>\n        <small>{source} · {updatedAt}</small>\n      </div>\n      <Switch checked={checked} onCheckedChange={onCheckedChange} />\n    </div>\n  )\n}`,
     usageCode: `<MarketingOptInControl\n  checked={lead.marketingOptIn}\n  source={lead.marketingConsentSource}\n  updatedAt={lead.marketingConsentUpdatedAt}\n  onCheckedChange={(checked) => setMarketingOptIn("lead", lead.id, checked)}\n/>`,
   },
+  {
+    id: "screening-outcome-pill",
+    name: "Screening Outcome Pill",
+    category: "Operations",
+    description: "Compact party-screening language for no match, possible match, match, and a stale government list.",
+    details: "Use on Compliance controls, customer records, and anywhere a completed sanctions screen needs to be scanned without turning the result into legal certainty.",
+    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Customer detail", route: "/customers" }, { label: "Components", route: "/components?component=screening-outcome-pill" }],
+    componentCode: `export function ScreeningOutcomePill({ outcome, stale = false }) {\n  return (\n    <span className="inline-flex flex-wrap items-center gap-1.5">\n      <StatusPill tone={outcomeTone[outcome]}>{outcomeLabel[outcome]}</StatusPill>\n      {stale ? <StatusPill tone="amber">List stale</StatusPill> : null}\n    </span>\n  )\n}`,
+    usageCode: `<ScreeningOutcomePill outcome={check.outcome} stale={check.listStale} />`,
+  },
+  {
+    id: "screening-list-freshness",
+    name: "Screening List Freshness",
+    category: "Operations",
+    description: "Shows whether the workspace copy of the UK OFSI list is loaded, current, or due a refresh.",
+    details: "Use above a screening form so operators can see the list publisher, name count, and last update before they rely on a no-match result.",
+    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Components", route: "/components?component=screening-list-freshness" }],
+    componentCode: `export function ScreeningListFreshness({ list, action }) {\n  return (\n    <div className="flex items-start justify-between gap-3">\n      <div>\n        <p>{list.sourceName}</p>\n        <StatusPill>{list.stale ? "Needs refresh" : "Current"}</StatusPill>\n        <p>{list.entryCount} names · Updated {list.downloadedAt}</p>\n      </div>\n      {action}\n    </div>\n  )\n}`,
+    usageCode: `<ScreeningListFreshness\n  list={workspace.list}\n  action={<Button onClick={refreshList}>Refresh list</Button>}\n/>`,
+  },
+  {
+    id: "screening-match-row",
+    name: "Screening Match Row",
+    category: "Operations",
+    description: "One government-list name that matched a screened party, with regime and exact-or-similar evidence.",
+    details: "Use under a screening result. Keep listed names readable in both left-to-right and right-to-left layouts; identifiers stay in their original form.",
+    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Customer detail", route: "/customers" }, { label: "Components", route: "/components?component=screening-match-row" }],
+    componentCode: `export function ScreeningMatchRow({ match }) {\n  return (\n    <div className="grid gap-1 sm:grid-cols-[minmax(0,1fr)_auto]">\n      <div>\n        <p>{match.listedName}</p>\n        <p>{[match.groupType, match.regime, match.country].filter(Boolean).join(" · ")}</p>\n      </div>\n      <StatusPill tone={match.matchKind === "exact" ? "red" : "amber"}>\n        {match.matchKind === "exact" ? "Exact name" : "Similar name"}\n      </StatusPill>\n    </div>\n  )\n}`,
+    usageCode: `{check.matches.map((match) => (\n  <ScreeningMatchRow key={match.groupId + match.listedName} match={match} />\n))}`,
+  },
 ]
 
 export const galleryCategories = ["All", "Design System", "Foundation", "Controls", "Navigation", "Data", "Visualizations", "Feedback", "Operations", "CRM", "Agent Dexter"]
@@ -4646,8 +4660,6 @@ export const galleryIcons = {
   "radial-goal-chart": Gauge,
   "scatter-chart": ChartScatter,
   "mixed-chart": ChartNoAxesCombined,
-  "paper-tray-stack": FileText,
-  "document-viewer": FileText,
   "audit-timeline": Clock3,
   "booking-row": Ship,
   "interactive-map": Globe2,
@@ -4745,4 +4757,7 @@ export const galleryIcons = {
   "contact-card-social-links-editor": Users,
   "automation-run-history": Workflow,
   "marketing-opt-in-control": BadgeCheck,
+  "screening-outcome-pill": ShieldCheck,
+  "screening-list-freshness": ShieldCheck,
+  "screening-match-row": ShieldCheck,
 } satisfies Record<string, LucideIcon>

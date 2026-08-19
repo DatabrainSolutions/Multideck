@@ -1,18 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
+import "@/quotes-transfer.css"
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
 import { createPortal } from "react-dom"
-import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import {
   AiBrain,
   Activity,
   Building2,
   CalendarClock,
+  ChartBar,
   Check,
   CircleDollarSign,
   Container,
   Database,
   FileText,
-  Health,
   KanbanSquare,
   MessageCircle,
   PanelRightClose,
@@ -33,14 +34,16 @@ import {
 } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { MultideckDateRangePicker } from "@/components/multideck/date-picker"
-import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
+import { DexterActionPill, SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { cn } from "@/lib/utils"
 import { useKanbanPointerDrag } from "@/lib/kanban-drag"
+import { mdMotion, reduceMotion } from "@/lib/motion"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   bookingCargo,
@@ -205,14 +208,29 @@ export function BookingMetricCard({ label, value, tone }: { label: string; value
   )
 }
 
-export function BookingMetricStrip({ rows = bookings }: { rows?: readonly Booking[] }) {
+export type BookingMetricSummary = {
+  active: number
+  inTransit: number
+  atDestination: number
+  exceptions: number
+  complete: number
+}
+
+export function BookingMetricStrip({ rows = bookings, summary }: { rows?: readonly Booking[]; summary?: BookingMetricSummary }) {
   const { t } = useLanguage()
+  const values = summary ?? {
+    active: rows.filter((booking) => booking.progress < 100).length,
+    inTransit: rows.filter((booking) => booking.progress >= 25 && booking.progress < 75).length,
+    atDestination: rows.filter((booking) => booking.progress >= 75 && booking.progress < 100).length,
+    exceptions: rows.filter((booking) => booking.status === "Exception").length,
+    complete: rows.filter((booking) => booking.progress >= 100).length,
+  }
   const metrics = [
-    { label: "Active", value: String(rows.filter((booking) => booking.progress < 100).length), tone: "neutral" as StatusTone },
-    { label: "In transit", value: String(rows.filter((booking) => booking.progress >= 25 && booking.progress < 75).length), tone: "teal" as StatusTone },
-    { label: "At destination", value: String(rows.filter((booking) => booking.progress >= 75 && booking.progress < 100).length), tone: "blue" as StatusTone },
-    { label: "Exceptions", value: String(rows.filter((booking) => booking.status === "Exception").length), tone: "red" as StatusTone },
-    { label: "Complete", value: String(rows.filter((booking) => booking.progress >= 100).length), tone: "green" as StatusTone },
+    { label: "Active", value: String(values.active), tone: "neutral" as StatusTone },
+    { label: "In transit", value: String(values.inTransit), tone: "teal" as StatusTone },
+    { label: "At destination", value: String(values.atDestination), tone: "blue" as StatusTone },
+    { label: "Exceptions", value: String(values.exceptions), tone: "red" as StatusTone },
+    { label: "Complete", value: String(values.complete), tone: "green" as StatusTone },
   ]
 
   return (
@@ -409,34 +427,23 @@ export function BookingViewSwitch({
   )
 }
 
-export function BookingListHeader<T extends string>({
+export function BookingListHeader({
   viewMode,
   onViewModeChange,
   onSpeakToDexter,
-  scopeOptions,
-  scope,
-  onScopeChange,
 }: {
   viewMode: BookingViewMode
   onViewModeChange: (mode: BookingViewMode) => void
   onSpeakToDexter: () => void
-  scopeOptions: readonly T[]
-  scope: T
-  onScopeChange: (scope: T) => void
 }) {
   const { t } = useLanguage()
 
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <h1 className="text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Bookings")}</h1>
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-        <div className="max-w-full overflow-x-auto pb-0.5 md-scrollbar">
-          <SegmentedControl options={scopeOptions} value={scope} onChange={onScopeChange} ariaLabel={t("Booking scope")} renderOption={(option) => t(option)} />
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <DexterActionPill onClick={onSpeakToDexter} />
-          <BookingViewSwitch value={viewMode} onChange={onViewModeChange} />
-        </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <DexterActionPill onClick={onSpeakToDexter} />
+        <BookingViewSwitch value={viewMode} onChange={onViewModeChange} />
       </div>
     </div>
   )
@@ -1020,6 +1027,8 @@ function BookingDetailHeader({
   record: BookingDetailRecord
 }) {
   const { direction, t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const bookingTabControlId = useId()
   const [bookingRefCopied, setBookingRefCopied] = useState(false)
   const bookingCopyResetTimerRef = useRef<number | null>(null)
   const tabs = bookingDetailTabs.map((label) => ({ id: label, label: t(label) }))
@@ -1063,6 +1072,41 @@ function BookingDetailHeader({
     tabButtons?.[nextIndex]?.focus()
   }
 
+  const bookingTabs = (
+    <Surface padding="none" tone="soft" className="w-full min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]">
+      <div className="relative isolate flex w-max min-w-full items-center gap-1 overflow-x-auto" role="tablist" aria-label={t("Booking workspace")}>
+        {tabs.map((tab) => {
+          const selected = tab.id === activeTab
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              tabIndex={selected ? 0 : -1}
+              className={cn(
+                "group relative isolate h-8 min-w-[72px] flex-1 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[12px] font-medium text-[var(--md-text)] transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.985]",
+                selected && "text-[var(--md-accent-ink)] hover:text-[var(--md-accent-ink)]",
+              )}
+              onClick={() => onTabChange(tab.id as BookingDetailTab)}
+              onKeyDown={(event) => moveBookingTabFocus(event, tab.id as BookingDetailTab)}
+            >
+              {selected ? (
+                <motion.span
+                  aria-hidden="true"
+                  layoutId={`${bookingTabControlId}-active-segment`}
+                  className="absolute inset-0 -z-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16),var(--md-shadow-soft)] transition-colors duration-200 group-hover:bg-[var(--md-accent-hover)]"
+                  transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
+                />
+              ) : null}
+              <span className="relative z-10">{tab.label}</span>
+            </button>
+          )
+        })}
+      </div>
+    </Surface>
+  )
+
   return (
     <header>
       <div className="grid min-w-0 grid-rows-[auto_auto] gap-1.5">
@@ -1089,9 +1133,17 @@ function BookingDetailHeader({
               />
               <CopyStatusIcon copied={bookingRefCopied} iconClassName="size-3.5" className="shrink-0" />
             </button>
-            <StatusPill tone={statusTone} className="h-6 shrink-0 px-2 text-[10px]">{t(statusLabel)}</StatusPill>
-            <span className="min-w-0 truncate text-[12px] text-[var(--md-text)]">{record.booking.route}</span>
+            <StatusPill kind="status" tone={statusTone} className="h-7 shrink-0 px-2.5 text-[11.5px] font-medium">{t(statusLabel)}</StatusPill>
           </div>
+          <span
+            data-booking-route
+            data-i18n-skip
+            dir="auto"
+            title={record.booking.route}
+            className="min-h-7 min-w-0 max-w-full truncate rounded-[calc(var(--md-radius-xl)-6px)] bg-[var(--md-field-bg)] px-2.5 py-1 text-[11.5px] font-medium leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] lg:ms-auto lg:max-w-[min(32%,320px)]"
+          >
+            {record.booking.route}
+          </span>
           <div className="flex shrink-0 items-center gap-1 overflow-x-auto">
             {activeTab === "Details" ? (
               detailsDirty ? (
@@ -1119,30 +1171,13 @@ function BookingDetailHeader({
           </div>
         </section>
 
-        <Surface padding="none" tone="soft" className="min-w-0 max-w-full justify-self-start overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]">
-          <div className="flex w-max max-w-full items-center gap-1 overflow-x-auto" role="tablist" aria-label={t("Booking workspace")}>
-            {tabs.map((tab) => {
-              const selected = tab.id === activeTab
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  tabIndex={selected ? 0 : -1}
-                  className={cn(
-                    "h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,transform] duration-200 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.985]",
-                    selected && "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16),var(--md-shadow-soft)] hover:bg-[var(--md-accent-hover)] hover:text-[var(--md-accent-ink)]",
-                  )}
-                  onClick={() => onTabChange(tab.id as BookingDetailTab)}
-                  onKeyDown={(event) => moveBookingTabFocus(event, tab.id as BookingDetailTab)}
-                >
-                  {tab.label}
-                </button>
-              )
-            })}
+        {activeTab === "Overview" ? (
+          <BookingOverviewSignals record={record} tabs={bookingTabs} />
+        ) : (
+          <div className="grid gap-2 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+            <div className="min-w-0">{bookingTabs}</div>
           </div>
-        </Surface>
+        )}
       </div>
     </header>
   )
@@ -1775,113 +1810,209 @@ function BookingCargoWiseGroup({
   )
 }
 
-function BookingOverviewSignals({ record }: { record: BookingDetailRecord }) {
-  const { t } = useLanguage()
+function chartPointPath(
+  values: readonly number[],
+  width: number,
+  height: number,
+  inset = { top: 12, right: 4, bottom: 22, left: 34 },
+) {
+  const usableWidth = width - inset.left - inset.right
+  const usableHeight = height - inset.top - inset.bottom
+  const points = values.map((value, index) => ({
+    x: values.length === 1 ? inset.left + (usableWidth / 2) : inset.left + ((index / (values.length - 1)) * usableWidth),
+    y: inset.top + ((100 - value) / 100) * usableHeight,
+  }))
+  const line = points.reduce((path, point, index) => {
+    if (index === 0) return `M${point.x.toFixed(1)},${point.y.toFixed(1)}`
+
+    const previous = points[index - 1]
+    const beforePrevious = points[index - 2] ?? previous
+    const next = points[index + 1] ?? point
+    const clampY = (value: number) => Math.max(inset.top, Math.min(height - inset.bottom, value))
+    const controlOneX = previous.x + ((point.x - beforePrevious.x) / 6)
+    const controlOneY = clampY(previous.y + ((point.y - beforePrevious.y) / 6))
+    const controlTwoX = point.x - ((next.x - previous.x) / 6)
+    const controlTwoY = clampY(point.y - ((next.y - previous.y) / 6))
+
+    return `${path} C${controlOneX.toFixed(1)},${controlOneY.toFixed(1)} ${controlTwoX.toFixed(1)},${controlTwoY.toFixed(1)} ${point.x.toFixed(1)},${point.y.toFixed(1)}`
+  }, "")
+
+  return {
+    points,
+    line,
+  }
+}
+
+function BookingDexterArrivalConfidence({ record }: { record: BookingDetailRecord }) {
+  const { language, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
-  const steps = getMovementSteps(record)
-  const operationalScore = record.booking.status === "Exception"
-    ? 34
-    : record.booking.status === "Delayed"
-      ? Math.max(48, Math.min(68, record.booking.progress + 4))
-      : record.booking.progress === 100
-        ? 96
-        : 84
-  const needleAngle = -90 + (operationalScore / 100) * 180
-  const operationalLabel = record.booking.status === "Exception"
-    ? "Action needed"
-    : record.booking.status === "Delayed"
-      ? "Schedule watch"
-      : record.booking.progress === 100
-        ? "Complete"
-        : "On track"
-  const operationalTone: StatusTone = record.booking.status === "Exception" ? "red" : record.booking.status === "Delayed" ? "amber" : "green"
-  const metadata = [
-    ["Operational owner", record.booking.owner],
-    ["Current location", record.booking.currentLocation],
-    ["Departure", record.booking.departureDate],
-    ["Current ETA", record.booking.eta],
-  ] as const
+  const gradientId = useId().replaceAll(":", "")
+  const reliableCarrier = Boolean(record.booking.carrier && !/pending|not supplied/i.test(record.booking.carrier))
+  const hasSchedule = Boolean(record.booking.eta && record.booking.departureDate)
+  const statusBase = record.booking.status === "Exception" ? 30 : record.booking.status === "Delayed" ? 54 : 78
+  const arrivalConfidence = Math.max(18, Math.min(96, statusBase + (record.booking.progress >= 25 ? 5 : 0) + (hasSchedule ? 4 : 0) + (reliableCarrier ? 6 : 0)))
+  const offsets = record.booking.status === "Exception" ? [22, 17, 12, 8, 4, 0] : record.booking.status === "Delayed" ? [7, 11, 5, -2, 2, 0] : [-17, -12, -9, -7, -3, 0]
+  const confidenceSeries = offsets.map((offset) => Math.max(12, Math.min(98, arrivalConfidence + offset)))
+  const chartWidth = 360
+  const chartHeight = 88
+  const chartInset = { top: 12, right: 4, bottom: 22, left: 34 }
+  const plotBottom = chartHeight - chartInset.bottom
+  const { points, line } = chartPointPath(confidenceSeries, chartWidth, chartHeight)
+  const area = `${line} L${chartWidth - chartInset.right},${plotBottom} L${chartInset.left},${plotBottom} Z`
+  const latestPoint = points.at(-1) ?? { x: chartWidth, y: chartHeight }
+  const chartColor = "color-mix(in srgb, var(--md-accent-lift-warm) 70%, var(--md-status-green-ink))"
+  const signalCount = [record.booking.status, record.booking.progress >= 0, hasSchedule, reliableCarrier].filter(Boolean).length
+  const departureValue = record.booking.departureAt || record.booking.departureDate
+  const arrivalValue = record.booking.arrivalAt || record.booking.arrivalDate
+  const departureTime = Date.parse(departureValue)
+  const arrivalTime = Date.parse(arrivalValue)
+  const hasScheduledWindow = Number.isFinite(departureTime) && Number.isFinite(arrivalTime) && arrivalTime > departureTime
+  const scheduledTimes = confidenceSeries.map((_, index) => (
+    hasScheduledWindow
+      ? new Date(departureTime + ((arrivalTime - departureTime) * (index / (confidenceSeries.length - 1))))
+      : null
+  ))
+  const usesClockTime = hasScheduledWindow && (arrivalTime - departureTime) <= 3 * 24 * 60 * 60 * 1000
+  const timeFormatter = new Intl.DateTimeFormat(language, usesClockTime
+    ? { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }
+    : { day: "numeric", month: "short" })
+  const xTicks = [0, Math.floor((confidenceSeries.length - 1) / 2), confidenceSeries.length - 1].map((index) => ({
+    x: points[index]?.x ?? chartInset.left,
+    label: scheduledTimes[index]
+      ? timeFormatter.format(scheduledTimes[index])
+      : index === 0
+        ? (record.booking.departureDate || t("Departure"))
+        : index === confidenceSeries.length - 1
+          ? (record.booking.arrivalDate || t("Arrival"))
+          : t("Mid-route"),
+  }))
+  const yTicks = [50, 75, 100]
 
   return (
-    <div className="grid gap-2 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
-      <div className="grid min-h-0 grid-rows-2 gap-2">
-        <Surface padding="none" className="md-scrollbar flex min-h-0 items-center overflow-x-auto rounded-[var(--md-radius-xl)] p-1.5">
-          <div className="grid w-full min-w-[560px] grid-cols-5 gap-1" role="list" aria-label={t("Operational milestones")}>
-            {steps.map((step, index) => (
+    <Surface padding="none" className="relative h-full min-h-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-accent-abyss-deep)] px-3 pb-2.5 pt-2.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12),0_10px_22px_var(--md-accent-veil-cast-a18)]">
+      <span aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-85">
+        <SpectralBloomShader tone="brand" shape="composer" />
+      </span>
+      <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(2,13,11,0.08),rgba(1,9,8,0.48))]" />
+      <div className="relative z-10 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="flex items-center gap-1 text-[10px] font-medium uppercase leading-3 tracking-[0.04em] text-white/64"><AiBrain className="size-3 text-white/85" strokeWidth={1.5} />{t("Dexter forecast")}</p>
+          <p className="mt-1 text-[12px] font-medium text-white">{t("On-time probability by journey time")}</p>
+          <p className="mt-0.5 text-[9.5px] text-white/55"><span data-i18n-skip dir="ltr">{signalCount}/4</span> · {t("booking signals available")}</p>
+        </div>
+        <div className="flex shrink-0 items-baseline gap-1">
+          <span data-i18n-skip dir="ltr" className="text-[28px] font-medium leading-none tracking-[-0.03em] text-white tabular-nums">{arrivalConfidence}</span>
+          <span className="text-[11px] text-white/58">%</span>
+        </div>
+      </div>
+
+      <div className="relative z-10 mt-1.5">
+        <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="h-[78px] w-full overflow-visible" role="img" aria-label={`${t("On-time probability by journey time")} ${arrivalConfidence}%`} preserveAspectRatio="none">
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={chartColor} stopOpacity="0.4" />
+              <stop offset="100%" stopColor={chartColor} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <text x={chartInset.left} y="7" fill="rgba(255,255,255,0.58)" fontSize="7.5">{t("Confidence (%)")}</text>
+          {yTicks.map((value) => {
+            const y = chartInset.top + ((100 - value) / 100) * (chartHeight - chartInset.top - chartInset.bottom)
+            return (
+              <g key={value}>
+                <line x1={chartInset.left} x2={chartWidth - chartInset.right} y1={y} y2={y} stroke="rgba(255,255,255,0.09)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                <text x={chartInset.left - 5} y={y + 2.5} textAnchor="end" fill="rgba(255,255,255,0.5)" fontSize="7" data-i18n-skip>{value}%</text>
+              </g>
+            )
+          })}
+          <line x1={chartInset.left} x2={chartInset.left} y1={chartInset.top} y2={plotBottom} stroke="rgba(255,255,255,0.22)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          <line x1={chartInset.left} x2={chartWidth - chartInset.right} y1={plotBottom} y2={plotBottom} stroke="rgba(255,255,255,0.22)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          <motion.path d={area} fill={`url(#${gradientId})`} initial={shouldReduceMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: shouldReduceMotion ? 0 : 0.34, ease: [0.22, 1, 0.36, 1] }} />
+          <motion.path d={line} fill="none" stroke={chartColor} strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" initial={shouldReduceMotion ? false : { pathLength: 0, opacity: 0 }} animate={{ pathLength: 1, opacity: 1 }} transition={{ duration: shouldReduceMotion ? 0 : 0.48, ease: [0.16, 1, 0.3, 1] }} />
+          <circle cx={latestPoint.x} cy={latestPoint.y} r="2.5" fill={chartColor} stroke="rgba(255,255,255,0.82)" strokeWidth="1.25" vectorEffect="non-scaling-stroke" />
+          {xTicks.map((tick, index) => (
+            <text key={`${tick.label}-${index}`} x={tick.x} y={chartHeight - 8} textAnchor={index === 0 ? "start" : index === xTicks.length - 1 ? "end" : "middle"} fill="rgba(255,255,255,0.52)" fontSize="7" data-i18n-skip>{tick.label}</text>
+          ))}
+          <text x={chartWidth - chartInset.right} y={chartHeight - 1} textAnchor="end" fill="rgba(255,255,255,0.42)" fontSize="6.5">{t("Scheduled journey")}</text>
+        </svg>
+      </div>
+      <p className="relative z-10 mt-1 truncate text-[9px] text-white/50">{t("Forecast across the scheduled departure-to-arrival window")}</p>
+    </Surface>
+  )
+}
+
+function BookingOverviewSignals({ record, tabs }: { record: BookingDetailRecord; tabs: ReactNode }) {
+  const { t } = useLanguage()
+  const bookingProgress = Math.max(0, Math.min(100, record.booking.progress))
+  const bookingStages = [
+    { id: "intake", label: "Booked", summary: "The booking and operational ownership have been recorded." },
+    { id: "costing", label: "Origin", summary: "Origin handling and departure requirements are being completed." },
+    { id: "review", label: "Departed", summary: "The main movement has departed its origin." },
+    { id: "sent", label: "Destination", summary: "Arrival and destination handling are underway." },
+    { id: "outcome", label: "Released", summary: "Release, delivery and commercial close-out are complete." },
+  ].map((stage, index) => {
+    const progress = Math.max(0, Math.min(100, (bookingProgress - (index * 20)) * 5))
+    return { ...stage, progress, state: progress >= 100 ? "done" : progress > 0 ? "current" : "todo" }
+  })
+  const bookingMetadata = [
+    { label: "Booking owner", value: record.booking.owner || t("Unassigned") },
+    { label: "Current location", value: record.booking.currentLocation || "—" },
+    { label: "Departure", value: record.booking.departureDate || "—" },
+    { label: "ETA", value: record.booking.eta || "—" },
+  ]
+
+  return (
+    <div className="grid items-stretch gap-2 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+      <div className="md-quote-stage-stack grid min-h-0 grid-rows-[auto_auto_auto] gap-2">
+        {tabs}
+
+        <Surface padding="none" className="md-quote-stage-panel flex min-h-0 items-center rounded-[var(--md-radius-xl)] p-1.5">
+          <div className="md-quote-stage-panel__steps" role="list" aria-label={t("Booking progress")}>
+            {bookingStages.map((stage) => (
               <div
-                key={step.label}
+                key={stage.id}
+                className="md-quote-stage-panel__step"
+                data-stage={stage.id}
+                data-state={stage.state}
+                style={{ "--md-quote-stage-progress": `${stage.progress}%` } as CSSProperties}
                 role="listitem"
-                aria-current={step.state === "current" ? "step" : undefined}
-                className={cn(
-                  "relative min-w-0 overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-2.5 py-2 shadow-[var(--md-shadow-line)]",
-                  step.state === "current" && "bg-[var(--md-accent-a10)]",
-                )}
+                aria-current={stage.state === "current" ? "step" : undefined}
               >
-                <motion.span
-                  aria-hidden="true"
-                  className={cn("absolute inset-x-0 top-0 h-0.5 origin-left bg-[var(--md-green)]", step.state === "current" && "bg-[var(--md-accent)]", step.state === "pending" && "bg-[var(--md-stroke)]")}
-                  initial={false}
-                  animate={{ scaleX: step.state === "pending" ? 0.18 : step.state === "current" ? Math.max(0.22, (record.booking.progress % 25) / 25) : 1 }}
-                  transition={{ duration: shouldReduceMotion ? 0 : 0.32, ease: [0.22, 1, 0.36, 1] }}
-                />
-                <div className="flex items-center justify-between gap-1">
-                  <span className="truncate text-[11px] font-medium text-[var(--md-ink)]">{t(step.label)}</span>
-                  <span className="text-[9px] font-medium tabular-nums text-[var(--md-subtle)]">{index + 1}/5</span>
-                </div>
-                <p data-i18n-skip dir="auto" className="mt-1 truncate text-[10px] text-[var(--md-text)]">{step.detail}</p>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label={`${t(stage.label)}, ${stage.progress}%: ${t(stage.summary)}`}>
+                      <span className="md-quote-stage-panel__label md-quote-stage-panel__label--track" aria-hidden="true">
+                        <span>{t(stage.label)}</span>
+                        {stage.progress > 0 && stage.progress < 100 ? <small data-i18n-skip>{stage.progress}%</small> : null}
+                      </span>
+                      <span className="md-quote-stage-panel__label md-quote-stage-panel__label--fill" aria-hidden="true">
+                        <span>{t(stage.label)}</span>
+                        {stage.progress > 0 && stage.progress < 100 ? <small data-i18n-skip>{stage.progress}%</small> : null}
+                      </span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={8} className="md-quote-stage-tooltip">
+                    <strong>{t(stage.label)} <span aria-hidden="true" data-i18n-skip>· {stage.progress}%</span></strong>
+                    <span>{t(stage.summary)}</span>
+                  </TooltipContent>
+                </Tooltip>
               </div>
             ))}
           </div>
         </Surface>
 
-        <Surface padding="none" className="min-h-0 overflow-hidden rounded-[var(--md-radius-xl)] px-3 py-1.5">
-          <dl className="grid h-full grid-cols-2 items-center gap-3 sm:grid-cols-4">
-            {metadata.map(([label, value]) => (
-              <div key={label} className="min-w-0">
-                <dt className="text-[10px] text-[var(--md-subtle)]">{t(label)}</dt>
-                <dd title={value} data-i18n-skip dir="auto" className="mt-0.5 truncate text-[11px] font-medium text-[var(--md-ink)]">{value}</dd>
+        <Surface padding="none" className="md-quote-stage-metadata min-h-0 overflow-hidden rounded-[var(--md-radius-xl)] px-3 py-1.5">
+          <dl className="grid h-full grid-cols-4 items-center gap-3">
+            {bookingMetadata.map((item) => (
+              <div key={item.label} className="min-w-0">
+                <dt>{t(item.label)}</dt>
+                <dd title={item.value} data-i18n-skip dir="auto">{item.value}</dd>
               </div>
             ))}
           </dl>
         </Surface>
       </div>
 
-      <Surface padding="none" className="relative overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-accent-abyss-deep)] p-2 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12),0_10px_22px_var(--md-accent-veil-cast-a18)]">
-        <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_75%_10%,rgba(87,205,180,0.22),transparent_52%),linear-gradient(145deg,rgba(2,13,11,0.04),rgba(1,9,8,0.36))]" />
-        <div className="relative z-10 flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="flex items-center gap-1 text-[11px] font-medium uppercase leading-3 tracking-[0.02em] text-white/68"><Health className="size-3 text-white/85" strokeWidth={1.5} />{t("Operational health")}</p>
-            <p className="mt-0.5 text-[13px] font-medium text-white">{operationalScore}% · {t(operationalLabel)}</p>
-          </div>
-          <StatusPill tone={operationalTone} className="border-0 bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)]">{t(record.booking.status)}</StatusPill>
-        </div>
-        <div className="relative z-10 mx-auto h-[58px] w-full overflow-hidden">
-          <svg viewBox="0 0 220 124" className="h-full w-full" role="img" aria-label={`${t("Operational health")}: ${operationalScore}%`}>
-            <defs>
-              <linearGradient id={`booking-health-${record.id}`} x1="30" y1="104" x2="190" y2="104" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stopColor="var(--md-red)" />
-                <stop offset="52%" stopColor="var(--md-amber)" />
-                <stop offset="100%" stopColor="var(--md-green)" />
-              </linearGradient>
-            </defs>
-            <path d="M 30 104 A 80 80 0 0 1 190 104" fill="none" stroke={`url(#booking-health-${record.id})`} strokeWidth="14" strokeLinecap="round" />
-            <motion.g
-              initial={false}
-              animate={{ rotate: needleAngle }}
-              transition={{ duration: shouldReduceMotion ? 0 : 0.38, ease: [0.22, 1, 0.36, 1] }}
-              style={{ transformOrigin: "110px 104px" }}
-            >
-              <line x1="110" y1="104" x2="110" y2="42" stroke="white" strokeWidth="4" strokeLinecap="round" />
-              <circle cx="110" cy="104" r="8" fill="white" stroke="rgba(2,13,11,0.72)" strokeWidth="3" />
-            </motion.g>
-          </svg>
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-between px-4 text-[9.5px] font-medium text-white/72">
-            <span>{t("At risk")}</span>
-            <span>{t("Healthy")}</span>
-          </div>
-        </div>
-        <p className="relative z-10 mt-0.5 text-[9.5px] text-white/58">{t("Derived from the current booking status and movement progress")}</p>
-      </Surface>
+      <BookingDexterArrivalConfidence record={record} />
     </div>
   )
 }
@@ -1947,9 +2078,68 @@ function BookingAvailabilityInspector({ record }: { record: BookingDetailRecord 
   )
 }
 
+function bookingSignalAvailable(value: string | number | null | undefined) {
+  const normalizedValue = String(value ?? "").trim()
+  return Boolean(normalizedValue && !/^(?:—|-|0|pending|not raised|not supplied|not available)$/i.test(normalizedValue))
+}
+
+function BookingOperationalCoverage({ record }: { record: BookingDetailRecord }) {
+  const { t } = useLanguage()
+  const reliableCarrier = bookingSignalAvailable(record.booking.carrier) && !/pending/i.test(record.booking.carrier)
+  const groups = [
+    {
+      label: "Movement",
+      signals: [reliableCarrier, bookingSignalAvailable(record.booking.currentLocation), record.booking.progress > 0],
+    },
+    {
+      label: "Schedule",
+      signals: [bookingSignalAvailable(record.booking.departureDate), bookingSignalAvailable(record.booking.eta)],
+    },
+    {
+      label: "Commercial close-out",
+      signals: [bookingSignalAvailable(record.booking.value), bookingSignalAvailable(record.booking.invoice)],
+    },
+  ].map((group) => {
+    const readySignals = group.signals.filter(Boolean).length
+    const score = Math.round((readySignals / group.signals.length) * 100)
+    const tone: StatusTone = score === 100 ? "green" : score >= 50 ? "amber" : "red"
+    const state = score === 100 ? "Ready" : score > 0 ? "Needs input" : "Not ready"
+    return { ...group, readySignals, score, state, tone }
+  })
+  const totalSignals = groups.reduce((total, group) => total + group.signals.length, 0)
+  const readySignals = groups.reduce((total, group) => total + group.readySignals, 0)
+
+  return (
+    <Surface padding="none" className="h-full min-w-0 overflow-hidden rounded-[var(--md-radius-xl)]">
+      <BookingSectionHeading
+        icon={<ChartBar className="size-4" strokeWidth={1.5} />}
+        title={t("Operational readiness")}
+        meta={`${readySignals}/${totalSignals} · ${t("booking controls ready")}`}
+      />
+      <div className="grid gap-4 px-4 py-4" role="group" aria-label={t("Operational readiness")}>
+        {groups.map((group) => (
+          <div key={group.label} className="grid min-w-0 grid-cols-[minmax(108px,0.34fr)_minmax(0,1fr)_42px] items-center gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-[11.5px] font-medium text-[var(--md-ink)]">{t(group.label)}</p>
+              <p className="mt-0.5 truncate text-[10px] text-[var(--md-subtle)]">{t(group.state)}</p>
+            </div>
+            <Progress
+              value={group.score}
+              aria-label={`${t(group.label)} ${group.score}%`}
+              dir="ltr"
+              className="h-2 rounded-full bg-[var(--md-line-strong)] [&>div]:bg-[var(--booking-signal-color)]"
+              style={{ "--booking-signal-color": toneToVar(group.tone) } as CSSProperties}
+            />
+            <span data-i18n-skip dir="ltr" className="text-end text-[11.5px] font-medium tabular-nums text-[var(--md-ink)]">{group.score}%</span>
+          </div>
+        ))}
+      </div>
+    </Surface>
+  )
+}
+
 function BookingDecisionOverview({ record }: { record: BookingDetailRecord }) {
   const { language, t } = useLanguage()
-  const nextAction = getBookingNextAction(record)
   const updatedDate = new Date(record.booking.updatedAt)
   const updatedAt = !record.booking.updatedAt
     ? t("Not available")
@@ -1959,8 +2149,6 @@ function BookingDecisionOverview({ record }: { record: BookingDetailRecord }) {
 
   return (
     <div className="grid gap-2">
-      <BookingOverviewSignals record={record} />
-
       <div className="grid gap-2 lg:grid-cols-[1fr_1fr_0.9fr]">
         <BookingCargoWiseGroup title="Booking header" compact>
           <div className="grid gap-1 min-[1500px]:grid-cols-2">
@@ -1998,22 +2186,7 @@ function BookingDecisionOverview({ record }: { record: BookingDetailRecord }) {
       </div>
 
       <div className="grid gap-2 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
-        <div className="grid min-w-0 gap-2">
-          <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-            <div className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Immediate next action")}</p>
-                  <StatusPill tone={nextAction.tone}>{record.job ? t(record.job.status) : t(record.booking.status)}</StatusPill>
-                </div>
-                <h2 className="mt-1.5 text-[16px] font-medium leading-5 text-[var(--md-ink)]">{t(nextAction.title)}</h2>
-                <p className="mt-1 max-w-[760px] text-[12px] leading-5 text-[var(--md-text)]">{t(nextAction.detail)}</p>
-              </div>
-              <Button className="h-8 rounded-[var(--md-radius-lg)] px-3 text-[11px]" onClick={() => toast.success(t("Workflow opened"))}>{t("Open workflow")}</Button>
-            </div>
-          </Surface>
-          <BookingBlockerSection record={record} />
-        </div>
+        <BookingOperationalCoverage record={record} />
         <aside aria-label={t("Booking context")}>
           <BookingAvailabilityInspector record={record} />
         </aside>
@@ -2420,18 +2593,13 @@ export function BookingDetailWorkspace({
   navigate: (path: string) => void
   bookingId?: string
 }) {
-  const { direction, t } = useLanguage()
-  const reduceMotion = useReducedMotion()
+  const { t } = useLanguage()
   const [activeTab, setActiveTab] = useState<BookingDetailTab>("Overview")
-  const [tabTravelDirection, setTabTravelDirection] = useState(1)
   const [record, setRecord] = useState<BookingDetailRecord | null>(null)
   const [draftBooking, setDraftBooking] = useState<LiveBooking | null>(null)
   const [loadState, setLoadState] = useState<"loading" | "ready" | "not-found" | "error">("loading")
 
   function changeActiveTab(nextTab: BookingDetailTab) {
-    const currentIndex = bookingDetailTabs.indexOf(activeTab)
-    const nextIndex = bookingDetailTabs.indexOf(nextTab)
-    setTabTravelDirection(nextIndex >= currentIndex ? 1 : -1)
     setActiveTab(nextTab)
   }
 
@@ -2440,7 +2608,6 @@ export function BookingDetailWorkspace({
     const normalizedId = bookingId.trim().toUpperCase()
 
     setActiveTab("Overview")
-    setTabTravelDirection(1)
     setRecord(null)
     setDraftBooking(null)
     setLoadState("loading")
@@ -2496,7 +2663,6 @@ export function BookingDetailWorkspace({
   const loadedRecord = record
   const detailsDirty = Boolean(draftBooking && JSON.stringify(draftBooking) !== JSON.stringify(loadedRecord.booking))
   const visibleRecord = activeTab === "Details" && draftBooking ? { ...loadedRecord, booking: draftBooking } : loadedRecord
-  const visualTabTravelDirection = tabTravelDirection * (direction === "rtl" ? -1 : 1)
 
   function updateDraftBooking(field: keyof LiveBooking, value: string | boolean) {
     setDraftBooking((current) => {
@@ -2538,29 +2704,13 @@ export function BookingDetailWorkspace({
           onTabChange={changeActiveTab}
           record={visibleRecord}
         />
-        <div className="relative min-h-px overflow-x-clip">
-          <AnimatePresence initial={false} mode="popLayout" custom={visualTabTravelDirection}>
-            <motion.div
-              key={activeTab}
-              custom={visualTabTravelDirection}
-              variants={{
-                enter: (travel: number) => ({ opacity: 0, x: travel * 12 }),
-                active: { opacity: 1, x: 0 },
-                exit: (travel: number) => ({ opacity: 0, x: travel * -8 }),
-              }}
-              initial="enter"
-              animate="active"
-              exit="exit"
-              transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <BookingDetailTabPage
-                activeTab={activeTab}
-                onBookingChange={updateDraftBooking}
-                onCustomFieldChange={updateDraftCustomField}
-                record={visibleRecord}
-              />
-            </motion.div>
-          </AnimatePresence>
+        <div className="relative min-h-px overflow-x-clip" data-booking-tab-panel>
+          <BookingDetailTabPage
+            activeTab={activeTab}
+            onBookingChange={updateDraftBooking}
+            onCustomFieldChange={updateDraftCustomField}
+            record={visibleRecord}
+          />
         </div>
       </div>
     </main>

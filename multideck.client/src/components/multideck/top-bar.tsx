@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useLanguage } from "@/i18n/language-provider"
 import { dispatchTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 import { cn } from "@/lib/utils"
+import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { AppBreadcrumbs } from "./app-breadcrumbs"
 import { CommandInput } from "./command-input"
 import { AppSidebar } from "./app-sidebar"
@@ -41,7 +42,7 @@ const crmCreateActions: Partial<Record<string, CrmCreateAction>> = {
   "/crm/accounts": { label: "New account", eventName: topBarActionEvents.createCrmAccount },
   "/crm/contacts": { label: "New contact", eventName: topBarActionEvents.createCrmContact },
   "/crm/contact-cards": { label: "New card", eventName: topBarActionEvents.createCrmContactCard },
-  "/crm/deals": { label: "New deal", path: "/crm/leads" },
+  "/crm/deals": { label: "New deal", eventName: topBarActionEvents.createCrmDeal },
 }
 
 const ratesTopBarActions: Partial<Record<string, { importLabel: string; createLabel: string }>> = {
@@ -106,9 +107,11 @@ function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (
 export function TopBar({
   route,
   navigate,
+  currentUser,
 }: {
   route: string
   navigate: (path: string) => void
+  currentUser?: AuthUserSummary | null
 }) {
   const isCustomerList = route === "/customers"
   const isCustomerDetail = route.startsWith("/customers/")
@@ -129,6 +132,7 @@ export function TopBar({
   const isReportingRoute = isReports || isScheduledReports
   const isOperationalJobScreen = route === "/" || route.startsWith("/bookings") || route.startsWith("/quotes") || isRoadRoute || isWarehouse
   const crmCreateAction = crmCreateActions[route]
+  const canWriteCrm = hasPermission(currentUser, "CRM.Write")
   const ratesTopBarAction = ratesTopBarActions[route]
   const { direction, t } = useLanguage()
   const [currentRecordName, setCurrentRecordName] = useState<string | null>(null)
@@ -240,30 +244,20 @@ export function TopBar({
       ) : isCrmLeadDetail ? (
         <>
           <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              variant="ghost"
-              className={topBarGhostActionClass}
-              onClick={() => toast.success("Activity logged", { description: `${currentRecordName ?? "Lead"} has a new CRM note.` })}
-            >
-              Log activity
-            </Button>
-            <Button variant="ghost" size="icon" aria-label="More lead actions" className={topBarIconActionClass}>
-              <MoreHorizontal data-icon="inline-start" strokeWidth={1.2} />
-            </Button>
+          {currentRecordName ? <div className="ml-auto flex items-center gap-2">
             <Button
               className={topBarPrimaryActionClass}
               onClick={() => navigate(`${route}/convert`)}
             >
               {t("Convert to deal")}
             </Button>
-          </div>
+          </div> : null}
         </>
       ) : (
         <>
           <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="hidden min-w-[210px] md:block" />
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
-            <CommandInput placeholder={isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search leads, contacts, deals, emails, lists, or marketing..." : isReportingRoute ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
+            <CommandInput placeholder={isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search leads, accounts, contacts, or deals..." : isReportingRoute ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
           </div>
           {ratesTopBarAction ? (
             <>
@@ -315,39 +309,22 @@ export function TopBar({
                 <span className="hidden sm:inline">New customer</span>
               </Button>
             </>
-          ) : isCrmRoute ? (
+          ) : isCrmRoute && crmCreateAction && canWriteCrm ? (
             <>
               <Button
-                variant="ghost"
-                className={cn("hidden sm:inline-flex", topBarGhostActionClass)}
-                onClick={() =>
-                  toast.success("CRM import opened", {
-                    description: "Add leads, contacts, deals, or relationship notes.",
-                  })
-                }
-              >
-                <Upload data-icon="inline-start" strokeWidth={1.2} />
-                Import
-              </Button>
-              <Button
-                aria-label={t(crmCreateAction?.label ?? "New CRM record")}
-                title={t(crmCreateAction?.label ?? "New CRM record")}
+                aria-label={t(crmCreateAction.label)}
+                title={t(crmCreateAction.label)}
                 className={topBarPrimaryActionClass}
                 onClick={() => {
-                  if (crmCreateAction?.eventName) {
+                  if (crmCreateAction.eventName) {
                     dispatchTopBarAction(crmCreateAction.eventName)
-                  } else if (crmCreateAction?.path) {
+                  } else if (crmCreateAction.path) {
                     navigate(crmCreateAction.path)
-                  } else {
-                    toast.success("CRM record draft created", {
-                      description: "Choose lead, contact, deal, or note next.",
-                    })
                   }
                 }}
               >
                 <Plus data-icon="inline-start" strokeWidth={1.2} />
-                <span className="hidden sm:inline">{t(crmCreateAction?.label ?? "New CRM record")}</span>
-                <span className="sm:hidden">{t(crmCreateAction?.label ?? "New CRM record")}</span>
+                <span className="hidden sm:inline">{t(crmCreateAction.label)}</span>
               </Button>
             </>
           ) : isQuotes ? (
@@ -394,7 +371,7 @@ export function TopBar({
             </Button>
           ) : (
             <>
-              {!isOperationalJobScreen && !isReportingRoute ? (
+              {!isOperationalJobScreen && !isReportingRoute && !isCrmRoute ? (
                 <>
                   <Tooltip>
                     <TooltipTrigger asChild>

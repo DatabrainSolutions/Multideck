@@ -2171,11 +2171,16 @@ function WarehouseCalendarDayCell({
 export function WarehouseCalendarView({
   customers = warehouseCalendarCustomers,
   events = warehouseCalendarEvents,
+  total = events.length,
+  limit = events.length,
   onOpenOrder,
   onReschedule,
+  onRangeChange,
 }: {
   customers?: readonly WarehouseCalendarCustomer[]
   events?: readonly WarehouseCalendarEvent[]
+  total?: number
+  limit?: number
   /** Opens the warehouse order behind an event. Omitted leaves the popover read-only. */
   onOpenOrder?: (event: WarehouseCalendarEvent) => void
   /**
@@ -2183,6 +2188,7 @@ export function WarehouseCalendarView({
    * grab cursor — so a read-only calendar cannot suggest an action it will not take.
    */
   onReschedule?: (change: { eventId: string; dateKey: string; startTime: string; endTime: string }) => void
+  onRangeChange?: (range: { start: string; end: string }) => void
 }) {
   const { language, t } = useLanguage()
   const [calendarView, setCalendarView] = useState<WarehouseCalendarViewMode>("Week")
@@ -2198,6 +2204,11 @@ export function WarehouseCalendarView({
       ? allCalendarDays.map((day) => ({ ...day, events: day.events.filter((event) => selectedCustomerIds.includes(event.customerId)) }))
       : allCalendarDays
   ), [allCalendarDays, selectedCustomerIds])
+  const rangeStart = allCalendarDays[0]?.dateKey
+  const rangeEnd = allCalendarDays.length ? formatDateKey(addCalendarDays(allCalendarDays[allCalendarDays.length - 1].date, 1)) : undefined
+  useEffect(() => {
+    if (rangeStart && rangeEnd) onRangeChange?.({ start: rangeStart, end: rangeEnd })
+  }, [onRangeChange, rangeEnd, rangeStart])
   const visibleCustomerIds = useMemo(() => new Set(allCalendarDays.flatMap((day) => day.events.map((event) => event.customerId))), [allCalendarDays])
   const visibleCustomers = customers.filter((customer) => visibleCustomerIds.has(customer.id))
   const periodLabel = formatCalendarPeriodLabel(calendarView, language, anchorDate)
@@ -2275,6 +2286,11 @@ export function WarehouseCalendarView({
         </div>
       </WarehousePageHeader>
       {visibleCustomers.length ? <WarehouseCalendarCustomerKey customers={visibleCustomers} selectedCustomerIds={selectedCustomerIds} onSelectCustomer={handleSelectCustomer} /> : null}
+      {total > events.length ? (
+        <p className="rounded-[var(--md-radius-lg)] bg-[var(--md-amber-a08)] px-3 py-2 text-[12px] leading-5 text-[var(--md-text)]" role="status">
+          {t("Showing")} <span dir="ltr" className="font-medium tabular-nums text-[var(--md-ink)]">{Math.min(limit, events.length)}</span> {t("of")} <span dir="ltr" className="font-medium tabular-nums text-[var(--md-ink)]">{total}</span> {t("scheduled orders for this period. Switch to Week to narrow the view.")}
+        </p>
+      ) : null}
       {calendarView === "Week" ? (
         <WarehouseCalendarWeekGrid
           days={calendarDays}

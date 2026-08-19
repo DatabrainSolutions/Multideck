@@ -32,7 +32,6 @@ const destinations: Record<string, string> = {
   "goto.contactCards": "/crm/contact-cards",
   "goto.warehouse": "/warehouse",
   "goto.reports": "/reports",
-  "goto.paperTray": "/paper-tray",
   "goto.settings": "/settings",
   "create.booking": "/bookings/new",
   "create.quote": "/quotes",

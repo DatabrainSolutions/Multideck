@@ -8,9 +8,11 @@ const pageSource = await readFile(new URL("../src/pages/customs-declarations-pag
 const translations = await readFile(new URL("../src/i18n/customs-declaration-phrases.ts", import.meta.url), "utf8")
 
 test("the declaration register keeps submitter attribution on each saved row", () => {
-  assert.match(apiSource, /CUST_CreatedBy: string \| null/u)
-  assert.match(apiSource, /\.select\("CUST_id, CUST_CreatedBy,/u)
-  assert.match(apiSource, /submittedBy: row\.CUST_CreatedBy/u)
+  assert.match(apiSource, /submittedBy: string \| null/u)
+  assert.match(apiSource, /\.rpc\("multideck_customs_declaration_register_page"/u)
+  assert.match(apiSource, /rows: Array\.isArray\(response\.rows\) \? response\.rows as CustomsDraftSummary\[\] : \[\]/u)
+  assert.match(apiSource, /limit: Math\.max\(1, Math\.min\(input\.limit, 50\)\)/u)
+  assert.match(apiSource, /\.limit\(customsDeclarationItemReadLimit\)/u)
 })
 
 test("the declaration register shows the authenticated submitter in a narrow avatar column", () => {

@@ -203,13 +203,6 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     defaultBinding: sequence("G", "E"),
   },
   {
-    id: "goto.paperTray",
-    group: "navigation",
-    label: "Go to Paper tray",
-    description: "Documents waiting on a person.",
-    defaultBinding: sequence("G", "T"),
-  },
-  {
     id: "goto.settings",
     group: "navigation",
     label: "Go to Settings",

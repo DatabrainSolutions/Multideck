@@ -511,6 +511,8 @@ export type QrStyle = {
   eyeStyle: QrEyeStyle
   dark: string
   light: string
+  /** Quiet zone in modules. Values below the ISO minimum are clamped at render time. */
+  quietZone: number
   /**
    * Fraction of the symbol's width cleared in the centre for a logo. Zero
    * disables the knockout. Only meaningful alongside error correction level H.
@@ -523,6 +525,7 @@ export const DEFAULT_QR_STYLE: QrStyle = {
   eyeStyle: "rounded",
   dark: "#0b1413",
   light: "#ffffff",
+  quietZone: QR_QUIET_ZONE,
   logoArea: 0,
 }
 
@@ -675,6 +678,7 @@ function eyePaths(matrix: QrMatrix, style: QrStyle) {
 
 export type QrRender = {
   extent: number
+  quietZone: number
   modulesPath: string
   eyeRing: string
   eyeCore: string
@@ -684,9 +688,11 @@ export type QrRender = {
 export function qrRender(matrix: QrMatrix, style: QrStyle = DEFAULT_QR_STYLE): QrRender {
   const { modulesPath, logoBounds } = qrGeometry(matrix, style)
   const { ring, core } = eyePaths(matrix, style)
+  const quietZone = Math.max(QR_QUIET_ZONE, Math.round(style.quietZone))
 
   return {
-    extent: matrix.size + QR_QUIET_ZONE * 2,
+    extent: matrix.size + quietZone * 2,
+    quietZone,
     modulesPath,
     eyeRing: ring,
     eyeCore: core,
@@ -706,13 +712,13 @@ export function qrSvgDocument(
 
   const logo =
     bounds && logoDataUrl
-      ? `<image href="${logoDataUrl}" x="${QR_QUIET_ZONE + bounds.start + 0.5}" y="${QR_QUIET_ZONE + bounds.start + 0.5}" width="${bounds.span - 1}" height="${bounds.span - 1}" preserveAspectRatio="xMidYMid meet"/>`
+      ? `<image href="${logoDataUrl}" x="${render.quietZone + bounds.start + 0.5}" y="${render.quietZone + bounds.start + 0.5}" width="${bounds.span - 1}" height="${bounds.span - 1}" preserveAspectRatio="xMidYMid meet"/>`
       : ""
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${extent} ${extent}" width="${extent * 8}" height="${extent * 8}">`,
     `<rect width="${extent}" height="${extent}" fill="${style.light}"/>`,
-    `<g transform="translate(${QR_QUIET_ZONE} ${QR_QUIET_ZONE})">`,
+    `<g transform="translate(${render.quietZone} ${render.quietZone})">`,
     `<path d="${render.modulesPath}" fill="${style.dark}"/>`,
     `<path d="${render.eyeRing}" fill="${style.dark}" fill-rule="evenodd"/>`,
     `<path d="${render.eyeCore}" fill="${style.dark}"/>`,
@@ -743,7 +749,7 @@ export function qrPngDataUrl(
   context.fillRect(0, 0, canvas.width, canvas.height)
 
   context.save()
-  context.translate(QR_QUIET_ZONE * scale, QR_QUIET_ZONE * scale)
+  context.translate(render.quietZone * scale, render.quietZone * scale)
   context.scale(scale, scale)
   context.fillStyle = style.dark
 
@@ -756,7 +762,7 @@ export function qrPngDataUrl(
     const bounds = render.logoBounds
     const inset = 0.5
     const size = (bounds.span - inset * 2) * scale
-    const offset = (QR_QUIET_ZONE + bounds.start + inset) * scale
+    const offset = (render.quietZone + bounds.start + inset) * scale
     // Preserve the logo's aspect ratio inside the cleared square.
     const ratio = logo.naturalWidth / Math.max(logo.naturalHeight, 1)
     const width = ratio >= 1 ? size : size * ratio

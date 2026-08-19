@@ -2,11 +2,6 @@ import { useId, useMemo, useState } from "react"
 import { FileImage, FileText, Grid2X2, List, X } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
-import {
-  PaperDocumentFace,
-  type PaperDocumentAccent,
-  type TrayDocument,
-} from "@/components/multideck/paper-tray"
 import { Surface } from "@/components/multideck/surface"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
@@ -15,6 +10,8 @@ export type DocumentWorkspaceSource = "quote" | "customer" | "supplier" | "desti
 export type DocumentWorkspaceSourceFilter = "all" | DocumentWorkspaceSource
 export type DocumentWorkspaceView = "list" | "grid"
 export type DocumentWorkspacePreviewKind = "pdf" | "image" | "document"
+export type DocumentPreviewAccent = "teal" | "blue" | "green" | "amber" | "neutral"
+export type DocumentPreviewSampleType = "invoice" | "packing-list" | "inspection" | "arrival" | "certificate" | "bill-of-lading" | "customs" | "delivery-order" | "release"
 
 export type DocumentWorkspaceRelationship = {
   label: string
@@ -29,8 +26,8 @@ export type DocumentWorkspacePreview = {
   url?: string
   thumbnailUrl?: string
   reference?: string
-  accent?: PaperDocumentAccent
-  sampleType?: TrayDocument["sampleType"]
+  accent?: DocumentPreviewAccent
+  sampleType?: DocumentPreviewSampleType
 }
 
 export type DocumentWorkspaceDocument = {
@@ -173,25 +170,40 @@ export const documentWorkspaceSampleDocuments: readonly DocumentWorkspaceDocumen
   },
 ] as const
 
-function getFallbackMimeType(kind: DocumentWorkspacePreviewKind) {
-  if (kind === "pdf") return "application/pdf"
-  if (kind === "image") return "image/*"
-  return "application/octet-stream"
+type DocumentPreviewFaceItem = {
+  name: string
+  kind: "sample" | "pdf" | "image"
+  reference?: string
+  accent?: DocumentPreviewAccent
 }
 
-function toPaperDocument(document: DocumentWorkspaceDocument): TrayDocument {
+function toDocumentPreviewItem(document: DocumentWorkspaceDocument): DocumentPreviewFaceItem {
   return {
-    id: document.id,
     name: document.fileName,
     kind: document.preview.kind === "document" ? "sample" : document.preview.kind,
-    mimeType: document.preview.mimeType ?? getFallbackMimeType(document.preview.kind),
-    sizeLabel: document.preview.fileSize ?? "",
-    addedAt: document.uploadedAt,
     reference: document.preview.reference ?? document.relationship.reference,
-    url: document.preview.url,
-    sampleType: document.preview.sampleType,
     accent: document.preview.accent,
   }
+}
+
+function DocumentPreviewFace({ item, compact = false, className }: { item: DocumentPreviewFaceItem; compact?: boolean; className?: string }) {
+  const Icon = item.kind === "image" ? FileImage : FileText
+
+  return (
+    <div className={cn("md-document-preview-face", compact && "md-document-preview-face--compact", className)} data-accent={item.accent ?? "teal"}>
+      <div className="md-document-preview-face__masthead">
+        <span className="md-document-preview-face__mark"><Icon className="size-3.5" strokeWidth={1.2} aria-hidden="true" /></span>
+        <span className="md-document-preview-face__brand">MULTIDECK</span>
+        <span className="md-document-preview-face__ref" data-i18n-skip dir="ltr">{item.reference ?? "DOCUMENT"}</span>
+      </div>
+      <p className="md-document-preview-face__title" data-i18n-skip dir="ltr">{item.name}</p>
+      <div className="md-document-preview-face__lines" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+    </div>
+  )
 }
 
 function getDocumentIcon(document: DocumentWorkspaceDocument) {
@@ -242,8 +254,8 @@ function DocumentPreviewCanvas({
   }
 
   return (
-    <PaperDocumentFace
-      item={toPaperDocument(document)}
+    <DocumentPreviewFace
+      item={toDocumentPreviewItem(document)}
       compact={compact}
       className={cn(
         "w-full max-w-[440px] shadow-[0_16px_38px_rgba(42,52,50,0.12)]",

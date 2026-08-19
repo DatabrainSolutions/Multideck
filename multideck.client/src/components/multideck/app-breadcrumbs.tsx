@@ -19,22 +19,24 @@ type AppBreadcrumb = {
 
 const staticLeafLabels: Record<string, string> = {
   "/agent-dexter": "Agent Dexter",
+  "/admin/users": "Users",
+  "/admin/ai-usage": "AI usage",
+  "/admin/broadcast": "Broadcast",
+  "/admin/billing": "Billing",
+  "/admin/activity": "Active log",
+  "/admin/detailed-log": "Detailed log",
   "/bookings": "Bookings",
   "/bookings/new": "New booking",
   "/bookings/provisional": "Provisional booking",
   "/components": "Components",
   "/crm": "CRM",
   "/crm/accounts": "Accounts",
-  "/crm/activity": "Activity",
   "/crm/contacts": "Contacts",
   "/crm/deals": "Deals",
-  "/crm/emails": "Email marketing",
   "/crm/leads": "Leads",
-  "/crm/lists": "Lists",
   "/crm/drive": "Drive",
   "/crm/settings": "CRM settings",
   "/customers": "Customers",
-  "/paper-tray": "Paper Tray",
   "/playground/navigation": "Navigation lab",
   "/quotes": "Quotes",
   "/reports": "Reports",
@@ -57,13 +59,9 @@ const staticLeafLabels: Record<string, string> = {
 
 const crmChildLabels: Record<string, string> = {
   accounts: "Accounts",
-  activity: "Activity",
   contacts: "Contacts",
   deals: "Deals",
-  emails: "Email marketing",
   leads: "Leads",
-  lists: "Lists",
-  marketing: "Marketing",
   settings: "CRM settings",
 }
 
@@ -188,27 +186,6 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
     ]
   }
 
-  const crmListMatch = route.match(/^\/crm\/lists\/([^/]+)$/)
-  if (crmListMatch) {
-    return [
-      { label: "Home", route: "/" },
-      { label: "CRM", route: "/crm" },
-      { label: "Lists", route: "/crm/lists" },
-      recordBreadcrumb(leafLabel, crmListMatch[1], "List"),
-    ]
-  }
-
-  const crmEmailMatch = route.match(/^\/crm\/emails\/([^/]+)\/(stats|edit)$/)
-  if (crmEmailMatch) {
-    return [
-      { label: "Home", route: "/" },
-      { label: "CRM", route: "/crm" },
-      { label: "Email marketing", route: "/crm/emails" },
-      { ...recordBreadcrumb(leafLabel, crmEmailMatch[1], "Broadcast"), route: "/crm/emails" },
-      { label: crmEmailMatch[2] === "stats" ? "Broadcast statistics" : "Broadcast editor" },
-    ]
-  }
-
   const customerMatch = route.match(/^\/customers\/([^/]+)$/)
   if (customerMatch) {
     return [
@@ -234,9 +211,7 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
     return [
       { label: "Home", route: "/" },
       { label: "Quotes", route: "/quotes" },
-      quoteMatch[1] === "new"
-        ? { label: "New quote" }
-        : leafLabel?.trim()
+      leafLabel?.trim()
         ? { label: leafLabel.trim(), localize: false }
         : { label: friendlyIdentifierLabel(quoteMatch[1], "Quote"), preserveDirection: !opaqueReferencePattern.test(quoteMatch[1]) },
     ]

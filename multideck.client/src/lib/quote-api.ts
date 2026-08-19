@@ -1,6 +1,8 @@
 import type { StatusTone } from "@/data/multideck-data"
 import type { QuoteRegisterRecord } from "@/data/quote-register-data"
-import { supabase } from "@/lib/supabase"
+import { filterQueryIsEmpty, type FilterQuery } from "@/lib/advanced-filters"
+import { readCachedRegisterPage, type RegisterSort } from "@/lib/application-data-api"
+import { getSupabaseSession, supabase } from "@/lib/supabase"
 
 type SalesQuoteRow = {
   Created_At: string
@@ -42,6 +44,21 @@ type SalesQuoteRow = {
   Priority: string
   Priority_Tone: string
   Quote_Source: string
+  Updated_At?: string
+}
+
+export type QuoteRegisterPage = {
+  rows: QuoteRegisterRecord[]
+  total: number
+  availableTotal: number
+}
+
+export type QuoteRegisterInput = {
+  search?: string
+  filterQuery: FilterQuery
+  sort?: RegisterSort | null
+  limit: number
+  offset: number
 }
 
 const statusTones = new Set<StatusTone>(["neutral", "teal", "green", "amber", "red", "blue", "orange", "purple"])
@@ -94,16 +111,65 @@ function mapQuote(row: SalesQuoteRow): QuoteRegisterRecord {
   }
 }
 
-export async function listSalesQuotes(): Promise<QuoteRegisterRecord[]> {
-  if (!supabase) throw new Error("Quotes are unavailable until this workspace is connected.")
+const dashboardQuoteCompatibilityColumns = [
+  "Created_At", "Quote_Reference", "Quote_Status", "Quote_Status_Tone", "Customer_Name", "Origin",
+  "Destination", "Estimated_Departure", "Estimated_Arrival", "Transport_Time", "Transport_Mode",
+  "Equipment_Load", "Pickup", "Delivery", "Routing_Via", "Incoterms", "Incoterms_Place",
+  "Service_Level", "Shipment_Type", "Carrier", "Supplier", "Sales_Owner", "Operations_Owner",
+  "Quote_Type", "Direction", "Customer_Purchase_Order", "Shipper_Reference", "Validity",
+  "Estimated_Quote", "Sell_Value", "Estimated_Profit", "Estimated_Cost", "Estimated_Margin", "Currency",
+  "Document_Status", "Workflow_Stage", "Priority", "Priority_Tone", "Quote_Source", "Updated_At",
+].join(",")
 
-  const { data, error } = await supabase
+/** Bounded compatibility sample used only while the dashboard RPC is absent. */
+export async function listSalesQuotesCompatibilitySample(signal?: AbortSignal): Promise<QuoteRegisterRecord[]> {
+  const client = supabase
+  if (!client) throw new Error("Quotes are unavailable until this workspace is connected.")
+  const session = await getSupabaseSession()
+  if (!session?.user) throw new Error("Sign in again to view quotes.")
+  let query = client
     .from("App_Live_Quotes")
-    .select("*")
-    .order("Updated_At", { ascending: false })
-
+    .select(dashboardQuoteCompatibilityColumns)
+    .order("Updated_At", { ascending: false, nullsFirst: false })
+    .limit(51)
+  if (signal) query = query.abortSignal(signal)
+  const { data, error } = await query
   if (error) throw error
-  return (data as SalesQuoteRow[]).map(mapQuote)
+  return (data ?? []).map((row) => mapQuote(row as unknown as SalesQuoteRow))
+}
+
+export async function listSalesQuotesPage(input: QuoteRegisterInput, signal?: AbortSignal): Promise<QuoteRegisterPage> {
+  const client = supabase
+  if (!client) throw new Error("Quotes are unavailable until this workspace is connected.")
+  const session = await getSupabaseSession()
+  if (!session?.user) throw new Error("Sign in again to view quotes.")
+
+  const normalizedInput = {
+    ...input,
+    search: input.search?.trim() || undefined,
+    filterQuery: filterQueryIsEmpty(input.filterQuery) ? null : input.filterQuery,
+    limit: Math.max(1, Math.min(input.limit, 50)),
+    offset: Math.max(0, input.offset),
+  }
+  const resource = `quotes:page:${JSON.stringify(normalizedInput)}`
+  return readCachedRegisterPage(session.user.id, resource, async (requestSignal) => {
+    const { data, error } = await client.rpc("multideck_quote_register_page", {
+      p_search: normalizedInput.search ?? null,
+      p_filter_query: normalizedInput.filterQuery,
+      p_sort: normalizedInput.sort?.id ?? "updatedAt",
+      p_sort_direction: normalizedInput.sort?.direction ?? "desc",
+      p_limit: normalizedInput.limit,
+      p_offset: normalizedInput.offset,
+    }).abortSignal(requestSignal)
+    if (error) throw error
+
+    const response = (data ?? {}) as Record<string, unknown>
+    return {
+      rows: Array.isArray(response.rows) ? response.rows.map((row) => mapQuote(row as SalesQuoteRow)) : [],
+      total: Number(response.total ?? 0),
+      availableTotal: Number(response.availableTotal ?? response.total ?? 0),
+    }
+  }, signal)
 }
 
 export async function getSalesQuote(reference: string): Promise<QuoteRegisterRecord | null> {

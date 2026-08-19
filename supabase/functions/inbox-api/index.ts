@@ -110,7 +110,7 @@ Deno.serve(async (request) => {
       return jsonResponse(request, allowedOrigins, await listThreads(clients.admin, actor, new URL(request.url)))
     }
     if (method === "GET" && path.length === 2 && path[0] === "threads") {
-      return jsonResponse(request, allowedOrigins, await getThread(clients.admin, actor, path[1]))
+      return jsonResponse(request, allowedOrigins, await getThread(clients.admin, actor, path[1], new URL(request.url)))
     }
     if (method === "PATCH" && path.length === 3 && path[0] === "threads" && path[2] === "read-state") {
       return jsonResponse(request, allowedOrigins, await updateThreadState(clients.admin, actor, path[1], await readJson(request)))

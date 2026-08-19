@@ -152,10 +152,14 @@ function BookingMapFallback() {
 
 export function LiveBookingsBoard({
   bookings: liveBookings,
+  totalBookings = liveBookings.length,
+  exceptionTotal,
   onOpenBooking,
   className,
 }: {
   bookings: DashboardBooking[]
+  totalBookings?: number
+  exceptionTotal?: number
   onOpenBooking?: (booking: LiveBookingFeedItem) => void
   className?: string
 }) {
@@ -163,7 +167,7 @@ export function LiveBookingsBoard({
   const shouldReduceMotion = useReducedMotion()
   const [view, setView] = useState<BoardView>("list")
   const bookings = liveBookings
-  const exceptions = liveBookings.filter((booking) => booking.tone === "red" || booking.tone === "amber").length
+  const exceptions = exceptionTotal ?? liveBookings.filter((booking) => booking.tone === "red" || booking.tone === "amber").length
 
   return (
     <Surface padding="none" className={cn("md-live-board", className)}>
@@ -182,7 +186,7 @@ export function LiveBookingsBoard({
           <div className="min-w-0">
             <h2 className="md-panel-title">{t("Live bookings")}</h2>
             <p className="md-panel-meta">
-              {bookings.length} {t("in transit")}
+              {totalBookings} {t("in transit")}
               {exceptions ? ` · ${exceptions} ${t("need attention")}` : ""}
             </p>
           </div>

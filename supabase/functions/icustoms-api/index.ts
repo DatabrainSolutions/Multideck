@@ -43,6 +43,7 @@ class CustomsSubmissionGateError extends HttpError {
 
 const SANDBOX_CONNECTION_ID = "c96a43a9-866a-4d27-ace1-5a6b82085dcb";
 const COMMODITY_CACHE_TTL_MS = 15 * 60 * 1000;
+const CUSTOMS_DECLARATION_ITEM_READ_LIMIT = 1_000;
 const COMMODITY_CACHE_LIMIT = 100;
 
 let providerClient: ICustomsClient | null = null;
@@ -158,10 +159,15 @@ async function latestSubmission(admin: SupabaseClient, declarationId: string) {
   return data as Json | null;
 }
 
-function publicSubmission(row: Json | null) {
+function publicSubmission(row: Json | null, declarationProviderStatus = "") {
   if (!row) return null;
   return {
-    status: row.ICUSS_Status,
+    // ICUSS_Status is the internal lifecycle bucket (released/cleared are
+    // deliberately retained as accepted there). Older accepted submissions
+    // predate ICUSS_ProviderStatus, so fall back to the declaration's retained
+    // provider snapshot before using the collapsed lifecycle value.
+    status: text(row.ICUSS_ProviderStatus, 40) || declarationProviderStatus ||
+      row.ICUSS_Status,
     mrn: row.ICUSS_MRN,
     lrn: row.ICUSS_LRN,
     errorMessage: publicProviderErrorMessage(row),
@@ -175,13 +181,20 @@ function publicSubmission(row: Json | null) {
 }
 
 function publicDeclaration(row: Json, submission: Json | null) {
+  const activeCorrelation = text(submission?.ICUSS_Status, 40) === "cancelled"
+    ? ""
+    : correlationFrom(row, submission);
+  const declarationProviderStatus = text(
+    row.CUST_iCustomsStatusSnapshot || row.CUST_Status,
+    40,
+  );
   return {
     id: row.CUST_id,
     reference: row.CUST_LocalReferenceNumber,
     status: row.CUST_Status,
-    correlationId: correlationFrom(row, submission) || null,
-    hasCustomsDraft: Boolean(correlationFrom(row, submission)),
-    provider: publicSubmission(submission),
+    correlationId: activeCorrelation || null,
+    hasCustomsDraft: Boolean(activeCorrelation),
+    provider: publicSubmission(submission, declarationProviderStatus),
   };
 }
 
@@ -474,7 +487,9 @@ async function providerDraft(
   // A submitted provider record is immutable. After an HMRC rejection the
   // corrected Multideck declaration starts a fresh provider draft, while
   // ordinary draft edits continue updating the original correlation.
-  const correlationId = text(latest?.ICUSS_Status, 40) === "rejected"
+  const correlationId = ["rejected", "cancelled"].includes(
+      text(latest?.ICUSS_Status, 40),
+    )
     ? ""
     : correlationFrom(declaration, latest);
   const path = iCustomsDraftPath(correlationId);
@@ -856,7 +871,8 @@ async function submitDeclaration(
     .from("Customs_Items")
     .select("CUSTI_ItemNumber, CUSTI_ItemPayloadJSON")
     .eq("CUSTI_CustomsID", declarationId)
-    .order("CUSTI_ItemNumber", { ascending: true });
+    .order("CUSTI_ItemNumber", { ascending: true })
+    .limit(CUSTOMS_DECLARATION_ITEM_READ_LIMIT);
   if (acceptedItemRowsError) {
     throw new HttpError(500, acceptedItemRowsError.message);
   }

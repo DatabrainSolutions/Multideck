@@ -2,6 +2,7 @@ import { Component, lazy, startTransition, Suspense, useCallback, useEffect, use
 import type { Session } from "@supabase/supabase-js"
 import { MotionConfig } from "motion/react"
 import { ThemeProvider } from "next-themes"
+import type { AdminRoute } from "@/pages/admin-page"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppShell } from "@/components/multideck/app-shell"
@@ -14,7 +15,8 @@ import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { LanguageProvider, useLanguage } from "@/i18n/language-provider"
 import { mdMotion } from "@/lib/motion"
 import { rememberAuthReturnPath, takeAuthReturnPath } from "@/lib/auth-routing"
-import { summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
+import { isTenantAdministrator, summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
+import { recordWorkspacePresence } from "@/lib/admin-audit-api"
 import { getApiAuthSession } from "@/lib/api"
 import {
   createProfilePhotoSignedUrls,
@@ -24,6 +26,7 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase"
 import { ThemeProfileSync, themeStorageKey } from "@/lib/theme-preferences"
 import { LanguageProfileSync } from "@/lib/language-preferences"
 import { rememberRecentWorkContext } from "@/lib/recent-work-context"
+import { invalidateWorkspaceBootstrap } from "@/lib/workspace-bootstrap"
 import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
 const OverviewPage = lazy(() => import("@/pages/overview-page").then((module) => ({ default: module.OverviewPage })))
@@ -35,8 +38,8 @@ const CustomersPage = lazy(() => import("@/pages/customers-page").then((module) 
 const InboxPage = lazy(() => import("@/pages/inbox-page").then((module) => ({ default: module.InboxPage })))
 const DocumentsPage = lazy(() => import("@/pages/documents-page").then((module) => ({ default: module.DocumentsPage })))
 const CustomsDeclarationsPage = lazy(() => import("@/pages/customs-declarations-page").then((module) => ({ default: module.CustomsDeclarationsPage })))
+const ScreeningPage = lazy(() => import("@/pages/screening-page").then((module) => ({ default: module.ScreeningPage })))
 const ReportsPage = lazy(() => import("@/pages/reports-page").then((module) => ({ default: module.ReportsPage })))
-const PaperTrayPage = lazy(() => import("@/pages/paper-tray-page").then((module) => ({ default: module.PaperTrayPage })))
 const NavigationLabPage = lazy(() => import("@/pages/navigation-lab-page").then((module) => ({ default: module.NavigationLabPage })))
 const QuoteDetailPage = lazy(() => import("@/pages/quotes-page").then((module) => ({ default: module.QuoteDetailPage })))
 const QuotesRegisterPage = lazy(() => import("@/pages/quotes-register-page").then((module) => ({ default: module.QuotesRegisterPage })))
@@ -44,6 +47,7 @@ const RatesPage = lazy(() => import("@/pages/rates-page").then((module) => ({ de
 const ReportTemplateBuilderPage = lazy(() => import("@/pages/report-template-builder-page").then((module) => ({ default: module.ReportTemplateBuilderPage })))
 const ReportViewerPage = lazy(() => import("@/pages/report-viewer-page").then((module) => ({ default: module.ReportViewerPage })))
 const SettingsPage = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.SettingsPage })))
+const AdminPage = lazy(() => import("@/pages/admin-page").then((module) => ({ default: module.AdminPage })))
 const WarehousePage = lazy(() => import("@/pages/warehouse-page").then((module) => ({ default: module.WarehousePage })))
 const BookingDetailPage = lazy(() => import("@/pages/booking-detail-page").then((module) => ({ default: module.BookingDetailPage })))
 const BookingWizardPage = lazy(() => import("@/pages/booking-wizard-page").then((module) => ({ default: module.BookingWizardPage })))
@@ -57,19 +61,12 @@ const CrmAccountDetailPage = lazy(() => import("@/pages/crm-account-detail-page"
 const CrmLeadsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmLeadsPage })))
 const CrmLeadDetailPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmLeadDetailPage })))
 const LeadConversionPage = lazy(() => import("@/pages/lead-conversion-page").then((module) => ({ default: module.LeadConversionPage })))
-const CrmActivityPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmActivityPage })))
 const CrmContactsPage = lazy(() => import("@/pages/crm-contacts-page").then((module) => ({ default: module.CrmContactsPage })))
 const CrmContactDetailPage = lazy(() => import("@/pages/crm-contact-detail-page").then((module) => ({ default: module.CrmContactDetailPage })))
 const CrmDealsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmDealsPage })))
 const CrmDealDetailPage = lazy(() => import("@/pages/crm-deal-detail-page").then((module) => ({ default: module.CrmDealDetailPage })))
-const CrmEmailsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmEmailsPage })))
-const CrmEmailStatsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmEmailStatsPage })))
-const CrmEmailEditPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmEmailEditPage })))
-const CrmListsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmListsPage })))
-const CrmListDetailPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmListDetailPage })))
 const CrmDrivePage = lazy(() => import("@/pages/crm-drive-page").then((module) => ({ default: module.CrmDrivePage })))
 const CrmSettingsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmSettingsPage })))
-const CrmFormsPage = lazy(() => import("@/pages/crm-forms-page").then((module) => ({ default: module.CrmFormsPage })))
 const ContactCardsPage = lazy(() => import("@/pages/contact-cards-page").then((module) => ({ default: module.ContactCardsPage })))
 const ContactCardDetailPage = lazy(() => import("@/pages/contact-cards-page").then((module) => ({ default: module.ContactCardDetailPage })))
 const ContactCardPublicPage = lazy(() => import("@/pages/contact-card-public-page").then((module) => ({ default: module.ContactCardPublicPage })))
@@ -101,18 +98,20 @@ function preloadImage(url: string) {
 const validRoutes = new Set([
   "/",
   "/agent-dexter",
+  "/admin/users",
+  "/admin/ai-usage",
+  "/admin/broadcast",
+  "/admin/billing",
+  "/admin/activity",
+  "/admin/detailed-log",
   "/auth",
   "/components",
   "/crm",
   "/crm/accounts",
-  "/crm/activity",
   "/crm/contact-cards",
   "/crm/contacts",
   "/crm/deals",
-  "/crm/emails",
-  "/crm/forms",
   "/crm/leads",
-  "/crm/lists",
   "/crm/drive",
   "/crm/settings",
   "/customers",
@@ -125,7 +124,7 @@ const validRoutes = new Set([
   "/customs/standalone/import/new",
   "/customs/job-related/export",
   "/customs/job-related/import",
-  "/paper-tray",
+  "/compliance/screening",
   "/playground/navigation",
   "/quotes",
   "/quotes/3",
@@ -191,6 +190,20 @@ function getLegacyCrmRoute(path: string) {
   return path === "/crm/marketing" ? "/crm/drive" : null
 }
 
+const unavailableCrmRoutePrefixes = [
+  "/crm/activity",
+  "/crm/emails",
+  "/crm/forms",
+  "/crm/lists",
+] as const
+
+/** Prototype-only CRM areas stay unreachable until their real data journeys are release-ready. */
+function getUnavailableCrmRoute(path: string) {
+  return unavailableCrmRoutePrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
+    ? "/crm"
+    : null
+}
+
 function getLegacyBookingRoute(path: string) {
   if (path === "/shipments") return "/bookings"
   const detailMatch = path.match(/^\/shipments\/([^/]+)$/)
@@ -231,24 +244,14 @@ function isCustomerDetailRoute(path: string) {
   return /^\/customers\/[^/]+$/.test(path)
 }
 
-function isCrmListDetailRoute(path: string) {
-  return /^\/crm\/lists\/[^/]+$/.test(path)
-}
-
-function isCrmEmailStatsRoute(path: string) {
-  return /^\/crm\/emails\/[^/]+\/stats$/.test(path)
-}
-
-function isCrmEmailEditRoute(path: string) {
-  return /^\/crm\/emails\/[^/]+\/edit$/.test(path)
-}
-
 function getRoute() {
   if (window.location.pathname === "/app" || window.location.pathname === "/app/") return "/"
   const legacyBookingRoute = getLegacyBookingRoute(window.location.pathname)
   if (legacyBookingRoute) return legacyBookingRoute
   const legacyCrmRoute = getLegacyCrmRoute(window.location.pathname)
   if (legacyCrmRoute) return legacyCrmRoute
+  const unavailableCrmRoute = getUnavailableCrmRoute(window.location.pathname)
+  if (unavailableCrmRoute) return unavailableCrmRoute
   if (window.location.pathname.startsWith("/reports/rpt-")) return window.location.pathname
   if (isBookingDetailRoute(window.location.pathname)) return window.location.pathname
   if (isRoadJobDetailRoute(window.location.pathname)) return window.location.pathname
@@ -265,9 +268,6 @@ function getRoute() {
   if (isCrmLeadDetailRoute(window.location.pathname)) return window.location.pathname
   if (isContactCardDetailRoute(window.location.pathname)) return window.location.pathname
   if (isContactCardPublicRoute(window.location.pathname)) return window.location.pathname
-  if (isCrmListDetailRoute(window.location.pathname)) return window.location.pathname
-  if (isCrmEmailStatsRoute(window.location.pathname)) return window.location.pathname
-  if (isCrmEmailEditRoute(window.location.pathname)) return window.location.pathname
   return validRoutes.has(window.location.pathname) ? window.location.pathname : "/"
 }
 
@@ -356,28 +356,13 @@ export default function App() {
   // sign-in screen and the public contact card must stay inert.
   const isWorkspaceRoute = !isContactCardPublicRoute(route) && route !== "/auth" && (authStatus === "authenticated" || isLocalNavigationLab)
 
-  useEffect(() => {
-    if (authStatus !== "authenticated" || currentUser?.actorType === "customer") return
-
-    const crmTimeoutId = window.setTimeout(() => {
-      void import("@/lib/crm-prefetch")
-        .then(({ prefetchCrmCollections }) => prefetchCrmCollections())
-        .catch(() => undefined)
-    }, 250)
-
-    const warehouseTimeoutId = window.setTimeout(() => {
-      void import("@/lib/warehouse-prefetch")
-        .then(({ prefetchWarehouseCollections }) => prefetchWarehouseCollections())
-        .catch(() => undefined)
-    }, 500)
-
-    return () => {
-      window.clearTimeout(crmTimeoutId)
-      window.clearTimeout(warehouseTimeoutId)
-    }
-  }, [authStatus, currentUser?.actorType])
   const handleProfilePhotoChange = useCallback((profilePhoto: UserProfilePhoto | null, profilePhotoUrl: string | null) => {
     setCurrentUser((user) => user ? { ...user, profilePhoto, profilePhotoUrl } : user)
+    setProfileMediaUrls((current) => ({
+      ...current,
+      profilePhotoPath: profilePhoto?.path ?? null,
+      profilePhotoUrl,
+    }))
   }, [])
   const handleCoverPhotoChange = useCallback((coverPhoto: UserProfilePhoto | null) => {
     setCurrentUser((user) => user ? { ...user, coverPhoto } : user)
@@ -392,6 +377,12 @@ export default function App() {
       setProfileMediaUrls(emptyProfileMediaUrls)
       return
     }
+
+    const mediaAlreadyLoaded = profileMediaUrls.profilePhotoPath === (profilePhoto?.path ?? null)
+      && profileMediaUrls.coverPhotoPath === (coverPhoto?.path ?? null)
+      && (!profilePhoto || Boolean(profileMediaUrls.profilePhotoUrl))
+      && (!coverPhoto || Boolean(profileMediaUrls.coverPhotoUrl))
+    if (mediaAlreadyLoaded) return
 
     let cancelled = false
     createProfilePhotoSignedUrls(photos)
@@ -422,7 +413,14 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [currentUser?.coverPhoto, currentUser?.profilePhoto])
+  }, [
+    currentUser?.coverPhoto,
+    currentUser?.profilePhoto,
+    profileMediaUrls.coverPhotoPath,
+    profileMediaUrls.coverPhotoUrl,
+    profileMediaUrls.profilePhotoPath,
+    profileMediaUrls.profilePhotoUrl,
+  ])
 
   useEffect(() => {
     const onPopState = () => {
@@ -448,8 +446,10 @@ export default function App() {
 
       if (!session?.user) {
         activeAccessToken = null
+        invalidateWorkspaceBootstrap()
         hasResolvedAuthenticatedSessionRef.current = false
         setCurrentUser(null)
+        setProfileMediaUrls(emptyProfileMediaUrls)
         setAuthStatus("unauthenticated")
         return
       }
@@ -460,14 +460,20 @@ export default function App() {
 
       if (!hasResolvedAuthenticatedSessionRef.current) setAuthStatus("checking")
       getApiAuthSession(session.access_token)
-        .then((apiSession) => apiSession.profile)
         .catch((error) => {
           console.error("The application profile could not be loaded.", error)
           return null
         })
-        .then((apiProfile) => {
+        .then((apiSession) => {
           if (cancelled || requestId !== sessionRequest) return
+          const apiProfile = apiSession?.profile ?? null
+          const bootstrapMedia = apiSession?.workspace?.profileMedia ?? null
           const nextUser = summarizeAuthUser(session.user, apiProfile)
+          if (bootstrapMedia && bootstrapMedia.profilePhotoPath === apiProfile?.profilePhoto?.path) {
+            nextUser.profilePhotoUrl = bootstrapMedia.profilePhotoUrl
+          }
+
+          setProfileMediaUrls(bootstrapMedia ?? emptyProfileMediaUrls)
 
           hasResolvedAuthenticatedSessionRef.current = true
           setCurrentUser(nextUser)
@@ -543,18 +549,40 @@ export default function App() {
     startTransition(() => setRoute(getRoute()))
   }, [authStatus, currentUser, route])
 
-  // A bookmark on the old path is rewritten in place, so the address bar stops
-  // showing a name the product no longer uses.
   useEffect(() => {
-    if (getLegacyCrmRoute(window.location.pathname)) {
+    if (authStatus !== "authenticated" || !route.startsWith("/admin") || isTenantAdministrator(currentUser)) return
+    window.history.replaceState({}, "", "/app")
+    startTransition(() => setRoute("/"))
+  }, [authStatus, currentUser, route])
+
+  useEffect(() => {
+    if (authStatus !== "authenticated" || currentUser?.actorType !== "internal") return
+    const updatePresence = () => {
+      if (document.visibilityState === "visible") void recordWorkspacePresence(route).catch(() => undefined)
+    }
+    updatePresence()
+    const intervalId = window.setInterval(updatePresence, 60_000)
+    document.addEventListener("visibilitychange", updatePresence)
+    return () => {
+      window.clearInterval(intervalId)
+      document.removeEventListener("visibilitychange", updatePresence)
+    }
+  }, [authStatus, currentUser?.actorType, route])
+
+  // Old and prototype-only CRM bookmarks are rewritten in place, so the address
+  // bar only shows routes that operators can genuinely use.
+  useEffect(() => {
+    if (getLegacyCrmRoute(window.location.pathname) || getUnavailableCrmRoute(window.location.pathname)) {
       window.history.replaceState(window.history.state, "", route)
     }
   }, [route])
 
   function navigate(path: string) {
+    path = getUnavailableCrmRoute(path) ?? path
     if (currentUser?.actorType === "customer" && !canCustomerOpenRoute(currentUser, path)) {
       path = currentUser.landingPath
     }
+    if (path.startsWith("/admin") && !isTenantAdministrator(currentUser)) path = "/"
     if (path === route) return
     rememberRecentWorkContext(route)
     window.history.pushState({}, "", path === "/" ? "/app" : path)
@@ -605,34 +633,27 @@ export default function App() {
                     />
                   ) : null}
                   {route === "/crm" ? <CrmOverviewPage /> : null}
-                  {route === "/crm/accounts" ? <CrmAccountsPage navigate={navigate} /> : null}
+                  {route === "/crm/accounts" ? <CrmAccountsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isCrmAccountDetailRoute(route) ? <CrmAccountDetailPage accountId={route.split("/").at(-1) ?? ""} navigate={navigate} /> : null}
-                  {route === "/crm/leads" ? <CrmLeadsPage navigate={navigate} /> : null}
+                  {route === "/crm/leads" ? <CrmLeadsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isCrmLeadConversionRoute(route) ? <LeadConversionPage navigate={navigate} leadId={route.split("/").at(-2) ?? ""} /> : null}
-                  {isCrmLeadDetailRoute(route) ? <CrmLeadDetailPage navigate={navigate} leadId={route.split("/").at(-1) ?? ""} /> : null}
-                  {route === "/crm/contact-cards" ? <ContactCardsPage navigate={navigate} /> : null}
-                  {isContactCardDetailRoute(route) ? <ContactCardDetailPage key={route} navigate={navigate} cardId={route.split("/").at(-1) ?? ""} /> : null}
-                  {route === "/crm/activity" ? <CrmActivityPage navigate={navigate} /> : null}
+                  {isCrmLeadDetailRoute(route) ? <CrmLeadDetailPage navigate={navigate} leadId={route.split("/").at(-1) ?? ""} currentUser={currentUser} /> : null}
+                  {route === "/crm/contact-cards" ? <ContactCardsPage navigate={navigate} currentUser={currentUser} /> : null}
+                  {isContactCardDetailRoute(route) ? <ContactCardDetailPage key={route} navigate={navigate} cardId={route.split("/").at(-1) ?? ""} currentUser={currentUser} /> : null}
                   {route === "/crm/contacts" ? <CrmContactsPage navigate={navigate} /> : null}
                   {isCrmContactDetailRoute(route) ? <CrmContactDetailPage contactId={route.split("/").at(-1) ?? ""} navigate={navigate} /> : null}
                   {route === "/crm/deals" ? <CrmDealsPage currentUser={currentUser} navigate={navigate} /> : null}
                   {isCrmDealDetailRoute(route) ? <CrmDealDetailPage key={route} dealId={route.split("/").at(-1) ?? ""} navigate={navigate} /> : null}
-                  {route === "/crm/emails" ? <CrmEmailsPage navigate={navigate} /> : null}
-                  {route === "/crm/forms" ? <CrmFormsPage /> : null}
-                  {isCrmEmailStatsRoute(route) ? <CrmEmailStatsPage navigate={navigate} campaignId={route.split("/").at(-2) ?? ""} /> : null}
-                  {isCrmEmailEditRoute(route) ? <CrmEmailEditPage navigate={navigate} campaignId={route.split("/").at(-2) ?? ""} /> : null}
-                  {route === "/crm/lists" ? <CrmListsPage navigate={navigate} /> : null}
-                  {isCrmListDetailRoute(route) ? <CrmListDetailPage navigate={navigate} listId={route.split("/").at(-1) ?? ""} /> : null}
-                  {route === "/crm/drive" ? <CrmDrivePage /> : null}
+                  {route === "/crm/drive" ? <CrmDrivePage currentUser={currentUser} /> : null}
                   {route === "/crm/settings" ? <CrmSettingsPage currentUser={currentUser} /> : null}
                   {route === "/customers" ? <CustomersPage navigate={navigate} /> : null}
                   {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/inbox" ? <InboxPage navigate={navigate} /> : null}
                   {route === "/documents" || route === "/documents/templates" ? <DocumentsPage navigate={navigate} /> : null}
                   {route.startsWith("/customs/") ? <CustomsDeclarationsPage route={route} navigate={navigate} currentUser={currentUser} /> : null}
-                  {route === "/paper-tray" ? <PaperTrayPage /> : null}
+                  {route === "/compliance/screening" ? <ScreeningPage /> : null}
                   {route === "/playground/navigation" ? <NavigationLabPage /> : null}
-                  {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} /> : null}
+                  {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/quotes/new" ? <QuoteDetailPage key={route} variant="cargowise" quoteId="NEW" navigate={navigate} /> : null}
                   {route !== "/quotes/new" && isQuoteDetailRoute(route) ? <QuoteDetailPage key={route} variant="cargowise" quoteId={route.split("/").at(-1)} navigate={navigate} /> : null}
                   {route.startsWith("/rates") ? <RatesPage route={route as "/rates" | "/rates/contracts" | "/rates/tariffs" | "/rates/imports" | "/rates/results"} navigate={navigate} /> : null}
@@ -648,10 +669,11 @@ export default function App() {
                       onCoverPhotoChange={handleCoverPhotoChange}
                     />
                   ) : null}
+                  {route.startsWith("/admin") ? <AdminPage route={route as AdminRoute} currentUser={currentUser} /> : null}
                   {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} navigate={navigate} /> : null}
-                  {route === "/bookings" ? <BookingsPage navigate={navigate} /> : null}
+                  {route === "/bookings" ? <BookingsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isBookingDetailRoute(route) ? <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-1) ?? "md-22455"} /> : null}
-                  {route === "/road-control" ? <RoadControlPage navigate={navigate} /> : null}
+                  {route === "/road-control" ? <RoadControlPage navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/road-control/new" ? <DomesticRoadBookingPage navigate={navigate} /> : null}
                   {isRoadJobDetailRoute(route) ? <DomesticRoadBookingPage key={route} navigate={navigate} roadJobId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/bookings/new" ? <BookingWizardPage navigate={navigate} /> : null}
