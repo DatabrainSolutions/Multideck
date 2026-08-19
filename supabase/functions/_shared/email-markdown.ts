@@ -49,7 +49,7 @@ export function parseEmailMarkdown(value: string): EmailMarkdownBlock[] {
       blocks.push({ type: "heading", level: heading[1].length as 1 | 2 | 3, text: heading[2].trim() })
       continue
     }
-    const unordered = line.match(/^[-+*]\s+(.+)$/)
+    const unordered = line.match(/^[-+*•]\s+(.+)$/)
     const ordered = line.match(/^\d+[.)]\s+(.+)$/)
     if (unordered || ordered) {
       flushParagraph()
