@@ -38,14 +38,13 @@ test("the thread follows the latest message and the composer reserves only its m
   assert.match(composerSource, /className="ms-auto flex shrink-0 items-center gap-2"[\s\S]*<DexterAccessModeToggle[\s\S]*<DexterActionPill/u)
 })
 
-test("the access selector changes to its measured label width without exposing either label", () => {
-  assert.match(composerSource, /overflow-visible rounded-full/u)
-  assert.match(composerSource, /inline-grid h-5[^\n]*overflow-hidden text-start/u)
-  assert.match(composerSource, /transition-\[width\][^\n]*delay-\[50ms\][^\n]*duration-\[180ms\]/u)
-  assert.match(composerSource, /style=\{labelWidths \? \{ width: labelWidths\[mode\] \} : undefined\}/u)
-  assert.match(composerSource, /labelFadeOutTransition[\s\S]*duration: 0\.06/u)
-  assert.match(composerSource, /labelFadeInTransition[\s\S]*duration: 0\.09, delay: 0\.19/u)
-  assert.match(composerSource, /shouldReduceMotion \? \([\s\S]*\{label\}[\s\S]*\) : \(/u)
+test("the access selector changes width with its visible label without exposing both labels", () => {
+  assert.match(composerSource, /md-composer-chip inline-flex h-9 w-fit[^\n]*rounded-full/u)
+  assert.match(composerSource, /layout="size"/u)
+  assert.match(composerSource, /const label = isFullAccess \? fullAccessLabel : approveLabel/u)
+  assert.match(composerSource, /<span className="shrink-0 whitespace-nowrap leading-5" aria-hidden="true">[\s\S]*\{label\}/u)
+  assert.match(composerSource, /aria-label=\{`\$\{label\}\. \$\{description\}`\}/u)
+  assert.doesNotMatch(composerSource, /labelWidths/u)
   assert.doesNotMatch(composerSource, /reservedLabelWidth/u)
 })
 

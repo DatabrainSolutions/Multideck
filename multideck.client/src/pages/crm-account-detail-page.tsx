@@ -1,9 +1,10 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { AiBrain, ArrowLeft, ArrowRight, Building2, CalendarDays, Check, Clock, Health, Mail, MapPin, Phone, Plus, RefreshCw, Trash2, TriangleAlert, UsersRound, Wallet, type LucideIcon } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
 import { CopyableField } from "@/components/multideck/copyable-field"
+import { CrmDetailOverviewShader } from "@/components/multideck/crm-detail-overview-shader"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
 import { ProgressRing } from "@/components/multideck/dashboard-radials"
 import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
@@ -18,7 +19,7 @@ import { Switch } from "@/components/ui/switch"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, staggerRamp } from "@/lib/motion"
 import { cn } from "@/lib/utils"
-import { getCustomer, getCustomerReference, updateAccount, type ApiCustomerDetail, type CustomerReference, type UpdateAccountInput } from "@/lib/customer-api"
+import { CustomerApiError, getCustomer, getCustomerReference, updateAccount, type ApiCustomerDetail, type CustomerReference, type UpdateAccountInput } from "@/lib/customer-api"
 import { CustomerWarehouseAccess } from "@/pages/customer-detail-page"
 
 type CustomField = { id: string; label: string; value: string }
@@ -36,16 +37,6 @@ type Moment = {
 
 /** The gaps people actually mean when they say "leave it a bit". */
 const gapPresets = [4, 12, 24, 48, 168]
-
-const CrmDetailOverviewShaderCanvas = lazy(() => import("@/components/multideck/lead-company-overview-shader"))
-
-function CrmDetailOverviewShader() {
-  return (
-    <Suspense fallback={<span className="block size-full bg-[radial-gradient(circle_at_50%_100%,#5366e5_0%,#06030a_68%)]" />}>
-      <CrmDetailOverviewShaderCanvas />
-    </Suspense>
-  )
-}
 
 /**
  * An account, edited where it is read.
@@ -76,6 +67,12 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
   const [reference, setReference] = useState<CustomerReference | null>(null)
   const [preferredPreferenceDraft, setPreferredPreferenceDraft] = useState<CommunicationPreferenceKey | null>(null)
   const [preferredPreferenceSaving, setPreferredPreferenceSaving] = useState(false)
+  const accountRef = useRef<ApiCustomerDetail | null>(null)
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
+
+  useEffect(() => {
+    accountRef.current = account
+  }, [account])
 
   useEffect(() => {
     let active = true
@@ -102,23 +99,42 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
 
   /**
    * One field's change, sent as a complete record because the endpoint takes the
-   * whole shape. The draft is rebuilt from the account each time rather than held
-   * in state, so a save can never carry a stale copy of a neighbouring field.
+   * whole shape. Saves are serialised and each draft is rebuilt from the latest
+   * confirmed response, so rapid edits cannot finish out of order and overwrite
+   * a neighbouring field.
    *
    * It throws on failure on purpose: the control that was changed catches it, puts
    * its own value back and shows the reason next to itself.
    */
-  const patch = useCallback(async (change: Partial<AccountDraft>) => {
-    const current = account
-    if (!current) return
-    const next = { ...toDraft(current), ...change }
-    const metadata = {
-      ...next.metadata,
-      customFields: Object.fromEntries(next.customFields.filter((field) => field.label.trim()).map((field) => [field.label.trim(), field.value.trim()])),
-    }
-    const updated = await updateAccount(accountId, { ...next, metadata })
-    setAccount(updated)
-  }, [account, accountId])
+  const patch = useCallback((change: Partial<AccountDraft>) => {
+    const save = saveQueueRef.current.then(async () => {
+      const current = accountRef.current
+      if (!current) return
+      const next = { ...toDraft(current), ...change }
+      const metadata = {
+        ...next.metadata,
+        customFields: Object.fromEntries(next.customFields.filter((field) => field.label.trim()).map((field) => [field.label.trim(), field.value.trim()])),
+      }
+      try {
+        const updated = await updateAccount(accountId, { ...next, metadata }, current.editVersion)
+        accountRef.current = updated
+        setAccount(updated)
+      } catch (cause) {
+        if (!(cause instanceof CustomerApiError) || cause.status !== 409) throw cause
+        try {
+          const latest = await getCustomer(accountId, { forceRefresh: true })
+          accountRef.current = latest
+          setAccount(latest)
+          throw new CustomerApiError(t("This account changed elsewhere. Your edit was not saved; the latest version is now shown."), 409)
+        } catch (refreshCause) {
+          if (refreshCause instanceof CustomerApiError && refreshCause.status === 409) throw refreshCause
+          throw new CustomerApiError(t("This account changed elsewhere. Your edit was not saved. Reload to see the latest version."), 409)
+        }
+      }
+    })
+    saveQueueRef.current = save.catch(() => undefined)
+    return save
+  }, [accountId, t])
 
   const customFields = useMemo(() => {
     const stored = account?.metadata.customFields
@@ -484,16 +500,19 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
           </Panel>
 
           <Panel title={t("Active shipments")} meta={String(currentAccount.activeShipments.length)}>
-              {currentAccount.activeShipments.length ? currentAccount.activeShipments.map((shipment) => (
-                <div key={shipment.id} className="grid gap-x-4 gap-y-1 border-t border-[var(--md-line)] px-4 py-3 sm:grid-cols-[120px_minmax(0,1fr)_auto] sm:items-center sm:px-5">
-                  <p className="text-[12.5px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{shipment.reference}</p>
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{shipment.route || t("Route not recorded")}</p>
-                    <p className="mt-0.5 text-[11.5px] text-[var(--md-text)]">{[shipment.mode, shipment.status, shipment.eta ? `${t("ETA")} ${formatDate(shipment.eta, language)}` : null].filter(Boolean).join(" · ")}</p>
+              {currentAccount.activeShipments.length ? currentAccount.activeShipments.map((shipment) => {
+                const presentation = shipmentPresentation(shipment.status, shipment.openExceptionCount, t)
+                return (
+                  <div key={shipment.id} className="grid gap-x-4 gap-y-1 border-t border-[var(--md-line)] px-4 py-3 sm:grid-cols-[120px_minmax(0,1fr)_auto] sm:items-center sm:px-5">
+                    <p className="text-[12.5px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{shipment.reference}</p>
+                    <div className="min-w-0">
+                      <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{shipment.route || t("Route not recorded")}</p>
+                      <p className="mt-0.5 text-[11.5px] text-[var(--md-text)]">{[shipment.mode, shipment.status ? humanize(shipment.status) : null, shipment.eta ? `${t("ETA")} ${formatDate(shipment.eta, language)}` : null].filter(Boolean).join(" · ")}</p>
+                    </div>
+                    <StatusPill tone={presentation.tone}>{presentation.label}</StatusPill>
                   </div>
-                  <StatusPill tone={shipment.openExceptionCount ? "amber" : "green"}>{shipment.openExceptionCount ? `${shipment.openExceptionCount} ${t("exceptions")}` : t("On track")}</StatusPill>
-                </div>
-              )) : <Empty text={t("Nothing is moving for this account right now.")} />}
+                )
+              }) : <Empty text={t("Nothing is moving for this account right now.")} />}
           </Panel>
 
             {/* One history. Calls, notes and emails interleaved in the order they
@@ -511,11 +530,15 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
                   ))}
                 </ol>
               ) : (
-                <Empty text={t("Nothing has been logged against this account yet.")} />
+                <Empty text={t("No activity has been recorded and no recent emails are linked to this account or its contacts.")} />
               )}
               {!currentAccount.recentEmails.available ? (
                 <p className="border-t border-[var(--md-line)] px-4 py-2.5 text-[11.5px] leading-4 text-[var(--md-subtle)] sm:px-5">
                   {t("Conversations are missing from this history — you need email access to include them.")}
+                </p>
+              ) : currentAccount.recentEmails.items.length === 0 && moments.length ? (
+                <p className="border-t border-[var(--md-line)] px-4 py-2.5 text-[11.5px] leading-4 text-[var(--md-subtle)] sm:px-5">
+                  {t("No recent emails are linked to this account or its contacts.")}
                 </p>
               ) : null}
           </Panel>
@@ -996,6 +1019,22 @@ function Empty({ text }: { text: string }) {
 
 function humanize(value: string | null | undefined) {
   return value ? value.replace(/[_-]+/g, " ").replace(/^./, (letter) => letter.toUpperCase()) : null
+}
+
+function shipmentPresentation(status: string | null, openExceptionCount: number, t: (value: string) => string) {
+  const normalized = status?.trim().toLocaleLowerCase().replace(/[\s_-]+/g, "") ?? ""
+  const statusLabel = t(humanize(status) ?? "Status not recorded")
+
+  if (openExceptionCount > 0) {
+    return {
+      tone: normalized.includes("blocked") || normalized.includes("failed") || normalized.includes("exception") ? "red" as const : "amber" as const,
+      label: `${statusLabel} · ${openExceptionCount} ${t(openExceptionCount === 1 ? "open exception" : "open exceptions")}`,
+    }
+  }
+  if (normalized.includes("delayed") || normalized.includes("late") || normalized.includes("risk")) return { tone: "amber" as const, label: statusLabel }
+  if (normalized.includes("blocked") || normalized.includes("failed") || normalized.includes("exception") || normalized.includes("cancel")) return { tone: "red" as const, label: statusLabel }
+  if (normalized.includes("ontrack") || normalized.includes("transit") || normalized.includes("complete") || normalized.includes("deliver")) return { tone: "green" as const, label: statusLabel }
+  return { tone: "neutral" as const, label: statusLabel }
 }
 
 /** Hours said the way a person would say them. */

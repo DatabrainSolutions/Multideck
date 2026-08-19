@@ -3,6 +3,7 @@ import type { ApiTeamUser } from "@/lib/api"
 
 export type AuthUserSummary = {
   id: string
+  internalUserId: string | null
   name: string | null
   email: string | null
   initials: string
@@ -11,6 +12,7 @@ export type AuthUserSummary = {
   profilePhotoUrl: string | null
   actorType: "internal" | "customer" | "unknown"
   organisations: { id: string; name: string; canManageWarehouseUsers?: boolean }[]
+  roles: { id: string; name: string }[]
   permissions: string[]
   landingPath: string
 }
@@ -43,6 +45,7 @@ export function summarizeAuthUser(user: User, profile?: ApiTeamUser | null): Aut
 
   return {
     id: user.id,
+    internalUserId: profile?.id ?? null,
     name,
     email,
     initials: makeInitials(name ?? email),
@@ -51,6 +54,7 @@ export function summarizeAuthUser(user: User, profile?: ApiTeamUser | null): Aut
     profilePhotoUrl: null,
     actorType: profile?.actorType ?? "unknown",
     organisations: profile?.organisations ?? [],
+    roles: profile?.roles ?? [],
     permissions: profile?.permissions ?? [],
     landingPath: profile?.landingPath ?? "/",
   }
@@ -58,4 +62,11 @@ export function summarizeAuthUser(user: User, profile?: ApiTeamUser | null): Aut
 
 export function hasPermission(user: AuthUserSummary | null | undefined, permission: string) {
   return user?.permissions.includes(permission) === true
+}
+
+const tenantAdministratorRoles = new Set(["administrator", "company admin"])
+
+export function isTenantAdministrator(user: AuthUserSummary | null | undefined) {
+  return user?.actorType === "internal"
+    && user.roles.some((role) => tenantAdministratorRoles.has(role.name.trim().toLowerCase()))
 }

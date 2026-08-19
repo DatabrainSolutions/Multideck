@@ -433,6 +433,9 @@ verify_jwt = true
 [functions.account]
 verify_jwt = true
 
+[functions.contact-card-profile]
+verify_jwt = false
+
 [functions.team]
 verify_jwt = true
 
@@ -446,6 +449,9 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.rates-api]
+verify_jwt = true
+
+[functions.admin-audit]
 verify_jwt = true
 
 # OAuth callbacks and provider notifications do not carry a Multideck JWT.

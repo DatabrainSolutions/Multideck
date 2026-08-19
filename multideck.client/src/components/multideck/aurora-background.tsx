@@ -5,6 +5,10 @@ import { useTheme } from "next-themes"
 import { useAccentBrandRamp, type ShaderStops } from "@/lib/accent-theme"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
+import {
+  ResilientShaderSurface,
+  type ShaderLifecycleControls,
+} from "@/components/multideck/resilient-shader-surface"
 
 const vertexShader = `#version 300 es
 in vec2 position;
@@ -145,30 +149,39 @@ export type AuroraBackgroundProps = {
   className?: string
 }
 
-export function AuroraBackground({
+function AuroraCanvas({
   colorStops,
   amplitude = 0.72,
   blend = 0.72,
   speed = 0.34,
   lightSurface = false,
-  className,
-}: AuroraBackgroundProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  onReady,
+  onFailure,
+}: Omit<AuroraBackgroundProps, "className"> & ShaderLifecycleControls) {
+  const containerRef = useRef<HTMLSpanElement>(null)
   const propsRef = useRef({ colorStops, amplitude, blend, speed, lightSurface })
+  const lifecycleRef = useRef({ onReady, onFailure })
   const shouldReduceMotion = Boolean(useReducedMotion())
 
   propsRef.current = { colorStops, amplitude, blend, speed, lightSurface }
+  lifecycleRef.current = { onReady, onFailure }
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
-    const renderer = new Renderer({
-      alpha: true,
-      premultipliedAlpha: true,
-      antialias: false,
-      dpr: Math.min(window.devicePixelRatio, 1.5),
-    })
+    let renderer: Renderer | null = null
+    try {
+      renderer = new Renderer({
+        alpha: true,
+        premultipliedAlpha: true,
+        antialias: false,
+        dpr: Math.min(window.devicePixelRatio, 1.5),
+      })
+    } catch (error) {
+      lifecycleRef.current.onFailure(error)
+      return
+    }
     const gl = renderer.gl
     gl.clearColor(0, 0, 0, 0)
     gl.enable(gl.BLEND)
@@ -214,35 +227,63 @@ export function AuroraBackground({
       program.uniforms.uBlend.value = current.blend
       program.uniforms.uLightSurface.value = current.lightSurface ? 1 : 0
       program.uniforms.uColorStops.value = toGlColors(current.colorStops)
-      renderer.render({ scene: mesh })
+      try {
+        renderer.render({ scene: mesh })
+      } catch (error) {
+        lifecycleRef.current.onFailure(error)
+        return
+      }
+      if (!ready) {
+        ready = true
+        lifecycleRef.current.onReady()
+      }
       if (!shouldReduceMotion && visible) frame = requestAnimationFrame(render)
     }
 
-    const intersectionObserver = new IntersectionObserver(([entry]) => {
-      const nextVisible = entry?.isIntersecting ?? true
-      if (nextVisible === visible) return
-      visible = nextVisible
-      cancelAnimationFrame(frame)
-      if (visible) frame = requestAnimationFrame(render)
-    })
-    intersectionObserver.observe(container)
+    const intersectionObserver = typeof IntersectionObserver === "undefined"
+      ? null
+      : new IntersectionObserver(([entry]) => {
+          const nextVisible = entry?.isIntersecting ?? true
+          if (nextVisible === visible) return
+          visible = nextVisible
+          cancelAnimationFrame(frame)
+          if (visible) frame = requestAnimationFrame(render)
+        })
+    intersectionObserver?.observe(container)
+    let ready = false
     render()
 
     return () => {
       cancelAnimationFrame(frame)
       resizeObserver.disconnect()
-      intersectionObserver.disconnect()
+      intersectionObserver?.disconnect()
       if (gl.canvas.parentNode === container) container.removeChild(gl.canvas)
+      gl.canvas.dataset.mdShaderDisposing = "true"
       gl.getExtension("WEBGL_lose_context")?.loseContext()
     }
   }, [shouldReduceMotion])
 
+  return <span ref={containerRef} className="block size-full" />
+}
+
+export function AuroraBackground({ className, ...props }: AuroraBackgroundProps) {
+  const { colorStops } = props
+
   return (
-    <div
-      ref={containerRef}
-      aria-hidden="true"
-      className={cn("pointer-events-none absolute inset-0 z-0 overflow-hidden", className)}
-    />
+    <ResilientShaderSurface
+      name="Watch mode aurora shader"
+      className={cn("pointer-events-none absolute inset-0 z-0", className)}
+      fallback={(
+        <span
+          className="block size-full"
+          style={{
+            background: `radial-gradient(ellipse at 16% 112%, color-mix(in srgb, ${colorStops[1]} 86%, transparent) 0%, transparent 58%), radial-gradient(ellipse at 82% 104%, color-mix(in srgb, ${colorStops[2]} 78%, transparent) 0%, transparent 55%), linear-gradient(155deg, ${colorStops[0]}, color-mix(in srgb, ${colorStops[1]} 54%, ${colorStops[2]}))`,
+          }}
+        />
+      )}
+    >
+      {(lifecycle) => <AuroraCanvas {...props} {...lifecycle} />}
+    </ResilientShaderSurface>
   )
 }
 

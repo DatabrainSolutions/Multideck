@@ -54,6 +54,7 @@ export async function loadNotificationEmailPreferences() {
     .select("CommNotifPref_EventType,CommNotifPref_IsEnabled,CommNotifPref_QuietHoursJSON")
     .eq("CommNotifPref_UserID", userId)
     .eq("CommNotifPref_ChannelCode", "email")
+    .limit(notificationEventTypes.length)
   if (error) throw error
 
   const preferences = { ...defaultNotificationEmailPreferences }

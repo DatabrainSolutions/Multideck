@@ -1,11 +1,10 @@
-import { lazy, Suspense, useCallback, useRef, useState, type PointerEvent, type ReactNode } from "react"
+import { useCallback, useRef, useState, type PointerEvent, type ReactNode } from "react"
 import { useReducedMotion } from "motion/react"
 import { useTheme } from "next-themes"
 import { useAccentBrandRamp } from "@/lib/accent-theme"
 import { cn } from "@/lib/utils"
-import type { ComposerDitherCanvasProps, ComposerPointer } from "./composer-dither-canvas"
-
-const ComposerDitherCanvas = lazy(() => import("./composer-dither-canvas"))
+import { ResilientShaderSurface } from "@/components/multideck/resilient-shader-surface"
+import ComposerDitherCanvas, { type ComposerDitherCanvasProps, type ComposerPointer } from "./composer-dither-canvas"
 
 /**
  * Where the ripple starts, in 0-1 canvas space. The band's canvas overhangs
@@ -19,8 +18,8 @@ function DitherFallback({ baseColor, waveColor }: { baseColor: string; waveColor
       className="block size-full"
       style={{
         backgroundColor: baseColor,
-        backgroundImage: `radial-gradient(${waveColor} 1px, transparent 1.1px)`,
-        backgroundSize: "4px 4px",
+        backgroundImage: `radial-gradient(ellipse at 9% 18%, color-mix(in srgb, ${waveColor} 72%, transparent) 0%, transparent 44%), radial-gradient(${waveColor} 1px, transparent 1.1px)`,
+        backgroundSize: "100% 100%, 4px 4px",
       }}
     />
   )
@@ -98,19 +97,25 @@ export function ComposerDither({
       onPointerMove={handleMove}
       onPointerLeave={handleLeave}
     >
-      <span ref={bleedRef} aria-hidden="true" className="md-composer-dither__bleed pointer-events-none absolute inset-x-0 top-0">
+      <span ref={bleedRef} aria-hidden="true" className="md-composer-dither__bleed pointer-events-none absolute inset-x-0 top-0 h-[180%]">
         <span className="md-composer-dither__canvas absolute inset-0">
-          <Suspense fallback={<DitherFallback baseColor={baseColor} waveColor={waveColor} />}>
-            <ComposerDitherCanvas
-              baseColor={baseColor}
-              waveColor={waveColor}
-              hovered={hovered}
-              pointer={pointerRef}
-              pulseToken={pulseToken}
-              pulseOrigin={pulseOrigin}
-              animated={!shouldReduceMotion}
-            />
-          </Suspense>
+          <ResilientShaderSurface
+            name="Composer dither shader"
+            fallback={<DitherFallback baseColor={baseColor} waveColor={waveColor} />}
+          >
+            {({ onReady }) => (
+              <ComposerDitherCanvas
+                baseColor={baseColor}
+                waveColor={waveColor}
+                hovered={hovered}
+                pointer={pointerRef}
+                pulseToken={pulseToken}
+                pulseOrigin={pulseOrigin}
+                animated={!shouldReduceMotion}
+                onReady={onReady}
+              />
+            )}
+          </ResilientShaderSurface>
         </span>
         <span className="md-composer-dither__veil absolute inset-0" />
       </span>

@@ -1,4 +1,4 @@
-import { callCrmRpc, CrmSupabaseError } from "@/lib/crm-supabase"
+import { callCrmMutation, callCrmRpc, CrmSupabaseError } from "@/lib/crm-supabase"
 import type { StatusTone } from "@/data/multideck-data"
 import { invalidateCrmResources, readCachedCrmResource, type CrmReadOptions } from "@/lib/crm-read-cache"
 import { getSupabaseSession } from "@/lib/supabase"
@@ -78,7 +78,7 @@ async function mutatePipelineSettings<T>(
   payload: unknown,
   fallback: string,
 ) {
-  const result = await callCrmRpc<T>(
+  const result = await callCrmMutation<T>(
     "multideck_crm_mutate_pipeline_settings",
     { p_action: action, p_id: id, p_payload: payload },
     fallback,

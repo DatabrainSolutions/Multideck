@@ -1,4 +1,5 @@
 import { edgeFetch } from "@/lib/api"
+import { readCachedRegisterPage } from "@/lib/application-data-api"
 
 export type BroadcastAudienceMode = "all" | "departments" | "users"
 
@@ -45,10 +46,24 @@ export type BroadcastHistoryItem = {
 export type BroadcastState = {
   departments: BroadcastDepartment[]
   users: BroadcastUser[]
+  usersDeferred?: boolean
   history: BroadcastHistoryItem[]
+  historyTotal?: number
+  historyOffset?: number
+  historyLimit?: number
+  historyHasMore?: boolean
   deliveryProvider: "resend"
   deliveryConfigured: boolean
   sender: { from: string; replyTo: string }
+}
+
+export type BroadcastUserPage = {
+  rows: BroadcastUser[]
+  total: number
+  offset: number
+  limit: number
+  hasMore: boolean
+  compatibilityMode?: boolean
 }
 
 type BroadcastPreview = { audience: Required<Pick<BroadcastAudience, "mode" | "departmentIds" | "userIds">> & { departmentNames: string[]; selectedCount: number; recipientCount: number; excludedCount: number }; recipients: BroadcastRecipient[]; emailPreview: { html: string; text: string } | null }
@@ -59,8 +74,59 @@ async function responseJson<T>(response: Response): Promise<T> {
   throw new Error(payload?.detail || "The broadcast request could not be completed.")
 }
 
-export async function getBroadcastState(accessToken: string) {
-  return responseJson<BroadcastState>(await edgeFetch("developer-broadcasts", "", accessToken))
+export async function getBroadcastState(
+  accessToken: string,
+  input: { historyLimit?: number; historyOffset?: number } = {},
+) {
+  const historyLimit = Math.max(1, Math.min(Math.trunc(input.historyLimit ?? 20), 50))
+  const historyOffset = Math.max(0, Math.min(Math.trunc(input.historyOffset ?? 0), 1_000_000))
+  const raw = await responseJson<BroadcastState>(await edgeFetch(
+    "developer-broadcasts",
+    `?historyLimit=${historyLimit}&historyOffset=${historyOffset}`,
+    accessToken,
+  ))
+  const allHistory = Array.isArray(raw.history) ? raw.history : []
+  if (!Number.isFinite(Number(raw.historyTotal)) || raw.usersDeferred !== true) {
+    throw new Error("Paged broadcast history and user search are still being prepared. Try again shortly.")
+  }
+  return {
+    ...raw,
+    users: [],
+    history: allHistory,
+    historyTotal: Math.max(allHistory.length, Number(raw.historyTotal)),
+    historyOffset: Number.isFinite(Number(raw.historyOffset)) ? Math.max(0, Number(raw.historyOffset)) : historyOffset,
+    historyLimit: Number.isFinite(Number(raw.historyLimit)) ? Math.max(1, Number(raw.historyLimit)) : historyLimit,
+    historyHasMore: raw.historyHasMore === true,
+  }
+}
+
+export async function listBroadcastUsersPage(
+  accessToken: string,
+  input: { query?: string; limit?: number; offset?: number } = {},
+  signal?: AbortSignal,
+) {
+  const query = input.query?.trim().slice(0, 200) ?? ""
+  const limit = Math.max(1, Math.min(Math.trunc(input.limit ?? 25), 50))
+  const offset = Math.max(0, Math.min(Math.trunc(input.offset ?? 0), 1_000_000))
+  const resource = `broadcast:user-page:${query.toLocaleLowerCase()}:${limit}:${offset}`
+  return readCachedRegisterPage(accessToken, resource, async (requestSignal) => {
+    const path = `/users?query=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`
+    const result = await responseJson<{ userPage: BroadcastUserPage }>(await edgeFetch(
+      "developer-broadcasts",
+      path,
+      accessToken,
+      { signal: requestSignal },
+    ))
+    const rows = Array.isArray(result.userPage?.rows) ? result.userPage.rows : []
+    return {
+      ...result.userPage,
+      rows,
+      total: Math.max(rows.length, Number(result.userPage?.total) || 0),
+      offset: Number.isFinite(Number(result.userPage?.offset)) ? Math.max(0, Number(result.userPage.offset)) : offset,
+      limit: Number.isFinite(Number(result.userPage?.limit)) ? Math.max(1, Number(result.userPage.limit)) : limit,
+      hasMore: result.userPage?.hasMore === true,
+    }
+  }, signal)
 }
 
 export async function previewBroadcastAudience(accessToken: string, audience: BroadcastAudience, message?: { subject: string; body: string }) {

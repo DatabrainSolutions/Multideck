@@ -86,6 +86,41 @@ function mapRate(row: Json, version?: Json | null): RateView {
   } as RateView
 }
 
+function mapVersion(row: Json) {
+  return {
+    id: row.RATEContractVer_ID,
+    rateId: row.RATEContractVer_ContractID,
+    versionNo: row.RATEContractVer_VersionNo,
+    status: row.RATEContractVer_StatusCode,
+    effectiveFrom: row.RATEContractVer_EffectiveFrom ?? "",
+    effectiveTo: row.RATEContractVer_EffectiveTo ?? "",
+    changeReason: row.RATEContractVer_ChangeReason ?? "",
+    sourceReference: row.RATEContractVer_SourceReference ?? "",
+    createdAt: row.RATEContractVer_CreatedAt,
+    createdBy: ((row.RATEContractVer_SnapshotJSON ?? {}) as Json).updatedBy ?? "Multideck operator",
+  }
+}
+
+function mapAuditEvent(row: Json) {
+  return {
+    id: row.RATEAudit_ID,
+    rateId: row.RATEAudit_ContractID ?? null,
+    action: row.RATEAudit_Action,
+    message: row.RATEAudit_Message ?? "",
+    createdAt: row.RATEAudit_CreatedAt,
+    createdBy: ((row.RATEAudit_MetadataJSON ?? {}) as Json).actorName ?? "Multideck operator",
+  }
+}
+
+function ratePair(value: unknown) {
+  const pair = (value ?? {}) as Json
+  return mapRate((pair.contract ?? {}) as Json, (pair.version ?? null) as Json | null)
+}
+
+function ratePairs(value: unknown) {
+  return Array.isArray(value) ? value.map(ratePair) : []
+}
+
 function snapshot(input: Json, updatedBy: string) {
   return {
     type: text(input.type, 30), mode: text(input.mode, 20), carrier: text(input.carrier), supplier: text(input.supplier),
@@ -97,32 +132,9 @@ function snapshot(input: Json, updatedBy: string) {
 }
 
 async function companyQuotes(admin: ReturnType<typeof adminClient>, actor: Actor) {
-  const officesResult = await admin.from("cmp_Offices").select("Office_ID").eq("Company_ID", actor.Company_ID)
-  if (officesResult.error) throw new HttpError(500, officesResult.error.message)
-  const officeIds = (officesResult.data ?? []).map((row) => row.Office_ID).filter(Boolean)
-  if (!officeIds.length) return []
-
-  const [primaryOfficeQuotes, legacyOfficeQuotes] = await Promise.all([
-    admin.from("CusQuote_Header").select("CusQuoteHeader_ID").in("CusQuoteHeader_OrgOfficeID", officeIds).eq("CusQuoteHeader_IsDeleted", false),
-    admin.from("CusQuote_Header").select("CusQuoteHeader_ID").in("OrgOffice_ID", officeIds).eq("CusQuoteHeader_IsDeleted", false),
-  ])
-  if (primaryOfficeQuotes.error) throw new HttpError(500, primaryOfficeQuotes.error.message)
-  if (legacyOfficeQuotes.error) throw new HttpError(500, legacyOfficeQuotes.error.message)
-
-  const quoteIds = Array.from(new Set([
-    ...(primaryOfficeQuotes.data ?? []).map((row) => row.CusQuoteHeader_ID),
-    ...(legacyOfficeQuotes.data ?? []).map((row) => row.CusQuoteHeader_ID),
-  ].filter(Boolean)))
-  if (!quoteIds.length) return []
-
-  const quotesResult = await admin
-    .from("App_Live_Quotes")
-    .select("CusQuoteHeader_ID,Quote_Reference,Customer_Name,Origin,Destination,Transport_Mode,Equipment_Load,Currency,Updated_At")
-    .in("CusQuoteHeader_ID", quoteIds)
-    .order("Updated_At", { ascending: false })
-    .limit(100)
-  if (quotesResult.error) throw new HttpError(500, quotesResult.error.message)
-  return quotesResult.data ?? []
+  const result = await admin.rpc("multideck_rates_quote_picker", { p_company_id: actor.Company_ID, p_limit: 100 })
+  if (result.error) throw new HttpError(500, result.error.message)
+  return Array.isArray(result.data) ? result.data : []
 }
 
 async function companyQuote(admin: ReturnType<typeof adminClient>, actor: Actor, quoteId: string) {
@@ -147,27 +159,71 @@ async function companyQuote(admin: ReturnType<typeof adminClient>, actor: Actor,
 }
 
 async function workspace(admin: ReturnType<typeof adminClient>, actor: Actor, permissions: string[]) {
-  const { data: contracts, error: contractsError } = await admin.from("RATE_Contracts").select("*").eq("Company_ID", actor.Company_ID).eq("RATEContract_IsDeleted", false).order("RATEContract_UpdatedAt", { ascending: false })
-  if (contractsError) throw new HttpError(500, contractsError.message)
-  const contractIds = (contracts ?? []).map((row) => row.RATEContract_ID)
-  const versionIds = (contracts ?? []).map((row) => row.RATEContract_CurrentVersionID).filter(Boolean)
-  const [{ data: currentVersions, error: currentError }, { data: versions, error: versionsError }, { data: audit, error: auditError }, { data: imports, error: importsError }, quotes] = await Promise.all([
-    versionIds.length ? admin.from("RATE_ContractVersions").select("*").in("RATEContractVer_ID", versionIds) : Promise.resolve({ data: [], error: null }),
-    contractIds.length ? admin.from("RATE_ContractVersions").select("*").in("RATEContractVer_ContractID", contractIds).order("RATEContractVer_VersionNo", { ascending: false }) : Promise.resolve({ data: [], error: null }),
-    admin.from("RATE_AuditEvents").select("*").eq("Company_ID", actor.Company_ID).order("RATEAudit_CreatedAt", { ascending: false }).limit(300),
+  const [{ data: snapshotData, error: snapshotError }, { data: imports, error: importsError }, quotes] = await Promise.all([
+    admin.rpc("multideck_rates_workspace_snapshot", { p_company_id: actor.Company_ID }),
     admin.from("RATE_ImportBatches").select("*").eq("Company_ID", actor.Company_ID).order("RATEImport_CreatedAt", { ascending: false }).limit(100),
     companyQuotes(admin, actor),
   ])
-  for (const error of [currentError, versionsError, auditError, importsError]) if (error) throw new HttpError(500, error.message)
-  const currentById = new Map((currentVersions ?? []).map((row) => [row.RATEContractVer_ID, row]))
+  for (const error of [snapshotError, importsError]) if (error) throw new HttpError(500, error.message)
+  const snapshot = (snapshotData ?? {}) as Json
   return {
-    rates: (contracts ?? []).map((row) => mapRate(row, currentById.get(row.RATEContract_CurrentVersionID))),
-    versions: (versions ?? []).map((row) => ({ id: row.RATEContractVer_ID, rateId: row.RATEContractVer_ContractID, versionNo: row.RATEContractVer_VersionNo, status: row.RATEContractVer_StatusCode, effectiveFrom: row.RATEContractVer_EffectiveFrom ?? "", effectiveTo: row.RATEContractVer_EffectiveTo ?? "", changeReason: row.RATEContractVer_ChangeReason ?? "", sourceReference: row.RATEContractVer_SourceReference ?? "", createdAt: row.RATEContractVer_CreatedAt, createdBy: ((row.RATEContractVer_SnapshotJSON ?? {}) as Json).updatedBy ?? "Multideck operator" })),
-    audit: (audit ?? []).map((row) => ({ id: row.RATEAudit_ID, rateId: row.RATEAudit_ContractID, action: row.RATEAudit_Action, message: row.RATEAudit_Message ?? "", createdAt: row.RATEAudit_CreatedAt, createdBy: ((row.RATEAudit_MetadataJSON ?? {}) as Json).actorName ?? "Multideck operator" })),
+    summary: snapshot.summary ?? {},
+    attention: ratePairs(snapshot.attention),
+    recent: ratePairs(snapshot.recent),
     imports: (imports ?? []).map((row) => ({ id: row.RATEImport_ID, fileName: row.RATEImport_FileName ?? "Rate source", sourceType: row.RATEImport_SourceTypeCode, status: row.RATEImport_StatusCode, rowCount: row.RATEImport_RowCount, errorCount: row.RATEImport_ErrorCount, warningCount: row.RATEImport_WarningCount, createdAt: row.RATEImport_CreatedAt })),
     quotes: quotes.map((row) => ({ id: row.CusQuoteHeader_ID, reference: row.Quote_Reference, customer: row.Customer_Name, origin: row.Origin, destination: row.Destination, mode: row.Transport_Mode, equipment: row.Equipment_Load, currency: row.Currency })),
     permissions: { canManage: permissions.includes("Rates.Manage") },
     integrations: { seaRates: { connected: false, reason: "SeaRates API credentials and a validated response contract are not configured." } },
+  }
+}
+
+async function recordsPage(admin: ReturnType<typeof adminClient>, actor: Actor, request: Request) {
+  const search = new URL(request.url).searchParams
+  const scope = text(search.get("scope"), 20)
+  const limit = Math.max(1, Math.min(Number(search.get("limit") ?? 20) || 20, 50))
+  const offset = Math.max(0, Number(search.get("offset") ?? 0) || 0)
+  const result = await admin.rpc("multideck_rates_register_page", {
+    p_company_id: actor.Company_ID,
+    p_scope: scope,
+    p_search: text(search.get("search")) || null,
+    p_mode: text(search.get("mode"), 20) || null,
+    p_tariff_type: text(search.get("tariffType"), 30) || null,
+    p_expiry: text(search.get("expiry"), 20) || null,
+    p_sort: text(search.get("sort"), 30) || "name",
+    p_sort_direction: text(search.get("direction"), 4) || "asc",
+    p_limit: limit,
+    p_offset: offset,
+  })
+  if (result.error) throw new HttpError(500, result.error.message)
+  const page = (result.data ?? {}) as Json
+  const expiry = (page.expiryCounts ?? {}) as Json
+  return {
+    rows: ratePairs(page.rows),
+    total: number(page.total),
+    expiryCounts: {
+      expired: number(expiry.expired),
+      sevenDays: number(expiry.sevenDays),
+      thirtyDays: number(expiry.thirtyDays),
+      activeCurrent: number(expiry.activeCurrent),
+    },
+  }
+}
+
+async function recordDetails(admin: ReturnType<typeof adminClient>, actor: Actor, rateId: string) {
+  const contractResult = await admin.from("RATE_Contracts").select("*").eq("RATEContract_ID", rateId).eq("Company_ID", actor.Company_ID).eq("RATEContract_IsDeleted", false).maybeSingle()
+  if (contractResult.error) throw new HttpError(500, contractResult.error.message)
+  if (!contractResult.data) throw new HttpError(404, "That rate no longer exists.")
+  const currentVersionId = contractResult.data.RATEContract_CurrentVersionID
+  const [currentVersionResult, versionsResult, auditResult] = await Promise.all([
+    currentVersionId ? admin.from("RATE_ContractVersions").select("*").eq("RATEContractVer_ID", currentVersionId).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    admin.from("RATE_ContractVersions").select("*").eq("RATEContractVer_ContractID", rateId).order("RATEContractVer_VersionNo", { ascending: false }).limit(100),
+    admin.from("RATE_AuditEvents").select("*").eq("Company_ID", actor.Company_ID).eq("RATEAudit_ContractID", rateId).order("RATEAudit_CreatedAt", { ascending: false }).limit(100),
+  ])
+  for (const error of [currentVersionResult.error, versionsResult.error, auditResult.error]) if (error) throw new HttpError(500, error.message)
+  return {
+    rate: mapRate(contractResult.data, currentVersionResult.data),
+    versions: (versionsResult.data ?? []).map(mapVersion),
+    audit: (auditResult.data ?? []).map(mapAuditEvent),
   }
 }
 
@@ -239,17 +295,28 @@ async function stageImport(request: Request, admin: ReturnType<typeof adminClien
 
 async function quoteOptions(admin: ReturnType<typeof adminClient>, actor: Actor, quoteId: string) {
   const quote = await companyQuote(admin, actor, quoteId)
-  const state = await workspace(admin, actor, ["Rates.Manage"])
-  const mode = String(quote.Transport_Mode ?? "").toLowerCase(); const origin = String(quote.Origin ?? "").toLowerCase(); const destination = String(quote.Destination ?? "").toLowerCase(); const customer = String(quote.Customer_Name ?? "").toLowerCase()
-  const options = state.rates.filter((rate) => rate.status === "active" && (!rate.validTo || rate.validTo >= new Date().toISOString().slice(0, 10))).map((rate) => {
-    const reasons: string[] = []; let score = 25
-    if (mode.includes(rate.mode) || (mode === "sea" && ["lcl", "fcl"].includes(rate.mode))) { score += 25; reasons.push("mode") }
-    if (origin.includes(rate.origin.toLowerCase()) || rate.origin.toLowerCase().includes(origin.split(" · ")[0])) { score += 20; reasons.push("origin") }
-    if (destination.includes(rate.destination.toLowerCase()) || rate.destination.toLowerCase().includes(destination.split(" · ")[0])) { score += 20; reasons.push("destination") }
-    if (!rate.customer || customer.includes(rate.customer.toLowerCase())) { score += 10; reasons.push(rate.customer ? "customer" : "eligible customers") }
-    return { ...rate, matchScore: score, matchReasons: reasons }
-  }).filter((rate) => rate.matchScore >= 60).sort((left, right) => right.matchScore - left.matchScore)
-  return { quote: { id: quote.CusQuoteHeader_ID, reference: quote.Quote_Reference, customer: quote.Customer_Name, origin: quote.Origin, destination: quote.Destination, mode: quote.Transport_Mode, equipment: quote.Equipment_Load, currency: quote.Currency }, options, seaRates: state.integrations.seaRates }
+  const candidates = await admin.rpc("multideck_rates_quote_candidates", {
+    p_company_id: actor.Company_ID,
+    p_mode: String(quote.Transport_Mode ?? ""),
+    p_origin: String(quote.Origin ?? ""),
+    p_destination: String(quote.Destination ?? ""),
+    p_customer: String(quote.Customer_Name ?? ""),
+    p_limit: 100,
+  })
+  if (candidates.error) throw new HttpError(500, candidates.error.message)
+  const options = (Array.isArray(candidates.data) ? candidates.data : []).map((value) => {
+    const pair = (value ?? {}) as Json
+    return {
+      ...ratePair(pair),
+      matchScore: number(pair.matchScore),
+      matchReasons: Array.isArray(pair.matchReasons) ? pair.matchReasons.map((reason) => String(reason)) : [],
+    }
+  })
+  return {
+    quote: { id: quote.CusQuoteHeader_ID, reference: quote.Quote_Reference, customer: quote.Customer_Name, origin: quote.Origin, destination: quote.Destination, mode: quote.Transport_Mode, equipment: quote.Equipment_Load, currency: quote.Currency },
+    options,
+    seaRates: { connected: false, reason: "SeaRates API credentials and a validated response contract are not configured." },
+  }
 }
 
 async function applyToQuote(admin: ReturnType<typeof adminClient>, actor: Actor, quoteId: string, rateId: string) {
@@ -273,6 +340,8 @@ Deno.serve(async (request) => {
     const permissions = await permissionValues(admin, actor.User_ID); const parts = routeParts(request, "rates-api"); const method = request.method.toUpperCase()
     if (!permissions.includes("Rates.View") && !permissions.includes("Rates.Manage")) throw new HttpError(403, "You do not have permission to view rates.")
     if (method === "GET" && parts[0] === "workspace") return json(request, await workspace(admin, actor, permissions))
+    if (method === "GET" && parts[0] === "records" && parts.length === 1) return json(request, await recordsPage(admin, actor, request))
+    if (method === "GET" && parts[0] === "records" && parts[1] && parts.length === 2) return json(request, await recordDetails(admin, actor, parts[1]))
     if (method === "POST" && parts[0] === "records" && parts.length === 1) { await requirePermission(admin, actor.User_ID, "Rates.Manage"); return json(request, { rate: await save(admin, actor, await body<Json>(request)) }, 201) }
     if (method === "PATCH" && parts[0] === "records" && parts[1]) { await requirePermission(admin, actor.User_ID, "Rates.Manage"); return json(request, { rate: await save(admin, actor, await body<Json>(request), parts[1]) }) }
     if (method === "POST" && parts[0] === "records" && parts[1] && parts[2] === "expire") { await requirePermission(admin, actor.User_ID, "Rates.Manage"); return json(request, { rate: await expire(admin, actor, parts[1]) }) }

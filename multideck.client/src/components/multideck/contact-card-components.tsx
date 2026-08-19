@@ -9,13 +9,14 @@ import { StatusPill } from "@/components/multideck/status-pill"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion } from "@/lib/motion"
-import { readableInk } from "@/lib/color"
-import { encodeQr, qrPngDataUrl, qrRender, qrSvgDocument, QR_QUIET_ZONE, type EccLevel, type QrStyle } from "@/lib/qr-code"
+import { contrastRatio, parseHex, readableInk } from "@/lib/color"
+import { encodeQr, qrPngDataUrl, qrRender, qrSvgDocument, type EccLevel, type QrStyle } from "@/lib/qr-code"
 import {
   cardPublicPath,
   cardPublicUrl,
   downloadDataUrl,
   downloadFile,
+  retryCardSave,
   useContactCardStore,
   type SaveStatus,
 } from "@/lib/contact-card-store"
@@ -90,20 +91,31 @@ export function AutomationHealthChip({ automation }: { automation: CardAutomatio
 /** Share of the symbol width cleared for a logo. Safe at level H. */
 export const QR_LOGO_AREA = 0.24
 
+const QR_LOGO_AREAS = { small: 0.16, medium: QR_LOGO_AREA, large: 0.3 } as const
+
+/** QR readers need a strong dark/light separation; low-contrast choices fall back safely. */
+export function qrContrastRatio(dark: string, light: string) {
+  const darkRgb = parseHex(dark)
+  const lightRgb = parseHex(light)
+  return darkRgb && lightRgb ? contrastRatio(darkRgb, lightRgb) : 21
+}
+
 /** Style and error-correction level are decided together: a logo needs level H. */
 export function qrStyleForCard(branding: CardBranding): QrStyle {
+  const safeColours = qrContrastRatio(branding.qrDark, branding.qrLight) >= 3
   return {
     moduleStyle: branding.qrModuleStyle,
     eyeStyle: branding.qrEyeStyle,
-    dark: branding.qrDark,
-    light: branding.qrLight,
-    logoArea: branding.logoInQr && branding.logoDataUrl ? QR_LOGO_AREA : 0,
+    dark: safeColours ? branding.qrDark : "#0b1413",
+    light: safeColours ? branding.qrLight : "#ffffff",
+    quietZone: branding.qrQuietZone ?? 4,
+    logoArea: branding.logoInQr && branding.logoDataUrl ? QR_LOGO_AREAS[branding.qrLogoSize ?? "medium"] : 0,
   }
 }
 
 export function useQrCode(value: string, branding: CardBranding) {
   const style = useMemo(() => qrStyleForCard(branding), [branding])
-  const level: EccLevel = style.logoArea > 0 ? "H" : "M"
+  const level: EccLevel = style.logoArea > 0 ? "H" : branding.qrErrorCorrection ?? "M"
   const matrix = useMemo(() => encodeQr(value, level), [level, value])
   const render = useMemo(() => (matrix ? qrRender(matrix, style) : null), [matrix, style])
 
@@ -149,7 +161,7 @@ export function QrCodeImage({
       className={cn("aspect-square h-auto w-full", className)}
     >
       <rect width={render.extent} height={render.extent} fill={style.light} />
-      <g transform={`translate(${QR_QUIET_ZONE} ${QR_QUIET_ZONE})`}>
+      <g transform={`translate(${render.quietZone} ${render.quietZone})`}>
         <path d={render.modulesPath} fill={style.dark} />
         <path d={render.eyeRing} fill={style.dark} fillRule="evenodd" />
         <path d={render.eyeCore} fill={style.dark} />
@@ -311,7 +323,7 @@ export function cardInitials(card: ContactCard) {
 /** The card person's photo, falling back to the card logo and then initials. */
 export function CardPersonBadge({ card, size = "md", profilePhotoUrl }: { card: ContactCard; size?: "sm" | "md" | "lg"; profilePhotoUrl?: string | null }) {
   const dimension = size === "sm" ? "size-8 text-[12px]" : size === "lg" ? "size-14 text-[18px]" : "size-11 text-[15px]"
-  const personPhoto = card.person.profileImageDataUrl || profilePhotoUrl
+  const personPhoto = profilePhotoUrl || card.person.profileImageDataUrl
 
   if (personPhoto) {
     return (
@@ -507,7 +519,15 @@ export function SaveIndicator({ cardId, className }: { cardId: string; className
             transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.smooth)}
           >
             {active === "saved" ? <Check className="size-3.5" strokeWidth={1.8} /> : null}
-            {t(SAVE_LABEL[active])}
+            {active === "error" ? (
+              <button
+                type="button"
+                className="rounded-[var(--md-radius-xs)] font-medium underline decoration-current/35 underline-offset-2 outline-none hover:decoration-current focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)]"
+                onClick={() => void retryCardSave(cardId).catch(() => undefined)}
+              >
+                {t("Not saved — try again")}
+              </button>
+            ) : t(SAVE_LABEL[active])}
           </motion.span>
         )}
       </AnimatePresence>

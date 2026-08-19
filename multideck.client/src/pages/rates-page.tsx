@@ -15,7 +15,9 @@ import { parseRateImport, type RateImportPreview } from "@/lib/rate-import-parse
 import {
   applyRateToQuote,
   expireRate,
+  getRateDetails,
   getRateOptions,
+  getRatesPage,
   getRatesWorkspace,
   saveRate,
   stageRateImport,
@@ -24,6 +26,8 @@ import {
   type RateRecord,
   type RateRecordInput,
   type RateRecordType,
+  type RateDetails,
+  type RateExpiryCounts,
   type RatesWorkspace,
 } from "@/lib/rates-api"
 import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
@@ -32,13 +36,16 @@ import { cn } from "@/lib/utils"
 type RatesRoute = "/rates" | "/rates/contracts" | "/rates/tariffs" | "/rates/imports" | "/rates/results"
 type ModeFilter = "all" | RateMode
 type TariffFilter = "all" | "cost_tariff" | "sales_tariff"
+type RateImportPreviewRow = { id: string; values: string[] }
 
 const modes: ModeFilter[] = ["all", "lcl", "fcl", "air", "road"]
 const fieldClass = "h-10 rounded-[var(--md-radius-md)] text-base sm:text-[13px]"
 const emptyWorkspace: RatesWorkspace = {
-  rates: [], versions: [], audit: [], imports: [], quotes: [], permissions: { canManage: false },
+  summary: { total: 0, attention: 0, active: 0, drafts: 0, costTariffs: 0, salesTariffs: 0, customerSpecific: 0, expiringTariffs: 0, sourcesInReview: 0 },
+  attention: [], recent: [], imports: [], quotes: [], permissions: { canManage: false },
   integrations: { seaRates: { connected: false, reason: "SeaRates is not connected." } },
 }
+const emptyExpiryCounts: RateExpiryCounts = { expired: 0, sevenDays: 0, thirtyDays: 0, activeCurrent: 0 }
 
 function Alert({ children, variant = "default", className }: { children: ReactNode; variant?: "default" | "destructive"; className?: string }) {
   return <div role={variant === "destructive" ? "alert" : "status"} className={cn("grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-4 text-[13px] shadow-[var(--md-shadow-line)] [&>svg]:mt-0.5 [&>svg]:size-4", variant === "destructive" && "text-[var(--md-red)]", className)}>{children}</div>
@@ -104,13 +111,13 @@ function Field({ label, children, hint, className }: { label: string; children: 
   return <label className={cn("grid content-start gap-1.5", className)}><span className="text-[12px] font-medium">{label}</span>{children}{hint ? <span className="text-[11.5px] leading-4 text-[var(--md-subtle)]">{hint}</span> : null}</label>
 }
 
-function ExpiryRail({ rates, onFilter }: { rates: RateRecord[]; onFilter: (filter: string) => void }) {
+function ExpiryRail({ counts, onFilter }: { counts: RateExpiryCounts; onFilter: (filter: string) => void }) {
   const { t } = useLanguage()
   const items = [
-    { key: "expired", label: t("Expired"), count: rates.filter((rate) => rate.status === "expired" || daysUntil(rate.validTo) < 0).length, tone: "red" as const },
-    { key: "7", label: t("Expires in 7 days"), count: rates.filter((rate) => daysUntil(rate.validTo) >= 0 && daysUntil(rate.validTo) <= 7).length, tone: "amber" as const },
-    { key: "30", label: t("Expires in 30 days"), count: rates.filter((rate) => daysUntil(rate.validTo) > 7 && daysUntil(rate.validTo) <= 30).length, tone: "amber" as const },
-    { key: "active", label: t("Active and current"), count: rates.filter((rate) => rate.status === "active" && daysUntil(rate.validTo) > 30).length, tone: "green" as const },
+    { key: "expired", label: t("Expired"), count: counts.expired, tone: "red" as const },
+    { key: "7", label: t("Expires in 7 days"), count: counts.sevenDays, tone: "amber" as const },
+    { key: "30", label: t("Expires in 30 days"), count: counts.thirtyDays, tone: "amber" as const },
+    { key: "active", label: t("Active and current"), count: counts.activeCurrent, tone: "green" as const },
   ]
   return <div className="grid overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] sm:grid-cols-2 xl:grid-cols-4">
     {items.map((item, index) => <button key={item.key} type="button" onClick={() => onFilter(item.key)} className={cn("flex min-h-20 items-center justify-between gap-4 px-5 text-start outline-none transition-[background,color,transform] duration-200 hover:bg-[var(--md-surface-tint)] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a24)]", index > 0 && "border-t border-[var(--md-line)] sm:border-s xl:border-t-0")}>
@@ -218,6 +225,19 @@ function RateEditor({ open, onOpenChange, initial, importId, onSaved }: { open: 
 function ImportWorkspace({ workspace, refresh, openEditor }: { workspace: RatesWorkspace; refresh: () => Promise<void>; openEditor: (suggested: Partial<RateRecordInput>, importId: string) => void }) {
   const { t } = useLanguage(); const inputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null); const [preview, setPreview] = useState<RateImportPreview | null>(null); const [busy, setBusy] = useState(false); const [error, setError] = useState("")
+  const previewRows = useMemo<RateImportPreviewRow[]>(() => (preview?.rows.slice(0, 8) ?? []).map((values, index) => ({ id: `preview-row-${index + 1}`, values })), [preview])
+  const previewColumns = useMemo<DataTableColumn<RateImportPreviewRow>[]>(() => {
+    const columnCount = Math.min(8, Math.max(0, ...previewRows.map((row) => row.values.length)))
+    return Array.from({ length: columnCount }, (_, index) => ({
+      id: `column-${index + 1}`,
+      label: `${t("Column")} ${index + 1}`,
+      kind: "text" as const,
+      width: 140,
+      minWidth: 112,
+      exportValue: (row: RateImportPreviewRow) => row.values[index] ?? "",
+      cell: (row: RateImportPreviewRow) => <span dir="auto">{row.values[index] || "—"}</span>,
+    }))
+  }, [previewRows, t])
   async function choose(event: ChangeEvent<HTMLInputElement>) { const selected = event.target.files?.[0]; if (!selected) return; setBusy(true); setError(""); setFile(selected); try { setPreview(await parseRateImport(selected)) } catch (caught) { setError(caught instanceof Error ? caught.message : "This file could not be read.") } finally { setBusy(false); event.target.value = "" } }
   async function archiveAndReview() { if (!file || !preview) return; setBusy(true); try { const response = await stageRateImport(file, preview); openEditor(preview.suggested, response.importBatch.id); await refresh() } catch (caught) { setError(caught instanceof Error ? caught.message : "The source file could not be archived.") } finally { setBusy(false) } }
   return <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -226,7 +246,7 @@ function ImportWorkspace({ workspace, refresh, openEditor }: { workspace: RatesW
       <button type="button" onClick={() => inputRef.current?.click()} className="mt-5 flex min-h-44 w-full flex-col items-center justify-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-6 text-center shadow-[inset_0_0_0_1px_var(--md-line)] outline-none transition-[background,box-shadow,transform] duration-200 hover:bg-[var(--md-selected-bg)] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]"><FileSpreadsheet className="size-6" /><span className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{busy ? t("Reading source…") : t("Choose a rate source")}</span><span className="mt-1 text-[12px] text-[var(--md-subtle)]">CSV, XLSX, PDF, EML, TXT · {t("up to 15 MB")}</span></button>
       <input ref={inputRef} type="file" className="sr-only" accept=".csv,.tsv,.xlsx,.pdf,.eml,.txt,text/csv,application/pdf" onChange={(event) => void choose(event)} />
       {error ? <Alert variant="destructive" className="mt-4"><AlertCircle /><AlertTitle>{t("Import needs attention")}</AlertTitle><AlertDescription>{t(error)}</AlertDescription></Alert> : null}
-      {preview ? <div className="mt-5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-raised)] p-4 shadow-[var(--md-shadow-line)]"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{preview.fileName}</p><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{preview.rows.length} {t("rows ready to check")}</p></div><Button onClick={() => void archiveAndReview()} disabled={busy}>{t("Review as rate")}</Button></div><div className="mt-4 max-h-64 overflow-auto rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] p-3"><table className="w-full text-start text-[12px]"><tbody>{preview.rows.slice(0, 8).map((row, index) => <tr key={index} className="border-b border-[var(--md-line)] last:border-0">{row.slice(0, 8).map((cell, cellIndex) => <td key={cellIndex} className="min-w-28 px-2 py-2" dir="auto">{cell || "—"}</td>)}</tr>)}</tbody></table></div></div> : null}
+      {preview ? <div className="mt-5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-raised)] p-4 shadow-[var(--md-shadow-line)]"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{preview.fileName}</p><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{preview.rows.length} {t("rows ready to check")}</p></div><Button onClick={() => void archiveAndReview()} disabled={busy}>{t("Review as rate")}</Button></div><div className="mt-4 max-h-64 overflow-auto rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] p-3"><DataTable ariaLabel="Rate source preview" columns={previewColumns} rows={previewRows} getRowKey={(row) => row.id} showToolbar={false} showColumnManager={false} minimumWidth={Math.max(560, previewColumns.length * 140)} exportConfig={{ fileName: `${preview.fileName}-preview`, recordCategory: "Source row" }} className="[&_[data-table-surface]]:rounded-[var(--md-radius-sm)] [&_[data-table-surface]]:shadow-none" tableClassName="text-[12px]" /></div></div> : null}
     </section>
     <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Source history")}</h2><div className="mt-4 grid gap-3">{workspace.imports.length ? workspace.imports.map((item) => <div key={item.id} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-[12.5px] font-medium" dir="auto">{item.fileName}</p><StatusPill tone={item.errorCount ? "red" : item.status === "review" ? "amber" : "green"}>{item.status}</StatusPill></div><p className="mt-2 text-[11.5px] text-[var(--md-subtle)]">{item.rowCount} rows · {new Date(item.createdAt).toLocaleDateString()}</p></div>) : <p className="text-[13px] leading-5 text-[var(--md-subtle)]">{t("No source files have been archived yet.")}</p>}</div></section>
   </div>
@@ -250,17 +270,32 @@ export function RatesPage({ route, navigate }: { route: RatesRoute; navigate: (p
   const [workspace, setWorkspace] = useState(emptyWorkspace)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  const [tableRows, setTableRows] = useState<RateRecord[]>([])
+  const [tableTotal, setTableTotal] = useState(0)
+  const [expiryCounts, setExpiryCounts] = useState(emptyExpiryCounts)
+  const [tableLoading, setTableLoading] = useState(false)
+  const [tableError, setTableError] = useState("")
+  const [offset, setOffset] = useState(0)
+  const [serverSort, setServerSort] = useState<{ id: string; direction: "asc" | "desc" } | null>({ id: "name", direction: "asc" })
+  const [dataRevision, setDataRevision] = useState(0)
   const [mode, setMode] = useState<ModeFilter>("all")
   const [tariffFilter, setTariffFilter] = useState<TariffFilter>("all")
   const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "")
+  const [debouncedQuery, setDebouncedQuery] = useState(query)
   const [expiryFilter, setExpiryFilter] = useState("")
   const [selected, setSelected] = useState<RateRecord | null>(null)
+  const [selectedDetails, setSelectedDetails] = useState<RateDetails | null>(null)
+  const [detailsLoading, setDetailsLoading] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorInitial, setEditorInitial] = useState<RateRecord | Partial<RateRecordInput> | null>(null)
   const [editorImportId, setEditorImportId] = useState<string | undefined>()
   const [expiring, setExpiring] = useState(false)
   const refresh = useCallback(async () => { setLoading(true); setError(""); try { setWorkspace(await getRatesWorkspace()) } catch (caught) { setError(caught instanceof Error ? caught.message : "Rates could not be loaded.") } finally { setLoading(false) } }, [])
   useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedQuery(query), 250)
+    return () => window.clearTimeout(timeout)
+  }, [query])
   const openNew = useCallback(() => {
     setEditorInitial(route === "/rates/contracts" ? { type: "contract" } : route === "/rates/tariffs" ? { type: "cost_tariff" } : null)
     setEditorImportId(undefined)
@@ -273,22 +308,50 @@ export function RatesPage({ route, navigate }: { route: RatesRoute; navigate: (p
     setTariffFilter("all")
     setExpiryFilter("")
     setSelected(null)
+    setSelectedDetails(null)
+    setOffset(0)
   }, [route])
-
-  const contractRates = useMemo(() => workspace.rates.filter((rate) => rate.type === "contract"), [workspace.rates])
-  const tariffRates = useMemo(() => workspace.rates.filter((rate) => rate.type !== "contract"), [workspace.rates])
-  const routeRates = useMemo(() => workspace.rates.filter((rate) => route === "/rates/contracts" ? rate.type === "contract" : route === "/rates/tariffs" ? rate.type !== "contract" : true), [route, workspace.rates])
-  const visibleRates = useMemo(() => routeRates.filter((rate) => {
-    if (mode !== "all" && rate.mode !== mode) return false
-    if (route === "/rates/tariffs" && tariffFilter !== "all" && rate.type !== tariffFilter) return false
-    const days = daysUntil(rate.validTo)
-    if (expiryFilter === "expired" && !(rate.status === "expired" || days < 0)) return false
-    if (expiryFilter === "7" && !(days >= 0 && days <= 7)) return false
-    if (expiryFilter === "30" && !(days > 7 && days <= 30)) return false
-    if (expiryFilter === "active" && !(rate.status === "active" && days > 30)) return false
-    const search = `${rate.code} ${rate.name} ${rate.carrier} ${rate.supplier} ${rate.customer} ${rate.origin} ${rate.destination} ${rate.cargo}`.toLowerCase()
-    return search.includes(query.trim().toLowerCase())
-  }), [expiryFilter, mode, query, route, routeRates, tariffFilter])
+  useEffect(() => setOffset(0), [debouncedQuery, expiryFilter, mode, serverSort, tariffFilter])
+  useEffect(() => {
+    if (route !== "/rates/contracts" && route !== "/rates/tariffs") return undefined
+    const controller = new AbortController()
+    setTableLoading(true)
+    setTableError("")
+    void getRatesPage({
+      scope: route === "/rates/contracts" ? "contracts" : "tariffs",
+      search: debouncedQuery,
+      mode: mode === "all" ? undefined : mode,
+      tariffType: route === "/rates/tariffs" && tariffFilter !== "all" ? tariffFilter : undefined,
+      expiry: expiryFilter ? expiryFilter as "expired" | "7" | "30" | "active" : undefined,
+      sort: serverSort,
+      limit: 20,
+      offset,
+    }, controller.signal).then((page) => {
+      setTableRows(page.rows)
+      setTableTotal(page.total)
+      setExpiryCounts(page.expiryCounts)
+    }).catch((caught) => {
+      if (caught instanceof Error && caught.name === "AbortError") return
+      setTableError(caught instanceof Error ? caught.message : "Rates could not be loaded.")
+    }).finally(() => {
+      if (!controller.signal.aborted) setTableLoading(false)
+    })
+    return () => controller.abort()
+  }, [dataRevision, debouncedQuery, expiryFilter, mode, offset, route, serverSort, tariffFilter])
+  useEffect(() => {
+    if (!selected) { setSelectedDetails(null); return undefined }
+    const controller = new AbortController()
+    setDetailsLoading(true)
+    void getRateDetails(selected.id, controller.signal).then((details) => {
+      setSelected(details.rate)
+      setSelectedDetails(details)
+    }).catch((caught) => {
+      if (!(caught instanceof Error && caught.name === "AbortError")) toast.error(t("Rate details could not be loaded"), { description: caught instanceof Error ? caught.message : undefined })
+    }).finally(() => {
+      if (!controller.signal.aborted) setDetailsLoading(false)
+    })
+    return () => controller.abort()
+  }, [selected?.id, t])
 
   const contractColumns = useMemo<DataTableColumn<RateRecord>[]>(() => [
     { id: "name", label: t("Agreement"), kind: "identity", width: 250, canHide: false, sortValue: (rate) => rate.name, cell: (rate) => <div><p className="font-medium text-[var(--md-ink)]">{rate.name}</p><p className="mt-0.5 text-[11.5px] text-[var(--md-subtle)]" dir="ltr">{rate.code}</p></div> },
@@ -314,17 +377,17 @@ export function RatesPage({ route, navigate }: { route: RatesRoute; navigate: (p
     { id: "status", label: t("Status"), kind: "status", width: 120, sortValue: (rate) => rate.status, cell: (rate) => <StatusPill tone={statusTone(rate)}>{daysUntil(rate.validTo) < 0 ? t("Expired") : daysUntil(rate.validTo) <= 30 ? t("Expiring") : t(rate.status[0].toUpperCase() + rate.status.slice(1))}</StatusPill> },
   ], [t])
 
-  const attentionRates = useMemo(() => workspace.rates.filter((rate) => rate.status === "draft" || rate.status === "expired" || daysUntil(rate.validTo) <= 30), [workspace.rates])
-  const recentRates = useMemo(() => [...workspace.rates].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()).slice(0, 5), [workspace.rates])
-  async function doExpire() { if (!selected) return; setExpiring(true); try { const response = await expireRate(selected.id); setWorkspace((current) => ({ ...current, rates: current.rates.map((rate) => rate.id === response.rate.id ? response.rate : rate) })); setSelected(response.rate); toast.success(t("Rate expired")) } catch (caught) { toast.error(t("The rate could not be expired"), { description: caught instanceof Error ? caught.message : undefined }) } finally { setExpiring(false) } }
+  const attentionRates = workspace.attention
+  const recentRates = workspace.recent
+  async function doExpire() { if (!selected) return; setExpiring(true); try { const response = await expireRate(selected.id); setSelected(response.rate); setSelectedDetails((current) => current ? { ...current, rate: response.rate } : current); await refresh(); setDataRevision((current) => current + 1); toast.success(t("Rate expired")) } catch (caught) { toast.error(t("The rate could not be expired"), { description: caught instanceof Error ? caught.message : undefined }) } finally { setExpiring(false) } }
 
   const workspaceError = error ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{t("Rates could not be loaded")}</AlertTitle><AlertDescription>{t(error)} <button className="font-medium underline" onClick={() => void refresh()}>{t("Try again")}</button></AlertDescription></Alert> : null
   const workspaceOverlays = <>
-    <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}><SheetContent side="right" className="w-full overflow-y-auto sm:max-w-[520px]"><SheetHeader><SheetTitle>{selected?.name}</SheetTitle><SheetDescription>{selected ? `${selected.code} · ${t(typeLabel(selected.type))} · v${selected.versionNo}` : ""}</SheetDescription></SheetHeader>{selected ? <div className="grid gap-5 px-4 pb-6"><div className="flex flex-wrap gap-2"><StatusPill tone={statusTone(selected)}>{t(selected.status)}</StatusPill><StatusPill kind="attribute" tone="teal">{selected.mode.toUpperCase()}</StatusPill><StatusPill kind="attribute" tone="blue">{t(selected.schedule === "ad_hoc" ? "Ad hoc" : selected.schedule === "weekly" ? "Weekly" : "Monthly")}</StatusPill></div><div className="grid grid-cols-2 gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-4"><div><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Cost")}</p><p className="mt-1 text-[15px] tabular-nums">{money(selected.buyTotal, selected.currency)}</p></div><div><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Sell / margin")}</p><p className="mt-1 text-[15px] tabular-nums">{money(selected.sellTotal, selected.currency)} · {selected.marginPercent?.toFixed(1) ?? "—"}%</p></div></div><dl className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-3 text-[13px]"><dt className="text-[var(--md-subtle)]">{t("Route")}</dt><dd dir="auto">{selected.origin} → {selected.destination}</dd><dt className="text-[var(--md-subtle)]">{t("Carrier")}</dt><dd>{selected.carrier || "—"}</dd><dt className="text-[var(--md-subtle)]">{t("Supplier")}</dt><dd>{selected.supplier || "—"}</dd><dt className="text-[var(--md-subtle)]">{t("Eligibility")}</dt><dd>{selected.customer || t("All eligible customers")} · {selected.cargo}</dd><dt className="text-[var(--md-subtle)]">{t("Validity")}</dt><dd dir="ltr">{selected.validFrom} → {selected.validTo}</dd><dt className="text-[var(--md-subtle)]">{t("Source")}</dt><dd>{selected.sourceReference || selected.sourceType}</dd></dl><div><h3 className="flex items-center gap-2 text-[13px] font-medium"><History className="size-4" />{t("Version and audit history")}</h3><div className="mt-3 grid gap-2">{workspace.versions.filter((version) => version.rateId === selected.id).map((version) => <div key={version.id} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 text-[12px]"><div className="flex justify-between gap-3"><span className="font-medium">v{version.versionNo} · {version.status}</span><span className="text-[var(--md-subtle)]">{new Date(version.createdAt).toLocaleDateString()}</span></div><p className="mt-1 text-[var(--md-subtle)]">{version.changeReason || t("Version saved")}</p></div>)}</div></div>{workspace.permissions.canManage ? <div className="flex flex-wrap gap-2"><Button onClick={() => { setEditorInitial(selected); setEditorImportId(undefined); setEditorOpen(true) }}><Pencil />{t("Create new version")}</Button><Button variant="ghost" onClick={() => void doExpire()} disabled={expiring || selected.status === "expired"}><Clock />{expiring ? t("Expiring…") : t("Expire rate")}</Button></div> : null}</div> : null}</SheetContent></Sheet>
-    <RateEditor open={editorOpen} onOpenChange={setEditorOpen} initial={editorInitial} importId={editorImportId} onSaved={(rate) => { setWorkspace((current) => ({ ...current, rates: [rate, ...current.rates.filter((item) => item.id !== rate.id)] })); setSelected(rate); void refresh() }} />
+    <Sheet open={Boolean(selected)} onOpenChange={(open) => { if (!open) { setSelected(null); setSelectedDetails(null) } }}><SheetContent side="right" className="w-full overflow-y-auto sm:max-w-[520px]"><SheetHeader><SheetTitle>{selected?.name}</SheetTitle><SheetDescription>{selected ? `${selected.code} · ${t(typeLabel(selected.type))} · v${selected.versionNo}` : ""}</SheetDescription></SheetHeader>{selected ? <div className="grid gap-5 px-4 pb-6"><div className="flex flex-wrap gap-2"><StatusPill tone={statusTone(selected)}>{t(selected.status)}</StatusPill><StatusPill kind="attribute" tone="teal">{selected.mode.toUpperCase()}</StatusPill><StatusPill kind="attribute" tone="blue">{t(selected.schedule === "ad_hoc" ? "Ad hoc" : selected.schedule === "weekly" ? "Weekly" : "Monthly")}</StatusPill></div><div className="grid grid-cols-2 gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-4"><div><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Cost")}</p><p className="mt-1 text-[15px] tabular-nums">{money(selected.buyTotal, selected.currency)}</p></div><div><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Sell / margin")}</p><p className="mt-1 text-[15px] tabular-nums">{money(selected.sellTotal, selected.currency)} · {selected.marginPercent?.toFixed(1) ?? "—"}%</p></div></div><dl className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-3 text-[13px]"><dt className="text-[var(--md-subtle)]">{t("Route")}</dt><dd dir="auto">{selected.origin} → {selected.destination}</dd><dt className="text-[var(--md-subtle)]">{t("Carrier")}</dt><dd>{selected.carrier || "—"}</dd><dt className="text-[var(--md-subtle)]">{t("Supplier")}</dt><dd>{selected.supplier || "—"}</dd><dt className="text-[var(--md-subtle)]">{t("Eligibility")}</dt><dd>{selected.customer || t("All eligible customers")} · {selected.cargo}</dd><dt className="text-[var(--md-subtle)]">{t("Validity")}</dt><dd dir="ltr">{selected.validFrom} → {selected.validTo}</dd><dt className="text-[var(--md-subtle)]">{t("Source")}</dt><dd>{selected.sourceReference || selected.sourceType}</dd></dl><div><h3 className="flex items-center gap-2 text-[13px] font-medium"><History className="size-4" />{t("Version and audit history")}</h3><div className="mt-3 grid gap-2">{detailsLoading ? <p className="text-[12px] text-[var(--md-subtle)]">{t("Loading history…")}</p> : selectedDetails?.versions.length ? selectedDetails.versions.map((version) => <div key={version.id} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 text-[12px]"><div className="flex justify-between gap-3"><span className="font-medium">v{version.versionNo} · {version.status}</span><span className="text-[var(--md-subtle)]">{new Date(version.createdAt).toLocaleDateString()}</span></div><p className="mt-1 text-[var(--md-subtle)]">{version.changeReason || t("Version saved")}</p></div>) : <p className="text-[12px] text-[var(--md-subtle)]">{t("No earlier versions")}</p>}</div></div>{workspace.permissions.canManage ? <div className="flex flex-wrap gap-2"><Button onClick={() => { setEditorInitial(selected); setEditorImportId(undefined); setEditorOpen(true) }}><Pencil />{t("Create new version")}</Button><Button variant="ghost" onClick={() => void doExpire()} disabled={expiring || selected.status === "expired"}><Clock />{expiring ? t("Expiring…") : t("Expire rate")}</Button></div> : null}</div> : null}</SheetContent></Sheet>
+    <RateEditor open={editorOpen} onOpenChange={setEditorOpen} initial={editorInitial} importId={editorImportId} onSaved={(rate) => { setSelected(rate); setDataRevision((current) => current + 1); void refresh() }} />
   </>
 
-  if (route === "/rates/imports") return <main className="grid gap-5"><div><h1 className="text-[24px] font-medium tracking-[-0.02em] text-[var(--md-ink)]">{t("Rate imports")}</h1><p className="mt-1 text-[13px] text-[var(--md-subtle)]">{t("Extract, check and archive the original commercial source before publishing a rate.")}</p></div><ImportWorkspace workspace={workspace} refresh={refresh} openEditor={(suggested, importId) => { setEditorInitial(suggested); setEditorImportId(importId); setEditorOpen(true) }} /><RateEditor open={editorOpen} onOpenChange={setEditorOpen} initial={editorInitial} importId={editorImportId} onSaved={(rate) => setWorkspace((current) => ({ ...current, rates: [rate, ...current.rates] }))} /></main>
+  if (route === "/rates/imports") return <main className="grid gap-5"><div><h1 className="text-[24px] font-medium tracking-[-0.02em] text-[var(--md-ink)]">{t("Rate imports")}</h1><p className="mt-1 text-[13px] text-[var(--md-subtle)]">{t("Extract, check and archive the original commercial source before publishing a rate.")}</p></div><ImportWorkspace workspace={workspace} refresh={refresh} openEditor={(suggested, importId) => { setEditorInitial(suggested); setEditorImportId(importId); setEditorOpen(true) }} /><RateEditor open={editorOpen} onOpenChange={setEditorOpen} initial={editorInitial} importId={editorImportId} onSaved={() => { setDataRevision((current) => current + 1); void refresh() }} /></main>
   if (route === "/rates/results") return <main className="grid gap-5"><div><h1 className="text-[24px] font-medium tracking-[-0.02em] text-[var(--md-ink)]">{t("Quote rate matching")}</h1><p className="mt-1 text-[13px] text-[var(--md-subtle)]">{t("Compare eligible contract and tariff rates, then apply a fixed snapshot to the quote.")}</p></div>{loading ? <p className="text-[13px] text-[var(--md-subtle)]">{t("Loading quote requirements…")}</p> : <QuoteMatching workspace={workspace} navigate={navigate} />}</main>
 
   if (route === "/rates") return <main className="grid gap-5">
@@ -332,13 +395,13 @@ export function RatesPage({ route, navigate }: { route: RatesRoute; navigate: (p
     {workspaceError}
     <section aria-label={t("Rate management summary")} className="grid overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] sm:grid-cols-2 xl:grid-cols-4">
       {[
-        [t("Needs review"), attentionRates.length],
-        [t("Active rates"), workspace.rates.filter((rate) => rate.status === "active" && daysUntil(rate.validTo) >= 0).length],
-        [t("Drafts"), workspace.rates.filter((rate) => rate.status === "draft").length],
-        [t("Sources in review"), workspace.imports.filter((item) => item.status === "review").length],
+        [t("Needs review"), workspace.summary.attention],
+        [t("Active rates"), workspace.summary.active],
+        [t("Drafts"), workspace.summary.drafts],
+        [t("Sources in review"), workspace.summary.sourcesInReview],
       ].map(([label, value], index) => <div key={String(label)} className={cn("min-h-24 px-5 py-4", index > 0 && "border-t border-[var(--md-line)] sm:border-s xl:border-t-0")}><p className="text-[12px] text-[var(--md-subtle)]">{label}</p><p className="mt-2 text-[24px] font-medium tabular-nums text-[var(--md-ink)]">{value}</p></div>)}
     </section>
-    {!loading && !workspace.rates.length ? <section className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] lg:grid lg:grid-cols-[minmax(260px,0.72fr)_minmax(0,1.28fr)]">
+    {!loading && !workspace.summary.total ? <section className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] lg:grid lg:grid-cols-[minmax(260px,0.72fr)_minmax(0,1.28fr)]">
       <div className="border-b border-[var(--md-line)] p-6 lg:border-b-0 lg:border-e"><span className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)]"><FileSpreadsheet className="size-5" /></span><h2 className="mt-4 text-[18px] font-medium text-[var(--md-ink)]">{t("Build your rate library")}</h2><p className="mt-2 max-w-md text-[13px] leading-5 text-[var(--md-subtle)]">{t("Import or add commercial rates, review the evidence, then make approved pricing available to quotes.")}</p></div>
       <ol className="divide-y divide-[var(--md-line)]">
         <li className="grid gap-3 p-5 sm:grid-cols-[32px_minmax(0,1fr)_auto] sm:items-center"><span className="grid size-8 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[12px] font-medium">1</span><div><h3 className="text-[13px] font-medium text-[var(--md-ink)]">{t("Bring in the source")}</h3><p className="mt-1 text-[12px] leading-5 text-[var(--md-subtle)]">{t("Import a spreadsheet, PDF, email or text file and keep the original evidence.")}</p></div><Button variant="ghost" onClick={() => navigate("/rates/imports")}><Upload />{t("Import source")}</Button></li>
@@ -354,9 +417,10 @@ export function RatesPage({ route, navigate }: { route: RatesRoute; navigate: (p
 
   if (route === "/rates/contracts") return <main className="grid gap-5">
     <div><h1 className="text-[24px] font-medium tracking-[-0.02em] text-[var(--md-ink)]">{t("Rate contracts")}</h1><p className="mt-1 max-w-3xl text-[13px] leading-5 text-[var(--md-subtle)]">{t("Manage negotiated carrier and supplier agreements, versions and renewal dates.")}</p></div>
-    <ExpiryRail rates={contractRates} onFilter={(filter) => setExpiryFilter((current) => current === filter ? "" : filter)} />
+    <ExpiryRail counts={expiryCounts} onFilter={(filter) => setExpiryFilter((current) => current === filter ? "" : filter)} />
     {workspaceError}
-    <DataTable columns={contractColumns} rows={visibleRates} getRowKey={(rate) => rate.id} storageKey="rates-contracts-register" ariaLabel={t("Rate contracts register")} selectedRowKey={selected?.id} onRowClick={setSelected} toolbarTabs={<SegmentedControl options={modes} value={mode} onChange={setMode} ariaLabel={t("Filter contracts by transport mode")} renderOption={(item) => t(modeLabel(item))} />} toolbarSearch={<div className="relative min-w-[220px]"><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" /><Input className={cn(fieldClass, "ps-9")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Agreement, carrier, route…")} aria-label={t("Search rate contracts")} /></div>} toolbarFilters={expiryFilter ? <Button variant="ghost" onClick={() => setExpiryFilter("")}>{t("Clear expiry filter")}</Button> : null} emptyState={<div className="px-6 py-12 text-center"><p className="text-[14px] font-medium text-[var(--md-ink)]">{loading ? t("Loading contracts…") : t("No rate contracts yet")}</p><p className="mx-auto mt-2 max-w-lg text-[13px] leading-5 text-[var(--md-subtle)]">{loading ? t("Checking agreement versions and renewal dates.") : t("Add a negotiated carrier or supplier agreement to control cost pricing for its lanes.")}</p>{!loading && workspace.permissions.canManage ? <Button className="mt-4" onClick={openNew}><Plus />{t("Add contract")}</Button> : null}</div>} />
+    {tableError ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{t("Rate contracts could not be loaded")}</AlertTitle><AlertDescription>{t(tableError)}</AlertDescription></Alert> : null}
+    <DataTable columns={contractColumns} rows={tableLoading ? [] : tableRows} getRowKey={(rate) => rate.id} storageKey="rates-contracts-register" ariaLabel={t("Rate contracts register")} selectedRowKey={selected?.id} onRowClick={setSelected} serverSorting={{ value: serverSort, onChange: setServerSort }} pagination={{ offset, limit: 20, total: tableTotal, loading: tableLoading, onOffsetChange: setOffset }} toolbarTabs={<SegmentedControl options={modes} value={mode} onChange={setMode} ariaLabel={t("Filter contracts by transport mode")} renderOption={(item) => t(modeLabel(item))} />} toolbarSearch={<div className="relative min-w-[220px]"><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" /><Input className={cn(fieldClass, "ps-9")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Agreement, carrier, route…")} aria-label={t("Search rate contracts")} /></div>} toolbarFilters={expiryFilter ? <Button variant="ghost" onClick={() => setExpiryFilter("")}>{t("Clear expiry filter")}</Button> : null} emptyState={<div className="px-6 py-12 text-center"><p className="text-[14px] font-medium text-[var(--md-ink)]">{tableLoading ? t("Loading contracts…") : t("No rate contracts yet")}</p><p className="mx-auto mt-2 max-w-lg text-[13px] leading-5 text-[var(--md-subtle)]">{tableLoading ? t("Checking agreement versions and renewal dates.") : t("Add a negotiated carrier or supplier agreement to control cost pricing for its lanes.")}</p>{!tableLoading && workspace.permissions.canManage ? <Button className="mt-4" onClick={openNew}><Plus />{t("Add contract")}</Button> : null}</div>} />
     {workspaceOverlays}
   </main>
 
@@ -364,14 +428,15 @@ export function RatesPage({ route, navigate }: { route: RatesRoute; navigate: (p
     <div><h1 className="text-[24px] font-medium tracking-[-0.02em] text-[var(--md-ink)]">{t("Tariffs and charges")}</h1><p className="mt-1 max-w-3xl text-[13px] leading-5 text-[var(--md-subtle)]">{t("Control cost and sales tariffs, customer eligibility, charge cycles and margin.")}</p></div>
     <section aria-label={t("Tariff summary")} className="grid overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] sm:grid-cols-2 xl:grid-cols-4">
       {[
-        [t("Cost tariffs"), tariffRates.filter((rate) => rate.type === "cost_tariff").length],
-        [t("Sales tariffs"), tariffRates.filter((rate) => rate.type === "sales_tariff").length],
-        [t("Customer-specific"), tariffRates.filter((rate) => Boolean(rate.customer)).length],
-        [t("Expiring within 30 days"), tariffRates.filter((rate) => daysUntil(rate.validTo) >= 0 && daysUntil(rate.validTo) <= 30).length],
+        [t("Cost tariffs"), workspace.summary.costTariffs],
+        [t("Sales tariffs"), workspace.summary.salesTariffs],
+        [t("Customer-specific"), workspace.summary.customerSpecific],
+        [t("Expiring within 30 days"), workspace.summary.expiringTariffs],
       ].map(([label, value], index) => <div key={String(label)} className={cn("min-h-24 px-5 py-4", index > 0 && "border-t border-[var(--md-line)] sm:border-s xl:border-t-0")}><p className="text-[12px] text-[var(--md-subtle)]">{label}</p><p className="mt-2 text-[24px] font-medium tabular-nums text-[var(--md-ink)]">{value}</p></div>)}
     </section>
     {workspaceError}
-    <DataTable columns={tariffColumns} rows={visibleRates} getRowKey={(rate) => rate.id} storageKey="rates-tariffs-register" ariaLabel={t("Tariffs and charges register")} selectedRowKey={selected?.id} onRowClick={setSelected} toolbarTabs={<SegmentedControl options={["all", "cost_tariff", "sales_tariff"] as TariffFilter[]} value={tariffFilter} onChange={setTariffFilter} ariaLabel={t("Filter by tariff kind")} renderOption={(item) => t(tariffFilterLabel(item))} />} toolbarSearch={<div className="relative min-w-[220px]"><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" /><Input className={cn(fieldClass, "ps-9")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Tariff, customer, route…")} aria-label={t("Search tariffs and charges")} /></div>} toolbarFilters={<div className="flex items-center gap-2"><Select value={mode} onValueChange={(value: ModeFilter) => setMode(value)}><SelectTrigger className="h-9 w-[130px]" aria-label={t("Filter tariffs by transport mode")}><SelectValue /></SelectTrigger><SelectContent>{modes.map((item) => <SelectItem key={item} value={item}>{t(modeLabel(item))}</SelectItem>)}</SelectContent></Select>{expiryFilter ? <Button variant="ghost" onClick={() => setExpiryFilter("")}>{t("Clear expiry filter")}</Button> : null}</div>} emptyState={<div className="px-6 py-12 text-center"><p className="text-[14px] font-medium text-[var(--md-ink)]">{loading ? t("Loading tariffs…") : t("No tariffs or charges yet")}</p><p className="mx-auto mt-2 max-w-lg text-[13px] leading-5 text-[var(--md-subtle)]">{loading ? t("Checking cost, sell and customer eligibility rules.") : t("Add cost pricing or a customer sales tariff to make this lane eligible for quote matching.")}</p>{!loading && workspace.permissions.canManage ? <Button className="mt-4" onClick={openNew}><Plus />{t("Add tariff")}</Button> : null}</div>} />
+    {tableError ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{t("Tariffs could not be loaded")}</AlertTitle><AlertDescription>{t(tableError)}</AlertDescription></Alert> : null}
+    <DataTable columns={tariffColumns} rows={tableLoading ? [] : tableRows} getRowKey={(rate) => rate.id} storageKey="rates-tariffs-register" ariaLabel={t("Tariffs and charges register")} selectedRowKey={selected?.id} onRowClick={setSelected} serverSorting={{ value: serverSort, onChange: setServerSort }} pagination={{ offset, limit: 20, total: tableTotal, loading: tableLoading, onOffsetChange: setOffset }} toolbarTabs={<SegmentedControl options={["all", "cost_tariff", "sales_tariff"] as TariffFilter[]} value={tariffFilter} onChange={setTariffFilter} ariaLabel={t("Filter by tariff kind")} renderOption={(item) => t(tariffFilterLabel(item))} />} toolbarSearch={<div className="relative min-w-[220px]"><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" /><Input className={cn(fieldClass, "ps-9")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Tariff, customer, route…")} aria-label={t("Search tariffs and charges")} /></div>} toolbarFilters={<div className="flex items-center gap-2"><Select value={mode} onValueChange={(value: ModeFilter) => setMode(value)}><SelectTrigger className="h-9 w-[130px]" aria-label={t("Filter tariffs by transport mode")}><SelectValue /></SelectTrigger><SelectContent>{modes.map((item) => <SelectItem key={item} value={item}>{t(modeLabel(item))}</SelectItem>)}</SelectContent></Select>{expiryFilter ? <Button variant="ghost" onClick={() => setExpiryFilter("")}>{t("Clear expiry filter")}</Button> : null}</div>} emptyState={<div className="px-6 py-12 text-center"><p className="text-[14px] font-medium text-[var(--md-ink)]">{tableLoading ? t("Loading tariffs…") : t("No tariffs or charges yet")}</p><p className="mx-auto mt-2 max-w-lg text-[13px] leading-5 text-[var(--md-subtle)]">{tableLoading ? t("Checking cost, sell and customer eligibility rules.") : t("Add cost pricing or a customer sales tariff to make this lane eligible for quote matching.")}</p>{!tableLoading && workspace.permissions.canManage ? <Button className="mt-4" onClick={openNew}><Plus />{t("Add tariff")}</Button> : null}</div>} />
     {workspaceOverlays}
   </main>
 }

@@ -29,13 +29,15 @@ test("every Inbox Edge request carries the current tenant identity", () => {
   assert.match(source, /inboxAccessToken\(true\)/)
 })
 
-test("Inbox navigation stays warm and conversation intent prefetches detail", () => {
+test("Inbox navigation warms only bounded rows and conversation intent prefetches detail", () => {
   assert.match(source, /inboxRequest\("\/workspace"/)
   assert.match(appShellSource, /InboxWorkspaceProvider cacheScope=\{currentUser\?\.id \?\? null\}/)
   assert.match(inboxWorkspaceSource, /threadPageRequestsRef/)
   assert.match(inboxWorkspaceSource, /threadDetailRequestsRef/)
   assert.match(inboxWorkspaceSource, /threadDetailCacheTtlMs = 60_000/)
-  assert.match(inboxWorkspaceSource, /page\.items\.slice\(0, 3\)/)
+  assert.doesNotMatch(inboxWorkspaceSource, /page\.items\.slice\(0, 3\)/)
+  assert.match(inboxWorkspaceSource, /Warm only the first visible list page/)
+  assert.match(inboxWorkspaceSource, /fetchOlderThreadMessages/)
   assert.match(inboxWorkspaceSource, /await prefetchThreadInlineAttachmentBlobUrls\(detail\)/)
   assert.match(threadRowSource, /onPointerEnter=\{onPrefetch\}/)
   assert.match(threadRowSource, /onFocus=\{onPrefetch\}/)

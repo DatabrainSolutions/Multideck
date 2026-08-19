@@ -2,14 +2,14 @@ import { useReducedMotion } from "motion/react"
 import { ConcentricSpin, FilmGrain, Plasma, Shader } from "shaders/react"
 import { useAccentBrandRamp } from "@/lib/accent-theme"
 
-export default function CrmDetailOverviewShaderCanvas() {
+export default function CrmDetailOverviewShaderCanvas({ onReady }: { onReady?: () => void }) {
   const reduceMotion = useReducedMotion()
   // The plasma's lit stop follows the accent; `colorA` stays a fixed cool
   // highlight because it is what stops the panel reading as a single flat hue.
   const { glowCore } = useAccentBrandRamp()
 
   return (
-    <Shader disableTelemetry className="size-full" style={{ width: "100%", height: "100%" }}>
+    <Shader disableTelemetry onReady={onReady} className="size-full" style={{ width: "100%", height: "100%" }}>
       <Plasma
         balance={35}
         colorA="#8bbef0"

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { getApiWorkspacePreferences } from "@/lib/api"
 import { supabase } from "@/lib/supabase"
+import { updateWorkspaceBootstrapPreferences } from "@/lib/workspace-bootstrap"
 
 export type TablePinPreferences = Record<string, string[]>
 
@@ -14,6 +16,7 @@ let loadPromise: Promise<void> | null = null
 let pendingSave: Promise<unknown> = Promise.resolve()
 let watchingAuth = false
 let preferenceRevision = 0
+let canPersistProfileTablePreferences = true
 const pendingEdits = new Map<string, string[]>()
 
 function toIdList(value: unknown): string[] {
@@ -55,17 +58,17 @@ function applyPreferences(next: TablePinPreferences) {
   notify()
 }
 
-async function currentUserId(client: SupabaseClient) {
+async function currentSession(client: SupabaseClient) {
   const { data, error } = await client.auth.getSession()
   if (error) throw error
-  return data.session?.user.id ?? null
+  return data.session
 }
 
 function saveRemotePreferences(next: TablePinPreferences) {
   const client = supabase
   const userId = loadedUserId
   const revisionAtSave = preferenceRevision
-  if (!client || !userId) return pendingSave
+  if (!client || !userId || !canPersistProfileTablePreferences) return pendingSave
 
   pendingSave = pendingSave
     .then(async () => {
@@ -77,6 +80,7 @@ function saveRemotePreferences(next: TablePinPreferences) {
 
       const { error } = await client.rpc("set_current_user_table_preferences", { p_preferences: next })
       if (error) throw error
+      updateWorkspaceBootstrapPreferences({ tablePinnedColumns: next })
       return true
     })
     .then((saved) => {
@@ -90,14 +94,28 @@ function saveRemotePreferences(next: TablePinPreferences) {
 }
 
 async function loadPreferences(client: SupabaseClient) {
-  const userId = await currentUserId(client)
+  const session = await currentSession(client)
+  const userId = session?.user.id ?? null
   loadedUserId = userId
   if (!userId) return
 
-  const { data, error } = await client.rpc("get_current_user_table_preferences")
-  if (error) throw error
+  const workspacePreferences = session?.access_token
+    ? await getApiWorkspacePreferences(session.access_token)
+    : null
+  if (workspacePreferences === null) {
+    canPersistProfileTablePreferences = false
+    return
+  }
+  canPersistProfileTablePreferences = true
 
-  const saved = normalizeTablePinPreferences(data)
+  let remotePreferences: unknown = workspacePreferences?.tablePinnedColumns ?? null
+  if (workspacePreferences === undefined) {
+    const { data, error } = await client.rpc("get_current_user_table_preferences")
+    if (error) throw error
+    remotePreferences = data
+  }
+
+  const saved = normalizeTablePinPreferences(remotePreferences)
   for (const [tableId, columnIds] of pendingEdits) {
     if (columnIds.length > 0) saved[tableId] = columnIds
     else delete saved[tableId]
@@ -122,6 +140,7 @@ function watchAuth(client: SupabaseClient) {
       loadedUserId = null
       loadPromise = null
       preferenceRevision = 0
+      canPersistProfileTablePreferences = true
       pendingEdits.clear()
       notify()
       void ensureLoaded()

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import {
   ArrowLeft,
@@ -15,6 +15,7 @@ import {
   FileText,
   Globe2,
   GripVertical,
+  LoaderCircle,
   Mail,
   MapPin,
   MoreHorizontal,
@@ -45,8 +46,11 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { CrmDetailOverviewShader } from "@/components/multideck/crm-detail-overview-shader"
 import { useLanguage } from "@/i18n/language-provider"
 import type { ApiLead, ApiLeadContact, ApiLeadDetail } from "@/lib/lead-api"
+import { engagementTemperatureTone, fallbackEngagementSignal } from "@/lib/crm-engagement"
+import { listDealsPage } from "@/lib/deal-api"
 import {
   createLeadField,
   createPipeline,
@@ -102,6 +106,7 @@ export type CrmDeal = {
   due: string
   owner: string
   status: string
+  isOverdue?: boolean
   summary: string
   nextStep: string
   tone: StatusTone
@@ -139,8 +144,8 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
-function stageMeta(count: number) {
-  return count === 1 ? "1 deal" : `${count} deals`
+function stageMeta(count: number, translate: (key: string) => string) {
+  return `${count} ${translate(count === 1 ? "deal" : "deals")}`
 }
 
 function percentWidth(value: number) {
@@ -454,8 +459,8 @@ function DealCardBody({
     <>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-[13.5px] font-medium leading-5 text-[var(--md-ink)]">{deal.title}</h3>
-          <p className="mt-1 truncate text-[11.5px] text-[var(--md-text)]">{deal.account}</p>
+          <h3 className="text-[13.5px] font-medium leading-5 text-[var(--md-ink)]" data-i18n-skip dir="auto">{deal.title}</h3>
+          <p className="mt-1 truncate text-[11.5px] text-[var(--md-text)]" data-i18n-skip dir="auto">{deal.account}</p>
         </div>
         <StatusPill tone={deal.tone}>{deal.status}</StatusPill>
       </div>
@@ -466,7 +471,7 @@ function DealCardBody({
           return (
             <div key={key} className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] items-baseline gap-2">
               <dt className="truncate text-[10.5px] text-[var(--md-subtle)]">{t(definition.label)}</dt>
-              <dd className="truncate text-end text-[11.5px] font-medium text-[var(--md-ink)]" dir="auto">
+              <dd className={cn("truncate text-end text-[11.5px] font-medium", key === "expectedClose" && deal.isOverdue ? "text-[var(--md-danger)]" : "text-[var(--md-ink)]")} data-i18n-skip dir="auto">
                 {dealCardValue(deal, key)}
               </dd>
             </div>
@@ -491,6 +496,7 @@ export function CrmPipelineBoard({
   onPipelineChange,
   onOpenSettings,
   onMoveDeal,
+  stagePaging,
 }: {
   pipelines?: readonly CrmPipelineBoardData[]
   stages?: readonly CrmPipelineStage[]
@@ -504,6 +510,7 @@ export function CrmPipelineBoard({
   onPipelineChange?: (pipeline: CrmPipelineBoardData) => void
   onOpenSettings?: () => void
   onMoveDeal?: (dealId: string, pipelineId: string, stageId: string) => Promise<void> | void
+  stagePaging?: Readonly<Record<string, { total: number; loading?: boolean; onLoadMore?: () => void }>>
 }) {
   const { t } = useLanguage()
   const [visibleDealCardFields] = useDealCardFields()
@@ -543,7 +550,13 @@ export function CrmPipelineBoard({
     onPipelineChange?.(pipeline)
   }
 
-  const dealCount = boardStages.reduce((sum, stage) => sum + stage.deals.length, 0)
+  const dealCount = boardStages.reduce((sum, stage) => sum + (stagePaging?.[stage.id]?.total ?? stage.deals.length), 0)
+  const companyDealCount = stagePaging
+    ? pipelines.reduce((sum, pipeline) => sum + pipeline.stages.reduce((stageSum, stage) => stageSum + (stagePaging[stage.id]?.total ?? stage.deals.length), 0), 0)
+    : new Set(pipelines.flatMap((pipeline) => pipeline.stages.flatMap((stage) => stage.deals.map((deal) => deal.id)))).size
+  const dealScope = pipelines.length > 1
+    ? `${dealCount} ${t("deals in this pipeline")} · ${companyDealCount} ${t("company-wide")}`
+    : `${dealCount} ${dealCount === 1 ? t("deal") : t("deals")}`
   const pipelineControls = (
     <div className={cn("flex items-center gap-2", commandHeader && "min-w-0 flex-wrap sm:flex-nowrap")}>
       <DropdownMenu>
@@ -592,7 +605,7 @@ export function CrmPipelineBoard({
             <h1 className="shrink-0 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{commandHeader.title}</h1>
             <div className="min-w-0 text-[12px] leading-5">
               <p className="font-medium text-[var(--md-text)]">
-                {activePipeline?.name ?? t("Pipeline")} · {boardStages.length} {t("stages")} · {dealCount} {t("leads")}
+                {activePipeline?.name ?? t("Pipeline")} · {boardStages.length} {t("stages")} · {dealScope}
               </p>
               <p className="text-[var(--md-subtle)]">{commandHeader.instruction}</p>
             </div>
@@ -606,7 +619,7 @@ export function CrmPipelineBoard({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-[13px] font-medium text-[var(--md-ink)]">{activePipeline?.name ?? t("Pipeline")}</p>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">{boardStages.length} {t("stages")} · {dealCount} {t("leads")}</p>
+            <p className="mt-1 text-[12px] text-[var(--md-text)]">{boardStages.length} {t("stages")} · {dealScope}</p>
           </div>
           {pipelineControls}
         </div>
@@ -623,6 +636,8 @@ export function CrmPipelineBoard({
         {kanban.previewColumns.map((column) => {
           const stage = boardStages.find((candidate) => candidate.id === column.id)
           if (!stage) return null
+          const paging = stagePaging?.[stage.id]
+          const stageTotal = paging?.total ?? column.tasks.length
 
           return (
             <Surface
@@ -637,7 +652,7 @@ export function CrmPipelineBoard({
               <header>
                 <div className="min-w-0">
                   <h2 className="truncate">{stage.title}</h2>
-                  <p className="mt-0.5 text-[11px] text-[var(--md-text)]">{stageMeta(column.tasks.length)}</p>
+                  <p className="mt-0.5 text-[11px] text-[var(--md-text)]">{stageMeta(stageTotal, t)}</p>
                 </div>
                 <span className="size-2.5 rounded-full" style={{ background: toneToVar(stage.tone) }} />
               </header>
@@ -655,7 +670,19 @@ export function CrmPipelineBoard({
                     visibleFields={visibleDealCardFields}
                   />
                 ))}
-                {column.tasks.length === 0 ? <p className="md-kanban-empty">No deals in this stage</p> : null}
+                {column.tasks.length === 0 ? <p className="md-kanban-empty">{t("No deals in this stage")}</p> : null}
+                {paging?.onLoadMore && column.tasks.length < stageTotal ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={paging.loading}
+                    className="mt-2 h-9 w-full rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[12px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"
+                    onClick={paging.onLoadMore}
+                  >
+                    {paging.loading ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+                    {t(paging.loading ? "Loading more deals…" : "Load more deals")}
+                  </Button>
+                ) : null}
               </div>
             </Surface>
           )
@@ -676,20 +703,21 @@ export function CrmPipelineBoard({
 }
 
 export function CrmDealDetailPanel({ deal }: { deal?: CrmDeal }) {
-  const activeDeal = deal ?? crmPipelineStages[1].deals[0]
+  const { t } = useLanguage()
+  const activeDeal: CrmDeal = deal ?? crmPipelineStages[1].deals[0]
 
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
       <div className="px-5 py-4">
         <SectionHeader
-          title="Selected deal"
-          meta={activeDeal.account}
+          title={t("Selected deal")}
+          meta={<span data-i18n-skip dir="auto">{activeDeal.account}</span>}
           action={<StatusPill tone={activeDeal.tone}>{activeDeal.status}</StatusPill>}
         />
       </div>
       <div className="shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] px-5 py-5">
-        <h2 className="text-[18px] font-medium leading-6 text-[var(--md-ink)]">{activeDeal.title}</h2>
-        <p className="mt-3 text-[13px] leading-6 text-[var(--md-text)]">{activeDeal.summary}</p>
+        <h2 className="text-[18px] font-medium leading-6 text-[var(--md-ink)]" data-i18n-skip dir="auto">{activeDeal.title}</h2>
+        <p className="mt-3 text-[13px] leading-6 text-[var(--md-text)]" data-i18n-skip dir="auto">{activeDeal.summary}</p>
         <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-gap-md)] sm:grid-cols-3">
           {[
             ["Value", activeDeal.value],
@@ -697,14 +725,14 @@ export function CrmDealDetailPanel({ deal }: { deal?: CrmDeal }) {
             ["Due", activeDeal.due],
           ].map(([label, value]) => (
             <div key={label} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)]">
-              <p className="text-[11px] font-medium text-[var(--md-subtle)]">{label}</p>
-              <p className="mt-1 truncate text-[13px] font-medium text-[var(--md-ink)]">{value}</p>
+              <p className="text-[11px] font-medium text-[var(--md-subtle)]">{t(label)}</p>
+              <p className={cn("mt-1 truncate text-[13px] font-medium", label === "Due" && activeDeal.isOverdue ? "text-[var(--md-danger)]" : "text-[var(--md-ink)]")} data-i18n-skip dir="auto">{value}</p>
             </div>
           ))}
         </div>
         <div className="mt-[var(--md-page-stack-gap)] rounded-[var(--md-radius-lg)] bg-white/72 p-[var(--md-gap-lg)] shadow-[var(--md-shadow-line)]">
-          <p className="text-[12px] font-medium text-[var(--md-subtle)]">Next step</p>
-          <p className="mt-2 text-[14px] font-medium leading-6 text-[var(--md-ink)]">{activeDeal.nextStep}</p>
+          <p className="text-[12px] font-medium text-[var(--md-subtle)]">{t("Next step")}</p>
+          <p className="mt-2 text-[14px] font-medium leading-6 text-[var(--md-ink)]" data-i18n-skip dir="auto">{activeDeal.nextStep}</p>
         </div>
       </div>
     </Surface>
@@ -798,21 +826,13 @@ function leadWebsiteHref(website: string) {
   return /^https?:\/\//i.test(website) ? website : `https://${website}`
 }
 
-const emptyLeadOwnerPhotoUrls = new Map<string, string>()
-
-function LeadOwner({ lead, photoUrl }: { lead: ApiLead; photoUrl?: string }) {
+function LeadOwner({ lead }: { lead: ApiLead }) {
   const { t } = useLanguage()
 
   if (!lead.ownerName) return <span className="text-[12px] text-[var(--md-subtle)]">{t("Unassigned")}</span>
 
   return (
-    <div className="flex min-w-[150px] items-center gap-2.5">
-      <Avatar aria-label={lead.ownerName}>
-        {photoUrl ? <AvatarImage src={photoUrl} alt="" /> : null}
-        <AvatarFallback className="bg-[var(--md-accent-a11)] text-[11px] font-medium text-[var(--md-accent)]">{lead.ownerInitials ?? "—"}</AvatarFallback>
-      </Avatar>
-      <span className="truncate text-[12px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{lead.ownerName}</span>
-    </div>
+    <span className="block truncate text-[12px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{lead.ownerName}</span>
   )
 }
 
@@ -821,22 +841,27 @@ export function CrmLeadQualificationTable({
   leads,
   onOpenLead,
   emptyMessage,
-  ownerPhotoUrls = emptyLeadOwnerPhotoUrls,
   toolbarTabs,
   toolbarSearch,
   toolbarFilters,
   toolbarOptions,
   emptyState,
+  loadExportRecords,
+  serverSorting,
 }: {
   leads: readonly ApiLead[]
   onOpenLead: (lead: ApiLead) => void
   emptyMessage: string
-  ownerPhotoUrls?: ReadonlyMap<string, string>
   toolbarTabs?: ReactNode
   toolbarSearch?: ReactNode
   toolbarFilters?: ReactNode
   toolbarOptions?: ReactNode
   emptyState?: ReactNode
+  loadExportRecords?: (leads: readonly ApiLead[]) => Promise<readonly ApiLeadDetail[]>
+  serverSorting?: {
+    value: { id: string; direction: "asc" | "desc" } | null
+    onChange: (value: { id: string; direction: "asc" | "desc" } | null) => void
+  }
 }) {
   const { language, t } = useLanguage()
   const columns = useMemo<DataTableColumn<ApiLead>[]>(() => [
@@ -849,20 +874,32 @@ export function CrmLeadQualificationTable({
       resizable: true,
       sortValue: (lead) => lead.companyName,
       cell: (lead) => (
-        <div className="flex min-w-0 items-center gap-3">
-          <Avatar className="size-10" aria-label={lead.companyName}>
-            <AvatarFallback className="bg-[var(--md-accent-a12)] text-[13px] font-medium text-[var(--md-accent)]">
-              {lead.initials}
-            </AvatarFallback>
-          </Avatar>
-          <span className="min-w-0">
-            <span className="block truncate text-[14px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{lead.companyName}</span>
-            <span className="mt-1 block truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="auto">
-              {[lead.countryCode, lead.serviceInterest ?? lead.tradeLane].filter(Boolean).join(" · ") || t("Commercial lead")}
-            </span>
+        <div className="min-w-0">
+          <span className="block truncate text-[14px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{lead.companyName}</span>
+          <span className="mt-1 block truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="auto">
+            {[lead.countryCode, lead.serviceInterest ?? lead.tradeLane].filter(Boolean).join(" · ") || t("Commercial lead")}
           </span>
         </div>
       ),
+    },
+    {
+      id: "temperature",
+      label: "Temperature",
+      kind: "status",
+      width: 145,
+      minWidth: 125,
+      maxWidth: 220,
+      resizable: true,
+      cellTitle: (lead) => {
+        const signal = lead.engagementSignal ?? fallbackEngagementSignal(lead.id, lead.lastActivityAt)
+        return signal.calculatedFromSources
+          ? `${signal.temperature} · ${signal.activityCount30d} ${t("activities")} · ${signal.emailCount30d} ${t("emails in 30 days")}`
+          : `${signal.temperature} · ${t("Based on the last recorded engagement")}`
+      },
+      cell: (lead) => {
+        const signal = lead.engagementSignal ?? fallbackEngagementSignal(lead.id, lead.lastActivityAt)
+        return <StatusPill tone={engagementTemperatureTone(signal.temperature)}>{t(signal.temperature)}</StatusPill>
+      },
     },
     {
       id: "primary-contact",
@@ -903,7 +940,7 @@ export function CrmLeadQualificationTable({
       maxWidth: 260,
       resizable: true,
       sortValue: (lead) => lead.ownerName,
-      cell: (lead) => <LeadOwner lead={lead} photoUrl={lead.ownerId ? ownerPhotoUrls.get(lead.ownerId) : undefined} />,
+      cell: (lead) => <LeadOwner lead={lead} />,
     },
     {
       id: "stage",
@@ -915,17 +952,6 @@ export function CrmLeadQualificationTable({
       resizable: true,
       sortValue: (lead) => lead.statusName,
       cell: (lead) => <StatusPill tone={leadStatusTone(lead)}>{lead.statusName}</StatusPill>,
-    },
-    {
-      id: "qualification",
-      label: "Qualification",
-      kind: "status",
-      width: 145,
-      minWidth: 125,
-      maxWidth: 220,
-      resizable: true,
-      sortValue: (lead) => lead.ratingName,
-      cell: (lead) => <StatusPill tone="neutral">{lead.ratingName}</StatusPill>,
     },
     {
       id: "engagement",
@@ -1003,42 +1029,31 @@ export function CrmLeadQualificationTable({
         </>
       ),
     },
-  ], [language, ownerPhotoUrls, t])
+  ], [language, t])
 
   return (
     <DataTable
-      key="crm-leads-v3"
+      key="crm-leads-v4"
       ariaLabel="CRM leads"
       columnsButtonLabel="Manage lead columns"
       columns={columns}
       rows={[...leads]}
       getRowKey={(lead) => lead.id}
-      storageKey="crm-leads-v3"
+      storageKey="crm-leads-v4"
       rowClassName="min-h-[76px] bg-white hover:bg-[#f8faf9] dark:bg-[var(--md-surface)] dark:hover:bg-[var(--md-surface-soft)]"
       onRowClick={onOpenLead}
       toolbarTabs={toolbarTabs}
       toolbarSearch={toolbarSearch}
       toolbarFilters={toolbarFilters}
       toolbarOptions={toolbarOptions}
+      exportConfig={{
+        fileName: "crm-leads",
+        recordCategory: "Lead details",
+        loadRecords: loadExportRecords,
+      }}
+      serverSorting={serverSorting}
       emptyState={emptyState ?? <p className="text-[13px] text-[var(--md-text)]">{emptyMessage}</p>}
     />
-  )
-}
-
-const LeadCompanyOverviewShaderCanvas = lazy(() => import("./lead-company-overview-shader"))
-
-function LeadCompanyOverviewShader() {
-  return (
-    <Suspense
-      fallback={(
-        <span
-          className="block size-full"
-          style={{ background: "radial-gradient(circle at 50% 100%, #5366e5 0%, #06030a 68%)" }}
-        />
-      )}
-    >
-      <LeadCompanyOverviewShaderCanvas />
-    </Suspense>
   )
 }
 
@@ -1425,7 +1440,7 @@ export function CrmLeadDetailPanel({
         aria-labelledby={`lead-company-${lead.id}`}
       >
         <span aria-hidden="true" className="pointer-events-none absolute inset-0 scale-[1.04]">
-          <LeadCompanyOverviewShader />
+          <CrmDetailOverviewShader />
         </span>
         <div className="relative z-10 [text-shadow:0_1px_10px_rgba(0,0,0,0.32)]">
           <h2 id={`lead-company-${lead.id}`} className="text-[13px] font-medium text-white/72">{t("Company overview")}</h2>
@@ -1970,7 +1985,7 @@ function LeadFieldComposer({
   )
 }
 
-function toEditorSource(pipeline: ApiPipeline): CrmPipelineEditorSource {
+function toEditorSource(pipeline: ApiPipeline, dealCountByStage: ReadonlyMap<string, number> = new Map()): CrmPipelineEditorSource {
   return {
     id: pipeline.id,
     name: pipeline.name,
@@ -1984,6 +1999,7 @@ function toEditorSource(pipeline: ApiPipeline): CrmPipelineEditorSource {
       tone: stage.tone,
       rule: stage.rule,
       probability: stage.probability,
+      dealCount: dealCountByStage.get(stage.id) ?? 0,
     })),
   }
 }
@@ -2011,6 +2027,7 @@ export function CrmSettingsBuilder({
   const preview = staticPipelines !== undefined || staticFields !== undefined
 
   const [serverPipelines, setServerPipelines] = useState<ApiPipeline[]>([])
+  const [serverDealCounts, setServerDealCounts] = useState<ReadonlyMap<string, number>>(new Map())
   const [serverFields, setServerFields] = useState<ApiLeadField[]>([])
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(preview ? "ready" : "loading")
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -2027,10 +2044,11 @@ export function CrmSettingsBuilder({
     setLoadState("loading")
     setLoadError(null)
 
-    getPipelineSettings()
-      .then((settings) => {
+    Promise.all([getPipelineSettings(), listDealsPage({ limit: 1, offset: 0 })])
+      .then(([settings, dealPage]) => {
         if (!isMounted) return
         setServerPipelines(settings.pipelines)
+        setServerDealCounts(new Map(dealPage.summary.byStage.map((stage) => [stage.id, stage.count])))
         setServerFields(settings.fields)
         setSelectedFieldOptions(Object.fromEntries(settings.fields.map((field) => [field.id, field.activeOptions])))
         setLoadState("ready")
@@ -2048,8 +2066,8 @@ export function CrmSettingsBuilder({
 
   const editorPipelines = useMemo<readonly CrmPipelineEditorSource[]>(() => {
     if (staticPipelines) return staticPipelines
-    return serverPipelines.map(toEditorSource)
-  }, [serverPipelines, staticPipelines])
+    return serverPipelines.map((pipeline) => toEditorSource(pipeline, serverDealCounts))
+  }, [serverDealCounts, serverPipelines, staticPipelines])
 
   const fields = useMemo<SettingsField[]>(() => {
     if (staticFields) {
@@ -2061,6 +2079,7 @@ export function CrmSettingsBuilder({
   const conversionSummary = staticPipelines?.[0] ?? serverPipelines[0]
 
   function toggleDealCardField(key: DealCardFieldKey) {
+    if (!canEdit) return
     if (dealCardFields.includes(key)) {
       if (dealCardFields.length === 1) return
       setDealCardFields(dealCardFields.filter((field) => field !== key))
@@ -2248,15 +2267,20 @@ export function CrmSettingsBuilder({
         )}
       >
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-          <div className="flex items-start justify-between gap-3 px-5 py-4">
+          <div className="grid min-w-0 gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
             <SectionHeader
               title={t("Deal card fields")}
               meta={t("Choose up to 3 details shown on your deal cards.")}
+              metaPlacement="stacked"
+              className="min-w-0"
+              metaClassName="leading-5"
             />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
+                  disabled={!canEdit}
+                  title={canEdit ? undefined : t("Only workspace administrators can change pipelines.")}
                   className="h-9 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
                 >
                   <SlidersHorizontal data-icon="inline-start" strokeWidth={1.2} />
@@ -2277,7 +2301,7 @@ export function CrmSettingsBuilder({
                     <DropdownMenuCheckboxItem
                       key={field.key}
                       checked={checked}
-                      disabled={!checked && dealCardFields.length >= dealCardFieldLimit}
+                      disabled={!canEdit || (!checked && dealCardFields.length >= dealCardFieldLimit)}
                       onCheckedChange={() => toggleDealCardField(field.key)}
                       onSelect={(event) => event.preventDefault()}
                       className="text-[13px]"
@@ -2298,7 +2322,7 @@ export function CrmSettingsBuilder({
                   <button
                     key={key}
                     type="button"
-                    disabled={dealCardFields.length === 1}
+                    disabled={!canEdit || dealCardFields.length === 1}
                     onClick={() => toggleDealCardField(key)}
                     className="inline-flex min-h-9 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] px-3 text-[12px] font-medium text-[var(--md-accent)] transition-colors hover:bg-[var(--md-accent-a18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] disabled:cursor-default disabled:opacity-65"
                     aria-label={`${t("Remove")} ${t(field.label)}`}

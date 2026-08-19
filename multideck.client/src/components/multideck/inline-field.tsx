@@ -148,15 +148,21 @@ export function InlineField({
   const fieldId = useId()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
+  const storedValueRef = useRef(value)
   const { state, message, setState, setMessage, markSaved } = useSaveState()
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
+  const savingRef = useRef(false)
   const settings = useContext(InlineFieldContext)
   const directEdit = directEditProp ?? settings.directEdit
   const stacked = stackedProp ?? settings.stacked
 
   // A value changed elsewhere — a save on another field, a refetch — replaces the
   // draft only while the operator is not part-way through typing into it.
-  useEffect(() => { if (!editing) setDraft(value) }, [value, editing])
+  useEffect(() => {
+    const previousValue = storedValueRef.current
+    storedValueRef.current = value
+    setDraft((current) => (!editing && state !== "saving" && state !== "error") || current === previousValue ? value : current)
+  }, [value, editing, state])
 
   useEffect(() => {
     if (!editing) return
@@ -166,11 +172,11 @@ export function InlineField({
   }, [editing])
 
   async function commit() {
+    if (savingRef.current) return
     if (!directEdit) setEditing(false)
     const next = draft.trim()
     if (next === value.trim()) { setEditing(false); setState("idle"); setMessage(null); return }
     if (required && !next) {
-      setDraft(value)
       setEditing(false)
       setState("error")
       setMessage(t(`${label} cannot be empty`))
@@ -179,16 +185,19 @@ export function InlineField({
 
     if (!onSave) return
 
+    savingRef.current = true
     setState("saving")
+    setMessage(null)
     try {
       await onSave(next)
       setEditing(false)
       markSaved()
     } catch (error) {
-      setDraft(value)
       setEditing(false)
       setState("error")
       setMessage(error instanceof Error ? error.message : t("That change could not be saved. Try again."))
+    } finally {
+      savingRef.current = false
     }
   }
 
@@ -235,10 +244,10 @@ export function InlineField({
               <Textarea
                 id={fieldId}
                 ref={inputRef as React.Ref<HTMLTextAreaElement>}
-                value={draft}
+                value={editing ? draft : value}
                 dir="auto"
                 onChange={(event) => setDraft(event.target.value)}
-                onFocus={() => setEditing(true)}
+                onFocus={() => { if (state !== "error") setDraft(value); setEditing(true) }}
                 onBlur={() => void commit()}
                 onKeyDown={handleKeyDown}
                 placeholder={placeholder ? t(placeholder) : undefined}
@@ -249,10 +258,10 @@ export function InlineField({
                 id={fieldId}
                 ref={inputRef as React.Ref<HTMLInputElement>}
                 type={kind === "number" ? "number" : kind === "date" ? "date" : kind}
-                value={draft}
+                value={editing ? draft : value}
                 dir={isLtr ? "ltr" : "auto"}
                 onChange={(event) => setDraft(event.target.value)}
-                onFocus={() => setEditing(true)}
+                onFocus={() => { if (state !== "error") setDraft(value); setEditing(true) }}
                 onBlur={() => void commit()}
                 onKeyDown={handleKeyDown}
                 placeholder={placeholder ? t(placeholder) : undefined}
@@ -291,7 +300,13 @@ export function InlineField({
         </div>
 
         {message ? (
-          <p role="alert" className="text-[11.5px] leading-4 text-[var(--md-red)]">{message}</p>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p role="alert" className="min-w-0 flex-1 text-[11.5px] leading-4 text-[var(--md-red)]">{message}</p>
+            <span className="flex shrink-0 items-center gap-1">
+              <button type="button" className="min-h-7 rounded-[var(--md-radius-sm)] px-2 text-[11.5px] font-medium text-[var(--md-accent)] hover:bg-[var(--md-accent-a08)]" onClick={() => void commit()}>{t("Retry")}</button>
+              <button type="button" className="min-h-7 rounded-[var(--md-radius-sm)] px-2 text-[11.5px] text-[var(--md-text)] hover:bg-[var(--md-hover)]" onClick={revert}>{t("Cancel changes")}</button>
+            </span>
+          </div>
         ) : hint && editing ? (
           <p className="text-[11.5px] leading-4 text-[var(--md-subtle)]">{t(hint)}</p>
         ) : null}
@@ -336,10 +351,16 @@ export function InlineTagField({
   const fieldId = useId()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
+  const storedValueRef = useRef(value)
   const { state, message, setState, setMessage, markSaved } = useSaveState()
   const inputRef = useRef<HTMLInputElement>(null)
+  const savingRef = useRef(false)
 
-  useEffect(() => { if (!editing) setDraft(value) }, [value, editing])
+  useEffect(() => {
+    const previousValue = storedValueRef.current
+    storedValueRef.current = value
+    setDraft((current) => (!editing && state !== "saving" && state !== "error") || current === previousValue ? value : current)
+  }, [value, editing, state])
   useEffect(() => {
     if (!editing) return
     inputRef.current?.focus()
@@ -347,17 +368,21 @@ export function InlineTagField({
   }, [editing])
 
   async function commit() {
+    if (savingRef.current) return
     setEditing(false)
     const next = draft.trim()
-    if (next === value.trim() || !onSave) { setDraft(value); return }
+    if (next === value.trim() || !onSave) { setDraft(value); setState("idle"); setMessage(null); return }
+    savingRef.current = true
     setState("saving")
+    setMessage(null)
     try {
       await onSave(next)
       markSaved()
     } catch (error) {
-      setDraft(value)
       setState("error")
       setMessage(error instanceof Error ? error.message : t("That change could not be saved. Try again."))
+    } finally {
+      savingRef.current = false
     }
   }
 
@@ -430,7 +455,15 @@ export function InlineTagField({
         </div>
       )}
 
-      {message ? <p role="alert" className="ps-1 text-[11px] leading-4 text-[var(--md-red)]">{message}</p> : null}
+      {message ? (
+        <div className="grid gap-1 ps-1">
+          <p role="alert" className="text-[11px] leading-4 text-[var(--md-red)]">{message}</p>
+          <span className="flex items-center gap-1">
+            <button type="button" className="min-h-7 rounded-[var(--md-radius-sm)] px-2 text-[11px] font-medium text-[var(--md-accent)] hover:bg-[var(--md-accent-a08)]" onClick={() => void commit()}>{t("Retry")}</button>
+            <button type="button" className="min-h-7 rounded-[var(--md-radius-sm)] px-2 text-[11px] text-[var(--md-text)] hover:bg-[var(--md-hover)]" onClick={() => { setDraft(value); setState("idle"); setMessage(null) }}>{t("Cancel changes")}</button>
+          </span>
+        </div>
+      ) : null}
     </div>
   )
 }

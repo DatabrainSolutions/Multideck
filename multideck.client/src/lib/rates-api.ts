@@ -1,4 +1,5 @@
 import { edgeFetch } from "@/lib/api"
+import { invalidateRegisterPages, readCachedRegisterPage, type RegisterSort } from "@/lib/application-data-api"
 import { getSupabaseSession } from "@/lib/supabase"
 
 export type RateMode = "lcl" | "fcl" | "air" | "road"
@@ -91,15 +92,48 @@ export type RateQuote = {
 
 export type RateOption = RateRecord & { matchScore: number; matchReasons: string[] }
 
+export type RatesSummary = {
+  total: number
+  attention: number
+  active: number
+  drafts: number
+  costTariffs: number
+  salesTariffs: number
+  customerSpecific: number
+  expiringTariffs: number
+  sourcesInReview: number
+}
+
 export type RatesWorkspace = {
-  rates: RateRecord[]
-  versions: RateVersion[]
-  audit: RateAuditEvent[]
+  summary: RatesSummary
+  attention: RateRecord[]
+  recent: RateRecord[]
   imports: RateImportBatch[]
   quotes: RateQuote[]
   permissions: { canManage: boolean }
   integrations: { seaRates: { connected: false; reason: string } }
 }
+
+export type RateExpiryCounts = { expired: number; sevenDays: number; thirtyDays: number; activeCurrent: number }
+
+export type RatesPageResult = {
+  rows: RateRecord[]
+  total: number
+  expiryCounts: RateExpiryCounts
+}
+
+export type RatesPageInput = {
+  scope: "contracts" | "tariffs"
+  search?: string
+  mode?: RateMode
+  tariffType?: Exclude<RateRecordType, "contract">
+  expiry?: "expired" | "7" | "30" | "active"
+  sort?: RegisterSort | null
+  limit: number
+  offset: number
+}
+
+export type RateDetails = { rate: RateRecord; versions: RateVersion[]; audit: RateAuditEvent[] }
 
 export type RateRecordInput = Omit<RateRecord, "id" | "versionNo" | "marginAmount" | "marginPercent" | "updatedAt" | "updatedBy"> & {
   id?: string
@@ -130,23 +164,59 @@ export function getRatesWorkspace() {
   return request<RatesWorkspace>("/workspace")
 }
 
-export function saveRate(input: RateRecordInput) {
-  return request<{ rate: RateRecord }>(input.id ? `/records/${input.id}` : "/records", {
+export async function getRatesPage(input: RatesPageInput, signal?: AbortSignal) {
+  const session = await getSupabaseSession()
+  if (!session?.user) throw new RatesApiError("Sign in again to view rates.")
+  const normalized = {
+    ...input,
+    search: input.search?.trim() || undefined,
+    limit: Math.max(1, Math.min(input.limit, 50)),
+    offset: Math.max(0, input.offset),
+  }
+  const parameters = new URLSearchParams({
+    scope: normalized.scope,
+    limit: String(normalized.limit),
+    offset: String(normalized.offset),
+    sort: normalized.sort?.id ?? "name",
+    direction: normalized.sort?.direction ?? "asc",
+  })
+  if (normalized.search) parameters.set("search", normalized.search)
+  if (normalized.mode) parameters.set("mode", normalized.mode)
+  if (normalized.tariffType) parameters.set("tariffType", normalized.tariffType)
+  if (normalized.expiry) parameters.set("expiry", normalized.expiry)
+  const resource = `rates:page:${parameters.toString()}`
+  return readCachedRegisterPage(session.user.id, resource, (requestSignal) => (
+    request<RatesPageResult>(`/records?${parameters.toString()}`, { signal: requestSignal })
+  ), signal)
+}
+
+export function getRateDetails(id: string, signal?: AbortSignal) {
+  return request<RateDetails>(`/records/${encodeURIComponent(id)}`, { signal })
+}
+
+export async function saveRate(input: RateRecordInput) {
+  const result = await request<{ rate: RateRecord }>(input.id ? `/records/${input.id}` : "/records", {
     method: input.id ? "PATCH" : "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
+  invalidateRegisterPages("rates:")
+  return result
 }
 
-export function expireRate(id: string) {
-  return request<{ rate: RateRecord }>(`/records/${id}/expire`, { method: "POST" })
+export async function expireRate(id: string) {
+  const result = await request<{ rate: RateRecord }>(`/records/${id}/expire`, { method: "POST" })
+  invalidateRegisterPages("rates:")
+  return result
 }
 
-export function stageRateImport(file: File, preview: unknown) {
+export async function stageRateImport(file: File, preview: unknown) {
   const formData = new FormData()
   formData.set("file", file)
   formData.set("preview", JSON.stringify(preview))
-  return request<{ importBatch: RateImportBatch }>("/imports", { method: "POST", body: formData })
+  const result = await request<{ importBatch: RateImportBatch }>("/imports", { method: "POST", body: formData })
+  invalidateRegisterPages("rates:")
+  return result
 }
 
 export function getRateOptions(quoteId: string) {

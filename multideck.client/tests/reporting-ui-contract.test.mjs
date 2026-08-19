@@ -30,7 +30,7 @@ test("both Reporting routes resolve through the shared front-end page", () => {
 })
 
 test("Reports is a direct history table with honest UI-only download states", () => {
-  assert.match(reportsPage, /toolbarLeading=\{<ReportingPageHeader title="Reports" \/>\}/u)
+  assert.match(reportsPage, /<ReportingPageHeader title="Reports" \/>[\s\S]*ariaLabel="Report history"/u)
   assert.doesNotMatch(reportsPage, /Front-end preview|Reporting preview status/u)
   assert.match(reportsPage, /ariaLabel="Report history"/u)
   assert.match(reportsPage, /Ready[\s\S]*Processing[\s\S]*Failed[\s\S]*Expired/u)
@@ -56,7 +56,7 @@ test("Scheduled reports lands on a table and opens the shared staged wizard", ()
   assert.match(reportsPage, /ariaLabel="Scheduled reports"/u)
   assert.doesNotMatch(reportsPage, /Schedule history/u)
   assert.doesNotMatch(reportsPage, /Example schedules|delivery is disconnected|4 example schedules/u)
-  assert.match(reportsPage, /toolbarLeading=\{scheduleHeader\}/u)
+  assert.match(reportsPage, /\{scheduleHeader\}[\s\S]*ariaLabel="Scheduled reports"/u)
   assert.match(reportsPage, /Review recurring delivery plans and their next run\. Changes are not saved yet\./u)
   assert.match(reportsPage, /Recipients or audience[\s\S]*Cadence[\s\S]*Next delivery[\s\S]*Delivery time[\s\S]*Status/u)
   for (const stateCopy of ["Loading scheduled reports…", "No scheduled reports yet", "Scheduled reports unavailable"]) {
@@ -69,10 +69,10 @@ test("Scheduled reports lands on a table and opens the shared staged wizard", ()
   assert.doesNotMatch(reportsPage, /fetch\(|axios|supabase|application-data-api|listLiveReports/u)
 })
 
-test("Reporting headings share the compact table toolbar with its column control", () => {
-  assert.match(dataTable, /toolbarLeading\?: ReactNode/u)
-  assert.match(dataTable, /data-table-leading/u)
-  assert.match(dataTable, /toolbarLeading \? "sm:min-w-0"/u)
+test("Reporting headings stay outside the reusable table-control toolbar", () => {
+  assert.doesNotMatch(dataTable, /toolbarLeading\?: ReactNode/u)
+  assert.doesNotMatch(dataTable, /data-table-leading/u)
+  assert.doesNotMatch(reportsPage, /toolbarLeading/u)
   assert.match(dataTable, /contentBeforeTable\?: ReactNode/u)
   assert.doesNotMatch(reportsPage, /md-page md-page-sections min-w-0/u)
 })

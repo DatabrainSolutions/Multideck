@@ -239,19 +239,27 @@ export async function attachEmailDocumentToCustomer(input: {
   }
 }
 
-export async function listCustomerDocuments(authorization: string, customerId: string) {
+export async function listCustomerDocuments(authorization: string, customerId: string, input: { limit?: number; offset?: number } = {}) {
   if (!isUuid(customerId)) throw new InboxHttpError(400, "Choose a valid customer.", "customer_invalid")
+  const limit = Math.max(1, Math.min(Math.trunc(Number(input.limit) || 20), 50))
+  const offset = Math.max(0, Math.trunc(Number(input.offset) || 0))
   const clients = runtimeClients(authorization)
   const actor = await requireActor(clients.user, clients.admin)
   await requirePermission(clients.admin, actor, "Customers.Read")
   const customerRow = await customer(clients.admin, customerId)
-  const rows = await many<Row>(clients.admin.from("CRM_CustomerDocuments").select("*")
+  const { data, error, count } = await clients.admin.from("CRM_CustomerDocuments").select("*", { count: "exact" })
     .eq("CRMCustomerDocument_CustomerOrgID", customerId)
     .in("CRMCustomerDocument_StatusCode", ["ready", "pending_review"])
-    .order("CRMCustomerDocument_CreatedAt", { ascending: false }), "Customer documents are unavailable.")
+    .order("CRMCustomerDocument_CreatedAt", { ascending: false })
+    .order("CRMCustomerDocument_ID", { ascending: false })
+    .range(offset, offset + limit - 1)
+  if (error) throw new InboxHttpError(503, "Customer documents are unavailable.", cleanString(error.code, 40) || "database_unavailable")
   return {
     customer: { id: customerRow.Org_id, name: cleanString(customerRow.Org_Name, 240) },
-    documents: rows.map(documentDto),
+    documents: (data ?? []).map(documentDto),
+    total: count ?? 0,
+    limit,
+    offset,
   }
 }
 

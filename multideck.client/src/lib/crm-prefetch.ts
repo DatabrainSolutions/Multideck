@@ -1,6 +1,6 @@
-import { listCustomers, listContacts } from "@/lib/customer-api"
-import { listDeals } from "@/lib/deal-api"
-import { listLeads } from "@/lib/lead-api"
+import { listAccountsPage, listContactsPage } from "@/lib/customer-api"
+import { listDealsPage } from "@/lib/deal-api"
+import { listLeadsPage } from "@/lib/lead-api"
 import { getPipelineSettings } from "@/lib/pipeline-api"
 
 let prefetch: Promise<unknown> | null = null
@@ -9,10 +9,10 @@ let prefetch: Promise<unknown> | null = null
 export function prefetchCrmCollections() {
   if (!prefetch) {
     prefetch = Promise.allSettled([
-      listCustomers(),
-      listContacts(),
-      listLeads(),
-      listDeals(),
+      listAccountsPage({ limit: 50, offset: 0 }),
+      listContactsPage({ limit: 50, offset: 0 }),
+      listLeadsPage({ limit: 50, offset: 0 }),
+      listDealsPage({ limit: 50, offset: 0 }),
       getPipelineSettings(),
     ]).finally(() => {
       prefetch = null

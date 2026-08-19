@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useSyncExternalStore } from "react"
 import {
   cardTotals,
   defaultAutomation,
@@ -16,10 +16,36 @@ import {
   type ContactCardOwnerOption,
   type ContactCardPipelineOption,
 } from "@/data/contact-card-data"
-import { getSupabaseSession, supabase } from "@/lib/supabase"
+import { getSupabaseSession, supabase, supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
 
 export type StoreStatus = "loading" | "ready" | "error"
 export type SaveStatus = "idle" | "saving" | "saved" | "error"
+
+export type ContactCardRegisterInput = {
+  limit?: number
+  offset?: number
+  search?: string
+  status?: string
+  automationState?: string
+  sortField?: "card" | "status" | "source" | "automation" | "activity" | "updated"
+  sortDirection?: "asc" | "desc"
+}
+
+export type ContactCardRegisterSummary = {
+  total: number
+  live: number
+  scans: number
+  exchanges: number
+  leads: number
+  needsAttention: number
+}
+
+export type ContactCardPageMeta = {
+  offset: number
+  limit: number
+  total: number
+  hasMore: boolean
+}
 
 type StoreState = {
   status: StoreStatus
@@ -29,6 +55,8 @@ type StoreState = {
   owners: ContactCardOwnerOption[]
   currentUserId: string | null
   tenantName: string
+  summary: ContactCardRegisterSummary
+  page: ContactCardPageMeta
   save: { status: SaveStatus; cardId: string | null }
 }
 
@@ -45,7 +73,12 @@ type WorkspacePayload = {
   runSteps?: Record<string, unknown>[]
   pipelines?: ContactCardPipelineOption[]
   owners?: ContactCardOwnerOption[]
+  summary?: Partial<ContactCardRegisterSummary>
+  page?: Partial<ContactCardPageMeta>
 }
+
+const emptyRegisterSummary: ContactCardRegisterSummary = { total: 0, live: 0, scans: 0, exchanges: 0, leads: 0, needsAttention: 0 }
+const emptyPageMeta: ContactCardPageMeta = { offset: 0, limit: 25, total: 0, hasMore: false }
 
 let state: StoreState = {
   status: "loading",
@@ -55,13 +88,21 @@ let state: StoreState = {
   owners: [],
   currentUserId: null,
   tenantName: "Multideck",
+  summary: emptyRegisterSummary,
+  page: emptyPageMeta,
   save: { status: "idle", cardId: null },
 }
 const listeners = new Set<() => void>()
 const saveTimers = new Map<string, number>()
+const saveQueues = new Map<string, Promise<void>>()
 const unsavedCardIds = new Set<string>()
 const publicCardCache = new Map<string, ContactCard>()
 let loadPromise: Promise<void> | null = null
+let lastRegisterInput: ContactCardRegisterInput = { limit: 25, offset: 0, sortField: "updated", sortDirection: "desc" }
+let registerRequestSequence = 0
+const detailCardIds = new Set<string>()
+const detailPromises = new Map<string, Promise<void>>()
+const detailErrors = new Map<string, string>()
 
 function emit(next: Partial<StoreState>) {
   state = { ...state, ...next }
@@ -310,22 +351,79 @@ async function callRpc<T>(name: string, args?: Record<string, unknown>) {
   return data as T
 }
 
-async function loadWorkspace() {
+function missingContactCardReadRpc(error: unknown) {
+  if (!error || typeof error !== "object") return false
+  const candidate = error as { code?: string; message?: string }
+  return ["42883", "PGRST202"].includes(candidate.code ?? "")
+    || /schema cache.*function|function .* does not exist|could not find the function/i.test(candidate.message ?? "")
+}
+
+function registerSummary(payload: WorkspacePayload): ContactCardRegisterSummary {
+  const value = payload.summary ?? {}
+  return {
+    total: Number(value.total ?? 0),
+    live: Number(value.live ?? 0),
+    scans: Number(value.scans ?? 0),
+    exchanges: Number(value.exchanges ?? 0),
+    leads: Number(value.leads ?? 0),
+    needsAttention: Number(value.needsAttention ?? 0),
+  }
+}
+
+function pageMeta(payload: WorkspacePayload, input: ContactCardRegisterInput): ContactCardPageMeta {
+  const value = payload.page ?? {}
+  return {
+    offset: Number(value.offset ?? input.offset ?? 0),
+    limit: Number(value.limit ?? input.limit ?? 25),
+    total: Number(value.total ?? 0),
+    hasMore: Boolean(value.hasMore),
+  }
+}
+
+async function fetchRegisterPayload(input: ContactCardRegisterInput) {
+  try {
+    return await callRpc<WorkspacePayload>("multideck_contact_cards_page", {
+      p_limit: input.limit ?? 25,
+      p_offset: input.offset ?? 0,
+      p_search: input.search?.trim() || null,
+      p_status: input.status || null,
+      p_automation_state: input.automationState || null,
+      p_sort_field: input.sortField ?? "updated",
+      p_sort_direction: input.sortDirection ?? "desc",
+    })
+  } catch (error) {
+    if (!missingContactCardReadRpc(error)) throw error
+    throw new Error("Contact card paging is still being prepared. Try again shortly.")
+  }
+}
+
+async function loadWorkspace(input: ContactCardRegisterInput = lastRegisterInput) {
+  const requestInput = { ...lastRegisterInput, ...input }
+  lastRegisterInput = requestInput
+  const requestId = ++registerRequestSequence
   emit({ status: "loading", error: null })
   try {
     const session = await getSupabaseSession()
-    const payload = await callRpc<WorkspacePayload>("multideck_contact_cards_workspace")
+    const payload = await fetchRegisterPayload(requestInput)
+    if (requestId !== registerRequestSequence) return
     const owners = payload.owners ?? []
+    const registerCards = mapWorkspace(payload).map((card) => {
+      if (!detailCardIds.has(card.id)) return card
+      return state.cards.find((existing) => existing.id === card.id) ?? card
+    })
     emit({
       status: "ready",
       error: null,
-      cards: mapWorkspace(payload),
+      cards: registerCards,
       pipelines: payload.pipelines ?? [],
       owners,
       currentUserId: owners.find((owner) => owner.email.toLowerCase() === session?.user.email?.toLowerCase())?.id ?? owners[0]?.id ?? null,
       tenantName: typeof payload.tenantName === "string" && payload.tenantName.trim() ? payload.tenantName.trim() : "Multideck",
+      summary: registerSummary(payload),
+      page: pageMeta(payload, requestInput),
     })
   } catch (error) {
+    if (requestId !== registerRequestSequence) return
     emit({ status: "error", error: error instanceof Error ? error.message : "Unable to load your contact cards. Check your connection and try again.", cards: [] })
   }
 }
@@ -334,8 +432,13 @@ function ensureLoaded() {
   if (!loadPromise) loadPromise = loadWorkspace()
 }
 
+export function loadContactCardsPage(input: ContactCardRegisterInput) {
+  loadPromise = loadWorkspace(input)
+  return loadPromise
+}
+
 export function reloadContactCards() {
-  loadPromise = loadWorkspace()
+  loadPromise = loadWorkspace(lastRegisterInput)
   return loadPromise
 }
 
@@ -344,33 +447,109 @@ export function useContactCardStore() {
   return useSyncExternalStore(subscribe, () => state, () => state)
 }
 
+async function loadContactCardDetail(cardId: string) {
+  detailErrors.delete(cardId)
+  try {
+    let payload: WorkspacePayload
+    try {
+      payload = await callRpc<WorkspacePayload>("multideck_contact_card_detail", { p_card_id: cardId })
+    } catch (error) {
+      if (!missingContactCardReadRpc(error)) throw error
+      payload = await callRpc<WorkspacePayload>("multideck_contact_cards_workspace")
+      payload = {
+        ...payload,
+        cards: (payload.cards ?? []).filter((row) => text(row, "ContactCard_ID") === cardId || text(row, "ContactCard_Slug") === cardId),
+        automations: (payload.automations ?? []).filter((row) => text(row, "ContactCard_ID") === cardId),
+        conditions: (payload.conditions ?? []).filter((row) => text(row, "ContactCard_ID") === cardId),
+        actions: (payload.actions ?? []).filter((row) => text(row, "ContactCard_ID") === cardId),
+        analytics: (payload.analytics ?? []).filter((row) => text(row, "ContactCard_ID") === cardId),
+        scans: [],
+        exchanges: (payload.exchanges ?? []).filter((row) => text(row, "ContactCard_ID") === cardId).slice(-20),
+        runs: (payload.runs ?? []).filter((row) => text(row, "ContactCard_ID") === cardId).slice(0, 25),
+      }
+      const runIds = new Set((payload.runs ?? []).map((row) => text(row, "AutomationRun_ID")))
+      payload.runSteps = (payload.runSteps ?? []).filter((row) => runIds.has(text(row, "AutomationRun_ID")))
+    }
+
+    const [detail] = mapWorkspace(payload)
+    if (!detail) throw new Error("This contact card is no longer available.")
+    detailCardIds.add(cardId)
+    detailCardIds.add(detail.id)
+    detailCardIds.add(detail.slug)
+    emit({
+      cards: state.cards.some((card) => card.id === detail.id)
+        ? state.cards.map((card) => card.id === detail.id ? detail : card)
+        : [detail, ...state.cards],
+      pipelines: payload.pipelines ?? state.pipelines,
+      owners: payload.owners ?? state.owners,
+      tenantName: typeof payload.tenantName === "string" && payload.tenantName.trim() ? payload.tenantName.trim() : state.tenantName,
+    })
+  } catch (error) {
+    detailErrors.set(cardId, error instanceof Error ? error.message : "Unable to load this contact card. Check your connection and try again.")
+    emit({ cards: [...state.cards] })
+  } finally {
+    detailPromises.delete(cardId)
+  }
+}
+
+function ensureContactCardDetail(cardId: string) {
+  if (detailCardIds.has(cardId)) return
+  if (!detailPromises.has(cardId)) detailPromises.set(cardId, loadContactCardDetail(cardId))
+}
+
+export function reloadContactCard(cardId: string) {
+  detailCardIds.delete(cardId)
+  detailErrors.delete(cardId)
+  const promise = loadContactCardDetail(cardId)
+  detailPromises.set(cardId, promise)
+  return promise
+}
+
 export function useContactCard(cardId: string | null) {
   const store = useContactCardStore()
+  useEffect(() => {
+    if (cardId) ensureContactCardDetail(cardId)
+  }, [cardId])
   const card = cardId ? store.cards.find((item) => item.id === cardId || item.slug === cardId) ?? null : null
-  return { ...store, card }
+  const detailError = cardId ? detailErrors.get(cardId) ?? null : null
+  const detailReady = !cardId || detailCardIds.has(cardId)
+  return { ...store, card, status: detailError ? "error" as const : detailReady ? store.status : "loading" as const, error: detailError ?? store.error }
 }
 
 function commit(cards: ContactCard[]) {
   emit({ cards })
 }
 
-async function persistCard(card: ContactCard) {
+async function persistCardNow(card: ContactCard) {
   emit({ save: { status: "saving", cardId: card.id } })
   try {
-    const creating = unsavedCardIds.has(card.id)
-    await callRpc<string>(creating ? "multideck_contact_card_create" : "multideck_contact_card_save", { p_card: card })
-    if (creating) unsavedCardIds.delete(card.id)
-    await callRpc<void>("multideck_contact_card_set_tenant_name_visibility", {
-      p_card_id: card.id,
-      p_show: card.showTenantName,
-    })
-    emit({ save: { status: "saved", cardId: card.id } })
+    // Card data and tenant attribution are one user-visible save. The RPC owns
+    // both writes in one transaction so a failed visibility update cannot leave
+    // the card looking saved while the public attribution remains stale.
+    await callRpc<string>("multideck_contact_card_save_atomic", { p_card: card })
+    unsavedCardIds.delete(card.id)
+    emit({ save: { status: "saved", cardId: card.id }, error: null })
     window.setTimeout(() => {
       if (state.save.cardId === card.id && state.save.status === "saved") emit({ save: { status: "idle", cardId: null } })
     }, 1800)
   } catch (error) {
     emit({ save: { status: "error", cardId: card.id }, error: error instanceof Error ? error.message : "Unable to save this card. Check your connection and try again." })
+    throw error
   }
+}
+
+function persistCard(card: ContactCard): Promise<void> {
+  // Autosave, publish/pause and explicit retries can be triggered close
+  // together. Keep each card's writes ordered so an older network response can
+  // never land after and overwrite a newer operator choice.
+  const previous = saveQueues.get(card.id) ?? Promise.resolve()
+  const next = previous.catch(() => undefined).then(() => persistCardNow(card))
+  saveQueues.set(card.id, next)
+  const clear = () => {
+    if (saveQueues.get(card.id) === next) saveQueues.delete(card.id)
+  }
+  void next.then(clear, clear)
+  return next
 }
 
 function queueSave(card: ContactCard) {
@@ -378,7 +557,7 @@ function queueSave(card: ContactCard) {
   if (existing) window.clearTimeout(existing)
   saveTimers.set(card.id, window.setTimeout(() => {
     saveTimers.delete(card.id)
-    void persistCard(state.cards.find((item) => item.id === card.id) ?? card)
+    void persistCard(state.cards.find((item) => item.id === card.id) ?? card).catch(() => undefined)
   }, 450))
 }
 
@@ -389,7 +568,7 @@ export function updateCard(cardId: string, update: (card: ContactCard) => Contac
   if (card) queueSave(card)
 }
 
-export function createCard(input: {
+export async function createCard(input: {
   label: string
   context: string
   fullName: string
@@ -398,7 +577,7 @@ export function createCard(input: {
   email: string
   phone: string
   leadSource: string
-}): ContactCard {
+}): Promise<ContactCard> {
   const owner = state.owners.find((item) => item.id === state.currentUserId) ?? state.owners[0]
   const pipeline = state.pipelines[0]
   const id = crypto.randomUUID()
@@ -442,8 +621,15 @@ export function createCard(input: {
     exchanges: [],
   }
   unsavedCardIds.add(id)
+  try {
+    await persistCard(card)
+  } catch (error) {
+    unsavedCardIds.delete(id)
+    throw error
+  }
+  detailCardIds.add(card.id)
+  detailCardIds.add(card.slug)
   commit([card, ...state.cards])
-  void persistCard(card)
   return card
 }
 
@@ -455,17 +641,37 @@ function uniqueSlug(source: string) {
   return slug
 }
 
-export function deleteCard(cardId: string) {
-  const previous = state.cards
-  commit(previous.filter((card) => card.id !== cardId))
-  void callRpc<void>("multideck_contact_card_delete", { p_card_id: cardId }).catch((error) => {
-    commit(previous)
-    emit({ error: error instanceof Error ? error.message : "Unable to delete this card. Try again." })
-  })
+export async function deleteCard(cardId: string): Promise<void> {
+  const timer = saveTimers.get(cardId)
+  if (timer) {
+    window.clearTimeout(timer)
+    saveTimers.delete(cardId)
+  }
+  await saveQueues.get(cardId)?.catch(() => undefined)
+  await callRpc<void>("multideck_contact_card_delete", { p_card_id: cardId })
+  const deleted = state.cards.find((card) => card.id === cardId)
+  detailCardIds.delete(cardId)
+  if (deleted?.slug) detailCardIds.delete(deleted.slug)
+  commit(state.cards.filter((card) => card.id !== cardId))
 }
 
-export function setCardStatus(cardId: string, status: ContactCard["status"]) {
-  updateCard(cardId, (card) => ({ ...card, status }))
+export async function setCardStatus(cardId: string, status: ContactCard["status"]): Promise<void> {
+  const previous = state.cards.find((card) => card.id === cardId)
+  if (!previous) throw new Error("This contact card is no longer available.")
+  const next = { ...previous, status }
+  commit(state.cards.map((card) => card.id === cardId ? next : card))
+  try {
+    await persistCard(next)
+  } catch (error) {
+    commit(state.cards.map((card) => card.id === cardId ? { ...card, status: previous.status } : card))
+    throw error
+  }
+}
+
+export async function retryCardSave(cardId: string): Promise<void> {
+  const card = state.cards.find((item) => item.id === cardId)
+  if (!card) throw new Error("This contact card is no longer available.")
+  await persistCard(card)
 }
 
 export function updateBranding(cardId: string, update: Partial<CardBranding>) {
@@ -487,12 +693,60 @@ export function readLogoFile(file: File): Promise<string> {
 export function updateAutomation(cardId: string, update: (automation: ContactCard["automation"]) => ContactCard["automation"]) {
   updateCard(cardId, (card) => ({ ...card, automation: { ...update(card.automation), hasUnpublishedChanges: true } }))
 }
-export function publishAutomation(cardId: string) {
-  updateCard(cardId, (card) => ({ ...card, automation: { ...card.automation, state: "active", hasUnpublishedChanges: false, autoPausedReason: null, failures: 0 } }))
+
+async function persistAutomationTransition(
+  cardId: string,
+  update: (automation: ContactCard["automation"]) => ContactCard["automation"],
+): Promise<void> {
+  const previous = state.cards.find((card) => card.id === cardId)
+  if (!previous) throw new Error("This contact card is no longer available.")
+
+  // Explicit lifecycle actions must own the next write. Cancel the debounced
+  // draft save so it cannot run after a failed transition and silently apply
+  // the state the UI just rolled back.
+  const timer = saveTimers.get(cardId)
+  if (timer) {
+    window.clearTimeout(timer)
+    saveTimers.delete(cardId)
+  }
+
+  const nextAutomation = update(previous.automation)
+  const next = { ...previous, automation: nextAutomation }
+  commit(state.cards.map((card) => card.id === cardId ? next : card))
+
+  try {
+    await persistCard(next)
+  } catch (error) {
+    // Do not overwrite edits made while the request was in flight. Roll back
+    // only when this failed transition is still the state shown to the user.
+    commit(state.cards.map((card) => card.id === cardId && card.automation === nextAutomation
+      ? { ...card, automation: previous.automation }
+      : card))
+    throw error
+  }
 }
-export function pauseAutomation(cardId: string) { updateCard(cardId, (card) => ({ ...card, automation: { ...card.automation, state: "paused" } })) }
-export function resumeAutomation(cardId: string) { updateCard(cardId, (card) => ({ ...card, automation: { ...card.automation, state: "active", autoPausedReason: null, failures: 0 } })) }
-export function turnAutomationOff(cardId: string) { updateCard(cardId, (card) => ({ ...card, automation: { ...card.automation, state: "off" } })) }
+
+export function publishAutomation(cardId: string): Promise<void> {
+  return persistAutomationTransition(cardId, (automation) => ({
+    ...automation,
+    state: "active",
+    hasUnpublishedChanges: false,
+    autoPausedReason: null,
+    failures: 0,
+  }))
+}
+
+export function pauseAutomation(cardId: string): Promise<void> {
+  return persistAutomationTransition(cardId, (automation) => ({ ...automation, state: "paused" }))
+}
+
+export function resumeAutomation(cardId: string): Promise<void> {
+  return persistAutomationTransition(cardId, (automation) => ({ ...automation, state: "active", autoPausedReason: null, failures: 0 }))
+}
+
+export function turnAutomationOff(cardId: string): Promise<void> {
+  return persistAutomationTransition(cardId, (automation) => ({ ...automation, state: "off" }))
+}
 export async function sendAutomationTest() { throw new Error("Email test delivery is not configured for this workspace.") }
 
 export async function testAutomation(cardId: string) {
@@ -511,17 +765,34 @@ function mapPublicCard(row: Record<string, unknown>): ContactCard {
   return mapWorkspace({ cards: [row], automations: [], conditions: [], actions: [], scans: [], exchanges: [] })[0]
 }
 
+type PublishedCardOwnerProfile = Pick<ContactCard["person"], "fullName" | "role" | "company" | "email" | "phone" | "website" | "profileImageDataUrl">
+
+async function loadPublishedCardOwnerProfile(slug: string): Promise<PublishedCardOwnerProfile | null> {
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) return null
+  const response = await fetch(`${supabaseFunctionsUrl}/contact-card-profile?slug=${encodeURIComponent(slug)}`, {
+    headers: { apikey: supabasePublicApiKey },
+  })
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error("The card owner's profile could not be loaded.")
+  return response.json() as Promise<PublishedCardOwnerProfile>
+}
+
 export async function loadPublicCard(slug: string, preview = false): Promise<ContactCard | null> {
   const local = findCardBySlug(slug)
-  if (local) return local
+  if (local) {
+    const ownerProfile = local.status === "published" ? await loadPublishedCardOwnerProfile(slug).catch(() => null) : null
+    return ownerProfile ? { ...local, person: { ...local.person, ...ownerProfile } } : local
+  }
   const row = await callRpc<Record<string, unknown> | null>(
     preview ? "multideck_contact_card_preview" : "multideck_public_contact_card",
     { p_slug: slug },
   )
   if (!row) return null
   const card = mapPublicCard(row)
-  if (!preview) publicCardCache.set(slug, card)
-  return card
+  const ownerProfile = card.status === "published" ? await loadPublishedCardOwnerProfile(slug).catch(() => null) : null
+  const resolvedCard = ownerProfile ? { ...card, person: { ...card.person, ...ownerProfile } } : card
+  if (!preview) publicCardCache.set(slug, resolvedCard)
+  return resolvedCard
 }
 
 function scanShape(): Pick<CardScan, "device" | "browser" | "channel" | "country" | "region"> {

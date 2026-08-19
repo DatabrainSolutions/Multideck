@@ -1,10 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AiBrain, ArrowLeft, ArrowRight, BriefcaseBusiness, Building2, CalendarDays, Languages, Mail, Phone, Plus, RefreshCw, Trash2, UsersRound } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { CopyableField } from "@/components/multideck/copyable-field"
+import { CrmDetailOverviewShader } from "@/components/multideck/crm-detail-overview-shader"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
 import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
-import { InlineField, InlineFieldCard, InlineSwitchField } from "@/components/multideck/inline-field"
+import { InlineField, InlineFieldCard, InlineSelectField, InlineSwitchField } from "@/components/multideck/inline-field"
 import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
@@ -12,30 +13,116 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { useLanguage } from "@/i18n/language-provider"
-import { getContact, updateContact, type ApiContactDetail, type UpdateContactInput } from "@/lib/customer-api"
+import { CustomerApiError, getContact, updateContact, type ApiContactDetail, type UpdateContactInput } from "@/lib/customer-api"
 
 type CustomField = { id: string; label: string; value: string }
 type ContactDraft = UpdateContactInput & { customFields: CustomField[] }
+type Translate = (value: string) => string
 
-const CrmDetailOverviewShaderCanvas = lazy(() => import("@/components/multideck/lead-company-overview-shader"))
+/**
+ * CRM keeps these as stable codes. Presentation translates their meaning while
+ * edits continue to use the untouched value supplied by the API.
+ */
+const contactValueLabels: Record<string, string> = {
+  decision_maker: "Decision maker",
+  decisionmaker: "Decision maker",
+  influencer: "Influencer",
+  champion: "Champion",
+  gatekeeper: "Gatekeeper",
+  finance: "Finance",
+  operations: "Operations",
+  procurement: "Procurement",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+  email: "Email",
+  phone: "Phone",
+  sms: "SMS",
+  whatsapp: "WhatsApp",
+  contact_card: "Contact card",
+  manual_override: "Manual override",
+  manual_entry: "Manual entry",
+  web_form: "Web form",
+  public_form: "Public form",
+  imported: "Imported",
+  import: "Imported",
+  legitimate_interest: "Legitimate interest",
+  consent: "Consent",
+  opted_in: "Opted in",
+  opted_out: "Opted out",
+  granted: "Granted",
+  revoked: "Revoked",
+  pending: "Pending",
+  unknown: "Unknown",
+}
 
-function CrmDetailOverviewShader() {
-  return (
-    <Suspense
-      fallback={<span className="block size-full bg-[radial-gradient(circle_at_50%_100%,#5366e5_0%,#06030a_68%)]" />}
-    >
-      <CrmDetailOverviewShaderCanvas />
-    </Suspense>
-  )
+const unsetContactValue = "__not_recorded__"
+
+const contactRoleOptions = [
+  { value: unsetContactValue, label: "Not recorded" },
+  { value: "decision_maker", label: "Decision maker" },
+  { value: "champion", label: "Champion" },
+  { value: "influencer", label: "Influencer" },
+  { value: "gatekeeper", label: "Gatekeeper" },
+  { value: "stakeholder", label: "Stakeholder" },
+  { value: "procurement", label: "Procurement" },
+  { value: "finance", label: "Finance" },
+  { value: "operations", label: "Operations" },
+] as const
+
+const contactInfluenceOptions = [
+  { value: unsetContactValue, label: "Not recorded" },
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+] as const
+
+const contactChannelOptions = [
+  { value: unsetContactValue, label: "Not recorded" },
+  { value: "email", label: "Email" },
+  { value: "phone", label: "Phone" },
+  { value: "sms", label: "SMS" },
+  { value: "whatsapp", label: "WhatsApp" },
+] as const
+
+const contactLanguageOptions = [
+  { value: unsetContactValue, label: "Not recorded" },
+  { value: "en-GB", label: "British English" },
+  { value: "en", label: "English" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "ar", label: "Arabic" },
+] as const
+
+function includeCurrentOption(
+  options: readonly { value: string; label: string }[],
+  value: string | null,
+  label: string | null,
+) {
+  if (!value || options.some((option) => option.value === value)) return options
+  return [{ value, label: label ?? value }, ...options]
+}
+
+const languageCodeAliases: Record<string, string> = {
+  arabic: "ar",
+  english: "en",
+  french: "fr",
+  german: "de",
 }
 
 export function CrmContactDetailPage({ contactId, navigate }: { contactId: string; navigate: (path: string) => void }) {
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
   const [contact, setContact] = useState<ApiContactDetail | null>(null)
   const [state, setState] = useState<"loading" | "ready" | "error">("loading")
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [consentOpen, setConsentOpen] = useState(false)
+  const contactRef = useRef<ApiContactDetail | null>(null)
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
+
+  useEffect(() => {
+    contactRef.current = contact
+  }, [contact])
 
   useEffect(() => {
     let active = true
@@ -51,20 +138,39 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
 
   /**
    * One field's change, sent as a complete record because the endpoint takes the
-   * whole shape. Rebuilt from the contact each time rather than held in state, so
-   * a save can never carry a stale copy of a neighbouring field. It throws on
-   * failure: the field that was edited catches it and shows the reason itself.
+   * whole shape. Saves are serialised and rebuilt from the latest confirmed
+   * response, so rapid edits cannot finish out of order. It throws on failure:
+   * the field that was edited catches it and shows the reason itself.
    */
-  const patch = useCallback(async (change: Partial<ContactDraft>) => {
-    const current = contact
-    if (!current) return
-    const next = { ...toDraft(current), ...change }
-    const metadata = {
-      ...next.metadata,
-      customFields: Object.fromEntries(next.customFields.filter((field) => field.label.trim()).map((field) => [field.label.trim(), field.value.trim()])),
-    }
-    setContact(await updateContact(contactId, { ...next, metadata }))
-  }, [contact, contactId])
+  const patch = useCallback((change: Partial<ContactDraft>) => {
+    const save = saveQueueRef.current.then(async () => {
+      const current = contactRef.current
+      if (!current) return
+      const next = { ...toDraft(current), ...change }
+      const metadata = {
+        ...next.metadata,
+        customFields: Object.fromEntries(next.customFields.filter((field) => field.label.trim()).map((field) => [field.label.trim(), field.value.trim()])),
+      }
+      try {
+        const updated = await updateContact(contactId, { ...next, metadata }, current.editVersion)
+        contactRef.current = updated
+        setContact(updated)
+      } catch (cause) {
+        if (!(cause instanceof CustomerApiError) || cause.status !== 409) throw cause
+        try {
+          const latest = await getContact(contactId, { forceRefresh: true })
+          contactRef.current = latest
+          setContact(latest)
+          throw new CustomerApiError(t("This contact changed elsewhere. Your edit was not saved; the latest version is now shown."), 409)
+        } catch (refreshCause) {
+          if (refreshCause instanceof CustomerApiError && refreshCause.status === 409) throw refreshCause
+          throw new CustomerApiError(t("This contact changed elsewhere. Your edit was not saved. Reload to see the latest version."), 409)
+        }
+      }
+    })
+    saveQueueRef.current = save.catch(() => undefined)
+    return save
+  }, [contactId, t])
 
   if (state === "loading") return <div className="md-page"><Surface padding="lg" className="grid min-h-[320px] place-items-center rounded-[var(--md-radius-xl)]"><DotGridLoaderPanel label="Loading contact" minHeight={0} /></Surface></div>
   if (state === "error" || !contact) return <div className="md-page md-page-stack"><Button variant="ghost" className="w-fit" onClick={() => navigate("/crm/contacts")}><ArrowLeft className="size-4 rtl:rotate-180" />{t("Back to contacts")}</Button><PageState icon={<RefreshCw className="size-6" />} title={t("Contact unavailable")} detail={error ?? undefined} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} embedded /></div>
@@ -72,16 +178,25 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
   const actionHref = contact.email ? `mailto:${contact.email}` : undefined
   const currentContact = contact
   const customFields = crmCustomFields(currentContact.metadata)
+  const roleLabel = localizeContactValue(contact.role, t)
+  const influenceLabel = localizeContactValue(contact.influenceLevel, t)
+  const channelLabel = localizeContactValue(contact.preferredChannel, t)
+  const preferredLanguageLabel = localizeLanguageValue(contact.preferredLanguage, language, t)
+  const roleOptions = includeCurrentOption(contactRoleOptions, currentContact.role, roleLabel)
+  const influenceOptions = includeCurrentOption(contactInfluenceOptions, currentContact.influenceLevel, influenceLabel)
+  const channelOptions = includeCurrentOption(contactChannelOptions, currentContact.preferredChannel, channelLabel)
+  const languageOptions = includeCurrentOption(contactLanguageOptions, currentContact.preferredLanguage, preferredLanguageLabel)
 
   const overviewRows = [
     { key: "account", label: t("Account"), value: contact.accountName, icon: Building2, direction: "auto" as const },
     { key: "email", label: t("Work email"), value: contact.email, icon: Mail, href: contact.email ? `mailto:${contact.email}` : null, direction: "ltr" as const },
     { key: "phone", label: t("Phone"), value: contact.phone, icon: Phone, href: contact.phone ? `tel:${contact.phone}` : null, direction: "ltr" as const },
-    { key: "role", label: t("Relationship role"), value: contact.role, icon: UsersRound, direction: "auto" as const },
+    { key: "role", label: t("Relationship role"), value: roleLabel, icon: UsersRound, direction: "auto" as const },
+    { key: "influence", label: t("Influence"), value: influenceLabel, icon: UsersRound, direction: "auto" as const },
     { key: "job-title", label: t("Job title"), value: contact.jobTitle, icon: BriefcaseBusiness, direction: "auto" as const },
-    { key: "preferred-channel", label: t("Preferred channel"), value: contact.preferredChannel, icon: Mail, direction: "auto" as const },
-    { key: "preferred-language", label: t("Preferred language"), value: contact.preferredLanguage, icon: Languages, direction: "auto" as const },
-    { key: "last-contact", label: t("Last contact"), value: contact.lastContactAt ? relativeDate(contact.lastContactAt, t) : null, icon: CalendarDays, direction: "auto" as const },
+    { key: "preferred-channel", label: t("Preferred channel"), value: channelLabel, icon: Mail, direction: "auto" as const },
+    { key: "preferred-language", label: t("Preferred language"), value: preferredLanguageLabel, icon: Languages, direction: "auto" as const },
+    { key: "last-contact", label: t("Last contact"), value: contact.lastContactAt ? relativeDate(contact.lastContactAt, language) : null, icon: CalendarDays, direction: "auto" as const },
   ]
 
   return <div className="md-page">
@@ -90,23 +205,23 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
         <header className="px-5 py-5 shadow-[var(--md-stroke-bottom)] sm:px-6">
           <Button type="button" variant="ghost" className="-ms-2 mb-4 h-8 w-fit rounded-[var(--md-radius-md)] px-2 text-[12px] font-medium text-[var(--md-text)] hover:bg-[var(--md-surface-tint)]" onClick={() => navigate("/crm/contacts")}><ArrowLeft data-icon="inline-start" className="size-3.5" strokeWidth={1.3} />{t("Back to contacts")}</Button>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex min-w-0 items-start gap-3.5"><CustomerAvatar initials={contact.initials} tone="blue" size="lg" className="size-14 rounded-full text-[18px]" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><CopyableField label={t("Contact")} value={contact.name} className="-my-1"><h1 className="truncate text-[24px] font-medium leading-8 text-[var(--md-ink)]" data-i18n-skip dir="auto">{contact.name}</h1></CopyableField><StatusPill tone={contact.consentMarketing ? "green" : "neutral"}>{t(contact.consentMarketing ? "Marketing opted in" : "Marketing opted out")}</StatusPill>{contact.consentSalesContact ? <StatusPill tone="teal">{t("Sales contact allowed")}</StatusPill> : null}</div><button type="button" onClick={() => navigate(`/crm/accounts/${contact.accountId}`)} className="mt-2 inline-flex items-center gap-1.5 rounded-[var(--md-radius-sm)] text-[13px] font-medium text-[var(--md-accent)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"><span data-i18n-skip dir="auto">{contact.accountName}</span><ArrowRight data-icon="inline-end" className="size-3.5" strokeWidth={1.4} /></button><p className="mt-2 text-[13px] text-[var(--md-text)]" data-i18n-skip dir="auto">{[contact.jobTitle || contact.role, contact.department, contact.location].filter(Boolean).join(" · ") || t("No role or location recorded")}</p></div></div>
+            <div className="flex min-w-0 items-start gap-3.5"><CustomerAvatar initials={contact.initials} tone="blue" size="lg" className="size-14 rounded-full text-[18px]" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><CopyableField label={t("Contact")} value={contact.name} className="-my-1"><h1 className="truncate text-[24px] font-medium leading-8 text-[var(--md-ink)]" data-i18n-skip dir="auto">{contact.name}</h1></CopyableField><StatusPill tone={contact.consentMarketing ? "green" : "neutral"}>{t(contact.consentMarketing ? "Marketing opted in" : "Marketing opted out")}</StatusPill>{contact.consentSalesContact ? <StatusPill tone="teal">{t("Sales contact allowed")}</StatusPill> : null}</div><button type="button" onClick={() => navigate(`/crm/accounts/${contact.accountId}`)} className="mt-2 inline-flex items-center gap-1.5 rounded-[var(--md-radius-sm)] text-[13px] font-medium text-[var(--md-accent)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"><span data-i18n-skip dir="auto">{contact.accountName}</span><ArrowRight data-icon="inline-end" className="size-3.5" strokeWidth={1.4} /></button><p className="mt-2 text-[13px] text-[var(--md-text)]" data-i18n-skip dir="auto">{[contact.jobTitle || roleLabel, contact.department, contact.location].filter(Boolean).join(" · ") || t("No role or location recorded")}</p></div></div>
             <div className="flex flex-wrap gap-2">{actionHref ? <Button asChild variant="outline"><a href={actionHref}><Mail className="size-4" strokeWidth={1.5} />{t("Email")}</a></Button> : null}{contact.phone ? <Button asChild variant="outline"><a href={`tel:${contact.phone}`}><Phone className="size-4" strokeWidth={1.5} />{t("Call")}</a></Button> : null}</div>
           </div>
         </header>
 
         <Panel title={t("Recent emails")} meta={contact.recentEmails.available ? String(contact.recentEmails.items.length) : t("Permission required")}>
-          {!contact.recentEmails.available ? <Empty text={t("You need email access to see conversations with this contact.")} /> : contact.recentEmails.items.length ? contact.recentEmails.items.map((email, index) => <button key={email.id} type="button" onClick={() => navigate(`/inbox?thread=${email.threadId}`)} className={`group flex w-full items-start gap-3 px-5 py-4 text-start hover:bg-[var(--md-surface-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)] ${index ? "border-t border-[var(--md-line)]" : ""}`}><span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] ${email.direction === "inbound" ? "bg-[var(--md-accent-a11)] text-[var(--md-accent)]" : "bg-[var(--md-surface-tint)] text-[var(--md-text)]"}`}><Mail className="size-4" strokeWidth={1.4} /></span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-4"><span className="truncate text-[14px] font-medium text-[var(--md-ink)]">{email.subject}</span><span className="shrink-0 text-[12px] tabular-nums text-[var(--md-subtle)]">{relativeDate(email.occurredAt, t)}</span></span>{email.preview ? <span className="mt-1 block truncate text-[12px] text-[var(--md-text)]">{email.preview}</span> : null}</span><ArrowRight className="mt-2 size-4 text-[var(--md-subtle)] transition-transform duration-150 group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transition-none" strokeWidth={1.4} /></button>) : <Empty text={t("No recent emails are linked to this contact.")} />}
+          {!contact.recentEmails.available ? <Empty text={t("You need email access to see conversations with this contact.")} /> : contact.recentEmails.items.length ? contact.recentEmails.items.map((email, index) => <button key={email.id} type="button" onClick={() => navigate(`/inbox?thread=${email.threadId}`)} className={`group flex w-full items-start gap-3 px-5 py-4 text-start hover:bg-[var(--md-surface-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)] ${index ? "border-t border-[var(--md-line)]" : ""}`}><span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] ${email.direction === "inbound" ? "bg-[var(--md-accent-a11)] text-[var(--md-accent)]" : "bg-[var(--md-surface-tint)] text-[var(--md-text)]"}`}><Mail className="size-4" strokeWidth={1.4} /></span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-4"><span className="truncate text-[14px] font-medium text-[var(--md-ink)]">{email.subject}</span><span className="shrink-0 text-[12px] tabular-nums text-[var(--md-subtle)]">{relativeDate(email.occurredAt, language)}</span></span>{email.preview ? <span className="mt-1 block truncate text-[12px] text-[var(--md-text)]">{email.preview}</span> : null}</span><ArrowRight className="mt-2 size-4 text-[var(--md-subtle)] transition-transform duration-150 group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transition-none" strokeWidth={1.4} /></button>) : <Empty text={t("No recent emails are linked to this contact.")} />}
         </Panel>
-        <Panel title={t("Activity")} meta={contact.activities.length ? t("Newest first") : undefined}>{contact.activities.length ? contact.activities.map((activity, index) => <div key={activity.id} className={`grid grid-cols-[10px_minmax(0,1fr)_auto] gap-3 px-5 py-4 ${index ? "border-t border-[var(--md-line)]" : ""}`}><span className="mt-1.5 size-2 rounded-full bg-[var(--md-accent)] shadow-[0_0_0_4px_var(--md-accent-a08)]" /><div><p className="text-[14px] font-medium text-[var(--md-ink)]">{activity.subject}</p>{activity.summary ? <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{activity.summary}</p> : null}</div><p className="shrink-0 text-[12px] tabular-nums text-[var(--md-subtle)]">{relativeDate(activity.occurredAt, t)}</p></div>) : <Empty text={t("No activity has been recorded for this contact yet.")} />}</Panel>
+        <Panel title={t("Activity")} meta={contact.activities.length ? t("Newest first") : undefined}>{contact.activities.length ? contact.activities.map((activity, index) => <div key={activity.id} className={`grid grid-cols-[10px_minmax(0,1fr)_auto] gap-3 px-5 py-4 ${index ? "border-t border-[var(--md-line)]" : ""}`}><span className="mt-1.5 size-2 rounded-full bg-[var(--md-accent)] shadow-[0_0_0_4px_var(--md-accent-a08)]" /><div><p className="text-[14px] font-medium text-[var(--md-ink)]">{activity.subject}</p>{activity.summary ? <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{activity.summary}</p> : null}</div><p className="shrink-0 text-[12px] tabular-nums text-[var(--md-subtle)]">{relativeDate(activity.occurredAt, language)}</p></div>) : <Empty text={t("No activity has been recorded for this contact yet.")} />}</Panel>
         <div className="grid gap-[var(--md-page-stack-gap)] px-5 py-5 shadow-[var(--md-stroke-top)] sm:px-6">
           <InlineFieldCard title="Who they are" directEdit>
             <InlineField label="First name" value={currentContact.firstName ?? ""} required={!currentContact.lastName} onSave={(firstName) => patch({ firstName: firstName || null })} />
             <InlineField label="Last name" value={currentContact.lastName ?? ""} required={!currentContact.firstName} onSave={(lastName) => patch({ lastName: lastName || null })} />
             <InlineField label="Job title" value={currentContact.jobTitle ?? ""} onSave={(jobTitle) => patch({ jobTitle: jobTitle || null })} />
             <InlineField label="Department" value={currentContact.department ?? ""} onSave={(department) => patch({ department: department || null })} />
-            <InlineField label="Role" value={currentContact.role ?? ""} hint="How they relate to the deal — decision maker, finance, operations" onSave={(role) => patch({ role: role || null })} />
-            <InlineField label="Influence" value={currentContact.influenceLevel ?? ""} onSave={(influenceLevel) => patch({ influenceLevel: influenceLevel || null })} />
+            <InlineSelectField label="Role" value={currentContact.role ?? unsetContactValue} options={roleOptions} onSave={(role) => patch({ role: role === unsetContactValue ? null : role })} />
+            <InlineSelectField label="Influence" value={currentContact.influenceLevel ?? unsetContactValue} options={influenceOptions} onSave={(influenceLevel) => patch({ influenceLevel: influenceLevel === unsetContactValue ? null : influenceLevel })} />
             <InlineField
               label="Relationship"
               kind="number"
@@ -119,9 +234,9 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
           <InlineFieldCard title="How to reach them" directEdit>
             <InlineField label="Work email" kind="email" placeholder="name@example.com" value={currentContact.email ?? ""} onSave={(email) => patch({ email: email || null })} />
             <InlineField label="Phone" kind="tel" value={currentContact.phone ?? ""} onSave={(phone) => patch({ phone: phone || null })} />
-            <InlineField label="Preferred channel" value={currentContact.preferredChannel ?? ""} onSave={(preferredChannel) => patch({ preferredChannel: preferredChannel || null })} />
-            <InlineField label="Language" value={currentContact.preferredLanguage ?? ""} onSave={(preferredLanguage) => patch({ preferredLanguage: preferredLanguage || null })} />
-            <InlineField label="Last contact" value={currentContact.lastContactAt ? relativeDate(currentContact.lastContactAt, t) : ""} readOnly />
+            <InlineSelectField label="Preferred channel" value={currentContact.preferredChannel ?? unsetContactValue} options={channelOptions} onSave={(preferredChannel) => patch({ preferredChannel: preferredChannel === unsetContactValue ? null : preferredChannel })} />
+            <InlineSelectField label="Language" value={currentContact.preferredLanguage ?? unsetContactValue} options={languageOptions} onSave={(preferredLanguage) => patch({ preferredLanguage: preferredLanguage === unsetContactValue ? null : preferredLanguage })} />
+            <InlineField label="Last contact" value={currentContact.lastContactAt ? relativeDate(currentContact.lastContactAt, language) : ""} readOnly />
           </InlineFieldCard>
 
           <InlineFieldCard title="Notes" directEdit>
@@ -143,7 +258,7 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
             action={<Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-2 text-[12px] active:scale-[0.96] motion-reduce:transform-none" onClick={() => setConsentOpen(true)}>{t("Change marketing")}</Button>}
           >
             <InlineField label="Marketing" value={t(currentContact.consentMarketing ? "Opted in" : "Opted out")} readOnly />
-            <InlineField label="Source" value={humanize(currentContact.marketingConsentSource) ?? ""} readOnly />
+            <InlineField label="Source" value={localizeContactValue(currentContact.marketingConsentSource, t) ?? ""} readOnly />
             <InlineSwitchField label="Allow direct sales contact" checked={currentContact.consentSalesContact} onSave={(consentSalesContact) => patch({ consentSalesContact })} />
             <InlineSwitchField icon={AiBrain} label="Allow AI training on approved data" checked={currentContact.trainingAllowed} onSave={(trainingAllowed) => patch({ trainingAllowed })} />
           </InlineFieldCard>
@@ -169,7 +284,7 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
         </div>
 
 
-        {contact.consentHistory.length ? <Panel title={t("Consent history")} meta={String(contact.consentHistory.length)}><div className="px-5 pb-4">{contact.consentHistory.map((item) => <div key={item.id} className="border-t border-[var(--md-line)] py-3 first:border-t-0"><div className="flex items-center justify-between gap-3"><StatusPill tone={item.status === "opted_in" ? "green" : "neutral"}>{t(item.status === "opted_in" ? "Opted in" : "Opted out")}</StatusPill><span className="text-[12px] tabular-nums text-[var(--md-subtle)]">{formatDate(item.effectiveAt)}</span></div><p className="mt-2 text-[12px] leading-5 text-[var(--md-text)]">{[humanize(item.source), item.reason].filter(Boolean).join(" · ")}</p></div>)}</div></Panel> : null}
+        {contact.consentHistory.length ? <Panel title={t("Consent history")} meta={String(contact.consentHistory.length)}><div className="px-5 pb-4">{contact.consentHistory.map((item) => <div key={item.id} className="border-t border-[var(--md-line)] py-3 first:border-t-0"><div className="flex items-center justify-between gap-3"><StatusPill tone={normaliseContactCode(item.status) === "opted_in" ? "green" : "neutral"}>{localizeContactValue(item.status, t) ?? t("Unknown")}</StatusPill><span className="text-[12px] tabular-nums text-[var(--md-subtle)]">{formatDate(item.effectiveAt, language)}</span></div><p className="mt-2 text-[12px] leading-5 text-[var(--md-text)]" dir="auto">{[localizeContactValue(item.source, t), item.reason].filter(Boolean).join(" · ")}</p></div>)}</div></Panel> : null}
       </Surface>
 
       <aside className="order-first relative min-w-0 self-start overflow-hidden rounded-[var(--md-radius-xl)] bg-[#06030a] px-5 py-5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a16),0_16px_36px_var(--md-accent-veil-cast-a18)] xl:order-none xl:sticky xl:top-[76px]" aria-labelledby={`contact-overview-${contact.id}`}>
@@ -178,7 +293,7 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
           <h2 id={`contact-overview-${contact.id}`} className="text-[13px] font-medium text-white/72">{t("Contact details")}</h2>
           <div className="mt-4 flex items-center gap-3">
             <CustomerAvatar initials={contact.initials} tone="blue" className="size-12 rounded-full bg-white/13 text-[15px] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)]" />
-            <div className="min-w-0"><CopyableField label={t("Contact")} value={contact.name} className="-my-2 min-w-0" contentClassName="min-w-0" buttonClassName="size-6 before:-inset-0.5 [@media(hover:none)]:size-10" tone="inverse"><p className="break-words text-[17px] font-medium leading-6 text-white" data-i18n-skip dir="auto">{contact.name}</p></CopyableField><p className="mt-1 text-[11px] text-white/58" data-i18n-skip dir="auto">{[contact.jobTitle || contact.role, contact.department].filter(Boolean).join(" · ") || t("Not recorded")}</p></div>
+            <div className="min-w-0"><CopyableField label={t("Contact")} value={contact.name} className="-my-2 min-w-0" contentClassName="min-w-0" buttonClassName="size-6 before:-inset-0.5 [@media(hover:none)]:size-10" tone="inverse"><p className="break-words text-[17px] font-medium leading-6 text-white" data-i18n-skip dir="auto">{contact.name}</p></CopyableField><p className="mt-1 text-[11px] text-white/58" data-i18n-skip dir="auto">{[contact.jobTitle || roleLabel, contact.department].filter(Boolean).join(" · ") || t("Not recorded")}</p></div>
           </div>
           <dl className="mt-3.5">
             {overviewRows.map(({ key, label, value, icon: Icon, href, direction }) => <div key={key} className="grid min-w-0 grid-cols-[20px_minmax(0,1fr)] gap-x-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] first:shadow-none"><Icon className="mt-0.5 size-4 text-white/54" strokeWidth={1.25} aria-hidden="true" /><div className="min-w-0"><dt className="text-[10.5px] text-white/58">{label}</dt><dd className="mt-0.5 min-w-0 text-[12px] font-medium leading-[18px] text-white/90">{value ? <CopyableField label={label} value={value} className="-my-2 max-w-full" contentClassName="max-w-full" buttonClassName="size-6 before:-inset-0.5 [@media(hover:none)]:size-10" tone="inverse">{key === "account" ? <button type="button" onClick={() => navigate(`/crm/accounts/${contact.accountId}`)} className="inline-flex max-w-full items-center gap-1 text-[var(--md-accent-lift-strong)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"><span className="truncate" data-i18n-skip dir="auto">{value}</span><ArrowRight data-icon="inline-end" className="size-3 shrink-0" strokeWidth={1.3} /></button> : href ? <a href={href} className="inline-flex max-w-full text-[var(--md-accent-lift-strong)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35" dir={direction} data-i18n-skip><span className={key === "phone" ? "whitespace-nowrap" : "[overflow-wrap:anywhere]"}>{value}</span></a> : <span data-i18n-skip dir={direction}>{value}</span>}</CopyableField> : <span className="text-white/48">{t("Not recorded")}</span>}</dd></div></div>)}
@@ -306,6 +421,39 @@ function comparableDraft(draft: ContactDraft) { return { ...draft, marketingCons
 function Panel({ title, meta, children }: { title: string; meta?: string; children: ReactNode }) { return <section className="overflow-hidden shadow-[var(--md-stroke-top)]"><div className="flex items-center justify-between gap-3 px-5 py-4 sm:px-6"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{title}</h2>{meta ? <span className="text-[12px] text-[var(--md-text)]">{meta}</span> : null}</div>{children}</section> }
 function Empty({ text }: { text: string }) { return <p className="border-t border-[var(--md-line)] px-5 py-6 text-[13px] leading-5 text-[var(--md-text)]">{text}</p> }
 function PageState({ icon, title, detail, action, embedded = false }: { icon: ReactNode; title: string; detail?: string; action?: ReactNode; embedded?: boolean }) { return <div className={embedded ? "" : "md-page"}><Surface padding="lg" className="grid min-h-[320px] place-items-center rounded-[var(--md-radius-xl)] text-center"><div className="max-w-md"><span className="mx-auto grid size-11 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">{icon}</span><p className="mt-4 text-[15px] font-medium text-[var(--md-ink)]">{title}</p>{detail ? <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{detail}</p> : null}{action ? <div className="mt-4">{action}</div> : null}</div></Surface></div> }
-function humanize(value: string | null | undefined) { return value ? value.replace(/[_-]+/g, " ").replace(/^./, (letter) => letter.toUpperCase()) : null }
-function formatDate(value: string) { return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(new Date(value)) }
-function relativeDate(value: string, t: (value: string) => string) { const days = Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000); if (days <= 0) return t("Today"); if (days === 1) return t("Yesterday"); if (days < 30) return `${days} ${t("days ago")}`; return formatDate(value) }
+
+function normaliseContactCode(value: string) {
+  return value.trim().toLocaleLowerCase("en").replace(/[\s-]+/g, "_")
+}
+
+function localizeContactValue(value: string | null | undefined, t: Translate) {
+  if (!value?.trim()) return null
+  const code = normaliseContactCode(value)
+  const readable = contactValueLabels[code] ?? code.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase())
+  return t(readable)
+}
+
+function localizeLanguageValue(value: string | null | undefined, language: string, t: Translate) {
+  if (!value?.trim()) return null
+  const stored = value.trim()
+  const languageCode = languageCodeAliases[normaliseContactCode(stored)] ?? stored.replace(/_/g, "-")
+  try {
+    return new Intl.DisplayNames([language], { type: "language" }).of(languageCode) ?? localizeContactValue(stored, t)
+  } catch {
+    return localizeContactValue(stored, t)
+  }
+}
+
+function formatDate(value: string, language: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat(language, { day: "numeric", month: "short", year: "numeric" }).format(date)
+}
+
+function relativeDate(value: string, language: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const days = Math.round((date.getTime() - Date.now()) / 86_400_000)
+  if (Math.abs(days) < 30) return new Intl.RelativeTimeFormat(language, { numeric: "auto" }).format(days, "day")
+  return formatDate(value, language)
+}

@@ -3,10 +3,9 @@
  *
  * Two shapes of read, chosen for how the screen is actually used:
  *
- * - Folders are loaded **once, in full**. A company drive is tens to a few hundred
- *   folders, so holding the whole tree in memory makes opening a folder, walking
- *   the breadcrumb, and going back instant with no request at all.
- * - Files are loaded **per folder**, because that list is the part that grows.
+ * - Child folders and files are loaded **per parent, in bounded pages**. The
+ *   operator can walk the tree without asking the browser or database to hold a
+ *   tenant's entire Drive in memory.
  *
  * Objects live in the private `crm-drive` bucket beneath the company's own path
  * prefix, which both the table policies and the storage policies enforce.
@@ -116,6 +115,17 @@ export type DriveFolderStats = {
   lastActivityAt: string | null
 }
 
+export type DriveCursor = { name: string; id: string }
+
+export type DrivePage<T> = {
+  items: T[]
+  totalCount: number
+  nextCursor: DriveCursor | null
+  hasMore: boolean
+}
+
+export const drivePageSize = 48
+
 export const emptyDriveFolderStats: DriveFolderStats = {
   folderCount: 0,
   fileCount: 0,
@@ -124,6 +134,7 @@ export const emptyDriveFolderStats: DriveFolderStats = {
 }
 
 export class DriveError extends Error {}
+export type DriveDeletionResult = { storageCleanupPending: boolean }
 
 const foldersTable = "CRM_DriveFolders"
 const filesTable = "CRM_DriveFiles"
@@ -234,21 +245,79 @@ export function compareDriveNames(left: { name: string }, right: { name: string 
 
 /* ---------------------------------------------------------------------- reads */
 
-export async function listDriveFolders(): Promise<DriveFolder[]> {
-  const { data, error } = await client().from(foldersTable).select(folderColumns)
-  if (error) throw driveError(error, "Drive folders could not be loaded.")
-
-  return (data as FolderRow[]).map(toFolder).sort(compareDriveNames)
+function isMissingPagingFunction(error: { code?: string; message?: string } | null) {
+  if (!error) return false
+  if (error.code === "42883" || error.code === "PGRST202") return true
+  const message = error.message ?? ""
+  return /crm_drive_(?:list_(?:folders|files)|folder_path)/i.test(message) && /function|schema cache|not found/i.test(message)
 }
 
-export async function listDriveFiles(folderId: string | null): Promise<DriveFile[]> {
-  const query = client().from(filesTable).select(fileColumns)
-  const { data, error } = await (folderId === null
-    ? query.is("DriveFile_FolderID", null)
-    : query.eq("DriveFile_FolderID", folderId))
-  if (error) throw driveError(error, "Drive files could not be loaded.")
+function compareCursor(left: { name: string; id: string }, right: DriveCursor) {
+  const name = nameCollator.compare(left.name, right.name)
+  return name !== 0 ? name : left.id.localeCompare(right.id)
+}
 
-  return (data as FileRow[]).map(toFile).sort(compareDriveNames)
+function pageFromRows<T extends { name: string; id: string }>(rows: T[], cursor: DriveCursor | null | undefined, limit: number): DrivePage<T> {
+  const sorted = rows.slice().sort((left, right) => compareDriveNames(left, right) || left.id.localeCompare(right.id))
+  const afterCursor = cursor ? sorted.filter((row) => compareCursor(row, cursor) > 0) : sorted
+  const items = afterCursor.slice(0, limit)
+  const hasMore = afterCursor.length > limit
+  return {
+    items,
+    totalCount: rows.length,
+    hasMore,
+    nextCursor: hasMore && items.length > 0 ? { name: items[items.length - 1].name, id: items[items.length - 1].id } : null,
+  }
+}
+
+function readDrivePage<T>(data: unknown): DrivePage<T> {
+  const value = (data ?? {}) as Partial<DrivePage<T>>
+  return {
+    items: Array.isArray(value.items) ? value.items : [],
+    totalCount: Number(value.totalCount) || 0,
+    hasMore: Boolean(value.hasMore),
+    nextCursor: value.nextCursor && typeof value.nextCursor === "object"
+      ? value.nextCursor as DriveCursor
+      : null,
+  }
+}
+
+export async function listDriveFolders(
+  parentId: string | null = null,
+  options: { cursor?: DriveCursor | null; limit?: number } = {},
+): Promise<DrivePage<DriveFolder>> {
+  const limit = Math.max(1, Math.min(options.limit ?? drivePageSize, 100))
+  const { data, error } = await client().rpc("crm_drive_list_folders", {
+    p_parent_id: parentId,
+    p_limit: limit,
+    p_cursor: options.cursor ?? null,
+  })
+  if (!error) return readDrivePage<DriveFolder>(data)
+  if (isMissingPagingFunction(error)) throw new DriveError("Drive folder paging is still being prepared. Try again shortly.")
+  throw driveError(error, "Drive folders could not be loaded.")
+}
+
+export async function listDriveFiles(
+  folderId: string | null,
+  options: { cursor?: DriveCursor | null; limit?: number } = {},
+): Promise<DrivePage<DriveFile>> {
+  const limit = Math.max(1, Math.min(options.limit ?? drivePageSize, 100))
+  const { data, error } = await client().rpc("crm_drive_list_files", {
+    p_folder_id: folderId,
+    p_limit: limit,
+    p_cursor: options.cursor ?? null,
+  })
+  if (!error) return readDrivePage<DriveFile>(data)
+  if (isMissingPagingFunction(error)) throw new DriveError("Drive file paging is still being prepared. Try again shortly.")
+  throw driveError(error, "Drive files could not be loaded.")
+}
+
+export async function loadDriveFolderPath(folderId: string | null): Promise<DriveFolder[]> {
+  if (!folderId) return []
+  const { data, error } = await client().rpc("crm_drive_folder_path", { p_folder_id: folderId })
+  if (!error) return Array.isArray(data) ? data as DriveFolder[] : []
+  if (isMissingPagingFunction(error)) throw new DriveError("Drive folder paths are still being prepared. Try again shortly.")
+  throw driveError(error, "The Drive folder path could not be loaded.")
 }
 
 /**
@@ -324,17 +393,12 @@ export async function updateDriveFolder(
   folderId: string,
   changes: { name?: string; colour?: DriveFolderColour; icon?: DriveFolderIcon },
 ): Promise<DriveFolder> {
-  const patch: Record<string, string> = {}
-  if (changes.name !== undefined) patch.DriveFolder_Name = changes.name.trim()
-  if (changes.colour !== undefined) patch.DriveFolder_ColourCode = changes.colour
-  if (changes.icon !== undefined) patch.DriveFolder_IconCode = changes.icon
-
-  const { data, error } = await client()
-    .from(foldersTable)
-    .update(patch)
-    .eq("DriveFolder_ID", folderId)
-    .select(folderColumns)
-    .single()
+  const { data, error } = await client().rpc("crm_drive_update_folder", {
+    p_folder_id: folderId,
+    p_name: changes.name?.trim() ?? null,
+    p_colour_code: changes.colour ?? null,
+    p_icon_code: changes.icon ?? null,
+  })
   if (error) throw driveError(error, "The folder could not be updated.")
 
   return toFolder(data as FolderRow)
@@ -344,38 +408,54 @@ export async function updateDriveFolder(
  * The row delete cascades in Postgres; the stored objects come back so the
  * bucket is cleared in the same action rather than left with orphans.
  */
-export async function deleteDriveFolder(folderId: string) {
+export async function deleteDriveFolder(folderId: string): Promise<DriveDeletionResult> {
   const { data, error } = await client().rpc("crm_drive_delete_folder", { p_folder_id: folderId })
   if (error) throw driveError(error, "The folder could not be deleted.")
 
   const paths = (data ?? []) as string[]
-  if (paths.length > 0) await removeStoredObjects(paths)
+  return { storageCleanupPending: await removeStoredObjects(paths) }
 }
 
 export async function renameDriveFile(fileId: string, name: string): Promise<DriveFile> {
-  const { data, error } = await client()
-    .from(filesTable)
-    .update({ DriveFile_Name: name.trim() })
-    .eq("DriveFile_ID", fileId)
-    .select(fileColumns)
-    .single()
+  const { data, error } = await client().rpc("crm_drive_rename_file", {
+    p_file_id: fileId,
+    p_name: name.trim(),
+  })
   if (error) throw driveError(error, "The file could not be renamed.")
 
   return toFile(data as FileRow)
 }
 
-export async function deleteDriveFile(file: DriveFile) {
-  const { error } = await client().from(filesTable).delete().eq("DriveFile_ID", file.id)
+export async function deleteDriveFile(file: DriveFile): Promise<DriveDeletionResult> {
+  const { data, error } = await client().rpc("crm_drive_delete_file", { p_file_id: file.id })
   if (error) throw driveError(error, "The file could not be deleted.")
 
-  await removeStoredObjects([file.storagePath, file.thumbnailPath].filter((path): path is string => Boolean(path)))
+  const paths = (data ?? []) as string[]
+  return { storageCleanupPending: await removeStoredObjects(paths) }
 }
 
 async function removeStoredObjects(paths: string[]) {
+  if (paths.length === 0) return false
   const { error } = await client().storage.from(driveBucket).remove(paths)
-  // The metadata is already gone, so the operator's action succeeded. A stubborn
-  // object is a cleanup concern, not something to fail the interaction over.
-  if (error) console.warn("Some Drive objects could not be removed from storage.", error)
+  if (error) {
+    console.warn("Some Drive objects are queued for another cleanup attempt.", error)
+    return true
+  }
+
+  const { error: completionError } = await client().rpc("crm_drive_complete_cleanup", { p_paths: paths })
+  if (completionError) {
+    console.warn("Drive storage was cleared but cleanup confirmation is still pending.", completionError)
+    return true
+  }
+  return false
+}
+
+/** Retry durable object cleanup whenever an authorised operator reopens Drive. */
+export async function retryPendingDriveCleanup(): Promise<DriveDeletionResult> {
+  const { data, error } = await client().rpc("crm_drive_pending_cleanup")
+  if (error) throw driveError(error, "Pending Drive cleanup could not be checked.")
+  const paths = (data ?? []) as string[]
+  return { storageCleanupPending: await removeStoredObjects(paths) }
 }
 
 /* --------------------------------------------------------------------- uploads */
@@ -442,17 +522,20 @@ export async function uploadDriveFile(input: DriveUploadInput): Promise<DriveFil
   const written: string[] = []
 
   try {
-    await putObject(storagePath, file, file.type || "application/octet-stream", { onProgress, signal })
+    // Record the intended object before the request starts. If Storage accepts
+    // the bytes but the client times out before receiving the response, the
+    // catch path still removes (or durably queues) the uncertain write.
     written.push(storagePath)
+    await putObject(storagePath, file, file.type || "application/octet-stream", { onProgress, signal })
 
     if (preview.thumbnail && thumbnailPath) {
+      written.push(thumbnailPath)
       const { error } = await client().storage.from(driveBucket).upload(thumbnailPath, preview.thumbnail, {
         cacheControl: "31536000",
         contentType: "image/webp",
         upsert: false,
       })
       if (error) throw driveError(error, "The file preview could not be stored.")
-      written.push(thumbnailPath)
     }
 
     const { data, error } = await client()
@@ -602,6 +685,9 @@ export async function driveSignedUrl(path: string) {
 export async function downloadDriveFile(file: DriveFile) {
   const { data, error } = await client().storage.from(driveBucket).download(file.storagePath)
   if (error) throw driveError(error, "The file could not be downloaded.")
+  if (data.size !== file.sizeBytes) {
+    throw new DriveError("The downloaded file did not match the saved size. Nothing was opened; try again.")
+  }
 
   const url = URL.createObjectURL(data)
   const link = document.createElement("a")

@@ -47,6 +47,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { DotGridLoader, DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
 import {
   getDateKey,
   MultideckDateRangePicker,
@@ -82,6 +83,7 @@ import {
 } from "@/components/multideck/crm-dashboard"
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import { Pagination } from "@/components/multideck/pagination"
+import { RegisterFacetSelect, RegisterRevalidatingMark, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { InlineField, InlineFieldCard } from "@/components/multideck/inline-field"
@@ -99,22 +101,29 @@ import { useLanguage } from "@/i18n/language-provider"
 import type { DashboardKpi } from "@/lib/dashboard-live-data"
 import { mdMotion } from "@/lib/motion"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
-import { getApiTeamUsers } from "@/lib/api"
-import { createCustomer, createCustomerContact, getCustomerReference, listCustomers, type ApiCustomer } from "@/lib/customer-api"
-import { listDeals, markDealWon, moveDealStage, type ApiDeal } from "@/lib/deal-api"
+import { getApiTeamUsersByIds } from "@/lib/api"
+import { createCustomer, createCustomerContact, getCustomerReference, listAccountsPage, type ApiCustomer } from "@/lib/customer-api"
+import { getDeal, listDealsPage, markDealWon, moveDealStage, type ApiDeal, type DealRegisterPage, type DealRegisterSort } from "@/lib/deal-api"
 import {
   createFollowUpLead,
   getCrmDashboard,
   getCrmFollowUpOpportunities,
   getLead,
-  listCrmTransferUsers,
-  listLeads,
+  cancelLeadTransfer,
+  decideLeadTransfer,
+  listLeadTransferRequests,
+  listCrmTransferUsersPage,
+  listLeadsPage,
+  requestLeadTransfer,
   transferLead,
   type ApiLead,
   type ApiLeadDetail,
+  type CrmRegisterSort,
   type CrmDashboardData,
   type CrmFollowUpData,
   type CrmFollowUpOpportunity,
+  type CrmLeadTransferRequest,
+  type LeadRegisterPage,
   type CrmTransferUser,
   updateLead,
   type UpdateLeadInput,
@@ -122,22 +131,52 @@ import {
 import { getPipelineSettings, type ApiPipeline } from "@/lib/pipeline-api"
 import { createProfilePhotoSignedUrls } from "@/lib/profile-photo"
 import { setMarketingOptIn } from "@/lib/marketing-consent-api"
+import { CrmConflictError, CrmMutationOutcomeUnknownError } from "@/lib/crm-supabase"
 import { getSupabaseSession } from "@/lib/supabase"
 import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
 type CrmPipeline = CrmPipelineBoardData
+type DealViewMode = "Board" | "List"
+const emptyLeadSummary: LeadRegisterPage["summary"] = { leads: 0, open: 0, converted: 0, disqualified: 0, unassigned: 0, dueFollowUps: 0, valued: 0, recent: 0, qualified: 0, estimatedValue: 0 }
+const emptyLeadFacets: LeadRegisterPage["facets"] = { statuses: [], sources: [], ratings: [], owners: [], hasUnassigned: false }
+const emptyDealFacets: DealRegisterPage["facets"] = { pipelines: [], stages: [], statuses: [], owners: [], hasUnassigned: false }
+const dealListPageSize = 50
+const leadScopes = ["All", "Mine"] as const
+type LeadScope = (typeof leadScopes)[number]
+
+function useDialogReturnFocus(open: boolean) {
+  const previousOpen = useRef(open)
+  const returnFocusTarget = useRef<HTMLElement | null>(null)
+
+  if (open && !previousOpen.current && typeof document !== "undefined") {
+    const activeElement = document.activeElement
+    returnFocusTarget.current = activeElement instanceof HTMLElement && activeElement !== document.body
+      ? activeElement
+      : null
+  }
+
+  useEffect(() => {
+    previousOpen.current = open
+  }, [open])
+
+  return (event: Event) => {
+    const target = returnFocusTarget.current
+    returnFocusTarget.current = null
+    if (!target?.isConnected) return
+    event.preventDefault()
+    target.focus()
+  }
+}
 type Lead = ApiLead
 
-const dealCloseDateFormatter = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" })
-const dealNextActionFormatter = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" })
 const dealValueFormatters = new Map<string, Intl.NumberFormat>()
 
-function getDealValueFormatter(currency: string, compact: boolean) {
-  const key = `${currency}:${compact ? "compact" : "standard"}`
+function getDealValueFormatter(currency: string, compact: boolean, language = "en-GB") {
+  const key = `${language}:${currency}:${compact ? "compact" : "standard"}`
   let formatter = dealValueFormatters.get(key)
   if (!formatter) {
-    formatter = new Intl.NumberFormat("en-GB", {
+    formatter = new Intl.NumberFormat(language, {
       style: "currency",
       currency,
       notation: compact ? "compact" : "standard",
@@ -146,6 +185,30 @@ function getDealValueFormatter(currency: string, compact: boolean) {
     dealValueFormatters.set(key, formatter)
   }
   return formatter
+}
+
+function isDealOpen(deal: ApiDeal) {
+  return !deal.isWon && !deal.wonAt && !deal.statusCode.toLocaleLowerCase().includes("lost")
+}
+
+function isDealCloseOverdue(deal: ApiDeal) {
+  if (!deal.expectedCloseDate || !isDealOpen(deal)) return false
+  return new Date(`${deal.expectedCloseDate}T23:59:59`).getTime() < Date.now()
+}
+
+function formatDealClose(deal: ApiDeal, language: string, translate: (key: string) => string, includeYear = false) {
+  if (!deal.expectedCloseDate) return translate("No close date")
+  const date = new Intl.DateTimeFormat(language, includeYear
+    ? { day: "numeric", month: "short", year: "numeric" }
+    : { day: "numeric", month: "short" })
+    .format(new Date(`${deal.expectedCloseDate}T12:00:00`))
+  return isDealCloseOverdue(deal) ? `${translate("Overdue")} · ${date}` : date
+}
+
+function formatDealNextAction(value: string | null, language: string, translate: (key: string) => string) {
+  return value
+    ? new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
+    : translate("Not recorded")
 }
 
 function apiDealTone(deal: ApiDeal): StatusTone {
@@ -157,59 +220,63 @@ function apiDealTone(deal: ApiDeal): StatusTone {
   return "blue"
 }
 
-function apiDealToBoardDeal(deal: ApiDeal, tone: StatusTone): CrmDeal {
-  const due = deal.expectedCloseDate
-    ? dealCloseDateFormatter.format(new Date(`${deal.expectedCloseDate}T12:00:00`))
-    : "No close date"
+function apiDealToBoardDeal(deal: ApiDeal, tone: StatusTone, language: string, translate: (key: string) => string): CrmDeal {
+  const due = formatDealClose(deal, language, translate)
   const value = deal.expectedValueAmount === null
-    ? "Value pending"
+    ? translate("Value pending")
     : getDealValueFormatter(
       deal.currencyCode || "GBP",
       deal.expectedValueAmount >= 100_000,
+      language,
     ).format(deal.expectedValueAmount)
   const owner = deal.ownerName
     ? deal.ownerName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()
     : "—"
   const margin = deal.expectedMarginAmount === null
-    ? "Not recorded"
-    : getDealValueFormatter(deal.currencyCode || "GBP", false).format(deal.expectedMarginAmount)
-  const nextAction = deal.nextActionDueAt
-    ? dealNextActionFormatter.format(new Date(deal.nextActionDueAt))
-    : "Not recorded"
+    ? translate("Not recorded")
+    : getDealValueFormatter(deal.currencyCode || "GBP", false, language).format(deal.expectedMarginAmount)
+  const nextAction = formatDealNextAction(deal.nextActionDueAt, language, translate)
 
   return {
     id: deal.id,
     title: deal.name,
     account: deal.companyName,
-    contact: deal.primaryContactName || "Contact pending",
+    contact: deal.primaryContactName || translate("Contact pending"),
     value,
     due,
     owner,
     status: deal.statusName,
-    summary: deal.customerNeed || deal.serviceInterest || "Commercial scope ready for qualification.",
+    isOverdue: isDealCloseOverdue(deal),
+    summary: deal.customerNeed || deal.serviceInterest || translate("Commercial scope ready for qualification."),
     nextStep: deal.nextActionDueAt
-      ? `Next action due ${dealNextActionFormatter.format(new Date(deal.nextActionDueAt))}.`
-      : "Set the next customer-facing action.",
+      ? `${translate("Next action due")} ${nextAction}.`
+      : translate("Set the next customer-facing action."),
     tone: tone === "neutral" ? apiDealTone(deal) : tone,
     cardFields: {
       expectedValue: value,
       expectedMargin: margin,
-      probability: deal.probabilityPct === null ? "Not recorded" : `${deal.probabilityPct}%`,
-      primaryContact: deal.primaryContactName || "Not recorded",
+      probability: deal.probabilityPct === null ? translate("Not recorded") : `${deal.probabilityPct}%`,
+      primaryContact: deal.primaryContactName || translate("Not recorded"),
       owner,
       expectedClose: due,
-      mode: deal.modeCode || "Not recorded",
-      direction: deal.directionCode || "Not recorded",
-      origin: deal.originName || "Not recorded",
-      destination: deal.destinationName || "Not recorded",
-      tradeLane: deal.tradeLane || "Not recorded",
-      serviceInterest: deal.serviceInterest || "Not recorded",
+      mode: translate(humanizeDealCode(deal.modeCode) || "Not recorded"),
+      direction: translate(humanizeDealCode(deal.directionCode) || "Not recorded"),
+      origin: deal.originName || translate("Not recorded"),
+      destination: deal.destinationName || translate("Not recorded"),
+      tradeLane: deal.tradeLane || translate("Not recorded"),
+      serviceInterest: deal.serviceInterest || translate("Not recorded"),
       nextAction,
     },
   }
 }
 
-function buildDealPipelines(pipelines: ApiPipeline[], deals: ApiDeal[]): CrmPipelineBoardData[] {
+function humanizeDealCode(value: string | null) {
+  return value
+    ? value.replace(/[_-]+/g, " ").replace(/^./, (letter) => letter.toUpperCase())
+    : ""
+}
+
+function buildDealPipelines(pipelines: ApiPipeline[], deals: ApiDeal[], language: string, translate: (key: string) => string): CrmPipelineBoardData[] {
   const dealsByStage = new Map<string, ApiDeal[]>()
   for (const deal of deals) {
     const key = `${deal.pipelineId}:${deal.pipelineStageId}`
@@ -226,17 +293,17 @@ function buildDealPipelines(pipelines: ApiPipeline[], deals: ApiDeal[]): CrmPipe
       title: stage.name,
       tone: stage.tone,
       deals: (dealsByStage.get(`${pipeline.id}:${stage.id}`) ?? [])
-        .map((deal) => apiDealToBoardDeal(deal, stage.tone)),
+        .map((deal) => apiDealToBoardDeal(deal, stage.tone, language, translate)),
     })),
   }))
 }
 
-async function loadLeadOwnerPhotoUrls() {
+async function loadLeadOwnerPhotoUrls(ownerIds: string[]) {
   const session = await getSupabaseSession()
-  if (!session?.access_token) return new Map<string, string>()
+  if (!session?.access_token || !ownerIds.length) return new Map<string, string>()
 
-  const team = await getApiTeamUsers(session.access_token)
-  const usersWithPhotos = team.users.filter((user) => user.profilePhoto !== null)
+  const users = await getApiTeamUsersByIds(session.access_token, ownerIds)
+  const usersWithPhotos = users.filter((user) => user.profilePhoto !== null)
   const signedUrlsByPath = await createProfilePhotoSignedUrls(usersWithPhotos.map((user) => user.profilePhoto!))
 
   return new Map(
@@ -857,6 +924,8 @@ function FollowUpRecordDialog({
   onCreated: () => void
 }) {
   const { t } = useLanguage()
+  const dialogOpen = Boolean(kind && (opportunity || open))
+  const restoreDialogFocus = useDialogReturnFocus(dialogOpen)
   const [personName, setPersonName] = useState("")
   const [companyName, setCompanyName] = useState("")
   const [email, setEmail] = useState("")
@@ -867,6 +936,7 @@ function FollowUpRecordDialog({
   const [postZipCode, setPostZipCode] = useState("")
   const [countryCode, setCountryCode] = useState("")
   const [accountId, setAccountId] = useState("")
+  const [accountSearch, setAccountSearch] = useState("")
   const [accounts, setAccounts] = useState<ApiCustomer[]>([])
   const [accountState, setAccountState] = useState<"idle" | "loading" | "ready" | "error">("idle")
   const [submitting, setSubmitting] = useState(false)
@@ -884,25 +954,38 @@ function FollowUpRecordDialog({
     setPostZipCode("")
     setCountryCode("")
     setAccountId("")
+    setAccountSearch("")
+    setAccounts([])
     setError(null)
-    if (kind !== "contact") {
-      setAccountState("idle")
-      return
-    }
+    setAccountState(kind === "contact" ? "loading" : "idle")
+  }, [kind, open, opportunity])
+
+  useEffect(() => {
+    if (kind !== "contact" || (!opportunity && !open)) return undefined
     let active = true
     setAccountState("loading")
-    listCustomers()
-      .then((rows) => {
+    const timer = window.setTimeout(() => {
+      listAccountsPage({
+        search: accountSearch.trim(),
+        sort: { id: "account", direction: "asc" },
+        limit: 25,
+        offset: 0,
+      })
+      .then((page) => {
         if (!active) return
-        setAccounts(rows)
+        setAccounts(page.rows)
         setAccountState("ready")
       })
       .catch(() => {
         if (!active) return
         setAccountState("error")
       })
-    return () => { active = false }
-  }, [kind, open, opportunity])
+    }, 250)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [accountSearch, kind, open, opportunity])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -958,8 +1041,8 @@ function FollowUpRecordDialog({
 
   const title = kind === "lead" ? t(opportunity ? "Create lead" : "New lead") : kind === "contact" ? t("Create contact") : t("Create account")
   return (
-    <Dialog open={Boolean(kind && (opportunity || open))} onOpenChange={(nextOpen) => { if (!nextOpen) onClose() }}>
-      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
+    <Dialog open={dialogOpen} onOpenChange={(nextOpen) => { if (!nextOpen) onClose() }}>
+      <DialogContent onCloseAutoFocus={restoreDialogFocus} className="max-h-[calc(100vh-2rem)] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
         <DialogHeader className="text-start">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{t(opportunity ? "Review the details found in the email before adding them to CRM." : "New sales opportunity")}</DialogDescription>
@@ -973,11 +1056,23 @@ function FollowUpRecordDialog({
           ) : (
             <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
               {t("Account")}
+              <Input
+                value={accountSearch}
+                onChange={(event) => {
+                  setAccountSearch(event.target.value)
+                  setAccountId("")
+                }}
+                placeholder={t("Search accounts")}
+                aria-label={t("Search accounts")}
+                className="h-10"
+                dir="auto"
+              />
               <Select value={accountId} onValueChange={setAccountId} disabled={accountState !== "ready"}>
                 <SelectTrigger className="h-10"><SelectValue placeholder={accountState === "loading" ? t("Loading accounts…") : t("Choose account")} /></SelectTrigger>
                 <SelectContent>{accounts.map((account) => <SelectItem key={account.id} value={account.id}><span dir="auto">{account.name}</span></SelectItem>)}</SelectContent>
               </Select>
               {accountState === "error" ? <span className="text-[11px] text-[var(--md-red)]">{t("Accounts could not be loaded.")}</span> : null}
+              {accountState === "ready" && !accounts.length ? <span className="text-[11px] text-[var(--md-subtle)]">{t("No accounts match this search.")}</span> : null}
             </label>
           )}
           <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
@@ -1147,8 +1242,8 @@ export function CrmOverviewPage() {
       { label: t("Open leads"), value: String(data.summary.openLeads), detail: data.summary.staleLeads ? `${data.summary.staleLeads} ${t("gone quiet")}` : t("all recently touched"), tone: "teal", icon: Users },
       { label: t("Needs follow-up"), value: String(queueTotal), detail: notInCrm ? `${notInCrm} ${t("not in CRM yet")}` : t("all already on record"), tone: "amber", icon: AlarmClock },
       { label: t("Replies due"), value: String(followUpData?.summary.repliesDue ?? 0), detail: t("people waiting on you"), tone: "red", icon: Reply },
-      { label: t("Open deals"), value: String(data.summary.openDeals), detail: `${data.pipeline.length} ${data.pipeline.length === 1 ? t("stage in play") : t("stages in play")}`, tone: "blue", icon: Briefcase },
-      { label: t("Pipeline value"), value: money.format(data.summary.pipelineValue), detail: t("open and unweighted"), tone: "green", icon: Wallet },
+      { label: t("Open deals"), value: String(data.summary.openDeals), detail: `${data.pipeline.length} ${data.pipeline.length === 1 ? t("stage across all pipelines") : t("stages across all pipelines")}`, tone: "blue", icon: Briefcase },
+      { label: t("Pipeline value"), value: money.format(data.summary.pipelineValue), detail: t("company-wide, open and unweighted"), tone: "green", icon: Wallet },
       { label: t("Areas"), value: String(data.areas.length), detail: largestArea ? `${t("most in")} ${largestArea.label}` : t("no address on file"), tone: "neutral", icon: MapPin },
     ]
   }, [data, followUpData, money, t])
@@ -1239,7 +1334,6 @@ export function CrmOverviewPage() {
               <CrmActivityFeed
                 activity={data.activity}
                 formatDateTime={formatDateTime}
-                onOpen={() => { window.location.href = "/crm/activity" }}
               />
             </CrmBand>
           </motion.div>
@@ -1284,9 +1378,12 @@ function PipelineSettingsDrawer({
   )
 }
 
-export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void }) {
-  const [activeFilter, setActiveFilter] = useState("All stages")
+export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: string) => void; currentUser?: AuthUserSummary | null }) {
+  const [activeFilter, setActiveFilter] = useState("all")
+  const [leadScope, setLeadScope] = useState<LeadScope>("All")
+  const currentLeadOwnerId = currentUser?.internalUserId ?? null
   const [searchQuery, setSearchQuery] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(20)
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
@@ -1298,149 +1395,122 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
   const [dexterOpen, setDexterOpen] = useState(false)
   const [createLeadOpen, setCreateLeadOpen] = useState(false)
   const [leads, setLeads] = useState<Lead[]>([])
-  const [ownerPhotoUrls, setOwnerPhotoUrls] = useState<Map<string, string>>(new Map())
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
+  const [revalidating, setRevalidating] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+  const lastConsumedReloadToken = useRef(0)
+  const hasLoadedLeads = useRef(false)
+  const [total, setTotal] = useState(0)
+  const [summary, setSummary] = useState(emptyLeadSummary)
+  const [facets, setFacets] = useState(emptyLeadFacets)
+  const [sort, setSort] = useState<CrmRegisterSort | null>({ id: "lead", direction: "asc" })
   const { language, t } = useLanguage()
 
   useEffect(() => subscribeTopBarAction(topBarActionEvents.createCrmLead, () => setCreateLeadOpen(true)), [])
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(searchQuery.trim()), 250)
+    return () => window.clearTimeout(timer)
+  }, [searchQuery])
+
+  useEffect(() => {
     let isMounted = true
-    setLoadState("loading")
+    const forceRefresh = reloadToken !== lastConsumedReloadToken.current
+    lastConsumedReloadToken.current = reloadToken
+    if (hasLoadedLeads.current) setRevalidating(true)
+    else setLoadState("loading")
     setLoadError(null)
 
-    listLeads(undefined, { forceRefresh: reloadToken > 0 })
+    const serverSort = sort ? {
+      id: ({
+        stage: "status",
+        qualification: "rating",
+        engagement: "last-activity",
+        "follow-up": "next-follow-up",
+      } as Record<string, string>)[sort.id] ?? sort.id,
+      direction: sort.direction,
+    } : null
+    listLeadsPage({
+      search: debouncedSearch,
+      statusCode: activeFilter === "all" ? undefined : activeFilter,
+      sourceCode: sourceFilter === "all" ? undefined : sourceFilter,
+      ownerId: leadScope === "Mine"
+        ? currentLeadOwnerId ?? "__no_current_user__"
+        : ownerFilter === "all" || ownerFilter === "__unassigned__" ? undefined : ownerFilter,
+      unassigned: leadScope === "All" && ownerFilter === "__unassigned__",
+      ratingCode: ratingFilter === "all" ? undefined : ratingFilter,
+      followUpScope: followUpFilter === "all" ? undefined : followUpFilter as "overdue" | "scheduled" | "unscheduled",
+      valueScope: valueFilter === "all" ? undefined : valueFilter as "valued" | "unvalued",
+      sort: serverSort,
+      limit: rowsPerPage,
+      offset: (page - 1) * rowsPerPage,
+    }, { forceRefresh })
       .then((data) => {
         if (!isMounted) return
-        setLeads(data)
+        setLeads(data.rows)
+        setTotal(data.total)
+        setSummary(data.summary)
+        setFacets(data.facets)
+        hasLoadedLeads.current = true
+        setRevalidating(false)
         setLoadState("ready")
       })
       .catch((error: unknown) => {
         if (!isMounted) return
-        setLoadError(error instanceof Error ? error.message : t("Unable to load CRM leads. Check your connection and try again."))
+        const message = error instanceof Error ? error.message : t("Unable to load CRM leads. Check your connection and try again.")
+        setLoadError(message)
+        setRevalidating(false)
+        if (hasLoadedLeads.current) {
+          toast.error(message)
+          return
+        }
         setLoadState("error")
       })
-
-    loadLeadOwnerPhotoUrls()
-      .then((nextOwnerPhotoUrls) => {
-        if (isMounted) setOwnerPhotoUrls(nextOwnerPhotoUrls)
-      })
-      .catch(() => undefined)
 
     return () => {
       isMounted = false
     }
-  }, [reloadToken, t])
+  }, [activeFilter, currentLeadOwnerId, debouncedSearch, followUpFilter, leadScope, ownerFilter, page, ratingFilter, reloadToken, rowsPerPage, sort, sourceFilter, t, valueFilter])
 
-  const {
-    filterOptions,
-    sourceOptions,
-    ownerOptions,
-    ratingOptions,
-    dueFollowUps,
-    recentLeads,
-    valuedLeads,
-    openLeads,
-    qualifiedLeads,
-  } = useMemo(() => {
-    const statuses = new Set<string>()
-    const sources = new Set<string>()
-    const owners = new Set<string>()
-    const ratings = new Set<string>()
-    const now = Date.now()
-    let dueFollowUpCount = 0
-    let recentLeadCount = 0
-    let valuedLeadCount = 0
-    let openLeadCount = 0
-    let qualifiedLeadCount = 0
-
-    for (const lead of leads) {
-      statuses.add(lead.statusName)
-      sources.add(lead.sourceName)
-      ratings.add(lead.ratingName)
-      if (lead.ownerName) owners.add(lead.ownerName)
-      if (lead.isOpen) {
-        openLeadCount += 1
-        if (lead.nextFollowUpAt && new Date(lead.nextFollowUpAt).getTime() < now) dueFollowUpCount += 1
-      }
-      if (now - new Date(lead.createdAt).getTime() <= 30 * 86_400_000) recentLeadCount += 1
-      if (lead.valueAmount !== null || lead.openOpportunityCount > 0) valuedLeadCount += 1
-      if (lead.qualificationScore !== null && lead.qualificationScore >= 70) qualifiedLeadCount += 1
-    }
-
-    const sortLabels = (values: Set<string>) =>
-      Array.from(values).sort((first, second) => first.localeCompare(second, language))
-
-    return {
-      filterOptions: [t("All stages"), ...sortLabels(statuses)],
-      sourceOptions: sortLabels(sources),
-      ownerOptions: sortLabels(owners),
-      ratingOptions: sortLabels(ratings),
-      dueFollowUps: dueFollowUpCount,
-      recentLeads: recentLeadCount,
-      valuedLeads: valuedLeadCount,
-      openLeads: openLeadCount,
-      qualifiedLeads: qualifiedLeadCount,
-    }
-  }, [language, leads, t])
-
-  const visibleLeads = useMemo(() => {
-    const term = searchQuery.trim().toLocaleLowerCase(language)
-    const now = Date.now()
-
-    return leads.filter((lead) => {
-      const stageMatches = activeFilter === t("All stages") || lead.statusName === activeFilter
-      if (!stageMatches) return false
-      if (sourceFilter !== "all" && lead.sourceName !== sourceFilter) return false
-      if (ownerFilter !== "all" && lead.ownerName !== ownerFilter) return false
-      if (ratingFilter !== "all" && lead.ratingName !== ratingFilter) return false
-      const followUpTime = lead.nextFollowUpAt ? new Date(lead.nextFollowUpAt).getTime() : null
-      if (followUpFilter === "overdue" && (followUpTime === null || followUpTime >= now)) return false
-      if (followUpFilter === "scheduled" && followUpTime === null) return false
-      if (followUpFilter === "unscheduled" && followUpTime !== null) return false
-      const hasValue = lead.valueAmount !== null || lead.openOpportunityCount > 0
-      if (valueFilter === "valued" && !hasValue) return false
-      if (valueFilter === "unvalued" && hasValue) return false
-      if (!term) return true
-
-      return [
-        lead.companyName,
-        lead.primaryContactName,
-        lead.primaryContactEmail,
-        lead.sourceName,
-        lead.ownerName,
-        lead.tradeLane,
-        lead.serviceInterest,
-      ].some((value) => value?.toLocaleLowerCase(language).includes(term))
-    })
-  }, [activeFilter, followUpFilter, language, leads, ownerFilter, ratingFilter, searchQuery, sourceFilter, t, valueFilter])
+  const filterOptions = facets.statuses
+  const sourceOptions = facets.sources
+  const ownerOptions = facets.hasUnassigned ? [...facets.owners, { id: "__unassigned__", name: t("Unassigned") }] : facets.owners
+  const ratingOptions = facets.ratings
+  const { dueFollowUps, recent: recentLeads, valued: valuedLeads, open: openLeads, qualified: qualifiedLeads } = summary
+  const advancedLeadFilters: Array<{ label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; allLabel: string }> = [
+    { label: "Stage", value: activeFilter, onChange: setActiveFilter, options: filterOptions.map((option) => ({ value: option.code, label: option.name })), allLabel: t("All stages") },
+    { label: "Source", value: sourceFilter, onChange: setSourceFilter, options: sourceOptions.map((option) => ({ value: option.code, label: option.name })), allLabel: t("All sources") },
+    { label: "Owner", value: ownerFilter, onChange: setOwnerFilter, options: ownerOptions.map((option) => ({ value: option.id, label: option.name })), allLabel: t("All owners") },
+    { label: "Rating", value: ratingFilter, onChange: setRatingFilter, options: ratingOptions.map((option) => ({ value: option.code, label: option.name })), allLabel: t("All ratings") },
+  ]
   const activeAdvancedFilterCount = [sourceFilter, ownerFilter, ratingFilter, followUpFilter, valueFilter].filter((value) => value !== "all").length
-    + (activeFilter === t("All stages") ? 0 : 1)
+    + (activeFilter === "all" ? 0 : 1)
 
-  const pageCount = Math.max(Math.ceil(visibleLeads.length / rowsPerPage), 1)
-  const paginatedLeads = visibleLeads.slice((page - 1) * rowsPerPage, page * rowsPerPage)
+  const pageCount = Math.max(Math.ceil(total / rowsPerPage), 1)
 
   useEffect(() => {
     setPage(1)
-  }, [activeFilter, followUpFilter, ownerFilter, ratingFilter, searchQuery, sourceFilter, valueFilter])
+  }, [activeFilter, debouncedSearch, followUpFilter, leadScope, ownerFilter, ratingFilter, sourceFilter, valueFilter])
 
   useEffect(() => {
     if (page > pageCount) setPage(pageCount)
   }, [page, pageCount])
 
-  useEffect(() => {
-    if (!filterOptions.includes(activeFilter)) setActiveFilter(t("All stages"))
-  }, [activeFilter, filterOptions, t])
-
   function openLeadDetail(lead: Lead) {
     navigate(getLeadCrmPath(lead))
   }
 
+  function changeLeadScope(nextScope: LeadScope) {
+    if (nextScope === leadScope) return
+    if (hasLoadedLeads.current) setRevalidating(true)
+    setLeadScope(nextScope)
+  }
+
   function clearLeadFilters() {
     setSearchQuery("")
-    setActiveFilter(t("All stages"))
+    setLeadScope("All")
+    setActiveFilter("all")
     setSourceFilter("all")
     setOwnerFilter("all")
     setRatingFilter("all")
@@ -1450,7 +1520,7 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
   }
 
   function exportLeads() {
-    if (!visibleLeads.length) {
+    if (!leads.length) {
       toast.error(t("No leads to export"))
       return
     }
@@ -1459,7 +1529,7 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
       const text = value === null || value === undefined ? "" : String(value)
       return `"${text.replaceAll("\"", "\"\"")}"`
     }
-    const rows = visibleLeads.map((lead) => [
+    const rows = leads.map((lead) => [
       lead.companyName,
       lead.primaryContactName,
       lead.primaryContactEmail,
@@ -1498,18 +1568,18 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
           </>
         }
         meta={loadState === "ready"
-          ? `${new Intl.NumberFormat(language).format(leads.length)} ${t("leads")} · ${new Intl.NumberFormat(language).format(dueFollowUps)} ${t("follow-ups due")} · ${new Intl.NumberFormat(language).format(recentLeads)} ${t("created in the last 30 days")}`
+          ? `${new Intl.NumberFormat(language).format(summary.leads)} ${t("leads")} · ${new Intl.NumberFormat(language).format(dueFollowUps)} ${t("follow-ups due")} · ${new Intl.NumberFormat(language).format(recentLeads)} ${t("created in the last 30 days")}`
           : t("Live CRM qualification data")}
         onSpeakToDexter={() => setDexterOpen(true)}
         action={
           <Button
             variant="ghost"
-            disabled={loadState !== "ready" || !visibleLeads.length}
+            disabled={loadState !== "ready" || !leads.length}
             className="h-10 rounded-[var(--md-radius-lg)] bg-white/45 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/70"
             onClick={exportLeads}
           >
             <Download data-icon="inline-start" strokeWidth={1.2} />
-            {t("Export current view")}
+            {t("Export this page")}
           </Button>
         }
       />
@@ -1517,7 +1587,7 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
       {loadState === "ready" ? (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
           {[
-            [t("Total leads"), leads.length, t("all recorded prospects")],
+            [t("Total leads"), summary.leads, t("all recorded prospects")],
             [t("Open leads"), openLeads, t("still in qualification")],
             [t("Due follow-ups"), dueFollowUps, t("need attention now")],
             [t("Valued leads"), valuedLeads, t("with value or opportunity context")],
@@ -1540,11 +1610,8 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
       ) : null}
 
       {loadState === "loading" ? (
-        <Surface padding="lg" className="flex min-h-[240px] items-center justify-center rounded-[var(--md-radius-xl)]" role="status" aria-live="polite">
-          <div className="text-center">
-            <LoaderCircle className="mx-auto size-6 animate-spin text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
-            <p className="mt-3 text-[13px] text-[var(--md-text)]">{t("Loading CRM leads…")}</p>
-          </div>
+        <Surface padding="lg" className="grid min-h-[240px] place-items-center rounded-[var(--md-radius-xl)]">
+          <DotGridLoaderPanel label="Loading CRM leads…" minHeight={0} />
         </Surface>
       ) : null}
 
@@ -1587,21 +1654,16 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
 
                 <fieldset className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   <legend className="sr-only">{t("Advanced lead filters")}</legend>
-                  {([
-                    ["Stage", activeFilter, setActiveFilter, filterOptions.slice(1), t("All stages")],
-                    ["Source", sourceFilter, setSourceFilter, sourceOptions, t("All sources")],
-                    ["Owner", ownerFilter, setOwnerFilter, ownerOptions, t("All owners")],
-                    ["Rating", ratingFilter, setRatingFilter, ratingOptions, t("All ratings")],
-                  ] as const).map(([label, value, onChange, options, allLabel]) => (
-                    <label key={label} className="grid gap-1.5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 text-[11px] font-medium text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
-                      {t(label)}
-                      <Select value={value} onValueChange={onChange}>
+                  {advancedLeadFilters.map((filter) => (
+                    <label key={filter.label} className="grid gap-1.5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 text-[11px] font-medium text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
+                      {t(filter.label)}
+                      <Select value={filter.value} onValueChange={filter.onChange}>
                         <SelectTrigger className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-popover)]">
-                          <SelectItem value={label === "Stage" ? t("All stages") : "all"} className="text-[12px]">{allLabel}</SelectItem>
-                          {options.map((option) => <SelectItem key={option} value={option} className="text-[12px]"><span data-i18n-skip dir="auto">{option}</span></SelectItem>)}
+                          <SelectItem value="all" className="text-[12px]">{filter.allLabel}</SelectItem>
+                          {filter.options.map((option) => <SelectItem key={option.value} value={option.value} className="text-[12px]"><span data-i18n-skip dir="auto">{option.label}</span></SelectItem>)}
                         </SelectContent>
                       </Select>
                     </label>
@@ -1634,10 +1696,13 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
             </section>
           ) : null}
           <CrmLeadQualificationTable
-            leads={paginatedLeads}
+            leads={leads}
             onOpenLead={openLeadDetail}
-            emptyMessage={leads.length ? t("No leads match this view.") : t("No leads have been recorded yet.")}
-            ownerPhotoUrls={ownerPhotoUrls}
+            loadExportRecords={(selectedLeads) => Promise.all(selectedLeads.map((lead) => getLead(lead.id)))}
+            emptyMessage={summary.leads ? t(leadScope === "Mine" ? "No leads assigned to you." : "No leads match this view.") : t("No leads have been recorded yet.")}
+            serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "lead", direction: "asc" }); setPage(1) } }}
+            toolbarTabs={<RegisterViewSwitch options={leadScopes} value={leadScope} onChange={changeLeadScope} counts={revalidating ? {} : { All: leadScope === "All" ? total : undefined, Mine: leadScope === "Mine" ? total : undefined }} ariaLabel="Lead ownership filter" compact />}
+            toolbarOptions={<RegisterRevalidatingMark active={revalidating} />}
             toolbarSearch={(
               <div className="relative min-w-[128px] max-w-[280px] flex-1 sm:min-w-[200px] sm:flex-none">
                   <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.35} aria-hidden="true" />
@@ -1671,13 +1736,13 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
                   {activeAdvancedFilterCount ? <span className="grid min-w-4 place-items-center rounded-full bg-[var(--md-accent-a11)] px-1 text-[10px] font-medium text-[var(--md-accent)]" data-i18n-skip>{activeAdvancedFilterCount}</span> : null}
                 </Button>
             )}
-            emptyState={leads.length ? (
+            emptyState={summary.leads ? (
               <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
                 <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
                   <Search className="size-4" strokeWidth={1.3} aria-hidden="true" />
                 </span>
-                <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t("No leads match this view.")}</p>
-                <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Change or clear a filter to see more leads.")}</p>
+                <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t(leadScope === "Mine" ? "No leads assigned to you." : "No leads match this view.")}</p>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(leadScope === "Mine" ? "Leads appear here when you are the current owner." : "Change or clear a filter to see more leads.")}</p>
                 <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-3 text-[12px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]" onClick={clearLeadFilters}>
                   {t("Clear filters")}
                 </Button>
@@ -1688,7 +1753,7 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
           <Pagination
             page={page}
             pageCount={pageCount}
-            totalItems={visibleLeads.length}
+            totalItems={total}
             pageSize={rowsPerPage}
             pageSizeOptions={rowsPerPageOptions}
             itemLabel="leads"
@@ -1714,9 +1779,11 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
 export function CrmLeadDetailPage({
   navigate,
   leadId,
+  currentUser,
 }: {
   navigate: (path: string) => void
   leadId: string
+  currentUser?: AuthUserSummary | null
 }) {
   const [lead, setLead] = useState<ApiLeadDetail | null>(null)
   const [ownerPhotoUrls, setOwnerPhotoUrls] = useState<Map<string, string>>(new Map())
@@ -1724,26 +1791,46 @@ export function CrmLeadDetailPage({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [transferUsers, setTransferUsers] = useState<CrmTransferUser[]>([])
+  const [transferUsersState, setTransferUsersState] = useState<"idle" | "loading" | "ready" | "error">("idle")
+  const [transferUsersTotal, setTransferUsersTotal] = useState(0)
+  const [transferUsersReloadToken, setTransferUsersReloadToken] = useState(0)
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferSearch, setTransferSearch] = useState("")
+  const [debouncedTransferSearch, setDebouncedTransferSearch] = useState("")
+  const [transferReason, setTransferReason] = useState("")
   const [transferSaving, setTransferSaving] = useState(false)
+  const [transferRequests, setTransferRequests] = useState<CrmLeadTransferRequest[]>([])
+  const [ownershipNote, setOwnershipNote] = useState("")
+  const [ownershipError, setOwnershipError] = useState<string | null>(null)
+  const [ownershipSaving, setOwnershipSaving] = useState<string | null>(null)
+  const leadRef = useRef<ApiLeadDetail | null>(null)
+  const leadSaveQueue = useRef<Promise<void>>(Promise.resolve())
   const { t } = useLanguage()
 
   useEffect(() => {
     let isMounted = true
     setLoadState("loading")
     setLoadError(null)
+    leadRef.current = null
 
+    const leadRequest = getLead(leadId)
     Promise.all([
-      getLead(leadId),
-      loadLeadOwnerPhotoUrls().catch(() => new Map<string, string>()),
-      listCrmTransferUsers(),
+      leadRequest,
+      leadRequest.then((data) => loadLeadOwnerPhotoUrls(data.ownerId ? [data.ownerId] : [])).catch(() => new Map<string, string>()),
+      listLeadTransferRequests(leadId)
+        .then((requests) => ({ requests, error: null as string | null }))
+        .catch((cause: unknown) => ({
+          requests: [] as CrmLeadTransferRequest[],
+          error: cause instanceof Error ? cause.message : t("Ownership requests could not be loaded."),
+        })),
     ])
-      .then(([data, nextOwnerPhotoUrls, users]) => {
+      .then(([data, nextOwnerPhotoUrls, ownership]) => {
         if (!isMounted) return
+        leadRef.current = data
         setLead(data)
         setOwnerPhotoUrls(nextOwnerPhotoUrls)
-        setTransferUsers(users)
+        setTransferRequests(ownership.requests)
+        setOwnershipError(ownership.error)
         setLoadState("ready")
       })
       .catch((error: unknown) => {
@@ -1757,40 +1844,149 @@ export function CrmLeadDetailPage({
     }
   }, [leadId, reloadToken, t])
 
-  const currentTransferUser = transferUsers.find((user) => user.isCurrentUser)
+  const currentTransferUser = currentUser?.internalUserId ? {
+    id: currentUser.internalUserId,
+    name: currentUser.name ?? currentUser.email ?? t("Current user"),
+    email: currentUser.email ?? "",
+    isCurrentUser: true,
+  } satisfies CrmTransferUser : null
   const isOwner = Boolean(currentTransferUser && lead?.ownerId === currentTransferUser.id)
-  const availableTransferUsers = transferUsers.filter((user) => {
-    if (user.id === lead?.ownerId) return false
-    const query = transferSearch.trim().toLocaleLowerCase()
-    return !query || `${user.name} ${user.email}`.toLocaleLowerCase().includes(query)
-  })
+  const canOverrideTransfer = hasPermission(currentUser, "CRM.Leads.Reassign")
+  const canDirectTransfer = isOwner || canOverrideTransfer
+  const pendingRequests = transferRequests.filter((request) => request.status === "pending")
+  const requestsToReview = pendingRequests.filter((request) => request.canDecide)
+  const currentPendingRequest = currentTransferUser
+    ? pendingRequests.find((request) => request.requesterId === currentTransferUser.id)
+    : undefined
+  const availableTransferUsers = transferUsers
+
+  useEffect(() => {
+    if (!transferOpen) return
+    const timer = window.setTimeout(() => setDebouncedTransferSearch(transferSearch.trim()), 250)
+    return () => window.clearTimeout(timer)
+  }, [transferOpen, transferSearch])
+
+  useEffect(() => {
+    if (!transferOpen || !canDirectTransfer || !lead) return
+    let active = true
+    setTransferUsersState("loading")
+    listCrmTransferUsersPage({
+      search: debouncedTransferSearch,
+      excludeUserId: lead.ownerId,
+      limit: 25,
+      offset: 0,
+    })
+      .then((page) => {
+        if (!active) return
+        setTransferUsers(page.rows)
+        setTransferUsersTotal(page.total)
+        setTransferUsersState("ready")
+      })
+      .catch(() => {
+        if (!active) return
+        setTransferUsers([])
+        setTransferUsersTotal(0)
+        setTransferUsersState("error")
+      })
+    return () => { active = false }
+  }, [canDirectTransfer, debouncedTransferSearch, lead, transferOpen, transferUsersReloadToken])
 
   async function submitTransfer(targetUser: CrmTransferUser) {
-    if (!lead || !isOwner || transferSaving) return
+    if (!lead || !canDirectTransfer || transferSaving) return
+    if (!isOwner && !transferReason.trim()) {
+      toast.error(t("Add a reason before overriding the current owner."))
+      return
+    }
     setTransferSaving(true)
     try {
-      await transferLead(lead.id, targetUser.id)
+      await transferLead(lead.id, targetUser.id, transferReason)
       toast.success(`${t("Lead transferred to")} ${targetUser.name}`)
       setTransferOpen(false)
       setTransferSearch("")
+      setTransferReason("")
       setReloadToken((token) => token + 1)
     } catch (submitError) {
+      if (submitError instanceof CrmMutationOutcomeUnknownError) {
+        setReloadToken((token) => token + 1)
+      }
       toast.error(submitError instanceof Error ? submitError.message : t("Lead ownership could not be updated."))
     } finally {
       setTransferSaving(false)
     }
   }
 
+  async function refreshOwnershipRequests() {
+    try {
+      const requests = await listLeadTransferRequests(leadId)
+      setTransferRequests(requests)
+      setOwnershipError(null)
+    } catch (cause) {
+      setOwnershipError(cause instanceof Error ? cause.message : t("Ownership requests could not be loaded."))
+    }
+  }
+
+  async function submitOwnershipRequest() {
+    if (!lead || !currentTransferUser || ownershipSaving) return
+    setOwnershipSaving("request")
+    try {
+      const request = await requestLeadTransfer(lead.id, ownershipNote)
+      setTransferRequests((current) => [request, ...current.filter((item) => item.id !== request.id)])
+      setOwnershipNote("")
+      toast.success(t("Ownership request sent"))
+    } catch (cause) {
+      if (cause instanceof CrmMutationOutcomeUnknownError) await refreshOwnershipRequests()
+      toast.error(cause instanceof Error ? cause.message : t("The ownership request could not be sent."))
+    } finally {
+      setOwnershipSaving(null)
+    }
+  }
+
+  async function cancelOwnershipRequest(request: CrmLeadTransferRequest) {
+    if (ownershipSaving) return
+    setOwnershipSaving(request.id)
+    try {
+      const cancelled = await cancelLeadTransfer(request.id)
+      setTransferRequests((current) => current.map((item) => item.id === cancelled.id ? cancelled : item))
+      toast.success(t("Ownership request cancelled"))
+    } catch (cause) {
+      if (cause instanceof CrmMutationOutcomeUnknownError) await refreshOwnershipRequests()
+      toast.error(cause instanceof Error ? cause.message : t("The ownership request could not be cancelled."))
+    } finally {
+      setOwnershipSaving(null)
+    }
+  }
+
+  async function decideOwnershipRequest(request: CrmLeadTransferRequest, decision: "approved" | "declined") {
+    if (ownershipSaving) return
+    setOwnershipSaving(request.id)
+    try {
+      await decideLeadTransfer(request.id, decision, ownershipNote)
+      toast.success(t(decision === "approved" ? "Ownership request approved" : "Ownership request declined"))
+      setOwnershipNote("")
+      if (decision === "approved") {
+        setTransferOpen(false)
+        setReloadToken((token) => token + 1)
+      } else {
+        await refreshOwnershipRequests()
+      }
+    } catch (cause) {
+      if (cause instanceof CrmMutationOutcomeUnknownError) {
+        await refreshOwnershipRequests()
+        setReloadToken((token) => token + 1)
+      }
+      toast.error(cause instanceof Error ? cause.message : t("The ownership request could not be updated."))
+    } finally {
+      setOwnershipSaving(null)
+    }
+  }
+
   async function changeLeadMarketingOptIn(optedIn: boolean) {
     if (!lead) return
     try {
-      const result = await setMarketingOptIn("lead", lead.id, optedIn)
-      setLead((current) => current ? {
-        ...current,
-        marketingOptIn: result.marketingOptIn,
-        marketingConsentSource: result.marketingConsentSource,
-        marketingConsentUpdatedAt: result.marketingConsentUpdatedAt,
-      } : current)
+      await setMarketingOptIn("lead", lead.id, optedIn)
+      const latest = await getLead(lead.id)
+      leadRef.current = latest
+      setLead(latest)
       toast.success(t(optedIn ? "Marketing opt-in recorded" : "Marketing opt-out recorded"))
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : t("Marketing consent could not be updated."))
@@ -1798,9 +1994,26 @@ export function CrmLeadDetailPage({
     }
   }
 
-  async function patchLead(change: UpdateLeadInput) {
-    const summary = await updateLead(leadId, change)
-    setLead((current) => current ? { ...current, ...summary } : current)
+  function patchLead(change: UpdateLeadInput) {
+    const save = leadSaveQueue.current.then(async () => {
+      const current = leadRef.current
+      if (!current) throw new Error(t("This lead is not ready to edit yet."))
+      try {
+        const summary = await updateLead(leadId, change, current.editVersion)
+        const next = { ...current, ...summary }
+        leadRef.current = next
+        setLead(next)
+      } catch (cause) {
+        if (cause instanceof CrmConflictError) {
+          const latest = await getLead(leadId)
+          leadRef.current = latest
+          setLead(latest)
+        }
+        throw cause
+      }
+    })
+    leadSaveQueue.current = save.catch(() => undefined)
+    return save
   }
 
   async function changeContactMarketingOptIn(contactId: string, optedIn: boolean) {
@@ -1825,11 +2038,8 @@ export function CrmLeadDetailPage({
   if (loadState === "loading") {
     return (
       <div className="md-page">
-        <Surface padding="lg" className="flex min-h-[300px] items-center justify-center rounded-[var(--md-radius-xl)]" role="status">
-          <div className="text-center">
-            <LoaderCircle className="mx-auto size-6 animate-spin text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
-            <p className="mt-3 text-[13px] text-[var(--md-text)]">{t("Loading lead qualification…")}</p>
-          </div>
+        <Surface padding="lg" className="grid min-h-[300px] place-items-center rounded-[var(--md-radius-xl)]">
+          <DotGridLoaderPanel label="Loading lead qualification…" minHeight={0} />
         </Surface>
       </div>
     )
@@ -1847,8 +2057,8 @@ export function CrmLeadDetailPage({
           {t("Back to leads")}
         </Button>
         <Surface padding="lg" className="rounded-[var(--md-radius-xl)]" role="alert">
-          <p className="text-[15px] font-medium text-[var(--md-ink)]">{t("Unable to load this lead. Check your connection and try again.")}</p>
-          <p className="mt-2 text-[13px] text-[var(--md-text)]" dir="auto">{loadError ? t(loadError) : null}</p>
+          <p className="text-[15px] font-medium text-[var(--md-ink)]">{t("Lead unavailable")}</p>
+          <p className="mt-2 text-[13px] text-[var(--md-text)]" dir="auto">{t(loadError ?? "This lead may have been removed or you may no longer have access.")}</p>
           <Button
             variant="ghost"
             className="mt-4 h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
@@ -1867,61 +2077,144 @@ export function CrmLeadDetailPage({
       <CrmLeadDetailPanel
         lead={lead}
         ownerPhotoUrl={lead.ownerId ? ownerPhotoUrls.get(lead.ownerId) : undefined}
-        ownerAction={isOwner ? (
+        ownerAction={currentTransferUser ? (
           <Popover open={transferOpen} onOpenChange={(open) => {
             setTransferOpen(open)
-            if (!open) setTransferSearch("")
+            if (!open) {
+              setTransferSearch("")
+              setDebouncedTransferSearch("")
+              setTransferUsers([])
+              setTransferUsersTotal(0)
+              setTransferUsersState("idle")
+              setTransferReason("")
+              setOwnershipNote("")
+            }
           }}>
             <PopoverTrigger asChild>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="size-7 shrink-0 rounded-[var(--md-radius-sm)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]"
-                aria-label={t("Transfer ownership")}
-                title={t("Transfer ownership")}
+                className="relative size-11 shrink-0 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]"
+                aria-label={t(canDirectTransfer ? "Manage ownership" : currentPendingRequest ? "Ownership request pending" : "Request ownership")}
+                title={t(canDirectTransfer ? "Manage ownership" : currentPendingRequest ? "Ownership request pending" : "Request ownership")}
               >
                 <ArrowRightLeft className="size-4" strokeWidth={1.4} aria-hidden="true" />
+                {requestsToReview.length ? <span className="absolute -end-0.5 -top-0.5 grid min-w-3.5 place-items-center rounded-full bg-[var(--md-accent)] px-1 text-[8px] font-medium leading-[14px] text-white" data-i18n-skip>{requestsToReview.length}</span> : null}
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-[min(320px,calc(100vw-32px))] rounded-[var(--md-radius-lg)] border-0 p-0 shadow-[var(--md-shadow-lift)]">
+            <PopoverContent align="start" className="w-[min(360px,calc(100vw-32px))] rounded-[var(--md-radius-lg)] border-0 p-0 shadow-[var(--md-shadow-lift)]">
               <div className="p-3 shadow-[var(--md-stroke-bottom)]">
-                <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Transfer ownership")}</p>
-                <p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Choose the team member who should own this lead.")}</p>
-                <div className="relative mt-3">
-                  <Search className="pointer-events-none absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
-                  <Input
-                    autoFocus
-                    value={transferSearch}
-                    onChange={(event) => setTransferSearch(event.target.value)}
-                    placeholder={t("Search team members…")}
-                    aria-label={t("Search team members")}
-                    className="h-9 rounded-[var(--md-radius-md)] ps-9 text-[12px]"
-                  />
-                </div>
+                <p className="text-[12px] font-medium text-[var(--md-ink)]">{t(canDirectTransfer ? "Manage ownership" : "Request ownership")}</p>
+                <p className="mt-1 text-[11px] leading-4 text-[var(--md-subtle)]">{t(canDirectTransfer ? "Transfer this lead or review requests from colleagues." : "Ask the current owner to transfer this lead to you.")}</p>
               </div>
-              <div className="md-scrollbar max-h-64 overflow-y-auto p-1.5" role="listbox" aria-label={t("Team members")}>
-                {availableTransferUsers.length ? availableTransferUsers.map((user) => (
-                  <button
-                    key={user.id}
-                    type="button"
-                    role="option"
-                    aria-selected="false"
-                    disabled={transferSaving}
-                    className="flex min-h-11 w-full items-center gap-3 rounded-[var(--md-radius-md)] px-2.5 py-2 text-start transition-colors hover:bg-[var(--md-surface-tint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] disabled:opacity-50"
-                    onClick={() => void submitTransfer(user)}
-                  >
-                    <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--md-accent-a11)] text-[11px] font-medium text-[var(--md-accent)]" aria-hidden="true">
-                      {user.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{user.name}</span>
-                      <span className="block truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{user.email}</span>
-                    </span>
-                    {transferSaving ? <LoaderCircle className="size-4 animate-spin text-[var(--md-subtle)]" aria-hidden="true" /> : null}
-                  </button>
-                )) : (
-                  <p className="px-3 py-6 text-center text-[12px] text-[var(--md-subtle)]">{t("No team members match this search.")}</p>
+              <div className="md-scrollbar max-h-[min(520px,calc(100vh-180px))] overflow-y-auto">
+                {ownershipError ? (
+                  <div role="alert" className="m-3 rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3 text-[11px] leading-4 text-[var(--md-text)]">
+                    <p dir="auto">{ownershipError}</p>
+                    <Button type="button" variant="outline" className="mt-2 h-8" onClick={() => void refreshOwnershipRequests()}>{t("Try again")}</Button>
+                  </div>
+                ) : null}
+
+                {requestsToReview.length ? (
+                  <section className="grid gap-2 p-3 shadow-[var(--md-stroke-bottom)]" aria-labelledby="ownership-requests-title">
+                    <div>
+                      <p id="ownership-requests-title" className="text-[11px] font-medium text-[var(--md-ink)]">{t("Ownership requests")}</p>
+                      <p className="mt-1 text-[10.5px] leading-4 text-[var(--md-subtle)]">{t("Approve only when responsibility has been agreed with the requester.")}</p>
+                    </div>
+                    {requestsToReview.map((request) => (
+                      <div key={request.id} className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] p-2.5">
+                        <p className="text-[11.5px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{request.requesterName}</p>
+                        <p className="mt-0.5 text-[10.5px] text-[var(--md-subtle)]">{t("Wants to take ownership")}</p>
+                        {request.requestNote ? <p className="mt-2 text-[11px] leading-4 text-[var(--md-text)]" dir="auto">{request.requestNote}</p> : null}
+                        <div className="mt-2 flex gap-2">
+                          <Button type="button" className="h-8 flex-1" disabled={Boolean(ownershipSaving)} onClick={() => void decideOwnershipRequest(request, "approved")}>
+                            {ownershipSaving === request.id ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : null}{t("Approve")}
+                          </Button>
+                          <Button type="button" variant="outline" className="h-8 flex-1" disabled={Boolean(ownershipSaving)} onClick={() => void decideOwnershipRequest(request, "declined")}>{t("Decline")}</Button>
+                        </div>
+                      </div>
+                    ))}
+                    <Textarea value={ownershipNote} onChange={(event) => setOwnershipNote(event.target.value)} placeholder={t("Decision note (optional)")} aria-label={t("Decision note")} dir="auto" className="min-h-[64px] rounded-[var(--md-radius-md)] text-[12px]" />
+                  </section>
+                ) : null}
+
+                {canDirectTransfer ? (
+                  <section className="grid gap-2 p-3" aria-labelledby="transfer-lead-title">
+                    <div>
+                      <p id="transfer-lead-title" className="text-[11px] font-medium text-[var(--md-ink)]">{t("Transfer lead")}</p>
+                      <p className="mt-1 text-[10.5px] leading-4 text-[var(--md-subtle)]">{t(isOwner ? "Choose the team member who should own this lead." : "A reason is required because you are overriding the current owner.")}</p>
+                    </div>
+                    <Textarea value={transferReason} onChange={(event) => setTransferReason(event.target.value)} placeholder={t(isOwner ? "Transfer note (optional)" : "Reason for overriding ownership")} aria-label={t(isOwner ? "Transfer note" : "Override reason")} dir="auto" className="min-h-[64px] rounded-[var(--md-radius-md)] text-[12px]" />
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
+                      <Input
+                        autoFocus={!requestsToReview.length}
+                        value={transferSearch}
+                        onChange={(event) => setTransferSearch(event.target.value)}
+                        placeholder={t("Search team members…")}
+                        aria-label={t("Search team members")}
+                        className="h-9 rounded-[var(--md-radius-md)] ps-9 text-[12px]"
+                      />
+                    </div>
+                    <div role="listbox" aria-label={t("Team members")}>
+                      {transferUsersState === "loading" ? (
+                        <div className="flex min-h-24 items-center justify-center gap-2 px-3 py-6 text-[12px] text-[var(--md-subtle)]" role="status" aria-live="polite">
+                          <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                          {t("Loading team members…")}
+                        </div>
+                      ) : transferUsersState === "error" ? (
+                        <div className="grid min-h-24 place-items-center gap-2 px-3 py-5 text-center" role="alert">
+                          <p className="text-[12px] text-[var(--md-subtle)]">{t("Team members could not be loaded.")}</p>
+                          <Button type="button" variant="outline" className="h-8" onClick={() => setTransferUsersReloadToken((value) => value + 1)}>{t("Try again")}</Button>
+                        </div>
+                      ) : availableTransferUsers.length ? availableTransferUsers.map((user) => (
+                        <button
+                          key={user.id}
+                          type="button"
+                          role="option"
+                          aria-selected="false"
+                          disabled={transferSaving || (!isOwner && !transferReason.trim())}
+                          className="flex min-h-11 w-full items-center gap-3 rounded-[var(--md-radius-md)] px-2.5 py-2 text-start transition-colors hover:bg-[var(--md-surface-tint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] disabled:opacity-50"
+                          onClick={() => void submitTransfer(user)}
+                        >
+                          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--md-accent-a11)] text-[11px] font-medium text-[var(--md-accent)]" aria-hidden="true">
+                            {user.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[12px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{user.name}</span>
+                            <span className="block truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{user.email}</span>
+                          </span>
+                          {transferSaving ? <LoaderCircle className="size-4 animate-spin text-[var(--md-subtle)]" aria-hidden="true" /> : null}
+                        </button>
+                      )) : (
+                        <p className="px-3 py-6 text-center text-[12px] text-[var(--md-subtle)]">{t("No team members match this search.")}</p>
+                      )}
+                    </div>
+                    {transferUsersState === "ready" && transferUsersTotal > availableTransferUsers.length ? (
+                      <p className="px-1 text-[10.5px] leading-4 text-[var(--md-subtle)]">
+                        {t("Showing the first results. Search by name or email to narrow the list.")}
+                      </p>
+                    ) : null}
+                  </section>
+                ) : currentPendingRequest ? (
+                  <section className="grid gap-3 p-3">
+                    <div className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] p-3">
+                      <p className="text-[11.5px] font-medium text-[var(--md-ink)]">{t("Ownership request pending")}</p>
+                      <p className="mt-1 text-[10.5px] leading-4 text-[var(--md-text)]">{t("The current owner has been notified. You can keep working elsewhere while they decide.")}</p>
+                      {currentPendingRequest.requestNote ? <p className="mt-2 text-[11px] leading-4 text-[var(--md-subtle)]" dir="auto">{currentPendingRequest.requestNote}</p> : null}
+                    </div>
+                    <Button type="button" variant="outline" className="h-9" disabled={Boolean(ownershipSaving)} onClick={() => void cancelOwnershipRequest(currentPendingRequest)}>
+                      {ownershipSaving === currentPendingRequest.id ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : null}{t("Cancel request")}
+                    </Button>
+                  </section>
+                ) : (
+                  <section className="grid gap-3 p-3">
+                    <Textarea value={ownershipNote} onChange={(event) => setOwnershipNote(event.target.value)} placeholder={t("Tell the owner why you should take this lead (optional)")} aria-label={t("Ownership request note")} dir="auto" className="min-h-[76px] rounded-[var(--md-radius-md)] text-[12px]" />
+                    <Button type="button" className="h-9" disabled={Boolean(ownershipSaving)} onClick={() => void submitOwnershipRequest()}>
+                      {ownershipSaving === "request" ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : null}{t("Send ownership request")}
+                    </Button>
+                  </section>
                 )}
               </div>
             </PopoverContent>
@@ -3221,33 +3514,103 @@ export function CrmEmailEditPage({ navigate, campaignId }: { navigate: (path: st
 }
 
 export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUserSummary | null; navigate?: (path: string) => void }) {
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
+  const [newDealOpen, setNewDealOpen] = useState(false)
+  const [dealLeadSearch, setDealLeadSearch] = useState("")
+  const [dealLeadOptions, setDealLeadOptions] = useState<ApiLead[]>([])
+  const [dealLeadState, setDealLeadState] = useState<"idle" | "loading" | "ready" | "error">("idle")
+  const [dealLeadError, setDealLeadError] = useState<string | null>(null)
   const [selectedDeal, setSelectedDeal] = useState<CrmDeal | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [dexterOpen, setDexterOpen] = useState(false)
   const [liveDeals, setLiveDeals] = useState<ApiDeal[]>([])
   const [livePipelines, setLivePipelines] = useState<ApiPipeline[]>([])
+  const [stagePages, setStagePages] = useState<Record<string, { total: number; loading: boolean }>>({})
+  const [viewMode, setViewMode] = useState<DealViewMode>("Board")
+  const [dealQuery, setDealQuery] = useState("")
+  const [debouncedDealQuery, setDebouncedDealQuery] = useState("")
+  const [dealListRows, setDealListRows] = useState<ApiDeal[]>([])
+  const [dealListTotal, setDealListTotal] = useState(0)
+  const [dealListFacets, setDealListFacets] = useState<DealRegisterPage["facets"]>(emptyDealFacets)
+  const [dealListOffset, setDealListOffset] = useState(0)
+  const [dealListSort, setDealListSort] = useState<DealRegisterSort | null>({ id: "created", direction: "desc" })
+  const [dealPipelineFilter, setDealPipelineFilter] = useState("")
+  const [dealStatusFilter, setDealStatusFilter] = useState("")
+  const [dealOwnerFilter, setDealOwnerFilter] = useState("")
+  const [dealListState, setDealListState] = useState<"idle" | "loading" | "ready" | "error">("idle")
+  const [dealListError, setDealListError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const lastConsumedReloadKey = useRef(0)
+  const lastConsumedListReloadKey = useRef(0)
   const [pendingWin, setPendingWin] = useState<{ deal: ApiDeal; stage: ApiPipeline["stages"][number] } | null>(null)
   const [winning, setWinning] = useState(false)
+  const restoreNewDealFocus = useDialogReturnFocus(newDealOpen)
   const requestedDealIdRef = useRef(new URLSearchParams(window.location.search).get("record"))
   const canManagePipelines = hasPermission(currentUser, "Settings.Manage")
 
+  useEffect(() => subscribeTopBarAction(topBarActionEvents.createCrmDeal, () => setNewDealOpen(true)), [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedDealQuery(dealQuery.trim()), 250)
+    return () => window.clearTimeout(timer)
+  }, [dealQuery])
+
+  useEffect(() => {
+    setDealListOffset(0)
+  }, [debouncedDealQuery, dealOwnerFilter, dealPipelineFilter, dealStatusFilter])
+
+  useEffect(() => {
+    if (!newDealOpen) return undefined
+    let active = true
+    const timer = window.setTimeout(() => {
+    setDealLeadState("loading")
+    setDealLeadError(null)
+    listLeadsPage({ search: dealLeadSearch, openOnly: true, sort: { id: "lead", direction: "asc" }, limit: 25, offset: 0 })
+      .then((page) => {
+        if (!active) return
+        setDealLeadOptions(page.rows)
+        setDealLeadState("ready")
+      })
+      .catch((error: unknown) => {
+        if (!active) return
+        setDealLeadError(error instanceof Error ? error.message : t("Open leads could not be loaded."))
+        setDealLeadState("error")
+      })
+    }, 250)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [dealLeadSearch, newDealOpen, t])
+
+  function startDealFromLead(leadId: string) {
+    setNewDealOpen(false)
+    setDealLeadSearch("")
+    const path = `/crm/leads/${encodeURIComponent(leadId)}/convert`
+    if (navigate) navigate(path)
+    else window.location.href = path
+  }
+
   useEffect(() => {
     let active = true
+    const forceRefresh = reloadKey !== lastConsumedReloadKey.current
+    lastConsumedReloadKey.current = reloadKey
     setLoading(true)
     setLoadError(null)
-    Promise.all([
-      getPipelineSettings({ forceRefresh: reloadKey > 0 }),
-      listDeals({ forceRefresh: reloadKey > 0 }),
-    ])
-      .then(([settings, deals]) => {
+    getPipelineSettings({ forceRefresh })
+      .then(async (settings) => {
+        const stages = settings.pipelines.flatMap((pipeline) => pipeline.stages.map((stage) => ({ pipelineId: pipeline.id, stageId: stage.id })))
+        const pages = await Promise.all(stages.map(({ pipelineId, stageId }) => listDealsPage({
+          pipelineId,
+          pipelineStageId: stageId,
+          sort: { id: "created", direction: "desc" },
+          limit: 40,
+          offset: 0,
+        }, { forceRefresh })))
         if (!active) return
         setLivePipelines(settings.pipelines)
-        setLiveDeals(deals)
+        setLiveDeals(Array.from(new Map(pages.flatMap((page) => page.rows).map((deal) => [deal.id, deal])).values()))
+        setStagePages(Object.fromEntries(stages.map((stage, index) => [stage.stageId, { total: pages[index]?.total ?? 0, loading: false }])))
       })
       .catch((error) => {
         if (!active) return
@@ -3261,25 +3624,196 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
     }
   }, [reloadKey, t])
 
+  useEffect(() => {
+    if (viewMode !== "List") return undefined
+    let active = true
+    const forceRefresh = reloadKey !== lastConsumedListReloadKey.current
+    lastConsumedListReloadKey.current = reloadKey
+    setDealListState("loading")
+    setDealListError(null)
+    listDealsPage({
+      search: debouncedDealQuery,
+      pipelineId: dealPipelineFilter || undefined,
+      statusCode: dealStatusFilter || undefined,
+      ownerId: dealOwnerFilter && dealOwnerFilter !== "__unassigned__" ? dealOwnerFilter : undefined,
+      unassigned: dealOwnerFilter === "__unassigned__",
+      sort: dealListSort ?? { id: "created", direction: "desc" },
+      limit: dealListPageSize,
+      offset: dealListOffset,
+    }, { forceRefresh })
+      .then((page) => {
+        if (!active) return
+        setDealListRows(page.rows)
+        setDealListTotal(page.total)
+        setDealListFacets(page.facets)
+        setDealListState("ready")
+      })
+      .catch((error: unknown) => {
+        if (!active) return
+        setDealListError(error instanceof Error ? error.message : t("Deals could not be loaded."))
+        setDealListState("error")
+      })
+    return () => { active = false }
+  }, [dealListOffset, dealListSort, dealOwnerFilter, dealPipelineFilter, dealStatusFilter, debouncedDealQuery, reloadKey, t, viewMode])
+
+  async function loadMoreDealsForStage(pipelineId: string, stageId: string) {
+    const current = stagePages[stageId]
+    if (!current || current.loading) return
+    const loaded = liveDeals.filter((deal) => deal.pipelineStageId === stageId).length
+    if (loaded >= current.total) return
+    setStagePages((pages) => ({ ...pages, [stageId]: { ...current, loading: true } }))
+    try {
+      const page = await listDealsPage({
+        pipelineId,
+        pipelineStageId: stageId,
+        sort: { id: "created", direction: "desc" },
+        limit: 40,
+        offset: loaded,
+      })
+      setLiveDeals((deals) => Array.from(new Map([...deals, ...page.rows].map((deal) => [deal.id, deal])).values()))
+      setStagePages((pages) => ({ ...pages, [stageId]: { total: page.total, loading: false } }))
+    } catch (error) {
+      setStagePages((pages) => ({ ...pages, [stageId]: { ...current, loading: false } }))
+      toast.error(error instanceof Error ? error.message : t("More deals could not be loaded."))
+    }
+  }
+
   const dealPipelines = useMemo(
-    () => buildDealPipelines(livePipelines, liveDeals),
-    [liveDeals, livePipelines],
+    () => buildDealPipelines(livePipelines, liveDeals, language, t),
+    [language, liveDeals, livePipelines, t],
   )
+
+  const dealListColumns = useMemo<DataTableColumn<ApiDeal>[]>(() => [
+    {
+      id: "deal",
+      label: "Deal",
+      kind: "identity",
+      width: 260,
+      minWidth: 210,
+      resizable: true,
+      sortValue: (deal) => deal.name,
+      cellTitle: (deal) => `${deal.name} · ${deal.companyName}`,
+      cell: (deal) => (
+        <div className="min-w-0">
+          <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{deal.name}</p>
+          <p className="mt-0.5 truncate text-[11px] text-[var(--md-text)]" data-i18n-skip dir="auto">{deal.companyName}</p>
+        </div>
+      ),
+    },
+    {
+      id: "pipeline",
+      label: "Pipeline",
+      kind: "attribute",
+      width: 180,
+      resizable: true,
+      sortValue: (deal) => deal.pipelineName,
+      cellTitle: (deal) => `${deal.pipelineName} · ${deal.pipelineStageName}`,
+      cell: (deal) => (
+        <div className="min-w-0">
+          <p className="truncate text-[12px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{deal.pipelineStageName}</p>
+          <p className="mt-0.5 truncate text-[10.5px] text-[var(--md-subtle)]" data-i18n-skip dir="auto">{deal.pipelineName}</p>
+        </div>
+      ),
+    },
+    {
+      id: "status",
+      label: "Status",
+      kind: "status",
+      width: 130,
+      sortValue: (deal) => deal.statusName,
+      cell: (deal) => <StatusPill tone={apiDealTone(deal)}>{deal.statusName}</StatusPill>,
+    },
+    {
+      id: "owner",
+      label: "Owner",
+      kind: "text",
+      width: 160,
+      resizable: true,
+      sortValue: (deal) => deal.ownerName ?? "",
+      cell: (deal) => <span className={deal.ownerName ? "block truncate text-[12px] text-[var(--md-ink)]" : "block truncate text-[12px] text-[var(--md-subtle)]"} data-i18n-skip={Boolean(deal.ownerName) || undefined} dir="auto">{deal.ownerName || t("Unassigned")}</span>,
+    },
+    {
+      id: "value",
+      label: "Expected value",
+      kind: "number",
+      width: 145,
+      sortValue: (deal) => deal.expectedValueAmount,
+      cell: (deal) => deal.expectedValueAmount === null
+        ? <span className="text-[12px] text-[var(--md-subtle)]">{t("Not recorded")}</span>
+        : <span className="text-[12px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip dir="ltr">{getDealValueFormatter(deal.currencyCode || "GBP", false, language).format(deal.expectedValueAmount)}</span>,
+    },
+    {
+      id: "close-date",
+      label: "Expected close",
+      kind: "date",
+      width: 160,
+      sortValue: (deal) => deal.expectedCloseDate ?? "",
+      cell: (deal) => (
+        <span className={isDealCloseOverdue(deal) ? "text-[12px] font-medium text-[var(--md-danger)]" : "text-[12px] text-[var(--md-text)]"} data-i18n-skip dir="auto">
+          {formatDealClose(deal, language, t, true)}
+        </span>
+      ),
+    },
+    {
+      id: "next-action",
+      label: "Next action",
+      kind: "date",
+      width: 190,
+      resizable: true,
+      defaultHidden: true,
+      cell: (deal) => <span className={deal.nextActionDueAt ? "block truncate text-[12px] text-[var(--md-text)]" : "block truncate text-[12px] text-[var(--md-subtle)]"} data-i18n-skip={Boolean(deal.nextActionDueAt) || undefined} dir="auto">{formatDealNextAction(deal.nextActionDueAt, language, t)}</span>,
+    },
+    {
+      id: "created",
+      label: "Created",
+      kind: "date",
+      width: 140,
+      defaultHidden: true,
+      sortValue: (deal) => deal.createdAt,
+      cell: (deal) => <span className="text-[12px] text-[var(--md-text)]" data-i18n-skip dir="auto">{new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(new Date(deal.createdAt))}</span>,
+    },
+  ], [language, t])
+
+  const listPipelineOptions = dealListFacets.pipelines.map((pipeline) => ({ value: pipeline.id, label: pipeline.name }))
+  const listStatusOptions = dealListFacets.statuses.map((status) => ({ value: status.code, label: status.name }))
+  const listOwnerOptions = [
+    ...dealListFacets.owners.map((owner) => ({ value: owner.id, label: owner.name })),
+    ...(dealListFacets.hasUnassigned ? [{ value: "__unassigned__", label: t("Unassigned") }] : []),
+  ]
+  const boardDealTotal = Object.values(stagePages).reduce((sum, stage) => sum + stage.total, 0)
+  const dealFiltersActive = Boolean(dealQuery || dealPipelineFilter || dealStatusFilter || dealOwnerFilter)
+
+  function clearDealListFilters() {
+    setDealQuery("")
+    setDealPipelineFilter("")
+    setDealStatusFilter("")
+    setDealOwnerFilter("")
+    setDealListOffset(0)
+  }
 
   useEffect(() => {
     const requestedDealId = requestedDealIdRef.current
     if (loading || !requestedDealId) return
     requestedDealIdRef.current = null
+    if (navigate) {
+      navigate(`/crm/deals/${encodeURIComponent(requestedDealId)}`)
+      return
+    }
     const requestedDeal = dealPipelines
       .flatMap((pipeline) => pipeline.stages)
       .flatMap((stage) => stage.deals)
       .find((deal) => deal.id === requestedDealId)
     if (requestedDeal) {
-      if (navigate) { navigate(`/crm/deals/${encodeURIComponent(requestedDeal.id)}`); return }
       setSelectedDeal(requestedDeal)
       setDetailOpen(true)
+      return
     }
-  }, [dealPipelines, loading, navigate])
+    void getDeal(requestedDealId).then((deal) => {
+      const stage = livePipelines.flatMap((pipeline) => pipeline.stages).find((candidate) => candidate.id === deal.pipelineStageId)
+      setSelectedDeal(apiDealToBoardDeal(deal, stage?.tone ?? "neutral", language, t))
+      setDetailOpen(true)
+    }).catch((error) => toast.error(error instanceof Error ? error.message : t("This deal could not be opened.")))
+  }, [dealPipelines, language, livePipelines, loading, navigate, t])
 
   function openDealDetail(deal: CrmDeal) {
     if (navigate) { navigate(`/crm/deals/${encodeURIComponent(deal.id)}`); return }
@@ -3287,9 +3821,23 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
     setDetailOpen(true)
   }
 
+  function openApiDealDetail(deal: ApiDeal) {
+    const stage = livePipelines.flatMap((pipeline) => pipeline.stages).find((candidate) => candidate.id === deal.pipelineStageId)
+    openDealDetail(apiDealToBoardDeal(deal, stage?.tone ?? "neutral", language, t))
+  }
+
   function switchPipeline(pipeline: CrmPipeline) {
     setSelectedDeal(pipeline.stages.flatMap((stage) => stage.deals)[0] ?? null)
     setDetailOpen(false)
+  }
+
+  function reconcileStageTotals(previous: ApiDeal, next: ApiDeal) {
+    if (previous.pipelineStageId === next.pipelineStageId) return
+    setStagePages((pages) => ({
+      ...pages,
+      [previous.pipelineStageId]: { total: Math.max(0, (pages[previous.pipelineStageId]?.total ?? 1) - 1), loading: false },
+      [next.pipelineStageId]: { total: (pages[next.pipelineStageId]?.total ?? 0) + 1, loading: false },
+    }))
   }
 
   async function persistDealMove(dealId: string, pipelineId: string, stageId: string) {
@@ -3301,7 +3849,9 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
     }
     try {
       const updated = await moveDealStage(dealId, pipelineId, stageId)
+      if (sourceDeal) reconcileStageTotals(sourceDeal, updated)
       setLiveDeals((deals) => deals.map((deal) => deal.id === updated.id ? updated : deal))
+      setDealListRows((deals) => deals.map((deal) => deal.id === updated.id ? updated : deal))
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("This deal could not be moved."))
       setReloadKey((key) => key + 1)
@@ -3313,7 +3863,9 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
     setWinning(true)
     try {
       const updated = await markDealWon(pendingWin.deal.id, pendingWin.stage.id)
+      reconcileStageTotals(pendingWin.deal, updated)
       setLiveDeals((deals) => deals.map((deal) => deal.id === updated.id ? updated : deal))
+      setDealListRows((deals) => deals.map((deal) => deal.id === updated.id ? updated : deal))
       setPendingWin(null)
       toast.success(t("Deal marked won and customer activated"))
     } catch (error) {
@@ -3326,7 +3878,29 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Deals")} className="md-page md-page-stack-compact">
-      {loading ? (
+      <header className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 className="text-[24px] font-medium leading-tight text-[var(--md-ink)]">{t("Deals")}</h1>
+            <p className="text-[11px] font-medium text-[var(--md-subtle)]">
+              {viewMode === "Board"
+                ? (loading ? t("Loading deal totals…") : `${new Intl.NumberFormat(language).format(boardDealTotal)} ${t(boardDealTotal === 1 ? "deal" : "deals")} · ${t("Pipeline board")}`)
+                : (dealListState === "idle" || (dealListState === "loading" && dealListRows.length === 0)
+                    ? t("Loading deal totals…")
+                    : `${new Intl.NumberFormat(language).format(dealListTotal)} ${t(dealListTotal === 1 ? "deal" : "deals")} · ${t("Company-wide list")}`)}
+            </p>
+          </div>
+          <p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">
+            {t(viewMode === "Board" ? "Move opportunities between stages and keep the commercial path visible." : "Search, sort and review every deal without loading the full pipeline into the browser.")}
+          </p>
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
+          <RegisterViewSwitch options={["Board", "List"] as const} value={viewMode} onChange={setViewMode} ariaLabel="Deal view" compact />
+          <DexterActionPill onClick={() => setDexterOpen(true)} />
+        </div>
+      </header>
+
+      {viewMode === "Board" ? (loading ? (
         <Surface padding="lg" className="min-h-[280px] animate-pulse rounded-[var(--md-radius-xl)] bg-[var(--md-surface)]">
           <span className="sr-only">{t("Loading deals")}</span>
         </Surface>
@@ -3351,18 +3925,49 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
       ) : (
         <CrmPipelineBoard
           pipelines={dealPipelines}
-          commandHeader={{
-            title: t("Deals"),
-            instruction: t("Drag cards between stages"),
-            actions: (
-              <DexterActionPill onClick={() => setDexterOpen(true)} />
-            ),
-          }}
           selectedDealId={detailOpen && selectedDeal ? selectedDeal.id : undefined}
           onSelectDeal={openDealDetail}
           onPipelineChange={switchPipeline}
           onOpenSettings={() => setSettingsOpen(true)}
           onMoveDeal={persistDealMove}
+          stagePaging={Object.fromEntries(livePipelines.flatMap((pipeline) => pipeline.stages.map((stage) => [stage.id, {
+            total: stagePages[stage.id]?.total ?? 0,
+            loading: stagePages[stage.id]?.loading ?? false,
+            onLoadMore: () => void loadMoreDealsForStage(pipeline.id, stage.id),
+          }])))}
+        />
+      )) : (
+        <DataTable
+          ariaLabel="Deal directory"
+          columnsButtonLabel="Manage deal columns"
+          storageKey="crm-deals-list"
+          columns={dealListColumns}
+          rows={dealListRows}
+          getRowKey={(deal) => deal.id}
+          onRowClick={openApiDealDetail}
+          rowClassName="group h-[64px] hover:bg-[var(--md-hover)]"
+          serverSorting={{ value: dealListSort, onChange: (next) => { setDealListSort(next ?? { id: "created", direction: "desc" }); setDealListOffset(0) } }}
+          pagination={{ offset: dealListOffset, limit: dealListPageSize, total: dealListTotal, loading: dealListState === "loading", onOffsetChange: setDealListOffset }}
+          compactToolbar
+          toolbarSearch={<RegisterSearchField value={dealQuery} onChange={setDealQuery} onClear={() => setDealQuery("")} label="Search deals" placeholder="Deal, company, pipeline or owner…" className="sm:w-[210px]" />}
+          toolbarFilters={<>
+            <RegisterFacetSelect label="Pipeline" allLabel="All pipelines" value={dealPipelineFilter} options={listPipelineOptions} onChange={setDealPipelineFilter} className="w-[132px]" />
+            <RegisterFacetSelect label="Status" allLabel="All statuses" value={dealStatusFilter} options={listStatusOptions} onChange={setDealStatusFilter} className="w-[122px]" />
+            <RegisterFacetSelect label="Owner" allLabel="All owners" value={dealOwnerFilter} options={listOwnerOptions} onChange={setDealOwnerFilter} className="w-[126px]" />
+          </>}
+          toolbarOptions={<RegisterRevalidatingMark active={dealListState === "loading" && dealListRows.length > 0} />}
+          contentBeforeTable={dealListState === "error" && dealListRows.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-danger)_8%,var(--md-surface))] px-3 py-2" role="alert">
+              <p className="text-[12px] text-[var(--md-danger)]" dir="auto">{dealListError ? t(dealListError) : t("Deals could not be refreshed.")}</p>
+              <Button type="button" variant="outline" className="h-8" onClick={() => setReloadKey((key) => key + 1)}>{t("Try again")}</Button>
+            </div>
+          ) : undefined}
+          exportConfig={{ fileName: "crm-deals", recordCategory: "Deal details", loadRecords: (selectedDeals) => Promise.all(selectedDeals.map((deal) => getDeal(deal.id))) }}
+          emptyState={dealListState === "idle" || dealListState === "loading"
+            ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading deals…" /></div>
+            : dealListState === "error"
+              ? <div className="grid min-h-[180px] place-items-center p-6 text-center" role="alert"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Deals could not be loaded.")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]" dir="auto">{dealListError ? t(dealListError) : null}</p><Button type="button" variant="outline" className="mt-3" onClick={() => setReloadKey((key) => key + 1)}>{t("Try again")}</Button></div></div>
+              : <div className="grid min-h-[180px] place-items-center p-6 text-center"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t(dealFiltersActive ? "No deals match these filters." : "No deals yet.")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{t(dealFiltersActive ? "Clear a filter or try another deal, company, pipeline or owner." : "Convert a qualified lead to create the first deal.")}</p>{dealFiltersActive ? <Button type="button" variant="outline" className="mt-3" onClick={clearDealListFilters}>{t("Clear filters")}</Button> : null}</div></div>}
         />
       )}
       {selectedDeal ? <DealDetailDrawer deal={selectedDeal} open={detailOpen} onClose={() => setDetailOpen(false)} /> : null}
@@ -3375,6 +3980,57 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
           setReloadKey((key) => key + 1)
         }}
       />
+      <Dialog open={newDealOpen} onOpenChange={(open) => {
+        setNewDealOpen(open)
+        if (!open) setDealLeadSearch("")
+      }}>
+        <DialogContent onCloseAutoFocus={restoreNewDealFocus} className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[560px]">
+          <DialogHeader className="text-start">
+            <DialogTitle>{t("New deal")}</DialogTitle>
+            <DialogDescription className="text-[13px] leading-5 text-[var(--md-text)]">
+              {t("Choose an open lead. You will review the commercial details before the deal is created.")}
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={dealLeadSearch}
+            onChange={(event) => setDealLeadSearch(event.target.value)}
+            placeholder={t("Search company, contact, owner or lane")}
+            aria-label={t("Search open leads")}
+            className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] text-base shadow-[var(--md-shadow-line)] sm:text-[13px]"
+          />
+          <div className="max-h-[360px] overflow-y-auto rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]">
+            {dealLeadState === "loading" ? (
+              <p className="px-4 py-8 text-center text-[13px] text-[var(--md-text)]" role="status">{t("Loading open leads…")}</p>
+            ) : dealLeadState === "error" ? (
+              <div className="px-4 py-6 text-center" role="alert">
+                <p className="text-[13px] text-[var(--md-text)]">{dealLeadError}</p>
+                <Button type="button" variant="outline" className="mt-3" onClick={() => { setNewDealOpen(false); window.setTimeout(() => setNewDealOpen(true), 0) }}>{t("Try again")}</Button>
+              </div>
+            ) : dealLeadOptions.length ? (
+              dealLeadOptions.map((lead, index) => (
+                <button
+                  key={lead.id}
+                  type="button"
+                  onClick={() => startDealFromLead(lead.id)}
+                  className={`group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-4 py-3 text-start outline-none transition-colors hover:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a20)] ${index ? "border-t border-[var(--md-line)]" : ""}`}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{lead.companyName}</span>
+                    <span className="mt-0.5 block truncate text-[11.5px] text-[var(--md-text)]" dir="auto">{[lead.primaryContactName, lead.ownerName, lead.tradeLane].filter(Boolean).join(" · ") || t("No supporting detail recorded")}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--md-accent)]">{t("Review deal")}<ArrowRight className="size-3.5 rtl:rotate-180" strokeWidth={1.4} /></span>
+                </button>
+              ))
+            ) : (
+              <div className="px-4 py-8 text-center">
+                <p className="text-[13px] font-medium text-[var(--md-ink)]">{t(dealLeadSearch.trim() ? "No open leads match this search." : "No open leads are ready to convert.")}</p>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Create or qualify a lead first, then start its deal from here.")}</p>
+                <Button type="button" variant="outline" className="mt-4" onClick={() => { setNewDealOpen(false); navigate?.("/crm/leads") }}>{t("Go to leads")}</Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={pendingWin !== null} onOpenChange={(open) => {
         if (!open && !winning) {
           setPendingWin(null)
@@ -3390,8 +4046,8 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
           </DialogHeader>
           {pendingWin ? (
             <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)]">
-              <p className="text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{pendingWin.deal.name}</p>
-              <p className="mt-1 text-[12px] text-[var(--md-text)]" dir="auto">{pendingWin.deal.companyName}</p>
+              <p className="text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{pendingWin.deal.name}</p>
+              <p className="mt-1 text-[12px] text-[var(--md-text)]" data-i18n-skip dir="auto">{pendingWin.deal.companyName}</p>
               <p className="mt-2 text-[11px] text-[var(--md-subtle)]">{t("Destination stage")}: <span dir="auto">{pendingWin.stage.name}</span></p>
             </div>
           ) : null}

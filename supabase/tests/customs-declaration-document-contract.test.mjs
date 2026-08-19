@@ -55,20 +55,42 @@ test("official declaration documents are immutable and retained for seven years"
   assert.match(source, /upsert: false/);
 });
 
-test("import and export templates keep the requested CDS structure and repeat items", async () => {
+test("the export template preserves the prescribed EAD and item-list particulars", async () => {
   const source = await read(
     "../functions/_shared/customs-declaration-template.ts",
   );
-  assert.match(source, /isImport \? "Import" : "Export"/);
-  assert.doesNotMatch(source, /class=\\"barcode\\"|MULTIDECK_MRN_BARCODE/);
-  assert.match(source, /\{d\.items\[i\]\.number\}/);
-  assert.match(source, /\{d\.items\[i\+1\]\.number\}/);
-  assert.match(source, /Calculation of taxes/);
-  assert.match(source, /exchange rates are only estimates/);
-  assert.match(source, /paper-size="A4"/);
-  assert.match(source, /audit-block/);
-  assert.match(source, /auditSpacerHeight/);
-  assert.match(source, /page-break-inside: avoid/);
+  const { customsDeclarationTemplate } = await import(
+    "../functions/_shared/customs-declaration-template.ts"
+  );
+  const exportTemplate = customsDeclarationTemplate("export");
+  const importTemplate = customsDeclarationTemplate("import");
+  assert.match(exportTemplate, /EXPORT ACCOMPANYING DOCUMENT/);
+  assert.match(exportTemplate, /<svg class="ead-barcode"/);
+  assert.match(exportTemplate, /viewBox="0 0 \{d\.mrnBarcodeWidth\} \{d\.mrnBarcodeHeight\}"/);
+  assert.match(exportTemplate, /<path d="\{d\.mrnBarcodePath\}" fill="#000"\/>/);
+  assert.doesNotMatch(exportTemplate, /mrnBarcodeSvg/);
+  assert.match(exportTemplate, /Code 128 B barcode containing MRN \{d\.mrn\}/);
+  assert.match(exportTemplate, /DECLARATION TYPE \(1\)/);
+  assert.match(exportTemplate, /Sec\. Decl\. \(S00\)/);
+  assert.match(exportTemplate, /Other SCI \(S32\)/);
+  assert.match(exportTemplate, /Customs office/);
+  assert.match(exportTemplate, /Reference numbers \(7\) - LRN and\/or UCR/);
+  assert.match(exportTemplate, /CONTROL BY OFFICE OF DISPATCH\/EXPORT \(E\)/);
+  assert.match(exportTemplate, /CONTROL BY OFFICE OF EXIT \(K\)/);
+  assert.match(exportTemplate, /EXPORT LIST OF ITEMS/);
+  assert.match(exportTemplate, /MRN: \{d\.mrn\}/);
+  assert.match(exportTemplate, /Page 1 of \{d\.totalPages\}/);
+  assert.match(exportTemplate, /\{d\.itemListPages\[i\]\.documentPageNumber\}/);
+  assert.match(exportTemplate, /\{d\.itemListPages\[i\+1\]\}/);
+  assert.match(exportTemplate, /\{d\.items\[0\]\.number\}/);
+  assert.match(exportTemplate, /paper-size="A4"/);
+  assert.doesNotMatch(
+    exportTemplate,
+    /Acceptance date\/time|Declaration status|Tax summary/,
+  );
+  assert.match(importTemplate, /Calculation of taxes/);
+  assert.match(importTemplate, /exchange rates are only estimates/);
+  assert.match(importTemplate, /\{d\.items\[i\+1\]\}/);
   assert.doesNotMatch(source, /test-watermark|TEST MODE/);
 });
 
@@ -85,6 +107,14 @@ test("document dataset validates provenance and exact accepted-snapshot sources"
   assert.match(source, /leafPaths\(dataset\)/);
   assert.match(source, /ICUSS_DeclarationSnapshotJSON/);
   assert.match(source, /ICUSS_ResponsePayloadJSON\.AcceptanceDateTime/);
+  assert.match(source, /valid 18-character MRN/);
+  assert.match(source, /providerCustomsOffice/);
+  assert.match(source, /securityIndicator/);
+  assert.match(source, /otherSpecificCircumstance/);
+  assert.match(source, /documentPageNumber/);
+  assert.match(source, /code128BBarcode/);
+  assert.match(source, /const startB = 104/);
+  assert.match(source, /code128Patterns\[symbol\]/);
   assert.match(
     source,
     /join\(\[isImport \? "IM" : "EX", draft\.declarationType\]/,

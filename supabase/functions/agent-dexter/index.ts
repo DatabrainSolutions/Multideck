@@ -404,6 +404,10 @@ function rpcErrorMessage(error: unknown, fallback: string) {
   return message || fallback
 }
 
+function missingRpc(error: unknown) {
+  return isObject(error) && (error.code === "42883" || error.code === "PGRST202")
+}
+
 const ATTACH_EMAIL_DOCUMENT_ACTION = "attach_email_document_to_customer"
 const QUARANTINE_INVENTORY_ACTION = "quarantine_inventory"
 const CREATE_PURCHASE_ORDER_ACTION = "create_purchase_order"
@@ -1596,7 +1600,8 @@ Uploaded PDF, Excel, CSV, Word, OpenDocument and image files can be read only th
 
 Forms creation, persistence, sending, reminders and electronic signatures are not connected yet. State that plainly and never imply the Forms preview is operational.
 Warehouse customer-user invitations and access-link emails are available only from the customer's Warehouse customer access panel. They are not connected to Dexter writes or Watching for you. Never claim to send or watch them; direct the operator to that customer panel.
-Workspace user invitations, department catalogue and membership changes, role assignments, custom permission changes and user deletion are available only from Settings > Users and Settings > Permissions. These are high-impact identity and authorization actions and are deliberately not connected to Dexter writes or Watching for you. Never claim to invite, change access for, remove or watch a workspace user; direct the operator to the relevant Settings page.
+Workspace user invitations, password resets, department catalogue and membership changes, role assignments, custom permission changes and user deletion are available only from Admin > Users. These are high-impact identity and authorization actions and are deliberately not connected to Dexter writes or Watching for you. Never claim to invite, reset a password, change access for, remove or watch a workspace user; direct a tenant administrator to Admin > Users.
+Admin Active log, Detailed log, authentication IP addresses and live workspace presence are deliberately unavailable to Dexter reads, writes and Watching for you. They contain sensitive security evidence and field-level before/after values. Never claim to inspect or monitor them; direct a tenant administrator to Admin.
 Developer broadcast history is available to Dexter as permission-gated read evidence, and Watching for you can react to deterministic broadcast status and count changes. Drafting, audience changes and sending remain in Settings > Developer > Broadcast because the administrator must review the exact branded email and recipient snapshot before explicit confirmation. These high-impact message actions are deliberately not Dexter write actions. Never claim to draft, edit or send a broadcast from chat; direct the operator to the Broadcast wizard.
 Mailbox automatic replies are available only from the selected mailbox's Inbox settings. They are not connected to Dexter reads, writes, or Watching for you because provider settings do not emit a tenant-safe watch event here. Never claim to inspect, change, or watch an out-of-office setting; direct the operator to Inbox settings.
 Gmail labels and Outlook folders are read-only provider organisation. When read_email_thread returns folders, use those visible names as context and never invent a missing label or folder. Label changes and folder moves do not emit a dedicated tenant-safe watch event in this release, so never claim that Watching for you can monitor those organisational changes; direct the operator to Inbox to browse them.
@@ -2918,28 +2923,55 @@ Deno.serve(async (request) => {
   }
 
   if (operation === "list-conversations") {
-    const { data, error } = await userClient.rpc("multideck_dexter_list_conversations")
-    return error
-      ? json(request, {
+    const query = cleanString(body.query, 200)
+    const requestedLimit = Number(body.limit)
+    const requestedOffset = Number(body.offset)
+    const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 50) : 25
+    const offset = Number.isFinite(requestedOffset) ? Math.min(Math.max(Math.trunc(requestedOffset), 0), 1_000_000) : 0
+    const { data, error } = await userClient.rpc("multideck_dexter_list_conversations_page", {
+      p_query: query || null,
+      p_limit: limit,
+      p_offset: offset,
+    })
+    if (!error && isObject(data)) return json(request, { conversationPage: data })
+    if (!missingRpc(error)) {
+      return json(request, {
         code: "dexter_history_unavailable",
         message: rpcErrorMessage(error, "Dexter's conversation history is unavailable."),
       }, 503)
-      : json(request, { conversations: Array.isArray(data) ? data : [] })
+    }
+
+    return json(request, {
+      code: "dexter_history_paging_unavailable",
+      message: "Dexter's paged conversation history is still being prepared. Try again shortly.",
+    }, 503)
   }
 
   if (operation === "get-conversation") {
     if (!conversationId) {
       return json(request, { code: "invalid_conversation", message: "Choose a Dexter conversation first." }, 400)
     }
-    const { data, error } = await userClient.rpc("multideck_dexter_get_conversation", {
+    const requestedLimit = Number(body.limit)
+    const requestedOffset = Number(body.offset)
+    const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 100) : 50
+    const offset = Number.isFinite(requestedOffset) ? Math.min(Math.max(Math.trunc(requestedOffset), 0), 1_000_000) : 0
+    const { data, error } = await userClient.rpc("multideck_dexter_get_conversation_page", {
       p_conversation_id: conversationId,
+      p_limit: limit,
+      p_offset: offset,
     })
-    return error || !isObject(data)
-      ? json(request, {
+    if (!error && isObject(data)) return json(request, { conversation: data })
+    if (!missingRpc(error)) {
+      return json(request, {
         code: "dexter_conversation_unavailable",
         message: rpcErrorMessage(error, "This conversation could not be loaded."),
-      }, error?.code === "P0002" ? 404 : 503)
-      : json(request, { conversation: data })
+      }, isObject(error) && error.code === "P0002" ? 404 : 503)
+    }
+
+    return json(request, {
+      code: "dexter_conversation_paging_unavailable",
+      message: "Dexter's paged conversation messages are still being prepared. Try again shortly.",
+    }, 503)
   }
 
   if (operation === "usage") {
@@ -2950,6 +2982,31 @@ Deno.serve(async (request) => {
         message: rpcErrorMessage(error, "Dexter usage is unavailable."),
       }, 503)
       : json(request, { usage: data })
+  }
+
+  if (operation === "usage-history") {
+    const sort = body.sort === "heaviest" ? "heaviest" : "newest"
+    const requestedLimit = Number(body.limit)
+    const requestedOffset = Number(body.offset)
+    const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 50) : 10
+    const offset = Number.isFinite(requestedOffset) ? Math.min(Math.max(Math.trunc(requestedOffset), 0), 1_000_000) : 0
+    const { data, error } = await userClient.rpc("multideck_dexter_get_usage_history", {
+      p_sort: sort,
+      p_limit: limit,
+      p_offset: offset,
+    })
+    if (!error && isObject(data)) return json(request, { usageHistory: data })
+    if (!missingRpc(error)) {
+      return json(request, {
+        code: "dexter_usage_unavailable",
+        message: rpcErrorMessage(error, "Dexter usage history is unavailable."),
+      }, 503)
+    }
+
+    return json(request, {
+      code: "dexter_usage_history_paging_unavailable",
+      message: "Dexter's paged usage history is still being prepared. Try again shortly.",
+    }, 503)
   }
 
   if (operation === "rename-conversation") {

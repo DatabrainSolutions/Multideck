@@ -86,8 +86,8 @@ export function AppShell({
   }, [route])
 
   const shell = (
-    <div className="h-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">
-      <div className="flex h-screen min-h-0">
+    <div className="h-screen w-full max-w-full overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">
+      <div className="flex h-screen w-full min-h-0 min-w-0 overflow-hidden">
         <AppSidebar
           route={route}
           navigate={navigate}
@@ -134,20 +134,24 @@ export function AppShell({
           onKeyDownCapture={moveTabToAdjacentField}
           onScroll={route === "/warehouse/items" ? (event) => writeWarehouseItemsScrollTop(event.currentTarget.scrollTop) : undefined}
           className={cn(
-            "min-h-0 min-w-0 flex-1",
-            isFullHeightRoute ? "overflow-hidden" : "overflow-y-auto md-scrollbar",
+            "min-h-0 min-w-0 max-w-full flex-1 overscroll-x-none",
+            isFullHeightRoute ? "overflow-hidden" : "overflow-x-clip overflow-y-auto md-scrollbar",
             !isSettingsRoute && !isFullHeightRoute && !isChromeTightRoute && "px-[var(--md-page-pad)] pb-[var(--md-page-pad)]",
           )}
         >
-          {isSettingsRoute || isFullHeightRoute || isChromeTightRoute ? null : <TopBar route={route} navigate={navigate} />}
+          {isSettingsRoute || isFullHeightRoute || isChromeTightRoute ? null : <TopBar route={route} navigate={navigate} currentUser={currentUser} />}
           {children}
         </main>
       </div>
     </div>
   )
 
-  // Keep Inbox data warm while the operator works elsewhere. The provider is
-  // scoped to the authenticated user and survives route changes, so opening
-  // Inbox does not begin with an avoidable account/bootstrap waterfall.
-  return <InboxWorkspaceProvider cacheScope={currentUser?.id ?? null}>{shell}</InboxWorkspaceProvider>
+  // Keep the authenticated Inbox cache alive across route changes without
+  // making every Multideck page pay for mailbox and thread reads. Sidebar
+  // intent can prepare account metadata; thread rows load only on Inbox.
+  return (
+    <InboxWorkspaceProvider cacheScope={currentUser?.id ?? null} active={isInboxRoute}>
+      {shell}
+    </InboxWorkspaceProvider>
+  )
 }

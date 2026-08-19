@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, type ComponentProps, type CSSProperties, type ReactNode } from "react"
+import { memo, type ComponentProps, type CSSProperties, type ReactNode } from "react"
 import { AiBrain, type LucideIcon } from "@/components/icons/hugeicons"
 import "@/dexter-transfer.css"
 import { Button } from "@/components/ui/button"
@@ -6,9 +6,8 @@ import { useLanguage } from "@/i18n/language-provider"
 import { useAccentShaderRamp, type ShaderStops } from "@/lib/accent-theme"
 import { useAiAgentName } from "@/lib/user-preferences"
 import { cn } from "@/lib/utils"
-import type { BloomCanvasProps } from "./spectral-bloom-canvas"
-
-const SpectralBloomCanvas = lazy(() => import("./spectral-bloom-canvas"))
+import { ResilientShaderSurface } from "@/components/multideck/resilient-shader-surface"
+import SpectralBloomCanvas, { type BloomCanvasProps } from "./spectral-bloom-canvas"
 
 type DexterActionPillProps = Omit<ComponentProps<typeof Button>, "children"> & {
   icon?: LucideIcon
@@ -22,19 +21,29 @@ function BloomFallback({ stops }: { stops: ShaderStops }) {
   const [colorA, colorB, colorC] = stops
   return (
     <span
-      className="block size-full"
+      className="md-bloom-fallback block size-full"
       style={{
-        background: `radial-gradient(circle at 82% 86%, ${colorA}, transparent 58%), linear-gradient(135deg, ${colorB}, ${colorC})`,
-      }}
-    />
+        "--md-bloom-a": colorA,
+        "--md-bloom-b": colorB,
+        "--md-bloom-c": colorC,
+      } as CSSProperties}
+    >
+      <span className="md-bloom-fallback__glow" />
+      <span className="md-bloom-fallback__rays" />
+    </span>
   )
 }
 
 function Bloom(props: BloomCanvasProps) {
   return (
-    <Suspense fallback={<BloomFallback stops={props.stops} />}>
-      <SpectralBloomCanvas {...props} />
-    </Suspense>
+    <ResilientShaderSurface
+      name="Spectral bloom shader"
+      technology="webgpu"
+      maxRetries={1}
+      fallback={<BloomFallback stops={props.stops} />}
+    >
+      {({ onReady }) => <SpectralBloomCanvas {...props} onReady={onReady} />}
+    </ResilientShaderSurface>
   )
 }
 

@@ -27,12 +27,17 @@ import {
   getWarehousePurchaseOrder,
   getWarehousePurchaseOrderReference,
   issueWarehousePurchaseOrder,
-  listWarehousePurchaseOrders,
+  listWarehouseFacilitiesPage,
+  listWarehousePurchaseOrderItemsPage,
+  listWarehousePurchaseOrderOrganisationsPage,
+  listWarehousePurchaseOrdersPage,
   updateWarehousePurchaseOrder,
+  type WarehouseFacility,
   type WarehousePurchaseOrder,
   type WarehousePurchaseOrderInput,
   type WarehousePurchaseOrderLine,
   type WarehousePurchaseOrderReference,
+  type WarehouseRegisterSort,
 } from "@/lib/warehouse"
 
 const controlClass = "!h-9 !w-full rounded-[var(--md-radius-md)] border-0 bg-white/68 !px-3 !text-[12.5px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] active:!scale-100 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
@@ -74,7 +79,117 @@ function normaliseInput(order: WarehousePurchaseOrder): WarehousePurchaseOrderIn
   }
 }
 
-function SearchablePurchaseOrderSelect({ value, options, placeholder, searchPlaceholder, emptyLabel, disabled, onChange }: { value: string; options: Array<{ id: string; name: string; code?: string }>; placeholder: string; searchPlaceholder: string; emptyLabel: string; disabled?: boolean; onChange: (value: string) => void }) {
+type PurchaseOrderOrganisationOption = WarehousePurchaseOrderReference["organisations"][number]
+type PurchaseOrderItemOption = WarehousePurchaseOrderReference["items"][number]
+
+function usePurchaseOrderReferenceSelectors(facilityId: string, customerOrgId: string) {
+  const [reference, setReference] = useState<WarehousePurchaseOrderReference | null>(null)
+  const [organisationRows, setOrganisationRows] = useState<PurchaseOrderOrganisationOption[]>([])
+  const [rememberedOrganisations, setRememberedOrganisations] = useState<PurchaseOrderOrganisationOption[]>([])
+  const [organisationSearch, setOrganisationSearch] = useState("")
+  const [organisationLoading, setOrganisationLoading] = useState(false)
+  const [organisationsHaveMore, setOrganisationsHaveMore] = useState(false)
+  const [itemRows, setItemRows] = useState<PurchaseOrderItemOption[]>([])
+  const [rememberedItems, setRememberedItems] = useState<PurchaseOrderItemOption[]>([])
+  const [itemSearch, setItemSearch] = useState("")
+  const [itemLoading, setItemLoading] = useState(false)
+  const [itemsHaveMore, setItemsHaveMore] = useState(false)
+  const [selectorError, setSelectorError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let live = true
+    getWarehousePurchaseOrderReference()
+      .then((value) => {
+        if (live) setReference({ ...value, organisations: [], items: [] })
+      })
+      .catch((cause) => { if (live) setSelectorError(errorMessage(cause)) })
+    return () => { live = false }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      setOrganisationLoading(true)
+      listWarehousePurchaseOrderOrganisationsPage({ search: organisationSearch.trim() || undefined, limit: 25 })
+        .then((page) => {
+          if (cancelled) return
+          setOrganisationRows(page.rows)
+          setOrganisationsHaveMore(page.hasMore)
+          setSelectorError(null)
+        })
+        .catch((cause) => {
+          if (!cancelled) {
+            setOrganisationRows([])
+            setOrganisationsHaveMore(false)
+            setSelectorError(errorMessage(cause))
+          }
+        })
+        .finally(() => { if (!cancelled) setOrganisationLoading(false) })
+    }, 220)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [organisationSearch])
+
+  useEffect(() => {
+    if (!facilityId || !customerOrgId) {
+      setItemRows([])
+      setItemsHaveMore(false)
+      return
+    }
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      setItemLoading(true)
+      listWarehousePurchaseOrderItemsPage({ facilityId, customerOrgId, search: itemSearch.trim() || undefined, limit: 25 })
+        .then((page) => {
+          if (cancelled) return
+          setItemRows(page.rows)
+          setItemsHaveMore(page.hasMore)
+          setSelectorError(null)
+        })
+        .catch((cause) => {
+          if (!cancelled) {
+            setItemRows([])
+            setItemsHaveMore(false)
+            setSelectorError(errorMessage(cause))
+          }
+        })
+        .finally(() => { if (!cancelled) setItemLoading(false) })
+    }, 220)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [customerOrgId, facilityId, itemSearch])
+
+  const rememberOrganisation = useCallback((organisation: PurchaseOrderOrganisationOption | null) => {
+    if (!organisation) return
+    setRememberedOrganisations((current) => current.some((candidate) => candidate.id === organisation.id) ? current : [...current, organisation])
+  }, [])
+  const rememberItems = useCallback((items: PurchaseOrderItemOption[]) => {
+    if (!items.length) return
+    setRememberedItems((current) => [...current, ...items].filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id) === index))
+  }, [])
+  const organisations = useMemo(() => [...rememberedOrganisations, ...organisationRows]
+    .filter((row, index, all) => all.findIndex((candidate) => candidate.id === row.id) === index), [organisationRows, rememberedOrganisations])
+  const items = useMemo(() => [...rememberedItems, ...itemRows]
+    .filter((item) => item.facilityId === facilityId && item.customerOrgId === customerOrgId)
+    .filter((row, index, all) => all.findIndex((candidate) => candidate.id === row.id) === index), [customerOrgId, facilityId, itemRows, rememberedItems])
+
+  return {
+    reference,
+    organisations,
+    organisationSearch,
+    setOrganisationSearch,
+    organisationLoading,
+    organisationsHaveMore,
+    items,
+    itemSearch,
+    setItemSearch,
+    itemLoading,
+    itemsHaveMore,
+    selectorError,
+    rememberOrganisation,
+    rememberItems,
+  }
+}
+
+function SearchablePurchaseOrderSelect({ value, options, placeholder, searchPlaceholder, emptyLabel, disabled, remoteSearch = false, loading = false, hasMore = false, onSearchChange, onChange }: { value: string; options: Array<{ id: string; name: string; code?: string }>; placeholder: string; searchPlaceholder: string; emptyLabel: string; disabled?: boolean; remoteSearch?: boolean; loading?: boolean; hasMore?: boolean; onSearchChange?: (value: string) => void; onChange: (value: string) => void }) {
   const { direction, t } = useLanguage()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -82,7 +197,7 @@ function SearchablePurchaseOrderSelect({ value, options, placeholder, searchPlac
   const listId = useId()
   const listRef = useRef<HTMLDivElement>(null)
   const selected = options.find((option)=>option.id === value)
-  const matches = options.filter((option)=>`${option.code ?? ""} ${option.name}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+  const matches = remoteSearch ? options : options.filter((option)=>`${option.code ?? ""} ${option.name}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
   useEffect(() => {
     if (highlightedIndex < 0) return
     listRef.current?.querySelector<HTMLElement>(`[data-option-index="${highlightedIndex}"]`)?.scrollIntoView({ block: "nearest" })
@@ -101,22 +216,21 @@ function SearchablePurchaseOrderSelect({ value, options, placeholder, searchPlac
       event.preventDefault(); setOpen(false)
     }
   }
-  return <Popover open={open} onOpenChange={(nextOpen)=>{ setOpen(nextOpen); setHighlightedIndex(-1); if(!nextOpen) setQuery("") }}>
+  return <Popover open={open} onOpenChange={(nextOpen)=>{ setOpen(nextOpen); setHighlightedIndex(-1); if(!nextOpen){ setQuery(""); onSearchChange?.("") } }}>
     <PopoverTrigger asChild><button type="button" role="combobox" aria-expanded={open} aria-controls={listId} disabled={disabled} onKeyDown={(event)=>{ if(event.key === "ArrowDown" || event.key === "ArrowUp"){ event.preventDefault(); setOpen(true) } }} className={cn(controlClass,"flex items-center justify-between gap-2 text-start disabled:cursor-not-allowed disabled:opacity-50")}><span className={cn("min-w-0 truncate",!selected&&"text-[var(--md-subtle)]")}>{selected ? <>{selected.code ? <><bdi dir="ltr">{selected.code}</bdi><span className="text-[var(--md-subtle)]"> · </span></> : null}{selected.name}</> : t(placeholder)}</span><ChevronDown className="size-3.5 shrink-0 text-[var(--md-subtle)]" /></button></PopoverTrigger>
     <PopoverContent align="start" sideOffset={5} dir={direction} className="w-[var(--radix-popover-trigger-width)] min-w-[260px] gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-lift)]">
-      <div className="relative m-1"><Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" /><Input autoFocus role="combobox" aria-expanded="true" aria-controls={listId} aria-activedescendant={highlightedIndex >= 0 ? `${listId}-option-${highlightedIndex}` : undefined} value={query} onChange={(event)=>{ setQuery(event.target.value); setHighlightedIndex(-1) }} onKeyDown={handleSearchKeyDown} placeholder={t(searchPlaceholder)} className="h-8 rounded-[var(--md-radius-md)] ps-8 text-[12px]" /></div>
-      <div ref={listRef} id={listId} role="listbox" className="max-h-56 overflow-y-auto p-1 md-scrollbar">{matches.map((option,index)=><button id={`${listId}-option-${index}`} data-option-index={index} key={option.id} type="button" role="option" aria-selected={option.id===value} onMouseMove={()=>setHighlightedIndex(index)} onClick={()=>choose(option)} className={cn("flex w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2.5 py-2 text-start text-[12px] hover:bg-[var(--md-hover)]",option.id===value&&"bg-[var(--md-selected-bg)]",index===highlightedIndex&&"bg-[var(--md-hover)] ring-1 ring-inset ring-[var(--md-accent-a18)]")}>{option.code ? <bdi dir="ltr" className="shrink-0 font-medium text-[var(--md-accent)]">{option.code}</bdi> : null}<span className="min-w-0 truncate">{option.name}</span>{option.id===value?<Check className="ms-auto size-3.5 shrink-0 text-[var(--md-accent)]"/>:null}</button>)}{!matches.length?<p className="px-3 py-5 text-center text-[12px] text-[var(--md-subtle)]">{t(emptyLabel)}</p>:null}</div>
+      <div className="relative m-1"><Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" /><Input autoFocus role="combobox" aria-expanded="true" aria-controls={listId} aria-activedescendant={highlightedIndex >= 0 ? `${listId}-option-${highlightedIndex}` : undefined} value={query} onChange={(event)=>{ setQuery(event.target.value); onSearchChange?.(event.target.value); setHighlightedIndex(-1) }} onKeyDown={handleSearchKeyDown} placeholder={t(searchPlaceholder)} className="h-8 rounded-[var(--md-radius-md)] ps-8 text-[12px]" />{loading ? <Loader2 className="pointer-events-none absolute end-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" /> : null}</div>
+      <div ref={listRef} id={listId} role="listbox" className="max-h-56 overflow-y-auto p-1 md-scrollbar">{matches.map((option,index)=><button id={`${listId}-option-${index}`} data-option-index={index} key={option.id} type="button" role="option" aria-selected={option.id===value} onMouseMove={()=>setHighlightedIndex(index)} onClick={()=>choose(option)} className={cn("flex w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2.5 py-2 text-start text-[12px] hover:bg-[var(--md-hover)]",option.id===value&&"bg-[var(--md-selected-bg)]",index===highlightedIndex&&"bg-[var(--md-hover)] ring-1 ring-inset ring-[var(--md-accent-a18)]")}>{option.code ? <bdi dir="ltr" className="shrink-0 font-medium text-[var(--md-accent)]">{option.code}</bdi> : null}<span className="min-w-0 truncate">{option.name}</span>{option.id===value?<Check className="ms-auto size-3.5 shrink-0 text-[var(--md-accent)]"/>:null}</button>)}{!loading && !matches.length?<p className="px-3 py-5 text-center text-[12px] text-[var(--md-subtle)]">{t(emptyLabel)}</p>:null}{hasMore ? <p className="px-3 py-2 text-center text-[11px] text-[var(--md-subtle)]">{t("Search to narrow the list.")}</p> : null}</div>
     </PopoverContent>
   </Popover>
 }
 
-function PurchaseOrderDetailsFields({ form, reference, editable, generatingNumber, onGenerateNumber, patch }: { form: WarehousePurchaseOrderInput; reference: WarehousePurchaseOrderReference | null; editable: boolean; generatingNumber: boolean; onGenerateNumber: () => void; patch: <K extends keyof WarehousePurchaseOrderInput>(key: K, value: WarehousePurchaseOrderInput[K]) => void }) {
+function PurchaseOrderDetailsFields({ form, reference, organisations, organisationLoading, organisationsHaveMore, onOrganisationSearch, onOrganisationSelected, editable, generatingNumber, onGenerateNumber, patch }: { form: WarehousePurchaseOrderInput; reference: WarehousePurchaseOrderReference | null; organisations: PurchaseOrderOrganisationOption[]; organisationLoading: boolean; organisationsHaveMore: boolean; onOrganisationSearch: (value: string) => void; onOrganisationSelected: (value: PurchaseOrderOrganisationOption | null) => void; editable: boolean; generatingNumber: boolean; onGenerateNumber: () => void; patch: <K extends keyof WarehousePurchaseOrderInput>(key: K, value: WarehousePurchaseOrderInput[K]) => void }) {
   const { t } = useLanguage()
-  const organisations = reference?.organisations ?? []
   return <div className="grid gap-x-2.5 gap-y-2 md:grid-cols-16">
     <WarehouseFormField label={t("Purchase order number")} required className="md:col-span-4"><div className="flex gap-1.5"><Input disabled={!editable} value={form.number} onChange={(event)=>patch("number",event.target.value)} className={controlClass} dir="ltr" /><Button type="button" variant="outline" disabled={!editable || !form.facilityId || generatingNumber} onClick={onGenerateNumber} className="h-9 shrink-0 rounded-[var(--md-radius-md)] px-2.5 text-[11.5px]">{generatingNumber ? <Loader2 className="size-3.5 animate-spin" /> : null}{t("Auto-generate")}</Button></div></WarehouseFormField>
     <WarehouseFormField label={t("Warehouse")} required className="md:col-span-4"><SearchablePurchaseOrderSelect disabled={!editable} value={form.facilityId} options={(reference?.facilities ?? []).map((facility)=>({ id:facility.id,name:facility.name,code:facility.code }))} placeholder="Choose warehouse" searchPlaceholder="Search warehouses…" emptyLabel="No matching warehouses" onChange={(value)=>{ patch("facilityId",value); patch("lines",form.lines.map((line)=>({ ...line,itemId:null }))) }} /></WarehouseFormField>
-    <WarehouseFormField label={t("Stock owner")} required className="md:col-span-4"><SearchablePurchaseOrderSelect disabled={!editable} value={form.customerOrgId} options={organisations} placeholder="Choose organisation" searchPlaceholder="Search stock owners…" emptyLabel="No matching stock owners" onChange={(value)=>{ patch("customerOrgId",value); patch("lines",form.lines.map((line)=>({ ...line,itemId:null }))) }} /></WarehouseFormField>
+    <WarehouseFormField label={t("Stock owner")} required className="md:col-span-4"><SearchablePurchaseOrderSelect disabled={!editable} value={form.customerOrgId} options={organisations} placeholder="Choose organisation" searchPlaceholder="Search stock owners…" emptyLabel="No matching stock owners" remoteSearch loading={organisationLoading} hasMore={organisationsHaveMore} onSearchChange={onOrganisationSearch} onChange={(value)=>{ onOrganisationSelected(organisations.find((organisation)=>organisation.id===value) ?? null); patch("customerOrgId",value); patch("lines",form.lines.map((line)=>({ ...line,itemId:null }))) }} /></WarehouseFormField>
     <WarehouseFormField label={t("Supplier")} className="md:col-span-4"><Input disabled={!editable} value={form.supplierName} onChange={(event)=>patch("supplierName",event.target.value)} className={controlClass} dir="auto" /></WarehouseFormField>
 
     <WarehouseFormField label={t("Buyer reference")} className="md:col-span-4"><Input disabled={!editable} value={form.buyerReference ?? ""} onChange={(event)=>patch("buyerReference",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
@@ -134,26 +248,33 @@ function PurchaseOrderDetailsFields({ form, reference, editable, generatingNumbe
 /** Reusable line editor for purchase-order entry and document-extraction review. */
 export function PurchaseOrderLineEditor({
   lines,
-  reference,
+  items,
   facilityId,
   customerOrgId,
+  itemLoading,
+  itemsHaveMore,
+  onItemSearch,
+  onItemSelected,
   disabled,
   onChange,
 }: {
   lines: WarehousePurchaseOrderLine[]
-  reference: WarehousePurchaseOrderReference | null
+  items: PurchaseOrderItemOption[]
   facilityId: string
   customerOrgId: string
+  itemLoading: boolean
+  itemsHaveMore: boolean
+  onItemSearch: (value: string) => void
+  onItemSelected: (item: PurchaseOrderItemOption | null) => void
   disabled?: boolean
   onChange: (lines: WarehousePurchaseOrderLine[]) => void
 }) {
   const { t } = useLanguage()
-  const items = reference?.items.filter((item)=>item.facilityId === facilityId && item.customerOrgId === customerOrgId) ?? []
   const patch = (index: number, changes: Partial<WarehousePurchaseOrderLine>) => onChange(lines.map((line, lineIndex)=>lineIndex === index ? { ...line, ...changes } : line))
   const rows = useMemo(() => lines.map((line, index) => ({ line, index })), [lines])
   const lineControlClass = "!h-8 w-full rounded-[var(--md-radius-sm)] border-0 bg-white/72 !px-2 !text-[12px] shadow-[var(--md-shadow-line)] active:!scale-100"
   const columns = useMemo<DataTableColumn<{ line: WarehousePurchaseOrderLine; index: number }>[]>(() => [
-    { id:"item",label:"Warehouse item",width:190,minWidth:150,canHide:false,resizable:true,cell:({line,index})=><SearchablePurchaseOrderSelect disabled={disabled || !facilityId || !customerOrgId} value={line.itemId ?? ""} options={items.map((item)=>({ id:item.id,code:item.sku,name:item.description }))} placeholder="Match item" searchPlaceholder="Search warehouse items…" emptyLabel="No matching warehouse items" onChange={(value)=>{ const item=items.find((candidate)=>candidate.id===value); if(item) patch(index,{itemId:item.id,sku:item.sku,description:line.description || item.description,uomCode:item.uomCode}) }} /> },
+    { id:"item",label:"Warehouse item",width:190,minWidth:150,canHide:false,resizable:true,cell:({line,index})=><SearchablePurchaseOrderSelect disabled={disabled || !facilityId || !customerOrgId} value={line.itemId ?? ""} options={items.map((item)=>({ id:item.id,code:item.sku,name:item.description }))} placeholder="Match item" searchPlaceholder="Search warehouse items…" emptyLabel="No matching warehouse items" remoteSearch loading={itemLoading} hasMore={itemsHaveMore} onSearchChange={onItemSearch} onChange={(value)=>{ const item=items.find((candidate)=>candidate.id===value); if(item){ onItemSelected(item); patch(index,{itemId:item.id,sku:item.sku,description:line.description || item.description,uomCode:item.uomCode}) } }} /> },
     { id:"sku",label:"SKU",width:105,minWidth:80,resizable:true,cell:({line,index})=><Input disabled={disabled} value={line.sku} onChange={(event)=>patch(index,{sku:event.target.value})} className={lineControlClass} dir="ltr" /> },
     { id:"description",label:"Description",width:240,minWidth:160,canHide:false,resizable:true,cell:({line,index})=><Input disabled={disabled} value={line.description} onChange={(event)=>patch(index,{description:event.target.value})} className={lineControlClass} dir="auto" /> },
     { id:"quantity",label:"Qty",kind:"number",width:76,minWidth:64,resizable:true,cell:({line,index})=>{ const item=items.find((candidate)=>candidate.id===line.itemId); return <Input disabled={disabled} type="number" min="0.000001" step={item?.allowsFractionalQuantity?"0.001":"1"} value={line.quantity} onChange={(event)=>patch(index,{quantity:Number(event.target.value)})} className={lineControlClass} dir="ltr" /> } },
@@ -164,14 +285,14 @@ export function PurchaseOrderLineEditor({
     { id:"delivery",label:"Delivery",kind:"date",width:126,minWidth:110,resizable:true,defaultHidden:true,cell:({line,index})=><Input disabled={disabled} type="date" value={line.requestedDeliveryDate ?? ""} onChange={(event)=>patch(index,{requestedDeliveryDate:event.target.value||null})} className={lineControlClass} dir="ltr" /> },
     { id:"net",label:"Net",kind:"number",width:86,minWidth:72,resizable:true,cell:({line})=><span dir="ltr" className="tabular-nums text-[12px] font-medium">{(Math.max(0,Number(line.quantity)||0)*Math.max(0,Number(line.unitPrice)||0)).toFixed(2)}</span> },
     { id:"actions",label:"",kind:"actions",width:44,minWidth:44,canHide:false,canPin:false,cell:({index})=><Button disabled={disabled || lines.length===1} type="button" variant="ghost" size="icon" aria-label={t("Remove line")} onClick={()=>onChange(lines.filter((_,lineIndex)=>lineIndex!==index))} className="size-8 rounded-[var(--md-radius-sm)] text-[var(--md-red)]"><Trash2 className="size-3.5" /></Button> },
-  ], [customerOrgId, disabled, facilityId, items, lines, onChange, t])
+  ], [customerOrgId, disabled, facilityId, itemLoading, items, itemsHaveMore, lines, onChange, onItemSearch, onItemSelected, t])
   return <DataTable ariaLabel="Purchase order lines" columnsButtonLabel="Manage purchase order line columns" storageKey="purchase-order-line-editor" columns={columns} rows={rows} getRowKey={({line,index})=>line.id ?? `line-${index}`} minimumWidth={1120} compactToolbar emptyState={null} toolbarOptions={!disabled?<Button type="button" variant="ghost" onClick={()=>onChange([...lines,emptyLine()])} className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px]"><Plus className="size-3.5" />{t("Add line")}</Button>:null} rowClassName="h-[48px]" tableClassName="text-[12px]" />
 }
 
 export function WarehousePurchaseOrderCreateView({ navigate }: { navigate?: (path: string) => void }) {
   const { t } = useLanguage()
   const [form, setForm] = useState<WarehousePurchaseOrderInput>(emptyInput)
-  const [reference, setReference] = useState<WarehousePurchaseOrderReference | null>(null)
+  const selectors = usePurchaseOrderReferenceSelectors(form.facilityId, form.customerOrgId)
   const [saving, setSaving] = useState(false)
   const [generatingNumber, setGeneratingNumber] = useState(false)
   const [extracting, setExtracting] = useState(false)
@@ -184,7 +305,6 @@ export function WarehousePurchaseOrderCreateView({ navigate }: { navigate?: (pat
     { id: "extracting", label: t("Finding header and lines"), detail: t("Identifying supplier, dates, references and ordered goods."), ceiling: 88, expectedMs: 10_000 },
     { id: "organising", label: t("Preparing the review"), detail: t("Matching extracted SKUs to warehouse items."), ceiling: 98, expectedMs: 2_000 },
   ], [t])
-  useEffect(() => { getWarehousePurchaseOrderReference().then(setReference).catch((cause) => setError(errorMessage(cause))) }, [])
   const patch = <K extends keyof WarehousePurchaseOrderInput>(key: K, value: WarehousePurchaseOrderInput[K]) => setForm((current)=>({ ...current, [key]: value }))
   const total = form.lines.reduce((sum,line)=>sum+Math.max(0,line.quantity)*Math.max(0,line.unitPrice)*(1+Math.max(0,line.taxRate)/100),0)
 
@@ -200,7 +320,11 @@ export function WarehousePurchaseOrderCreateView({ navigate }: { navigate?: (pat
     abortRef.current?.abort(); abortRef.current = new AbortController(); setExtracting(true); setError(null); setStage("reading")
     try {
       const result = await extractPurchaseOrder(file,{ signal:abortRef.current.signal,onStage:setStage })
-      const items = reference?.items.filter((item)=>item.facilityId === form.facilityId && item.customerOrgId === form.customerOrgId) ?? []
+      const matchedPages = form.facilityId && form.customerOrgId ? await Promise.all(result.lines.map((line) => (
+        line.sku.trim() ? listWarehousePurchaseOrderItemsPage({ facilityId: form.facilityId, customerOrgId: form.customerOrgId, search: line.sku.trim(), limit: 25 }) : Promise.resolve({ rows: [] as PurchaseOrderItemOption[], limit: 25, offset: 0, hasMore: false })
+      ))) : []
+      const matchedItems = matchedPages.flatMap((page) => page.rows)
+      selectors.rememberItems(matchedItems)
       setForm((current)=>({
         ...current,
         number: result.number || current.number,
@@ -219,7 +343,7 @@ export function WarehousePurchaseOrderCreateView({ navigate }: { navigate?: (pat
         extractionModel: result.model,
         extractionMetadata: { pageCount:result.pageCount,timings:result.timings,reviewedAt:null },
         lines: result.lines.map((line)=>{
-          const item = items.find((candidate)=>candidate.sku.toLowerCase() === line.sku.toLowerCase())
+          const item = matchedItems.find((candidate)=>candidate.sku.toLowerCase() === line.sku.toLowerCase())
           return { itemId:item?.id ?? null,sku:line.sku,supplierItemCode:line.supplierItemCode || null,description:line.description,quantity:line.quantity,uomCode:item?.uomCode ?? line.uomCode,unitPrice:line.unitPrice,taxRate:line.taxRate,requestedDeliveryDate:line.requestedDeliveryDate || null,metadata:{ sourcePage:line.page,extractedCurrency:line.currencyCode } }
         }),
       }))
@@ -246,15 +370,16 @@ export function WarehousePurchaseOrderCreateView({ navigate }: { navigate?: (pat
       <div className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-[24px] font-medium leading-none tracking-[-0.015em] text-[var(--md-ink)]">{t("New purchase order")}</h1><p className="mt-1.5 text-[13px] text-[var(--md-text)]">{t("Enter the header and lines, or import a supplier PDF and review the extracted values before saving.")}</p></div><Button disabled={saving || extracting} onClick={() => void save()} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <Loader2 className="size-4 animate-spin" /> : null}{t("Create purchase order")}</Button></div>
     </motion.header>
     <PurchaseOrderSection index={0} title="Purchase order details" meta="Supplier, dates, ownership and commercial references." action={<label className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-[var(--md-radius-md)] bg-white/58 px-2.5 text-[12px] font-medium shadow-[var(--md-shadow-line)]"><Upload className="size-3.5" />{t("Extract from PDF")}<input className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event)=>{ const file=event.target.files?.[0]; if(file){ patch("sourceFileName",file.name); void importDocument(file) } event.currentTarget.value="" }} /></label>}>
-      {extracting ? <DocumentExtractionProgress title={t("Reading purchase order")} detail={t("Extracted values are never saved until you review and confirm them.")} fileName={form.sourceFileName ?? undefined} stages={extractionStages} activeStageId={stage} onCancel={()=>abortRef.current?.abort()} /> : <PurchaseOrderDetailsFields form={form} reference={reference} editable onGenerateNumber={() => void generateNumber()} generatingNumber={generatingNumber} patch={patch} />}
-      {error ? <div className="mt-4 flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-red-a08)] px-3 py-2.5 text-[12px] text-[var(--md-red)]" role="alert"><AlertCircle className="mt-0.5 size-4 shrink-0" />{t(error)}</div>:null}
+      {extracting ? <DocumentExtractionProgress title={t("Reading purchase order")} detail={t("Extracted values are never saved until you review and confirm them.")} fileName={form.sourceFileName ?? undefined} stages={extractionStages} activeStageId={stage} onCancel={()=>abortRef.current?.abort()} /> : <PurchaseOrderDetailsFields form={form} reference={selectors.reference} organisations={selectors.organisations} organisationLoading={selectors.organisationLoading} organisationsHaveMore={selectors.organisationsHaveMore} onOrganisationSearch={selectors.setOrganisationSearch} onOrganisationSelected={selectors.rememberOrganisation} editable onGenerateNumber={() => void generateNumber()} generatingNumber={generatingNumber} patch={patch} />}
+      {error || selectors.selectorError ? <div className="mt-4 flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-red-a08)] px-3 py-2.5 text-[12px] text-[var(--md-red)]" role="alert"><AlertCircle className="mt-0.5 size-4 shrink-0" />{t(error ?? selectors.selectorError ?? "")}</div>:null}
     </PurchaseOrderSection>
-    {!extracting ? <PurchaseOrderSection index={1} title="Order lines" meta="Match each extracted line to the correct warehouse item before issuing." action={<span className="text-[12px] text-[var(--md-subtle)]">{t("Total")} <strong dir="ltr" className="ms-1 font-medium tabular-nums text-[var(--md-ink)]">{form.currencyCode} {total.toFixed(2)}</strong></span>}><PurchaseOrderLineEditor lines={form.lines} reference={reference} facilityId={form.facilityId} customerOrgId={form.customerOrgId} onChange={(lines)=>patch("lines",lines)} /></PurchaseOrderSection> : null}
+    {!extracting ? <PurchaseOrderSection index={1} title="Order lines" meta="Match each extracted line to the correct warehouse item before issuing." action={<span className="text-[12px] text-[var(--md-subtle)]">{t("Total")} <strong dir="ltr" className="ms-1 font-medium tabular-nums text-[var(--md-ink)]">{form.currencyCode} {total.toFixed(2)}</strong></span>}><PurchaseOrderLineEditor lines={form.lines} items={selectors.items} facilityId={form.facilityId} customerOrgId={form.customerOrgId} itemLoading={selectors.itemLoading} itemsHaveMore={selectors.itemsHaveMore} onItemSearch={selectors.setItemSearch} onItemSelected={(item)=>selectors.rememberItems(item ? [item] : [])} onChange={(lines)=>patch("lines",lines)} /></PurchaseOrderSection> : null}
   </div>
 }
 
 const purchaseOrderScopes = ["Open", "All"] as const
 type PurchaseOrderScope = (typeof purchaseOrderScopes)[number]
+const purchaseOrderPageSize = 20
 
 const purchaseOrderStatuses = ["draft", "issued", "part_received", "received", "cancelled"] as const
 
@@ -269,8 +394,11 @@ export function warehousePurchaseOrderDetailId(route: string) {
 
 export function WarehousePurchaseOrdersWorkspace({ navigate }: { navigate?: (path: string) => void }) {
   const { language, t } = useLanguage()
-  const [reference, setReference] = useState<WarehousePurchaseOrderReference | null>(null)
+  const [facilities, setFacilities] = useState<WarehouseFacility[]>([])
   const [orders, setOrders] = useState<WarehousePurchaseOrder[] | null>(null)
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [sort, setSort] = useState<WarehouseRegisterSort | null>(null)
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "")
   const [committedSearch, setCommittedSearch] = useState(search)
   const [facilityId, setFacilityId] = useState("")
@@ -286,44 +414,51 @@ export function WarehousePurchaseOrdersWorkspace({ navigate }: { navigate?: (pat
     const ticket = ++requestId.current
     setPending(true)
     try {
-      const [nextReference, nextOrders] = await Promise.all([
-        reference ?? getWarehousePurchaseOrderReference(),
-        listWarehousePurchaseOrders({
-          facilityId: facilityId || undefined,
-          statusCode: statusCode || undefined,
-          search: committedSearch.trim() || undefined,
-        }),
-      ])
+      const page = await listWarehousePurchaseOrdersPage({
+        facilityId: facilityId || undefined,
+        status: statusCode || undefined,
+        openOnly: scope === "Open",
+        search: committedSearch.trim() || undefined,
+        sort,
+        limit: purchaseOrderPageSize,
+        offset,
+      })
       if (ticket !== requestId.current) return
-      setReference(nextReference)
-      setOrders(nextOrders)
+      setOrders(page.rows)
+      setTotal(page.total)
       setError(null)
       const requested = requestedRecordIdRef.current
       if (requested) {
         requestedRecordIdRef.current = null
-        const requestedOrder = nextOrders.find((order) => order.id === requested)
-        if (requestedOrder) navigate?.(purchaseOrderDetailPath(requestedOrder))
+        navigate?.(purchaseOrderDetailPath({ id: requested }))
       }
     } catch (cause) {
       if (ticket !== requestId.current) return
       setError(errorMessage(cause))
       setOrders([])
+      setTotal(0)
     } finally {
       if (ticket === requestId.current) setPending(false)
     }
-  }, [reference, facilityId, statusCode, committedSearch])
+  }, [facilityId, statusCode, scope, committedSearch, sort, offset, navigate])
 
   useEffect(() => { void refresh() }, [refresh])
 
   useEffect(() => {
+    let live = true
+    listWarehouseFacilitiesPage({ sort: { id: "name", direction: "asc" }, limit: 50, offset: 0 })
+      .then((page) => { if (live) setFacilities(page.rows) })
+      .catch(() => undefined)
+    return () => { live = false }
+  }, [])
+
+  useEffect(() => {
     if (search === committedSearch) return
-    const timer = window.setTimeout(() => setCommittedSearch(search), 320)
+    const timer = window.setTimeout(() => { setCommittedSearch(search); setOffset(0) }, 320)
     return () => window.clearTimeout(timer)
   }, [search, committedSearch])
 
-  const visible = useMemo(() => (orders ?? []).filter((order) => (
-    scope === "All" || !["received", "cancelled"].includes(order.statusCode)
-  )), [orders, scope])
+  const visible = orders ?? []
 
   const columns = useMemo<DataTableColumn<WarehousePurchaseOrder>[]>(() => [
     {
@@ -339,14 +474,14 @@ export function WarehousePurchaseOrdersWorkspace({ navigate }: { navigate?: (pat
     { id: "supplier", label: "Supplier", width: 210, resizable: true, sortValue: (order) => order.supplierName, cell: (order) => <div className="min-w-0"><p className="truncate text-[12.5px] font-medium text-[var(--md-ink)]">{order.supplierName}</p><p className="truncate text-[11px] text-[var(--md-subtle)]">{order.customerName}</p></div> },
     { id: "warehouse", label: "Warehouse", width: 176, resizable: true, sortValue: (order) => order.facilityName, cell: (order) => <span className="truncate text-[12.5px] text-[var(--md-text)]">{order.facilityName}</span> },
     { id: "delivery", label: "Expected", width: 152, resizable: true, sortValue: (order) => order.expectedDeliveryDate, cell: (order) => <span className="whitespace-nowrap text-[12px] text-[var(--md-text)]">{order.expectedDeliveryDate ? dateOnly.format(new Date(`${order.expectedDeliveryDate}T00:00:00`)) : "—"}</span> },
-    { id: "lines", label: "Lines", width: 88, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.lines.length, cell: (order) => <span dir="ltr" className="tabular-nums">{order.lines.length}</span> },
+    { id: "lines", label: "Lines", width: 88, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.lineCount ?? order.lines.length, cell: (order) => <span dir="ltr" className="tabular-nums">{order.lineCount ?? order.lines.length}</span> },
     { id: "total", label: "Total", width: 140, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.totalAmount, cell: (order) => <span dir="ltr" className="whitespace-nowrap font-medium tabular-nums text-[var(--md-ink)]">{order.currencyCode} {order.totalAmount.toFixed(2)}</span> },
     { id: "status", label: "Status", kind: "status", width: 144, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.statusCode, cell: (order) => <StatusPill tone={statusTone(order.statusCode)}>{t(order.statusCode.replace("_", " "))}</StatusPill> },
   ], [dateOnly, t])
 
   const loaded = orders !== null
   const hasFilters = Boolean(search.trim() || facilityId || statusCode)
-  const clearFilters = () => { setSearch(""); setCommittedSearch(""); setFacilityId(""); setStatusCode("") }
+  const clearFilters = () => { setSearch(""); setCommittedSearch(""); setFacilityId(""); setStatusCode(""); setOffset(0) }
   const emptyState = error ? (
     <div className="mx-auto max-w-[380px]" role="alert">
       <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Purchase orders could not be loaded")}</p>
@@ -381,13 +516,15 @@ export function WarehousePurchaseOrdersWorkspace({ navigate }: { navigate?: (pat
       rowClassName="hover:bg-[var(--md-hover)]"
       compactToolbar
       emptyState={emptyState}
-      toolbarTabs={<RegisterViewSwitch options={purchaseOrderScopes} value={scope} onChange={setScope} counts={{ [scope]: visible.length } as Partial<Record<PurchaseOrderScope, number>>} ariaLabel="Purchase order scope" compact />}
-      toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => { setSearch(""); setCommittedSearch("") }} label="Search purchase orders" placeholder="PO, supplier, reference" className="sm:min-w-[156px] sm:w-[156px]" />}
+      toolbarTabs={<RegisterViewSwitch options={purchaseOrderScopes} value={scope} onChange={(value) => { setScope(value); setOffset(0) }} counts={{ [scope]: total } as Partial<Record<PurchaseOrderScope, number>>} ariaLabel="Purchase order scope" compact />}
+      toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => { setSearch(""); setCommittedSearch(""); setOffset(0) }} label="Search purchase orders" placeholder="PO, supplier, reference" className="sm:min-w-[156px] sm:w-[156px]" />}
       toolbarFilters={<>
-        <RegisterFacetSelect label="Status" allLabel="All statuses" value={statusCode} options={purchaseOrderStatuses.map((status) => ({ value: status, label: status.replace("_", " ") }))} onChange={setStatusCode} className="w-[120px] sm:w-[120px]" />
-        <RegisterFacetSelect label="Warehouse" allLabel="All warehouses" value={facilityId} options={(reference?.facilities ?? []).map((facility) => ({ value: facility.id, label: facility.name }))} onChange={setFacilityId} className="w-[132px] sm:w-[132px]" />
+        <RegisterFacetSelect label="Status" allLabel="All statuses" value={statusCode} options={purchaseOrderStatuses.map((status) => ({ value: status, label: status.replace("_", " ") }))} onChange={(value) => { setStatusCode(value); setOffset(0) }} className="w-[120px] sm:w-[120px]" />
+        <RegisterFacetSelect label="Warehouse" allLabel="All warehouses" value={facilityId} options={facilities.map((facility) => ({ value: facility.id, label: facility.name }))} onChange={(value) => { setFacilityId(value); setOffset(0) }} className="w-[132px] sm:w-[132px]" />
       </>}
       toolbarOptions={<RegisterRevalidatingMark active={pending && loaded} />}
+      serverSorting={{ value: sort, onChange: (value) => { setSort(value); setOffset(0) } }}
+      pagination={{ offset, limit: purchaseOrderPageSize, total, loading: pending, onOffsetChange: setOffset }}
     />
   </div>
 }
@@ -407,7 +544,7 @@ export function WarehousePurchaseOrderDetailView({ purchaseOrderId, navigate }: 
   const [order, setOrder] = useState<WarehousePurchaseOrder | null>(null)
   const [form, setForm] = useState<WarehousePurchaseOrderInput | null>(null)
   const [savedForm, setSavedForm] = useState("")
-  const [reference, setReference] = useState<WarehousePurchaseOrderReference | null>(null)
+  const selectors = usePurchaseOrderReferenceSelectors(form?.facilityId ?? "", form?.customerOrgId ?? "")
   const [loadError, setLoadError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -418,12 +555,22 @@ export function WarehousePurchaseOrderDetailView({ purchaseOrderId, navigate }: 
     try {
       const found = await getWarehousePurchaseOrder(purchaseOrderId)
       const nextForm = normaliseInput(found)
+      selectors.rememberOrganisation({ id: found.customerOrgId, name: found.customerName })
+      selectors.rememberItems(found.lines.flatMap((line) => line.itemId ? [{
+        id: line.itemId,
+        customerOrgId: found.customerOrgId,
+        facilityId: found.facilityId,
+        sku: line.sku,
+        description: line.description,
+        uomCode: line.uomCode,
+        quantityBasisCode: "count" as const,
+        allowsFractionalQuantity: !Number.isInteger(line.quantity),
+      }] : []))
       setOrder(found); setForm(nextForm); setSavedForm(JSON.stringify(nextForm)); setLoadError(null)
     } catch (cause) { setLoadError(errorMessage(cause)) }
-  }, [purchaseOrderId])
+  }, [purchaseOrderId, selectors.rememberItems, selectors.rememberOrganisation])
 
   useEffect(() => { void load() }, [load])
-  useEffect(() => { getWarehousePurchaseOrderReference().then(setReference).catch(() => undefined) }, [])
 
   async function runAction(kind: "issue" | "cancel" | "inbound") {
     if (!order) return
@@ -486,7 +633,7 @@ export function WarehousePurchaseOrderDetailView({ purchaseOrderId, navigate }: 
       </div>
     </motion.header>
 
-    {error ? <div className="flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-red-a08)] px-3 py-2.5 text-[12px] text-[var(--md-red)]" role="alert"><AlertCircle className="mt-0.5 size-4 shrink-0" />{t(error)}</div> : null}
+    {error || selectors.selectorError ? <div className="flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-red-a08)] px-3 py-2.5 text-[12px] text-[var(--md-red)]" role="alert"><AlertCircle className="mt-0.5 size-4 shrink-0" />{t(error ?? selectors.selectorError ?? "")}</div> : null}
 
     <Tabs defaultValue="details" className="gap-[var(--md-gap-md)]">
       <TabsList variant="line" className="h-auto w-full max-w-full justify-start gap-1 overflow-x-auto bg-transparent p-0">
@@ -496,10 +643,10 @@ export function WarehousePurchaseOrderDetailView({ purchaseOrderId, navigate }: 
       </TabsList>
       <TabsContent value="details" className="mt-0 grid content-start gap-[var(--md-gap-md)]">
         <PurchaseOrderSection index={0} title="Purchase order details" meta="Supplier, dates, ownership and commercial references.">
-          <PurchaseOrderDetailsFields form={form} reference={reference} editable={editable} onGenerateNumber={() => void generateNumber()} generatingNumber={generatingNumber} patch={patch} />
+          <PurchaseOrderDetailsFields form={form} reference={selectors.reference} organisations={selectors.organisations} organisationLoading={selectors.organisationLoading} organisationsHaveMore={selectors.organisationsHaveMore} onOrganisationSearch={selectors.setOrganisationSearch} onOrganisationSelected={selectors.rememberOrganisation} editable={editable} onGenerateNumber={() => void generateNumber()} generatingNumber={generatingNumber} patch={patch} />
         </PurchaseOrderSection>
         <PurchaseOrderSection index={1} title="Order lines" meta="The goods, quantities and commercial values agreed with the supplier.">
-          <PurchaseOrderLineEditor lines={form.lines} reference={reference} facilityId={form.facilityId} customerOrgId={form.customerOrgId} disabled={!editable} onChange={(lines) => patch("lines", lines)} />
+          <PurchaseOrderLineEditor lines={form.lines} items={selectors.items} facilityId={form.facilityId} customerOrgId={form.customerOrgId} itemLoading={selectors.itemLoading} itemsHaveMore={selectors.itemsHaveMore} onItemSearch={selectors.setItemSearch} onItemSelected={(item)=>selectors.rememberItems(item ? [item] : [])} disabled={!editable} onChange={(lines) => patch("lines", lines)} />
         </PurchaseOrderSection>
         {order.sourceFileName ? <PurchaseOrderSection index={2} title="Source document"><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><ReceiptText className="size-4" /></span><div className="min-w-0"><p dir="auto" className="truncate text-[12.5px] font-medium text-[var(--md-ink)]">{order.sourceFileName}</p><p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Reviewed extraction source")}</p></div></div></PurchaseOrderSection> : null}
       </TabsContent>

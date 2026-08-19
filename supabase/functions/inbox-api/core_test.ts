@@ -6,6 +6,7 @@ import {
   buildMimeMessage,
   buildRfc2822,
   decodeCursor,
+  decodeThreadCursor,
   decodeHtmlEntities,
   encodeCursor,
   gmailGroupQuery,
@@ -51,7 +52,23 @@ Deno.test("only exact HTTPS and local development origins are allowlisted", () =
 
 Deno.test("cursor is opaque and rejects malformed input", () => {
   assertEquals(decodeCursor(encodeCursor({ offset: 50 })), 50)
+  assertEquals(decodeThreadCursor(encodeCursor({ offset: 50 })), {
+    offset: 50,
+    afterAt: null,
+    afterThreadId: null,
+    legacyOffset: true,
+  })
+  assertEquals(decodeThreadCursor(encodeCursor({
+    lastMessageAt: "2026-08-19T12:30:00.000Z",
+    threadId: "45b92d1f-4d13-4d79-80c1-4cb338c5d2de",
+  })), {
+    offset: 0,
+    afterAt: "2026-08-19T12:30:00.000Z",
+    afterThreadId: "45b92d1f-4d13-4d79-80c1-4cb338c5d2de",
+    legacyOffset: false,
+  })
   assertThrows(() => decodeCursor("not-json"), InboxHttpError)
+  assertThrows(() => decodeThreadCursor(encodeCursor({ lastMessageAt: "not-a-date", threadId: "bad" })), InboxHttpError)
 })
 
 Deno.test("provider detail reads preserve order and respect their concurrency ceiling", async () => {

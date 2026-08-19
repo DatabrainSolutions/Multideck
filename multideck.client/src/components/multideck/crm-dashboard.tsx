@@ -82,6 +82,7 @@ function Row({
   meter,
   status,
   side,
+  sideInteractive,
   onOpen,
   ariaLabel,
 }: {
@@ -97,6 +98,7 @@ function Row({
    *  from the row action. */
   status?: ReactNode
   side: ReactNode
+  sideInteractive?: boolean
   onOpen?: () => void
   ariaLabel?: string
 }) {
@@ -110,24 +112,12 @@ function Row({
       data-metered={meter ? "true" : undefined}
       data-status-column={status ? "true" : undefined}
       style={accent ? { ["--md-row-accent" as string]: accent } : undefined}
-      role={onOpen ? "button" : undefined}
-      tabIndex={onOpen ? 0 : undefined}
-      aria-label={onOpen ? ariaLabel : undefined}
-      onClick={onOpen}
-      onKeyDown={
-        onOpen
-          ? (event) => {
-              if (event.key !== "Enter" && event.key !== " ") return
-              event.preventDefault()
-              onOpen()
-            }
-          : undefined
-      }
       initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       exit={shouldReduceMotion ? undefined : { opacity: 0, y: -5 }}
       transition={shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.028) }}
     >
+      {onOpen ? <button type="button" className="md-crm-row-open-target" aria-label={ariaLabel} onClick={onOpen} /> : null}
       {glyph ? <span className="md-crm-row-glyph">{glyph}</span> : null}
       <span className="md-crm-row-body">
         <span className="md-crm-row-title" dir="auto">{title}</span>
@@ -135,7 +125,7 @@ function Row({
       </span>
       {meter}
       {status ? <span className="md-crm-row-status">{status}</span> : null}
-      <span className="md-crm-row-side">{side}</span>
+      <span className="md-crm-row-side" data-interactive={sideInteractive ? "true" : undefined}>{side}</span>
     </motion.div>
   )
 }
@@ -244,7 +234,7 @@ export function CrmOpportunityValue({
 
   return (
     <Panel
-      title={t("Opportunity value")}
+      title={t("Company pipeline value")}
       action={onOpen ? <PanelLink label={t("Deals")} onClick={onOpen} /> : undefined}
       className="md-crm-gauge-panel"
     >
@@ -257,7 +247,7 @@ export function CrmOpportunityValue({
               height={gaugeSize * 0.86}
               viewBox={`0 0 ${gaugeSize} ${gaugeSize * 0.86}`}
               role="img"
-              aria-label={`${t("Opportunity value")} ${formatValue(totalValue, currencyCode)}`}
+              aria-label={`${t("Company pipeline value")} ${formatValue(totalValue, currencyCode)}`}
             >
               {ticks.map((tick, index) => {
                 if (!tick) return null
@@ -454,11 +444,12 @@ const QueueRow = memo(function QueueRow({
         </>
       }
       sub={opportunity.subject}
-      status={<StatusPill tone={tone}>{t(bucketLabel[bucket])}</StatusPill>}
+      status={<StatusPill kind="status" tone={tone}>{t(bucketLabel[bucket])}</StatusPill>}
+      sideInteractive={opportunity.canCreate}
       side={
         <>
           {opportunity.canCreate ? (
-            <span onClick={(event) => event.stopPropagation()}>{renderCreate(opportunity)}</span>
+            <span>{renderCreate(opportunity)}</span>
           ) : (
             <span className="md-crm-row-age" data-i18n-skip={opportunity.daysWaiting === 0 ? undefined : ""}>
               {opportunity.daysWaiting === 0 ? t("today") : `${opportunity.daysWaiting}${t("d")}`}
@@ -668,18 +659,22 @@ export function CrmAreaHeatmap({
   limit?: number
 }) {
   const { t } = useLanguage()
-  const points = useMemo(() => {
-    const ranked = [...areas].sort((a, b) => b.count - a.count).slice(0, limit)
-    const peak = Math.max(...ranked.map((area) => area.count), 1)
-    return ranked.flatMap((area) => {
+  const mappedAreas = useMemo(() => (
+    areas.flatMap((area) => {
       const coordinate = coordinateForArea(area.label)
-      return coordinate ? [{ ...area, town: areaTown(area.label), coordinate, share: area.count / peak }] : []
+      return coordinate ? [{ ...area, town: areaTown(area.label), coordinate }] : []
     })
-  }, [areas, limit])
+  ), [areas])
+  const points = useMemo(() => {
+    const ranked = [...mappedAreas].sort((a, b) => b.count - a.count).slice(0, limit)
+    const peak = Math.max(...ranked.map((area) => area.count), 1)
+    return ranked.map((area) => ({ ...area, share: area.count / peak }))
+  }, [limit, mappedAreas])
 
   const total = areas.reduce((sum, area) => sum + area.count, 0)
-  const mappedTotal = points.reduce((sum, point) => sum + point.count, 0)
+  const mappedTotal = mappedAreas.reduce((sum, area) => sum + area.count, 0)
   const unmappedTotal = Math.max(total - mappedTotal, 0)
+  const hiddenMappedAreaCount = Math.max(mappedAreas.length - points.length, 0)
   const boundsPoints = useMemo(() => points.map((point) => point.coordinate), [points])
 
   return (
@@ -728,7 +723,9 @@ export function CrmAreaHeatmap({
           <p className="md-crm-heat-foot">
             <span>{mappedTotal} {mappedTotal === 1 ? t("lead mapped") : t("leads mapped")}</span>
             <span className="md-crm-heat-foot-value">
-              {unmappedTotal ? <><span data-i18n-skip dir="ltr">{unmappedTotal}</span> {unmappedTotal === 1 ? t("without an area") : t("without areas")}</> : t("All areas mapped")}
+              {hiddenMappedAreaCount ? <><span data-i18n-skip dir="ltr">{hiddenMappedAreaCount}</span> {hiddenMappedAreaCount === 1 ? t("more mapped area not shown") : t("more mapped areas not shown")}</> : null}
+              {hiddenMappedAreaCount && unmappedTotal ? <span aria-hidden="true"> · </span> : null}
+              {unmappedTotal ? <><span data-i18n-skip dir="ltr">{unmappedTotal}</span> {unmappedTotal === 1 ? t("without an area") : t("without areas")}</> : hiddenMappedAreaCount ? null : t("All areas mapped")}
             </span>
           </p>
         </div>

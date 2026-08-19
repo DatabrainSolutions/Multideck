@@ -9,6 +9,7 @@ export const topBarActionEvents = {
   createCrmAccount: "multideck:crm:create-account",
   createCrmContact: "multideck:crm:create-contact",
   createCrmLead: "multideck:crm:create-lead",
+  createCrmDeal: "multideck:crm:create-deal",
   createCrmContactCard: "multideck:crm:create-contact-card",
   createRate: "multideck:rates:create-rate",
   importRates: "multideck:rates:import",

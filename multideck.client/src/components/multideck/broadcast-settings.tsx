@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { AiEditing, ArrowUp, Building2, LoaderCircle, Megaphone, Plus, RefreshCw, UserRound, UsersRound, X } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { SettingsInput, SettingsPageHeader, SettingsPanel, SettingsTextarea } from "@/components/multideck/settings-components"
 import { WizardDialog, WizardSaveNowButton, type WizardStep } from "@/components/multideck/wizard-dialog"
@@ -10,7 +11,7 @@ import { useLanguage } from "@/i18n/language-provider"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 import {
-  draftBroadcastWithAI, getBroadcastState, previewBroadcastAudience, saveBroadcastDraft, sendBroadcast,
+  draftBroadcastWithAI, getBroadcastState, listBroadcastUsersPage, previewBroadcastAudience, saveBroadcastDraft, sendBroadcast,
   type BroadcastAudience, type BroadcastAudienceMode, type BroadcastHistoryItem, type BroadcastState,
 } from "@/lib/developer-broadcast-api"
 
@@ -44,15 +45,74 @@ function HistoryRecipients({ item, t }: { item: BroadcastHistoryItem; t: (text: 
   return <div className="tabular-nums"><p className="font-medium text-[var(--md-ink)]">{item.recipientCount} {t(item.recipientCount === 1 ? "recipient" : "recipients")}</p>{item.status === "draft" ? <p className="mt-0.5 text-[12px] text-[var(--md-subtle)]">{t("Not sent")}</p> : <p className="mt-0.5 text-[12px] text-[var(--md-subtle)]">{item.deliveredCount} {t("accepted")} · {item.failedCount} {t("failed")}</p>}</div>
 }
 
-function BroadcastHistory({ state, busy, openWizard, t }: { state: BroadcastState | null; busy: BroadcastSettingsBusy; openWizard: (trigger?: HTMLButtonElement) => void; t: (text: string) => string }) {
+function BroadcastHistory({ state, busy, loadingMore, openWizard, onLoadMore, t }: { state: BroadcastState | null; busy: BroadcastSettingsBusy; loadingMore: boolean; openWizard: (trigger?: HTMLButtonElement) => void; onLoadMore: () => void; t: (text: string) => string }) {
   const history = state?.history ?? []
+  const columns = useMemo<DataTableColumn<BroadcastHistoryItem>[]>(() => [{
+    id: "subject",
+    label: "Subject",
+    width: 300,
+    minWidth: 240,
+    resizable: true,
+    sortValue: (item) => item.subject,
+    cellClassName: "w-[38%] max-w-[520px] px-5 py-3.5",
+    cell: (item) => <><p className="line-clamp-2 font-medium leading-[1.4] text-[var(--md-ink)]" data-i18n-skip dir="auto">{item.subject}</p>{item.error ? <p className="mt-1 line-clamp-2 text-[12px] leading-[1.45] text-[var(--md-red)]">{item.error}</p> : null}</>,
+  }, {
+    id: "audience",
+    label: "Audience",
+    width: 165,
+    minWidth: 140,
+    sortValue: (item) => audienceLabel(item.audienceMode),
+    cellClassName: "px-4 py-3.5 text-[var(--md-text)]",
+    cell: (item) => t(audienceLabel(item.audienceMode)),
+  }, {
+    id: "recipients",
+    label: "Recipients",
+    width: 170,
+    minWidth: 150,
+    sortValue: (item) => item.recipientCount,
+    cellClassName: "px-4 py-3.5",
+    cell: (item) => <HistoryRecipients item={item} t={t} />,
+  }, {
+    id: "status",
+    label: "Status",
+    kind: "status",
+    width: 130,
+    minWidth: 110,
+    sortValue: (item) => item.status,
+    cellClassName: "px-4 py-3.5",
+    cell: (item) => <StatusPill tone={statusTone(item.status)} indicator={false}>{t(item.status.replace("_", " "))}</StatusPill>,
+  }, {
+    id: "activity",
+    label: "Activity",
+    kind: "date",
+    align: "end",
+    width: 160,
+    minWidth: 140,
+    sortValue: (item) => new Date(item.sentAt ?? item.createdAt).getTime(),
+    cellClassName: "px-5 py-3.5 text-end tabular-nums",
+    cell: (item) => <><p className="text-[var(--md-ink)]">{historyDate(item)}</p><p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t(item.sentAt ? "Sent" : "Created")}</p></>,
+  }], [t])
   if (!history.length) return <div className="px-5 py-12 text-center"><p className="text-[13px] font-medium text-[var(--md-ink)]">{busy === "load" ? t("Loading broadcast history…") : t("No broadcasts yet")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Start a new broadcast to create the first reviewed draft.")}</p>{busy !== "load" ? <Button type="button" variant="outline" className="mt-4 h-9 rounded-[var(--md-radius-md)] active:scale-[0.96] motion-reduce:active:scale-100" onClick={(event) => openWizard(event.currentTarget)}><Plus className="size-4" />{t("New broadcast")}</Button> : null}</div>
 
   return <>
     <ul className="divide-y divide-[rgba(11,20,19,0.07)] sm:hidden" aria-label={t("Recent broadcasts")}>
       {history.map((item) => <li key={item.id} className="px-4 py-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words text-[14px] font-medium leading-[1.35] text-[var(--md-ink)]" data-i18n-skip dir="auto">{item.subject}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{t(audienceLabel(item.audienceMode))}</p></div><StatusPill tone={statusTone(item.status)} indicator={false}>{t(item.status.replace("_", " "))}</StatusPill></div>{item.error ? <p className="mt-2 text-[12px] leading-[1.45] text-[var(--md-red)]" role="status">{item.error}</p> : null}<div className="mt-3 flex items-end justify-between gap-4"><HistoryRecipients item={item} t={t} /><div className="text-end tabular-nums"><p className="text-[12px] text-[var(--md-ink)]">{historyDate(item)}</p><p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t(item.sentAt ? "Sent" : "Created")}</p></div></div></li>)}
     </ul>
-    <div className="hidden overflow-x-auto sm:block"><table className="w-full min-w-[760px] border-collapse text-start text-[13px]"><thead><tr className="text-[12px] font-medium text-[var(--md-subtle)]"><th className="px-5 py-3 text-start">{t("Subject")}</th><th className="px-4 py-3 text-start">{t("Audience")}</th><th className="px-4 py-3 text-start">{t("Recipients")}</th><th className="px-4 py-3 text-start">{t("Status")}</th><th className="px-5 py-3 text-end">{t("Activity")}</th></tr></thead><tbody>{history.map((item) => <tr key={item.id} className="border-t border-[rgba(11,20,19,0.07)] align-top"><td className="w-[38%] max-w-[520px] px-5 py-3.5"><p className="line-clamp-2 font-medium leading-[1.4] text-[var(--md-ink)]" data-i18n-skip dir="auto">{item.subject}</p>{item.error ? <p className="mt-1 line-clamp-2 text-[12px] leading-[1.45] text-[var(--md-red)]">{item.error}</p> : null}</td><td className="px-4 py-3.5 text-[var(--md-text)]">{t(audienceLabel(item.audienceMode))}</td><td className="px-4 py-3.5"><HistoryRecipients item={item} t={t} /></td><td className="px-4 py-3.5"><StatusPill tone={statusTone(item.status)} indicator={false}>{t(item.status.replace("_", " "))}</StatusPill></td><td className="px-5 py-3.5 text-end tabular-nums"><p className="text-[var(--md-ink)]">{historyDate(item)}</p><p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t(item.sentAt ? "Sent" : "Created")}</p></td></tr>)}</tbody></table></div>
+    <DataTable
+      ariaLabel="Recent broadcasts"
+      columns={columns}
+      rows={history}
+      getRowKey={(item) => item.id}
+      storageKey="broadcast-history"
+      showToolbar={false}
+      showColumnManager={false}
+      minimumWidth={760}
+      rowClassName="align-top"
+      exportConfig={{ fileName: "broadcast-history", recordCategory: "Broadcast details" }}
+      className="hidden sm:block [&_[data-table-surface]]:rounded-none [&_[data-table-surface]]:shadow-none"
+      tableClassName="text-[13px]"
+    />
+    {state?.historyHasMore ? <div className="flex justify-center px-4 py-3"><Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium" disabled={loadingMore} onClick={onLoadMore}>{t(loadingMore ? "Loading older broadcasts…" : "Load older broadcasts")}</Button></div> : null}
   </>
 }
 
@@ -75,6 +135,12 @@ export function BroadcastSettings() {
   const [message, setMessage] = useState("")
   const [aiDirection, setAiDirection] = useState("")
   const [busy, setBusy] = useState<BroadcastSettingsBusy>("load")
+  const [loadingOlderHistory, setLoadingOlderHistory] = useState(false)
+  const [broadcastUsers, setBroadcastUsers] = useState<BroadcastState["users"]>([])
+  const [broadcastUserQuery, setBroadcastUserQuery] = useState("")
+  const [broadcastUsersHaveMore, setBroadcastUsersHaveMore] = useState(false)
+  const [loadingBroadcastUsers, setLoadingBroadcastUsers] = useState(false)
+  const [broadcastUsersError, setBroadcastUsersError] = useState("")
   const [error, setError] = useState("")
   const [status, setStatus] = useState("")
   const previewRequest = useRef(0)
@@ -82,12 +148,47 @@ export function BroadcastSettings() {
 
   const load = useCallback(async () => {
     setBusy("load"); setError("")
-    try { setState(await getBroadcastState(await accessToken())) }
+    try {
+      const next = await getBroadcastState(await accessToken(), { historyLimit: 20, historyOffset: 0 })
+      setState(next)
+      setBroadcastUsers([])
+      setBroadcastUsersHaveMore(false)
+    }
     catch (caught) { setError(caught instanceof Error ? caught.message : t("Broadcasts could not be loaded.")) }
     finally { setBusy(null) }
   }, [t])
 
   useEffect(() => { void load() }, [load])
+
+  const loadBroadcastUserPage = useCallback(async (query: string, offset: number, append: boolean) => {
+    if (!state) return
+    setLoadingBroadcastUsers(true)
+    setBroadcastUsersError("")
+    try {
+      const page = await listBroadcastUsersPage(await accessToken(), { query, limit: 25, offset })
+      const rows = page.rows
+      const hasMore = page.hasMore
+      setBroadcastUsers((current) => {
+        if (!append) return rows
+        const byId = new Map(current.map((user) => [user.id, user]))
+        rows.forEach((user) => byId.set(user.id, user))
+        return [...byId.values()]
+      })
+      setBroadcastUsersHaveMore(hasMore)
+    } catch (caught) {
+      setBroadcastUsersError(caught instanceof Error ? caught.message : t("Users could not be loaded."))
+      if (!append) setBroadcastUsers([])
+      setBroadcastUsersHaveMore(false)
+    } finally {
+      setLoadingBroadcastUsers(false)
+    }
+  }, [state, t])
+
+  useEffect(() => {
+    if (!wizardOpen || audience.mode !== "users" || !state) return
+    const timer = window.setTimeout(() => void loadBroadcastUserPage(broadcastUserQuery, 0, false), broadcastUserQuery.trim() ? 220 : 0)
+    return () => window.clearTimeout(timer)
+  }, [audience.mode, broadcastUserQuery, loadBroadcastUserPage, state, wizardOpen])
   useEffect(() => {
     if (wizardOpen || !wizardTrigger.current) return
     const frame = window.requestAnimationFrame(() => wizardTrigger.current?.focus())
@@ -122,7 +223,7 @@ export function BroadcastSettings() {
 
   function openWizard(trigger?: HTMLButtonElement) {
     if (trigger) wizardTrigger.current = trigger
-    setAudience({ mode: "all", departmentIds: [], userIds: [] }); setSubject(""); setMessage(""); setAiDirection(""); setPreview(null); setError(""); setStatus(""); setStep("audience"); setWizardOpen(true)
+    setAudience({ mode: "all", departmentIds: [], userIds: [] }); setSubject(""); setMessage(""); setAiDirection(""); setPreview(null); setError(""); setStatus(""); setBroadcastUserQuery(""); setBroadcastUsersError(""); setStep("audience"); setWizardOpen(true)
   }
 
   function changeAudience(mode: BroadcastAudienceMode) { setAudience((current) => ({ ...current, mode })) }
@@ -163,6 +264,27 @@ export function BroadcastSettings() {
     finally { setBusy(null) }
   }
 
+  async function loadOlderHistory() {
+    if (!state?.historyHasMore || loadingOlderHistory) return
+    setLoadingOlderHistory(true)
+    setError("")
+    try {
+      const next = await getBroadcastState(await accessToken(), { historyLimit: state.historyLimit ?? 20, historyOffset: state.history.length })
+      setState((current) => current ? {
+        ...current,
+        history: [...current.history, ...next.history.filter((item) => !current.history.some((existing) => existing.id === item.id))],
+        historyTotal: next.historyTotal,
+        historyOffset: next.historyOffset,
+        historyLimit: next.historyLimit,
+        historyHasMore: next.historyHasMore,
+      } : current)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("Older broadcasts could not be loaded."))
+    } finally {
+      setLoadingOlderHistory(false)
+    }
+  }
+
   const recipientCount = preview?.audience.recipientCount ?? 0
   const excludedCount = preview?.audience.excludedCount ?? 0
   const submitDisabled = busy !== null || !state?.deliveryConfigured || !audienceComplete || !composeComplete || !recipientCount || !preview?.emailPreview?.html
@@ -176,13 +298,13 @@ export function BroadcastSettings() {
 
       <div className="mt-5">
         <SettingsPanel title={t("Recent broadcasts")} description={t("Draft, sent, and failed delivery history is retained for audit.")}>
-          <BroadcastHistory state={state} busy={busy} openWizard={openWizard} t={t} />
+          <BroadcastHistory state={state} busy={busy} loadingMore={loadingOlderHistory} openWizard={openWizard} onLoadMore={() => void loadOlderHistory()} t={t} />
         </SettingsPanel>
       </div>
 
       <WizardDialog open={wizardOpen} onOpenChange={(open) => busy !== "send" && busy !== "draft" && setWizardOpen(open)} title="New broadcast" description="Create one reviewed administrative email for selected workspace users." steps={steps} activeStepId={step} onStepChange={(next) => setStep(next as BroadcastStep)} submitLabel="Send broadcast" onSubmit={() => void confirmSend()} saving={busy === "send"} submitDisabled={submitDisabled} secondaryAction={<WizardSaveNowButton label="Save as draft" onSubmit={() => void saveDraft()} saving={busy === "draft"} disabled={busy !== null || !audienceComplete || !composeComplete || !recipientCount} />} bodyMinHeight={510} className="sm:max-w-[880px]">
         {error ? <div className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_8%,var(--md-surface))] px-4 py-3" role="alert"><p className="text-[12px] leading-5 text-[var(--md-red)]">{error}</p></div> : null}
-        {step === "audience" ? <AudienceStep state={state} audience={audience} preview={preview} busy={busy === "preview"} onModeChange={changeAudience} onDepartmentToggle={toggleDepartment} onUserToggle={toggleUser} t={t} /> : null}
+        {step === "audience" ? <AudienceStep state={state} audience={audience} preview={preview} busy={busy === "preview"} users={broadcastUsers} userQuery={broadcastUserQuery} usersHaveMore={broadcastUsersHaveMore} usersLoading={loadingBroadcastUsers} usersError={broadcastUsersError} onUserQuery={setBroadcastUserQuery} onLoadMoreUsers={() => void loadBroadcastUserPage(broadcastUserQuery, broadcastUsers.length, true)} onModeChange={changeAudience} onDepartmentToggle={toggleDepartment} onUserToggle={toggleUser} t={t} /> : null}
         {step === "compose" ? <ComposeStep subject={subject} message={message} direction={aiDirection} busy={busy === "ai"} onSubject={setSubject} onMessage={setMessage} onDirection={setAiDirection} onAI={() => void prepareWithAI()} t={t} /> : null}
         {step === "preview" ? <div className="grid gap-5"><div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 shadow-[var(--md-shadow-line)]"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t(audienceLabel(audience.mode))} · <span className="tabular-nums">{recipientCount}</span> {t("recipients")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{excludedCount} {t("excluded automatically")}</p></div><Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] active:scale-[0.96] motion-reduce:active:scale-100" onClick={() => setStep("audience")}>{t("Edit audience")}</Button></div><div className="grid gap-4 sm:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]"><div className="grid content-start gap-4"><label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Subject")}<SettingsInput value={subject} onChange={(event) => setSubject(event.target.value)} maxLength={200} /></label><label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Message")}<SettingsTextarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={20000} className="min-h-[300px]" /></label><p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Changes update the server-rendered branded preview. Nothing is sent from this step.")}</p></div><ServerEmailPreview preview={preview} loading={busy === "preview"} t={t} /></div></div> : null}
         {step === "confirm" ? <div className="grid gap-5"><div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-4 shadow-[var(--md-shadow-line)] sm:grid-cols-3">{countLabel(recipientCount, t("Recipients"))}{countLabel(excludedCount, t("Excluded"))}<div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t(audienceLabel(audience.mode))}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Saved on confirmation")}</p></div></div><ServerEmailPreview preview={preview} loading={busy === "preview"} t={t} /><div className="flex flex-wrap items-center justify-between gap-3"><p className="max-w-[58ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("Confirming sends this exact audience and message through the approved Multideck sender.")}</p><div className="flex gap-2"><Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] active:scale-[0.96] motion-reduce:active:scale-100" onClick={() => setStep("audience")}>{t("Edit audience")}</Button><Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] active:scale-[0.96] motion-reduce:active:scale-100" onClick={() => setStep("preview")}>{t("Edit message")}</Button></div></div></div> : null}
@@ -191,8 +313,63 @@ export function BroadcastSettings() {
   )
 }
 
-function AudienceStep({ state, audience, preview, busy, onModeChange, onDepartmentToggle, onUserToggle, t }: { state: BroadcastState | null; audience: BroadcastAudience; preview: BroadcastPreview | null; busy: boolean; onModeChange: (mode: BroadcastAudienceMode) => void; onDepartmentToggle: (id: string) => void; onUserToggle: (id: string) => void; t: (text: string) => string }) {
-  return <><div className="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label={t("Broadcast audience")}>{(["all", "departments", "users"] as BroadcastAudienceMode[]).map((mode) => { const selected = audience.mode === mode; const Icon = mode === "all" ? UsersRound : mode === "departments" ? Building2 : UserRound; return <button key={mode} type="button" role="radio" aria-checked={selected} onClick={() => onModeChange(mode)} className={cn("min-h-[82px] rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 text-start shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,color,scale] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-accent-a08)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100", selected && "bg-[var(--md-accent-a10)] text-[var(--md-accent)] shadow-[inset_0_0_0_1px_var(--md-accent-a45)]")}><span className="flex items-center justify-between gap-3"><Icon className="size-4" strokeWidth={1.4} /><span className={cn("size-2 rounded-full bg-[var(--md-line)]", selected && "bg-[var(--md-accent)]")} /></span><span className="mt-3 block text-[13px] font-medium text-[var(--md-ink)]">{t(audienceLabel(mode))}</span></button> })}</div>{audience.mode === "departments" ? <div><p className="mb-3 text-[12px] font-medium text-[var(--md-ink)]">{t("Departments")}</p><div className="grid gap-2 sm:grid-cols-2">{state?.departments.filter((item) => item.isActive).map((department) => <label key={department.id} className="flex min-h-11 items-center gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 shadow-[var(--md-shadow-line)]"><Checkbox checked={audience.departmentIds.includes(department.id)} onCheckedChange={() => onDepartmentToggle(department.id)} /><span className="min-w-0 break-words text-[13px] text-[var(--md-ink)]" data-i18n-skip dir="auto">{department.name}</span></label>)}</div>{!state?.departments.some((item) => item.isActive) ? <p className="text-[12px] leading-5 text-[var(--md-text)]">{t("No active departments yet. Add department membership while editing users.")}</p> : null}</div> : null}{audience.mode === "users" ? <div><p className="mb-3 text-[12px] font-medium text-[var(--md-ink)]">{t("Users")}</p><div className="max-h-[280px] space-y-2 overflow-y-auto pe-1">{state?.users.map((user) => <label key={user.id} className="flex min-h-12 items-center gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 shadow-[var(--md-shadow-line)]"><Checkbox checked={audience.userIds.includes(user.id)} onCheckedChange={() => onUserToggle(user.id)} /><span className="min-w-0 flex-1"><span className="block break-words text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{user.name}</span><span className="block break-all text-[12px] text-[var(--md-text)]" data-i18n-skip dir="ltr">{user.email}</span></span></label>)}</div></div> : null}<div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-4 shadow-[var(--md-shadow-line)] sm:grid-cols-3" aria-busy={busy}>{countLabel(preview?.audience.recipientCount ?? 0, t("Recipients"))}{countLabel(preview?.audience.excludedCount ?? 0, t("Excluded"))}<div><p className="text-[13px] font-medium text-[var(--md-ink)]">{busy ? t("Updating audience…") : t(audienceLabel(audience.mode))}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Live recipient summary")}</p></div></div>{preview?.recipients.some((item) => item.status === "excluded") ? <div><p className="mb-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Excluded recipients")}</p><div className="space-y-2">{preview.recipients.filter((item) => item.status === "excluded").map((recipient) => <div key={recipient.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2.5"><div className="min-w-0"><p className="break-words text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{recipient.name}</p><p className="break-all text-[12px] text-[var(--md-text)]" data-i18n-skip dir="ltr">{recipient.email}</p></div><StatusPill tone="amber" indicator={false}>{t(recipient.exclusionReason ?? "Excluded")}</StatusPill></div>)}</div></div> : null}</>
+function AudienceStep({
+  state,
+  audience,
+  preview,
+  busy,
+  users,
+  userQuery,
+  usersHaveMore,
+  usersLoading,
+  usersError,
+  onUserQuery,
+  onLoadMoreUsers,
+  onModeChange,
+  onDepartmentToggle,
+  onUserToggle,
+  t,
+}: {
+  state: BroadcastState | null
+  audience: BroadcastAudience
+  preview: BroadcastPreview | null
+  busy: boolean
+  users: BroadcastState["users"]
+  userQuery: string
+  usersHaveMore: boolean
+  usersLoading: boolean
+  usersError: string
+  onUserQuery: (value: string) => void
+  onLoadMoreUsers: () => void
+  onModeChange: (mode: BroadcastAudienceMode) => void
+  onDepartmentToggle: (id: string) => void
+  onUserToggle: (id: string) => void
+  t: (text: string) => string
+}) {
+  return <>
+    <div className="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label={t("Broadcast audience")}>
+      {(["all", "departments", "users"] as BroadcastAudienceMode[]).map((mode) => {
+        const selected = audience.mode === mode
+        const Icon = mode === "all" ? UsersRound : mode === "departments" ? Building2 : UserRound
+        return <button key={mode} type="button" role="radio" aria-checked={selected} onClick={() => onModeChange(mode)} className={cn("min-h-[82px] rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 text-start shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,color,scale] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-accent-a08)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100", selected && "bg-[var(--md-accent-a10)] text-[var(--md-accent)] shadow-[inset_0_0_0_1px_var(--md-accent-a45)]")}><span className="flex items-center justify-between gap-3"><Icon className="size-4" strokeWidth={1.4} /><span className={cn("size-2 rounded-full bg-[var(--md-line)]", selected && "bg-[var(--md-accent)]")} /></span><span className="mt-3 block text-[13px] font-medium text-[var(--md-ink)]">{t(audienceLabel(mode))}</span></button>
+      })}
+    </div>
+
+    {audience.mode === "departments" ? <div><p className="mb-3 text-[12px] font-medium text-[var(--md-ink)]">{t("Departments")}</p><div className="grid gap-2 sm:grid-cols-2">{state?.departments.filter((item) => item.isActive).map((department) => <label key={department.id} className="flex min-h-11 items-center gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 shadow-[var(--md-shadow-line)]"><Checkbox checked={audience.departmentIds.includes(department.id)} onCheckedChange={() => onDepartmentToggle(department.id)} /><span className="min-w-0 break-words text-[13px] text-[var(--md-ink)]" data-i18n-skip dir="auto">{department.name}</span></label>)}</div>{!state?.departments.some((item) => item.isActive) ? <p className="text-[12px] leading-5 text-[var(--md-text)]">{t("No active departments yet. Add department membership while editing users.")}</p> : null}</div> : null}
+
+    {audience.mode === "users" ? <div className="grid gap-3">
+      <div className="flex items-end justify-between gap-3"><label className="grid min-w-0 flex-1 gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{t("Search users")}<SettingsInput value={userQuery} onChange={(event) => onUserQuery(event.target.value)} placeholder={t("Search by name or email")} /></label><p className="pb-2 text-[12px] tabular-nums text-[var(--md-subtle)]">{audience.userIds.length} {t("selected")}</p></div>
+      <div className="max-h-[280px] space-y-2 overflow-y-auto pe-1" aria-busy={usersLoading}>
+        {users.map((user) => <label key={user.id} className="flex min-h-12 items-center gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 shadow-[var(--md-shadow-line)]"><Checkbox checked={audience.userIds.includes(user.id)} onCheckedChange={() => onUserToggle(user.id)} /><span className="min-w-0 flex-1"><span className="block break-words text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{user.name}</span><span className="block break-all text-[12px] text-[var(--md-text)]" data-i18n-skip dir="ltr">{user.email}</span></span></label>)}
+        {!users.length && !usersLoading ? <p className="px-2 py-4 text-center text-[12px] text-[var(--md-text)]">{t("No users found")}</p> : null}
+      </div>
+      {usersError ? <p className="text-[12px] text-[var(--md-red)]" role="status">{usersError}</p> : null}
+      {usersHaveMore ? <Button type="button" variant="ghost" className="h-8 justify-self-center rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium" disabled={usersLoading} onClick={onLoadMoreUsers}>{t(usersLoading ? "Loading more users…" : "Load more users")}</Button> : null}
+    </div> : null}
+
+    <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-4 shadow-[var(--md-shadow-line)] sm:grid-cols-3" aria-busy={busy}>{countLabel(preview?.audience.recipientCount ?? 0, t("Recipients"))}{countLabel(preview?.audience.excludedCount ?? 0, t("Excluded"))}<div><p className="text-[13px] font-medium text-[var(--md-ink)]">{busy ? t("Updating audience…") : t(audienceLabel(audience.mode))}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Live recipient summary")}</p></div></div>
+    {preview?.recipients.some((item) => item.status === "excluded") ? <div><p className="mb-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Excluded recipients")}</p><div className="space-y-2">{preview.recipients.filter((item) => item.status === "excluded").map((recipient) => <div key={recipient.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2.5"><div className="min-w-0"><p className="break-words text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{recipient.name}</p><p className="break-all text-[12px] text-[var(--md-text)]" data-i18n-skip dir="ltr">{recipient.email}</p></div><StatusPill tone="amber" indicator={false}>{t(recipient.exclusionReason ?? "Excluded")}</StatusPill></div>)}</div></div> : null}
+  </>
 }
 
 function ComposeStep({ subject, message, direction, busy, onSubject, onMessage, onDirection, onAI, t }: { subject: string; message: string; direction: string; busy: boolean; onSubject: (value: string) => void; onMessage: (value: string) => void; onDirection: (value: string) => void; onAI: () => void; t: (text: string) => string }) {

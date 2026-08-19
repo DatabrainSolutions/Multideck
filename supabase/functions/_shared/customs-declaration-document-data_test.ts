@@ -44,6 +44,7 @@ function acceptedSources() {
     transactionNature: "11",
     freightPaymentMethod: "A",
     consignor: "GB CONSIGNOR LTD",
+    ucr: "UCR-EXACT",
   };
   return {
     declaration: {
@@ -64,6 +65,9 @@ function acceptedSources() {
       ICUSS_CompletedAt: "2026-08-12T22:21:01Z",
       ICUSS_ResponsePayloadJSON: {
         AcceptanceDateTime: { _2DateTimeString: "20260812222005Z" },
+        OfficeOfExport: { ID: "GB000074" },
+        SecurityIndicator: "S",
+        SpecificCircumstanceIndicator: "A",
       },
       ICUSS_DeclarationSnapshotJSON: {
         schemaVersion: 1,
@@ -97,12 +101,24 @@ Deno.test("accepted dataset uses immutable snapshot and exact provider fields", 
     );
   assertEquals(usesAcceptedSnapshot, true);
   assertEquals(dataset.documentMode, "official");
+  assertEquals(dataset.mrn, mrn);
+  assertEquals(dataset.mrnBarcodeWidth, 253);
+  assertEquals(dataset.mrnBarcodeHeight, 46);
+  assert(
+    String(dataset.mrnBarcodePath).startsWith("M10 0h2v46h-2z"),
+  );
   assertEquals(dataset.declarationCode, "EX A");
   assertEquals(dataset.reference, "JENKAR26A");
-  assertEquals(dataset.auditSpacerHeight, 217);
+  assertEquals(dataset.auditSpacerHeight, 45);
   assertEquals(dataset.movementTransport, "30 | VSL123");
   assertEquals(dataset.borderTransport, "30 | VSL123 | GB");
   assertEquals(dataset.lrn, "LRN-EXACT");
+  assertEquals(dataset.ucr, "UCR-EXACT");
+  assertEquals(dataset.customsOffice, "GB000074");
+  assertEquals(dataset.securityIndicator, "S");
+  assertEquals(dataset.otherSpecificCircumstance, "A");
+  assertEquals(dataset.totalPages, 1);
+  assertEquals((dataset.itemListPages as unknown[]).length, 0);
   assertEquals(
     (dataset.status as Record<string, unknown>).acceptedAt,
     "20260812222005Z",
@@ -124,6 +140,10 @@ Deno.test("accepted dataset uses immutable snapshot and exact provider fields", 
     "11",
   );
   assertEquals(
+    (dataset.items[0] as Record<string, unknown>).documentPageNumber,
+    1,
+  );
+  assertEquals(
     (dataset.parties as Record<string, unknown>).secondaryOne,
     "GB CONSIGNOR LTD",
   );
@@ -132,6 +152,72 @@ Deno.test("accepted dataset uses immutable snapshot and exact provider fields", 
     "GB CARRIER LTD",
   );
   assertEquals(provenance.reference[0].table, "ICUS_Submissions");
+});
+
+Deno.test("official EAD data fails closed unless the MRN is exactly 18 characters", () => {
+  const sources = acceptedSources();
+  (sources.submission as Record<string, unknown>).ICUSS_MRN = "26GBSHORT";
+  assertThrows(
+    () =>
+      buildCustomsDeclarationDocumentDataset(
+        sources.declaration,
+        sources.submission,
+        sources.itemRows,
+        "production",
+      ),
+    Error,
+    "valid 18-character MRN",
+  );
+});
+
+Deno.test("official EAD data fails closed when the accepted response has no office of export", () => {
+  const sources = acceptedSources();
+  (sources.submission as Record<string, unknown>).ICUSS_ResponsePayloadJSON = {
+    AcceptanceDateTime: { _2DateTimeString: "20260812222005Z" },
+  };
+  assertThrows(
+    () =>
+      buildCustomsDeclarationDocumentDataset(
+        sources.declaration,
+        sources.submission,
+        sources.itemRows,
+        "production",
+      ),
+    Error,
+    "office of export required for an official EAD",
+  );
+});
+
+Deno.test("additional accepted goods items become consecutively numbered ELoI pages", () => {
+  const sources = acceptedSources();
+  const snapshot = (sources.submission as Record<string, unknown>)
+    .ICUSS_DeclarationSnapshotJSON as Record<string, unknown>;
+  const first = (snapshot.items as Array<Record<string, unknown>>)[0];
+  snapshot.items = [
+    first,
+    {
+      itemNumber: 2,
+      payload: {
+        ...(first.payload as Record<string, unknown>),
+        id: "item-2",
+        description: "Second accepted item",
+        ucr: "UCR-SECOND",
+      },
+    },
+  ];
+  const { dataset } = buildCustomsDeclarationDocumentDataset(
+    sources.declaration,
+    sources.submission,
+    [],
+    "production",
+  );
+  assertEquals(dataset.totalPages, 2);
+  assertEquals((dataset.itemListPages as unknown[]).length, 1);
+  assertEquals(
+    (dataset.itemListPages as Array<Record<string, unknown>>)[0]
+      .documentPageNumber,
+    2,
+  );
 });
 
 Deno.test("sandbox and legacy persisted data remain non-official verification copies", () => {

@@ -74,6 +74,7 @@ import { DexterInlineCitation, isDexterCitationUrl } from "@/components/multidec
 import { ProgressiveBlur } from "@/components/multideck/progressive-blur"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   createDexterWatch,
@@ -113,10 +114,10 @@ import {
   takeDexterTaskHandoff,
   type DexterConversationsChangedDetail,
 } from "@/lib/dexter-navigation"
-import { listCustomers } from "@/lib/customer-api"
-import { listStandaloneExportDrafts } from "@/lib/customs-drafts-api"
-import { listLeads } from "@/lib/lead-api"
-import { listDeals, type ApiDeal } from "@/lib/deal-api"
+import { listAccountsPage } from "@/lib/customer-api"
+import { listCustomsDeclarationDraftsPage } from "@/lib/customs-drafts-api"
+import { listLeadsPage } from "@/lib/lead-api"
+import { listDealsPage, type ApiDeal } from "@/lib/deal-api"
 import { listDexterEmailContextSources } from "@/lib/inbox-api"
 import { readRecentWorkContext } from "@/lib/recent-work-context"
 import type { AuthUserSummary } from "@/lib/auth-user"
@@ -1639,6 +1640,8 @@ export function AgentDexterPage({
     message: string
   } | null>(null)
   const [activeConversation, setActiveConversation] = useState<DexterConversation | null>(null)
+  const [isLoadingEarlierMessages, setIsLoadingEarlierMessages] = useState(false)
+  const [earlierMessagesError, setEarlierMessagesError] = useState<string | null>(null)
   const [selectedResponseMessageIds, setSelectedResponseMessageIds] = useState<Record<string, string>>({})
   const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null)
   const [conversationRenderKey, setConversationRenderKey] = useState("dexter-new-conversation")
@@ -1842,24 +1845,28 @@ export function AgentDexterPage({
     let active = true
 
     Promise.allSettled([
-      listCustomers(),
-      listLeads(),
-      listDeals(),
-      listStandaloneExportDrafts(),
+      listAccountsPage({ limit: 50, offset: 0 }),
+      listLeadsPage({ limit: 50, offset: 0 }),
+      listDealsPage({ limit: 50, offset: 0, sort: { id: "created", direction: "desc" } }),
+      listCustomsDeclarationDraftsPage("export", "standalone", {
+        limit: 50,
+        offset: 0,
+        sort: { id: "lastSaved", direction: "desc" },
+      }),
       listDexterEmailContextSources(),
     ]).then(([customerResult, leadResult, dealResult, declarationResult, emailResult]) => {
       if (!active) return
       setMentionItems(mergeDexterMentionItems(
-        customerResult.status === "fulfilled" ? customerMentionItems(customerResult.value) : [],
-        leadResult.status === "fulfilled" ? leadMentionItems(leadResult.value) : [],
-        dealResult.status === "fulfilled" ? dealMentionItems(dealResult.value) : [],
-        declarationResult.status === "fulfilled" ? customsDeclarationMentionItems(declarationResult.value) : [],
+        customerResult.status === "fulfilled" ? customerMentionItems(customerResult.value.rows) : [],
+        leadResult.status === "fulfilled" ? leadMentionItems(leadResult.value.rows) : [],
+        dealResult.status === "fulfilled" ? dealMentionItems(dealResult.value.rows) : [],
+        declarationResult.status === "fulfilled" ? customsDeclarationMentionItems(declarationResult.value.rows) : [],
         emailResult.status === "fulfilled"
           ? emailMentionItems(emailResult.value)
           : emailMentionItems(null, true),
         defaultDexterMentionItems.filter((mention) => mention.type !== "email"),
       ))
-      setRecentDeals(dealResult.status === "fulfilled" ? dealResult.value : [])
+      setRecentDeals(dealResult.status === "fulfilled" ? dealResult.value.rows : [])
     })
 
     return () => {
@@ -2819,6 +2826,8 @@ export function AgentDexterPage({
     setRetryingMessageId(null)
     actionDecisionInFlightRef.current = null
     setStreamingMessageId(null)
+    setIsLoadingEarlierMessages(false)
+    setEarlierMessagesError(null)
     try {
       pendingScrollToLatestRef.current = true
       setSelectedResponseMessageIds({})
@@ -2830,6 +2839,50 @@ export function AgentDexterPage({
       setError(requestError instanceof Error ? requestError.message : t("This conversation could not be loaded."))
     } finally {
       if (conversationIntentRef.current.version === intent.version) setIsLoadingConversation(false)
+    }
+  }
+
+  async function loadEarlierConversationMessages() {
+    const current = activeConversation
+    if (!current?.id || !current.hasOlderMessages || isLoadingEarlierMessages) return
+    const intentVersion = conversationIntentRef.current.version
+    const nextOffset = (current.messageOffset ?? 0) + (current.messageLimit ?? 50)
+    const viewport = streamRef.current
+    const previousScrollHeight = viewport?.scrollHeight ?? 0
+    const previousScrollTop = viewport?.scrollTop ?? 0
+    setIsLoadingEarlierMessages(true)
+    setEarlierMessagesError(null)
+    try {
+      const older = await getDexterConversation(current.id, { limit: current.messageLimit ?? 50, offset: nextOffset })
+      if (conversationIntentRef.current.version !== intentVersion || conversationIntentRef.current.id !== current.id) return
+      setActiveConversation((latest) => {
+        if (!latest || latest.id !== current.id) return latest
+        const seen = new Set<string>()
+        const messages = [...older.messages, ...latest.messages].filter((message) => {
+          if (seen.has(message.id)) return false
+          seen.add(message.id)
+          return true
+        })
+        return {
+          ...latest,
+          messages,
+          messageTotal: older.messageTotal ?? latest.messageTotal,
+          messageOffset: older.messageOffset ?? nextOffset,
+          messageLimit: older.messageLimit ?? latest.messageLimit ?? 50,
+          hasOlderMessages: older.hasOlderMessages === true,
+        }
+      })
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          if (!viewport) return
+          viewport.scrollTop = previousScrollTop + Math.max(0, viewport.scrollHeight - previousScrollHeight)
+        })
+      })
+    } catch (requestError) {
+      if (conversationIntentRef.current.version !== intentVersion) return
+      setEarlierMessagesError(requestError instanceof Error ? requestError.message : t("Earlier messages could not be loaded."))
+    } finally {
+      if (conversationIntentRef.current.version === intentVersion) setIsLoadingEarlierMessages(false)
     }
   }
 
@@ -2857,6 +2910,8 @@ export function AgentDexterPage({
     setStage("landing")
     rememberOpenDexterConversation(null)
     setActiveConversation(null)
+    setIsLoadingEarlierMessages(false)
+    setEarlierMessagesError(null)
     setSelectedResponseMessageIds({})
     setRetryingMessageId(null)
     setConversationRenderKey(`dexter-new-conversation-${Date.now()}`)
@@ -3167,6 +3222,20 @@ export function AgentDexterPage({
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ ...mdMotion.page, delay: 0.12 }}
                     >
+                      {activeConversation?.hasOlderMessages || earlierMessagesError ? (
+                        <div className="mx-auto flex w-full max-w-[860px] flex-col items-center gap-2 px-5 pb-2 pt-1">
+                          {earlierMessagesError ? <p className="text-center text-[12px] text-[var(--md-red)]" role="status">{t(earlierMessagesError)}</p> : null}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]"
+                            disabled={isLoadingEarlierMessages}
+                            onClick={() => void loadEarlierConversationMessages()}
+                          >
+                            {isLoadingEarlierMessages ? t("Loading earlier messages…") : t("Load earlier messages")}
+                          </Button>
+                        </div>
+                      ) : null}
                       <ConversationStream
                         messages={activeConversation?.messages ?? []}
                         isWorking={isWorking}

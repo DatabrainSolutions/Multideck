@@ -9,6 +9,7 @@ export type BloomCanvasProps = {
   stops: ShaderStops
   /** Off for previews: a static bloom shows the same colours with no render loop. */
   animated?: boolean
+  onReady?: () => void
 }
 
 const SpectralBloomCanvas = memo(function SpectralBloomCanvas({
@@ -16,6 +17,7 @@ const SpectralBloomCanvas = memo(function SpectralBloomCanvas({
   shape = "compact",
   stops,
   animated = true,
+  onReady,
 }: BloomCanvasProps) {
   const reduceMotion = useReducedMotion()
   const isBrandMark = tone === "brand"
@@ -27,7 +29,7 @@ const SpectralBloomCanvas = memo(function SpectralBloomCanvas({
   const burstId = `md-bloom-${useId().replace(/[^a-zA-Z0-9]/g, "")}`
 
   return (
-    <Shader disableTelemetry className="size-full" style={{ width: "100%", height: "100%" }}>
+    <Shader disableTelemetry onReady={onReady} className="size-full" style={{ width: "100%", height: "100%" }}>
       <SunBurst
         id={burstId}
         background="#00000000"

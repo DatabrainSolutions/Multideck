@@ -15,28 +15,35 @@ import {
 } from "@/components/multideck/booking-components"
 import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { Pagination } from "@/components/multideck/pagination"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
+import { RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { ChoiceControl } from "@/components/multideck/workflow-components"
-import { toneToVar } from "@/components/multideck/status-pill"
+import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
-import { currentOperator, getBookingShape, bookingScopeTabs } from "@/data/multideck-data"
 import { useLanguage } from "@/i18n/language-provider"
+import type { AuthUserSummary } from "@/lib/auth-user"
 import { getSavedView, saveView } from "@/lib/view-preferences"
 import {
   createEmptyFilterQuery,
-  matchesFilterQuery,
   type FilterFieldOption,
   type FilterQuery,
 } from "@/lib/advanced-filters"
-import { listLiveBookings, type LiveBooking } from "@/lib/application-data-api"
+import {
+  listLiveBookingsPage,
+  type BookingRegisterSummary,
+  type LiveBooking,
+  type RegisterSort,
+} from "@/lib/application-data-api"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
 const bookingViewStorageKey = "multideck.view.bookings"
-type BookingScope = (typeof bookingScopeTabs)[number]
-type BookingSortDirection = "asc" | "desc"
+const bookingTableStorageKey = "booking-register-operations-v4"
+const bookingOwnershipScopes = ["All", "Mine"] as const
+type BookingScope = (typeof bookingOwnershipScopes)[number]
 const dateSearchFields = new Set<BookingSearchField>(["date", "departure", "arrival"])
 const directionFilters = ["All directions", "Import", "Export", "Domestic", "Cross trade"] as const
 const modeFilters = ["All modes", "OCEAN", "AIR", "ROAD", "FAS", "FSA"] as const
@@ -49,6 +56,17 @@ const shipmentTypeFiltersByMode = {
   FSA: ["All types", "Multiple"],
 } as const
 type ShipmentTypeFilter = (typeof shipmentTypeFiltersByMode)[keyof typeof shipmentTypeFiltersByMode][number]
+const emptyBookingSummary: BookingRegisterSummary = { active: 0, inTransit: 0, atDestination: 0, exceptions: 0, complete: 0, total: 0 }
+
+function readSavedSort(storageKey: string, fallback: RegisterSort): RegisterSort {
+  if (typeof window === "undefined") return fallback
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(`multideck.table.${storageKey}`) ?? "null") as { sort?: RegisterSort | null } | null
+    return saved?.sort?.id && (saved.sort.direction === "asc" || saved.sort.direction === "desc") ? saved.sort : fallback
+  } catch {
+    return fallback
+  }
+}
 
 function normalized(value: string) {
   return value.trim().toLocaleLowerCase()
@@ -76,6 +94,23 @@ function getBookingNextAction(booking: LiveBooking) {
   return "Prepare arrival and delivery"
 }
 
+function bookingDirectionLabel(value: string) {
+  const normalized = value.replaceAll("_", " ").replaceAll("-", " ").trim().replace(/\s+/gu, " ").toLocaleLowerCase()
+  if (normalized === "import") return "Import"
+  if (normalized === "export") return "Export"
+  if (normalized === "domestic") return "Domestic"
+  if (normalized === "cross trade") return "Cross trade"
+  return value.trim() || "Domestic"
+}
+
+function bookingDirectionTone(direction: string) {
+  if (direction === "Import") return "blue" as const
+  if (direction === "Export") return "teal" as const
+  if (direction === "Cross trade") return "purple" as const
+  if (direction === "Domestic") return "orange" as const
+  return "neutral" as const
+}
+
 function formatOperationalDate(value: string, language: string) {
   if (!value) return "—"
   const date = new Date(`${value}T00:00:00Z`)
@@ -90,80 +125,27 @@ function formatLastActivity(value: string, language: string) {
   return new Intl.DateTimeFormat(language, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(date)
 }
 
-function getCustomFieldValues(booking: Booking) {
-  return booking.customFields.flatMap((field) => [field.label, field.value, `${field.label} ${field.value}`])
-}
-
-type TextBookingSearchField = Exclude<BookingSearchField, "date" | "departure" | "arrival">
-
-function getBookingSearchValues(booking: Booking, field: TextBookingSearchField) {
-  const fullTextValues = [
-    booking.id,
-    booking.customer,
-    booking.route,
-    booking.carrier,
-    booking.container,
-    booking.mode,
-    booking.value,
-    booking.eta,
-    booking.time,
-    booking.status,
-    booking.owner,
-    booking.invoice,
-    booking.jobRef,
-    booking.customerRef,
-    booking.supplierRef,
-    booking.origin,
-    booking.destination,
-    booking.vessel,
-    booking.vin,
-    ...getCustomFieldValues(booking),
-  ]
-
-  const valuesByField: Record<TextBookingSearchField, string[]> = {
-    any: fullTextValues,
-    invoice: [booking.invoice],
-    jobRef: [booking.jobRef],
-    customerRef: [booking.customerRef],
-    supplierRef: [booking.supplierRef],
-    destination: [booking.destination, booking.route],
-    origin: [booking.origin, booking.route],
-    vessel: [booking.vessel, booking.carrier],
-    vin: [booking.vin],
-    customFields: getCustomFieldValues(booking),
-  }
-
-  return valuesByField[field]
-}
-
 const bookingFilterFields: readonly FilterFieldOption[] = bookingSearchFieldOptions.map((option) => (
   dateSearchFields.has(option.value)
     ? { value: option.value, label: option.label, kind: "date" as const }
     : { value: option.value, label: option.label, placeholder: option.placeholder }
 ))
 
-function bookingFilterValue(booking: Booking, field: string) {
-  if (field === "date") return [booking.departureDate, booking.arrivalDate]
-  if (field === "departure") return booking.departureDate
-  if (field === "arrival") return booking.arrivalDate
-  return getBookingSearchValues(booking, field as TextBookingSearchField)
-}
-
-function bookingMatchesSearch(booking: Booking, search: FilterQuery) {
-  return matchesFilterQuery(booking, search, bookingFilterValue)
-}
-
-export function BookingsPage({ navigate }: { navigate: (path: string) => void }) {
+export function BookingsPage({ navigate, currentUser }: { navigate: (path: string) => void; currentUser: AuthUserSummary | null }) {
   const { language, t } = useLanguage()
-  const [scope, setScope] = useState<BookingScope>("All Jobs")
+  const [scope, setScope] = useState<BookingScope>("All")
   const [viewMode, setViewMode] = useState<BookingViewMode>(() => getSavedView(bookingViewStorageKey, bookingViewModes, bookingViewModes[0]))
-  const [bookingRecords, setBookingRecords] = useState<LiveBooking[]>([])
+  const [boardRecords, setBoardRecords] = useState<LiveBooking[]>([])
+  const [tableRows, setTableRows] = useState<LiveBooking[]>([])
+  const [tableTotal, setTableTotal] = useState(0)
+  const [tableSummary, setTableSummary] = useState<BookingRegisterSummary>(emptyBookingSummary)
   const [bookingsLoading, setBookingsLoading] = useState(true)
   const [bookingsError, setBookingsError] = useState<string | null>(null)
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set())
-  const [sortDirection, setSortDirection] = useState<BookingSortDirection>("asc")
+  const [serverSort, setServerSort] = useState<RegisterSort | null>(() => readSavedSort(bookingTableStorageKey, { id: "customerCargo", direction: "asc" }))
   const [search, setSearch] = useState<FilterQuery>(createEmptyFilterQuery)
   const [quickSearch, setQuickSearch] = useState("")
+  const [debouncedQuickSearch, setDebouncedQuickSearch] = useState("")
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(10)
   const [dexterOpen, setDexterOpen] = useState(false)
@@ -171,60 +153,71 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   const [modeFilter, setModeFilter] = useState<(typeof modeFilters)[number]>(modeFilters[0])
   const [shipmentTypeFilter, setShipmentTypeFilter] = useState<ShipmentTypeFilter>("All types")
   const shipmentTypeFilters = shipmentTypeFiltersByMode[modeFilter]
+  const registerScope = scope === "Mine" ? "My Jobs" : "All Jobs"
+  const currentOperatorCode = currentUser?.initials ?? ""
 
   useEffect(() => {
-    let cancelled = false
+    const timer = globalThis.setTimeout(() => setDebouncedQuickSearch(quickSearch), 250)
+    return () => globalThis.clearTimeout(timer)
+  }, [quickSearch])
+
+  useEffect(() => {
+    const controller = new AbortController()
     setBookingsLoading(true)
     setBookingsError(null)
-    void listLiveBookings().then((records) => {
-      if (!cancelled) {
-        setBookingRecords(records)
-        setFavouriteIds(new Set(records.filter((record) => record.isFavourite).map((record) => record.id)))
-      }
+    void listLiveBookingsPage({
+      search: debouncedQuickSearch,
+      scope: registerScope,
+      operatorCode: currentOperatorCode,
+      direction: directionFilter === "All directions" ? undefined : directionFilter,
+      mode: modeFilter === "All modes" ? undefined : modeFilter,
+      shipmentType: shipmentTypeFilter === "All types" ? undefined : shipmentTypeFilter,
+      filterQuery: search,
+      sort: serverSort,
+      limit: rowsPerPage,
+      offset: (page - 1) * rowsPerPage,
+    }, controller.signal).then((result) => {
+      if (viewMode === "Table") setTableRows(result.rows)
+      else setBoardRecords(result.rows)
+      setTableTotal(result.total)
+      setTableSummary(result.summary)
+      setFavouriteIds((current) => new Set([...current, ...result.rows.filter((record) => record.isFavourite).map((record) => record.id)]))
     }).catch((error) => {
-      if (!cancelled) setBookingsError(error instanceof Error ? error.message : "Bookings could not be loaded.")
-    }).finally(() => { if (!cancelled) setBookingsLoading(false) })
-    return () => { cancelled = true }
-  }, [])
+      if ((error as { name?: string })?.name !== "AbortError") {
+        setBookingsError(error instanceof Error ? error.message : "Bookings could not be loaded.")
+      }
+    }).finally(() => {
+      if (!controller.signal.aborted) setBookingsLoading(false)
+    })
+    return () => controller.abort()
+  }, [currentOperatorCode, debouncedQuickSearch, directionFilter, modeFilter, page, registerScope, rowsPerPage, search, serverSort, shipmentTypeFilter, viewMode])
 
-  const scopedBookings = useMemo(() => {
-    return (
-      scope === "My Jobs" ? bookingRecords.filter((booking) => booking.owner === currentOperator.initials) :
-        scope === "Staged Jobs" ? bookingRecords.filter((booking) => booking.progress < 25) :
-          bookingRecords
-    )
-  }, [bookingRecords, scope])
+  // Board rows are already filtered, sorted and paged by the same tenant-safe
+  // read model as the table. Keeping the current slice bounded prevents a board
+  // from turning 100,000 bookings into 100,000 React cards.
+  const visibleBookings = boardRecords
 
-  /** The shape pills and quick search apply alongside the advanced filter, so both share one predicate. */
-  const matchesToolbarFilters = useCallback((booking: LiveBooking) => {
-    const quickQuery = normalized(quickSearch)
-    const shape = getBookingShape(booking.id)
-    return (directionFilter === "All directions" || shape.direction === directionFilter)
-      && (modeFilter === "All modes" || booking.mode === modeFilter)
-      && (shipmentTypeFilter === "All types" || shape.shipmentType === shipmentTypeFilter)
-      && (!quickQuery || getBookingSearchValues(booking, "any").some((candidate) => normalized(candidate).includes(quickQuery)))
-  }, [directionFilter, modeFilter, quickSearch, shipmentTypeFilter])
+  const countDraftMatches = useCallback((draft: FilterQuery) => {
+    return listLiveBookingsPage({
+      search: quickSearch,
+      scope: registerScope,
+      operatorCode: currentOperatorCode,
+      direction: directionFilter === "All directions" ? undefined : directionFilter,
+      mode: modeFilter === "All modes" ? undefined : modeFilter,
+      shipmentType: shipmentTypeFilter === "All types" ? undefined : shipmentTypeFilter,
+      filterQuery: draft,
+      sort: serverSort,
+      limit: 1,
+      offset: 0,
+    }).then((result) => result.total)
+  }, [currentOperatorCode, directionFilter, modeFilter, quickSearch, registerScope, serverSort, shipmentTypeFilter])
 
-  const visibleBookings = useMemo(() => (
-    scopedBookings
-      .filter((booking) => matchesToolbarFilters(booking) && bookingMatchesSearch(booking, search))
-      .sort((a, b) => {
-        const result = a.customer.localeCompare(b.customer, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id)
-        return sortDirection === "asc" ? result : -result
-      })
-  ), [matchesToolbarFilters, scopedBookings, search, sortDirection])
-
-  const countDraftMatches = useCallback(
-    (draft: FilterQuery) => scopedBookings.filter((booking) => matchesToolbarFilters(booking) && bookingMatchesSearch(booking, draft)).length,
-    [matchesToolbarFilters, scopedBookings],
-  )
-
-  const pageCount = Math.max(Math.ceil(visibleBookings.length / rowsPerPage), 1)
-  const paginatedBookings = visibleBookings.slice((page - 1) * rowsPerPage, page * rowsPerPage)
+  const totalBookings = tableTotal
+  const pageCount = Math.max(Math.ceil(totalBookings / rowsPerPage), 1)
 
   useEffect(() => {
     setPage(1)
-  }, [directionFilter, modeFilter, quickSearch, scope, shipmentTypeFilter, viewMode, search])
+  }, [directionFilter, modeFilter, quickSearch, scope, shipmentTypeFilter, viewMode, search, serverSort])
 
   useEffect(() => {
     saveView(bookingViewStorageKey, viewMode)
@@ -253,6 +246,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   }
 
   function clearFilters() {
+    setScope("All")
     setQuickSearch("")
     setSearch(createEmptyFilterQuery())
     setDirectionFilter(directionFilters[0])
@@ -320,19 +314,14 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
     },
     {
       id: "customerCargo",
-      label: t("Customer and cargo"),
-      width: 240,
-      minWidth: 200,
-      maxWidth: 340,
+      label: t("Customer"),
+      width: 176,
+      minWidth: 150,
+      maxWidth: 240,
       resizable: true,
       sortValue: (booking) => booking.customer,
       cell: (booking) => (
-        <div className="min-w-0">
-          <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" title={booking.customer}>{booking.customer}</p>
-          <p className="mt-1 truncate text-[11px] text-[var(--md-text)]" title={`${booking.shipmentType} · ${booking.container}`}>
-            {booking.shipmentType || t("General cargo")} · <bdi>{booking.container || t("Equipment pending")}</bdi>
-          </p>
-        </div>
+        <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" title={booking.customer} data-i18n-skip dir="auto">{booking.customer}</p>
       ),
     },
     {
@@ -349,30 +338,33 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
     {
       id: "movement",
       label: t("Movement"),
-      width: 268,
-      minWidth: 224,
-      maxWidth: 360,
+      kind: "attribute",
+      width: 128,
+      minWidth: 116,
+      maxWidth: 160,
       resizable: true,
-      cellClassName: "align-top py-3",
-      sortValue: (booking) => `${booking.origin} ${booking.destination} ${booking.carrier}`,
       cell: (booking) => {
-        const shape = getBookingShape(booking.id)
-        const direction = booking.direction || shape.direction
-        const shipmentType = booking.shipmentType || shape.shipmentType
-
-        return (
-          <div className="grid min-w-0 gap-1.5">
-            <p className="truncate text-[12px] font-medium text-[var(--md-ink)]">{t(direction)}</p>
-            <p className="truncate text-[12px] font-medium text-[var(--md-ink)]" title={booking.route}>{booking.route}</p>
-            <p className="flex min-w-0 items-center gap-1.5 text-[10.5px] text-[var(--md-text)]">
-              <span className="truncate">{t(shipmentType)}</span>
-              <span className="shrink-0 text-[var(--md-subtle)]" aria-hidden="true">·</span>
-              <span className="truncate text-[var(--md-subtle)]" title={booking.carrier}>{booking.carrier || t("Carrier pending")}</span>
-            </p>
-            {booking.vessel ? <p className="truncate text-[10.5px] text-[var(--md-subtle)]" title={booking.vessel}>{booking.vessel}</p> : null}
-          </div>
-        )
+        const direction = bookingDirectionLabel(booking.direction)
+        return <StatusPill tone={bookingDirectionTone(direction)}>{t(direction)}</StatusPill>
       },
+    },
+    {
+      id: "origin",
+      label: t("Origin"),
+      width: 166,
+      minWidth: 138,
+      maxWidth: 240,
+      resizable: true,
+      cell: (booking) => <p className="truncate text-[12px] font-medium text-[var(--md-ink)]" title={booking.origin} data-i18n-skip dir="auto">{booking.origin || "—"}</p>,
+    },
+    {
+      id: "destination",
+      label: t("Destination"),
+      width: 166,
+      minWidth: 138,
+      maxWidth: 240,
+      resizable: true,
+      cell: (booking) => <p className="truncate text-[12px] font-medium text-[var(--md-ink)]" title={booking.destination} data-i18n-skip dir="auto">{booking.destination || "—"}</p>,
     },
     {
       id: "schedule",
@@ -497,22 +489,21 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onSpeakToDexter={() => setDexterOpen(true)}
-        scopeOptions={bookingScopeTabs}
-        scope={scope}
-        onScopeChange={setScope}
       />
-      <BookingMetricStrip rows={scopedBookings} />
+      <BookingMetricStrip summary={tableSummary} />
       {bookingsError ? <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 py-3 text-[13px] text-[var(--md-red)]">{t("Bookings could not be loaded.")} {bookingsError}</div> : null}
       {viewMode === "Table" ? (
         <DataTable
           ariaLabel={t("Bookings")}
           columnsButtonLabel={t("Manage booking columns")}
           columns={columns}
-          rows={bookingsLoading ? [] : paginatedBookings}
+          rows={bookingsLoading ? [] : tableRows}
           getRowKey={(booking) => booking.id}
-          storageKey="booking-register-operations-v3"
+          storageKey={bookingTableStorageKey}
+          serverSorting={{ value: serverSort, onChange: setServerSort }}
           rowClassName={() => "hover:bg-[var(--md-hover)]"}
           onRowClick={openBooking}
+          toolbarTabs={<RegisterViewSwitch options={bookingOwnershipScopes} value={scope} onChange={setScope} counts={{ [scope]: tableTotal } as Partial<Record<BookingScope, number>>} ariaLabel="Booking ownership filter" compact />}
           toolbarFilters={(
             <>
               <div aria-label={t("Booking shape")} className="flex max-w-full flex-wrap items-center gap-1.5">
@@ -529,7 +520,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
                 title="Advanced booking search"
                 itemLabel="bookings"
                 countMatches={countDraftMatches}
-                totalCount={scopedBookings.length}
+                totalCount={tableSummary.total}
               />
             </>
           )}
@@ -556,22 +547,22 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
               <Button
                 type="button"
                 variant="ghost"
-                aria-label={t(sortDirection === "asc" ? "Sort bookings Z to A" : "Sort bookings A to Z")}
-                aria-pressed={sortDirection === "desc"}
+                aria-label={t(serverSort?.id === "customerCargo" && serverSort.direction === "desc" ? "Sort bookings A to Z" : "Sort bookings Z to A")}
+                aria-pressed={serverSort?.id === "customerCargo" && serverSort.direction === "desc"}
                 className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-text)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] active:scale-[0.96]"
-                onClick={() => setSortDirection((current) => current === "asc" ? "desc" : "asc")}
+                onClick={() => setServerSort((current) => ({ id: "customerCargo", direction: current?.id === "customerCargo" && current.direction === "asc" ? "desc" : "asc" }))}
               >
-                {sortDirection === "asc" ? <ArrowDownAZ className="size-3.5" strokeWidth={1.45} /> : <ArrowUpAZ className="size-3.5" strokeWidth={1.45} />}
-                <span aria-hidden="true">{sortDirection === "asc" ? "A–Z" : "Z–A"}</span>
+                {serverSort?.id === "customerCargo" && serverSort.direction === "desc" ? <ArrowUpAZ className="size-3.5" strokeWidth={1.45} /> : <ArrowDownAZ className="size-3.5" strokeWidth={1.45} />}
+                <span aria-hidden="true">{serverSort?.id === "customerCargo" && serverSort.direction === "desc" ? "Z–A" : "A–Z"}</span>
               </Button>
           )}
-          emptyState={bookingsLoading ? <div className="mx-auto py-8 text-center text-[13px] text-[var(--md-text)]">{t("Loading bookings...")}</div> : (
+          emptyState={bookingsLoading ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading bookings…" /></div> : (
             <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
               <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
                 <Search className="size-4" strokeWidth={1.3} aria-hidden="true" />
               </span>
-              <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t("No bookings match this search")}</p>
-              <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Change or clear a filter to see more bookings.")}</p>
+              <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t(scope === "Mine" ? "No bookings assigned to you" : "No bookings match this search")}</p>
+              <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(scope === "Mine" ? "Bookings appear here when you are recorded as their owner." : "Change or clear a filter to see more bookings.")}</p>
               <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-3 text-[12px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]" onClick={clearFilters}>
                 {t("Clear filters")}
               </Button>
@@ -581,25 +572,30 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
       ) : null}
 
       {viewMode === "Board" ? (
-        <BookingBoardPreview
-          rows={visibleBookings}
-          onOpenBooking={openBooking}
-          onMoveBooking={(_bookingId, _status, orderedRows) => {
-            const orderedIndex = new Map(orderedRows.map((booking, index) => [booking.id, index]))
-            setBookingRecords((current) => [...current].sort((first, second) => {
-              const firstIndex = orderedIndex.get(first.id)
-              const secondIndex = orderedIndex.get(second.id)
-              if (firstIndex === undefined || secondIndex === undefined) return 0
-              return firstIndex - secondIndex
-            }))
-          }}
-        />
+        <div className="grid gap-2">
+          <div className="flex min-w-0 items-center">
+            <RegisterViewSwitch options={bookingOwnershipScopes} value={scope} onChange={setScope} counts={{ [scope]: tableTotal } as Partial<Record<BookingScope, number>>} ariaLabel="Booking ownership filter" compact />
+          </div>
+          <BookingBoardPreview
+            rows={visibleBookings}
+            onOpenBooking={openBooking}
+            onMoveBooking={(_bookingId, _status, orderedRows) => {
+              const orderedIndex = new Map(orderedRows.map((booking, index) => [booking.id, index]))
+              setBoardRecords((current) => [...current].sort((first, second) => {
+                const firstIndex = orderedIndex.get(first.id)
+                const secondIndex = orderedIndex.get(second.id)
+                if (firstIndex === undefined || secondIndex === undefined) return 0
+                return firstIndex - secondIndex
+              }))
+            }}
+          />
+        </div>
       ) : null}
 
       <Pagination
         page={page}
         pageCount={pageCount}
-        totalItems={visibleBookings.length}
+        totalItems={totalBookings}
         pageSize={rowsPerPage}
         pageSizeOptions={rowsPerPageOptions}
         itemLabel="bookings"

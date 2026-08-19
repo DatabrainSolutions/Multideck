@@ -45,3 +45,25 @@ test("force refresh and invalidation fetch a new value", async () => {
   invalidateCrmResources("user-1", ["contacts"])
   assert.equal(await readCachedCrmResource("user-1", "contacts", load), 3)
 })
+
+test("an invalidated in-flight read cannot put stale data back into the cache", async () => {
+  let calls = 0
+  let resolveFirst
+  const firstLoad = () => {
+    calls += 1
+    return new Promise((resolve) => { resolveFirst = resolve })
+  }
+
+  const staleRequest = readCachedCrmResource("user-1", "accounts:all", firstLoad)
+  invalidateCrmResources("user-1", ["accounts:"])
+
+  assert.equal(await readCachedCrmResource("user-1", "accounts:all", async () => {
+    calls += 1
+    return "fresh"
+  }), "fresh")
+
+  resolveFirst("stale")
+  assert.equal(await staleRequest, "stale")
+  assert.equal(await readCachedCrmResource("user-1", "accounts:all", async () => "unexpected"), "fresh")
+  assert.equal(calls, 2)
+})

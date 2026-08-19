@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { isDefaultScope, mergeSavedOrder, useSidebarLayoutScope } from "@/lib/sidebar-preferences"
-import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
+import { hasPermission, isTenantAdministrator, type AuthUserSummary } from "@/lib/auth-user"
 import { createProfilePhotoSignedUrl } from "@/lib/profile-photo"
 import { supabase } from "@/lib/supabase"
 import { useAiAgentName } from "@/lib/user-preferences"
@@ -22,8 +22,9 @@ import { mailboxLabelTone } from "@/lib/mailbox-label-colour"
 import { customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
 import { readSettingsSectionFromUrl, settingsNavigationGroups, type SettingsSectionId } from "@/data/settings-navigation"
 import { useLanguage } from "@/i18n/language-provider"
-import { deleteDexterConversation, getDexterUsage, listDexterConversations, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
-import { listDeals } from "@/lib/deal-api"
+import { deleteDexterConversation, getDexterUsage, listDexterConversationsPage, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
+import { listDealsPage } from "@/lib/deal-api"
+import { listLeadsPage } from "@/lib/lead-api"
 import {
   announceDexterConversationsChanged,
   DEXTER_CONVERSATIONS_CHANGED_EVENT,
@@ -812,7 +813,7 @@ function InboxContextSidebar({
                 </span>
               </SelectValue>
             </SelectTrigger>
-            <SelectContent className="rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
+            <SelectContent className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
               {providers.map((candidate) => (
                 <SelectItem key={candidate} value={candidate} className="text-[13px]">
                   <span className="flex items-center gap-2">
@@ -833,7 +834,7 @@ function InboxContextSidebar({
           </div>
         ) : (
           <p className={cn("px-2 text-[12px] text-[var(--md-subtle)]", collapsed && "sr-only")}>
-            {t(accountState === "loading" ? "Loading mailboxes" : accountState === "error" ? "Mail unavailable" : "No mail connected")}
+            {t(accountState === "idle" || accountState === "loading" ? "Loading mailboxes" : accountState === "error" ? "Mail unavailable" : "No mail connected")}
           </p>
         )}
       </div>
@@ -1036,6 +1037,7 @@ export function AppSidebar({
 }) {
   const { direction, t } = useLanguage()
   const aiAgentName = useAiAgentName()
+  const inboxWorkspace = useOptionalInboxWorkspace()
   const shouldReduceMotion = useReducedMotion()
   const isCustomer = currentUser?.actorType === "customer"
   const isSettingsRoute = route === "/settings"
@@ -1044,21 +1046,28 @@ export function AppSidebar({
   const canManageWarehouseUsers = hasPermission(currentUser, "Warehouse.Users.ManageOwn")
   const canReadDocuments = hasPermission(currentUser, "Documents.Read")
   const canShowDocumentBuilder = import.meta.env.DEV || canReadDocuments
+  const canOpenAdmin = isTenantAdministrator(currentUser)
   const isCrmRoute = route === "/crm" || route.startsWith("/crm/")
   const [crmDealCount, setCrmDealCount] = useState<number | null>(null)
+  const [crmLeadCount, setCrmLeadCount] = useState<number | null>(null)
 
   useEffect(() => {
     if (isCustomer || !isCrmRoute) return
     let active = true
-    listDeals()
-      .then((deals) => { if (active) setCrmDealCount(deals.length) })
-      .catch(() => { if (active) setCrmDealCount(null) })
+    Promise.allSettled([
+      listLeadsPage({ limit: 1, offset: 0 }),
+      listDealsPage({ limit: 1, offset: 0 }),
+    ]).then(([leads, deals]) => {
+      if (!active) return
+      setCrmLeadCount(leads.status === "fulfilled" ? leads.value.total : null)
+      setCrmDealCount(deals.status === "fulfilled" ? deals.value.total : null)
+    })
     return () => { active = false }
-  }, [isCrmRoute, isCustomer])
+  }, [route, isCrmRoute, isCustomer])
 
   const availableAreas = useMemo<SidebarArea[]>(() => {
     if (!isCustomer) {
-      return sidebarAreas.map((area) => {
+      return sidebarAreas.filter((area) => area.id !== "administration" || canOpenAdmin).map((area) => {
         if (area.id === "documents-service") {
           return { ...area, destinations: area.destinations.filter((destination) => destination.id !== "document-builder" || canShowDocumentBuilder) }
         }
@@ -1068,9 +1077,11 @@ export function AppSidebar({
           destinations: area.destinations.map((destination) => destination.id === "crm-leads-opportunities"
             ? {
                 ...destination,
-                children: destination.children?.map((item) => item.route === "/crm/deals"
-                  ? { ...item, value: crmDealCount === null ? undefined : String(crmDealCount) }
-                  : item),
+                children: destination.children?.map((item) => {
+                  if (item.route === "/crm/leads") return { ...item, value: crmLeadCount === null ? undefined : String(crmLeadCount) }
+                  if (item.route === "/crm/deals") return { ...item, value: crmDealCount === null ? undefined : String(crmDealCount) }
+                  return item
+                }),
               }
             : destination),
         }
@@ -1080,7 +1091,7 @@ export function AppSidebar({
     const destinations = customerWarehouseNavigation.filter((item) =>
       item.route !== "/warehouse/users" || canManageWarehouseUsers)
     return [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations }]
-  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, crmDealCount])
+  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, crmDealCount, crmLeadCount])
   const initialArea = isSettingsRoute
     ? undefined
     : isCustomer
@@ -1107,6 +1118,8 @@ export function AppSidebar({
   const [dexterConversations, setDexterConversations] = useState<SearchableDexterConversation[]>([])
   const [dexterConversationSearch, setDexterConversationSearch] = useState("")
   const [isSearchingDexterConversations, setIsSearchingDexterConversations] = useState(false)
+  const [isLoadingMoreDexterConversations, setIsLoadingMoreDexterConversations] = useState(false)
+  const [hasMoreDexterConversations, setHasMoreDexterConversations] = useState(false)
   const [activeDexterConversationId, setActiveDexterConversationId] = useState<string | null>(null)
   const [editingDexterConversationId, setEditingDexterConversationId] = useState<string | null>(null)
   const [editingDexterTitle, setEditingDexterTitle] = useState("")
@@ -1139,39 +1152,39 @@ export function AppSidebar({
     return () => resizeObserver.disconnect()
   }, [activeAreaId, collapsed, isAgentRoute, isInboxRoute, isSettingsRoute, updateSidebarScrollFade])
 
-  const loadDexterConversations = useCallback(async (search = "") => {
+  const loadDexterConversations = useCallback(async (search = "", offset = 0) => {
     if (!isAgentRoute) return
     const query = search.trim()
+    const isLoadingMore = offset > 0
     const requestVersion = dexterConversationRequestVersion.current + 1
     dexterConversationRequestVersion.current = requestVersion
-    setIsSearchingDexterConversations(Boolean(query))
+    setIsSearchingDexterConversations(Boolean(query) && !isLoadingMore)
+    setIsLoadingMoreDexterConversations(isLoadingMore)
 
     try {
-      let conversations: SearchableDexterConversation[]
-      if (query) {
-        if (!supabase) throw new Error("Dexter is not connected to this workspace.")
-        const { data, error } = await supabase.rpc("multideck_dexter_search_conversations", {
-          p_query: query,
-          p_limit: 50,
-        })
-        if (error) throw error
-        conversations = Array.isArray(data) ? data as SearchableDexterConversation[] : []
-      } else {
-        conversations = await listDexterConversations()
-      }
+      const page = await listDexterConversationsPage({ query, limit: 25, offset })
+      const conversations = page.rows as SearchableDexterConversation[]
 
       if (dexterConversationRequestVersion.current !== requestVersion) return
-      setDexterConversations(conversations)
+      setDexterConversations((current) => {
+        if (!isLoadingMore) return conversations
+        const byId = new Map(current.map((conversation) => [conversation.id, conversation]))
+        conversations.forEach((conversation) => byId.set(conversation.id, conversation))
+        return [...byId.values()]
+      })
+      setHasMoreDexterConversations(page.hasMore)
       setDexterSidebarError(null)
     } catch (error) {
       if (dexterConversationRequestVersion.current !== requestVersion) return
-      setDexterConversations([])
+      if (!isLoadingMore) setDexterConversations([])
+      setHasMoreDexterConversations(false)
       setDexterSidebarError(query
         ? t("Unable to search conversations. Clear the search and try again.")
         : error instanceof Error ? error.message : t("Dexter's conversation history is unavailable."))
     } finally {
       if (dexterConversationRequestVersion.current === requestVersion) {
         setIsSearchingDexterConversations(false)
+        setIsLoadingMoreDexterConversations(false)
       }
     }
   }, [isAgentRoute, t])
@@ -1257,7 +1270,7 @@ export function AppSidebar({
   }, [currentUser?.coverPhoto])
 
   useEffect(() => {
-    if (!accountMenuOpen || isCustomer) return
+    if (!accountMenuOpen || !canOpenAdmin) return
 
     let active = true
     getDexterUsage()
@@ -1275,7 +1288,7 @@ export function AppSidebar({
       })
 
     return () => { active = false }
-  }, [accountMenuOpen, isCustomer])
+  }, [accountMenuOpen, canOpenAdmin])
 
   useEffect(() => {
     const routeArea = isSettingsRoute
@@ -1411,6 +1424,7 @@ export function AppSidebar({
         item={inboxNavItem}
         isActive={route === "/inbox"}
         onIntent={() => {
+          void inboxWorkspace?.prepareAccounts()
           if (typeof window !== "undefined") void import("@/pages/inbox-page")
         }}
         onClick={() => navigate("/inbox")}
@@ -1585,7 +1599,7 @@ export function AppSidebar({
                     </span>
                   </div>
 
-                  <div className="mt-2 grid gap-0.5" aria-busy={isSearchingDexterConversations}>
+                  <div className="mt-2 grid gap-0.5" aria-busy={isSearchingDexterConversations || isLoadingMoreDexterConversations}>
                   {dexterConversations.map((conversation, index) => (
                     <motion.div
                       key={conversation.id}
@@ -1732,6 +1746,17 @@ export function AppSidebar({
                       )}
                     </motion.div>
                   ))}
+                  {hasMoreDexterConversations ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="mx-2 mt-1 h-8 rounded-[var(--md-radius-lg)] text-[12px] font-medium text-[var(--md-text)]"
+                      disabled={isLoadingMoreDexterConversations}
+                      onClick={() => void loadDexterConversations(dexterConversationSearch, dexterConversations.length)}
+                    >
+                      {t(isLoadingMoreDexterConversations ? "Loading older conversations" : "Load older conversations")}
+                    </Button>
+                  ) : null}
                   {dexterConversations.length === 0 && !isSearchingDexterConversations ? (
                     <div className="px-2 py-3 text-[12px] leading-5 text-[var(--md-subtle)]">
                       <p>{t(dexterConversationSearch ? "No matching conversations" : "No conversations yet")}</p>
@@ -2107,7 +2132,7 @@ export function AppSidebar({
               <Settings data-icon="inline-start" className="size-4" strokeWidth={1.4} />
               <span className="min-w-0 flex-1 truncate">{t("Account settings")}</span>
             </button> : null}
-            {!isCustomer ? (
+            {canOpenAdmin ? (
               <>
                 <button
                   type="button"
@@ -2115,7 +2140,7 @@ export function AppSidebar({
                   className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
                   onClick={() => {
                     setAccountMenuOpen(false)
-                    openSettingsSection("ai-usage")
+                    navigate("/admin/ai-usage")
                   }}
                 >
                   <ChartAnalysis data-icon="inline-start" className="size-4" strokeWidth={1.4} />

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { RefreshCw } from "@/components/icons/hugeicons"
 import {
@@ -20,7 +20,7 @@ import { customerWarehouseNavigation, warehouseNavigation } from "@/data/navigat
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion } from "@/lib/motion"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
-import { getWarehouseWorkspaceData, rescheduleOperationalWarehouseOrder, type WarehouseWorkspaceData } from "@/lib/warehouse"
+import { getWarehouseHeaderActions, getWarehouseWorkspaceData, rescheduleOperationalWarehouseOrder, type WarehouseHeaderAction, type WarehouseWorkspaceData } from "@/lib/warehouse"
 import { toast } from "sonner"
 import { CustomerWarehouseAccess } from "@/pages/customer-detail-page"
 
@@ -35,6 +35,19 @@ function localSlotToIso(dateKey: string, timeKey: string) {
   const [year, month, day] = dateKey.split("-").map(Number)
   const [hour, minute] = timeKey.split(":").map(Number)
   return new Date(year, month - 1, day, hour, minute, 0, 0).toISOString()
+}
+
+function localDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+}
+
+function initialWarehouseCalendarRange() {
+  const today = new Date()
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7))
+  const end = new Date(start)
+  end.setDate(end.getDate() + 7)
+  return { start: localDateKey(start), end: localDateKey(end) }
 }
 
 const warehouseRouteItems = [...warehouseNavigation, ...customerWarehouseNavigation].flatMap((item) => item.children ?? [item])
@@ -62,6 +75,9 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
   const detailItemSku = warehouseItemDetailSku(route)
   const activeSection = (warehouseRouteItems.find((item) => item.route === route)?.label ?? (detailPurchaseOrderId || route === "/warehouse/purchase-orders/new" ? "Purchase orders" : detailOrderNumber ? "Orders" : detailItemSku ? "Items" : "Dashboard")) as WarehouseSection
   const [warehouseData, setWarehouseData] = useState<WarehouseWorkspaceData | null>(null)
+  const [calendarData, setCalendarData] = useState<WarehouseWorkspaceData["calendar"] | null>(null)
+  const [calendarRange, setCalendarRange] = useState(initialWarehouseCalendarRange)
+  const [registerHeaderActions, setRegisterHeaderActions] = useState<WarehouseHeaderAction[]>([])
   const [loadState, setLoadState] = useState<"idle" | "loading" | "error">("idle")
   const [reloadToken, setReloadToken] = useState(0)
   const { language, t } = useLanguage()
@@ -70,7 +86,7 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
   // The dashboard carries all seven figures in its own band, and the calendar
   // needs its date controls in this space. Neither screen repeats the three
   // operational chips in the page header.
-  const headerActions = activeSection === "Dashboard" || activeSection === "Calendar" || isCustomer ? [] : warehouseData?.dashboard.headerActions ?? []
+  const headerActions = activeSection === "Dashboard" || activeSection === "Calendar" || isCustomer ? [] : registerHeaderActions
   const canManageItems = !isCustomer || hasPermission(currentUser, "Warehouse.Items.ManageOwn")
   const canCreateInbound = !isCustomer || hasPermission(currentUser, "Warehouse.Orders.CreateInboundOwn")
   const canCreateOutbound = !isCustomer || hasPermission(currentUser, "Warehouse.Orders.CreateOutboundOwn")
@@ -78,22 +94,35 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
   const canUpload = !isCustomer || hasPermission(currentUser, "Warehouse.Documents.UploadOwn")
   const canManageUsers = isCustomer && hasPermission(currentUser, "Warehouse.Users.ManageOwn")
 
-  // The dashboard snapshot is one request that answers the metric band, the
-  // calendar and the header chips. Moving between the register screens reuses the
-  // payload already in hand; opening the dashboard or the calendar revalidates it,
-  // because those two screens *are* the payload. A customer never sees the
-  // operator figures, so their session never asks for them.
-  const snapshotScope = isCustomer ? null : activeSection === "Dashboard" || activeSection === "Calendar" ? activeSection : "chips"
+  // Full order rows belong to the dashboard and calendar only. Register headers
+  // use a three-count summary so opening a table never transfers dashboard data.
+  const snapshotScope = isCustomer ? null : activeSection === "Dashboard" || activeSection === "Calendar" ? activeSection : null
+  const needsRegisterHeader = !isCustomer
+    && !detailOrderNumber
+    && !detailPurchaseOrderId
+    && !detailItemSku
+    && route !== "/warehouse/purchase-orders/new"
+    && activeSection !== "Dashboard"
+    && activeSection !== "Calendar"
 
   useEffect(() => {
-    if (!snapshotScope) return
+    if (!needsRegisterHeader) return
+    let isMounted = true
+    getWarehouseHeaderActions(language)
+      .then((actions) => { if (isMounted) setRegisterHeaderActions(actions) })
+      .catch((error) => console.error("Warehouse header summary could not be loaded.", error))
+    return () => { isMounted = false }
+  }, [needsRegisterHeader, language])
+
+  useEffect(() => {
+    if (snapshotScope !== "Dashboard") return
 
     let isMounted = true
     // Existing figures stay on screen while the next payload is in flight, so a
     // revalidation never blanks a band the operator is reading.
     setLoadState((current) => warehouseData ? current : "loading")
 
-    getWarehouseWorkspaceData(language)
+    getWarehouseWorkspaceData(language, { mode: "overview" })
       .then((data) => {
         if (!isMounted) return
         setWarehouseData(data)
@@ -109,18 +138,39 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
     }
   }, [snapshotScope, language, reloadToken])
 
+  useEffect(() => {
+    if (snapshotScope !== "Calendar") return
+    let isMounted = true
+    setLoadState("loading")
+    getWarehouseWorkspaceData(language, { mode: "calendar", start: calendarRange.start, end: calendarRange.end })
+      .then((data) => {
+        if (!isMounted) return
+        setCalendarData(data.calendar)
+        setLoadState("idle")
+      })
+      .catch((error) => {
+        console.error("Warehouse calendar data could not be loaded.", error)
+        if (isMounted) setLoadState("error")
+      })
+    return () => { isMounted = false }
+  }, [calendarRange.end, calendarRange.start, language, reloadToken, snapshotScope])
+
+  const handleCalendarRangeChange = useCallback((range: { start: string; end: string }) => {
+    setCalendarRange((current) => current.start === range.start && current.end === range.end ? current : range)
+  }, [])
+
   // Optimistic slot changes, keyed by event id and dropped as soon as the payload
   // comes back agreeing with them.
   const [slotOverrides, setSlotOverrides] = useState<Record<string, { date: string; time: string; endTime: string }>>({})
 
   const calendarEvents = useMemo(() => {
-    const events = warehouseData?.calendar.events ?? []
+    const events = calendarData?.events ?? []
     if (!Object.keys(slotOverrides).length) return events
     return events.map((event) => slotOverrides[event.id] ? { ...event, ...slotOverrides[event.id] } : event)
-  }, [warehouseData, slotOverrides])
+  }, [calendarData, slotOverrides])
 
   async function rescheduleEvent(change: { eventId: string; dateKey: string; startTime: string; endTime: string }) {
-    const original = warehouseData?.calendar.events.find((event) => event.id === change.eventId)
+    const original = calendarData?.events.find((event) => event.id === change.eventId)
     if (!original) return
 
     setSlotOverrides((current) => ({ ...current, [change.eventId]: { date: change.dateKey, time: change.startTime, endTime: change.endTime } }))
@@ -141,7 +191,8 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
     }
   }
 
-  const dashboardOrCalendarState = !warehouseData ? (
+  const activeWorkspaceDataReady = activeSection === "Dashboard" ? Boolean(warehouseData) : activeSection === "Calendar" ? Boolean(calendarData) : true
+  const dashboardOrCalendarState = !activeWorkspaceDataReady ? (
     <Surface padding="lg" className="grid min-h-[240px] place-items-center rounded-[var(--md-radius-xl)] text-center">
       {loadState === "error" ? (
         <div className="max-w-md" role="alert">
@@ -251,8 +302,11 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
           {activeSection === "Users" && canManageUsers ? <WarehouseOrganisationUsersView currentUser={currentUser} /> : null}
           {activeSection === "Calendar" ? dashboardOrCalendarState ?? (
             <WarehouseCalendarView
-              customers={warehouseData!.calendar.customers}
+              customers={calendarData!.customers}
               events={calendarEvents}
+              total={calendarData!.total}
+              limit={calendarData!.limit}
+              onRangeChange={handleCalendarRangeChange}
               // Straight to the order's own page, with the calendar as the place
               // its back button returns to.
               // The block stays where it was dropped while the write is in flight,

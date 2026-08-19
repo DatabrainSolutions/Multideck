@@ -271,8 +271,20 @@ export type InboxThreadDetail = {
   unreadCount: number
   /** A shared mailbox the operator may read but not send from. */
   readOnly: boolean
+  /** Exact message count for the complete conversation. */
+  messageTotal: number
+  /** Number of newer messages skipped by this response page. */
+  messageOffset: number
+  /** Maximum messages requested for this response page. */
+  messageLimit: number
+  hasOlderMessages: boolean
   messages: InboxMessage[]
   summary: ThreadSummaryState
+}
+
+export type ThreadDetailQuery = {
+  offset?: number
+  limit?: number
 }
 
 export type ThreadPage = {
@@ -761,12 +773,22 @@ export function latestReplySource(messages: InboxMessage[]) {
   return null
 }
 
-export function normalizeThreadDetail(value: unknown, requestedId: string): InboxThreadDetail {
+export function normalizeThreadDetail(value: unknown, requestedId: string, request: ThreadDetailQuery = {}): InboxThreadDetail {
   const record = readRecord(value)
   const id = readText(pickField(record, "id", "threadId"), requestedId)
   const state = readRecord(pickField(record, "state"))
   const explicitUnread = pickField(record, "unreadCount")
   const isRead = pickField(state, "isRead") ?? pickField(record, "isRead")
+  const requestedLimit = Math.min(50, Math.max(1, Math.floor(request.limit ?? 25)))
+  const requestedOffset = Math.max(0, Math.floor(request.offset ?? 0))
+  const normalizedMessages = readList(pickField(record, "messages")).map((message) => normalizeMessage(message, id))
+  const explicitTotal = pickField(record, "messageTotal", "message_total")
+  if (explicitTotal === undefined) {
+    throw new Error("Inbox message paging is still being prepared. Try again shortly.")
+  }
+  const messageTotal = Math.max(0, readCount(explicitTotal))
+  const messageOffset = Math.max(0, readCount(pickField(record, "messageOffset", "message_offset"), requestedOffset))
+  const messageLimit = Math.min(50, Math.max(1, readCount(pickField(record, "messageLimit", "message_limit"), requestedLimit)))
 
   return {
     id,
@@ -776,7 +798,11 @@ export function normalizeThreadDetail(value: unknown, requestedId: string): Inbo
     archived: readFlag(pickField(state, "isArchived") ?? pickField(record, "archived", "isArchived")),
     unreadCount: explicitUnread !== undefined ? readCount(explicitUnread) : isRead === false ? 1 : 0,
     readOnly: readFlag(pickField(record, "readOnly", "isReadOnly")),
-    messages: readList(pickField(record, "messages")).map((message) => normalizeMessage(message, id)),
+    messageTotal,
+    messageOffset,
+    messageLimit,
+    hasOlderMessages: readFlag(pickField(record, "hasOlderMessages", "has_older_messages")),
+    messages: normalizedMessages,
     summary: normalizeSummary(pickField(record, "summary", "lunaSummary")),
   }
 }

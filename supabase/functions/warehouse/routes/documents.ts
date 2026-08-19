@@ -6,6 +6,7 @@ import {
   allowedExtensions,
   bodyObject,
   bool,
+  boundedPage,
   clean,
   companyFacilityIds,
   cors,
@@ -42,21 +43,45 @@ function mapDocument(row, upload) {
     createdAt: row.WMSDocument_CreatedAt
   };
 }
-export async function handleDocuments(request, path, admin, actor) {
+export async function handleDocuments(request, path, url, admin, actor) {
   const orderId = uuid(path[1], "order"), order = await scopedOrder(admin, actor, orderId), documentId = path[3] && path[3] !== "documents" ? uuid(path[3], "document") : null;
   if (!actor.companyId) {
     requireCapability(actor, path[4] === "review" ? "__internal__" : path.length === 3 && request.method === "POST" ? "warehouse_documents:upload" : "warehouse_orders:read");
   }
-  const documents = await many(admin.from("WMS_Documents").select("*").eq("WMSDocument_OrderID", orderId).order("WMSDocument_CreatedAt", {
-    ascending: false
-  })), documentIds = documents.map((r)=>r.WMSDocument_ID), uploads = documentIds.length ? await many(admin.from("Portal_FileUploads").select("*").in("PortalUpload_TargetID", documentIds)) : [], uploadByDocument = new Map(uploads.map((r)=>[
-      r.PortalUpload_TargetID,
-      r
-    ]));
   if (request.method === "GET" && path.length === 3) {
-    return documents.map((r)=>mapDocument(r, uploadByDocument.get(r.WMSDocument_ID)));
+    const { limit, offset } = boundedPage(url, 20, 50);
+    const { data, error } = await admin.from("WMS_Documents")
+      .select("WMSDocument_ID,WMSDocument_OrderID,WMSDocument_Title,WMSDocument_DocumentTypeCode,WMSDocument_StatusCode,WMSDocument_CreatedAt")
+      .eq("WMSDocument_OrderID", orderId)
+      .order("WMSDocument_CreatedAt", { ascending: false })
+      .order("WMSDocument_ID", { ascending: false })
+      .range(offset, offset + limit);
+    if (error) throw new HttpError(500, error.message);
+    const candidates = data ?? [];
+    const documents = candidates.slice(0, limit);
+    const documentIds = documents.map((row)=>row.WMSDocument_ID);
+    const uploads = documentIds.length ? await many(admin.from("Portal_FileUploads")
+      .select("PortalUpload_TargetID,PortalUpload_FileName,PortalUpload_MimeType,PortalUpload_FileSizeBytes")
+      .in("PortalUpload_TargetID", documentIds)) : [];
+    const uploadByDocument = new Map(uploads.map((row)=>[row.PortalUpload_TargetID, row]));
+    return {
+      rows: documents.map((row)=>mapDocument(row, uploadByDocument.get(row.WMSDocument_ID))),
+      limit,
+      offset,
+      hasMore: candidates.length > limit
+    };
   }
-  const document = documents.find((r)=>r.WMSDocument_ID === documentId), upload = documentId ? uploadByDocument.get(documentId) : null;
+  const documents = documentId ? await many(admin.from("WMS_Documents")
+    .select("*")
+    .eq("WMSDocument_ID", documentId)
+    .eq("WMSDocument_OrderID", orderId)
+    .limit(1)) : [];
+  const document = documents[0] ?? null;
+  const uploads = documentId ? await many(admin.from("Portal_FileUploads")
+    .select("*")
+    .eq("PortalUpload_TargetID", documentId)
+    .limit(1)) : [];
+  const upload = uploads[0] ?? null;
   if (request.method === "GET" && path[4] === "url") {
     if (!document || !upload?.PortalUpload_StoragePath) {
       throw new HttpError(404, "This warehouse document does not exist.");

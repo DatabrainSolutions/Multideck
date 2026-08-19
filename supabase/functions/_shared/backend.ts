@@ -68,6 +68,16 @@ export function adminClient() {
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 }
 
+export function authenticatedClient(token: string) {
+  const url = Deno.env.get("SUPABASE_URL")
+  const key = Deno.env.get("SUPABASE_ANON_KEY")
+  if (!url || !key) throw new HttpError(503, "Supabase user credentials are not configured.")
+  return createClient(url, key, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+}
+
 export async function authenticate(request: Request, admin = adminClient()) {
   const token = request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "").trim()
   if (!token) throw new HttpError(401, "Sign in again to continue.")

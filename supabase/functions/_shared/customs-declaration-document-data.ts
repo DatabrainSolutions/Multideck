@@ -139,6 +139,145 @@ function displayMrn(value: string) {
     .trim();
 }
 
+const code128Patterns = [
+  "212222",
+  "222122",
+  "222221",
+  "121223",
+  "121322",
+  "131222",
+  "122213",
+  "122312",
+  "132212",
+  "221213",
+  "221312",
+  "231212",
+  "112232",
+  "122132",
+  "122231",
+  "113222",
+  "123122",
+  "123221",
+  "223211",
+  "221132",
+  "221231",
+  "213212",
+  "223112",
+  "312131",
+  "311222",
+  "321122",
+  "321221",
+  "312212",
+  "322112",
+  "322211",
+  "212123",
+  "212321",
+  "232121",
+  "111323",
+  "131123",
+  "131321",
+  "112313",
+  "132113",
+  "132311",
+  "211313",
+  "231113",
+  "231311",
+  "112133",
+  "112331",
+  "132131",
+  "113123",
+  "113321",
+  "133121",
+  "313121",
+  "211331",
+  "231131",
+  "213113",
+  "213311",
+  "213131",
+  "311123",
+  "311321",
+  "331121",
+  "312113",
+  "312311",
+  "332111",
+  "314111",
+  "221411",
+  "431111",
+  "111224",
+  "111422",
+  "121124",
+  "121421",
+  "141122",
+  "141221",
+  "112214",
+  "112412",
+  "122114",
+  "122411",
+  "142112",
+  "142211",
+  "241211",
+  "221114",
+  "413111",
+  "241112",
+  "134111",
+  "111242",
+  "121142",
+  "121241",
+  "114212",
+  "124112",
+  "124211",
+  "411212",
+  "421112",
+  "421211",
+  "212141",
+  "214121",
+  "412121",
+  "111143",
+  "111341",
+  "131141",
+  "114113",
+  "114311",
+  "411113",
+  "411311",
+  "113141",
+  "114131",
+  "311141",
+  "411131",
+  "211412",
+  "211214",
+  "211232",
+  "2331112",
+] as const;
+
+/** Encodes the accepted MRN with the mandatory Code 128 start set B. */
+function code128BBarcodeGeometry(value: string) {
+  const codes = Array.from(value, (character) => character.charCodeAt(0) - 32);
+  if (codes.some((code) => code < 0 || code > 94)) {
+    throw new Error("The accepted Customs MRN cannot be encoded as Code 128 B");
+  }
+  const startB = 104;
+  const checksum =
+    (startB + codes.reduce((sum, code, index) => sum + code * (index + 1), 0)) %
+    103;
+  const symbols = [startB, ...codes, checksum, 106];
+  const quietZone = 10;
+  const barHeight = 46;
+  let x = quietZone;
+  const path: string[] = [];
+  for (const symbol of symbols) {
+    const pattern = code128Patterns[symbol];
+    for (let index = 0; index < pattern.length; index += 1) {
+      const width = Number(pattern[index]);
+      if (index % 2 === 0) {
+        path.push(`M${x} 0h${width}v${barHeight}h-${width}z`);
+      }
+      x += width;
+    }
+  }
+  const width = x + quietZone;
+  return { path: path.join(""), width, height: barHeight };
+}
+
 function titleCase(value: string) {
   return value
     ? value.charAt(0).toUpperCase() + value.slice(1).toLowerCase()
@@ -158,6 +297,32 @@ function providerAcceptanceDateTime(value: unknown): string {
       if (exact) return exact;
     }
     const nestedMatch = providerAcceptanceDateTime(entry);
+    if (nestedMatch) return nestedMatch;
+  }
+  return "";
+}
+
+function providerText(value: unknown, keys: string[]): string {
+  if (!value || typeof value !== "object") return "";
+  const wanted = new Set(
+    keys.map((key) => key.replace(/[^a-z0-9]/gi, "").toLowerCase()),
+  );
+  for (const [key, entry] of Object.entries(value as Json)) {
+    const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    if (wanted.has(normalized)) {
+      if (typeof entry === "string" || typeof entry === "number") {
+        const exact = text(entry, 160);
+        if (exact) return exact;
+      }
+      const nested = record(entry);
+      const exact = text(
+        nested._2DateTimeString ?? nested.id ?? nested.ID ?? nested.value ??
+          nested.code,
+        160,
+      );
+      if (exact) return exact;
+    }
+    const nestedMatch = providerText(entry, keys);
     if (nestedMatch) return nestedMatch;
   }
   return "";
@@ -316,6 +481,25 @@ export function buildCustomsDeclarationDocumentDataset(
       number: tracked(
         `${path}.number`,
         entry.number,
+        entry.table === "ICUS_Submissions"
+          ? [{
+            table: "ICUS_Submissions",
+            fields: [
+              `ICUSS_DeclarationSnapshotJSON.items[itemNumber=${entry.number}].itemNumber`,
+            ],
+            itemNumber: entry.number,
+          }]
+          : entry.table === "Customs_Items"
+          ? [{
+            table: "Customs_Items",
+            fields: ["CUSTI_ItemNumber"],
+            itemNumber: entry.number,
+          }]
+          : itemSources(entry, ["id"]),
+      ),
+      documentPageNumber: tracked(
+        `${path}.documentPageNumber`,
+        index + 1,
         entry.table === "ICUS_Submissions"
           ? [{
             table: "ICUS_Submissions",
@@ -516,8 +700,16 @@ export function buildCustomsDeclarationDocumentDataset(
     };
   });
 
+  if (!items.length) {
+    throw new Error("The accepted Customs submission contains no goods items");
+  }
+
   const mrn = text(submission.ICUSS_MRN, 64).replace(/\s+/g, "").toUpperCase();
-  if (!mrn) throw new Error("The accepted Customs submission has no MRN");
+  if (!/^[A-Z0-9]{18}$/.test(mrn)) {
+    throw new Error(
+      "The accepted Customs submission does not contain a valid 18-character MRN",
+    );
+  }
   const lifecycleStatus = text(submission.ICUSS_Status, 40);
   if (
     !["accepted", "released", "cleared"].includes(
@@ -540,9 +732,27 @@ export function buildCustomsDeclarationDocumentDataset(
   const providerAcceptedAt = providerAcceptanceDateTime(
     submission.ICUSS_ResponsePayloadJSON,
   );
+  const providerCustomsOffice = providerText(
+    submission.ICUSS_ResponsePayloadJSON,
+    [
+      "CustomsOffice",
+      "OfficeOfExport",
+      "ExportOffice",
+      "CustomsOfficeReferenceNumber",
+    ],
+  );
+  const providerSecurityIndicator = providerText(
+    submission.ICUSS_ResponsePayloadJSON,
+    ["SecurityDeclaration", "SecurityIndicator", "Security"],
+  );
+  const providerOtherSpecificCircumstance = providerText(
+    submission.ICUSS_ResponsePayloadJSON,
+    ["OtherSpecificCircumstance", "SpecificCircumstanceIndicator", "OtherSCI"],
+  );
   const completedAt = providerAcceptedAt ||
     text(submission.ICUSS_CompletedAt, 80);
   const updatedAt = text(submission.ICUSS_UpdatedAt, 80);
+  const mrnBarcode = code128BBarcodeGeometry(mrn);
   const exportConsignors = persistedItemRows.map((entry) =>
     entry.item.consignor
   ).map((value) => text(value)).filter(Boolean);
@@ -571,6 +781,11 @@ export function buildCustomsDeclarationDocumentDataset(
         }`,
       );
     }
+    if (providerEnvironment === "production" && !providerCustomsOffice) {
+      throw new Error(
+        "The accepted Customs response does not contain the office of export required for an official EAD",
+      );
+    }
   }
 
   const dataset: CustomsDeclarationDocumentDataset = {
@@ -593,6 +808,26 @@ export function buildCustomsDeclarationDocumentDataset(
     mrnDisplay: tracked(
       "mrnDisplay",
       displayMrn(mrn),
+      submissionSource("ICUSS_MRN"),
+    ),
+    mrn: tracked(
+      "mrn",
+      mrn,
+      submissionSource("ICUSS_MRN"),
+    ),
+    mrnBarcodePath: tracked(
+      "mrnBarcodePath",
+      mrnBarcode.path,
+      submissionSource("ICUSS_MRN"),
+    ),
+    mrnBarcodeWidth: tracked(
+      "mrnBarcodeWidth",
+      mrnBarcode.width,
+      submissionSource("ICUSS_MRN"),
+    ),
+    mrnBarcodeHeight: tracked(
+      "mrnBarcodeHeight",
+      mrnBarcode.height,
       submissionSource("ICUSS_MRN"),
     ),
     declarationCode: tracked(
@@ -621,12 +856,26 @@ export function buildCustomsDeclarationDocumentDataset(
         ? persistedItemRows.flatMap((entry) => itemSources(entry, ["id"]))
         : draftSource("items"),
     ),
+    totalPages: tracked(
+      "totalPages",
+      Math.max(1, items.length),
+      persistedItemRows.length
+        ? persistedItemRows.flatMap((entry) => itemSources(entry, ["id"]))
+        : draftSource("items"),
+    ),
+    itemListPages: tracked(
+      "itemListPages",
+      items.slice(1),
+      persistedItemRows.length
+        ? persistedItemRows.flatMap((entry) => itemSources(entry, ["id"]))
+        : draftSource("items"),
+    ),
     auditSpacerHeight: tracked(
       "auditSpacerHeight",
       Math.max(
         0,
-        (isImport ? 138 : 217) -
-          Math.max(0, items.length - 1) * (isImport ? 228 : 217) -
+        (isImport ? 138 : 45) -
+          (isImport ? Math.max(0, items.length - 1) * 228 : 0) -
           (text(draft.headerAdditionalInformationCode) ||
               text(draft.headerAdditionalInformationDescription)
             ? 11
@@ -648,6 +897,51 @@ export function buildCustomsDeclarationDocumentDataset(
       [
         ...draftSource("traderReference"),
         ...localReferenceSource,
+      ],
+    ),
+    ucr: tracked(
+      "ucr",
+      uniqueLines(items.map((item) => item.reference)) ||
+        text(draft.traderReference),
+      [
+        ...(persistedItemRows.length
+          ? persistedItemRows.flatMap((entry) => itemSources(entry, ["ucr"]))
+          : draftSource("items")),
+        ...draftSource("traderReference"),
+      ],
+    ),
+    issuingDate: tracked(
+      "issuingDate",
+      completedAt,
+      submissionSource(
+        "ICUSS_ResponsePayloadJSON.AcceptanceDateTime",
+        "ICUSS_CompletedAt",
+      ),
+    ),
+    customsOffice: tracked(
+      "customsOffice",
+      providerCustomsOffice,
+      [
+        ...submissionSource("ICUSS_ResponsePayloadJSON.OfficeOfExport"),
+      ],
+    ),
+    securityIndicator: tracked(
+      "securityIndicator",
+      providerSecurityIndicator || text(draft.securityIndicator),
+      [
+        ...submissionSource("ICUSS_ResponsePayloadJSON.SecurityIndicator"),
+        ...draftSource("securityIndicator"),
+      ],
+    ),
+    otherSpecificCircumstance: tracked(
+      "otherSpecificCircumstance",
+      providerOtherSpecificCircumstance ||
+        text(draft.otherSpecificCircumstance),
+      [
+        ...submissionSource(
+          "ICUSS_ResponsePayloadJSON.SpecificCircumstanceIndicator",
+        ),
+        ...draftSource("otherSpecificCircumstance"),
       ],
     ),
     parties: {
@@ -972,6 +1266,14 @@ export function buildCustomsDeclarationDocumentDataset(
       draftSource("currency"),
     ),
   };
+
+  items.slice(1).forEach((item, itemListIndex) => {
+    Object.keys(item).forEach((key) => {
+      const sourcePath = `items[${itemListIndex + 1}].${key}`;
+      provenance[`itemListPages[${itemListIndex}].${key}`] =
+        provenance[sourcePath];
+    });
+  });
 
   validateCustomsDocumentProvenance(dataset, provenance);
   return {

@@ -609,6 +609,31 @@ function ActionDrawer({
 /* Publish confirmation                                                        */
 /* -------------------------------------------------------------------------- */
 
+type AutomationMutationKind = "publish" | "pause" | "resume" | "off"
+
+function useConfirmedAutomationMutation() {
+  const { t } = useLanguage()
+  const [saving, setSaving] = useState<AutomationMutationKind | null>(null)
+
+  async function run(kind: AutomationMutationKind, mutation: () => Promise<void>, successMessage: string) {
+    if (saving) return false
+    setSaving(kind)
+    try {
+      await mutation()
+      toast.success(t(successMessage))
+      return true
+    } catch (cause) {
+      const reason = cause instanceof Error ? t(cause.message) : t("The automation could not be saved.")
+      toast.error(`${reason} ${t("The previous confirmed setting has been restored. Check your connection and try again.")}`)
+      return false
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  return { saving, run }
+}
+
 /**
  * The gate in front of anything that reaches a real person. It states the
  * consequence in plain sentences and offers a test send, which is the thing
@@ -619,11 +644,13 @@ function PublishDialog({
   open,
   onOpenChange,
   onConfirm,
+  confirming = false,
 }: {
   card: ContactCard
   open: boolean
   onOpenChange: (open: boolean) => void
   onConfirm: () => void
+  confirming?: boolean
 }) {
   const { t } = useLanguage()
   const [testing, setTesting] = useState(false)
@@ -653,7 +680,7 @@ function PublishDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => { if (!confirming) onOpenChange(next) }}>
       <DialogContent className="max-w-[520px]">
         <DialogHeader>
           <DialogTitle className="text-[16px]">{t("Turn this automation on?")}</DialogTitle>
@@ -688,7 +715,7 @@ function PublishDialog({
             variant="outline"
             className="h-9 rounded-[var(--md-radius-md)] text-[13px]"
             onClick={runTest}
-            disabled={testing}
+            disabled={testing || confirming}
           >
             {testing ? (
               <LoaderCircle data-icon="inline-start" className="animate-spin" strokeWidth={1.4} />
@@ -701,14 +728,15 @@ function PublishDialog({
           </Button>
 
           <div className="flex gap-2 sm:justify-end">
-            <Button variant="ghost" className="h-9 rounded-[var(--md-radius-md)] text-[13px]" onClick={() => onOpenChange(false)}>
+            <Button variant="ghost" className="h-9 rounded-[var(--md-radius-md)] text-[13px]" disabled={confirming} onClick={() => onOpenChange(false)}>
               {t("Cancel")}
             </Button>
             <Button
               className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] text-[13px] text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
+              disabled={confirming}
               onClick={onConfirm}
             >
-              {t("Turn on")}
+              {confirming ? t("Saving…") : t("Turn on")}
             </Button>
           </div>
         </DialogFooter>
@@ -832,10 +860,14 @@ const formSourceOptions = [
   ["email", "Email"],
   ["company", "Company"],
   ["phone", "Phone"],
-  ["marketingConsent", "Marketing consent"],
   ["cardName", "Card name"],
   ["fixed", "Fixed value"],
 ] as const
+
+// Existing cards may still contain this mapping from the previous UI. Keep it
+// readable without offering it as a new field choice: consent is controlled by
+// the card's dedicated checkbox and is captured automatically on submission.
+const legacyMarketingConsentOption = ["marketingConsent", "Marketing consent (managed by checkbox)"] as const
 
 function readCrmFieldMappings(card: ContactCard): CrmFieldMapping[] {
   const raw = card.automation.actions.find((action) => action.kind === "add-to-crm")?.config.fieldMappings
@@ -857,6 +889,7 @@ function readCrmFieldMappings(card: ContactCard): CrmFieldMapping[] {
 
 function CrmFieldMappingPanel({ card }: { card: ContactCard }) {
   const { t } = useLanguage()
+  const automationMutation = useConfirmedAutomationMutation()
   const mappings = readCrmFieldMappings(card)
 
   function saveMappings(next: CrmFieldMapping[]) {
@@ -879,8 +912,12 @@ function CrmFieldMappingPanel({ card }: { card: ContactCard }) {
           title={t("CRM field mapping")}
           meta={t("Every submission creates a CRM contact or updates the existing contact with the same email address.")}
           action={card.automation.hasUnpublishedChanges ? (
-            <Button className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] text-[13px] text-[var(--md-accent-ink)]" onClick={() => { publishAutomation(card.id); toast.success(t("CRM mapping saved")) }}>
-              {t("Save changes")}
+            <Button
+              className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] text-[13px] text-[var(--md-accent-ink)]"
+              disabled={automationMutation.saving !== null}
+              onClick={() => { void automationMutation.run("publish", () => publishAutomation(card.id), "CRM mapping saved") }}
+            >
+              {t(automationMutation.saving === "publish" ? "Saving…" : "Save changes")}
             </Button>
           ) : null}
         />
@@ -895,7 +932,7 @@ function CrmFieldMappingPanel({ card }: { card: ContactCard }) {
 
           <div>
             <div className="flex items-end justify-between gap-4">
-              <div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Form to CRM fields")}</p><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Choose where each answer is stored on the contact or lead.")}</p></div>
+              <div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Form to CRM fields")}</p><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Choose where each answer is stored on the contact or lead.")}</p><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Marketing consent is controlled by the card checkbox and captured automatically.")}</p></div>
               <Button variant="outline" className="h-8 rounded-[var(--md-radius-md)] text-[12px]" onClick={() => saveMappings([...mappings, { source: "fixed", target: "notes", value: "" }])}>
                 <Plus data-icon="inline-start" strokeWidth={1.4} />{t("Add field")}
               </Button>
@@ -906,7 +943,10 @@ function CrmFieldMappingPanel({ card }: { card: ContactCard }) {
                 <div key={`${mapping.target}-${index}`} className="grid gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-2 sm:grid-cols-[minmax(140px,0.8fr)_minmax(0,1fr)_20px_minmax(140px,0.8fr)_32px] sm:items-center">
                   <Select value={mapping.source} onValueChange={(source) => updateMapping(index, { source, value: source === "fixed" ? mapping.value : "" })}>
                     <SelectTrigger aria-label={t("Form answer")} className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-[13px]"><SelectValue /></SelectTrigger>
-                    <SelectContent>{formSourceOptions.map(([value, label]) => <SelectItem key={value} value={value}>{t(label)}</SelectItem>)}</SelectContent>
+                    <SelectContent>
+                      {mapping.source === "marketingConsent" ? <SelectItem value={legacyMarketingConsentOption[0]} disabled>{t(legacyMarketingConsentOption[1])}</SelectItem> : null}
+                      {formSourceOptions.map(([value, label]) => <SelectItem key={value} value={value}>{t(label)}</SelectItem>)}
+                    </SelectContent>
                   </Select>
                   {mapping.source === "fixed" ? (
                     <Input value={mapping.value ?? ""} onChange={(event) => updateMapping(index, { value: event.target.value })} aria-label={t("Fixed value")} placeholder={t("Enter a fixed value")} className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-base sm:text-[13px]" />
@@ -938,6 +978,7 @@ function LegacyCardAutomationPanel({ card }: { card: ContactCard }) {
   const shouldReduceMotion = useReducedMotion()
   const { automation } = card
   const health = automationHealth(automation)
+  const automationMutation = useConfirmedAutomationMutation()
 
   const [editingCondition, setEditingCondition] = useState<AutomationCondition | null>(null)
   const [editingAction, setEditingAction] = useState<AutomationAction | null>(null)
@@ -992,8 +1033,7 @@ function LegacyCardAutomationPanel({ card }: { card: ContactCard }) {
       setPublishOpen(true)
       return
     }
-    publishAutomation(card.id)
-    toast.success(t("Automation published"))
+    void automationMutation.run("publish", () => publishAutomation(card.id), "Automation published")
   }
 
   function saveCondition(condition: AutomationCondition) {
@@ -1048,23 +1088,34 @@ function LegacyCardAutomationPanel({ card }: { card: ContactCard }) {
         actions={
           <>
             {automation.state === "active" ? (
-              <Button variant="outline" className="h-9 rounded-[var(--md-radius-md)] text-[13px]" onClick={() => pauseAutomation(card.id)}>
+              <Button
+                variant="outline"
+                className="h-9 rounded-[var(--md-radius-md)] text-[13px]"
+                disabled={automationMutation.saving !== null}
+                onClick={() => { void automationMutation.run("pause", () => pauseAutomation(card.id), "Automation paused") }}
+              >
                 <CirclePause data-icon="inline-start" strokeWidth={1.4} />
-                {t("Pause")}
+                {t(automationMutation.saving === "pause" ? "Saving…" : "Pause")}
               </Button>
             ) : (
-              <Button variant="outline" className="h-9 rounded-[var(--md-radius-md)] text-[13px]" onClick={() => resumeAutomation(card.id)}>
+              <Button
+                variant="outline"
+                className="h-9 rounded-[var(--md-radius-md)] text-[13px]"
+                disabled={automationMutation.saving !== null}
+                onClick={() => { void automationMutation.run("resume", () => resumeAutomation(card.id), "Automation resumed") }}
+              >
                 <CirclePlay data-icon="inline-start" strokeWidth={1.4} />
-                {automation.state === "off" ? t("Turn on") : t("Resume")}
+                {t(automationMutation.saving === "resume" ? "Saving…" : automation.state === "off" ? "Turn on" : "Resume")}
               </Button>
             )}
             {automation.state !== "off" ? (
               <Button
                 variant="ghost"
                 className="h-9 rounded-[var(--md-radius-md)] text-[13px] text-[var(--md-text)]"
-                onClick={() => turnAutomationOff(card.id)}
+                disabled={automationMutation.saving !== null}
+                onClick={() => { void automationMutation.run("off", () => turnAutomationOff(card.id), "Automation turned off") }}
               >
-                {t("Turn off")}
+                {t(automationMutation.saving === "off" ? "Saving…" : "Turn off")}
               </Button>
             ) : null}
           </>
@@ -1171,10 +1222,11 @@ function LegacyCardAutomationPanel({ card }: { card: ContactCard }) {
         card={card}
         open={publishOpen}
         onOpenChange={setPublishOpen}
+        confirming={automationMutation.saving === "publish"}
         onConfirm={() => {
-          publishAutomation(card.id)
-          setPublishOpen(false)
-          toast.success(t("Automation is live"))
+          void automationMutation.run("publish", () => publishAutomation(card.id), "Automation is live").then((saved) => {
+            if (saved) setPublishOpen(false)
+          })
         }}
       />
     </div>
@@ -1184,6 +1236,7 @@ function LegacyCardAutomationPanel({ card }: { card: ContactCard }) {
 /** Compact automation summary for the card overview. */
 export function AutomationSummaryBand({ card, onOpen }: { card: ContactCard; onOpen: () => void }) {
   const { t } = useLanguage()
+  const automationMutation = useConfirmedAutomationMutation()
   const health = automationHealth(card.automation)
   const enabled = card.automation.actions.filter((action) => action.enabled).length
 
@@ -1200,9 +1253,14 @@ export function AutomationSummaryBand({ card, onOpen }: { card: ContactCard; onO
       actions={
         <>
           {card.automation.state === "active" ? (
-            <Button variant="outline" className="h-9 rounded-[var(--md-radius-md)] text-[13px]" onClick={() => pauseAutomation(card.id)}>
+            <Button
+              variant="outline"
+              className="h-9 rounded-[var(--md-radius-md)] text-[13px]"
+              disabled={automationMutation.saving !== null}
+              onClick={() => { void automationMutation.run("pause", () => pauseAutomation(card.id), "Automation paused") }}
+            >
               <CirclePause data-icon="inline-start" strokeWidth={1.4} />
-              {t("Pause")}
+              {t(automationMutation.saving === "pause" ? "Saving…" : "Pause")}
             </Button>
           ) : null}
           <Button variant="ghost" className="h-9 rounded-[var(--md-radius-md)] text-[13px] text-[var(--md-text)]" onClick={onOpen}>
@@ -1217,6 +1275,7 @@ export function AutomationSummaryBand({ card, onOpen }: { card: ContactCard; onO
 /** Exposed for the settings tab so a card can opt out entirely. */
 export function AutomationEnableRow({ card }: { card: ContactCard }) {
   const { t } = useLanguage()
+  const automationMutation = useConfirmedAutomationMutation()
 
   return (
     <div className="flex items-center justify-between gap-4">
@@ -1229,7 +1288,14 @@ export function AutomationEnableRow({ card }: { card: ContactCard }) {
       <Switch
         checked={card.automation.state !== "off"}
         aria-label={t("Run an automation on every exchange")}
-        onCheckedChange={(checked) => (checked ? resumeAutomation(card.id) : turnAutomationOff(card.id))}
+        disabled={automationMutation.saving !== null}
+        onCheckedChange={(checked) => {
+          void automationMutation.run(
+            checked ? "resume" : "off",
+            () => checked ? resumeAutomation(card.id) : turnAutomationOff(card.id),
+            checked ? "Automation resumed" : "Automation turned off",
+          )
+        }}
       />
     </div>
   )

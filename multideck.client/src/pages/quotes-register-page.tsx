@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { ArrowUpRight, Search, X } from "@/components/icons/hugeicons"
 
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
+import { RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { Pagination } from "@/components/multideck/pagination"
@@ -9,17 +11,52 @@ import { Input } from "@/components/ui/input"
 import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
 import {
   createEmptyQuoteSearch,
-  quoteMatchesSearch,
   quoteSearchFieldOptions,
   type QuoteSearchQuery,
 } from "@/lib/quote-filters"
+import { filterQueryIsEmpty } from "@/lib/advanced-filters"
 import { StatusPill } from "@/components/multideck/status-pill"
 import type { QuoteRegisterRecord } from "@/data/quote-register-data"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
-import { listSalesQuotes } from "@/lib/quote-api"
+import { type RegisterSort } from "@/lib/application-data-api"
+import { listSalesQuotesPage } from "@/lib/quote-api"
+import type { AuthUserSummary } from "@/lib/auth-user"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
+const quoteTableStorageKey = "quote-register"
+const quoteScopes = ["All", "Mine"] as const
+type QuoteScope = (typeof quoteScopes)[number]
+
+function withQuoteOwnerScope(query: QuoteSearchQuery, scope: QuoteScope, ownerName?: string | null): QuoteSearchQuery {
+  const owner = ownerName?.trim()
+  if (scope !== "Mine" || !owner) return query
+
+  return {
+    match: "all",
+    groups: [
+      ...query.groups,
+      {
+        id: "quote-owner-scope",
+        match: "any",
+        conditions: [
+          { id: "quote-sales-owner", field: "salesOwner", operator: "is", value: owner },
+          { id: "quote-operations-owner", field: "operationsOwner", operator: "is", value: owner },
+        ],
+      },
+    ],
+  }
+}
+
+function readSavedSort(storageKey: string, fallback: RegisterSort): RegisterSort {
+  if (typeof window === "undefined") return fallback
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(`multideck.table.${storageKey}`) ?? "null") as { sort?: RegisterSort | null } | null
+    return saved?.sort?.id && (saved.sort.direction === "asc" || saved.sort.direction === "desc") ? saved.sort : fallback
+  } catch {
+    return fallback
+  }
+}
 
 function formatDate(value: string, locale: string) {
   const parsed = new Date(`${value}T12:00:00Z`)
@@ -31,47 +68,60 @@ function ltrValue(value: ReactNode, className = "") {
   return <span data-i18n-skip dir="ltr" className={className}>{value}</span>
 }
 
-export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => void }) {
+export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path: string) => void; currentUser?: AuthUserSummary | null }) {
   const { language, t } = useLanguage()
   const [search, setSearch] = useState<QuoteSearchQuery>(createEmptyQuoteSearch)
   const [quickSearch, setQuickSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "")
+  const [scope, setScope] = useState<QuoteScope>("All")
+  const [debouncedQuickSearch, setDebouncedQuickSearch] = useState(quickSearch)
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [serverSort, setServerSort] = useState<RegisterSort | null>(() => readSavedSort(quoteTableStorageKey, { id: "updatedAt", direction: "desc" }))
   const [dexterOpen, setDexterOpen] = useState(false)
   const [quotes, setQuotes] = useState<QuoteRegisterRecord[]>([])
+  const [quoteTotal, setQuoteTotal] = useState(0)
+  const [availableQuoteTotal, setAvailableQuoteTotal] = useState(0)
   const [quotesLoading, setQuotesLoading] = useState(true)
   const [quotesError, setQuotesError] = useState<string | null>(null)
 
   useEffect(() => {
-    let cancelled = false
-    setQuotesLoading(true)
-    setQuotesError(null)
-    void listSalesQuotes()
-      .then((records) => { if (!cancelled) setQuotes(records) })
-      .catch((error) => { if (!cancelled) setQuotesError(error instanceof Error ? error.message : "Quotes could not be loaded.") })
-      .finally(() => { if (!cancelled) setQuotesLoading(false) })
-    return () => { cancelled = true }
-  }, [])
-
-  const matchesQuickSearch = useCallback((quote: QuoteRegisterRecord) => {
-    const quickQuery = quickSearch.trim().toLocaleLowerCase()
-    if (!quickQuery) return true
-    return Object.entries(quote)
-      .filter(([key]) => key !== "statusTone" && key !== "priorityTone")
-      .some(([, value]) => String(value ?? "").toLocaleLowerCase().includes(quickQuery))
+    const timer = globalThis.setTimeout(() => setDebouncedQuickSearch(quickSearch), 250)
+    return () => globalThis.clearTimeout(timer)
   }, [quickSearch])
 
-  const filteredQuotes = useMemo(
-    () => quotes.filter((quote) => quoteMatchesSearch(quote, search) && matchesQuickSearch(quote)),
-    [matchesQuickSearch, quotes, search],
-  )
+  useEffect(() => {
+    const controller = new AbortController()
+    setQuotesLoading(true)
+    setQuotesError(null)
+    void listSalesQuotesPage({
+      search: debouncedQuickSearch,
+      filterQuery: withQuoteOwnerScope(search, scope, currentUser?.name),
+      sort: serverSort,
+      limit: rowsPerPage,
+      offset: (page - 1) * rowsPerPage,
+    }, controller.signal).then((result) => {
+      setQuotes(result.rows)
+      setQuoteTotal(result.total)
+      setAvailableQuoteTotal(result.availableTotal)
+    }).catch((error) => {
+      if ((error as { name?: string })?.name !== "AbortError") {
+        setQuotesError(error instanceof Error ? error.message : "Quotes could not be loaded.")
+      }
+    }).finally(() => {
+      if (!controller.signal.aborted) setQuotesLoading(false)
+    })
+    return () => controller.abort()
+  }, [currentUser?.name, debouncedQuickSearch, page, rowsPerPage, scope, search, serverSort])
+
   /** Lets the filter panel show how many quotes a draft would return before it is applied. */
-  const countDraftMatches = useCallback(
-    (draft: QuoteSearchQuery) => quotes.filter((quote) => quoteMatchesSearch(quote, draft) && matchesQuickSearch(quote)).length,
-    [matchesQuickSearch, quotes],
-  )
-  const pageCount = Math.max(Math.ceil(filteredQuotes.length / rowsPerPage), 1)
-  const paginatedQuotes = filteredQuotes.slice((page - 1) * rowsPerPage, page * rowsPerPage)
+  const countDraftMatches = useCallback((draft: QuoteSearchQuery) => listSalesQuotesPage({
+    search: quickSearch,
+    filterQuery: withQuoteOwnerScope(draft, scope, currentUser?.name),
+    sort: serverSort,
+    limit: 1,
+    offset: 0,
+  }).then((result) => result.total), [currentUser?.name, quickSearch, scope, serverSort])
+  const pageCount = Math.max(Math.ceil(quoteTotal / rowsPerPage), 1)
 
   function clearSearch() {
     setQuickSearch("")
@@ -79,7 +129,7 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
     setPage(1)
   }
 
-  useEffect(() => setPage(1), [rowsPerPage, search])
+  useEffect(() => setPage(1), [quickSearch, rowsPerPage, scope, search, serverSort])
   useEffect(() => {
     if (page > pageCount) setPage(pageCount)
   }, [page, pageCount])
@@ -179,7 +229,7 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
           <h1 className="shrink-0 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Quotes")}</h1>
           <div className="min-w-0 text-[12px] leading-5">
             <p className="font-medium text-[var(--md-text)]">
-              {t("Quote register")} · <span data-i18n-skip dir="ltr">{new Intl.NumberFormat(language).format(filteredQuotes.length)}</span> {t("quotes")}
+              {t("Quote register")} · <span data-i18n-skip dir="ltr">{new Intl.NumberFormat(language).format(quoteTotal)}</span> {t("quotes")}
             </p>
             <p className="text-[var(--md-subtle)]">
               {t("Search, review and open every customer quote from one place.")}
@@ -197,11 +247,21 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
         ariaLabel="Quote register"
         columnsButtonLabel="Manage quote columns"
         columns={columns}
-        rows={quotesLoading ? [] : paginatedQuotes}
+        rows={quotesLoading ? [] : quotes}
         getRowKey={(quote) => quote.reference}
-        storageKey="quote-register"
+        storageKey={quoteTableStorageKey}
+        serverSorting={{ value: serverSort, onChange: setServerSort }}
         rowClassName="hover:bg-[var(--md-hover)]"
         onRowClick={(quote) => navigate(`/quotes/${quote.reference.toLowerCase()}`)}
+        toolbarTabs={(
+          <RegisterViewSwitch
+            options={quoteScopes}
+            value={scope}
+            onChange={setScope}
+            ariaLabel={t("Quote ownership")}
+            compact
+          />
+        )}
         toolbarSearch={(
           <div className="relative min-w-[128px] max-w-[280px] flex-1 sm:min-w-[200px] sm:flex-none">
               <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.35} aria-hidden="true" />
@@ -239,11 +299,16 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
               title="Advanced quote search"
               itemLabel="quotes"
               countMatches={countDraftMatches}
-              totalCount={quotes.length}
+              totalCount={availableQuoteTotal}
             />
         )}
         emptyState={quotesLoading ? (
-          <div className="mx-auto grid max-w-sm place-items-center py-8 text-center text-[13px] text-[var(--md-text)]">{t("Loading quotes...")}</div>
+          <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading quotes…" /></div>
+        ) : scope === "Mine" && !quickSearch && filterQueryIsEmpty(search) ? (
+          <div className="mx-auto grid max-w-sm place-items-center py-5 text-center">
+            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No quotes assigned to you")}</p>
+            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Quotes appear here when you are set as the sales or operations owner.")}</p>
+          </div>
         ) : (
           <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
             <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
@@ -261,12 +326,15 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
       <Pagination
         page={page}
         pageCount={pageCount}
-        totalItems={filteredQuotes.length}
+        totalItems={quoteTotal}
         pageSize={rowsPerPage}
         pageSizeOptions={rowsPerPageOptions}
         itemLabel="quotes"
         onPageChange={setPage}
-        onPageSizeChange={setRowsPerPage}
+        onPageSizeChange={(nextRowsPerPage) => {
+          setRowsPerPage(nextRowsPerPage)
+          setPage(1)
+        }}
       />
     </DexterDockedPage>
   )

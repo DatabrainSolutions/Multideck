@@ -10,6 +10,7 @@ import { markCoverOffset, resolveCardLayout, type CardLayoutSpec, type CardMarkS
 import { readableInk } from "@/lib/color"
 import { CARD_SOCIAL_LABELS, type CardSocialKind, type ContactCard } from "@/data/contact-card-data"
 import { cn } from "@/lib/utils"
+import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 
 export type PublicFormValues = {
   firstName: string
@@ -50,7 +51,7 @@ export function PublicCardShell({
   children: ReactNode
 }) {
   const { t } = useLanguage()
-  const theme = useMemo(() => resolveCardTheme(card?.branding ?? { accent: "#1f6f68", theme: "light", headerStyle: "bar", layout: "classic", cornerStyle: "soft", logoDataUrl: null, logoInQr: false, qrModuleStyle: "rounded", qrEyeStyle: "rounded", qrDark: "#0b1413", qrLight: "#ffffff" }), [card?.branding])
+  const theme = useMemo(() => resolveCardTheme(card?.branding ?? { accent: "#1f6f68", theme: "light", headerStyle: "bar", layout: "classic", cornerStyle: "soft", logoDataUrl: null, logoInQr: false, qrModuleStyle: "rounded", qrEyeStyle: "rounded", qrErrorCorrection: "M", qrLogoSize: "medium", qrQuietZone: 4, qrDark: "#0b1413", qrLight: "#ffffff" }), [card?.branding])
 
   const style = { ...cardThemeVariables(theme), fontSize: `${scale}rem` } as CSSProperties
   const spec = resolveCardLayout(card?.branding.layout)
@@ -897,5 +898,23 @@ export function PublicCardPhases({ phase, form, exchange }: { phase: "form" | "d
 
 export function PublicCardFooter() {
   const { t } = useLanguage()
-  return <p className="mt-12 text-[11.5px] text-[var(--card-subtle)]">{t("Powered by Multideck")}</p>
+  return (
+    <div className="mt-8 flex w-full justify-center">
+      <span
+        role="img"
+        aria-label={t("Multideck")}
+        className="block h-[20px] w-[93px] bg-[var(--card-subtle)] opacity-80"
+        style={{
+          WebkitMaskImage: `url(${multideckFullLogo})`,
+          maskImage: `url(${multideckFullLogo})`,
+          WebkitMaskPosition: "center",
+          maskPosition: "center",
+          WebkitMaskRepeat: "no-repeat",
+          maskRepeat: "no-repeat",
+          WebkitMaskSize: "contain",
+          maskSize: "contain",
+        }}
+      />
+    </div>
+  )
 }

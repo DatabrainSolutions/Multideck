@@ -369,6 +369,7 @@ export type DriveFolderTileProps = {
   onCancelRename: () => void
   onCustomise: (folder: DriveFolder) => void
   onDelete: (folder: DriveFolder) => void
+  canEdit?: boolean
 }
 
 export function DriveFolderTile({
@@ -381,6 +382,7 @@ export function DriveFolderTile({
   onCancelRename,
   onCustomise,
   onDelete,
+  canEdit = true,
 }: DriveFolderTileProps) {
   const { t } = useLanguage()
   const Icon = folderIconGlyphs[folder.icon]
@@ -427,7 +429,7 @@ export function DriveFolderTile({
             <span className="grid min-w-0 gap-1">
               <DriveInlineName
                 value={folder.name}
-                editing={renaming}
+                editing={canEdit && renaming}
                 className="text-[13px] font-medium leading-5 text-[var(--md-ink)]"
                 onCommit={(next) => onRename(folder, next)}
                 onCancel={onCancelRename}
@@ -443,19 +445,23 @@ export function DriveFolderTile({
           <FolderOpen strokeWidth={1.3} />
           Open
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => onStartRename(folder)}>
-          <Pencil strokeWidth={1.3} />
-          Rename
-        </ContextMenuItem>
-        <ContextMenuItem onSelect={() => onCustomise(folder)}>
-          <Palette strokeWidth={1.3} />
-          Colour and icon
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem variant="destructive" onSelect={() => onDelete(folder)}>
-          <Trash2 strokeWidth={1.3} />
-          Delete
-        </ContextMenuItem>
+        {canEdit ? (
+          <>
+            <ContextMenuItem onSelect={() => onStartRename(folder)}>
+              <Pencil strokeWidth={1.3} />
+              Rename
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => onCustomise(folder)}>
+              <Palette strokeWidth={1.3} />
+              Colour and icon
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem variant="destructive" onSelect={() => onDelete(folder)}>
+              <Trash2 strokeWidth={1.3} />
+              Delete
+            </ContextMenuItem>
+          </>
+        ) : null}
       </ContextMenuContent>
     </ContextMenu>
   )
@@ -475,6 +481,10 @@ export type DriveFileTileProps = {
   onCancelRename: () => void
   onDownload: (file: DriveFile) => void
   onDelete: (file: DriveFile) => void
+  canEdit?: boolean
+  pendingError?: string | null
+  onRetry?: (file: DriveFile) => void
+  onDismiss?: (file: DriveFile) => void
 }
 
 export function DriveFileTile({
@@ -489,7 +499,12 @@ export function DriveFileTile({
   onCancelRename,
   onDownload,
   onDelete,
+  canEdit = true,
+  pendingError = null,
+  onRetry,
+  onDismiss,
 }: DriveFileTileProps) {
+  const { t } = useLanguage()
   const { pressed, handlers } = usePressed()
   const meta = `${driveFileTypeLabel(file)} · ${formatDriveBytes(file.sizeBytes)}`
 
@@ -498,7 +513,7 @@ export function DriveFileTile({
       role="button"
       tabIndex={0}
       aria-label={`${file.name}, ${meta}`}
-      aria-busy={pending || undefined}
+      aria-busy={(pending && !pendingError) || undefined}
       data-pressed={pressed && !renaming && !pending ? "true" : undefined}
       className="md-drive-file cursor-default"
       {...handlers}
@@ -514,7 +529,7 @@ export function DriveFileTile({
       <span className="grid min-w-0 gap-0.5 px-2">
         <DriveInlineName
           value={file.name}
-          editing={renaming}
+          editing={canEdit && renaming}
           className="text-[12.5px] font-medium leading-[18px] text-[var(--md-ink)]"
           onCommit={(next) => onRename(file, next)}
           onCancel={onCancelRename}
@@ -522,6 +537,33 @@ export function DriveFileTile({
         <span className="truncate text-[11px] leading-4 text-[var(--md-subtle)]" data-i18n-skip dir="ltr">
           {meta}
         </span>
+        {pendingError ? (
+          <span className="grid gap-1 pb-1" role="alert">
+            <span className="truncate text-[11px] text-[var(--md-red)]" title={pendingError}>{t("Upload failed")}</span>
+            <span className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                className="min-h-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-2 text-[11px] font-medium text-[var(--md-accent-ink)]"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onRetry?.(file)
+                }}
+              >
+                {t("Retry")}
+              </button>
+              <button
+                type="button"
+                className="min-h-8 rounded-[var(--md-radius-md)] px-2 text-[11px] text-[var(--md-text)] hover:bg-[var(--md-hover)]"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onDismiss?.(file)
+                }}
+              >
+                {t("Dismiss")}
+              </button>
+            </span>
+          </span>
+        ) : null}
       </span>
     </div>
   )
@@ -538,19 +580,25 @@ export function DriveFileTile({
           <Eye strokeWidth={1.3} />
           Preview
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => onStartRename(file)}>
-          <Pencil strokeWidth={1.3} />
-          Rename
-        </ContextMenuItem>
+        {canEdit ? (
+          <ContextMenuItem onSelect={() => onStartRename(file)}>
+            <Pencil strokeWidth={1.3} />
+            Rename
+          </ContextMenuItem>
+        ) : null}
         <ContextMenuItem onSelect={() => onDownload(file)}>
           <Download strokeWidth={1.3} />
           Download
         </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem variant="destructive" onSelect={() => onDelete(file)}>
-          <Trash2 strokeWidth={1.3} />
-          Delete
-        </ContextMenuItem>
+        {canEdit ? (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem variant="destructive" onSelect={() => onDelete(file)}>
+              <Trash2 strokeWidth={1.3} />
+              Delete
+            </ContextMenuItem>
+          </>
+        ) : null}
       </ContextMenuContent>
     </ContextMenu>
   )
@@ -850,6 +898,7 @@ export function DriveFilePreviewDialog({
   onOpenChange,
   onDownload,
   onDelete,
+  canDelete = true,
 }: {
   file: DriveFile | null
   url: string | null
@@ -857,6 +906,7 @@ export function DriveFilePreviewDialog({
   onOpenChange: (open: boolean) => void
   onDownload: (file: DriveFile) => void
   onDelete: (file: DriveFile) => void
+  canDelete?: boolean
 }) {
   const { t } = useLanguage()
   const [loaded, setLoaded] = useState(false)
@@ -947,14 +997,16 @@ export function DriveFilePreviewDialog({
         </div>
 
         <DialogFooter className="bg-[var(--md-surface-soft)]">
-          <Button
-            variant="ghost"
-            className="h-9 rounded-[var(--md-radius-lg)] px-3 text-[13px] text-[var(--md-red)] hover:bg-[color-mix(in_srgb,var(--md-red)_10%,transparent)]"
-            onClick={() => onDelete(file)}
-          >
-            <Trash2 data-icon="inline-start" strokeWidth={1.3} />
-            {t("Delete")}
-          </Button>
+          {canDelete ? (
+            <Button
+              variant="ghost"
+              className="h-9 rounded-[var(--md-radius-lg)] px-3 text-[13px] text-[var(--md-red)] hover:bg-[color-mix(in_srgb,var(--md-red)_10%,transparent)]"
+              onClick={() => onDelete(file)}
+            >
+              <Trash2 data-icon="inline-start" strokeWidth={1.3} />
+              {t("Delete")}
+            </Button>
+          ) : null}
           <Button
             className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]"
             onClick={() => onDownload(file)}
@@ -1041,11 +1093,15 @@ export function DriveSurfaceContextMenu({
   children,
   onCreateFolder,
   onUpload,
+  canEdit = true,
 }: {
   children: ReactNode
   onCreateFolder: () => void
   onUpload: () => void
+  canEdit?: boolean
 }) {
+  if (!canEdit) return children
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
