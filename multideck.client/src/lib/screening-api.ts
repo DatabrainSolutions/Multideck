@@ -30,6 +30,7 @@ export type ScreeningMatch = {
   listedOn: string | null
   ukRef: string | null
   country: string | null
+  listingNotes?: string | null
 }
 
 export type ScreeningCheck = {
@@ -39,6 +40,7 @@ export type ScreeningCheck = {
   orgId?: string | null
   outcome: ScreeningOutcome
   matchCount: number
+  totalCount?: number
   listStale: boolean
   listAgeHours: number | null
   createdAt: string

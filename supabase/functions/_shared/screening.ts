@@ -36,48 +36,86 @@ export function normalizeScreeningName(value: unknown) {
   return tokens.join(" ") || null
 }
 
-export function parseCsv(text: string) {
-  const rows: string[][] = []
+export function createCsvParser(onRow: (row: string[]) => void) {
   let row: string[] = []
   let field = ""
   let quoted = false
+  let quotePending = false
 
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index]
-    const next = text[index + 1]
-    if (quoted) {
-      if (char === '"' && next === '"') {
-        field += '"'
-        index += 1
-      } else if (char === '"') {
-        quoted = false
-      } else {
-        field += char
-      }
-      continue
-    }
+  const commitRow = () => {
+    row.push(field)
+    if (row.some((value) => value.trim())) onRow(row)
+    row = []
+    field = ""
+  }
+
+  const handleUnquoted = (char: string, next: string | undefined) => {
     if (char === '"') {
       quoted = true
-      continue
+      return 0
     }
     if (char === ",") {
       row.push(field)
       field = ""
-      continue
+      return 0
     }
-    if (char === "\n" || (char === "\r" && next === "\n")) {
-      row.push(field)
-      if (row.some((value) => value.trim())) rows.push(row)
-      row = []
-      field = ""
-      if (char === "\r") index += 1
-      continue
+    if (char === "\n") {
+      commitRow()
+      return 0
     }
-    if (char !== "\r") field += char
+    if (char === "\r") {
+      commitRow()
+      return next === "\n" ? 1 : 0
+    }
+    field += char
+    return 0
   }
 
-  row.push(field)
-  if (row.some((value) => value.trim())) rows.push(row)
+  return {
+    push(text: string) {
+      for (let index = 0; index < text.length; index += 1) {
+        const char = text[index]
+        const next = text[index + 1]
+        if (quotePending) {
+          quotePending = false
+          if (char === '"') {
+            field += '"'
+            continue
+          }
+          quoted = false
+          index += handleUnquoted(char, next)
+          continue
+        }
+        if (quoted) {
+          if (char === '"') {
+            if (next === '"') {
+              field += '"'
+              index += 1
+            } else if (next === undefined) {
+              quotePending = true
+            } else {
+              quoted = false
+            }
+            continue
+          }
+          field += char
+          continue
+        }
+        index += handleUnquoted(char, next)
+      }
+    },
+    end() {
+      if (quotePending) quoted = false
+      if (quoted || field || row.length) commitRow()
+    },
+  }
+}
+
+export function parseCsv(text: string) {
+  const rows: string[][] = []
+  const parser = createCsvParser((row) => rows.push(row))
+  parser.push(text)
+  parser.end()
   return rows
 }
 
@@ -110,53 +148,138 @@ function ukRefFrom(row: Map<string, string>) {
   return matched?.[1] ?? null
 }
 
-function headerRowIndex(rows: string[][]) {
-  return rows.findIndex((row) => {
-    const keys = row.map(headerKey)
-    return keys.includes("group id") && keys.includes("name 1")
+function isHeaderRow(values: string[]) {
+  const keys = values.map(headerKey)
+  return keys.includes("group id") && keys.includes("name 1")
+}
+
+function ofsiEntryFromValues(keys: string[], values: string[]): ParsedScreeningEntry | null {
+  const row = new Map(keys.map((key, index) => [key, values[index] ?? ""]))
+  const groupId = cell(row, "group id", "ofsi group id")
+  const name = [
+    cell(row, "name 1"),
+    cell(row, "name 2"),
+    cell(row, "name 3"),
+    cell(row, "name 4"),
+    cell(row, "name 5"),
+    cell(row, "name 6"),
+    cell(row, "title"),
+  ].filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
+  const normalizedName = normalizeScreeningName(name)
+  if (!groupId || !name || !normalizedName) return null
+  return {
+    groupId,
+    uniqueId: cell(row, "unique id"),
+    name: name.slice(0, 500),
+    normalizedName: normalizedName.slice(0, 500),
+    aliasType: cell(row, "alias type"),
+    groupType: cell(row, "group type"),
+    regime: cell(row, "regime name", "regime"),
+    country: cell(row, "country"),
+    listedOn: listedOn(cell(row, "listed on")),
+    ukRef: ukRefFrom(row),
+    otherInformation: extractOfsiListingNotes(cell(row, "other information")),
+  }
+}
+
+export function extractOfsiListingNotes(other: string | null) {
+  if (!other?.trim()) return null
+  const fields = parseOfsiTaggedFields(other)
+  const statement = firstTaggedValue(fields, "UK Statement of Reasons", "Statement of Reasons")
+  if (statement) return clipListingNotes(statement)
+
+  const narrative: string[] = []
+  for (const [label, value] of fields) {
+    const rest = adminTagRemainder(label, value)
+    if (rest) narrative.push(rest)
+  }
+  if (narrative.length) return clipListingNotes(narrative.join(" "))
+
+  const stripped = other
+    .replace(/\(UK Sanctions List Ref\):\s*[A-Z0-9/-]+\.?\s*/gi, "")
+    .replace(/\(UN Ref\):\s*[A-Za-z0-9.]+\.?\s*/g, "")
+    .replace(/\(Gender\):\s*[A-Za-z]+\.?\s*/gi, "")
+    .trim()
+  return stripped ? clipListingNotes(stripped) : null
+}
+
+function parseOfsiTaggedFields(other: string) {
+  const tag = /\(([^)]+)\):\s*/g
+  const tags: { label: string; start: number; end: number }[] = []
+  let matched: RegExpExecArray | null
+  while ((matched = tag.exec(other))) {
+    tags.push({
+      label: matched[1].trim(),
+      start: matched.index,
+      end: matched.index + matched[0].length,
+    })
+  }
+  const fields = new Map<string, string>()
+  for (let index = 0; index < tags.length; index += 1) {
+    const from = tags[index].end
+    const to = index + 1 < tags.length ? tags[index + 1].start : other.length
+    fields.set(tags[index].label, other.slice(from, to).replace(/[.\s]+$/u, "").trim())
+  }
+  return fields
+}
+
+function firstTaggedValue(fields: Map<string, string>, ...names: string[]) {
+  for (const name of names) {
+    const value = fields.get(name)?.trim()
+    if (value) return value
+  }
+  return null
+}
+
+function adminTagRemainder(label: string, value: string) {
+  if (/sanctions list ref/i.test(label)) {
+    return value.replace(/^[A-Z0-9][A-Z0-9/-]*\.?\s*/u, "").trim()
+  }
+  if (/^un ref$/i.test(label)) {
+    return value.replace(/^[A-Za-z0-9.]+\.?\s*/u, "").trim()
+  }
+  if (/^gender$/i.test(label)) {
+    return value.replace(/^(male|female)\.?\s*/iu, "").trim()
+  }
+  return ""
+}
+
+function clipListingNotes(value: string) {
+  const clipped = value.replace(/\s+/g, " ").trim()
+  return clipped ? clipped.slice(0, 4000) : null
+}
+
+export function createOfsiEntryParser(onEntry: (entry: ParsedScreeningEntry) => void) {
+  let keys: string[] | null = null
+  let entryCount = 0
+  const csv = createCsvParser((values) => {
+    if (!keys) {
+      if (isHeaderRow(values)) keys = values.map(headerKey)
+      return
+    }
+    const entry = ofsiEntryFromValues(keys, values)
+    if (!entry) return
+    entryCount += 1
+    onEntry(entry)
   })
+
+  return {
+    push(text: string) {
+      csv.push(text)
+    },
+    end() {
+      csv.end()
+      if (!keys) throw new Error("The OFSI list did not include a header row.")
+      if (!entryCount) throw new Error("The OFSI list did not contain any usable names.")
+    },
+  }
 }
 
 export function parseOfsiEntries(csvText: string) {
-  const rows = parseCsv(csvText.replace(/^\uFEFF/, ""))
-  const headerIndex = headerRowIndex(rows)
-  const header = headerIndex >= 0 ? rows[headerIndex] : null
-  if (!header?.length) throw new Error("The OFSI list did not include a header row.")
-
-  const keys = header.map(headerKey)
   const entries: ParsedScreeningEntry[] = []
-
-  for (const values of rows.slice(headerIndex + 1)) {
-    const row = new Map(keys.map((key, index) => [key, values[index] ?? ""]))
-    const groupId = cell(row, "group id", "ofsi group id")
-    const name = [
-      cell(row, "name 1"),
-      cell(row, "name 2"),
-      cell(row, "name 3"),
-      cell(row, "name 4"),
-      cell(row, "name 5"),
-      cell(row, "name 6"),
-      cell(row, "title"),
-    ].filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
-    const normalizedName = normalizeScreeningName(name)
-    if (!groupId || !name || !normalizedName) continue
-
-    entries.push({
-      groupId,
-      uniqueId: cell(row, "unique id"),
-      name,
-      normalizedName,
-      aliasType: cell(row, "alias type"),
-      groupType: cell(row, "group type"),
-      regime: cell(row, "regime name", "regime"),
-      country: cell(row, "country"),
-      listedOn: listedOn(cell(row, "listed on")),
-      ukRef: ukRefFrom(row),
-      otherInformation: cell(row, "other information")?.slice(0, 500) ?? null,
-    })
-  }
-
-  if (!entries.length) throw new Error("The OFSI list did not contain any usable names.")
+  const parser = createOfsiEntryParser((entry) => entries.push(entry))
+  parser.push(csvText.replace(/^\uFEFF/, ""))
+  parser.end()
   return entries
 }
 

@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner"
 import { useLanguage } from "@/i18n/language-provider"
 import { getScreeningCheck, getScreeningWorkspace, runScreeningCheck, type ScreeningCheck } from "@/lib/screening-api"
-import { ScreeningMatchRow, ScreeningOutcomePill } from "@/components/multideck/screening-components"
+import { ScreeningMatchList, ScreeningOutcomePill, ScreeningResultSummary } from "@/components/multideck/screening-components"
 import { getCustomer, getCustomerDocumentUrl, listContactsPage, listCustomerDocuments, type ApiCustomerDetail, type ApiCustomerDocument, type ApiCustomerDocumentListing, type ContactRegisterPage } from "@/lib/customer-api"
 import { setMarketingOptIn, type MarketingConsentRecordType } from "@/lib/marketing-consent-api"
 import { getWarehousePortalReference, inviteWarehousePortalUser, listWarehousePortalUsersPage, revokeWarehousePortalUser, sendWarehousePortalAccessLink, updateWarehousePortalUser, type WarehousePortalReference, type WarehousePortalUser } from "@/lib/warehouse"
@@ -389,9 +389,10 @@ function CustomerScreening({ customerId, customerName }: { customerId: string; c
       </div>
       {error ? <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-3 text-[12px] text-[var(--md-red)]">{error}</p> : null}
       {loading ? <div className="grid min-h-16 place-items-center border-t border-[rgba(11,20,19,0.06)]"><LoaderCircle className="size-4 animate-spin text-[var(--md-accent)]" /></div> : null}
-      {!loading && check?.matches?.length ? check.matches.map((match) => <ScreeningMatchRow key={`${match.groupId}-${match.listedName}`} match={match} />) : null}
-      {!loading && check && !check.matches?.length ? <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-text)]">{t("No listed names matched this search.")}</p> : null}
-      {!loading && !check && !error ? <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-text)]">{t("No screening has been run for this customer yet.")}</p> : null}
+      {!loading && check ? <ScreeningResultSummary subjectName={check.subjectName} country={check.country} outcome={check.outcome} /> : null}
+      {!loading && check?.matches?.length ? <ScreeningMatchList matches={check.matches} /> : null}
+      {!loading && check && !check.matches?.length && check.outcome !== "clear" && check.outcome !== "unavailable" ? <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-text)]">{t("No listed names matched this search.")}</p> : null}
+      {!loading && !check && !error ? <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-text)]">{t("No screening results are recorded in the last 3 months.")}</p> : null}
     </Surface>
   )
 }

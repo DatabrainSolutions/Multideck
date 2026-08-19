@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react"
 import { LoaderCircle, RefreshCw, ShieldCheck } from "@/components/icons/hugeicons"
-import { ScreeningListFreshness, ScreeningMatchRow, ScreeningOutcomePill } from "@/components/multideck/screening-components"
+import { ScreeningListFreshness, ScreeningMatchList, ScreeningOutcomePill, ScreeningResultSummary } from "@/components/multideck/screening-components"
 import { Surface } from "@/components/multideck/surface"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -124,6 +124,9 @@ export function ScreeningPage() {
                 {t(running ? "Screening…" : "Screen")}
               </Button>
             </form>
+            <p className="mt-3 text-[12px] leading-5 text-[var(--md-text)]">
+              {t("Exact names and close spellings are both returned. Similar names are treated as possible matches.")}
+            </p>
             {error ? <p className="mt-3 text-[12px] text-[var(--md-red)]">{error}</p> : null}
           </Surface>
 
@@ -134,13 +137,12 @@ export function ScreeningPage() {
             </div>
             {active ? (
               <div>
-                <p className="px-5 pb-3 text-[13px] text-[var(--md-text)]">
-                  {active.subjectName}
-                  {active.country ? ` · ${active.country}` : ""}
-                </p>
+                <ScreeningResultSummary subjectName={active.subjectName} country={active.country} outcome={active.outcome} />
                 {active.matches?.length
-                  ? active.matches.map((match) => <ScreeningMatchRow key={`${match.groupId}-${match.listedName}`} match={match} />)
-                  : <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-text)]">{t("No listed names matched this search.")}</p>}
+                  ? <ScreeningMatchList matches={active.matches} />
+                  : active.outcome === "clear" || active.outcome === "unavailable"
+                    ? null
+                    : <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-text)]">{t("No listed names matched this search.")}</p>}
               </div>
             ) : (
               <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-text)]">{t("Screen a name to see the current list result here.")}</p>
@@ -151,6 +153,7 @@ export function ScreeningPage() {
         <Surface className="overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
           <div className="px-5 py-4">
             <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Recent screens")}</h2>
+            <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("from the last 3 months")}</p>
           </div>
           {loadState === "loading" ? (
             <div className="grid min-h-28 place-items-center border-t border-[rgba(11,20,19,0.06)]">
@@ -177,7 +180,7 @@ export function ScreeningPage() {
               </p>
             </button>
           )) : (
-            <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-text)]">{t("No screening results are recorded yet.")}</p>
+            <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-text)]">{t("No screening results are recorded in the last 3 months.")}</p>
           )}
         </Surface>
       </div>

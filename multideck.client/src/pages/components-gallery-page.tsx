@@ -87,7 +87,7 @@ import { ThreadSummary } from "@/components/multideck/thread-summary"
 import type { InboxThreadListItem, Mailbox, MailProvider, ThreadSummaryState } from "@/lib/inbox-api"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, TablePillKindContext, toneToVar } from "@/components/multideck/status-pill"
-import { ScreeningListFreshness, ScreeningMatchRow, ScreeningOutcomePill } from "@/components/multideck/screening-components"
+import { ScreeningListFreshness, ScreeningMatchList, ScreeningMatchRow, ScreeningOutcomePill, ScreeningResultSummary } from "@/components/multideck/screening-components"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
 import { AuthIdentityManager, AuthProviderSelector } from "@/components/multideck/auth-provider-selector"
 import { DashboardPriorityQueue } from "@/components/multideck/dashboard-priority-queue"
@@ -240,7 +240,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row"],
+    ids: ["pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
@@ -1398,8 +1398,34 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "screening-match-row" ? (
         <div className="w-full max-w-[640px] overflow-hidden rounded-[var(--md-radius-xl)] bg-white/60 shadow-[var(--md-shadow-line)]">
-          <ScreeningMatchRow match={{ groupId: "G-88", listedName: "ALFA SHIPPING LTD", matchKind: "exact", score: 1, regime: "Russia", groupType: "Entity", listedOn: "2022-03-01", ukRef: "RUS1234", country: "IR" }} />
-          <ScreeningMatchRow match={{ groupId: "G-88", listedName: "ALPHA SHIPPING", matchKind: "similar", score: 0.86, regime: "Russia", groupType: "Entity", listedOn: "2022-03-01", ukRef: "RUS1234", country: "IR" }} />
+          <ScreeningMatchRow match={{ groupId: "G-88", listedName: "ALFA SHIPPING LTD", matchKind: "exact", score: 1, regime: "Russia", groupType: "Entity", listedOn: "2022-03-01", ukRef: "RUS1234", country: "IR", listingNotes: "Involved in providing logistical support to the Russian government." }} />
+          <ScreeningMatchRow match={{ groupId: "G-88", listedName: "ALPHA SHIPPING", matchKind: "similar", score: 0.86, regime: "Russia", groupType: "Entity", listedOn: "2022-03-01", ukRef: "RUS1234", country: "IR", listingNotes: "Involved in providing logistical support to the Russian government." }} />
+        </div>
+      ) : null}
+
+      {id === "screening-match-list" ? (
+        <div className="w-full max-w-[640px] overflow-hidden rounded-[var(--md-radius-xl)] bg-white/60 shadow-[var(--md-shadow-line)]">
+          <ScreeningMatchList matches={[
+            "SHIPPING LTD", "SHIPPING", "TRADING", "LOGISTICS", "MARINE", "HOLDINGS", "INDUSTRIES",
+            "EXPORT", "AGENCY", "LINE", "GROUP", "PARTNERS", "SERVICES",
+          ].map((suffix, index) => ({
+            groupId: `G-${88 + index}`,
+            listedName: `ALFA ${suffix}`,
+            matchKind: index === 0 ? "exact" as const : "similar" as const,
+            score: index === 0 ? 1 : 0.86 - index * 0.002,
+            regime: index % 3 === 0 ? "Russia" : index % 3 === 1 ? "Iran" : "Belarus",
+            groupType: "Entity",
+            listedOn: index > 10 ? "2014-03-18" : "2022-03-01",
+            ukRef: `RUS${1234 + index}`,
+            country: "IR",
+            listingNotes: "Involved in providing logistical support to a designated government.",
+          }))} />
+        </div>
+      ) : null}
+
+      {id === "screening-result-summary" ? (
+        <div className="w-full max-w-[640px] overflow-hidden rounded-[var(--md-radius-xl)] bg-white/60 py-4 shadow-[var(--md-shadow-line)]">
+          <ScreeningResultSummary subjectName="ALFA SHIPPING LTD" country="IR" outcome="match" />
         </div>
       ) : null}
 

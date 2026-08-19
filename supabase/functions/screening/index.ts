@@ -26,6 +26,7 @@ function checkSummary(row: any) {
     orgId: row.ScreeningCheck_OrgID,
     outcome: row.ScreeningCheck_OutcomeCode,
     matchCount: row.ScreeningCheck_MatchCount,
+    totalCount: row.ScreeningCheck_MatchCount ?? 0,
     listStale: row.ScreeningCheck_ListStale,
     listAgeHours: row.ScreeningCheck_ListAgeHours == null ? null : Number(row.ScreeningCheck_ListAgeHours),
     createdAt: row.ScreeningCheck_CreatedAt,
@@ -33,12 +34,15 @@ function checkSummary(row: any) {
 }
 
 async function listChecks(admin: any, companyId: string, orgId?: string | null) {
+  const since = new Date()
+  since.setMonth(since.getMonth() - 3)
   let query = admin
     .from("CMP_ScreeningChecks")
     .select("ScreeningCheck_ID,ScreeningCheck_SubjectName,ScreeningCheck_Country,ScreeningCheck_OrgID,ScreeningCheck_OutcomeCode,ScreeningCheck_MatchCount,ScreeningCheck_ListStale,ScreeningCheck_ListAgeHours,ScreeningCheck_CreatedAt")
     .eq("ScreeningCheck_CompanyID", companyId)
+    .gte("ScreeningCheck_CreatedAt", since.toISOString())
     .order("ScreeningCheck_CreatedAt", { ascending: false })
-    .limit(40)
+    .limit(500)
   if (orgId) query = query.eq("ScreeningCheck_OrgID", orgId)
   const { data, error } = await query
   if (error) throw new HttpError(500, error.message)
@@ -56,9 +60,10 @@ async function checkDetail(admin: any, companyId: string, checkId: string) {
   if (!check) throw new HttpError(404, "That screening result is not available.")
   const { data: matches, error: matchError } = await admin
     .from("CMP_ScreeningMatches")
-    .select("ScreeningMatch_ID,ScreeningMatch_GroupId,ScreeningMatch_ListedName,ScreeningMatch_MatchKind,ScreeningMatch_Score,ScreeningMatch_Regime,ScreeningMatch_GroupType,ScreeningMatch_ListedOn,ScreeningMatch_UkRef,ScreeningMatch_Country")
+    .select("ScreeningMatch_ID,ScreeningMatch_GroupId,ScreeningMatch_ListedName,ScreeningMatch_MatchKind,ScreeningMatch_Score,ScreeningMatch_Regime,ScreeningMatch_GroupType,ScreeningMatch_ListedOn,ScreeningMatch_UkRef,ScreeningMatch_Country,ScreeningMatch_ListingNotes")
     .eq("ScreeningMatch_CheckID", checkId)
     .order("ScreeningMatch_Score", { ascending: false })
+    .limit(10000)
   if (matchError) throw new HttpError(500, matchError.message)
   return {
     ...checkSummary(check),
@@ -73,6 +78,7 @@ async function checkDetail(admin: any, companyId: string, checkId: string) {
       listedOn: match.ScreeningMatch_ListedOn,
       ukRef: match.ScreeningMatch_UkRef,
       country: match.ScreeningMatch_Country,
+      listingNotes: match.ScreeningMatch_ListingNotes ?? null,
     })),
   }
 }
