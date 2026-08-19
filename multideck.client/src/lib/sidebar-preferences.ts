@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { getApiWorkspacePreferences } from "@/lib/api"
 import { supabase } from "@/lib/supabase"
+import { updateWorkspaceBootstrapPreferences } from "@/lib/workspace-bootstrap"
 
 export type SidebarScopeLayout = {
   order: string[]
@@ -29,6 +31,7 @@ let loadPromise: Promise<void> | null = null
 let pendingSave: Promise<unknown> = Promise.resolve()
 let hasLocalEdit = false
 let watchingAuth = false
+let canPersistProfileSidebar = true
 
 function toIdList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -165,17 +168,17 @@ async function pushPreferences() {
   await saveRemotePreferences(preferences)
 }
 
-async function currentUserId(client: SupabaseClient) {
+async function currentSession(client: SupabaseClient) {
   const { data, error } = await client.auth.getSession()
   if (error) throw error
 
-  return data.session?.user.id ?? null
+  return data.session
 }
 
 // Saves are chained so a quick pin-then-reorder cannot land out of order and resurrect stale state.
 function saveRemotePreferences(next: SidebarPreferences) {
   const client = supabase
-  if (!client || !loadedUserId) return pendingSave
+  if (!client || !loadedUserId || !canPersistProfileSidebar) return pendingSave
 
   pendingSave = pendingSave
     .then(() =>
@@ -186,6 +189,7 @@ function saveRemotePreferences(next: SidebarPreferences) {
     )
     .then(({ error }) => {
       if (error) throw error
+      updateWorkspaceBootstrapPreferences({ sidebar: next })
     })
     .catch((error: unknown) => {
       console.warn("Your sidebar preferences could not be saved to your profile.", error)
@@ -195,7 +199,8 @@ function saveRemotePreferences(next: SidebarPreferences) {
 }
 
 async function loadPreferences(client: SupabaseClient) {
-  const userId = await currentUserId(client)
+  const session = await currentSession(client)
+  const userId = session?.user.id ?? null
   loadedUserId = userId
   // Signed out, so there is no profile to read from and preferences stay on this device only.
   if (!userId) return
@@ -204,11 +209,24 @@ async function loadPreferences(client: SupabaseClient) {
   const cached = readStoredPreferences(storageKey)
   if (!hasLocalEdit && !isDefaultPreferences(cached)) applyPreferences(cached)
 
-  const { data, error } = await client.rpc("get_current_user_sidebar_preferences")
-  if (error) throw error
+  const workspacePreferences = session?.access_token
+    ? await getApiWorkspacePreferences(session.access_token)
+    : null
+  if (workspacePreferences === null) {
+    canPersistProfileSidebar = false
+    return
+  }
+  canPersistProfileSidebar = true
+
+  let remotePreferences: unknown = workspacePreferences?.sidebar ?? null
+  if (workspacePreferences === undefined) {
+    const { data, error } = await client.rpc("get_current_user_sidebar_preferences")
+    if (error) throw error
+    remotePreferences = data
+  }
   if (hasLocalEdit) return
 
-  const saved = normalizePreferences(data)
+  const saved = normalizePreferences(remotePreferences)
   const inherited = readSharedPreferences()
   if (isDefaultPreferences(saved) && !isDefaultPreferences(inherited)) {
     applyPreferences(inherited)
@@ -237,6 +255,7 @@ function watchAuth(client: SupabaseClient) {
       loadedUserId = null
       loadPromise = null
       hasLocalEdit = false
+      canPersistProfileSidebar = true
       notify()
       void ensureLoaded()
     })

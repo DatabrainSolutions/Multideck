@@ -4,14 +4,11 @@ import {
   BookOpen,
   Cloud,
   Command,
-  CreditCard,
-  ChartAnalysis,
   LifeBuoy,
   Megaphone,
   Palette,
   ShieldCheck,
   UserRound,
-  UsersRound,
   type LucideIcon,
 } from "@/components/icons/hugeicons"
 
@@ -22,11 +19,7 @@ export type SettingsSectionId =
   | "customisation"
   | "shortcuts"
   | "dexter"
-  | "users"
-  | "broadcast"
   | "integrations"
-  | "billing"
-  | "ai-usage"
   | "whats-new"
   | "docs"
   | "support"
@@ -59,16 +52,7 @@ export const settingsNavigationGroups: SettingsNavigationGroup[] = [
   {
     label: "Workspace",
     items: [
-      { id: "users", label: "Users", description: "People, roles and access", icon: UsersRound },
       { id: "integrations", label: "Integrations", description: "Connected mail and systems", icon: Cloud },
-      { id: "billing", label: "Billing", description: "Plan, payment and invoices", icon: CreditCard },
-      { id: "ai-usage", label: "AI usage", description: "Spend, actions and guardrails", icon: ChartAnalysis },
-    ],
-  },
-  {
-    label: "Developer",
-    items: [
-      { id: "broadcast", label: "Broadcast", description: "Create reviewed workspace broadcasts", icon: Megaphone },
     ],
   },
   {
@@ -90,7 +74,6 @@ export function isSettingsSectionId(value: string | null): value is SettingsSect
 export function readSettingsSectionFromUrl(): SettingsSectionId {
   if (typeof window === "undefined") return "profile"
   const section = new URLSearchParams(window.location.search).get("tab")
-  if (section === "permissions") return "users"
   return isSettingsSectionId(section) ? section : "profile"
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { ArrowLeft, ArrowRight, Building2, RefreshCw, Trophy } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -11,7 +11,24 @@ import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, staggerRamp } from "@/lib/motion"
 import { getPipelineSettings, type ApiPipeline } from "@/lib/pipeline-api"
-import { listDeals, updateDeal, type ApiDeal, type UpdateDealInput } from "@/lib/deal-api"
+import { getDeal, updateDeal, type ApiDeal, type UpdateDealInput } from "@/lib/deal-api"
+import { CrmConflictError } from "@/lib/crm-supabase"
+
+const dealModeOptions = [
+  { value: "__none", label: "Not decided" },
+  { value: "air", label: "Air" },
+  { value: "ocean", label: "Ocean" },
+  { value: "road", label: "Road" },
+  { value: "rail", label: "Rail" },
+  { value: "multimodal", label: "Multimodal" },
+] as const
+
+const dealDirectionOptions = [
+  { value: "__none", label: "Not decided" },
+  { value: "import", label: "Import" },
+  { value: "export", label: "Export" },
+  { value: "cross_trade", label: "Cross trade" },
+] as const
 
 /** The deal's own address, so a deal can be linked to and returned from. */
 export function dealDetailPath(deal: { id: string }) {
@@ -40,20 +57,23 @@ export function CrmDealDetailPage({ dealId, navigate }: { dealId: string; naviga
   const [state, setState] = useState<"loading" | "ready" | "error">("loading")
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+  const dealRef = useRef<ApiDeal | null>(null)
+  const dealSaveQueue = useRef<Promise<void>>(Promise.resolve())
 
   useEffect(() => {
     let active = true
     setState("loading")
     setError(null)
-    Promise.all([listDeals({ forceRefresh: reloadToken > 0 }), getPipelineSettings({ forceRefresh: reloadToken > 0 })])
-      .then(([deals, settings]) => {
+    dealRef.current = null
+    Promise.all([getDeal(dealId, { forceRefresh: reloadToken > 0 }), getPipelineSettings({ forceRefresh: reloadToken > 0 })])
+      .then(([found, settings]) => {
         if (!active) return
-        const found = deals.find((candidate) => candidate.id === dealId) ?? null
         if (!found) {
           setError(t("This deal is not in your pipeline any more."))
           setState("error")
           return
         }
+        dealRef.current = found
         setDeal(found)
         setPipelines(settings.pipelines)
         setState("ready")
@@ -71,9 +91,30 @@ export function CrmDealDetailPage({ dealId, navigate }: { dealId: string; naviga
    * different fields on the same deal cannot overwrite each other. It throws on
    * failure: the field that was edited catches it and shows the reason itself.
    */
-  const patch = useCallback(async (change: UpdateDealInput) => {
-    setDeal(await updateDeal(dealId, change))
-  }, [dealId])
+  const patch = useCallback((change: UpdateDealInput) => {
+    const save = dealSaveQueue.current.then(async () => {
+      const current = dealRef.current
+      if (!current) throw new Error(t("This deal is not ready to edit yet."))
+      try {
+        const next = await updateDeal(dealId, change, current.editVersion)
+        dealRef.current = next
+        setDeal(next)
+      } catch (cause) {
+        if (cause instanceof CrmConflictError) {
+          const latest = await getDeal(dealId, { forceRefresh: true }).catch(() => null)
+          dealRef.current = latest
+          setDeal(latest)
+          if (!latest) {
+            setError(t("This deal is not in your pipeline any more."))
+            setState("error")
+          }
+        }
+        throw cause
+      }
+    })
+    dealSaveQueue.current = save.catch(() => undefined)
+    return save
+  }, [dealId, t])
 
   const money = useMemo(() => (amount: number | null, currency: string | null) => {
     if (amount === null) return ""
@@ -226,8 +267,18 @@ export function CrmDealDetailPage({ dealId, navigate }: { dealId: string; naviga
             <InlineField label="Origin" value={currentDeal.originName ?? ""} onSave={(originName) => patch({ originName: originName || null })} />
             <InlineField label="Destination" value={currentDeal.destinationName ?? ""} onSave={(destinationName) => patch({ destinationName: destinationName || null })} />
             <InlineField label="Trade lane" value={currentDeal.tradeLane ?? ""} onSave={(tradeLane) => patch({ tradeLane: tradeLane || null })} />
-            <InlineField label="Mode" value={currentDeal.modeCode ?? ""} onSave={(modeCode) => patch({ modeCode: modeCode || null })} />
-            <InlineField label="Direction" value={currentDeal.directionCode ?? ""} onSave={(directionCode) => patch({ directionCode: directionCode || null })} />
+            <InlineSelectField
+              label="Mode"
+              value={currentDeal.modeCode ?? "__none"}
+              options={dealModeOptions}
+              onSave={(modeCode) => patch({ modeCode: modeCode === "__none" ? null : modeCode })}
+            />
+            <InlineSelectField
+              label="Direction"
+              value={currentDeal.directionCode ?? "__none"}
+              options={dealDirectionOptions}
+              onSave={(directionCode) => patch({ directionCode: directionCode === "__none" ? null : directionCode })}
+            />
           </InlineFieldCard>
         </div>
 

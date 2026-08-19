@@ -40,6 +40,7 @@ import {
   type SendReceipt,
   type SendRequest,
   type ThreadPage,
+  type ThreadDetailQuery,
   type ThreadQuery,
   type ThreadSummaryState,
 } from "@/lib/inbox-contract"
@@ -420,10 +421,13 @@ export async function listThreads(request: ThreadQuery): Promise<ThreadPage> {
   })
 }
 
-export async function getThread(threadId: string): Promise<InboxThreadDetail> {
-  return inboxRequest(`/threads/${encodeURIComponent(threadId)}`, {
+export async function getThread(threadId: string, request: ThreadDetailQuery = {}): Promise<InboxThreadDetail> {
+  const limit = Math.min(50, Math.max(1, Math.floor(request.limit ?? 25)))
+  const offset = Math.max(0, Math.floor(request.offset ?? 0))
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  return inboxRequest(`/threads/${encodeURIComponent(threadId)}?${params.toString()}`, {
     method: "GET",
-    normalize: (payload) => normalizeThreadDetail(payload, threadId),
+    normalize: (payload) => normalizeThreadDetail(payload, threadId, { limit, offset }),
   })
 }
 

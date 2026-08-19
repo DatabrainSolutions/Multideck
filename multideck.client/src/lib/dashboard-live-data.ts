@@ -2,6 +2,7 @@ import type { LucideIcon } from "@/components/icons/hugeicons"
 import type { StatusTone } from "@/data/multideck-data"
 import type { QuoteRegisterRecord } from "@/data/quote-register-data"
 import type { LiveBooking } from "@/lib/application-data-api"
+import type { DashboardOverviewReadModel } from "@/lib/dashboard-api"
 
 export type DashboardRange = "today" | "week" | "month" | "quarter" | "custom"
 export type DashboardCustomDateRange = { start: string | null; end: string | null }
@@ -585,5 +586,88 @@ export function dashboardBookings(bookings: LiveBooking[]): DashboardBooking[] {
       origin: booking.origin,
       destination: booking.destination,
     }
+  })
+}
+
+function readModelWindow(model: DashboardOverviewReadModel) {
+  const start = new Date(model.windowStart).getTime()
+  const end = new Date(model.seriesEnd).getTime()
+  return {
+    start: Number.isFinite(start) ? start : Date.now(),
+    end: Number.isFinite(end) && end > start ? end : Date.now() + 1,
+  }
+}
+
+/** Builds the existing dashboard presentation from the bounded server read model. */
+export function dashboardSnapshotFromReadModel(
+  range: DashboardRange,
+  model: DashboardOverviewReadModel,
+): DashboardLiveSnapshot {
+  const movement = "vs start of period"
+  const { counts, series } = model
+  const kpis: DashboardKpi[] = [
+    { label: "Active jobs", value: String(counts.activeJobs), change: `${counts.exceptions} need action`, detail: `${counts.exceptions} need action`, tone: counts.exceptions ? "amber" : "green", series: series.activeJobs, delta: seriesDelta(series.activeJobs, movement) },
+    { label: "Booking exceptions", value: String(counts.exceptions), change: `${Math.max(counts.activeJobs - counts.exceptions, 0)} on track`, detail: `${Math.max(counts.activeJobs - counts.exceptions, 0)} on track`, tone: counts.exceptions ? "red" : "green", series: series.exceptions, delta: seriesDelta(series.exceptions, movement) },
+    { label: "Open quotes", value: String(counts.openQuotes), change: `${counts.readyQuotes} ready`, detail: `${counts.readyQuotes} ready to send`, tone: counts.readyQuotes ? "green" : "blue", series: series.quotes, delta: seriesDelta(series.quotes, movement) },
+    { label: "Ready quotes", value: String(counts.readyQuotes), change: `${counts.totalQuotes} total`, detail: `${counts.totalQuotes} quotes in period`, tone: counts.readyQuotes ? "teal" : "neutral", series: series.readyQuotes, delta: seriesDelta(series.readyQuotes, movement) },
+  ]
+  const actions: DashboardAction[] = model.priorityItems.slice(0, 8).map((item) => ({
+    label: item.kind === "exception" ? `Review ${item.reference}` : item.kind === "quote-send" ? `Send ${item.reference}` : `Progress ${item.reference}`,
+    value: item.kind === "exception" ? "Open" : item.kind === "quote-send" ? "Send" : "Review",
+    detail: `${item.customer} · ${item.context} · ${item.status}`,
+    source: item.kind === "exception" ? "Bookings" : "Quotes",
+    tone: item.tone,
+  }))
+  const window = readModelWindow(model)
+  return {
+    kpis,
+    actions,
+    briefLead: actions.length ? "Prioritised from current booking exceptions and quote workflow status." : "No booking exceptions or quote actions are currently open.",
+    trends: Object.fromEntries(kpis.map((kpi) => [kpi.label, trend(kpi.series ?? [], range, window)])),
+  }
+}
+
+export function dashboardModeTrendFromReadModel(
+  range: DashboardRange,
+  model: DashboardOverviewReadModel,
+): DashboardModeTrend {
+  const window = readModelWindow(model)
+  const formatter = new Intl.DateTimeFormat(
+    undefined,
+    range === "today" ? { hour: "2-digit" } : { month: "short", day: "numeric" },
+  )
+  const width = (window.end - window.start) / 10
+  return {
+    labels: Array.from({ length: 10 }, (_, index) => formatter.format(new Date(window.start + width * (index + 1)))),
+    series: model.modeDefinitions.map((mode) => ({
+      key: mode.label,
+      label: mode.label,
+      color: mode.color,
+      values: model.series.modes[mode.key] ?? [],
+    })),
+  }
+}
+
+export function dashboardStatusMixFromReadModel(model: DashboardOverviewReadModel): DashboardBreakdownSlice[] {
+  const rank: Record<string, number> = { Exception: 0, Delayed: 1, "On track": 2 }
+  const colours: Record<string, string> = { Exception: "var(--md-red)", Delayed: "var(--md-amber)", "On track": "var(--md-green)" }
+  return Object.entries(model.statusCounts)
+    .filter(([, value]) => value > 0)
+    .sort((left, right) => (rank[left[0]] ?? 9) - (rank[right[0]] ?? 9))
+    .map(([name, value]) => ({ name, value, color: colours[name] ?? "var(--md-blue)" }))
+}
+
+export function dashboardQuoteStagesFromReadModel(model: DashboardOverviewReadModel): DashboardBreakdownSlice[] {
+  const shades = ["var(--md-accent)", "var(--md-accent-tint)", "var(--md-accent-glow-core)", "var(--md-blue)", "var(--md-subtle)"]
+  return model.quoteStages.map((stage, index) => ({ ...stage, color: shades[index % shades.length] }))
+}
+
+export function dashboardBookingsFromReadModel(model: DashboardOverviewReadModel): DashboardBooking[] {
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" })
+  const now = new Date(model.generatedAt).getTime()
+  return model.liveBookings.map((booking) => {
+    const updated = new Date(booking.updatedAt).getTime()
+    const minutes = Number.isFinite(updated) && Number.isFinite(now) ? Math.round((updated - now) / 60_000) : 0
+    return { ...booking, updated: rtf.format(minutes, "minute") }
   })
 }

@@ -7,7 +7,14 @@ const companyDashboard = readFileSync(new URL("../migrations/20260808000440_crm_
 const dexter = readFileSync(new URL("../migrations/20260803152000_dexter_crm_essentials.sql", import.meta.url), "utf8")
 const followUps = readFileSync(new URL("../migrations/20260803212017_crm_follow_up_opportunities.sql", import.meta.url), "utf8")
 const page = readFileSync(new URL("../../multideck.client/src/pages/crm-page.tsx", import.meta.url), "utf8")
+const app = readFileSync(new URL("../../multideck.client/src/App.tsx", import.meta.url), "utf8")
+const translations = readFileSync(new URL("../../multideck.client/src/i18n/translate.ts", import.meta.url), "utf8")
 const forms = readFileSync(new URL("../../multideck.client/src/pages/crm-forms-page.tsx", import.meta.url), "utf8")
+const dashboard = readFileSync(new URL("../../multideck.client/src/components/multideck/crm-dashboard.tsx", import.meta.url), "utf8")
+const crmComponents = readFileSync(new URL("../../multideck.client/src/components/multideck/crm-components.tsx", import.meta.url), "utf8")
+const pipelineEditor = readFileSync(new URL("../../multideck.client/src/components/multideck/crm-pipeline-editor.tsx", import.meta.url), "utf8")
+const demoIsolation = readFileSync(new URL("../migrations/20260818092918_crm_demo_lead_isolation.sql", import.meta.url), "utf8")
+const qaLeadMarkers = readFileSync(new URL("../migrations/20260818093051_crm_mark_qa_leads_demo.sql", import.meta.url), "utf8")
 
 test("CRM dashboard keeps personal work user-scoped and uses company-visible deals", () => {
   assert.match(migration, /multideck_crm_get_dashboard/)
@@ -39,6 +46,47 @@ test("follow-up opportunities are deterministic, mailbox-scoped and require revi
   assert.match(followUps, /grant execute on function public\.multideck_crm_create_follow_up_lead.*authenticated/s)
   assert.match(page, /getCrmFollowUpOpportunities/)
   assert.match(page, /Review the details found in the email before adding them to CRM/)
+  assert.match(dashboard, /className="md-crm-row-open-target"/)
+  assert.match(dashboard, /sideInteractive=\{opportunity\.canCreate\}/)
+  assert.doesNotMatch(dashboard, /role=\{onOpen \? "button"/)
+})
+
+test("deal stages localise counts and empty states", () => {
+  assert.match(crmComponents, /translate\(count === 1 \? "deal" : "deals"\)/)
+  assert.match(crmComponents, /t\("No deals in this stage"\)/)
+  assert.doesNotMatch(crmComponents, />No deals in this stage</)
+})
+
+test("area map separates unrecognised leads from recognised areas hidden by the display limit", () => {
+  assert.match(dashboard, /const mappedAreas = useMemo/)
+  assert.match(dashboard, /const mappedTotal = mappedAreas\.reduce/)
+  assert.match(dashboard, /mappedAreas\.length - points\.length/)
+  assert.match(dashboard, /more mapped areas not shown/)
+  assert.match(dashboard, /without areas/)
+})
+
+test("marked demo leads stay out of CRM, Dexter and watch surfaces", () => {
+  assert.match(demoIsolation, /multideck_crm_list_leads_essential/)
+  assert.match(demoIsolation, /multideck_crm_get_dashboard/)
+  assert.match(demoIsolation, /multideck_dexter_domain_leads/)
+  assert.match(demoIsolation, /with ordinality rows\(item, ordinal\)/)
+  assert.match(demoIsolation, /jsonb_agg\(item[\s\S]*order by ordinal\)/)
+  assert.match(demoIsolation, /lower\(coalesce\(lead\."CRMLead_MetadataJSON" ->> 'isDemo', 'false'\)\) <> 'true'/)
+  assert.match(demoIsolation, /TR_CRM_Leads_dexter_watch/)
+  assert.match(demoIsolation, /TR_CRM_Leads_native_address_dexter_watch_update/)
+  assert.match(qaLeadMarkers, /automated-qa-address/)
+  assert.match(qaLeadMarkers, /\^qr-live-qa-/)
+  assert.match(qaLeadMarkers, /\^codex-lead-/)
+  assert.doesNotMatch(qaLeadMarkers, /CRMLead_ID"\s*=/)
+})
+
+test("pipeline stages expose separate keyboard controls without nested buttons", () => {
+  const stageCard = pipelineEditor.slice(pipelineEditor.indexOf("function StageCard"), pipelineEditor.indexOf("function TonePicker"))
+  assert.match(stageCard, /aria-pressed=\{selected\}/)
+  assert.match(stageCard, /onClick=\{onSelect\}/)
+  assert.match(stageCard, /aria-label=\{`\$\{t\("Rename stage"\)\}/)
+  assert.doesNotMatch(stageCard, /role="button"/)
+  assert.doesNotMatch(stageCard, /tabIndex=\{-1\}/)
 })
 
 test("lead transfers lock, reject stale owners, update open opportunities and notify both owners", () => {
@@ -49,10 +97,21 @@ test("lead transfers lock, reject stale owners, update open opportunities and no
   assert.match(migration, /from \(values \(p_expected_owner_id\), \(p_target_user_id\)\)/)
   assert.match(migration, /CRM\.Leads\.Reassign/)
   const leadDetailPage = page.slice(page.indexOf("export function CrmLeadDetailPage"), page.indexOf("export function CrmListsPage"))
-  assert.match(leadDetailPage, /aria-label=\{t\("Transfer ownership"\)\}/)
+  assert.match(leadDetailPage, /requestLeadTransfer/)
+  assert.match(leadDetailPage, /decideLeadTransfer/)
+  assert.match(leadDetailPage, /cancelLeadTransfer/)
+  assert.match(leadDetailPage, /hasPermission\(currentUser, "CRM\.Leads\.Reassign"\)/)
+  assert.match(leadDetailPage, /Request ownership/)
+  assert.match(leadDetailPage, /Ownership request pending/)
+  assert.match(leadDetailPage, /Ownership requests/)
+  assert.match(leadDetailPage, /Reason for overriding ownership/)
   assert.match(leadDetailPage, /Search team members/)
-  assert.match(leadDetailPage, /isOwner \? \(/)
-  assert.doesNotMatch(leadDetailPage, /Request ownership|requestLeadTransfer/)
+  assert.match(leadDetailPage, /requestsToReview\.map/)
+  assert.match(leadDetailPage, /currentPendingRequest/)
+  assert.match(app, /<CrmLeadDetailPage[^>]*currentUser=\{currentUser\}/)
+  for (const phrase of ["Manage ownership", "Ownership request pending", "Send ownership request", "Reason for overriding ownership"]) {
+    assert.ok(translations.includes(`"${phrase}": { de:`), `${phrase} must be localised`)
+  }
 })
 
 test("deal winning is conversion-stage validated, permissioned and idempotent", () => {

@@ -26,8 +26,12 @@ Deno.serve(async (request) => {
     const authorization = request.headers.get("Authorization")?.trim() ?? ""
     if (!/^Bearer\s+\S+$/i.test(authorization)) throw new InboxHttpError(401, "Sign in again to open customer documents.", "authentication_required")
     if (request.method === "GET") {
-      const customerId = new URL(request.url).searchParams.get("customerId") ?? ""
-      return jsonResponse(request, allowedOrigins, await listCustomerDocuments(authorization, customerId))
+      const params = new URL(request.url).searchParams
+      const customerId = params.get("customerId") ?? ""
+      return jsonResponse(request, allowedOrigins, await listCustomerDocuments(authorization, customerId, {
+        limit: Number(params.get("limit") || 20),
+        offset: Number(params.get("offset") || 0),
+      }))
     }
     if (request.method === "POST") {
       const body = await readJson(request)

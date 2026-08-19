@@ -1,5 +1,6 @@
 import {
   authenticate,
+  authenticatedClient,
   body,
   corsHeaders,
   currentInternalUser,
@@ -8,7 +9,6 @@ import {
   initials,
   json,
   normalize,
-  permissionValues,
   requirePermission,
   routeParts,
 } from "../_shared/backend.ts"
@@ -33,8 +33,30 @@ function occurredAt(message: Row) {
   return message.CommMessage_MessageDate ?? message.CommMessage_ReceivedAt ?? message.CommMessage_SentAt ?? message.CommMessage_CreatedAt
 }
 
-async function customerRows(admin: any, search?: string | null) {
-  const { data: customerTypeLinks, error: linkError } = await admin.from("Org_Master_Type").select("Org_ID,OrgType_ID")
+async function accessibleAccountIds(admin: any, companyId: string) {
+  const { data, error } = await admin.rpc("multideck_crm_accessible_account_ids", { p_company_id: companyId })
+  if (error) throw new HttpError(500, error.message)
+  return [...new Set((data ?? []).map((row: Row) => String(row.account_id ?? "")).filter(Boolean))]
+}
+
+async function requireExactAccountAccess(admin: any, actorUserId: string, accountId: string) {
+  const { error } = await admin.rpc("_multideck_crm_require_account_access", {
+    p_actor_user_id: actorUserId,
+    p_account_id: accountId,
+  })
+  if (error?.code === "P0002") throw new HttpError(404, "Account not found.")
+  if (error) throw new HttpError(error.code === "42501" ? 403 : 500, error.message)
+}
+
+async function customerRows(admin: any, companyId: string, search?: string | null, accountId?: string | null, includeDetailSource = false, scopedIdsOverride?: string[], actorUserId?: string) {
+  if (accountId && actorUserId) await requireExactAccountAccess(admin, actorUserId, accountId)
+  const accessibleIds = accountId && actorUserId ? [] : scopedIdsOverride ?? await accessibleAccountIds(admin, companyId)
+  if (accountId && !actorUserId && !accessibleIds.includes(accountId)) return []
+  const scopedIds = accountId ? [accountId] : accessibleIds
+  if (!scopedIds.length) return []
+  let typeLinkQuery = admin.from("Org_Master_Type").select("Org_ID,OrgType_ID")
+  typeLinkQuery = typeLinkQuery.in("Org_ID", scopedIds)
+  const { data: customerTypeLinks, error: linkError } = await typeLinkQuery
   if (linkError) throw new HttpError(500, linkError.message)
   const typeIds = [...new Set((customerTypeLinks ?? []).map((item: Row) => item.OrgType_ID))]
   const { data: types, error: typeError } = typeIds.length
@@ -52,7 +74,7 @@ async function customerRows(admin: any, search?: string | null) {
     .filter(([, names]) => names.some((name) => name.toLowerCase() === "customer"))
     .map(([id]) => id)
 
-  let query = admin.from("Org_Master").select("*").order("Org_Name")
+  let query = admin.from("Org_Master").select("*").in("Org_id", scopedIds).order("Org_Name")
   query = customerIds.length
     ? query.or(`Org_CRMIsPotentialCustomer.eq.true,Org_id.in.(${customerIds.join(",")})`)
     : query.eq("Org_CRMIsPotentialCustomer", true)
@@ -60,12 +82,12 @@ async function customerRows(admin: any, search?: string | null) {
   if (error) throw new HttpError(500, error.message)
 
   const ids = (organisations ?? []).map((item: Row) => item.Org_id)
-  const [{ data: addresses, error: addressError }, { data: contacts, error: contactError }, { data: profiles, error: profileError }] = await Promise.all([
+  const [{ data: addresses, error: addressError }, { data: contactCountsResult, error: contactCountError }, { data: profiles, error: profileError }] = await Promise.all([
     ids.length ? admin.from("Org_Addresses").select("*").in("Org_ID", ids) : Promise.resolve({ data: [], error: null }),
-    ids.length ? admin.from("Org_Contacts").select("OrgContact_ID,Org_ID").in("Org_ID", ids) : Promise.resolve({ data: [], error: null }),
+    ids.length ? admin.rpc("multideck_crm_contact_counts", { p_account_ids: ids }) : Promise.resolve({ data: [], error: null }),
     ids.length ? admin.from("CRM_AccountProfiles").select("*").in("CRMAccount_OrgID", ids).eq("CRMAccount_IsDeleted", false) : Promise.resolve({ data: [], error: null }),
   ])
-  if (addressError || contactError || profileError) throw new HttpError(500, (addressError ?? contactError ?? profileError).message)
+  if (addressError || contactCountError || profileError) throw new HttpError(500, (addressError ?? contactCountError ?? profileError).message)
 
   const ownerIds = [...new Set((profiles ?? []).map((profile: Row) => profile.CRMAccount_OwnerUserID).filter(Boolean))]
   const { data: owners, error: ownerError } = ownerIds.length
@@ -76,8 +98,7 @@ async function customerRows(admin: any, search?: string | null) {
   const addressMap = new Map<string, Row>((addresses ?? []).map((item: Row) => [item.Org_ID, item]))
   const profileMap = new Map<string, Row>((profiles ?? []).map((item: Row) => [item.CRMAccount_OrgID, item]))
   const ownerMap = new Map<string, Row>((owners ?? []).map((item: Row) => [item.User_ID, item]))
-  const contactCounts = new Map<string, number>()
-  for (const item of contacts ?? []) contactCounts.set(item.Org_ID, (contactCounts.get(item.Org_ID) ?? 0) + 1)
+  const contactCounts = new Map<string, number>((contactCountsResult ?? []).map((item: Row) => [item.account_id, Number(item.contact_count) || 0]))
   const term = search?.trim().toLowerCase()
 
   return (organisations ?? []).map((org: Row) => {
@@ -108,17 +129,48 @@ async function customerRows(admin: any, search?: string | null) {
       healthScore: profile?.CRMAccount_HealthScore ?? null,
       lastContactAt: profile?.CRMAccount_LastContactAt ?? null,
       nextActionDueAt: profile?.CRMAccount_NextActionDueAt ?? null,
+      editVersion: profile?.CRMAccount_EditVersion ?? 1,
       marketingOptIn: Boolean(org.Org_MarketingOptIn),
       marketingConsentSource: org.Org_MarketingConsentSource ?? null,
       marketingConsentUpdatedAt: org.Org_MarketingConsentUpdatedAt ?? null,
       types: typeNames,
+      ...(includeDetailSource ? {
+        __detailSource: {
+          org,
+          address: address ?? null,
+          profile: profile ?? null,
+        },
+      } : {}),
     }
   }).filter((item: Row) => !term || [item.name, item.location, item.industry, item.ownerName, item.relationshipStatus].some((value) => value?.toLowerCase().includes(term)))
 }
 
-async function contactRows(admin: any, search?: string | null, accountId?: string | null) {
+async function contactRows(admin: any, companyId: string, search?: string | null, accountId?: string | null, contactId?: string | null, includeDetailSource = false, scopedContactIdsOverride?: string[], actorUserId?: string, maxRows?: number) {
+  let exactAccountId = accountId ?? null
+  if (contactId && actorUserId) {
+    const { data: exactContact, error } = await admin.from("Org_Contacts")
+      .select("OrgContact_ID,Org_ID")
+      .eq("OrgContact_ID", contactId)
+      .limit(1)
+      .maybeSingle()
+    if (error) throw new HttpError(500, error.message)
+    if (!exactContact) return []
+    exactAccountId = exactContact.Org_ID
+  }
+  if (exactAccountId && actorUserId) await requireExactAccountAccess(admin, actorUserId, exactAccountId)
+  const accessibleIds = scopedContactIdsOverride || (exactAccountId && actorUserId) ? [] : await accessibleAccountIds(admin, companyId)
+  if (accountId && !actorUserId && !accessibleIds.includes(accountId)) return []
+  if (!scopedContactIdsOverride && !exactAccountId && !accessibleIds.length) return []
+  if (scopedContactIdsOverride && !scopedContactIdsOverride.length) return []
   let query = admin.from("Org_Contacts").select("*").order("OrgContact_LastName").order("OrgContact_FirstName")
+  query = scopedContactIdsOverride
+    ? query.in("OrgContact_ID", scopedContactIdsOverride)
+    : exactAccountId
+      ? query.eq("Org_ID", exactAccountId)
+      : query.in("Org_ID", accessibleIds)
   if (accountId) query = query.eq("Org_ID", accountId)
+  if (contactId) query = query.eq("OrgContact_ID", contactId)
+  if (maxRows) query = query.limit(Math.max(1, Math.min(maxRows, 50)))
   const { data: contacts, error } = await query
   if (error) throw new HttpError(500, error.message)
   const contactIds = (contacts ?? []).map((item: Row) => item.OrgContact_ID)
@@ -180,109 +232,56 @@ async function contactRows(admin: any, search?: string | null, accountId?: strin
       lastContactAt: profile?.CRMContact_LastContactAt ?? null,
       notes: profile?.CRMContact_Notes ?? null,
       trainingAllowed: Boolean(profile?.CRMContact_IsTrainingAllowed),
+      editVersion: profile?.CRMContact_EditVersion ?? 1,
       metadata,
+      ...(includeDetailSource ? { __detailSource: { profile: profile ?? null } } : {}),
     }
   }).filter((item: Row) => !term || [item.name, item.email, item.phone, item.accountName, item.role, item.jobTitle, item.department].some((value) => value?.toLowerCase().includes(term)))
 }
 
-async function recentEmails(admin: any, userId: string, accountId: string, contactIds: string[], contactEmails: string[] = []) {
-  const permissions = await permissionValues(admin, userId)
+async function recentEmails(admin: any, userId: string, permissions: string[], accountId: string, contactIds: string[], contactEmails: string[] = [], includeAccountThreads = true) {
   if (!permissions.includes("Email.Read")) return { available: false, items: [] }
-  const now = new Date().toISOString()
-  const { data: access, error: accessError } = await admin.from("Comm_MailboxAccess")
-    .select("CommMailboxAccess_MailboxID,CommMailboxAccess_ExpiresAt")
-    .eq("CommMailboxAccess_UserID", userId).eq("CommMailboxAccess_CanRead", true).is("CommMailboxAccess_RevokedAt", null)
-  if (accessError) throw new HttpError(500, accessError.message)
-  const mailboxIds = (access ?? []).filter((row: Row) => !row.CommMailboxAccess_ExpiresAt || row.CommMailboxAccess_ExpiresAt > now).map((row: Row) => row.CommMailboxAccess_MailboxID)
-  if (!mailboxIds.length) return { available: true, items: [] }
-
   const normalizedEmails = [...new Set(contactEmails.map((value) => value.trim().toLowerCase()).filter(Boolean))]
-  let participantQuery = admin.from("Comm_MessageRecipients").select("CommRecipient_MessageID")
-  if (contactIds.length && normalizedEmails.length) {
-    participantQuery = participantQuery.or(`CommRecipient_ContactID.in.(${contactIds.join(",")}),CommRecipient_NormalizedAddress.in.(${normalizedEmails.join(",")})`)
-  } else if (contactIds.length) {
-    participantQuery = participantQuery.in("CommRecipient_ContactID", contactIds)
-  } else if (normalizedEmails.length) {
-    participantQuery = participantQuery.in("CommRecipient_NormalizedAddress", normalizedEmails)
-  }
-  const [{ data: participantRows, error: participantError }, { data: threads, error: threadError }] = await Promise.all([
-    contactIds.length || normalizedEmails.length ? participantQuery : Promise.resolve({ data: [], error: null }),
-    admin.from("Comm_Threads").select("CommThread_ID").eq("CommThread_CustomerOrgID", accountId).eq("CommThread_IsDeleted", false),
-  ])
-  if (participantError || threadError) throw new HttpError(500, (participantError ?? threadError).message)
-  const threadIds = (threads ?? []).map((row: Row) => row.CommThread_ID)
-  const { data: threadMessages, error: threadMessageError } = threadIds.length
-    ? await admin.from("Comm_Messages").select("CommMessage_ID").in("CommMessage_ThreadID", threadIds)
-    : { data: [], error: null }
-  if (threadMessageError) throw new HttpError(500, threadMessageError.message)
-  const messageIds = [...new Set([...(participantRows ?? []), ...(threadMessages ?? [])].map((row: Row) => row.CommRecipient_MessageID ?? row.CommMessage_ID).filter(Boolean))]
-  if (!messageIds.length) return { available: true, items: [] }
-
-  const { data: messages, error: messageError } = await admin.from("Comm_Messages").select("*")
-    .in("CommMessage_ID", messageIds).in("CommMessage_MailboxID", mailboxIds)
-    .eq("CommMessage_IsDeleted", false).eq("CommMessage_IsDraft", false).eq("CommMessage_IsSpam", false)
-    .order("CommMessage_MessageDate", { ascending: false, nullsFirst: false }).limit(12)
-  if (messageError) throw new HttpError(500, messageError.message)
-  const selectedIds = (messages ?? []).map((row: Row) => row.CommMessage_ID)
-  const { data: recipients, error: recipientError } = selectedIds.length
-    ? await admin.from("Comm_MessageRecipients").select("*").in("CommRecipient_MessageID", selectedIds)
-    : { data: [], error: null }
-  if (recipientError) throw new HttpError(500, recipientError.message)
-  const recipientsByMessage = new Map<string, Row[]>()
-  for (const recipient of recipients ?? []) recipientsByMessage.set(recipient.CommRecipient_MessageID, [...(recipientsByMessage.get(recipient.CommRecipient_MessageID) ?? []), recipient])
-
+  const { data, error } = await admin.rpc("multideck_crm_customer_recent_emails", {
+    p_user_id: userId,
+    p_account_id: accountId,
+    p_contact_ids: contactIds,
+    p_contact_emails: normalizedEmails,
+    p_include_account_threads: includeAccountThreads,
+    p_limit: 12,
+  })
+  if (error) throw new HttpError(500, error.message)
+  const result = objectValue(data)
   return {
-    available: true,
-    items: (messages ?? []).sort((a: Row, b: Row) => new Date(occurredAt(b)).getTime() - new Date(occurredAt(a)).getTime()).map((message: Row) => {
-      const messageRecipients = recipientsByMessage.get(message.CommMessage_ID) ?? []
-      const external = messageRecipients.find((recipient) => contactIds.includes(recipient.CommRecipient_ContactID))
-        ?? messageRecipients.find((recipient) => recipient.CommRecipient_IsExternal)
-      return {
-        id: message.CommMessage_ID,
-        threadId: message.CommMessage_ThreadID,
-        direction: message.CommMessage_IsInbound || message.CommMessage_DirectionCode === "inbound" ? "inbound" : "outbound",
-        subject: message.CommMessage_Subject || "(No subject)",
-        preview: message.CommMessage_IsBodyRedacted ? null : message.CommMessage_BodyPreview ?? null,
-        occurredAt: occurredAt(message),
-        contactName: external?.CommRecipient_DisplayNameSnapshot ?? null,
-        contactEmail: external?.CommRecipient_Address ?? null,
-        hasAttachments: Boolean(message.CommMessage_HasAttachments),
-      }
-    }),
+    available: result.available !== false,
+    items: Array.isArray(result.items) ? result.items : [],
   }
 }
 
-async function accountDetail(admin: any, userId: string, id: string) {
-  const summary = (await customerRows(admin)).find((item: Row) => item.id === id)
-  if (!summary) throw new HttpError(404, "Account not found.")
-  const [orgResult, contactsResult, profileResult, shipmentResult, addressResult, engagementResult] = await Promise.all([
-    admin.from("Org_Master").select("*").eq("Org_id", id).single(),
-    admin.from("Org_Contacts").select("OrgContact_ID").eq("Org_ID", id),
-    admin.from("CRM_AccountProfiles").select("*").eq("CRMAccount_OrgID", id).eq("CRMAccount_IsDeleted", false).maybeSingle(),
+async function accountDetail(admin: any, companyId: string, userId: string, permissions: string[], id: string) {
+  const summaryWithSource = (await customerRows(admin, companyId, null, id, true, undefined, userId))[0]
+  if (!summaryWithSource) throw new HttpError(404, "Account not found.")
+  const { __detailSource, ...summary } = summaryWithSource
+  const { org, address, profile } = __detailSource
+  const [shipmentResult, engagementResult, contactList] = await Promise.all([
     admin.from("Job_ShipmentSummary").select("*").eq("Job_Customer", id).neq("Job_Status", "Closed").order("Job_PredictedDeliveryAt").limit(12),
-    admin.from("Org_Addresses").select("*").eq("Org_ID", id).limit(1),
     admin.from("CRM_CustomerEngagementPreferences").select("*").eq("CRMCustEngPref_CustomerOrgID", id).order("CRMCustEngPref_UpdatedAt", { ascending: false }).limit(1),
+    contactRows(admin, companyId, null, id, null, false, undefined, userId, 20),
   ])
-  const detailError = [orgResult, contactsResult, profileResult, shipmentResult, addressResult, engagementResult].find((result) => result.error)?.error
+  const detailError = [shipmentResult, engagementResult].find((result) => result.error)?.error
   if (detailError) throw new HttpError(500, detailError.message)
-  const org = orgResult.data
-  const contacts = contactsResult.data
-  const profile = profileResult.data
   const shipments = shipmentResult.data
-  const addresses = addressResult.data
   const engagement = engagementResult.data
   const accountId = profile?.CRMAccount_ID ?? null
-  const contactIds = (contacts ?? []).map((item: Row) => item.OrgContact_ID)
-  const contactList = await contactRows(admin, null, id)
+  const contactIds = contactList.map((contact: Row) => contact.id)
   const contactEmails = contactList.map((contact: Row) => contact.email).filter(Boolean)
   const [{ data: activities, error: activityError }, emailResult] = await Promise.all([
     accountId
       ? admin.from("CRM_Activities").select("*").eq("CRMActivity_AccountID", accountId).eq("CRMActivity_IsDeleted", false).order("CRMActivity_ActivityAt", { ascending: false }).limit(20)
       : Promise.resolve({ data: [], error: null }),
-    recentEmails(admin, userId, id, contactIds, contactEmails),
+    recentEmails(admin, userId, permissions, id, contactIds, contactEmails),
   ])
   if (activityError) throw new HttpError(500, activityError.message)
-  const address = addresses?.[0] ?? null
   const preference = engagement?.[0] ?? null
   return {
     ...summary,
@@ -343,16 +342,20 @@ async function accountDetail(admin: any, userId: string, id: string) {
   }
 }
 
-async function contactDetail(admin: any, userId: string, id: string) {
-  const summary = (await contactRows(admin)).find((item: Row) => item.id === id)
-  if (!summary) throw new HttpError(404, "Contact not found.")
-  const { data: profile } = await admin.from("CRM_ContactProfiles").select("*").eq("CRMContact_OrgContactID", id).maybeSingle()
-  const { data: participants } = await admin.from("CRM_ActivityParticipants").select("CRMActPart_ActivityID").eq("CRMActPart_OrgContactID", id)
-  const activityIds = (participants ?? []).map((item: Row) => item.CRMActPart_ActivityID)
-  const { data: activities } = activityIds.length
-    ? await admin.from("CRM_Activities").select("*").in("CRMActivity_ID", activityIds).eq("CRMActivity_IsDeleted", false).order("CRMActivity_ActivityAt", { ascending: false }).limit(20)
-    : { data: [] }
-  const { data: consents } = await admin.from("Comm_ConsentPreferences").select("*").eq("CommConsent_ContactID", id).eq("CommConsent_ChannelCode", "email").order("CommConsent_EffectiveAt", { ascending: false }).limit(12)
+async function contactDetail(admin: any, companyId: string, userId: string, permissions: string[], id: string) {
+  const summaryWithSource = (await contactRows(admin, companyId, null, null, id, true, undefined, userId, 1))[0]
+  if (!summaryWithSource) throw new HttpError(404, "Contact not found.")
+  const { __detailSource, ...summary } = summaryWithSource
+  const profile = __detailSource.profile
+  const { data: activityResult, error: activityError } = await admin.rpc("multideck_crm_contact_activity_page", {
+    p_user_id: userId,
+    p_contact_id: id,
+    p_limit: 20,
+  })
+  if (activityError) throw new HttpError(500, activityError.message)
+  const activities = Array.isArray(activityResult) ? activityResult : []
+  const { data: consents, error: consentError } = await admin.from("Comm_ConsentPreferences").select("*").eq("CommConsent_ContactID", id).eq("CommConsent_ChannelCode", "email").order("CommConsent_EffectiveAt", { ascending: false }).limit(12)
+  if (consentError) throw new HttpError(500, consentError.message)
   return {
     ...summary,
     metadata: objectValue(profile?.CRMContact_MetadataJSON),
@@ -364,214 +367,148 @@ async function contactDetail(admin: any, userId: string, id: string) {
       reason: item.CommConsent_Reason,
       effectiveAt: item.CommConsent_EffectiveAt,
     })),
-    activities: (activities ?? []).map((item: Row) => ({
-      id: item.CRMActivity_ID,
-      subject: item.CRMActivity_Subject,
-      summary: item.CRMActivity_Summary,
-      occurredAt: item.CRMActivity_ActivityAt,
-      type: item.CRMActivity_ActivityTypeCode,
-    })),
-    recentEmails: await recentEmails(admin, userId, summary.accountId, [id], summary.email ? [summary.email] : []),
+    activities,
+    recentEmails: await recentEmails(admin, userId, permissions, summary.accountId, [id], summary.email ? [summary.email] : [], false),
   }
 }
 
-async function updateAccount(admin: any, current: Row, id: string, payload: Row) {
-  const { data: org, error: orgLookupError } = await admin.from("Org_Master").select("Org_id,Org_MarketingOptIn").eq("Org_id", id).maybeSingle()
-  if (orgLookupError) throw new HttpError(500, orgLookupError.message)
-  if (!org) throw new HttpError(404, "Account not found.")
+async function updateAccount(admin: any, current: Row, permissions: string[], id: string, payload: Row) {
   const name = normalize(payload.name)
   if (!name) throw new HttpError(400, "Enter an account name.")
   const address = objectValue(payload.address)
-  const addressCountryCode = countryCode(address.countryCode)
-  const now = new Date().toISOString()
-  const { error: orgError } = await admin.from("Org_Master").update({ Org_Name: name, Org_CRMRelationshipStatusCode: normalize(payload.relationshipStatus), Org_CRMUpdatedAt: now }).eq("Org_id", id)
-  if (orgError) throw new HttpError(500, orgError.message)
-
-  const profileRow = {
-    CRMAccount_OrgID: id,
-    CRMAccount_RelationshipStatusCode: normalize(payload.relationshipStatus) ?? "active_customer",
-    CRMAccount_Tier: normalize(payload.tier),
-    CRMAccount_Segment: normalize(payload.segment),
-    CRMAccount_Vertical: normalize(payload.vertical),
-    CRMAccount_PrimaryModeCode: normalize(payload.primaryMode),
-    CRMAccount_PrimaryTradeLane: normalize(payload.primaryTradeLane),
-    CRMAccount_GrowthState: normalize(payload.growthState),
-    CRMAccount_HealthScore: Number.isFinite(Number(payload.healthScore)) ? Number(payload.healthScore) : null,
-    CRMAccount_ChurnRiskScore: Number.isFinite(Number(payload.churnRiskScore)) ? Number(payload.churnRiskScore) : null,
-    CRMAccount_CustomerCentricSummary: normalize(payload.summary),
-    CRMAccount_IsStrategic: Boolean(payload.strategic),
-    CRMAccount_IsTrainingAllowed: Boolean(payload.trainingAllowed),
-    CRMAccount_MetadataJSON: objectValue(payload.metadata),
-    CRMAccount_UpdatedAt: now,
-    CRMAccount_UpdatedBy: current.User_ID,
-    CRMAccount_IsDeleted: false,
-  }
-  const { data: profile, error: profileError } = await admin.from("CRM_AccountProfiles").upsert(profileRow, { onConflict: "CRMAccount_OrgID" }).select("CRMAccount_ID").single()
-  if (profileError) throw new HttpError(500, profileError.message)
-
-  const { data: existingAddress } = await admin.from("Org_Addresses").select("OrgAdd_ID").eq("Org_ID", id).limit(1).maybeSingle()
-  const addressRow = {
-    Org_ID: id,
-    OrgAdd_Line1: normalize(address.line1),
-    OrgAdd_Line2: normalize(address.line2),
-    OrgAdd_TownCity: normalize(address.townCity),
-    OrgAdd_CountyState: normalize(address.countyState),
-    OrgAdd_PostZipCode: normalize(address.postZipCode),
-    OrgAdd_Country: addressCountryCode,
-    OrgAdd_MainEmail: normalize(address.mainEmail)?.toLowerCase(),
-    OrgAdd_MainPhone: normalize(address.mainPhone),
-  }
-  const addressResult = existingAddress
-    ? await admin.from("Org_Addresses").update(addressRow).eq("OrgAdd_ID", existingAddress.OrgAdd_ID)
-    : await admin.from("Org_Addresses").insert({ OrgAdd_ID: crypto.randomUUID(), ...addressRow })
-  if (addressResult.error) throw new HttpError(500, addressResult.error.message)
-
-  const engagement = objectValue(payload.engagement)
-  const { data: existingEngagement } = await admin.from("CRM_CustomerEngagementPreferences").select("CRMCustEngPref_ID").eq("CRMCustEngPref_CustomerOrgID", id).order("CRMCustEngPref_UpdatedAt", { ascending: false }).limit(1).maybeSingle()
-  const engagementRow = {
-    CRMCustEngPref_CustomerOrgID: id,
-    CRMCustEngPref_PreferredChannelCode: normalize(engagement.preferredChannel),
-    CRMCustEngPref_AllowThankYouMessages: engagement.allowThankYouMessages !== false,
-    CRMCustEngPref_AllowFollowupMessages: engagement.allowFollowupMessages !== false,
-    CRMCustEngPref_AllowWhatsApp: Boolean(engagement.allowWhatsApp),
-    CRMCustEngPref_DoNotOverContact: Boolean(engagement.doNotOverContact),
-    CRMCustEngPref_MinHoursBetweenNonUrgentMessages: Math.max(0, Number(engagement.minHoursBetweenNonUrgentMessages) || 24),
-    CRMCustEngPref_Notes: normalize(engagement.notes),
-    CRMCustEngPref_UpdatedAt: now,
-  }
-  const engagementResult = existingEngagement
-    ? await admin.from("CRM_CustomerEngagementPreferences").update(engagementRow).eq("CRMCustEngPref_ID", existingEngagement.CRMCustEngPref_ID)
-    : await admin.from("CRM_CustomerEngagementPreferences").insert({ CRMCustEngPref_ID: crypto.randomUUID(), ...engagementRow })
-  if (engagementResult.error) throw new HttpError(500, engagementResult.error.message)
-
-  const marketingConsentChanged = typeof payload.marketingOptIn === "boolean" && Boolean(org.Org_MarketingOptIn) !== payload.marketingOptIn
-  if (marketingConsentChanged) {
-    const reason = normalize(payload.marketingConsentReason)
-    if (!reason) throw new HttpError(400, "Explain the source or evidence for this consent change.")
-    const { error: consentError } = await admin.rpc("_multideck_set_marketing_consent", {
-      p_record_type: "customer", p_record_id: id, p_opted_in: payload.marketingOptIn,
-      p_source: "account_detail", p_reason: reason, p_actor: current.User_ID,
-      p_metadata: { surface: "crm_account_detail" },
-    })
-    if (consentError) throw new HttpError(500, consentError.message)
-  }
-  await admin.from("CRM_Activities").insert({
-    CRMActivity_ID: crypto.randomUUID(), CRMActivity_ActivityTypeCode: "review", CRMActivity_AccountID: profile.CRMAccount_ID,
-    CRMActivity_Subject: "Account details updated", CRMActivity_Summary: normalize(payload.changeSummary) ?? "The account profile and communication preferences were reviewed.",
-    CRMActivity_ActivityAt: now, CRMActivity_OwnerUserID: current.User_ID, CRMActivity_CreatedBy: current.User_ID, CRMActivity_UpdatedBy: current.User_ID,
+  countryCode(address.countryCode)
+  const { error } = await admin.rpc("multideck_crm_update_account", {
+    p_actor_user_id: current.User_ID,
+    p_account_id: id,
+    p_expected_version: expectedVersion(payload.expectedVersion),
+    p_input: payload,
   })
-  return accountDetail(admin, current.User_ID, id)
+  if (error) throw crmWriteError(error, "The account could not be saved.")
+  return accountDetail(admin, current.Company_ID, current.User_ID, permissions, id)
 }
 
-async function updateContact(admin: any, current: Row, id: string, payload: Row) {
-  const { data: contact, error: contactError } = await admin.from("Org_Contacts").select("*").eq("OrgContact_ID", id).maybeSingle()
-  if (contactError) throw new HttpError(500, contactError.message)
-  if (!contact) throw new HttpError(404, "Contact not found.")
+async function updateContact(admin: any, current: Row, permissions: string[], id: string, payload: Row) {
   const firstName = normalize(payload.firstName)
   const lastName = normalize(payload.lastName)
   if (!firstName && !lastName) throw new HttpError(400, "Enter the contact's name.")
-  const now = new Date().toISOString()
-  const { error: nameError } = await admin.from("Org_Contacts").update({ OrgContact_FirstName: firstName, OrgContact_LastName: lastName }).eq("OrgContact_ID", id)
-  if (nameError) throw new HttpError(500, nameError.message)
-  const email = normalize(payload.email)?.toLowerCase()
-  const { data: existingEmail } = await admin.from("OrgContact_Emails").select("OrgContactEmail_ID").eq("OrgContact_ID", id).order("OrgContactEmail_Type").limit(1).maybeSingle()
-  if (email) {
-    const emailResult = existingEmail
-      ? await admin.from("OrgContact_Emails").update({ OrgContactEmail_Email: email }).eq("OrgContactEmail_ID", existingEmail.OrgContactEmail_ID)
-      : await admin.from("OrgContact_Emails").insert({ OrgContactEmail_ID: crypto.randomUUID(), OrgContact_ID: id, OrgContactEmail_Email: email, OrgContactEmail_Type: 1 })
-    if (emailResult.error) throw new HttpError(500, emailResult.error.message)
-  } else if (existingEmail) {
-    const { error: emailDeleteError } = await admin.from("OrgContact_Emails").delete().eq("OrgContactEmail_ID", existingEmail.OrgContactEmail_ID)
-    if (emailDeleteError) throw new HttpError(500, emailDeleteError.message)
-  }
-  const metadata = { ...objectValue(payload.metadata), jobTitle: normalize(payload.jobTitle), department: normalize(payload.department), phone: normalize(payload.phone) }
-  const profileRow = {
-    CRMContact_OrgContactID: id,
-    CRMContact_RoleCode: normalize(payload.role),
-    CRMContact_InfluenceLevel: normalize(payload.influenceLevel),
-    CRMContact_RelationshipStrength: Number.isFinite(Number(payload.relationshipStrength)) ? Number(payload.relationshipStrength) : null,
-    CRMContact_PreferredChannelCode: normalize(payload.preferredChannel),
-    CRMContact_PreferredLanguageCode: normalize(payload.preferredLanguage),
-    CRMContact_ConsentSalesContact: Boolean(payload.consentSalesContact),
-    CRMContact_ConsentMarketing: Boolean(payload.marketingOptIn),
-    CRMContact_Notes: normalize(payload.notes),
-    CRMContact_IsTrainingAllowed: Boolean(payload.trainingAllowed),
-    CRMContact_MetadataJSON: metadata,
-    CRMContact_UpdatedAt: now,
-    CRMContact_UpdatedBy: current.User_ID,
-  }
-  const { data: profile, error: profileError } = await admin.from("CRM_ContactProfiles").upsert(profileRow, { onConflict: "CRMContact_OrgContactID" }).select("CRMContact_ID,CRMContact_AccountID").single()
-  if (profileError) throw new HttpError(500, profileError.message)
-  const phone = normalize(payload.phone)
-  const { data: phoneIdentity, error: phoneIdentityError } = await admin.from("Comm_Identities").select("CommIdentity_ID").eq("CommIdentity_ContactID", id).in("CommIdentity_ChannelCode", ["phone", "sms", "whatsapp"]).eq("CommIdentity_IsDeleted", false).limit(1).maybeSingle()
-  if (phoneIdentityError) throw new HttpError(500, phoneIdentityError.message)
-  if (phone) {
-    const normalizedPhone = phone.replace(/[^+\d]/g, "")
-    const identityRow = { CommIdentity_ChannelCode: normalize(payload.preferredChannel) === "whatsapp" ? "whatsapp" : "phone", CommIdentity_Address: phone, CommIdentity_NormalizedAddress: normalizedPhone, CommIdentity_DisplayName: [firstName, lastName].filter(Boolean).join(" "), CommIdentity_ParticipantTypeCode: "external", CommIdentity_OrgID: contact.Org_ID, CommIdentity_ContactID: id, CommIdentity_Source: "crm_contact_detail", CommIdentity_UpdatedAt: now, CommIdentity_IsDeleted: false }
-    const phoneResult = phoneIdentity ? await admin.from("Comm_Identities").update(identityRow).eq("CommIdentity_ID", phoneIdentity.CommIdentity_ID) : await admin.from("Comm_Identities").insert({ CommIdentity_ID: crypto.randomUUID(), ...identityRow })
-    if (phoneResult.error) throw new HttpError(500, phoneResult.error.message)
-  } else if (phoneIdentity) {
-    const { error: phoneDeleteError } = await admin.from("Comm_Identities").update({ CommIdentity_IsDeleted: true, CommIdentity_UpdatedAt: now }).eq("CommIdentity_ID", phoneIdentity.CommIdentity_ID)
-    if (phoneDeleteError) throw new HttpError(500, phoneDeleteError.message)
-  }
-  const marketingConsentChanged = typeof payload.marketingOptIn === "boolean" && Boolean(contact.OrgContact_MarketingOptIn) !== payload.marketingOptIn
-  if (marketingConsentChanged) {
-    const reason = normalize(payload.marketingConsentReason)
-    if (!reason) throw new HttpError(400, "Explain the source or evidence for this consent change.")
-    const { error: consentError } = await admin.rpc("_multideck_set_marketing_consent", {
-      p_record_type: "contact", p_record_id: id, p_opted_in: payload.marketingOptIn,
-      p_source: "contact_detail", p_reason: reason, p_actor: current.User_ID,
-      p_metadata: { surface: "crm_contact_detail" },
-    })
-    if (consentError) throw new HttpError(500, consentError.message)
-  }
-  let accountProfileId = profile?.CRMContact_AccountID ?? null
-  if (!accountProfileId) {
-    const { data: accountProfile } = await admin.from("CRM_AccountProfiles").select("CRMAccount_ID").eq("CRMAccount_OrgID", contact.Org_ID).eq("CRMAccount_IsDeleted", false).maybeSingle()
-    accountProfileId = accountProfile?.CRMAccount_ID ?? null
-  }
-  const activityId = crypto.randomUUID()
-  await admin.from("CRM_Activities").insert({
-    CRMActivity_ID: activityId, CRMActivity_ActivityTypeCode: "note", CRMActivity_AccountID: accountProfileId,
-    CRMActivity_Subject: "Contact details updated", CRMActivity_Summary: normalize(payload.changeSummary) ?? "The contact profile and communication preferences were reviewed.",
-    CRMActivity_ActivityAt: now, CRMActivity_OwnerUserID: current.User_ID, CRMActivity_CreatedBy: current.User_ID, CRMActivity_UpdatedBy: current.User_ID,
+  const { error } = await admin.rpc("multideck_crm_update_contact", {
+    p_actor_user_id: current.User_ID,
+    p_contact_id: id,
+    p_expected_version: expectedVersion(payload.expectedVersion),
+    p_input: payload,
   })
-  await admin.from("CRM_ActivityParticipants").insert({ CRMActPart_ID: crypto.randomUUID(), CRMActPart_ActivityID: activityId, CRMActPart_OrgID: contact.Org_ID, CRMActPart_OrgContactID: id, CRMActPart_NameSnapshot: [firstName, lastName].filter(Boolean).join(" "), CRMActPart_EmailSnapshot: email, CRMActPart_Role: normalize(payload.role), CRMActPart_IsExternal: true })
-  return contactDetail(admin, current.User_ID, id)
+  if (error) throw crmWriteError(error, "The contact could not be saved.")
+  return contactDetail(admin, current.Company_ID, current.User_ID, permissions, id)
+}
+
+function crmWriteError(error: any, fallback: string): HttpError {
+  if (error?.code === "P0001" || String(error?.message ?? "").startsWith("CRM_CONFLICT:")) {
+    return new HttpError(409, "This record changed while you were editing it. Reload it before saving again.")
+  }
+  if (error?.code === "23505") return new HttpError(409, error.message || "That CRM record already exists.")
+  if (error?.code === "P0002") return new HttpError(404, error.message || "The CRM record could not be found.")
+  if (error?.code === "22023" || error?.code === "22P02") return new HttpError(400, error.message || fallback)
+  return new HttpError(500, error?.message || fallback)
+}
+
+function expectedVersion(value: unknown): number | null {
+  if (value == null || value === "") return null
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 1) throw new HttpError(400, "The record version is invalid.")
+  return parsed
 }
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
   try {
-    const { admin, user } = await authenticate(request)
+    const { admin, user, token } = await authenticate(request)
     const current = await currentInternalUser(admin, user)
     const parts = routeParts(request, "customers")
+    const userDb = authenticatedClient(token)
 
     if (request.method === "GET") {
-      await requirePermission(admin, current.User_ID, "Customers.Read")
+      const permissions = await requirePermission(admin, current.User_ID, "Customers.Read")
       if (parts[0] === "reference") {
-        const [{ data: organisationTypes, error }, { data: owners, error: ownerError }, { data: relationshipStatuses, error: relationshipError }] = await Promise.all([
+        const [{ data: organisationTypes, error }, { data: relationshipStatuses, error: relationshipError }] = await Promise.all([
           admin.from("Org_Types").select("OrgType_ID,OrgType_Name").order("OrgType_Order").order("OrgType_Name"),
-          admin.from("cmp_Users").select("User_ID,User_Firstname,User_Lastname,User_Email").eq("Company_ID", current.Company_ID).not("Auth_User_ID", "is", null).order("User_Firstname"),
           admin.from("sys_CRMRelationshipStatuses").select("CRMRelStatus_Code,CRMRelStatus_Name").eq("CRMRelStatus_IsActive", true).order("CRMRelStatus_SortOrder"),
         ])
-        if (error || ownerError || relationshipError) throw new HttpError(500, (error ?? ownerError ?? relationshipError)?.message ?? "The CRM reference data could not be loaded.")
+        if (error || relationshipError) throw new HttpError(500, (error ?? relationshipError)?.message ?? "The CRM reference data could not be loaded.")
         return json(request, {
           organisationTypes: (organisationTypes ?? []).map((item: Row) => ({ id: item.OrgType_ID, name: item.OrgType_Name })),
-          owners: (owners ?? []).map((item: Row) => ({ id: item.User_ID, name: [item.User_Firstname, item.User_Lastname].filter(Boolean).join(" ") || item.User_Email, email: item.User_Email })),
+          // Kept for rollout compatibility with older clients. Account owner
+          // filters now come from the bounded register facets instead.
+          owners: [],
           relationshipStatuses: (relationshipStatuses ?? []).map((item: Row) => ({ code: item.CRMRelStatus_Code, name: item.CRMRelStatus_Name })),
         })
       }
-      if (parts[0] === "contacts" && parts[1]) return json(request, await contactDetail(admin, current.User_ID, parts[1]))
-      if (parts[0] === "contacts") return json(request, await contactRows(admin, new URL(request.url).searchParams.get("search")))
-      if (parts[0]) return json(request, await accountDetail(admin, current.User_ID, parts[0]))
-      return json(request, await customerRows(admin, new URL(request.url).searchParams.get("search")))
+      if (parts[0] === "directory") {
+        const params = new URL(request.url).searchParams
+        const { data, error } = await userDb.rpc("multideck_customer_directory_page", {
+          p_scope: params.get("scope") || "all",
+          p_status: params.get("status") || "All",
+          p_limit: Number(params.get("limit") || 20),
+          p_offset: Number(params.get("offset") || 0),
+        })
+        if (error) throw new HttpError(error.code === "42501" ? 403 : 500, error.message)
+        const payload = objectValue(data)
+        const ids = Array.isArray(payload.ids) ? payload.ids.filter((value): value is string => typeof value === "string") : []
+        const rows = await customerRows(admin, current.Company_ID, null, null, false, ids)
+        const rowMap = new Map(rows.map((row: Row) => [row.id, row]))
+        return json(request, { ...payload, rows: ids.flatMap((id) => rowMap.get(id) ? [rowMap.get(id)] : []) })
+      }
+      if (parts[0] === "contacts" && parts[1]) return json(request, await contactDetail(admin, current.Company_ID, current.User_ID, permissions, parts[1]))
+      if (parts[0] === "contacts") {
+        const params = new URL(request.url).searchParams
+        if (params.has("limit")) {
+          const { data, error } = await userDb.rpc("multideck_crm_contact_register_page", {
+            p_search: params.get("search"),
+            p_consent_scope: params.get("consentScope"),
+            p_account_id: params.get("accountId") || null,
+            p_channel: params.get("channel"),
+            p_sort: params.get("sort") || "contact",
+            p_direction: params.get("direction") || "asc",
+            p_limit: Number(params.get("limit") || 50),
+            p_offset: Number(params.get("offset") || 0),
+          })
+          if (error) throw new HttpError(error.code === "42501" ? 403 : 500, error.message)
+          const payload = objectValue(data)
+          const ids = Array.isArray(payload.ids) ? payload.ids.filter((value): value is string => typeof value === "string") : []
+          const rows = await contactRows(admin, current.Company_ID, null, null, null, false, ids)
+          const rowMap = new Map(rows.map((row: Row) => [row.id, row]))
+          return json(request, { ...payload, rows: ids.flatMap((id) => rowMap.get(id) ? [rowMap.get(id)] : []) })
+        }
+        throw new HttpError(400, "Contact lists require bounded paging.")
+      }
+      if (parts[0]) return json(request, await accountDetail(admin, current.Company_ID, current.User_ID, permissions, parts[0]))
+      const params = new URL(request.url).searchParams
+      if (params.has("limit")) {
+        const owner = params.get("owner")
+        const { data, error } = await userDb.rpc("multideck_crm_account_register_page", {
+          p_search: params.get("search"),
+          p_marketing_scope: params.get("marketingScope"),
+          p_relationship: params.get("relationship"),
+          p_owner_id: owner && owner !== "__unassigned__" ? owner : null,
+          p_unassigned: owner === "__unassigned__",
+          p_sort: params.get("sort") || "account",
+          p_direction: params.get("direction") || "asc",
+          p_limit: Number(params.get("limit") || 50),
+          p_offset: Number(params.get("offset") || 0),
+        })
+        if (error) throw new HttpError(error.code === "42501" ? 403 : 500, error.message)
+        const payload = objectValue(data)
+        const ids = Array.isArray(payload.ids) ? payload.ids.filter((value): value is string => typeof value === "string") : []
+        const rows = await customerRows(admin, current.Company_ID, null, null, false, ids)
+        const rowMap = new Map(rows.map((row: Row) => [row.id, row]))
+        return json(request, { ...payload, rows: ids.flatMap((id) => rowMap.get(id) ? [rowMap.get(id)] : []) })
+      }
+      throw new HttpError(400, "Account lists require bounded paging.")
     }
 
     if (request.method === "PATCH") {
-      await requirePermission(admin, current.User_ID, "Customers.Write")
-      if (parts[0] === "contacts" && parts[1]) return json(request, await updateContact(admin, current, parts[1], await body<Row>(request)))
-      if (parts.length === 1) return json(request, await updateAccount(admin, current, parts[0], await body<Row>(request)))
+      const permissions = await requirePermission(admin, current.User_ID, "Customers.Write")
+      if (parts[0] === "contacts" && parts[1]) return json(request, await updateContact(admin, current, permissions, parts[1], await body<Row>(request)))
+      if (parts.length === 1) return json(request, await updateAccount(admin, current, permissions, parts[0], await body<Row>(request)))
     }
 
     if (request.method === "POST" && !parts.length) {
@@ -579,55 +516,19 @@ Deno.serve(async (request) => {
       const payload = await body<Row>(request)
       const name = normalize(payload.name)
       if (!name) throw new HttpError(400, "Enter an account name.")
-      const addressCountryCode = countryCode(payload.countryCode)
-      const { data: existing } = await admin.from("Org_Master").select("Org_id").ilike("Org_Name", name).maybeSingle()
-      if (existing) throw new HttpError(409, `An account named '${name}' already exists.`)
-      const { data: type } = await admin.from("Org_Types").select("OrgType_ID").eq("OrgType_ID", payload.orgTypeId).maybeSingle()
-      if (!type) throw new HttpError(400, "Choose a valid organisation type.")
-      const { data: currencies, error: currencyError } = await admin.from("sys_Currency").select("Currency_ID,Currency_Code").order("Currency_Code")
-      if (currencyError) throw new HttpError(500, currencyError.message)
-      const baseCurrency = (currencies ?? []).find((currency: Row) => currency.Currency_Code === "GBP") ?? currencies?.[0]
-      if (!baseCurrency) throw new HttpError(500, "No base currency is configured for this workspace.")
-      const id = crypto.randomUUID()
-      const now = new Date().toISOString()
-      const codeStem = name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 11) || "ACCOUNT"
-      const accountCode = `${codeStem}-${id.slice(0, 6).toUpperCase()}`.slice(0, 20)
-      const inserted = await admin.from("Org_Master").insert({
-        Org_id: id,
-        Org_Name: name,
-        Org_BaseCurrency: baseCurrency.Currency_ID,
-        Org_AccCode: accountCode,
-        Org_CRMRelationshipStatusCode: "active_customer",
-        Org_CRMIsPotentialCustomer: true,
-        Org_CRMIsLead: false,
-        Org_CRMUpdatedAt: now,
+      countryCode(payload.countryCode)
+      const { data, error } = await admin.rpc("multideck_crm_create_account", {
+        p_actor_user_id: current.User_ID,
+        p_input: payload,
       })
-      if (inserted.error) throw new HttpError(500, inserted.error.message)
-      const typeLink = await admin.from("Org_Master_Type").insert({ Org_ID: id, OrgType_ID: payload.orgTypeId })
-      if (typeLink.error) throw new HttpError(500, typeLink.error.message)
-      const profileInsert = await admin.from("CRM_AccountProfiles").insert({
-        CRMAccount_ID: crypto.randomUUID(), CRMAccount_OrgID: id, CRMAccount_RelationshipStatusCode: "active_customer",
-        CRMAccount_OwnerUserID: current.User_ID, CRMAccount_CreatedBy: current.User_ID, CRMAccount_UpdatedBy: current.User_ID,
-      })
-      if (profileInsert.error) throw new HttpError(500, profileInsert.error.message)
-      if (normalize(payload.addressLine1) || normalize(payload.townCity) || addressCountryCode) {
-        const addressInsert = await admin.from("Org_Addresses").insert({ OrgAdd_ID: crypto.randomUUID(), Org_ID: id, OrgAdd_Line1: normalize(payload.addressLine1), OrgAdd_TownCity: normalize(payload.townCity), OrgAdd_PostZipCode: normalize(payload.postZipCode), OrgAdd_Country: addressCountryCode })
-        if (addressInsert.error) throw new HttpError(500, addressInsert.error.message)
-      }
-      if (normalize(payload.contactFirstName) || normalize(payload.contactLastName) || normalize(payload.contactEmail)) {
-        const contactId = crypto.randomUUID()
-        const contactInsert = await admin.from("Org_Contacts").insert({ OrgContact_ID: contactId, Org_ID: id, OrgContact_FirstName: normalize(payload.contactFirstName), OrgContact_LastName: normalize(payload.contactLastName) })
-        if (contactInsert.error) throw new HttpError(500, contactInsert.error.message)
-        if (normalize(payload.contactEmail)) {
-          const emailInsert = await admin.from("OrgContact_Emails").insert({ OrgContactEmail_ID: crypto.randomUUID(), OrgContact_ID: contactId, OrgContactEmail_Email: normalize(payload.contactEmail)?.toLowerCase(), OrgContactEmail_Type: 1 })
-          if (emailInsert.error) throw new HttpError(500, emailInsert.error.message)
-        }
-      }
-      return json(request, (await customerRows(admin)).find((item: Row) => item.id === id), 201)
+      if (error) throw crmWriteError(error, "The account could not be created.")
+      const id = String(data?.id ?? "")
+      if (!id) throw new HttpError(500, "The account was created but could not be opened.")
+      return json(request, (await customerRows(admin, current.Company_ID, null, id, false, undefined, current.User_ID))[0], 201)
     }
 
     if (request.method === "POST" && parts.length === 2 && parts[1] === "contacts") {
-      await requirePermission(admin, current.User_ID, "Customers.Write")
+      const permissions = await requirePermission(admin, current.User_ID, "Customers.Write")
       const customerId = parts[0]
       const payload = await body<Row>(request)
       const email = normalize(payload.email)?.toLowerCase()
@@ -635,17 +536,13 @@ Deno.serve(async (request) => {
       const lastName = normalize(payload.lastName)
       if (!email) throw new HttpError(400, "Enter a contact email address.")
       if (!firstName && !lastName) throw new HttpError(400, "Enter the contact's name.")
-      const { data: customer } = await admin.from("Org_Master").select("Org_id,Org_Name").eq("Org_id", customerId).maybeSingle()
-      if (!customer) throw new HttpError(404, "Choose an existing account.")
-      const { data: existingEmail } = await admin.from("OrgContact_Emails").select("OrgContactEmail_ID").ilike("OrgContactEmail_Email", email).maybeSingle()
-      if (existingEmail) throw new HttpError(409, "This email is already connected to a contact.")
-      const contactId = crypto.randomUUID()
-      const insertedContact = await admin.from("Org_Contacts").insert({ OrgContact_ID: contactId, Org_ID: customerId, OrgContact_FirstName: firstName, OrgContact_LastName: lastName })
-      if (insertedContact.error) throw new HttpError(500, insertedContact.error.message)
-      const insertedEmail = await admin.from("OrgContact_Emails").insert({ OrgContactEmail_ID: crypto.randomUUID(), OrgContact_ID: contactId, OrgContactEmail_Email: email, OrgContactEmail_Type: 1 })
-      if (insertedEmail.error) throw new HttpError(500, insertedEmail.error.message)
-      if (payload.role || payload.jobTitle || payload.department || typeof payload.marketingOptIn === "boolean") await updateContact(admin, current, contactId, payload)
-      return json(request, { id: contactId, accountId: customerId, accountName: customer.Org_Name, firstName, lastName, email }, 201)
+      const { data, error } = await admin.rpc("multideck_crm_create_contact", {
+        p_actor_user_id: current.User_ID,
+        p_account_id: customerId,
+        p_input: payload,
+      })
+      if (error) throw crmWriteError(error, "The contact could not be created.")
+      return json(request, { id: data?.id, accountId: customerId, firstName, lastName, email, editVersion: data?.editVersion ?? 1 }, 201)
     }
     throw new HttpError(405, "Method not allowed.")
   } catch (error) {

@@ -16,6 +16,10 @@ const sidebar = readFileSync(
   resolve(repoRoot, "multideck.client/src/components/multideck/app-sidebar.tsx"),
   "utf8",
 )
+const dexterApi = readFileSync(
+  resolve(repoRoot, "multideck.client/src/lib/dexter-api.ts"),
+  "utf8",
+)
 
 test("Dexter conversation search stays scoped to the signed-in user and tenant", () => {
   assert.match(migration, /_multideck_dexter_context\(\)/)
@@ -28,7 +32,8 @@ test("Dexter conversation search stays scoped to the signed-in user and tenant",
 test("Dexter sidebar searches titles and saved message content with recovery copy", () => {
   assert.match(repairMigration, /conversation\."AICNV_Title"/)
   assert.match(repairMigration, /message\."AIMSG_ContentText"/)
-  assert.match(sidebar, /multideck_dexter_search_conversations/)
+  assert.match(sidebar, /listDexterConversationsPage\(\{ query, limit: 25, offset \}\)/)
+  assert.match(dexterApi, /\{ operation: "list-conversations", query, limit, offset \}/)
   assert.match(sidebar, /Search conversations/)
   assert.match(sidebar, /No matching conversations/)
   assert.match(sidebar, /Clear search/)

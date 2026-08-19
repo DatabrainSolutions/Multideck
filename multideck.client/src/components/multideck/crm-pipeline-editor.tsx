@@ -67,7 +67,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { cn } from "@/lib/utils"
-import { crmPipelineBoards, type StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/multideck-data"
 import { Surface } from "./surface"
 import { toneToVar } from "./status-pill"
 
@@ -88,6 +88,7 @@ export type CrmPipelineEditorSource = {
     tone: StatusTone
     rule: string
     probability?: number
+    dealCount?: number
   }[]
 }
 
@@ -276,8 +277,6 @@ function stageProbability(index: number, total: number) {
 }
 
 function pipelineDraft(source: CrmPipelineEditorSource, pipelineIndex: number): EditablePipeline {
-  const board = crmPipelineBoards.find((candidate) => candidate.name === source.name)
-
   return {
     id: source.id ?? `${slug(source.name)}-${pipelineIndex}`,
     serverId: source.id ?? null,
@@ -291,7 +290,7 @@ function pipelineDraft(source: CrmPipelineEditorSource, pipelineIndex: number): 
       tone: stage.tone,
       rule: stage.rule,
       probability: stage.probability ?? stageProbability(stageIndex, source.stages.length),
-      dealCount: board?.stages.find((candidate) => candidate.title === stage.name)?.deals.length ?? 0,
+      dealCount: stage.dealCount ?? 0,
       // Kept per stage rather than looked up by name, so renaming the entry point or the
       // conversion trigger does not silently detach it.
       isDefaultEntry: stage.name === source.defaultStage,
@@ -310,6 +309,7 @@ function StageCard({
   stage,
   index,
   total,
+  canEdit,
   selected,
   held,
   lifted,
@@ -319,6 +319,7 @@ function StageCard({
   rotate,
   presence,
   onRename,
+  onSelect,
   onStartRename,
   onEndRename,
   onKeyboardMove,
@@ -327,6 +328,7 @@ function StageCard({
   stage: EditableStage
   index: number
   total: number
+  canEdit: boolean
   selected: boolean
   held: boolean
   lifted: boolean
@@ -336,6 +338,7 @@ function StageCard({
   rotate: MotionValue<number>
   presence: MotionValue<number>
   onRename: (name: string) => void
+  onSelect: () => void
   onStartRename: () => void
   onEndRename: () => void
   onKeyboardMove: (direction: -1 | 1) => void
@@ -358,7 +361,8 @@ function StageCard({
     input.select()
   }, [renaming])
 
-  function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (!canEdit) return
     if (event.altKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       event.preventDefault()
       const forward = event.key === (document.documentElement.dir === "rtl" ? "ArrowLeft" : "ArrowRight")
@@ -377,24 +381,25 @@ function StageCard({
       className="relative shrink-0"
       style={{ width, marginInlineEnd: marginEnd, height: CARD_HEIGHT }}
     >
-      <button
-        type="button"
-        data-no-drag=""
-        tabIndex={-1}
-        aria-label={t("Insert stage here")}
-        title={t("Insert stage here")}
-        onClick={onInsertBefore}
-        className={cn(
-          "group/insert absolute inset-y-0 z-20 grid w-[26px] place-items-center focus-visible:outline-none",
-          "start-[-26px]",
-          dragging && "pointer-events-none opacity-0",
-        )}
-      >
-        <span className="h-[84px] w-px origin-center scale-y-0 rounded-full bg-[var(--md-accent)] opacity-0 transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/insert:scale-y-100 group-hover/insert:opacity-60 group-focus-visible/insert:scale-y-100 group-focus-visible/insert:opacity-60" />
-        <span className="absolute grid size-[26px] scale-[0.55] place-items-center rounded-full bg-[var(--md-surface)] text-[var(--md-accent)] opacity-0 shadow-[var(--md-shadow-soft),inset_0_0_0_1px_color-mix(in_srgb,var(--md-accent)_28%,transparent)] transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover/insert:scale-100 group-hover/insert:opacity-100 group-focus-visible/insert:scale-100 group-focus-visible/insert:opacity-100">
-          <Plus className="size-4" strokeWidth={1.8} />
-        </span>
-      </button>
+      {canEdit ? (
+        <button
+          type="button"
+          data-no-drag=""
+          aria-label={t("Insert stage here")}
+          title={t("Insert stage here")}
+          onClick={onInsertBefore}
+          className={cn(
+            "group/insert absolute inset-y-0 z-20 grid w-[26px] place-items-center focus-visible:outline-none",
+            "start-[-26px]",
+            dragging && "pointer-events-none opacity-0",
+          )}
+        >
+          <span className="h-[84px] w-px origin-center scale-y-0 rounded-full bg-[var(--md-accent)] opacity-0 transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/insert:scale-y-100 group-hover/insert:opacity-60 group-focus-visible/insert:scale-y-100 group-focus-visible/insert:opacity-60" />
+          <span className="absolute grid size-[26px] scale-[0.55] place-items-center rounded-full bg-[var(--md-surface)] text-[var(--md-accent)] opacity-0 shadow-[var(--md-shadow-soft),inset_0_0_0_1px_color-mix(in_srgb,var(--md-accent)_28%,transparent)] transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover/insert:scale-100 group-hover/insert:opacity-100 group-focus-visible/insert:scale-100 group-focus-visible/insert:opacity-100">
+            <Plus className="size-4" strokeWidth={1.8} />
+          </span>
+        </button>
+      ) : null}
 
       <motion.div
         data-stage-card={stage.id}
@@ -408,19 +413,21 @@ function StageCard({
           style={{ willChange: held ? "transform" : undefined }}
         >
           <div
-            role="button"
-            tabIndex={0}
-            aria-pressed={selected}
-            aria-label={`${t("Stage")} ${index + 1} ${t("of")} ${total}: ${t(stage.name)}`}
-            onKeyDown={handleKeyDown}
             className={cn(
               "group/card relative flex size-full touch-pan-y select-none flex-col overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3.5 text-start",
               "shadow-[var(--md-shadow-line)] transition-[box-shadow,transform] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-              "focus-visible:outline-none focus-visible:shadow-[var(--md-shadow-line),0_0_0_3px_color-mix(in_srgb,var(--md-accent)_22%,transparent)]",
               held ? "cursor-grabbing shadow-[var(--md-shadow-lift)]" : "cursor-grab hover:-translate-y-[3px] hover:shadow-[var(--md-shadow-soft)]",
             )}
             style={{ "--md-stage-tone": tone } as CSSProperties}
           >
+            <button
+              type="button"
+              aria-pressed={selected}
+              aria-label={`${t("Stage")} ${index + 1} ${t("of")} ${total}: ${t(stage.name)}`}
+              onClick={onSelect}
+              onKeyDown={handleKeyDown}
+              className="absolute inset-0 z-0 rounded-[var(--md-radius-xl)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[color-mix(in_srgb,var(--md-accent)_25%,transparent)]"
+            />
             <motion.span
               aria-hidden="true"
               className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-xl)] shadow-[inset_0_0_0_1.5px_var(--md-accent)]"
@@ -439,17 +446,18 @@ function StageCard({
                 {index + 1}
               </span>
               <span className="flex-1" />
-              <button
-                type="button"
-                data-no-drag=""
-                tabIndex={-1}
-                aria-label={`${t("Rename stage")}: ${t(stage.name)}`}
-                title={t("Rename stage")}
-                onClick={onStartRename}
-                className="grid size-6 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:opacity-100 focus-visible:outline-none group-hover/card:opacity-100"
-              >
-                <Pencil className="size-3.5" strokeWidth={1.4} />
-              </button>
+              {canEdit ? (
+                <button
+                  type="button"
+                  data-no-drag=""
+                  aria-label={`${t("Rename stage")}: ${t(stage.name)}`}
+                  title={t("Rename stage")}
+                  onClick={onStartRename}
+                  className="relative z-10 grid size-6 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:opacity-100 focus-visible:outline-none group-hover/card:opacity-100"
+                >
+                  <Pencil className="size-3.5" strokeWidth={1.4} />
+                </button>
+              ) : null}
               <span
                 aria-hidden="true"
                 className={cn(
@@ -477,7 +485,7 @@ function StageCard({
                       onEndRename()
                     }
                   }}
-                  className="w-full rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-1.5 py-0.5 text-[15px] font-medium text-[var(--md-ink)] outline-none ring-2 ring-[color-mix(in_srgb,var(--md-accent)_45%,transparent)]"
+                  className="relative z-10 w-full rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-1.5 py-0.5 text-[15px] font-medium text-[var(--md-ink)] outline-none ring-2 ring-[color-mix(in_srgb,var(--md-accent)_45%,transparent)]"
                 />
               ) : (
                 <span className="line-clamp-2 text-[15px] font-medium leading-5 text-[var(--md-ink)]">{t(stage.name)}</span>
@@ -514,7 +522,7 @@ function StageCard({
   )
 }
 
-function TonePicker({ value, onChange }: { value: StatusTone; onChange: (tone: StatusTone) => void }) {
+function TonePicker({ value, onChange, disabled = false }: { value: StatusTone; onChange: (tone: StatusTone) => void; disabled?: boolean }) {
   const { t } = useLanguage()
 
   return (
@@ -527,6 +535,7 @@ function TonePicker({ value, onChange }: { value: StatusTone; onChange: (tone: S
             type="button"
             role="radio"
             aria-checked={active}
+            disabled={disabled}
             aria-label={t(`${tone} stage colour`)}
             onClick={() => onChange(tone)}
             className={cn(
@@ -555,7 +564,7 @@ function TonePicker({ value, onChange }: { value: StatusTone; onChange: (tone: S
   )
 }
 
-function ProbabilityTrack({ value, onChange }: { value: number; onChange: (probability: number) => void }) {
+function ProbabilityTrack({ value, onChange, disabled = false }: { value: number; onChange: (probability: number) => void; disabled?: boolean }) {
   const { t, direction } = useLanguage()
   const trackRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef(false)
@@ -573,6 +582,7 @@ function ProbabilityTrack({ value, onChange }: { value: number; onChange: (proba
   )
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (disabled) return
     if (event.button !== 0) return
     draggingRef.current = true
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -581,6 +591,7 @@ function ProbabilityTrack({ value, onChange }: { value: number; onChange: (proba
   }
 
   function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (disabled) return
     if (!draggingRef.current) return
     const next = stepFromPointer(event.clientX)
     if (next !== null && next !== value) onChange(next)
@@ -616,6 +627,7 @@ function ProbabilityTrack({ value, onChange }: { value: number; onChange: (proba
           type="button"
           role="radio"
           aria-checked={step === value}
+          disabled={disabled}
           onClick={() => onChange(step)}
           onKeyDown={(event) => {
             const forward = event.key === (direction === "rtl" ? "ArrowLeft" : "ArrowRight")
@@ -971,11 +983,13 @@ export function CrmPipelineEditor({
   }, [selectedStage?.id, stageSignature, direction, slotLeft, slotLeftSpring, reduce])
 
   function updatePipeline(updater: (pipeline: EditablePipeline) => EditablePipeline) {
+    if (!canEdit) return
     setDrafts((current) => current.map((pipeline) => (pipeline.id === activePipelineId ? updater(pipeline) : pipeline)))
     setDirty(true)
   }
 
   function updateStage(id: string, updater: (stage: EditableStage) => EditableStage) {
+    if (!canEdit) return
     updatePipeline((pipeline) => ({
       ...pipeline,
       stages: pipeline.stages.map((stage) => (stage.id === id ? updater(stage) : stage)),
@@ -1078,6 +1092,7 @@ export function CrmPipelineEditor({
   }, [stopAutoScroll, syncDrag])
 
   function handleRowPointerDown(event: ReactPointerEvent<HTMLOListElement>) {
+    if (!canEdit) return
     const target = event.target as HTMLElement
     if (target.closest("[data-no-drag]")) return
     if (event.pointerType === "mouse" && event.button !== 0) return
@@ -1169,6 +1184,7 @@ export function CrmPipelineEditor({
   }
 
   function moveStage(id: string, offset: -1 | 1) {
+    if (!canEdit) return
     const from = stagesRef.current.findIndex((stage) => stage.id === id)
     const to = clamp(from + offset, 0, stagesRef.current.length - 1)
     if (from === -1 || from === to) return
@@ -1186,6 +1202,7 @@ export function CrmPipelineEditor({
   }
 
   function insertStage(index: number) {
+    if (!canEdit) return
     if (!activePipeline) return
 
     const id = `${activePipeline.id}-stage-${Date.now()}`
@@ -1228,6 +1245,7 @@ export function CrmPipelineEditor({
   }, [activePipeline, addStageRequestKey, canEdit, loading])
 
   function duplicateStage(id: string) {
+    if (!canEdit) return
     if (!activePipeline) return
 
     const index = stagesRef.current.findIndex((stage) => stage.id === id)
@@ -1254,6 +1272,7 @@ export function CrmPipelineEditor({
   }
 
   function removeStage(id: string) {
+    if (!canEdit) return
     const index = stagesRef.current.findIndex((stage) => stage.id === id)
     const stage = stagesRef.current[index]
     if (!stage || stage.dealCount > 0 || stagesRef.current.length <= 1) return
@@ -1287,6 +1306,7 @@ export function CrmPipelineEditor({
   }
 
   function createPipeline(template?: PipelineTemplate) {
+    if (!canEdit) return
     const id = `pipeline-${template?.id ?? "blank"}-${Date.now()}`
     const templateStages = template?.stages ?? [
       {
@@ -1329,6 +1349,7 @@ export function CrmPipelineEditor({
   }
 
   async function saveChanges() {
+    if (!canEdit) return
     if (!activePipeline || saving) return
 
     if (!onSave) {
@@ -1371,6 +1392,7 @@ export function CrmPipelineEditor({
   }
 
   async function deletePipeline(target: EditablePipeline) {
+    if (!canEdit) return
     if (pipelineBusy) return
 
     const remaining = drafts.filter((pipeline) => pipeline.id !== target.id)
@@ -1408,6 +1430,7 @@ export function CrmPipelineEditor({
   }
 
   async function movePipeline(id: string, offset: -1 | 1) {
+    if (!canEdit) return
     if (pipelineBusy) return
 
     const from = drafts.findIndex((pipeline) => pipeline.id === id)
@@ -1445,12 +1468,14 @@ export function CrmPipelineEditor({
   // operator lands on eases in rather than appearing fully formed.
   return (
     <>
-      <PipelineTemplatesDialog
-        open={templatesOpen}
-        onOpenChange={setTemplatesOpen}
-        onSelect={createPipeline}
-        onCreateBlank={() => createPipeline()}
-      />
+      {canEdit ? (
+        <PipelineTemplatesDialog
+          open={templatesOpen}
+          onOpenChange={setTemplatesOpen}
+          onSelect={createPipeline}
+          onCreateBlank={() => createPipeline()}
+        />
+      ) : null}
       {loading ? (
         <EditorPanel key="loading" reduce={reduce}>
           <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]" aria-label={t("Loading pipeline editor")}>
@@ -1474,13 +1499,17 @@ export function CrmPipelineEditor({
           <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
             <h2 className="text-[16px] font-medium text-[var(--md-ink)]">{t("No pipelines yet")}</h2>
             <p className="mt-2 text-[13px] text-[var(--md-text)]">{t("Create a pipeline to define how deals move through your sales process.")}</p>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Button onClick={() => createPipeline()}><Plus data-icon="inline-start" />{t("Create pipeline")}</Button>
-              <Button variant="ghost" className="bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]" onClick={() => setTemplatesOpen(true)}>
-                <Zap data-icon="inline-start" strokeWidth={1.2} />
-                {t("Templates")}
-              </Button>
-            </div>
+            {canEdit ? (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <Button onClick={() => createPipeline()}><Plus data-icon="inline-start" />{t("Create pipeline")}</Button>
+                <Button variant="ghost" className="bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]" onClick={() => setTemplatesOpen(true)}>
+                  <Zap data-icon="inline-start" strokeWidth={1.2} />
+                  {t("Templates")}
+                </Button>
+              </div>
+            ) : (
+              <p className="mt-4 text-[12px] leading-5 text-[var(--md-subtle)]">{t("Only workspace administrators can change pipelines.")}</p>
+            )}
           </Surface>
         </EditorPanel>
       ) : (
@@ -1489,7 +1518,7 @@ export function CrmPipelineEditor({
               <div className="flex flex-col gap-3 px-5 py-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    {renamingPipeline ? (
+                    {renamingPipeline && canEdit ? (
                       <input
                         autoFocus
                         dir="auto"
@@ -1505,7 +1534,7 @@ export function CrmPipelineEditor({
                         }}
                         className="w-[280px] max-w-full rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-1.5 py-0.5 text-[18px] font-medium text-[var(--md-ink)] outline-none ring-2 ring-[color-mix(in_srgb,var(--md-accent)_45%,transparent)]"
                       />
-                    ) : (
+                    ) : canEdit ? (
                       <button
                         type="button"
                         onClick={() => setRenamingPipeline(true)}
@@ -1515,6 +1544,10 @@ export function CrmPipelineEditor({
                         <span className="truncate">{t(activePipeline.name)}</span>
                         <Pencil className="size-3.5 shrink-0 text-[var(--md-subtle)] opacity-0 transition-opacity duration-150 group-hover/title:opacity-100" strokeWidth={1.4} />
                       </button>
+                    ) : (
+                      <h2 className="min-w-0 truncate px-1.5 py-0.5 text-[18px] font-medium text-[var(--md-ink)]" title={t("Only workspace administrators can change pipelines.")}>
+                        {t(activePipeline.name)}
+                      </h2>
                     )}
                     <AnimatePresence initial={false}>
                       {dirty ? (
@@ -1532,7 +1565,7 @@ export function CrmPipelineEditor({
                   </div>
                   <p className="mt-1 ps-1.5 text-[12px] text-[var(--md-text)]">
                     <span data-i18n-skip dir="ltr">{stages.length}</span> {t("stages")} · <span data-i18n-skip dir="ltr">{dealTotal}</span>{" "}
-                    {t("deals")} · <span data-i18n-skip dir="ltr">{averageProbability}%</span> {t("average win rate")}
+                    {t("deals")} · <span data-i18n-skip dir="ltr">{averageProbability}%</span> {t("average stage probability")}
                   </p>
                 </div>
 
@@ -1611,24 +1644,26 @@ export function CrmPipelineEditor({
                       ) : null}
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[13px] font-medium shadow-[var(--md-shadow-line)]"
-                      onClick={() => createPipeline()}
-                    >
-                      <Plus data-icon="inline-start" strokeWidth={1.2} />
-                      {t("Create pipeline")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[13px] font-medium shadow-[var(--md-shadow-line)]"
-                      onClick={() => setTemplatesOpen(true)}
-                    >
-                      <Zap data-icon="inline-start" strokeWidth={1.2} />
-                      {t("Templates")}
-                    </Button>
-                  </div>
+                  {canEdit ? (
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[13px] font-medium shadow-[var(--md-shadow-line)]"
+                        onClick={() => createPipeline()}
+                      >
+                        <Plus data-icon="inline-start" strokeWidth={1.2} />
+                        {t("Create pipeline")}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[13px] font-medium shadow-[var(--md-shadow-line)]"
+                        onClick={() => setTemplatesOpen(true)}
+                      >
+                        <Zap data-icon="inline-start" strokeWidth={1.2} />
+                        {t("Templates")}
+                      </Button>
+                    </div>
+                  ) : null}
                   <Button
                     className="h-9 rounded-[var(--md-radius-lg)] px-4 text-[13px] font-medium"
                     disabled={!dirty || saving || !canEdit}
@@ -1698,15 +1733,19 @@ export function CrmPipelineEditor({
                         stage={stage}
                         index={index}
                         total={stages.length}
+                        canEdit={canEdit}
                         selected={stage.id === selectedStage.id}
                         held={stage.id === heldId}
                         lifted={stage.id === heldId && dragging}
-                        renaming={stage.id === renamingStageId}
+                        renaming={canEdit && stage.id === renamingStageId}
                         dragging={dragging}
                         x={stage.id === heldId ? dragOffset : cardValue(stage.id)}
                         rotate={rotate}
                         presence={presenceValue(stage.id)}
-                        onRename={(name) => updateStage(stage.id, (entry) => ({ ...entry, name }))}
+                        onRename={(name) => {
+                          if (canEdit) updateStage(stage.id, (entry) => ({ ...entry, name }))
+                        }}
+                        onSelect={() => setSelectedStageId(stage.id)}
                         onStartRename={() => {
                           setSelectedStageId(stage.id)
                           setRenamingStageId(stage.id)
@@ -1717,19 +1756,21 @@ export function CrmPipelineEditor({
                       />
                     ))}
 
-                    <li className="relative shrink-0" style={{ width: CARD_WIDTH, height: CARD_HEIGHT }}>
-                      <button
-                        type="button"
-                        data-no-drag=""
-                        onClick={() => insertStage(stages.length)}
-                        className="group/add flex size-full flex-col items-center justify-center gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] text-[13px] font-medium text-[var(--md-text)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--md-ink)_12%,transparent)] transition-[background,box-shadow,color] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[color-mix(in_srgb,var(--md-accent)_5%,var(--md-surface))] hover:text-[var(--md-ink)] hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--md-accent)_38%,transparent)] focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--md-accent),0_0_0_3px_color-mix(in_srgb,var(--md-accent)_18%,transparent)]"
-                      >
-                        <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] transition-transform duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover/add:scale-[1.08]">
-                          <Plus className="size-4" strokeWidth={1.2} />
-                        </span>
-                        {t("Add stage")}
-                      </button>
-                    </li>
+                    {canEdit ? (
+                      <li className="relative shrink-0" style={{ width: CARD_WIDTH, height: CARD_HEIGHT }}>
+                        <button
+                          type="button"
+                          data-no-drag=""
+                          onClick={() => insertStage(stages.length)}
+                          className="group/add flex size-full flex-col items-center justify-center gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] text-[13px] font-medium text-[var(--md-text)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--md-ink)_12%,transparent)] transition-[background,box-shadow,color] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[color-mix(in_srgb,var(--md-accent)_5%,var(--md-surface))] hover:text-[var(--md-ink)] hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--md-accent)_38%,transparent)] focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--md-accent),0_0_0_3px_color-mix(in_srgb,var(--md-accent)_18%,transparent)]"
+                        >
+                          <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] transition-transform duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover/add:scale-[1.08]">
+                            <Plus className="size-4" strokeWidth={1.2} />
+                          </span>
+                          {t("Add stage")}
+                        </button>
+                      </li>
+                    ) : null}
                   </ol>
                 </div>
 
@@ -1779,7 +1820,7 @@ export function CrmPipelineEditor({
                       className="size-9 rounded-[var(--md-radius-md)]"
                       aria-label={t("Move stage earlier")}
                       title={t("Move stage earlier")}
-                      disabled={selectedIndex <= 0}
+                      disabled={!canEdit || selectedIndex <= 0}
                       onClick={() => moveStage(selectedStage.id, -1)}
                     >
                       <ArrowLeft className="size-4 rtl:rotate-180" strokeWidth={1.2} />
@@ -1790,7 +1831,7 @@ export function CrmPipelineEditor({
                       className="size-9 rounded-[var(--md-radius-md)]"
                       aria-label={t("Move stage later")}
                       title={t("Move stage later")}
-                      disabled={selectedIndex >= stages.length - 1}
+                      disabled={!canEdit || selectedIndex >= stages.length - 1}
                       onClick={() => moveStage(selectedStage.id, 1)}
                     >
                       <ArrowRight className="size-4 rtl:rotate-180" strokeWidth={1.2} />
@@ -1801,12 +1842,13 @@ export function CrmPipelineEditor({
                 <div className={cn("mt-4 gap-5", stacked ? "grid" : "flex flex-wrap items-start gap-x-8")}>
                   <div className={cn(stacked ? "w-full" : "min-w-[212px] max-w-[240px] flex-1")}>
                     <span className="text-[12px] font-medium text-[var(--md-subtle)]">{t("Stage colour")}</span>
-                    <TonePicker value={selectedStage.tone} onChange={(tone) => updateStage(selectedStage.id, (stage) => ({ ...stage, tone }))} />
+                    <TonePicker disabled={!canEdit} value={selectedStage.tone} onChange={(tone) => updateStage(selectedStage.id, (stage) => ({ ...stage, tone }))} />
                   </div>
 
                   <div className={cn(stacked ? "w-full" : "min-w-[268px] max-w-[360px] flex-[1.3]")}>
                     <span className="text-[12px] font-medium text-[var(--md-subtle)]">{t("Win probability")}</span>
                     <ProbabilityTrack
+                      disabled={!canEdit}
                       value={selectedStage.probability}
                       onChange={(probability) => updateStage(selectedStage.id, (stage) => ({ ...stage, probability }))}
                     />
@@ -1817,6 +1859,7 @@ export function CrmPipelineEditor({
                     <Textarea
                       dir="auto"
                       value={selectedStage.rule}
+                      disabled={!canEdit}
                       onChange={(event) => updateStage(selectedStage.id, (stage) => ({ ...stage, rule: event.target.value }))}
                       className="mt-2 min-h-[68px] rounded-[var(--md-radius-lg)] text-[13px] leading-5"
                     />
@@ -1825,24 +1868,28 @@ export function CrmPipelineEditor({
                   <div className={cn(stacked ? "w-full" : "min-w-[188px] max-w-[300px] flex-1")}>
                     <span className="text-[12px] font-medium text-[var(--md-subtle)]">{t("Stage actions")}</span>
                     <div className="mt-2 grid gap-1.5">
-                      <Button
-                        variant="ghost"
-                        className="h-9 justify-start rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[13px] shadow-[var(--md-shadow-line)]"
-                        onClick={() => duplicateStage(selectedStage.id)}
-                      >
-                        <Copy data-icon="inline-start" className="size-4" strokeWidth={1.2} />
-                        {t("Duplicate stage")}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="h-9 justify-start rounded-[var(--md-radius-lg)] text-[13px] text-[var(--md-red)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--md-red)_32%,transparent)] hover:bg-[color-mix(in_srgb,var(--md-red)_7%,transparent)] hover:text-[var(--md-red)]"
-                        disabled={selectedStage.dealCount > 0 || stages.length <= 1}
-                        onClick={() => removeStage(selectedStage.id)}
-                      >
-                        <Trash2 data-icon="inline-start" className="size-4" strokeWidth={1.2} />
-                        {t("Remove stage")}
-                      </Button>
-                      <p className="text-[11px] leading-4 text-[var(--md-subtle)]">{removalNote}</p>
+                      {canEdit ? (
+                        <>
+                          <Button
+                            variant="ghost"
+                            className="h-9 justify-start rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[13px] shadow-[var(--md-shadow-line)]"
+                            onClick={() => duplicateStage(selectedStage.id)}
+                          >
+                            <Copy data-icon="inline-start" className="size-4" strokeWidth={1.2} />
+                            {t("Duplicate stage")}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className="h-9 justify-start rounded-[var(--md-radius-lg)] text-[13px] text-[var(--md-red)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--md-red)_32%,transparent)] hover:bg-[color-mix(in_srgb,var(--md-red)_7%,transparent)] hover:text-[var(--md-red)]"
+                            disabled={selectedStage.dealCount > 0 || stages.length <= 1}
+                            onClick={() => removeStage(selectedStage.id)}
+                          >
+                            <Trash2 data-icon="inline-start" className="size-4" strokeWidth={1.2} />
+                            {t("Remove stage")}
+                          </Button>
+                          <p className="text-[11px] leading-4 text-[var(--md-subtle)]">{removalNote}</p>
+                        </>
+                      ) : null}
                     </div>
                   </div>
                 </div>

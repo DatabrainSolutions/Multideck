@@ -12,6 +12,7 @@ import "./styles.css"
  */
 const lead: ApiLeadDetail = {
   id: "lead-1",
+  editVersion: 1,
   companyName: "Northstar Logistics",
   initials: "NL",
   primaryContactName: "Amelia Hart",

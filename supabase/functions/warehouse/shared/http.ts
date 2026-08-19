@@ -41,6 +41,21 @@ export function clean(value, max = 10_000) {
   const result = value.trim();
   return result ? result.slice(0, max) : null;
 }
+export function boundedPage(url, defaultLimit = 20, maxLimit = 50) {
+  const rawLimit = Number(url.searchParams.get("limit"));
+  const rawOffset = Number(url.searchParams.get("offset"));
+  return {
+    limit: Math.max(1, Math.min(Number.isFinite(rawLimit) && rawLimit > 0 ? Math.floor(rawLimit) : defaultLimit, maxLimit)),
+    offset: Math.max(0, Number.isFinite(rawOffset) ? Math.floor(rawOffset) : 0)
+  };
+}
+export function postgrestSearchPattern(value, max = 160) {
+  const term = clean(value, max);
+  if (!term) return null;
+  // PostgREST `.or()` uses commas and parentheses as grammar. Strip those
+  // separators and escape SQL wildcard characters so search input is data only.
+  return `%${term.replace(/[(),]/g, " ").replace(/[%_]/g, (character)=>`\\${character}`)}%`;
+}
 export function required(value, message, field, max) {
   const result = clean(value, max);
   if (!result) throw new HttpError(400, message, {

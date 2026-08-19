@@ -52,10 +52,27 @@ export type GeneratedDocumentSummary = {
 export type DocumentBuilderWorkspace = {
   templates: DocumentTemplateSummary[]
   generatedDocuments: GeneratedDocumentSummary[]
+  generatedDocumentTotal?: number
+  generatedDocumentOffset?: number
+  generatedDocumentLimit?: number
   permissions: {
     canGenerate: boolean
     canManageTemplates: boolean
   }
+}
+
+export type GeneratedDocumentPage = {
+  rows: GeneratedDocumentSummary[]
+  total: number
+  offset: number
+  limit: number
+}
+
+export type GeneratedDocumentPageRequest = {
+  offset?: number
+  limit?: number
+  search?: string
+  sort?: { id: string; direction: "asc" | "desc" }
 }
 
 export type RenderDocumentRequest = {
@@ -158,11 +175,17 @@ async function toFunctionError(error: unknown, fallback: string) {
   return new Error(fallback)
 }
 
-export async function getDocumentBuilderWorkspace(): Promise<DocumentBuilderWorkspace> {
+export async function getDocumentBuilderWorkspace(options: GeneratedDocumentPageRequest = {}): Promise<DocumentBuilderWorkspace> {
   const client = requireDocumentClient()
   const invokeWorkspace = () => client.functions.invoke<DocumentBuilderWorkspace>("document-builder-workspace", {
     method: "POST",
-    body: {},
+    body: {
+      action: "workspace",
+      documentOffset: options.offset ?? 0,
+      documentLimit: options.limit ?? 20,
+      documentSearch: options.search ?? "",
+      documentSort: options.sort ?? { id: "created", direction: "desc" },
+    },
   })
 
   let { data, error } = await invokeWorkspace()
@@ -175,7 +198,39 @@ export async function getDocumentBuilderWorkspace(): Promise<DocumentBuilderWork
 
   if (error) throw await toFunctionError(error, "The document workspace could not be loaded.")
   if (!data) throw new Error("The document workspace returned no data.")
+  if (typeof data.generatedDocumentTotal !== "number") {
+    throw new Error("Paged document workspace data is still being prepared. Try again shortly.")
+  }
   return data
+}
+
+export async function getGeneratedDocumentsPage(options: GeneratedDocumentPageRequest = {}): Promise<GeneratedDocumentPage> {
+  const client = requireDocumentClient()
+  const request = {
+    action: "documents",
+    documentOffset: options.offset ?? 0,
+    documentLimit: options.limit ?? 20,
+    documentSearch: options.search ?? "",
+    documentSort: options.sort ?? { id: "created", direction: "desc" },
+  }
+  const invokePage = () => client.functions.invoke<GeneratedDocumentPage | DocumentBuilderWorkspace>("document-builder-workspace", {
+    method: "POST",
+    body: request,
+  })
+
+  let { data, error } = await invokePage()
+  if (error && isTransientFunctionFetchError(error)) {
+    await waitForDocumentWorkspaceRetry()
+    const retryResult = await invokePage()
+    data = retryResult.data
+    error = retryResult.error
+  }
+
+  if (error) throw await toFunctionError(error, "Document history could not be loaded.")
+  if (!data) throw new Error("Document history returned no data.")
+  if ("rows" in data && Array.isArray(data.rows)) return data
+
+  throw new Error("Paged document history is still being prepared. Try again shortly.")
 }
 
 export async function renderDocument(request: RenderDocumentRequest): Promise<RenderDocumentResponse> {

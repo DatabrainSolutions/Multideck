@@ -6,6 +6,7 @@ import {
   allowedExtensions,
   bodyObject,
   bool,
+  boundedPage,
   clean,
   companyFacilityIds,
   cors,
@@ -20,11 +21,15 @@ import {
   required,
   uuid,
 } from "../shared/mod.ts";
-import { orderContext } from "./orders.ts";
-
-export async function handlePortal(request, path, admin, actor) {
-  const context = await orderContext(admin, actor);
+export async function handlePortal(request, path, url, admin, actor) {
+  requireCapability(actor, "warehouse_orders:read");
   if (request.method === "GET" && path[1] === "reference") {
+    const facilityIds = await companyFacilityIds(admin, actor);
+    const facilities = facilityIds.length ? await many(admin.from("WMS_Facilities")
+      .select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name")
+      .in("WMSFacility_ID", facilityIds)
+      .eq("WMSFacility_IsDeleted", false)
+      .order("WMSFacility_Name")) : [];
     return {
       roles: [
         {
@@ -43,7 +48,7 @@ export async function handlePortal(request, path, admin, actor) {
           description: "Full self-service and user administration."
         }
       ],
-      facilities: context.facilities.map((r)=>({
+      facilities: facilities.map((r)=>({
           id: r.WMSFacility_ID,
           code: r.WMSFacility_Code,
           name: r.WMSFacility_Name
@@ -59,11 +64,19 @@ export async function handlePortal(request, path, admin, actor) {
         throw new HttpError(403, "You can only manage users for your organisation.");
       }
     }
-    const { data, error } = await admin.rpc("warehouse_edge_portal_users", {
-      p_customer_org_id: customerOrgId
+    const { limit, offset } = boundedPage(url);
+    const { data, error } = await admin.rpc("warehouse_edge_portal_users_page", {
+      p_customer_org_id: customerOrgId,
+      p_limit: limit,
+      p_offset: offset,
     });
-    if (error) throw new HttpError(500, error.message);
-    return data ?? [];
+    if (error) {
+      if (["42883", "PGRST202"].includes(error.code ?? "")) {
+        throw new HttpError(503, "Warehouse user paging is still being prepared. Try again shortly.");
+      }
+      throw new HttpError(500, error.message);
+    }
+    return data ?? { rows: [], total: 0, limit, offset };
   }
   const action = request.method === "POST" && path[1] === "invitations"
     ? "invite"
@@ -86,13 +99,23 @@ export async function handlePortal(request, path, admin, actor) {
 
   if (action === "access-link") {
     const portalUserId = uuid(path[4], "portal user");
-    const { data: customerUsers, error: usersError } = await admin.rpc("warehouse_edge_portal_users", {
-      p_customer_org_id: targetCustomerOrgId
-    });
-    if (usersError) throw new HttpError(500, usersError.message);
-    const portalUser = Array.isArray(customerUsers) ? customerUsers.find((user)=>user?.id === portalUserId) : null;
-    if (!portalUser?.email) throw new HttpError(404, "This customer portal user does not exist.");
-    return await deliverPortalAccessLink(admin, actor, targetCustomerOrgId, portalUserId, portalUser.email);
+    const [portalUser, membership] = await Promise.all([
+      oneOrNull(admin.from("Portal_Users")
+        .select("PortalUser_ID,PortalUser_Email")
+        .eq("PortalUser_ID", portalUserId)
+        .eq("PortalUser_IsDeleted", false)
+        .limit(1)
+        .maybeSingle()),
+      oneOrNull(admin.from("Portal_UserOrganisations")
+        .select("PortalUserOrg_PortalUserID")
+        .eq("PortalUserOrg_PortalUserID", portalUserId)
+        .eq("PortalUserOrg_OrgID", targetCustomerOrgId)
+        .neq("PortalUserOrg_StatusCode", "revoked")
+        .limit(1)
+        .maybeSingle()),
+    ]);
+    if (!portalUser?.PortalUser_Email || !membership) throw new HttpError(404, "This customer portal user does not exist.");
+    return await deliverPortalAccessLink(admin, actor, targetCustomerOrgId, portalUserId, portalUser.PortalUser_Email);
   }
   let inviteEmail = null;
   let shouldDeliverAccessLink = false;

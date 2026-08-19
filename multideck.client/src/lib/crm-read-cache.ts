@@ -38,14 +38,21 @@ export function readCachedCrmResource<T>(
 
   const inFlight = load()
     .then((value) => {
-      entries.set(key, { value, updatedAt: Date.now() })
+      // An invalidation or newer read may have replaced this request while it
+      // was in flight. The caller can still use the response it requested, but
+      // it must not be allowed to repopulate the shared cache with stale data.
+      if ((entries.get(key) as CacheEntry<T> | undefined)?.inFlight === inFlight) {
+        entries.set(key, { value, updatedAt: Date.now() })
+      }
       return value
     })
     .catch((error) => {
-      if (current?.value !== undefined) {
-        entries.set(key, { value: current.value, updatedAt: current.updatedAt })
-      } else {
-        entries.delete(key)
+      if ((entries.get(key) as CacheEntry<T> | undefined)?.inFlight === inFlight) {
+        if (current?.value !== undefined) {
+          entries.set(key, { value: current.value, updatedAt: current.updatedAt })
+        } else {
+          entries.delete(key)
+        }
       }
       throw error
     })
@@ -64,6 +71,10 @@ export function invalidateCrmResources(scope: string, resources: readonly string
     if (key.startsWith(`${scope}:`) && resources.some((resource) => key.startsWith(`${scope}:${resource}`))) {
       entries.delete(key)
     }
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("multideck:crm-changed", { detail: { scope, resources } }))
   }
 }
 

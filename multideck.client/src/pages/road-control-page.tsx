@@ -5,55 +5,79 @@ import { Button } from "@/components/ui/button"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { DomesticJobStageRail, DomesticRoadJobCard, DomesticRoadKanbanBoard, roadJobStageStatus, roadJobStages, type DomesticRoadJob, type RoadJobStageId } from "@/components/multideck/domestic-road-components"
+import { Pagination } from "@/components/multideck/pagination"
 import { PageSettingsMenu, type PageSettingsViewOption } from "@/components/multideck/page-settings-menu"
 import { Surface } from "@/components/multideck/surface"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { useLanguage } from "@/i18n/language-provider"
+import type { AuthUserSummary } from "@/lib/auth-user"
 import { getSavedView, saveView } from "@/lib/view-preferences"
-import { listLiveRoadJobs } from "@/lib/application-data-api"
+import { listRoadControlPage, type RoadControlCounts } from "@/lib/application-data-api"
 
 const roadScopeOptions = ["My Jobs", "All Jobs", "Starred Jobs"] as const
 type RoadScope = (typeof roadScopeOptions)[number]
 const roadViewModes = ["List", "Kanban"] as const
 type RoadViewMode = (typeof roadViewModes)[number]
 const roadViewStorageKey = "multideck.view.road-control"
+const roadPageSize = 20
 const roadViewOptions = [
   { value: "List", label: "List", icon: List },
   { value: "Kanban", label: "Kanban", icon: KanbanSquare },
 ] satisfies readonly PageSettingsViewOption<RoadViewMode>[]
 
-export function RoadControlPage({ navigate }: { navigate: (path: string) => void }) {
+const emptyRoadCounts: RoadControlCounts = { intake: 0, ready: 0, carrier: 0, live: 0, close: 0 }
+
+export function RoadControlPage({ navigate, currentUser }: { navigate: (path: string) => void; currentUser: AuthUserSummary | null }) {
   const { t } = useLanguage()
   const [activeStage, setActiveStage] = useState<RoadJobStageId>("ready")
   const [scope, setScope] = useState<RoadScope>("All Jobs")
   const [viewMode, setViewMode] = useState<RoadViewMode>(() => getSavedView(roadViewStorageKey, roadViewModes, roadViewModes[0]))
   const [roadJobs, setRoadJobs] = useState<DomesticRoadJob[]>([])
+  const [stageCounts, setStageCounts] = useState<RoadControlCounts>(emptyRoadCounts)
+  const [filteredTotal, setFilteredTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [roadJobsLoading, setRoadJobsLoading] = useState(true)
   const [roadJobsError, setRoadJobsError] = useState<string | null>(null)
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set())
   const [dexterOpen, setDexterOpen] = useState(false)
 
   useEffect(() => {
-    let cancelled = false
-    void listLiveRoadJobs().then((records) => { if (!cancelled) setRoadJobs(records) }).catch((error) => {
-      if (!cancelled) setRoadJobsError(error instanceof Error ? error.message : "Road jobs could not be loaded.")
-    }).finally(() => { if (!cancelled) setRoadJobsLoading(false) })
-    return () => { cancelled = true }
-  }, [])
+    const controller = new AbortController()
+    setRoadJobsLoading(true)
+    setRoadJobsError(null)
+    void listRoadControlPage({
+      scope,
+      operatorCode: currentUser?.initials,
+      stage: viewMode === "List" ? activeStage : undefined,
+      limit: roadPageSize,
+      offset: viewMode === "List" ? (page - 1) * roadPageSize : 0,
+    }, controller.signal).then((result) => {
+      setRoadJobs(result.rows)
+      setStageCounts(result.counts)
+      setFilteredTotal(result.filteredTotal)
+      setFavouriteIds((current) => new Set([...current, ...result.favouriteBookingIds]))
+    }).catch((error) => {
+      if ((error as { name?: string })?.name !== "AbortError") setRoadJobsError(error instanceof Error ? error.message : "Road jobs could not be loaded.")
+    }).finally(() => {
+      if (!controller.signal.aborted) setRoadJobsLoading(false)
+    })
+    return () => controller.abort()
+  }, [activeStage, currentUser?.initials, page, scope, viewMode])
 
   const stages = useMemo(() => roadJobStages.map((item) => ({
     ...item,
-    count: roadJobs.filter((job) => job.stage === item.id).length,
-  })), [roadJobs])
+    count: stageCounts[item.id],
+  })), [stageCounts])
   const stage = stages.find((item) => item.id === activeStage) ?? stages[0]
-  const scopedJobs = useMemo(() => {
-    return roadJobs.filter((job) => {
-      if (scope === "My Jobs") return job.owner === "EM"
-      if (scope === "Starred Jobs") return favouriteIds.has(job.bookingId)
-      return true
-    })
-  }, [favouriteIds, roadJobs, scope])
-  const jobs = scopedJobs.filter((job) => job.stage === activeStage)
+  const jobs = roadJobs
+  const pageCount = Math.max(1, Math.ceil(filteredTotal / roadPageSize))
+  const kanbanIsCapped = viewMode === "Kanban" && roadJobStages.some((item) => stageCounts[item.id] > roadJobs.filter((job) => job.stage === item.id).length)
+
+  useEffect(() => setPage(1), [activeStage, scope, viewMode])
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount)
+  }, [page, pageCount])
 
   useEffect(() => {
     saveView(roadViewStorageKey, viewMode)
@@ -69,6 +93,10 @@ export function RoadControlPage({ navigate }: { navigate: (path: string) => void
   }
 
   function moveRoadJob(jobId: string, stage: RoadJobStageId, orderedJobs?: DomesticRoadJob[]) {
+    const previousStage = roadJobs.find((job) => job.id === jobId)?.stage
+    if (previousStage && previousStage !== stage) {
+      setStageCounts((counts) => ({ ...counts, [previousStage]: Math.max(0, counts[previousStage] - 1), [stage]: counts[stage] + 1 }))
+    }
     setRoadJobs((current) => {
       if (!orderedJobs) {
         return current.map((job) => job.id === jobId && job.stage !== stage ? { ...job, stage, ...roadJobStageStatus[stage] } : job)
@@ -123,7 +151,21 @@ export function RoadControlPage({ navigate }: { navigate: (path: string) => void
             </Surface>
           ) : null}
         </div>
-      </section> : <DomesticRoadKanbanBoard jobs={scopedJobs} favouriteIds={favouriteIds} onMoveJob={moveRoadJob} onToggleFavourite={(job) => toggleFavourite(job.bookingId)} onOpenBooking={(job) => navigate(`/road-control/${job.id.toLowerCase()}`)} />) : null}
+      </section> : <>
+        <DomesticRoadKanbanBoard jobs={roadJobs} favouriteIds={favouriteIds} onMoveJob={moveRoadJob} onToggleFavourite={(job) => toggleFavourite(job.bookingId)} onOpenBooking={(job) => navigate(`/road-control/${job.id.toLowerCase()}`)} />
+        {kanbanIsCapped ? <p className="text-center text-[12px] text-[var(--md-subtle)]">{t("Showing the 20 most recently updated jobs in each stage.")}</p> : null}
+      </>) : null}
+
+      {!roadJobsLoading && !roadJobsError && viewMode === "List" ? (
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          totalItems={filteredTotal}
+          pageSize={roadPageSize}
+          itemLabel="road jobs"
+          onPageChange={setPage}
+        />
+      ) : null}
     </DexterDockedPage>
   )
 }

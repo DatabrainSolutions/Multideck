@@ -630,6 +630,39 @@ test("a thread detail keeps the requested id when the response omits it", () => 
   assert.equal(detail.id, "t-requested")
 })
 
+test("a legacy full-thread response is sliced from newest to oldest for rollout compatibility", () => {
+  const messages = Array.from({ length: 60 }, (_, index) => ({
+    id: `m${index + 1}`,
+    direction: "inbound",
+    receivedAt: new Date(Date.UTC(2026, 7, 19, 9, index)).toISOString(),
+  }))
+  const newest = normalizeThreadDetail({ id: "t1", messages }, "t1", { limit: 25, offset: 0 })
+  const older = normalizeThreadDetail({ id: "t1", messages }, "t1", { limit: 25, offset: 25 })
+
+  assert.deepEqual(newest.messages.map((message) => message.id), messages.slice(35).map((message) => message.id))
+  assert.deepEqual(older.messages.map((message) => message.id), messages.slice(10, 35).map((message) => message.id))
+  assert.equal(newest.messageTotal, 60)
+  assert.equal(newest.hasOlderMessages, true)
+  assert.equal(older.hasOlderMessages, true)
+})
+
+test("a bounded thread page keeps exact server paging metadata", () => {
+  const detail = normalizeThreadDetail({
+    id: "t1",
+    messages: [{ id: "m36" }, { id: "m37" }],
+    messageTotal: 60,
+    messageOffset: 0,
+    messageLimit: 25,
+    hasOlderMessages: true,
+  }, "t1")
+
+  assert.equal(detail.messages.length, 2)
+  assert.equal(detail.messageTotal, 60)
+  assert.equal(detail.messageOffset, 0)
+  assert.equal(detail.messageLimit, 25)
+  assert.equal(detail.hasOlderMessages, true)
+})
+
 test("a summary given as bare prose is treated as ready", () => {
   const item = normalizeThreadListItem({ id: "t1", lunaSummary: "One open question remains." })
 

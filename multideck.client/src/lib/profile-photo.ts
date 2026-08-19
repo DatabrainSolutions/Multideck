@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import { invalidateWorkspaceBootstrap } from "@/lib/workspace-bootstrap"
 
 export const profilePhotoBucket = "profile-photos" as const
 export const profilePhotoMaxBytes = 5 * 1024 * 1024
@@ -104,7 +105,7 @@ export async function createProfilePhotoSignedUrl(photo: UserProfilePhoto, expir
   return data.signedUrl
 }
 
-export async function createProfilePhotoSignedUrls(photos: readonly UserProfilePhoto[], expiresInSeconds = 3600) {
+export async function createProfilePhotoSignedUrls(photos: readonly UserProfilePhoto[], expiresInSeconds = 3600): Promise<Map<string, string>> {
   const client = requireSupabase()
   const uniquePaths = [...new Set(photos.filter((photo) => photo.bucket === profilePhotoBucket).map((photo) => photo.path))]
   if (uniquePaths.length === 0) return new Map<string, string>()
@@ -114,7 +115,7 @@ export async function createProfilePhotoSignedUrls(photos: readonly UserProfileP
 
   return new Map(
     data
-      .filter((item): item is typeof item & { signedUrl: string } => typeof item.signedUrl === "string")
+      .filter((item): item is typeof item & { path: string; signedUrl: string } => typeof item.path === "string" && typeof item.signedUrl === "string")
       .map((item) => [item.path, item.signedUrl]),
   )
 }
@@ -149,6 +150,7 @@ export async function uploadCurrentUserProfilePhoto(
 
     const savedPhoto = normalizeProfilePhoto(data)
     if (!savedPhoto) throw new Error("Supabase did not return the saved profile photo metadata.")
+    invalidateWorkspaceBootstrap()
 
     if (previousPhoto?.path && previousPhoto.path !== savedPhoto.path) {
       const { error: cleanupError } = await client.storage.from(previousPhoto.bucket).remove([previousPhoto.path])
@@ -169,6 +171,7 @@ export async function removeCurrentUserProfilePhoto(photo: UserProfilePhoto) {
   })
   if (error) throw error
   if (data !== true) throw new Error("This profile photo changed elsewhere. Refresh and try again.")
+  invalidateWorkspaceBootstrap()
 
   const { error: removeError } = await client.storage.from(photo.bucket).remove([photo.path])
   return { storageCleanupPending: Boolean(removeError) }
@@ -204,6 +207,7 @@ export async function uploadCurrentUserCoverPhoto(
 
     const savedPhoto = normalizeProfilePhoto(data)
     if (!savedPhoto) throw new Error("Supabase did not return the saved cover photo metadata.")
+    invalidateWorkspaceBootstrap()
 
     if (previousPhoto?.path && previousPhoto.path !== savedPhoto.path) {
       const { error: cleanupError } = await client.storage.from(previousPhoto.bucket).remove([previousPhoto.path])
@@ -224,6 +228,7 @@ export async function removeCurrentUserCoverPhoto(photo: UserProfilePhoto) {
   })
   if (error) throw error
   if (data !== true) throw new Error("This cover photo changed elsewhere. Refresh and try again.")
+  invalidateWorkspaceBootstrap()
 
   const { error: removeError } = await client.storage.from(photo.bucket).remove([photo.path])
   return { storageCleanupPending: Boolean(removeError) }

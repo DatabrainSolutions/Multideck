@@ -38,9 +38,10 @@ import {
   getWarehouseFacilityReference,
   getWarehouseItemReference,
   getWarehouseLocationReference,
-  listWarehouseFacilities,
-  listWarehouseItems,
-  listWarehouseLocations,
+  listWarehouseFacilitiesPage,
+  listWarehouseItemCustomersPage,
+  listWarehouseItemsPage,
+  listWarehouseLocationsPage,
   updateWarehouseFacility,
   updateWarehouseItem,
   updateWarehouseLocation,
@@ -55,6 +56,7 @@ import {
   type WarehouseLocation,
   type WarehouseLocationInput,
   type WarehouseLocationReference,
+  type WarehouseRegisterSort,
 } from "@/lib/warehouse"
 
 // ---------------------------------------------------------------------------
@@ -63,6 +65,8 @@ import {
 
 const fieldControlClass =
   "!h-10 !w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 !px-3 !text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] active:!scale-100 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+
+const warehouseRegisterPageSize = 20
 
 export const warehouseDialogHeaderClass =
   "bg-[var(--md-surface-soft)] px-6 py-5 pe-14 text-start shadow-[var(--md-stroke-bottom)] [&_[data-slot=dialog-title]]:text-[17px] [&_[data-slot=dialog-title]]:leading-6"
@@ -526,6 +530,10 @@ export function WarehouseFacilitiesView() {
   const shouldReduceMotion = useReducedMotion()
   const [reference, setReference] = useState<WarehouseFacilityReference | null>(null)
   const [facilities, setFacilities] = useState<WarehouseFacility[] | null>(null)
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [sort, setSort] = useState<WarehouseRegisterSort | null>({ id: "facility", direction: "asc" })
+  const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [activeFilter, setActiveFilter] = useState<string>(facilityFilters[0])
@@ -534,31 +542,40 @@ export function WarehouseFacilitiesView() {
 
   async function refresh() {
     setLoadError(null)
+    setLoading(true)
     try {
-      const [referenceData, list] = await Promise.all([
+      const [referenceData, page] = await Promise.all([
         reference ? Promise.resolve(reference) : getWarehouseFacilityReference(),
-        listWarehouseFacilities({ search: search.trim() || undefined, includeInactive: activeFilter === "All" }),
+        listWarehouseFacilitiesPage({ search: search.trim() || undefined, includeInactive: activeFilter === "All", sort, limit: warehouseRegisterPageSize, offset }),
       ])
       setReference(referenceData)
-      setFacilities(list)
+      setFacilities(page.rows)
+      setTotal(page.total)
     } catch (error) {
       const message = error instanceof WarehouseApiError ? error.message : String(error)
       setLoadError(message)
       setFacilities([])
+      setTotal(0)
+    } finally {
+      setLoading(false)
     }
   }
 
   useEffect(() => {
     let active = true
-    const timer = window.setTimeout(() => listWarehouseFacilities({ search: search.trim() || undefined, includeInactive: activeFilter === "All" })
-      .then((list) => { if (active) { setLoadError(null); setFacilities(list) } })
+    setLoading(true)
+    const timer = window.setTimeout(() => listWarehouseFacilitiesPage({ search: search.trim() || undefined, includeInactive: activeFilter === "All", sort, limit: warehouseRegisterPageSize, offset })
+      .then((page) => { if (active) { setLoadError(null); setFacilities(page.rows); setTotal(page.total) } })
       .catch((error) => {
         if (!active) return
         setLoadError(error instanceof WarehouseApiError ? error.message : String(error))
         setFacilities([])
-      }), 250)
+        setTotal(0)
+      }).finally(() => { if (active) setLoading(false) }), 250)
     return () => { active = false; window.clearTimeout(timer) }
-  }, [activeFilter, search])
+  }, [activeFilter, offset, search, sort])
+
+  useEffect(() => setOffset(0), [activeFilter, search, sort])
 
   useEffect(() => {
     let active = true
@@ -696,10 +713,12 @@ export function WarehouseFacilitiesView() {
             emptyState={emptyState}
             toolbarTabs={(
               <div className="flex min-w-0 items-center gap-2">
-                <RegisterViewSwitch options={facilityFilters} value={activeFilter} onChange={setActiveFilter} counts={{ [activeFilter]: visibleRows.length }} ariaLabel="Facility status" compact />
+                <RegisterViewSwitch options={facilityFilters} value={activeFilter} onChange={setActiveFilter} counts={{ [activeFilter]: total }} ariaLabel="Facility status" compact />
               </div>
             )}
             toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search facilities" placeholder="Code, name, city" className="sm:min-w-[220px] sm:w-[220px]" />}
+            serverSorting={{ value: sort, onChange: setSort }}
+            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset }}
           />
         </motion.div>
       )}
@@ -868,14 +887,44 @@ function ItemDialog({
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [section, setSection] = useState("identity")
+  const [customerSearch, setCustomerSearch] = useState("")
+  const [customerRows, setCustomerRows] = useState<{ id: string; name: string }[]>([])
+  const [selectedCustomer, setSelectedCustomer] = useState<{ id: string; name: string } | null>(null)
+  const [customerLoading, setCustomerLoading] = useState(false)
+  const [customerError, setCustomerError] = useState<string | null>(null)
   const { t } = useLanguage()
 
   useEffect(() => {
     if (!open) return
     setErrors({})
     setSection("identity")
+    setCustomerSearch("")
+    setCustomerRows([])
+    setSelectedCustomer(item ? { id: item.customerOrgId, name: item.customerOrgName ?? item.customerOrgId } : null)
     setForm(item ? itemToForm(item) : emptyItemForm(reference))
   }, [open, item, reference])
+
+  useEffect(() => {
+    if (!open || isEditing) return
+    let active = true
+    setCustomerLoading(true)
+    const timeoutId = window.setTimeout(() => {
+      listWarehouseItemCustomersPage({ search: customerSearch, limit: 25, offset: 0 })
+        .then((page) => {
+          if (!active) return
+          setCustomerRows(page.rows)
+          setCustomerError(null)
+          setSelectedCustomer((current) => current ?? page.rows[0] ?? null)
+          setForm((current) => {
+            if (current.customerOrgId || !page.rows[0]) return current
+            return { ...current, customerOrgId: page.rows[0].id }
+          })
+        })
+        .catch((error) => { if (active) { setCustomerRows([]); setCustomerError(error instanceof Error ? error.message : String(error)) } })
+        .finally(() => { if (active) setCustomerLoading(false) })
+    }, 220)
+    return () => { active = false; window.clearTimeout(timeoutId) }
+  }, [customerSearch, isEditing, open])
 
   function update<K extends keyof ItemFormState>(key: K, value: ItemFormState[K]) {
     setForm((current) => ({ ...current, [key]: value }))
@@ -967,14 +1016,18 @@ function ItemDialog({
               {isEditing ? (
                 <Input value={customerName} readOnly className={cn(fieldControlClass, "cursor-not-allowed opacity-80")} />
               ) : (
-                <Select value={form.customerOrgId} onValueChange={(value) => update("customerOrgId", value)}>
-                  <SelectTrigger className={fieldControlClass}><SelectValue placeholder="Choose a customer" /></SelectTrigger>
-                  <SelectContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
-                    {reference?.customers.map((customer) => (
-                      <SelectItem key={customer.id} value={customer.id} className="text-[13px]">{customer.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="grid gap-1.5">
+                  <Input aria-label={t("Search customers by code or name")} value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} className={fieldControlClass} placeholder={t("Search customers by code or name")} />
+                  <Select value={form.customerOrgId} onValueChange={(value) => { update("customerOrgId", value); setSelectedCustomer(customerRows.find((customer) => customer.id === value) ?? selectedCustomer) }}>
+                    <SelectTrigger className={fieldControlClass}><SelectValue placeholder={customerLoading ? t("Loading customers") : "Choose a customer"} /></SelectTrigger>
+                    <SelectContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
+                      {[...(selectedCustomer && !customerRows.some((customer) => customer.id === selectedCustomer.id) ? [selectedCustomer] : []), ...customerRows].map((customer) => (
+                        <SelectItem key={customer.id} value={customer.id} className="text-[13px]">{customer.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {customerError ? <p role="alert" className="text-[11px] text-[var(--md-red)]">{customerError}</p> : null}
+                </div>
               )}
             </WarehouseFormField>
             <WarehouseFormField label="Facility" required error={firstFieldError(errors, "FacilityId")}>
@@ -1132,19 +1185,47 @@ function ImportItemsDialog({
   onImported: () => void
 }) {
   const [customerOrgId, setCustomerOrgId] = useState("")
+  const [customerSearch, setCustomerSearch] = useState("")
+  const [customerRows, setCustomerRows] = useState<{ id: string; name: string }[]>([])
+  const [selectedCustomer, setSelectedCustomer] = useState<{ id: string; name: string } | null>(null)
+  const [customerLoading, setCustomerLoading] = useState(false)
+  const [customerError, setCustomerError] = useState<string | null>(null)
   const [facilityId, setFacilityId] = useState("")
   const [file, setFile] = useState<File | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState<ImportItemsResult | null>(null)
+  const { t } = useLanguage()
 
   useEffect(() => {
     if (!open) return
-    setCustomerOrgId(reference?.customers[0]?.id ?? "")
+    setCustomerOrgId("")
+    setCustomerSearch("")
+    setCustomerRows([])
+    setSelectedCustomer(null)
     setFacilityId(reference?.facilities[0]?.id ?? "")
     setFile(null)
     setResult(null)
   }, [open, reference])
+
+  useEffect(() => {
+    if (!open) return
+    let active = true
+    setCustomerLoading(true)
+    const timeoutId = window.setTimeout(() => {
+      listWarehouseItemCustomersPage({ search: customerSearch, limit: 25, offset: 0 })
+        .then((page) => {
+          if (!active) return
+          setCustomerRows(page.rows)
+          setCustomerError(null)
+          setSelectedCustomer((current) => current ?? page.rows[0] ?? null)
+          setCustomerOrgId((current) => current || page.rows[0]?.id || "")
+        })
+        .catch((error) => { if (active) { setCustomerRows([]); setCustomerError(error instanceof Error ? error.message : String(error)) } })
+        .finally(() => { if (active) setCustomerLoading(false) })
+    }, 220)
+    return () => { active = false; window.clearTimeout(timeoutId) }
+  }, [customerSearch, open])
 
   async function handleDownloadTemplate() {
     setDownloading(true)
@@ -1199,14 +1280,18 @@ function ImportItemsDialog({
         <div className="grid gap-3.5 px-6 py-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <WarehouseFormField label="Customer" required>
-              <Select value={customerOrgId} onValueChange={setCustomerOrgId}>
-                <SelectTrigger className={fieldControlClass}><SelectValue placeholder="Choose a customer" /></SelectTrigger>
-                <SelectContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
-                  {reference?.customers.map((customer) => (
-                    <SelectItem key={customer.id} value={customer.id} className="text-[13px]">{customer.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="grid gap-1.5">
+                <Input aria-label={t("Search customers by code or name")} value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} className={fieldControlClass} placeholder={t("Search customers by code or name")} />
+                <Select value={customerOrgId} onValueChange={(value) => { setCustomerOrgId(value); setSelectedCustomer(customerRows.find((customer) => customer.id === value) ?? selectedCustomer) }}>
+                  <SelectTrigger className={fieldControlClass}><SelectValue placeholder={customerLoading ? t("Loading customers") : "Choose a customer"} /></SelectTrigger>
+                  <SelectContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
+                    {[...(selectedCustomer && !customerRows.some((customer) => customer.id === selectedCustomer.id) ? [selectedCustomer] : []), ...customerRows].map((customer) => (
+                      <SelectItem key={customer.id} value={customer.id} className="text-[13px]">{customer.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {customerError ? <p role="alert" className="text-[11px] text-[var(--md-red)]">{customerError}</p> : null}
+              </div>
             </WarehouseFormField>
             <WarehouseFormField label="Facility" required>
               <Select value={facilityId} onValueChange={setFacilityId}>
@@ -1298,6 +1383,10 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
   const numberFormat = useMemo(() => new Intl.NumberFormat(language, { maximumFractionDigits: 3 }), [language])
   const [reference, setReference] = useState<WarehouseItemReference | null>(null)
   const [items, setItems] = useState<WarehouseItem[] | null>(null)
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [sort, setSort] = useState<WarehouseRegisterSort | null>({ id: "sku", direction: "asc" })
+  const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [facilityId, setFacilityId] = useState("")
@@ -1307,26 +1396,35 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
   const [editing, setEditing] = useState<WarehouseItem | null>(null)
   async function refresh() {
     setLoadError(null)
+    setLoading(true)
     try {
-      const list = await listWarehouseItems({ facilityId: facilityId || undefined, search: search.trim() || undefined, includeInactive: activeFilter === "All" })
-      setItems(list)
+      const page = await listWarehouseItemsPage({ facilityId: facilityId || undefined, search: search.trim() || undefined, includeInactive: activeFilter === "All", sort, limit: warehouseRegisterPageSize, offset })
+      setItems(page.rows)
+      setTotal(page.total)
     } catch (error) {
       setLoadError(error instanceof WarehouseApiError ? error.message : String(error))
       setItems([])
+      setTotal(0)
+    } finally {
+      setLoading(false)
     }
   }
 
   useEffect(() => {
     let active = true
-    const timer = window.setTimeout(() => listWarehouseItems({ facilityId: facilityId || undefined, search: search.trim() || undefined, includeInactive: activeFilter === "All" })
-      .then((list) => { if (active) { setLoadError(null); setItems(list) } })
+    setLoading(true)
+    const timer = window.setTimeout(() => listWarehouseItemsPage({ facilityId: facilityId || undefined, search: search.trim() || undefined, includeInactive: activeFilter === "All", sort, limit: warehouseRegisterPageSize, offset })
+      .then((page) => { if (active) { setLoadError(null); setItems(page.rows); setTotal(page.total) } })
       .catch((error) => {
         if (!active) return
         setLoadError(error instanceof WarehouseApiError ? error.message : String(error))
         setItems([])
-      }), 250)
+        setTotal(0)
+      }).finally(() => { if (active) setLoading(false) }), 250)
     return () => { active = false; window.clearTimeout(timer) }
-  }, [activeFilter, facilityId, search])
+  }, [activeFilter, facilityId, offset, search, sort])
+
+  useEffect(() => setOffset(0), [activeFilter, facilityId, search, sort])
 
   useEffect(() => {
     let active = true
@@ -1367,7 +1465,7 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
     setDialogOpen(true)
   }
 
-  const canCreate = Boolean(reference && reference.customers.length && reference.facilities.length)
+  const canCreate = Boolean(reference?.facilities.length)
 
   useEffect(() => {
     const openFromTopBar = () => {
@@ -1379,6 +1477,10 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
   function openEdit(item: WarehouseItem) {
     setEditing(item)
     setDialogOpen(true)
+  }
+
+  function openImport() {
+    setImportOpen(true)
   }
 
   function openItem(item: WarehouseItem) {
@@ -1485,7 +1587,7 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
 
   const toolbarTabs = (
     <div className="flex min-w-0 items-center gap-2">
-      <RegisterViewSwitch options={itemFilters} value={activeFilter} onChange={setActiveFilter} counts={{ [activeFilter]: visibleRows.length }} ariaLabel="Item status" compact />
+      <RegisterViewSwitch options={itemFilters} value={activeFilter} onChange={setActiveFilter} counts={{ [activeFilter]: total }} ariaLabel="Item status" compact />
     </div>
   )
 
@@ -1552,7 +1654,9 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
             toolbarTabs={toolbarTabs}
             toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search items" placeholder="SKU, description, customer" />}
             toolbarFilters={toolbarFilters}
-            toolbarOptions={canManage ? <button type="button" onClick={() => setImportOpen(true)} disabled={!canCreate} className={cn(registerButtonClass, "disabled:pointer-events-none disabled:opacity-45")}><Upload className="size-3.5" strokeWidth={1.4} aria-hidden="true" /><span className="hidden sm:inline">{t("Import")}</span></button> : null}
+            toolbarOptions={canManage ? <button type="button" onClick={openImport} disabled={!canCreate} className={cn(registerButtonClass, "disabled:pointer-events-none disabled:opacity-45")}><Upload className="size-3.5" strokeWidth={1.4} aria-hidden="true" /><span className="hidden sm:inline">{t("Import")}</span></button> : null}
+            serverSorting={{ value: sort, onChange: setSort }}
+            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset }}
           />
         </motion.div>
       )}
@@ -1935,6 +2039,10 @@ export function WarehouseLocationsView() {
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>("")
   const [reference, setReference] = useState<WarehouseLocationReference | null>(null)
   const [locations, setLocations] = useState<WarehouseLocation[] | null>(null)
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [sort, setSort] = useState<WarehouseRegisterSort | null>({ id: "code", direction: "asc" })
+  const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [activeFilter, setActiveFilter] = useState<(typeof locationFilters)[number]>(locationFilters[0])
@@ -1943,9 +2051,10 @@ export function WarehouseLocationsView() {
 
   useEffect(() => {
     let active = true
-    listWarehouseFacilities({})
-      .then((list) => {
+    listWarehouseFacilitiesPage({ limit: 50, offset: 0, sort: { id: "facility", direction: "asc" } })
+      .then((page) => {
         if (!active) return
+        const list = page.rows
         setFacilities(list)
         setSelectedFacilityId((current) => current || list[0]?.id || "")
       })
@@ -1973,25 +2082,34 @@ export function WarehouseLocationsView() {
     }
     let active = true
     setLocations(null)
-    const timer = window.setTimeout(() => listWarehouseLocations(selectedFacilityId, { search: search.trim() || undefined, includeInactive: activeFilter === "All" })
-      .then((list) => { if (active) { setLoadError(null); setLocations(list) } })
+    setLoading(true)
+    const timer = window.setTimeout(() => listWarehouseLocationsPage(selectedFacilityId, { search: search.trim() || undefined, includeInactive: activeFilter === "All", sort, limit: warehouseRegisterPageSize, offset })
+      .then((page) => { if (active) { setLoadError(null); setLocations(page.rows); setTotal(page.total) } })
       .catch((error) => {
         if (!active) return
         setLoadError(error instanceof WarehouseApiError ? error.message : String(error))
         setLocations([])
-      }), 250)
+        setTotal(0)
+      }).finally(() => { if (active) setLoading(false) }), 250)
     return () => { active = false; window.clearTimeout(timer) }
-  }, [selectedFacilityId, activeFilter, search])
+  }, [selectedFacilityId, activeFilter, offset, search, sort])
+
+  useEffect(() => setOffset(0), [selectedFacilityId, activeFilter, search, sort])
 
   async function refresh() {
     if (!selectedFacilityId) return
     setLoadError(null)
+    setLoading(true)
     try {
-      const list = await listWarehouseLocations(selectedFacilityId, { search: search.trim() || undefined, includeInactive: activeFilter === "All" })
-      setLocations(list)
+      const page = await listWarehouseLocationsPage(selectedFacilityId, { search: search.trim() || undefined, includeInactive: activeFilter === "All", sort, limit: warehouseRegisterPageSize, offset })
+      setLocations(page.rows)
+      setTotal(page.total)
     } catch (error) {
       setLoadError(error instanceof WarehouseApiError ? error.message : String(error))
       setLocations([])
+      setTotal(0)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -2125,7 +2243,7 @@ export function WarehouseLocationsView() {
             rowClassName="hover:bg-[var(--md-hover)]"
             emptyState={emptyState}
             toolbarTabs={(
-              <RegisterViewSwitch options={locationFilters} value={activeFilter} onChange={setActiveFilter} counts={{ [activeFilter]: visibleRows.length }} ariaLabel="Location status" compact />
+              <RegisterViewSwitch options={locationFilters} value={activeFilter} onChange={setActiveFilter} counts={{ [activeFilter]: total }} ariaLabel="Location status" compact />
             )}
             toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search locations" placeholder="Code, zone, position" />}
             toolbarFilters={(
@@ -2140,6 +2258,8 @@ export function WarehouseLocationsView() {
                 </Select>
               </>
             )}
+            serverSorting={{ value: sort, onChange: setSort }}
+            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset }}
           />
         </motion.div>
       )}

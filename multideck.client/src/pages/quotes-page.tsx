@@ -790,7 +790,7 @@ function QuoteOverviewSignals({ quote, compact = false }: { quote: QuoteRecord; 
   ]
 
   return (
-    <div className={cn("grid gap-2", compact ? "lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]" : "xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]")}>
+    <div className={cn("md-quote-signals grid min-w-0 gap-2", compact ? "md-quote-signals--compact" : "md-quote-signals--standard")}>
       <div className="md-quote-stage-stack grid min-h-0 grid-rows-2 gap-2">
         <Surface padding="none" className="md-quote-stage-panel flex min-h-0 items-center rounded-[var(--md-radius-xl)] p-1.5">
           <div className="md-quote-stage-panel__steps" role="list" aria-label={t("Quote progress")}>
@@ -2130,7 +2130,7 @@ function QuoteCargoWiseOverviewPanel({ quote }: { quote: QuoteRecord }) {
     <div className="md-quote-cargowise-overview grid gap-2">
       <QuoteOverviewSignals quote={quote} compact />
 
-      <div className="grid gap-2 lg:grid-cols-[1fr_1fr_0.9fr]">
+      <div className="md-quote-cargowise-primary-grid grid min-w-0 gap-2">
         <CargoWiseGroup title="Quote header" compact>
           <div className="grid gap-1 md:grid-cols-2">
             <CargoWiseField label="Type" value={quote.quoteType ?? "Local client"} compact />
@@ -2156,7 +2156,7 @@ function QuoteCargoWiseOverviewPanel({ quote }: { quote: QuoteRecord }) {
           </div>
         </CargoWiseGroup>
 
-        <CargoWiseGroup title="Totals" compact>
+        <CargoWiseGroup title="Totals" compact className="md-quote-cargowise-totals">
           <div className="grid gap-1 md:grid-cols-2">
             <CargoWiseField label="Cost" value={money(quote.cost)} compact compactLabel="tight" />
             <CargoWiseField label="Revenue" value={money(quote.revenue)} compact compactLabel="tight" />
@@ -2167,7 +2167,7 @@ function QuoteCargoWiseOverviewPanel({ quote }: { quote: QuoteRecord }) {
         </CargoWiseGroup>
       </div>
 
-      <div className="grid gap-2 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+      <div className="md-quote-cargowise-intelligence-grid grid min-w-0 gap-2">
         <ClientPricingIntelligence />
         <RecentQuotesSummary quote={quote} />
       </div>
@@ -3220,17 +3220,17 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
   }
 
   return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={`${t("Quote")} ${activeQuote.id}`}>
-      <main className="min-h-full bg-[var(--md-analytics-bg)] px-4 py-4 sm:px-5">
-        <div className="grid w-full gap-2">
-          <Tabs value={activeTab} onValueChange={(value) => changeWorkspaceTab(value as QuoteWorkspaceTab)} className="gap-2">
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={`${t("Quote")} ${activeQuote.id}`} className="min-w-0 max-w-full overflow-x-clip">
+      <main className="md-quote-workspace min-h-full min-w-0 max-w-full overflow-x-clip bg-[var(--md-analytics-bg)] px-3 py-3 sm:px-5 sm:py-4">
+        <div className="grid w-full min-w-0 max-w-full gap-2">
+          <Tabs value={activeTab} onValueChange={(value) => changeWorkspaceTab(value as QuoteWorkspaceTab)} className="min-w-0 max-w-full gap-2">
             <div className="relative">
-              <div className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+              <div className="md-quote-workspace-header grid min-w-0 items-stretch gap-2">
                 <div className="grid min-w-0 grid-rows-[auto_auto] gap-1.5">
                 <section
-                  className="flex min-w-0 flex-col gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-3 py-1.5 shadow-[var(--md-shadow-line)] lg:flex-row lg:flex-nowrap lg:items-center lg:justify-between"
+                  className="md-quote-record-header flex min-w-0 gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-3 py-1.5 shadow-[var(--md-shadow-line)]"
                 >
-          <div className="flex w-full min-w-0 items-center gap-1.5 lg:w-auto lg:shrink-0">
+          <div className="md-quote-record-identity flex min-w-0 items-center gap-1.5">
             <div className="min-w-0">
               <div className="flex flex-nowrap items-center gap-1.5">
                 <h1 className="flex shrink-0 items-center gap-1.5 text-[14px] font-medium leading-5 text-[var(--md-ink)]">
@@ -3261,7 +3261,7 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
               </div>
             </div>
           </div>
-          <div className="flex w-full min-w-0 flex-nowrap items-center gap-1 overflow-x-auto lg:w-auto lg:shrink-0 lg:overflow-visible">
+          <div className="md-quote-record-actions flex min-w-0 flex-nowrap items-center gap-1 md-scrollbar">
             <LayoutGroup id={`quote-actions-${activeQuote.id}`}>
               <AnimatePresence initial={false} mode="popLayout">
                 {isDirty ? (

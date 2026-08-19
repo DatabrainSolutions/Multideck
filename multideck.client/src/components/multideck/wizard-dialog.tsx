@@ -89,12 +89,28 @@ export function WizardDialog({
   // produce the same direction.
   const [direction, setDirection] = useState(1)
   const previousIndex = useRef(activeIndex)
+  const previousOpen = useRef(open)
+  const returnFocusTarget = useRef<HTMLElement | null>(null)
+
+  // These dialogs are often opened by a top-bar event rather than a Radix
+  // DialogTrigger. Capture the focused action before the portal mounts so
+  // keyboard users return to the control they used when the dialog closes.
+  if (open && !previousOpen.current && typeof document !== "undefined") {
+    const activeElement = document.activeElement
+    returnFocusTarget.current = activeElement instanceof HTMLElement && activeElement !== document.body
+      ? activeElement
+      : null
+  }
 
   useEffect(() => {
     if (activeIndex === previousIndex.current) return
     setDirection(activeIndex > previousIndex.current ? 1 : -1)
     previousIndex.current = activeIndex
   }, [activeIndex])
+
+  useEffect(() => {
+    previousOpen.current = open
+  }, [open])
 
   function goTo(index: number) {
     const next = steps[Math.max(0, Math.min(steps.length - 1, index))]
@@ -113,10 +129,10 @@ export function WizardDialog({
         {!isFormLayout ? (
           <nav aria-label={t("Steps")} className={cn("shrink-0 pb-4 pt-4", presentation === "drawer" ? "px-5" : "px-6")}>
             <ol className="relative flex items-start justify-between gap-2">
-            <span aria-hidden="true" className="absolute inset-x-0 top-[11px] h-px bg-[var(--md-line)]" />
+            <span aria-hidden="true" className="absolute inset-x-0 top-[11px] h-0.5 rounded-full bg-[var(--md-line-strong)]" />
             <motion.span
               aria-hidden="true"
-              className="absolute inset-x-0 top-[11px] h-px origin-left bg-[var(--md-accent)] rtl:origin-right"
+              className="absolute inset-x-0 top-[11px] h-0.5 origin-left rounded-full bg-[var(--md-accent)] rtl:origin-right"
               initial={false}
               animate={{ scaleX: steps.length > 1 ? activeIndex / (steps.length - 1) : 1 }}
               transition={shouldReduceMotion ? { duration: 0 } : mdMotion.panel}
@@ -130,21 +146,21 @@ export function WizardDialog({
                     type="button"
                     onClick={() => goTo(index)}
                     aria-current={isCurrent ? "step" : undefined}
-                    className="group flex min-w-0 flex-col items-center gap-1.5 rounded-[var(--md-radius-md)] px-1 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]"
+                    className="group flex min-w-0 flex-col items-center gap-2 rounded-[var(--md-radius-md)] px-1 py-0.5 outline-none"
                   >
                     <span
                       className={cn(
-                        "relative isolate grid size-[22px] shrink-0 place-items-center rounded-full text-[11px] font-medium tabular-nums transition-[background-color,color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] before:absolute before:-inset-[3px] before:-z-10 before:rounded-full before:bg-[var(--md-surface)] before:content-['']",
+                        "relative z-[1] grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-medium tabular-nums ring-[3px] ring-[var(--md-surface)] transition-[background-color,color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] group-focus-visible:outline group-focus-visible:outline-2 group-focus-visible:outline-offset-[3px] group-focus-visible:outline-[var(--md-accent)]",
                         isCurrent
                           ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[0_0_0_3px_var(--md-accent-a14)]"
                           : isDone
-                            ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]"
-                            : "bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] group-hover:text-[var(--md-text)]",
+                            ? "bg-[var(--md-accent-a18)] text-[var(--md-accent)] shadow-[inset_0_0_0_1px_var(--md-accent-a32)]"
+                            : "bg-[var(--md-field-bg)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_var(--md-line-strong)] group-hover:bg-[var(--md-field-bg-hover)] group-hover:text-[var(--md-ink)]",
                       )}
                     >
                       {isDone ? <Check className="size-3" strokeWidth={2} aria-hidden="true" /> : <span data-i18n-skip dir="ltr">{index + 1}</span>}
                     </span>
-                    <span className={cn("max-w-[130px] truncate text-[11.5px] leading-4 transition-colors duration-200", isCurrent ? "font-medium text-[var(--md-ink)]" : "text-[var(--md-text)] group-hover:text-[var(--md-ink)]")}>
+                    <span className={cn("max-w-[130px] truncate text-[12px] leading-4 transition-colors duration-200", isCurrent ? "font-medium text-[var(--md-ink)]" : "text-[var(--md-text)] group-hover:text-[var(--md-ink)]")}>
                       {t(step.label)}
                     </span>
                   </button>
@@ -248,6 +264,13 @@ export function WizardDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn("flex max-h-[calc(100dvh-1rem)] min-h-0 flex-col gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-h-[calc(100dvh-2rem)] sm:max-w-[720px]", className)}
+        onCloseAutoFocus={(event) => {
+          const target = returnFocusTarget.current
+          returnFocusTarget.current = null
+          if (!target?.isConnected) return
+          event.preventDefault()
+          target.focus()
+        }}
         onEscapeKeyDown={(event) => {
           const activeElement = document.activeElement
           if (activeElement instanceof Element && activeElement.closest('[data-wizard-escape-contained="true"]')) event.preventDefault()

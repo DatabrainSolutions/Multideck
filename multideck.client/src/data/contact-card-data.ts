@@ -1,6 +1,6 @@
 /** Shared QR contact-card types and defaults. Analytics are calculated by Supabase. */
 
-import type { QrEyeStyle, QrModuleStyle } from "@/lib/qr-code"
+import type { EccLevel, QrEyeStyle, QrModuleStyle } from "@/lib/qr-code"
 
 export type ContactCardStatus = "draft" | "published" | "paused"
 
@@ -48,6 +48,8 @@ export function defaultSocialLinks(email = "", website = ""): CardSocialLink[] {
 export type CardTheme = "light" | "dark" | "tinted"
 export type CardHeaderStyle = "none" | "bar" | "band" | "cover"
 export type CardLayout = "classic" | "editorial" | "compact" | "spotlight"
+export type QrLogoSize = "small" | "medium" | "large"
+export type QrQuietZone = 4 | 6 | 8
 
 /**
  * Everything a card owner can restyle. The accent is theirs to choose freely;
@@ -65,6 +67,12 @@ export type CardBranding = {
   logoInQr: boolean
   qrModuleStyle: QrModuleStyle
   qrEyeStyle: QrEyeStyle
+  /** Higher correction survives more print and surface damage, at the cost of density. */
+  qrErrorCorrection: EccLevel
+  /** The logo knockout is deliberately bounded to keep the code scannable. */
+  qrLogoSize: QrLogoSize
+  /** ISO minimum is 4 modules; larger quiet zones help cameras on busy backgrounds. */
+  qrQuietZone: QrQuietZone
   qrDark: string
   qrLight: string
 }
@@ -80,6 +88,9 @@ export function defaultBranding(accent = "#1f6f68"): CardBranding {
     logoInQr: false,
     qrModuleStyle: "rounded",
     qrEyeStyle: "rounded",
+    qrErrorCorrection: "M",
+    qrLogoSize: "medium",
+    qrQuietZone: 4,
     qrDark: "#0b1413",
     qrLight: "#ffffff",
   }

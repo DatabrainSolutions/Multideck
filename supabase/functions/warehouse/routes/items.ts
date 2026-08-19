@@ -6,6 +6,7 @@ import {
   allowedExtensions,
   bodyObject,
   bool,
+  boundedPage,
   clean,
   companyFacilityIds,
   cors,
@@ -66,31 +67,37 @@ function mapItem(row, orgNames, facilityNames, uoms = []) {
     updatedAt: row.WMSItem_UpdatedAt
   };
 }
-async function itemContext(admin, actor) {
+
+async function loadExactItem(admin, actor, itemId) {
   requireCapability(actor, "warehouse_items:read");
   const facilityIds = await companyFacilityIds(admin, actor);
-  const facilities = facilityIds.length ? await many(admin.from("WMS_Facilities").select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name").in("WMSFacility_ID", facilityIds).eq("WMSFacility_IsDeleted", false)) : [];
-  let orgs = await many(admin.from("Org_Master").select("Org_id,Org_Name"));
-  if (!actor.companyId) {
-    orgs = orgs.filter((row)=>actor.organisationIds.has(row.Org_id));
-  }
-  const orgIds = new Set(orgs.map((row)=>row.Org_id));
-  const items = facilityIds.length ? await many(admin.from("WMS_Items").select("*").in("WMSItem_DefaultFacilityID", facilityIds).eq("WMSItem_IsDeleted", false)) : [];
-  const uoms = items.length ? await many(admin.from("WMS_ItemUOMs").select("*").in("WMSItemUOM_ItemID", items.map((row)=>row.WMSItem_ID))) : [];
-  return {
-    facilities,
-    orgs,
-    items: items.filter((row)=>orgIds.has(row.WMSItem_CustomerOrgID)),
-    orgNames: new Map(orgs.map((row)=>[
-        row.Org_id,
-        row.Org_Name
-      ])),
-    facilityNames: new Map(facilities.map((row)=>[
-        row.WMSFacility_ID,
-        row.WMSFacility_Name
-      ])),
-    uoms
-  };
+  if (!facilityIds.length) return null;
+
+  let query = admin.from("WMS_Items")
+    .select("*")
+    .eq("WMSItem_ID", itemId)
+    .in("WMSItem_DefaultFacilityID", facilityIds)
+    .eq("WMSItem_IsDeleted", false)
+    .limit(1);
+  if (!actor.companyId) query = query.in("WMSItem_CustomerOrgID", [...actor.organisationIds]);
+  const item = await oneOrNull(query.maybeSingle());
+  if (!item) return null;
+
+  const [uoms, organisation, facility] = await Promise.all([
+    many(admin.from("WMS_ItemUOMs").select("*").eq("WMSItemUOM_ItemID", item.WMSItem_ID).order("WMSItemUOM_UOMCode")),
+    oneOrNull(admin.from("Org_Master").select("Org_id,Org_Name").eq("Org_id", item.WMSItem_CustomerOrgID).limit(1).maybeSingle()),
+    oneOrNull(admin.from("WMS_Facilities").select("WMSFacility_ID,WMSFacility_Name").eq("WMSFacility_ID", item.WMSItem_DefaultFacilityID).limit(1).maybeSingle()),
+  ]);
+  return { item, uoms, organisation, facility, facilityIds };
+}
+
+function mapExactItem(context) {
+  return mapItem(
+    context.item,
+    new Map(context.organisation ? [[context.organisation.Org_id, context.organisation.Org_Name]] : []),
+    new Map(context.facility ? [[context.facility.WMSFacility_ID, context.facility.WMSFacility_Name]] : []),
+    context.uoms,
+  );
 }
 function itemPayload(input, actor, create) {
   const net = numberOrNull(input.netWeightKg), gross = numberOrNull(input.grossWeightKg), min = numberOrNull(input.temperatureMinC), max = numberOrNull(input.temperatureMaxC);
@@ -139,14 +146,122 @@ function itemPayload(input, actor, create) {
   };
 }
 export async function handleItems(request, path, url, admin, actor) {
-  const context = await itemContext(admin, actor);
-  if (request.method === "GET" && path[1] === "reference") {
+  const boundedList = request.method === "GET" && path.length === 1 && url.searchParams.has("limit");
+  if (boundedList) {
+    requireCapability(actor, "warehouse_items:read");
+    const facilityIds = await companyFacilityIds(admin, actor);
+    const requestedFacility = clean(url.searchParams.get("facilityId"));
+    if (requestedFacility && !facilityIds.includes(requestedFacility)) throw new HttpError(403, "Choose a facility available in your workspace.");
+    const { limit, offset } = boundedPage(url);
+    const { data, error } = await admin.rpc("warehouse_edge_items_page", {
+      p_allowed_facility_ids: facilityIds,
+      p_allowed_org_ids: actor.companyId ? null : [...actor.organisationIds],
+      p_facility_id: requestedFacility,
+      p_search: clean(url.searchParams.get("search"), 160),
+      p_include_inactive: url.searchParams.get("includeInactive") === "true",
+      p_sort: clean(url.searchParams.get("sort"), 40) ?? "sku",
+      p_direction: url.searchParams.get("direction") === "desc" ? "desc" : "asc",
+      p_limit: limit,
+      p_offset: offset
+    });
+    if (!error) return data ?? { rows: [], total: 0, limit, offset };
+    if (["42883", "PGRST202"].includes(error.code ?? "")) {
+      throw new HttpError(503, "Warehouse item paging is still being prepared. Try again shortly.");
+    }
+    throw new HttpError(500, error.message);
+  }
+  if (request.method === "GET" && path.length === 1) {
+    throw new HttpError(400, "Warehouse item lists require bounded paging.");
+  }
+  if (request.method === "GET" && path[1] === "reference" && path[2] === "customers") {
+    requireCapability(actor, "warehouse_items:read");
+    const { limit, offset } = boundedPage(url);
+    if (!actor.companyId && actor.organisationIds.size === 0) return { rows: [], total: 0, limit, offset, hasMore: false };
+    let query = admin.from("Org_Master")
+      .select("Org_id,Org_Name", { count: "exact" });
+    if (!actor.companyId) query = query.in("Org_id", [...actor.organisationIds]);
+    const term = clean(url.searchParams.get("search"), 160);
+    if (term) query = query.ilike("Org_Name", `%${term.replace(/[\\%_]/g, "\\$&")}%`);
+    const { data, error, count } = await query
+      .order("Org_Name")
+      .order("Org_id")
+      .range(offset, offset + limit - 1);
+    if (error) throw new HttpError(500, error.message);
+    const total = count ?? 0;
     return {
-      customers: context.orgs.map((row)=>({
-          id: row.Org_id,
-          name: row.Org_Name
-        })),
-      facilities: context.facilities.map((row)=>({
+      rows: (data ?? []).map((row)=>({ id: row.Org_id, name: row.Org_Name })),
+      total,
+      limit,
+      offset,
+      hasMore: offset + limit < total
+    };
+  }
+  if (request.method === "GET" && path[1] === "reference" && url.searchParams.get("scope") === "facilities") {
+    requireCapability(actor, "warehouse_items:read");
+    const facilityIds = await companyFacilityIds(admin, actor);
+    const facilities = facilityIds.length ? await many(admin.from("WMS_Facilities")
+      .select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name")
+      .in("WMSFacility_ID", facilityIds)
+      .eq("WMSFacility_IsDeleted", false)
+      .order("WMSFacility_Name")) : [];
+    return {
+      customers: [],
+      customersDeferred: true,
+      facilities: facilities.map((row)=>({
+        id: row.WMSFacility_ID,
+        code: row.WMSFacility_Code,
+        name: row.WMSFacility_Name
+      }))
+    };
+  }
+  if (request.method === "GET" && path[1] === "detail") {
+    requireCapability(actor, "warehouse_items:read");
+    const sku = required(url.searchParams.get("sku"), "Choose an item SKU.", "sku", 120);
+    const facilityIds = await companyFacilityIds(admin, actor);
+    const { data: itemId, error: lookupError } = await admin.rpc("warehouse_edge_item_id_by_sku", {
+      p_allowed_facility_ids: facilityIds,
+      p_allowed_org_ids: actor.companyId ? null : [...actor.organisationIds],
+      p_sku: sku
+    });
+    if (lookupError) {
+      if (["42883", "PGRST202"].includes(lookupError.code ?? "")) throw new HttpError(503, "Warehouse item details are still being prepared. Try again shortly.");
+      throw new HttpError(500, lookupError.message);
+    }
+    if (!itemId) throw new HttpError(404, "This SKU does not match any warehouse item.");
+
+    let itemQuery = admin.from("WMS_Items")
+      .select("*")
+      .eq("WMSItem_ID", itemId)
+      .in("WMSItem_DefaultFacilityID", facilityIds)
+      .eq("WMSItem_IsDeleted", false);
+    if (!actor.companyId) itemQuery = itemQuery.in("WMSItem_CustomerOrgID", [...actor.organisationIds]);
+    const item = await oneOrNull(itemQuery.maybeSingle());
+    if (!item) throw new HttpError(404, "This SKU does not match any warehouse item.");
+
+    const [uoms, organisation, facility] = await Promise.all([
+      many(admin.from("WMS_ItemUOMs").select("*").eq("WMSItemUOM_ItemID", item.WMSItem_ID).order("WMSItemUOM_UOMCode")),
+      oneOrNull(admin.from("Org_Master").select("Org_id,Org_Name").eq("Org_id", item.WMSItem_CustomerOrgID).maybeSingle()),
+      oneOrNull(admin.from("WMS_Facilities").select("WMSFacility_ID,WMSFacility_Name").eq("WMSFacility_ID", item.WMSItem_DefaultFacilityID).maybeSingle())
+    ]);
+    return mapItem(
+      item,
+      new Map(organisation ? [[organisation.Org_id, organisation.Org_Name]] : []),
+      new Map(facility ? [[facility.WMSFacility_ID, facility.WMSFacility_Name]] : []),
+      uoms
+    );
+  }
+  if (request.method === "GET" && path[1] === "reference") {
+    requireCapability(actor, "warehouse_items:read");
+    const facilityIds = await companyFacilityIds(admin, actor);
+    const facilities = facilityIds.length ? await many(admin.from("WMS_Facilities")
+      .select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name")
+      .in("WMSFacility_ID", facilityIds)
+      .eq("WMSFacility_IsDeleted", false)
+      .order("WMSFacility_Name")) : [];
+    return {
+      customers: [],
+      customersDeferred: true,
+      facilities: facilities.map((row)=>({
           id: row.WMSFacility_ID,
           code: row.WMSFacility_Code,
           name: row.WMSFacility_Name
@@ -154,6 +269,7 @@ export async function handleItems(request, path, url, admin, actor) {
     };
   }
   if (request.method === "GET" && path[1] === "import" && path[2] === "template") {
+    requireCapability(actor, "warehouse_items:read");
     const { default: ExcelJS } = await import("npm:exceljs@4.4.0");
     const book = new ExcelJS.Workbook();
     const sheet = book.addWorksheet("Items");
@@ -191,27 +307,16 @@ export async function handleItems(request, path, url, admin, actor) {
       }
     });
   }
-  if (request.method === "GET" && path.length === 1) {
-    const term = clean(url.searchParams.get("search"))?.toLowerCase(), facility = clean(url.searchParams.get("facilityId"));
-    return context.items.filter((row)=>!facility || row.WMSItem_DefaultFacilityID === facility).filter((row)=>url.searchParams.get("includeInactive") === "true" || row.WMSItem_IsActive).filter((row)=>!term || [
-        row.WMSItem_SKU,
-        row.WMSItem_Description,
-        row.WMSItem_CommodityDescription,
-        row.WMSItem_HSCode,
-        context.orgNames.get(row.WMSItem_CustomerOrgID),
-        context.facilityNames.get(row.WMSItem_DefaultFacilityID)
-      ].some((value)=>String(value ?? "").toLowerCase().includes(term))).sort((a, b)=>a.WMSItem_SKU.localeCompare(b.WMSItem_SKU)).map((row)=>mapItem(row, context.orgNames, context.facilityNames, context.uoms));
-  }
   if (request.method === "POST" && path[1] === "import") {
-    return await importItems(request, admin, actor, context);
+    return await importItems(request, admin, actor);
   }
   const itemId = path[1] ? uuid(path[1], "item") : null;
-  const existing = itemId ? context.items.find((row)=>row.WMSItem_ID === itemId) : null;
+  const existing = itemId ? await loadExactItem(admin, actor, itemId) : null;
   if (request.method === "GET" && itemId) {
     if (!existing) {
       throw new HttpError(404, "This item does not exist in your workspace.");
     }
-    return mapItem(existing, context.orgNames, context.facilityNames, context.uoms);
+    return mapExactItem(existing);
   }
   if (request.method === "DELETE" && itemId) {
     if (!existing) {
@@ -229,8 +334,23 @@ export async function handleItems(request, path, url, admin, actor) {
     throw new HttpError(405, "Method not allowed.");
   }
   requireCapability(actor, "warehouse_items:manage");
-  const input = bodyObject(await request.json()), facilityId = uuid(input.facilityId, "facility"), customerOrgId = request.method === "POST" ? uuid(input.customerOrgId, "customer") : existing?.WMSItem_CustomerOrgID;
-  if (!customerOrgId || !context.facilities.some((row)=>row.WMSFacility_ID === facilityId) || !context.orgs.some((row)=>row.Org_id === customerOrgId)) {
+  if (request.method === "PUT" && !existing) throw new HttpError(404, "This item does not exist in your workspace.");
+  const input = bodyObject(await request.json());
+  const facilityId = uuid(input.facilityId, "facility");
+  const customerOrgId = request.method === "POST" ? uuid(input.customerOrgId, "customer") : existing?.item.WMSItem_CustomerOrgID;
+  const facilityIds = existing?.facilityIds ?? await companyFacilityIds(admin, actor);
+  const organisation = customerOrgId ? await oneOrNull(admin.from("Org_Master")
+    .select("Org_id,Org_Name")
+    .eq("Org_id", customerOrgId)
+    .limit(1)
+    .maybeSingle()) : null;
+  const facility = facilityIds.includes(facilityId) ? await oneOrNull(admin.from("WMS_Facilities")
+    .select("WMSFacility_ID,WMSFacility_Name")
+    .eq("WMSFacility_ID", facilityId)
+    .eq("WMSFacility_IsDeleted", false)
+    .limit(1)
+    .maybeSingle()) : null;
+  if (!customerOrgId || !organisation || !facility || (!actor.companyId && !actor.organisationIds.has(customerOrgId))) {
     throw new HttpError(400, "Choose a customer and facility available in your workspace.");
   }
   requireCustomerScope(actor, customerOrgId, facilityId);
@@ -254,14 +374,27 @@ export async function handleItems(request, path, url, admin, actor) {
     }));
     if (uoms.some((entry)=>entry.WMSItemUOM_QuantityInBaseUOM<=0)) throw new HttpError(400,"Packaging conversions must be greater than zero.");
     if (uoms.length) await one(admin.from("WMS_ItemUOMs").insert(uoms).select().limit(1).single(),"Could not save the item packaging units.");
-    context.uoms = await many(admin.from("WMS_ItemUOMs").select("*").eq("WMSItemUOM_ItemID",saved.WMSItem_ID));
   }
-  return mapItem(saved, context.orgNames, context.facilityNames, context.uoms);
+  const uoms = await many(admin.from("WMS_ItemUOMs").select("*").eq("WMSItemUOM_ItemID", saved.WMSItem_ID).order("WMSItemUOM_UOMCode"));
+  return mapItem(
+    saved,
+    new Map([[organisation.Org_id, organisation.Org_Name]]),
+    new Map([[facility.WMSFacility_ID, facility.WMSFacility_Name]]),
+    uoms,
+  );
 }
-async function importItems(request, admin, actor, context) {
+async function importItems(request, admin, actor) {
   requireCapability(actor, "warehouse_items:manage");
   const form = await request.formData(), customerOrgId = uuid(form.get("customerOrgId"), "customer"), facilityId = uuid(form.get("facilityId"), "facility");
   requireCustomerScope(actor, customerOrgId, facilityId);
+  const facilityIds = await companyFacilityIds(admin, actor);
+  const [organisation, facility] = await Promise.all([
+    oneOrNull(admin.from("Org_Master").select("Org_id").eq("Org_id", customerOrgId).limit(1).maybeSingle()),
+    facilityIds.includes(facilityId) ? oneOrNull(admin.from("WMS_Facilities").select("WMSFacility_ID").eq("WMSFacility_ID", facilityId).eq("WMSFacility_IsDeleted", false).limit(1).maybeSingle()) : Promise.resolve(null),
+  ]);
+  if (!organisation || !facility || (!actor.companyId && !actor.organisationIds.has(customerOrgId))) {
+    throw new HttpError(400, "Choose a customer and facility available in your workspace.");
+  }
   const file = form.get("file");
   if (!(file instanceof File) || file.size === 0 || file.size > 10 * 1024 * 1024) throw new HttpError(400, "Upload an Excel workbook no larger than 10 MB.");
   const { default: ExcelJS } = await import("npm:exceljs@4.4.0");
@@ -282,7 +415,19 @@ async function importItems(request, admin, actor, context) {
     }
     if (Object.values(record).some((value)=>value !== null && String(value).trim())) rows.push(record);
   });
-  const existing = new Set(context.items.filter((row)=>row.WMSItem_CustomerOrgID === customerOrgId).map((row)=>String(row.WMSItem_SKU).toLowerCase())), results = [], inserts = [];
+  if (rows.length > 2_000) throw new HttpError(400, "Import up to 2,000 item rows at a time.");
+  const requestedSkus = [...new Set(rows.map((row)=>clean(row.SKU ?? row.sku, 120)?.toLowerCase()).filter(Boolean))];
+  const { data: existingSkus, error: existingError } = await admin.rpc("warehouse_edge_existing_item_skus", {
+    p_customer_org_id: customerOrgId,
+    p_skus: requestedSkus,
+  });
+  if (existingError) {
+    if (["42883", "PGRST202"].includes(existingError.code ?? "")) {
+      throw new HttpError(503, "Warehouse item imports are still being prepared. Try again shortly.");
+    }
+    throw new HttpError(500, existingError.message);
+  }
+  const existing = new Set((existingSkus ?? []).map((sku)=>String(sku).toLowerCase())), results = [], inserts = [];
   rows.forEach((row, index)=>{
     const sku = clean(row.SKU ?? row.sku, 120), description = clean(row.Description ?? row.description, 240);
     if (!sku || !description) {

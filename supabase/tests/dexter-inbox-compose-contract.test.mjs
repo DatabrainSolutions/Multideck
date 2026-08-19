@@ -2,13 +2,13 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 
-const read = (path) => readFileSync(path, "utf8")
-const edge = read("supabase/functions/dexter-email-compose/index.ts")
-const migration = read("supabase/migrations/20260804191000_dexter_email_composer_thread_context.sql")
-const runtime = read("supabase/functions/inbox-api/runtime.ts")
-const client = read("multideck.client/src/lib/dexter-api.ts")
-const composer = read("multideck.client/src/components/multideck/mail-composer.tsx")
-const inbox = read("multideck.client/src/pages/inbox-page.tsx")
+const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8")
+const edge = read("../functions/dexter-email-compose/index.ts")
+const migration = read("../migrations/20260804191000_dexter_email_composer_thread_context.sql")
+const runtime = read("../functions/inbox-api/runtime.ts")
+const client = read("../../multideck.client/src/lib/dexter-api.ts")
+const composer = read("../../multideck.client/src/components/multideck/mail-composer.tsx")
+const inbox = read("../../multideck.client/src/pages/inbox-page.tsx")
 
 test("Inbox Dexter drafting uses Luna low reasoning and an optional bounded writing profile", () => {
   assert.match(edge, /DEXTER_FAST_MODEL[\s\S]*gpt-5\.6-luna/)

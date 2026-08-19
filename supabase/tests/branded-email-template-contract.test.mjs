@@ -6,12 +6,14 @@ const template = readFileSync(new URL("../functions/_shared/email-template.ts", 
 const sender = readFileSync(new URL("../functions/_shared/email-sender.ts", import.meta.url), "utf8")
 const authSender = readFileSync(new URL("../functions/send-auth-email/index.ts", import.meta.url), "utf8")
 const notificationSender = readFileSync(new URL("../functions/send-notification-email/index.ts", import.meta.url), "utf8")
+const teamSender = readFileSync(new URL("../functions/team/index.ts", import.meta.url), "utf8")
 const bannerUrl = new URL("../../multideck.client/public/email/multideck-email-banner.jpg", import.meta.url)
 const banner = readFileSync(bannerUrl)
 
 test("every Multideck system-email sender uses the shared branded renderer", () => {
   assert.match(authSender, /renderBrandedEmail\(/)
   assert.match(notificationSender, /renderBrandedEmail\(/)
+  assert.match(teamSender, /sendUserDeletionEmail[\s\S]*?renderBrandedEmail\(/)
 })
 
 test("every Multideck system email uses the approved support mailbox", () => {
@@ -22,6 +24,8 @@ test("every Multideck system email uses the approved support mailbox", () => {
   assert.match(authSender, /reply_to: MULTIDECK_EMAIL_REPLY_TO/)
   assert.match(notificationSender, /from: MULTIDECK_EMAIL_FROM/)
   assert.match(notificationSender, /reply_to: MULTIDECK_EMAIL_REPLY_TO/)
+  assert.match(teamSender, /from: MULTIDECK_EMAIL_FROM/)
+  assert.match(teamSender, /reply_to: MULTIDECK_EMAIL_REPLY_TO/)
 })
 
 test("the shared email template begins with the full-width Multideck banner", () => {

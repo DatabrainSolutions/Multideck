@@ -29,10 +29,13 @@ import {
   createWarehouseHandlingUnit,
   getWarehouseHandlingUnitReference,
   getWarehouseOrderReference,
-  listWarehouseHandlingUnits,
-  listWarehouseInventory,
-  listWarehouseInventoryExceptions,
-  listWarehouseInventoryMovements,
+  listWarehouseFacilitiesPage,
+  listWarehouseHandlingUnitsPage,
+  listWarehouseInventoryExceptionsPage,
+  listWarehouseInventoryMovementsPage,
+  listWarehouseInventoryPage,
+  listWarehouseOrderCustomersPage,
+  listWarehouseOrderLocationsPage,
   moveWarehouseBalance,
   moveWarehouseHandlingUnit,
   recordWarehouseSample,
@@ -40,14 +43,17 @@ import {
   resolveWarehouseLocationException,
   type WarehouseHandlingUnit,
   type WarehouseHandlingUnitReference,
+  type WarehouseFacility,
   type WarehouseInventoryBalance,
   type WarehouseInventoryException,
   type WarehouseInventoryMovement,
   type WarehouseOrderReference,
+  type WarehouseRegisterSort,
 } from "@/lib/warehouse"
 
 const controlClass = "!h-10 !w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 !px-3 !text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] active:!scale-100 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
 const noneValue = "__none__"
+const inventoryPageSize = 20
 
 function message(error: unknown) {
   return error instanceof WarehouseApiError ? error.message : error instanceof Error ? error.message : String(error)
@@ -112,6 +118,64 @@ function searchIndex(values: (string | number | null | undefined)[]) {
   return values.filter((value) => value !== null && value !== undefined && value !== "").join(" ").toLowerCase()
 }
 
+type WarehouseActionLocation = WarehouseOrderReference["locations"][number]
+type WarehouseActionCustomer = WarehouseOrderReference["customers"][number]
+
+function useWarehouseActionLocations(open: boolean, facilityId: string, retained: WarehouseActionLocation[] = []) {
+  const [search, setSearch] = useState("")
+  const [rows, setRows] = useState<WarehouseActionLocation[]>([])
+  const [loading, setLoading] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const retainedKey = retained.map((row) => `${row.id}:${row.code}`).join("|")
+
+  useEffect(() => { if (open) setSearch("") }, [facilityId, open])
+  useEffect(() => {
+    if (!open || !facilityId) { setRows([]); setHasMore(false); setError(null); return }
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      setLoading(true)
+      listWarehouseOrderLocationsPage({ facilityId, search: search.trim() || undefined, limit: 50 })
+        .then((page) => { if (!cancelled) { setRows(page.rows); setHasMore(page.hasMore); setError(null) } })
+        .catch((cause) => { if (!cancelled) { setRows([]); setHasMore(false); setError(message(cause)) } })
+        .finally(() => { if (!cancelled) setLoading(false) })
+    }, 220)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [facilityId, open, search])
+
+  const options = useMemo(() => [...retained, ...rows]
+    .filter((row) => row.facilityId === facilityId)
+    .filter((row, index, all) => all.findIndex((candidate) => candidate.id === row.id) === index), [facilityId, retainedKey, rows])
+  return { search, setSearch, options, loading, hasMore, error }
+}
+
+function useWarehouseActionCustomers(open: boolean, retained: WarehouseActionCustomer[] = []) {
+  const [search, setSearch] = useState("")
+  const [rows, setRows] = useState<WarehouseActionCustomer[]>([])
+  const [loading, setLoading] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const retainedKey = retained.map((row) => `${row.id}:${row.name}`).join("|")
+
+  useEffect(() => { if (open) setSearch("") }, [open])
+  useEffect(() => {
+    if (!open) { setRows([]); setHasMore(false); setError(null); return }
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      setLoading(true)
+      listWarehouseOrderCustomersPage({ search: search.trim() || undefined, limit: 25 })
+        .then((page) => { if (!cancelled) { setRows(page.rows); setHasMore(page.hasMore); setError(null) } })
+        .catch((cause) => { if (!cancelled) { setRows([]); setHasMore(false); setError(message(cause)) } })
+        .finally(() => { if (!cancelled) setLoading(false) })
+    }, 220)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [open, search])
+
+  const options = useMemo(() => [...retained, ...rows]
+    .filter((row, index, all) => all.findIndex((candidate) => candidate.id === row.id) === index), [retainedKey, rows])
+  return { search, setSearch, options, loading, hasMore, error }
+}
+
 export function WarehouseInventoryWorkspace() {
   const { language, t } = useLanguage()
   const number = useMemo(() => new Intl.NumberFormat(language, { maximumFractionDigits: 6 }), [language])
@@ -123,10 +187,16 @@ export function WarehouseInventoryWorkspace() {
   const [committedSearch, setCommittedSearch] = useState("")
   const [reference, setReference] = useState<WarehouseOrderReference | null>(null)
   const [huReference, setHuReference] = useState<WarehouseHandlingUnitReference | null>(null)
+  const [facilities, setFacilities] = useState<WarehouseFacility[]>([])
   const [balances, setBalances] = useState<WarehouseInventoryBalance[]>([])
   const [units, setUnits] = useState<WarehouseHandlingUnit[]>([])
+  const [actionUnits, setActionUnits] = useState<WarehouseHandlingUnit[]>([])
   const [movements, setMovements] = useState<WarehouseInventoryMovement[]>([])
   const [exceptions, setExceptions] = useState<WarehouseInventoryException[]>([])
+  const [totals, setTotals] = useState<Partial<Record<InventoryMode, number>>>({})
+  const [facetOptionsByMode, setFacetOptionsByMode] = useState<Partial<Record<InventoryMode, string[]>>>({})
+  const [offset, setOffset] = useState(0)
+  const [sort, setSort] = useState<WarehouseRegisterSort | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [pending, setPending] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -138,6 +208,7 @@ export function WarehouseInventoryWorkspace() {
   // Responses can land out of order once the operator types quickly. Only the
   // newest request is allowed to write, so a slow "ab" can never overwrite "abc".
   const requestId = useRef(0)
+  const facetValue = facets[mode]
 
   useEffect(() => {
     const openCreate = () => setCreateOpen(true)
@@ -154,21 +225,26 @@ export function WarehouseInventoryWorkspace() {
     const ticket = ++requestId.current
     setPending(true)
     try {
-      const [stock, objects, history, openExceptions] = await Promise.all([
-        listWarehouseInventory({ facilityId: facilityId || undefined, search: committedSearch || undefined }),
-        listWarehouseHandlingUnits({ facilityId: facilityId || undefined, search: committedSearch || undefined }),
-        listWarehouseInventoryMovements({ facilityId: facilityId || undefined, search: committedSearch || undefined, take: 250 }),
-        listWarehouseInventoryExceptions({ facilityId: facilityId || undefined, search: committedSearch || undefined, openOnly: true }),
-      ])
+      const common = { facilityId: facilityId || undefined, search: committedSearch || undefined, facet: facetValue || undefined, sort, limit: inventoryPageSize, offset }
+      const result = mode === "Stock" ? await listWarehouseInventoryPage(common)
+        : mode === "Objects" ? await listWarehouseHandlingUnitsPage(common)
+          : mode === "Movements" ? await listWarehouseInventoryMovementsPage(common)
+            : await listWarehouseInventoryExceptionsPage({ ...common, openOnly: true })
       if (ticket !== requestId.current) return
-      setBalances(stock); setUnits(objects); setMovements(history); setExceptions(openExceptions); setError(null); setLoaded(true)
+      if (mode === "Stock") setBalances(result.rows as WarehouseInventoryBalance[])
+      else if (mode === "Objects") setUnits(result.rows as WarehouseHandlingUnit[])
+      else if (mode === "Movements") setMovements(result.rows as WarehouseInventoryMovement[])
+      else setExceptions(result.rows as WarehouseInventoryException[])
+      setTotals((current) => ({ ...current, [mode]: result.total }))
+      setFacetOptionsByMode((current) => ({ ...current, [mode]: result.facets }))
+      setError(null); setLoaded(true)
     } catch (cause) {
       if (ticket !== requestId.current) return
       setError(message(cause))
     } finally {
       if (ticket === requestId.current) setPending(false)
     }
-  }, [facilityId, committedSearch])
+  }, [committedSearch, facetValue, facilityId, mode, offset, sort])
 
   useEffect(() => { void refresh() }, [refresh])
 
@@ -191,26 +267,45 @@ export function WarehouseInventoryWorkspace() {
   // once the operator stops, and only to widen the set beyond what is in hand.
   useEffect(() => {
     if (search === committedSearch) return
-    const timer = window.setTimeout(() => setCommittedSearch(search), 320)
+    const timer = window.setTimeout(() => { setOffset(0); setCommittedSearch(search) }, 320)
     return () => window.clearTimeout(timer)
   }, [search, committedSearch])
 
-  // Reference data does not change with a search term, so it is fetched apart
-  // from the registers: once for the order lookups, and per warehouse for locations.
+  // The filter needs only the small, bounded facility catalogue. The much larger
+  // customer/item/location reference payload is deferred until an action opens.
   useEffect(() => {
     let live = true
-    getWarehouseOrderReference().then((value) => { if (live) setReference(value) }).catch(() => undefined)
+    listWarehouseFacilitiesPage({ limit: 50 }).then((value) => { if (live) setFacilities(value.rows) }).catch(() => undefined)
     return () => { live = false }
   }, [])
 
   useEffect(() => {
+    if (!createOpen && !emptyOpen) return
     let live = true
-    getWarehouseHandlingUnitReference(facilityId || undefined).then((value) => { if (live) setHuReference(value) }).catch(() => undefined)
+    getWarehouseOrderReference().then((value) => { if (live) setReference(value) }).catch(() => undefined)
     return () => { live = false }
-  }, [facilityId])
+  }, [createOpen, emptyOpen])
+
+  useEffect(() => {
+    const actionFacilityId = selectedBalance?.facilityId ?? selectedUnit?.facilityId ?? selectedException?.facilityId ?? (facilityId || undefined)
+    if (!selectedBalance && !selectedUnit && !selectedException && !createOpen && !emptyOpen) return
+    let live = true
+    getWarehouseHandlingUnitReference(actionFacilityId).then((value) => { if (live) setHuReference(value) }).catch(() => undefined)
+    return () => { live = false }
+  }, [createOpen, emptyOpen, facilityId, selectedBalance, selectedException, selectedUnit])
+
+  useEffect(() => {
+    const facility = selectedBalance?.facilityId ?? selectedUnit?.facilityId
+    const customerOrgId = selectedBalance?.customerOrgId ?? selectedUnit?.customerOrgId
+    if (!facility) { setActionUnits([]); return }
+    let live = true
+    listWarehouseHandlingUnitsPage({ facilityId: facility, customerOrgId: customerOrgId ?? undefined, limit: 50 })
+      .then((value) => { if (live) setActionUnits(value.rows) })
+      .catch(() => { if (live) setActionUnits([]) })
+    return () => { live = false }
+  }, [selectedBalance, selectedUnit])
 
   const query = search.trim().toLowerCase()
-  const facetValue = facets[mode]
 
   const filteredBalances = useMemo(() => balances.filter((row) => (
     (!facetValue || (row.inventoryStatusName ?? row.inventoryStatusCode) === facetValue)
@@ -232,22 +327,11 @@ export function WarehouseInventoryWorkspace() {
     && (!query || searchIndex([row.title, row.description, row.typeCode, row.statusCode, row.expectedLocationCode, row.actualLocationCode]).includes(query))
   )), [exceptions, facetValue, query])
 
-  const counts: Record<InventoryMode, number> = {
-    Stock: filteredBalances.length,
-    Objects: filteredUnits.length,
-    Movements: filteredMovements.length,
-    Exceptions: filteredExceptions.length,
-  }
+  const counts: Partial<Record<InventoryMode, number>> = totals
 
   // Options come from the rows actually in hand, so the menu can never offer a
   // value that returns nothing.
-  const facetOptions = useMemo(() => {
-    const values = mode === "Stock" ? balances.map((row) => row.inventoryStatusName ?? row.inventoryStatusCode)
-      : mode === "Objects" ? units.map((row) => row.typeName)
-      : mode === "Movements" ? movements.map((row) => row.typeName ?? row.typeCode)
-      : exceptions.map((row) => row.severityCode)
-    return [...new Set(values.filter(Boolean))].sort((first, second) => first.localeCompare(second))
-  }, [mode, balances, units, movements, exceptions])
+  const facetOptions = facetOptionsByMode[mode] ?? []
 
   // A facet the current rows no longer contain would silently hide everything.
   useEffect(() => {
@@ -292,7 +376,7 @@ export function WarehouseInventoryWorkspace() {
     { id: "exception-status", label: "Status", kind: "status", width: 138, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.statusCode, cell: (row) => <StatusPill tone={statusTone(row.statusCode)}>{t(row.statusCode)}</StatusPill> },
   ], [dateTime, t])
 
-  const clearFilters = () => { setSearch(""); setCommittedSearch(""); setFacets(emptyFacets); setFacilityId("") }
+  const clearFilters = () => { setSearch(""); setCommittedSearch(""); setFacets(emptyFacets); setFacilityId(""); setOffset(0); setSort(null) }
   const hasFilters = Boolean(query || facetValue || facilityId)
 
   const emptyState = error ? (
@@ -327,7 +411,7 @@ export function WarehouseInventoryWorkspace() {
 
   const toolbarTabs = (
     <div className="flex min-w-0 items-center gap-2">
-      <RegisterViewSwitch options={inventoryModes} value={mode} onChange={setMode} counts={counts} ariaLabel="Inventory view" compact />
+      <RegisterViewSwitch options={inventoryModes} value={mode} onChange={(value) => { setMode(value); setOffset(0); setSort(null); setLoaded(false) }} counts={counts} ariaLabel="Inventory view" compact />
     </div>
   )
 
@@ -338,15 +422,15 @@ export function WarehouseInventoryWorkspace() {
         allLabel={facetAllLabels[mode]}
         value={facetValue}
         options={facetOptions.map((option) => ({ value: option, label: option }))}
-        onChange={(value) => setFacets((current) => ({ ...current, [mode]: value }))}
+        onChange={(value) => { setFacets((current) => ({ ...current, [mode]: value })); setOffset(0) }}
         className="w-[120px] sm:w-[120px]"
       />
       <RegisterFacetSelect
         label="Warehouse"
         allLabel="All warehouses"
         value={facilityId}
-        options={(reference?.facilities ?? []).map((facility) => ({ value: facility.id, label: facility.name }))}
-        onChange={setFacilityId}
+        options={facilities.map((facility) => ({ value: facility.id, label: facility.name }))}
+        onChange={(value) => { setFacilityId(value); setOffset(0) }}
         className="w-[132px] sm:w-[132px]"
       />
     </>
@@ -396,12 +480,14 @@ export function WarehouseInventoryWorkspace() {
       toolbarOptions={<RegisterRevalidatingMark active={pending && loaded} />}
       compactToolbar
       emptyState={emptyState}
+      serverSorting={{ value: sort, onChange: (value) => { setSort(value); setOffset(0) } }}
+      pagination={{ offset, limit: inventoryPageSize, total: totals[mode] ?? 0, loading: pending, onOffsetChange: setOffset }}
     />
-    <StockActionPanel balance={selectedBalance} open={Boolean(selectedBalance)} onClose={() => setSelectedBalance(null)} reference={huReference} units={units} onChanged={() => void refresh()} />
-    <WarehouseObjectPanel unit={selectedUnit} open={Boolean(selectedUnit)} onClose={() => setSelectedUnit(null)} reference={huReference} units={units} onChanged={() => void refresh()} />
-    <ExceptionPanel exception={selectedException} open={Boolean(selectedException)} onClose={() => setSelectedException(null)} reference={huReference} onChanged={() => void refresh()} />
+    <StockActionPanel balance={selectedBalance} open={Boolean(selectedBalance)} onClose={() => setSelectedBalance(null)} reference={huReference} units={actionUnits} onChanged={() => void refresh()} />
+    <WarehouseObjectPanel unit={selectedUnit} open={Boolean(selectedUnit)} onClose={() => setSelectedUnit(null)} units={actionUnits} onChanged={() => void refresh()} />
+    <ExceptionPanel exception={selectedException} open={Boolean(selectedException)} onClose={() => setSelectedException(null)} onChanged={() => void refresh()} />
     <CreateHandlingUnitDialog open={createOpen} onOpenChange={setCreateOpen} reference={reference} huReference={huReference} fixedFacilityId={facilityId} onChanged={() => void refresh()} />
-    <EmptyLocationDialog open={emptyOpen} onOpenChange={setEmptyOpen} reference={reference} huReference={huReference} fixedFacilityId={facilityId} onChanged={() => void refresh()} />
+    <EmptyLocationDialog open={emptyOpen} onOpenChange={setEmptyOpen} reference={reference} fixedFacilityId={facilityId} onChanged={() => void refresh()} />
   </div>
 }
 
@@ -425,6 +511,8 @@ function StockActionPanel({ balance, open, onClose, reference, units, onChanged 
   const [recipient, setRecipient] = useState("")
   const [custody, setCustody] = useState("")
   const [saving, setSaving] = useState(false)
+  const retainedLocations = useMemo<WarehouseActionLocation[]>(() => balance?.locationId && balance.locationCode ? [{ id: balance.locationId, facilityId: balance.facilityId, code: balance.locationCode, zoneName: null, statusCode: "available" }] : [], [balance])
+  const locationSelector = useWarehouseActionLocations(open, balance?.facilityId ?? "", retainedLocations)
 
   useEffect(() => {
     if (!balance || !open) return
@@ -439,7 +527,7 @@ function StockActionPanel({ balance, open, onClose, reference, units, onChanged 
 
   if (!balance) return null
   const currentBalance = balance
-  const locations = reference?.locations.filter((location) => location.facilityId === balance.facilityId) ?? []
+  const locations = locationSelector.options
   const compatibleUnits = units.filter((unit) => unit.facilityId === balance.facilityId && unit.customerOrgId === balance.customerOrgId && unit.lifecycleStatusCode === "open")
   const movingFromElsewhere = action === "move" && actualSourceLocationId !== currentBalance.locationId
 
@@ -511,6 +599,10 @@ function StockActionPanel({ balance, open, onClose, reference, units, onChanged 
 
       {action === "move" ? (
         <>
+          <WarehouseFormField label={t("Find a location")} hint={locationSelector.hasMore ? t("Search to narrow the location list.") : undefined}>
+            <div className="relative"><Input value={locationSelector.search} onChange={(event) => locationSelector.setSearch(event.target.value)} placeholder={t("Search locations…")} className={controlClass} />{locationSelector.loading ? <Loader2 className="pointer-events-none absolute end-3 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" /> : null}</div>
+            {locationSelector.error ? <p role="alert" className="mt-1 text-[11.5px] text-[var(--md-red)]">{locationSelector.error}</p> : null}
+          </WarehouseFormField>
           <WarehouseFormField label={t("Found at")} required hint={movingFromElsewhere ? t("This differs from the recorded location, so the move is logged as an override.") : undefined}>
             <Select value={actualSourceLocationId} onValueChange={setActualSourceLocationId}>
               <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
@@ -520,7 +612,7 @@ function StockActionPanel({ balance, open, onClose, reference, units, onChanged 
           <WarehouseFormField label={t("Moving to")} required>
             <Select value={targetLocationId} onValueChange={setTargetLocationId}>
               <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
-              <SelectContent>{locations.filter((location) => location.statusCode === "available").map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent>
+              <SelectContent>{locations.filter((location) => !location.statusCode || location.statusCode === "available").map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent>
             </Select>
           </WarehouseFormField>
           <WarehouseFormField label={t("Onto object")} hint={t("Leave as loose stock if it is not going onto a pallet.")}>
@@ -565,7 +657,7 @@ const objectModes = ["move", "consolidate"] as const
 type ObjectMode = (typeof objectModes)[number]
 const objectModeLabels: Record<ObjectMode, string> = { move: "Move it", consolidate: "Consolidate into it" }
 
-function WarehouseObjectPanel({ unit, open, onClose, reference, units, onChanged }: { unit: WarehouseHandlingUnit | null; open: boolean; onClose: () => void; reference: WarehouseHandlingUnitReference | null; units: WarehouseHandlingUnit[]; onChanged: () => void }) {
+function WarehouseObjectPanel({ unit, open, onClose, units, onChanged }: { unit: WarehouseHandlingUnit | null; open: boolean; onClose: () => void; units: WarehouseHandlingUnit[]; onChanged: () => void }) {
   const { language, t } = useLanguage()
   const number = useMemo(() => new Intl.NumberFormat(language, { maximumFractionDigits: 6 }), [language])
   const [mode, setMode] = useState<ObjectMode>("move")
@@ -574,6 +666,8 @@ function WarehouseObjectPanel({ unit, open, onClose, reference, units, onChanged
   const [sources, setSources] = useState<string[]>([])
   const [notes, setNotes] = useState("")
   const [saving, setSaving] = useState(false)
+  const retainedLocations = useMemo<WarehouseActionLocation[]>(() => unit?.locationId && unit.locationCode ? [{ id: unit.locationId, facilityId: unit.facilityId, code: unit.locationCode, zoneName: null, statusCode: "available" }] : [], [unit])
+  const locationSelector = useWarehouseActionLocations(open, unit?.facilityId ?? "", retainedLocations)
 
   useEffect(() => {
     if (!unit || !open) return
@@ -586,7 +680,7 @@ function WarehouseObjectPanel({ unit, open, onClose, reference, units, onChanged
 
   if (!unit) return null
   const currentUnit = unit
-  const locations = reference?.locations.filter((location) => location.facilityId === unit.facilityId && location.statusCode === "available") ?? []
+  const locations = locationSelector.options.filter((location) => !location.statusCode || location.statusCode === "available")
   const candidates = units.filter((candidate) => candidate.id !== unit.id && candidate.facilityId === unit.facilityId && candidate.customerOrgId === unit.customerOrgId && candidate.lifecycleStatusCode === "open")
 
   async function save() {
@@ -655,6 +749,10 @@ function WarehouseObjectPanel({ unit, open, onClose, reference, units, onChanged
 
       {mode === "move" ? (
         <>
+          <WarehouseFormField label={t("Find a location")} hint={locationSelector.hasMore ? t("Search to narrow the location list.") : undefined}>
+            <div className="relative"><Input value={locationSelector.search} onChange={(event) => locationSelector.setSearch(event.target.value)} placeholder={t("Search locations…")} className={controlClass} />{locationSelector.loading ? <Loader2 className="pointer-events-none absolute end-3 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" /> : null}</div>
+            {locationSelector.error ? <p role="alert" className="mt-1 text-[11.5px] text-[var(--md-red)]">{locationSelector.error}</p> : null}
+          </WarehouseFormField>
           <WarehouseFormField label={t("Found at")}>
             <Select value={actualSourceLocationId} onValueChange={setActualSourceLocationId}>
               <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
@@ -689,17 +787,81 @@ function WarehouseObjectPanel({ unit, open, onClose, reference, units, onChanged
 }
 
 function CreateHandlingUnitDialog({ open, onOpenChange, reference, huReference, fixedFacilityId, onChanged }: { open: boolean; onOpenChange: (open: boolean) => void; reference: WarehouseOrderReference | null; huReference: WarehouseHandlingUnitReference | null; fixedFacilityId: string; onChanged: () => void }) {
-  const { t } = useLanguage(); const [facilityId, setFacilityId] = useState(""); const [customerOrgId, setCustomerOrgId] = useState(""); const [locationId, setLocationId] = useState(""); const [typeCode, setTypeCode] = useState("pallet"); const [code, setCode] = useState(""); const [saving, setSaving] = useState(false)
-  useEffect(() => { if (!open) return; const facility = fixedFacilityId || reference?.facilities[0]?.id || ""; setFacilityId(facility); setCustomerOrgId(reference?.customers[0]?.id ?? ""); setLocationId(huReference?.locations.find((location) => location.facilityId === facility && location.statusCode === "available")?.id ?? ""); setCode("") }, [open, fixedFacilityId, reference, huReference])
-  async function save() { setSaving(true); try { await createWarehouseHandlingUnit({ facilityId, customerOrgId: customerOrgId || null, locationId: locationId || null, typeCode, code: code || null, sscc: null, externalReference: null }); toast.success(t("Warehouse object created")); onOpenChange(false); onChanged() } catch (cause) { toast.error(t("Warehouse object could not be created"), { description: message(cause) }) } finally { setSaving(false) } }
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[560px]"><DialogHeader className={warehouseDialogHeaderClass}><DialogTitle>{t("New warehouse object")}</DialogTitle><DialogDescription>{t("Create a pallet, IBC, carton, drum, tote, or labelled loose unit.")}</DialogDescription></DialogHeader><div className="grid gap-4 px-6 py-5"><WarehouseFormField label={t("Warehouse")}><Select value={facilityId} onValueChange={(value) => { setFacilityId(value); setLocationId(huReference?.locations.find((location) => location.facilityId === value && location.statusCode === "available")?.id ?? "") }}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.facilities.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField><WarehouseFormField label={t("Customer")}><Select value={customerOrgId} onValueChange={setCustomerOrgId}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.customers.map((customer) => <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField><WarehouseFormField label={t("Object type")}><Select value={typeCode} onValueChange={setTypeCode}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{huReference?.types.map((type) => <SelectItem key={type.code} value={type.code}>{t(type.name)}</SelectItem>)}</SelectContent></Select></WarehouseFormField><WarehouseFormField label={t("Label code")} hint={t("Leave empty to generate a code.")}><Input dir="ltr" value={code} onChange={(event) => setCode(event.target.value)} className={controlClass}/></WarehouseFormField><WarehouseFormField label={t("Initial location")}><Select value={locationId} onValueChange={setLocationId}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{huReference?.locations.filter((location) => location.facilityId === facilityId && location.statusCode === "available").map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent></Select></WarehouseFormField></div><DialogFooter className={warehouseDialogFooterClass}><Button variant="ghost" onClick={() => onOpenChange(false)}>{t("Cancel")}</Button><Button disabled={saving || !facilityId || !typeCode} onClick={() => void save()} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <Loader2 className="size-4 animate-spin"/> : <PackagePlus className="size-4"/>}{t("Create object")}</Button></DialogFooter></DialogContent></Dialog>
+  const { t } = useLanguage()
+  const [facilityId, setFacilityId] = useState("")
+  const [customerOrgId, setCustomerOrgId] = useState("")
+  const [selectedCustomer, setSelectedCustomer] = useState<WarehouseActionCustomer | null>(null)
+  const [locationId, setLocationId] = useState("")
+  const [typeCode, setTypeCode] = useState("pallet")
+  const [code, setCode] = useState("")
+  const [saving, setSaving] = useState(false)
+  const customers = useWarehouseActionCustomers(open, selectedCustomer ? [selectedCustomer] : [])
+  const locations = useWarehouseActionLocations(open, facilityId)
+  const availableLocations = locations.options.filter((location) => !location.statusCode || location.statusCode === "available")
+
+  useEffect(() => {
+    if (!open) return
+    setFacilityId(fixedFacilityId || reference?.facilities[0]?.id || "")
+    setCustomerOrgId("")
+    setSelectedCustomer(null)
+    setLocationId("")
+    setCode("")
+  }, [open, fixedFacilityId, reference])
+  useEffect(() => {
+    if (!open || customerOrgId || !customers.options[0]) return
+    setCustomerOrgId(customers.options[0].id)
+    setSelectedCustomer(customers.options[0])
+  }, [customerOrgId, customers.options, open])
+  useEffect(() => {
+    if (!open || locationId || !availableLocations[0]) return
+    setLocationId(availableLocations[0].id)
+  }, [availableLocations, locationId, open])
+
+  async function save() {
+    setSaving(true)
+    try {
+      await createWarehouseHandlingUnit({ facilityId, customerOrgId: customerOrgId || null, locationId: locationId || null, typeCode, code: code || null, sscc: null, externalReference: null })
+      toast.success(t("Warehouse object created")); onOpenChange(false); onChanged()
+    } catch (cause) {
+      toast.error(t("Warehouse object could not be created"), { description: message(cause) })
+    } finally { setSaving(false) }
+  }
+
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[560px]"><DialogHeader className={warehouseDialogHeaderClass}><DialogTitle>{t("New warehouse object")}</DialogTitle><DialogDescription>{t("Create a pallet, IBC, carton, drum, tote, or labelled loose unit.")}</DialogDescription></DialogHeader><div className="grid gap-4 px-6 py-5">
+    <WarehouseFormField label={t("Warehouse")}><Select value={facilityId} onValueChange={(value) => { setFacilityId(value); setLocationId("") }}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.facilities.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
+    <WarehouseFormField label={t("Customer")} hint={customers.hasMore ? t("Search to narrow the customer list.") : undefined}><div className="grid gap-1.5"><div className="relative"><Input value={customers.search} onChange={(event) => customers.setSearch(event.target.value)} placeholder={t("Search customers…")} className={controlClass} />{customers.loading ? <Loader2 className="pointer-events-none absolute end-3 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" /> : null}</div><Select value={customerOrgId} onValueChange={(value) => { setCustomerOrgId(value); setSelectedCustomer(customers.options.find((customer) => customer.id === value) ?? null) }}><SelectTrigger className={controlClass}><SelectValue placeholder={t("Choose customer")} /></SelectTrigger><SelectContent>{customers.options.map((customer) => <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>)}</SelectContent></Select>{customers.error ? <p role="alert" className="text-[11.5px] text-[var(--md-red)]">{customers.error}</p> : null}</div></WarehouseFormField>
+    <WarehouseFormField label={t("Object type")}><Select value={typeCode} onValueChange={setTypeCode}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{huReference?.types.map((type) => <SelectItem key={type.code} value={type.code}>{t(type.name)}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
+    <WarehouseFormField label={t("Label code")} hint={t("Leave empty to generate a code.")}><Input dir="ltr" value={code} onChange={(event) => setCode(event.target.value)} className={controlClass}/></WarehouseFormField>
+    <WarehouseFormField label={t("Initial location")} hint={locations.hasMore ? t("Search to narrow the location list.") : undefined}><div className="grid gap-1.5"><div className="relative"><Input value={locations.search} onChange={(event) => locations.setSearch(event.target.value)} placeholder={t("Search locations…")} className={controlClass} />{locations.loading ? <Loader2 className="pointer-events-none absolute end-3 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" /> : null}</div><Select value={locationId} onValueChange={setLocationId}><SelectTrigger className={controlClass}><SelectValue placeholder={t("Choose location")} /></SelectTrigger><SelectContent>{availableLocations.map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent></Select>{locations.error ? <p role="alert" className="text-[11.5px] text-[var(--md-red)]">{locations.error}</p> : null}</div></WarehouseFormField>
+  </div><DialogFooter className={warehouseDialogFooterClass}><Button variant="ghost" onClick={() => onOpenChange(false)}>{t("Cancel")}</Button><Button disabled={saving || !facilityId || !typeCode} onClick={() => void save()} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <Loader2 className="size-4 animate-spin"/> : <PackagePlus className="size-4"/>}{t("Create object")}</Button></DialogFooter></DialogContent></Dialog>
 }
 
-function EmptyLocationDialog({ open, onOpenChange, reference, huReference, fixedFacilityId, onChanged }: { open: boolean; onOpenChange: (open: boolean) => void; reference: WarehouseOrderReference | null; huReference: WarehouseHandlingUnitReference | null; fixedFacilityId: string; onChanged: () => void }) {
-  const { t } = useLanguage(); const [facilityId, setFacilityId] = useState(""); const [locationId, setLocationId] = useState(""); const [notes, setNotes] = useState(""); const [confirmed, setConfirmed] = useState(false); const [saving, setSaving] = useState(false)
-  useEffect(() => { if (!open) return; const facility = fixedFacilityId || reference?.facilities[0]?.id || ""; setFacilityId(facility); setLocationId(huReference?.locations.find((location) => location.facilityId === facility && location.typeCode !== "investigation")?.id ?? ""); setNotes(""); setConfirmed(false) }, [open, fixedFacilityId, reference, huReference])
+function EmptyLocationDialog({ open, onOpenChange, reference, fixedFacilityId, onChanged }: { open: boolean; onOpenChange: (open: boolean) => void; reference: WarehouseOrderReference | null; fixedFacilityId: string; onChanged: () => void }) {
+  const { t } = useLanguage()
+  const [facilityId, setFacilityId] = useState("")
+  const [locationId, setLocationId] = useState("")
+  const [notes, setNotes] = useState("")
+  const [confirmed, setConfirmed] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const locations = useWarehouseActionLocations(open, facilityId)
+  const selectableLocations = locations.options.filter((location) => location.typeCode !== "investigation")
+
+  useEffect(() => {
+    if (!open) return
+    setFacilityId(fixedFacilityId || reference?.facilities[0]?.id || "")
+    setLocationId("")
+    setNotes("")
+    setConfirmed(false)
+  }, [open, fixedFacilityId, reference])
+  useEffect(() => {
+    if (!open || locationId || !selectableLocations[0]) return
+    setLocationId(selectableLocations[0].id)
+  }, [locationId, open, selectableLocations])
   async function save() { setSaving(true); try { await reportWarehouseLocationEmpty({ facilityId, locationId, notes: notes || null }); toast.success(t("Location investigation opened")); onOpenChange(false); onChanged() } catch (cause) { toast.error(t("Investigation could not be opened"), { description: message(cause) }) } finally { setSaving(false) } }
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[560px]"><DialogHeader className={warehouseDialogHeaderClass}><DialogTitle>{t("Location is physically empty")}</DialogTitle><DialogDescription>{t("Expected stock will be held as unlocated while a count and investigation are opened. No stock is silently written off.")}</DialogDescription></DialogHeader><div className="grid gap-4 px-6 py-5"><WarehouseFormField label={t("Warehouse")}><Select value={facilityId} onValueChange={(value) => { setFacilityId(value); setLocationId(huReference?.locations.find((location) => location.facilityId === value && location.typeCode !== "investigation")?.id ?? "") }}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.facilities.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField><WarehouseFormField label={t("Scanned location")}><Select value={locationId} onValueChange={setLocationId}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{huReference?.locations.filter((location) => location.facilityId === facilityId && location.typeCode !== "investigation").map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent></Select></WarehouseFormField><WarehouseFormField label={t("What was checked?")}><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-20 rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]"/></WarehouseFormField><label className="flex items-start gap-3 rounded-[var(--md-radius-lg)] bg-[rgba(185,28,28,0.06)] p-3 text-[12px] text-[var(--md-text)]"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5"/><span>{t("I scanned and physically checked the whole location and confirm it is empty.")}</span></label></div><DialogFooter className={warehouseDialogFooterClass}><Button variant="ghost" onClick={() => onOpenChange(false)}>{t("Cancel")}</Button><Button disabled={saving || !facilityId || !locationId || !confirmed} onClick={() => void save()} className="bg-[var(--md-red)] text-white">{saving ? <Loader2 className="size-4 animate-spin"/> : <MapPinOff className="size-4"/>}{t("Open investigation")}</Button></DialogFooter></DialogContent></Dialog>
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[560px]"><DialogHeader className={warehouseDialogHeaderClass}><DialogTitle>{t("Location is physically empty")}</DialogTitle><DialogDescription>{t("Expected stock will be held as unlocated while a count and investigation are opened. No stock is silently written off.")}</DialogDescription></DialogHeader><div className="grid gap-4 px-6 py-5">
+    <WarehouseFormField label={t("Warehouse")}><Select value={facilityId} onValueChange={(value) => { setFacilityId(value); setLocationId("") }}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.facilities.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
+    <WarehouseFormField label={t("Scanned location")} hint={locations.hasMore ? t("Search to narrow the location list.") : undefined}><div className="grid gap-1.5"><div className="relative"><Input value={locations.search} onChange={(event) => locations.setSearch(event.target.value)} placeholder={t("Search locations…")} className={controlClass} />{locations.loading ? <Loader2 className="pointer-events-none absolute end-3 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" /> : null}</div><Select value={locationId} onValueChange={setLocationId}><SelectTrigger className={controlClass}><SelectValue placeholder={t("Choose location")} /></SelectTrigger><SelectContent>{selectableLocations.map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent></Select>{locations.error ? <p role="alert" className="text-[11.5px] text-[var(--md-red)]">{locations.error}</p> : null}</div></WarehouseFormField>
+    <WarehouseFormField label={t("What was checked?")}><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-20 rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]"/></WarehouseFormField><label className="flex items-start gap-3 rounded-[var(--md-radius-lg)] bg-[rgba(185,28,28,0.06)] p-3 text-[12px] text-[var(--md-text)]"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5"/><span>{t("I scanned and physically checked the whole location and confirm it is empty.")}</span></label></div><DialogFooter className={warehouseDialogFooterClass}><Button variant="ghost" onClick={() => onOpenChange(false)}>{t("Cancel")}</Button><Button disabled={saving || !facilityId || !locationId || !confirmed} onClick={() => void save()} className="bg-[var(--md-red)] text-white">{saving ? <Loader2 className="size-4 animate-spin"/> : <MapPinOff className="size-4"/>}{t("Open investigation")}</Button></DialogFooter></DialogContent></Dialog>
 }
 
 const resolutionLabels: Record<string, string> = {
@@ -709,13 +871,21 @@ const resolutionLabels: Record<string, string> = {
   approve_loss: "Approve the write-off",
 }
 
-function ExceptionPanel({ exception, open, onClose, reference, onChanged }: { exception: WarehouseInventoryException | null; open: boolean; onClose: () => void; reference: WarehouseHandlingUnitReference | null; onChanged: () => void }) {
+function ExceptionPanel({ exception, open, onClose, onChanged }: { exception: WarehouseInventoryException | null; open: boolean; onClose: () => void; onChanged: () => void }) {
   const { language, t } = useLanguage()
   const dateTime = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }), [language])
   const [resolution, setResolution] = useState<"found" | "data_error" | "request_loss" | "approve_loss">("found")
   const [locationId, setLocationId] = useState("")
   const [notes, setNotes] = useState("")
   const [saving, setSaving] = useState(false)
+  const retainedLocations = useMemo<WarehouseActionLocation[]>(() => {
+    if (!exception) return []
+    return [
+      exception.expectedLocationId && exception.expectedLocationCode ? { id: exception.expectedLocationId, facilityId: exception.facilityId, code: exception.expectedLocationCode, zoneName: null, statusCode: "available" } : null,
+      exception.actualLocationId && exception.actualLocationCode ? { id: exception.actualLocationId, facilityId: exception.facilityId, code: exception.actualLocationCode, zoneName: null, statusCode: "available" } : null,
+    ].filter(Boolean) as WarehouseActionLocation[]
+  }, [exception])
+  const locationSelector = useWarehouseActionLocations(open, exception?.facilityId ?? "", retainedLocations)
 
   useEffect(() => {
     if (!exception || !open) return
@@ -789,11 +959,13 @@ function ExceptionPanel({ exception, open, onClose, reference, onChanged }: { ex
       </WarehouseFormField>
 
       {resolution === "found" ? (
-        <WarehouseFormField label={t("Scanned at")} required>
+        <WarehouseFormField label={t("Scanned at")} required hint={locationSelector.hasMore ? t("Search to narrow the location list.") : undefined}>
+          <div className="relative mb-1.5"><Input value={locationSelector.search} onChange={(event) => locationSelector.setSearch(event.target.value)} placeholder={t("Search locations…")} className={controlClass} />{locationSelector.loading ? <Loader2 className="pointer-events-none absolute end-3 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" /> : null}</div>
           <Select value={locationId} onValueChange={setLocationId}>
             <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
-            <SelectContent>{reference?.locations.filter((location) => location.facilityId === exception.facilityId && location.statusCode === "available").map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent>
+            <SelectContent>{locationSelector.options.filter((location) => !location.statusCode || location.statusCode === "available").map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent>
           </Select>
+          {locationSelector.error ? <p role="alert" className="mt-1 text-[11.5px] text-[var(--md-red)]">{locationSelector.error}</p> : null}
         </WarehouseFormField>
       ) : null}
 

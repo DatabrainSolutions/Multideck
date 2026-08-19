@@ -71,7 +71,6 @@ import { AccentPicker } from "@/components/multideck/accent-picker"
 import { AiUsageOverview } from "@/components/multideck/ai-usage-overview"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { AuthIdentityManager } from "@/components/multideck/auth-provider-selector"
-import { BroadcastSettings } from "@/components/multideck/broadcast-settings"
 import { CopyFeedbackTransition, CopyStatusIcon } from "@/components/multideck/copyable-field"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { ShortcutKeys } from "@/components/multideck/keyboard-shortcut-keys"
@@ -110,10 +109,12 @@ import {
   deleteApiTeamUser,
   deleteApiTeamUserInvitation,
   getApiCurrentUser,
-  getApiAuthorizationState,
-  getApiTeamUsers,
+  getApiAuthorizationCatalogue,
+  getApiTeamUsersPage,
   getApiTeamUserDeletionImpact,
+  getApiTeamUserReplacementOptions,
   resendApiTeamUserInvitation,
+  resetApiTeamUserPassword,
   updateApiTeamUser,
   updateApiTeamUserStatus,
   updateApiCurrentUserProfile,
@@ -123,14 +124,14 @@ import {
   type ApiPermission,
   type ApiTeamUser,
   type ApiTeamUserDeletionImpact,
-  type ApiTeamUsersResponse,
+  type ApiTeamUsersPageResponse,
 } from "@/lib/api"
 import {
   createSupportTicket,
   SupportTicketError,
   type CreateSupportTicketResponse,
 } from "@/lib/support-ticket"
-import { getDexterUsage, type DexterUsage, type DexterUsageEntry } from "@/lib/dexter-api"
+import { getDexterUsage, getDexterUsageHistory, type DexterUsage, type DexterUsageEntry, type DexterUsageHistoryPage } from "@/lib/dexter-api"
 import {
   consentToDexterWritingProfile,
   DexterWritingProfileError,
@@ -169,6 +170,7 @@ import { getSupabaseSession, supabase } from "@/lib/supabase"
 import {
   ProfilePhotoValidationError,
   createProfilePhotoSignedUrl,
+  createProfilePhotoSignedUrls,
   loadCurrentUserCoverPhoto,
   loadCurrentUserProfilePhoto,
   profilePhotoAcceptedTypes,
@@ -387,6 +389,7 @@ type ProfileFormState = {
   preferredName: string
   email: string
   phone: string
+  website: string
   roleTitle: string
 }
 
@@ -396,6 +399,7 @@ const emptyProfileForm: ProfileFormState = {
   preferredName: "",
   email: "",
   phone: "",
+  website: "",
   roleTitle: "",
 }
 
@@ -429,6 +433,7 @@ function createProfileFormFromUser(user: User): ProfileFormState {
     preferredName: readProfileMetadataValue(metadata, ["preferred_name", "preferredName"]) || firstName,
     email: user.email ?? "",
     phone: readProfileMetadataValue(metadata, ["phone", "phone_number", "mobile"]) || (user.phone ?? ""),
+    website: readProfileMetadataValue(metadata, ["website", "website_url"]),
     roleTitle: readProfileMetadataValue(metadata, ["role_title", "roleTitle", "title"]),
   }
 }
@@ -694,6 +699,7 @@ function ProfileTab({
           full_name: nextFullName,
           name: nextFullName,
           phone: profile.phone.trim(),
+          website: profile.website.trim(),
           role_title: profile.roleTitle.trim(),
         },
       })
@@ -1011,7 +1017,7 @@ function ProfileTab({
               </span>
             </div>
             </SettingsFieldRow>
-            <SettingsFieldRow label="Phone" description="For two-factor and emergency alerts only.">
+            <SettingsFieldRow label={t("Phone")} description={t("Used where you choose to share your contact details.")}>
             <SettingsInput
               value={profile.phone}
               aria-label="Phone"
@@ -1022,6 +1028,19 @@ function ProfileTab({
               data-i18n-skip
               disabled={isProfileLoading || isProfileSaving}
               onChange={(event) => updateProfileField("phone", event.target.value)}
+            />
+            </SettingsFieldRow>
+            <SettingsFieldRow label={t("Website")} description={t("Shown on contact cards when you choose to share it.")}>
+            <SettingsInput
+              value={profile.website}
+              aria-label={t("Website")}
+              autoComplete="url"
+              type="url"
+              placeholder="https://example.com"
+              dir="ltr"
+              data-i18n-skip
+              disabled={isProfileLoading || isProfileSaving}
+              onChange={(event) => updateProfileField("website", event.target.value)}
             />
             </SettingsFieldRow>
             <SettingsFieldRow label={t("Job title")} description={t("Shown beneath your name across Multideck.")}>
@@ -1561,11 +1580,9 @@ type StartPageGroup = { label: string; options: StartPageOption[] }
 const startPageExtras: Record<string, StartPageOption[]> = {
   "sales-crm": [
     { route: "/customers", label: "Customers" },
-    { route: "/crm/lists", label: "Lists" },
     { route: "/crm/settings", label: "CRM settings" },
   ],
   "documents-service": [
-    { route: "/paper-tray", label: "Paper Tray" },
     { route: "/documents/templates", label: "Templates" },
   ],
 }
@@ -2477,18 +2494,21 @@ function RolePermissionMatrix({
   )
 }
 
-function TeamUserIdentity({ user }: { user: ApiTeamUser }) {
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
+function TeamUserIdentity({ user, photoUrl: providedPhotoUrl }: { user: ApiTeamUser; photoUrl?: string | null }) {
+  const [fallbackPhotoUrl, setFallbackPhotoUrl] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    setPhotoUrl(null)
+    setFallbackPhotoUrl(null)
+    if (providedPhotoUrl !== undefined) return () => { cancelled = true }
     if (!user.profilePhoto) return () => { cancelled = true }
     void createProfilePhotoSignedUrl(user.profilePhoto).then((url) => {
-      if (!cancelled) setPhotoUrl(url)
+      if (!cancelled) setFallbackPhotoUrl(url)
     }).catch(() => undefined)
     return () => { cancelled = true }
-  }, [user.profilePhoto])
+  }, [providedPhotoUrl, user.profilePhoto])
+
+  const photoUrl = providedPhotoUrl === undefined ? fallbackPhotoUrl : providedPhotoUrl
 
   return (
     <div className="flex min-w-0 items-center gap-3">
@@ -2522,16 +2542,21 @@ function UserActionTooltip({ label, children }: { label: string; children: React
   )
 }
 
-function UsersTab() {
+export function AdminUsersContent() {
   const { direction, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const accessPanelDistance = shouldReduceMotion ? 0 : direction === "rtl" ? -8 : 8
   const accessPanelTransition = reduceMotion(Boolean(shouldReduceMotion), mdMotion.smooth)
-  const [team, setTeam] = useState<ApiTeamUsersResponse | null>(null)
+  const [team, setTeam] = useState<ApiTeamUsersPageResponse | null>(null)
   const [authorizationState, setAuthorizationState] = useState<ApiAuthorizationState | null>(null)
+  const [authorizationError, setAuthorizationError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
+  const [userOffset, setUserOffset] = useState(0)
+  const [userSort, setUserSort] = useState<{ id: string; direction: "asc" | "desc" } | null>({ id: "user", direction: "asc" })
+  const [teamPhotoUrls, setTeamPhotoUrls] = useState<Map<string, string>>(new Map())
   const [currentAuthUserId, setCurrentAuthUserId] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteForm, setInviteForm] = useState(emptyInviteForm)
@@ -2544,6 +2569,10 @@ function UsersTab() {
   const [resendingUserId, setResendingUserId] = useState<string | null>(null)
   const [deleteInviteCandidate, setDeleteInviteCandidate] = useState<ApiTeamUser | null>(null)
   const [deletingInvite, setDeletingInvite] = useState(false)
+  const [passwordCandidate, setPasswordCandidate] = useState<ApiTeamUser | null>(null)
+  const [newUserPassword, setNewUserPassword] = useState("")
+  const [confirmUserPassword, setConfirmUserPassword] = useState("")
+  const [resettingPassword, setResettingPassword] = useState(false)
   const [editingUser, setEditingUser] = useState<ApiTeamUser | null>(null)
   const [editForm, setEditForm] = useState({ firstName: "", lastName: "", jobTitle: "", officeId: "", roleId: "", departmentIds: [] as string[] })
   const [savingUser, setSavingUser] = useState(false)
@@ -2555,41 +2584,133 @@ function UsersTab() {
   const [deletionImpact, setDeletionImpact] = useState<ApiTeamUserDeletionImpact | null>(null)
   const [loadingDeletionImpact, setLoadingDeletionImpact] = useState(false)
   const [replacementUserId, setReplacementUserId] = useState("")
+  const [replacementSearch, setReplacementSearch] = useState("")
+  const [replacementUsers, setReplacementUsers] = useState<ApiTeamUser[]>([])
+  const [replacementUserTotal, setReplacementUserTotal] = useState(0)
+  const [loadingReplacementUsers, setLoadingReplacementUsers] = useState(false)
+  const [replacementPhotoUrls, setReplacementPhotoUrls] = useState<Map<string, string>>(new Map())
   const [deletionConfirmation, setDeletionConfirmation] = useState("")
   const [deletionNameCopied, setDeletionNameCopied] = useState(false)
   const deletionNameCopyTimerRef = useRef<number | null>(null)
   const [deletingUser, setDeletingUser] = useState(false)
 
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     setLoadError(null)
     try {
       const session = await getSupabaseSession()
       if (!session?.access_token) throw new Error(t("Sign in again before managing team users."))
-      const [nextTeam, nextAuthorization] = await Promise.all([
-        getApiTeamUsers(session.access_token),
-        getApiAuthorizationState(session.access_token),
-      ])
+      const nextTeam = await getApiTeamUsersPage(session.access_token, {
+        search: debouncedSearchQuery,
+        sort: userSort,
+        limit: 20,
+        offset: userOffset,
+      }, signal)
       setCurrentAuthUserId(session.user.id)
-      const defaultRole = getDefaultInviteRole(nextAuthorization.roles.filter((role) => role.isSystem))
       setTeam(nextTeam)
-      setAuthorizationState(nextAuthorization)
-      setInviteForm((current) => ({
-        ...current,
-        officeId: current.officeId || nextTeam.offices[0]?.id || "",
-        roleId: current.roleId || defaultRole?.id || "",
-        roleTitle: defaultRole?.name ?? current.roleTitle,
-      }))
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return
       setLoadError(error instanceof Error ? error.message : t("Users could not be loaded."))
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
+    }
+  }, [debouncedSearchQuery, t, userOffset, userSort])
+
+  const loadAuthorization = useCallback(async (signal?: AbortSignal) => {
+    setAuthorizationError(null)
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before managing team users."))
+      setAuthorizationState(await getApiAuthorizationCatalogue(session.access_token, signal))
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return
+      setAuthorizationError(error instanceof Error ? error.message : t("Roles could not be loaded."))
     }
   }, [t])
 
   useEffect(() => {
-    void loadUsers()
+    const timeout = window.setTimeout(() => {
+      setUserOffset(0)
+      setDebouncedSearchQuery(searchQuery.trim())
+    }, 250)
+    return () => window.clearTimeout(timeout)
+  }, [searchQuery])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void loadUsers(controller.signal)
+    return () => controller.abort()
   }, [loadUsers])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void loadAuthorization(controller.signal)
+    return () => controller.abort()
+  }, [loadAuthorization])
+
+  useEffect(() => {
+    const defaultRole = getDefaultInviteRole((authorizationState?.roles ?? []).filter((role) => role.isSystem))
+    setInviteForm((current) => ({
+      ...current,
+      officeId: current.officeId || team?.offices[0]?.id || "",
+      roleId: current.roleId || defaultRole?.id || "",
+      roleTitle: defaultRole?.name ?? current.roleTitle,
+    }))
+  }, [authorizationState?.roles, team?.offices])
+
+  useEffect(() => {
+    let cancelled = false
+    const photos = (team?.users ?? []).flatMap((user) => user.profilePhoto ? [user.profilePhoto] : [])
+    setTeamPhotoUrls(new Map())
+    if (!photos.length) return () => { cancelled = true }
+    void createProfilePhotoSignedUrls(photos).then((urls) => {
+      if (!cancelled) setTeamPhotoUrls(urls)
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [team?.users])
+
+  useEffect(() => {
+    let cancelled = false
+    const photos = replacementUsers.flatMap((user) => user.profilePhoto ? [user.profilePhoto] : [])
+    setReplacementPhotoUrls(new Map())
+    if (!photos.length) return () => { cancelled = true }
+    void createProfilePhotoSignedUrls(photos).then((urls) => {
+      if (!cancelled) setReplacementPhotoUrls(urls)
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [replacementUsers])
+
+  useEffect(() => {
+    if (!deleteCandidate || !deletionImpact?.requiresReassignment) return
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => {
+      setLoadingReplacementUsers(true)
+      void (async () => {
+        try {
+          const session = await getSupabaseSession()
+          if (!session?.access_token) throw new Error(t("Sign in again before removing users."))
+          const page = await getApiTeamUserReplacementOptions(session.access_token, deleteCandidate.id, replacementSearch, controller.signal)
+          if (controller.signal.aborted) return
+          setReplacementUsers((current) => {
+            const selected = current.find((user) => user.id === replacementUserId)
+            return selected && !page.users.some((user) => user.id === selected.id) ? [selected, ...page.users] : page.users
+          })
+          setReplacementUserTotal(page.total)
+          if (!replacementSearch && page.total === 1 && page.users[0]) setReplacementUserId(page.users[0].id)
+        } catch (error) {
+          if (!(error instanceof DOMException && error.name === "AbortError")) {
+            toast.error(t("Users could not be loaded."), { description: error instanceof Error ? error.message : t("Refresh the users list and try again.") })
+          }
+        } finally {
+          if (!controller.signal.aborted) setLoadingReplacementUsers(false)
+        }
+      })()
+    }, replacementSearch ? 250 : 0)
+    return () => {
+      window.clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [deleteCandidate, deletionImpact?.requiresReassignment, replacementSearch, replacementUserId, t])
 
   useEffect(() => () => {
     if (deletionNameCopyTimerRef.current !== null) window.clearTimeout(deletionNameCopyTimerRef.current)
@@ -2683,6 +2804,7 @@ function UsersTab() {
       setInviteForm({ ...emptyInviteForm, officeId: inviteForm.officeId, roleId: defaultRole?.id ?? "", roleTitle: defaultRole?.name ?? "Operator" })
       setInviteOpen(false)
       toast.success(t(response.invited ? "Invitation sent" : "User already active"), { description: response.user.email })
+      void loadUsers()
     } catch (error) {
       toast.error(t("Invitation could not be sent"), {
         description: error instanceof Error ? error.message : t("Check the email, office and role, then try again."),
@@ -2700,6 +2822,7 @@ function UsersTab() {
       const updatedUser = await resendApiTeamUserInvitation(session.access_token, user.id, window.location.origin)
       setTeam((current) => current ? { ...current, users: upsertTeamUser(current.users, updatedUser) } : current)
       toast.success(t("Invitation resent"), { description: user.email })
+      void loadUsers()
     } catch (error) {
       toast.error(t("Invitation could not be resent"), {
         description: error instanceof Error ? error.message : t("Check the email address, then try again."),
@@ -2719,12 +2842,55 @@ function UsersTab() {
       setTeam((current) => current ? { ...current, users: current.users.filter((user) => user.id !== deleteInviteCandidate.id) } : current)
       toast.success(t("Invitation deleted"), { description: deleteInviteCandidate.email })
       setDeleteInviteCandidate(null)
+      void loadUsers()
     } catch (error) {
       toast.error(t("Invitation could not be deleted"), {
         description: error instanceof Error ? error.message : t("Check your access and try again."),
       })
     } finally {
       setDeletingInvite(false)
+    }
+  }
+
+  function openPasswordReset(user: ApiTeamUser) {
+    setNewUserPassword("")
+    setConfirmUserPassword("")
+    setPasswordCandidate(user)
+  }
+
+  function closePasswordReset() {
+    setPasswordCandidate(null)
+    setNewUserPassword("")
+    setConfirmUserPassword("")
+  }
+
+  async function resetUserPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!passwordCandidate) return
+    if (newUserPassword.length < 8 || newUserPassword.length > 128) {
+      toast.error(t("The password must be between 8 and 128 characters."))
+      return
+    }
+    if (newUserPassword !== confirmUserPassword) {
+      toast.error(t("Passwords do not match."))
+      return
+    }
+
+    setResettingPassword(true)
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before resetting user passwords."))
+      await resetApiTeamUserPassword(session.access_token, passwordCandidate.id, newUserPassword)
+      toast.success(t("Password reset"), {
+        description: t("{name} can sign in with the new password now.").replace("{name}", passwordCandidate.displayName),
+      })
+      closePasswordReset()
+    } catch (error) {
+      toast.error(t("Password could not be reset"), {
+        description: error instanceof Error ? error.message : t("Check your access and try again."),
+      })
+    } finally {
+      setResettingPassword(false)
     }
   }
 
@@ -2794,6 +2960,7 @@ function UsersTab() {
       toast.success(t("User details saved"), { description: updated.email })
       if (legacyRoleCleanupError) toast.warning(t("New role assigned, but cleanup needs attention"), { description: legacyRoleCleanupError })
       setEditingUser(null)
+      void loadUsers()
     } catch (error) {
       toast.error(t("User details could not be saved"), { description: error instanceof Error ? error.message : t("Check the details and try again.") })
     } finally {
@@ -2812,6 +2979,7 @@ function UsersTab() {
       setTeam((current) => current ? { ...current, users: upsertTeamUser(current.users, updated) } : current)
       toast.success(t(nextStatus === "active" ? "User reactivated" : "User deactivated"), { description: updated.email })
       setStatusCandidate(null)
+      void loadUsers()
     } catch (error) {
       toast.error(t("User status could not be changed"), { description: error instanceof Error ? error.message : t("Check your access and try again.") })
     } finally {
@@ -2823,6 +2991,9 @@ function UsersTab() {
     setDeleteCandidate(user)
     setDeletionImpact(null)
     setReplacementUserId("")
+    setReplacementSearch("")
+    setReplacementUsers([])
+    setReplacementUserTotal(0)
     setDeletionConfirmation("")
     setDeletionNameCopied(false)
     setLoadingDeletionImpact(true)
@@ -2834,6 +3005,9 @@ function UsersTab() {
           { key: "Workflow_Tasks.Task_AssignedUserID", table: "Tasks", field: "Task_AssignedUserID", count: 7 },
           { key: "CRM_Accounts.Account_OwnerUserID", table: "Customer records", field: "Account_OwnerUserID", count: 2 },
         ] : []
+        const qaEligibleUsers = (team?.users ?? []).filter((candidate) => candidate.id !== user.id && candidate.status === "Active" && candidate.authUserId !== currentAuthUserId).slice(0, 5)
+        setReplacementUsers(qaEligibleUsers)
+        setReplacementUserTotal(qaEligibleUsers.length)
         setDeletionImpact({
           alreadyDeleted: false,
           requiresReassignment: groups.length > 0,
@@ -2842,7 +3016,7 @@ function UsersTab() {
           cleanup: [],
           retainedAttribution: [],
           impactToken: `local-rendered-qa-${qaMode}`,
-          eligibleUsers: (team?.users ?? []).filter((candidate) => candidate.id !== user.id && candidate.status === "Active" && candidate.authUserId !== currentAuthUserId).slice(0, 5),
+          eligibleUsers: [],
         })
         return
       }
@@ -2850,7 +3024,6 @@ function UsersTab() {
       if (!session?.access_token) throw new Error(t("Sign in again before removing users."))
       const impact = await getApiTeamUserDeletionImpact(session.access_token, user.id)
       setDeletionImpact(impact)
-      if (impact.eligibleUsers.length === 1) setReplacementUserId(impact.eligibleUsers[0].id)
     } catch (error) {
       const unavailable = error instanceof Error && error.message === "USER_DELETION_IMPACT_UNAVAILABLE"
       toast.error(t(unavailable ? "Deletion tools are unavailable" : "Deletion impact could not be loaded"), {
@@ -2907,14 +3080,19 @@ function UsersTab() {
     try {
       const session = await getSupabaseSession()
       if (!session?.access_token) throw new Error(t("Sign in again before removing users."))
-      await deleteApiTeamUser(session.access_token, deleteCandidate.id, {
+      const deletion = await deleteApiTeamUser(session.access_token, deleteCandidate.id, {
         impactToken: deletionImpact.impactToken,
         replacementUserId: deletionImpact.requiresReassignment ? replacementUserId : null,
         confirmation: deletionConfirmation,
       })
       setTeam((current) => current ? { ...current, users: current.users.filter((user) => user.id !== deleteCandidate.id) } : current)
-      toast.success(t("User permanently deleted"), { description: deleteCandidate.email })
+      if (deletion.notificationEmail.status === "failed") {
+        toast.warning(t("User deleted, but their email could not be sent"), { description: t("Their access is removed. Contact them separately to confirm the account deletion.") })
+      } else {
+        toast.success(t("User permanently deleted"), { description: t("A deletion confirmation email was sent to {email}.").replace("{email}", deleteCandidate.email) })
+      }
       setDeleteCandidate(null)
+      void loadUsers()
     } catch (error) {
       toast.error(t("User could not be deleted"), { description: error instanceof Error ? error.message : t("Review the reassignment summary and try again.") })
     } finally {
@@ -2928,16 +3106,19 @@ function UsersTab() {
   const savedRoles = assignableRoles.filter((role) => !role.isSystem)
   const permissionAreas = getPermissionAreas(authorizationState?.permissions ?? [])
   const users = team?.users ?? []
+  const totalUsers = team?.total ?? 0
   const editingUserRole = editingUser ? getPrimaryRole(editingUser, roles) : null
   const selectedInviteRole = assignableRoles.find((role) => role.id === inviteForm.roleId) ?? null
   const selectedEditRole = assignableRoles.find((role) => role.id === editForm.roleId) ?? null
-  const normalizedSearch = searchQuery.trim().toLowerCase()
-  const visibleUsers = normalizedSearch ? users.filter((user) => [
-    user.displayName,
-    user.email,
-    user.offices.map((office) => office.name).join(" "),
-    getRoleDisplayName(getPrimaryRole(user, roles)),
-  ].join(" ").toLowerCase().includes(normalizedSearch)) : users
+  const visibleUsers = users
+  const teamPhotoUrl = useCallback((user: ApiTeamUser) => (
+    user.profilePhoto ? teamPhotoUrls.get(user.profilePhoto.path) ?? null : null
+  ), [teamPhotoUrls])
+  const passwordCandidateName = passwordCandidate?.firstName?.trim() || passwordCandidate?.displayName.trim().split(/\s+/)[0] || ""
+  const resetPasswordTitle = t("Reset {name}’s password").replace("{name}", passwordCandidateName)
+  const resetPasswordDescription = t("Choose a new password for {name}. It will be used at the next sign-in. Existing sessions will stay active.").replace("{name}", passwordCandidateName)
+  const resetPasswordHint = t("Use at least 8 characters. Share the new password with {name} securely.").replace("{name}", passwordCandidateName)
+  const resetPasswordAction = t(resettingPassword ? "Resetting {name}’s password" : "Reset {name}’s password").replace("{name}", passwordCandidateName)
 
   function renderRoleComposer(target: "invite" | "edit" | "standalone") {
     const backLabel = target === "invite" ? t("Back to user details") : target === "edit" ? t("Back to edit user") : t("Back to users")
@@ -2995,7 +3176,7 @@ function UsersTab() {
       canHide: false,
       canPin: true,
       sortValue: (user) => user.displayName,
-      cell: (user) => <TeamUserIdentity user={user} />,
+      cell: (user) => <TeamUserIdentity user={user} photoUrl={teamPhotoUrl(user)} />,
     },
     {
       id: "office",
@@ -3033,8 +3214,8 @@ function UsersTab() {
       label: t("Actions"),
       kind: "actions",
       align: "end",
-      width: 128,
-      minWidth: 116,
+      width: 160,
+      minWidth: 148,
       canHide: false,
       canPin: false,
       resizable: false,
@@ -3045,18 +3226,19 @@ function UsersTab() {
         </div>
       ) : (
         <div className="flex items-center justify-end gap-1">
+          <UserActionTooltip label={user.authUserId === currentAuthUserId ? t("Use Security settings to change your own password") : user.status !== "Active" || !user.authUserId ? t("Reactivate this user before resetting their password") : t("Reset password")}><Button type="button" variant="ghost" size="icon" disabled={user.authUserId === currentAuthUserId || user.status !== "Active" || !user.authUserId} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t("Reset password")} ${user.displayName}`} onClick={() => openPasswordReset(user)}><KeyRound className="size-3.5" strokeWidth={1.5} aria-hidden="true" /></Button></UserActionTooltip>
           <UserActionTooltip label={t("Edit")}><Button type="button" variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t("Edit")} ${user.displayName}`} onClick={() => openUserEditor(user)}><EditUser02 className="size-3.5" strokeWidth={1.5} aria-hidden="true" /></Button></UserActionTooltip>
           <UserActionTooltip label={t(user.status === "Deactivated" ? "Reactivate" : "Deactivate")}><Button type="button" variant="ghost" size="icon" disabled={user.authUserId === currentAuthUserId} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t(user.status === "Deactivated" ? "Reactivate" : "Deactivate")} ${user.displayName}`} onClick={() => setStatusCandidate(user)}>{user.status === "Deactivated" ? <UserRoundCheck className="size-3.5" strokeWidth={1.5} aria-hidden="true" /> : <Ban className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}</Button></UserActionTooltip>
           <UserActionTooltip label={user.authUserId === currentAuthUserId ? t("You cannot remove your own access") : t("Delete user")}><Button type="button" variant="ghost" size="icon" disabled={user.authUserId === currentAuthUserId} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-[rgba(209,78,78,0.08)] hover:text-[var(--md-red)]" aria-label={`${t("Delete user")} ${user.displayName}`} onClick={() => void openDeleteUser(user)}><Trash2 className="size-3.5" strokeWidth={1.5} aria-hidden="true" /></Button></UserActionTooltip>
         </div>
       ),
     },
-  ], [currentAuthUserId, deletingInvite, resendingUserId, roles, t])
+  ], [currentAuthUserId, deletingInvite, resendingUserId, roles, t, teamPhotoUrl])
 
   return (
     <>
       <SettingsPageHeader
-        eyebrow={t("Workspace / Users")}
+        eyebrow={t("Admin / Users")}
         title={t("Users")}
         description={t("Invite people, assign reusable roles and manage workspace access in one place.")}
         descriptionPlacement="under-title"
@@ -3079,14 +3261,25 @@ function UsersTab() {
           </div>
         ) : (
           <>
+            {authorizationError ? (
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 shadow-[var(--md-shadow-line)]" role="alert">
+                <div>
+                  <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Users loaded, but roles could not be loaded.")}</p>
+                  <p className="mt-0.5 text-[11px] text-[var(--md-text)]" dir="auto">{authorizationError}</p>
+                </div>
+                {compactAction(t("Retry roles"), () => void loadAuthorization())}
+              </div>
+            ) : null}
             <div className="hidden xl:block">
               <DataTable
                 ariaLabel={t("Workspace users")}
                 columns={columns}
                 rows={visibleUsers}
                 getRowKey={(user) => user.id}
-                storageKey="settings-users-v3"
-                minimumWidth={772}
+                storageKey="settings-users-v4"
+                serverSorting={{ value: userSort, onChange: (next) => { setUserSort(next ?? { id: "user", direction: "asc" }); setUserOffset(0) } }}
+                pagination={{ offset: userOffset, limit: 20, total: totalUsers, loading, onOffsetChange: setUserOffset }}
+                minimumWidth={804}
                 tableClassName="table-fixed"
                 toolbarSearch={(
                   <label className="relative block w-[min(280px,70vw)]">
@@ -3116,7 +3309,7 @@ function UsersTab() {
                 return (
                   <article key={user.id} className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)]">
                     <div className="flex items-start justify-between gap-3">
-                      <TeamUserIdentity user={user} />
+                      <TeamUserIdentity user={user} photoUrl={teamPhotoUrl(user)} />
                       <StatusPill tone={user.status === "Active" ? "green" : user.status === "Deactivated" ? "neutral" : "amber"}>{t(user.status)}</StatusPill>
                     </div>
                     <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[var(--md-line)] pt-3 text-[12px]">
@@ -3130,13 +3323,26 @@ function UsersTab() {
                           <Button type="button" variant="ghost" size="icon" disabled={resendingUserId === user.id || deletingInvite} className="text-[var(--md-red)]" aria-label={`${t("Delete invite")} ${user.displayName}`} onClick={() => setDeleteInviteCandidate(user)}><Trash2 className="size-3.5" strokeWidth={1.45} aria-hidden="true" /></Button>
                         </>
                       ) : (
-                        <Button type="button" variant="ghost" size="sm" onClick={() => openUserEditor(user)}><EditUser02 className="size-3.5" strokeWidth={1.5} aria-hidden="true" />{t("Edit")}</Button>
+                        <>
+                          <Button type="button" variant="ghost" size="sm" disabled={user.authUserId === currentAuthUserId || user.status !== "Active" || !user.authUserId} onClick={() => openPasswordReset(user)}><KeyRound className="size-3.5" strokeWidth={1.5} aria-hidden="true" />{t("Reset password")}</Button>
+                          <Button type="button" variant="ghost" size="sm" onClick={() => openUserEditor(user)}><EditUser02 className="size-3.5" strokeWidth={1.5} aria-hidden="true" />{t("Edit")}</Button>
+                        </>
                       )}
                     </div>
                   </article>
                 )
               })}
               {!visibleUsers.length ? <div className="grid min-h-40 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-6 text-center shadow-[var(--md-shadow-soft)]"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{loading ? t("Loading users…") : t("No users found")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{loading ? t("Checking the live workspace roster.") : t("Invite a user or clear the search to continue.")}</p></div></div> : null}
+              {totalUsers > 0 ? (
+                <Pagination
+                  page={Math.floor(userOffset / 20) + 1}
+                  pageCount={Math.max(1, Math.ceil(totalUsers / 20))}
+                  totalItems={totalUsers}
+                  pageSize={20}
+                  onPageChange={(page) => setUserOffset((page - 1) * 20)}
+                  itemLabel="users"
+                />
+              ) : null}
             </div>
           </>
         )}
@@ -3229,6 +3435,39 @@ function UsersTab() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={Boolean(passwordCandidate)} onOpenChange={(open) => {
+        if (open || resettingPassword) return
+        closePasswordReset()
+      }}>
+        <DialogContent className="gap-0 rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-5 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[500px] sm:p-6">
+          <DialogHeader className="gap-2.5 pe-8 text-start">
+            <DialogTitle className="text-[18px] leading-[1.2] text-balance">{resetPasswordTitle}</DialogTitle>
+            <DialogDescription className="max-w-[52ch] text-[13px] leading-5 text-pretty">{resetPasswordDescription}</DialogDescription>
+          </DialogHeader>
+          <form className="mt-6 grid gap-6" onSubmit={resetUserPassword}>
+            <div className="grid gap-5">
+              <label className="grid gap-2.5 text-[13px] font-medium leading-5 text-[var(--md-ink)]">
+                {t("New password")}
+                <SettingsInput className="h-11 rounded-[var(--md-radius-xl)] px-3.5 text-base sm:text-sm" value={newUserPassword} onChange={(event) => setNewUserPassword(event.target.value)} type="password" autoComplete="new-password" minLength={8} maxLength={128} required aria-describedby="admin-reset-password-hint" autoFocus />
+              </label>
+              <label className="grid gap-2.5 text-[13px] font-medium leading-5 text-[var(--md-ink)]">
+                {t("Confirm new password")}
+                <SettingsInput className="h-11 rounded-[var(--md-radius-xl)] px-3.5 text-base sm:text-sm" value={confirmUserPassword} onChange={(event) => setConfirmUserPassword(event.target.value)} type="password" autoComplete="new-password" minLength={8} maxLength={128} required aria-invalid={Boolean(confirmUserPassword && newUserPassword !== confirmUserPassword)} aria-describedby={confirmUserPassword && newUserPassword !== confirmUserPassword ? "admin-reset-password-mismatch" : "admin-reset-password-hint"} />
+              </label>
+              <p id="admin-reset-password-hint" className="text-[12px] leading-5 text-[var(--md-text)]">{resetPasswordHint}</p>
+              {confirmUserPassword && newUserPassword !== confirmUserPassword ? <p id="admin-reset-password-mismatch" className="text-[12px] font-medium leading-5 text-[var(--md-red)]" role="alert">{t("Passwords do not match.")}</p> : null}
+            </div>
+            <DialogFooter className="mx-0 mb-0 gap-3 rounded-none bg-transparent p-0 shadow-none">
+              <Button type="button" variant="ghost" disabled={resettingPassword} className="h-9 w-full rounded-[var(--md-radius-lg)] px-4 sm:w-auto" onClick={closePasswordReset}>{t("Cancel")}</Button>
+              <Button type="submit" disabled={resettingPassword || newUserPassword.length < 8 || newUserPassword.length > 128 || newUserPassword !== confirmUserPassword} className="h-9 w-full rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)] sm:w-auto">
+                {resettingPassword ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <KeyRound className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
+                {resetPasswordAction}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={Boolean(editingUser)} onOpenChange={(open) => {
         if (open || savingUser || creatingDepartment || creatingRole) return
         setEditingUser(null)
@@ -3311,7 +3550,7 @@ function UsersTab() {
           {deleteCandidate ? <div className="mt-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3"><TeamUserIdentity user={deleteCandidate} /></div> : null}
           {loadingDeletionImpact ? <div className="grid min-h-28 place-items-center" role="status"><LoaderCircle className="size-5 animate-spin text-[var(--md-accent)] motion-reduce:animate-none" aria-hidden="true" /><span className="sr-only">{t("Checking assigned work")}</span></div> : deletionImpact ? (
             <div className="mt-4 grid gap-5">
-              {deletionImpact.requiresReassignment ? <section className="grid gap-3"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Reassign active work before deletion")}</p><p className="mt-1 text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("The transfer and deletion run in one transaction. If anything changes, deletion stops so you can review the updated scope.")}</p></div><div className="grid gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3">{deletionImpact.groups.map((group) => <div key={group.key} className="flex items-center justify-between gap-4 text-[12px]"><span className="min-w-0 break-words text-[var(--md-text)]">{group.table}</span><span className="tabular-nums font-medium text-[var(--md-ink)]">{group.count}</span></div>)}<div className="mt-1 flex items-center justify-between gap-4 pt-2 text-[13px] font-medium"><span>{t("Total records to transfer")}</span><span className="tabular-nums">{deletionImpact.totalTransferable}</span></div></div><label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Transfer to")}<Select value={replacementUserId} onValueChange={setReplacementUserId}><SelectTrigger className="h-12 w-full rounded-[var(--md-radius-lg)]"><SelectValue placeholder={t("Choose an active user")} /></SelectTrigger><SelectContent>{deletionImpact.eligibleUsers.map((user) => <SelectItem key={user.id} value={user.id}><TeamUserIdentity user={user} /></SelectItem>)}</SelectContent></Select></label></section> : <div className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-green)_9%,var(--md-surface))] p-3.5"><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No active work needs reassignment")}</p><p className="mt-1 text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("Deletion can continue without transferring jobs, tasks or ownership.")}</p></div>}
+              {deletionImpact.requiresReassignment ? <section className="grid gap-3"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Reassign active work before deletion")}</p><p className="mt-1 text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("The transfer and deletion run in one transaction. If anything changes, deletion stops so you can review the updated scope.")}</p></div><div className="grid gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3">{deletionImpact.groups.map((group) => <div key={group.key} className="flex items-center justify-between gap-4 text-[12px]"><span className="min-w-0 break-words text-[var(--md-text)]">{group.table}</span><span className="tabular-nums font-medium text-[var(--md-ink)]">{group.count}</span></div>)}<div className="mt-1 flex items-center justify-between gap-4 pt-2 text-[13px] font-medium"><span>{t("Total records to transfer")}</span><span className="tabular-nums">{deletionImpact.totalTransferable}</span></div></div><label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Transfer to")}<span className="relative block"><Search className="pointer-events-none absolute start-3 top-1/2 z-10 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} /><SettingsInput value={replacementSearch} onChange={(event) => setReplacementSearch(event.target.value)} placeholder={t("Search users")} className="ps-9" /></span><Select value={replacementUserId} onValueChange={setReplacementUserId}><SelectTrigger disabled={loadingReplacementUsers || !replacementUsers.length} className="h-12 w-full rounded-[var(--md-radius-lg)]"><SelectValue placeholder={t(loadingReplacementUsers ? "Loading users…" : "Choose an active user")} /></SelectTrigger><SelectContent>{replacementUsers.map((user) => <SelectItem key={user.id} value={user.id}><TeamUserIdentity user={user} photoUrl={user.profilePhoto ? replacementPhotoUrls.get(user.profilePhoto.path) ?? null : null} /></SelectItem>)}</SelectContent></Select>{!loadingReplacementUsers && replacementUserTotal > replacementUsers.length ? <span className="text-[11.5px] font-normal text-[var(--md-subtle)]">{t("Search users")} · <span data-i18n-skip dir="ltr">{replacementUserTotal}</span></span> : null}</label></section> : <div className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-green)_9%,var(--md-surface))] p-3.5"><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No active work needs reassignment")}</p><p className="mt-1 text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("Deletion can continue without transferring jobs, tasks or ownership.")}</p></div>}
               <div className="grid gap-2">
                 <div className="flex flex-wrap items-center gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">
                   <span>{t("Type {name} to confirm").split("{name}")[0]}</span>
@@ -4099,7 +4338,7 @@ function ApiTab() {
   )
 }
 
-function BillingTab() {
+export function AdminBillingContent() {
   const invoices = [
     ["INV-2026-0618", "18 Jun 2026", "EUR 1,284", "Paid"],
     ["INV-2026-0518", "18 May 2026", "EUR 1,196", "Paid"],
@@ -4237,31 +4476,44 @@ function AiUsageOverviewScreen({
 }
 
 function AiUsageHistoryScreen({
-  usage,
-  isLoading,
-  error,
-  onRetry,
   onBack,
 }: {
-  usage: DexterUsage | null
-  isLoading: boolean
-  error: string | null
-  onRetry: () => void
   onBack: () => void
 }) {
   const { t, language } = useLanguage()
   const [order, setOrder] = useState<"newest" | "heaviest">("newest")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const [history, setHistory] = useState<DexterUsageHistoryPage | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+  const [refreshVersion, setRefreshVersion] = useState(0)
+  const offset = (page - 1) * pageSize
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setHistoryLoading(true)
+    setHistoryError(null)
+    void getDexterUsageHistory({ sort: order, limit: pageSize, offset }, controller.signal)
+      .then(setHistory)
+      .catch((requestError) => {
+        if (requestError instanceof Error && requestError.name === "AbortError") return
+        setHistoryError(requestError instanceof Error ? requestError.message : t("Dexter usage could not be loaded."))
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setHistoryLoading(false)
+      })
+    return () => controller.abort()
+  }, [offset, order, pageSize, refreshVersion, t])
+
+  useEffect(() => {
+    const refresh = () => setRefreshVersion((current) => current + 1)
+    window.addEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, refresh)
+    return () => window.removeEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, refresh)
+  }, [])
 
   const entries = useMemo(() => {
-    const recorded = usage?.recentEntries ?? []
-    const sorted = [...recorded].sort((first, second) => (
-      order === "heaviest"
-        ? second.totalTokens - first.totalTokens
-        : new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime()
-    ))
-    return sorted.map((entry: DexterUsageEntry) => ({
+    return (history?.rows ?? []).map((entry: DexterUsageEntry) => ({
       id: entry.id,
       title: entry.title,
       inputTokens: entry.inputTokens,
@@ -4270,20 +4522,20 @@ function AiUsageHistoryScreen({
       createdAt: entry.createdAt,
       date: new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.createdAt)),
     }))
-  }, [usage, order, language])
+  }, [history?.rows, language])
 
   const listedTokens = entries.reduce((total, entry) => total + entry.totalTokens, 0)
   const heaviest = Math.max(1, ...entries.map((entry) => entry.totalTokens))
-  const pageCount = Math.max(1, Math.ceil(entries.length / pageSize))
-  const visibleUsage = entries.slice((page - 1) * pageSize, page * pageSize)
+  const pageCount = Math.max(1, Math.ceil((history?.total ?? 0) / pageSize))
+  const visibleUsage = entries
   const formatTokens = (value: number) => value.toLocaleString("en-GB")
   type UsageEntry = (typeof entries)[number]
   const usageColumns = useMemo<DataTableColumn<UsageEntry>[]>(() => [
-    { id: "request", label: "Request", kind: "long-text", width: 420, minWidth: 240, resizable: true, sortValue: (entry) => entry.title, cellTitle: (entry) => entry.title, cellClassName: "whitespace-normal", cell: (entry) => <div className="min-w-0"><p className="line-clamp-2 text-[13px] leading-[1.4] text-[var(--md-ink)]" data-i18n-skip>{entry.title}</p><span className="mt-2 block h-1 w-full max-w-[240px] overflow-hidden rounded-full bg-[var(--md-ai-track)]"><span aria-hidden="true" className="block h-full rounded-full bg-[color-mix(in_srgb,var(--md-accent)_78%,var(--md-blue))]" style={{ width: `${Math.max(2, (entry.totalTokens / heaviest) * 100)}%` }} /></span></div> },
-    { id: "input", label: "Input", kind: "number", width: 120, sortValue: (entry) => entry.inputTokens, cell: (entry) => <span dir="ltr" data-i18n-skip>{formatTokens(entry.inputTokens)}</span> },
-    { id: "output", label: "Output", kind: "number", width: 120, sortValue: (entry) => entry.outputTokens, cell: (entry) => <span dir="ltr" data-i18n-skip>{formatTokens(entry.outputTokens)}</span> },
-    { id: "total", label: "Total tokens", kind: "number", width: 132, sortValue: (entry) => entry.totalTokens, cell: (entry) => <span className="font-medium text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{formatTokens(entry.totalTokens)}</span> },
-    { id: "when", label: "When", kind: "date", width: 180, sortValue: (entry) => entry.createdAt, cell: (entry) => <span className="tabular-nums text-[var(--md-text)]" dir="ltr" data-i18n-skip>{entry.date}</span> },
+    { id: "request", label: "Request", kind: "long-text", width: 420, minWidth: 240, resizable: true, cellTitle: (entry) => entry.title, cellClassName: "whitespace-normal", cell: (entry) => <div className="min-w-0"><p className="line-clamp-2 text-[13px] leading-[1.4] text-[var(--md-ink)]" data-i18n-skip>{entry.title}</p><span className="mt-2 block h-1 w-full max-w-[240px] overflow-hidden rounded-full bg-[var(--md-ai-track)]"><span aria-hidden="true" className="block h-full rounded-full bg-[color-mix(in_srgb,var(--md-accent)_78%,var(--md-blue))]" style={{ width: `${Math.max(2, (entry.totalTokens / heaviest) * 100)}%` }} /></span></div> },
+    { id: "input", label: "Input", kind: "number", width: 120, cell: (entry) => <span dir="ltr" data-i18n-skip>{formatTokens(entry.inputTokens)}</span> },
+    { id: "output", label: "Output", kind: "number", width: 120, cell: (entry) => <span dir="ltr" data-i18n-skip>{formatTokens(entry.outputTokens)}</span> },
+    { id: "total", label: "Total tokens", kind: "number", width: 132, cell: (entry) => <span className="font-medium text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{formatTokens(entry.totalTokens)}</span> },
+    { id: "when", label: "When", kind: "date", width: 180, cell: (entry) => <span className="tabular-nums text-[var(--md-text)]" dir="ltr" data-i18n-skip>{entry.date}</span> },
   ], [heaviest])
 
   useEffect(() => {
@@ -4315,11 +4567,11 @@ function AiUsageHistoryScreen({
           </div>
         </div>
 
-        {error ? (
+        {historyError ? (
           <div role="alert" className="px-6 py-12 text-center">
             <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Dexter usage is temporarily unavailable")}</p>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">{t(error)}</p>
-            <Button type="button" variant="ghost" className="mt-4 h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 text-[13px] font-medium" onClick={onRetry}>
+            <p className="mt-1 text-[12px] text-[var(--md-text)]">{t(historyError)}</p>
+            <Button type="button" variant="ghost" className="mt-4 h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 text-[13px] font-medium" onClick={() => setRefreshVersion((current) => current + 1)}>
               {t("Try again")}
             </Button>
           </div>
@@ -4349,9 +4601,9 @@ function AiUsageHistoryScreen({
           </>
         ) : (
           <div className="px-6 py-12 text-center">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t(isLoading ? "Loading Dexter usage" : "No Dexter usage this month")}</p>
+            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t(historyLoading ? "Loading Dexter usage" : "No Dexter usage this month")}</p>
             <p className="mt-1 text-[12px] text-[var(--md-text)]">
-              {t(isLoading ? "The latest metered activity will appear here shortly." : "Dexter responses will appear here after the first completed request.")}
+              {t(historyLoading ? "The latest metered activity will appear here shortly." : "Dexter responses will appear here after the first completed request.")}
             </p>
           </div>
         )}
@@ -4360,7 +4612,7 @@ function AiUsageHistoryScreen({
           <Pagination
             page={Math.min(page, pageCount)}
             pageCount={pageCount}
-            totalItems={entries.length}
+            totalItems={history?.total ?? 0}
             pageSize={pageSize}
             pageSizeOptions={[10, 20, 50]}
             onPageChange={setPage}
@@ -4374,7 +4626,7 @@ function AiUsageHistoryScreen({
   )
 }
 
-function AiUsageTab() {
+export function AdminAiUsageContent() {
   const { t } = useLanguage()
   const readView = () => new URLSearchParams(window.location.search).get("view") === "history" ? "history" : "overview"
   const [view, setView] = useState<"overview" | "history">(readView)
@@ -4418,11 +4670,11 @@ function AiUsageTab() {
   }, [])
 
   useEffect(() => {
-    document.title = `${view === "history" ? "Usage history" : "AI usage"} · Settings · Multideck`
+    document.title = `${view === "history" ? "Usage history" : "AI usage"} · Admin · Multideck`
   }, [view])
 
   function changeView(nextView: "overview" | "history") {
-    const nextPath = nextView === "history" ? "/settings?tab=ai-usage&view=history" : "/settings?tab=ai-usage"
+    const nextPath = nextView === "history" ? "/admin/ai-usage?view=history" : "/admin/ai-usage"
     window.history.pushState({}, "", nextPath)
     setView(nextView)
     window.dispatchEvent(new PopStateEvent("popstate"))
@@ -4432,10 +4684,6 @@ function AiUsageTab() {
   return view === "history"
     ? (
         <AiUsageHistoryScreen
-          usage={usage}
-          isLoading={isLoading}
-          error={error}
-          onRetry={() => void loadUsage()}
           onBack={() => changeView("overview")}
         />
       )
@@ -5009,16 +5257,8 @@ function TabContent({
       return <AgentDexterTab />
     case "notifications":
       return <NotificationsTab />
-    case "users":
-      return <UsersTab />
-    case "broadcast":
-      return <BroadcastSettings />
     case "integrations":
       return <IntegrationsTab navigate={navigate} />
-    case "billing":
-      return <BillingTab />
-    case "ai-usage":
-      return <AiUsageTab />
     case "whats-new":
       return <WhatsNewTab />
     case "docs":
@@ -5056,11 +5296,22 @@ export function SettingsPage({
 
   useEffect(() => {
     const section = new URLSearchParams(window.location.search).get("tab")
-    if (section === "permissions") window.history.replaceState({}, "", "/settings?tab=users")
+    const adminRoutes: Record<string, string> = {
+      permissions: "/admin/users",
+      users: "/admin/users",
+      "ai-usage": "/admin/ai-usage",
+      broadcast: "/admin/broadcast",
+      billing: "/admin/billing",
+    }
+    if (section && adminRoutes[section]) {
+      if (!currentUser) return
+      navigate(adminRoutes[section])
+      return
+    }
     const onPopState = () => setActiveTab(readSettingsSectionFromUrl())
     window.addEventListener("popstate", onPopState)
     return () => window.removeEventListener("popstate", onPopState)
-  }, [])
+  }, [currentUser, navigate])
 
   useEffect(() => {
     document.title = `${activeItem.label} · Settings · Multideck`

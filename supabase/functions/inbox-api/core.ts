@@ -428,15 +428,46 @@ export function encodeCursor(value: unknown) {
   return btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
 }
 
-export function decodeCursor(value: string | null) {
-  if (!value) return 0
+function decodeCursorValue(value: string) {
   try {
     const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=")
-    const parsed = JSON.parse(atob(padded))
-    return Number.isSafeInteger(parsed?.offset) && parsed.offset >= 0 ? parsed.offset : 0
+    return JSON.parse(atob(padded))
   } catch {
     throw new InboxHttpError(400, "The inbox page cursor is invalid.", "cursor_invalid")
   }
+}
+
+export function decodeCursor(value: string | null) {
+  if (!value) return 0
+  const parsed = decodeCursorValue(value)
+  return Number.isSafeInteger(parsed?.offset) && parsed.offset >= 0 ? parsed.offset : 0
+}
+
+export type InboxThreadCursor = {
+  offset: number
+  afterAt: string | null
+  afterThreadId: string | null
+  legacyOffset: boolean
+}
+
+export function decodeThreadCursor(value: string | null): InboxThreadCursor {
+  if (!value) return { offset: 0, afterAt: null, afterThreadId: null, legacyOffset: false }
+  const parsed = decodeCursorValue(value)
+  if (Number.isSafeInteger(parsed?.offset) && parsed.offset >= 0) {
+    return { offset: parsed.offset, afterAt: null, afterThreadId: null, legacyOffset: true }
+  }
+
+  const afterAt = cleanString(parsed?.lastMessageAt, 80)
+  const afterThreadId = cleanString(parsed?.threadId, 80)
+  if (
+    !afterAt
+    || !Number.isFinite(Date.parse(afterAt))
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(afterThreadId)
+  ) {
+    throw new InboxHttpError(400, "The inbox page cursor is invalid.", "cursor_invalid")
+  }
+
+  return { offset: 0, afterAt: new Date(afterAt).toISOString(), afterThreadId, legacyOffset: false }
 }
 
 export function base64UrlDecode(value: string) {

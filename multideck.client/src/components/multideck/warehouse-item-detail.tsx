@@ -9,7 +9,7 @@ import { Surface } from "@/components/multideck/surface"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, staggerRamp } from "@/lib/motion"
 import { cn } from "@/lib/utils"
-import { WarehouseApiError, listWarehouseItems, type WarehouseItem } from "@/lib/warehouse"
+import { getWarehouseItemBySku, WarehouseApiError, type WarehouseItem } from "@/lib/warehouse"
 
 /**
  * The item's own address. Lower-cased because it is typed and shared by people,
@@ -103,13 +103,7 @@ export function WarehouseItemDetailView({
 
   const load = useCallback(async function load() {
     try {
-      const matches = await listWarehouseItems({ search: sku, includeInactive: true })
-      const found = matches.find((candidate) => candidate.sku.toLowerCase() === sku.toLowerCase()) ?? null
-      if (!found) {
-        setLoadError(t("This SKU does not match any warehouse item."))
-        return
-      }
-      setItem(found)
+      setItem(await getWarehouseItemBySku(sku))
       setLoadError(null)
     } catch (cause) {
       setLoadError(message(cause))

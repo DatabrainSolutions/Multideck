@@ -11,6 +11,7 @@ import {
   connectionStatus,
   decodeHtmlEntities,
   decodeCursor,
+  decodeThreadCursor,
   deliveryReportNeedsRawMime,
   encodeCursor,
   emailHtmlContentIds,
@@ -190,6 +191,9 @@ async function result<T>(promise: PromiseLike<{ data: T | null; error: any }>, m
   }
   return data
 }
+
+const missingInboxReadModel = (error: { code?: string } | null | undefined) =>
+  ["42883", "PGRST202"].includes(error?.code ?? "")
 
 export async function requireActor(user: Db, admin: Db): Promise<Actor> {
   const { data: auth, error } = await user.auth.getUser()
@@ -1664,7 +1668,9 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
         .eq("CommMessage_ThreadID", threadId)
         .eq("CommMessage_MailboxID", mailbox.CommMailbox_ID)
         .eq("CommMessage_IsInbound", false)
-        .eq("CommMessage_IsDeleted", false)) ?? []
+        .eq("CommMessage_IsDeleted", false)
+        .order("CommMessage_CreatedAt", { ascending: false })
+        .limit(200)) ?? []
       : []
     const replyToMessageId = replyTargetMessageId(
       incoming.headers,
@@ -2217,25 +2223,6 @@ function occurred(row: Row) {
   return row.CommMessage_ReceivedAt ?? row.CommMessage_SentAt ?? row.CommMessage_MessageDate ?? row.CommMessage_CreatedAt
 }
 
-function chunkValues<T>(values: T[], size = 100) {
-  const chunks: T[][] = []
-  const limit = Math.max(1, Math.floor(size))
-  for (let index = 0; index < values.length; index += limit) chunks.push(values.slice(index, index + limit))
-  return chunks
-}
-
-async function readInBatches<T>(values: string[], read: (batch: string[]) => Promise<T[]>) {
-  if (!values.length) return []
-  const pages = await mapWithConcurrency(chunkValues(values), 4, read)
-  return pages.flat()
-}
-
-async function currentSummaries(admin: Db, threadIds: string[]) {
-  if (!threadIds.length) return new Map<string, any>()
-  const rows = await result<Row[]>(admin.from("Comm_ThreadSummaries").select("*").in("CommThreadSummary_ThreadID", threadIds).is("CommThreadSummary_SupersededAt", null)) ?? []
-  return new Map(rows.map((row) => [row.CommThreadSummary_ThreadID, summaryDto(row)]))
-}
-
 function summaryDto(row?: Row | null) {
   if (!row) return { status: "none", text: null, keyPoints: [], sourceMessageIds: [], model: null, updatedAt: null, error: null }
   const structured = isObject(row.CommThreadSummary_StructuredJSON) ? row.CommThreadSummary_StructuredJSON : (() => { try { return JSON.parse(row.CommThreadSummary_StructuredJSON ?? "{}") } catch { return {} } })()
@@ -2247,9 +2234,17 @@ function summaryDto(row?: Row | null) {
 }
 
 async function threadData(admin: Db, actor: Actor, threadId: string, accessible: Set<string>) {
-  const rows = await result<Row[]>(admin.from("Comm_Messages").select("*").eq("CommMessage_ThreadID", threadId).eq("CommMessage_IsDeleted", false).order("CommMessage_MessageDate")) ?? []
-  if (!rows.length || rows.some((row) => !accessible.has(row.CommMessage_MailboxID))) throw new InboxHttpError(404, "This email thread was not found.", "thread_not_found")
-  return rows
+  if (!accessible.size) throw new InboxHttpError(404, "This email thread was not found.", "thread_not_found")
+  const rows = await result<Row[]>(admin.from("Comm_Messages")
+    .select("*")
+    .eq("CommMessage_ThreadID", threadId)
+    .in("CommMessage_MailboxID", [...accessible])
+    .eq("CommMessage_IsDeleted", false)
+    .order("CommMessage_MessageDate", { ascending: false })
+    .order("CommMessage_ID", { ascending: false })
+    .limit(100)) ?? []
+  if (!rows.length) throw new InboxHttpError(404, "This email thread was not found.", "thread_not_found")
+  return rows.reverse()
 }
 
 export async function listThreads(admin: Db, actor: Actor, url: URL) {
@@ -2261,30 +2256,54 @@ export async function listThreads(admin: Db, actor: Actor, url: URL) {
   }
   if (!providerFolderId && !["inbox", "sent", "drafts", "archive", "all", "spam", "trash", "deleted"].includes(folder)) throw new InboxHttpError(400, "Choose a valid mail folder.", "folder_invalid")
   const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 25))
-  const offset = decodeCursor(url.searchParams.get("cursor"))
+  const cursor = decodeThreadCursor(url.searchParams.get("cursor"))
+  const offset = cursor.offset
   const query = cleanString(url.searchParams.get("query"), 200).toLowerCase()
 
   if (mailboxId) {
-    const snapshot = providerFolderId
-      ? await result<Row>(admin.rpc("comm_inbox_provider_folder_thread_page", {
+    const legacyPage = () => providerFolderId
+      ? admin.rpc("comm_inbox_provider_folder_thread_page", {
         p_user_id: actor.userId,
         p_mailbox_id: mailboxId,
         p_folder_id: providerFolderId,
         p_query: query,
         p_limit: limit,
         p_offset: offset,
-      }))
-      : await result<Row>(admin.rpc("comm_inbox_thread_page", {
+      })
+      : admin.rpc("comm_inbox_thread_page", {
         p_user_id: actor.userId,
         p_mailbox_id: mailboxId,
         p_folder: folder,
         p_query: query,
         p_limit: limit,
         p_offset: offset,
-      }))
+      })
+
+    // Empty, non-draft list pages use a maintained folder-aware read model and
+    // keyset cursor. Search and already-issued offset cursors retain the exact
+    // legacy path until their own indexed compatibility migration is present.
+    const canUseSlicePage = !query && folder !== "drafts" && !cursor.legacyOffset
+    let snapshot: Row | null
+    if (canUseSlicePage) {
+      const paged = await admin.rpc("comm_inbox_thread_slice_page", {
+        p_user_id: actor.userId,
+        p_mailbox_id: mailboxId,
+        p_folder: folder,
+        p_provider_folder_id: providerFolderId || null,
+        p_limit: limit,
+        p_after_at: cursor.afterAt,
+        p_after_thread_id: cursor.afterThreadId,
+      })
+      if (!paged.error) snapshot = paged.data as Row | null
+      else if (missingInboxReadModel(paged.error)) snapshot = await result<Row>(legacyPage())
+      else snapshot = await result<Row>(Promise.resolve(paged))
+    } else {
+      snapshot = await result<Row>(legacyPage())
+    }
     if (snapshot?.permissionGranted !== true) {
       throw new InboxHttpError(403, "You do not have permission to perform this inbox action.", "permission_denied")
     }
+    if (snapshot.cursorValid === false) throw new InboxHttpError(400, "The inbox page cursor is invalid.", "cursor_invalid")
     if (snapshot.folderValid === false) throw new InboxHttpError(400, "Choose a valid mail folder.", "folder_invalid")
     if (snapshot.mailboxFound !== true) throw new InboxHttpError(404, "This mailbox is unavailable.", "mailbox_not_found")
     const items = (Array.isArray(snapshot.items) ? snapshot.items : []).map((row: Row) => ({
@@ -2307,122 +2326,20 @@ export async function listThreads(admin: Db, actor: Actor, url: URL) {
     })).filter((item) => item.id && item.mailboxId)
     const hasMore = snapshot.hasMore === true
     const nextOffset = Number(snapshot.nextOffset)
+    const nextLastMessageAt = cleanString(snapshot.nextLastMessageAt, 80)
+    const nextThreadId = cleanString(snapshot.nextThreadId, 80)
     return {
       items,
-      nextCursor: hasMore && Number.isFinite(nextOffset) ? encodeCursor({ offset: nextOffset }) : null,
+      nextCursor: hasMore && nextLastMessageAt && nextThreadId
+        ? encodeCursor({ lastMessageAt: nextLastMessageAt, threadId: nextThreadId })
+        : hasMore && Number.isFinite(nextOffset)
+          ? encodeCursor({ offset: nextOffset })
+          : null,
       hasMore,
     }
   }
 
-  // The client opens one physically isolated mailbox at a time. Retain the
-  // existing multi-mailbox path for older callers that omit mailboxId.
-  await requirePermission(admin, actor, "Email.Read")
-  const accessible = await mailboxIds(admin, actor, "read")
-  const ids = [...accessible]
-  if (!ids.length) return { items: [], nextCursor: null, hasMore: false }
-  // Thread lists never need full message bodies. Selecting `*` here made a
-  // real mailbox return hundreds of HTML documents before the first row could
-  // render, which can exceed the Edge/PostgREST response budget.
-  const [messagesResult, systemFoldersResult] = await Promise.all([
-    result<Row[]>(admin.from("Comm_Messages").select([
-    "CommMessage_ID",
-    "CommMessage_ThreadID",
-    "CommMessage_MailboxID",
-    "CommMessage_Subject",
-    "CommMessage_BodyPreview",
-    "CommMessage_MessageDate",
-    "CommMessage_ReceivedAt",
-    "CommMessage_SentAt",
-    "CommMessage_CreatedAt",
-    "CommMessage_CreatedBy",
-    "CommMessage_StatusCode",
-    "CommMessage_IsInbound",
-    "CommMessage_IsDraft",
-    "CommMessage_IsSpam",
-    "CommMessage_HasAttachments",
-    ].join(",")).in("CommMessage_MailboxID", ids).eq("CommMessage_IsDeleted", false).order("CommMessage_MessageDate", { ascending: false }).limit(1000)),
-    result<Row[]>(admin.from("Comm_MailFolders").select("CommMailFolder_ID,CommMailFolder_RoleCode").in("CommMailFolder_MailboxID", ids)),
-  ])
-  const messages = messagesResult ?? []
-  const systemFolders = systemFoldersResult ?? []
-  const roleByFolder = new Map(systemFolders.map((row) => [row.CommMailFolder_ID, row.CommMailFolder_RoleCode]))
-  const threadIds = [...new Set(messages.map((row) => row.CommMessage_ThreadID).filter(Boolean))]
-  const [memberships, states, connectionByMailbox] = await Promise.all([
-    readInBatches<Row>(messages.map((row) => row.CommMessage_ID), async (messageIds) => (
-      await result<Row[]>(admin.from("Comm_MessageFolders")
-        .select("CommMessageFolder_MessageID,CommMessageFolder_FolderID")
-        .in("CommMessageFolder_MessageID", messageIds)) ?? []
-    )),
-    readInBatches<Row>(threadIds, async (ids) => (
-      await result<Row[]>(admin.from("Comm_ReadStates")
-        .select("CommRead_ThreadID,CommRead_ReadAt,CommRead_IsArchived,CommRead_IsStarred")
-        .eq("CommRead_UserID", actor.userId)
-        .is("CommRead_MessageID", null)
-        .in("CommRead_ThreadID", ids)) ?? []
-    )),
-    mailboxProviderMap(admin, ids),
-  ])
-  const rolesByMessage = new Map<string, Set<string>>()
-  for (const membership of memberships) {
-    const role = roleByFolder.get(membership.CommMessageFolder_FolderID)
-    if (!role) continue
-    const roles = rolesByMessage.get(membership.CommMessageFolder_MessageID) ?? new Set<string>()
-    roles.add(role)
-    rolesByMessage.set(membership.CommMessageFolder_MessageID, roles)
-  }
-  const stateMap = new Map(states.map((row) => [row.CommRead_ThreadID, row]))
-  let filtered = messages.filter((row) => {
-    const state = stateMap.get(row.CommMessage_ThreadID)
-    const roles = rolesByMessage.get(row.CommMessage_ID) ?? new Set<string>()
-    if (folder === "inbox" && (!(roles.has("inbox") || (roles.size === 0 && row.CommMessage_IsInbound)) || row.CommMessage_IsDraft || state?.CommRead_IsArchived)) return false
-    if (folder === "sent" && !(roles.has("sent") || (roles.size === 0 && !row.CommMessage_IsInbound && row.CommMessage_StatusCode === "sent"))) return false
-    if (folder === "drafts" && !(roles.has("drafts") || (row.CommMessage_IsDraft && row.CommMessage_CreatedBy === actor.userId))) return false
-    if (folder === "archive" && !state?.CommRead_IsArchived) return false
-    if (folder === "spam" && !(roles.has("spam") || row.CommMessage_IsSpam)) return false
-    // Provider trash/deleted items remain non-deleted local records so they can
-    // be rendered safely; folder membership represents their provider state.
-    if ((folder === "trash" || folder === "deleted") && !roles.has("trash")) return false
-    return !query || `${row.CommMessage_Subject ?? ""} ${row.CommMessage_BodyPreview ?? ""}`.toLowerCase().includes(query)
-  })
-  const groups = new Map<string, Row[]>()
-  for (const message of filtered) groups.set(message.CommMessage_ThreadID, [...(groups.get(message.CommMessage_ThreadID) ?? []), message])
-  const ordered = [...groups.entries()].sort((a, b) => Date.parse(occurred(b[1][0])) - Date.parse(occurred(a[1][0])))
-  const page = ordered.slice(offset, offset + limit)
-  const pageMessageIds = page.flatMap(([, rows]) => rows.map((row) => row.CommMessage_ID))
-  const [recipients, summaries] = await Promise.all([
-    readInBatches<Row>(pageMessageIds, async (messageIds) => (
-      await result<Row[]>(admin.from("Comm_MessageRecipients")
-        .select("CommRecipient_MessageID,CommRecipient_NormalizedAddress,CommRecipient_Address,CommRecipient_DisplayNameSnapshot")
-        .in("CommRecipient_MessageID", messageIds)) ?? []
-    )),
-    currentSummaries(admin, page.map(([threadId]) => threadId)),
-  ])
-  const recipientMap = new Map<string, Row[]>()
-  for (const row of recipients) recipientMap.set(row.CommRecipient_MessageID, [...(recipientMap.get(row.CommRecipient_MessageID) ?? []), row])
-  const items = page.map(([threadId, rows]) => {
-    const latest = rows[0]
-    const state = stateMap.get(threadId)
-    const readAt = state?.CommRead_ReadAt ? Date.parse(state.CommRead_ReadAt) : 0
-    const participantMap = new Map<string, MailAddress>()
-    for (const message of rows) for (const recipient of recipientMap.get(message.CommMessage_ID) ?? []) participantMap.set(recipient.CommRecipient_NormalizedAddress, { address: recipient.CommRecipient_Address, displayName: recipient.CommRecipient_DisplayNameSnapshot })
-    return {
-      id: threadId, mailboxId: latest.CommMessage_MailboxID, provider: connectionByMailbox.get(latest.CommMessage_MailboxID) ?? "outlook",
-      subject: repairMojibake(latest.CommMessage_Subject ?? "(No subject)"), preview: decodeHtmlEntities(latest.CommMessage_BodyPreview ?? ""), participants: [...participantMap.values()].slice(0, 8),
-      lastMessageAt: occurred(latest), unreadCount: rows.filter((row) => row.CommMessage_IsInbound && Date.parse(occurred(row)) > readAt).length,
-      messageCount: rows.length, hasAttachments: rows.some((row) => row.CommMessage_HasAttachments), starred: state?.CommRead_IsStarred === true,
-      archived: state?.CommRead_IsArchived === true, summary: summaries.get(threadId) ?? summaryDto(),
-    }
-  })
-  const hasMore = offset + limit < ordered.length
-  return { items, nextCursor: hasMore ? encodeCursor({ offset: offset + limit }) : null, hasMore }
-}
-
-async function mailboxProviderMap(admin: Db, mailboxIds: string[]) {
-  const mailboxes = mailboxIds.length ? await result<Row[]>(admin.from("Comm_Mailboxes").select("CommMailbox_ID,CommMailbox_ConnectionID").in("CommMailbox_ID", mailboxIds)) ?? [] : []
-  const connectionIds = [...new Set(mailboxes.map((row) => row.CommMailbox_ConnectionID).filter(Boolean))]
-  const connections = connectionIds.length ? await result<Row[]>(admin.from("Comm_ProviderConnections").select("CommConn_ID,CommConn_ProviderTypeCode").in("CommConn_ID", connectionIds)) ?? [] : []
-  const providers = new Map(connections.map((row) => [row.CommConn_ID, publicProvider(row.CommConn_ProviderTypeCode)]))
-  return new Map(mailboxes.map((row) => [row.CommMailbox_ID, providers.get(row.CommMailbox_ConnectionID) ?? "outlook"]))
+  throw new InboxHttpError(400, "Choose a mailbox before loading email threads.", "mailbox_required")
 }
 
 async function hydrateOutlookInlineContentIds(admin: Db, actor: Actor, messages: Row[], attachments: Row[]) {
@@ -2573,11 +2490,24 @@ async function hydrateOutlookInlineContentIds(admin: Db, actor: Actor, messages:
   })
 }
 
-export async function getThread(admin: Db, actor: Actor, threadId: string) {
-  const snapshot = await result<Row>(admin.rpc("comm_inbox_thread_snapshot", {
+export async function getThread(admin: Db, actor: Actor, threadId: string, url?: URL) {
+  const requestedLimit = Math.floor(Number(url?.searchParams.get("limit"))) || 25
+  const requestedOffset = Math.floor(Number(url?.searchParams.get("offset"))) || 0
+  const limit = Math.min(50, Math.max(1, requestedLimit))
+  const offset = Math.min(1_000_000, Math.max(0, requestedOffset))
+  const paged = await admin.rpc("comm_inbox_thread_page", {
     p_user_id: actor.userId,
     p_thread_id: threadId,
-  }))
+    p_limit: limit,
+    p_offset: offset,
+  })
+  let snapshot: Row | null
+  if (!paged.error) snapshot = paged.data as Row | null
+  else if (missingInboxReadModel(paged.error)) {
+    throw new InboxHttpError(503, "Paged email threads are still being prepared. Try again shortly.", "thread_paging_unavailable")
+  } else {
+    snapshot = await result<Row>(Promise.resolve(paged))
+  }
   if (snapshot?.permissionGranted !== true) {
     throw new InboxHttpError(403, "You do not have permission to perform this inbox action.", "permission_denied")
   }
@@ -2589,6 +2519,7 @@ export async function getThread(admin: Db, actor: Actor, threadId: string) {
   const attachments = Array.isArray(snapshot.attachments) ? snapshot.attachments : []
   const deliveryEvents = Array.isArray(snapshot.deliveryEvents) ? snapshot.deliveryEvents : []
   const trackingTokens = Array.isArray(snapshot.trackingTokens) ? snapshot.trackingTokens : []
+  const replyMessages = Array.isArray(snapshot.replyMessages) ? snapshot.replyMessages : []
   const state = isObject(snapshot.state) ? snapshot.state : null
   const sendIds = new Set(Array.isArray(snapshot.sendMailboxIds) ? snapshot.sendMailboxIds : [])
   const summary = summaryDto(isObject(snapshot.summary) ? snapshot.summary : null)
@@ -2617,7 +2548,7 @@ export async function getThread(admin: Db, actor: Actor, threadId: string) {
     const events = deliveryEvents.filter((event) => event.CommDelivery_MessageID === row.CommMessage_ID)
     const eventAt = (type: string) => events.find((event) => event.CommDelivery_EventTypeCode === type)?.CommDelivery_EventAt ?? null
     const tracking = trackingTokens.find((token) => token.CommTrack_MessageID === row.CommMessage_ID)
-    const replyMessage = messages.find((candidate) => candidate.CommMessage_IsInbound && (
+    const replyMessage = [...messages, ...replyMessages].find((candidate) => candidate.CommMessage_IsInbound && (
       candidate.CommMessage_ReplyToMessageID === row.CommMessage_ID
       || inferredReplyTargetByInbound.get(candidate.CommMessage_ID) === row.CommMessage_ID
     ))
@@ -2632,8 +2563,12 @@ export async function getThread(admin: Db, actor: Actor, threadId: string) {
   return {
     id: threadId, mailboxId: messages.at(-1)?.CommMessage_MailboxID, subject: repairMojibake(messages.at(-1)?.CommMessage_Subject ?? "(No subject)"),
     starred: state?.CommRead_IsStarred === true, archived: state?.CommRead_IsArchived === true,
-    unreadCount: messages.filter((row) => row.CommMessage_IsInbound && Date.parse(occurred(row)) > readAt).length,
-    readOnly: !messages.every((row) => sendIds.has(row.CommMessage_MailboxID)),
+    unreadCount: Number.isFinite(Number(snapshot.unreadCount)) ? Math.max(0, Number(snapshot.unreadCount)) : messages.filter((row) => row.CommMessage_IsInbound && Date.parse(occurred(row)) > readAt).length,
+    readOnly: typeof snapshot.readOnly === "boolean" ? snapshot.readOnly : !messages.every((row) => sendIds.has(row.CommMessage_MailboxID)),
+    messageTotal: Number.isFinite(Number(snapshot.messageTotal)) ? Math.max(0, Number(snapshot.messageTotal)) : messages.length,
+    messageOffset: Number.isFinite(Number(snapshot.messageOffset)) ? Math.max(0, Number(snapshot.messageOffset)) : offset,
+    messageLimit: Number.isFinite(Number(snapshot.messageLimit)) ? Math.max(1, Number(snapshot.messageLimit)) : limit,
+    hasOlderMessages: snapshot.hasOlderMessages === true,
     messages: messages.map((row) => ({
       id: row.CommMessage_ID, threadId, mailboxId: row.CommMessage_MailboxID, direction: row.CommMessage_IsInbound ? "inbound" : "outbound",
       from: addresses(row.CommMessage_ID, "from"), to: addresses(row.CommMessage_ID, "to"), cc: addresses(row.CommMessage_ID, "cc"), bcc: addresses(row.CommMessage_ID, "bcc"),

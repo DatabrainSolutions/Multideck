@@ -1,11 +1,18 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from "react"
+import { Fragment, isValidElement, useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronUp, Columns3, Eye, EyeOff, GripVertical, MoreHorizontal, MorphingIcon, Pin, PinOff, RotateCcw, type LucideIcon } from "@/components/icons/hugeicons"
+import { Csv02Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns3, Eye, EyeOff, GripVertical, LoaderCircle, MoreHorizontal, MorphingIcon, Pin, PinOff, RotateCcw, SquareCheck, Trash2, X, type LucideIcon } from "@/components/icons/hugeicons"
 
+import { TableCsvExportDialog } from "@/components/multideck/table-csv-export-dialog"
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useLanguage } from "@/i18n/language-provider"
+import { discoverCsvRecordFields, type CsvExportField, type CsvExportSource, type DiscoverCsvFieldsOptions } from "@/lib/csv-export"
 import { useTablePinnedColumns } from "@/lib/table-preferences"
 import { cn, isInsideFloatingLayer } from "@/lib/utils"
 import { TablePillKindContext } from "@/components/multideck/status-pill"
@@ -29,6 +36,36 @@ export type DataTableColumn<Row> = {
   defaultHidden?: boolean
   resizable?: boolean
   sortValue?: (row: Row) => string | number | null | undefined
+  /** Exact CSV value for a displayed column. Falls back to the row value, sort value, then rendered text. */
+  exportValue?: (row: Row) => unknown
+  /** Excludes navigation or control-only columns from CSV field selection. */
+  exportable?: boolean
+}
+
+export type DataTableRowContextAction<Row> = {
+  id: string
+  label: string
+  hint?: string
+  icon: LucideIcon
+  tone?: "default" | "destructive"
+  disabled?: boolean
+  onSelect: (row: Row) => void
+}
+
+export type DataTableExportConfig<Row> = DiscoverCsvFieldsOptions & {
+  fileName?: string | ((rows: readonly Row[]) => string)
+  /** Loads full records only after export is requested, preserving lean register queries. */
+  loadRecords?: (rows: readonly Row[]) => Promise<readonly unknown[]>
+  fields?: readonly CsvExportField<Row>[]
+}
+
+export type DataTableBulkDeleteConfig<Row> = {
+  canDelete?: (row: Row) => boolean
+  disabledReason?: string
+  title?: string
+  description?: (rows: readonly Row[]) => string
+  confirmLabel?: string
+  onConfirm: (rows: readonly Row[]) => Promise<void>
 }
 
 type SavedTableLayout = {
@@ -44,6 +81,12 @@ type ColumnContextMenu = {
   y: number
 }
 
+type RowContextMenu<Row> = {
+  row: Row
+  x: number
+  y: number
+}
+
 type DataTableProps<Row> = {
   columns: DataTableColumn<Row>[]
   rows: Row[]
@@ -55,8 +98,6 @@ type DataTableProps<Row> = {
   selectedRowKeys?: ReadonlySet<string>
   ariaLabel?: string
   columnsButtonLabel?: string
-  /** Page or register context that should align with the table controls. */
-  toolbarLeading?: ReactNode
   /** View tabs or equivalent view toggles only. Search, filters, and actions belong in trailing slots. */
   toolbarTabs?: ReactNode
   /** Trailing controls are rendered in this fixed order: search, filters, options, columns. */
@@ -78,8 +119,27 @@ type DataTableProps<Row> = {
   rowProps?: (row: Row) => HTMLAttributes<HTMLTableRowElement>
   wrapRow?: (row: Row, rowElement: ReactElement) => ReactNode
   renderAfterRow?: (row: Row, visibleColumnCount: number) => ReactNode
+  /** Enabled by default so every canonical record table shares one selection/export workflow. */
+  enableSelectionExport?: boolean
+  exportConfig?: DataTableExportConfig<Row>
+  /** Adds a confirmed destructive action to the shared selected-row toolbar. */
+  bulkDelete?: DataTableBulkDeleteConfig<Row>
+  rowContextActions?: (row: Row) => readonly DataTableRowContextAction<Row>[]
   className?: string
   tableClassName?: string
+  /** Server-owned paging keeps large registers bounded without changing the table interaction model. */
+  pagination?: {
+    offset: number
+    limit: number
+    total: number
+    loading?: boolean
+    onOffsetChange: (offset: number) => void
+  }
+  /** When supplied, sorting is executed by the server instead of the current page only. */
+  serverSorting?: {
+    value: { id: string; direction: "asc" | "desc" } | null
+    onChange: (value: { id: string; direction: "asc" | "desc" } | null) => void
+  }
 }
 
 function readLayout(storageKey: string | undefined, columns: DataTableColumn<unknown>[]): SavedTableLayout {
@@ -111,6 +171,29 @@ function readLayout(storageKey: string | undefined, columns: DataTableColumn<unk
   }
 }
 
+function reactNodeToPlainText(node: ReactNode): string {
+  if (node === null || node === undefined || typeof node === "boolean") return ""
+  if (typeof node === "string" || typeof node === "number" || typeof node === "bigint") return String(node)
+  if (Array.isArray(node)) return node.map(reactNodeToPlainText).filter(Boolean).join(" ")
+  if (!isValidElement(node)) return ""
+  const props = node.props as { children?: ReactNode; value?: unknown; "aria-label"?: string }
+  const children = reactNodeToPlainText(props.children)
+  if (children) return children.replace(/\s+/g, " ").trim()
+  if (typeof props["aria-label"] === "string") return props["aria-label"]
+  return typeof props.value === "string" || typeof props.value === "number" ? String(props.value) : ""
+}
+
+function directRecordValue(record: unknown, key: string) {
+  if (record === null || record === undefined || typeof record !== "object") return undefined
+  return (record as Record<string, unknown>)[key]
+}
+
+function rowMenuItemDelay(index: number) {
+  if (index === 0) return 0.034
+  if (index === 1) return 0.074
+  return 0.108
+}
+
 export function DataTable<Row>({
   columns,
   rows,
@@ -122,7 +205,6 @@ export function DataTable<Row>({
   selectedRowKeys,
   ariaLabel,
   columnsButtonLabel,
-  toolbarLeading,
   toolbarTabs,
   toolbarSearch,
   toolbarFilters,
@@ -140,8 +222,14 @@ export function DataTable<Row>({
   rowProps,
   wrapRow,
   renderAfterRow,
+  enableSelectionExport = true,
+  exportConfig,
+  bulkDelete,
+  rowContextActions,
   className,
   tableClassName,
+  pagination,
+  serverSorting,
 }: DataTableProps<Row>) {
   const { direction, t } = useLanguage()
   const reduceMotion = useReducedMotion()
@@ -156,6 +244,16 @@ export function DataTable<Row>({
   const [resizingId, setResizingId] = useState<string | null>(null)
   const [sort, setSort] = useState<{ id: string; direction: "asc" | "desc" } | null>(initialLayout.sort)
   const [contextMenu, setContextMenu] = useState<ColumnContextMenu | null>(null)
+  const [rowContextMenu, setRowContextMenu] = useState<RowContextMenu<Row> | null>(null)
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectionKeys, setSelectionKeys] = useState<Set<string>>(new Set())
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportSources, setExportSources] = useState<CsvExportSource<Row>[]>([])
+  const [exportLoading, setExportLoading] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null)
   const [stickyColumnsEnabled, setStickyColumnsEnabled] = useState(() => (
     typeof window === "undefined" || window.matchMedia("(min-width: 768px)").matches
   ))
@@ -164,6 +262,9 @@ export function DataTable<Row>({
   ))
   const resizeStart = useRef<{ columnId: string; x: number; width: number; min: number; max: number } | null>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
+  const rowContextMenuRef = useRef<HTMLDivElement>(null)
+  const rowContextTriggerRef = useRef<HTMLTableRowElement | null>(null)
+  const exportRequestId = useRef(0)
 
   useEffect(() => {
     setOrder((current) => [...current.filter((id) => columnIds.includes(id)), ...columnIds.filter((id) => !current.includes(id))])
@@ -171,6 +272,10 @@ export function DataTable<Row>({
     setWidths((current) => Object.fromEntries(Object.entries(current).filter(([id]) => columnIds.includes(id))))
     setSort((current) => current && columnIds.includes(current.id) ? current : null)
   }, [columnIds])
+
+  useEffect(() => {
+    if (serverSorting) setSort(serverSorting.value)
+  }, [serverSorting?.value?.direction, serverSorting?.value?.id])
 
   useEffect(() => {
     if (!storageKey) return
@@ -221,6 +326,56 @@ export function DataTable<Row>({
   }, [contextMenu])
 
   useEffect(() => {
+    if (!rowContextMenu) return
+
+    const closeMenu = () => setRowContextMenu(null)
+    const closeFromPointer = (event: globalThis.PointerEvent) => {
+      if (rowContextMenuRef.current?.contains(event.target as Node)) return
+      closeMenu()
+    }
+    const closeFromKeyboard = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      closeMenu()
+      window.requestAnimationFrame(() => rowContextTriggerRef.current?.focus())
+    }
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      rowContextMenuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+    })
+
+    window.addEventListener("pointerdown", closeFromPointer)
+    window.addEventListener("scroll", closeMenu, true)
+    window.addEventListener("resize", closeMenu)
+    window.addEventListener("keydown", closeFromKeyboard)
+    return () => {
+      window.cancelAnimationFrame(focusFrame)
+      window.removeEventListener("pointerdown", closeFromPointer)
+      window.removeEventListener("scroll", closeMenu, true)
+      window.removeEventListener("resize", closeMenu)
+      window.removeEventListener("keydown", closeFromKeyboard)
+    }
+  }, [rowContextMenu])
+
+  useEffect(() => {
+    const available = new Set(rows.map(getRowKey))
+    setSelectionKeys((current) => {
+      const next = new Set([...current].filter((key) => available.has(key)))
+      return next.size === current.size ? current : next
+    })
+  }, [getRowKey, rows])
+
+  useEffect(() => {
+    if (!selectionMode || exportOpen || rowContextMenu) return
+    const exitSelectionFromKeyboard = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      setSelectionMode(false)
+      setSelectionKeys(new Set())
+    }
+    window.addEventListener("keydown", exitSelectionFromKeyboard)
+    return () => window.removeEventListener("keydown", exitSelectionFromKeyboard)
+  }, [exportOpen, rowContextMenu, selectionMode])
+
+  useEffect(() => {
     if (!resizingId) return
 
     const resizeFromPointer = (event: globalThis.PointerEvent) => {
@@ -252,19 +407,21 @@ export function DataTable<Row>({
   }, [columns, order, pinned])
 
   const visibleColumns = orderedColumns.filter((column) => !hidden.has(column.id))
+  const selectionColumnWidth = selectionMode ? 44 : 0
   const columnWidth = (column: DataTableColumn<Row>) => widths[column.id] ?? column.width ?? 160
   const pinnedOffsets = new Map<string, number>()
-  let nextOffset = 0
+  let nextOffset = selectionColumnWidth
   visibleColumns.forEach((column) => {
     if (!pinned.has(column.id)) return
     pinnedOffsets.set(column.id, nextOffset)
     nextOffset += columnWidth(column)
   })
 
-  const minimumWidth = minimumWidthOverride ?? Math.max(visibleColumns.reduce((width, column) => width + columnWidth(column), 0), 720)
+  const minimumWidth = (minimumWidthOverride ?? Math.max(visibleColumns.reduce((width, column) => width + columnWidth(column), 0), 720)) + selectionColumnWidth
   const hasCustomLayout = Boolean(sort) || hidden.size !== defaultHidden.length || [...hidden].some((id) => !defaultHidden.includes(id)) || Object.keys(widths).length > 0 || pinned.size > 0 || order.some((id, index) => id !== columnIds[index])
   const contextColumn = contextMenu ? columns.find((column) => column.id === contextMenu.columnId) : undefined
   const sortedRows = useMemo(() => {
+    if (serverSorting) return rows
     if (!sort) return rows
     const column = columns.find((candidate) => candidate.id === sort.id)
     if (!column?.sortValue) return rows
@@ -279,7 +436,130 @@ export function DataTable<Row>({
         : String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: "base" })
       return sort.direction === "asc" ? comparison : -comparison
     })
-  }, [columns, rows, sort])
+  }, [columns, rows, serverSorting, sort])
+
+  const selectedRows = useMemo(
+    () => sortedRows.filter((row) => selectionKeys.has(getRowKey(row))),
+    [getRowKey, selectionKeys, sortedRows],
+  )
+  const selectedRowsCanDelete = Boolean(selectedRows.length && bulkDelete && selectedRows.every((row) => bulkDelete.canDelete?.(row) ?? true))
+  const allRowsSelected = sortedRows.length > 0 && selectedRows.length === sortedRows.length
+  const exportFields = useMemo<CsvExportField<Row>[]>(() => {
+    const columnFields = columns
+      .filter((column) => column.exportable !== false && column.kind !== "actions" && column.id !== "open")
+      .map<CsvExportField<Row>>((column) => ({
+        id: `column:${column.id}`,
+        label: column.label,
+        category: "Columns",
+        defaultSelected: true,
+        getValue: (source) => {
+          if (column.exportValue) return column.exportValue(source.row)
+          const directValue = directRecordValue(source.record, column.id)
+          if (directValue !== undefined) return directValue
+          const renderedValue = reactNodeToPlainText(column.cell(source.row))
+          if (renderedValue) return renderedValue
+          return column.sortValue?.(source.row)
+        },
+      }))
+    const discoveredFields = discoverCsvRecordFields(exportSources, {
+      recordCategory: exportConfig?.recordCategory,
+      categoryForPath: exportConfig?.categoryForPath,
+      labelForPath: exportConfig?.labelForPath,
+      excludePaths: exportConfig?.excludePaths,
+      maxDepth: exportConfig?.maxDepth,
+    })
+    return [...columnFields, ...discoveredFields, ...(exportConfig?.fields ?? [])]
+  }, [columns, exportConfig, exportSources])
+
+  function toggleSelection(row: Row) {
+    const key = getRowKey(row)
+    setSelectionKeys((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  function selectFromContextMenu(row: Row) {
+    setSelectionMode(true)
+    const key = getRowKey(row)
+    setSelectionKeys((current) => {
+      const next = new Set(current)
+      if (selectionMode && next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  function exitSelectionMode() {
+    setSelectionMode(false)
+    setSelectionKeys(new Set())
+  }
+
+  function toggleAllRows() {
+    setSelectionKeys(allRowsSelected ? new Set() : new Set(sortedRows.map(getRowKey)))
+  }
+
+  async function loadExportSources(rowsToExport: readonly Row[]) {
+    const requestId = ++exportRequestId.current
+    setExportSources(rowsToExport.map((row) => ({ row, record: row })))
+    setExportError(null)
+    if (!exportConfig?.loadRecords) {
+      setExportLoading(false)
+      return
+    }
+
+    setExportLoading(true)
+    try {
+      const records = await exportConfig.loadRecords(rowsToExport)
+      if (records.length !== rowsToExport.length) throw new Error("The full record response was incomplete.")
+      if (requestId !== exportRequestId.current) return
+      setExportSources(rowsToExport.map((row, index) => ({ row, record: records[index] ?? row })))
+    } catch (reason) {
+      if (requestId !== exportRequestId.current) return
+      console.error("Full table export records could not be loaded.", reason)
+      setExportError("Check your connection and try loading the selected records again.")
+    } finally {
+      if (requestId === exportRequestId.current) setExportLoading(false)
+    }
+  }
+
+  function openExportDialog() {
+    if (!selectedRows.length) return
+    setExportOpen(true)
+    void loadExportSources(selectedRows)
+  }
+
+  async function confirmBulkDelete() {
+    if (!bulkDelete || !selectedRowsCanDelete || bulkDeleting) return
+    setBulkDeleting(true)
+    setBulkDeleteError(null)
+    try {
+      await bulkDelete.onConfirm(selectedRows)
+      setBulkDeleteOpen(false)
+      exitSelectionMode()
+    } catch (reason) {
+      console.error("Selected table rows could not be deleted.", reason)
+      setBulkDeleteError(reason instanceof Error ? reason.message : "The selected rows could not be deleted. Try again.")
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
+  function openRowContextMenuAt(row: Row, clientX: number, clientY: number, trigger?: HTMLTableRowElement) {
+    const menuWidth = 252
+    const customActions = rowContextActions?.(row) ?? []
+    const actionCount = customActions.length + (enableSelectionExport ? 1 : 0)
+    const menuHeight = 8 + actionCount * 36 + (enableSelectionExport && customActions.length ? 8 : 0)
+    const left = direction === "rtl"
+      ? Math.max(8, clientX - menuWidth)
+      : Math.min(clientX, window.innerWidth - menuWidth - 8)
+    const top = Math.max(8, Math.min(clientY, window.innerHeight - menuHeight - 8))
+    setContextMenu(null)
+    rowContextTriggerRef.current = trigger ?? null
+    setRowContextMenu({ row, x: left, y: top })
+  }
 
   function moveColumn(sourceId: string, targetId: string) {
     if (sourceId === targetId) return
@@ -343,20 +623,26 @@ export function DataTable<Row>({
     setPinned([])
     setWidths({})
     setSort(null)
+    serverSorting?.onChange(null)
   }
 
   function toggleSort(column: DataTableColumn<Row>) {
     if (!column.sortValue) return
-    setSort((current) => {
+    const next = (() => {
+      const current = serverSorting?.value ?? sort
       if (!current || current.id !== column.id) return { id: column.id, direction: "asc" }
       if (current.direction === "asc") return { id: column.id, direction: "desc" }
       return null
-    })
+    })() as { id: string; direction: "asc" | "desc" } | null
+    setSort(next)
+    serverSorting?.onChange(next)
   }
 
   function setColumnSort(column: DataTableColumn<Row>, direction: "asc" | "desc" | null) {
     if (!column.sortValue) return
-    setSort(direction ? { id: column.id, direction } : null)
+    const next = direction ? { id: column.id, direction } : null
+    setSort(next)
+    serverSorting?.onChange(next)
   }
 
   function openColumnContextMenu(column: DataTableColumn<Row>, event: ReactMouseEvent<HTMLTableCellElement>) {
@@ -418,8 +704,62 @@ export function DataTable<Row>({
     return column.kind === "number" ? "tabular-nums" : undefined
   }
 
-  const hasTrailingToolbar = Boolean(toolbarSearch || toolbarFilters || toolbarOptions || showColumnManager)
-  const hasLeadingToolbar = Boolean(toolbarLeading || toolbarTabs)
+  const hasTrailingToolbar = Boolean(selectionMode || toolbarSearch || toolbarFilters || toolbarOptions || showColumnManager)
+  const hasLeadingToolbar = Boolean(toolbarTabs)
+  const contextRowActions = rowContextMenu ? rowContextActions?.(rowContextMenu.row) ?? [] : []
+  const contextRowKey = rowContextMenu ? getRowKey(rowContextMenu.row) : null
+  const contextRowSelected = contextRowKey ? selectionKeys.has(contextRowKey) : false
+  const contextRowLabel = rowContextMenu
+    ? rowAriaLabel?.(rowContextMenu.row) ?? contextRowKey ?? "Row"
+    : "Row"
+  const resolvedExportFileName = typeof exportConfig?.fileName === "function"
+    ? exportConfig.fileName(exportSources.map((source) => source.row))
+    : exportConfig?.fileName ?? `${ariaLabel ?? storageKey ?? "multideck-table"}-${new Date().toISOString().slice(0, 10)}`
+  const selectionControls = selectionMode ? (
+    <motion.div
+      data-table-selection-controls
+      initial={reduceMotion ? false : { opacity: 0, x: direction === "rtl" ? 8 : -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: direction === "rtl" ? 6 : -6 }}
+      transition={{ duration: reduceMotion ? 0 : 0.2, ease: [0.22, 1, 0.36, 1] }}
+      className="order-0 flex h-8 items-center gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] ps-2.5 pe-1 shadow-[var(--md-shadow-line)]"
+      role="group"
+      aria-label={t("Selected row actions")}
+    >
+      <span className="me-1 whitespace-nowrap text-[11px] font-medium text-[var(--md-ink)]">
+        <span data-i18n-skip dir="ltr">{selectedRows.length}</span> {t(selectedRows.length === 1 ? "selected row" : "selected rows")}
+      </span>
+      <button
+        type="button"
+        disabled={!selectedRows.length}
+        onClick={openExportDialog}
+        className="grid size-7 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] text-[var(--md-accent)] outline-none transition-[background,color,opacity,transform] hover:bg-[color-mix(in_srgb,var(--md-accent)_16%,transparent)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-35 motion-reduce:transform-none"
+        aria-label={t("Export selected rows")}
+        title={t("Export selected rows")}
+      >
+        <HugeiconsIcon icon={Csv02Icon} size={15} strokeWidth={1.4} aria-hidden="true" />
+      </button>
+      {bulkDelete ? <button
+        type="button"
+        disabled={!selectedRowsCanDelete || bulkDeleting}
+        onClick={() => { setBulkDeleteError(null); setBulkDeleteOpen(true) }}
+        className="grid size-7 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-red)] outline-none transition-[background,color,opacity,transform] hover:bg-[color-mix(in_srgb,var(--md-red)_10%,transparent)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--md-red)_24%,transparent)] active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-35 motion-reduce:transform-none"
+        aria-label={t(selectedRowsCanDelete ? "Delete selected rows" : bulkDelete.disabledReason ?? "Selected rows cannot be deleted")}
+        title={t(selectedRowsCanDelete ? "Delete selected rows" : bulkDelete.disabledReason ?? "Selected rows cannot be deleted")}
+      >
+        <Trash2 className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+      </button> : null}
+      <button
+        type="button"
+        onClick={exitSelectionMode}
+        className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] outline-none transition-[background,color,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.94] motion-reduce:transform-none"
+        aria-label={t("Exit selection mode")}
+        title={t("Exit selection mode")}
+      >
+        <X className="size-3.5" strokeWidth={1.4} />
+      </button>
+    </motion.div>
+  ) : null
 
   return (
     <div className={cn("w-full min-w-0", className)}>
@@ -428,12 +768,12 @@ export function DataTable<Row>({
           two clean rows read far better than a leading group floating in the
           middle of a ragged three-row block. */}
       {showToolbar ? <div data-table-toolbar className={cn("mb-2 flex min-h-9 flex-nowrap items-center gap-x-2 gap-y-1.5 bg-transparent px-0 py-0.5 sm:flex-wrap", hasLeadingToolbar ? "justify-between" : "justify-end")}>
-        {toolbarLeading ? <div data-table-leading className="min-w-0 flex-1">{toolbarLeading}</div> : null}
-        {!toolbarLeading && toolbarTabs ? <div data-table-tabs className="flex min-w-0 items-center gap-1 overflow-x-auto sm:shrink-0 sm:overflow-visible">{toolbarTabs}</div> : null}
+        {toolbarTabs ? <div data-table-tabs className="flex min-w-0 items-center gap-1 overflow-x-auto sm:shrink-0 sm:overflow-visible">{toolbarTabs}</div> : null}
         {/* The minimum width is what makes the trailing controls drop to their own
             line as one block. Without it they wrap control by control around the
             leading group and the row loses its reading order. */}
-        {hasTrailingToolbar ? <div data-table-trailing-controls className={cn("ms-auto flex flex-none flex-nowrap items-center justify-end gap-1.5 sm:flex-wrap", toolbarLeading ? "sm:min-w-0" : compactToolbar ? "sm:min-w-[min(100%,520px)]" : "sm:min-w-[min(100%,560px)]")}>
+        {hasTrailingToolbar ? <div data-table-trailing-controls className={cn("ms-auto flex flex-none flex-nowrap items-center justify-end gap-1.5 sm:flex-wrap", compactToolbar ? "sm:min-w-[min(100%,520px)]" : "sm:min-w-[min(100%,560px)]")}>
+          <AnimatePresence initial={false}>{selectionControls}</AnimatePresence>
           {mobileToolbarControls && (toolbarSearch || toolbarFilters || toolbarOptions) ? <Popover>
             <PopoverTrigger asChild>
               <button type="button" className="inline-flex h-8 items-center gap-1.5 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-line)] active:scale-[0.96]" aria-label={t("Table controls")}>
@@ -523,11 +863,38 @@ export function DataTable<Row>({
         </div> : null}
       </div> : null}
       {contentBeforeTable ? <div data-table-content-before className="mb-3">{contentBeforeTable}</div> : null}
+      {!showToolbar && selectionMode ? <div className="mb-2 flex justify-end"><AnimatePresence initial={false}>{selectionControls}</AnimatePresence></div> : null}
 
       <div data-table-surface className={cn("overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", !showToolbar && "h-full")}>
       <Table aria-label={ariaLabel ? t(ariaLabel) : undefined} className={tableClassName} style={{ minWidth: minimumWidth }}>
         <TableHeader>
           <TableRow className="border-[var(--md-line)] bg-[var(--md-surface-soft)] hover:bg-[var(--md-surface-soft)]">
+            {selectionMode ? (
+              <TableHead
+                data-table-selection-column
+                style={{
+                  width: selectionColumnWidth,
+                  minWidth: selectionColumnWidth,
+                  position: "sticky",
+                  ...(direction === "rtl" ? { right: 0 } : { left: 0 }),
+                }}
+                className={cn("z-[5] bg-[var(--md-surface-soft)] p-0 text-center", direction === "rtl" ? "shadow-[-2px_0_0_var(--md-line)]" : "shadow-[2px_0_0_var(--md-line)]")}
+              >
+                <motion.div
+                  initial={reduceMotion ? false : { opacity: 0, x: direction === "rtl" ? 8 : -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
+                  className="grid h-full min-h-10 place-items-center"
+                >
+                  <Checkbox
+                    checked={allRowsSelected ? true : selectedRows.length ? "indeterminate" : false}
+                    onCheckedChange={toggleAllRows}
+                    aria-label={t(allRowsSelected ? "Deselect all rows" : "Select all rows")}
+                    className="size-[18px] rounded-[var(--md-radius-xs)]"
+                  />
+                </motion.div>
+              </TableHead>
+            ) : null}
             {visibleColumns.map((column) => {
               const isPinned = stickyColumnsEnabled && pinned.has(column.id)
               return (
@@ -582,9 +949,12 @@ export function DataTable<Row>({
         <TableBody>
           {sortedRows.length ? sortedRows.map((row) => {
             const rowKey = getRowKey(row)
-            const isSelected = selectedRowKey === rowKey || selectedRowKeys?.has(rowKey) === true
+            const internallySelected = selectionKeys.has(rowKey)
+            const isSelected = internallySelected || selectedRowKey === rowKey || selectedRowKeys?.has(rowKey) === true
             const isMuted = rowState?.(row) === "muted"
-            const interactive = (onRowClick || onRowDoubleClick) && (isRowInteractive?.(row) ?? true)
+            const rowInteractionAllowed = isRowInteractive?.(row) ?? true
+            const interactive = Boolean((onRowClick || onRowDoubleClick) && rowInteractionAllowed)
+            const hasRowMenu = enableSelectionExport || Boolean(rowContextActions?.(row).length)
             const additionalRowProps = rowProps?.(row)
             const rowElement = (
               <TableRow
@@ -593,17 +963,78 @@ export function DataTable<Row>({
                 data-state={isSelected ? "selected" : undefined}
                 data-row-state={isMuted ? "muted" : undefined}
                 aria-selected={isSelected || undefined}
-                aria-label={rowAriaLabel ? t(rowAriaLabel(row)) : undefined}
-                className={cn("border-[var(--md-line)] bg-[var(--md-surface)] hover:bg-[var(--md-hover)]", isMuted && "bg-[var(--md-surface-soft)] opacity-65", typeof rowClassName === "function" ? rowClassName(row) : rowClassName, interactive && "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color-mix(in_srgb,var(--md-accent)_30%,transparent)]")}
-                tabIndex={interactive ? 0 : undefined}
-                onClick={interactive && onRowClick ? () => onRowClick(row) : undefined}
-                onDoubleClick={interactive && onRowDoubleClick ? () => onRowDoubleClick(row) : undefined}
-                onKeyDown={interactive && onRowClick ? (event) => {
-                  if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return
+                aria-label={rowAriaLabel ? t(rowAriaLabel(row)) : additionalRowProps?.["aria-label"]}
+                aria-haspopup={hasRowMenu ? "menu" : additionalRowProps?.["aria-haspopup"]}
+                className={cn("border-[var(--md-line)] bg-[var(--md-surface)] hover:bg-[var(--md-hover)]", isMuted && "bg-[var(--md-surface-soft)] opacity-65", additionalRowProps?.className, typeof rowClassName === "function" ? rowClassName(row) : rowClassName, (interactive || hasRowMenu) && "outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color-mix(in_srgb,var(--md-accent)_30%,transparent)]", interactive && !selectionMode && "cursor-pointer", selectionMode && "cursor-default")}
+                tabIndex={additionalRowProps?.tabIndex ?? (interactive || hasRowMenu ? 0 : undefined)}
+                onClick={(event) => {
+                  if (selectionMode && !(event.target as HTMLElement).closest("button, input, a, [role='button'], [role='checkbox'], [role='combobox']")) {
+                    toggleSelection(row)
+                    return
+                  }
+                  additionalRowProps?.onClick?.(event)
+                  if (event.defaultPrevented) return
+                  if (interactive && onRowClick) onRowClick(row)
+                }}
+                onDoubleClick={(event) => {
+                  additionalRowProps?.onDoubleClick?.(event)
+                  if (!event.defaultPrevented && !selectionMode && interactive && onRowDoubleClick) onRowDoubleClick(row)
+                }}
+                onContextMenu={(event) => {
+                  additionalRowProps?.onContextMenu?.(event)
+                  if (event.defaultPrevented || !hasRowMenu) return
                   event.preventDefault()
-                  onRowClick(row)
-                } : undefined}
+                  event.stopPropagation()
+                  openRowContextMenuAt(row, event.clientX, event.clientY, event.currentTarget)
+                }}
+                onKeyDown={(event) => {
+                  additionalRowProps?.onKeyDown?.(event)
+                  if (event.defaultPrevented) return
+                  if (hasRowMenu && (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))) {
+                    event.preventDefault()
+                    const rect = event.currentTarget.getBoundingClientRect()
+                    openRowContextMenuAt(row, direction === "rtl" ? rect.right : rect.left + 24, rect.top + 28, event.currentTarget)
+                    return
+                  }
+                  if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return
+                  if (selectionMode) {
+                    event.preventDefault()
+                    toggleSelection(row)
+                    return
+                  }
+                  if (interactive && onRowClick) {
+                    event.preventDefault()
+                    onRowClick(row)
+                  }
+                }}
               >
+                {selectionMode ? (
+                  <TableCell
+                    data-table-selection-column
+                    style={{
+                      width: selectionColumnWidth,
+                      minWidth: selectionColumnWidth,
+                      position: "sticky",
+                      ...(direction === "rtl" ? { right: 0 } : { left: 0 }),
+                    }}
+                    className={cn("z-[4] p-0 text-center", isSelected ? "bg-[var(--md-table-pinned-selected-bg)]" : "bg-[var(--md-table-pinned-bg)]", direction === "rtl" ? "shadow-[-2px_0_0_var(--md-line)]" : "shadow-[2px_0_0_var(--md-line)]")}
+                  >
+                    <motion.div
+                      initial={reduceMotion ? false : { opacity: 0, x: direction === "rtl" ? 8 : -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
+                      className="grid min-h-11 place-items-center"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <Checkbox
+                        checked={internallySelected}
+                        onCheckedChange={() => toggleSelection(row)}
+                        aria-label={`${t(internallySelected ? "Deselect row" : "Select row")}: ${rowAriaLabel ? t(rowAriaLabel(row)) : rowKey}`}
+                        className="size-[18px] rounded-[var(--md-radius-xs)]"
+                      />
+                    </motion.div>
+                  </TableCell>
+                ) : null}
                 {visibleColumns.map((column) => {
                   const isPinned = stickyColumnsEnabled && pinned.has(column.id)
                   return (
@@ -641,18 +1072,47 @@ export function DataTable<Row>({
             return (
               <Fragment key={rowKey}>
                 {wrapRow ? wrapRow(row, rowElement) : rowElement}
-                {renderAfterRow?.(row, visibleColumns.length)}
+                {renderAfterRow?.(row, visibleColumns.length + (selectionMode ? 1 : 0))}
               </Fragment>
             )
           }) : (
             <TableRow className="h-[180px] border-[var(--md-line)] bg-[var(--md-surface)] hover:bg-transparent">
-              <TableCell colSpan={visibleColumns.length} className="text-center">
+              <TableCell colSpan={visibleColumns.length + (selectionMode ? 1 : 0)} className="text-center">
                 {emptyState ?? <p className="text-[13px] text-[var(--md-text)]">{t("No records to show")}</p>}
               </TableCell>
             </TableRow>
           )}
         </TableBody>
       </Table>
+      {pagination ? (
+        <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-t border-[var(--md-line)] bg-[var(--md-surface-soft)] px-3 py-1.5">
+          <p className="text-[11.5px] text-[var(--md-text)]" aria-live="polite">
+            {t("Showing")} <span data-i18n-skip dir="ltr" className="font-medium tabular-nums text-[var(--md-ink)]">{pagination.total ? pagination.offset + 1 : 0}–{Math.min(pagination.offset + rows.length, pagination.total)}</span> {t("of")} <span data-i18n-skip dir="ltr" className="font-medium tabular-nums text-[var(--md-ink)]">{pagination.total}</span>
+          </p>
+          <div className="flex items-center gap-1" role="group" aria-label={t("Table pages")}>
+            <button
+              type="button"
+              disabled={pagination.loading || pagination.offset <= 0}
+              onClick={() => pagination.onOffsetChange(Math.max(0, pagination.offset - pagination.limit))}
+              className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] outline-none transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-30 motion-reduce:transform-none"
+              aria-label={t("Previous page")}
+              title={t("Previous page")}
+            >
+              <ChevronLeft className="size-3.5 rtl:rotate-180" strokeWidth={1.5} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              disabled={pagination.loading || pagination.offset + rows.length >= pagination.total}
+              onClick={() => pagination.onOffsetChange(pagination.offset + pagination.limit)}
+              className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] outline-none transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-30 motion-reduce:transform-none"
+              aria-label={t("Next page")}
+              title={t("Next page")}
+            >
+              <ChevronRight className="size-3.5 rtl:rotate-180" strokeWidth={1.5} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      ) : null}
       </div>
       {typeof document !== "undefined" ? createPortal(
         <AnimatePresence>
@@ -666,7 +1126,7 @@ export function DataTable<Row>({
               animate={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px)" }}
               exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98, y: -3, filter: "blur(3px)" }}
               transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
-              className="fixed z-[120] w-[252px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_96%,transparent)] p-1.5 text-start shadow-[var(--md-shadow-popover)] backdrop-blur-xl"
+              className="premium-stroke fixed z-[120] w-[252px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_96%,transparent)] p-1.5 text-start shadow-[var(--md-shadow-popover)] backdrop-blur-xl"
               style={{ left: contextMenu.x, top: contextMenu.y }}
             >
               <div className="mb-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2.5 shadow-[var(--md-shadow-line)]">
@@ -742,6 +1202,137 @@ export function DataTable<Row>({
         </AnimatePresence>,
         document.body,
       ) : null}
+      {typeof document !== "undefined" ? createPortal(
+        <AnimatePresence>
+          {rowContextMenu ? (
+            <motion.div
+              ref={rowContextMenuRef}
+              role="menu"
+              aria-label={`${t("Row actions")}: ${t(contextRowLabel)}`}
+              dir={direction}
+              initial={reduceMotion ? false : { opacity: 0, scale: 0.9, filter: "blur(5px)" }}
+              animate={reduceMotion ? { opacity: 1 } : {
+                opacity: [0, 1, 1],
+                scale: [0.9, 1.014, 1],
+                filter: ["blur(5px)", "blur(0px)", "blur(0px)"],
+              }}
+              exit={reduceMotion ? { opacity: 0 } : {
+                opacity: 0,
+                scale: 0.972,
+                transition: { duration: 0.11, ease: [0.55, 0, 1, 0.45] },
+              }}
+              transition={{ duration: reduceMotion ? 0 : 0.28, times: [0, 0.52, 1], ease: [0.19, 1, 0.22, 1] }}
+              className="premium-stroke fixed z-[120] w-[252px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_96%,transparent)] p-1 text-start shadow-[var(--md-shadow-lift)] backdrop-blur-xl"
+              style={{
+                left: rowContextMenu.x,
+                top: rowContextMenu.y,
+                transformOrigin: direction === "rtl" ? "top right" : "top left",
+              }}
+              onKeyDown={(event) => {
+                if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return
+                const buttons = [...(rowContextMenuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
+                if (!buttons.length) return
+                event.preventDefault()
+                const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement)
+                const nextIndex = event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? buttons.length - 1
+                    : event.key === "ArrowDown"
+                      ? (currentIndex + 1 + buttons.length) % buttons.length
+                      : (currentIndex - 1 + buttons.length) % buttons.length
+                buttons[nextIndex]?.focus()
+              }}
+            >
+              {enableSelectionExport ? (
+                <motion.button
+                  type="button"
+                  role="menuitem"
+                  initial={reduceMotion ? false : { opacity: 0, y: -5, scale: 0.988 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: reduceMotion ? 0 : 0.26, delay: reduceMotion ? 0 : rowMenuItemDelay(0), ease: [0.16, 1, 0.3, 1] }}
+                  onClick={() => {
+                    selectFromContextMenu(rowContextMenu.row)
+                    setRowContextMenu(null)
+                  }}
+                  className={cn("group flex h-9 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[13px] font-medium outline-none transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] focus-visible:bg-[var(--md-hover)]", contextRowSelected ? "text-[var(--md-accent)]" : "text-[var(--md-text)]")}
+                >
+                  <span className={cn("grid size-5 shrink-0 place-items-center text-[var(--md-subtle)] transition-[color,transform] duration-150 group-hover:text-[var(--md-accent)]", contextRowSelected && "text-[var(--md-accent)]")}>
+                    <SquareCheck className="size-4" strokeWidth={1.3} />
+                  </span>
+                  <span className="min-w-0 flex-1 text-start">{t(selectionMode && contextRowSelected ? "Deselect row" : "Select")}</span>
+                  <span className="shrink-0 text-[11px] font-normal text-[var(--md-subtle)]">{t(selectionMode ? (contextRowSelected ? "Remove" : "Add") : "Multiple rows")}</span>
+                </motion.button>
+              ) : null}
+
+              {enableSelectionExport && contextRowActions.length ? <div className="my-1 h-px bg-[var(--md-line)]" /> : null}
+
+              {contextRowActions.map((item, index) => {
+                const Icon = item.icon
+                const destructive = item.tone === "destructive"
+                return (
+                  <motion.button
+                    key={item.id}
+                    type="button"
+                    role="menuitem"
+                    disabled={item.disabled}
+                    initial={reduceMotion ? false : { opacity: 0, y: -5, scale: 0.988 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: reduceMotion ? 0 : 0.26, delay: reduceMotion ? 0 : rowMenuItemDelay(index + (enableSelectionExport ? 1 : 0)), ease: [0.16, 1, 0.3, 1] }}
+                    onClick={() => {
+                      item.onSelect(rowContextMenu.row)
+                      setRowContextMenu(null)
+                    }}
+                    className={cn("group flex h-9 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[background,color,opacity] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:bg-[var(--md-hover)] disabled:cursor-not-allowed disabled:opacity-35", destructive && "hover:bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] hover:text-[var(--md-red)] focus-visible:bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] focus-visible:text-[var(--md-red)]")}
+                  >
+                    <span className={cn("grid size-5 shrink-0 place-items-center text-[var(--md-subtle)] transition-[color,transform] duration-150 group-hover:text-[var(--md-accent)]", destructive && "group-hover:text-[var(--md-red)]")}>
+                      <Icon className="size-4" strokeWidth={1.3} />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-start">{t(item.label)}</span>
+                    {item.hint ? <span className="shrink-0 text-[11px] font-normal text-[var(--md-subtle)]">{t(item.hint)}</span> : null}
+                  </motion.button>
+                )
+              })}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>,
+        document.body,
+      ) : null}
+      <TableCsvExportDialog
+        open={exportOpen}
+        onOpenChange={(open) => {
+          setExportOpen(open)
+          if (!open) {
+            exportRequestId.current += 1
+            setExportLoading(false)
+          }
+        }}
+        sources={exportSources}
+        fields={exportFields}
+        fileName={resolvedExportFileName}
+        loading={exportLoading}
+        error={exportError}
+        onRetry={() => void loadExportSources(exportSources.map((source) => source.row))}
+        onDownloaded={exitSelectionMode}
+      />
+      <Dialog open={bulkDeleteOpen} onOpenChange={(open) => { if (!bulkDeleting) { setBulkDeleteOpen(open); if (!open) setBulkDeleteError(null) } }}>
+        <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>{t(bulkDelete?.title ?? "Delete selected rows?")}</DialogTitle>
+            <DialogDescription>
+              {bulkDelete?.description?.(selectedRows) ?? t("This permanently deletes every selected row. This action cannot be undone.")}
+            </DialogDescription>
+          </DialogHeader>
+          {bulkDeleteError ? <p role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] px-3 py-2.5 text-[12px] leading-5 text-[var(--md-red)]">{t(bulkDeleteError)}</p> : null}
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={bulkDeleting} onClick={() => setBulkDeleteOpen(false)}>{t("Cancel")}</Button>
+            <Button type="button" disabled={!selectedRowsCanDelete || bulkDeleting} className="bg-[var(--md-red)] text-white hover:opacity-90" onClick={() => void confirmBulkDelete()}>
+              {bulkDeleting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Trash2 className="size-3.5" strokeWidth={1.4} aria-hidden="true" />}
+              {t(bulkDeleting ? "Deleting selected rows" : bulkDelete?.confirmLabel ?? "Delete selected rows")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

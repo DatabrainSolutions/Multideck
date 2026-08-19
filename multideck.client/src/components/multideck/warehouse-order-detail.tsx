@@ -33,16 +33,16 @@ import {
   cancelOperationalWarehouseOrder,
   dispatchOperationalWarehouseOrder,
   downloadWarehouseOrderDocument,
-  getWarehouseOrderReference,
-  listOperationalWarehouseOrders,
-  listWarehouseInventory,
+  getOperationalWarehouseOrderByNumber,
+  getOperationalWarehouseOrderAvailability,
   listWarehouseOrderDocuments,
+  listWarehouseOrderLocationsPage,
   receiveOperationalWarehouseOrder,
   reviewWarehouseOrderDocument,
   uploadWarehouseOrderDocument,
   type DispatchWarehouseOrderInput,
   type ReceiveWarehouseOrderInput,
-  type WarehouseInventoryBalance,
+  type WarehouseOrderAvailability,
   type WarehouseOperationalOrder,
   type WarehouseOrderDocument,
   type WarehouseOrderLine,
@@ -300,10 +300,14 @@ export function WarehouseOrderDetailView({
   const dateOnly = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: "medium" }), [language])
   const dateTime = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }), [language])
   const [order, setOrder] = useState<WarehouseOperationalOrder | null>(null)
-  const [reference, setReference] = useState<WarehouseOrderReference | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [rows, setRows] = useState<PostingRow[]>([])
-  const [stock, setStock] = useState<WarehouseInventoryBalance[]>([])
+  const [stock, setStock] = useState<WarehouseOrderAvailability[]>([])
+  const [locationRows, setLocationRows] = useState<WarehouseOrderReference["locations"]>([])
+  const [locationSearch, setLocationSearch] = useState("")
+  const [locationsLoading, setLocationsLoading] = useState(false)
+  const [locationsHasMore, setLocationsHasMore] = useState(false)
+  const [locationsError, setLocationsError] = useState<string | null>(null)
   const [notes, setNotes] = useState("")
   const [vehicleReg, setVehicleReg] = useState("")
   const [containerNumber, setContainerNumber] = useState("")
@@ -311,6 +315,8 @@ export function WarehouseOrderDetailView({
   const [receivingObjectType, setReceivingObjectType] = useState("loose")
   const [receivingObjectCode, setReceivingObjectCode] = useState("")
   const [documents, setDocuments] = useState<WarehouseOrderDocument[] | null>(null)
+  const [documentsHaveMore, setDocumentsHaveMore] = useState(false)
+  const [documentsLoadingMore, setDocumentsLoadingMore] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -320,12 +326,7 @@ export function WarehouseOrderDetailView({
 
   const load = useCallback(async function load() {
     try {
-      const matches = await listOperationalWarehouseOrders({ search: orderNumber })
-      const found = matches.find((candidate) => candidate.orderNumber.toLowerCase() === orderNumber.toLowerCase()) ?? null
-      if (!found) {
-        setLoadError(t("This order number does not match any warehouse order."))
-        return
-      }
+      const found = await getOperationalWarehouseOrderByNumber(orderNumber)
       setOrder(found)
       setLoadError(null)
     } catch (cause) {
@@ -334,12 +335,6 @@ export function WarehouseOrderDetailView({
   }, [orderNumber, t])
 
   useEffect(() => { void load() }, [load])
-
-  useEffect(() => {
-    let live = true
-    getWarehouseOrderReference().then((value) => { if (live) setReference(value) }).catch(() => undefined)
-    return () => { live = false }
-  }, [])
 
   useEffect(() => {
     if (!order || seededOrderRef.current === order.id) return
@@ -368,18 +363,69 @@ export function WarehouseOrderDetailView({
   const isOutbound = order?.typeCode === "outbound"
 
   useEffect(() => {
+    if (!canOperate || !facilityId) {
+      setLocationRows([])
+      setLocationsHasMore(false)
+      setLocationsError(null)
+      return
+    }
+    let live = true
+    const timer = window.setTimeout(() => {
+      setLocationsLoading(true)
+      setLocationsError(null)
+      void listWarehouseOrderLocationsPage({ facilityId, search: locationSearch, limit: 25, offset: 0 })
+        .then((page) => {
+          if (!live) return
+          setLocationRows(page.rows)
+          setLocationsHasMore(page.hasMore)
+        })
+        .catch((cause) => {
+          if (!live) return
+          setLocationRows([])
+          setLocationsHasMore(false)
+          setLocationsError(message(cause))
+        })
+        .finally(() => { if (live) setLocationsLoading(false) })
+    }, locationSearch.trim() ? 220 : 0)
+    return () => {
+      live = false
+      window.clearTimeout(timer)
+    }
+  }, [canOperate, facilityId, locationSearch])
+
+  const locations = useMemo(() => {
+    const selected: WarehouseOrderReference["locations"] = []
+    if (order) {
+      for (const line of order.lines) {
+        if (line.sourceLocationId && line.sourceLocationCode) selected.push({ id: line.sourceLocationId, facilityId: order.facilityId, code: line.sourceLocationCode, zoneName: null })
+        if (line.targetLocationId && line.targetLocationCode) selected.push({ id: line.targetLocationId, facilityId: order.facilityId, code: line.targetLocationCode, zoneName: null })
+      }
+    }
+    return [...new Map([...selected, ...locationRows].map((location) => [location.id, location])).values()]
+  }, [locationRows, order])
+
+  useEffect(() => {
     if (!orderId) return
     let live = true
-    listWarehouseOrderDocuments(orderId).then((value) => { if (live) setDocuments(value) }).catch(() => { if (live) setDocuments([]) })
+    setDocuments(null)
+    listWarehouseOrderDocuments(orderId).then((page) => {
+      if (!live) return
+      setDocuments(page.rows)
+      setDocumentsHaveMore(page.hasMore)
+    }).catch(() => {
+      if (!live) return
+      setDocuments([])
+      setDocumentsHaveMore(false)
+    })
     return () => { live = false }
   }, [orderId])
 
   useEffect(() => {
-    if (!isOutbound || !facilityId) return
+    if (!isOutbound || !facilityId || !orderId) return
     let live = true
-    listWarehouseInventory({ facilityId }).then((value) => { if (live) setStock(value) }).catch(() => { if (live) setStock([]) })
+    getOperationalWarehouseOrderAvailability(orderId, facilityId).then((value) => { if (live) setStock(value) }).catch(() => { if (live) setStock([]) })
     return () => { live = false }
-  }, [isOutbound, facilityId])
+  }, [isOutbound, facilityId, orderId])
 
   function goBack() {
     navigate?.(backTo)
@@ -460,7 +506,9 @@ export function WarehouseOrderDetailView({
       for (const file of files.filter((candidate) => candidate.size <= maxOrderDocumentBytes)) {
         try { await uploadWarehouseOrderDocument(order.id, file); uploaded += 1 } catch { failed += 1 }
       }
-      setDocuments(await listWarehouseOrderDocuments(order.id))
+      const page = await listWarehouseOrderDocuments(order.id)
+      setDocuments(page.rows)
+      setDocumentsHaveMore(page.hasMore)
       if (uploaded) toast.success(t(uploaded === 1 ? "File added to this order" : "Files added to this order"))
       if (failed) setError(t("Some files could not be added. Keep each file under 25 MB."))
     } catch (cause) {
@@ -475,12 +523,28 @@ export function WarehouseOrderDetailView({
     setSaving(true); setError(null)
     try {
       await reviewWarehouseOrderDocument(order.id, documentId, statusCode)
-      setDocuments(await listWarehouseOrderDocuments(order.id))
+      const page = await listWarehouseOrderDocuments(order.id)
+      setDocuments(page.rows)
+      setDocumentsHaveMore(page.hasMore)
       toast.success(t(statusCode === "accepted" ? "Document accepted" : "Document rejected"))
     } catch (cause) {
       setError(message(cause))
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function loadMoreDocuments() {
+    if (!order || !documents || !documentsHaveMore || documentsLoadingMore) return
+    setDocumentsLoadingMore(true)
+    try {
+      const page = await listWarehouseOrderDocuments(order.id, { offset: documents.length })
+      setDocuments((current) => [...new Map([...(current ?? []), ...page.rows].map((item) => [item.id, item])).values()])
+      setDocumentsHaveMore(page.hasMore)
+    } catch (cause) {
+      setError(message(cause))
+    } finally {
+      setDocumentsLoadingMore(false)
     }
   }
 
@@ -527,7 +591,6 @@ export function WarehouseOrderDetailView({
   const done = order.lines.reduce((total, line) => total + (order.typeCode === "inbound" ? line.receivedQuantity : line.dispatchedQuantity), 0)
   const progress = ordered > 0 ? Math.max(0, Math.min(1, done / ordered)) : 0
   const final = ["complete", "cancelled"].includes(order.statusCode)
-  const locations = reference?.locations.filter((location) => location.facilityId === order.facilityId) ?? []
   const canPost = canOperate && !final && rows.length > 0
   const postBlocked = rows.some((row) => order.typeCode === "inbound"
     ? Number(row.quantity) + Number(row.missingQuantity) <= 0 || (Number(row.quantity) > 0 && !row.locationId)
@@ -615,6 +678,27 @@ export function WarehouseOrderDetailView({
               meta="Quantities post straight to the inventory ledger and to current balances."
             >
               <div className="grid gap-4">
+                <WarehouseFormField
+                  label={t("Find a warehouse location")}
+                  hint={locationsError
+                    ? t("Locations could not be loaded. Try another search.")
+                    : locationsHasMore
+                      ? t("Keep typing to narrow the location list.")
+                      : t("Search by location code. Up to 25 matches are shown.")}
+                >
+                  <div className="relative">
+                    <Input
+                      value={locationSearch}
+                      onChange={(event) => setLocationSearch(event.target.value)}
+                      placeholder={t("Search locations")}
+                      aria-label={t("Search warehouse locations")}
+                      className={cn(controlClass, "pe-9")}
+                      dir="auto"
+                    />
+                    {locationsLoading ? <Loader2 aria-hidden="true" className="absolute end-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" strokeWidth={1.5} /> : null}
+                  </div>
+                </WarehouseFormField>
+
                 {order.typeCode === "inbound" ? (
                   <div className="grid gap-3 sm:grid-cols-2">
                     <WarehouseFormField label={t("Receive stock as")}>
@@ -647,7 +731,7 @@ export function WarehouseOrderDetailView({
                 {rows.map((row) => {
                   const line = order.lines.find((candidate) => candidate.id === row.orderLineId)
                   if (!line) return null
-                  const lots = stock.filter((balance) => balance.itemId === line.itemId && balance.availableQuantity > 0)
+                  const lots = stock.filter((balance) => balance.itemId === line.itemId && balance.customsStatusCode === line.customsStatusCode && balance.availableQuantity > 0)
 
                   return (
                     <div key={row.orderLineId} className="grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
@@ -778,6 +862,12 @@ export function WarehouseOrderDetailView({
                     </div>
                   )
                 })}
+                {documentsHaveMore ? (
+                  <Button type="button" variant="ghost" disabled={documentsLoadingMore} onClick={() => void loadMoreDocuments()} className="mt-1 h-8 justify-center rounded-[var(--md-radius-md)] text-[12px]">
+                    {documentsLoadingMore ? <Loader2 className="size-3.5 animate-spin" strokeWidth={1.5} /> : null}
+                    {t(documentsLoadingMore ? "Loading more files…" : "Load more files")}
+                  </Button>
+                ) : null}
               </div>
             ) : (
               <p className="py-4 text-center text-[12px] text-[var(--md-text)]">{t("Add the delivery note, photos or emails that belong with this order.")}</p>

@@ -6,6 +6,7 @@ import {
   allowedExtensions,
   bodyObject,
   bool,
+  boundedPage,
   clean,
   companyFacilityIds,
   cors,
@@ -28,17 +29,40 @@ export async function handleLocations(request, path, url, admin, actor) {
     throw new HttpError(404, "This facility does not exist in your workspace.");
   }
   const locationIndex = path.indexOf("locations"), tail = path.slice(locationIndex + 1);
-  const types = await many(admin.from("sys_WMSLocationTypes").select("*")), statuses = await many(admin.from("sys_WMSLocationStatuses").select("*")), zoneTypes = await many(admin.from("sys_WMSZoneTypes").select("*")), zones = await many(admin.from("WMS_Zones").select("*").eq("WMSZone_FacilityID", facilityId).eq("WMSZone_IsDeleted", false));
+  const boundedList = request.method === "GET" && !tail.length && url.searchParams.has("limit");
+  if (boundedList) {
+    const { limit, offset } = boundedPage(url);
+    const { data, error } = await admin.rpc("warehouse_edge_locations_page", {
+      p_allowed_facility_ids: scoped,
+      p_facility_id: facilityId,
+      p_search: clean(url.searchParams.get("search"), 160),
+      p_include_inactive: url.searchParams.get("includeInactive") === "true",
+      p_sort: clean(url.searchParams.get("sort"), 40) ?? "code",
+      p_direction: url.searchParams.get("direction") === "desc" ? "desc" : "asc",
+      p_limit: limit,
+      p_offset: offset
+    });
+    if (!error) return data ?? { rows: [], total: 0, limit, offset };
+    if (["42883", "PGRST202"].includes(error.code ?? "")) {
+      throw new HttpError(503, "Warehouse location paging is still being prepared. Try again shortly.");
+    }
+    throw new HttpError(500, error.message);
+  }
+  if (request.method === "GET" && !tail.length) {
+    throw new HttpError(400, "Warehouse location lists require bounded paging.");
+  }
+  const [types, statuses, zoneTypes] = await Promise.all([
+    many(admin.from("sys_WMSLocationTypes").select("*").eq("WMSLocationType_IsActive", true)),
+    many(admin.from("sys_WMSLocationStatuses").select("*").eq("WMSLocationStatus_IsActive", true)),
+    many(admin.from("sys_WMSZoneTypes").select("*").eq("WMSZoneType_IsActive", true)),
+  ]);
   const typeNames = new Map(types.map((row)=>[
       row.WMSLocationType_Code,
       row.WMSLocationType_Name
     ])), statusNames = new Map(statuses.map((row)=>[
       row.WMSLocationStatus_Code,
       row.WMSLocationStatus_Name
-    ])), zoneById = new Map(zones.map((row)=>[
-      row.WMSZone_ID,
-      row
-    ]));
+    ])), zoneById = new Map();
   const map = (row)=>{
     const zone = zoneById.get(row.WMSLocation_ZoneID);
     return {
@@ -90,20 +114,24 @@ export async function handleLocations(request, path, url, admin, actor) {
         }))
     };
   }
-  const rows = await many(admin.from("WMS_Locations").select("*").eq("WMSLocation_FacilityID", facilityId).eq("WMSLocation_IsDeleted", false));
-  if (request.method === "GET" && !tail.length) {
-    const term = clean(url.searchParams.get("search"))?.toLowerCase();
-    return rows.filter((row)=>url.searchParams.get("includeInactive") === "true" || row.WMSLocation_IsActive).filter((row)=>!term || [
-        row.WMSLocation_Code,
-        row.WMSLocation_Barcode,
-        row.WMSLocation_Aisle,
-        row.WMSLocation_Bay,
-        row.WMSLocation_Level,
-        row.WMSLocation_Position,
-        zoneById.get(row.WMSLocation_ZoneID)?.WMSZone_Name
-      ].some((value)=>String(value ?? "").toLowerCase().includes(term))).sort((a, b)=>a.WMSLocation_Code.localeCompare(b.WMSLocation_Code)).map(map);
+  const locationId = tail[0] ? uuid(tail[0], "location") : null;
+  const existing = locationId ? await oneOrNull(admin.from("WMS_Locations")
+    .select("*")
+    .eq("WMSLocation_ID", locationId)
+    .eq("WMSLocation_FacilityID", facilityId)
+    .eq("WMSLocation_IsDeleted", false)
+    .limit(1)
+    .maybeSingle()) : null;
+  if (existing?.WMSLocation_ZoneID) {
+    const zone = await oneOrNull(admin.from("WMS_Zones")
+      .select("WMSZone_ID,WMSZone_TypeCode,WMSZone_Name")
+      .eq("WMSZone_ID", existing.WMSLocation_ZoneID)
+      .eq("WMSZone_FacilityID", facilityId)
+      .eq("WMSZone_IsDeleted", false)
+      .limit(1)
+      .maybeSingle());
+    if (zone) zoneById.set(zone.WMSZone_ID, zone);
   }
-  const locationId = tail[0] ? uuid(tail[0], "location") : null, existing = rows.find((row)=>row.WMSLocation_ID === locationId);
   if (request.method === "GET") {
     if (!existing) {
       throw new HttpError(404, "This location does not exist in this facility.");
@@ -118,12 +146,18 @@ export async function handleLocations(request, path, url, admin, actor) {
     if (stock) {
       throw new HttpError(409, "Move or dispatch the stock in this location before deleting it.");
     }
-    const usedLines = await many(admin.from("WMS_OrderLines").select("WMSOrderLine_OrderID").or(`WMSOrderLine_SourceLocationID.eq.${locationId},WMSOrderLine_TargetLocationID.eq.${locationId}`));
-    if (usedLines.length) {
-      const openOrder = await oneOrNull(admin.from("WMS_Orders").select("WMSOrder_ID").in("WMSOrder_ID", usedLines.map((row)=>row.WMSOrderLine_OrderID)).eq("WMSOrder_IsDeleted", false).not("WMSOrder_StatusCode", "in", '("complete","cancelled")').limit(1).maybeSingle());
-      if (openOrder) {
-        throw new HttpError(409, "This location is still used by an open warehouse order.");
+    const { data: hasOpenOrder, error: guardError } = await admin.rpc("warehouse_edge_location_has_open_order", {
+      p_facility_id: facilityId,
+      p_location_id: locationId,
+    });
+    if (guardError) {
+      if (["42883", "PGRST202"].includes(guardError.code ?? "")) {
+        throw new HttpError(503, "Warehouse location safety checks are still being prepared. Try again shortly.");
       }
+      throw new HttpError(500, guardError.message);
+    }
+    if (hasOpenOrder) {
+      throw new HttpError(409, "This location is still used by an open warehouse order.");
     }
     await admin.from("WMS_Locations").update({
       WMSLocation_IsDeleted: true,
@@ -140,7 +174,13 @@ export async function handleLocations(request, path, url, admin, actor) {
     if (!definition) {
       throw new HttpError(400, `'${zoneTypeCode}' is not a valid zone.`);
     }
-    let zone = zones.find((row)=>row.WMSZone_TypeCode === zoneTypeCode);
+    let zone = await oneOrNull(admin.from("WMS_Zones")
+      .select("*")
+      .eq("WMSZone_FacilityID", facilityId)
+      .eq("WMSZone_TypeCode", zoneTypeCode)
+      .eq("WMSZone_IsDeleted", false)
+      .limit(1)
+      .maybeSingle());
     if (!zone) {
       zone = await one(admin.from("WMS_Zones").insert({
         WMSZone_ID: id(),
@@ -156,6 +196,7 @@ export async function handleLocations(request, path, url, admin, actor) {
       }).select().single(), "Could not create the warehouse zone.");
     }
     zoneId = zone.WMSZone_ID;
+    zoneById.set(zone.WMSZone_ID, zone);
   }
   const min = numberOrNull(input.temperatureMinC), max = numberOrNull(input.temperatureMaxC);
   if (min !== null && max !== null && max < min) {

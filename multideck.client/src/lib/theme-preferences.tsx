@@ -1,7 +1,9 @@
 import { useEffect } from "react"
 import { flushSync } from "react-dom"
 import { useTheme } from "next-themes"
+import { getApiWorkspacePreferences } from "@/lib/api"
 import { supabase } from "@/lib/supabase"
+import { updateWorkspaceBootstrapPreferences } from "@/lib/workspace-bootstrap"
 
 type ThemeMode = "light" | "dark"
 
@@ -10,6 +12,7 @@ export const themeStorageKey = "multideck.theme"
 
 let activeUserId: string | null = null
 let lastPersistedTheme: ThemeMode | null = null
+let canPersistProfileTheme = true
 /**
  * The most recent deliberate choice, stamped on the monotonic clock. Any profile
  * read that started before `at` is stale by definition, so it can never undo the
@@ -50,7 +53,7 @@ function appliedMode(): ThemeMode {
 function saveTheme(mode: ThemeMode) {
   const client = supabase
   const userId = activeUserId
-  if (!client || !userId) return
+  if (!client || !userId || !canPersistProfileTheme) return
 
   saveQueue = saveQueue
     .then(async () => {
@@ -63,7 +66,10 @@ function saveTheme(mode: ThemeMode) {
       })
       if (error) throw error
 
-      if (activeUserId === userId) lastPersistedTheme = mode
+      if (activeUserId === userId) {
+        lastPersistedTheme = mode
+        updateWorkspaceBootstrapPreferences({ themeMode: mode })
+      }
     })
     .catch((error: unknown) => {
       // Deliberately not reflected in the UI: the mode is already applied and
@@ -134,7 +140,8 @@ export function ThemeProfileSync() {
         return
       }
 
-      const userId = sessionData.session?.user.id ?? null
+      const session = sessionData.session
+      const userId = session?.user.id ?? null
 
       // Only a genuine account change discards what this browser knows. A first
       // resolve leaves it alone, because an early click may have been waiting for
@@ -142,21 +149,33 @@ export function ThemeProfileSync() {
       if (activeUserId !== null && activeUserId !== userId) {
         lastPersistedTheme = null
         localChoice = null
+        canPersistProfileTheme = true
       }
       activeUserId = userId
 
       // Signed out: this browser's own mode stays in effect, unsynced.
       if (!userId) return
 
-      const { data, error } = await client.rpc("get_current_user_theme_preference")
-      if (error) {
-        console.warn("Your appearance preference could not be loaded from your profile.", error)
+      const workspacePreferences = session?.access_token
+        ? await getApiWorkspacePreferences(session.access_token)
+        : null
+      if (workspacePreferences === null) {
+        canPersistProfileTheme = false
         return
+      }
+      canPersistProfileTheme = true
+
+      let savedTheme = workspacePreferences?.themeMode ?? null
+      if (workspacePreferences === undefined) {
+        const { data, error } = await client.rpc("get_current_user_theme_preference")
+        if (error) {
+          console.warn("Your appearance preference could not be loaded from your profile.", error)
+          return
+        }
+        savedTheme = readThemeMode(data)
       }
 
       if (activeUserId !== userId) return
-
-      const savedTheme = readThemeMode(data)
 
       // This browser's choice outranks a profile read if the click happened after
       // the read began, if the choice was still queued when the read began, or if

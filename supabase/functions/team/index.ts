@@ -1,21 +1,107 @@
 import { authenticate, body, corsHeaders, currentInternalUser, failure, HttpError, isTrustedMultideckOrigin, json, requirePermission, routeParts } from "../_shared/backend.ts"
+import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
+import { normaliseLocale, renderBrandedEmail } from "../_shared/email-template.ts"
+import { authorizationCatalogueReadModel, isLegacyCustomRoleName, isPendingInvitation, singleTeamUserReadModel, SYSTEM_ROLES, teamCatalogueReadModel, teamUsersByIdsReadModel, teamUsersPageCompatibilityReadModel } from "../_shared/team-read-model.ts"
 
-const SYSTEM_ROLES: Record<string, { description: string; canEditPermissions: boolean }> = {
-  Administrator: { description: "Full workspace administration across users, roles, data, integrations, and billing.", canEditPermissions: false },
-  "Company Admin": { description: "Manage the company workspace, its people, and day-to-day configuration.", canEditPermissions: false },
-  "Company Manager": { description: "Coordinate company operations and team activity without system administration.", canEditPermissions: false },
-  "Company User": { description: "Use the company workspace for assigned operational work.", canEditPermissions: false },
-  "Guest User": { description: "Limited workspace visibility for temporary or external collaboration.", canEditPermissions: false },
-  "Operations manager": { description: "Manage day-to-day freight operations, users, reports, and customer work without changing authorization rules.", canEditPermissions: false },
-  Operator: { description: "Create and update operational freight records while keeping destructive and admin actions restricted.", canEditPermissions: false },
-  "System Admin": { description: "Maintain system-level configuration and protected workspace access.", canEditPermissions: false },
-  Viewer: { description: "Read-only access for people who need visibility without operational edit rights.", canEditPermissions: false },
+type DeletionEmailLocale = "en" | "de" | "fr" | "ar"
+
+const deletionEmailCopy: Record<DeletionEmailLocale, {
+  subject: string
+  preview: string
+  title: string
+  greeting: (name: string) => string
+  body: string[]
+  eyebrow: string
+  footer: string
+}> = {
+  en: {
+    subject: "Your Multideck account has been deleted",
+    preview: "Your Multideck workspace access has been removed.",
+    title: "Your account has been deleted",
+    greeting: (name) => `Hello ${name},`,
+    body: ["A workspace administrator has deleted your Multideck account. Your sign-in and access to this workspace have been removed.", "You do not need to take any action."],
+    eyebrow: "Account update",
+    footer: "If you believe this was a mistake, reply to this email and the Multideck team will help.",
+  },
+  de: {
+    subject: "Dein Multideck-Konto wurde gelöscht",
+    preview: "Dein Zugang zum Multideck-Arbeitsbereich wurde entfernt.",
+    title: "Dein Konto wurde gelöscht",
+    greeting: (name) => `Hallo ${name},`,
+    body: ["Ein Administrator hat dein Multideck-Konto gelöscht. Deine Anmeldung und dein Zugang zu diesem Arbeitsbereich wurden entfernt.", "Du musst nichts weiter tun."],
+    eyebrow: "Kontoaktualisierung",
+    footer: "Wenn du glaubst, dass dies ein Fehler war, antworte auf diese E-Mail. Das Multideck-Team hilft dir weiter.",
+  },
+  fr: {
+    subject: "Votre compte Multideck a été supprimé",
+    preview: "Votre accès à l’espace Multideck a été supprimé.",
+    title: "Votre compte a été supprimé",
+    greeting: (name) => `Bonjour ${name},`,
+    body: ["Un administrateur a supprimé votre compte Multideck. Votre connexion et votre accès à cet espace ont été retirés.", "Vous n’avez aucune action à effectuer."],
+    eyebrow: "Mise à jour du compte",
+    footer: "Si vous pensez qu’il s’agit d’une erreur, répondez à cet e-mail. L’équipe Multideck vous aidera.",
+  },
+  ar: {
+    subject: "تم حذف حساب Multideck الخاص بك",
+    preview: "تمت إزالة وصولك إلى مساحة عمل Multideck.",
+    title: "تم حذف حسابك",
+    greeting: (name) => `مرحبًا ${name}،`,
+    body: ["حذف مسؤول مساحة العمل حساب Multideck الخاص بك. تمت إزالة تسجيل دخولك ووصولك إلى مساحة العمل هذه.", "لا يلزمك اتخاذ أي إجراء."],
+    eyebrow: "تحديث الحساب",
+    footer: "إذا كنت تعتقد أن هذا حدث عن طريق الخطأ، فرد على هذه الرسالة وسيساعدك فريق Multideck.",
+  },
 }
 
-const LEGACY_CUSTOM_ROLE_PATTERN = /^Custom · [0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+async function sendUserDeletionEmail(target: any, deletionReference: string) {
+  const recipient = String(target.User_Email ?? "").trim().toLowerCase()
+  if (!recipient || recipient.endsWith("@redacted.invalid")) throw new Error("The deleted user does not have a deliverable email address.")
+  const apiKey = Deno.env.get("RESEND_API_KEY")?.trim()
+  if (!apiKey) throw new Error("Account deletion email delivery is not configured.")
 
-function isLegacyCustomRoleName(name: string) {
-  return LEGACY_CUSTOM_ROLE_PATTERN.test(name)
+  const locale = normaliseLocale(target.User_Locale) as DeletionEmailLocale
+  const copy = deletionEmailCopy[locale]
+  const name = String(target.User_Firstname ?? "").trim()
+  const body = name ? [copy.greeting(name), ...copy.body] : copy.body
+  const rendered = renderBrandedEmail({
+    subject: copy.subject,
+    preview: copy.preview,
+    title: copy.title,
+    body,
+    eyebrow: copy.eyebrow,
+    footer: copy.footer,
+    locale,
+  })
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 30_000)
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": `user-deletion-${deletionReference}`,
+      },
+      body: JSON.stringify({
+        from: MULTIDECK_EMAIL_FROM,
+        reply_to: MULTIDECK_EMAIL_REPLY_TO,
+        to: [recipient],
+        subject: copy.subject,
+        html: rendered.html,
+        text: rendered.text,
+      }),
+    })
+    const payload = await response.json().catch(() => ({})) as { id?: string }
+    if (!response.ok) throw new Error(`Resend rejected the account deletion email (${response.status}).`)
+    if (!payload.id) throw new Error("Resend accepted the account deletion email without returning a message ID.")
+    return payload.id
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw new Error("Resend timed out before accepting the account deletion email.")
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 function invitationOrigin(request: Request, value: unknown) {
@@ -32,73 +118,79 @@ function invitationExpiry(value: unknown) {
   throw new HttpError(400, "Choose when the invitation should expire.")
 }
 
-const passwordMarkerRequiredFrom = Date.parse("2026-08-12T00:00:00Z")
-
-function isPendingInvitation(authUser: any) {
-  if (!authUser?.invited_at) return false
-  const passwordCreated = Boolean(
-    authUser.app_metadata?.multideck_password_created_at
-    || authUser.user_metadata?.multideck_password_created_at,
-  )
-  const invitedAt = Date.parse(authUser.invited_at)
-  // Earlier users predate the explicit password marker, so retain the old
-  // sign-in fallback for them. New invitations stay pending until password setup.
-  return Number.isFinite(invitedAt) && invitedAt >= passwordMarkerRequiredFrom
-    ? !passwordCreated
-    : !authUser.last_sign_in_at
-}
-
 async function userDto(admin: any, row: any) {
-  const [{ data: company }, { data: officeLinks }, { data: roleLinks }, { data: departmentLinks }, authResult] = await Promise.all([
-    row.Company_ID ? admin.from("cmp_Company").select("Company_ID,Company_Name").eq("Company_ID", row.Company_ID).maybeSingle() : Promise.resolve({ data: null }),
-    admin.from("cmp_Users_Offices").select("Office_ID").eq("User_ID", row.User_ID),
-    admin.from("cmp_Users_Roles").select("sys_UserRole_ID").eq("User_ID", row.User_ID),
-    admin.from("cmp_Users_Departments").select("Department_ID").eq("User_ID", row.User_ID),
-    row.Auth_User_ID ? admin.auth.admin.getUserById(row.Auth_User_ID) : Promise.resolve({ data: { user: null } }),
-  ])
-  const officeIds = (officeLinks ?? []).map((item: any) => item.Office_ID)
-  const roleIds = (roleLinks ?? []).map((item: any) => item.sys_UserRole_ID)
-  const departmentIds = (departmentLinks ?? []).map((item: any) => item.Department_ID)
-  const [{ data: offices }, { data: roles }, { data: departments }] = await Promise.all([
-    officeIds.length ? admin.from("cmp_Offices").select("Office_ID,Office_Name,Office_Address").in("Office_ID", officeIds).order("Office_Name") : Promise.resolve({ data: [] }),
-    roleIds.length ? admin.from("sys_UserRoles").select("sys_UserRole_ID,sys_UserRole_Name").in("sys_UserRole_ID", roleIds).order("sys_UserRole_Name") : Promise.resolve({ data: [] }),
-    departmentIds.length ? admin.from("cmp_Departments").select("Department_ID,Department_Name,Department_IsActive").in("Department_ID", departmentIds).order("Department_Name") : Promise.resolve({ data: [] }),
-  ])
-  const makePhoto = (kind: string) => row[`User_${kind}PhotoPath`] ? ({
-    bucket: row[`User_${kind}PhotoBucket`], path: row[`User_${kind}PhotoPath`], mimeType: row[`User_${kind}PhotoMimeType`],
-    sizeBytes: row[`User_${kind}PhotoSizeBytes`], updatedAt: row[`User_${kind}PhotoUpdatedAt`],
-  }) : null
-  const authUser = authResult?.data?.user ?? null
-  const invitationPending = isPendingInvitation(authUser)
-  return {
-    id: row.User_ID, authUserId: row.Auth_User_ID, displayName: [row.User_Firstname, row.User_Lastname].filter(Boolean).join(" ") || row.User_Email,
-    firstName: row.User_Firstname, lastName: row.User_Lastname, email: row.User_Email,
-    company: company ? { id: company.Company_ID, name: company.Company_Name } : null,
-    offices: (offices ?? []).map((item: any) => ({ id: item.Office_ID, name: item.Office_Name, address: item.Office_Address })),
-    roles: (roles ?? []).map((item: any) => ({ id: item.sys_UserRole_ID, name: item.sys_UserRole_Name })),
-    departments: (departments ?? []).map((item: any) => ({ id: item.Department_ID, name: item.Department_Name, isActive: item.Department_IsActive })),
-    status: row.User_AccessStatus === "deactivated" ? "Deactivated" : invitationPending ? "Invited" : row.Auth_User_ID ? "Active" : "Profile only",
-    invitationSentAt: invitationPending ? authUser.invited_at : null,
-    deactivatedAt: row.User_DeactivatedAt ?? null, jobTitle: row.User_JobTitle ?? null,
-    profilePhoto: makePhoto("Profile"), coverPhoto: makePhoto("Cover"),
-  }
+  return singleTeamUserReadModel(admin, row)
 }
 
-async function listTeam(admin: any, current: any) {
+function boundedInteger(value: string | null, fallback: number, minimum: number, maximum: number) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) ? Math.min(Math.max(parsed, minimum), maximum) : fallback
+}
+
+const teamUserIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+async function lookupTeamUsers(admin: any, current: any, request: Request) {
   if (!current.Company_ID) throw new HttpError(403, "Your Multideck user is not assigned to a company yet.")
-  const [{ data: company }, { data: offices }, { data: departments }, { data: users, error }] = await Promise.all([
-    admin.from("cmp_Company").select("Company_ID,Company_Name").eq("Company_ID", current.Company_ID).maybeSingle(),
-    admin.from("cmp_Offices").select("Office_ID,Office_Name,Office_Address").eq("Company_ID", current.Company_ID).order("Office_Name"),
-    admin.from("cmp_Departments").select("Department_ID,Department_Name,Department_IsActive").eq("Company_ID", current.Company_ID).order("Department_Name"),
-    admin.from("cmp_Users").select("*").eq("Company_ID", current.Company_ID).neq("User_AccessStatus", "deleted").order("User_Firstname").order("User_Lastname").order("User_Email"),
-  ])
-  if (error) throw new HttpError(500, error.message)
-  return {
-    company: company ? { id: company.Company_ID, name: company.Company_Name } : null,
-    offices: (offices ?? []).map((item: any) => ({ id: item.Office_ID, name: item.Office_Name, address: item.Office_Address })),
-    departments: (departments ?? []).map((item: any) => ({ id: item.Department_ID, name: item.Department_Name, isActive: item.Department_IsActive })),
-    users: await Promise.all((users ?? []).map((item: any) => userDto(admin, item))),
+  const ids = [...new Set((new URL(request.url).searchParams.get("ids") ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean))]
+  if (ids.length > 50 || ids.some((value) => !teamUserIdPattern.test(value))) {
+    throw new HttpError(400, "Choose up to 50 valid team users.")
   }
+  return { users: await teamUsersByIdsReadModel(admin, current.Company_ID, ids) }
+}
+
+async function listTeamPage(admin: any, current: any, request: Request) {
+  if (!current.Company_ID) throw new HttpError(403, "Your Multideck user is not assigned to a company yet.")
+  const url = new URL(request.url)
+  const search = (url.searchParams.get("search") ?? "").trim().slice(0, 200)
+  const sortBy = new Set(["user", "office", "role", "status"]).has(url.searchParams.get("sort") ?? "")
+    ? url.searchParams.get("sort")!
+    : "user"
+  const sortDirection = url.searchParams.get("direction") === "desc" ? "desc" : "asc"
+  const limit = boundedInteger(url.searchParams.get("limit"), 20, 1, 50)
+  const offset = boundedInteger(url.searchParams.get("offset"), 0, 0, 2_147_483_647)
+
+  const [{ data, error }, catalogue] = await Promise.all([
+    admin.rpc("multideck_team_users_register_page", {
+      p_company_id: current.Company_ID,
+      p_search: search,
+      p_sort_by: sortBy,
+      p_sort_direction: sortDirection,
+      p_limit: limit,
+      p_offset: offset,
+    }),
+    teamCatalogueReadModel(admin, current.Company_ID),
+  ])
+  if (!error) return { ...catalogue, ...(data ?? { users: [], total: 0, limit, offset }) }
+  if (!["42883", "PGRST202"].includes(error.code ?? "")) throw new HttpError(500, error.message)
+
+  const page = await teamUsersPageCompatibilityReadModel(admin, current.Company_ID, {
+    search,
+    sortBy,
+    sortDirection,
+    limit,
+    offset,
+  })
+  return { ...catalogue, ...page }
+}
+
+async function replacementOptions(admin: any, current: any, targetUserId: string, request: Request) {
+  if (!current.Company_ID) throw new HttpError(403, "Your Multideck user is not assigned to a company yet.")
+  const { data: target } = await admin.from("cmp_Users").select("User_ID").eq("User_ID", targetUserId).eq("Company_ID", current.Company_ID).neq("User_AccessStatus", "deleted").maybeSingle()
+  if (!target) throw new HttpError(404, "User not found.")
+  const url = new URL(request.url)
+  const search = (url.searchParams.get("search") ?? "").trim().slice(0, 200)
+  const limit = boundedInteger(url.searchParams.get("limit"), 50, 1, 50)
+  const { data, error } = await admin.rpc("multideck_team_user_replacement_options", {
+    p_company_id: current.Company_ID,
+    p_target_user_id: targetUserId,
+    p_search: search,
+    p_limit: limit,
+  })
+  if (error) throw new HttpError(500, error.message)
+  return data ?? { users: [], total: 0 }
 }
 
 async function createDepartment(admin: any, current: any, payload: any) {
@@ -118,7 +210,7 @@ async function createDepartment(admin: any, current: any, payload: any) {
   return { id: data.Department_ID, name: data.Department_Name, isActive: data.Department_IsActive }
 }
 
-async function roleIdsForUser(admin: any, userId: string) {
+async function roleIdsForUser(admin: any, userId: string): Promise<string[]> {
   const { data, error } = await admin.from("cmp_Users_Roles").select("sys_UserRole_ID").eq("User_ID", userId)
   if (error) throw new HttpError(500, error.message)
   return (data ?? []).map((item: any) => item.sys_UserRole_ID)
@@ -134,13 +226,16 @@ async function ensureAdministratorSurvives(admin: any, companyId: string, target
   const removesUserManager = currentRoleIds.some((roleId) => managingRoleIds.includes(roleId))
     && (nextRoleIds === null || !nextRoleIds.some((roleId) => managingRoleIds.includes(roleId)))
   if (!removesUserManager) return
-  const { data: otherActiveUsers } = await admin.from("cmp_Users")
-    .select("User_ID").eq("Company_ID", companyId).eq("User_AccessStatus", "active").neq("User_ID", targetUserId)
-  const otherIds = (otherActiveUsers ?? []).map((item: any) => item.User_ID)
-  const { count } = otherIds.length
-    ? await admin.from("cmp_Users_Roles").select("*", { count: "exact", head: true }).in("User_ID", otherIds).in("sys_UserRole_ID", managingRoleIds)
-    : { count: 0 }
-  if (!count) throw new HttpError(400, "Keep at least one active administrator who can manage users before changing this user.")
+  const { data: anotherAdministrator, error } = await admin.rpc("multideck_other_active_admin_exists", {
+    p_company_id: companyId,
+    p_excluded_user_id: targetUserId,
+    p_role_ids: managingRoleIds,
+  })
+  if (error) {
+    if (["42883", "PGRST202"].includes(error.code ?? "")) throw new HttpError(503, "Workspace administrator checks are still being prepared. Try again shortly.")
+    throw new HttpError(500, error.message)
+  }
+  if (!anotherAdministrator) throw new HttpError(400, "Keep at least one active administrator who can manage users before changing this user.")
 }
 
 async function updateTeamUser(admin: any, current: any, targetId: string, payload: any) {
@@ -222,43 +317,70 @@ async function setUserAccessStatus(admin: any, current: any, targetId: string, s
   return userDto(admin, attached)
 }
 
-async function authorizationState(admin: any, current: any) {
-  const [{ data: permissions, error }, { data: roles }, { data: teamUsers }] = await Promise.all([
-    admin.from("sys_Permissions").select("*").order("sys_Permission_Group").order("sys_Permission_Value"),
-    admin.from("sys_UserRoles").select("*").order("sys_UserRole_Name"),
-    admin.from("cmp_Users").select("User_ID").eq("Company_ID", current.Company_ID),
-  ])
-  if (error) throw new HttpError(500, error.message)
-  const roleRows = await Promise.all((roles ?? []).map(async (role: any) => {
-    const { data: links } = await admin.from("sys_UserRole_Permissions").select("sys_Permission_ID").eq("sys_UserRole_ID", role.sys_UserRole_ID)
-    const ids = (links ?? []).map((link: any) => link.sys_Permission_ID)
-    const { data: values } = ids.length ? await admin.from("sys_Permissions").select("sys_Permission_Value").in("sys_Permission_ID", ids).order("sys_Permission_Value") : { data: [] }
-    const definition = SYSTEM_ROLES[role.sys_UserRole_Name]
-    return {
-      id: role.sys_UserRole_ID,
-      name: role.sys_UserRole_Name,
-      description: definition?.description ?? "Reusable workspace role.",
-      isSystem: Boolean(definition),
-      isLegacyCustom: isLegacyCustomRoleName(role.sys_UserRole_Name),
-      canEditPermissions: definition?.canEditPermissions ?? true,
-      permissionValues: (values ?? []).map((item: any) => item.sys_Permission_Value),
-    }
-  }))
-  const userRoles = await Promise.all((teamUsers ?? []).map(async (teamUser: any) => {
-    const { data } = await admin.from("cmp_Users_Roles").select("sys_UserRole_ID").eq("User_ID", teamUser.User_ID)
-    return { userId: teamUser.User_ID, roleIds: (data ?? []).map((item: any) => item.sys_UserRole_ID) }
-  }))
-  return {
-    permissions: (permissions ?? []).map((item: any) => ({ id: item.sys_Permission_ID, value: item.sys_Permission_Value, group: item.sys_Permission_Group, name: item.sys_Permission_Name, description: item.sys_Permission_Description, isDangerous: item.sys_Permission_IsDangerous })),
-    roles: roleRows, userRoles,
+async function resetTeamUserPassword(admin: any, current: any, targetId: string, payload: any) {
+  const password = typeof payload.password === "string" ? payload.password : ""
+  if (password.length < 8 || password.length > 128) throw new HttpError(400, "The password must be between 8 and 128 characters.")
+
+  const { data: target, error: targetError } = await admin.from("cmp_Users")
+    .select("User_ID,Auth_User_ID,User_Email,User_AccessStatus")
+    .eq("User_ID", targetId)
+    .eq("Company_ID", current.Company_ID)
+    .neq("User_AccessStatus", "deleted")
+    .maybeSingle()
+  if (targetError) throw new HttpError(500, targetError.message)
+  if (!target) throw new HttpError(404, "User not found.")
+  if (target.User_ID === current.User_ID) throw new HttpError(400, "Use Security settings to change your own password.")
+  if (target.User_AccessStatus !== "active" || !target.Auth_User_ID) throw new HttpError(409, "Reactivate this user before resetting their password.")
+
+  const { data: authRecord, error: authRecordError } = await admin.auth.admin.getUserById(target.Auth_User_ID)
+  if (authRecordError || !authRecord?.user) throw new HttpError(404, "Unable to find this person's sign-in account. Refresh the page and try again.")
+  if (!authRecord.user.email || authRecord.user.email.toLowerCase() !== String(target.User_Email).toLowerCase()) {
+    throw new HttpError(409, "Unable to verify this person's sign-in account. Refresh the page and try again.")
   }
+
+  const resetAt = new Date().toISOString()
+  const { error: passwordError } = await admin.auth.admin.updateUserById(target.Auth_User_ID, {
+    password,
+    user_metadata: {
+      ...authRecord.user.user_metadata,
+      multideck_password_created_at: resetAt,
+      multideck_password_reset_at: resetAt,
+    },
+  })
+  if (passwordError) throw new HttpError(400, "Unable to reset the password. Check the password requirements and try again.")
+
+  const { error: auditError } = await admin.from("Audit_Events").insert({
+    AuditEvent_EventTypeCode: "security_event",
+    AuditEvent_ActorTypeCode: "user",
+    AuditEvent_UserID: current.User_ID,
+    AuditEvent_AuthUserID: current.Auth_User_ID,
+    AuditEvent_SourceApp: "Multideck App",
+    AuditEvent_SourceModule: "Admin Users",
+    AuditEvent_SourceTableSchema: "public",
+    AuditEvent_SourceTableName: "cmp_Users",
+    AuditEvent_RecordTypeCode: "user",
+    AuditEvent_RecordID: target.User_ID,
+    AuditEvent_RecordKeyJSON: { User_ID: target.User_ID },
+    AuditEvent_Action: "reset_password",
+    AuditEvent_Title: "User password reset",
+    AuditEvent_IsSensitive: true,
+    AuditEvent_SensitivityCode: "confidential",
+    AuditEvent_MetadataJSON: { administratorPasswordReset: true },
+  })
+  if (auditError) throw new HttpError(500, "The password changed, but the activity record could not be saved. Do not reset it again. Contact support.")
+
+  return { updated: true }
+}
+
+async function authorizationState(admin: any, current: any) {
+  return authorizationCatalogueReadModel(admin)
 }
 
 async function createRole(admin: any, payload: any) {
   const name = String(payload.name ?? "").trim().replace(/\s+/g, " ")
   if (!name || name.length > 50) throw new HttpError(400, "Enter a role name of 50 characters or fewer.")
   if (isLegacyCustomRoleName(name)) throw new HttpError(400, "Choose a reusable role name instead of a user-specific Custom role name.")
-  const permissionValues = [...new Set((payload.permissionValues ?? []).map((value: unknown) => String(value).trim()).filter(Boolean))]
+  const permissionValues = [...new Set<string>((payload.permissionValues ?? []).map((value: unknown) => String(value).trim()).filter(Boolean))]
   if (!permissionValues.length) throw new HttpError(400, "Enable at least one permission before creating the role.")
   const { data: selectedPermissions, error: selectedPermissionsError } = await admin.from("sys_Permissions").select("sys_Permission_ID,sys_Permission_Value").in("sys_Permission_Value", permissionValues)
   if (selectedPermissionsError) throw new HttpError(500, selectedPermissionsError.message)
@@ -300,7 +422,9 @@ Deno.serve(async (request) => {
     const { admin, user } = await authenticate(request)
     const current = await currentInternalUser(admin, user)
     const parts = routeParts(request, "team")
-    if (!parts.length && request.method === "GET") { await requirePermission(admin, current.User_ID, "Users.Read"); return json(request, await listTeam(admin, current)) }
+    if (!parts.length && request.method === "GET") throw new HttpError(400, "Workspace user lists require bounded paging.")
+    if (parts.length === 1 && parts[0] === "page" && request.method === "GET") { await requirePermission(admin, current.User_ID, "Users.Read"); return json(request, await listTeamPage(admin, current, request)) }
+    if (parts.length === 1 && parts[0] === "lookup" && request.method === "GET") { await requirePermission(admin, current.User_ID, "Users.Read"); return json(request, await lookupTeamUsers(admin, current, request)) }
     if (parts.length === 1 && parts[0] === "departments" && request.method === "POST") {
       await requirePermission(admin, current.User_ID, "Users.Manage")
       return json(request, await createDepartment(admin, current, await body(request)), 201)
@@ -367,7 +491,10 @@ Deno.serve(async (request) => {
         if (departmentInsertError) throw new HttpError(500, departmentInsertError.message)
       }
       profile = (await admin.from("cmp_Users").select("*").eq("User_ID", profile.User_ID).single()).data
-      return json(request, { user: await userDto(admin, profile), company: { id: current.Company_ID, name: (await admin.from("cmp_Company").select("Company_Name").eq("Company_ID", current.Company_ID).single()).data.Company_Name }, office: { id: office.Office_ID, name: office.Office_Name, address: office.Office_Address }, invited }, 201)
+      if (!profile) throw new HttpError(500, "The invited user profile could not be reloaded.")
+      const { data: company } = await admin.from("cmp_Company").select("Company_Name").eq("Company_ID", current.Company_ID).single()
+      if (!company) throw new HttpError(500, "The workspace company could not be reloaded.")
+      return json(request, { user: await userDto(admin, profile), company: { id: current.Company_ID, name: company.Company_Name }, office: { id: office.Office_ID, name: office.Office_Name, address: office.Office_Address }, invited }, 201)
     }
     if (parts.length === 2 && parts[1] === "invitation" && request.method === "POST") {
       await requirePermission(admin, current.User_ID, "Users.Invite")
@@ -412,6 +539,10 @@ Deno.serve(async (request) => {
       if (profileError) throw new HttpError(500, profileError.message)
       return json(request, null, 204)
     }
+    if (parts.length === 2 && parts[1] === "password" && request.method === "PATCH") {
+      await requirePermission(admin, current.User_ID, "Users.Manage")
+      return json(request, await resetTeamUserPassword(admin, current, parts[0], await body(request)))
+    }
     if (parts.length === 1 && request.method === "PATCH") {
       await requirePermission(admin, current.User_ID, "Users.Manage")
       return json(request, await updateTeamUser(admin, current, parts[0], await body(request)))
@@ -429,8 +560,11 @@ Deno.serve(async (request) => {
       await ensureAdministratorSurvives(admin, current.Company_ID, target.User_ID)
       const { data: impact, error } = await admin.rpc("User_DeletionImpact", { p_actor_user_id: current.User_ID, p_target_user_id: target.User_ID })
       if (error) throw new HttpError(500, error.message)
-      const { data: eligibleRows } = await admin.from("cmp_Users").select("*").eq("Company_ID", current.Company_ID).eq("User_AccessStatus", "active").neq("User_ID", target.User_ID).order("User_Firstname").order("User_Lastname")
-      return json(request, { ...impact, eligibleUsers: await Promise.all((eligibleRows ?? []).map((row: any) => userDto(admin, row))) })
+      return json(request, { ...impact, eligibleUsers: [] })
+    }
+    if (parts.length === 2 && parts[1] === "replacement-options" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Users.Manage")
+      return json(request, await replacementOptions(admin, current, parts[0], request))
     }
     if (parts.length === 1 && request.method === "DELETE") {
       await requirePermission(admin, current.User_ID, "Users.Manage")
@@ -460,6 +594,20 @@ Deno.serve(async (request) => {
         }
         throw new HttpError(409, deleteError.message)
       }
+      let notificationEmail: { status: "sent" | "failed" | "already_processed"; providerId: string | null } = {
+        status: result?.alreadyDeleted ? "already_processed" : "failed",
+        providerId: null,
+      }
+      if (!result?.alreadyDeleted) {
+        try {
+          notificationEmail = {
+            status: "sent",
+            providerId: await sendUserDeletionEmail(target, String(result?.deletionReference ?? "")),
+          }
+        } catch (error) {
+          console.error("Account deletion email delivery failed", error)
+        }
+      }
       if (retainedAuthUserId) {
         const { error: authError } = await admin.auth.admin.deleteUser(retainedAuthUserId)
         if (authError && target.User_AccessStatus !== "deleted") throw new HttpError(500, "Workspace access and work reassignment succeeded, but Auth cleanup is still pending. Retry deletion to finish safely.")
@@ -475,7 +623,7 @@ Deno.serve(async (request) => {
         if (cleanupMarkerError) throw new HttpError(500, "Personal files were removed, but cleanup finalisation is still pending. Retry deletion to finish safely.")
       }
       const { cleanupArtifacts: _privateCleanupArtifacts, ...publicResult } = result ?? {}
-      return json(request, publicResult)
+      return json(request, { ...publicResult, notificationEmail })
     }
     if (parts[1] === "office" && request.method === "PATCH") {
       await requirePermission(admin, current.User_ID, "Users.Manage"); const payload = await body<any>(request)
@@ -486,6 +634,7 @@ Deno.serve(async (request) => {
       return json(request, await userDto(admin, target))
     }
     if (parts[0] === "authorization") {
+      if (parts.length === 2 && parts[1] === "catalogue" && request.method === "GET") { await requirePermission(admin, current.User_ID, "Authorization.Read"); return json(request, await authorizationCatalogueReadModel(admin)) }
       if (parts.length === 1 && request.method === "GET") { await requirePermission(admin, current.User_ID, "Authorization.Read"); return json(request, await authorizationState(admin, current)) }
       await requirePermission(admin, current.User_ID, "Authorization.Manage")
       if (parts[1] === "roles" && parts.length === 2 && request.method === "POST") return json(request, await createRole(admin, await body(request)), 201)
@@ -497,11 +646,11 @@ Deno.serve(async (request) => {
         await admin.from("sys_UserRole_Permissions").delete().eq("sys_UserRole_ID", parts[2]); await admin.from("sys_UserRoles").delete().eq("sys_UserRole_ID", parts[2]); return json(request, null, 204)
       }
       if (parts[1] === "users" && parts[3] === "roles" && request.method === "PATCH") {
-        const payload = await body<any>(request); const roleIds = [...new Set(payload.roleIds ?? [])]; if (!roleIds.length) throw new HttpError(400, "Choose at least one role.")
+        const payload = await body<any>(request); const roleIds = [...new Set<string>((payload.roleIds ?? []).map(String))]; if (!roleIds.length) throw new HttpError(400, "Choose at least one role.")
         const { data: target } = await admin.from("cmp_Users").select("User_ID").eq("User_ID", parts[2]).eq("Company_ID", current.Company_ID).maybeSingle(); if (!target) throw new HttpError(404, "User not found.")
         const { data: roles } = await admin.from("sys_UserRoles").select("sys_UserRole_ID,sys_UserRole_Name").in("sys_UserRole_ID", roleIds)
         if ((roles ?? []).length !== roleIds.length || (roles ?? []).some((role: any) => isLegacyCustomRoleName(role.sys_UserRole_Name))) throw new HttpError(400, "Choose valid reusable roles.")
-        await ensureAdministratorSurvives(admin, current.Company_ID, target.User_ID, roleIds as string[])
+        await ensureAdministratorSurvives(admin, current.Company_ID, target.User_ID, roleIds)
         await admin.from("cmp_Users_Roles").delete().eq("User_ID", target.User_ID); await admin.from("cmp_Users_Roles").insert(roleIds.map((id: string) => ({ User_ID: target.User_ID, sys_UserRole_ID: id })))
         return json(request, { userId: target.User_ID, roleIds })
       }

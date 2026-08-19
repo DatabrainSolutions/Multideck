@@ -1,21 +1,5 @@
 // @ts-nocheck
-import { HttpError, bodyObject, clean, companyFacilityIds, many, requireInternal, uuid } from "../shared/mod.ts";
-
-async function purchaseOrderContext(admin, actor) {
-  requireInternal(actor);
-  const facilityIds = await companyFacilityIds(admin, actor);
-  const [facilities, organisations, items] = await Promise.all([
-    facilityIds.length ? many(admin.from("WMS_Facilities").select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name").in("WMSFacility_ID", facilityIds).eq("WMSFacility_IsDeleted", false).eq("WMSFacility_IsActive", true)) : Promise.resolve([]),
-    many(admin.from("Org_Master").select("Org_id,Org_Name").order("Org_Name")),
-    facilityIds.length ? many(admin.from("WMS_Items").select("WMSItem_ID,WMSItem_CustomerOrgID,WMSItem_DefaultFacilityID,WMSItem_SKU,WMSItem_Description,WMSItem_BaseUOMCode,WMSItem_QuantityBasisCode,WMSItem_AllowsFractionalQuantity").in("WMSItem_DefaultFacilityID", facilityIds).eq("WMSItem_IsDeleted", false).eq("WMSItem_IsActive", true)) : Promise.resolve([]),
-  ]);
-  return { facilityIds, facilities, organisations, items };
-}
-
-async function loadPurchaseOrders(admin, context) {
-  if (!context.facilityIds.length) return [];
-  return await many(admin.from("WMS_PurchaseOrders").select("*").in("WMSPO_FacilityID", context.facilityIds).eq("WMSPO_IsDeleted", false).order("WMSPO_UpdatedAt", { ascending: false }).limit(500));
-}
+import { HttpError, bodyObject, boundedPage, clean, companyFacilityIds, many, requireInternal, uuid } from "../shared/mod.ts";
 
 async function mapPurchaseOrders(admin, rows, context) {
   if (!rows.length) return [];
@@ -24,9 +8,20 @@ async function mapPurchaseOrders(admin, rows, context) {
     many(admin.from("WMS_PurchaseOrderLines").select("*").in("WMSPOLine_PurchaseOrderID", ids).order("WMSPOLine_LineNo")),
     many(admin.from("WMS_PurchaseOrderEvents").select("*").in("WMSPOEvent_PurchaseOrderID", ids).order("WMSPOEvent_EventAt", { ascending: false })),
   ]);
+  const itemIds = [...new Set(lines.map((line)=>line.WMSPOLine_ItemID).filter(Boolean))];
+  const contextItems = context.items ?? [];
+  const contextItemIds = new Set(contextItems.map((row)=>row.WMSItem_ID));
+  const missingItemIds = itemIds.filter((itemId)=>!contextItemIds.has(itemId));
+  const scopedItems = missingItemIds.length ? [
+    ...contextItems,
+    ...await many(admin.from("WMS_Items")
+      .select("WMSItem_ID,WMSItem_SKU,WMSItem_Description")
+      .in("WMSItem_ID", missingItemIds)
+      .eq("WMSItem_IsDeleted", false)),
+  ] : contextItems;
   const facilities = new Map(context.facilities.map((row)=>[row.WMSFacility_ID, row]));
   const organisations = new Map(context.organisations.map((row)=>[row.Org_id, row.Org_Name]));
-  const items = new Map(context.items.map((row)=>[row.WMSItem_ID, row]));
+  const items = new Map(scopedItems.map((row)=>[row.WMSItem_ID, row]));
   return rows.map((row)=>{
     const facility = facilities.get(row.WMSPO_FacilityID);
     return {
@@ -58,6 +53,7 @@ async function mapPurchaseOrders(admin, rows, context) {
       extractionModel: row.WMSPO_ExtractionModel,
       extractionMetadata: row.WMSPO_ExtractionMetadataJSON,
       version: row.WMSPO_Version,
+      lineCount: lines.filter((line)=>line.WMSPOLine_PurchaseOrderID === row.WMSPO_ID).length,
       createdAt: row.WMSPO_CreatedAt,
       updatedAt: row.WMSPO_UpdatedAt,
       lines: lines.filter((line)=>line.WMSPOLine_PurchaseOrderID === row.WMSPO_ID).map((line)=>{
@@ -95,57 +91,150 @@ async function mapPurchaseOrders(admin, rows, context) {
 }
 
 export async function handlePurchaseOrders(request, path, url, admin, actor) {
-  const context = await purchaseOrderContext(admin, actor);
-  if (request.method === "GET" && path[1] === "reference") {
+  if (request.method === "GET" && path[1] === "reference" && path[2] === "organisations") {
+    requireInternal(actor);
+    const { limit, offset } = boundedPage(url, 25, 50);
+    let query = admin.from("Org_Master").select("Org_id,Org_Name");
+    const term = clean(url.searchParams.get("search"), 160);
+    if (term) query = query.ilike("Org_Name", `%${term.replace(/[\\%_]/g, "\\$&")}%`);
+    const { data, error } = await query.order("Org_Name").order("Org_id").range(offset, offset + limit);
+    if (error) throw new HttpError(500, error.message);
+    const candidates = data ?? [];
     return {
-      facilities: context.facilities.map((row)=>({ id: row.WMSFacility_ID, code: row.WMSFacility_Code, name: row.WMSFacility_Name })),
-      organisations: context.organisations.map((row)=>({ id: row.Org_id, name: row.Org_Name })),
-      items: context.items.map((row)=>({
-        id: row.WMSItem_ID,
-        customerOrgId: row.WMSItem_CustomerOrgID,
-        facilityId: row.WMSItem_DefaultFacilityID,
-        sku: row.WMSItem_SKU,
-        description: row.WMSItem_Description,
-        uomCode: row.WMSItem_BaseUOMCode,
-        quantityBasisCode: row.WMSItem_QuantityBasisCode ?? "count",
-        allowsFractionalQuantity: row.WMSItem_AllowsFractionalQuantity ?? false,
-      })),
-      currencies: ["GBP", "EUR", "USD", "CNY", "JPY", "AED"],
+      rows: candidates.slice(0, limit).map((row)=>({ id: row.Org_id, name: row.Org_Name })),
+      limit,
+      offset,
+      hasMore: candidates.length > limit
     };
   }
-
-  if (request.method === "GET" && path[1] === "next-number") {
-    const facilityId = uuid(url.searchParams.get("facilityId"), "warehouse");
-    if (!context.facilityIds.includes(facilityId)) throw new HttpError(403, "You do not have access to this warehouse.");
-    const facility = context.facilities.find((row)=>row.WMSFacility_ID === facilityId);
-    const prefix = `PO-${String(facility?.WMSFacility_Code ?? "WH").toUpperCase()}-${new Date().getUTCFullYear()}`;
-    const { data, error } = await admin.from("WMS_PurchaseOrders")
-      .select("WMSPO_Number")
-      .eq("WMSPO_FacilityID", facilityId)
+  if (request.method === "GET" && path[1] === "reference" && path[2] === "items") {
+    requireInternal(actor);
+    const { limit, offset } = boundedPage(url, 25, 50);
+    const facilityIds = await companyFacilityIds(admin, actor);
+    const requestedFacilityId = clean(url.searchParams.get("facilityId"));
+    const requestedCustomerOrgId = clean(url.searchParams.get("customerOrgId"));
+    if (!requestedFacilityId || !requestedCustomerOrgId || !facilityIds.includes(requestedFacilityId)) {
+      return { rows: [], limit, offset, hasMore: false };
+    }
+    const { data, error } = await admin.rpc("warehouse_edge_item_selector_page", {
+      p_allowed_facility_ids: facilityIds,
+      p_allowed_org_ids: null,
+      p_facility_id: requestedFacilityId,
+      p_customer_org_id: requestedCustomerOrgId,
+      p_search: clean(url.searchParams.get("search"), 160),
+      p_limit: limit,
+      p_offset: offset
+    });
+    if (!error) return data ?? { rows: [], limit, offset, hasMore: false };
+    if (["42883", "PGRST202"].includes(error.code ?? "")) {
+      throw new HttpError(503, "Warehouse item search is still being prepared. Try again shortly.");
+    }
+    throw new HttpError(500, error.message);
+  }
+  if (request.method === "GET" && path[1] === "reference" && url.searchParams.get("scope") === "setup") {
+    requireInternal(actor);
+    const facilityIds = await companyFacilityIds(admin, actor);
+    const facilities = facilityIds.length ? await many(admin.from("WMS_Facilities")
+      .select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name")
+      .in("WMSFacility_ID", facilityIds)
+      .eq("WMSFacility_IsDeleted", false)
+      .eq("WMSFacility_IsActive", true)
+      .order("WMSFacility_Name")) : [];
+    return {
+      facilities: facilities.map((row)=>({ id: row.WMSFacility_ID, code: row.WMSFacility_Code, name: row.WMSFacility_Name })),
+      organisations: [],
+      organisationsDeferred: true,
+      items: [],
+      itemsDeferred: true,
+      currencies: ["GBP", "EUR", "USD", "CNY", "JPY", "AED"]
+    };
+  }
+  const directPurchaseOrderId = request.method === "GET" && path[1] && !["reference", "next-number"].includes(path[1])
+    ? uuid(path[1], "purchase order")
+    : null;
+  if (directPurchaseOrderId) {
+    requireInternal(actor);
+    const facilityIds = await companyFacilityIds(admin, actor);
+    if (!facilityIds.length) throw new HttpError(404, "This purchase order does not exist in your workspace.");
+    const rows = await many(admin.from("WMS_PurchaseOrders")
+      .select("*")
+      .eq("WMSPO_ID", directPurchaseOrderId)
+      .in("WMSPO_FacilityID", facilityIds)
       .eq("WMSPO_IsDeleted", false)
-      .ilike("WMSPO_Number", `${prefix}-%`);
-    if (error) throw error;
-    const used = new Set((data ?? []).map((row)=>String(row.WMSPO_Number).toUpperCase()));
-    let sequence = 1;
-    while (used.has(`${prefix}-${String(sequence).padStart(4, "0")}`)) sequence += 1;
-    return { number: `${prefix}-${String(sequence).padStart(4, "0")}` };
+      .limit(1));
+    if (!rows.length) throw new HttpError(404, "This purchase order does not exist in your workspace.");
+    const row = rows[0];
+    const [facilities, organisations] = await Promise.all([
+      many(admin.from("WMS_Facilities")
+        .select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name")
+        .eq("WMSFacility_ID", row.WMSPO_FacilityID)
+        .eq("WMSFacility_IsDeleted", false)
+        .limit(1)),
+      many(admin.from("Org_Master")
+        .select("Org_id,Org_Name")
+        .eq("Org_id", row.WMSPO_CustomerOrgID)
+        .limit(1)),
+    ]);
+    return (await mapPurchaseOrders(admin, rows, { facilities, organisations, items: [] }))[0];
   }
-
-  let rows = await loadPurchaseOrders(admin, context);
+  const boundedList = request.method === "GET" && !path[1] && url.searchParams.has("limit");
+  if (boundedList) {
+    requireInternal(actor);
+    const facilityIds = await companyFacilityIds(admin, actor);
+    const { limit, offset } = boundedPage(url);
+    if (!facilityIds.length) return { rows: [], total: 0, limit, offset, facets: [] };
+    const requestedFacilityId = clean(url.searchParams.get("facilityId"));
+    if (requestedFacilityId && !facilityIds.includes(requestedFacilityId)) return { rows: [], total: 0, limit, offset, facets: [] };
+    const { data, error } = await admin.rpc("warehouse_edge_purchase_orders_page", {
+      p_allowed_facility_ids: facilityIds,
+      p_facility_id: requestedFacilityId,
+      p_status: clean(url.searchParams.get("status"), 60),
+      p_open_only: url.searchParams.get("openOnly") === "true",
+      p_search: clean(url.searchParams.get("search"), 160),
+      p_sort: clean(url.searchParams.get("sort"), 60),
+      p_direction: url.searchParams.get("direction") === "asc" ? "asc" : "desc",
+      p_limit: limit,
+      p_offset: offset
+    });
+    if (!error) return data ?? { rows: [], total: 0, limit, offset, facets: [] };
+    if (["42883", "PGRST202"].includes(error.code ?? "")) {
+      throw new HttpError(503, "Warehouse purchase-order paging is still being prepared. Try again shortly.");
+    }
+    throw new HttpError(500, error.message);
+  }
+  if (request.method === "GET" && !path[1]) {
+    throw new HttpError(400, "Warehouse purchase-order lists require bounded paging.");
+  }
+  if (request.method === "GET" && path[1] === "next-number") {
+    requireInternal(actor);
+    const facilityId = uuid(url.searchParams.get("facilityId"), "warehouse");
+    const facilityIds = await companyFacilityIds(admin, actor);
+    if (!facilityIds.includes(facilityId)) throw new HttpError(403, "You do not have access to this warehouse.");
+    const facilities = await many(admin.from("WMS_Facilities")
+      .select("WMSFacility_ID,WMSFacility_Code")
+      .eq("WMSFacility_ID", facilityId)
+      .eq("WMSFacility_IsDeleted", false)
+      .limit(1));
+    if (!facilities.length) throw new HttpError(404, "This warehouse does not exist in your workspace.");
+    const prefix = `PO-${String(facilities[0].WMSFacility_Code ?? "WH").toUpperCase()}-${new Date().getUTCFullYear()}`;
+    const { data, error } = await admin.rpc("warehouse_edge_next_purchase_order_number", {
+      p_allowed_facility_ids: facilityIds,
+      p_facility_id: facilityId,
+      p_prefix: prefix
+    });
+    if (error) {
+      if (["42883", "PGRST202"].includes(error.code ?? "")) {
+        throw new HttpError(503, "Warehouse purchase-order numbering is still being prepared. Try again shortly.");
+      }
+      throw new HttpError(500, error.message);
+    }
+    if (!data) throw new HttpError(403, "You do not have access to this warehouse.");
+    return { number: data };
+  }
+  if (request.method === "GET" && path[1] === "reference") {
+    throw new HttpError(400, "Warehouse purchase-order references must use deferred, paged selectors.");
+  }
   const purchaseOrderId = path[1] && !["reference", "next-number"].includes(path[1]) ? uuid(path[1], "purchase order") : null;
-  if (request.method === "GET" && purchaseOrderId) {
-    const found = rows.filter((row)=>row.WMSPO_ID === purchaseOrderId);
-    if (!found.length) throw new HttpError(404, "This purchase order does not exist in your workspace.");
-    return (await mapPurchaseOrders(admin, found, context))[0];
-  }
-  if (request.method === "GET") {
-    const facilityId = clean(url.searchParams.get("facilityId"));
-    const statusCode = clean(url.searchParams.get("statusCode"));
-    const term = clean(url.searchParams.get("search"))?.toLowerCase();
-    rows = rows.filter((row)=>(!facilityId || row.WMSPO_FacilityID === facilityId) && (!statusCode || row.WMSPO_StatusCode === statusCode) && (!term || [row.WMSPO_Number,row.WMSPO_SupplierName,row.WMSPO_BuyerReference,row.WMSPO_SupplierReference].some((value)=>String(value ?? "").toLowerCase().includes(term))));
-    return await mapPurchaseOrders(admin, rows, context);
-  }
-
   const input = request.headers.get("content-type")?.includes("application/json") ? bodyObject(await request.json()) : {};
   const action = !purchaseOrderId && request.method === "POST"
     ? "create"
@@ -155,18 +244,35 @@ export async function handlePurchaseOrders(request, path, url, admin, actor) {
         ? path[2].replace("-", "_")
         : null;
   if (!action) throw new HttpError(404, "Warehouse purchase order endpoint not found.");
+  requireInternal(actor);
+  const facilityIds = await companyFacilityIds(admin, actor);
   const { data, error } = await admin.rpc("warehouse_edge_purchase_order_mutation", {
     p_action: action,
     p_purchase_order_id: purchaseOrderId,
     p_payload: input,
     p_actor_user_id: actor.userId,
-    p_allowed_facility_ids: context.facilityIds,
+    p_allowed_facility_ids: facilityIds,
   });
   if (error) {
     const match = error.message.match(/WMS(400|403|404|409|500):\s*(.*)$/s);
     throw new HttpError(match ? Number(match[1]) : 500, match?.[2] ?? "The purchase order could not be saved.");
   }
-  rows = await loadPurchaseOrders(admin, context);
-  const found = rows.filter((row)=>row.WMSPO_ID === data);
-  return (await mapPurchaseOrders(admin, found, context))[0];
+  const rows = await many(admin.from("WMS_PurchaseOrders")
+    .select("*")
+    .eq("WMSPO_ID", data)
+    .in("WMSPO_FacilityID", facilityIds)
+    .eq("WMSPO_IsDeleted", false)
+    .limit(1));
+  if (!rows.length) throw new HttpError(404, "This purchase order does not exist in your workspace.");
+  const [facilities, organisations] = await Promise.all([
+    many(admin.from("WMS_Facilities")
+      .select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name")
+      .eq("WMSFacility_ID", rows[0].WMSPO_FacilityID)
+      .limit(1)),
+    many(admin.from("Org_Master")
+      .select("Org_id,Org_Name")
+      .eq("Org_id", rows[0].WMSPO_CustomerOrgID)
+      .limit(1)),
+  ]);
+  return (await mapPurchaseOrders(admin, rows, { facilities, organisations, items: [] }))[0];
 }

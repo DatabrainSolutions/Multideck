@@ -15,6 +15,7 @@ import {
   Paperclip,
   RefreshCw,
   Save,
+  Search,
   ShieldCheck,
   TriangleAlert,
 } from "@/components/icons/hugeicons"
@@ -39,6 +40,7 @@ import { useLanguage } from "@/i18n/language-provider"
 import {
   bootstrapDocumentStudioTemplate,
   getDocumentBuilderWorkspace,
+  getGeneratedDocumentsPage,
   getDocumentStudioComponent,
   getDocumentStudioSession,
   getGeneratedDocumentDownload,
@@ -1528,6 +1530,14 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   const [workspace, setWorkspace] = useState<DocumentBuilderWorkspace | null>(initialWorkspace ?? documentWorkspaceCache)
   const [loading, setLoading] = useState(!initialWorkspace && !documentWorkspaceCache)
   const [error, setError] = useState<string | null>(null)
+  const [documentOffset, setDocumentOffset] = useState(0)
+  const [documentQuery, setDocumentQuery] = useState("")
+  const [debouncedDocumentQuery, setDebouncedDocumentQuery] = useState("")
+  const [documentSort, setDocumentSort] = useState<{ id: string; direction: "asc" | "desc" } | null>({ id: "created", direction: "desc" })
+  const [documentPageLoading, setDocumentPageLoading] = useState(false)
+  const [documentPageError, setDocumentPageError] = useState<string | null>(null)
+  const documentRequestIdRef = useRef(0)
+  const lastDocumentPageKeyRef = useRef<string | null>(initialWorkspace ? "0||created:desc" : null)
   // Entering Documents is always an overview. A retained local draft is only
   // considered after the operator explicitly starts document creation.
   const [createOpen, setCreateOpen] = useState(false)
@@ -1551,7 +1561,13 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
     setLoading(true)
     setError(null)
     try {
-      const nextWorkspace = await getDocumentBuilderWorkspace()
+      const nextWorkspace = await getDocumentBuilderWorkspace({
+        offset: documentOffset,
+        limit: 20,
+        search: debouncedDocumentQuery,
+        sort: documentSort ?? { id: "created", direction: "desc" },
+      })
+      lastDocumentPageKeyRef.current = `${documentOffset}|${debouncedDocumentQuery}|${documentSort?.id ?? "created"}:${documentSort?.direction ?? "desc"}`
       documentWorkspaceCache = nextWorkspace
       setWorkspace(nextWorkspace)
     } catch (loadError) {
@@ -1564,6 +1580,44 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   useEffect(() => {
     if (!initialWorkspace) void loadWorkspace()
   }, [initialWorkspace])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedDocumentQuery(documentQuery.trim()), 250)
+    return () => window.clearTimeout(timeout)
+  }, [documentQuery])
+
+  useEffect(() => setDocumentOffset(0), [debouncedDocumentQuery, documentSort])
+
+  useEffect(() => {
+    if (!workspace) return
+    const key = `${documentOffset}|${debouncedDocumentQuery}|${documentSort?.id ?? "created"}:${documentSort?.direction ?? "desc"}`
+    if (lastDocumentPageKeyRef.current === key) return
+    lastDocumentPageKeyRef.current = key
+    const requestId = documentRequestIdRef.current + 1
+    documentRequestIdRef.current = requestId
+    setDocumentPageLoading(true)
+    setDocumentPageError(null)
+    void getGeneratedDocumentsPage({
+      offset: documentOffset,
+      limit: 20,
+      search: debouncedDocumentQuery,
+      sort: documentSort ?? { id: "created", direction: "desc" },
+    }).then((page) => {
+      if (documentRequestIdRef.current !== requestId) return
+      setWorkspace((current) => current ? {
+        ...current,
+        generatedDocuments: page.rows,
+        generatedDocumentTotal: page.total,
+        generatedDocumentOffset: page.offset,
+        generatedDocumentLimit: page.limit,
+      } : current)
+    }).catch((pageError) => {
+      if (documentRequestIdRef.current !== requestId) return
+      setDocumentPageError(pageError instanceof Error ? pageError.message : t("Document history could not be loaded."))
+    }).finally(() => {
+      if (documentRequestIdRef.current === requestId) setDocumentPageLoading(false)
+    })
+  }, [debouncedDocumentQuery, documentOffset, documentSort, t, workspace?.permissions.canGenerate])
 
   useEffect(() => () => {
     if (previewDocumentUrl) URL.revokeObjectURL(previewDocumentUrl)
@@ -1656,6 +1710,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
 
   const publishedTemplates = workspace?.templates.filter((template) => template.status === "published") ?? []
   const generatedDocuments = workspace?.generatedDocuments ?? []
+  const generatedDocumentTotal = workspace?.generatedDocumentTotal ?? generatedDocuments.length
   const generatedDocumentColumns = useMemo<DataTableColumn<GeneratedDocumentSummary>[]>(() => [
     { id: "document", label: "Document", kind: "long-text", width: 280, minWidth: 210, resizable: true, sortValue: (document) => document.fileName, cellTitle: (document) => document.fileName, cell: (document) => <div className="min-w-0"><p className="truncate text-[11.5px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{document.fileName}</p><p className="mt-0.5 text-[10px] text-[var(--md-subtle)]"><span>{t(document.templateName)}</span> · <span data-i18n-skip>{formatBytes(document.fileSizeBytes)}</span></p></div> },
     { id: "job", label: "Job", kind: "text", width: 140, sortValue: (document) => document.targetReference, cell: (document) => <span className="text-[11px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{document.targetReference}</span> },
@@ -1809,7 +1864,24 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
           <h2 className="text-[17px] font-medium text-[var(--md-ink)]">{t("Recent documents")}</h2>
           <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Every file is private and downloaded through a short-lived secure link.")}</p>
         </div>
-        <DataTable ariaLabel="Recent documents" columnsButtonLabel="Manage document columns" columns={generatedDocumentColumns} rows={generatedDocuments} getRowKey={(document) => document.id} storageKey="generated-documents" minimumWidth={760} onRowClick={(document) => void openDocumentPreview(document)} isRowInteractive={(document) => document.status === "ready"} rowAriaLabel={(document) => `Preview document: ${document.fileName}`} rowClassName="group/row" emptyState={<p className="text-[11px] text-[var(--md-subtle)]">{t("No documents have been generated yet.")}</p>} />
+        {documentPageError ? <Surface role="alert" tone="soft" className="mb-3 flex items-center justify-between gap-3 border-s-2 border-[var(--md-red)]"><p className="text-[11px] text-[var(--md-text)]">{documentPageError}</p><Button type="button" variant="ghost" onClick={() => { lastDocumentPageKeyRef.current = null; setDocumentSort((current) => current ? { ...current } : { id: "created", direction: "desc" }) }}>{t("Try again")}</Button></Surface> : null}
+        <DataTable
+          ariaLabel="Recent documents"
+          columnsButtonLabel="Manage document columns"
+          columns={generatedDocumentColumns}
+          rows={generatedDocuments}
+          getRowKey={(document) => document.id}
+          storageKey="generated-documents"
+          minimumWidth={760}
+          onRowClick={(document) => void openDocumentPreview(document)}
+          isRowInteractive={(document) => document.status === "ready"}
+          rowAriaLabel={(document) => `Preview document: ${document.fileName}`}
+          rowClassName="group/row"
+          serverSorting={{ value: documentSort, onChange: (next) => setDocumentSort(next ?? { id: "created", direction: "desc" }) }}
+          pagination={{ offset: documentOffset, limit: 20, total: generatedDocumentTotal, loading: documentPageLoading, onOffsetChange: setDocumentOffset }}
+          toolbarSearch={<label className="relative min-w-0 sm:w-[240px]"><span className="sr-only">{t("Search documents")}</span><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" aria-hidden="true" /><Input value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} className="h-8 ps-9 text-base sm:text-[12px]" placeholder={t("Document, job or customer…")} /></label>}
+          emptyState={<p className="text-[11px] text-[var(--md-subtle)]">{documentPageLoading ? t("Loading documents…") : debouncedDocumentQuery ? t("No documents match this search.") : t("No documents have been generated yet.")}</p>}
+        />
       </section>
 
       <Dialog open={Boolean(previewDocument)} onOpenChange={(open) => { if (!open) closeDocumentPreview() }}>

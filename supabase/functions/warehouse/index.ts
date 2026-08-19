@@ -41,7 +41,7 @@ Deno.serve(async (request)=>{
     const marker = "/warehouse/", pathname = url.pathname.includes(marker) ? url.pathname.split(marker)[1] : "", path = pathname.split("/").filter(Boolean);
     let result;
     if (path[0] === "dashboard" && request.method === "GET") {
-      result = await handleDashboard(admin, actor);
+      result = await handleDashboard(admin, actor, path[1] ?? null, url);
     } else if (path[0] === "facilities" && path.includes("locations")) {
       const { handleLocations } = await import("./routes/locations.ts");
       result = await handleLocations(request, path, url, admin, actor);
@@ -65,13 +65,13 @@ Deno.serve(async (request)=>{
       result = await handlePurchaseOrders(request, path, url, admin, actor);
     } else if (path[0] === "orders" && path[2] === "documents") {
       const { handleDocuments } = await import("./routes/documents.ts");
-      result = await handleDocuments(request, path, admin, actor);
+      result = await handleDocuments(request, path, url, admin, actor);
     } else if (path[0] === "orders") {
       const { handleOrders } = await import("./routes/orders.ts");
       result = await handleOrders(request, path, url, admin, actor);
     } else if (path[0] === "portal") {
       const { handlePortal } = await import("./routes/portal-users.ts");
-      result = await handlePortal(request, path, admin, actor);
+      result = await handlePortal(request, path, url, admin, actor);
     } else throw new HttpError(404, "Warehouse endpoint not found.");
     if (result instanceof Response) return result;
     return json(request, result, result === undefined ? 204 : request.method === "POST" ? 201 : 200);

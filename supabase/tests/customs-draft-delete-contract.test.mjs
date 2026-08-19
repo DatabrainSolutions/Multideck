@@ -56,6 +56,14 @@ test("the provider UUID returned by supported draft creation is retained for del
   assert.match(edgeFunction, /ICUSS_iCustomsSubmissionID: internalDraftId/u)
 })
 
+test("a restored locally deleted draft starts a fresh provider mirror", () => {
+  const lifecycle = edgeFunction.match(/async function providerDraft[\s\S]*?async function startProviderDraft/u)?.[0] ?? edgeFunction
+  assert.match(lifecycle, /\["rejected", "cancelled"\]\.includes/u)
+  assert.match(lifecycle, /correlationFrom\(declaration, latest\)/u)
+  assert.match(edgeFunction, /submission\?\.ICUSS_Status, 40\) === "cancelled"/u)
+  assert.match(edgeFunction, /hasCustomsDraft: Boolean\(activeCorrelation\)/u)
+})
+
 test("Dexter's approved create action starts the same iCustoms draft lifecycle", () => {
   assert.match(dexter, /async function startCustomsProviderDraftFetch/u)
   assert.match(dexter, /provider-draft-start/u)

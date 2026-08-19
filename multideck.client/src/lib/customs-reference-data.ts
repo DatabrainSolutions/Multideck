@@ -37,6 +37,15 @@ type CatalogueRow = {
   sort_order: number
 }
 
+type CustomsReferenceCacheEntry = {
+  value?: CustomsReferenceData
+  expiresAt: number
+  inFlight?: Promise<CustomsReferenceData>
+}
+
+const CUSTOMS_REFERENCE_CACHE_TTL_MS = 5 * 60_000
+const customsReferenceCache = new Map<"export" | "import", CustomsReferenceCacheEntry>()
+
 export function createEmptyCustomsReferenceData(): CustomsReferenceData {
   const catalogues = {} as CustomsReferenceData
   for (const catalogue of customsCatalogCodes) catalogues[catalogue] = []
@@ -46,32 +55,50 @@ export function createEmptyCustomsReferenceData(): CustomsReferenceData {
 export async function loadCustomsReferenceData(direction: "export" | "import") {
   if (!supabase) throw new Error("Supabase is not configured for this App workspace.")
 
-  const { data, error } = await supabase
-    .from("sys_CustomsOptionCatalogue")
-    .select("catalog_code, option_code, option_name, option_description, direction, sort_order")
-    .order("catalog_code")
-    .order("sort_order")
-    .order("option_name")
+  const cached = customsReferenceCache.get(direction)
+  if (cached?.value && cached.expiresAt > Date.now()) return cached.value
+  if (cached?.inFlight) return cached.inFlight
 
-  if (error) throw error
+  const inFlight = (async () => {
+    const { data, error } = await supabase
+      .from("sys_CustomsOptionCatalogue")
+      .select("catalog_code, option_code, option_name, option_description, direction, sort_order")
+      .in("catalog_code", [...customsCatalogCodes])
+      .in("direction", ["all", direction])
+      .order("catalog_code")
+      .order("sort_order")
+      .order("option_name")
 
-  const catalogues = createEmptyCustomsReferenceData()
-  for (const row of (data ?? []) as CatalogueRow[]) {
-    if (row.direction !== "all" && row.direction !== direction) continue
-    if (!customsCatalogCodes.includes(row.catalog_code as CustomsCatalogCode)) continue
-    catalogues[row.catalog_code as CustomsCatalogCode].push({
-      code: row.option_code,
-      name: row.option_name,
-      description: row.option_description,
+    if (error) throw error
+
+    const catalogues = createEmptyCustomsReferenceData()
+    for (const row of (data ?? []) as CatalogueRow[]) {
+      if (row.direction !== "all" && row.direction !== direction) continue
+      if (!customsCatalogCodes.includes(row.catalog_code as CustomsCatalogCode)) continue
+      catalogues[row.catalog_code as CustomsCatalogCode].push({
+        code: row.option_code,
+        name: row.option_name,
+        description: row.option_description,
+      })
+    }
+
+    const missingCatalogues = customsCatalogCodes.filter((catalogue) => catalogues[catalogue].length === 0)
+    if (missingCatalogues.length) {
+      throw new Error(`Customs reference catalogues are incomplete: ${missingCatalogues.join(", ")}`)
+    }
+
+    customsReferenceCache.set(direction, {
+      value: catalogues,
+      expiresAt: Date.now() + CUSTOMS_REFERENCE_CACHE_TTL_MS,
     })
-  }
+    return catalogues
+  })().catch((error) => {
+    customsReferenceCache.delete(direction)
+    throw error
+  })
 
-  const missingCatalogues = customsCatalogCodes.filter((catalogue) => catalogues[catalogue].length === 0)
-  if (missingCatalogues.length) {
-    throw new Error(`Customs reference catalogues are incomplete: ${missingCatalogues.join(", ")}`)
-  }
-
-  return catalogues
+  customsReferenceCache.set(direction, { expiresAt: 0, inFlight })
+  return inFlight
 }
 
 export function useCustomsReferenceData(direction: "export" | "import") {

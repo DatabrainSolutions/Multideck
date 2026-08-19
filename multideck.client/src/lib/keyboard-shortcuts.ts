@@ -18,7 +18,9 @@
 
 import { useEffect, useRef, useState } from "react"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { getApiWorkspacePreferences } from "@/lib/api"
 import { supabase } from "@/lib/supabase"
+import { updateWorkspaceBootstrapPreferences } from "@/lib/workspace-bootstrap"
 import {
   bindingsEqual,
   bindingSurvivesTyping,
@@ -60,6 +62,7 @@ let loadPromise: Promise<void> | null = null
 let pendingSave: Promise<unknown> = Promise.resolve()
 let hasLocalEdit = false
 let watchingAuth = false
+let canPersistProfileShortcuts = true
 
 /** Drops ids this release no longer ships, and anything that is not a string. */
 function normalizeOverrides(value: unknown): ShortcutOverrides {
@@ -148,23 +151,24 @@ function commit(next: ShortcutOverrides) {
   void pushOverrides()
 }
 
-async function currentUserId(client: SupabaseClient) {
+async function currentSession(client: SupabaseClient) {
   const { data, error } = await client.auth.getSession()
   if (error) throw error
 
-  return data.session?.user.id ?? null
+  return data.session
 }
 
 // Saves are chained so a quick rebind-then-reset cannot land out of order and
 // resurrect the binding the operator just replaced.
 function saveRemoteOverrides(next: ShortcutOverrides) {
   const client = supabase
-  if (!client || !loadedUserId) return pendingSave
+  if (!client || !loadedUserId || !canPersistProfileShortcuts) return pendingSave
 
   pendingSave = pendingSave
     .then(() => client.rpc("set_current_user_keyboard_shortcuts", { p_shortcuts: next }))
     .then(({ error }) => {
       if (error) throw error
+      updateWorkspaceBootstrapPreferences({ keyboardShortcuts: next })
     })
     .catch((error: unknown) => {
       console.warn("Your keyboard shortcuts could not be saved to your profile.", error)
@@ -180,7 +184,8 @@ async function pushOverrides() {
 }
 
 async function loadOverrides(client: SupabaseClient) {
-  const userId = await currentUserId(client)
+  const session = await currentSession(client)
+  const userId = session?.user.id ?? null
   loadedUserId = userId
   // Signed out, so there is no profile to read and the set stays on this device.
   if (!userId) return
@@ -189,11 +194,24 @@ async function loadOverrides(client: SupabaseClient) {
   const cached = readStoredOverrides(storageKey)
   if (!hasLocalEdit && Object.keys(cached).length > 0) applyOverrides(cached)
 
-  const { data, error } = await client.rpc("get_current_user_keyboard_shortcuts")
-  if (error) throw error
+  const workspacePreferences = session?.access_token
+    ? await getApiWorkspacePreferences(session.access_token)
+    : null
+  if (workspacePreferences === null) {
+    canPersistProfileShortcuts = false
+    return
+  }
+  canPersistProfileShortcuts = true
+
+  let remoteOverrides: unknown = workspacePreferences?.keyboardShortcuts ?? null
+  if (workspacePreferences === undefined) {
+    const { data, error } = await client.rpc("get_current_user_keyboard_shortcuts")
+    if (error) throw error
+    remoteOverrides = data
+  }
   if (hasLocalEdit) return
 
-  const saved = normalizeOverrides(data)
+  const saved = normalizeOverrides(remoteOverrides)
   const inherited = readStoredOverrides(sharedStorageKey)
 
   // First sign-in after this feature moved onto the profile: adopt whatever this
@@ -232,6 +250,7 @@ function watchAuth(client: SupabaseClient) {
       loadedUserId = null
       loadPromise = null
       hasLocalEdit = false
+      canPersistProfileShortcuts = true
       announce()
       void ensureLoaded()
     })

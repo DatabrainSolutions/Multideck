@@ -110,3 +110,23 @@ test("retrying the latest prompt keeps the earlier exchange at the top", () => {
     ["u1", "a1", "u2", "a2"],
   )
 })
+
+test("a bounded history page renders when its first branch parent lives on an older page", () => {
+  const pagedMessages = [
+    message("u51", "user", "First prompt on this page", { parentResponseMessageId: "a50" }),
+    message("a51", "assistant", "First answer on this page", {
+      responseToUserMessageId: "u51",
+      responseVersion: 1,
+    }),
+    message("u52", "user", "Next prompt", { parentResponseMessageId: "a51" }),
+    message("a52", "assistant", "Next answer", {
+      responseToUserMessageId: "u52",
+      responseVersion: 1,
+    }),
+  ]
+
+  assert.deepEqual(
+    conversationBranchFor(pagedMessages, {}).map(({ id }) => id),
+    ["u51", "a51", "u52", "a52"],
+  )
+})

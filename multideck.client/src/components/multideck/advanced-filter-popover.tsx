@@ -80,7 +80,7 @@ export function AdvancedFilterPopover({
   label?: string
   title?: string
   itemLabel?: string
-  countMatches?: (query: FilterQuery) => number
+  countMatches?: (query: FilterQuery) => number | Promise<number>
   totalCount?: number
   align?: "start" | "center" | "end"
 }) {
@@ -93,13 +93,32 @@ export function AdvancedFilterPopover({
   const [selectedViewId, setSelectedViewId] = useState("")
   const [naming, setNaming] = useState(false)
   const [draftName, setDraftName] = useState("")
+  const [matchedCount, setMatchedCount] = useState<number | null>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
 
   const firstField = fields[0]?.value ?? "any"
   const appliedCount = countActiveFilterConditions(value)
   const draftCount = countActiveFilterConditions(draft)
-  const matchedCount = open && countMatches ? countMatches(draft) : null
   const numberFormat = useMemo(() => new Intl.NumberFormat(language), [language])
+
+  useEffect(() => {
+    if (!open || !countMatches) {
+      setMatchedCount(null)
+      return
+    }
+
+    let current = true
+    setMatchedCount(null)
+    const timer = globalThis.setTimeout(() => {
+      void Promise.resolve(countMatches(draft))
+        .then((count) => { if (current) setMatchedCount(count) })
+        .catch(() => { if (current) setMatchedCount(null) })
+    }, 180)
+    return () => {
+      current = false
+      globalThis.clearTimeout(timer)
+    }
+  }, [countMatches, draft, open])
 
   useEffect(() => {
     if (naming) nameInputRef.current?.focus()

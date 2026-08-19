@@ -5,6 +5,7 @@ import test from "node:test"
 const apiSource = await readFile(new URL("../src/lib/customs-drafts-api.ts", import.meta.url), "utf8")
 const providerApiSource = await readFile(new URL("../src/lib/icustoms-api.ts", import.meta.url), "utf8")
 const pageSource = await readFile(new URL("../src/pages/customs-declarations-page.tsx", import.meta.url), "utf8")
+const dataTableSource = await readFile(new URL("../src/components/multideck/data-table.tsx", import.meta.url), "utf8")
 
 test("opening a new standalone declaration creates its owned draft immediately", () => {
   assert.match(pageSource, /useState\(Boolean\(declarationId\)\)/u)
@@ -51,7 +52,9 @@ test("register deletion uses the provider-backed Edge lifecycle and the Dexter i
   assert.match(pageSource, /animate=\{\{ width: confirming \? 62 : 28 \}\}/u)
   assert.match(pageSource, /absolute inset-y-0 right-0/u)
   assert.match(pageSource, /onKeyDown=\{\(event\) => \{[\s\S]*event\.key !== "Escape"/u)
-  assert.match(pageSource, /md-sidebar-menu premium-stroke/u)
-  assert.match(pageSource, /onSelect=\{\(\) => setContextDeleteDraft\(draft\)\}/u)
+  assert.match(pageSource, /rowContextActions=\{\(draft\) =>/u)
+  assert.match(pageSource, /onSelect: setContextDeleteDraft/u)
+  assert.match(dataTableSource, /premium-stroke fixed z-\[120\] w-\[252px\]/u)
+  assert.match(dataTableSource, /initial=\{reduceMotion \? false : \{ opacity: 0, scale: 0\.96, y: -5, filter: "blur\(6px\)" \}\}/u)
   assert.match(pageSource, /<DialogTitle>\{t\("Delete this draft\?"\)\}<\/DialogTitle>/u)
 })

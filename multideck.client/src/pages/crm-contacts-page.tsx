@@ -1,74 +1,90 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { AiBrain, ArrowRight, LoaderCircle, Mail, RefreshCw, UserRoundCheck, UsersRound } from "@/components/icons/hugeicons"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { AiBrain, ArrowRight, Mail, RefreshCw, UserRoundCheck, UsersRound } from "@/components/icons/hugeicons"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
-import { CustomerAvatar } from "@/components/multideck/customer-components"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { RegisterFacetSelect, RegisterRevalidatingMark, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
-import { listContacts, listCustomers, type ApiContact, type ApiCustomer } from "@/lib/customer-api"
+import { getContact, listContactsPage, type ApiContact, type ContactRegisterPage, type RegisterSort } from "@/lib/customer-api"
 import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 
 const consentScopes = ["All", "Opted in", "Opted out"] as const
 type ConsentScope = typeof consentScopes[number]
+const contactPageSize = 50
+const emptyContactSummary: ContactRegisterPage["summary"] = { contacts: 0, recentlyContacted: 0, marketingOptedIn: 0, marketingOptedOut: 0 }
+const emptyContactFacets: ContactRegisterPage["facets"] = { accounts: [], channels: [] }
 
 export function CrmContactsPage({ navigate }: { navigate: (path: string) => void }) {
   const { t } = useLanguage()
   const [contacts, setContacts] = useState<ApiContact[]>([])
-  const [accounts, setAccounts] = useState<ApiCustomer[]>([])
+  const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([])
   const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
   const [consentFilter, setConsentFilter] = useState<ConsentScope>("All")
   const [accountFilter, setAccountFilter] = useState("")
   const [channelFilter, setChannelFilter] = useState("")
   const [state, setState] = useState<"loading" | "ready" | "error">("loading")
   const [reloadToken, setReloadToken] = useState(0)
+  const lastConsumedReloadToken = useRef(0)
   const [dexterOpen, setDexterOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [offset, setOffset] = useState(0)
+  const [total, setTotal] = useState(0)
+  const [summary, setSummary] = useState(emptyContactSummary)
+  const [facets, setFacets] = useState(emptyContactFacets)
+  const [sort, setSort] = useState<RegisterSort | null>({ id: "contact", direction: "asc" })
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250)
+    return () => window.clearTimeout(timer)
+  }, [query])
+
+  useEffect(() => setOffset(0), [query, consentFilter, accountFilter, channelFilter])
 
   useEffect(() => {
     let active = true
+    const forceRefresh = reloadToken !== lastConsumedReloadToken.current
+    lastConsumedReloadToken.current = reloadToken
     setState("loading")
-    Promise.all([
-      listContacts(undefined, { forceRefresh: reloadToken > 0 }),
-      listCustomers(undefined, { forceRefresh: reloadToken > 0 }),
-    ])
-      .then(([nextContacts, nextAccounts]) => {
+    listContactsPage({
+      search: debouncedQuery,
+      consentScope: consentFilter === "Opted in" ? "opted_in" : consentFilter === "Opted out" ? "opted_out" : "all",
+      accountId: accountFilter,
+      channel: channelFilter,
+      sort,
+      limit: contactPageSize,
+      offset,
+    }, { forceRefresh })
+      .then((data) => {
         if (!active) return
-        setContacts(nextContacts)
-        setAccounts(nextAccounts)
+        setContacts(data.rows)
+        setTotal(data.total)
+        setSummary(data.summary)
+        setFacets(data.facets)
+        setAccounts(data.facets.accounts)
         setState("ready")
       })
       .catch((error) => { console.error("Contacts could not be loaded.", error); if (active) setState("error") })
     return () => { active = false }
-  }, [reloadToken])
+  }, [accountFilter, channelFilter, consentFilter, debouncedQuery, offset, reloadToken, sort])
 
   useEffect(() => subscribeTopBarAction(topBarActionEvents.createCrmContact, () => setCreateOpen(true)), [])
 
-  const filtered = useMemo(() => {
-    const term = query.trim().toLowerCase()
-    return contacts.filter((contact) => {
-      if (consentFilter === "Opted in" && !contact.consentMarketing) return false
-      if (consentFilter === "Opted out" && contact.consentMarketing) return false
-      if (accountFilter && contact.accountId !== accountFilter) return false
-      if (channelFilter && contact.preferredChannel !== channelFilter) return false
-      return !term || [contact.name, contact.email, contact.phone, contact.accountName, contact.role, contact.jobTitle, contact.department].some((value) => value?.toLowerCase().includes(term))
-    })
-  }, [accountFilter, channelFilter, consentFilter, contacts, query])
-
-  const optedIn = contacts.filter((contact) => contact.consentMarketing).length
-  const optedOut = contacts.length - optedIn
-  const recentlyContacted = contacts.filter((contact) => contact.lastContactAt && Date.now() - new Date(contact.lastContactAt).getTime() < 30 * 86_400_000).length
+  const optedIn = summary.marketingOptedIn
+  const optedOut = summary.marketingOptedOut
+  const recentlyContacted = summary.recentlyContacted
   const contactFiltersActive = Boolean(query || accountFilter || channelFilter || consentFilter !== "All")
-  const channelOptions = useMemo(() => [...new Set(contacts.map((contact) => contact.preferredChannel).filter((value): value is string => Boolean(value)))].sort().map((value) => ({ value, label: humanize(value) })), [contacts])
-  const accountOptions = useMemo(() => accounts.map((account) => ({ value: account.id, label: account.name })).sort((left, right) => left.label.localeCompare(right.label)), [accounts])
+  const channelOptions = useMemo(() => facets.channels.map((value) => ({ value, label: humanize(value) })), [facets.channels])
+  const accountOptions = useMemo(() => accounts.map((account) => ({ value: account.id, label: account.name })), [accounts])
   const contactColumns = useMemo<DataTableColumn<ApiContact>[]>(() => [
     {
       id: "contact", label: "Contact", width: 330, minWidth: 250, maxWidth: 460, canHide: false, resizable: true,
       sortValue: (contact) => contact.name,
-      cell: (contact) => <div className="flex min-h-11 items-center gap-3"><CustomerAvatar initials={contact.initials} tone="blue" /><span className="min-w-0"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name}</span><span dir="ltr" className="mt-0.5 block truncate text-start text-[12px] text-[var(--md-text)]">{contact.email || t("No email recorded")}</span></span></div>,
+      cell: (contact) => <div className="grid min-h-11 min-w-0 content-center"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name}</span><span dir="ltr" className="mt-0.5 block truncate text-start text-[12px] text-[var(--md-text)]">{contact.email || t("No email recorded")}</span></div>,
     },
     { id: "account", label: "Account", width: 190, minWidth: 150, resizable: true, sortValue: (contact) => contact.accountName, cellClassName: "text-[13px] font-medium text-[var(--md-ink)]", cell: (contact) => contact.accountName },
     { id: "role", label: "Role", width: 170, minWidth: 130, resizable: true, sortValue: (contact) => contact.jobTitle || contact.role, cellClassName: "text-[13px] text-[var(--md-text)]", cell: (contact) => contact.jobTitle || contact.role || t("Not recorded") },
@@ -93,7 +109,7 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
       </header>
 
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <ContactStat icon={UsersRound} label={t("Contacts")} value={contacts.length} />
+        <ContactStat icon={UsersRound} label={t("Contacts")} value={summary.contacts} />
         <ContactStat icon={UserRoundCheck} label={t("Contacted in 30 days")} value={recentlyContacted} />
         <ContactStat icon={Mail} label={t("Marketing opted in")} value={optedIn} />
         <ContactStat icon={Mail} label={t("Marketing opted out")} value={optedOut} />
@@ -104,12 +120,19 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
         columnsButtonLabel="Manage contact columns"
         storageKey="crm-contacts"
         columns={contactColumns}
-        rows={state === "ready" ? filtered : []}
+        rows={contacts}
         getRowKey={(contact) => contact.id}
+        exportConfig={{
+          fileName: "crm-contacts",
+          recordCategory: "Contact details",
+          loadRecords: (selectedContacts) => Promise.all(selectedContacts.map((contact) => getContact(contact.id))),
+        }}
         onRowClick={(contact) => navigate(`/crm/contacts/${contact.id}`)}
         rowClassName="group hover:bg-[var(--md-hover)]"
+        serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "contact", direction: "asc" }); setOffset(0) } }}
+        pagination={{ offset, limit: contactPageSize, total, loading: state === "loading", onOffsetChange: setOffset }}
         compactToolbar
-        toolbarTabs={<RegisterViewSwitch options={consentScopes} value={consentFilter} onChange={setConsentFilter} counts={{ All: contacts.length, "Opted in": optedIn, "Opted out": optedOut }} ariaLabel="Marketing consent filter" compact />}
+        toolbarTabs={<RegisterViewSwitch options={consentScopes} value={consentFilter} onChange={setConsentFilter} counts={{ All: summary.contacts, "Opted in": optedIn, "Opted out": optedOut }} ariaLabel="Marketing consent filter" compact />}
         toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search contacts" placeholder="Search contacts…" className="sm:w-[180px]" />}
         toolbarFilters={<>
           <RegisterFacetSelect label="Account" allLabel="All accounts" value={accountFilter} options={accountOptions} onChange={setAccountFilter} className="w-[140px]" />
@@ -117,7 +140,7 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
         </>}
         toolbarOptions={<RegisterRevalidatingMark active={state === "loading" && contacts.length > 0} />}
         emptyState={state === "loading"
-          ? <ContactState icon={<LoaderCircle className="size-5 animate-spin" />} title={t("Loading contacts…")} />
+          ? <ContactState icon={<DotGridLoader size="sm" decorative />} title={t("Loading contacts…")} />
           : state === "error"
             ? <ContactState icon={<RefreshCw className="size-5" />} title={t("Contacts could not be loaded.")} detail={t("Check your connection and try again.")} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} />
             : <ContactState icon={<UsersRound className="size-5" />} title={contactFiltersActive ? t("No contacts match these filters.") : t("No contacts yet.")} detail={contactFiltersActive ? t("Clear a filter or try another name, account or email.") : t("Add the first contact to start a relationship history.")} action={contactFiltersActive ? <Button variant="outline" onClick={clearContactFilters}>{t("Clear filters")}</Button> : <Button onClick={() => setCreateOpen(true)}>{t("New contact")}</Button>} />}
