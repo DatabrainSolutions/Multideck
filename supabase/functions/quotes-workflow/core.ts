@@ -19,8 +19,8 @@ export function optionalText(value: unknown, maximum = 2000) {
 }
 
 export function parseReference(value: unknown) {
-  const reference = requiredText(value, "Quote reference", 24).toUpperCase()
-  if (!/^[A-Z][A-Z0-9_-]{0,19}-[0-9]+$/.test(reference)) throw new QuoteWorkflowError(400, "Choose a valid quote reference.")
+  const reference = requiredText(value, "Quote reference", 64).toUpperCase()
+  if (!/^[A-Z0-9 _./-]{1,64}$/.test(reference) || !/[0-9]/.test(reference)) throw new QuoteWorkflowError(400, "Choose a valid quote reference.")
   return reference
 }
 

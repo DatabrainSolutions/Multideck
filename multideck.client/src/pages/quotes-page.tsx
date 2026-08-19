@@ -432,8 +432,10 @@ const salesRepresentativeOptions = systemPeople
 
 function salesRepresentativeValue(salesRep?: string, emptyWhenMissing = false) {
   if (!salesRep?.trim()) return emptyWhenMissing ? "" : salesRepresentativeOptions[0]
-  return salesRepresentativeOptions.find((option) => option.startsWith(`${salesRep} - `))
-    ?? salesRepresentativeOptions[0]
+  const normalizedSalesRep = salesRep.trim()
+  return salesRepresentativeOptions.find((option) => option.startsWith(`${normalizedSalesRep} - `))
+    ?? salesRepresentativeOptions.find((option) => option.endsWith(` - ${normalizedSalesRep}`))
+    ?? normalizedSalesRep
 }
 
 const carrierOfficeOptions: Record<string, string[]> = {
@@ -603,10 +605,34 @@ function shipmentTypeOptions(mode: string) {
   return shipmentTypeOptionsByMode[mode] ?? shipmentTypeOptionsByMode.Sea
 }
 
-function shipmentTypeValue(mode: string, value?: string) {
-  if (!mode.trim() || !value?.trim()) return ""
-  const options = shipmentTypeOptions(mode)
-  return options.includes(value) ? value : ""
+const shipmentTypeCodesByMode: Record<string, string[]> = {
+  sea: ["FCL", "LCL", "CONSOL", "BREAKBULK", "PROJECT"],
+  air: ["AIR", "CONSOL", "PROJECT"],
+  road: ["FTL", "LTL", "RO_RO", "PROJECT"],
+  rail: ["PROJECT", "OTHER"],
+  multimodal: ["FCL", "LCL", "FTL", "LTL", "AIR", "CONSOL", "BREAKBULK", "RO_RO", "PROJECT", "OTHER"],
+  courier: ["AIR", "OTHER"],
+  warehouse: ["OTHER"],
+  customs_only: ["CUSTOMS_ONLY"],
+  docs_only: ["DOCS_ONLY"],
+  other: ["OTHER"],
+}
+
+function shipmentTypeCode(value: string) {
+  return value.split(" - ", 1)[0].trim().toUpperCase()
+}
+
+function shipmentTypeChoicesForMode(mode: string, choices: string[]) {
+  const allowedCodes = shipmentTypeCodesByMode[mode.trim().toLowerCase()]
+  if (!allowedCodes) return choices
+  return choices.filter((choice) => allowedCodes.includes(shipmentTypeCode(choice)))
+}
+
+function shipmentTypeValue(mode: string, value?: string, choices?: string[]) {
+  const selected = value?.trim() ?? ""
+  if (!selected) return ""
+  const available = choices ?? shipmentTypeOptions(mode)
+  return available.some((option) => option === selected || shipmentTypeCode(option) === shipmentTypeCode(selected)) ? selected : ""
 }
 
 function parseTransportModes(value: string) {
@@ -1122,7 +1148,7 @@ function QuoteSetupPanel({
             <QuoteField label="HBL delivery mode" value={quote.hblMode ?? "CY/CFS"} editable={editable} onChange={(value) => onQuoteChange("hblMode", value)} />
             <QuoteField label="From" value={quote.origin} editable={editable} required invalid={validationAttempted && !quote.origin.trim()} onChange={(value) => onQuoteChange("origin", value)} />
             <QuoteField label="To" value={quote.destination} editable={editable} required invalid={validationAttempted && !quote.destination.trim()} onChange={(value) => onQuoteChange("destination", value)} />
-            <QuoteField label="Direction" value={quote.direction ?? ""} editable={editable} required invalid={validationAttempted && !quote.direction?.trim()} options={["Export", "Import", "Domestic", "Cross trade"]} onChange={(value) => onQuoteChange("direction", value)} />
+            <QuoteField label="Quote Type" value={quote.direction ?? ""} editable={editable} required invalid={validationAttempted && !quote.direction?.trim()} options={["Export", "Import", "Domestic", "Cross trade"]} onChange={(value) => onQuoteChange("direction", value)} />
             <QuoteField label="Currency" value={quote.currency} editable={editable} required invalid={validationAttempted && !quote.currency.trim()} options={["GBP", "EUR", "USD"]} onChange={(value) => onQuoteChange("currency", value)} />
             <QuoteField label="Via" value={quote.via} editable={editable} onChange={(value) => onQuoteChange("via", value)} />
             <QuoteField label="Transit days" value={quote.transitDays ?? ""} editable={editable} onChange={(value) => onQuoteChange("transitDays", value)} />
@@ -1809,7 +1835,7 @@ function QuoteOverviewPanel({ quote }: { quote: QuoteRecord }) {
             <DenseFact label="Via" value={`${quote.via} - Singapore`} detail="Transhipment" />
             <DenseFact label="Destination" value={formatLocation(quote.destination, "Kobe")} detail="Japan" />
             <DenseFact label="HBL mode" value={quote.hblMode ?? "CY/CFS"} detail={quote.serviceLevel ?? "Service level not selected"} />
-            <DenseFact label="Direction" value={quote.direction ?? "Export"} detail={`${quote.branch} / ${quote.department}`} />
+            <DenseFact label="Quote Type" value={quote.direction ?? "Export"} detail={`${quote.branch} / ${quote.department}`} />
           </div>
         </Surface>
 
@@ -2319,7 +2345,7 @@ function QuoteCargoWiseOverviewPanel({ quote }: { quote: QuoteRecord }) {
             <CargoWiseField label="Via" value={quote.via} compact />
             <CargoWiseField label="Transit" value={quote.transitDays ? `${quote.transitDays} days` : ""} compact />
             <CargoWiseField label="HBL mode" value={quote.hblMode ?? ""} compact />
-            <CargoWiseField label="Direction" value={quote.direction ?? ""} compact />
+            <CargoWiseField label="Quote Type" value={quote.direction ?? ""} compact />
           </div>
         </CargoWiseGroup>
 
@@ -2534,7 +2560,7 @@ function QuoteCargoWiseDetailsPanel({
 
   function changeMode(mode: string) {
     onQuoteChange("mode", mode)
-    const nextShipmentType = shipmentTypeValue(mode, quote.shipmentType)
+    const nextShipmentType = shipmentTypeValue(mode, quote.shipmentType, shipmentTypeChoicesForMode(mode, shipmentTypeChoices))
     if (nextShipmentType !== quote.shipmentType) onQuoteChange("shipmentType", nextShipmentType)
   }
 
@@ -2637,15 +2663,17 @@ function QuoteCargoWiseDetailsPanel({
           <div className="grid content-start gap-1.5">
             <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Ownership")}</h4>
             <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <CargoWiseSelectField label="Branch" value={quote.branch ?? ""} options={officeChoices} compact editable={editable} dataOptions onChange={(value) => {
-                const office = lookups?.offices.find((option) => (option.code || option.name) === value)
-                onQuoteChange("branch", value)
-                onQuoteChange("officeId", office?.id ?? "")
-              }} />
+              <CargoWiseSelectField label="Quote Type" value={quote.direction ?? ""} options={["Export", "Import", "Domestic", "Cross trade"]} compact editable={editable} onChange={(value) => onQuoteChange("direction", value)} />
               <CargoWiseSelectField label="Dept" value={quote.department ?? ""} options={departmentChoices} compact editable={editable} dataOptions onChange={(value) => {
                 const department = lookups?.departments.find((option) => option.name === value)
                 onQuoteChange("department", value)
                 onQuoteChange("departmentId", department?.id ?? "")
+              }} />
+              <CargoWiseSelectField label="Priority" value={quote.priority ?? ""} options={["Low", "Standard", "High", "Tender"]} compact editable={editable} onChange={(value) => onQuoteChange("priority", value)} />
+              <CargoWiseSelectField label="Branch" value={quote.branch ?? ""} options={officeChoices} compact editable={editable} dataOptions onChange={(value) => {
+                const office = lookups?.offices.find((option) => (option.code || option.name) === value)
+                onQuoteChange("branch", value)
+                onQuoteChange("officeId", office?.id ?? "")
               }} />
               <CargoWiseSelectField
                 label="Sales rep"
@@ -2660,7 +2688,6 @@ function QuoteCargoWiseDetailsPanel({
                   onQuoteChange("salesOwnerId", userId)
                 }}
               />
-              <CargoWiseSelectField label="Priority" value={quote.priority ?? ""} options={["Low", "Standard", "High", "Tender"]} compact editable={editable} onChange={(value) => onQuoteChange("priority", value)} />
               <CargoWiseSelectField label="Hold reason" value={quote.holdReason ?? ""} options={["None", "Missing carrier", "Missing consignee", "Margin review", "Credit check"]} compact editable={editable} onChange={(value) => onQuoteChange("holdReason", value)} />
             </div>
           </div>
@@ -2780,8 +2807,8 @@ function QuoteCargoWiseDetailsPanel({
             <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-3">
               <CargoWiseSelectField
                 label="Shipment type"
-                value={shipmentTypeValue(quote.mode, quote.shipmentType)}
-                options={shipmentTypeChoices}
+                value={shipmentTypeValue(quote.mode, quote.shipmentType, shipmentTypeChoicesForMode(quote.mode, shipmentTypeChoices))}
+                options={shipmentTypeChoicesForMode(quote.mode, shipmentTypeChoices)}
                 editable={editable}
                 onChange={(value) => onQuoteChange("shipmentType", value)}
               />
@@ -2795,7 +2822,6 @@ function QuoteCargoWiseDetailsPanel({
               <CargoWiseLookupField label="Via" value={quote.via} editable={editable} onChange={(value) => onQuoteChange("via", value)} />
               <CargoWiseField label="Transit" value={quote.transitDays ?? ""} editable={editable} onChange={(value) => onQuoteChange("transitDays", value)} />
               <CargoWiseSelectField label="Frequency" value={quote.frequency ?? ""} options={["0 - Ad hoc", "1 - Weekly", "2 - Twice weekly", "3 - Daily"]} editable={editable} onChange={(value) => onQuoteChange("frequency", value)} />
-              <CargoWiseSelectField label="Direction" value={quote.direction ?? ""} options={["Export", "Import", "Domestic", "Cross trade"]} editable={editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.direction?.trim()} onChange={(value) => onQuoteChange("direction", value)} />
               <CargoWiseSelectField label="Currency" value={quote.currency} options={currencyChoices} editable={editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.currency.trim()} onChange={(value) => onQuoteChange("currency", value)} />
             </div>
           </div>
@@ -3108,7 +3134,7 @@ function QuoteWorkspaceContext({
       items: [["Customer", quote.customer], ["Route", `${formatLocation(quote.origin, "—")} → ${formatLocation(quote.destination, "—")}`], ["Margin", quote.margin], ["Status", quote.jobStatus ?? quote.status]],
     },
     details: {
-      items: [["Customer ref", quote.localRef ?? "—"], ["Branch / Dept", [quote.branch, quote.department].filter(Boolean).join(" / ") || (quote.id === "NEW" ? "" : "— / —")], ["Sales rep", salesRepresentativeValue(quote.salesRep, quote.id === "NEW")], ["Priority", quote.priority ?? "Standard"]],
+      items: [["Customer ref", quote.localRef ?? "—"], ["Branch / Dept", [quote.branch, quote.department].filter(Boolean).join(" / ") || (quote.id === "NEW" ? "" : "— / —")], ["Sales rep", salesRepresentativeValue(quote.salesRep, true) || "Select"], ["Priority", quote.priority ?? "Standard"]],
     },
     documents: {
       items: [["Quote", quote.id], ["Customer", quote.customer], ["Document status", quote.docsStatus ?? "Draft"], ["Workflow", quote.workflow ?? "Review"]],

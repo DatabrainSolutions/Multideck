@@ -9,13 +9,22 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useLanguage } from "@/i18n/language-provider"
 import { getAdminAudit, type AdminActiveUser, type AdminAuditResponse, type AdminAuditRow, type AdminAuditView } from "@/lib/admin-audit-api"
-import { getQuoteReferenceSettings, saveQuoteReferenceSettings } from "@/lib/quote-workflow-api"
+import { getQuoteReferenceSettings, saveQuoteReferenceSettings, type QuoteReferenceSettings } from "@/lib/quote-workflow-api"
 import type { AuthUserSummary } from "@/lib/auth-user"
 
 const AdminUsersContent = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.AdminUsersContent })))
 const AdminAiUsageContent = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.AdminAiUsageContent })))
 const AdminBillingContent = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.AdminBillingContent })))
 const AdminBroadcastContent = lazy(() => import("@/components/multideck/broadcast-settings").then((module) => ({ default: module.BroadcastSettings })))
+
+function normaliseReferencePatternInput(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return { pattern: "", nextNumber: null as number | null }
+  if (/\{number\}/i.test(trimmed)) return { pattern: trimmed, nextNumber: null as number | null }
+  const numberedPrefix = trimmed.match(/^(.*?)(\d+)$/)
+  if (numberedPrefix) return { pattern: `${numberedPrefix[1]}{number}`, nextNumber: Number(numberedPrefix[2]) }
+  return { pattern: `${trimmed}{number}`, nextNumber: null as number | null }
+}
 
 export type AdminRoute = "/admin/users" | "/admin/ai-usage" | "/admin/broadcast" | "/admin/billing" | "/admin/system-preferences" | "/admin/activity" | "/admin/detailed-log"
 type AuditCategory = "all" | "authentication" | "application"
@@ -242,8 +251,9 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
 
 function SystemPreferencesContent() {
   const { t } = useLanguage()
-  const [quotePrefix, setQuotePrefix] = useState("")
-  const [bookingPrefix, setBookingPrefix] = useState("")
+  const [quotePattern, setQuotePattern] = useState("")
+  const [quoteNextNumber, setQuoteNextNumber] = useState(1)
+  const [bookingPatterns, setBookingPatterns] = useState<QuoteReferenceSettings["bookingPatterns"]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
@@ -251,8 +261,9 @@ function SystemPreferencesContent() {
 
   useEffect(() => {
     void getQuoteReferenceSettings().then((settings) => {
-      setQuotePrefix(settings.quotePrefix)
-      setBookingPrefix(settings.bookingPrefix)
+      setQuotePattern(settings.quotePattern)
+      setQuoteNextNumber(settings.quoteNextNumber ?? 1)
+      setBookingPatterns(settings.bookingPatterns)
     }).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "System preferences could not be loaded.")).finally(() => setLoading(false))
   }, [])
 
@@ -261,9 +272,10 @@ function SystemPreferencesContent() {
     setFeedback(null)
     setError(null)
     try {
-      const settings = await saveQuoteReferenceSettings({ quotePrefix, bookingPrefix })
-      setQuotePrefix(settings.quotePrefix)
-      setBookingPrefix(settings.bookingPrefix)
+      const settings = await saveQuoteReferenceSettings({ quotePattern, quoteNextNumber, bookingPatterns })
+      setQuotePattern(settings.quotePattern)
+      setQuoteNextNumber(settings.quoteNextNumber ?? 1)
+      setBookingPatterns(settings.bookingPatterns)
       setFeedback("System preferences saved.")
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "System preferences could not be saved.")
@@ -272,10 +284,28 @@ function SystemPreferencesContent() {
     }
   }
 
-  const header = <SettingsPageHeader title={t("System Preferences")} description={t("Control the prefixes used when new quote and booking references are created.")} descriptionPlacement="under-title" />
+  const updateBookingPattern = (index: number, patch: Partial<QuoteReferenceSettings["bookingPatterns"][number]>) => {
+    setBookingPatterns((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item))
+  }
+  const addBookingPattern = () => {
+    const key = `booking-${bookingPatterns.length + 1}`
+    setBookingPatterns((current) => [...current, { key, label: "Booking type", pattern: "B-{number}", nextNumber: 1, enabled: true }])
+  }
+  const normaliseQuotePattern = () => {
+    const normalized = normaliseReferencePatternInput(quotePattern)
+    setQuotePattern(normalized.pattern)
+    if (normalized.nextNumber !== null && Number.isFinite(normalized.nextNumber)) setQuoteNextNumber(Math.max(1, normalized.nextNumber))
+  }
+  const normaliseBookingPattern = (index: number) => {
+    const item = bookingPatterns[index]
+    if (!item) return
+    const normalized = normaliseReferencePatternInput(item.pattern)
+    updateBookingPattern(index, { pattern: normalized.pattern, ...(normalized.nextNumber === null ? {} : { nextNumber: Math.max(1, normalized.nextNumber) }) })
+  }
+  const header = <SettingsPageHeader title={t("System Preferences")} description={t("Control the patterns used when new quote and booking references are created.")} descriptionPlacement="under-title" />
   if (loading) return <div className="px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[760px]">{header}<p className="mt-8 text-[13px] text-[var(--md-text)]" role="status">{t("Loading system preferences…")}</p></div></div>
 
-  return <div className="min-w-0 px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[760px] space-y-5 pb-[var(--md-page-bottom-pad)]">{header}<section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]"><div className="grid gap-4 sm:grid-cols-2"><label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]"><span>{t("Quote reference prefix")}</span><Input value={quotePrefix} maxLength={12} onChange={(event) => setQuotePrefix(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="Q" aria-label={t("Quote reference prefix")} /><span className="text-[11px] font-normal text-[var(--md-subtle)]">{t("Example: Q-1001")}</span></label><label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]"><span>{t("Booking reference prefix")}</span><Input value={bookingPrefix} maxLength={12} onChange={(event) => setBookingPrefix(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="B" aria-label={t("Booking reference prefix")} /><span className="text-[11px] font-normal text-[var(--md-subtle)]">{t("Example: B-1001")}</span></label></div>{error ? <p className="mt-4 text-[12px] text-[var(--md-red)]" role="alert">{error}</p> : null}{feedback ? <p className="mt-4 text-[12px] text-[var(--md-green)]" role="status">{t(feedback)}</p> : null}<div className="mt-5 flex justify-end"><Button type="button" disabled={saving || !quotePrefix || !bookingPrefix} onClick={() => void save()}>{t(saving ? "Saving…" : "Save preferences")}</Button></div></section></div></div>
+  return <div className="min-w-0 px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[860px] space-y-5 pb-[var(--md-page-bottom-pad)]">{header}<section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]"><div className="grid gap-4"><div className="grid gap-3 sm:grid-cols-[1fr_160px]"><label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]"><span>{t("Quote reference pattern")}</span><Input value={quotePattern} maxLength={64} onChange={(event) => setQuotePattern(event.target.value)} onBlur={normaliseQuotePattern} placeholder="Q-{number}" aria-label={t("Quote reference pattern")} /><span className="text-[11px] font-normal text-[var(--md-subtle)]">{t("Use {number} where the ascending number should appear. Example: JQ{number}. A value such as JQ20000 becomes JQ{number} starting at 20000.")}</span></label><label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]"><span>{t("Next number")}</span><Input type="number" min={1} value={quoteNextNumber} onChange={(event) => setQuoteNextNumber(Math.max(1, Number(event.target.value) || 1))} aria-label={t("Next quote number")} /></label></div><div className="grid gap-3"><div className="flex items-center justify-between"><div><h2 className="text-[12px] font-medium text-[var(--md-text)]">{t("Booking reference patterns")}</h2><p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Add separate sequences for Import, Export or any other booking type.")}</p></div><Button type="button" variant="outline" onClick={addBookingPattern}>{t("Add pattern")}</Button></div>{bookingPatterns.map((item, index) => <div key={`${item.key}-${index}`} className="grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-muted)] p-3 sm:grid-cols-[1fr_1.4fr_120px_auto]"><label className="grid gap-1 text-[11px] font-medium text-[var(--md-text)]"><span>{t("Label")}</span><Input value={item.label} onChange={(event) => updateBookingPattern(index, { label: event.target.value })} aria-label={t("Booking pattern label")} /></label><label className="grid gap-1 text-[11px] font-medium text-[var(--md-text)]"><span>{t("Pattern")}</span><Input value={item.pattern} maxLength={64} onChange={(event) => updateBookingPattern(index, { pattern: event.target.value })} onBlur={() => normaliseBookingPattern(index)} placeholder="B-{number}" aria-label={t("Booking reference pattern")} /></label><label className="grid gap-1 text-[11px] font-medium text-[var(--md-text)]"><span>{t("Next number")}</span><Input type="number" min={1} value={item.nextNumber} onChange={(event) => updateBookingPattern(index, { nextNumber: Math.max(1, Number(event.target.value) || 1) })} aria-label={t("Next booking number")} /></label><div className="flex items-end"><Button type="button" variant="ghost" onClick={() => setBookingPatterns((current) => current.filter((_, itemIndex) => itemIndex !== index))}>{t("Remove")}</Button></div></div>)}</div></div>{error ? <p className="mt-4 text-[12px] text-[var(--md-red)]" role="alert">{error}</p> : null}{feedback ? <p className="mt-4 text-[12px] text-[var(--md-green)]" role="status">{t(feedback)}</p> : null}<div className="mt-5 flex justify-end"><Button type="button" disabled={saving || !quotePattern || bookingPatterns.length === 0} onClick={() => void save()}>{t(saving ? "Saving…" : "Save preferences")}</Button></div></section></div></div>
 }
 
 export function AdminPage({ route, currentUser }: { route: AdminRoute; currentUser: AuthUserSummary | null }) {

@@ -145,8 +145,15 @@ export type QuoteWorkflowSources = {
 }
 
 export type QuoteReferenceSettings = {
-  quotePrefix: string
-  bookingPrefix: string
+  quotePattern: string
+  quoteNextNumber: number | null
+  bookingPatterns: Array<{
+    key: string
+    label: string
+    pattern: string
+    nextNumber: number
+    enabled: boolean
+  }>
 }
 
 function requireClient() {

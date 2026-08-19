@@ -256,7 +256,7 @@ Deno.serve(async (request) => {
     }
     if (action === "save-reference-settings") {
       await requireAdministrator(admin, userId)
-      const { data, error } = await admin.rpc("quote_workflow_save_reference_settings", { caller_auth_user_id: userId, quote_prefix: body.quotePrefix, booking_prefix: body.bookingPrefix })
+      const { data, error } = await admin.rpc("quote_workflow_save_reference_settings", { caller_auth_user_id: userId, quote_pattern: body.quotePattern, quote_next_number: body.quoteNextNumber, booking_patterns: body.bookingPatterns })
       if (error || !data) throw error ?? new Error("Reference settings save returned no result")
       return jsonResponse(request, data)
     }
