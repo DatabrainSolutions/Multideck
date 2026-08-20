@@ -107,6 +107,8 @@ import { DataTable, type DataTableColumn } from "@/components/multideck/data-tab
 import { UnifiedQuoteChargesWorkspace, type UnifiedQuoteChargeRow } from "@/components/multideck/unified-quote-charges-workspace"
 import { QuoteSearchBuilder, type QuoteSearchQuery } from "@/components/multideck/quote-search-builder"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
+import { CarrierFilterControl, MarketRateRequestBar, RateCompareResults, RateShapeFilters, RateSourcePill, ZoneLookupField } from "@/components/multideck/rate-workspace-components"
+import { comparePresets, matchTariffOffers, modesForDirection, rateSheets, typesForDirection, type RateDirection, type RateMode } from "@/data/rate-workspace-data"
 import { DocumentViewer, PaperTrayStack } from "@/components/multideck/paper-tray"
 import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/components/multideck/document-workspace"
 import { createInitialPaperTrays } from "@/data/paper-tray-data"
@@ -153,7 +155,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "rate-shape-filters", "rate-source-pill", "zone-lookup-field", "carrier-filter-control", "market-rate-request-bar", "tariff-compare-results", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -191,6 +193,27 @@ const previewChargeRows: PreviewChargeRow[] = [
   { id: "FRT", description: "International freight", supplier: "Bluewave Ocean", cost: 840, sell: 980 },
   { id: "OCART", description: "Pickup transport", supplier: "Severn Road Logistics", cost: 610, sell: 630 },
   { id: "DTHC", description: "Destination handling", supplier: "Kobe Gateway Agency", cost: 304, sell: 360 },
+]
+
+const previewRateOffers = [
+  ...matchTariffOffers(rateSheets, { ...comparePresets[1].request }),
+  {
+    id: "preview-market",
+    sourceId: "road-index",
+    sourceKind: "third-party" as const,
+    sourceLabel: "UK road market index",
+    carrierId: "redline",
+    carrierName: "Redline Transport",
+    tariffName: "Road market index",
+    serviceLevel: "Next-day",
+    buyTotal: 104,
+    currency: "GBP",
+    transitDays: 1,
+    validUntil: "2026-08-20T14:00:00Z",
+    confidence: "indicative" as const,
+    routingSummary: "LS12 4AA → BS1 4DJ",
+    breakdown: [{ label: "Indicative per pallet × 2", amount: 104 }],
+  },
 ]
 
 const previewUnifiedChargeRowsSeed: UnifiedQuoteChargeRow[] = [
@@ -562,6 +585,12 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewMarketingFolderId, setPreviewMarketingFolderId] = useState(previewMarketingFolders[0].id)
   const [previewPaperDocumentId, setPreviewPaperDocumentId] = useState<string | null>(null)
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
+  const [previewRateOrigin, setPreviewRateOrigin] = useState("LS12 4AA")
+  const [previewRateCarriers, setPreviewRateCarriers] = useState(["XPO Logistics"])
+  const [previewRateDirection, setPreviewRateDirection] = useState<RateDirection>("Import")
+  const [previewRateMode, setPreviewRateMode] = useState<RateMode>("Sea")
+  const [previewRateType, setPreviewRateType] = useState("FCL")
+  const [previewRateOfferId, setPreviewRateOfferId] = useState(previewRateOffers[0]?.id ?? "")
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
   const previewNow = useLiveNow()
   const previewPaperDocument = previewPaperTrays.flatMap((tray) => tray.documents).find((document) => document.id === previewPaperDocumentId) ?? null
@@ -1234,6 +1263,72 @@ function ComponentPreview({ id }: { id: string }) {
             storageKey="gallery-charge-table"
             ariaLabel="Quote charges preview"
           />
+        </div>
+      ) : null}
+
+      {id === "rate-shape-filters" ? (
+        <div className="w-full max-w-[760px]">
+          <RateShapeFilters
+            directionOptions={["Import", "Export", "Cross trade", "Domestic"]}
+            direction={previewRateDirection}
+            onDirectionChange={(next) => {
+              const direction = next as RateDirection
+              const mode = modesForDirection(direction)[0]
+              setPreviewRateDirection(direction)
+              setPreviewRateMode(mode)
+              setPreviewRateType(typesForDirection(direction, mode)[0])
+            }}
+            modeOptions={modesForDirection(previewRateDirection)}
+            mode={previewRateMode}
+            onModeChange={(next) => {
+              const mode = next as RateMode
+              setPreviewRateMode(mode)
+              setPreviewRateType(typesForDirection(previewRateDirection, mode)[0])
+            }}
+            typeOptions={typesForDirection(previewRateDirection, previewRateMode)}
+            shipmentType={previewRateType}
+            onTypeChange={setPreviewRateType}
+          />
+        </div>
+      ) : null}
+
+      {id === "rate-source-pill" ? (
+        <div className="flex w-full max-w-[560px] flex-wrap gap-2 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <RateSourcePill source="contract" confidence="firm" />
+          <RateSourcePill source="tariff" confidence="firm" />
+          <RateSourcePill source="spot" confidence="indicative" />
+          <RateSourcePill source="carrier-api" confidence="indicative" />
+        </div>
+      ) : null}
+
+      {id === "zone-lookup-field" ? (
+        <div className="w-full max-w-[360px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <ZoneLookupField id="gallery-origin" label="Origin" value={previewRateOrigin} onChange={setPreviewRateOrigin} placeholder="Postcode or area" />
+        </div>
+      ) : null}
+
+      {id === "carrier-filter-control" ? (
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <CarrierFilterControl
+            carriers={["XPO Logistics", "GXO Logistics", "Palletline"]}
+            value={previewRateCarriers}
+            onChange={setPreviewRateCarriers}
+            nominatedCarrierName="XPO Logistics"
+            nominatedLocked={previewRateCarriers.length === 1 && previewRateCarriers[0] === "XPO Logistics"}
+            onClearNominated={() => setPreviewRateCarriers([])}
+          />
+        </div>
+      ) : null}
+
+      {id === "market-rate-request-bar" ? (
+        <div className="w-full max-w-[760px]">
+          <MarketRateRequestBar coverage="uncovered" state="idle" errorCount={1} onRequest={() => undefined} />
+        </div>
+      ) : null}
+
+      {id === "tariff-compare-results" ? (
+        <div className="w-full max-w-[1120px]">
+          <RateCompareResults storageKey="gallery-rate-compare" offers={previewRateOffers} selectedId={previewRateOfferId} onSelect={(offer) => setPreviewRateOfferId(offer.id)} />
         </div>
       ) : null}
 

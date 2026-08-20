@@ -46,6 +46,7 @@ const CrmListsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ d
 const CrmListDetailPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmListDetailPage })))
 const CrmMarketingPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmMarketingPage })))
 const CrmSettingsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmSettingsPage })))
+const RatesPage = lazy(() => import("@/pages/rates-page").then((module) => ({ default: module.RatesPage })))
 
 type AuthStatus = "checking" | "authenticated" | "unauthenticated"
 
@@ -69,6 +70,11 @@ const validRoutes = new Set([
   "/playground/navigation",
   "/quotes",
   "/quotes/3",
+  "/rates",
+  "/rates/import",
+  "/rates/export",
+  "/rates/cross-trade",
+  "/rates/domestic",
   "/reports",
   "/reports/templates/monthly-client-review",
   "/settings",
@@ -327,6 +333,7 @@ export default function App() {
                   {route === "/paper-tray" ? <PaperTrayPage /> : null}
                   {route === "/playground/navigation" ? <NavigationLabPage /> : null}
                   {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} /> : null}
+                  {route.startsWith("/rates") ? <RatesPage route={route} navigate={navigate} /> : null}
                   {isQuoteDetailRoute(route) ? <QuoteDetailPage key={route} variant="cargowise" quoteId={route.split("/").at(-1)} /> : null}
                   {route === "/reports" ? <ReportsPage navigate={navigate} /> : null}
                   {route === "/settings" ? <SettingsPage navigate={navigate} /> : null}
