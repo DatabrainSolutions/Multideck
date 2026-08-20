@@ -607,6 +607,50 @@ export function typesForDirection(direction: RateDirection, mode: RateMode) {
   return direction === "Domestic" ? [...domesticShipmentTypes] : [...shipmentTypesByMode[mode]]
 }
 
+export function routeForDirection(direction: RateDirection) {
+  if (direction === "Import") return "/rates/import"
+  if (direction === "Export") return "/rates/export"
+  if (direction === "Cross trade") return "/rates/cross-trade"
+  return "/rates/domestic"
+}
+
+export function defaultShapeFor(direction: RateDirection, mode?: RateMode) {
+  const nextMode = mode && modesForDirection(direction).includes(mode) ? mode : modesForDirection(direction)[0]
+  return {
+    mode: nextMode,
+    shipmentType: typesForDirection(direction, nextMode)[0],
+  }
+}
+
+export function compareRequestForShape(direction: RateDirection, mode: RateMode, shipmentType: string): RateCompareRequest {
+  const matchingPreset = comparePresets.find((preset) => (
+    preset.request.direction === direction
+    && preset.request.mode === mode
+    && preset.request.shipmentType === shipmentType
+  ))
+  if (matchingPreset) return { ...matchingPreset.request }
+
+  const sheet = rateSheets.find((item) => (
+    item.direction === direction
+    && item.mode === mode
+    && item.shipmentType === shipmentType
+    && item.status === "Live"
+  ))
+
+  return {
+    customerId: direction === "Import" ? "bauhaus" : "jenkar",
+    direction,
+    mode,
+    shipmentType,
+    origin: sheet?.originName ?? (direction === "Domestic" ? "WF2 8TH" : "Ningbo"),
+    destination: sheet?.destinationName ?? (direction === "Domestic" ? "BS1 4DJ" : "Felixstowe"),
+    pallets: direction === "Domestic" ? 2 : 1,
+    weightKg: mode === "Air" ? 420 : direction === "Domestic" ? 420 : 18000,
+    serviceLevel: sheet?.serviceLevel ?? (direction === "Domestic" ? shipmentType : "Any"),
+    includeMarket: direction !== "Domestic",
+  }
+}
+
 export function normalizeLocation(value: string) {
   return value.trim().toUpperCase().replace(/\s+/g, " ")
 }

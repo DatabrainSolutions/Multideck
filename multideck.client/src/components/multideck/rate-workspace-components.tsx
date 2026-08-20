@@ -131,6 +131,9 @@ export function CarrierFilterControl({
 }
 
 export function RateShapeFilters({
+  directionOptions,
+  direction,
+  onDirectionChange,
   modeOptions,
   mode,
   onModeChange,
@@ -141,6 +144,9 @@ export function RateShapeFilters({
   source,
   onSourceChange,
 }: {
+  directionOptions?: readonly string[]
+  direction?: string
+  onDirectionChange?: (value: string) => void
   modeOptions: readonly string[]
   mode: string
   onModeChange: (value: string) => void
@@ -154,25 +160,33 @@ export function RateShapeFilters({
   const { t } = useLanguage()
 
   return (
-    <section aria-label={t("Rate shape")} className="flex flex-wrap items-start gap-3 rounded-[var(--md-radius-xl)] bg-white/32 p-2.5 shadow-[var(--md-shadow-line)]">
-      <div className="min-w-0">
-        <p className="mb-1.5 px-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{t("Mode")}</p>
-        <FilterChips options={modeOptions} activeOption={mode} onChange={onModeChange} labelForOption={t} />
-      </div>
-      <span className="hidden h-12 w-px self-center bg-[rgba(11,20,19,0.08)] sm:block" aria-hidden="true" />
-      <div className="min-w-0">
-        <p className="mb-1.5 px-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{t("Type")}</p>
-        <FilterChips options={typeOptions} activeOption={shipmentType} onChange={onTypeChange} labelForOption={t} />
-      </div>
-      {sourceOptions && source && onSourceChange ? (
-        <>
-          <span className="hidden h-12 w-px self-center bg-[rgba(11,20,19,0.08)] sm:block" aria-hidden="true" />
-          <div className="min-w-0">
-            <p className="mb-1.5 px-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{t("Source")}</p>
-            <FilterChips options={sourceOptions} activeOption={source} onChange={onSourceChange} labelForOption={t} />
-          </div>
-        </>
+    <section aria-label={t("Rate shape")} className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/32 p-3 shadow-[var(--md-shadow-line)]">
+      {directionOptions && direction && onDirectionChange ? (
+        <div className="min-w-0">
+          <p className="mb-1.5 px-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{t("Direction")}</p>
+          <FilterChips options={directionOptions} activeOption={direction} onChange={onDirectionChange} labelForOption={t} />
+        </div>
       ) : null}
+      <div className="flex min-w-0 flex-wrap items-start gap-3">
+        <div className="min-w-0">
+          <p className="mb-1.5 px-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{t("Mode")}</p>
+          <FilterChips options={modeOptions} activeOption={mode} onChange={onModeChange} labelForOption={t} />
+        </div>
+        <span className="hidden h-12 w-px self-center bg-[rgba(11,20,19,0.08)] sm:block" aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="mb-1.5 px-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{t("Type")}</p>
+          <FilterChips options={typeOptions} activeOption={shipmentType} onChange={onTypeChange} labelForOption={t} />
+        </div>
+        {sourceOptions && source && onSourceChange ? (
+          <>
+            <span className="hidden h-12 w-px self-center bg-[rgba(11,20,19,0.08)] sm:block" aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="mb-1.5 px-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{t("Source")}</p>
+              <FilterChips options={sourceOptions} activeOption={source} onChange={onSourceChange} labelForOption={t} />
+            </div>
+          </>
+        ) : null}
+      </div>
     </section>
   )
 }

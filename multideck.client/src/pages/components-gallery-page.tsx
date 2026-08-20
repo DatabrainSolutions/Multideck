@@ -107,8 +107,8 @@ import { DataTable, type DataTableColumn } from "@/components/multideck/data-tab
 import { UnifiedQuoteChargesWorkspace, type UnifiedQuoteChargeRow } from "@/components/multideck/unified-quote-charges-workspace"
 import { QuoteSearchBuilder, type QuoteSearchQuery } from "@/components/multideck/quote-search-builder"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
-import { CarrierFilterControl, MarketRateRequestBar, RateCompareResults, RateSourcePill, ZoneLookupField } from "@/components/multideck/rate-workspace-components"
-import { comparePresets, matchTariffOffers, rateSheets } from "@/data/rate-workspace-data"
+import { CarrierFilterControl, MarketRateRequestBar, RateCompareResults, RateShapeFilters, RateSourcePill, ZoneLookupField } from "@/components/multideck/rate-workspace-components"
+import { comparePresets, matchTariffOffers, modesForDirection, rateSheets, typesForDirection, type RateDirection, type RateMode } from "@/data/rate-workspace-data"
 import { DocumentViewer, PaperTrayStack } from "@/components/multideck/paper-tray"
 import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/components/multideck/document-workspace"
 import { createInitialPaperTrays } from "@/data/paper-tray-data"
@@ -155,7 +155,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "rate-source-pill", "zone-lookup-field", "carrier-filter-control", "market-rate-request-bar", "tariff-compare-results", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "rate-shape-filters", "rate-source-pill", "zone-lookup-field", "carrier-filter-control", "market-rate-request-bar", "tariff-compare-results", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -587,6 +587,9 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
   const [previewRateOrigin, setPreviewRateOrigin] = useState("LS12 4AA")
   const [previewRateCarriers, setPreviewRateCarriers] = useState(["XPO Logistics"])
+  const [previewRateDirection, setPreviewRateDirection] = useState<RateDirection>("Import")
+  const [previewRateMode, setPreviewRateMode] = useState<RateMode>("Sea")
+  const [previewRateType, setPreviewRateType] = useState("FCL")
   const [previewRateOfferId, setPreviewRateOfferId] = useState(previewRateOffers[0]?.id ?? "")
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
   const previewNow = useLiveNow()
@@ -1259,6 +1262,32 @@ function ComponentPreview({ id }: { id: string }) {
             getRowKey={(row) => row.id}
             storageKey="gallery-charge-table"
             ariaLabel="Quote charges preview"
+          />
+        </div>
+      ) : null}
+
+      {id === "rate-shape-filters" ? (
+        <div className="w-full max-w-[760px]">
+          <RateShapeFilters
+            directionOptions={["Import", "Export", "Cross trade", "Domestic"]}
+            direction={previewRateDirection}
+            onDirectionChange={(next) => {
+              const direction = next as RateDirection
+              const mode = modesForDirection(direction)[0]
+              setPreviewRateDirection(direction)
+              setPreviewRateMode(mode)
+              setPreviewRateType(typesForDirection(direction, mode)[0])
+            }}
+            modeOptions={modesForDirection(previewRateDirection)}
+            mode={previewRateMode}
+            onModeChange={(next) => {
+              const mode = next as RateMode
+              setPreviewRateMode(mode)
+              setPreviewRateType(typesForDirection(previewRateDirection, mode)[0])
+            }}
+            typeOptions={typesForDirection(previewRateDirection, previewRateMode)}
+            shipmentType={previewRateType}
+            onTypeChange={setPreviewRateType}
           />
         </div>
       ) : null}
