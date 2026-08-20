@@ -288,3 +288,20 @@ Before saying the work is done:
 - Check that the result still feels calm, premium, and believable.
 - Check that nested corners follow the radius rule.
 - Run the most relevant local check for the files changed when practical.
+
+## Cursor Cloud specific instructions
+
+This section is for future cloud agents. Dependencies are refreshed automatically by the environment update script (`.NET 10 SDK` install, `npm ci` in `multideck.client`, and a server `dotnet restore`). Node 22 is already in the base image. `dotnet` is installed under `~/.dotnet` and added to `PATH`/`DOTNET_ROOT` via `~/.bashrc`; if a shell can't find it, call `~/.dotnet/dotnet` directly.
+
+### Services
+
+- Client (`multideck.client`): React 19 + Vite SPA. Run with `npm run dev` (serves `http://localhost:5173`). Build/typecheck with `npm run build` (`tsc -b && vite build`) — this is the only lint/typecheck gate; there is no separate ESLint config. Standard scripts live in `multideck.client/package.json`.
+- Server (`multideck.server`): .NET 10 Web API. Run with `dotnet run` (serves `http://localhost:5273`, Development). In Development it also exposes `/scalar/v1` and `/openapi/v1.json`. Build with `dotnet build`. It references `multideck.persistence`, `multideck.documents`, and `multideck.intelligence`; those are libraries, not separate processes.
+
+### Non-obvious caveats
+
+- The server refuses to start unless a Supabase server secret is present: it validates `Documents:Supabase:ApiKey` (falls back to `Supabase:SecretKey` / `Supabase:ServiceRoleKey`) and throws "A Supabase server secret is required for document storage." at startup. `appsettings.json` ships real hosted Supabase URL + Postgres connection string but leaves this secret blank. To boot locally without real document-storage access, set any non-empty `Supabase__ServiceRoleKey` env var (e.g. `export Supabase__ServiceRoleKey=dev-local-placeholder`) before `dotnet run`. Real document/storage/admin operations need the actual service-role secret. DB connectivity is lazy (EF Core), so startup succeeds with a placeholder even though data endpoints need a valid Supabase JWT.
+- The client reads config from `multideck.client/.env` (gitignored; copy from `.env.example`). `VITE_SUPABASE_PUBLISHABLE_KEY` is NOT in the repo, so real sign-in cannot be completed locally without it plus an invite-only account. In DEV the tenant-host check is bypassed (`isTenantHostTrusted = import.meta.env.DEV`), so `localhost` is treated as a trusted tenant.
+- Every in-app route is auth-gated and redirects to `/auth` when unauthenticated. The `/playground/navigation` dev bypass in `App.tsx` render logic does NOT actually reach the page, because the unauthenticated redirect effect changes the route to `/auth` first. Do not rely on it to preview the app without a session.
+- Workspace-router mode: set `VITE_MULTIDECK_ROOT_HOST=localhost` and `VITE_MULTIDECK_WORKSPACES=slug:Name,...` to make `http://localhost:5173/auth` render the "Choose a company" router; selecting a company routes to `http://<slug>.localhost:5173/auth` (Chrome resolves `*.localhost` to loopback; Vite serves it). This is the cleanest way to exercise real product UI without credentials.
+- Headless-VM GPU limitation: the `/auth` screens render a decorative WebGL background (`SpectralBloomShader`, from the `shaders` package). With no GPU it logs `[gpu] initialization error` and can intermittently take over the screen with a black background + spinning cube — especially while screen-recording. It is purely cosmetic; the sign-in form still works. Prefer screenshots over video for the auth screens.
