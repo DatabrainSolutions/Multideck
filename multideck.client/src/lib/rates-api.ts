@@ -3,8 +3,9 @@ import { invalidateRegisterPages, readCachedRegisterPage, type RegisterSort } fr
 import { getSupabaseSession } from "@/lib/supabase"
 
 export type RateMode = "lcl" | "fcl" | "air" | "road"
-export type RateRecordType = "contract" | "cost_tariff" | "sales_tariff"
-export type RateStatus = "draft" | "active" | "expired"
+export type RateRecordType = "cost_tariff" | "sales_tariff"
+export type RateStatus = "draft" | "active" | "expired" | "pending_approval"
+export type RatePricingMode = "markup_percent" | "markup_amount" | "override"
 
 export type RateCharge = {
   id?: string
@@ -25,6 +26,7 @@ export type RateRecord = {
   carrier: string
   supplier: string
   customer: string
+  customerOrgId: string
   origin: string
   destination: string
   cargo: string
@@ -40,11 +42,48 @@ export type RateRecord = {
   sourceType: string
   sourceReference: string
   schedule: "weekly" | "monthly" | "ad_hoc"
+  sendAfterApproval: boolean
+  itemCount: number
   modeDetails: Record<string, string | number | boolean>
   charges: RateCharge[]
   updatedAt: string
   updatedBy: string
 }
+
+export type RatePackItem = {
+  id: string
+  packId: string
+  sourceCostId: string
+  sourceVersionId: string
+  sourceName: string
+  sourceMode: string
+  sourceCarrier: string
+  origin: string
+  destination: string
+  service: string
+  cargo: string
+  currency: string
+  pricingMode: RatePricingMode
+  markupPercent: number
+  markupAmount: number
+  sourceBuyTotal: number
+  sellTotal: number
+  charges: RateCharge[]
+  sortOrder: number
+}
+
+export type RatePublication = {
+  id: string
+  packId: string
+  status: string
+  fileName: string
+  sentAt: string
+  sentTo: string[]
+  errorMessage: string
+  createdAt: string
+}
+
+export type RateCustomer = { id: string; name: string }
 
 export type RateVersion = {
   id: string
@@ -99,6 +138,8 @@ export type RatesSummary = {
   drafts: number
   costTariffs: number
   salesTariffs: number
+  customerPacks: number
+  pendingApproval: number
   customerSpecific: number
   expiringTariffs: number
   sourcesInReview: number
@@ -114,7 +155,7 @@ export type RatesWorkspace = {
   integrations: { seaRates: { connected: false; reason: string } }
 }
 
-export type RateExpiryCounts = { expired: number; sevenDays: number; thirtyDays: number; activeCurrent: number }
+export type RateExpiryCounts = { expired: number; sevenDays: number; thirtyDays: number; activeCurrent: number; pendingApproval?: number }
 
 export type RatesPageResult = {
   rows: RateRecord[]
@@ -123,22 +164,39 @@ export type RatesPageResult = {
 }
 
 export type RatesPageInput = {
-  scope: "contracts" | "tariffs"
+  scope: "costs" | "packs" | "contracts" | "tariffs"
   search?: string
   mode?: RateMode
-  tariffType?: Exclude<RateRecordType, "contract">
-  expiry?: "expired" | "7" | "30" | "active"
+  tariffType?: RateRecordType
+  expiry?: "expired" | "7" | "30" | "active" | "pending_approval"
   sort?: RegisterSort | null
   limit: number
   offset: number
 }
 
-export type RateDetails = { rate: RateRecord; versions: RateVersion[]; audit: RateAuditEvent[] }
+export type RateDetails = {
+  rate: RateRecord
+  versions: RateVersion[]
+  audit: RateAuditEvent[]
+  items: RatePackItem[]
+  publications: RatePublication[]
+}
 
-export type RateRecordInput = Omit<RateRecord, "id" | "versionNo" | "marginAmount" | "marginPercent" | "updatedAt" | "updatedBy"> & {
+export type RateRecordInput = Omit<RateRecord, "id" | "versionNo" | "marginAmount" | "marginPercent" | "updatedAt" | "updatedBy" | "itemCount"> & {
   id?: string
   importId?: string
   changeReason?: string
+  itemCount?: number
+}
+
+export type RatePackItemInput = {
+  sourceCostId: string
+  pricingMode: RatePricingMode
+  markupPercent?: number
+  markupAmount?: number
+  sellTotal?: number
+  charges?: RateCharge[]
+  reason?: string
 }
 
 export class RatesApiError extends Error {}
@@ -164,11 +222,19 @@ export function getRatesWorkspace() {
   return request<RatesWorkspace>("/workspace")
 }
 
+export function searchRateCustomers(search = "", signal?: AbortSignal) {
+  const parameters = new URLSearchParams()
+  if (search.trim()) parameters.set("search", search.trim())
+  return request<{ customers: RateCustomer[] }>(`/customers?${parameters.toString()}`, { signal })
+}
+
 export async function getRatesPage(input: RatesPageInput, signal?: AbortSignal) {
   const session = await getSupabaseSession()
   if (!session?.user) throw new RatesApiError("Sign in again to view rates.")
+  const scope = input.scope === "contracts" ? "costs" : input.scope === "tariffs" ? "packs" : input.scope
   const normalized = {
     ...input,
+    scope,
     search: input.search?.trim() || undefined,
     limit: Math.max(1, Math.min(input.limit, 50)),
     offset: Math.max(0, input.offset),
@@ -206,6 +272,44 @@ export async function saveRate(input: RateRecordInput) {
 
 export async function expireRate(id: string) {
   const result = await request<{ rate: RateRecord }>(`/records/${id}/expire`, { method: "POST" })
+  invalidateRegisterPages("rates:")
+  return result
+}
+
+export async function saveRatePackItem(packId: string, input: RatePackItemInput, itemId?: string) {
+  const result = await request<RateDetails>(itemId ? `/records/${packId}/items/${itemId}` : `/records/${packId}/items`, {
+    method: itemId ? "PATCH" : "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  invalidateRegisterPages("rates:")
+  return result
+}
+
+export async function removeRatePackItem(packId: string, itemId: string) {
+  const result = await request<RateDetails>(`/records/${packId}/items/${itemId}`, { method: "DELETE" })
+  invalidateRegisterPages("rates:")
+  return result
+}
+
+export async function approveRatePack(packId: string) {
+  const result = await request<RateDetails>(`/records/${packId}/approve`, { method: "POST" })
+  invalidateRegisterPages("rates:")
+  return result
+}
+
+export async function generateRatePackDocument(packId: string) {
+  const result = await request<RateDetails>(`/records/${packId}/generate`, { method: "POST" })
+  invalidateRegisterPages("rates:")
+  return result
+}
+
+export async function sendRatePackDocument(packId: string, publicationId?: string) {
+  const result = await request<RateDetails>(`/records/${packId}/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ publicationId }),
+  })
   invalidateRegisterPages("rates:")
   return result
 }

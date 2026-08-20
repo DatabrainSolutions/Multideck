@@ -135,6 +135,12 @@ const ACTION_INTENTS: Record<string, RegExp> = {
   update_deal: /\b(update|edit|change|amend|correct|assign|set|move)\b.{0,80}\b(deal|opportunity|pipeline)\b/,
   update_quote: /\b(update|edit|change|amend|correct|set)\b.{0,80}\b(quote|quotation)\b/,
   attach_email_document_to_customer: /\b(attach|save|add|file)\b.{0,80}\b(document|file|attachment)\b.{0,80}\b(customer|account)\b/,
+  create_cost_tariff: /\b(create|add|new)\b.{0,80}\b(cost tariff|buy rate|supplier tariff|carrier tariff)\b/,
+  update_cost_tariff: /\b(update|edit|change|amend|correct)\b.{0,80}\b(cost tariff|buy rate|supplier tariff|carrier tariff)\b/,
+  create_customer_tariff_pack: /\b(create|add|new)\b.{0,80}\b(customer tariff|tariff pack|sales tariff)\b/,
+  update_customer_tariff_pack: /\b(update|edit|change|amend|correct)\b.{0,80}\b(customer tariff|tariff pack|sales tariff)\b/,
+  add_customer_tariff_item: /\b(add|include|put)\b.{0,80}\b(cost tariff|buy rate)\b.{0,80}\b(pack|customer tariff)\b|\b(markup|override)\b.{0,80}\b(pack|tariff)\b/,
+  remove_customer_tariff_item: /\b(remove|delete|drop)\b.{0,80}\b(cost tariff|buy rate|item)\b.{0,80}\b(pack|customer tariff)\b/,
 }
 
 export function operatorAuthorisesAction(prompt: string, actionCode: string) {

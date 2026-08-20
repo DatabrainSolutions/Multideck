@@ -10,7 +10,7 @@ import {
   requirePermission,
   routeParts,
 } from "../_shared/backend.ts"
-import { refreshOfsiList } from "../_shared/screening-ingest.ts"
+import { refreshUksl } from "../_shared/screening-ingest.ts"
 
 async function listStatus(admin: any) {
   const { data, error } = await admin.rpc("cmp_screening_list_status")
@@ -106,7 +106,7 @@ function csvReport(checks: ReturnType<typeof checkSummary>[], report: ReturnType
   const rows = [
     ["Multideck party screening report"],
     ["Generated at", new Date().toISOString()],
-    ["Check source", "UK Sanctions List - FCDO/OFSI snapshot held in this tenant workspace"],
+    ["Check source", "UK Sanctions List - FCDO snapshot held in this tenant workspace"],
     ["Matching criteria", "Exact normalized names; similar names only where the reviewer chose the 82% trigram and word-similarity check"],
     ["Screened", report.screened],
     ["Automatic clear", report.automaticClear],
@@ -203,7 +203,7 @@ Deno.serve(async (request) => {
 
     if (request.method === "POST" && parts[0] === "refresh") {
       await requirePermission(admin, current.User_ID, "Screening.Write")
-      const result = await refreshOfsiList(admin)
+      const result = await refreshUksl(admin)
       if (result.status === "failed") throw new HttpError(502, result.message)
       return json(request, { list: await listStatus(admin), refresh: result })
     }

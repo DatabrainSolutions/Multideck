@@ -103,6 +103,8 @@ import { WarehouseKanbanBoardPreview, WarehouseOrdersTable, WarehouseProductsTab
 import { WarehouseFormField } from "@/components/multideck/warehouse-management-components"
 import { WarehouseExceptionSummary, WarehouseObjectSummary, WarehouseQuantityUomField } from "@/components/multideck/warehouse-inventory-workspace"
 import { PurchaseOrderLineEditor } from "@/components/multideck/warehouse-purchase-orders-workspace"
+import { RateChargeLineEditor } from "@/components/multideck/rate-charge-line-editor"
+import { RatePricingRuleControl } from "@/components/multideck/rate-pricing-rule-control"
 import type { WarehousePurchaseOrderLine, WarehousePurchaseOrderReference } from "@/lib/warehouse"
 import type { WarehouseHandlingUnit, WarehouseInventoryException } from "@/lib/warehouse"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -240,7 +242,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "rate-charge-line-editor", "rate-pricing-rule-control", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
@@ -1154,6 +1156,8 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewPurchaseOrderLines, setPreviewPurchaseOrderLines] = useState<WarehousePurchaseOrderLine[]>([
     { itemId: "gallery-item-rsj", sku: "MAR-RSJ-118", supplierItemCode: "YH-1440", description: "Rain shell jacket · navy · mixed sizes", quantity: 780, uomCode: "EA", unitPrice: 18.4, taxRate: 0, requestedDeliveryDate: "2026-08-18" },
   ])
+  const [previewRateCharges, setPreviewRateCharges] = useState([{ id: "gallery-charge-1", description: "Ocean freight", basis: "per container", buyAmount: 1850, sellAmount: 0 }])
+  const [previewRatePricing, setPreviewRatePricing] = useState({ pricingMode: "markup_percent" as const, markupPercent: 12, markupAmount: 0, sellTotal: 0 })
   const [previewContactLayout, setPreviewContactLayout] = useState<CardLayout>("editorial")
   const [previewMarketingOptIn, setPreviewMarketingOptIn] = useState(true)
   const [previewSocialLinks, setPreviewSocialLinks] = useState<CardSocialLink[]>([
@@ -2316,6 +2320,18 @@ function ComponentPreview({ id }: { id: string }) {
             onItemSelected={() => undefined}
             onChange={setPreviewPurchaseOrderLines}
           />
+        </div>
+      ) : null}
+
+      {id === "rate-charge-line-editor" ? (
+        <div className="w-full max-w-[720px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <RateChargeLineEditor charges={previewRateCharges} onChange={setPreviewRateCharges} />
+        </div>
+      ) : null}
+
+      {id === "rate-pricing-rule-control" ? (
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <RatePricingRuleControl value={previewRatePricing} onChange={setPreviewRatePricing} />
         </div>
       ) : null}
 

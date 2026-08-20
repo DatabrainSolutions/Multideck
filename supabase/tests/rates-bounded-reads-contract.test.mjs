@@ -4,6 +4,7 @@ import test from "node:test"
 
 const root = new URL("../", import.meta.url)
 const migration = await readFile(new URL("migrations/20260818233000_rates_workspace_bounded_reads.sql", root), "utf8")
+const packs = await readFile(new URL("migrations/20260820133000_rates_customer_tariff_packs.sql", root), "utf8")
 const edge = await readFile(new URL("functions/rates-api/index.ts", root), "utf8")
 const client = await readFile(new URL("../multideck.client/src/lib/rates-api.ts", root), "utf8")
 const page = await readFile(new URL("../multideck.client/src/pages/rates-page.tsx", root), "utf8")
@@ -14,7 +15,9 @@ test("Rates registers execute filtering, sorting and paging before returning at 
   assert.match(migration, /from filtered[\s\S]*limit v_limit offset v_offset/)
   assert.match(migration, /'total', \(select count\(\*\) from filtered\)/)
   assert.match(edge, /admin\.rpc\("multideck_rates_register_page"/)
-  assert.match(edge, /if \(method === "GET" && parts\[0\] === "records" && parts\.length === 1\)/)
+  assert.match(packs, /v_scope not in \('costs', 'packs'\)/)
+  assert.match(packs, /when v_scope = 'costs' then contract\."RATEContract_TypeCode" = 'cost_tariff'/)
+  assert.match(packs, /customerPacks/)
   assert.doesNotMatch(edge, /from\("RATE_Contracts"\)\.select\("\*"\)\.eq\("Company_ID", actor\.Company_ID\).*order\("RATEContract_UpdatedAt"/)
 })
 
@@ -24,7 +27,7 @@ test("Rates startup returns exact counts and bounded attention, recent, import a
   assert.match(migration, /multideck_rates_quote_picker[\s\S]*least\(coalesce\(p_limit, 100\), 100\)/)
   assert.match(edge, /multideck_rates_workspace_snapshot/)
   assert.match(edge, /RATE_ImportBatches[\s\S]*\.limit\(100\)/)
-  assert.match(edge, /summary: snapshot\.summary/)
+  assert.match(edge, /summary: snapshotJson\.summary/)
   assert.doesNotMatch(edge, /versions: \(versions \?\? \[\]\)/)
   assert.doesNotMatch(edge, /RATE_AuditEvents[\s\S]*\.limit\(300\)/)
 })

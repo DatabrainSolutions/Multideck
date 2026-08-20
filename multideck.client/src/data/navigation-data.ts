@@ -160,7 +160,6 @@ export const sidebarAreas: SidebarArea[] = [
     icon: ReceiptText,
     destinations: [
       { id: "rate-management", label: "Rate management", icon: ReceiptText, route: "/rates" },
-      { id: "rate-contracts", label: "Rate contracts", icon: FileText, route: "/rates/contracts" },
       { id: "tariffs-charges", label: "Tariffs & charges", icon: SlidersHorizontal, route: "/rates/tariffs" },
       { id: "rate-imports", label: "Imports & review", icon: Upload, route: "/rates/imports" },
       { id: "rate-results", label: "Quote matching", icon: ChartLine, route: "/rates/results" },

@@ -387,7 +387,7 @@ function CustomerScreening({ customerId, customerName }: { customerId: string; c
             <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Party screening")}</h2>
             {check ? <ScreeningOutcomePill outcome={check.outcome} stale={check.listStale} /> : null}
           </div>
-          <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Screen this customer against the UK OFSI list stored in this workspace.")}</p>
+          <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Screen this customer against the UK Sanctions List stored in this workspace.")}</p>
         </div>
         <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-lg)]" onClick={() => void screenCustomer()} disabled={running}>
           {running ? <LoaderCircle className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}

@@ -371,7 +371,7 @@ function buildPromptWithAttachedContext(prompt: string, attachments: DexterAttac
 
   const context = attachments
     .map((attachment) => {
-      const exactRecordId = ["booking", "customer", "lead", "deal", "declaration", "quote"].includes(attachment.type)
+      const exactRecordId = ["booking", "customer", "lead", "deal", "declaration", "quote", "rate"].includes(attachment.type)
         && isUuid(attachment.id)
         ? ` [selected record ID: ${attachment.id}]`
         : ""
@@ -450,6 +450,12 @@ function actionDisplayName(locale: DexterLocale, actionCode: string, fallback: s
       change_warehouse_inventory_status: "Bestandsstatus ändern",
       record_warehouse_sample: "Lagerprobe erfassen",
       resolve_warehouse_location_exception: "Lagerplatzabweichung klären",
+      create_cost_tariff: "Einkaufstarif erstellen",
+      update_cost_tariff: "Einkaufstarif bearbeiten",
+      create_customer_tariff_pack: "Kundentarifpaket erstellen",
+      update_customer_tariff_pack: "Kundentarifpaket bearbeiten",
+      add_customer_tariff_item: "Einkaufstarif zum Kundenpaket hinzufügen",
+      remove_customer_tariff_item: "Einkaufstarif aus dem Kundenpaket entfernen",
     },
     fr: {
       [CREATE_CUSTOMS_DECLARATION_ACTION]: "Créer un brouillon de déclaration en douane",
@@ -466,6 +472,12 @@ function actionDisplayName(locale: DexterLocale, actionCode: string, fallback: s
       change_warehouse_inventory_status: "Modifier le statut du stock",
       record_warehouse_sample: "Enregistrer un échantillon",
       resolve_warehouse_location_exception: "Résoudre l’anomalie d’emplacement",
+      create_cost_tariff: "Créer un tarif de coût",
+      update_cost_tariff: "Modifier un tarif de coût",
+      create_customer_tariff_pack: "Créer un pack tarifaire client",
+      update_customer_tariff_pack: "Modifier un pack tarifaire client",
+      add_customer_tariff_item: "Ajouter un tarif de coût au pack client",
+      remove_customer_tariff_item: "Retirer un tarif de coût du pack client",
     },
     ar: {
       [CREATE_CUSTOMS_DECLARATION_ACTION]: "إنشاء مسودة إقرار جمركي",
@@ -482,6 +494,12 @@ function actionDisplayName(locale: DexterLocale, actionCode: string, fallback: s
       change_warehouse_inventory_status: "تغيير حالة المخزون",
       record_warehouse_sample: "تسجيل عينة مستودع",
       resolve_warehouse_location_exception: "حل استثناء موقع المستودع",
+      create_cost_tariff: "إنشاء تعريفة تكلفة",
+      update_cost_tariff: "تعديل تعريفة التكلفة",
+      create_customer_tariff_pack: "إنشاء حزمة تعريفة عميل",
+      update_customer_tariff_pack: "تعديل حزمة تعريفة العميل",
+      add_customer_tariff_item: "إضافة تعريفة تكلفة إلى حزمة العميل",
+      remove_customer_tariff_item: "إزالة تعريفة تكلفة من حزمة العميل",
     },
   }[locale]
   return actionNames[actionCode] ?? fallback
@@ -508,6 +526,15 @@ const WAREHOUSE_EDGE_ACTIONS = new Set([
   "record_warehouse_sample",
   "report_warehouse_location_empty",
   "resolve_warehouse_location_exception",
+])
+
+const RATES_EDGE_ACTIONS = new Set([
+  "create_cost_tariff",
+  "update_cost_tariff",
+  "create_customer_tariff_pack",
+  "update_customer_tariff_pack",
+  "add_customer_tariff_item",
+  "remove_customer_tariff_item",
 ])
 
 function customsDraftPayload(actionCode: string, args: JsonObject) {
@@ -780,6 +807,123 @@ async function warehouseActionFetch(authorization: string, actionCode: string, a
   }
 }
 
+function optionalText(value: unknown, maximum: number) {
+  return value === null || value === undefined ? undefined : cleanString(value, maximum)
+}
+
+async function ratesActionFetch(authorization: string, actionCode: string, args: JsonObject) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() ?? ""
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")?.trim() ?? ""
+  const headers = { Authorization: authorization, apikey: anonKey, "Content-Type": "application/json" }
+  const targetId = cleanString(args.target_id, 80)
+  let method = "POST"
+  let path = "/records"
+  let body: JsonObject = {}
+  if (actionCode === "create_cost_tariff") {
+    body = {
+      type: "cost_tariff",
+      name: cleanString(args.name, 240),
+      mode: cleanString(args.mode, 20),
+      carrier: optionalText(args.carrier, 180) || "",
+      supplier: optionalText(args.supplier, 180) || "",
+      customerOrgId: isUuid(cleanString(args.customerOrgId, 80)) ? cleanString(args.customerOrgId, 80) : "",
+      origin: cleanString(args.origin, 180),
+      destination: cleanString(args.destination, 180),
+      cargo: optionalText(args.cargo, 180) || "General cargo",
+      service: optionalText(args.service, 180) || "Standard",
+      validFrom: cleanString(args.validFrom, 10),
+      validTo: cleanString(args.validTo, 10),
+      currency: cleanString(args.currency, 3).toUpperCase(),
+      buyTotal: Number(args.buyTotal) || 0,
+      sourceReference: optionalText(args.sourceReference, 180) || "",
+      schedule: cleanString(args.schedule, 20) || "ad_hoc",
+      changeReason: cleanString(args.reason, 1000) || "Created by Dexter",
+      status: "active",
+    }
+  } else if (actionCode === "update_cost_tariff") {
+    if (!isUuid(targetId)) return { data: null, error: { code: "invalid_action", message: "Choose the exact cost tariff to edit." } }
+    method = "PATCH"
+    path = `/records/${targetId}`
+    body = {
+      type: "cost_tariff",
+      name: optionalText(args.name, 240),
+      mode: optionalText(args.mode, 20),
+      carrier: optionalText(args.carrier, 180),
+      supplier: optionalText(args.supplier, 180),
+      customerOrgId: args.customerOrgId === null ? "" : optionalText(args.customerOrgId, 36),
+      origin: optionalText(args.origin, 180),
+      destination: optionalText(args.destination, 180),
+      validFrom: optionalText(args.validFrom, 10),
+      validTo: optionalText(args.validTo, 10),
+      currency: optionalText(args.currency, 3)?.toUpperCase(),
+      buyTotal: args.buyTotal === null || args.buyTotal === undefined ? undefined : Number(args.buyTotal),
+      sourceReference: optionalText(args.sourceReference, 180),
+      changeReason: cleanString(args.reason, 1000) || "Updated by Dexter",
+    }
+  } else if (actionCode === "create_customer_tariff_pack") {
+    body = {
+      type: "sales_tariff",
+      name: cleanString(args.name, 240),
+      customerOrgId: cleanString(args.customerOrgId, 36),
+      validFrom: cleanString(args.validFrom, 10),
+      validTo: cleanString(args.validTo, 10),
+      currency: cleanString(args.currency, 3).toUpperCase(),
+      schedule: cleanString(args.schedule, 20) || "ad_hoc",
+      sendAfterApproval: args.sendAfterApproval === true,
+      origin: "Multiple lanes",
+      destination: "Multiple lanes",
+      changeReason: cleanString(args.reason, 1000) || "Created by Dexter",
+      status: "draft",
+    }
+  } else if (actionCode === "update_customer_tariff_pack") {
+    if (!isUuid(targetId)) return { data: null, error: { code: "invalid_action", message: "Choose the exact customer tariff pack to edit." } }
+    method = "PATCH"
+    path = `/records/${targetId}`
+    body = {
+      type: "sales_tariff",
+      name: optionalText(args.name, 240),
+      customerOrgId: optionalText(args.customerOrgId, 36),
+      validFrom: optionalText(args.validFrom, 10),
+      validTo: optionalText(args.validTo, 10),
+      currency: optionalText(args.currency, 3)?.toUpperCase(),
+      schedule: optionalText(args.schedule, 20),
+      sendAfterApproval: args.sendAfterApproval === null || args.sendAfterApproval === undefined ? undefined : args.sendAfterApproval === true,
+      changeReason: cleanString(args.reason, 1000) || "Updated by Dexter",
+    }
+  } else if (actionCode === "add_customer_tariff_item") {
+    if (!isUuid(targetId) || !isUuid(cleanString(args.sourceCostId, 80))) return { data: null, error: { code: "invalid_action", message: "Choose the exact pack and cost tariff." } }
+    path = `/records/${targetId}/items`
+    body = {
+      sourceCostId: cleanString(args.sourceCostId, 36),
+      pricingMode: cleanString(args.pricingMode, 30) || "markup_percent",
+      markupPercent: Number(args.markupPercent) || 0,
+      markupAmount: Number(args.markupAmount) || 0,
+      sellTotal: Number(args.sellTotal) || 0,
+      reason: cleanString(args.reason, 1000) || "Pack item updated by Dexter",
+    }
+  } else if (actionCode === "remove_customer_tariff_item") {
+    const itemId = cleanString(args.itemId, 80)
+    if (!isUuid(targetId) || !isUuid(itemId)) return { data: null, error: { code: "invalid_action", message: "Choose the exact pack item to remove." } }
+    method = "DELETE"
+    path = `/records/${targetId}/items/${itemId}`
+  } else {
+    return { data: null, error: { code: "invalid_action", message: "That rates action is not allowlisted." } }
+  }
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/rates-api${path}`, {
+      method,
+      headers,
+      body: method === "DELETE" ? undefined : JSON.stringify(body),
+    })
+    const payload = await response.json().catch(() => ({}))
+    return response.ok
+      ? { data: payload, error: null }
+      : { data: null, error: { code: `rates_${response.status}`, message: cleanString(payload?.detail, 300) || "The rates action could not be completed." } }
+  } catch {
+    return { data: null, error: { code: "rates_unavailable", message: "The Rates Edge Function could not be reached. Nothing was changed." } }
+  }
+}
+
 async function executeWorkspaceAction(
   authorization: string,
   actionCode: string,
@@ -888,6 +1032,10 @@ async function executeWorkspaceAction(
     return await warehouseActionFetch(authorization, actionCode, args, executionKey)
   }
 
+  if (RATES_EDGE_ACTIONS.has(actionCode)) {
+    return await ratesActionFetch(authorization, actionCode, args)
+  }
+
   if (actionCode !== ATTACH_EMAIL_DOCUMENT_ACTION) {
     return { data: null, error: { code: "prepared_action_required", message: "That action must use Dexter's server-owned prepared-action executor." } }
   }
@@ -923,7 +1071,8 @@ function isEdgeExecutedAction(actionCode: string) {
     actionCode === SUBMIT_CUSTOMS_DECLARATION_ACTION ||
     actionCode === QUARANTINE_INVENTORY_ACTION ||
     actionCode === ATTACH_EMAIL_DOCUMENT_ACTION ||
-    WAREHOUSE_EDGE_ACTIONS.has(actionCode)
+    WAREHOUSE_EDGE_ACTIONS.has(actionCode) ||
+    RATES_EDGE_ACTIONS.has(actionCode)
 }
 
 async function executePreparedActionById(input: {
@@ -1294,8 +1443,10 @@ function addDomainCitations(domain: string, value: unknown) {
         if (!isObject(record)) return record
         const rateCode = cleanReference(record.rateCode, 120)
         const title = cleanString(record.name, 240) || rateCode || "Rate record"
+        const isPack = record.kind === "customer_pack" || record.type === "sales_tariff"
+        const path = isPack ? "/rates/tariffs" : "/rates"
         return rateCode
-          ? addRecordCitation(record, title, `/rates?search=${encodeURIComponent(rateCode)}`, "Rate contract or tariff record")
+          ? addRecordCitation(record, title, `${path}?search=${encodeURIComponent(rateCode)}`, isPack ? "Customer tariff pack record" : "Cost tariff record")
           : record
       }),
     }
@@ -1336,7 +1487,7 @@ function addDomainCitations(domain: string, value: unknown) {
       data: {
         ...data,
         list: isObject(data.list)
-          ? addRecordCitation(data.list, "UK OFSI consolidated list", "/compliance/screening", "Workspace copy of the UK OFSI sanctions list")
+          ? addRecordCitation(data.list, "UK Sanctions List", "/compliance/screening", "Workspace copy of the current UK Sanctions List")
           : data.list,
         checks,
       },
@@ -1493,7 +1644,7 @@ Name the relevant jurisdiction when it is known. Treat legal, tax, sanctions, da
 The dedicated commercial-invoice importer remains the safest route when item lines must be overlaid on the exact prepared PDF and individually reviewed before they change a customs declaration. It accepts PDF, Excel, CSV, Word, OpenDocument and image invoices through the same content-safe document normaliser used by Dexter. Dexter chat can also extract read-only evidence from those operator-uploaded formats with its listed document tool, then use only an available allowlisted workspace action. It cannot bypass declaration review or claim a destination change succeeded without a successful action result. Temporary upload, conversion and OCR states are explicitly not meaningful watch events; Watching for you follows the destination record only after an applied change emits its normal deterministic event.
 Customs declaration records and their latest recorded iCustoms submission state are connected through the customs_declarations data domain. Dexter may inspect, create and edit operator-owned UK CDS import and export drafts through its listed actions, and watch one exact declaration. Creating a declaration also creates its editable iCustoms draft; it does not submit anything to HMRC. For a create or edit action, put every known header and goods-line field into draft_json as one valid JSON object; use only source-backed values, preserve unknown fields when editing, and never invent a commodity code, customs value, party identifier, licence or previous-document reference. Dexter can validate and save an exact current declaration as an iCustoms draft. In Approve mode it prepares one exact submission for review. In Full access it may submit once without another prompt only when the operator's current clean request explicitly asks to file or submit that declaration. Deleting a Customs draft is intentionally not available to Dexter: direct the operator to the declaration register, where destructive inline confirmation is required. Deleting an abandoned, unsubmitted draft is not a meaningful Watching for you event. Never imply that saving an iCustoms draft, seeing a queued submission, or submitting it proves the declaration was accepted.
 Live iCustoms commodity suggestions, tariff measures and certificate options deliberately require operator review in the goods-line Commodity assistant and are not callable from Dexter. If asked to run that lookup, say so clearly and direct the operator to Find commodity code on the exact goods line; do not guess or reproduce a stale result. The lookup itself creates no persisted business event, so Watching for you begins only after the operator applies and saves the declaration change through the normal Customs workflow.
-Party screening against the UK OFSI consolidated list is connected through the screening data domain. Query it for list freshness and completed results. Use run_screening_check to screen one exact name against the workspace copy of that list; never invent a sanctions status. Exact names and close spellings both come back. matchCount and totalCount are the full number of listed names found. The operator screen pages those names 12 at a time; never say only 12 matches exist when the count is higher. Report every returned listed name you can see with its sanctions programme, UK list reference, and listing notes. Completed screening history covers the last three months only; older government listings on the OFSI list are still screened. A match or possible match is an operational review item, not legal certainty. Watching for you can follow a new screening outcome or an OFSI list refresh. If the list is stale or unloaded, say so and direct the operator to Compliance controls to refresh it.
+Party screening against the UK Sanctions List is connected through the screening data domain. Query it for list freshness and completed results. Use run_screening_check to screen one name against the workspace copy of that list; never invent a sanctions status. Exact names always match and close spellings are returned only when similar-name review is requested. matchCount and totalCount are the full number of consolidated UKSL designations found, grouped by Unique ID. Report every returned designation you can see with its sanctions programme, UK list reference, and listing notes. Completed screening history covers the last three months only. A match or possible match is an operational review item, not legal certainty. Watching for you can follow a new screening outcome or a UK Sanctions List refresh. If the list is stale or unloaded, say so and direct the operator to Compliance controls to refresh it.
 Structure substantial answers as current position, blocker or exposure, evidence needed, then safest next operational step.`,
   ops: `## Operations and exceptions specialist
 Act like an experienced forwarding operations controller. Prioritise what needs attention now and who should do what next.
@@ -1579,7 +1730,7 @@ Work fluently across air, sea, road, rail, customs, warehousing, quotations, boo
 Use freight terminology accurately and only when it helps. Distinguish planned, estimated, actual, confirmed, and inferred information.
 Treat ETD, ETA, ATD, ATA, cut-offs, free time, Incoterms, chargeable weight, demurrage, detention, customs status, carrier acceptance, space, rates, surcharges, and contract terms as materially different facts.
 Never infer a rate, contract term, customs decision, carrier commitment, available space, free-time allowance, or arrival date from incomplete evidence.
-Rates and contracts are connected for tenant-safe reading and deterministic watches. Commercial changes are not an allowlisted Dexter action: direct the operator to Rates & Contracts for the reviewed, versioned workflow instead of claiming you changed pricing.
+Rates and contracts are connected for tenant-safe reading, approval-safe writes and deterministic watches. Dexter may create or edit incoming cost tariffs, create or edit a customer tariff pack, and add or remove pack items with markup or override. Approving a pack and sending the customer tariff document stay in Rates. Never claim those high-impact commercial steps completed in chat.
 When information is missing, name the smallest missing input and say what the operator can do next.
 For customs, sanctions, tax, dangerous goods, or regulatory questions, explain the operational position without presenting uncertain guidance as legal certainty.
 Separate workspace facts from your inference or recommendation. Cite useful human-readable references from the records, but never raw UUIDs.
@@ -1618,7 +1769,7 @@ ${emailSummary}
 Use query_data_domain whenever the operator asks about company records or metrics. Use only the listed domain codes.
 Use the bookings domain for freight bookings and jobs. Dexter may create and edit a booking only through the listed canonical booking actions. Use warehouse for warehouse summaries, inventory balances, handling units and warehouse exceptions; warehouse_orders for exact inbound and outbound order lines, receipt history and dispatch history before any goods-in or goods-out action; warehouse_reference to resolve facilities, offices, locations and items before a warehouse create or edit; and warehouse_calendar only to read the derived warehouse schedule. Never substitute one for the other when a domain returns no records.
 Use customs_declarations for declaration drafts, filing references and recorded iCustoms submission states. Do not use warehouse customs fields as a substitute for a declaration record.
-Use screening for UK OFSI list freshness and completed party-screening results from the last three months. Screen a name only through run_screening_check against the workspace copy of that list. Never invent a sanctions status, never scrape the government website live, and treat a match or possible match as an operational review item rather than legal certainty. If matches are returned, use matchCount or totalCount as the full total. The UI pages 12 names at a time; do not imply that is the complete set. Report returned names with their sanctions programme and listing notes rather than summarising from general knowledge.
+Use screening for UK Sanctions List freshness and completed party-screening results from the last three months. Screen a name only through run_screening_check against the workspace copy of that list. Never invent a sanctions status, never scrape the government website live, and treat a match or possible match as an operational review item rather than legal certainty. If matches are returned, use matchCount or totalCount as the full number of consolidated designations. Report returned names with their sanctions programme and listing notes rather than summarising from general knowledge.
 For a named workspace record, search with the strongest concise name, reference, email, SKU, container number, location or lane from the request. Do not pass the whole conversational sentence as the search value.
 Workspace search results can include searchEvidence. exact_identifier, exact_text, exact_phrase and all_terms are evidence-backed matches. corrected_text is only a likely spelling correction: compare its matchedValue with the returned record's other identifying fields, state the actual name or reference you found, and do not describe it as confirmed when another candidate is plausible. Never substitute a different named company, person, reference or record type.
 If a workspace search returns no matching records, retry at most twice: first remove filler or status wording, then use one stable identifier fragment. Do not remove every identifying clue. After those checks, say what was not found and ask for one useful clue. Never fill the gap from conversation history or general knowledge.
@@ -3359,6 +3510,7 @@ Deno.serve(async (request) => {
       quote: "quotes",
       booking: "bookings",
       declaration: "customs_declarations",
+      rate: "rates",
     }
     const exactMention = attachments.find((attachment) => mentionCapability[attachment.type] === capability)
     if (exactMention) {
@@ -3699,7 +3851,7 @@ Deno.serve(async (request) => {
       prompt,
       specialist,
       availableActionCodes: actions.map((action) => action.code),
-      trustedTargetIds: attachments.filter((attachment) => ["booking", "customer", "lead", "deal", "declaration", "quote"].includes(attachment.type)).map((attachment) => attachment.id),
+        trustedTargetIds: attachments.filter((attachment) => ["booking", "customer", "lead", "deal", "declaration", "quote", "rate"].includes(attachment.type)).map((attachment) => attachment.id),
       trustedRecipientAddresses: [...trustedRecipientAddresses],
     })
   } catch (error) {

@@ -130,7 +130,6 @@ const validRoutes = new Set([
   "/quotes",
   "/quotes/3",
   "/rates",
-  "/rates/contracts",
   "/rates/tariffs",
   "/rates/imports",
   "/rates/results",
@@ -189,6 +188,10 @@ function isCustomsDeclarationEditRoute(path: string) {
 /** The Marketing drive became Drive; old links still have to land somewhere real. */
 function getLegacyCrmRoute(path: string) {
   return path === "/crm/marketing" ? "/crm/drive" : null
+}
+
+function getLegacyRatesRoute(path: string) {
+  return path === "/rates/contracts" || path.startsWith("/rates/contracts/") ? "/rates" : null
 }
 
 const unavailableCrmRoutePrefixes = [
@@ -251,6 +254,8 @@ function getRoute() {
   if (legacyBookingRoute) return legacyBookingRoute
   const legacyCrmRoute = getLegacyCrmRoute(window.location.pathname)
   if (legacyCrmRoute) return legacyCrmRoute
+  const legacyRatesRoute = getLegacyRatesRoute(window.location.pathname)
+  if (legacyRatesRoute) return legacyRatesRoute
   const unavailableCrmRoute = getUnavailableCrmRoute(window.location.pathname)
   if (unavailableCrmRoute) return unavailableCrmRoute
   if (window.location.pathname.startsWith("/reports/rpt-")) return window.location.pathname
@@ -573,7 +578,7 @@ export default function App() {
   // Old and prototype-only CRM bookmarks are rewritten in place, so the address
   // bar only shows routes that operators can genuinely use.
   useEffect(() => {
-    if (getLegacyCrmRoute(window.location.pathname) || getUnavailableCrmRoute(window.location.pathname)) {
+    if (getLegacyCrmRoute(window.location.pathname) || getUnavailableCrmRoute(window.location.pathname) || getLegacyRatesRoute(window.location.pathname)) {
       window.history.replaceState(window.history.state, "", route)
     }
   }, [route])
@@ -657,7 +662,7 @@ export default function App() {
                   {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/quotes/new" ? <QuoteDetailPage key={route} variant="cargowise" quoteId="NEW" navigate={navigate} /> : null}
                   {route !== "/quotes/new" && isQuoteDetailRoute(route) ? <QuoteDetailPage key={route} variant="cargowise" quoteId={route.split("/").at(-1)} navigate={navigate} /> : null}
-                  {route.startsWith("/rates") ? <RatesPage route={route as "/rates" | "/rates/contracts" | "/rates/tariffs" | "/rates/imports" | "/rates/results"} navigate={navigate} /> : null}
+                  {route.startsWith("/rates") ? <RatesPage route={route as "/rates" | "/rates/tariffs" | "/rates/imports" | "/rates/results"} navigate={navigate} /> : null}
                   {route === "/reports" || route === "/reports/scheduled"
                     ? <ReportsPage route={route} />
                     : null}

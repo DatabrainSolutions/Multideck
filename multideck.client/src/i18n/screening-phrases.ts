@@ -10,11 +10,17 @@ export const screeningPhrases: PhraseDictionary = {
     ar: "افحص عميلاً أو شاحناً أو مرسلاً إليه مقابل قائمة OFSI الموحدة للمملكة المتحدة المحفوظة في مساحة العمل هذه. التطابق بند للمراجعة وليس حكماً قانونياً.",
   },
   "UK OFSI consolidated list": { de: "OFSI-Sammelliste des Vereinigten Königreichs", fr: "Liste consolidée OFSI du Royaume-Uni", ar: "القائمة الموحدة لهيئة OFSI في المملكة المتحدة" },
+  "UK Sanctions List": { de: "Britische Sanktionsliste", fr: "Liste britannique des sanctions", ar: "قائمة العقوبات البريطانية" },
   "UK Office of Financial Sanctions Implementation": { de: "UK Office of Financial Sanctions Implementation", fr: "UK Office of Financial Sanctions Implementation", ar: "مكتب تنفيذ العقوبات المالية في المملكة المتحدة" },
   "The UK OFSI list has not been loaded into this workspace yet.": {
     de: "Die OFSI-Liste des Vereinigten Königreichs wurde in diesem Arbeitsbereich noch nicht geladen.",
     fr: "La liste OFSI du Royaume-Uni n’a pas encore été chargée dans cet espace.",
     ar: "لم تُحمَّل قائمة OFSI للمملكة المتحدة إلى مساحة العمل هذه بعد.",
+  },
+  "The UK Sanctions List has not been loaded into this workspace yet.": {
+    de: "Die britische Sanktionsliste wurde in diesem Arbeitsbereich noch nicht geladen.",
+    fr: "La liste britannique des sanctions n’a pas encore été chargée dans cet espace.",
+    ar: "لم تُحمَّل قائمة العقوبات البريطانية إلى مساحة العمل هذه بعد.",
   },
   "This list is older than 36 hours. Refresh before relying on a no-match result.": {
     de: "Diese Liste ist älter als 36 Stunden. Aktualisieren Sie sie, bevor Sie ein Ergebnis ohne Treffer verwenden.",
@@ -46,6 +52,11 @@ export const screeningPhrases: PhraseDictionary = {
     fr: "Ce nom correspond à une personne ou une organisation figurant sur la liste consolidée OFSI du Royaume-Uni. Examinez le régime de sanctions et les motifs d’inscription ci-dessous avant de continuer.",
     ar: "يطابق هذا الاسم شخصاً أو جهة مدرجة في قائمة OFSI الموحدة للمملكة المتحدة. راجع برنامج العقوبات وملاحظات الإدراج أدناه قبل المتابعة.",
   },
+  "This name matches a person or organisation on the UK Sanctions List. Review the sanctions programme and listing notes below before proceeding.": {
+    de: "Dieser Name entspricht einer Person oder Organisation auf der britischen Sanktionsliste. Prüfen Sie unten das Sanktionsprogramm und die Listungshinweise, bevor Sie fortfahren.",
+    fr: "Ce nom correspond à une personne ou une organisation figurant sur la liste britannique des sanctions. Examinez le régime de sanctions et les motifs d’inscription ci-dessous avant de continuer.",
+    ar: "يطابق هذا الاسم شخصاً أو جهة مدرجة في قائمة العقوبات البريطانية. راجع برنامج العقوبات وملاحظات الإدراج أدناه قبل المتابعة.",
+  },
   "This name is similar to a listed person or organisation. Confirm whether it is the same party, then review the sanctions details below.": {
     de: "Dieser Name ähnelt einer gelisteten Person oder Organisation. Prüfen Sie, ob es dieselbe Partei ist, und sehen Sie sich dann die Sanktionsangaben unten an.",
     fr: "Ce nom est proche d’une personne ou d’une organisation listée. Confirmez s’il s’agit de la même partie, puis examinez les détails de sanctions ci-dessous.",
@@ -55,6 +66,11 @@ export const screeningPhrases: PhraseDictionary = {
     de: "Die OFSI-Liste des Vereinigten Königreichs ist in diesem Arbeitsbereich nicht verfügbar, daher konnte dieser Name nicht geprüft werden.",
     fr: "La liste OFSI du Royaume-Uni n’est pas disponible dans cet espace, ce nom n’a donc pas pu être contrôlé.",
     ar: "قائمة OFSI للمملكة المتحدة غير متاحة في مساحة العمل هذه، لذلك تعذر فحص هذا الاسم.",
+  },
+  "The UK Sanctions List is not available in this workspace, so this name could not be screened.": {
+    de: "Die britische Sanktionsliste ist in diesem Arbeitsbereich nicht verfügbar, daher konnte dieser Name nicht geprüft werden.",
+    fr: "La liste britannique des sanctions n’est pas disponible dans cet espace, ce nom n’a donc pas pu être contrôlé.",
+    ar: "قائمة العقوبات البريطانية غير متاحة في مساحة العمل هذه، لذلك تعذر فحص الاسم.",
   },
   "No listed names matched this search. That is not a legal clearance.": {
     de: "Keine gelisteten Namen entsprachen dieser Suche. Das ist keine rechtliche Freigabe.",
@@ -98,6 +114,11 @@ export const screeningPhrases: PhraseDictionary = {
     fr: "Contrôlez ce client par rapport à la liste OFSI du Royaume-Uni stockée dans cet espace.",
     ar: "افحص هذا العميل مقابل قائمة OFSI للمملكة المتحدة المخزّنة في مساحة العمل هذه.",
   },
+  "Screen this customer against the UK Sanctions List stored in this workspace.": {
+    de: "Prüfen Sie diesen Kunden gegen die in diesem Arbeitsbereich gespeicherte britische Sanktionsliste.",
+    fr: "Contrôlez ce client par rapport à la liste britannique des sanctions stockée dans cet espace.",
+    ar: "افحص هذا العميل مقابل قائمة العقوبات البريطانية المخزّنة في مساحة العمل هذه.",
+  },
   "Exact names and close spellings are both returned. Similar names are treated as possible matches.": {
     de: "Exakte Namen und ähnliche Schreibweisen werden beide zurückgegeben. Ähnliche Namen gelten als mögliche Treffer.",
     fr: "Les noms exacts et les graphies proches sont tous deux renvoyés. Les noms similaires sont traités comme des correspondances possibles.",
@@ -121,6 +142,11 @@ export const screeningPhrases: PhraseDictionary = {
     de: "Quelle: aktuelle britische Sanktionsliste von FCDO/OFSI, gespeichert in diesem Mandantenarbeitsbereich. Exakte normalisierte Namen werden immer abgeglichen; ähnliche Namen nutzen optional die 82%-Prüfregel für Trigramm- und Wortähnlichkeit.",
     fr: "Source : liste britannique des sanctions actuelle de FCDO/OFSI, conservée dans cet espace client. Les noms normalisés exacts correspondent toujours ; les noms similaires utilisent en option la règle de revue à 82 % par trigrammes et similarité de mots.",
     ar: "المصدر: قائمة العقوبات البريطانية الحالية من FCDO/OFSI والمحفوطة في مساحة عمل العميل. تتطابق الأسماء المعيارية المطابقة دائماً؛ وتستخدم الأسماء المشابهة قاعدة مراجعة اختيارية بنسبة 82% للتشابه الثلاثي وتشابه الكلمات.",
+  },
+  "Source: current UK Sanctions List from the FCDO, stored in this tenant workspace. Results are consolidated by UKSL Unique ID. Exact normalised names always match; similar names use the optional 82% trigram and word-similarity review rule.": {
+    de: "Quelle: aktuelle britische Sanktionsliste des FCDO, gespeichert in diesem Mandantenarbeitsbereich. Ergebnisse werden nach der UKSL Unique ID zusammengeführt. Exakte normalisierte Namen werden immer abgeglichen; ähnliche Namen nutzen optional die 82%-Prüfregel für Trigramm- und Wortähnlichkeit.",
+    fr: "Source : liste britannique des sanctions actuelle du FCDO, conservée dans cet espace client. Les résultats sont regroupés par Unique ID de l’UKSL. Les noms normalisés exacts correspondent toujours ; les noms similaires utilisent en option la règle de revue à 82 % par trigrammes et similarité de mots.",
+    ar: "المصدر: قائمة العقوبات البريطانية الحالية من وزارة الخارجية البريطانية والمحفوظة في مساحة عمل العميل. تُدمج النتائج حسب المعرّف الفريد لقائمة UKSL. تتطابق الأسماء المعيارية المطابقة دائماً؛ وتستخدم الأسماء المشابهة قاعدة مراجعة اختيارية بنسبة 82% للتشابه الثلاثي وتشابه الكلمات.",
   },
   "Download detailed report": { de: "Detaillierten Bericht herunterladen", fr: "Télécharger le rapport détaillé", ar: "تنزيل التقرير التفصيلي" },
   "Running report…": { de: "Bericht wird erstellt…", fr: "Génération du rapport…", ar: "جارٍ إعداد التقرير…" },

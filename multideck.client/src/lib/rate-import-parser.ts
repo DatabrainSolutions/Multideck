@@ -73,7 +73,7 @@ function findValue(rows: string[][], names: string[]) {
 function suggest(rows: string[][], rawText: string): Partial<RateRecordInput> {
   const haystack = `${rows.flat().join(" ")} ${rawText}`.toLowerCase()
   const mode: RateMode = /\bair\b/.test(haystack) ? "air" : /\broad|truck|pallet\b/.test(haystack) ? "road" : /\bfcl|container|40hc|20gp\b/.test(haystack) ? "fcl" : "lcl"
-  const type: RateRecordType = /sales tariff|customer tariff|sell rate/.test(haystack) ? "sales_tariff" : /contract/.test(haystack) ? "contract" : "cost_tariff"
+  const type: RateRecordType = /sales tariff|customer tariff|sell rate/.test(haystack) ? "sales_tariff" : "cost_tariff"
   const buy = Number(findValue(rows, ["buy", "cost", "supplier rate"]).replace(/[^0-9.-]/g, "")) || 0
   const sell = Number(findValue(rows, ["sell", "sales", "customer rate"]).replace(/[^0-9.-]/g, "")) || 0
   return {

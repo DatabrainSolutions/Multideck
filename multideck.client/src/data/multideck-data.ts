@@ -2119,7 +2119,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "Compact semantic pills for every workflow status and descriptive attribute shown in a table.",
     details: "Every pill rendered inside an operator table uses the filled green, yellow, red, blue, orange, or purple semantic palette. The cyan information family uses a quieter, lower-saturation treatment in light mode, while dark mode retains the approved deep cyan pair. Pills outside tables keep the quieter surface shell and leading dot.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rate management", route: "/rates" }, { label: "Tariffs & charges", route: "/rates/tariffs" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n  const filledTablePill = tableKind !== null || kind === "status"\n\n  return (\n    <Badge\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill={filledTablePill ? "true" : undefined}\n      className={cn(baseClass, filledTablePill && filledTableClass, filledTablePill && tableToneClass[tone], className)}\n    >\n      {indicator ?? (!filledTablePill ? <span className="size-1.5 rounded-full" style={{ backgroundColor: toneToVar(tone) }} /> : null)}\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill kind="status" tone="purple">New</StatusPill>\n<StatusPill kind="status" tone="orange">Contacted</StatusPill>\n<StatusPill kind="status" tone="blue">Qualified</StatusPill>\n<StatusPill kind="status" tone="amber">Nurturing</StatusPill>\n<StatusPill kind="status" tone="green">Converted</StatusPill>\n<StatusPill kind="status" tone="red">Disqualified</StatusPill>\n\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
   },
@@ -3260,7 +3260,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Navigation",
     description: "A compact mode switch with one spring-animated selection pill for two to four exclusive choices.",
     details: "Use for short mutually exclusive view modes. The selected pill preserves spatial continuity, respects reduced motion, and stays visually identical across settings, dashboards, registers, and workflows.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Rates & contracts", route: "/rates" }, { label: "Inbox", route: "/inbox" }, { label: "Purchase orders", route: "/warehouse/purchase-orders" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Rate management", route: "/rates" }, { label: "Inbox", route: "/inbox" }, { label: "Purchase orders", route: "/warehouse/purchase-orders" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
     componentCode: `export function SegmentedControl({ options, value, onChange }) {\n  const controlId = useId()\n  const shouldReduceMotion = useReducedMotion()\n\n  return (\n    <div role="group" className="relative isolate inline-flex rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1">\n      {options.map((option) => (\n        <button key={option} aria-pressed={value === option} onClick={() => onChange(option)}>\n          {value === option ? (\n            <motion.span layoutId={controlId + "-active"} transition={reduceMotion(shouldReduceMotion, mdMotion.spring)} />\n          ) : null}\n          {option}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<SegmentedControl\n  options={["Table", "Board"]}\n  value={viewMode}\n  onChange={setViewMode}\n/>`,
   },
@@ -3300,7 +3300,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Data",
     description: "The canonical Multideck table with persisted layout, right-click row selection, and field-aware CSV export.",
     details: "Declare each column's data kind so alignment and status treatments stay consistent. Right-click any row and choose Select to reveal the sticky checkbox column; operators can select several rows, then use the CSV action to choose displayed columns or expand hairline record sections for hidden fields. Register endpoints stay lean: pass exportConfig.loadRecords when full detail such as lead contacts, account addresses, or Customs parties should be loaded only after export is requested. Existing row actions such as Duplicate or Delete belong in rowContextActions so they share the same animated menu.",
-    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Bookings", route: "/bookings" }, { label: "Customs declarations", route: "/customs/standalone/export" }, { label: "Rates & contracts", route: "/rates" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Users", route: "/admin/users" }, { label: "Active log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Broadcast history", route: "/admin/broadcast" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Purchase orders", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=data-table" }],
+    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Bookings", route: "/bookings" }, { label: "Customs declarations", route: "/customs/standalone/export" }, { label: "Rate management", route: "/rates" }, { label: "Tariffs & charges", route: "/rates/tariffs" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Users", route: "/admin/users" }, { label: "Active log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Broadcast history", route: "/admin/broadcast" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Purchase orders", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=data-table" }],
     componentCode: `export function DataTable({ columns, rows, getRowKey, exportConfig, rowContextActions }) {\n  const [selectionMode, setSelectionMode] = useState(false)\n  const [selectedRowKeys, setSelectedRowKeys] = useState(new Set())\n\n  return (\n    <section>\n      <TableToolbar selection={selectionMode ? <SelectionExportActions selectedRowKeys={selectedRowKeys} /> : null} columnsLast />\n      <TableSurface>\n        <Table>{/* sticky selection column, semantic cells, persisted layout */}</Table>\n      </TableSurface>\n      <TableCsvExportDialog config={exportConfig} />\n      <AnimatedRowContextMenu actions={rowContextActions} onSelect={() => setSelectionMode(true)} />\n    </section>\n  )\n}`,
     usageCode: `<DataTable\n  ariaLabel="CRM leads"\n  columns={leadColumns}\n  rows={leads}\n  getRowKey={(lead) => lead.id}\n  storageKey="crm-leads"\n  exportConfig={{\n    fileName: "crm-leads",\n    recordCategory: "Lead details",\n    loadRecords: (selected) => Promise.all(selected.map((lead) => getLead(lead.id))),\n  }}\n  onRowClick={openLead}\n/>`,
   },
@@ -3399,6 +3399,48 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
   onItemSearch={setItemSearch}
   onItemSelected={rememberItem}
   onChange={(lines) => setForm((current) => ({ ...current, lines }))}
+/>`,
+  },
+  {
+    id: "rate-charge-line-editor",
+    name: "Rate Charge Line Editor",
+    category: "Operations",
+    description: "Editable charge lines for an incoming cost tariff or a customer pack item, with description, basis and amount.",
+    details: "Use on cost tariffs with buy amounts and on customer pack items with sell amounts. Keep the shared tariff format so operators can inspect every charge without dropping into a mixed total-only form.",
+    foundOn: [{ label: "Rate management", route: "/rates" }, { label: "Tariffs & charges", route: "/rates/tariffs" }, { label: "Components", route: "/components?component=rate-charge-line-editor" }],
+    componentCode: `export function RateChargeLineEditor({ charges, onChange, amountKind = "buy" }) {
+  return charges.map((charge, index) => (
+    <div key={charge.id ?? index}>
+      <Input value={charge.description} onChange={(event) => update(index, { description: event.target.value })} />
+      <Input value={charge.basis} onChange={(event) => update(index, { basis: event.target.value })} />
+      <Input value={amountKind === "sell" ? charge.sellAmount : charge.buyAmount} />
+    </div>
+  ))
+}`,
+    usageCode: `<RateChargeLineEditor
+  charges={draft.charges}
+  amountKind="buy"
+  onChange={(charges) => setDraft((current) => ({ ...current, charges }))}
+/>`,
+  },
+  {
+    id: "rate-pricing-rule-control",
+    name: "Rate Pricing Rule Control",
+    category: "Operations",
+    description: "Markup percent, markup amount or a fixed sell override for one included cost tariff in a customer pack.",
+    details: "Use on each pack item, not as a one-off total on a mixed form. Overrides stay put when the linked cost changes; markup recalculates and the pack then needs approval.",
+    foundOn: [{ label: "Tariffs & charges", route: "/rates/tariffs" }, { label: "Components", route: "/components?component=rate-pricing-rule-control" }],
+    componentCode: `export function RatePricingRuleControl({ value, onChange }) {
+  return (
+    <>
+      <Select value={value.pricingMode} onValueChange={(pricingMode) => onChange({ ...value, pricingMode })} />
+      <Input value={value.pricingMode === "override" ? value.sellTotal : value.markupPercent} />
+    </>
+  )
+}`,
+    usageCode: `<RatePricingRuleControl
+  value={item}
+  onChange={(value) => savePackItem(packId, { sourceCostId: item.sourceCostId, ...value }, item.id)}
 />`,
   },
   {

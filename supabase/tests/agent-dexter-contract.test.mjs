@@ -589,7 +589,7 @@ test("live deals are exact @ mentions in Dexter chat and Watch mode", () => {
   assert.match(dexterComponents, /"lead", "deal", "declaration", "page"/)
   assert.match(dexterPage, /dealResult\.status === "fulfilled" \? dealMentionItems\(dealResult\.value\.rows\) : \[\]/)
   assert.match(dexterPage, /listDealsPage\(\{ limit: 50, offset: 0, sort: \{ id: "created", direction: "desc" \} \}\)/)
-  assert.match(dexterPage, /\["booking", "lead", "deal", "declaration", "quote"\]/)
+  assert.match(dexterPage, /\["booking", "lead", "deal", "declaration", "quote", "rate"\]/)
   assert.match(dexterCompanion, /listAccountsPage\(\{ limit: 25, offset: 0 \}\)/)
   assert.match(dexterCompanion, /listLeadsPage\(\{ limit: 25, offset: 0 \}\)/)
   assert.match(dexterCompanion, /listDealsPage\(\{ limit: 25, offset: 0 \}\)/)

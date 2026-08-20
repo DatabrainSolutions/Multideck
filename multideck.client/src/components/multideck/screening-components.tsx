@@ -55,7 +55,7 @@ export function ScreeningListFreshness({
   const loaded = Boolean(list?.loaded)
   const downloaded = list?.downloadedAt ? formatScreeningTime(list.downloadedAt, language) : null
   const meta = !loaded
-    ? t("The UK OFSI list has not been loaded into this workspace yet.")
+    ? t("The UK Sanctions List has not been loaded into this workspace yet.")
     : list?.stale
       ? t("This list is older than 36 hours. Refresh before relying on a no-match result.")
       : t("Names are screened against the copy stored in this workspace, not a live government website.")
@@ -64,7 +64,7 @@ export function ScreeningListFreshness({
     <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between", className)}>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-[14px] font-medium text-[var(--md-ink)]">{t(list?.sourceName || "UK OFSI consolidated list")}</p>
+          <p className="text-[14px] font-medium text-[var(--md-ink)]">{t(list?.sourceName || "UK Sanctions List")}</p>
           <StatusPill tone={!loaded ? "neutral" : list?.stale ? "amber" : "green"}>
             {t(!loaded ? "Not loaded" : list?.stale ? "Needs refresh" : "Current")}
           </StatusPill>
@@ -201,11 +201,11 @@ export function ScreeningResultSummary({
 }) {
   const { t } = useLanguage()
   const explanation = outcome === "match"
-    ? t("This name matches a person or organisation on the UK OFSI consolidated list. Review the sanctions programme and listing notes below before proceeding.")
+    ? t("This name matches a person or organisation on the UK Sanctions List. Review the sanctions programme and listing notes below before proceeding.")
     : outcome === "possible_match"
       ? t("This name is similar to a listed person or organisation. Confirm whether it is the same party, then review the sanctions details below.")
       : outcome === "unavailable"
-        ? t("The UK OFSI list is not available in this workspace, so this name could not be screened.")
+        ? t("The UK Sanctions List is not available in this workspace, so this name could not be screened.")
         : t("No listed names matched this search. That is not a legal clearance.")
 
   return (

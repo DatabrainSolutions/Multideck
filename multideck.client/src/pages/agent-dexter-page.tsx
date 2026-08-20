@@ -65,6 +65,7 @@ import {
   emailMentionItems,
   leadMentionItems,
   mergeDexterMentionItems,
+  rateMentionItems,
 } from "@/data/dexter-mentions"
 import { DexterBrandMark } from "@/components/multideck/dexter-brand-mark"
 import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
@@ -119,6 +120,7 @@ import { listCustomsDeclarationDraftsPage } from "@/lib/customs-drafts-api"
 import { listLeadsPage } from "@/lib/lead-api"
 import { listDealsPage, type ApiDeal } from "@/lib/deal-api"
 import { listDexterEmailContextSources } from "@/lib/inbox-api"
+import { getRatesPage } from "@/lib/rates-api"
 import { readRecentWorkContext } from "@/lib/recent-work-context"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { cn } from "@/lib/utils"
@@ -1721,7 +1723,7 @@ export function AgentDexterPage({
   }, [t])
   const watchMentionItems = useMemo(() => mentionItems.filter((mention) => {
     if (mention.type === "email") return true
-    if (!(["booking", "lead", "deal", "declaration", "quote"] as const).includes(mention.type as "booking" | "lead" | "deal" | "declaration" | "quote")) return false
+    if (!(["booking", "lead", "deal", "declaration", "quote", "rate"] as const).includes(mention.type as "booking" | "lead" | "deal" | "declaration" | "quote" | "rate")) return false
     const rawId = mention.id.startsWith(`${mention.type}:`)
       ? mention.id.slice(mention.type.length + 1)
       : mention.id
@@ -1854,13 +1856,17 @@ export function AgentDexterPage({
         sort: { id: "lastSaved", direction: "desc" },
       }),
       listDexterEmailContextSources(),
-    ]).then(([customerResult, leadResult, dealResult, declarationResult, emailResult]) => {
+      getRatesPage({ scope: "costs", limit: 50, offset: 0, sort: { id: "name", direction: "asc" } }),
+      getRatesPage({ scope: "packs", limit: 50, offset: 0, sort: { id: "name", direction: "asc" } }),
+    ]).then(([customerResult, leadResult, dealResult, declarationResult, emailResult, costResult, packResult]) => {
       if (!active) return
       setMentionItems(mergeDexterMentionItems(
         customerResult.status === "fulfilled" ? customerMentionItems(customerResult.value.rows) : [],
         leadResult.status === "fulfilled" ? leadMentionItems(leadResult.value.rows) : [],
         dealResult.status === "fulfilled" ? dealMentionItems(dealResult.value.rows) : [],
         declarationResult.status === "fulfilled" ? customsDeclarationMentionItems(declarationResult.value.rows) : [],
+        costResult.status === "fulfilled" ? rateMentionItems(costResult.value.rows) : [],
+        packResult.status === "fulfilled" ? rateMentionItems(packResult.value.rows) : [],
         emailResult.status === "fulfilled"
           ? emailMentionItems(emailResult.value)
           : emailMentionItems(null, true),

@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
-import { refreshOfsiList } from "../_shared/screening-ingest.ts"
+import { refreshUksl } from "../_shared/screening-ingest.ts"
 
 function json(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -49,12 +49,12 @@ Deno.serve(async (request) => {
       return json({ code: "worker_unauthorized" }, 401)
     }
 
-    const result = await refreshOfsiList(admin)
+    const result = await refreshUksl(admin)
     return json({ ok: result.status !== "failed", ...result }, result.status === "failed" ? 502 : 200)
   } catch (error) {
     return json({
       code: "screening_list_refresh_failed",
-      message: error instanceof Error ? error.message : "The OFSI list could not be refreshed.",
+      message: error instanceof Error ? error.message : "The UK Sanctions List could not be refreshed.",
     }, 500)
   }
 })

@@ -45,10 +45,9 @@ const crmCreateActions: Partial<Record<string, CrmCreateAction>> = {
   "/crm/deals": { label: "New deal", eventName: topBarActionEvents.createCrmDeal },
 }
 
-const ratesTopBarActions: Partial<Record<string, { importLabel: string; createLabel: string }>> = {
-  "/rates": { importLabel: "Import rates", createLabel: "New rate" },
-  "/rates/contracts": { importLabel: "Import contracts", createLabel: "New contract" },
-  "/rates/tariffs": { importLabel: "Import tariffs", createLabel: "New tariff" },
+const ratesTopBarActions: Partial<Record<string, { importLabel?: string; createLabel: string }>> = {
+  "/rates": { importLabel: "Import rates", createLabel: "New cost tariff" },
+  "/rates/tariffs": { createLabel: "New customer tariff" },
 }
 
 function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (path: string) => void }) {
@@ -261,6 +260,7 @@ export function TopBar({
           </div>
           {ratesTopBarAction ? (
             <>
+              {ratesTopBarAction.importLabel ? (
               <Button
                 variant="ghost"
                 className={cn("hidden sm:inline-flex", topBarGhostActionClass)}
@@ -269,6 +269,7 @@ export function TopBar({
                 <Upload data-icon="inline-start" strokeWidth={1.2} />
                 {t(ratesTopBarAction.importLabel)}
               </Button>
+              ) : null}
               <Button
                 aria-label={t(ratesTopBarAction.createLabel)}
                 title={t(ratesTopBarAction.createLabel)}

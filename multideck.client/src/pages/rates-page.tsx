@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react"
-import { AlertCircle, Clock, FileSpreadsheet, History, Pencil, Plus, Search, Upload } from "@/components/icons/hugeicons"
+import { AlertCircle, Clock, FileSpreadsheet, History, Pencil, Plus, Search, Send, Upload } from "@/components/icons/hugeicons"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { RateChargeLineEditor } from "@/components/multideck/rate-charge-line-editor"
+import { RatePricingRuleControl } from "@/components/multideck/rate-pricing-rule-control"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { Button } from "@/components/ui/button"
@@ -14,38 +16,45 @@ import { useLanguage } from "@/i18n/language-provider"
 import { parseRateImport, type RateImportPreview } from "@/lib/rate-import-parser"
 import {
   applyRateToQuote,
+  approveRatePack,
   expireRate,
+  generateRatePackDocument,
   getRateDetails,
   getRateOptions,
   getRatesPage,
   getRatesWorkspace,
+  removeRatePackItem,
   saveRate,
+  saveRatePackItem,
+  searchRateCustomers,
+  sendRatePackDocument,
   stageRateImport,
+  type RateCustomer,
+  type RateDetails,
+  type RateExpiryCounts,
   type RateMode,
   type RateOption,
+  type RatePackItem,
   type RateRecord,
   type RateRecordInput,
   type RateRecordType,
-  type RateDetails,
-  type RateExpiryCounts,
   type RatesWorkspace,
 } from "@/lib/rates-api"
 import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 import { cn } from "@/lib/utils"
 
-type RatesRoute = "/rates" | "/rates/contracts" | "/rates/tariffs" | "/rates/imports" | "/rates/results"
+type RatesRoute = "/rates" | "/rates/tariffs" | "/rates/imports" | "/rates/results"
 type ModeFilter = "all" | RateMode
-type TariffFilter = "all" | "cost_tariff" | "sales_tariff"
 type RateImportPreviewRow = { id: string; values: string[] }
 
 const modes: ModeFilter[] = ["all", "lcl", "fcl", "air", "road"]
 const fieldClass = "h-10 rounded-[var(--md-radius-md)] text-base sm:text-[13px]"
 const emptyWorkspace: RatesWorkspace = {
-  summary: { total: 0, attention: 0, active: 0, drafts: 0, costTariffs: 0, salesTariffs: 0, customerSpecific: 0, expiringTariffs: 0, sourcesInReview: 0 },
+  summary: { total: 0, attention: 0, active: 0, drafts: 0, costTariffs: 0, salesTariffs: 0, customerPacks: 0, pendingApproval: 0, customerSpecific: 0, expiringTariffs: 0, sourcesInReview: 0 },
   attention: [], recent: [], imports: [], quotes: [], permissions: { canManage: false },
   integrations: { seaRates: { connected: false, reason: "SeaRates is not connected." } },
 }
-const emptyExpiryCounts: RateExpiryCounts = { expired: 0, sevenDays: 0, thirtyDays: 0, activeCurrent: 0 }
+const emptyExpiryCounts: RateExpiryCounts = { expired: 0, sevenDays: 0, thirtyDays: 0, activeCurrent: 0, pendingApproval: 0 }
 
 function Alert({ children, variant = "default", className }: { children: ReactNode; variant?: "default" | "destructive"; className?: string }) {
   return <div role={variant === "destructive" ? "alert" : "status"} className={cn("grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-4 text-[13px] shadow-[var(--md-shadow-line)] [&>svg]:mt-0.5 [&>svg]:size-4", variant === "destructive" && "text-[var(--md-red)]", className)}>{children}</div>
@@ -56,12 +65,13 @@ function AlertDescription({ children }: { children: ReactNode }) { return <div c
 const blankRate: RateRecordInput = {
   code: "",
   name: "",
-  type: "contract",
+  type: "cost_tariff",
   status: "active",
   mode: "fcl",
   carrier: "",
   supplier: "",
   customer: "",
+  customerOrgId: "",
   origin: "",
   destination: "",
   cargo: "General cargo",
@@ -74,6 +84,7 @@ const blankRate: RateRecordInput = {
   sourceType: "manual",
   sourceReference: "",
   schedule: "ad_hoc",
+  sendAfterApproval: false,
   modeDetails: {},
   charges: [],
 }
@@ -90,41 +101,67 @@ function daysUntil(date: string) {
 }
 
 function statusTone(rate: RateRecord) {
+  if (rate.status === "pending_approval") return "amber" as const
   if (rate.status === "expired" || daysUntil(rate.validTo) < 0) return "red" as const
   if (daysUntil(rate.validTo) <= 30) return "amber" as const
   return rate.status === "active" ? "green" as const : "neutral" as const
 }
 
 function typeLabel(type: RateRecordType) {
-  return type === "cost_tariff" ? "Cost tariff" : type === "sales_tariff" ? "Sales tariff" : "Contract"
+  return type === "sales_tariff" ? "Customer tariff" : "Cost tariff"
+}
+
+function statusLabel(rate: RateRecord, t: (value: string) => string) {
+  if (rate.status === "pending_approval") return t("Needs approval")
+  if (daysUntil(rate.validTo) < 0) return t("Expired")
+  if (daysUntil(rate.validTo) <= 30) return t("Expiring")
+  return t(rate.status[0].toUpperCase() + rate.status.slice(1))
 }
 
 function modeLabel(mode: ModeFilter) {
   return mode === "all" ? "All modes" : mode.toUpperCase()
 }
 
-function tariffFilterLabel(filter: TariffFilter) {
-  return filter === "all" ? "All tariffs" : filter === "cost_tariff" ? "Cost tariffs" : "Sales tariffs"
-}
-
 function Field({ label, children, hint, className }: { label: string; children: ReactNode; hint?: string; className?: string }) {
   return <label className={cn("grid content-start gap-1.5", className)}><span className="text-[12px] font-medium">{label}</span>{children}{hint ? <span className="text-[11.5px] leading-4 text-[var(--md-subtle)]">{hint}</span> : null}</label>
 }
 
-function ExpiryRail({ counts, onFilter }: { counts: RateExpiryCounts; onFilter: (filter: string) => void }) {
+function ExpiryRail({ counts, includePending, onFilter }: { counts: RateExpiryCounts; includePending?: boolean; onFilter: (filter: string) => void }) {
   const { t } = useLanguage()
   const items = [
+    ...(includePending ? [{ key: "pending_approval", label: t("Needs approval"), count: counts.pendingApproval ?? 0, tone: "amber" as const }] : []),
     { key: "expired", label: t("Expired"), count: counts.expired, tone: "red" as const },
     { key: "7", label: t("Expires in 7 days"), count: counts.sevenDays, tone: "amber" as const },
     { key: "30", label: t("Expires in 30 days"), count: counts.thirtyDays, tone: "amber" as const },
     { key: "active", label: t("Active and current"), count: counts.activeCurrent, tone: "green" as const },
   ]
-  return <div className="grid overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] sm:grid-cols-2 xl:grid-cols-4">
+  return <div className={cn("grid overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] sm:grid-cols-2", includePending ? "xl:grid-cols-5" : "xl:grid-cols-4")}>
     {items.map((item, index) => <button key={item.key} type="button" onClick={() => onFilter(item.key)} className={cn("flex min-h-20 items-center justify-between gap-4 px-5 text-start outline-none transition-[background,color,transform] duration-200 hover:bg-[var(--md-surface-tint)] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a24)]", index > 0 && "border-t border-[var(--md-line)] sm:border-s xl:border-t-0")}>
       <span><span className="block text-[12px] text-[var(--md-subtle)]">{item.label}</span><strong className="mt-1 block text-[22px] font-medium tabular-nums text-[var(--md-ink)]">{item.count}</strong></span>
       <StatusPill tone={item.tone}>{item.count ? t("Review") : t("Clear")}</StatusPill>
     </button>)}
   </div>
+}
+
+function CustomerPicker({ value: _value, displayName, label, onChange, optional }: { value: string; displayName?: string; label: string; onChange: (customer: RateCustomer | { id: ""; name: "" }) => void; optional?: boolean }) {
+  const { t } = useLanguage()
+  const [query, setQuery] = useState(displayName ?? "")
+  const [customers, setCustomers] = useState<RateCustomer[]>([])
+  useEffect(() => { if (displayName && !query) setQuery(displayName) }, [displayName, query])
+  useEffect(() => {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => {
+      void searchRateCustomers(query, controller.signal).then((result) => setCustomers(result.customers)).catch(() => undefined)
+    }, 200)
+    return () => { window.clearTimeout(timeout); controller.abort() }
+  }, [query])
+  return <Field label={label} hint={optional ? t("Leave blank unless this buy rate is for one account.") : undefined}>
+    <Input className={fieldClass} value={query} onChange={(event) => { setQuery(event.target.value); if (!event.target.value) onChange({ id: "", name: "" }) }} placeholder={t("Search customers…")} />
+    {customers.length ? <div className="max-h-40 overflow-auto rounded-[calc(var(--md-radius-lg)-4px)] bg-[var(--md-surface-tint)] p-1">
+      {optional ? <button type="button" className="block w-full rounded-[var(--md-radius-sm)] px-3 py-2 text-start text-[13px] hover:bg-[var(--md-selected-bg)]" onClick={() => { onChange({ id: "", name: "" }); setQuery("") }}>{t("No specific customer")}</button> : null}
+      {customers.map((customer) => <button key={customer.id} type="button" className="block w-full rounded-[var(--md-radius-sm)] px-3 py-2 text-start text-[13px] hover:bg-[var(--md-selected-bg)]" onClick={() => { onChange(customer); setQuery(customer.name) }}>{customer.name}</button>)}
+    </div> : null}
+  </Field>
 }
 
 function ModeFields({ draft, updateDetails }: { draft: RateRecordInput; updateDetails: (key: string, value: string | number | boolean) => void }) {
@@ -160,62 +197,69 @@ function RateEditor({ open, onOpenChange, initial, importId, onSaved }: { open: 
   const [draft, setDraft] = useState<RateRecordInput>(blankRate)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+  const isPack = draft.type === "sales_tariff"
   useEffect(() => {
     if (!open) return
-    setDraft({ ...blankRate, ...initial, id: initial && "id" in initial ? initial.id : undefined, importId, changeReason: initial && "id" in initial ? "Commercial rate updated" : "Initial version", modeDetails: { ...(initial?.modeDetails ?? {}) }, charges: initial?.charges ?? [] })
+    const type = initial?.type === "sales_tariff" ? "sales_tariff" : "cost_tariff"
+    setDraft({
+      ...blankRate,
+      ...initial,
+      type,
+      status: type === "sales_tariff" ? (initial && "status" in initial && initial.status ? initial.status : "draft") : (initial && "status" in initial && initial.status ? initial.status : "active"),
+      id: initial && "id" in initial ? initial.id : undefined,
+      importId,
+      changeReason: initial && "id" in initial ? "Commercial rate updated" : "Initial version",
+      customerOrgId: initial && "customerOrgId" in initial ? initial.customerOrgId ?? "" : "",
+      sendAfterApproval: initial && "sendAfterApproval" in initial ? Boolean(initial.sendAfterApproval) : false,
+      modeDetails: { ...(initial?.modeDetails ?? {}) },
+      charges: initial?.charges ?? [],
+    })
     setError("")
   }, [importId, initial, open])
   const update = <Key extends keyof RateRecordInput>(key: Key, value: RateRecordInput[Key]) => setDraft((current) => ({ ...current, [key]: value }))
-  const updateSalesRule = (key: "markupPercent" | "minimumSell" | "additionalFee", value: number) => setDraft((current) => {
-    const modeDetails = { ...current.modeDetails, [key]: value }
-    const markup = Number(modeDetails.markupPercent ?? 0)
-    const minimum = Number(modeDetails.minimumSell ?? 0)
-    const additional = Number(modeDetails.additionalFee ?? 0)
-    return { ...current, modeDetails, sellTotal: Math.max(minimum, current.buyTotal * (1 + markup / 100) + additional) }
-  })
-  const updateBuyTotal = (value: number) => setDraft((current) => {
-    if (current.type !== "sales_tariff") return { ...current, buyTotal: value }
-    const markup = Number(current.modeDetails.markupPercent ?? 0)
-    const minimum = Number(current.modeDetails.minimumSell ?? 0)
-    const additional = Number(current.modeDetails.additionalFee ?? 0)
-    return { ...current, buyTotal: value, sellTotal: Math.max(minimum, value * (1 + markup / 100) + additional) }
-  })
   async function submit() {
-    if (!draft.name.trim() || !draft.origin.trim() || !draft.destination.trim() || !draft.validTo) { setError("Add a name, route and end date before saving."); return }
+    if (!draft.name.trim() || !draft.validTo) { setError("Add a name and end date before saving."); return }
+    if (!isPack && (!draft.origin.trim() || !draft.destination.trim())) { setError("Add a name, route and end date before saving."); return }
+    if (isPack && !draft.customerOrgId) { setError("Choose the customer for this tariff pack."); return }
     if (draft.validTo < draft.validFrom) { setError("The end date must be on or after the start date."); return }
-    if (draft.type === "sales_tariff" && draft.sellTotal < draft.buyTotal) { setError("The sales tariff is below cost. Increase sell or record it as a cost tariff."); return }
     setSaving(true); setError("")
-    try { const response = await saveRate({ ...draft, code: draft.code.trim() || `RATE-${Date.now().toString().slice(-6)}` }); onSaved(response.rate); onOpenChange(false); toast.success(draft.id ? t("New rate version saved") : t("Rate saved")) }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "The rate could not be saved.") }
+    try {
+      const charges = draft.charges
+      const buyTotal = charges.length ? charges.reduce((sum, charge) => sum + charge.buyAmount, 0) : draft.buyTotal
+      const response = await saveRate({ ...draft, buyTotal, code: draft.code.trim() || `RATE-${Date.now().toString().slice(-6)}` })
+      onSaved(response.rate); onOpenChange(false); toast.success(draft.id ? t("New rate version saved") : t("Rate saved"))
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "The rate could not be saved.") }
     finally { setSaving(false) }
   }
   return <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}><DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-[760px]">
-    <DialogHeader><DialogTitle>{draft.id ? t("Create a new rate version") : t("Add a rate")}</DialogTitle><DialogDescription>{t("Contract, tariff and mode details stay together so quote matching can use one reliable record.")}</DialogDescription></DialogHeader>
+    <DialogHeader>
+      <DialogTitle>{draft.id ? t("Create a new rate version") : isPack ? t("New customer tariff") : t("New cost tariff")}</DialogTitle>
+      <DialogDescription>{isPack ? t("One pack belongs to one customer and can include many incoming cost tariffs.") : t("Incoming carrier and supplier tariffs stay in one format, with a contract reference when needed.")}</DialogDescription>
+    </DialogHeader>
     {error ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{t("Check the rate")}</AlertTitle><AlertDescription>{t(error)}</AlertDescription></Alert> : null}
     <div className="grid gap-4 sm:grid-cols-2">
-      <Field label={t("Rate type")}><Select value={draft.type} onValueChange={(value: RateRecordType) => update("type", value)}><SelectTrigger className={fieldClass}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="contract">{t("Contract")}</SelectItem><SelectItem value="cost_tariff">{t("Cost tariff")}</SelectItem><SelectItem value="sales_tariff">{t("Sales tariff")}</SelectItem></SelectContent></Select></Field>
-      <Field label={t("Transport mode")}><Select value={draft.mode} onValueChange={(value: RateMode) => update("mode", value)}><SelectTrigger className={fieldClass}><SelectValue /></SelectTrigger><SelectContent>{(["lcl", "fcl", "air", "road"] as RateMode[]).map((mode) => <SelectItem value={mode} key={mode}>{mode.toUpperCase()}</SelectItem>)}</SelectContent></Select></Field>
-      <Field label={t("Rate name")} className="sm:col-span-2"><Input className={fieldClass} value={draft.name} onChange={(event) => update("name", event.target.value)} placeholder={t("e.g. UK–Japan FCL contract")} /></Field>
-      <Field label={t("Carrier")}><Input className={fieldClass} value={draft.carrier} onChange={(event) => update("carrier", event.target.value)} /></Field>
-      <Field label={t("Supplier")}><Input className={fieldClass} value={draft.supplier} onChange={(event) => update("supplier", event.target.value)} /></Field>
-      {draft.type === "sales_tariff" ? <Field label={t("Customer eligibility")} className="sm:col-span-2" hint={t("Leave blank for every eligible customer.")}><Input className={fieldClass} value={draft.customer} onChange={(event) => update("customer", event.target.value)} /></Field> : null}
-      <Field label={t("Origin")}><Input dir="auto" className={fieldClass} value={draft.origin} onChange={(event) => update("origin", event.target.value)} placeholder="GBSOU · Southampton" /></Field>
-      <Field label={t("Destination")}><Input dir="auto" className={fieldClass} value={draft.destination} onChange={(event) => update("destination", event.target.value)} placeholder="JPUKB · Kobe" /></Field>
-      <Field label={t("Cargo eligibility")}><Input className={fieldClass} value={draft.cargo} onChange={(event) => update("cargo", event.target.value)} /></Field>
-      <Field label={t("Service")}><Input className={fieldClass} value={draft.service} onChange={(event) => update("service", event.target.value)} /></Field>
-      <ModeFields draft={draft} updateDetails={(key, value) => update("modeDetails", { ...draft.modeDetails, [key]: value })} />
+      {isPack ? null : <Field label={t("Transport mode")}><Select value={draft.mode} onValueChange={(value: RateMode) => update("mode", value)}><SelectTrigger className={fieldClass}><SelectValue /></SelectTrigger><SelectContent>{(["lcl", "fcl", "air", "road"] as RateMode[]).map((mode) => <SelectItem value={mode} key={mode}>{mode.toUpperCase()}</SelectItem>)}</SelectContent></Select></Field>}
+      <Field label={isPack ? t("Pack name") : t("Rate name")} className={isPack ? "sm:col-span-2" : undefined}><Input className={fieldClass} value={draft.name} onChange={(event) => update("name", event.target.value)} placeholder={isPack ? t("e.g. Northwind 2026 tariff") : t("e.g. UK–Japan FCL contract")} /></Field>
+      {isPack ? <CustomerPicker value={draft.customerOrgId} displayName={draft.customer} label={t("Customer")} onChange={(customer) => { update("customerOrgId", customer.id); update("customer", customer.name) }} /> : <>
+        <Field label={t("Carrier")}><Input className={fieldClass} value={draft.carrier} onChange={(event) => update("carrier", event.target.value)} /></Field>
+        <Field label={t("Supplier")}><Input className={fieldClass} value={draft.supplier} onChange={(event) => update("supplier", event.target.value)} /></Field>
+        <CustomerPicker value={draft.customerOrgId} displayName={draft.customer} label={t("Customer-specific buy rate")} optional onChange={(customer) => { update("customerOrgId", customer.id); update("customer", customer.name) }} />
+        <Field label={t("Origin")}><Input dir="auto" className={fieldClass} value={draft.origin} onChange={(event) => update("origin", event.target.value)} placeholder="GBSOU · Southampton" /></Field>
+        <Field label={t("Destination")}><Input dir="auto" className={fieldClass} value={draft.destination} onChange={(event) => update("destination", event.target.value)} placeholder="JPUKB · Kobe" /></Field>
+        <Field label={t("Cargo eligibility")}><Input className={fieldClass} value={draft.cargo} onChange={(event) => update("cargo", event.target.value)} /></Field>
+        <Field label={t("Service")}><Input className={fieldClass} value={draft.service} onChange={(event) => update("service", event.target.value)} /></Field>
+        <ModeFields draft={draft} updateDetails={(key, value) => update("modeDetails", { ...draft.modeDetails, [key]: value })} />
+      </>}
       <Field label={t("Valid from")}><Input type="date" dir="ltr" className={fieldClass} value={draft.validFrom} onChange={(event) => update("validFrom", event.target.value)} /></Field>
       <Field label={t("Valid to")}><Input type="date" dir="ltr" className={fieldClass} value={draft.validTo} onChange={(event) => update("validTo", event.target.value)} /></Field>
       <Field label={t("Tariff cycle")}><Select value={draft.schedule} onValueChange={(value: RateRecordInput["schedule"]) => update("schedule", value)}><SelectTrigger className={fieldClass}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="weekly">{t("Weekly")}</SelectItem><SelectItem value="monthly">{t("Monthly")}</SelectItem><SelectItem value="ad_hoc">{t("Ad hoc")}</SelectItem></SelectContent></Select></Field>
       <Field label={t("Currency")}><Input dir="ltr" maxLength={3} className={fieldClass} value={draft.currency} onChange={(event) => update("currency", event.target.value.toUpperCase())} /></Field>
-      <Field label={t("Cost total")}><Input inputMode="decimal" className={fieldClass} value={draft.buyTotal} onChange={(event) => updateBuyTotal(Number(event.target.value))} /></Field>
-      <Field label={t("Sell total")} hint={draft.type === "sales_tariff" ? t("Customer documents receive sell values only.") : undefined}><Input inputMode="decimal" className={fieldClass} value={draft.sellTotal} onChange={(event) => update("sellTotal", Number(event.target.value))} /></Field>
-      {draft.type === "sales_tariff" ? <>
-        <Field label={t("Markup %")}><Input inputMode="decimal" className={fieldClass} value={String(draft.modeDetails.markupPercent ?? "")} onChange={(event) => updateSalesRule("markupPercent", Number(event.target.value))} /></Field>
-        <Field label={t("Minimum sell")}><Input inputMode="decimal" className={fieldClass} value={String(draft.modeDetails.minimumSell ?? "")} onChange={(event) => updateSalesRule("minimumSell", Number(event.target.value))} /></Field>
-        <Field label={t("Additional fee")} className="sm:col-span-2" hint={t("Added after markup and retained in the immutable version.")}><Input inputMode="decimal" className={fieldClass} value={String(draft.modeDetails.additionalFee ?? "")} onChange={(event) => updateSalesRule("additionalFee", Number(event.target.value))} /></Field>
-      </> : null}
-      <Field label={t("Source reference")} className="sm:col-span-2"><Input className={fieldClass} value={draft.sourceReference} onChange={(event) => update("sourceReference", event.target.value)} placeholder={t("Email subject, file name or agreement reference")} /></Field>
+      {isPack ? <Field label={t("Send after approval")} className="sm:col-span-2"><Select value={draft.sendAfterApproval ? "yes" : "no"} onValueChange={(value) => update("sendAfterApproval", value === "yes")}><SelectTrigger className={fieldClass}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="no">{t("Leave ready to send")}</SelectItem><SelectItem value="yes">{t("Send after approval")}</SelectItem></SelectContent></Select></Field> : null}
+      {!isPack ? <>
+        <Field label={t("Cost total")} hint={t("Filled from charge lines when they are present.")}><Input inputMode="decimal" className={fieldClass} value={draft.buyTotal} onChange={(event) => update("buyTotal", Number(event.target.value))} /></Field>
+        <Field label={t("Contract reference")} className="sm:col-span-2"><Input className={fieldClass} value={draft.sourceReference} onChange={(event) => update("sourceReference", event.target.value)} placeholder={t("Agreement number or file name")} /></Field>
+        <div className="sm:col-span-2"><RateChargeLineEditor charges={draft.charges} onChange={(charges) => update("charges", charges)} /></div>
+      </> : <Field label={t("Source reference")} className="sm:col-span-2"><Input className={fieldClass} value={draft.sourceReference} onChange={(event) => update("sourceReference", event.target.value)} /></Field>}
       {draft.id ? <Field label={t("Change reason")} className="sm:col-span-2"><Textarea value={draft.changeReason} onChange={(event) => update("changeReason", event.target.value)} /></Field> : null}
     </div>
     <DialogFooter><Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>{t("Cancel")}</Button><Button onClick={() => void submit()} disabled={saving}>{saving ? t("Saving rate…") : draft.id ? t("Save new version") : t("Save rate")}</Button></DialogFooter>
@@ -239,7 +283,7 @@ function ImportWorkspace({ workspace, refresh, openEditor }: { workspace: RatesW
     }))
   }, [previewRows, t])
   async function choose(event: ChangeEvent<HTMLInputElement>) { const selected = event.target.files?.[0]; if (!selected) return; setBusy(true); setError(""); setFile(selected); try { setPreview(await parseRateImport(selected)) } catch (caught) { setError(caught instanceof Error ? caught.message : "This file could not be read.") } finally { setBusy(false); event.target.value = "" } }
-  async function archiveAndReview() { if (!file || !preview) return; setBusy(true); try { const response = await stageRateImport(file, preview); openEditor(preview.suggested, response.importBatch.id); await refresh() } catch (caught) { setError(caught instanceof Error ? caught.message : "The source file could not be archived.") } finally { setBusy(false) } }
+  async function archiveAndReview() { if (!file || !preview) return; setBusy(true); try { const response = await stageRateImport(file, preview); openEditor({ ...preview.suggested, type: "cost_tariff" }, response.importBatch.id); await refresh() } catch (caught) { setError(caught instanceof Error ? caught.message : "The source file could not be archived.") } finally { setBusy(false) } }
   return <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
     <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
       <div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)]"><Upload className="size-5" /></span><div><h2 className="text-[18px] font-medium text-[var(--md-ink)]">{t("Import and review")}</h2><p className="mt-1 max-w-2xl text-[13px] leading-5 text-[var(--md-subtle)]">{t("Read CSV, spreadsheet, PDF, email or text rate sources. Nothing becomes an active rate until you review and save it.")}</p></div></div>
@@ -261,7 +305,69 @@ function QuoteMatching({ workspace, navigate }: { workspace: RatesWorkspace; nav
   return <div className="grid gap-5"><section className="flex flex-wrap items-end justify-between gap-4 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><Field label={t("Quote needing a rate")} className="min-w-[280px]"><Select value={quoteId} onValueChange={setQuoteId}><SelectTrigger className={fieldClass}><SelectValue placeholder={t("Choose a quote")} /></SelectTrigger><SelectContent>{workspace.quotes.map((quote) => <SelectItem key={quote.id} value={quote.id}>{quote.reference} · {quote.customer}</SelectItem>)}</SelectContent></Select></Field><Button variant="ghost" onClick={() => void find()} disabled={!quoteId || loading}><Search />{loading ? t("Checking rates…") : t("Check again")}</Button></section>
     <Alert><AlertCircle /><AlertTitle>{t("SeaRates is not connected")}</AlertTitle><AlertDescription>{t("Contract and tariff matches are available now. SeaRates service options will be added only after its real API response can be validated.")}</AlertDescription></Alert>
     {error ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{t("Matching needs attention")}</AlertTitle><AlertDescription>{t(error)}</AlertDescription></Alert> : null}
-    <div className="grid gap-3">{!loading && !options.length ? <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-6 py-12 text-center shadow-[var(--md-shadow-line)]"><p className="text-[14px] font-medium text-[var(--md-ink)]">{t("No eligible rates found")}</p><p className="mx-auto mt-2 max-w-lg text-[13px] leading-5 text-[var(--md-subtle)]">{t("Check the quote route, mode and validity, or add a contract or tariff for this lane.")}</p></div> : options.map((option) => <article key={option.id} className="grid gap-4 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)] lg:grid-cols-[minmax(0,1fr)_auto_auto_auto]"><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-[14px] font-medium text-[var(--md-ink)]">{option.name}</h3><StatusPill tone={option.matchScore >= 80 ? "green" : "amber"}>{option.matchScore}% match</StatusPill><StatusPill kind="attribute" tone="blue">{typeLabel(option.type)}</StatusPill></div><p className="mt-2 text-[12px] text-[var(--md-subtle)]">{option.origin} → {option.destination} · {option.matchReasons.join(" · ")}</p></div><div className="lg:text-end"><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Cost")}</p><p className="mt-1 text-[14px] tabular-nums">{money(option.buyTotal, option.currency)}</p></div><div className="lg:text-end"><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Sell / margin")}</p><p className="mt-1 text-[14px] tabular-nums">{money(option.sellTotal, option.currency)} · {option.marginPercent?.toFixed(1) ?? "—"}%</p></div><Button onClick={() => void apply(option)} disabled={applying !== null}>{applying === option.id ? t("Applying…") : t("Use in quote")}</Button></article>)}</div>
+    <div className="grid gap-3">{!loading && !options.length ? <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-6 py-12 text-center shadow-[var(--md-shadow-line)]"><p className="text-[14px] font-medium text-[var(--md-ink)]">{t("No eligible rates found")}</p><p className="mx-auto mt-2 max-w-lg text-[13px] leading-5 text-[var(--md-subtle)]">{t("Check the quote route, mode and validity, or add a contract or tariff for this lane.")}</p></div> : options.map((option) => <article key={option.id} className="grid gap-4 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)] lg:grid-cols-[minmax(0,1fr)_auto_auto_auto]"><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-[14px] font-medium text-[var(--md-ink)]">{option.name}</h3><StatusPill tone={option.matchScore >= 80 ? "green" : "amber"}>{option.matchScore}% match</StatusPill><StatusPill kind="attribute" tone="blue">{t(typeLabel(option.type))}</StatusPill></div><p className="mt-2 text-[12px] text-[var(--md-subtle)]">{option.origin} → {option.destination} · {option.matchReasons.join(" · ")}</p></div><div className="lg:text-end"><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Cost")}</p><p className="mt-1 text-[14px] tabular-nums">{option.type === "sales_tariff" ? "—" : money(option.buyTotal, option.currency)}</p></div><div className="lg:text-end"><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Sell")}</p><p className="mt-1 text-[14px] tabular-nums">{money(option.sellTotal, option.currency)}</p></div><Button onClick={() => void apply(option)} disabled={applying !== null}>{applying === option.id ? t("Applying…") : t("Use in quote")}</Button></article>)}</div>
+  </div>
+}
+
+function PackItems({ details, canManage, onChanged }: { details: RateDetails; canManage: boolean; onChanged: (details: RateDetails) => void }) {
+  const { t } = useLanguage()
+  const [costs, setCosts] = useState<RateRecord[]>([])
+  const [sourceCostId, setSourceCostId] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [rule, setRule] = useState({ pricingMode: "markup_percent" as const, markupPercent: 10, markupAmount: 0, sellTotal: 0 })
+  useEffect(() => {
+    void getRatesPage({ scope: "costs", limit: 50, offset: 0, sort: { id: "name", direction: "asc" } }).then((page) => setCosts(page.rows)).catch(() => undefined)
+  }, [])
+  async function includeCost() {
+    if (!sourceCostId) return
+    setBusy(true)
+    try { onChanged(await saveRatePackItem(details.rate.id, { sourceCostId, ...rule })) }
+    catch (caught) { toast.error(t("The pack item could not be saved"), { description: caught instanceof Error ? caught.message : undefined }) }
+    finally { setBusy(false) }
+  }
+  async function updateItem(item: RatePackItem, next = rule) {
+    setBusy(true)
+    try { onChanged(await saveRatePackItem(details.rate.id, { sourceCostId: item.sourceCostId, pricingMode: next.pricingMode, markupPercent: next.markupPercent, markupAmount: next.markupAmount, sellTotal: next.sellTotal }, item.id)) }
+    catch (caught) { toast.error(t("The pack item could not be saved"), { description: caught instanceof Error ? caught.message : undefined }) }
+    finally { setBusy(false) }
+  }
+  async function remove(item: RatePackItem) {
+    setBusy(true)
+    try { onChanged(await removeRatePackItem(details.rate.id, item.id)) }
+    catch (caught) { toast.error(t("The pack item could not be removed"), { description: caught instanceof Error ? caught.message : undefined }) }
+    finally { setBusy(false) }
+  }
+  return <div className="grid gap-4">
+    <h3 className="text-[13px] font-medium">{t("Included cost tariffs")}</h3>
+    <div className="grid gap-3">
+      {details.items.length ? details.items.map((item) => (
+        <article key={item.id} className="grid gap-3 rounded-[calc(var(--md-radius-xl)-4px)] bg-[var(--md-surface-tint)] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[13px] font-medium text-[var(--md-ink)]">{item.sourceName}</p>
+              <p className="mt-1 text-[12px] text-[var(--md-subtle)]" dir="auto">{item.origin} → {item.destination} · {item.sourceCarrier || t("Carrier")}</p>
+            </div>
+            <StatusPill kind="attribute" tone="teal">{item.sourceMode.toUpperCase()}</StatusPill>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-[13px]">
+            <div><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Cost")}</p><p className="mt-1 tabular-nums">{money(item.sourceBuyTotal, item.currency)}</p></div>
+            <div><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Sell")}</p><p className="mt-1 tabular-nums">{money(item.sellTotal, item.currency)}</p></div>
+          </div>
+          {item.charges.length ? <RateChargeLineEditor charges={item.charges} amountKind="sell" onChange={() => undefined} disabled /> : null}
+          {canManage ? <>
+            <RatePricingRuleControl value={{ pricingMode: item.pricingMode, markupPercent: item.markupPercent, markupAmount: item.markupAmount, sellTotal: item.sellTotal }} onChange={(value) => void updateItem(item, value)} disabled={busy} />
+            <div className="flex justify-end"><Button variant="ghost" disabled={busy} onClick={() => void remove(item)}>{t("Remove")}</Button></div>
+          </> : null}
+        </article>
+      )) : <p className="text-[12px] text-[var(--md-subtle)]">{t("No cost tariffs included yet.")}</p>}
+    </div>
+    {canManage ? <div className="grid gap-3 rounded-[calc(var(--md-radius-xl)-4px)] bg-[var(--md-surface-tint)] p-4">
+      <Field label={t("Include a cost tariff")}>
+        <Select value={sourceCostId} onValueChange={setSourceCostId}><SelectTrigger className={fieldClass}><SelectValue placeholder={t("Choose a cost tariff")} /></SelectTrigger><SelectContent>{costs.map((cost) => <SelectItem key={cost.id} value={cost.id}>{cost.name}</SelectItem>)}</SelectContent></Select>
+      </Field>
+      <RatePricingRuleControl value={rule} onChange={setRule} disabled={busy} />
+      <Button onClick={() => void includeCost()} disabled={busy || !sourceCostId}>{busy ? t("Saving rate…") : t("Add to pack")}</Button>
+    </div> : null}
   </div>
 }
 
@@ -279,7 +385,6 @@ export function RatesPage({ route, navigate }: { route: RatesRoute; navigate: (p
   const [serverSort, setServerSort] = useState<{ id: string; direction: "asc" | "desc" } | null>({ id: "name", direction: "asc" })
   const [dataRevision, setDataRevision] = useState(0)
   const [mode, setMode] = useState<ModeFilter>("all")
-  const [tariffFilter, setTariffFilter] = useState<TariffFilter>("all")
   const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "")
   const [debouncedQuery, setDebouncedQuery] = useState(query)
   const [expiryFilter, setExpiryFilter] = useState("")
@@ -290,6 +395,7 @@ export function RatesPage({ route, navigate }: { route: RatesRoute; navigate: (p
   const [editorInitial, setEditorInitial] = useState<RateRecord | Partial<RateRecordInput> | null>(null)
   const [editorImportId, setEditorImportId] = useState<string | undefined>()
   const [expiring, setExpiring] = useState(false)
+  const [acting, setActing] = useState(false)
   const refresh = useCallback(async () => { setLoading(true); setError(""); try { setWorkspace(await getRatesWorkspace()) } catch (caught) { setError(caught instanceof Error ? caught.message : "Rates could not be loaded.") } finally { setLoading(false) } }, [])
   useEffect(() => { void refresh() }, [refresh])
   useEffect(() => {
@@ -297,7 +403,7 @@ export function RatesPage({ route, navigate }: { route: RatesRoute; navigate: (p
     return () => window.clearTimeout(timeout)
   }, [query])
   const openNew = useCallback(() => {
-    setEditorInitial(route === "/rates/contracts" ? { type: "contract" } : route === "/rates/tariffs" ? { type: "cost_tariff" } : null)
+    setEditorInitial(route === "/rates/tariffs" ? { type: "sales_tariff", origin: "Multiple lanes", destination: "Multiple lanes" } : { type: "cost_tariff" })
     setEditorImportId(undefined)
     setEditorOpen(true)
   }, [route])
@@ -305,24 +411,22 @@ export function RatesPage({ route, navigate }: { route: RatesRoute; navigate: (p
   useEffect(() => { const unsubscribeNew = subscribeTopBarAction(topBarActionEvents.createRate, openNew); const unsubscribeImport = subscribeTopBarAction(topBarActionEvents.importRates, openImport); return () => { unsubscribeNew(); unsubscribeImport() } }, [openImport, openNew])
   useEffect(() => {
     setMode("all")
-    setTariffFilter("all")
     setExpiryFilter("")
     setSelected(null)
     setSelectedDetails(null)
     setOffset(0)
   }, [route])
-  useEffect(() => setOffset(0), [debouncedQuery, expiryFilter, mode, serverSort, tariffFilter])
+  useEffect(() => setOffset(0), [debouncedQuery, expiryFilter, mode, serverSort])
   useEffect(() => {
-    if (route !== "/rates/contracts" && route !== "/rates/tariffs") return undefined
+    if (route !== "/rates" && route !== "/rates/tariffs") return undefined
     const controller = new AbortController()
     setTableLoading(true)
     setTableError("")
     void getRatesPage({
-      scope: route === "/rates/contracts" ? "contracts" : "tariffs",
+      scope: route === "/rates" ? "costs" : "packs",
       search: debouncedQuery,
       mode: mode === "all" ? undefined : mode,
-      tariffType: route === "/rates/tariffs" && tariffFilter !== "all" ? tariffFilter : undefined,
-      expiry: expiryFilter ? expiryFilter as "expired" | "7" | "30" | "active" : undefined,
+      expiry: expiryFilter ? expiryFilter as "expired" | "7" | "30" | "active" | "pending_approval" : undefined,
       sort: serverSort,
       limit: 20,
       offset,
@@ -337,7 +441,7 @@ export function RatesPage({ route, navigate }: { route: RatesRoute; navigate: (p
       if (!controller.signal.aborted) setTableLoading(false)
     })
     return () => controller.abort()
-  }, [dataRevision, debouncedQuery, expiryFilter, mode, offset, route, serverSort, tariffFilter])
+  }, [dataRevision, debouncedQuery, expiryFilter, mode, offset, route, serverSort])
   useEffect(() => {
     if (!selected) { setSelectedDetails(null); return undefined }
     const controller = new AbortController()
@@ -353,37 +457,45 @@ export function RatesPage({ route, navigate }: { route: RatesRoute; navigate: (p
     return () => controller.abort()
   }, [selected?.id, t])
 
-  const contractColumns = useMemo<DataTableColumn<RateRecord>[]>(() => [
-    { id: "name", label: t("Agreement"), kind: "identity", width: 250, canHide: false, sortValue: (rate) => rate.name, cell: (rate) => <div><p className="font-medium text-[var(--md-ink)]">{rate.name}</p><p className="mt-0.5 text-[11.5px] text-[var(--md-subtle)]" dir="ltr">{rate.code}</p></div> },
+  const costColumns = useMemo<DataTableColumn<RateRecord>[]>(() => [
+    { id: "name", label: t("Cost tariff"), kind: "identity", width: 250, canHide: false, sortValue: (rate) => rate.name, cell: (rate) => <div><p className="font-medium text-[var(--md-ink)]">{rate.name}</p><p className="mt-0.5 text-[11.5px] text-[var(--md-subtle)]" dir="ltr">{rate.code} · {rate.sourceReference || t("No contract reference")}</p></div> },
     { id: "mode", label: t("Mode"), kind: "attribute", width: 90, sortValue: (rate) => rate.mode, cell: (rate) => <StatusPill kind="attribute" tone="teal">{rate.mode.toUpperCase()}</StatusPill> },
     { id: "route", label: t("Lane"), kind: "long-text", width: 230, sortValue: (rate) => `${rate.origin}${rate.destination}`, cell: (rate) => <span dir="auto">{rate.origin} → {rate.destination}</span> },
     { id: "carrier", label: t("Carrier / supplier"), kind: "long-text", width: 180, defaultHidden: true, sortValue: (rate) => rate.carrier || rate.supplier, cell: (rate) => rate.carrier || rate.supplier || "—" },
-    { id: "validity", label: t("Renewal"), kind: "date", width: 155, sortValue: (rate) => rate.validTo, cell: (rate) => <span dir="ltr">{rate.validFrom} → {rate.validTo}</span> },
-    { id: "buy", label: t("Cost basis"), kind: "number", width: 125, sortValue: (rate) => rate.buyTotal, cell: (rate) => money(rate.buyTotal, rate.currency) },
-    { id: "version", label: t("Version"), kind: "number", width: 90, defaultHidden: true, sortValue: (rate) => rate.versionNo, cell: (rate) => `v${rate.versionNo}` },
-    { id: "status", label: t("Status"), kind: "status", width: 120, sortValue: (rate) => rate.status, cell: (rate) => <StatusPill tone={statusTone(rate)}>{daysUntil(rate.validTo) < 0 ? t("Expired") : daysUntil(rate.validTo) <= 30 ? t("Expiring") : t(rate.status[0].toUpperCase() + rate.status.slice(1))}</StatusPill> },
-  ], [t])
-
-  const tariffColumns = useMemo<DataTableColumn<RateRecord>[]>(() => [
-    { id: "name", label: t("Tariff"), kind: "identity", width: 240, canHide: false, sortValue: (rate) => rate.name, cell: (rate) => <div><p className="font-medium text-[var(--md-ink)]">{rate.name}</p><p className="mt-0.5 text-[11.5px] text-[var(--md-subtle)]" dir="ltr">{rate.code} · v{rate.versionNo}</p></div> },
-    { id: "type", label: t("Kind"), kind: "attribute", width: 130, defaultHidden: true, sortValue: (rate) => rate.type, cell: (rate) => <StatusPill kind="attribute" tone={rate.type === "sales_tariff" ? "green" : "blue"}>{t(typeLabel(rate.type))}</StatusPill> },
-    { id: "mode", label: t("Mode"), kind: "attribute", width: 90, sortValue: (rate) => rate.mode, cell: (rate) => <StatusPill kind="attribute" tone="teal">{rate.mode.toUpperCase()}</StatusPill> },
-    { id: "route", label: t("Lane"), kind: "long-text", width: 210, sortValue: (rate) => `${rate.origin}${rate.destination}`, cell: (rate) => <span dir="auto">{rate.origin} → {rate.destination}</span> },
-    { id: "schedule", label: t("Cycle"), kind: "attribute", width: 105, defaultHidden: true, sortValue: (rate) => rate.schedule, cell: (rate) => t(rate.schedule === "ad_hoc" ? "Ad hoc" : rate.schedule === "weekly" ? "Weekly" : "Monthly") },
-    { id: "eligibility", label: t("Eligibility"), kind: "long-text", width: 170, defaultHidden: true, sortValue: (rate) => rate.customer || rate.cargo, cell: (rate) => rate.customer || t("All eligible customers") },
-    { id: "buy", label: t("Cost"), kind: "number", width: 115, sortValue: (rate) => rate.buyTotal, cell: (rate) => money(rate.buyTotal, rate.currency) },
-    { id: "sell", label: t("Sell / margin"), kind: "number", width: 145, defaultHidden: true, sortValue: (rate) => rate.sellTotal, cell: (rate) => <span>{money(rate.sellTotal, rate.currency)} · {rate.marginPercent?.toFixed(1) ?? "—"}%</span> },
+    { id: "customer", label: t("Customer"), kind: "long-text", width: 160, defaultHidden: true, sortValue: (rate) => rate.customer, cell: (rate) => rate.customer || t("Any customer") },
     { id: "validity", label: t("Validity"), kind: "date", width: 155, sortValue: (rate) => rate.validTo, cell: (rate) => <span dir="ltr">{rate.validFrom} → {rate.validTo}</span> },
-    { id: "status", label: t("Status"), kind: "status", width: 120, sortValue: (rate) => rate.status, cell: (rate) => <StatusPill tone={statusTone(rate)}>{daysUntil(rate.validTo) < 0 ? t("Expired") : daysUntil(rate.validTo) <= 30 ? t("Expiring") : t(rate.status[0].toUpperCase() + rate.status.slice(1))}</StatusPill> },
+    { id: "buy", label: t("Cost"), kind: "number", width: 125, sortValue: (rate) => rate.buyTotal, cell: (rate) => money(rate.buyTotal, rate.currency) },
+    { id: "status", label: t("Status"), kind: "status", width: 120, sortValue: (rate) => rate.status, cell: (rate) => <StatusPill tone={statusTone(rate)}>{statusLabel(rate, t)}</StatusPill> },
   ], [t])
 
-  const attentionRates = workspace.attention
-  const recentRates = workspace.recent
+  const packColumns = useMemo<DataTableColumn<RateRecord>[]>(() => [
+    { id: "name", label: t("Customer tariff"), kind: "identity", width: 240, canHide: false, sortValue: (rate) => rate.name, cell: (rate) => <div><p className="font-medium text-[var(--md-ink)]">{rate.name}</p><p className="mt-0.5 text-[11.5px] text-[var(--md-subtle)]" dir="ltr">{rate.code} · v{rate.versionNo}</p></div> },
+    { id: "customer", label: t("Customer"), kind: "long-text", width: 180, sortValue: (rate) => rate.customer, cell: (rate) => rate.customer || "—" },
+    { id: "items", label: t("Included tariffs"), kind: "number", width: 130, sortValue: (rate) => rate.itemCount, cell: (rate) => rate.itemCount },
+    { id: "schedule", label: t("Cycle"), kind: "attribute", width: 105, sortValue: (rate) => rate.schedule, cell: (rate) => t(rate.schedule === "ad_hoc" ? "Ad hoc" : rate.schedule === "weekly" ? "Weekly" : "Monthly") },
+    { id: "sell", label: t("Sell"), kind: "number", width: 125, sortValue: (rate) => rate.sellTotal, cell: (rate) => money(rate.sellTotal, rate.currency) },
+    { id: "validity", label: t("Validity"), kind: "date", width: 155, sortValue: (rate) => rate.validTo, cell: (rate) => <span dir="ltr">{rate.validFrom} → {rate.validTo}</span> },
+    { id: "status", label: t("Status"), kind: "status", width: 140, sortValue: (rate) => rate.status, cell: (rate) => <StatusPill tone={statusTone(rate)}>{statusLabel(rate, t)}</StatusPill> },
+  ], [t])
+
   async function doExpire() { if (!selected) return; setExpiring(true); try { const response = await expireRate(selected.id); setSelected(response.rate); setSelectedDetails((current) => current ? { ...current, rate: response.rate } : current); await refresh(); setDataRevision((current) => current + 1); toast.success(t("Rate expired")) } catch (caught) { toast.error(t("The rate could not be expired"), { description: caught instanceof Error ? caught.message : undefined }) } finally { setExpiring(false) } }
+  async function runPackAction(action: "approve" | "generate" | "send") {
+    if (!selected) return
+    setActing(true)
+    try {
+      const details = action === "approve" ? await approveRatePack(selected.id) : action === "generate" ? await generateRatePackDocument(selected.id) : await sendRatePackDocument(selected.id, selectedDetails?.publications[0]?.id)
+      setSelected(details.rate)
+      setSelectedDetails(details)
+      setDataRevision((current) => current + 1)
+      toast.success(action === "approve" ? t("Customer tariff approved") : action === "generate" ? t("Tariff document generated") : t("Tariff document sent"))
+    } catch (caught) {
+      toast.error(t("The customer tariff could not be updated"), { description: caught instanceof Error ? caught.message : undefined })
+    } finally { setActing(false) }
+  }
 
   const workspaceError = error ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{t("Rates could not be loaded")}</AlertTitle><AlertDescription>{t(error)} <button className="font-medium underline" onClick={() => void refresh()}>{t("Try again")}</button></AlertDescription></Alert> : null
   const workspaceOverlays = <>
-    <Sheet open={Boolean(selected)} onOpenChange={(open) => { if (!open) { setSelected(null); setSelectedDetails(null) } }}><SheetContent side="right" className="w-full overflow-y-auto sm:max-w-[520px]"><SheetHeader><SheetTitle>{selected?.name}</SheetTitle><SheetDescription>{selected ? `${selected.code} · ${t(typeLabel(selected.type))} · v${selected.versionNo}` : ""}</SheetDescription></SheetHeader>{selected ? <div className="grid gap-5 px-4 pb-6"><div className="flex flex-wrap gap-2"><StatusPill tone={statusTone(selected)}>{t(selected.status)}</StatusPill><StatusPill kind="attribute" tone="teal">{selected.mode.toUpperCase()}</StatusPill><StatusPill kind="attribute" tone="blue">{t(selected.schedule === "ad_hoc" ? "Ad hoc" : selected.schedule === "weekly" ? "Weekly" : "Monthly")}</StatusPill></div><div className="grid grid-cols-2 gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-4"><div><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Cost")}</p><p className="mt-1 text-[15px] tabular-nums">{money(selected.buyTotal, selected.currency)}</p></div><div><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Sell / margin")}</p><p className="mt-1 text-[15px] tabular-nums">{money(selected.sellTotal, selected.currency)} · {selected.marginPercent?.toFixed(1) ?? "—"}%</p></div></div><dl className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-3 text-[13px]"><dt className="text-[var(--md-subtle)]">{t("Route")}</dt><dd dir="auto">{selected.origin} → {selected.destination}</dd><dt className="text-[var(--md-subtle)]">{t("Carrier")}</dt><dd>{selected.carrier || "—"}</dd><dt className="text-[var(--md-subtle)]">{t("Supplier")}</dt><dd>{selected.supplier || "—"}</dd><dt className="text-[var(--md-subtle)]">{t("Eligibility")}</dt><dd>{selected.customer || t("All eligible customers")} · {selected.cargo}</dd><dt className="text-[var(--md-subtle)]">{t("Validity")}</dt><dd dir="ltr">{selected.validFrom} → {selected.validTo}</dd><dt className="text-[var(--md-subtle)]">{t("Source")}</dt><dd>{selected.sourceReference || selected.sourceType}</dd></dl><div><h3 className="flex items-center gap-2 text-[13px] font-medium"><History className="size-4" />{t("Version and audit history")}</h3><div className="mt-3 grid gap-2">{detailsLoading ? <p className="text-[12px] text-[var(--md-subtle)]">{t("Loading history…")}</p> : selectedDetails?.versions.length ? selectedDetails.versions.map((version) => <div key={version.id} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 text-[12px]"><div className="flex justify-between gap-3"><span className="font-medium">v{version.versionNo} · {version.status}</span><span className="text-[var(--md-subtle)]">{new Date(version.createdAt).toLocaleDateString()}</span></div><p className="mt-1 text-[var(--md-subtle)]">{version.changeReason || t("Version saved")}</p></div>) : <p className="text-[12px] text-[var(--md-subtle)]">{t("No earlier versions")}</p>}</div></div>{workspace.permissions.canManage ? <div className="flex flex-wrap gap-2"><Button onClick={() => { setEditorInitial(selected); setEditorImportId(undefined); setEditorOpen(true) }}><Pencil />{t("Create new version")}</Button><Button variant="ghost" onClick={() => void doExpire()} disabled={expiring || selected.status === "expired"}><Clock />{expiring ? t("Expiring…") : t("Expire rate")}</Button></div> : null}</div> : null}</SheetContent></Sheet>
+    <Sheet open={Boolean(selected)} onOpenChange={(open) => { if (!open) { setSelected(null); setSelectedDetails(null) } }}><SheetContent side="right" className="w-full overflow-y-auto sm:max-w-[560px]"><SheetHeader><SheetTitle>{selected?.name}</SheetTitle><SheetDescription>{selected ? `${selected.code} · ${t(typeLabel(selected.type))} · v${selected.versionNo}` : ""}</SheetDescription></SheetHeader>{selected ? <div className="grid gap-5 px-4 pb-6"><div className="flex flex-wrap gap-2"><StatusPill tone={statusTone(selected)}>{statusLabel(selected, t)}</StatusPill>{selected.type === "cost_tariff" ? <StatusPill kind="attribute" tone="teal">{selected.mode.toUpperCase()}</StatusPill> : null}<StatusPill kind="attribute" tone="blue">{t(selected.schedule === "ad_hoc" ? "Ad hoc" : selected.schedule === "weekly" ? "Weekly" : "Monthly")}</StatusPill></div><div className="grid grid-cols-2 gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-4">{selected.type === "cost_tariff" ? <div><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Cost")}</p><p className="mt-1 text-[15px] tabular-nums">{money(selected.buyTotal, selected.currency)}</p></div> : <div><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Included tariffs")}</p><p className="mt-1 text-[15px] tabular-nums">{selected.itemCount}</p></div>}<div><p className="text-[11.5px] text-[var(--md-subtle)]">{selected.type === "sales_tariff" ? t("Sell") : t("Contract reference")}</p><p className="mt-1 text-[15px] tabular-nums">{selected.type === "sales_tariff" ? money(selected.sellTotal, selected.currency) : selected.sourceReference || "—"}</p></div></div><dl className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-3 text-[13px]"><dt className="text-[var(--md-subtle)]">{t("Route")}</dt><dd dir="auto">{selected.origin} → {selected.destination}</dd><dt className="text-[var(--md-subtle)]">{t("Carrier")}</dt><dd>{selected.carrier || "—"}</dd><dt className="text-[var(--md-subtle)]">{t("Customer")}</dt><dd>{selected.customer || t("Any customer")}</dd><dt className="text-[var(--md-subtle)]">{t("Validity")}</dt><dd dir="ltr">{selected.validFrom} → {selected.validTo}</dd></dl>{selected.type === "sales_tariff" && selectedDetails ? <PackItems details={selectedDetails} canManage={workspace.permissions.canManage} onChanged={(details) => { setSelected(details.rate); setSelectedDetails(details); setDataRevision((current) => current + 1) }} /> : null}{selected.type === "sales_tariff" && selectedDetails?.publications.length ? <div><h3 className="text-[13px] font-medium">{t("Published documents")}</h3><div className="mt-3 grid gap-2">{selectedDetails.publications.map((publication) => <div key={publication.id} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 text-[12px]"><div className="flex justify-between gap-3"><span>{publication.fileName}</span><StatusPill tone={publication.status === "sent" ? "green" : publication.status === "failed" ? "red" : "amber"}>{publication.status.replaceAll("_", " ")}</StatusPill></div>{publication.errorMessage ? <p className="mt-1 text-[var(--md-subtle)]">{publication.errorMessage}</p> : null}</div>)}</div></div> : null}<div><h3 className="flex items-center gap-2 text-[13px] font-medium"><History className="size-4" />{t("Version and audit history")}</h3><div className="mt-3 grid gap-2">{detailsLoading ? <p className="text-[12px] text-[var(--md-subtle)]">{t("Loading history…")}</p> : selectedDetails?.versions.length ? selectedDetails.versions.map((version) => <div key={version.id} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 text-[12px]"><div className="flex justify-between gap-3"><span className="font-medium">v{version.versionNo} · {version.status}</span><span className="text-[var(--md-subtle)]">{new Date(version.createdAt).toLocaleDateString()}</span></div><p className="mt-1 text-[var(--md-subtle)]">{version.changeReason || t("Version saved")}</p></div>) : <p className="text-[12px] text-[var(--md-subtle)]">{t("No earlier versions")}</p>}</div></div>{workspace.permissions.canManage ? <div className="flex flex-wrap gap-2"><Button onClick={() => { setEditorInitial(selected); setEditorImportId(undefined); setEditorOpen(true) }}><Pencil />{t("Create new version")}</Button>{selected.type === "sales_tariff" ? <><Button onClick={() => void runPackAction("approve")} disabled={acting || selected.status === "expired"}>{acting ? t("Saving rate…") : t("Approve pack")}</Button><Button variant="ghost" onClick={() => void runPackAction("generate")} disabled={acting}><FileSpreadsheet />{t("Generate document")}</Button><Button variant="ghost" onClick={() => void runPackAction("send")} disabled={acting}><Send />{t("Send to customer")}</Button></> : <Button variant="ghost" onClick={() => void doExpire()} disabled={expiring || selected.status === "expired"}><Clock />{expiring ? t("Expiring…") : t("Expire rate")}</Button>}</div> : null}</div> : null}</SheetContent></Sheet>
     <RateEditor open={editorOpen} onOpenChange={setEditorOpen} initial={editorInitial} importId={editorImportId} onSaved={(rate) => { setSelected(rate); setDataRevision((current) => current + 1); void refresh() }} />
   </>
 
@@ -391,52 +503,26 @@ export function RatesPage({ route, navigate }: { route: RatesRoute; navigate: (p
   if (route === "/rates/results") return <main className="grid gap-5"><div><h1 className="text-[24px] font-medium tracking-[-0.02em] text-[var(--md-ink)]">{t("Quote rate matching")}</h1><p className="mt-1 text-[13px] text-[var(--md-subtle)]">{t("Compare eligible contract and tariff rates, then apply a fixed snapshot to the quote.")}</p></div>{loading ? <p className="text-[13px] text-[var(--md-subtle)]">{t("Loading quote requirements…")}</p> : <QuoteMatching workspace={workspace} navigate={navigate} />}</main>
 
   if (route === "/rates") return <main className="grid gap-5">
-    <div><h1 className="text-[24px] font-medium tracking-[-0.02em] text-[var(--md-ink)]">{t("Rate management")}</h1><p className="mt-1 max-w-3xl text-[13px] leading-5 text-[var(--md-subtle)]">{t("See what needs review, keep commercial sources current and move approved rates into quote matching.")}</p></div>
-    {workspaceError}
-    <section aria-label={t("Rate management summary")} className="grid overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] sm:grid-cols-2 xl:grid-cols-4">
-      {[
-        [t("Needs review"), workspace.summary.attention],
-        [t("Active rates"), workspace.summary.active],
-        [t("Drafts"), workspace.summary.drafts],
-        [t("Sources in review"), workspace.summary.sourcesInReview],
-      ].map(([label, value], index) => <div key={String(label)} className={cn("min-h-24 px-5 py-4", index > 0 && "border-t border-[var(--md-line)] sm:border-s xl:border-t-0")}><p className="text-[12px] text-[var(--md-subtle)]">{label}</p><p className="mt-2 text-[24px] font-medium tabular-nums text-[var(--md-ink)]">{value}</p></div>)}
+    <div><h1 className="text-[24px] font-medium tracking-[-0.02em] text-[var(--md-ink)]">{t("Rate management")}</h1><p className="mt-1 max-w-3xl text-[13px] leading-5 text-[var(--md-subtle)]">{t("Incoming carrier and supplier cost tariffs, including contract references and customer-specific buy rates.")}</p></div>
+    <section aria-label={t("Rate management summary")} className="grid overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] sm:grid-cols-3">
+      {[[t("Expiring or expired"), workspace.summary.attention], [t("Drafts"), workspace.summary.drafts], [t("Sources in review"), workspace.summary.sourcesInReview]].map(([label, value], index) => <div key={String(label)} className={cn("min-h-20 px-5 py-4", index > 0 && "border-t border-[var(--md-line)] sm:border-s sm:border-t-0")}><p className="text-[12px] text-[var(--md-subtle)]">{label}</p><p className="mt-2 text-[24px] font-medium tabular-nums text-[var(--md-ink)]">{value}</p></div>)}
     </section>
-    {!loading && !workspace.summary.total ? <section className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] lg:grid lg:grid-cols-[minmax(260px,0.72fr)_minmax(0,1.28fr)]">
-      <div className="border-b border-[var(--md-line)] p-6 lg:border-b-0 lg:border-e"><span className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)]"><FileSpreadsheet className="size-5" /></span><h2 className="mt-4 text-[18px] font-medium text-[var(--md-ink)]">{t("Build your rate library")}</h2><p className="mt-2 max-w-md text-[13px] leading-5 text-[var(--md-subtle)]">{t("Import or add commercial rates, review the evidence, then make approved pricing available to quotes.")}</p></div>
-      <ol className="divide-y divide-[var(--md-line)]">
-        <li className="grid gap-3 p-5 sm:grid-cols-[32px_minmax(0,1fr)_auto] sm:items-center"><span className="grid size-8 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[12px] font-medium">1</span><div><h3 className="text-[13px] font-medium text-[var(--md-ink)]">{t("Bring in the source")}</h3><p className="mt-1 text-[12px] leading-5 text-[var(--md-subtle)]">{t("Import a spreadsheet, PDF, email or text file and keep the original evidence.")}</p></div><Button variant="ghost" onClick={() => navigate("/rates/imports")}><Upload />{t("Import source")}</Button></li>
-        <li className="grid gap-3 p-5 sm:grid-cols-[32px_minmax(0,1fr)_auto] sm:items-center"><span className="grid size-8 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[12px] font-medium">2</span><div><h3 className="text-[13px] font-medium text-[var(--md-ink)]">{t("Review and publish")}</h3><p className="mt-1 text-[12px] leading-5 text-[var(--md-subtle)]">{t("Check validity, route, mode and commercial values before the rate becomes active.")}</p></div>{workspace.permissions.canManage ? <Button variant="ghost" onClick={openNew}><Plus />{t("Add first rate")}</Button> : null}</li>
-        <li className="grid gap-3 p-5 sm:grid-cols-[32px_minmax(0,1fr)_auto] sm:items-center"><span className="grid size-8 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[12px] font-medium">3</span><div><h3 className="text-[13px] font-medium text-[var(--md-ink)]">{t("Match to a quote")}</h3><p className="mt-1 text-[12px] leading-5 text-[var(--md-subtle)]">{t("Compare eligible pricing and save the selected rate as an immutable quote snapshot.")}</p></div><Button variant="ghost" onClick={() => navigate("/rates/results")}>{t("Open quote matching")}</Button></li>
-      </ol>
-    </section> : <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)]">
-      <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><div className="flex items-center justify-between gap-3"><div><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Attention queue")}</h2><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Expired, expiring and draft pricing that needs a decision.")}</p></div><StatusPill tone={attentionRates.length ? "amber" : "green"}>{attentionRates.length ? t("Review") : t("Clear")}</StatusPill></div><div className="mt-4 divide-y divide-[var(--md-line)]">{attentionRates.length ? attentionRates.slice(0, 6).map((rate) => <button key={rate.id} type="button" onClick={() => setSelected(rate)} className="flex w-full items-center justify-between gap-4 py-3 text-start outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]"><span><span className="block text-[13px] font-medium text-[var(--md-ink)]">{rate.name}</span><span className="mt-1 block text-[12px] text-[var(--md-subtle)]" dir="auto">{rate.origin} → {rate.destination}</span></span><StatusPill tone={statusTone(rate)}>{daysUntil(rate.validTo) < 0 ? t("Expired") : rate.status === "draft" ? t("Draft") : t("Expiring")}</StatusPill></button>) : <p className="py-8 text-center text-[13px] text-[var(--md-subtle)]">{t("Everything is current. No rate decisions are waiting.")}</p>}</div></section>
-      <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Recently updated")}</h2><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("The latest commercial records across contracts and tariffs.")}</p><div className="mt-4 divide-y divide-[var(--md-line)]">{recentRates.map((rate) => <button key={rate.id} type="button" onClick={() => setSelected(rate)} className="flex w-full items-center justify-between gap-3 py-3 text-start outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]"><span className="min-w-0"><span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{rate.name}</span><span className="mt-1 block text-[12px] text-[var(--md-subtle)]">{t(typeLabel(rate.type))} · {new Date(rate.updatedAt).toLocaleDateString()}</span></span><StatusPill kind="attribute" tone="teal">{rate.mode.toUpperCase()}</StatusPill></button>)}</div></section>
-    </div>}
-    {workspaceOverlays}
-  </main>
-
-  if (route === "/rates/contracts") return <main className="grid gap-5">
-    <div><h1 className="text-[24px] font-medium tracking-[-0.02em] text-[var(--md-ink)]">{t("Rate contracts")}</h1><p className="mt-1 max-w-3xl text-[13px] leading-5 text-[var(--md-subtle)]">{t("Manage negotiated carrier and supplier agreements, versions and renewal dates.")}</p></div>
     <ExpiryRail counts={expiryCounts} onFilter={(filter) => setExpiryFilter((current) => current === filter ? "" : filter)} />
     {workspaceError}
-    {tableError ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{t("Rate contracts could not be loaded")}</AlertTitle><AlertDescription>{t(tableError)}</AlertDescription></Alert> : null}
-    <DataTable columns={contractColumns} rows={tableLoading ? [] : tableRows} getRowKey={(rate) => rate.id} storageKey="rates-contracts-register" ariaLabel={t("Rate contracts register")} selectedRowKey={selected?.id} onRowClick={setSelected} serverSorting={{ value: serverSort, onChange: setServerSort }} pagination={{ offset, limit: 20, total: tableTotal, loading: tableLoading, onOffsetChange: setOffset }} toolbarTabs={<SegmentedControl options={modes} value={mode} onChange={setMode} ariaLabel={t("Filter contracts by transport mode")} renderOption={(item) => t(modeLabel(item))} />} toolbarSearch={<div className="relative min-w-[220px]"><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" /><Input className={cn(fieldClass, "ps-9")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Agreement, carrier, route…")} aria-label={t("Search rate contracts")} /></div>} toolbarFilters={expiryFilter ? <Button variant="ghost" onClick={() => setExpiryFilter("")}>{t("Clear expiry filter")}</Button> : null} emptyState={<div className="px-6 py-12 text-center"><p className="text-[14px] font-medium text-[var(--md-ink)]">{tableLoading ? t("Loading contracts…") : t("No rate contracts yet")}</p><p className="mx-auto mt-2 max-w-lg text-[13px] leading-5 text-[var(--md-subtle)]">{tableLoading ? t("Checking agreement versions and renewal dates.") : t("Add a negotiated carrier or supplier agreement to control cost pricing for its lanes.")}</p>{!tableLoading && workspace.permissions.canManage ? <Button className="mt-4" onClick={openNew}><Plus />{t("Add contract")}</Button> : null}</div>} />
+    {tableError ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{t("Cost tariffs could not be loaded")}</AlertTitle><AlertDescription>{t(tableError)}</AlertDescription></Alert> : null}
+    <DataTable columns={costColumns} rows={tableLoading ? [] : tableRows} getRowKey={(rate) => rate.id} storageKey="rates-costs-register" ariaLabel={t("Cost tariff register")} selectedRowKey={selected?.id} onRowClick={setSelected} serverSorting={{ value: serverSort, onChange: setServerSort }} pagination={{ offset, limit: 20, total: tableTotal, loading: tableLoading, onOffsetChange: setOffset }} toolbarTabs={<SegmentedControl options={modes} value={mode} onChange={setMode} ariaLabel={t("Filter cost tariffs by transport mode")} renderOption={(item) => t(modeLabel(item))} />} toolbarSearch={<div className="relative min-w-[220px]"><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" /><Input className={cn(fieldClass, "ps-9")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Tariff, carrier, route…")} aria-label={t("Search cost tariffs")} /></div>} toolbarFilters={expiryFilter ? <Button variant="ghost" onClick={() => setExpiryFilter("")}>{t("Clear expiry filter")}</Button> : null} emptyState={<div className="px-6 py-12 text-center"><p className="text-[14px] font-medium text-[var(--md-ink)]">{tableLoading ? t("Loading cost tariffs…") : t("No cost tariffs yet")}</p><p className="mx-auto mt-2 max-w-lg text-[13px] leading-5 text-[var(--md-subtle)]">{tableLoading ? t("Checking incoming carrier and supplier tariffs.") : t("Add a carrier or supplier cost tariff to start the incoming rate library.")}</p>{!tableLoading && workspace.permissions.canManage ? <Button className="mt-4" onClick={openNew}><Plus />{t("New cost tariff")}</Button> : null}</div>} />
     {workspaceOverlays}
   </main>
 
   return <main className="grid gap-5">
-    <div><h1 className="text-[24px] font-medium tracking-[-0.02em] text-[var(--md-ink)]">{t("Tariffs and charges")}</h1><p className="mt-1 max-w-3xl text-[13px] leading-5 text-[var(--md-subtle)]">{t("Control cost and sales tariffs, customer eligibility, charge cycles and margin.")}</p></div>
-    <section aria-label={t("Tariff summary")} className="grid overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] sm:grid-cols-2 xl:grid-cols-4">
-      {[
-        [t("Cost tariffs"), workspace.summary.costTariffs],
-        [t("Sales tariffs"), workspace.summary.salesTariffs],
-        [t("Customer-specific"), workspace.summary.customerSpecific],
-        [t("Expiring within 30 days"), workspace.summary.expiringTariffs],
-      ].map(([label, value], index) => <div key={String(label)} className={cn("min-h-24 px-5 py-4", index > 0 && "border-t border-[var(--md-line)] sm:border-s xl:border-t-0")}><p className="text-[12px] text-[var(--md-subtle)]">{label}</p><p className="mt-2 text-[24px] font-medium tabular-nums text-[var(--md-ink)]">{value}</p></div>)}
+    <div><h1 className="text-[24px] font-medium tracking-[-0.02em] text-[var(--md-ink)]">{t("Tariffs and charges")}</h1><p className="mt-1 max-w-3xl text-[13px] leading-5 text-[var(--md-subtle)]">{t("Outgoing customer tariff packs. Include cost tariffs, apply markup or override, then approve the sell document.")}</p></div>
+    <section aria-label={t("Customer tariff summary")} className="grid overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] sm:grid-cols-2 xl:grid-cols-4">
+      {[[t("Customer packs"), workspace.summary.customerPacks || workspace.summary.salesTariffs], [t("Needs approval"), workspace.summary.pendingApproval], [t("Customer-specific"), workspace.summary.customerSpecific], [t("Expiring within 30 days"), workspace.summary.expiringTariffs]].map(([label, value], index) => <div key={String(label)} className={cn("min-h-24 px-5 py-4", index > 0 && "border-t border-[var(--md-line)] sm:border-s xl:border-t-0")}><p className="text-[12px] text-[var(--md-subtle)]">{label}</p><p className="mt-2 text-[24px] font-medium tabular-nums text-[var(--md-ink)]">{value}</p></div>)}
     </section>
+    <ExpiryRail counts={expiryCounts} includePending onFilter={(filter) => setExpiryFilter((current) => current === filter ? "" : filter)} />
     {workspaceError}
-    {tableError ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{t("Tariffs could not be loaded")}</AlertTitle><AlertDescription>{t(tableError)}</AlertDescription></Alert> : null}
-    <DataTable columns={tariffColumns} rows={tableLoading ? [] : tableRows} getRowKey={(rate) => rate.id} storageKey="rates-tariffs-register" ariaLabel={t("Tariffs and charges register")} selectedRowKey={selected?.id} onRowClick={setSelected} serverSorting={{ value: serverSort, onChange: setServerSort }} pagination={{ offset, limit: 20, total: tableTotal, loading: tableLoading, onOffsetChange: setOffset }} toolbarTabs={<SegmentedControl options={["all", "cost_tariff", "sales_tariff"] as TariffFilter[]} value={tariffFilter} onChange={setTariffFilter} ariaLabel={t("Filter by tariff kind")} renderOption={(item) => t(tariffFilterLabel(item))} />} toolbarSearch={<div className="relative min-w-[220px]"><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" /><Input className={cn(fieldClass, "ps-9")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Tariff, customer, route…")} aria-label={t("Search tariffs and charges")} /></div>} toolbarFilters={<div className="flex items-center gap-2"><Select value={mode} onValueChange={(value: ModeFilter) => setMode(value)}><SelectTrigger className="h-9 w-[130px]" aria-label={t("Filter tariffs by transport mode")}><SelectValue /></SelectTrigger><SelectContent>{modes.map((item) => <SelectItem key={item} value={item}>{t(modeLabel(item))}</SelectItem>)}</SelectContent></Select>{expiryFilter ? <Button variant="ghost" onClick={() => setExpiryFilter("")}>{t("Clear expiry filter")}</Button> : null}</div>} emptyState={<div className="px-6 py-12 text-center"><p className="text-[14px] font-medium text-[var(--md-ink)]">{tableLoading ? t("Loading tariffs…") : t("No tariffs or charges yet")}</p><p className="mx-auto mt-2 max-w-lg text-[13px] leading-5 text-[var(--md-subtle)]">{tableLoading ? t("Checking cost, sell and customer eligibility rules.") : t("Add cost pricing or a customer sales tariff to make this lane eligible for quote matching.")}</p>{!tableLoading && workspace.permissions.canManage ? <Button className="mt-4" onClick={openNew}><Plus />{t("Add tariff")}</Button> : null}</div>} />
+    {tableError ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{t("Customer tariffs could not be loaded")}</AlertTitle><AlertDescription>{t(tableError)}</AlertDescription></Alert> : null}
+    <DataTable columns={packColumns} rows={tableLoading ? [] : tableRows} getRowKey={(rate) => rate.id} storageKey="rates-packs-register" ariaLabel={t("Customer tariff register")} selectedRowKey={selected?.id} onRowClick={setSelected} serverSorting={{ value: serverSort, onChange: setServerSort }} pagination={{ offset, limit: 20, total: tableTotal, loading: tableLoading, onOffsetChange: setOffset }} toolbarSearch={<div className="relative min-w-[220px]"><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" /><Input className={cn(fieldClass, "ps-9")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Customer, pack, route…")} aria-label={t("Search customer tariffs")} /></div>} toolbarFilters={expiryFilter ? <Button variant="ghost" onClick={() => setExpiryFilter("")}>{t("Clear expiry filter")}</Button> : null} emptyState={<div className="px-6 py-12 text-center"><p className="text-[14px] font-medium text-[var(--md-ink)]">{tableLoading ? t("Loading customer tariffs…") : t("No customer tariffs yet")}</p><p className="mx-auto mt-2 max-w-lg text-[13px] leading-5 text-[var(--md-subtle)]">{tableLoading ? t("Checking customer packs and approval status.") : t("Create a customer pack, include incoming cost tariffs, then approve the sell document.")}</p>{!tableLoading && workspace.permissions.canManage ? <Button className="mt-4" onClick={openNew}><Plus />{t("New customer tariff")}</Button> : null}</div>} />
     {workspaceOverlays}
   </main>
 }

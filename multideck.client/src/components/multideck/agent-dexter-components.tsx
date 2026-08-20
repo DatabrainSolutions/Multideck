@@ -572,6 +572,7 @@ const mentionTypeLabels: Record<DexterMentionType, string> = {
   page: "Page",
   quote: "Quote",
   document: "Document",
+  rate: "Rate",
 }
 
 export function DexterMentionText({
@@ -696,7 +697,7 @@ export function DexterMentionInput({
   const results = useMemo(() => {
     const normalizedQuery = query?.trim().toLocaleLowerCase() ?? ""
     if (!normalizedQuery) {
-      const typeOrder: DexterMentionType[] = ["email", "booking", "customer", "lead", "deal", "declaration", "page", "quote", "document"]
+      const typeOrder: DexterMentionType[] = ["email", "booking", "customer", "lead", "deal", "declaration", "page", "quote", "document", "rate"]
       const firstFromEachType = typeOrder.flatMap((type) => items.filter((item) => item.type === type).slice(0, 1))
       const additionalItems = typeOrder.flatMap((type) => items.filter((item) => item.type === type).slice(1, 2))
       return [...firstFromEachType, ...additionalItems].slice(0, 8)

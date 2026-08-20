@@ -1,5 +1,5 @@
-export const UK_OFSI_SOURCE_CODE = "uk_ofsi_consolidated"
-export const UK_OFSI_CSV_URL = "https://ofsistorage.blob.core.windows.net/publishlive/2022format/ConList.csv"
+export const UK_SANCTIONS_LIST_SOURCE_CODE = "uk_sanctions_list"
+export const UK_SANCTIONS_LIST_CSV_URL = "https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.csv"
 export const SCREENING_STALE_AFTER_HOURS = 36
 export const SCREENING_SIMILAR_THRESHOLD = 0.82
 
@@ -141,7 +141,7 @@ function listedOn(value: string | null) {
 }
 
 function ukRefFrom(row: Map<string, string>) {
-  const direct = cell(row, "uk sanctions list ref")
+  const direct = cell(row, "unique id", "uk sanctions list ref")
   if (direct) return direct
   const other = cell(row, "other information")
   const matched = other?.match(/UK Sanctions List Ref\)?:\s*([A-Z0-9/-]+)/i)
@@ -150,12 +150,15 @@ function ukRefFrom(row: Map<string, string>) {
 
 function isHeaderRow(values: string[]) {
   const keys = values.map(headerKey)
-  return keys.includes("group id") && keys.includes("name 1")
+  return keys.includes("unique id") && keys.some((key) => /^name [1-6]$/.test(key))
 }
 
-function ofsiEntryFromValues(keys: string[], values: string[]): ParsedScreeningEntry | null {
+function ukslEntryFromValues(keys: string[], values: string[]): ParsedScreeningEntry | null {
   const row = new Map(keys.map((key, index) => [key, values[index] ?? ""]))
-  const groupId = cell(row, "group id", "ofsi group id")
+  const uniqueId = cell(row, "unique id")
+  // UKSL Unique ID is the continuing identifier. OFSI Group ID is absent for
+  // post-January 2026 designations, so it cannot be the grouping key.
+  const groupId = uniqueId
   const name = [
     cell(row, "name 1"),
     cell(row, "name 2"),
@@ -169,20 +172,20 @@ function ofsiEntryFromValues(keys: string[], values: string[]): ParsedScreeningE
   if (!groupId || !name || !normalizedName) return null
   return {
     groupId,
-    uniqueId: cell(row, "unique id"),
+    uniqueId,
     name: name.slice(0, 500),
     normalizedName: normalizedName.slice(0, 500),
-    aliasType: cell(row, "alias type"),
-    groupType: cell(row, "group type"),
+    aliasType: cell(row, "name type", "alias type"),
+    groupType: cell(row, "designation type", "group type", "type of entity"),
     regime: cell(row, "regime name", "regime"),
-    country: cell(row, "country"),
-    listedOn: listedOn(cell(row, "listed on")),
+    country: cell(row, "address country", "country", "country of birth", "nationality ies"),
+    listedOn: listedOn(cell(row, "date designated", "listed on")),
     ukRef: ukRefFrom(row),
-    otherInformation: extractOfsiListingNotes(cell(row, "other information")),
+    otherInformation: extractListingNotes(cell(row, "uk statement of reasons", "other information")),
   }
 }
 
-export function extractOfsiListingNotes(other: string | null) {
+export function extractListingNotes(other: string | null) {
   if (!other?.trim()) return null
   const fields = parseOfsiTaggedFields(other)
   const statement = firstTaggedValue(fields, "UK Statement of Reasons", "Statement of Reasons")
@@ -249,16 +252,22 @@ function clipListingNotes(value: string) {
   return clipped ? clipped.slice(0, 4000) : null
 }
 
-export function createOfsiEntryParser(onEntry: (entry: ParsedScreeningEntry) => void) {
+export function createUkslEntryParser(onEntry: (entry: ParsedScreeningEntry) => void) {
   let keys: string[] | null = null
   let entryCount = 0
+  const seen = new Set<string>()
   const csv = createCsvParser((values) => {
     if (!keys) {
       if (isHeaderRow(values)) keys = values.map(headerKey)
       return
     }
-    const entry = ofsiEntryFromValues(keys, values)
+    const entry = ukslEntryFromValues(keys, values)
     if (!entry) return
+    // UKSL repeats a designation for each address and other attributes. Retain
+    // one record per designation/name so a result is not duplicated on review.
+    const identity = `${entry.groupId}\u0000${entry.normalizedName}`
+    if (seen.has(identity)) return
+    seen.add(identity)
     entryCount += 1
     onEntry(entry)
   })
@@ -269,15 +278,15 @@ export function createOfsiEntryParser(onEntry: (entry: ParsedScreeningEntry) => 
     },
     end() {
       csv.end()
-      if (!keys) throw new Error("The OFSI list did not include a header row.")
-      if (!entryCount) throw new Error("The OFSI list did not contain any usable names.")
+      if (!keys) throw new Error("The UK Sanctions List did not include a header row.")
+      if (!entryCount) throw new Error("The UK Sanctions List did not contain any usable names.")
     },
   }
 }
 
-export function parseOfsiEntries(csvText: string) {
+export function parseUkslEntries(csvText: string) {
   const entries: ParsedScreeningEntry[] = []
-  const parser = createOfsiEntryParser((entry) => entries.push(entry))
+  const parser = createUkslEntryParser((entry) => entries.push(entry))
   parser.push(csvText.replace(/^\uFEFF/, ""))
   parser.end()
   return entries

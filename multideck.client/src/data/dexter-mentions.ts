@@ -19,9 +19,10 @@ import type { ApiCustomer } from "@/lib/customer-api"
 import type { CustomsDraftSummary } from "@/lib/customs-drafts-api"
 import type { ApiDeal } from "@/lib/deal-api"
 import type { ApiLead } from "@/lib/lead-api"
+import type { RateRecord } from "@/lib/rates-api"
 import type { DexterEmailContextSource, MailProvider } from "@/lib/inbox-contract"
 
-export type DexterMentionType = "email" | "booking" | "customer" | "lead" | "deal" | "declaration" | "page" | "quote" | "document"
+export type DexterMentionType = "email" | "booking" | "customer" | "lead" | "deal" | "declaration" | "page" | "quote" | "document" | "rate"
 
 export type DexterMentionItem = {
   id: string
@@ -231,6 +232,31 @@ export function customsDeclarationMentionItems(items: CustomsDraftSummary[]): De
     route: `/customs/standalone/export/${declaration.id}`,
     icon: FileCheck2,
   }))
+}
+
+export function rateMentionItems(items: RateRecord[]): DexterMentionItem[] {
+  return items.map((rate) => {
+    const isPack = rate.type === "sales_tariff"
+    return {
+      id: `rate:${rate.id}`,
+      type: "rate" as const,
+      title: rate.name || rate.code,
+      meta: [rate.code, isPack ? "Customer tariff" : "Cost tariff", rate.customer || rate.carrier || rate.supplier, rate.status].filter(Boolean).join(" · "),
+      keywords: [
+        rate.code,
+        rate.origin,
+        rate.destination,
+        rate.mode,
+        rate.carrier,
+        rate.supplier,
+        rate.customer,
+        rate.sourceReference,
+        isPack ? "customer pack sales tariff" : "cost tariff buy rate",
+      ].filter(Boolean).join(" "),
+      route: isPack ? `/rates/tariffs?search=${encodeURIComponent(rate.code || rate.name)}` : `/rates?search=${encodeURIComponent(rate.code || rate.name)}`,
+      icon: ReceiptText,
+    }
+  })
 }
 
 export function mergeDexterMentionItems(...groups: DexterMentionItem[][]) {

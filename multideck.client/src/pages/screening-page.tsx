@@ -220,7 +220,7 @@ export function ScreeningPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Screening report")}</h2>
-            <p className="mt-1 max-w-[48rem] text-[12px] leading-5 text-[var(--md-text)]">{t("Source: current UK Sanctions List from FCDO/OFSI, stored in this tenant workspace. Exact normalised names always match; similar names use the optional 82% trigram and word-similarity review rule.")}</p>
+            <p className="mt-1 max-w-[48rem] text-[12px] leading-5 text-[var(--md-text)]">{t("Source: current UK Sanctions List from the FCDO, stored in this tenant workspace. Results are consolidated by UKSL Unique ID. Exact normalised names always match; similar names use the optional 82% trigram and word-similarity review rule.")}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-md)]" onClick={() => void onDownloadReport()} disabled={downloading}>{downloading ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}{t("Download detailed report")}</Button>
