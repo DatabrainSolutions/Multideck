@@ -363,7 +363,14 @@ function CustomerScreening({ customerId, customerName }: { customerId: string; c
     setRunning(true)
     setError(null)
     try {
-      setCheck(await runScreeningCheck({ subjectName: customerName, orgId: customerId }))
+      setCheck(await runScreeningCheck({
+        subjectName: customerName,
+        orgId: customerId,
+        sourceArea: "customer",
+        sourceRecordId: customerId,
+        sourceLabel: customerName,
+        subjectRole: "customer",
+      }))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("The name could not be screened."))
     } finally {
