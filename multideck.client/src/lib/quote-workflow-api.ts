@@ -114,7 +114,23 @@ export type QuoteWorkflowEvent = {
   CusQuoteEvent_TypeCode: string
   CusQuoteEvent_Summary: string
   CusQuoteEvent_OccurredAt: string
+  CusQuoteEvent_MetadataJSON?: { message?: string | null; competitorDocumentId?: string | null } | null
   cmp_Users?: { User_Firstname?: string; User_Lastname?: string } | null
+}
+
+export type QuoteWorkflowCustomerResponse = {
+  decision: "accepted" | "declined" | "challenged"
+  message: string | null
+  respondedAt: string
+  attachment: null | {
+    id: string
+    fileName: string
+    mimeType: string
+    fileSizeBytes: number
+    createdAt: string
+    url: string | null
+    expiresAt: string | null
+  }
 }
 
 export type QuoteIntelligenceState = "ready" | "building_baseline" | "updating" | "rules_only" | "unavailable"
@@ -181,6 +197,7 @@ export type QuoteWorkflowWorkspace = {
   totals: { cost: number; sell: number; profit: number; marginPct: number | null }
   versions: QuoteWorkflowVersion[]
   events: QuoteWorkflowEvent[]
+  customerResponse: QuoteWorkflowCustomerResponse | null
   intelligence: QuoteIntelligenceSnapshot | null
 }
 

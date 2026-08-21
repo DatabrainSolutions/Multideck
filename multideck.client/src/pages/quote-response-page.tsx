@@ -5,10 +5,12 @@ import { AlertTriangle, CheckCircle2, Download, FileText, LoaderCircle, MessageS
 import { errorStateAnimationData } from "@/assets/error-state-animation"
 import { BrandLockup } from "@/components/multideck/auth-flow"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/i18n/language-provider"
 import { releasePdfPageImages, renderPdfPageImages, type RenderedPdfPage } from "@/lib/customs-invoice-pdf-preview"
 import { getCustomerQuote, submitCustomerQuoteResponse, uploadCompetitorQuote, type QuoteResponseDecision, type QuoteResponseResult, type QuoteResponseView } from "@/lib/quote-response-api"
+import { formatQuoteLossReason, quoteLossReasons } from "@/lib/quote-loss-reasons"
 import { cn } from "@/lib/utils"
 
 type CustomerTheme = "light" | "dark"
@@ -40,6 +42,9 @@ export function QuoteResponsePage({ token }: { token: string }) {
   const [message, setMessage] = useState("")
   const [competitorQuote, setCompetitorQuote] = useState<File | null>(null)
   const [uploadedDocumentId, setUploadedDocumentId] = useState<string | null>(null)
+  const [declineDialogOpen, setDeclineDialogOpen] = useState(false)
+  const [lossReason, setLossReason] = useState("")
+  const [lossDetails, setLossDetails] = useState("")
   const [result, setResult] = useState<QuoteResponseResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -56,27 +61,36 @@ export function QuoteResponsePage({ token }: { token: string }) {
   }, [token])
 
   const activeView = view?.state === "active" ? view : null
-  const messageRequired = decision === "declined" || decision === "challenged"
+  const messageRequired = decision === "challenged"
   const responseReady = Boolean(decision && (!messageRequired || message.trim()))
 
   function chooseDecision(next: QuoteResponseDecision) {
+    if (decision !== next) {
+      setMessage("")
+      setCompetitorQuote(null)
+      setUploadedDocumentId(null)
+    }
     setDecision(next)
     setError("")
-    if (next !== "challenged") { setCompetitorQuote(null); setUploadedDocumentId(null) }
+    if (next === "declined") {
+      setLossReason("")
+      setLossDetails("")
+      setDeclineDialogOpen(true)
+    }
   }
 
-  async function submitResponse() {
-    if (!decision || !responseReady || submitting) return
+  async function submitResponse(nextDecision = decision, nextMessage = message) {
+    if (!nextDecision || (nextDecision === "challenged" && !nextMessage.trim()) || submitting) return
     setSubmitting(true)
     setError("")
     try {
       let documentId = uploadedDocumentId
-      if (decision === "challenged" && competitorQuote && !documentId) {
+      if (nextDecision === "challenged" && competitorQuote && !documentId) {
         const upload = await uploadCompetitorQuote(token, competitorQuote)
         documentId = upload.documentId
         setUploadedDocumentId(documentId)
       }
-      setResult(await submitCustomerQuoteResponse(token, decision, message, documentId))
+      setResult(await submitCustomerQuoteResponse(token, nextDecision, nextMessage, documentId))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Your response could not be submitted.")
     } finally { setSubmitting(false) }
@@ -109,15 +123,36 @@ export function QuoteResponsePage({ token }: { token: string }) {
           const selected = decision === choice.id
           return <button key={choice.id} type="button" aria-pressed={selected} onClick={() => chooseDecision(choice.id)} className={cn("group flex min-h-[68px] items-start gap-3 rounded-[var(--md-radius-xl)] px-3.5 py-3 text-start outline-none transition-[box-shadow,filter,opacity,transform] duration-160 ease-[cubic-bezier(0.22,1,0.36,1)] hover:brightness-[0.98] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a28)] active:scale-[0.985] motion-reduce:transition-none motion-reduce:active:scale-100", toneClasses[choice.tone], selected ? "shadow-[inset_0_0_0_2px_currentColor]" : "opacity-[0.78] hover:opacity-100")}><span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,currentColor_9%,transparent)]"><Icon className="size-4" aria-hidden="true" /></span><span className="min-w-0"><span className="block text-[13px] font-medium">{t(choice.label)}</span><span className="mt-1 block text-pretty text-[11px] leading-4 opacity-75">{t(choice.description)}</span></span></button>
         })}</div>
-        <AnimatePresence initial={false} mode="wait">{decision && selectedChoice ? <motion.div key={decision} initial={reducedMotion ? false : { opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={reducedMotion ? undefined : { opacity: 0, y: -3 }} transition={transition} className="mt-4 grid gap-3">
-          <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{t(decision === "accepted" ? "Message (optional)" : decision === "challenged" ? "What should we review?" : "Why are you declining?")}<Textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={4000} required={messageRequired} className="min-h-28 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface-tint)] text-[14px] leading-5 shadow-[var(--md-shadow-line)]" placeholder={t(decision === "challenged" ? "Tell the freight team what needs to change" : decision === "declined" ? "Give the team useful context" : "Add a note for the freight team")} /></label>
-          {decision === "challenged" ? <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{t("Competitor quote (optional)")}<span className="relative flex min-h-11 cursor-pointer items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"><FileText className="size-4 shrink-0" /><span className="min-w-0 truncate">{competitorQuote?.name || t("Attach PDF or image, up to 10 MB")}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" aria-label={t("Competitor quote (optional)")} className="absolute inset-0 cursor-pointer opacity-0 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a28)]" onChange={(event) => { setCompetitorQuote(event.target.files?.[0] ?? null); setUploadedDocumentId(null) }} /></span></label> : null}
+        <AnimatePresence initial={false} mode="wait">{decision && decision !== "declined" && selectedChoice ? <motion.div key={decision} initial={reducedMotion ? false : { opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={reducedMotion ? undefined : { opacity: 0, y: -3 }} transition={transition} className="mt-4 grid gap-3">
+          <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{t(decision === "accepted" ? "Message (optional)" : "What should we review?")}<Textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={4000} required={messageRequired} className="min-h-28 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface-tint)] text-[14px] leading-5 shadow-[var(--md-shadow-line)]" placeholder={t(decision === "challenged" ? "Tell the freight team what needs to change" : "Add a note for the freight team")} /></label>
+          {decision === "challenged" ? <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{t("Supporting attachment (optional)")}<span className="relative flex min-h-11 cursor-pointer items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"><FileText className="size-4 shrink-0" /><span className="min-w-0 truncate">{competitorQuote?.name || t("Attach PDF or image, up to 10 MB")}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" aria-label={t("Supporting attachment (optional)")} className="absolute inset-0 cursor-pointer opacity-0 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a28)]" onChange={(event) => { setCompetitorQuote(event.target.files?.[0] ?? null); setUploadedDocumentId(null) }} /></span></label> : null}
           {error ? <p role="alert" className="flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] px-3 py-2 text-[12px] leading-5 text-[var(--md-red)]"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{t(error)}</p> : null}
           <Button type="button" disabled={!responseReady || submitting} onClick={() => void submitResponse()} className={cn("h-11 w-full rounded-[var(--md-radius-lg)] text-[13px] font-medium shadow-none hover:brightness-[0.97]", toneClasses[selectedChoice.tone])}>{submitting ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <SelectedChoiceIcon className="size-4" />}{t(submitting ? "Submitting response…" : decision === "accepted" ? "Confirm acceptance" : decision === "challenged" ? "Send review request" : "Confirm decline")}</Button>
         </motion.div> : null}</AnimatePresence>
         <p className="mt-4 text-pretty text-[11px] leading-4 text-[var(--md-subtle)]">{activeView.expiresAt ? <>{t("This private link expires on")} {formatDate(activeView.expiresAt, language)}. {t("Please do not forward it.")}</> : t("This private link stays active until you respond. Please do not forward it.")}</p>
       </aside>
     </main>
+    <Dialog open={declineDialogOpen} onOpenChange={(open) => {
+      if (submitting) return
+      setDeclineDialogOpen(open)
+      if (!open) setDecision(null)
+    }}>
+      <DialogContent className="rounded-[var(--md-radius-2xl)] sm:max-w-[520px]">
+        <DialogHeader>
+          <DialogTitle>{t("Why are you declining this quote?")}</DialogTitle>
+          <DialogDescription>{t("Choose the main reason and add any detail that will help the freight team.")}</DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {quoteLossReasons.map((reason) => <Button key={reason} type="button" variant="ghost" aria-pressed={lossReason === reason} className={cn("h-auto min-h-10 justify-start whitespace-normal rounded-[var(--md-radius-lg)] px-3 py-2 text-start text-[12px] shadow-[var(--md-shadow-line)]", lossReason === reason && "bg-[var(--md-accent-a10)] text-[var(--md-accent)]")} onClick={() => setLossReason(reason)}>{t(reason)}</Button>)}
+        </div>
+        <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]"><span>{t(lossReason === "Other" ? "Reason" : "Additional detail (optional)")}</span><Textarea value={lossDetails} onChange={(event) => setLossDetails(event.target.value)} maxLength={4000} placeholder={t("Add useful context for the freight team")} className="min-h-24 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]" /></label>
+        {error ? <p role="alert" className="flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] px-3 py-2 text-[12px] leading-5 text-[var(--md-red)]"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{t(error)}</p> : null}
+        <DialogFooter>
+          <Button type="button" variant="ghost" disabled={submitting} onClick={() => { setDeclineDialogOpen(false); setDecision(null) }}>{t("Cancel")}</Button>
+          <Button type="button" disabled={!lossReason || (lossReason === "Other" && !lossDetails.trim()) || submitting} className="bg-[var(--md-red)] text-white hover:bg-[var(--md-red-strong)]" onClick={() => void submitResponse("declined", formatQuoteLossReason(lossReason, lossDetails))}>{submitting ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <XCircle className="size-4" />}{t(submitting ? "Submitting response…" : "Confirm decline")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </QuoteResponseFrame>
 }
 

@@ -18,6 +18,7 @@ import {
   Info,
   ListChecks,
   Mail,
+  MessageSquareText,
   Maximize2,
   MoreHorizontal,
   Plus,
@@ -63,6 +64,7 @@ import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { CopyFeedbackTransition, CopyStatusIcon } from "@/components/multideck/copyable-field"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { textareaSelectionAnchor, type TextareaSelection, type TextareaSelectionAnchor } from "@/lib/textarea-selection"
+import { formatQuoteLossReason, quoteLossReasons } from "@/lib/quote-loss-reasons"
 import { listMailboxes, type Mailbox } from "@/lib/inbox-api"
 import { cn } from "@/lib/utils"
 import {
@@ -3341,15 +3343,6 @@ async function loadQuoteWorkspace(reference: string) {
   }
 }
 
-const quoteLossReasons = [
-  "Price too high",
-  "Chose a competitor",
-  "Timing or project changed",
-  "Service or routing did not fit",
-  "No response from customer",
-  "Other",
-] as const
-
 function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: QuoteWorkflowSources | null): QuoteRecord {
   const record = workspace.quote
   const facts = record.shipmentFacts ?? {}
@@ -3625,7 +3618,7 @@ function quoteAuditRecords(workspace: QuoteWorkflowWorkspace | null): QuoteAudit
       ? "pricing"
       : event.CusQuoteEvent_TypeCode === "sent"
         ? "communication"
-        : ["accepted", "declined", "ghosted"].includes(event.CusQuoteEvent_TypeCode)
+        : ["accepted", "declined", "ghosted", "customer_accepted", "customer_declined", "customer_challenged"].includes(event.CusQuoteEvent_TypeCode)
           ? "approval"
           : "record"
     return {
@@ -3633,7 +3626,7 @@ function quoteAuditRecords(workspace: QuoteWorkflowWorkspace | null): QuoteAudit
       timestamp: event.CusQuoteEvent_OccurredAt,
       actor: actorName,
       action: event.CusQuoteEvent_Summary,
-      detail: event.CusQuoteEvent_Summary,
+      detail: event.CusQuoteEvent_MetadataJSON?.message || event.CusQuoteEvent_Summary,
       eventType,
       field: "Quote",
       oldValue: "",
@@ -3642,6 +3635,64 @@ function quoteAuditRecords(workspace: QuoteWorkflowWorkspace | null): QuoteAudit
       state: "completed",
     }
   })
+}
+
+function formatDocumentSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return undefined
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function quoteCustomerResponseDocuments(workspace: QuoteWorkflowWorkspace | null) {
+  const response = workspace?.customerResponse
+  const attachment = response?.attachment
+  if (!response || !attachment) return []
+  return [{
+    id: attachment.id,
+    fileName: attachment.fileName,
+    description: "Attachment supplied with the customer's quote change request.",
+    documentType: "Customer quote response",
+    uploadedAt: attachment.createdAt,
+    lastModifiedAt: attachment.createdAt,
+    source: "customer" as const,
+    relationship: { label: `Quote ${workspace.quote.reference}`, reference: workspace.quote.reference },
+    preview: {
+      kind: attachment.mimeType.startsWith("image/") ? "image" as const : "pdf" as const,
+      mimeType: attachment.mimeType,
+      fileSize: formatDocumentSize(attachment.fileSizeBytes),
+      url: attachment.url || undefined,
+      reference: workspace.quote.reference,
+      accent: "amber" as const,
+    },
+  }]
+}
+
+function QuoteCustomerResponsePanel({ response }: { response: NonNullable<QuoteWorkflowWorkspace["customerResponse"]> }) {
+  const { t } = useLanguage()
+  const accepted = response.decision === "accepted"
+  const declined = response.decision === "declined"
+  const title = accepted ? "Customer accepted the quote" : declined ? "Customer declined the quote" : "Customer asked for changes"
+  const meta = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(response.respondedAt))
+  return (
+    <Surface padding="xs" className={cn(
+      "rounded-[var(--md-radius-md)]",
+      accepted && "bg-[var(--md-status-green-bg)]",
+      declined && "bg-[var(--md-status-red-bg)]",
+      !accepted && !declined && "bg-[var(--md-status-amber-bg)]",
+    )}>
+      <SectionHeader
+        title={<span className="inline-flex items-center gap-1.5"><MessageSquareText className="size-3.5" strokeWidth={1.4} aria-hidden="true" />{t(title)}</span>}
+        meta={meta}
+      />
+      {response.message ? <p className="mt-2 whitespace-pre-wrap text-[12px] leading-5 text-[var(--md-ink)]" data-i18n-skip dir="auto">{response.message}</p> : null}
+      {response.attachment ? (
+        response.attachment.url ? <Button asChild variant="outline" size="sm" className="mt-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)]">
+          <a href={response.attachment.url} target="_blank" rel="noreferrer"><FileText className="size-4" strokeWidth={1.4} />{t("Open customer attachment")}</a>
+        </Button> : <p role="status" className="mt-2 text-[11px] text-[var(--md-text)]">{t("The customer attachment is recorded but temporarily unavailable.")}</p>
+      ) : null}
+    </Surface>
+  )
 }
 
 export function QuoteDetailPage({
@@ -4110,9 +4161,7 @@ export function QuoteDetailPage({
   }, [currentQuoteId, draftCharges, draftQuote, isDirty, loading, saving, transitioning])
 
   async function markQuoteLost() {
-    const reason = lossReason === "Other"
-      ? lossDetails.trim()
-      : [lossReason, lossDetails.trim()].filter(Boolean).join(": ")
+    const reason = formatQuoteLossReason(lossReason, lossDetails)
     if (!currentQuoteId || !reason || transitioning || isDirty) return
     setTransitioning(true)
     setWorkflowError("")
@@ -4314,9 +4363,12 @@ export function QuoteDetailPage({
 
   function renderActiveWorkspacePanel() {
     if (activeTab === "overview") {
-      if (variant === "ai") return <QuoteAiOverviewPanel quote={savedQuote} />
-      if (variant === "cargowise") return <QuoteCargoWiseOverviewPanel quote={savedQuote} intelligence={intelligence} intelligenceUnavailable={intelligenceUnavailable} />
-      return <QuoteOverviewPanel quote={savedQuote} />
+      const overview = variant === "ai"
+        ? <QuoteAiOverviewPanel quote={savedQuote} />
+        : variant === "cargowise"
+          ? <QuoteCargoWiseOverviewPanel quote={savedQuote} intelligence={intelligence} intelligenceUnavailable={intelligenceUnavailable} />
+          : <QuoteOverviewPanel quote={savedQuote} />
+      return <div className="grid gap-2">{workspace?.customerResponse ? <QuoteCustomerResponsePanel response={workspace.customerResponse} /> : null}{overview}</div>
     }
 
     if (activeTab === "details") {
@@ -4338,7 +4390,7 @@ export function QuoteDetailPage({
       )
     }
 
-    if (activeTab === "documents") return <DocumentWorkspace documents={[]} />
+    if (activeTab === "documents") return <DocumentWorkspace documents={quoteCustomerResponseDocuments(workspace)} />
     return <AuditWorkspace records={quoteAuditRecords(workspace)} />
   }
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react"
+import { toast } from "sonner"
 import { ArrowDownAZ, ArrowUpAZ, CalendarClock, Search, Star, TriangleAlert, X } from "@/components/icons/hugeicons"
 import {
   BookingBoardPreview,
@@ -270,7 +271,9 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
             className={favourite ? "size-8 text-[var(--md-amber)] transition-transform active:scale-[0.96] motion-reduce:transition-none" : "size-8 text-[var(--md-subtle)] transition-transform active:scale-[0.96] motion-reduce:transition-none"}
             onClick={(event) => {
               event.stopPropagation()
-              toggleStar(booking.id, favouriteIds.has(booking.id))
+              void toggleStar(booking.id, favouriteIds.has(booking.id)).catch(() => {
+                toast.error(t("The job star could not be saved. Try again."))
+              })
             }}
           >
             <Star className={favourite ? "size-4 fill-current" : "size-4"} strokeWidth={1.35} />
@@ -477,7 +480,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
       sortValue: (booking) => booking.invoice,
       cell: (booking) => <span className="text-[12px] text-[var(--md-ink)]" dir="ltr">{booking.invoice || t("Not raised")}</span>,
     },
-  ], [favouriteIds, language, t])
+  ], [favouriteIds, isStarred, language, t, toggleStar])
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Bookings")} className="md-page md-page-stack">

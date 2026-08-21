@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { toast } from "sonner"
 import {
   BarChart3,
   Handshake,
@@ -476,7 +477,9 @@ export function HomePage({
                       "grid size-7 shrink-0 place-items-center rounded-full transition-[color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a22)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100",
                       starred ? "text-[var(--md-amber)]" : "text-[var(--md-subtle)] hover:text-[var(--md-ink)]",
                     )}
-                    onClick={() => toggleStar(booking.id, booking.isFavourite)}
+                    onClick={() => void toggleStar(booking.id, booking.isFavourite).catch(() => {
+                      toast.error(t("The job star could not be saved. Try again."))
+                    })}
                   >
                     <Star className={cn("size-3.5", starred && "fill-current")} strokeWidth={1.4} aria-hidden="true" />
                   </button>

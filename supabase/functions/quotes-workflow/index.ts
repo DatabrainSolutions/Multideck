@@ -993,6 +993,43 @@ async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateReque
   ])
   const firstError = customerResult.error || chargeResult.error || partyResult.error || versionResult.error || eventResult.error
   if (firstError) throw firstError
+  const events = eventResult.data ?? []
+  const customerResponseEvent = events.find((event) => ["customer_accepted", "customer_declined", "customer_challenged"].includes(String(event.CusQuoteEvent_TypeCode)))
+  let customerResponse: Row | null = null
+  if (customerResponseEvent) {
+    const metadata = isObject(customerResponseEvent.CusQuoteEvent_MetadataJSON) ? customerResponseEvent.CusQuoteEvent_MetadataJSON : {}
+    const attachmentId = cleanString(metadata.competitorDocumentId, 36)
+    let attachment: Row | null = null
+    if (attachmentId) {
+      const { data: stored, error: storedError } = await admin.from("DOC_StoredObjects")
+        .select("DOCStoredObject_ID,DOCStoredObject_Container,DOCStoredObject_BlobName,DOCStoredObject_OriginalFileName,DOCStoredObject_MimeType,DOCStoredObject_FileSizeBytes,DOCStoredObject_CreatedAt")
+        .eq("DOCStoredObject_ID", attachmentId)
+        .eq("DOCStoredObject_ConcernCode", "quote_response")
+        .eq("DOCStoredObject_AggregateType", "quote_customer_response_link")
+        .eq("DOCStoredObject_StatusCode", "active")
+        .is("DOCStoredObject_DeletedAt", null)
+        .maybeSingle()
+      if (storedError) throw storedError
+      if (stored) {
+        const { data: signed } = await admin.storage.from(String(stored.DOCStoredObject_Container)).createSignedUrl(String(stored.DOCStoredObject_BlobName), signedUrlLifetimeSeconds)
+        attachment = {
+          id: String(stored.DOCStoredObject_ID),
+          fileName: String(stored.DOCStoredObject_OriginalFileName),
+          mimeType: String(stored.DOCStoredObject_MimeType),
+          fileSizeBytes: Number(stored.DOCStoredObject_FileSizeBytes || 0),
+          createdAt: String(stored.DOCStoredObject_CreatedAt),
+          url: signed?.signedUrl ?? null,
+          expiresAt: signed?.signedUrl ? new Date(Date.now() + signedUrlLifetimeSeconds * 1000).toISOString() : null,
+        }
+      }
+    }
+    customerResponse = {
+      decision: String(customerResponseEvent.CusQuoteEvent_TypeCode).replace("customer_", ""),
+      message: cleanString(metadata.message, 4_000) || null,
+      respondedAt: String(customerResponseEvent.CusQuoteEvent_OccurredAt),
+      attachment,
+    }
+  }
   const parties = new Map((partyResult.data ?? []).map((party) => [String(party.CusQuoteParty_RoleCode), party as Row]))
   const charges = (chargeResult.data ?? []).map((line) => ({
     id: String(line.CusQuoteLine_ID), description: String(line.CusQuoteLine_Description), supplierId: line.CusQuoteLine_SupplierID,
@@ -1038,7 +1075,7 @@ async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateReque
     },
     charges,
     totals: { ...totals, profit: totals.sell - totals.cost, marginPct: totals.sell ? ((totals.sell - totals.cost) / totals.sell) * 100 : null },
-    versions: versionResult.data ?? [], events: eventResult.data ?? [], intelligence,
+    versions: versionResult.data ?? [], events, customerResponse, intelligence,
   }
 }
 

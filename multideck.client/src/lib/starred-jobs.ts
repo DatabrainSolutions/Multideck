@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from "react"
+import { setLiveJobStarred } from "@/lib/application-data-api"
 
 /**
  * Which jobs an operator wants kept in front of them on Home.
  *
  * Bookings already carry a favourite flag, and that stays the truth. What this
- * holds is the operator's un-saved changes to it: starring a job from Home
- * takes effect immediately and survives a refresh, without pretending a write
- * reached the register. Overrides are scoped per signed-in user, so a shared
- * machine never shows one person's pinned work to the next.
+ * holds is the operator's optimistic change while the authenticated database
+ * write completes. Overrides are scoped per signed-in user, so a shared machine
+ * never shows one person's pinned work to the next.
  */
 type StarOverrides = Record<string, boolean>
 
@@ -64,13 +64,23 @@ export function useStarredJobs(userId: string | null | undefined) {
     [overrides],
   )
 
-  const toggleStar = useCallback((id: string, saved: boolean) => {
+  const toggleStar = useCallback(async (id: string, saved: boolean) => {
     const next = { ...readOverrides(userId) }
     const starred = next[id] ?? saved
     if (!starred === saved) delete next[id]
     else next[id] = !starred
     writeOverrides(userId, next)
     setOverrides(next)
+    try {
+      await setLiveJobStarred(id, !starred)
+    } catch (error) {
+      const rollback = { ...readOverrides(userId) }
+      if (starred === saved) delete rollback[id]
+      else rollback[id] = starred
+      writeOverrides(userId, rollback)
+      setOverrides(rollback)
+      throw error
+    }
   }, [userId])
 
   return { isStarred, toggleStar }

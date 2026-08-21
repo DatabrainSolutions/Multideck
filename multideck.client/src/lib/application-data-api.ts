@@ -190,6 +190,19 @@ export function invalidateRegisterPages(resourcePrefix: string) {
   }
 }
 
+export async function setLiveJobStarred(bookingReference: string, starred: boolean) {
+  const session = await getSupabaseSession()
+  if (!session?.user) throw new Error("Sign in again to update starred jobs.")
+  const { error } = await requireClient().rpc("multideck_set_job_starred", {
+    p_booking_reference: bookingReference,
+    p_starred: starred,
+  })
+  if (error) throw error
+  invalidateRegisterPages("bookings:")
+  invalidateRegisterPages("dashboard:")
+  invalidateRegisterPages("road-control:")
+}
+
 export type LiveNotification = { id: string; title: string; description: string; tone: StatusTone; occurredAt: string; readAt: string | null }
 
 export type LiveQuoteCharge = {

@@ -13,6 +13,7 @@ import { useLanguage } from "@/i18n/language-provider"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { getSavedView, saveView } from "@/lib/view-preferences"
 import { listRoadControlPage, type RoadControlCounts } from "@/lib/application-data-api"
+import { useStarredJobs } from "@/lib/starred-jobs"
 
 const roadScopeOptions = ["My Jobs", "All Jobs", "Starred Jobs"] as const
 type RoadScope = (typeof roadScopeOptions)[number]
@@ -40,6 +41,7 @@ export function RoadControlPage({ navigate, currentUser }: { navigate: (path: st
   const [roadJobsError, setRoadJobsError] = useState<string | null>(null)
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set())
   const [dexterOpen, setDexterOpen] = useState(false)
+  const { toggleStar } = useStarredJobs(currentUser?.id)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -84,11 +86,21 @@ export function RoadControlPage({ navigate, currentUser }: { navigate: (path: st
   }, [viewMode])
 
   function toggleFavourite(bookingId: string) {
+    const saved = favouriteIds.has(bookingId)
     setFavouriteIds((current) => {
       const next = new Set(current)
       if (next.has(bookingId)) next.delete(bookingId)
       else next.add(bookingId)
       return next
+    })
+    void toggleStar(bookingId, saved).catch(() => {
+      setFavouriteIds((current) => {
+        const rollback = new Set(current)
+        if (saved) rollback.add(bookingId)
+        else rollback.delete(bookingId)
+        return rollback
+      })
+      toast.error(t("The job star could not be saved. Try again."))
     })
   }
 
