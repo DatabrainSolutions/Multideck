@@ -162,12 +162,17 @@ export function ThemeProvider({
   useEffect(() => {
     const root = document.documentElement
     const reconcileDocumentTheme = () => {
-      if (!documentHasTheme(themeRef.current)) applyDocumentTheme(themeRef.current)
+      // StrictMode, hot replacement, or a deployment handover can briefly
+      // leave an older observer alive. The shared cache is updated by every
+      // real theme commit, so all observer instances must follow it instead of
+      // repainting from their own potentially stale ref.
+      const expectedMode = readStoredTheme(storageKey, themeRef.current)
+      if (!documentHasTheme(expectedMode)) applyDocumentTheme(expectedMode)
     }
     const observer = new MutationObserver(reconcileDocumentTheme)
     observer.observe(root, { attributes: true, attributeFilter: ["class", "style"] })
     return () => observer.disconnect()
-  }, [applyDocumentTheme])
+  }, [applyDocumentTheme, storageKey])
 
   useEffect(() => () => releaseTransitionRef.current?.(), [])
 
