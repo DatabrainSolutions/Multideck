@@ -6,6 +6,8 @@ import test from "node:test"
 const indexHtml = readFileSync(new URL("../index.html", import.meta.url), "utf8")
 const themePreferences = readFileSync(new URL("../src/lib/theme-preferences.tsx", import.meta.url), "utf8")
 const themeProvider = readFileSync(new URL("../src/lib/theme-provider.tsx", import.meta.url), "utf8")
+const themeToggle = readFileSync(new URL("../src/components/multideck/theme-toggle.tsx", import.meta.url), "utf8")
+const appShortcuts = readFileSync(new URL("../src/components/multideck/app-shortcuts.tsx", import.meta.url), "utf8")
 const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8")
 const styles = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8")
 const sourceRoot = fileURLToPath(new URL("../src/", import.meta.url))
@@ -77,8 +79,10 @@ test("a successful profile write clears only its matching pending intent", () =>
 test("only a genuine account change discards this browser's choice", () => {
   // Clearing on the first resolve would drop a click made while the session
   // lookup was still in flight; not clearing at all would hand one operator's
-  // choice to the next person signing in on this browser.
-  assert.match(themePreferences, /if \(activeUserId !== null && activeUserId !== userId\)/)
+  // choice to the next person signing in on this browser. A token refresh that
+  // briefly reports no user is not a new account.
+  assert.match(themePreferences, /userId !== null && activeUserId !== null && activeUserId !== userId/)
+  assert.match(themePreferences, /resumedSameUser && latestChoice\) saveTheme\(latestChoice\)/)
 })
 
 test("the Multideck provider commits React theme state and CSS tokens before paint", () => {
@@ -103,7 +107,7 @@ test("a same-state request repairs document and React state divergence", () => {
   assert.match(setter, /commitTheme\(resolved\)/)
   assert.doesNotMatch(setter, /resolved === themeRef\.current/)
   assert.ok(commit.indexOf("themeRef.current = mode") < commit.indexOf("applyDocumentTheme(mode)"))
-  assert.match(commit, /if \(stateChanged\) setThemeState\(mode\)/)
+  assert.match(commit, /setThemeState\(\(current\) => \(current === mode \? current : mode\)\)/)
 })
 
 test("an older concurrent render cannot repaint over the latest theme choice", () => {
@@ -163,12 +167,22 @@ test("production theme writers cannot bypass the shared flicker guard", () => {
   )
 })
 
+test("the appearance switch toggles the live mode instead of a render snapshot", () => {
+  assert.match(themeToggle, /toggleThemeWithProfileIntent\(setTheme\)/)
+  assert.match(themeToggle, /initial=\{false\}/)
+  assert.doesNotMatch(themeToggle, /nextTheme/)
+  assert.match(appShortcuts, /toggleThemeWithProfileIntent\(setTheme\)/)
+  assert.doesNotMatch(appShortcuts, /resolvedTheme === "dark" \? "light" : "dark"/)
+})
+
 test("rapid toggles coalesce profile writes around the latest requested mode", () => {
   assert.match(themePreferences, /pendingThemeSave = \{ mode, userId \}/)
   assert.match(themePreferences, /while \(pendingThemeSave\)/)
   assert.match(themePreferences, /pendingThemeSave = null/)
   assert.match(themePreferences, /if \(pendingThemeSave\) saveTheme\(pendingThemeSave\.mode\)/)
   assert.match(themePreferences, /recordChoice\(mode\)\s*persistThemeIntent\(mode\)\s*setTheme\(mode\)\s*saveTheme\(mode\)/)
+  assert.match(themePreferences, /export function toggleThemeWithProfileIntent/)
+  assert.match(themePreferences, /nextMode = current === "dark" \? "light" : "dark"/)
 })
 
 test("the profile layer records cross-tab intent without making a visual write", () => {

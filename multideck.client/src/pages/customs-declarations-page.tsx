@@ -852,6 +852,12 @@ function iCustomsDeclarationUrl(direction: DeclarationKind, correlationId: strin
   }
 }
 
+function shouldCheckLocalWebhookState(state: ICustomsWorkspaceState | null) {
+  const status = state?.declaration.provider?.status ?? state?.declaration.status
+  return shouldPollCustomsSubmission(status, state?.declaration.provider?.submittedAt) ||
+    (["accepted", "released", "cleared"].includes(status ?? "") && !state?.declaration.document.available)
+}
+
 function formatDraftAmount(amount: number | null, currency: string | null) {
   if (amount === null) return "—"
   if (!currency) return amount.toLocaleString(undefined, { maximumFractionDigits: 2 })
@@ -868,7 +874,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
   const referenceData = useCustomsReferenceData(kind)
   const organisationDirectory = useCustomsOrganisationDirectory()
   const [draft, setDraft] = useState<StandaloneExportDraft>(() => createStandaloneDeclarationDraft(kind))
-  const [tab, setTab] = useState<EditorTab>("declaration")
+  const [tab, setTab] = useState<EditorTab>(() => new URLSearchParams(window.location.search).get("tab") === "review" ? "review" : "declaration")
   const [viewMode, setViewMode] = useState<EditorViewMode>("tabs")
   const [formTab, setFormTab] = useState<FormTab>("general")
   const [activeItemId, setActiveItemId] = useState(draft.items[0].id)
@@ -1317,14 +1323,13 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
     }
   }
 
-  const refreshFromICustoms = useCallback(async () => {
+  const readLocalCustomsState = useCallback(async () => {
     if (!declarationId || iCustomsBusyRef.current) return null
     if (statusRefreshInFlightRef.current) return statusRefreshInFlightRef.current
 
     const refresh = (async () => {
       setStatusLifecycle({ phase: "checking" })
       try {
-        await refreshICustomsDeclaration(declarationId)
         const state = await getICustomsDeclarationState(declarationId)
         setICustomsState(state)
         const status = state.declaration.provider?.status ?? state.declaration.status
@@ -1341,6 +1346,26 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
 
     statusRefreshInFlightRef.current = refresh
     return refresh
+  }, [declarationId])
+
+  const recoverFromICustoms = useCallback(async () => {
+    if (!declarationId || iCustomsBusyRef.current) return null
+    setICustomsBusy("refresh")
+    setStatusLifecycle({ phase: "checking" })
+    try {
+      await refreshICustomsDeclaration(declarationId)
+      const state = await getICustomsDeclarationState(declarationId)
+      setICustomsState(state)
+      const status = state.declaration.provider?.status ?? state.declaration.status
+      setStatusLifecycle({ phase: isTerminalCustomsStatus(status) ? "complete" : "waiting" })
+      return state
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : "The customs response could not be checked."
+      setStatusLifecycle({ phase: "error", message })
+      return null
+    } finally {
+      setICustomsBusy(null)
+    }
   }, [declarationId])
 
   const loadDeclarationPdf = useCallback(async () => {
@@ -1437,9 +1462,8 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
   ]
   const customsStatus = iCustomsState?.declaration.provider?.status ?? iCustomsState?.declaration.status ?? "draft"
   const iCustomsProviderReference = iCustomsState?.declaration.correlationId?.trim() || null
-  const customsSubmittedAt = iCustomsState?.declaration.provider?.submittedAt
-  const declarationPdfAvailable = Boolean(declarationId && iCustomsState?.declaration.provider?.mrn && ["accepted", "released", "cleared"].includes(customsStatus))
-  const statusPollingNeeded = shouldPollCustomsSubmission(customsStatus, customsSubmittedAt)
+  const declarationPdfAvailable = Boolean(declarationId && iCustomsState?.declaration.document.available)
+  const statusPollingNeeded = shouldCheckLocalWebhookState(iCustomsState)
 
   useEffect(() => {
     if (tab === "review" || iCustomsIssues.length || ["rejected", "error"].includes(customsStatus)) setValidated(true)
@@ -1471,9 +1495,8 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
           return
         }
         attempt += 1
-        const state = await refreshFromICustoms()
-        const nextStatus = state?.declaration.provider?.status ?? state?.declaration.status
-        if (!cancelled && (!state || shouldPollCustomsStatus(nextStatus))) schedule()
+        const state = await readLocalCustomsState()
+        if (!cancelled && (!state || shouldCheckLocalWebhookState(state))) schedule()
       }, delay)
     }
 
@@ -1483,19 +1506,18 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
       if (statusPollTimerRef.current !== null) window.clearTimeout(statusPollTimerRef.current)
       statusPollTimerRef.current = null
     }
-  }, [customsStatus, declarationId, refreshFromICustoms, statusPollingNeeded])
+  }, [customsStatus, declarationId, readLocalCustomsState, statusPollingNeeded])
 
   useEffect(() => {
     if (!declarationId) return
     const refreshOnReturn = () => {
-      if (document.visibilityState !== "visible" || !shouldPollCustomsSubmission(iCustomsState?.declaration.provider?.status ?? iCustomsState?.declaration.status, iCustomsState?.declaration.provider?.submittedAt)) return
+      if (document.visibilityState !== "visible" || !shouldCheckLocalWebhookState(iCustomsState)) return
       const now = Date.now()
       if (now - lastFocusRefreshAtRef.current < 1_500) return
       lastFocusRefreshAtRef.current = now
       const wasTimedOut = statusLifecycle.phase === "timed-out"
-      void refreshFromICustoms().then((state) => {
-        const refreshedStatus = state?.declaration.provider?.status ?? state?.declaration.status
-        if (wasTimedOut && shouldPollCustomsStatus(refreshedStatus)) setStatusLifecycle({ phase: "timed-out" })
+      void readLocalCustomsState().then((state) => {
+        if (wasTimedOut && shouldCheckLocalWebhookState(state)) setStatusLifecycle({ phase: "timed-out" })
       })
     }
     window.addEventListener("focus", refreshOnReturn)
@@ -1504,18 +1526,18 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
       window.removeEventListener("focus", refreshOnReturn)
       document.removeEventListener("visibilitychange", refreshOnReturn)
     }
-  }, [declarationId, iCustomsState, refreshFromICustoms, statusLifecycle.phase])
+  }, [declarationId, iCustomsState, readLocalCustomsState, statusLifecycle.phase])
 
   useEffect(() => {
-    const acceptedMrn = iCustomsState?.declaration.provider?.mrn ?? null
-    if (!declarationPdfAvailable || !acceptedMrn) {
+    const documentId = iCustomsState?.declaration.document.documentId ?? null
+    if (!declarationPdfAvailable || !documentId) {
       pdfAutoLoadAttemptedForRef.current = null
       return
     }
-    if (pdfBlob || pdfBusy || pdfAutoLoadAttemptedForRef.current === acceptedMrn) return
-    pdfAutoLoadAttemptedForRef.current = acceptedMrn
+    if (pdfBlob || pdfBusy || pdfAutoLoadAttemptedForRef.current === documentId) return
+    pdfAutoLoadAttemptedForRef.current = documentId
     void loadDeclarationPdf().catch(() => undefined)
-  }, [declarationPdfAvailable, iCustomsState?.declaration.provider?.mrn, loadDeclarationPdf, pdfBlob, pdfBusy])
+  }, [declarationPdfAvailable, iCustomsState?.declaration.document.documentId, loadDeclarationPdf, pdfBlob, pdfBusy])
 
   if (loadingDraft) {
     return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><p role="status" className="text-[13px] text-[var(--md-text)]">{t(declarationId ? "Loading saved declaration" : "Starting your draft")}</p></Surface>
@@ -1619,7 +1641,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
       {referenceData.error ? <Surface padding="sm" className="rounded-[var(--md-radius-lg)]"><div className="flex items-center gap-2 text-[11px] text-[var(--md-red)]"><CircleAlert className="size-4 shrink-0" /><span><strong>{t("Customs reference data unavailable")}</strong> {t("Selection fields remain locked until the database catalogue is available.")}</span></div></Surface> : null}
 
       {viewMode === "form" && formTab === "general" ? <GeneralFormView draft={draft} update={update} updateMany={updateMany} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
-      {viewMode === "form" && formTab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} t={t} /> : null}
+      {viewMode === "form" && formTab === "items" ? <ItemsSection declarationCategory={draft.declarationCategory} items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} t={t} /> : null}
       {viewMode === "tabs" ? <div className="relative min-w-0 overflow-x-clip">
         <AnimatePresence initial={false} mode="popLayout">
           <motion.div
@@ -1636,8 +1658,8 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
             {tab === "parties" ? <PartiesSection draft={draft} update={update} updateMany={updateMany} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
             {tab === "transport" ? <TransportSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
             {tab === "documents" ? <DocumentsSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
-            {tab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} t={t} /> : null}
-            {tab === "review" ? <ReviewSection draft={draft} completion={completion} iCustomsState={iCustomsState} iCustomsBusy={iCustomsBusy} iCustomsIssues={iCustomsIssues} statusLifecycle={statusLifecycle} pdfAvailable={declarationPdfAvailable} pdfBusy={pdfBusy} pdfLoadError={pdfLoadError} savingDraft={savingDraft} update={update} updateItem={updateItemById} onOpenPdf={() => void openDeclarationPdf()} onCreateDraft={() => void createOrUpdateICustomsDraft()} onSaveDraft={() => void saveDraft(false)} onSubmit={() => void prepareSubmitToICustoms()} t={t} /> : null}
+            {tab === "items" ? <ItemsSection declarationCategory={draft.declarationCategory} items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} t={t} /> : null}
+            {tab === "review" ? <ReviewSection draft={draft} completion={completion} iCustomsState={iCustomsState} iCustomsBusy={iCustomsBusy} iCustomsIssues={iCustomsIssues} statusLifecycle={statusLifecycle} pdfAvailable={declarationPdfAvailable} pdfBusy={pdfBusy} pdfLoadError={pdfLoadError} savingDraft={savingDraft} update={update} updateItem={updateItemById} onOpenPdf={() => void openDeclarationPdf()} onRefresh={() => void recoverFromICustoms()} onCreateDraft={() => void createOrUpdateICustomsDraft()} onSaveDraft={() => void saveDraft(false)} onSubmit={() => void prepareSubmitToICustoms()} t={t} /> : null}
           </motion.div>
         </AnimatePresence>
       </div> : null}
@@ -1812,6 +1834,7 @@ function PartiesSection({ draft, update, updateMany, showDataElements, showOptio
       </PartyFieldsGroup>
       <PartyFieldsGroup title={t(direction === "export" ? "Carrier & representation" : "Representation")} className="xl:col-span-2" fieldsClassName="xl:grid-cols-3 2xl:grid-cols-3">
         {direction === "export" ? <CustomsOrganisationField party="carrier" label={t("Carrier")} required showDataElements={showDataElements} value={draft.carrier} onChange={(value) => update("carrier", value)} onSelect={(organisation) => update("carrier", organisation.name)} invalid={issues.has("carrier")} fieldKey="carrier" highlighted={highlightedField === "carrier"} /> : null}
+        {direction === "export" ? <TextField label={t("Carrier identifier (EORI)")} required showDataElements={showDataElements} value={draft.carrierIdentifier} onChange={(value) => update("carrierIdentifier", value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 17))} invalid={issues.has("carrierIdentifier")} fieldKey="carrierIdentifier" highlighted={highlightedField === "carrierIdentifier"} /> : null}
         {direction === "export" ? <CustomsOrganisationField party="representative" label={t("Representative")} dataElement="3/19" customsBox="14" showDataElements={showDataElements} value={draft.representative} onChange={(value) => update("representative", value)} onSelect={(organisation) => update("representative", organisation.name)} /> : null}
         <SelectField label={t("Type of representation")} dataElement="3/21" customsBox="14" required={direction === "import"} showDataElements={showDataElements} value={draft.representationType} onChange={(value) => update("representationType", value)} invalid={issues.has("representationType")} fieldKey="representationType" highlighted={highlightedField === "representationType"} options={representationTypes} />
         {showOptional ? <><TextField label={t("Authorisation identifier")} showDataElements={showDataElements} value={draft.authorisationIdentifier} onChange={(value) => update("authorisationIdentifier", value)} /><TextField label={t("Authorisation category")} showDataElements={showDataElements} value={draft.authorisationCategory} onChange={(value) => update("authorisationCategory", value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4))} maxLength={4} /></> : null}
@@ -1917,7 +1940,7 @@ function DocumentsSection({ draft, update, showDataElements, showOptional, issue
   </SectionFrame>
 }
 
-function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, onOpenInvoiceImport, onDuplicate, onRemove, update, updateRow, showDataElements, showOptional, issues, validated, highlightedField, t }: { items: ExportDeclarationItem[]; activeItem: ExportDeclarationItem; activeItemId: string; onSelectItem: (id: string) => void; onAdd: () => void; onOpenInvoiceImport: () => void; onDuplicate: (itemId?: string) => void; onRemove: (itemId?: string) => void; update: <K extends keyof ExportDeclarationItem>(field: K, value: ExportDeclarationItem[K]) => void; updateRow: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void; showDataElements: boolean; showOptional: boolean; issues: Set<string>; validated: boolean; highlightedField?: string; t: (text: string) => string }) {
+function ItemsSection({ declarationCategory, items, activeItem, activeItemId, onSelectItem, onAdd, onOpenInvoiceImport, onDuplicate, onRemove, update, updateRow, showDataElements, showOptional, issues, validated, highlightedField, t }: { declarationCategory: string; items: ExportDeclarationItem[]; activeItem: ExportDeclarationItem; activeItemId: string; onSelectItem: (id: string) => void; onAdd: () => void; onOpenInvoiceImport: () => void; onDuplicate: (itemId?: string) => void; onRemove: (itemId?: string) => void; update: <K extends keyof ExportDeclarationItem>(field: K, value: ExportDeclarationItem[K]) => void; updateRow: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void; showDataElements: boolean; showOptional: boolean; issues: Set<string>; validated: boolean; highlightedField?: string; t: (text: string) => string }) {
   const { direction } = useLanguage()
   const declarationDirection = useContext(CustomsDirectionContext)
   const shouldReduceMotion = Boolean(useReducedMotion())
@@ -2111,6 +2134,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
                         >
                           <div className="sticky start-0 w-[100cqw] min-w-0 max-w-[100cqw] p-3">
                             <ItemDetailsEditor
+                              declarationCategory={declarationCategory}
                               item={item}
                               itemNumber={index + 1}
                               onDuplicate={() => onDuplicate(item.id)}
@@ -2505,7 +2529,8 @@ function CommoditySmartSearch({ item, direction, update, triggerClassName, trigg
   </>
 }
 
-function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove, update, showDataElements, showOptional, issues, highlightedField, t }: {
+function ItemDetailsEditor({ declarationCategory, item, itemNumber, onDuplicate, onRemove, canRemove, update, showDataElements, showOptional, issues, highlightedField, t }: {
+  declarationCategory: string
   item: ExportDeclarationItem
   itemNumber: number
   onDuplicate: () => void
@@ -2622,7 +2647,7 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
 
       {declarationDirection === "export" ? <ItemDetailGroup title={t("Parties & transport")}>
         <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
-          <TextField label={t("Consignor")} dataElement="3/7" customsBox="2" required showDataElements={showDataElements} value={item.consignor} onChange={(value) => update("consignor", value)} invalid={issues.has("consignor")} fieldKey="consignor" highlighted={highlightedField === "consignor"} />
+          {declarationCategory === "B1" ? null : <TextField label={t("Consignor")} dataElement="3/7" customsBox="2" required showDataElements={showDataElements} value={item.consignor} onChange={(value) => update("consignor", value)} invalid={issues.has("consignor")} fieldKey="consignor" highlighted={highlightedField === "consignor"} />}
           <TextField label={t("Consignee")} dataElement="3/9" customsBox="8" showDataElements={showDataElements} value={item.consignee} onChange={(value) => update("consignee", value)} />
           <SelectField label={t("Destination country")} dataElement="5/8" customsBox="17" showDataElements={showDataElements} value={item.destinationCountry} onChange={(value) => update("destinationCountry", value)} options={optionalCountries} />
           <TextField label={t("Reference number or UCR")} dataElement="2/4" customsBox="44" showDataElements={showDataElements} value={item.ucr} onChange={(value) => update("ucr", value)} />
@@ -2932,7 +2957,7 @@ function validatedItemField(issues: Set<string>, missing: Array<keyof ExportDecl
   return issues.has(field) && missing.includes(field)
 }
 
-function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustomsIssues, statusLifecycle, pdfAvailable, pdfBusy, pdfLoadError, savingDraft, update, updateItem, onOpenPdf, onCreateDraft, onSaveDraft, onSubmit, t }: {
+function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustomsIssues, statusLifecycle, pdfAvailable, pdfBusy, pdfLoadError, savingDraft, update, updateItem, onOpenPdf, onRefresh, onCreateDraft, onSaveDraft, onSubmit, t }: {
   draft: StandaloneExportDraft
   completion: ReturnType<typeof declarationCompletion>
   iCustomsState: ICustomsWorkspaceState | null
@@ -2946,6 +2971,7 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
   update: <K extends keyof StandaloneExportDraft>(field: K, value: StandaloneExportDraft[K]) => void
   updateItem: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void
   onOpenPdf: () => void
+  onRefresh: () => void
   onCreateDraft: () => void
   onSaveDraft: () => void
   onSubmit: () => void
@@ -2959,6 +2985,7 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
   const providerAwaitingResponse = shouldPollCustomsSubmission(provider?.status, provider?.submittedAt)
   const providerRejected = provider?.status === "rejected"
   const providerAccepted = ["accepted", "released", "cleared"].includes(provider?.status ?? "")
+  const waitingForDocument = providerAccepted && !pdfAvailable
   const connectionUnavailable = iCustomsState?.connection.configured === false
   const providerIssues = provider?.issues ?? []
   const providerCorrelationId = iCustomsState?.declaration.correlationId ?? draft.iCustomsCorrelationId
@@ -3016,10 +3043,12 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
         {iCustomsBusy === "loading" ? <p className="mt-4 text-[12px] text-[var(--md-subtle)]">{t("Checking the customs connection")}</p> : null}
         {connectionUnavailable ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,transparent)] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-amber)]" /><span>{t("The customs test connection is not configured on the server yet.")}</span></div> : null}
         {provider || providerCorrelationId ? <dl className="mt-4 divide-y divide-[var(--md-line)] border-y border-[var(--md-line)]">{provider ? <Summary label={t("iCustoms draft status")} value={t(provider.status === "queued" ? "Starting" : titleCase(provider.status))} /> : null}{providerCorrelationId ? <Summary label={t("iCustoms correlation ID")} value={providerCorrelationId} valueDirection="ltr" /> : null}{provider?.mrn ? <Summary label="MRN" value={provider.mrn} /> : null}{provider?.updatedAt ? <Summary label={t("Last customs update")} value={new Date(provider.updatedAt).toLocaleString()} /> : null}</dl> : null}
-        {providerAwaitingResponse ? <div role="status" aria-live="polite" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-3 text-[12px] text-[var(--md-text)]"><RefreshCw className={cn("mt-0.5 size-4 shrink-0 text-[var(--md-accent)]", statusLifecycle.phase === "checking" && "animate-spin motion-reduce:animate-none")} /><span><strong className="block text-[var(--md-ink)]">{t(statusLifecycle.phase === "timed-out" ? "Customs response is taking longer than expected" : "Waiting for the customs response")}</strong>{t(statusLifecycle.phase === "timed-out" ? "Multideck will check again when you return to this declaration." : "Multideck checks automatically while this declaration is open.")}</span></div> : null}
+        {providerAwaitingResponse ? <div role="status" aria-live="polite" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-3 text-[12px] text-[var(--md-text)]"><RefreshCw className={cn("mt-0.5 size-4 shrink-0 text-[var(--md-accent)]", statusLifecycle.phase === "checking" && "animate-spin motion-reduce:animate-none")} /><span><strong className="block text-[var(--md-ink)]">{t(statusLifecycle.phase === "timed-out" ? "Customs response is taking longer than expected" : "Waiting for the customs response")}</strong>{t(statusLifecycle.phase === "timed-out" ? "Use Refresh from iCustoms if you need to recover a delayed webhook." : "Multideck shows webhook updates as iCustoms delivers them.")}</span></div> : null}
+        {waitingForDocument ? <div role="status" aria-live="polite" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-3 text-[12px] text-[var(--md-text)]"><FileText className="mt-0.5 size-4 shrink-0 text-[var(--md-accent)]" /><span><strong className="block text-[var(--md-ink)]">{t("Waiting for the declaration document from iCustoms")}</strong>{t("You can keep working. Multideck will show the document as soon as the webhook delivers it.")}</span></div> : null}
         {statusLifecycle.phase === "error" ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,transparent)] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-amber)]" /><span><strong className="block text-[var(--md-ink)]">{t("Customs status check was interrupted")}</strong>{t(statusLifecycle.message ?? "Multideck will retry automatically.")}</span></div> : null}
-        {pdfAvailable ? <Button type="button" variant="ghost" className="mt-4 w-full bg-black text-white shadow-none hover:bg-black/80 hover:text-white" disabled={pdfBusy} onClick={onOpenPdf}><FileText className="size-4" />{t(pdfBusy ? "Preparing declaration PDF" : pdfLoadError ? "Retry declaration PDF" : "View declaration PDF")}</Button> : null}
-        {pdfLoadError && pdfAvailable ? <p role="alert" className="mt-2 text-[11px] leading-4 text-[var(--md-red)]">{t("The declaration PDF could not be prepared automatically. Choose Retry declaration PDF to try again.")}</p> : null}
+        {waitingForDocument || pdfAvailable || ((statusLifecycle.phase === "timed-out" || statusLifecycle.phase === "error") && providerAwaitingResponse) ? <Button type="button" variant="outline" className="mt-3 w-full" disabled={iCustomsBusy === "refresh"} onClick={onRefresh}><RefreshCw className={cn("size-4", iCustomsBusy === "refresh" && "animate-spin motion-reduce:animate-none")} />{t(iCustomsBusy === "refresh" ? "Refreshing from iCustoms" : "Refresh from iCustoms")}</Button> : null}
+        {pdfAvailable ? <Button type="button" variant="ghost" className="mt-4 w-full bg-black text-white shadow-none hover:bg-black/80 hover:text-white" disabled={pdfBusy} onClick={onOpenPdf}><FileText className="size-4" />{t(pdfBusy ? "Opening declaration document" : pdfLoadError ? "Retry opening document" : "View declaration document")}</Button> : null}
+        {pdfLoadError && pdfAvailable ? <p role="alert" className="mt-2 text-[11px] leading-4 text-[var(--md-red)]">{t("The declaration document could not be opened. Choose Retry opening document to request a fresh secure link.")}</p> : null}
         {providerDeclarationUrl ? <Button asChild variant="outline" className="mt-2 w-full"><a href={providerDeclarationUrl} target="_blank" rel="noopener noreferrer"><span>{t("View in")}</span><img src={iCustomsLogo} alt="iCustoms" className="h-4 w-auto" /><ExternalLink className="size-3.5" /></a></Button> : null}
         {providerAccepted && providerIssues.length ? <div role="status" className="mt-4 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_8%,var(--md-surface))] p-3">
           <div className="flex items-start gap-2"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-amber)]" /><div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Customs accepted this declaration with provider messages")}</p><p className="mt-0.5 text-[11px] leading-4 text-[var(--md-text)]">{t("The declaration is accepted. Review these iCustoms messages for awareness; they do not change the accepted status.")}</p></div></div>
@@ -3028,7 +3057,7 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
         {provider?.errorMessage && !providerIssues.length ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-red)]" /><span><strong className="block text-[var(--md-ink)]">{t("Customs service needs attention")}</strong>{t(provider.errorMessage)}</span></div> : null}
         {iCustomsIssues.length ? <div role="alert" className="mt-4"><p className="text-[12px] font-medium text-[var(--md-red)]">{t("Customs checks still need attention")}</p><ul className="mt-2 space-y-1.5 ps-4 text-[11px] leading-4 text-[var(--md-text)]">{iCustomsIssues.slice(0, 8).map((issue) => <li key={issue} className="list-disc">{translateCustomsMessage(issue, t)}</li>)}</ul></div> : null}
 
-        {providerLifecycleStarted ? null : <><Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || savingDraft || provider?.status === "queued"} onClick={onSaveDraft}><Save className="size-4" />{t(savingDraft || iCustomsBusy === "draft" ? "Saving draft" : "Save draft")}</Button>{!hasProviderDraft ? <Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable || provider?.status === "queued"} onClick={onCreateDraft}><RefreshCw className={cn("size-4", (iCustomsBusy === "draft" || provider?.status === "queued") && "animate-spin motion-reduce:animate-none")} />{t(provider?.status === "queued" ? "Starting iCustoms draft" : iCustomsBusy === "draft" ? "Retrying iCustoms draft" : "Retry iCustoms draft")}</Button> : providerRejected ? null : <Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || savingDraft || connectionUnavailable} onClick={onSubmit}>{iCustomsBusy === "validate" ? <RefreshCw className="size-4 animate-spin motion-reduce:animate-none" /> : <Send className="size-4" />}{t(iCustomsBusy === "validate" ? "Checking declaration" : "Submit")}</Button>}</>}
+        {providerLifecycleStarted ? null : <><Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || savingDraft || provider?.status === "queued"} onClick={onSaveDraft}><Save className="size-4" />{t(savingDraft || iCustomsBusy === "draft" ? "Saving draft" : "Save draft")}</Button>{!hasProviderDraft ? <Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable || provider?.status === "queued"} onClick={onCreateDraft}><RefreshCw className={cn("size-4", (iCustomsBusy === "draft" || provider?.status === "queued") && "animate-spin motion-reduce:animate-none")} />{t(provider?.status === "queued" ? "Starting iCustoms draft" : iCustomsBusy === "draft" ? "Retrying iCustoms draft" : "Retry iCustoms draft")}</Button> : null}{providerRejected ? null : <Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || savingDraft || connectionUnavailable || provider?.status === "queued"} onClick={onSubmit}>{iCustomsBusy === "validate" ? <RefreshCw className="size-4 animate-spin motion-reduce:animate-none" /> : <Send className="size-4" />}{t(iCustomsBusy === "validate" ? "Checking declaration" : "Submit")}</Button>}</>}
       </Surface>
     </div>
   </div>
@@ -3045,7 +3074,7 @@ type ReviewFieldMeta = {
 }
 
 function reviewSectionForField(field: string): Exclude<EditorTab, "items" | "review"> {
-  if (["importer", "exporter", "consignee", "carrier", "declarant", "representative", "seller", "buyer", "representationType", "authorisationIdentifier", "authorisationCategory"].includes(field) || /^(importer|exporter|consignee|declarant)(Name|AddressLine|City|Postcode|Country)$/.test(field)) return "parties"
+  if (["importer", "exporter", "consignee", "carrier", "carrierIdentifier", "declarant", "representative", "seller", "buyer", "representationType", "authorisationIdentifier", "authorisationCategory"].includes(field) || /^(importer|exporter|consignee|declarant)(Name|AddressLine|City|Postcode|Country)$/.test(field)) return "parties"
   if (["exportCountry", "destinationCountry", "borderMode", "inlandMode", "containerId", "goodsLocationName", "goodsLocationIdentifier"].includes(field)) return "transport"
   if (["exitOffice", "presentationOffice", "previousDocumentCategory", "previousDocumentType", "previousDocumentReference", "headerAdditionalInformationCode", "headerAdditionalInformationDescription", "transactionNature", "tradeTerms", "customsValuationMethod", "freightChargeAmount", "freightChargeCurrency", "freightChargeApportionment", "vatValueAdjustmentAmount", "vatValueAdjustmentCurrency", "vatValueAdjustmentApportionment", "insuranceCostAmount", "insuranceCostCurrency", "containerPackingCostAmount", "containerPackingCostCurrency"].includes(field)) return "documents"
   return "declaration"

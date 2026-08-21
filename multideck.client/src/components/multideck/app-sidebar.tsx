@@ -237,7 +237,9 @@ function NotificationBell() {
                 type="button"
                 className="group grid w-full grid-cols-[6px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-3 text-start transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)]"
                 onClick={() => {
-                  const url = typeof notification.metadata.url === "string" ? notification.metadata.url : ""
+                  const url = typeof notification.metadata.action_url === "string"
+                    ? notification.metadata.action_url
+                    : typeof notification.metadata.url === "string" ? notification.metadata.url : ""
                   if (notification.status === "unread") updateNotificationStatus(notification.id, "read")
                   if (url.startsWith("/")) {
                     window.history.pushState({}, "", url)
@@ -247,8 +249,8 @@ function NotificationBell() {
               >
                 <span aria-hidden="true" className={cn("mt-[7px] size-1.5 rounded-full transition-opacity duration-150", notification.status === "unread" ? "bg-[var(--md-accent)] opacity-100" : "opacity-0")} />
                 <span className="min-w-0">
-                  <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{notification.title}</span>
-                  <span className="mt-0.5 block truncate text-[12px] leading-5 text-[var(--md-text)]">{notification.body}</span>
+                  <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{t(notification.title)}</span>
+                  <span className="mt-0.5 block truncate text-[12px] leading-5 text-[var(--md-text)]">{t(notification.body)}</span>
                 </span>
                 <span className="pt-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{notificationTime(notification.createdAt)}</span>
               </motion.button>

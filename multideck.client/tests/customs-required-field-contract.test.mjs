@@ -18,11 +18,13 @@ test("validation requires the internal reference for exports while keeping the t
   assert.match(validation, /draft\.traderReference\.trim\(\) && !\/\^\[A-Z0-9\]/u)
 })
 
-test("exports require a carrier and a consignor for every goods item", () => {
+test("exports require a carrier name and identifier while B1 omits the item consignor", () => {
   assert.match(page, /label=\{t\("Carrier"\)\} required[\s\S]*?fieldKey="carrier"/u)
-  assert.match(page, /label=\{t\("Consignor"\)\}[\s\S]*?required[\s\S]*?fieldKey="consignor"/u)
-  assert.match(validation, /draft\.direction === "export"\) requireGeneral\("carrier", "Add the carrier name or identifier\."\)/u)
-  assert.match(validation, /draft\.direction === "export" && !item\.consignor\.trim\(\)\) push\("consignor", "Add the consignor for this goods item\."\)/u)
+  assert.match(page, /label=\{t\("Carrier identifier \(EORI\)"\)\} required[\s\S]*?fieldKey="carrierIdentifier"/u)
+  assert.match(page, /declarationCategory === "B1" \? null : <TextField label=\{t\("Consignor"\)\}/u)
+  assert.match(validation, /draft\.direction === "export"\) requireGeneral\("carrier", "Add the carrier name\."\)/u)
+  assert.match(validation, /draft\.direction === "export"\) requireGeneral\("carrierIdentifier", "Add the carrier identifier \(EORI\)\."\)/u)
+  assert.match(validation, /draft\.direction === "export" && draft\.declarationCategory !== "B1" && !item\.consignor\.trim\(\)/u)
 })
 
 test("document waivers may use a declaration statement instead of an invented ID", () => {

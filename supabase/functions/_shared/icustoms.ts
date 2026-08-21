@@ -137,6 +137,7 @@ export type ExportDeclarationInput = {
   consigneePostcode?: unknown;
   consigneeCountry?: unknown;
   carrier?: unknown;
+  carrierIdentifier?: unknown;
   declarant?: unknown;
   declarantName?: unknown;
   declarantAddressLine?: unknown;
@@ -439,9 +440,14 @@ export function validateICustomsDeclaration(
     issues.push("Add the consignee name or identifier.");
   }
   if (direction === "export" && !clean(input.carrier, 120)) {
-    issues.push("Add the carrier name or identifier.");
+    issues.push("Add the carrier name.");
   }
-  if (direction === "export") {
+  if (direction === "export" && !clean(input.carrierIdentifier, 17)) {
+    issues.push("Add the carrier identifier (EORI).");
+  }
+  if (
+    direction === "export" && upper(input.declarationCategory, 3) !== "B1"
+  ) {
     items.forEach((item, index) => {
       if (!clean(item.consignor, 120)) {
         issues.push(`Add the consignor for goods item ${index + 1}.`);
@@ -1333,7 +1339,10 @@ export function buildICustomsDeclarationXml(
             ),
           )
           : "",
-        direction === "export" ? party("Consignor", item.consignor) : "",
+        direction === "export" &&
+            upper(input.declarationCategory, 3) !== "B1"
+          ? party("Consignor", item.consignor)
+          : "",
         itemConsignee,
         partyReferences("Exporter", item.itemExporters),
         partyReferences("Seller", item.itemSellers),
@@ -1551,7 +1560,10 @@ export function buildICustomsDeclarationXml(
         : "",
       borderTransport,
       direction === "export"
-        ? group("Consignment", party("Carrier", input.carrier))
+        ? group(
+          "Consignment",
+          party("Carrier", input.carrierIdentifier, { name: input.carrier }),
+        )
         : "",
       party(
         "Declarant",
@@ -1842,11 +1854,30 @@ export class ICustomsClient {
     );
   }
 
-  submit(correlationId: string) {
+  updateAndSubmit(correlationId: string, xml: string) {
+    return this.request(
+      `/api/cds/v1/update-and-submit/${encodeURIComponent(correlationId)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/xml" },
+        body: xml,
+      },
+    );
+  }
+
+  submitDraft(correlationId: string) {
     return this.request(
       `/api/cds/v1/submit/${encodeURIComponent(correlationId)}`,
       { method: "POST" },
     );
+  }
+
+  draftAndSubmit(xml: string) {
+    return this.request("/api/cds/v1/draft-and-submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/xml" },
+      body: xml,
+    });
   }
 
   notifications(correlationId: string) {
@@ -2127,10 +2158,19 @@ export function providerIssues(value: unknown): ICustomsPublicIssue[] {
   return issues;
 }
 
-export function providerCorrelationId(value: unknown) {
+export function providerCorrelationId(value: unknown): string {
   const record = providerRecord(value);
-  return clean(record.co_relation_id, 160) || clean(record.co_relation, 160) ||
-    clean(record.correlation_id, 160) || clean(record.declaration_id, 160);
+  const direct = clean(record.co_relation_id, 160) ||
+    clean(record.co_relation, 160) || clean(record.correlation_id, 160) ||
+    clean(record.declaration_id, 160);
+  if (direct) return direct;
+  if (Array.isArray(record.declarations)) {
+    for (const declaration of record.declarations) {
+      const nested = providerCorrelationId(declaration);
+      if (nested) return nested;
+    }
+  }
+  return "";
 }
 
 function allStrings(value: unknown, output: string[] = []) {

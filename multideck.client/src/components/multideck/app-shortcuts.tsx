@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { KeyboardShortcutsPanel } from "@/components/multideck/keyboard-shortcuts-panel"
 import { useLanguage } from "@/i18n/language-provider"
-import { setThemeWithProfileIntent } from "@/lib/theme-preferences"
+import { toggleThemeWithProfileIntent } from "@/lib/theme-preferences"
 import { focusAppSearch } from "@/lib/app-commands"
 import { DEXTER_NEW_CONVERSATION_EVENT } from "@/lib/dexter-navigation"
 import { getShortcutDefinition, shortcutDefinitions } from "@/data/keyboard-shortcuts-data"
@@ -134,7 +134,7 @@ function SequenceHud() {
  */
 export function AppShortcuts({ navigate }: { navigate: (path: string) => void }) {
   const { t } = useLanguage()
-  const { resolvedTheme, setTheme } = useTheme()
+  const { setTheme } = useTheme()
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed()
   const [overviewOpen, setOverviewOpen] = useState(false)
 
@@ -166,14 +166,16 @@ export function AppShortcuts({ navigate }: { navigate: (path: string) => void })
       "search.quickFocus": search,
       "shortcuts.overview": () => setOverviewOpen((open) => !open),
       "interface.sidebar": () => setSidebarCollapsed(!sidebarCollapsed),
-      "interface.theme": () => setThemeWithProfileIntent(setTheme, resolvedTheme === "dark" ? "light" : "dark"),
+      "interface.theme": () => {
+        toggleThemeWithProfileIntent(setTheme)
+      },
       "interface.back": () => window.history.back(),
       "interface.forward": () => window.history.forward(),
     }
 
     for (const id of Object.keys(destinations)) map[id] = () => goTo(id)
     return map
-  }, [goTo, navigate, resolvedTheme, search, setSidebarCollapsed, setTheme, sidebarCollapsed])
+  }, [goTo, navigate, search, setSidebarCollapsed, setTheme, sidebarCollapsed])
 
   useShortcutActions(actions)
 

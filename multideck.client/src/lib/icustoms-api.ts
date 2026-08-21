@@ -34,6 +34,13 @@ export type ICustomsDeclarationState = {
   status: string
   correlationId: string | null
   hasCustomsDraft: boolean
+  document: {
+    available: boolean
+    documentId: string | null
+    fileName: string | null
+    receivedAt: string | null
+    mimeType: string | null
+  }
   provider: ICustomsSubmissionState | null
 }
 

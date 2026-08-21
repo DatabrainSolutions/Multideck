@@ -9,6 +9,8 @@ export type CustomsDeclarationDocument = {
   mrn: string
   isOfficial: boolean
   environment: "sandbox" | "production"
+  source: "icustoms_webhook" | "icustoms_provider_recovery" | "multideck_carbone" | "historical"
+  receivedAt: string
   retainedUntil: string
   signedUrl: string
   expiresAt: string
@@ -21,12 +23,12 @@ async function documentError(response: Response) {
   } catch {
     // Keep the human fallback when the function gateway did not return JSON.
   }
-  return new Error("The declaration PDF could not be opened. Try again.")
+  return new Error("The declaration document could not be opened. Try again.")
 }
 
 export async function getCustomsDeclarationDocument(declarationId: string) {
   const session = await getSupabaseSession()
-  if (!session?.access_token) throw new Error("Sign in again to view the declaration PDF.")
+  if (!session?.access_token) throw new Error("Sign in again to view the declaration document.")
   const response = await edgeFetch("customs-declaration-document", "", session.access_token, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

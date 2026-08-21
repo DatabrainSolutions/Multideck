@@ -29,13 +29,17 @@ test("Dexter names the destructive-action exception instead of guessing support"
   assert.match(dexter, /not a meaningful Watching for you event/u)
 })
 
-test("new records start a real iCustoms workspace draft without HMRC submission", () => {
+test("new records start a complete iCustoms workspace draft without HMRC submission", () => {
   assert.match(edgeFunction, /provider-draft-start/u)
-  assert.match(edgeFunction, /buildICustomsDraftShellXml/u)
+  const lifecycle = edgeFunction.match(/async function startProviderDraft[\s\S]*?async function deleteProviderDraft/u)?.[0] ?? edgeFunction
+  assert.match(lifecycle, /buildICustomsDeclarationXml\(draft, direction\)/u)
+  assert.match(lifecycle, /declaration\.CUST_GenericPayloadJSON/u)
+  assert.match(lifecycle, /rejectedDraftAttempt/u)
+  assert.match(lifecycle, /:retry:/u)
   assert.match(edgeFunction, /\.createDraft\(xml\)/u)
   assert.match(providerClient, /element\("DeclarationCategory"/u)
   assert.match(providerClient, /element\("TypeCode"/u)
-  assert.doesNotMatch(edgeFunction.match(/async function startProviderDraft[\s\S]*?async function deleteProviderDraft/u)?.[0] ?? "", /\.submit\(/u)
+  assert.doesNotMatch(lifecycle, /\.submit\(/u)
 })
 
 test("deletion removes the provider draft before its owner-bound local recovery record", () => {

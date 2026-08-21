@@ -134,6 +134,7 @@ export type StandaloneExportDraft = {
   consigneePostcode: string
   consigneeCountry: string
   carrier: string
+  carrierIdentifier: string
   declarant: string
   declarantName: string
   declarantAddressLine: string
@@ -302,6 +303,7 @@ export function createStandaloneDeclarationDraft(direction: DeclarationDirection
     consigneePostcode: "",
     consigneeCountry: "",
     carrier: "",
+    carrierIdentifier: "",
     declarant: "",
     declarantName: "",
     declarantAddressLine: "",
@@ -403,7 +405,8 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
   if (draft.direction === "import") requireGeneral("importer", "Select or add the importer.")
   requireGeneral("exporter", "Select or add the exporter.")
   if (draft.direction === "export") requireGeneral("consignee", "Select or add the consignee.")
-  if (draft.direction === "export") requireGeneral("carrier", "Add the carrier name or identifier.")
+  if (draft.direction === "export") requireGeneral("carrier", "Add the carrier name.")
+  if (draft.direction === "export") requireGeneral("carrierIdentifier", "Add the carrier identifier (EORI).")
   requireGeneral("declarant", "Select the declarant.")
   const requiredPartyContacts = [
     ...(draft.direction === "import" ? [["importer", ["importerName", "importerAddressLine", "importerCity", "importerPostcode", "importerCountry"]] as const] : []),
@@ -528,7 +531,7 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
     const commodityCodeLength = draft.direction === "export" ? 8 : 10
     if (!new RegExp(`^\\d{${commodityCodeLength}}$`).test(item.commodityCode)) push("commodityCode", `Enter ${commodityCodeLength === 8 ? "an" : "a"} ${commodityCodeLength}-digit commodity code.`)
     if (!item.description.trim()) push("description", "Add a goods description.")
-    if (draft.direction === "export" && !item.consignor.trim()) push("consignor", "Add the consignor for this goods item.")
+    if (draft.direction === "export" && draft.declarationCategory !== "B1" && !item.consignor.trim()) push("consignor", "Add the consignor for this goods item.")
     if (!item.packageKind) push("packageKind", "Select a package kind.")
     if (!item.packageMarks.trim()) push("packageMarks", "Add package marks.")
     if (!positive(item.packageCount) || !Number.isInteger(Number(item.packageCount))) push("packageCount", "Enter a whole package count.")

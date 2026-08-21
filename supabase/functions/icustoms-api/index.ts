@@ -12,7 +12,6 @@ import {
 } from "../_shared/backend.ts";
 import {
   buildICustomsDeclarationXml,
-  buildICustomsDraftShellXml,
   type ExportDeclarationInput,
   ICustomsClient,
   iCustomsCommodityDetail,
@@ -98,16 +97,20 @@ function uuid(value: unknown) {
     : "";
 }
 
-function requestMetadata(xml: string, operation: string) {
-  return crypto.subtle.digest("SHA-256", new TextEncoder().encode(xml)).then((
+function requestMetadata(
+  payload: string,
+  operation: string,
+  contentType: string | null = "application/xml",
+) {
+  return crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload)).then((
     digest,
   ) => ({
     operation,
-    contentType: "application/xml",
+    contentType,
     payloadHashSha256: Array.from(new Uint8Array(digest)).map((byte) =>
       byte.toString(16).padStart(2, "0")
     ).join(""),
-    payloadBytes: new TextEncoder().encode(xml).byteLength,
+    payloadBytes: new TextEncoder().encode(payload).byteLength,
   }));
 }
 
@@ -212,6 +215,13 @@ function publicDeclaration(row: Json, submission: Json | null) {
     status: row.CUST_Status,
     correlationId: activeCorrelation || null,
     hasCustomsDraft: Boolean(activeCorrelation),
+    document: {
+      available: Boolean(row.CUST_DeclarationDocumentID),
+      documentId: row.CUST_DeclarationDocumentID ?? null,
+      fileName: row.CUST_DeclarationDocumentFileName ?? null,
+      receivedAt: row.CUST_DeclarationDocumentReceivedAt ?? null,
+      mimeType: row.CUST_DeclarationDocumentMimeType ?? null,
+    },
     provider: publicSubmission(submission, declarationProviderStatus),
   };
 }
@@ -320,6 +330,28 @@ async function idempotentSubmission(
   return data as Json | null;
 }
 
+async function rejectedDraftAttempt(
+  admin: SupabaseClient,
+  declarationId: string,
+  idempotencyKey: string,
+) {
+  if (!idempotencyKey) return null;
+  const { data, error } = await admin
+    .from("ICUS_Submissions")
+    .select("ICUSS_id, ICUSS_ResponseStatusCode")
+    .eq("ICUSS_CustomsID", declarationId)
+    .eq("ICUSS_IdempotencyKey", idempotencyKey)
+    .eq("ICUSS_Status", "error")
+    .order("ICUSS_CreatedAt", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new HttpError(500, error.message);
+  const status = Number(data?.ICUSS_ResponseStatusCode);
+  return status >= 400 && status < 500 && ![408, 425, 429].includes(status)
+    ? data as Json
+    : null;
+}
+
 async function recordProviderFailure(
   admin: SupabaseClient,
   actor: Actor,
@@ -387,6 +419,24 @@ async function saveProviderSuccess(
 ) {
   const now = new Date().toISOString();
   const providerBody = providerRecord(response.body);
+  // iCustoms can reply with HTTP 200 while the JSON body reports a failed
+  // operation. Keep this final persistence boundary fail-closed as well as
+  // checking the individual call sites, so no future path can turn one of
+  // those provider failures into a submitted/accepted Multideck record.
+  if (
+    providerBody.success === false ||
+    String(providerBody.success).toLowerCase() === "false"
+  ) {
+    throw new ICustomsProviderError(
+      Number(providerBody.status) || response.status || 502,
+      text(providerBody.message, 500) ||
+        "The customs service could not complete this request.",
+      lifecyclePhase === "draft"
+        ? "icustoms_workspace_draft_failed"
+        : "icustoms_submission_failed",
+      response.body,
+    );
+  }
   const submissionStatus = lifecyclePhase === "draft"
     ? "draft"
     : ["released", "cleared"].includes(providerStatus)
@@ -595,12 +645,12 @@ async function startProviderDraft(
     };
   }
 
-  const idempotencyKey = text(input.idempotencyKey, 160) ||
+  const requestedIdempotencyKey = text(input.idempotencyKey, 160) ||
     `start-draft-${declarationId}-${crypto.randomUUID()}`;
   const previous = await idempotentSubmission(
     admin,
     declarationId,
-    idempotencyKey,
+    requestedIdempotencyKey,
   );
   if (previous) {
     return {
@@ -608,21 +658,36 @@ async function startProviderDraft(
       idempotentReplay: true,
     };
   }
+  // A provider-side 4xx means the earlier draft was rejected before it could
+  // be created. Retrying that reviewed declaration is safe, but the immutable
+  // failed attempt must keep its original key for audit and evidence.
+  const rejectedAttempt = await rejectedDraftAttempt(
+    admin,
+    declarationId,
+    requestedIdempotencyKey,
+  );
+  const idempotencyKey = rejectedAttempt
+    ? `${requestedIdempotencyKey}:retry:${crypto.randomUUID()}`
+    : requestedIdempotencyKey;
+  const draft = providerRecord(
+    declaration.CUST_GenericPayloadJSON,
+  ) as ExportDeclarationInput;
   const direction = declaration.CUST_Direction === "import"
     ? "import"
     : "export";
   const path = iCustomsDraftPath(null);
-  const xml = buildICustomsDraftShellXml(
-    direction,
-    text(declaration.CUST_LocalReferenceNumber, 160),
-  );
+  // iCustoms now applies its complete CDS schema validation when a provider
+  // draft is created. Send the persisted declaration rather than the former
+  // minimal shell so the first provider mirror uses the same reviewed data as
+  // later draft updates and HMRC submission.
+  const xml = buildICustomsDeclarationXml(draft, direction);
   const submission = await createSubmission(
     admin,
     actor,
     declarationId,
     idempotencyKey,
     path,
-    await requestMetadata(xml, "create_draft_shell"),
+    await requestMetadata(xml, "create_draft"),
     text(declaration.CUST_DeclarationKind, 40),
   );
   try {
@@ -857,14 +922,8 @@ async function submitDeclaration(
     };
   }
   const correlationId = correlationFrom(declaration, latest);
-  if (!correlationId || !latest) {
-    throw new HttpError(
-      409,
-      "Create the customs test draft before submitting it.",
-    );
-  }
   if (
-    ["submitted", "accepted", "rejected", "cancelled"].includes(
+    latest && ["submitted", "accepted", "rejected", "cancelled"].includes(
       text(latest.ICUSS_Status, 40),
     )
   ) {
@@ -885,6 +944,12 @@ async function submitDeclaration(
   if (submissionIssues.length) {
     throw new CustomsSubmissionGateError(submissionIssues);
   }
+  const xml = buildICustomsDeclarationXml(
+    providerRecord(
+      declaration.CUST_GenericPayloadJSON,
+    ) as ExportDeclarationInput,
+    direction,
+  );
   const { data: acceptedItemRows, error: acceptedItemRowsError } = await admin
     .from("Customs_Items")
     .select("CUSTI_ItemNumber, CUSTI_ItemPayloadJSON")
@@ -909,25 +974,57 @@ async function submitDeclaration(
       payload: providerRecord(row.CUSTI_ItemPayloadJSON),
     })),
   };
+  const requestPath = correlationId
+    ? `/api/cds/v1/submit/${correlationId}`
+    : "/api/cds/v1/draft-and-submit";
+  const operation = correlationId ? "submit_draft" : "draft_and_submit";
+  const queuedSubmission = await createSubmission(
+    admin,
+    actor,
+    declarationId,
+    idempotencyKey,
+    requestPath,
+    await requestMetadata(
+      correlationId ? "" : xml,
+      operation,
+      correlationId ? null : "application/xml",
+    ),
+    text(declaration.CUST_DeclarationKind, 40),
+  );
   const { data: submission, error: prepareError } = await admin.from(
     "ICUS_Submissions",
   ).update({
     ICUSS_Status: "submitting",
-    ICUSS_IdempotencyKey: idempotencyKey,
-    ICUSS_RequestMethod: "POST",
-    ICUSS_RequestPath: `/api/cds/v1/submit/${correlationId}`,
-    ICUSS_RequestHeadersJSON: {},
-    ICUSS_RequestPayloadJSON: { operation: "submit", correlationId },
     ICUSS_DeclarationSnapshotJSON: declarationSnapshot,
-    ICUSS_AttemptCount: Number(latest.ICUSS_AttemptCount ?? 0) + 1,
     ICUSS_UpdatedAt: new Date().toISOString(),
     ICUSS_UpdatedBy: actor.User_ID,
-  }).eq("ICUSS_id", latest.ICUSS_id).select("*").single();
+  }).eq("ICUSS_id", queuedSubmission.ICUSS_id).select("*").single();
   if (prepareError) throw new HttpError(500, prepareError.message);
   try {
-    const response = await connectedICustomsClient().submit(
-      correlationId,
-    );
+    const client = connectedICustomsClient();
+    const response = correlationId
+      ? await client.submitDraft(correlationId)
+      : await client.draftAndSubmit(xml);
+    const responseRecord = providerRecord(response.body);
+    if (responseRecord.success === false) {
+      throw new ICustomsProviderError(
+        Number(responseRecord.status) || response.status || 502,
+        text(responseRecord.message, 500) ||
+          "The customs service could not submit this declaration.",
+        "icustoms_submission_failed",
+        response.body,
+      );
+    }
+    const resolvedCorrelationId = correlationId ||
+      providerCorrelationId(response.body);
+    if (!resolvedCorrelationId) {
+      throw new ICustomsProviderError(
+        502,
+        "The customs service queued the declaration without returning its reference.",
+        "icustoms_correlation_missing",
+        response.body,
+      );
+    }
     const saved = await saveProviderSuccess(
       admin,
       actor,
@@ -935,14 +1032,14 @@ async function submitDeclaration(
       submission as Json,
       response,
       "submitted",
-      correlationId,
+      resolvedCorrelationId,
     );
     await audit(
       admin,
       actor,
       declarationId,
       "icustoms_submitted",
-      "The declaration was submitted once to the iCustoms sandbox.",
+      "The declaration was queued once for iCustoms sandbox submission and webhook delivery.",
       { status: declaration.CUST_Status },
       {
         status: saved.declaration.CUST_Status,
@@ -964,6 +1061,7 @@ async function refreshDeclaration(
   user: User,
   actor: Actor,
   declarationId: string,
+  token: string,
 ) {
   const declaration = await declarationForUser(
     admin,
@@ -979,6 +1077,57 @@ async function refreshDeclaration(
       409,
       "This declaration does not have a customs test draft yet.",
     );
+  }
+  const { data: recoverableEvents, error: recoverableError } = await admin
+    .from("ICUS_WebhookEvents")
+    .select("ICUSWH_id")
+    .eq("ICUSWH_ApiConnectionID", latest.ICUSS_ApiConnectionID)
+    .eq("ICUSWH_CorrelationID", correlationId)
+    .eq("ICUSWH_SignatureVerified", true)
+    .is("ICUSWH_DocumentSHA256", null)
+    .neq("ICUSWH_ProcessStatus", "processed")
+    .not("ICUSWH_RawStoragePath", "is", null)
+    .order("ICUSWH_ReceivedAt", { ascending: false })
+    .limit(10);
+  if (recoverableError) throw new HttpError(500, recoverableError.message);
+  let webhookDocumentRecovered = false;
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "") ?? "";
+  if (!supabaseUrl) throw new HttpError(503, "Supabase is not configured.");
+  for (const event of recoverableEvents ?? []) {
+    const eventId = uuid(event.ICUSWH_id);
+    if (!eventId) continue;
+    const replay = await fetch(
+      `${supabaseUrl}/functions/v1/icustoms-webhook/replay/${eventId}`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+    const replayBody = await replay.json().catch(() => ({})) as Json;
+    if (replay.ok && replayBody.documentAvailable === true) {
+      webhookDocumentRecovered = true;
+      break;
+    }
+    if (replay.status === 409) continue;
+    if (replay.status >= 500) {
+      throw new HttpError(502, "The captured iCustoms document could not be recovered yet.");
+    }
+  }
+  if (webhookDocumentRecovered) {
+    const recoveredDeclaration = await declarationForUser(
+      admin,
+      user,
+      declarationId,
+      false,
+      true,
+    );
+    return {
+      declaration: publicDeclaration(
+        recoveredDeclaration,
+        await latestSubmission(admin, declarationId),
+      ),
+      webhookDocumentRecovered: true,
+    };
   }
   const response = await connectedICustomsClient().notifications(
     correlationId,
@@ -1019,6 +1168,7 @@ async function refreshDeclaration(
   );
   return {
     declaration: publicDeclaration(saved.declaration, saved.submission),
+    webhookDocumentRecovered,
   };
 }
 
@@ -1106,7 +1256,7 @@ Deno.serve(async (request) => {
   }
   try {
     const admin = adminClient();
-    const { user } = await authenticate(request, admin);
+    const { user, token } = await authenticate(request, admin);
     const actor = await currentInternalUser(admin, user) as Actor;
     const parts = routeParts(request, "icustoms-api");
     const method = request.method.toUpperCase();
@@ -1201,7 +1351,7 @@ Deno.serve(async (request) => {
     if (method === "POST" && parts[2] === "refresh") {
       return json(
         request,
-        await refreshDeclaration(admin, user, actor, declarationId),
+        await refreshDeclaration(admin, user, actor, declarationId, token),
       );
     }
     throw new HttpError(404, "Customs service route not found.");

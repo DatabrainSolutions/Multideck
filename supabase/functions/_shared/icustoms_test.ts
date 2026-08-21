@@ -6,6 +6,7 @@ import {
   ICustomsClient,
   iCustomsCommodityDetail,
   iCustomsCommoditySuggestions,
+  providerCorrelationId,
   providerIssues,
   validateICustomsB1Export,
   validateICustomsH1Import,
@@ -43,6 +44,7 @@ function validDeclaration(): ExportDeclarationInput {
     consigneePostcode: "75001",
     consigneeCountry: "FR",
     carrier: "GB Carrier Ltd",
+    carrierIdentifier: "GB123456789000",
     declarant: "GB123456789000",
     declarantName: "Sandbox Declarant Ltd",
     declarantAddressLine: "3 Customs Street",
@@ -370,13 +372,13 @@ Deno.test("buildICustomsB1ExportXml keeps common parties, destinations and previ
   );
   assert(
     xml.includes(
-      "<Consignment><Carrier><Name>GB Carrier Ltd</Name></Carrier></Consignment>",
+      "<Consignment><Carrier><Name>GB Carrier Ltd</Name><ID>GB123456789000</ID></Carrier></Consignment>",
     ),
-    "Expected the saved carrier in the declaration-level iCustoms consignment.",
+    "Expected the saved carrier name and identifier in the declaration-level iCustoms consignment.",
   );
   assert(
-    xml.includes("<Consignor><Name>GB Consignor Ltd</Name></Consignor>"),
-    "Expected the saved consignor on the export goods item.",
+    !xml.includes("<Consignor>"),
+    "Expected B1 goods items to omit the provider-disallowed consignor.",
   );
   assert(
     xml.includes(
@@ -391,7 +393,7 @@ Deno.test("buildICustomsB1ExportXml keeps common parties, destinations and previ
   );
 });
 
-Deno.test("multi-item B1 exports keep the consignee at item level only", () => {
+Deno.test("multi-item B1 exports keep the consignee at item level and omit consignors", () => {
   const declaration = validDeclaration();
   const firstItem = (declaration.items as Array<Record<string, unknown>>)[0];
   declaration.totalAmount = "2000";
@@ -419,8 +421,8 @@ Deno.test("multi-item B1 exports keep the consignee at item level only", () => {
     "Expected one item-level consignee per goods line.",
   );
   assert(
-    occurrences(xml, "<Consignor>") === 2,
-    "Expected every goods line to keep its persisted consignor.",
+    occurrences(xml, "<Consignor>") === 0,
+    "Expected B1 goods lines to omit provider-disallowed consignors.",
   );
 });
 
@@ -989,6 +991,92 @@ Deno.test("ICustomsClient authenticates once and sends the draft with a bearer t
     new Headers(calls[1].init?.headers).get("Authorization") ===
       "Bearer sandbox-token",
     "Expected the bearer token on the draft request.",
+  );
+});
+
+Deno.test("ICustomsClient queues a new declaration on the webhook-enabled endpoint", async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const transport = ((url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init });
+    if (calls.length === 1) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ token: "sandbox-token" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          success: true,
+          declarations: [{
+            success: true,
+            co_relation_id: "queued-sandbox-correlation",
+            status: "Submitting...",
+          }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+  }) as typeof fetch;
+  const client = new ICustomsClient({
+    baseUrl: "https://ihub-tdr.customscloud.co",
+    environment: "sandbox",
+    apiKey: "test-key",
+    apiSecret: "test-secret",
+  }, transport);
+
+  const xml = buildICustomsB1ExportXml(validDeclaration());
+  const response = await client.draftAndSubmit(xml);
+
+  assert(
+    calls[1].url.endsWith("/api/cds/v1/draft-and-submit") &&
+      calls[1].init?.method === "POST" &&
+      new Headers(calls[1].init?.headers).get("Content-Type") ===
+        "application/xml" &&
+      calls[1].init?.body === xml,
+    "Expected the complete XML on the documented queued submission route.",
+  );
+  assert(
+    providerCorrelationId(response.body) === "queued-sandbox-correlation",
+    "Expected the nested queued response correlation ID.",
+  );
+});
+
+Deno.test("ICustomsClient submits an existing complete provider draft by correlation ID", async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const transport = ((url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init });
+    if (calls.length === 1) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ token: "sandbox-token" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({ success: true, status: 200, message: "Draft submitted successfully" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+  }) as typeof fetch;
+  const client = new ICustomsClient({
+    baseUrl: "https://ihub-tdr.customscloud.co",
+    environment: "sandbox",
+    apiKey: "test-key",
+    apiSecret: "test-secret",
+  }, transport);
+
+  await client.submitDraft("queued-sandbox-correlation");
+
+  assert(
+    calls[1].url.endsWith("/api/cds/v1/submit/queued-sandbox-correlation") &&
+      calls[1].init?.method === "POST" &&
+      calls[1].init?.body === undefined,
+    "Expected the documented submit-only call for an existing complete provider draft.",
   );
 });
 

@@ -116,7 +116,6 @@ export function ThemeProvider({
     // The ref is the synchronous authority for user intent. Update it before
     // touching the document so an older concurrent render can only reconcile
     // towards the newest deliberate choice.
-    const stateChanged = themeRef.current !== mode
     themeRef.current = mode
 
     // Apply the document synchronously. React state can temporarily survive HMR
@@ -133,7 +132,10 @@ export function ThemeProvider({
       }
     }
 
-    if (stateChanged) setThemeState(mode)
+    // Publish from the current React value, not from the ref. A click can leave
+    // the document and ref on the new mode while a stale render still holds the
+    // previous one; skipping that publish is what freezes the switch.
+    setThemeState((current) => (current === mode ? current : mode))
   }, [applyDocumentTheme, storageKey])
 
   const setTheme = useCallback((nextTheme: ThemeSetter) => {

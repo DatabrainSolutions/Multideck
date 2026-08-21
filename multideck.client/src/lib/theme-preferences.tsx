@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react"
-import { useTheme } from "@/lib/theme-provider"
+import { useTheme, type ThemeMode } from "@/lib/theme-provider"
 import { getApiWorkspacePreferences } from "@/lib/api"
 import { supabase } from "@/lib/supabase"
 import { updateWorkspaceBootstrapPreferences } from "@/lib/workspace-bootstrap"
 
-type ThemeMode = "light" | "dark"
+type ThemeSetter = ThemeMode | ((current: ThemeMode) => ThemeMode)
 
 /** Also read by the pre-paint script in index.html, which must use the same key. */
 export const themeStorageKey = "multideck.theme"
@@ -110,7 +110,10 @@ function recordChoice(mode: ThemeMode) {
 }
 
 function setActiveUser(userId: string | null) {
-  if (activeUserId !== null && activeUserId !== userId) {
+  // A token refresh can briefly report no user. That is not a new account, and
+  // must not throw away the mode on screen or the write still in flight.
+  const switchedAccount = userId !== null && activeUserId !== null && activeUserId !== userId
+  if (switchedAccount) {
     hydratedUserId = null
     hydratingUserId = null
     lastPersistedTheme = null
@@ -119,7 +122,10 @@ function setActiveUser(userId: string | null) {
     canPersistProfileTheme = true
     preferenceRevision += 1
   }
+
+  const resumedSameUser = userId !== null && activeUserId === null && hydratedUserId === userId
   activeUserId = userId
+  if (resumedSameUser && latestChoice) saveTheme(latestChoice)
 }
 
 function saveTheme(mode: ThemeMode) {
@@ -172,11 +178,24 @@ function saveTheme(mode: ThemeMode) {
  * ThemeProvider owns the root class, local storage, transition lock, and its own
  * cross-tab visual sync; this module records intent and persists it separately.
  */
-export function setThemeWithProfileIntent(setTheme: (mode: ThemeMode) => void, mode: ThemeMode) {
+export function setThemeWithProfileIntent(setTheme: (nextTheme: ThemeSetter) => void, mode: ThemeMode) {
   recordChoice(mode)
   persistThemeIntent(mode)
   setTheme(mode)
   saveTheme(mode)
+}
+
+/** Toggle from the live provider value so a second click cannot repeat a stale mode. */
+export function toggleThemeWithProfileIntent(setTheme: (nextTheme: ThemeSetter) => void): ThemeMode {
+  let nextMode: ThemeMode = "light"
+  setTheme((current) => {
+    nextMode = current === "dark" ? "light" : "dark"
+    recordChoice(nextMode)
+    persistThemeIntent(nextMode)
+    saveTheme(nextMode)
+    return nextMode
+  })
+  return nextMode
 }
 
 /**

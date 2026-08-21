@@ -492,6 +492,9 @@ verify_jwt = false
 [functions.icustoms-api]
 verify_jwt = true
 
+[functions.icustoms-webhook]
+verify_jwt = false
+
 [functions.screening]
 verify_jwt = true
 

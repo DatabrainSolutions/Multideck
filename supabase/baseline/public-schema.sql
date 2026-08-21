@@ -85814,3 +85814,130 @@ revoke all on function public.multideck_dexter_action_create_purchase_order(uuid
 insert into public."sys_AIDexterActions" ("AIDexterAction_Code","AIDexterAction_DomainCode","AIDexterAction_Name","AIDexterAction_Description","AIDexterAction_Function","AIDexterAction_ParametersJSON","AIDexterAction_SortOrder","AIDexterAction_IsActive","AIDexterAction_UpdatedAt") values
 ('create_purchase_order','purchase_orders','Create purchase order','Create a reviewed draft purchase order through the Warehouse Edge Function. Approval is always required.','multideck_dexter_action_create_purchase_order','{"type":"object","properties":{"facility_id":{"type":"string"},"customer_org_id":{"type":"string"},"number":{"type":"string"},"supplier_name":{"type":["string","null"]},"supplier_org_id":{"type":["string","null"]},"currency_code":{"type":"string"},"issue_date":{"type":["string","null"]},"expected_delivery_date":{"type":["string","null"]},"notes":{"type":["string","null"]},"lines":{"type":"array","items":{"type":"object","properties":{"item_id":{"type":["string","null"]},"sku":{"type":["string","null"]},"description":{"type":"string"},"quantity":{"type":"number","exclusiveMinimum":0},"uom_code":{"type":"string"},"unit_price":{"type":"number","minimum":0},"tax_rate":{"type":"number","minimum":0}},"required":["item_id","sku","description","quantity","uom_code","unit_price","tax_rate"],"additionalProperties":false}}},"required":["facility_id","customer_org_id","number","supplier_name","supplier_org_id","currency_code","issue_date","expected_delivery_date","notes","lines"],"additionalProperties":false}'::jsonb,16,true,now())
 on conflict ("AIDexterAction_Code") do update set "AIDexterAction_DomainCode"=excluded."AIDexterAction_DomainCode","AIDexterAction_Name"=excluded."AIDexterAction_Name","AIDexterAction_Description"=excluded."AIDexterAction_Description","AIDexterAction_Function"=excluded."AIDexterAction_Function","AIDexterAction_ParametersJSON"=excluded."AIDexterAction_ParametersJSON","AIDexterAction_IsActive"=true,"AIDexterAction_UpdatedAt"=now();
+
+-- iCustoms webhook delivery and declaration-document provisioning parity.
+-- This block is intentionally appended to the generated baseline so new
+-- physical tenant projects receive the same hardened receiver schema as the
+-- incremental migration without reordering the historical schema dump.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'icustoms-webhook-captures',
+  'icustoms-webhook-captures',
+  false,
+  52428800,
+  array[
+    'application/json',
+    'application/octet-stream',
+    'application/pdf',
+    'application/x-www-form-urlencoded',
+    'multipart/form-data',
+    'text/plain'
+  ]::text[]
+)
+on conflict (id) do update
+set public = false,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
+alter table public."ICUS_Submissions"
+  add column if not exists "ICUSS_ProviderStatus" text;
+
+alter table public."ICUS_WebhookEvents"
+  add column if not exists "ICUSWH_CorrelationID" character varying(160),
+  add column if not exists "ICUSWH_BodySHA256" character(64),
+  add column if not exists "ICUSWH_ContentType" character varying(160),
+  add column if not exists "ICUSWH_BodySizeBytes" integer,
+  add column if not exists "ICUSWH_RawStorageBucket" text,
+  add column if not exists "ICUSWH_RawStoragePath" text,
+  add column if not exists "ICUSWH_SubmissionID" uuid references public."ICUS_Submissions"("ICUSS_id") on delete set null,
+  add column if not exists "ICUSWH_DocumentSHA256" character(64),
+  add column if not exists "ICUSWH_NotificationID" uuid references public."Comm_Notifications"("CommNotif_ID") on delete set null;
+
+alter table public."ICUS_WebhookEvents"
+  add constraint "CK_ICUS_WebhookEvents_body_hash" check ("ICUSWH_BodySHA256" is null or "ICUSWH_BodySHA256" ~ '^[0-9a-f]{64}$'),
+  add constraint "CK_ICUS_WebhookEvents_document_hash" check ("ICUSWH_DocumentSHA256" is null or "ICUSWH_DocumentSHA256" ~ '^[0-9a-f]{64}$'),
+  add constraint "CK_ICUS_WebhookEvents_body_size" check ("ICUSWH_BodySizeBytes" is null or "ICUSWH_BodySizeBytes" between 0 and 52428800);
+
+create unique index if not exists "UX_ICUS_WebhookEvents_delivery"
+  on public."ICUS_WebhookEvents" ("ICUSWH_ApiConnectionID", coalesce(nullif("ICUSWH_EventID", ''), "ICUSWH_BodySHA256"));
+create index if not exists "IX_ICUS_WebhookEvents_correlation"
+  on public."ICUS_WebhookEvents" ("ICUSWH_CorrelationID", "ICUSWH_ReceivedAt" desc);
+alter table public."ICUS_WebhookEvents" enable row level security;
+revoke all on table public."ICUS_WebhookEvents" from public, anon, authenticated;
+grant all on table public."ICUS_WebhookEvents" to service_role;
+
+create table if not exists public."Customs_DeclarationDocuments" (
+  "CUSTD_ID" uuid primary key default gen_random_uuid(),
+  "CUSTD_CustomsID" uuid not null references public."Customs_Declarations"("CUST_id") on delete restrict,
+  "CUSTD_Direction" text not null check ("CUSTD_Direction" in ('import', 'export')),
+  "CUSTD_SourceSHA256" text not null check ("CUSTD_SourceSHA256" ~ '^[0-9a-f]{64}$'),
+  "CUSTD_SourceCode" text not null default 'multideck_carbone' check ("CUSTD_SourceCode" in ('multideck_carbone', 'icustoms_webhook', 'icustoms_provider_recovery')),
+  "CUSTD_ProviderEventID" text,
+  "CUSTD_ProviderEnvironment" text not null default 'sandbox' check ("CUSTD_ProviderEnvironment" in ('sandbox', 'production')),
+  "CUSTD_IsOfficial" boolean not null default false,
+  "CUSTD_ProviderStatus" text,
+  "CUSTD_MRN" text,
+  "CUSTD_FileName" text not null,
+  "CUSTD_StorageBucket" text not null default 'multideck-generated',
+  "CUSTD_StoragePath" text not null,
+  "CUSTD_MimeType" text not null default 'application/pdf',
+  "CUSTD_FileSizeBytes" bigint not null check ("CUSTD_FileSizeBytes" > 0),
+  "CUSTD_FileSHA256" text not null check ("CUSTD_FileSHA256" ~ '^[0-9a-f]{64}$'),
+  "CUSTD_RetainUntil" timestamptz not null,
+  "CUSTD_ReceivedAt" timestamptz not null default now(),
+  "CUSTD_CreatedAt" timestamptz not null default now(),
+  "CUSTD_CreatedBy" uuid not null references auth.users(id),
+  constraint "CK_Customs_DeclarationDocuments_accepted_retention"
+    check ("CUSTD_RetainUntil" >= "CUSTD_CreatedAt" + interval '7 years')
+);
+
+create unique index if not exists "UX_Customs_DeclarationDocuments_snapshot"
+  on public."Customs_DeclarationDocuments" ("CUSTD_CustomsID", "CUSTD_SourceSHA256");
+create unique index if not exists "UX_Customs_DeclarationDocuments_provider_event"
+  on public."Customs_DeclarationDocuments" ("CUSTD_ProviderEventID")
+  where "CUSTD_SourceCode" = 'icustoms_webhook' and "CUSTD_ProviderEventID" is not null;
+create index if not exists "IX_Customs_DeclarationDocuments_declaration"
+  on public."Customs_DeclarationDocuments" ("CUSTD_CustomsID", "CUSTD_ReceivedAt" desc);
+create index if not exists "IX_Customs_DeclarationDocuments_retention"
+  on public."Customs_DeclarationDocuments" ("CUSTD_RetainUntil");
+
+alter table public."Customs_DeclarationDocuments" enable row level security;
+revoke all on table public."Customs_DeclarationDocuments" from public, anon;
+grant select on table public."Customs_DeclarationDocuments" to authenticated;
+grant all on table public."Customs_DeclarationDocuments" to service_role;
+create policy "Users read own Customs declaration documents"
+  on public."Customs_DeclarationDocuments" for select to authenticated
+  using (exists (
+    select 1 from public."Customs_Declarations" declaration
+    where declaration."CUST_id" = "CUSTD_CustomsID"
+      and declaration."CUST_CreatedBy" = auth.uid()
+      and not declaration."CUST_IsDeleted"
+  ));
+
+alter table public."Customs_Declarations"
+  add column if not exists "CUST_AssignedUserID" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "CUST_DeclarationDocumentID" uuid references public."Customs_DeclarationDocuments"("CUSTD_ID") on delete restrict,
+  add column if not exists "CUST_DeclarationDocumentFileName" text,
+  add column if not exists "CUST_DeclarationDocumentMimeType" text,
+  add column if not exists "CUST_DeclarationDocumentReceivedAt" timestamptz;
+
+create unique index if not exists "UX_Comm_Notifications_icustoms_event"
+  on public."Comm_Notifications" (("CommNotif_MetadataJSON" ->> 'provider_event_id'))
+  where "CommNotif_LinkTypeCode" = 'customs'
+    and "CommNotif_MetadataJSON" ->> 'event_type' = 'icustoms_webhook'
+    and nullif("CommNotif_MetadataJSON" ->> 'provider_event_id', '') is not null;
+create unique index if not exists "UX_ICUS_SubmissionEvents_webhook_event"
+  on public."ICUS_SubmissionEvents" (("ICUSE_EventPayloadJSON" ->> 'providerEventId'))
+  where "ICUSE_EventType" in ('icustoms_webhook_notification', 'icustoms_webhook_document')
+    and nullif("ICUSE_EventPayloadJSON" ->> 'providerEventId', '') is not null;
+
+create or replace function public._multideck_customs_declaration_document_immutable()
+returns trigger language plpgsql security definer set search_path=pg_catalog,public as $$
+begin
+  raise exception 'Customs declaration document evidence is immutable.' using errcode='55000';
+end;
+$$;
+revoke all on function public._multideck_customs_declaration_document_immutable() from public,anon,authenticated;
+create trigger "TR_Customs_DeclarationDocuments_immutable"
+before update or delete on public."Customs_DeclarationDocuments"
+for each row execute function public._multideck_customs_declaration_document_immutable();
