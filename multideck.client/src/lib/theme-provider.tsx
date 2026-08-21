@@ -114,8 +114,8 @@ export function ThemeProvider({
 
   const commitTheme = useCallback((mode: ThemeMode, { persist = true } = {}) => {
     // The ref is the synchronous authority for user intent. Update it before
-    // touching the document so a MutationObserver or an older concurrent
-    // render can only reconcile towards the newest deliberate choice.
+    // touching the document so an older concurrent render can only reconcile
+    // towards the newest deliberate choice.
     const stateChanged = themeRef.current !== mode
     themeRef.current = mode
 
@@ -158,21 +158,6 @@ export function ThemeProvider({
     window.addEventListener("storage", adoptThemeFromAnotherTab)
     return () => window.removeEventListener("storage", adoptThemeFromAnotherTab)
   }, [commitTheme, storageKey])
-
-  useEffect(() => {
-    const root = document.documentElement
-    const reconcileDocumentTheme = () => {
-      // StrictMode, hot replacement, or a deployment handover can briefly
-      // leave an older observer alive. The shared cache is updated by every
-      // real theme commit, so all observer instances must follow it instead of
-      // repainting from their own potentially stale ref.
-      const expectedMode = readStoredTheme(storageKey, themeRef.current)
-      if (!documentHasTheme(expectedMode)) applyDocumentTheme(expectedMode)
-    }
-    const observer = new MutationObserver(reconcileDocumentTheme)
-    observer.observe(root, { attributes: true, attributeFilter: ["class", "style"] })
-    return () => observer.disconnect()
-  }, [applyDocumentTheme, storageKey])
 
   useEffect(() => () => releaseTransitionRef.current?.(), [])
 

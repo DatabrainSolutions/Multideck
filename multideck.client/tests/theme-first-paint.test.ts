@@ -118,23 +118,12 @@ test("an older concurrent render cannot repaint over the latest theme choice", (
   assert.doesNotMatch(layoutCommit, /commitTheme\(theme, /)
 })
 
-test("the provider repairs an external root-class drift without polling", () => {
-  assert.match(themeProvider, /const reconcileDocumentTheme = \(\) => \{/)
-  assert.match(themeProvider, /const expectedMode = readStoredTheme\(storageKey, themeRef\.current\)/)
-  assert.match(themeProvider, /if \(!documentHasTheme\(expectedMode\)\) applyDocumentTheme\(expectedMode\)/)
-  assert.match(themeProvider, /new MutationObserver\(reconcileDocumentTheme\)/)
-  assert.match(themeProvider, /attributeFilter: \["class", "style"\]/)
-  assert.match(themeProvider, /return \(\) => observer\.disconnect\(\)/)
-  assert.match(themeProvider, /\}, \[applyDocumentTheme, storageKey\]\)/)
+test("the provider has one theme authority instead of an independent root observer", () => {
+  // Theme changes already flow through commitTheme, including cross-tab
+  // storage events. A root observer creates a second authority that can outlive
+  // its render and repaint over a newer user choice.
+  assert.doesNotMatch(themeProvider, /MutationObserver/)
   assert.doesNotMatch(themeProvider, /setInterval/)
-})
-
-test("a stale observer follows the shared cached choice instead of its private ref", () => {
-  const observer = themeProvider.match(/const reconcileDocumentTheme = \(\) => \{[\s\S]*?\n    \}/)?.[0] ?? ""
-
-  assert.match(observer, /readStoredTheme\(storageKey, themeRef\.current\)/)
-  assert.doesNotMatch(observer, /documentHasTheme\(themeRef\.current\)/)
-  assert.doesNotMatch(observer, /applyDocumentTheme\(themeRef\.current\)/)
 })
 
 test("no production surface can reintroduce next-themes' passive-effect boundary", () => {
