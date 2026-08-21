@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEven
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { ArrowLeft, Check, CheckCheck, CircleAlert, FileText, Merge, Minus, ScanText, ShieldCheck, Split, Square } from "@/components/icons/hugeicons"
 import { useReducedMotion } from "motion/react"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/lib/theme-provider"
 import { toast } from "sonner"
 import docsFolderAnimation from "@/assets/animations/docs-folder.json"
 import { Button } from "@/components/ui/button"

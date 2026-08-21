@@ -19,7 +19,7 @@ import { createProfilePhotoSignedUrl } from "@/lib/profile-photo"
 import { supabase } from "@/lib/supabase"
 import { useAiAgentName } from "@/lib/user-preferences"
 import { mailboxLabelTone } from "@/lib/mailbox-label-colour"
-import { customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
+import { customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, todoNavItem, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
 import { readSettingsSectionFromUrl, settingsNavigationGroups, type SettingsSectionId } from "@/data/settings-navigation"
 import { useLanguage } from "@/i18n/language-provider"
 import { deleteDexterConversation, getDexterUsage, listDexterConversationsPage, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
@@ -648,7 +648,7 @@ function destinationMatches(destination: SidebarDestination, route: string) {
  * areas rail stays visible instead of opening a pane that does not own them.
  */
 function isTopLevelRoute(route: string) {
-  return route === "/" || route === "/inbox" || route === "/agent-dexter"
+  return route === "/" || route === "/inbox" || route === "/to-do" || route === "/agent-dexter"
 }
 
 function findAreaForRoute(route: string, areas: SidebarArea[] = sidebarAreas) {
@@ -1412,6 +1412,7 @@ export function AppSidebar({
       <SidebarNavItem
         item={homeNavItem}
         isActive={route === "/"}
+        onIntent={() => { if (typeof window !== "undefined") void import("@/pages/home-page") }}
         onClick={() => navigate("/")}
         collapsed={collapsed}
       />
@@ -1428,6 +1429,18 @@ export function AppSidebar({
           if (typeof window !== "undefined") void import("@/pages/inbox-page")
         }}
         onClick={() => navigate("/inbox")}
+        collapsed={collapsed}
+      />
+    </SidebarSectionItem>
+  )
+
+  const todoSidebarItem = (
+    <SidebarSectionItem>
+      <SidebarNavItem
+        item={todoNavItem}
+        isActive={route === "/to-do"}
+        onIntent={() => { if (typeof window !== "undefined") void import("@/pages/to-do-page") }}
+        onClick={() => navigate("/to-do")}
         collapsed={collapsed}
       />
     </SidebarSectionItem>
@@ -1503,7 +1516,7 @@ export function AppSidebar({
         >
           <div>
         {isSettingsRoute || isCustomer || isAgentRoute || isInboxRoute ? null : (
-          <SidebarSection>{homeSidebarItem}{inboxSidebarItem}{dexterSidebarItem}</SidebarSection>
+          <SidebarSection>{homeSidebarItem}{inboxSidebarItem}{todoSidebarItem}{dexterSidebarItem}</SidebarSection>
         )}
 
         <AnimatePresence mode="popLayout" initial={false}>

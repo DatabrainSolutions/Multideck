@@ -20,7 +20,7 @@ test("submission persists current edits and passes server validation before conf
   assert.ok(prepareStart > -1)
   assert.ok(submitStart > prepareStart)
   assert.match(prepare, /completion\.issues\.length/u)
-  assert.match(prepare, /saveStandaloneDeclarationDraft\(draft, declarationId\)/u)
+  assert.match(prepare, /saveDeclarationDraft\(draft, declarationId\)/u)
   assert.match(prepare, /validateICustomsDeclaration\(saved\.id\)/u)
   assert.match(prepare, /if \(!validation\.ready\)[\s\S]*setICustomsIssues\(validation\.issues\)[\s\S]*revealReviewIssues\(\)/u)
   assert.match(prepare, /setSubmitDialogOpen\(true\)/u)

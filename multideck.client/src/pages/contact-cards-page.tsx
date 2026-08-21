@@ -768,7 +768,7 @@ export function ContactCardDetailPage({ cardId, navigate, currentUser }: { cardI
                               <span className="text-[12px] text-[var(--md-subtle)] tabular-nums">
                                 {new Date(exchange.at).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                               </span>
-                              <StatusPill tone={exchange.outcome === "created" ? "teal" : "neutral"}>
+                              <StatusPill kind="status" tone={exchange.outcome === "created" ? "teal" : "neutral"} indicator={false}>
                                 {t(exchange.outcome === "created" ? "New lead" : "Matched existing")}
                               </StatusPill>
                             </div>

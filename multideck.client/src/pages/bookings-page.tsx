@@ -27,6 +27,7 @@ import { Progress } from "@/components/ui/progress"
 import { useLanguage } from "@/i18n/language-provider"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { getSavedView, saveView } from "@/lib/view-preferences"
+import { useStarredJobs } from "@/lib/starred-jobs"
 import {
   createEmptyFilterQuery,
   type FilterFieldOption,
@@ -141,6 +142,8 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
   const [tableSummary, setTableSummary] = useState<BookingRegisterSummary>(emptyBookingSummary)
   const [bookingsLoading, setBookingsLoading] = useState(true)
   const [bookingsError, setBookingsError] = useState<string | null>(null)
+  // The register's own favourite flag is the saved truth; anything the operator
+  // stars here is kept alongside it so Home and every other screen agree.
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set())
   const [serverSort, setServerSort] = useState<RegisterSort | null>(() => readSavedSort(bookingTableStorageKey, { id: "customerCargo", direction: "asc" }))
   const [search, setSearch] = useState<FilterQuery>(createEmptyFilterQuery)
@@ -155,6 +158,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
   const shipmentTypeFilters = shipmentTypeFiltersByMode[modeFilter]
   const registerScope = scope === "Mine" ? "My Jobs" : "All Jobs"
   const currentOperatorCode = currentUser?.initials ?? ""
+  const { isStarred, toggleStar } = useStarredJobs(currentUser?.id)
 
   useEffect(() => {
     const timer = globalThis.setTimeout(() => setDebouncedQuickSearch(quickSearch), 250)
@@ -227,14 +231,6 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
     if (page > pageCount) setPage(pageCount)
   }, [page, pageCount])
 
-  function toggleFavourite(id: string) {
-    setFavouriteIds((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
 
   function openBooking(booking: Booking) {
     navigate(getBookingDetailPath(booking.id))
@@ -264,7 +260,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
       maxWidth: 52,
       resizable: false,
       cell: (booking) => {
-        const favourite = favouriteIds.has(booking.id)
+        const favourite = isStarred(booking.id, favouriteIds.has(booking.id))
         return (
           <Button
             type="button"
@@ -274,7 +270,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
             className={favourite ? "size-8 text-[var(--md-amber)] transition-transform active:scale-[0.96] motion-reduce:transition-none" : "size-8 text-[var(--md-subtle)] transition-transform active:scale-[0.96] motion-reduce:transition-none"}
             onClick={(event) => {
               event.stopPropagation()
-              toggleFavourite(booking.id)
+              toggleStar(booking.id, favouriteIds.has(booking.id))
             }}
           >
             <Star className={favourite ? "size-4 fill-current" : "size-4"} strokeWidth={1.35} />

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises"
 import test from "node:test"
 
 const source = await readFile(new URL("../src/pages/customs-declarations-page.tsx", import.meta.url), "utf8")
+const readinessSource = await readFile(new URL("../src/components/multideck/customs-readiness-review.tsx", import.meta.url), "utf8")
 
 test("customs validation opens review instead of navigating to the source field", () => {
   assert.match(source, /setViewMode\("tabs"\)[\s\S]*selectTab\("review"\)/u)
@@ -11,14 +12,17 @@ test("customs validation opens review instead of navigating to the source field"
 })
 
 test("review fixes disclose focused editable fields in place", () => {
-  assert.match(source, /aria-expanded=\{expanded\}/u)
-  assert.match(source, /aria-controls=\{`customs-review-fix-/u)
+  assert.match(source, /<CustomsReadinessReview/u)
+  assert.match(readinessSource, /aria-expanded=\{expanded\}/u)
+  assert.match(readinessSource, /aria-controls=\{`customs-readiness-fix-/u)
   assert.match(source, /<ReviewFixFields draft=\{draft\} issue=\{issue\}/u)
-  assert.match(source, /querySelector<HTMLElement>\("input, textarea, button"\)\?\.focus\(\)/u)
+  assert.match(readinessSource, /querySelector<HTMLElement>\("input, textarea, select, button"\)\?\.focus\(\)/u)
   assert.match(source, /<CompactCustomsFormContext\.Provider value>/u)
   assert.doesNotMatch(source, /invalid && "ring-2 ring-\[color-mix\(in_srgb,var\(--md-red\)/u)
-  assert.match(source, /function confirmFix\(\)[\s\S]*setOpenFixKey\(null\)[\s\S]*setHeldIssue\(null\)/u)
-  assert.match(source, /onClick=\{confirmFix\}>\{t\("Confirm"\)\}<\/Button>/u)
+  assert.match(readinessSource, /renderFix\(issue, \(\) => setOpenFixKey\(null\)\)/u)
+  assert.match(readinessSource, /className="ms-7 mt-1 border-t border-\[var\(--md-line\)\] pt-3"/u)
+  assert.doesNotMatch(readinessSource, /customs-readiness-fix-[\s\S]*bg-\[var\(--md-surface-soft\)\]/u)
+  assert.match(source, /onClick=\{close\}>\{t\("Confirm"\)\}<\/Button>/u)
   assert.doesNotMatch(source, /Country`\]\s*\.filter\(/u)
   assert.match(source, /<ReviewFixSectionHeader draft=\{draft\} issue=\{issue\} t=\{t\} \/>/u)
 })
@@ -34,7 +38,7 @@ test("inline fixes cover grouped form and provider issues", () => {
 })
 
 test("provider rejection fixes stay in the main review panel", () => {
-  const reviewPanelEnd = source.indexOf('</Surface>\n    <div className="space-y-4">', source.indexOf("function ReviewSection"))
+  const reviewPanelEnd = source.indexOf('</CustomsReadinessReview>\n    <div className="space-y-4">', source.indexOf("function ReviewSection"))
   const providerFixes = source.indexOf("providerRejected && providerIssues.length", source.indexOf("function ReviewSection"))
 
   assert.ok(reviewPanelEnd > -1)

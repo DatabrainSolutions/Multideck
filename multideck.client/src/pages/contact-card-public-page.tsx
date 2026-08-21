@@ -75,6 +75,7 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
   const [downloaded, setDownloaded] = useState(false)
 
   const scanIdRef = useRef<string | null>(null)
+  const scanPromiseRef = useRef<Promise<string | null> | null>(null)
   const startedRef = useRef(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
@@ -91,7 +92,9 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
         }
         setCard(found)
         setLoadState("ready")
-        void recordScan(found.id, preview || found.status !== "published").then((scanId) => {
+        const scanPromise = recordScan(found.id, preview || found.status !== "published").catch(() => null)
+        scanPromiseRef.current = scanPromise
+        void scanPromise.then((scanId) => {
           if (!cancelled) scanIdRef.current = scanId
         })
       })
@@ -129,7 +132,9 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
     setValues((current) => ({ ...current, [key]: value }))
     if (!startedRef.current && card) {
       startedRef.current = true
-      recordFormStarted(card.id, scanIdRef.current)
+      const currentScanId = scanIdRef.current
+      if (currentScanId) recordFormStarted(card.id, currentScanId)
+      else void scanPromiseRef.current?.then((scanId) => recordFormStarted(card.id, scanId))
     }
   }
 
@@ -162,7 +167,8 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
     const slowTimer = window.setTimeout(() => setSlow(true), 5000)
 
     try {
-      await submitExchange(card.id, scanIdRef.current, values, preview || card.status !== "published")
+      const scanId = scanIdRef.current ?? await scanPromiseRef.current
+      await submitExchange(card.id, scanId, values, preview || card.status !== "published")
       // Only now does the exchange exist. Nothing is promised before this point.
       setPhase("done")
     } catch {

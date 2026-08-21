@@ -39,10 +39,13 @@ export function escapeHtml(value: string) {
 
 export function safeMultideckUrl(value: unknown, fallback = defaults.appUrl) {
   try {
-    const url = new URL(String(value ?? ""))
+    const url = new URL(String(value ?? ""), `${defaults.appUrl}/`)
     if (url.protocol !== "https:" && url.protocol !== "http:") return fallback
     if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return url.toString()
-    if (url.hostname === "multideck.app" || url.hostname.endsWith(".multideck.app")) return url.toString()
+    if (
+      url.hostname === "multideck.app" || url.hostname.endsWith(".multideck.app")
+      || url.hostname === "multideck.live" || url.hostname.endsWith(".multideck.live")
+    ) return url.toString()
     const supabaseUrl = Deno.env.get("SUPABASE_URL")
     if (supabaseUrl && url.origin === new URL(supabaseUrl).origin && url.pathname === "/auth/v1/verify") {
       return url.toString()

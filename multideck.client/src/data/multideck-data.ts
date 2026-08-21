@@ -2119,9 +2119,49 @@ export const galleryComponents = [
     category: "Feedback",
     description: "Compact semantic pills for every workflow status and descriptive attribute shown in a table.",
     details: "Every pill rendered inside an operator table uses the filled green, yellow, red, blue, orange, or purple semantic palette. The cyan information family uses a quieter, lower-saturation treatment in light mode, while dark mode retains the approved deep cyan pair. Pills outside tables keep the quieter surface shell and leading dot.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "To Do list", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n  const filledTablePill = tableKind !== null || kind === "status"\n\n  return (\n    <Badge\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill={filledTablePill ? "true" : undefined}\n      className={cn(baseClass, filledTablePill && filledTableClass, filledTablePill && tableToneClass[tone], className)}\n    >\n      {indicator ?? (!filledTablePill ? <span className="size-1.5 rounded-full" style={{ backgroundColor: toneToVar(tone) }} /> : null)}\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill kind="status" tone="purple">New</StatusPill>\n<StatusPill kind="status" tone="orange">Contacted</StatusPill>\n<StatusPill kind="status" tone="blue">Qualified</StatusPill>\n<StatusPill kind="status" tone="amber">Nurturing</StatusPill>\n<StatusPill kind="status" tone="green">Converted</StatusPill>\n<StatusPill kind="status" tone="red">Disqualified</StatusPill>\n\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
+  },
+  {
+    id: "todo-completion-control",
+    name: "To Do Completion Control",
+    category: "Controls",
+    description: "A personal-task checkbox with a tactile circle pop and a trimmed SVG tick.",
+    details: "Use for completing or reopening To Do tasks. The footprint stays stable through optimistic saves, the tick draws only after direct input, and reduced-motion users receive the final state immediately.",
+    foundOn: [{ label: "To Do list", route: "/to-do" }, { label: "Components", route: "/components?component=todo-completion-control" }],
+    componentCode: `export function TodoCompletionControl({ checked, busy, label, onChange }) {\n  const reduce = useReducedMotion()\n  return (\n    <button aria-label={label} aria-pressed={checked} aria-busy={busy || undefined} onClick={() => onChange(!checked)}>\n      <motion.svg viewBox="0 0 24 24" animate={reduce ? undefined : { scale: checked ? [1, 0.88, 1.08, 1] : 1 }}>\n        <motion.circle cx="12" cy="12" r="9.25" animate={{ fill: checked ? "var(--md-accent)" : "transparent" }} />\n        <motion.path d="M7.8 12.2 10.6 15l5.8-6.2" animate={{ pathLength: checked ? 1 : 0, opacity: checked ? 1 : 0 }} />\n      </motion.svg>\n    </button>\n  )\n}`,
+    usageCode: `<TodoCompletionControl\n  checked={task.status === "completed"}\n  busy={saving}\n  label={task.status === "completed" ? "Reopen task" : "Mark task complete"}\n  onChange={(checked) => updateTask({ status: checked ? "completed" : "open" })}\n/>`,
+  },
+  {
+    id: "todo-priority-pill",
+    name: "To Do Priority Pill",
+    category: "Feedback",
+    description: "The table-pill priority language for Low, Medium, High, and Urgent personal tasks.",
+    details: "Use only when an operator assigns a priority. Colour and a directional icon work together, so the priority remains understandable without relying on colour alone.",
+    foundOn: [{ label: "To Do list", route: "/to-do" }, { label: "Components", route: "/components?component=todo-priority-pill" }],
+    componentCode: `export function TodoPriorityPill({ priority }) {\n  const { label, tone, Icon } = priorityPresentation[priority]\n  return <StatusPill kind="status" tone={tone} indicator={<Icon aria-hidden="true" />}>{label}</StatusPill>\n}`,
+    usageCode: `{task.priority ? <TodoPriorityPill priority={task.priority} /> : null}`,
+  },
+  {
+    id: "todo-action-state-icon",
+    name: "To Do Action State Icon",
+    category: "Feedback",
+    description: "A fixed-footprint arrow, progress ring, and trimmed success tick for contextual task creation.",
+    details: "Use inside the Dexter Add to To Do action. The arrow yields to a compact progress ring during the real save, then the tick draws after confirmation. Only progress rotation is linear, and reduced motion switches states instantly.",
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=todo-action-state-icon" }],
+    componentCode: `export function TodoActionStateIcon({ state }) {\n  return (\n    <motion.svg viewBox="0 0 24 24">\n      <motion.g animate={{ opacity: state === "idle" ? 1 : 0 }}><path d="M5 12h13M13 7l5 5-5 5" /></motion.g>\n      <motion.circle animate={{ opacity: state === "loading" ? 1 : 0 }} />\n      <motion.path d="M6.8 12.2 10.4 15.7 17.5 8.3" animate={{ pathLength: state === "success" ? 1 : 0 }} />\n    </motion.svg>\n  )\n}`,
+    usageCode: `<button disabled={state !== "idle"}>\n  <span>Add to To Do list</span>\n  <TodoActionStateIcon state={state} />\n</button>`,
+  },
+  {
+    id: "todo-priority-picker",
+    name: "To Do Priority Picker",
+    category: "Controls",
+    description: "An icon-led priority selector for assigning task urgency without making every task feel urgent.",
+    details: "Use for task creation and editing. Each priority has a distinct icon and semantic colour; the menu keeps the standard Multideck surface and short entrance motion, with an explicit No priority state.",
+    foundOn: [{ label: "To Do list", route: "/to-do" }, { label: "Components", route: "/components?component=todo-priority-picker" }],
+    componentCode: `export function TodoPriorityPicker({ value, onValueChange, ariaLabel }) {\n  return (\n    <Select value={value || "none"} onValueChange={(next) => onValueChange(next === "none" ? "" : next)}>\n      <SelectTrigger aria-label={ariaLabel}><SelectValue /></SelectTrigger>\n      <SelectContent>{priorityOptions.map((option) => <SelectItem value={option.value}><PriorityOption {...option} /></SelectItem>)}</SelectContent>\n    </Select>\n  )\n}`,
+    usageCode: `<TodoPriorityPicker value={priority} ariaLabel="Priority" onValueChange={setPriority} />`,
   },
   {
     id: "kbd",
@@ -2173,6 +2213,36 @@ export const galleryComponents = [
     foundOn: [{ label: "Components", route: "/components?component=ai-edge-glow" }],
     componentCode: `export function AIEdgeGlow({ active = true, intensity = "active", variant = "surface", className, contentClassName, children }) {\n  return (\n    <div\n      className={cn(\n        "md-ai-edge-glow",\n        active && "md-ai-edge-glow--active",\n        intensity === "subtle" && "md-ai-edge-glow--subtle",\n        variant === "screen" && "md-ai-edge-glow--screen",\n        className,\n      )}\n      data-active={active ? "true" : "false"}\n    >\n      <span className="md-ai-edge-glow__wash" aria-hidden />\n      <span className="md-ai-edge-glow__signal" aria-hidden />\n      <span className="md-ai-edge-glow__frame" aria-hidden />\n      <div className={cn("relative z-10 h-full w-full", contentClassName)}>{children}</div>\n    </div>\n  )\n}`,
     usageCode: `<AIEdgeGlow active={isExtracting} variant="screen" className="min-h-screen rounded-none">\n  <NewJobWorkspace />\n</AIEdgeGlow>\n\n<AIEdgeGlow active={isCheckingRates} intensity="subtle" className="rounded-[var(--md-radius-2xl)]">\n  <RatesPanel />\n</AIEdgeGlow>`,
+  },
+  {
+    id: "home-dexter-launcher",
+    name: "Home Dexter Launcher",
+    category: "Home",
+    description: "The greeting and prompt box that opens Home: the real Dexter composer, a time-of-day welcome, and the prompts worth starting from today.",
+    details: "Use as the head of Home. The greeting follows the operator's own clock — morning, afternoon, evening, and a plain welcome for the hours before dawn. Writing clears the deck below; sending drops the composer to the position it holds in a conversation and hands the whole draft — specialist, model, access mode, @ records and uploads — to the Dexter workspace, so nothing the operator set up is lost in the route change.",
+    foundOn: [{ label: "Home", route: "/" }, { label: "Components", route: "/components?component=home-dexter-launcher" }],
+    componentCode: `export function HomeDexterLauncher({ operatorName, standfirst, suggestions, engaged, onEngagedChange, docked, onDockedChange, navigate }) {\n  const now = useMinuteTick()\n  const [value, setValue] = useState("")\n  const greeting = greetingPartForHour(now.getHours())\n\n  function handOver(prompt, specialistId) {\n    rememberDexterHomeHandoff({ prompt, specialistId, modelId, accessMode, fullAccessGrantId, clientSessionId, mentions, uploadedDocuments })\n    onDockedChange(true)\n  }\n\n  return (\n    <div className="mx-auto flex w-full flex-col">\n      <AnimatePresence initial={false}>\n        {engaged ? null : (\n          <motion.div key="home-greeting" className="mx-auto mb-[var(--md-page-section-gap)] text-center">\n            <DexterBrandMark className="size-6" />\n            <h1>{greeting}</h1>\n            <p>{standfirst}</p>\n          </motion.div>\n        )}\n      </AnimatePresence>\n\n      <motion.div layout layoutDependency={docked} onLayoutAnimationComplete={openWorkspace}>\n        <DexterPromptComposer value={value} onChange={setValue} onSend={handOver} />\n      </motion.div>\n\n      <AnimatePresence initial={false}>\n        {engaged ? null : <HomePromptRail suggestions={suggestions} onPick={handOver} />}\n      </AnimatePresence>\n    </div>\n  )\n}`,
+    usageCode: `const [engaged, setEngaged] = useState(false)\nconst [docked, setDocked] = useState(false)\n\n<HomeDexterLauncher\n  operatorName={currentUser?.name ?? null}\n  standfirst="Three jobs need you before today's cutoff."\n  suggestions={suggestions}\n  engaged={engaged}\n  onEngagedChange={setEngaged}\n  docked={docked}\n  onDockedChange={setDocked}\n  navigate={navigate}\n/>`,
+  },
+  {
+    id: "home-prompt-rail",
+    name: "Home Prompt Rail",
+    category: "Home",
+    description: "Personalised prompts on a hairline: rows drawn from the operator's own records, with one highlight that travels between them.",
+    details: "Use under a prompt box when the suggestions are real sentences of different lengths. Rows on a rule rather than a grid of pills, which reflows into a ragged block every time the underlying work changes. Every suggestion should name a record or a figure so the request it sends is never a guess.",
+    foundOn: [{ label: "Home", route: "/" }, { label: "Components", route: "/components?component=home-prompt-rail" }],
+    componentCode: `export function HomePromptRail({ suggestions, onPick }) {\n  const [activeId, setActiveId] = useState(null)\n\n  return (\n    <div role="list">\n      {suggestions.map((suggestion, index) => (\n        <motion.div key={suggestion.id} role="listitem" className="border-t border-[var(--md-line)] first:border-t-0">\n          <button\n            type="button"\n            className="group relative isolate flex w-full items-center gap-3 rounded-[var(--md-radius-lg)] px-2.5 py-2.5"\n            onPointerEnter={() => setActiveId(suggestion.id)}\n            onFocus={() => setActiveId(suggestion.id)}\n            onClick={() => onPick(suggestion.prompt, suggestion.specialistId)}\n          >\n            {activeId === suggestion.id ? (\n              <motion.span layoutId="rail-highlight" className="absolute inset-0 -z-10 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)]" />\n            ) : null}\n            <suggestion.icon className="size-[15px] text-[var(--md-accent)]" strokeWidth={1.35} />\n            <span className="min-w-0 flex-1 text-[13.5px] font-medium">{suggestion.title}</span>\n            <span className="text-[11.5px] text-[var(--md-subtle)]">{suggestion.meta}</span>\n          </button>\n        </motion.div>\n      ))}\n    </div>\n  )\n}`,
+    usageCode: `<HomePromptRail\n  suggestions={[\n    { id: "triage", title: "Work through what is due before cutoff", prompt: "Take my queue for today in deadline order…", meta: "4 due", icon: Zap, specialistId: "ops" },\n  ]}\n  onPick={(prompt, specialistId) => handOver(prompt, specialistId)}\n/>`,
+  },
+  {
+    id: "home-deck-panel",
+    name: "Home Deck Panel",
+    category: "Home",
+    description: "One module of Home's deck: a recessed grey block of short rows, or a bare heading over entries that are their own containers.",
+    details: "Use for a column of four or five facts that an operator scans rather than reads. `block` recesses the module behind the page so several of them read as one quiet band; `bare` keeps only the heading, for a column whose entries — a clock per region — are separate objects rather than a list. Pair with HomeDeckRow inside a block and HomeDeckTile outside one.",
+    foundOn: [{ label: "Home", route: "/" }, { label: "Components", route: "/components?component=home-deck-panel" }],
+    componentCode: `export function HomeDeckPanel({ title, count, action, variant = "block", children }) {\n  return (\n    <section\n      className={cn(\n        "flex h-full min-w-0 flex-col",\n        variant === "block" && "rounded-[var(--md-radius-2xl)] bg-[var(--md-deck-surface)] p-3",\n      )}\n      aria-label={title}\n    >\n      <header className="flex min-h-[20px] items-baseline justify-between gap-3">\n        <h2 className="truncate text-[12px] font-medium">{title}</h2>\n        <div className="flex shrink-0 items-baseline gap-2.5">\n          {count ? <span className="text-[11.5px] tabular-nums text-[var(--md-subtle)]">{count}</span> : null}\n          {action}\n        </div>\n      </header>\n      <div className={cn("mt-1.5 min-h-0 flex-1 overflow-y-auto", variant === "bare" && "flex flex-col gap-1.5")}>\n        {children}\n      </div>\n    </section>\n  )\n}`,
+    usageCode: `<HomeDeckPanel title="My jobs" count={starred.length} action={<HomeDeckAction onClick={showAll}>All</HomeDeckAction>}>\n  {jobs.map((job, index) => (\n    <HomeDeckRow key={job.id} index={index}>\n      <button type="button" className={homeDeckRowButtonClass} onClick={() => open(job)}>\n        <span>{job.id}</span>\n        <span className="truncate text-[var(--md-subtle)]">{job.customer}</span>\n      </button>\n    </HomeDeckRow>\n  ))}\n</HomeDeckPanel>\n\n<HomeDeckPanel variant="bare" title="Clocking off">\n  {regions.map((region, index) => <HomeDeckTile key={region.code} index={index}>{/* … */}</HomeDeckTile>)}\n</HomeDeckPanel>`,
   },
   {
     id: "dashboard-customise-panel",
@@ -2270,6 +2340,50 @@ export const galleryComponents = [
 // The default loader downloads through the signed-in tenant's
 // Inbox Edge Function. A custom loader is only useful for isolated previews.
 `,
+  },
+  {
+    id: "ai-prompt-morph",
+    name: "AI Prompt Morph",
+    category: "Agent Dexter",
+    description: "A circular Dexter pencil that expands in place into a compact single-line prompt without moving the surrounding row.",
+    details: "Use for optional AI refinement or drafting beside an existing workflow. Keep the 40px vertical anchor fixed, let the pill grow into available inline space, return focus to the trigger on close, and show work inside the same pill instead of opening another panel.",
+    foundOn: [
+      { label: "Broadcast", route: "/admin/broadcast" },
+      { label: "System Preferences", route: "/admin/system-preferences" },
+      { label: "Components", route: "/components?component=ai-prompt-morph" },
+    ],
+    componentCode: `export function AiPromptMorph({ open, value, busy, onOpenChange, onValueChange, onSubmit }) {
+  return (
+    <div className="relative h-10 w-full max-w-[520px]">
+      <AnimatePresence initial={false} mode="wait">
+        {open ? <motion.div className="absolute inset-0 flex gap-2">
+        <form className="flex h-10 min-w-0 flex-1 items-center rounded-full" onSubmit={onSubmit}>
+          <input value={value} onChange={(event) => onValueChange(event.target.value)} />
+          <button type="submit" disabled={busy}>Send</button>
+        </form>
+        <button type="button" onClick={() => onOpenChange(false)}>Close</button>
+        </motion.div> : <button type="button" onClick={() => onOpenChange(true)}>Open AI prompt</button>}
+      </AnimatePresence>
+    </div>
+  )
+}`,
+    usageCode: `<AiPromptMorph
+  id="reference-rule-prompt"
+  open={promptOpen}
+  value={prompt}
+  busy={crafting}
+  busyLabel="Crafting rule…"
+  placeholder="Describe the reference you want…"
+  triggerLabel="Custom rule"
+  showTriggerLabel
+  inputLabel="Custom rule"
+  closeLabel="Cancel"
+  submitLabel="Create rule"
+  submitDisabled={!prompt.trim()}
+  onOpenChange={setPromptOpen}
+  onValueChange={setPrompt}
+  onSubmit={createRule}
+/>`,
   },
   {
     id: "dexter-email-compose-card",
@@ -2572,10 +2686,10 @@ export const galleryComponents = [
     name: "Theme Toggle",
     category: "Navigation",
     description: "The sidebar appearance switch for moving between light and dark mode without leaving the workspace.",
-    details: "Use in persistent navigation surfaces where the user's preference should feel immediate and calm. The thumb travels with the selected mode while persistent sun and moon layers cross-fade without remounting or filter flicker. Reduced-motion users receive the same clear state without spatial movement.",
+    details: "Use in persistent navigation surfaces where the user's preference should feel immediate and calm. The shared theme boundary owns the visual change and cross-tab update, while profile persistence runs behind it and can never repaint an older choice. The thumb and persistent sun and moon layers communicate the new state without remounting; reduced-motion users receive the same clear state without spatial movement.",
     foundOn: [{ label: "Overview sidebar", route: "/" }, { label: "Components", route: "/components" }],
-    componentCode: `export function ThemeToggle({ compact = false, showAppearanceLabel = true }) {\n  const { resolvedTheme, setTheme } = useTheme()\n  const { direction, t } = useLanguage()\n  const shouldReduceMotion = useReducedMotion()\n  const isDark = resolvedTheme === "dark"\n\n  return (\n    <button\n      type="button"\n      role="switch"\n      aria-checked={isDark}\n      aria-label={t(isDark ? "Switch to light mode" : "Switch to dark mode")}\n      onClick={() => setTheme(isDark ? "light" : "dark")}\n    >\n      {compact ? null : (\n        <span>\n          {showAppearanceLabel ? <span>{t("Appearance")}</span> : null}\n          <span>{t(isDark ? "Dark mode" : "Light mode")}</span>\n        </span>\n      )}\n      <span className="relative h-[30px] w-12 rounded-full">\n        <motion.span\n          animate={{ x: compact ? 0 : isDark ? (direction === "rtl" ? -18 : 18) : 0 }}\n          transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", duration: 0.3, bounce: 0 }}\n        >\n          <motion.span initial={false} animate={{ opacity: isDark ? 0 : 1, scale: isDark ? 0.25 : 1 }}><Sun /></motion.span>\n          <motion.span initial={false} animate={{ opacity: isDark ? 1 : 0, scale: isDark ? 1 : 0.25 }}><Moon /></motion.span>\n        </motion.span>\n      </span>\n    </button>\n  )\n}`,
-    usageCode: `<ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="multideck.theme">\n  <AppShell>\n    <ThemeToggle />\n  </AppShell>\n</ThemeProvider>`,
+    componentCode: `export function ThemeToggle({ compact = false, showAppearanceLabel = true }) {\n  const { resolvedTheme, setTheme } = useTheme()\n  const { direction, t } = useLanguage()\n  const shouldReduceMotion = useReducedMotion()\n  const isDark = resolvedTheme === "dark"\n\n  return (\n    <button\n      type="button"\n      role="switch"\n      aria-checked={isDark}\n      aria-label={t(isDark ? "Switch to light mode" : "Switch to dark mode")}\n      onClick={() => setThemeWithProfileIntent(setTheme, isDark ? "light" : "dark")}\n    >\n      {compact ? null : (\n        <span>\n          {showAppearanceLabel ? <span>{t("Appearance")}</span> : null}\n          <span>{t(isDark ? "Dark mode" : "Light mode")}</span>\n        </span>\n      )}\n      <span className="relative h-[30px] w-12 rounded-full">\n        <motion.span\n          animate={{ x: compact ? 0 : isDark ? (direction === "rtl" ? -18 : 18) : 0 }}\n          transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", duration: 0.3, bounce: 0 }}\n        >\n          <motion.span initial={false} animate={{ opacity: isDark ? 0 : 1, scale: isDark ? 0.25 : 1 }}><Sun /></motion.span>\n          <motion.span initial={false} animate={{ opacity: isDark ? 1 : 0, scale: isDark ? 1 : 0.25 }}><Moon /></motion.span>\n        </motion.span>\n      </span>\n    </button>\n  )\n}`,
+    usageCode: `<ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange enableSystem={false} storageKey="multideck.theme">\n  <AppShell>\n    <ThemeToggle />\n  </AppShell>\n</ThemeProvider>`,
   },
   {
     id: "animated-list",
@@ -2980,7 +3094,7 @@ export const DotGridLoader = memo(function DotGridLoader({ label, size = "md", d
     category: "Navigation",
     description: "A compact checkbox menu for fields that can hold several choices without expanding the form.",
     details: "Use when choices can be combined, such as multimodal freight transport or warehouse access. Options may be plain translated strings or stable values with data-driven labels. It supports required, invalid, disabled, RTL, and translated states.",
-    foundOn: [{ label: "Quote details", route: "/quotes" }, { label: "Customer warehouse access", route: "/customers" }, { label: "Components", route: "/components?component=multi-select-menu" }],
+    foundOn: [{ label: "Quote details", route: "/quotes" }, { label: "Company profiles", route: "/crm/accounts" }, { label: "Customer warehouse access", route: "/customers" }, { label: "Components", route: "/components?component=multi-select-menu" }],
     componentCode: `export function MultiSelectMenu({ value, options, onValueChange, placeholder }) {\n  const items = options.map((option) => typeof option === "string" ? { value: option, label: option } : option)\n  const selectedLabels = items.filter((option) => value.includes(option.value)).map((option) => option.label)\n  const toggle = (optionValue) => onValueChange(value.includes(optionValue) ? value.filter((item) => item !== optionValue) : [...value, optionValue])\n  return (\n    <DropdownMenu>\n      <DropdownMenuTrigger asChild><Button>{selectedLabels.length ? selectedLabels.join(" + ") : placeholder}</Button></DropdownMenuTrigger>\n      <DropdownMenuContent>{items.map((option) => <DropdownMenuCheckboxItem key={option.value} checked={value.includes(option.value)} onCheckedChange={() => toggle(option.value)}>{option.label}</DropdownMenuCheckboxItem>)}</DropdownMenuContent>\n    </DropdownMenu>\n  )\n}`,
     usageCode: `<MultiSelectMenu\n  value={warehouseIds}\n  options={warehouses.map((warehouse) => ({\n    value: warehouse.id,\n    label: \`\${warehouse.code} · \${warehouse.name}\`,\n  }))}\n  onValueChange={setWarehouseIds}\n  placeholder="Select warehouses"\n  label="Warehouses"\n/>`,
   },
@@ -3469,7 +3583,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Navigation",
     description: "A reusable horizontal tab rail for switching sections inside one record or workflow.",
     details: "Use when the user should stay in context while moving between overview, contacts, bookings, documents, activity, or notes.",
-    foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Warehouse", route: "/warehouse" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Account detail", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Warehouse", route: "/warehouse" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
     componentCode: `export function TabsRail({ tabs, activeTab, onChange }) {\n  return (\n    <div className="flex gap-6 overflow-x-auto border-b border-[rgba(11,20,19,0.08)]">\n      {tabs.map((tab) => (\n        <button key={tab.label} onClick={() => onChange(tab.label)}>\n          {tab.label}\n          {tab.value ? <span>{tab.value}</span> : null}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<TabsRail\n  tabs={tabs}\n  activeTab={activeTab}\n  onChange={setActiveTab}\n/>`,
   },
@@ -3702,6 +3816,16 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     foundOn: [{ label: "Booking detail", route: "/bookings/md-22455" }, { label: "Components", route: "/components" }],
     componentCode: `export function BookingResolutionChecklist() {\n  const [checkedItems, setCheckedItems] = useState(new Set([\"Confirm hold reason\"]))\n\n  return (\n    <Surface>\n      {items.map(([label, detail]) => (\n        <button onClick={() => toggleItem(label)}>\n          <Checkbox checked={checkedItems.has(label)} />\n          <span>{label}</span>\n          <span>{detail}</span>\n        </button>\n      ))}\n    </Surface>\n  )\n}`,
     usageCode: `<BookingResolutionChecklist />`,
+  },
+  {
+    id: "customs-readiness-review",
+    name: "Customs Readiness Review",
+    category: "Operations",
+    description: "A progress-led readiness review that shows exactly what blocks a declaration and opens the relevant correction inline.",
+    details: "Use before a Customs handoff or submission. Keep each issue actionable, save through the owning workflow, then recalculate readiness from the server.",
+    foundOn: [{ label: "Booking Customs review", route: "/bookings" }, { label: "Customs declaration Review", route: "/customs/standalone" }, { label: "Components", route: "/components?component=customs-readiness-review" }],
+    componentCode: `export function CustomsReadinessReview({ percent, completeChecks, totalChecks, issues, renderFix }) {\n  return (\n    <Surface>\n      <h2>{percent}% complete</h2>\n      <p>{completeChecks}/{totalChecks} readiness checks passed</p>\n      {issues.map((issue) => (\n        <div key={issue.key}>\n          <span>{issue.label}</span>\n          <button>Fix</button>\n          {renderFix(issue)}\n        </div>\n      ))}\n    </Surface>\n  )\n}`,
+    usageCode: `<CustomsReadinessReview\n  percent={readiness.percent}\n  completeChecks={readiness.completeChecks}\n  totalChecks={readiness.totalChecks}\n  issues={readiness.missing}\n  renderFix={(issue, close) => <InlineCorrection issue={issue} onSaved={close} />}\n/>`,
   },
   {
     id: "booking-ask-panel",
@@ -4100,6 +4224,35 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
   onCancelRename={() => setRenamingId(null)}
   onDownload={download}
   onDelete={(target) => setRemoval({ kind: "file", file: target })}
+/>`,
+  },
+  {
+    id: "organisation-foundation-panel",
+    name: "Organisation Foundation Panel",
+    category: "CRM",
+    description: "The shared company setup surface for editable codes, responsible offices, operational addresses, opening hours, and destination-aware related-party defaults.",
+    details: "Use on a company record after its identity and types are established. It keeps one Companies register while allowing the same organisation to be classified as a customer, supplier, or both. Address purposes can share one physical address, but each purpose has one explicit default.",
+    foundOn: [{ label: "Company details", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "Companies", route: "/crm/accounts" }, { label: "Components", route: "/components?component=organisation-foundation-panel" }],
+    componentCode: `export function OrganisationFoundationPanel({ account, reference, onChange }) {
+  return (
+    <Surface padding="none">
+      <CompanySetup code={account.accountCode} scope={account.scopeCode} offices={account.officeAssignments} />
+      <OperationalAddresses
+        addresses={account.addresses}
+        capabilities={account.addressCapabilities}
+        onSave={(address) => saveOrganisationAddress(account.id, address, account.editVersion)}
+      />
+      <RelatedPartyDefaults
+        defaults={account.relatedPartyDefaults}
+        onSave={(rule) => saveRelatedPartyDefault(account.id, rule, account.editVersion)}
+      />
+    </Surface>
+  )
+}`,
+    usageCode: `<OrganisationFoundationPanel
+  account={company}
+  reference={crmReference}
+  onChange={setCompany}
 />`,
   },
   {
@@ -4663,9 +4816,14 @@ export const galleryIcons = {
   typography: Type,
   surface: Gauge,
   "status-pill": BadgeCheck,
+  "todo-completion-control": ClipboardCheck,
+  "todo-priority-pill": ClipboardCheck,
+  "todo-action-state-icon": ClipboardCheck,
+  "todo-priority-picker": ClipboardCheck,
   kbd: KeyRound,
   "ai-edge-glow": BrainCircuit,
   "dashboard-customise-panel": AiEditing,
+  "ai-prompt-morph": AiEditing,
   "dexter-action-pill": AiBrain,
   "dexter-companion-sidebar": AiBrain,
   toast: Bell,

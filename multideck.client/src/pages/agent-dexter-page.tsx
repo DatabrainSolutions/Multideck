@@ -65,7 +65,10 @@ import {
   emailMentionItems,
   leadMentionItems,
   mergeDexterMentionItems,
+  restoreDexterMentionItems,
 } from "@/data/dexter-mentions"
+import { peekDexterHomeHandoff, takeDexterHomeHandoff } from "@/lib/dexter-home-handoff"
+import { loadDexterMentionSources } from "@/lib/dexter-mention-sources"
 import { DexterBrandMark } from "@/components/multideck/dexter-brand-mark"
 import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
 import { DexterEmailComposeCard } from "@/components/multideck/dexter-email-compose-card"
@@ -73,6 +76,7 @@ import { WatchModeAurora } from "@/components/multideck/aurora-background"
 import { DexterInlineCitation, isDexterCitationUrl } from "@/components/multideck/dexter-inline-citation"
 import { ProgressiveBlur } from "@/components/multideck/progressive-blur"
 import { StatusPill } from "@/components/multideck/status-pill"
+import { TodoActionStateIcon, type TodoActionIconState } from "@/components/multideck/todo-components"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
@@ -124,6 +128,8 @@ import type { AuthUserSummary } from "@/lib/auth-user"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { readableWatchEvent, readableWatchSummary } from "@/lib/dexter-watch-copy"
+import { dexterTodoSuggestion, type DexterTodoSuggestion } from "@/lib/dexter-todo-suggestion"
+import { createTodoTask } from "@/lib/todo-api"
 
 const DEXTER_CONTEXT_WINDOW_TOKENS = 128_000
 const DEXTER_JUMP_TO_LATEST_DISTANCE = 180
@@ -1114,6 +1120,53 @@ function DexterConversationTrail({
   )
 }
 
+function DexterTodoSuggestionAction({ suggestion, sourceMessageId }: { suggestion: DexterTodoSuggestion; sourceMessageId: string }) {
+  const { t } = useLanguage()
+  const [state, setState] = useState<TodoActionIconState>("idle")
+  const [error, setError] = useState<string | null>(null)
+
+  async function addTask() {
+    if (state !== "idle") return
+    setState("loading")
+    setError(null)
+    try {
+      await createTodoTask({
+        ...suggestion,
+        source: "dexter_context",
+        sourceDexterMessageId: sourceMessageId,
+      })
+      setState("success")
+    } catch {
+      setState("idle")
+      setError(t("Unable to add task. Check your connection and try again."))
+    }
+  }
+
+  const label = state === "loading"
+    ? t("Adding to To Do list…")
+    : state === "success"
+      ? t("Added to To Do list")
+      : t("Add to To Do list")
+
+  return (
+    <div className="mt-5 border-t border-[var(--md-line)] pt-2.5">
+      <button
+        type="button"
+        className="group/todo flex min-h-10 w-full items-center justify-between gap-3 rounded-[var(--md-radius-md)] px-2 text-start text-[12.5px] font-medium text-[var(--md-text)] outline-none transition-[background-color,color] duration-200 hover:bg-[var(--md-accent-a08)] hover:text-[var(--md-accent)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] disabled:cursor-default disabled:text-[var(--md-green)]"
+        aria-label={label}
+        aria-busy={state === "loading" || undefined}
+        disabled={state !== "idle"}
+        onClick={() => void addTask()}
+      >
+        <span>{label}</span>
+        <TodoActionStateIcon state={state} className={cn(state === "idle" && "transition-transform duration-200 ease-out group-hover/todo:translate-x-0.5 rtl:group-hover/todo:-translate-x-0.5")} />
+      </button>
+      <span className="sr-only" role="status" aria-live="polite">{state === "success" ? label : null}</span>
+      {error ? <p role="alert" className="px-2 pb-1 text-[11.5px] text-[var(--md-red)]">{error}</p> : null}
+    </div>
+  )
+}
+
 function ConversationStream({
   messages,
   isWorking,
@@ -1225,6 +1278,18 @@ function ConversationStream({
       !message.content.trim() &&
       !(message.emailAttachments?.length) &&
       !message.pendingAction
+    const messageIndex = messages.findIndex((candidate) => candidate.id === message.id)
+    const sourceUserMessage = message.responseToUserMessageId
+      ? messages.find((candidate) => candidate.id === message.responseToUserMessageId && candidate.role === "user")
+      : [...messages.slice(0, Math.max(0,messageIndex))].reverse().find((candidate) => candidate.role === "user")
+    const sourceMessageId = persistedDexterMessageId(message)
+    const todoSuggestion = sourceUserMessage && sourceMessageId
+      ? dexterTodoSuggestion(sourceUserMessage.content,message.content,{
+          pendingAction: Boolean(message.pendingAction),
+          emailDraft: Boolean(message.emailDraft),
+          streaming: isStreamingMessage,
+        })
+      : null
 
     return (
       <motion.div
@@ -1323,6 +1388,7 @@ function ConversationStream({
               />
             ) : null}
           </AnimatePresence>
+          {todoSuggestion && sourceMessageId ? <DexterTodoSuggestionAction suggestion={todoSuggestion} sourceMessageId={sourceMessageId} /> : null}
         </div>
       </motion.div>
     )
@@ -1620,8 +1686,12 @@ export function AgentDexterPage({
   const { language, t } = useLanguage()
   const shouldReduceMotion = Boolean(useReducedMotion())
   const initialConversationIdRef = useRef(readDexterConversationIdFromLocation())
+  // Read without consuming: the layout has to be chosen before the first paint,
+  // or a prompt handed over from Home would show one frame of the landing
+  // screen with the composer in the wrong place before the thread opens.
+  const homeHandoffRef = useRef(peekDexterHomeHandoff())
   const [stage, setStage] = useState<"landing" | "conversation">(
-    initialConversationIdRef.current ? "conversation" : "landing",
+    initialConversationIdRef.current || homeHandoffRef.current ? "conversation" : "landing",
   )
   const [dexterMode, setDexterMode] = useState<"chat" | "watch">("chat")
   const [watches, setWatches] = useState<DexterWatch[]>([])
@@ -1646,18 +1716,18 @@ export function AgentDexterPage({
   const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null)
   const [conversationRenderKey, setConversationRenderKey] = useState("dexter-new-conversation")
   const [composerValue, setComposerValue] = useState("")
-  const [selectedSpecialistId, setSelectedSpecialistId] = useState<DexterSpecialistId>("auto")
-  const [selectedModelId, setSelectedModelId] = useState<DexterModelId>(defaultDexterModelId)
-  const [accessMode, setAccessMode] = useState<DexterAccessMode>("approve")
+  const [selectedSpecialistId, setSelectedSpecialistId] = useState<DexterSpecialistId>(homeHandoffRef.current?.specialistId ?? "auto")
+  const [selectedModelId, setSelectedModelId] = useState<DexterModelId>(homeHandoffRef.current?.modelId ?? defaultDexterModelId)
+  const [accessMode, setAccessMode] = useState<DexterAccessMode>(homeHandoffRef.current?.accessMode ?? "approve")
   const [pendingAccessMode, setPendingAccessMode] = useState<DexterAccessMode | null>(null)
-  const [fullAccessGrantId, setFullAccessGrantId] = useState<string | null>(null)
+  const [fullAccessGrantId, setFullAccessGrantId] = useState<string | null>(homeHandoffRef.current?.fullAccessGrantId ?? null)
   const [isAccessModeChanging, setIsAccessModeChanging] = useState(false)
   const [showAttachments, setShowAttachments] = useState(false)
   const [attachmentQuery, setAttachmentQuery] = useState("")
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<Set<string>>(new Set())
   const [composerEmailAttachments, setComposerEmailAttachments] = useState<DexterEmailAttachment[]>([])
   const [composerEmailUpdates, setComposerEmailUpdates] = useState<DexterWatchEmailContext[]>([])
-  const [composerUploadedDocuments, setComposerUploadedDocuments] = useState<DexterUploadedDocument[]>([])
+  const [composerUploadedDocuments, setComposerUploadedDocuments] = useState<DexterUploadedDocument[]>(homeHandoffRef.current?.uploadedDocuments ?? [])
   const [isUploadingDocument, setIsUploadingDocument] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [mentionItems, setMentionItems] = useState<DexterMentionItem[]>(defaultDexterMentionItems)
@@ -1676,7 +1746,9 @@ export function AgentDexterPage({
   const jumpScrollTimeoutRef = useRef<number | null>(null)
   const liveReasoningRef = useRef("")
   const actionDecisionInFlightRef = useRef<string | null>(null)
-  const dexterClientSessionIdRef = useRef(crypto.randomUUID())
+  // A full-access grant is issued against a client session, so a prompt that
+  // secured one on Home has to keep the same session or the grant is worthless.
+  const dexterClientSessionIdRef = useRef(homeHandoffRef.current?.clientSessionId ?? crypto.randomUUID())
   const accessModeRequestVersionRef = useRef(0)
   const accessModeRequestInFlightRef = useRef(false)
   const promptSubmissionInFlightRef = useRef(false)
@@ -1688,6 +1760,8 @@ export function AgentDexterPage({
   const attachedItems = useAttachedItems(selectedAttachmentIds)
   const generatedDocumentHandoffRef = useRef(false)
   const taskHandoffRef = useRef(false)
+  const homeHandoffConsumedRef = useRef(false)
+  const [pendingHomePrompt, setPendingHomePrompt] = useState<string | null>(null)
 
   useEffect(() => () => {
     activePromptAbortControllerRef.current?.abort()
@@ -1703,6 +1777,26 @@ export function AgentDexterPage({
     setDexterMode("chat")
     setComposerValue(prompt)
   }, [])
+
+  // A prompt written on Home arrives already composed. Restore its context
+  // first and send on the following render, so the request carries the records
+  // and files the operator attached rather than an empty draft.
+  useEffect(() => {
+    if (homeHandoffConsumedRef.current) return
+    homeHandoffConsumedRef.current = true
+    const handoff = takeDexterHomeHandoff()
+    if (!handoff) return
+    setDexterMode("chat")
+    setComposerValue(handoff.prompt)
+    setComposerMentions(restoreDexterMentionItems(handoff.mentions, mentionItems))
+    setPendingHomePrompt(handoff.prompt)
+  }, [mentionItems])
+
+  useEffect(() => {
+    if (!pendingHomePrompt) return
+    setPendingHomePrompt(null)
+    void submitPrompt(pendingHomePrompt)
+  }, [pendingHomePrompt])
 
   useEffect(() => {
     if (generatedDocumentHandoffRef.current) return
@@ -1844,29 +1938,11 @@ export function AgentDexterPage({
   useEffect(() => {
     let active = true
 
-    Promise.allSettled([
-      listAccountsPage({ limit: 50, offset: 0 }),
-      listLeadsPage({ limit: 50, offset: 0 }),
-      listDealsPage({ limit: 50, offset: 0, sort: { id: "created", direction: "desc" } }),
-      listCustomsDeclarationDraftsPage("export", "standalone", {
-        limit: 50,
-        offset: 0,
-        sort: { id: "lastSaved", direction: "desc" },
-      }),
-      listDexterEmailContextSources(),
-    ]).then(([customerResult, leadResult, dealResult, declarationResult, emailResult]) => {
+    // Shared with Home's composer, so both offer the same records to @.
+    void loadDexterMentionSources().then((sources) => {
       if (!active) return
-      setMentionItems(mergeDexterMentionItems(
-        customerResult.status === "fulfilled" ? customerMentionItems(customerResult.value.rows) : [],
-        leadResult.status === "fulfilled" ? leadMentionItems(leadResult.value.rows) : [],
-        dealResult.status === "fulfilled" ? dealMentionItems(dealResult.value.rows) : [],
-        declarationResult.status === "fulfilled" ? customsDeclarationMentionItems(declarationResult.value.rows) : [],
-        emailResult.status === "fulfilled"
-          ? emailMentionItems(emailResult.value)
-          : emailMentionItems(null, true),
-        defaultDexterMentionItems.filter((mention) => mention.type !== "email"),
-      ))
-      setRecentDeals(dealResult.status === "fulfilled" ? dealResult.value.rows : [])
+      setMentionItems(sources.mentionItems)
+      setRecentDeals(sources.recentDeals)
     })
 
     return () => {

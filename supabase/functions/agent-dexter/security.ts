@@ -134,6 +134,11 @@ const ACTION_INTENTS: Record<string, RegExp> = {
   update_lead: /\b(update|edit|change|amend|correct|assign|set)\b.{0,80}\b(lead|prospect)\b/,
   update_deal: /\b(update|edit|change|amend|correct|assign|set|move)\b.{0,80}\b(deal|opportunity|pipeline)\b/,
   update_quote: /\b(update|edit|change|amend|correct|set)\b.{0,80}\b(quote|quotation)\b/,
+  mark_quote_lost: /\b(mark|record|set)\b.{0,40}\b(quote|quotation)\b.{0,40}\b(lost|declined|unsuccessful)\b|\b(lost|declined)\b.{0,40}\b(quote|quotation)\b/,
+  create_todo_task: /\b(create|add|remember|remind|schedule|new)\b.{0,80}\b(to[- ]?do|todo|task|action item)\b|\b(remind me|add to my to[- ]?do)\b/,
+  update_todo_task: /\b(update|edit|change|amend|reschedule|move|rename|set)\b.{0,80}\b(to[- ]?do|todo|task|action item)\b/,
+  complete_todo_task: /\b(complete|finish|done|reopen|tick off|mark)\b.{0,80}\b(to[- ]?do|todo|task|action item)\b/,
+  delete_todo_task: /\b(delete|remove)\b.{0,80}\b(to[- ]?do|todo|task|action item)\b/,
   attach_email_document_to_customer: /\b(attach|save|add|file)\b.{0,80}\b(document|file|attachment)\b.{0,80}\b(customer|account)\b/,
 }
 

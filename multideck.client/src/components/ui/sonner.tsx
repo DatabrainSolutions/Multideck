@@ -1,4 +1,4 @@
-import { useTheme } from "next-themes"
+import { useTheme } from "@/lib/theme-provider"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { Loader2Icon } from "@/components/icons/hugeicons"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"

@@ -1,0 +1,255 @@
+import { supabase } from "@/lib/supabase"
+
+export type BookingWorkflowParty = {
+  id?: string
+  role: string
+  organisationId?: string | null
+  addressId?: string | null
+  contactId?: string | null
+  sequence?: number
+  name?: string | null
+  address?: string | null
+  contactName?: string | null
+  email?: string | null
+  phone?: string | null
+  countryCode?: string | null
+  identifierType?: string | null
+  identifierValue?: string | null
+  isPrimary?: boolean
+  rawSnapshot?: Record<string, unknown>
+}
+
+export type BookingWorkflowCargo = {
+  id?: string
+  lineNumber?: number
+  description?: string | null
+  commodity?: string | null
+  pieces?: number | null
+  packageType?: string | null
+  packageQuantity?: number | null
+  grossWeightKg?: number | null
+  netWeightKg?: number | null
+  volumeCbm?: number | null
+  hsCode?: string | null
+  countryOfOrigin?: string | null
+  declaredValue?: number | null
+  declaredValueCurrency?: string | null
+  isHazardous?: boolean
+  isTemperatureControlled?: boolean
+  cargoData?: Record<string, unknown>
+}
+
+export type BookingWorkflowContainer = {
+  id?: string
+  number?: string | null
+  type?: string | null
+  equipmentKind?: string | null
+  status?: string | null
+  grossWeightKg?: number | null
+  notes?: string | null
+  data?: Record<string, unknown>
+}
+
+export type BookingWorkflowRoute = {
+  id?: string
+  order?: number
+  status?: string | null
+  mode?: string | null
+  origin?: string | null
+  originUnlocode?: string | null
+  originAddress?: string | null
+  originTerminal?: string | null
+  destination?: string | null
+  destinationUnlocode?: string | null
+  destinationAddress?: string | null
+  destinationTerminal?: string | null
+  plannedPickupAt?: string | null
+  plannedDepartureAt?: string | null
+  plannedArrivalAt?: string | null
+  plannedDeliveryAt?: string | null
+  carrierId?: string | null
+  carrierBookingReference?: string | null
+  masterTransportReference?: string | null
+  houseTransportReference?: string | null
+  serviceLevel?: string | null
+  transportMeansName?: string | null
+  vessel?: string | null
+  voyageNumber?: string | null
+  flightNumber?: string | null
+  vehicleRegistration?: string | null
+  trailerNumber?: string | null
+  railService?: string | null
+  isMainCarriage?: boolean
+  routeData?: Record<string, unknown>
+}
+
+export type BookingWorkflowDocument = {
+  id: string
+  typeCode?: string | null
+  title: string
+  status?: string | null
+  fileName?: string | null
+  mimeType?: string | null
+  fileSizeBytes?: number | null
+  isPrimary?: boolean
+  createdAt?: string | null
+}
+
+export type BookingWorkflowDeclaration = {
+  id: string
+  direction: "import" | "export"
+  status: string
+  localReference?: string | null
+  customsReference?: string | null
+  mrn?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export type BookingWorkflowEvent = {
+  id: string
+  type: string
+  summary: string
+  metadata?: Record<string, unknown> | null
+  occurredAt: string
+  actor?: string | null
+}
+
+export type BookingWorkflowWorkspace = {
+  booking: {
+    jobId: string
+    bookingReference: string
+    jobReference: string
+    jobNumber: number
+    status: string
+    direction?: string | null
+    mode?: string | null
+    customerId?: string | null
+    customerName?: string | null
+    customerCode?: string | null
+    carrierId?: string | null
+    carrierName?: string | null
+    supplierId?: string | null
+    supplierName?: string | null
+    officeId: string
+    origin?: string | null
+    originUnlocode?: string | null
+    destination?: string | null
+    destinationUnlocode?: string | null
+    readyDate?: string | null
+    requiredDeliveryDate?: string | null
+    customerDeadline?: string | null
+    predictedDeliveryAt?: string | null
+    trackingStatus?: string | null
+    currentLocation?: string | null
+    internalNotes?: string | null
+    incoterm?: string | null
+    incotermLocation?: string | null
+    freightChargeAmount?: number | null
+    freightChargeCurrency?: string | null
+    collectionAddress?: string | null
+    deliveryAddress?: string | null
+    sourceQuoteId?: string | null
+    sourceQuoteVersionId?: string | null
+    sourceQuoteResponseId?: string | null
+    sourceSnapshot?: Record<string, unknown>
+    createdAt: string
+    updatedAt: string
+  }
+  parties: BookingWorkflowParty[]
+  cargo: BookingWorkflowCargo[]
+  containers: BookingWorkflowContainer[]
+  routes: BookingWorkflowRoute[]
+  documents: BookingWorkflowDocument[]
+  declarations: BookingWorkflowDeclaration[]
+  charges: Array<Record<string, unknown>>
+  events: BookingWorkflowEvent[]
+  sourceQuote?: Record<string, unknown> | null
+}
+
+export type BookingCustomsReadinessItem = { key: string; label: string; section: string }
+export type BookingCustomsReadiness = {
+  eligible: boolean
+  ready: boolean
+  direction: string
+  percent: number
+  completeChecks: number
+  totalChecks: number
+  missing: BookingCustomsReadinessItem[]
+  warnings: BookingCustomsReadinessItem[]
+  evidence: Record<string, unknown>
+}
+
+export type BookingCustomsHandoff = {
+  declarationId: string
+  reference: string
+  direction: "import" | "export"
+  route: string
+  canOpen: boolean
+  reused: boolean
+}
+
+function requireClient() {
+  if (!supabase) throw new Error("Bookings are unavailable until this workspace is connected.")
+  return supabase
+}
+
+async function functionError(error: unknown, fallback: string) {
+  const context = typeof error === "object" && error && "context" in error ? (error as { context?: unknown }).context : null
+  if (context instanceof Response) {
+    try {
+      const payload = await context.clone().json() as { error?: unknown }
+      if (typeof payload.error === "string" && payload.error.trim()) return new Error(payload.error)
+    } catch {
+      // Preserve the product-safe fallback when the gateway has no JSON body.
+    }
+  }
+  return error instanceof Error && error.message && !error.message.includes("non-2xx") ? error : new Error(fallback)
+}
+
+async function invoke<T>(body: Record<string, unknown>, fallback: string) {
+  const { data, error } = await requireClient().functions.invoke<T>("bookings-workflow", { method: "POST", body })
+  if (error) throw await functionError(error, fallback)
+  if (!data) throw new Error(fallback)
+  return data
+}
+
+export function openBookingWorkflow(idempotencyKey: string) {
+  return invoke<{ jobId: string; bookingReference: string; route: string; reused: boolean }>({
+    action: "open",
+    idempotencyKey,
+    sequenceKey: "default",
+  }, "The new booking could not be opened.")
+}
+
+export function getBookingWorkflow(reference: string) {
+  return invoke<BookingWorkflowWorkspace>({ action: "workspace", reference }, "The booking workspace could not be loaded.")
+}
+
+export function saveBookingWorkflow(jobId: string, booking: Record<string, unknown>) {
+  return invoke<BookingWorkflowWorkspace>({ action: "save", jobId, booking }, "The booking could not be saved.")
+}
+
+export function getBookingCustomsReadiness(jobId: string) {
+  return invoke<BookingCustomsReadiness>({ action: "customs-readiness", jobId }, "Customs readiness could not be checked.")
+}
+
+export function sendBookingToCustoms(jobId: string, idempotencyKey: string) {
+  return invoke<BookingCustomsHandoff>({ action: "send-to-customs", jobId, idempotencyKey }, "The booking could not be sent to Customs.")
+}
+
+export async function uploadBookingCustomsDocument(jobId: string, documentType: "commercial_invoice" | "packing_list", file: File) {
+  const form = new FormData()
+  form.set("action", "upload-document")
+  form.set("jobId", jobId)
+  form.set("documentType", documentType)
+  form.set("idempotencyKey", crypto.randomUUID())
+  form.set("file", file)
+  const { data, error } = await requireClient().functions.invoke<{ documentId: string; fileName: string; documentType: string }>("bookings-workflow", {
+    method: "POST",
+    body: form,
+  })
+  if (error) throw await functionError(error, "The booking document could not be attached.")
+  if (!data) throw new Error("The booking document could not be attached.")
+  return data
+}

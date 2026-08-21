@@ -9,7 +9,8 @@ test("accepted declaration PDFs use a private server-owned Carbone boundary", as
     "../functions/customs-declaration-document/index.ts",
   );
   assert.match(source, /authenticateRequest\(request\)/);
-  assert.match(source, /CUST_CreatedBy.*context\.userId/s);
+  assert.match(source, /rpc\("customs_declaration_authorised"/);
+  assert.match(source, /caller_auth_user_id: context\.userId/);
   assert.match(source, /ICUSS_Status === "accepted"/);
   assert.match(source, /ICUSS_MRN/);
   assert.match(source, /buildCustomsDeclarationDocumentDataset/);

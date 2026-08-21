@@ -10,8 +10,8 @@ const dataTableSource = await readFile(new URL("../src/components/multideck/data
 test("opening a new standalone declaration creates its owned draft immediately", () => {
   assert.match(pageSource, /useState\(Boolean\(declarationId\)\)/u)
   assert.match(pageSource, /if \(declarationId \|\| initialDraftCreationRef\.current\) return/u)
-  assert.match(pageSource, /saveStandaloneDeclarationDraft\(draftRef\.current\)/u)
-  assert.match(pageSource, /do \{[\s\S]*latestDraft[\s\S]*saveStandaloneDeclarationDraft\(latestDraft, saved\.id\)[\s\S]*\} while/u)
+  assert.match(pageSource, /saveDeclarationDraft\(draftRef\.current\)/u)
+  assert.match(pageSource, /do \{[\s\S]*latestDraft[\s\S]*saveDeclarationDraft\(latestDraft, saved\.id\)[\s\S]*\} while/u)
   assert.match(pageSource, /startICustomsProviderDraft\(saved\.id, `start-\$\{saved\.id\}`\)/u)
   assert.match(pageSource, /\.then\(async \(\) => \{[\s\S]*getICustomsDeclarationState\(saved\.id\)[\s\S]*newly started iCustoms draft state could not be refreshed/u)
   assert.match(pageSource, /activeDeclarationIdRef\.current === saved\.id/u)

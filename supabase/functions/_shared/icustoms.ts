@@ -179,6 +179,14 @@ export type ExportDeclarationInput = {
   secondaryDefermentAccount?: unknown;
   freightChargeAmount?: unknown;
   freightChargeCurrency?: unknown;
+  freightChargeApportionment?: unknown;
+  vatValueAdjustmentAmount?: unknown;
+  vatValueAdjustmentCurrency?: unknown;
+  vatValueAdjustmentApportionment?: unknown;
+  insuranceCostAmount?: unknown;
+  insuranceCostCurrency?: unknown;
+  containerPackingCostAmount?: unknown;
+  containerPackingCostCurrency?: unknown;
   exitOffice?: unknown;
   supervisingOffice?: unknown;
   presentationOffice?: unknown;
@@ -218,6 +226,111 @@ function validPreviousDocumentReference(reference: string, type: unknown) {
 function positiveNumber(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+const transactionNatureCodes = new Set([
+  "11",
+  "12",
+  "13",
+  "14",
+  "19",
+  "21",
+  "22",
+  "23",
+  "29",
+  "3",
+  "41",
+  "42",
+  "51",
+  "52",
+  "7",
+  "8",
+  "91",
+  "99",
+]);
+
+type ImportCostAdjustment = {
+  code: string;
+  currency: string;
+  amount: string;
+};
+
+function costApportionment(value: unknown): "value" | "gross_mass" {
+  return clean(value, 20) === "gross_mass" ? "gross_mass" : "value";
+}
+
+function allocatedAmounts(
+  total: number,
+  items: ExportDeclarationItemInput[],
+  basis: "value" | "gross_mass",
+) {
+  const totalMinorUnits = Math.round(total * 100);
+  const weights = items.map((item) =>
+    positiveNumber(basis === "gross_mass" ? item.grossMass : item.itemPrice) ??
+      0
+  );
+  const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
+  const resolvedWeights = weightTotal > 0 ? weights : items.map(() => 1);
+  const resolvedTotal = resolvedWeights.reduce(
+    (sum, weight) => sum + weight,
+    0,
+  );
+  const minorUnits = resolvedWeights.map((weight) =>
+    Math.floor((totalMinorUnits * weight) / resolvedTotal)
+  );
+  let remainder = totalMinorUnits -
+    minorUnits.reduce((sum, amount) => sum + amount, 0);
+  for (let index = 0; remainder > 0; index = (index + 1) % minorUnits.length) {
+    minorUnits[index] += 1;
+    remainder -= 1;
+  }
+  return minorUnits.map((amount) => (amount / 100).toFixed(2));
+}
+
+function importCostAdjustmentsByItem(
+  input: ExportDeclarationInput,
+  items: ExportDeclarationItemInput[],
+): ImportCostAdjustment[][] {
+  const result = items.map((): ImportCostAdjustment[] => []);
+  if (!items.length) return result;
+
+  const append = (
+    amountValue: unknown,
+    currencyValue: unknown,
+    code: string,
+    basis: "value" | "gross_mass" = "value",
+  ) => {
+    const amount = positiveNumber(amountValue);
+    const currency = upper(currencyValue, 3);
+    if (!amount || !currency) return;
+    allocatedAmounts(amount, items, basis).forEach((allocated, index) => {
+      if (Number(allocated) > 0) {
+        result[index].push({ code, currency, amount: allocated });
+      }
+    });
+  };
+
+  const freightBasis = costApportionment(input.freightChargeApportionment);
+  append(
+    input.freightChargeAmount,
+    input.freightChargeCurrency,
+    freightBasis === "gross_mass" ? "AQ" : "AP",
+    freightBasis,
+  );
+  const vatBasis = costApportionment(input.vatValueAdjustmentApportionment);
+  append(
+    input.vatValueAdjustmentAmount,
+    input.vatValueAdjustmentCurrency,
+    vatBasis === "gross_mass" ? "AW" : "AV",
+    vatBasis,
+  );
+  append(input.insuranceCostAmount, input.insuranceCostCurrency, "AK");
+  append(
+    input.containerPackingCostAmount,
+    input.containerPackingCostCurrency,
+    "AD",
+  );
+  return result;
 }
 
 function roughlyEqual(left: number, right: number, tolerance = 0.005) {
@@ -386,7 +499,7 @@ export function validateICustomsDeclaration(
   if (!/^[A-Z]$/.test(upper(input.goodsLocationType, 1))) {
     issues.push("Choose the one-letter goods location type.");
   }
-  if (!/^\d{1,2}$/.test(clean(input.transactionNature, 2))) {
+  if (!transactionNatureCodes.has(clean(input.transactionNature, 2))) {
     issues.push("Choose the nature of transaction.");
   }
   if (direction === "import") {
@@ -400,6 +513,43 @@ export function validateICustomsDeclaration(
       issues.push(
         "Add the goods location identifier used for the trade terms.",
       );
+    }
+    const importCosts = [
+      [input.freightChargeAmount, input.freightChargeCurrency, "freight costs"],
+      [
+        input.vatValueAdjustmentAmount,
+        input.vatValueAdjustmentCurrency,
+        "VAT value adjustment",
+      ],
+      [
+        input.insuranceCostAmount,
+        input.insuranceCostCurrency,
+        "insurance costs",
+      ],
+      [
+        input.containerPackingCostAmount,
+        input.containerPackingCostCurrency,
+        "container and packing costs",
+      ],
+    ] as const;
+    for (const [amountValue, currencyValue, label] of importCosts) {
+      const hasAmount = Boolean(clean(amountValue, 40));
+      const hasCurrency = Boolean(clean(currencyValue, 3));
+      if (
+        (hasAmount || hasCurrency) &&
+        (!positiveNumber(amountValue) ||
+          !/^[A-Z]{3}$/.test(upper(currencyValue, 3)))
+      ) {
+        issues.push(
+          `Enter a positive amount and three-letter currency for ${label}.`,
+        );
+      }
+    }
+    if (
+      clean(input.tradeTerms, 3).toUpperCase() === "EXW" &&
+      !positiveNumber(input.freightChargeAmount)
+    ) {
+      issues.push("EXW imports require freight costs for CDS valuation.");
     }
     const authorisationIdentifier = clean(input.authorisationIdentifier, 35);
     const authorisationCategory = upper(input.authorisationCategory, 4);
@@ -463,6 +613,9 @@ export function validateICustomsDeclaration(
   let grossMassSum = 0;
   let netMassSum = 0;
   let invoiceSum = 0;
+  const headerImportCosts = direction === "import"
+    ? importCostAdjustmentsByItem(input, items)
+    : items.map((): ImportCostAdjustment[] => []);
 
   items.forEach((item, index) => {
     const line = `Item ${index + 1}`;
@@ -481,8 +634,13 @@ export function validateICustomsDeclaration(
     );
     const additionalDocuments = repeatableInputs(item.additionalDocuments);
 
-    if (!/^\d{10}$/.test(commodityCode)) {
-      issues.push(`${line}: enter a 10-digit commodity code.`);
+    const commodityCodeLength = direction === "export" ? 8 : 10;
+    if (!new RegExp(`^\\d{${commodityCodeLength}}$`).test(commodityCode)) {
+      issues.push(
+        `${line}: enter ${
+          commodityCodeLength === 8 ? "an" : "a"
+        } ${commodityCodeLength}-digit commodity code.`,
+      );
     }
     if (!clean(item.description, 280)) {
       issues.push(`${line}: add a goods description.`);
@@ -690,6 +848,9 @@ export function validateICustomsDeclaration(
         );
       }
     });
+    const headerCostCodes = new Set(
+      (headerImportCosts[index] ?? []).map((entry) => entry.code),
+    );
     repeatableInputs(item.valuationAdjustments).forEach((entry, entryIndex) => {
       if (!hasAnyValue(entry, ["code", "currency", "amount"])) return;
       if (
@@ -700,6 +861,13 @@ export function validateICustomsDeclaration(
           `${line}, addition or deduction ${
             entryIndex + 1
           }: complete code, currency and amount.`,
+        );
+      }
+      if (headerCostCodes.has(upper(entry.code, 4))) {
+        issues.push(
+          `${line}, addition or deduction ${
+            entryIndex + 1
+          }: remove the duplicate cost already entered in Import costs.`,
         );
       }
     });
@@ -882,6 +1050,9 @@ export function buildICustomsDeclarationXml(
   // header-level shape used by the reference declaration.
   const useItemLevelConsignees = direction === "export" && items.length > 1 &&
     items.every((item) => clean(item.consignee, 70));
+  const headerImportCosts = direction === "import"
+    ? importCostAdjustmentsByItem(input, items)
+    : items.map((): ImportCostAdjustment[] => []);
   const goodsItems = items.map((item, index) => {
     const procedureCode = upper(item.procedureCode, 4);
     const explicitItemDestination = upper(item.destinationCountry, 2);
@@ -899,7 +1070,10 @@ export function buildICustomsDeclarationXml(
       ),
     ].filter(Boolean);
     const classification = [
-      element("CommodityCode", upper(item.commodityCode, 10)),
+      element(
+        "CommodityCode",
+        upper(item.commodityCode, direction === "export" ? 8 : 10),
+      ),
       element("CusCode", upper(item.cusCode, 8)),
       ...taricCodes.map((code) => element("AdditionalTaricCode", code)),
       ...nationalCodes.map((code) => element("AdditionalNationalCode", code)),
@@ -1083,7 +1257,10 @@ export function buildICustomsDeclarationXml(
           ].join(""),
         )
       ).join("");
-    const valuationAdjustments = repeatableInputs(item.valuationAdjustments)
+    const valuationAdjustments = [
+      ...(headerImportCosts[index] ?? []),
+      ...repeatableInputs(item.valuationAdjustments),
+    ]
       .filter((entry) => hasAnyValue(entry, ["code", "currency", "amount"]));
     const valuationAdjustmentXml = direction === "import"
       ? (valuationAdjustments.length
@@ -1652,7 +1829,9 @@ export class ICustomsClient {
     correlationId: string,
   ) {
     return this.request(
-      `/api/cds/v1/GetDeclaration/${direction}/${encodeURIComponent(correlationId)}`,
+      `/api/cds/v1/GetDeclaration/${direction}/${
+        encodeURIComponent(correlationId)
+      }`,
     );
   }
 

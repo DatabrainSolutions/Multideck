@@ -52,71 +52,18 @@ import {
   type Mailbox,
 } from "@/lib/inbox-api";
 import { loadDefaultInboxProvider } from "@/lib/inbox-provider-preference";
+import {
+  textareaSelectionAnchor,
+  type TextareaSelection,
+  type TextareaSelectionAnchor,
+} from "@/lib/textarea-selection";
 import { cn } from "@/lib/utils";
 
 type DraftStatus = DexterEmailDraft["delivery"]["status"];
 type DraftSaveState = "idle" | "saving" | "saved" | "failed";
-type DraftTextSelection = { start: number; end: number; text: string };
-type SelectionAnchor = { left: number; top: number };
+type DraftTextSelection = TextareaSelection;
+type SelectionAnchor = TextareaSelectionAnchor;
 type ReplacementTransition = { id: number; top: number; height: number };
-
-function selectionAnchorFor(
-  textarea: HTMLTextAreaElement,
-  start: number,
-): SelectionAnchor {
-  const computed = window.getComputedStyle(textarea);
-  const mirror = document.createElement("div");
-  const marker = document.createElement("span");
-  const copiedProperties = [
-    "font-family",
-    "font-size",
-    "font-style",
-    "font-weight",
-    "letter-spacing",
-    "line-height",
-    "padding-block-start",
-    "padding-inline-end",
-    "padding-block-end",
-    "padding-inline-start",
-    "text-align",
-    "text-indent",
-    "text-transform",
-    "word-spacing",
-  ];
-
-  for (const property of copiedProperties) {
-    mirror.style.setProperty(property, computed.getPropertyValue(property));
-  }
-  mirror.style.position = "fixed";
-  mirror.style.insetInlineStart = "-10000px";
-  mirror.style.top = "0";
-  mirror.style.visibility = "hidden";
-  mirror.style.boxSizing = "border-box";
-  mirror.style.width = `${textarea.clientWidth}px`;
-  mirror.style.whiteSpace = "pre-wrap";
-  mirror.style.overflowWrap = "break-word";
-  mirror.textContent = textarea.value.slice(0, start);
-  marker.textContent = "\u200b";
-  mirror.append(marker);
-  document.body.append(mirror);
-
-  const left = Math.max(
-    116,
-    Math.min(
-      textarea.clientWidth - 116,
-      marker.offsetLeft - textarea.scrollLeft,
-    ),
-  );
-  const top = Math.max(
-    46,
-    Math.min(
-      textarea.offsetTop + textarea.clientHeight - 8,
-      textarea.offsetTop + marker.offsetTop - textarea.scrollTop - 8,
-    ),
-  );
-  mirror.remove();
-  return { left, top };
-}
 
 function addressText(addresses: DexterEmailDraftAddress[]) {
   return addresses
@@ -554,7 +501,7 @@ export function DexterEmailComposeCard({
       return;
     }
     setBodySelection({ start, end, text });
-    setSelectionAnchor(selectionAnchorFor(editor, start));
+    setSelectionAnchor(textareaSelectionAnchor(editor, start));
   }
 
   async function openRefinement(

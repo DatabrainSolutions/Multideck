@@ -7,22 +7,26 @@ const apiSource = await readFile(new URL("../src/lib/customs-drafts-api.ts", imp
 const pageSource = await readFile(new URL("../src/pages/customs-declarations-page.tsx", import.meta.url), "utf8")
 const translations = await readFile(new URL("../src/i18n/customs-declaration-phrases.ts", import.meta.url), "utf8")
 
-test("the declaration register keeps submitter attribution on each saved row", () => {
-  assert.match(apiSource, /submittedBy: string \| null/u)
+test("the declaration register resolves the assigned workspace user on each saved row", () => {
+  assert.match(apiSource, /assignedUserId: string \| null/u)
+  assert.match(apiSource, /assignee: CustomsAssignee \| null/u)
   assert.match(apiSource, /\.rpc\("multideck_customs_declaration_register_page"/u)
-  assert.match(apiSource, /rows: Array\.isArray\(response\.rows\) \? response\.rows as CustomsDraftSummary\[\] : \[\]/u)
+  assert.match(apiSource, /getCustomsDeclarationAssigneesByIds/u)
   assert.match(apiSource, /limit: Math\.max\(1, Math\.min\(input\.limit, 50\)\)/u)
   assert.match(apiSource, /\.limit\(customsDeclarationItemReadLimit\)/u)
 })
 
-test("the declaration register shows the authenticated submitter in a narrow avatar column", () => {
+test("the declaration register preserves profile pictures in a narrow assignee avatar column", () => {
   assert.match(appSource, /<CustomsDeclarationsPage[^>]+currentUser=\{currentUser\}/u)
-  assert.match(pageSource, /id: "submittedBy"[\s\S]*width: 64[\s\S]*maxWidth: 64/u)
-  assert.match(pageSource, /draft\.submittedBy === currentUser\?\.id/u)
-  assert.match(pageSource, /<AvatarImage src=\{currentUser\.profilePhotoUrl\} alt=""/u)
-  assert.match(pageSource, /aria-label=\{`\$\{t\("Submitted by"\)\}: \$\{name\}`\}/u)
+  assert.match(pageSource, /id: "assignedTo"[\s\S]*width: 64[\s\S]*maxWidth: 64/u)
+  assert.match(pageSource, /createProfilePhotoSignedUrls/u)
+  assert.match(pageSource, /resolvedPhotoUrl = photoUrl \?\? legacyCurrentUser\?\.profilePhotoUrl \?\? null/u)
+  assert.match(pageSource, /<AvatarImage src=\{resolvedPhotoUrl\} alt=""/u)
+  assert.match(pageSource, /!draft\.assignmentSupported && draft\.submittedBy === currentUser\?\.id/u)
+  assert.match(pageSource, /aria-label=\{`\$\{t\("Assigned to"\)\}: \$\{name\}`\}/u)
 })
 
-test("the submitter label is available in every supported declaration language", () => {
-  assert.match(translations, /"Submitted by": \{ de: "[^"]+", fr: "[^"]+", ar: "[^"]+" \}/u)
+test("the assignee workflow is available in every supported declaration language", () => {
+  assert.match(translations, /"Choose the workspace user responsible for this declaration\.": \{ de: "[^"]+", fr: "[^"]+", ar: "[^"]+" \}/u)
+  assert.match(translations, /"Declaration assigned": \{ de: "[^"]+", fr: "[^"]+", ar: "[^"]+" \}/u)
 })

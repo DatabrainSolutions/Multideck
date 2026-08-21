@@ -15,6 +15,11 @@ const accountDetail = readFileSync(new URL("../../multideck.client/src/pages/crm
 const contactsPage = readFileSync(new URL("../../multideck.client/src/pages/crm-contacts-page.tsx", import.meta.url), "utf8")
 const contactDetail = readFileSync(new URL("../../multideck.client/src/pages/crm-contact-detail-page.tsx", import.meta.url), "utf8")
 const contactCreateDialog = readFileSync(new URL("../../multideck.client/src/components/multideck/contact-create-dialog.tsx", import.meta.url), "utf8")
+const advancedFilterPopover = readFileSync(new URL("../../multideck.client/src/components/multideck/advanced-filter-popover.tsx", import.meta.url), "utf8")
+const organisationFoundation = readFileSync(new URL("../../multideck.client/src/components/multideck/organisation-foundation-panel.tsx", import.meta.url), "utf8")
+const organisationFoundationMigration = readFileSync(new URL("../migrations/20260820110000_crm_organisation_contact_address_foundation.sql", import.meta.url), "utf8")
+const accountOperations = readFileSync(new URL("../../multideck.client/src/components/multideck/account-operations-workspace.tsx", import.meta.url), "utf8")
+const accountOperationsMigration = readFileSync(new URL("../migrations/20260820162000_crm_account_operational_detail.sql", import.meta.url), "utf8")
 
 test("account and contact product routes use the authenticated customer API rather than fixture arrays", () => {
   assert.match(customerApi, /edgeFetch\("customers"/)
@@ -55,9 +60,11 @@ test("account summary matches the six-tile leads summary pattern", () => {
   assert.match(accountsPage, sharedSummaryClass)
   assert.match(crmPage, sharedTileClass)
   assert.match(accountsPage, sharedTileClass)
-  for (const label of ["Total accounts", "Contacts", "Needs attention", "Marketing opted in", "Unassigned", "Healthy accounts"]) {
+  for (const label of ["Contacts", "Needs attention", "Marketing opted in", "Unassigned"]) {
     assert.match(accountsPage, new RegExp(`t\\(\\"${label}\\"\\)`))
   }
+  assert.match(accountsPage, /t\("Total companies"\)/)
+  assert.match(accountsPage, /t\("Healthy companies"\)/)
 })
 
 test("account and contact directories use the configurable register table and in-table controls", () => {
@@ -68,8 +75,15 @@ test("account and contact directories use the configurable register table and in
     assert.match(source, /<RegisterSearchField/)
     assert.doesNotMatch(source, /<TableHeader>|<TableBody>/)
   }
-  assert.match(accountsPage, /storageKey="crm-accounts(?:-v\d+)?"/)
+  assert.match(accountsPage, /storageKey="crm-company-organisations-v1"/)
   assert.match(contactsPage, /storageKey="crm-contacts"/)
+  const filterValueControl = advancedFilterPopover.slice(
+    advancedFilterPopover.indexOf('<div className="col-start-2 row-start-3'),
+    advancedFilterPopover.indexOf('<Button', advancedFilterPopover.indexOf('<div className="col-start-2 row-start-3')),
+  )
+  assert.match(filterValueControl, /kind === "select"/)
+  assert.match(filterValueControl, /aria-label=\{t\("Filter value"\)\}/)
+  assert.match(filterValueControl, /\(meta\?\.options \?\? \[\]\)\.map/)
 })
 
 test("a top-bar contact requires an explicit account choice", () => {
@@ -82,7 +96,7 @@ test("a top-bar contact requires an explicit account choice", () => {
 test("account and contact creation failures stay visible and recoverable on every wizard step", () => {
   assert.match(accountsPage, /referenceState.*"idle" \| "loading" \| "ready" \| "error"/)
   assert.match(accountsPage, /setReferenceState\("error"\)/)
-  assert.match(accountsPage, /Organisation types could not be loaded\. Try again before creating this account\./)
+  assert.match(accountsPage, /Organisation types could not be loaded\. Try again before creating this company\./)
   assert.match(accountsPage, /setReferenceReloadToken\(\(value\) => value \+ 1\)/)
 
   const accountGlobalError = accountsPage.slice(accountsPage.lastIndexOf("{createError ?"))
@@ -94,7 +108,7 @@ test("account and contact creation failures stay visible and recoverable on ever
 
 test("contact fields edit inline and consent changes require evidence", () => {
   assert.match(contactDetail, /import \{ InlineField, InlineFieldCard, InlineSelectField, InlineSwitchField \}/)
-  assert.match(contactDetail, /import \{[^}]*getContact, updateContact, type ApiContactDetail, type UpdateContactInput \}/)
+  assert.match(contactDetail, /import \{[^}]*getContact[^}]*updateContact[^}]*type ApiContactDetail[^}]*type UpdateContactInput \}/)
   assert.match(contactDetail, /const saveQueueRef = useRef<Promise<void>>\(Promise\.resolve\(\)\)/)
   assert.match(contactDetail, /const patch = useCallback\(\(change: Partial<ContactDraft>\)/)
   assert.match(contactDetail, /saveQueueRef\.current\.then\(async \(\) =>/)
@@ -117,6 +131,25 @@ test("contact fields edit inline and consent changes require evidence", () => {
   assert.match(customers, /p_expected_version: expectedVersion\(payload\.expectedVersion\)/)
 })
 
+test("company foundations preserve offices, address capabilities, defaults, and contact history", () => {
+  assert.match(accountDetail, /<OrganisationFoundationPanel/)
+  assert.match(organisationFoundation, /account\.officeAssignments/)
+  assert.match(organisationFoundation, /account\.addressCapabilities/)
+  assert.match(organisationFoundation, /account\.relatedPartyDefaults/)
+  assert.match(organisationFoundation, /Weekly opening hours/)
+  assert.match(organisationFoundation, /Dated overrides/)
+  assert.match(contactDetail, /contact\.employmentHistory/)
+  assert.match(contactDetail, /contact\.emailHistory/)
+  assert.match(contactDetail, /transferContact\(contact\.id/)
+  assert.match(organisationFoundationMigration, /CRM_AccountOfficeAssignments/)
+  assert.match(organisationFoundationMigration, /CRM_ContactOrganisationAssignments/)
+  assert.match(organisationFoundationMigration, /Org_AddressOpeningHours/)
+  assert.match(organisationFoundationMigration, /Org_AddressOpeningOverrides/)
+  assert.match(organisationFoundationMigration, /Org_RelatedPartyDefaults/)
+  assert.match(organisationFoundationMigration, /multideck_crm_transfer_contact/)
+  assert.match(organisationFoundationMigration, /multideck_crm_resolve_related_party_default/)
+})
+
 test("account editing uses existing CRM reference data and preserves the current customer model", () => {
   assert.match(customers, /sys_CRMRelationshipStatuses/)
   assert.match(accountDetail, /getCustomerReference/)
@@ -129,17 +162,31 @@ test("account editing uses existing CRM reference data and preserves the current
   assert.match(accountDetail, /<ScoreCell label=\{t\("Churn risk"\)\} score=\{currentAccount\.churnRiskScore\} tone="risk" \/>/)
   assert.match(accountDetail, /function ScoreCell\(\{ label, score, tone \}/)
   assert.match(accountDetail, /<ProgressRing ratio=\{\(score \?\? 0\) \/ 100\}/)
-  assert.match(accountDetail, /const overviewRows = \[/)
   assert.match(accountDetail, /<header[\s\S]*<HeadingField value=\{currentAccount\.name\}/)
-  assert.match(accountDetail, /<aside[\s\S]*aria-labelledby=\{`account-overview-\$\{currentAccount\.id\}`\}/)
-  assert.match(accountDetail, /overviewRows\.map\(\(\{ key, label, value, icon: Icon, href, direction \}\)/)
-  assert.match(accountDetail, /<CopyableField label=\{t\("Account"\)\} value=\{currentAccount\.name\}/)
+  assert.doesNotMatch(accountDetail, /<aside[\s\S]*Company details/)
+  assert.match(accountDetail, /<AccountDetailTabs account=\{currentAccount\}/)
+  assert.match(accountDetail, /<AccountOperationsPanel account=\{currentAccount\}/)
   assert.match(accountDetail, /MarketingOptInControl/)
   assert.match(accountDetail, /<AddCustomField onAdd=\{\(label, value\) => patch\(\{ customFields:/)
   assert.match(customers, /CRM_AccountProfiles/)
   assert.match(customers, /CRM_CustomerEngagementPreferences/)
   assert.match(accountDetail, /CustomerWarehouseAccess customerId=\{currentAccount\.id\}/)
   assert.match(accountDetail, /<Zone title=\{t\("Profile"\)}>\s*<InlineFieldGroup stacked directEdit>/)
+})
+
+test("account operations are contextual, persisted and available to booking workflows", () => {
+  assert.match(accountOperations, /roleTabs[\s\S]*account\.types/)
+  for (const label of ["Shipping line", "SCAC code", "Consignee", "Collection addresses", "Overseas agent", "Credit limit", "Supported invoice currencies", "VAT number", "EORI number", "Direct representation authority", "Recurring operational instructions", "Appointment required", "Privacy and retention"]) {
+    assert.match(accountOperations, new RegExp(label, "i"))
+  }
+  assert.match(customers, /accountOperations\(admin, id, profile \?\? null\)/)
+  assert.match(customers, /multideck_crm_replace_account_operations/)
+  assert.match(accountOperationsMigration, /CRM_AccountOperationalInstructions/)
+  assert.match(accountOperationsMigration, /Org_AddressOperationalDetails/)
+  assert.match(accountOperationsMigration, /CRM_AccountDocumentRecords/)
+  assert.match(accountOperationsMigration, /multideck_crm_resolve_account_instructions/)
+  assert.match(accountOperationsMigration, /app_user_can_access_organisation/)
+  assert.match(accountOperationsMigration, /left\(regexp_replace[\s\S]*, 8\)/)
 })
 
 test("account country codes are validated before any customer write", () => {
@@ -160,7 +207,7 @@ test("CRM detail reads stay scoped and consent reasons are validated before writ
   const updateAccountSource = customers.slice(customers.indexOf("async function updateAccount"), customers.indexOf("async function updateContact"))
   const updateContactSource = customers.slice(customers.indexOf("async function updateContact"), customers.indexOf("function crmWriteError"))
 
-  assert.match(accountDetailSource, /const summaryWithSource = \(await customerRows\(admin, companyId, null, id, true, undefined, userId\)\)\[0\]/)
+  assert.match(accountDetailSource, /const summaryWithSource = \(await customerRows\(admin, companyId, null, id, true, undefined, userId, "any"\)\)\[0\]/)
   assert.match(accountDetailSource, /contactRows\(admin, companyId, null, id, null, false, undefined, userId, 20\)/)
   assert.ok(accountDetailSource.indexOf("const contactIds = contactList.map") < accountDetailSource.indexOf("recentEmails(admin, userId, permissions, id, contactIds"))
   assert.doesNotMatch(accountDetailSource, /admin\.from\("Org_Master"\)/)
@@ -187,7 +234,7 @@ test("CRM detail reads stay scoped and consent reasons are validated before writ
   assert.doesNotMatch(updateAccountSource, /admin\.from\("(?:Org_Master|CRM_AccountProfiles|Org_Addresses|CRM_CustomerEngagementPreferences|CRM_Activities)"\)\.(?:insert|update|upsert|delete)/)
   assert.doesNotMatch(updateContactSource, /admin\.from\("(?:Org_Contacts|OrgContact_Emails|CRM_ContactProfiles|Comm_Identities|CRM_Activities|CRM_ActivityParticipants)"\)\.(?:insert|update|upsert|delete)/)
   assert.match(contactDetailSource, /multideck_crm_contact_activity_page/)
-  assert.match(contactDetailSource, /activityError[\s\S]*consentError/)
+  assert.match(contactDetailSource, /activityError[\s\S]*historyError/)
   assert.match(contactDetailSource, /recentEmails\(admin, userId, permissions, summary\.accountId, \[id\], summary\.email \? \[summary\.email\] : \[\], false\)/)
 })
 

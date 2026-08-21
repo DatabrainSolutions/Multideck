@@ -507,3 +507,118 @@
 [dir="rtl"] .md-booking-confirm-label [data-copy-layer="copied"] {
   transform: translateX(50%);
 }
+/* Quote cold-load geometry mirrors the CRM dashboard skeleton: the final
+   workspace shape is reserved, and data replaces it without a page jump. */
+.md-quote-skeleton {
+  display: grid;
+  gap: var(--md-page-stack-gap-compact);
+}
+
+.md-quote-skeleton__block {
+  display: block;
+  border-radius: var(--md-radius-xl);
+  background: var(--md-surface);
+  box-shadow: var(--md-shadow-line);
+  animation: md-quote-skeleton-breathe 1600ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.md-quote-skeleton__header,
+.md-quote-skeleton__tabs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--md-gap-sm);
+  padding: 8px 12px;
+}
+
+.md-quote-skeleton__header {
+  min-height: 44px;
+}
+
+.md-quote-skeleton__tabs {
+  min-height: 42px;
+  overflow: hidden;
+}
+
+.md-quote-skeleton__spacer {
+  flex: 1 1 auto;
+}
+
+.md-quote-skeleton__line {
+  display: block;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: var(--md-radius-md);
+  background: var(--md-surface-soft);
+  animation: md-quote-skeleton-breathe 1600ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.md-quote-skeleton__facts,
+.md-quote-skeleton__signals,
+.md-quote-skeleton__panels {
+  display: grid;
+  gap: var(--md-page-stack-gap-compact);
+}
+
+.md-quote-skeleton__facts {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.md-quote-skeleton__facts .md-quote-skeleton__block {
+  height: 54px;
+}
+
+.md-quote-skeleton__signals {
+  grid-template-columns: minmax(0, 1.6fr) minmax(240px, 0.8fr);
+}
+
+.md-quote-skeleton__signals .md-quote-skeleton__block {
+  height: 112px;
+}
+
+.md-quote-skeleton__block--dark {
+  background: var(--md-accent-abyss-deep);
+  opacity: 0.82;
+}
+
+.md-quote-skeleton__panels {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.md-quote-skeleton__panels .md-quote-skeleton__block {
+  height: 286px;
+}
+
+.md-quote-skeleton--still .md-quote-skeleton__block,
+.md-quote-skeleton--still .md-quote-skeleton__line {
+  animation: none;
+  opacity: 0.72;
+}
+
+@media (max-width: 760px) {
+  .md-quote-skeleton__header {
+    flex-wrap: wrap;
+  }
+
+  .md-quote-skeleton__header .md-quote-skeleton__spacer {
+    display: none;
+  }
+
+  .md-quote-skeleton__facts,
+  .md-quote-skeleton__panels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .md-quote-skeleton__signals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .md-quote-skeleton__panels .md-quote-skeleton__block {
+    height: 220px;
+  }
+}
+
+@keyframes md-quote-skeleton-breathe {
+  0%, 100% { opacity: 0.58; }
+  50% { opacity: 0.92; }
+}

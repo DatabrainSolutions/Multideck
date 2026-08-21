@@ -11,6 +11,7 @@ const migration = (await Promise.all([
   read("supabase/migrations/20260819100932_quote_workspace_v1_accept_version.sql"),
   read("supabase/migrations/20260819101226_quote_workspace_v1_indexes.sql"),
 ])).join("\n")
+const quoteLossMigration = await read("supabase/migrations/20260820112421_require_quote_loss_reason.sql")
 const rollback = await read("supabase/rollbacks/20260819100028_quote_workspace_v1_rollback.sql")
 const workflowEdge = await read("supabase/functions/quotes-workflow/index.ts")
 const workflowCore = await read("supabase/functions/quotes-workflow/core.ts")
@@ -69,6 +70,28 @@ test("Dexter quote parity is permission guarded and existing watches stay event 
   assert.match(migration, /'\["Quotes\.Write"\]'::jsonb/)
   assert.match(migration, /"AIDexterAction_HasExternalEffect"/)
   assert.doesNotMatch(migration, /cron\.schedule[\s\S]+quotes/)
+})
+
+test("quote loss requires a saved reason and removes the staged lifecycle from Dexter", () => {
+  assert.match(quoteLossMigration, /next_lifecycle = 'declined' and nullif\(btrim\(requested_note\), ''\) is null/)
+  assert.match(quoteLossMigration, /'lossReason'/)
+  assert.match(quoteLossMigration, /multideck_dexter_action_mark_quote_lost/)
+  assert.match(quoteLossMigration, /"AIDexterAction_Code" = 'manage_quote_lifecycle'/)
+  assert.match(quoteLossMigration, /"AIDexterAction_IsActive" = false/)
+  assert.match(quoteLossMigration, /Evaluation remains event-driven from the quote table trigger/)
+})
+
+test("quote workspace presents one Open state until booking or loss", () => {
+  assert.match(quotePage, /status: "Open"/)
+  assert.match(quotePage, /status: "Lost"/)
+  assert.match(quotePage, /function QuoteWorkspaceSkeleton\(\)/)
+  assert.match(quotePage, /void getSalesQuote\(reference\)/)
+  assert.match(quotePage, /await loadQuoteWorkspace\(reference\)/)
+  assert.doesNotMatch(quotePage, /Loading quote…<\/div>/)
+  assert.match(quotePage, /Why was this quote lost\?/)
+  assert.match(quotePage, /transitionQuoteWorkflow\(currentQuoteId, "declined", reason\)/)
+  assert.doesNotMatch(quotePage, /Mark calculated/)
+  assert.doesNotMatch(quotePage, /const quoteStages/)
 })
 
 test("one rollback restores the exact pre-migration fixtures and removes only v1 work", () => {

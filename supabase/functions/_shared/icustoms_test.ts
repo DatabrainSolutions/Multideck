@@ -59,7 +59,7 @@ function validDeclaration(): ExportDeclarationInput {
     exitOffice: "GB000001",
     goodsLocationName: "Dover & District",
     goodsLocationType: "A",
-    transactionNature: "1",
+    transactionNature: "11",
     previousDocumentCategory: "Z",
     previousDocumentType: "MRN",
     previousDocumentReference: "25GB00000000000001",
@@ -67,7 +67,7 @@ function validDeclaration(): ExportDeclarationInput {
     headerAdditionalInformationDescription: "EXPORTER",
     isContainerised: "0",
     items: [{
-      commodityCode: "0803101000",
+      commodityCode: "08031010",
       description: "Fresh plantain <bananas>",
       packageKind: "BX",
       packageMarks: "MD-TEST-001",
@@ -127,7 +127,7 @@ function validImportDeclaration(): ExportDeclarationInput {
     goodsLocationName: "WLALONBTW",
     goodsLocationIdentifier: "GBWLA",
     goodsLocationType: "A",
-    transactionNature: "1",
+    transactionNature: "11",
     tradeTerms: "CIF",
     isContainerised: "0",
     items: [{
@@ -207,6 +207,141 @@ Deno.test("buildICustomsH1ImportXml follows the documented H1 contract", () => {
   assert(
     !xml.includes("<TotalGrossMass>"),
     "The H1 contract uses TotalGrossMassMeasure only.",
+  );
+});
+
+Deno.test("commodity length and transaction nature follow the declaration direction", () => {
+  const exportDeclaration = validDeclaration();
+  const exportXml = buildICustomsB1ExportXml(exportDeclaration);
+  assert(
+    exportXml.includes("<CommodityCode>08031010</CommodityCode>"),
+    "Expected an eight-digit export commodity code.",
+  );
+
+  (exportDeclaration.items as Array<Record<string, unknown>>)[0].commodityCode =
+    "0803101000";
+  assert(
+    validateICustomsB1Export(exportDeclaration).some((issue) =>
+      issue.includes("8-digit commodity code")
+    ),
+    "Expected a ten-digit export commodity code to be rejected.",
+  );
+
+  const importDeclaration = validImportDeclaration();
+  (importDeclaration.items as Array<Record<string, unknown>>)[0].commodityCode =
+    "08031010";
+  assert(
+    validateICustomsH1Import(importDeclaration).some((issue) =>
+      issue.includes("10-digit commodity code")
+    ),
+    "Expected an eight-digit import commodity code to be rejected.",
+  );
+
+  importDeclaration.transactionNature = "1";
+  assert(
+    validateICustomsH1Import(importDeclaration).some((issue) =>
+      issue.includes("nature of transaction")
+    ),
+    "Expected the former one-digit transaction summary to be rejected.",
+  );
+});
+
+Deno.test("H1 import costs map to the official CDS additions codes", () => {
+  const declaration = validImportDeclaration();
+  declaration.freightChargeAmount = "120";
+  declaration.freightChargeCurrency = "EUR";
+  declaration.freightChargeApportionment = "value";
+  declaration.vatValueAdjustmentAmount = "35";
+  declaration.vatValueAdjustmentCurrency = "GBP";
+  declaration.vatValueAdjustmentApportionment = "value";
+  declaration.insuranceCostAmount = "20";
+  declaration.insuranceCostCurrency = "USD";
+  declaration.containerPackingCostAmount = "10";
+  declaration.containerPackingCostCurrency = "GBP";
+
+  const xml = buildICustomsH1ImportXml(declaration);
+  for (const code of ["AP", "AV", "AK", "AD"]) {
+    assert(
+      xml.includes(`<AdditionCode>${code}</AdditionCode>`),
+      `Expected import cost code ${code}.`,
+    );
+  }
+  assert(
+    xml.includes('<Amount currencyID="EUR">120</Amount>') &&
+      xml.includes('<Amount currencyID="USD">20</Amount>'),
+    "Expected each import cost to retain its invoiced currency.",
+  );
+
+  declaration.freightChargeApportionment = "gross_mass";
+  declaration.vatValueAdjustmentApportionment = "gross_mass";
+  const grossMassXml = buildICustomsH1ImportXml(declaration);
+  assert(
+    grossMassXml.includes("<AdditionCode>AQ</AdditionCode>") &&
+      grossMassXml.includes("<AdditionCode>AW</AdditionCode>"),
+    "Expected gross-mass freight and VAT adjustment codes AQ and AW.",
+  );
+
+  declaration.borderMode = "4";
+  declaration.freightChargeApportionment = "value";
+  const genericAirFreightXml = buildICustomsH1ImportXml(declaration);
+  assert(
+    genericAirFreightXml.includes("<AdditionCode>AP</AdditionCode>") &&
+      !genericAirFreightXml.includes("<AdditionCode>AR</AdditionCode>") &&
+      !genericAirFreightXml.includes("<AdditionCode>AS</AdditionCode>"),
+    "Expected generic air freight to remain AP until an Airport of Loading adjustment is explicitly supported.",
+  );
+
+  declaration.tradeTerms = "EXW";
+  declaration.freightChargeAmount = "";
+  declaration.freightChargeCurrency = "";
+  assert(
+    validateICustomsH1Import(declaration).some((issue) =>
+      issue.includes("EXW imports require freight costs")
+    ),
+    "Expected EXW imports to require freight costs.",
+  );
+});
+
+Deno.test("H1 import costs allocate across items and reject incomplete or duplicated values", () => {
+  const declaration = validImportDeclaration();
+  const firstItem = (declaration.items as Array<Record<string, unknown>>)[0];
+  declaration.items = [
+    { ...firstItem, itemPrice: "1000", grossMass: "100" },
+    { ...firstItem, itemPrice: "3000", grossMass: "300", packageMarks: "MD-IMPORT-002" },
+  ];
+  declaration.totalAmount = "4000";
+  declaration.totalPackages = "20";
+  declaration.totalGrossMass = "400";
+  declaration.freightChargeAmount = "120";
+  declaration.freightChargeCurrency = "EUR";
+  declaration.freightChargeApportionment = "value";
+
+  const allocatedXml = buildICustomsH1ImportXml(declaration);
+  assert(
+    allocatedXml.includes('<Amount currencyID="EUR">30</Amount>') &&
+      allocatedXml.includes('<Amount currencyID="EUR">90</Amount>'),
+    "Expected declaration freight to be allocated to both items in proportion to their values.",
+  );
+
+  (declaration.items as Array<Record<string, unknown>>)[0].valuationAdjustments = [{
+    code: "AP",
+    currency: "EUR",
+    amount: "5",
+  }];
+  assert(
+    validateICustomsH1Import(declaration).some((issue) =>
+      issue.includes("duplicate cost already entered in Import costs")
+    ),
+    "Expected an item-level AP cost to be rejected when freight was already entered at declaration level.",
+  );
+
+  const incomplete = validImportDeclaration();
+  incomplete.insuranceCostAmount = "20";
+  assert(
+    validateICustomsH1Import(incomplete).some((issue) =>
+      issue.includes("three-letter currency for insurance costs")
+    ),
+    "Expected a cost amount without its invoiced currency to fail validation.",
   );
 });
 
@@ -899,7 +1034,9 @@ Deno.test("ICustomsClient creates the smallest honest provider draft shell and d
   assert(
     shell.includes("<DeclarationCategory>B1</DeclarationCategory>") &&
       shell.includes("<TypeCode>EXA</TypeCode>") &&
-      shell.includes("<TraderAssignedReferenceID>MD-CDS-EX-TEST</TraderAssignedReferenceID>") &&
+      shell.includes(
+        "<TraderAssignedReferenceID>MD-CDS-EX-TEST</TraderAssignedReferenceID>",
+      ) &&
       !shell.includes("<Commodity>") &&
       calls[1].init?.body === shell,
     "Expected only direction, type, and the truthful local reference in the initial shell.",
@@ -1119,7 +1256,7 @@ Deno.test("ICustomsClient updates the same provider draft with every edited good
       statisticalValue: "1000",
     },
     {
-      commodityCode: "0901110000",
+      commodityCode: "09011100",
       description: "New second goods item",
       consignor: "GB Consignor Ltd",
       packageKind: "BX",

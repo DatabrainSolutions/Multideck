@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, type PointerEvent, type ReactNode } from "react"
 import { useReducedMotion } from "motion/react"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/lib/theme-provider"
 import { useAccentBrandRamp } from "@/lib/accent-theme"
 import { cn } from "@/lib/utils"
 import { ResilientShaderSurface } from "@/components/multideck/resilient-shader-surface"

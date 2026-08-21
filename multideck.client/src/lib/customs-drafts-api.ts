@@ -1,5 +1,6 @@
 import { createExportDeclarationItem, createStandaloneDeclarationDraft, type DeclarationDirection, type ExportDeclarationItem, type StandaloneExportDraft } from "@/lib/customs-declaration"
 import { invalidateRegisterPages, readCachedRegisterPage, type RegisterSort } from "@/lib/application-data-api"
+import type { UserProfilePhoto } from "@/lib/profile-photo"
 import { getSupabaseSession, supabase } from "@/lib/supabase"
 
 type SavedItemRow = {
@@ -18,6 +19,9 @@ type SaveDraftResultRow = {
 export type CustomsDraftSummary = {
   id: string
   submittedBy: string | null
+  assignmentSupported: boolean
+  assignedUserId: string | null
+  assignee: CustomsAssignee | null
   jobId: string | null
   jobReference: string | null
   bookingReference: string | null
@@ -32,6 +36,24 @@ export type CustomsDraftSummary = {
   itemCount: number
   createdAt: string
   updatedAt: string
+}
+
+export type CustomsAssignee = {
+  id: string
+  displayName: string
+  firstName: string | null
+  lastName: string | null
+  email: string
+  jobTitle: string | null
+  canWorkCustoms: boolean
+  profilePhoto: UserProfilePhoto | null
+}
+
+export type CustomsAssigneePage = {
+  users: CustomsAssignee[]
+  total: number
+  limit: number
+  offset: number
 }
 
 export type CustomsDeclarationScope = "standalone" | "job-related"
@@ -106,8 +128,19 @@ export async function listCustomsDeclarationDraftsPage(
     if (error) throw error
     const response = record(data)
     const facets = record(response.facets)
+    const rows = Array.isArray(response.rows) ? response.rows as Array<Omit<CustomsDraftSummary, "assignee" | "assignmentSupported"> & { assignedUserId?: string | null }> : []
+    const assignees = await getCustomsDeclarationAssigneesByIds(
+      rows.map((row) => row.assignedUserId).filter((value): value is string => Boolean(value)),
+      requestSignal,
+    )
+    const assigneeById = new Map(assignees.map((assignee) => [assignee.id, assignee]))
     return {
-      rows: Array.isArray(response.rows) ? response.rows as CustomsDraftSummary[] : [],
+      rows: rows.map((row) => ({
+        ...row,
+        assignmentSupported: Object.prototype.hasOwnProperty.call(row, "assignedUserId"),
+        assignedUserId: row.assignedUserId ?? null,
+        assignee: row.assignedUserId ? assigneeById.get(row.assignedUserId) ?? null : null,
+      })),
       total: Number(response.total ?? 0),
       availableTotal: Number(response.availableTotal ?? 0),
       facets: {
@@ -116,6 +149,69 @@ export async function listCustomsDeclarationDraftsPage(
       },
     }
   }, signal)
+}
+
+export async function listCustomsDeclarationAssignees(
+  search = "",
+  limit = 50,
+  offset = 0,
+  signal?: AbortSignal,
+): Promise<CustomsAssigneePage> {
+  const client = requireSupabase()
+  let query = client.rpc("multideck_customs_assignment_users_page", {
+    p_search: search.trim().slice(0, 200) || null,
+    p_limit: Math.max(1, Math.min(Math.trunc(limit), 50)),
+    p_offset: Math.max(0, Math.trunc(offset)),
+  })
+  if (signal) query = query.abortSignal(signal)
+  const { data, error } = await query
+  if (error) throw error
+  const response = record(data)
+  return {
+    users: Array.isArray(response.users) ? response.users as CustomsAssignee[] : [],
+    total: Number(response.total ?? 0),
+    limit: Number(response.limit ?? limit),
+    offset: Number(response.offset ?? offset),
+  }
+}
+
+export async function getCustomsDeclarationAssigneesByIds(
+  userIds: string[],
+  signal?: AbortSignal,
+): Promise<CustomsAssignee[]> {
+  const ids = [...new Set(userIds.filter(Boolean))].slice(0, 50)
+  if (!ids.length) return []
+  const client = requireSupabase()
+  let query = client.rpc("multideck_customs_assignees_by_ids", { p_user_ids: ids })
+  if (signal) query = query.abortSignal(signal)
+  const { data, error } = await query
+  if (error) throw error
+  return Array.isArray(data) ? data as CustomsAssignee[] : []
+}
+
+export async function getCustomsDeclarationAssignment(declarationId: string): Promise<CustomsAssignee | null> {
+  const client = requireSupabase()
+  const { data, error } = await client
+    .from("Customs_Declarations")
+    .select("CUST_AssignedUserID")
+    .eq("CUST_id", declarationId)
+    .eq("CUST_IsDeleted", false)
+    .single()
+  if (error) throw error
+  const assignedUserId = data.CUST_AssignedUserID as string | null
+  if (!assignedUserId) return null
+  return (await getCustomsDeclarationAssigneesByIds([assignedUserId]))[0] ?? null
+}
+
+export async function assignCustomsDeclaration(declarationId: string, assignedUserId: string | null) {
+  const client = requireSupabase()
+  const { data, error } = await client.rpc("assign_customs_declaration", {
+    p_declaration_id: declarationId,
+    p_assigned_user_id: assignedUserId,
+  })
+  if (error) throw error
+  invalidateCustomsDeclarationPages()
+  return record(data)
 }
 
 export async function loadStandaloneDeclarationDraft(
@@ -197,6 +293,21 @@ export async function saveStandaloneDeclarationDraft(
     reference: saved.local_reference_number,
     updatedAt: saved.updated_at,
   }
+}
+
+export async function saveJobRelatedDeclarationDraft(
+  declarationId: string,
+  draft: StandaloneExportDraft,
+): Promise<SaveCustomsDraftResult> {
+  const client = requireSupabase()
+  const { data, error } = await client.rpc("save_job_customs_draft", {
+    p_declaration_id: declarationId,
+    p_draft: draft,
+  }).single()
+  if (error) throw error
+  const saved = data as SaveDraftResultRow
+  invalidateCustomsDeclarationPages()
+  return { id: saved.declaration_id, reference: saved.local_reference_number, updatedAt: saved.updated_at }
 }
 
 export const loadStandaloneExportDraft = (declarationId: string) => loadStandaloneDeclarationDraft(declarationId, "export")

@@ -68,11 +68,12 @@ function tone(value: string): StatusTone {
 }
 
 function mapQuote(row: SalesQuoteRow): QuoteRegisterRecord {
+  const lost = ["declined", "ghosted", "lost"].includes(row.Quote_Status.trim().toLowerCase())
   return {
     createdAt: row.Created_At,
     reference: row.Quote_Reference,
-    status: row.Quote_Status,
-    statusTone: tone(row.Quote_Status_Tone),
+    status: lost ? "Lost" : "Open",
+    statusTone: lost ? "red" : "green",
     customer: row.Customer_Name,
     origin: row.Origin,
     destination: row.Destination,
@@ -177,10 +178,10 @@ export async function getSalesQuote(reference: string): Promise<QuoteRegisterRec
 
   const { data, error } = await supabase
     .from("App_Live_Quotes")
-    .select("*")
+    .select(dashboardQuoteCompatibilityColumns)
     .eq("Quote_Reference", reference)
     .maybeSingle()
 
   if (error) throw error
-  return data ? mapQuote(data as SalesQuoteRow) : null
+  return data ? mapQuote(data as unknown as SalesQuoteRow) : null
 }

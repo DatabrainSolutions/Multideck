@@ -1019,7 +1019,7 @@ function FollowUpRecordDialog({
         const name = personNameParts(personName)
         await createCustomer({
           name: companyName,
-          orgTypeId: orgType.id,
+          orgTypeIds: [orgType.id],
           addressLine1: null,
           townCity: null,
           postZipCode: null,

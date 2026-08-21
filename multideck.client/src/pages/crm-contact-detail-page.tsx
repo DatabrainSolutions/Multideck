@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { AiBrain, ArrowLeft, ArrowRight, BriefcaseBusiness, Building2, CalendarDays, Languages, Mail, Phone, Plus, RefreshCw, Trash2, UsersRound } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowLeft, ArrowLeftRight, ArrowRight, BriefcaseBusiness, Building2, CalendarDays, Languages, Mail, Phone, Plus, RefreshCw, Trash2, UsersRound } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { CopyableField } from "@/components/multideck/copyable-field"
 import { CrmDetailOverviewShader } from "@/components/multideck/crm-detail-overview-shader"
@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { useLanguage } from "@/i18n/language-provider"
-import { CustomerApiError, getContact, updateContact, type ApiContactDetail, type UpdateContactInput } from "@/lib/customer-api"
+import { CustomerApiError, getContact, listAccountsPage, transferContact, updateContact, type ApiContactDetail, type ApiCustomer, type UpdateContactInput } from "@/lib/customer-api"
 
 type CustomField = { id: string; label: string; value: string }
 type ContactDraft = UpdateContactInput & { customFields: CustomField[] }
@@ -117,6 +117,7 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [consentOpen, setConsentOpen] = useState(false)
+  const [transferOpen, setTransferOpen] = useState(false)
   const contactRef = useRef<ApiContactDetail | null>(null)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
 
@@ -284,6 +285,37 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
         </div>
 
 
+        <Panel
+          title={t("Employment history")}
+          meta={String(contact.employmentHistory.length)}
+          action={<Button type="button" variant="outline" className="h-8 px-2.5 text-[12px]" onClick={() => setTransferOpen(true)}><ArrowLeftRight className="size-3.5" strokeWidth={1.4} />{t("Move to another company")}</Button>}
+        >
+          {contact.employmentHistory.length ? contact.employmentHistory.map((item, index) => (
+            <div key={item.id} className={`grid gap-2 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:px-6 ${index ? "border-t border-[var(--md-line)]" : ""}`}>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" className="truncate text-start text-[14px] font-medium text-[var(--md-ink)] hover:text-[var(--md-accent)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" onClick={() => navigate(`/crm/accounts/${item.organisationId}`)} data-i18n-skip dir="auto">{item.organisationName}</button>
+                  {item.isCurrent ? <StatusPill tone="green">{t("Current employer")}</StatusPill> : null}
+                </div>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]" dir="auto">{[item.jobTitle, item.department, localizeContactValue(item.role, t)].filter(Boolean).join(" · ") || t("No role recorded")}</p>
+              </div>
+              <p className="text-[12px] tabular-nums text-[var(--md-subtle)]"><span dir="ltr">{formatDate(item.startedAt, language)}</span> – <span dir="ltr">{item.endedAt ? formatDate(item.endedAt, language) : t("Present")}</span></p>
+            </div>
+          )) : <Empty text={t("No employer history has been recorded yet.")} />}
+        </Panel>
+
+        <Panel title={t("Email history")} meta={String(contact.emailHistory.length)}>
+          {contact.emailHistory.length ? contact.emailHistory.map((item, index) => (
+            <div key={item.id} className={`grid gap-2 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:px-6 ${index ? "border-t border-[var(--md-line)]" : ""}`}>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <a href={`mailto:${item.email}`} className="min-w-0 break-all text-[14px] font-medium text-[var(--md-accent)] hover:underline" dir="ltr" data-i18n-skip>{item.email}</a>
+                <StatusPill tone={item.isActive ? "green" : "neutral"}>{t(item.isActive ? (item.isPrimary ? "Current primary" : "Active") : "Retired")}</StatusPill>
+              </div>
+              <p className="text-[12px] tabular-nums text-[var(--md-subtle)]"><span dir="ltr">{formatDate(item.validFrom, language)}</span> – <span dir="ltr">{item.validTo ? formatDate(item.validTo, language) : t("Present")}</span></p>
+            </div>
+          )) : <Empty text={t("No email history has been recorded yet.")} />}
+        </Panel>
+
         {contact.consentHistory.length ? <Panel title={t("Consent history")} meta={String(contact.consentHistory.length)}><div className="px-5 pb-4">{contact.consentHistory.map((item) => <div key={item.id} className="border-t border-[var(--md-line)] py-3 first:border-t-0"><div className="flex items-center justify-between gap-3"><StatusPill tone={normaliseContactCode(item.status) === "opted_in" ? "green" : "neutral"}>{localizeContactValue(item.status, t) ?? t("Unknown")}</StatusPill><span className="text-[12px] tabular-nums text-[var(--md-subtle)]">{formatDate(item.effectiveAt, language)}</span></div><p className="mt-2 text-[12px] leading-5 text-[var(--md-text)]" dir="auto">{[localizeContactValue(item.source, t), item.reason].filter(Boolean).join(" · ")}</p></div>)}</div></Panel> : null}
       </Surface>
 
@@ -309,6 +341,15 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
         onSave={async (marketingOptIn, marketingConsentReason) => {
           await patch({ marketingOptIn, marketingConsentReason })
           toast.success(t(marketingOptIn ? "Marketing consent recorded" : "Marketing opt-out recorded"))
+        }}
+      />
+      <ContactTransferDialog
+        open={transferOpen}
+        onOpenChange={setTransferOpen}
+        contact={currentContact}
+        onTransferred={(updated) => {
+          contactRef.current = updated
+          setContact(updated)
         }}
       />
     </div>
@@ -368,6 +409,111 @@ function ContactConsentDialog({ open, onOpenChange, current, source, updatedAt, 
   )
 }
 
+function ContactTransferDialog({
+  open,
+  onOpenChange,
+  contact,
+  onTransferred,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  contact: ApiContactDetail
+  onTransferred: (contact: ApiContactDetail) => void
+}) {
+  const { t } = useLanguage()
+  const [companies, setCompanies] = useState<ApiCustomer[]>([])
+  const [targetOrganisationId, setTargetOrganisationId] = useState("")
+  const [startedAt, setStartedAt] = useState(() => new Date().toISOString().slice(0, 10))
+  const [jobTitle, setJobTitle] = useState(contact.jobTitle ?? "")
+  const [department, setDepartment] = useState(contact.department ?? "")
+  const [role, setRole] = useState(contact.role ?? "")
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    let active = true
+    setTargetOrganisationId("")
+    setStartedAt(new Date().toISOString().slice(0, 10))
+    setJobTitle(contact.jobTitle ?? "")
+    setDepartment(contact.department ?? "")
+    setRole(contact.role ?? "")
+    setError(null)
+    setLoading(true)
+    listAccountsPage({ organisationType: "company", limit: 100, offset: 0 })
+      .then((page) => { if (active) setCompanies(page.rows.filter((company) => company.id !== contact.accountId)) })
+      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : t("Companies could not be loaded.")) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [contact.accountId, contact.department, contact.jobTitle, contact.role, open, t])
+
+  async function save() {
+    if (!targetOrganisationId || !startedAt) return
+    setSaving(true)
+    setError(null)
+    try {
+      const updated = await transferContact(contact.id, {
+        targetOrganisationId,
+        startedAt,
+        jobTitle: jobTitle.trim() || null,
+        department: department.trim() || null,
+        role: role.trim() || null,
+      }, contact.editVersion)
+      onTransferred(updated)
+      onOpenChange(false)
+      toast.success(t("Contact moved and employment history preserved"))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("The contact could not be moved."))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const fieldClass = "h-10 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[16px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] sm:text-[14px]"
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!saving) onOpenChange(next) }}>
+      <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[560px]">
+        <DialogHeader className="text-start">
+          <DialogTitle>{t("Move contact to another company")}</DialogTitle>
+          <DialogDescription>{t("The current employment will be closed on the selected date. Previous employers and email addresses remain in the contact history.")}</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="grid gap-1.5 text-[13px] font-medium text-[var(--md-ink)] sm:col-span-2">
+            {t("New company")}
+            <select value={targetOrganisationId} onChange={(event) => setTargetOrganisationId(event.target.value)} disabled={loading} className={fieldClass}>
+              <option value="">{loading ? t("Loading companies…") : t("Select a company")}</option>
+              {companies.map((company) => <option key={company.id} value={company.id}>{company.name}{company.accountCode ? ` · ${company.accountCode}` : ""}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-[13px] font-medium text-[var(--md-ink)]">
+            {t("Start date")}
+            <Input type="date" value={startedAt} onChange={(event) => setStartedAt(event.target.value)} className={fieldClass} dir="ltr" />
+          </label>
+          <label className="grid gap-1.5 text-[13px] font-medium text-[var(--md-ink)]">
+            {t("Job title")}
+            <Input value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} className={fieldClass} dir="auto" />
+          </label>
+          <label className="grid gap-1.5 text-[13px] font-medium text-[var(--md-ink)]">
+            {t("Department")}
+            <Input value={department} onChange={(event) => setDepartment(event.target.value)} className={fieldClass} dir="auto" />
+          </label>
+          <label className="grid gap-1.5 text-[13px] font-medium text-[var(--md-ink)]">
+            {t("Relationship role")}
+            <Input value={role} onChange={(event) => setRole(event.target.value)} className={fieldClass} dir="auto" />
+          </label>
+          {error ? <p role="alert" className="rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,var(--md-red)_8%,var(--md-surface))] px-3 py-2 text-[12px] leading-5 text-[var(--md-red)] sm:col-span-2">{error}</p> : null}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>{t("Cancel")}</Button>
+          <Button type="button" disabled={saving || loading || !targetOrganisationId || !startedAt} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)]" onClick={() => void save()}>{saving ? t("Moving…") : t("Move contact")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /** Custom fields live in metadata as a flat map. The label is the identity. */
 function crmCustomFields(metadata: Record<string, unknown> | null | undefined) {
   const stored = metadata?.customFields
@@ -418,7 +564,7 @@ function AddCustomField({ onAdd }: { onAdd: (label: string, value: string) => Pr
 
 function toDraft(contact: ApiContactDetail): ContactDraft { const metadata = contact.metadata ?? {}; const fields = metadata.customFields && typeof metadata.customFields === "object" ? metadata.customFields as Record<string, unknown> : {}; return { firstName: contact.firstName, lastName: contact.lastName, email: contact.email, phone: contact.phone, jobTitle: contact.jobTitle, department: contact.department, role: contact.role, influenceLevel: contact.influenceLevel, relationshipStrength: contact.relationshipStrength, preferredChannel: contact.preferredChannel, preferredLanguage: contact.preferredLanguage, consentSalesContact: contact.consentSalesContact, marketingOptIn: contact.consentMarketing, marketingConsentReason: "", notes: contact.notes, trainingAllowed: contact.trainingAllowed, metadata, customFields: Object.entries(fields).map(([label, value]) => ({ id: label, label, value: typeof value === "string" ? value : String(value) })) } }
 function comparableDraft(draft: ContactDraft) { return { ...draft, marketingConsentReason: null, customFields: draft.customFields.map(({ label, value }) => ({ label, value })) } }
-function Panel({ title, meta, children }: { title: string; meta?: string; children: ReactNode }) { return <section className="overflow-hidden shadow-[var(--md-stroke-top)]"><div className="flex items-center justify-between gap-3 px-5 py-4 sm:px-6"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{title}</h2>{meta ? <span className="text-[12px] text-[var(--md-text)]">{meta}</span> : null}</div>{children}</section> }
+function Panel({ title, meta, action, children }: { title: string; meta?: string; action?: ReactNode; children: ReactNode }) { return <section className="overflow-hidden shadow-[var(--md-stroke-top)]"><div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 sm:px-6"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{title}</h2><div className="flex items-center gap-2">{meta ? <span className="text-[12px] text-[var(--md-text)]">{meta}</span> : null}{action}</div></div>{children}</section> }
 function Empty({ text }: { text: string }) { return <p className="border-t border-[var(--md-line)] px-5 py-6 text-[13px] leading-5 text-[var(--md-text)]">{text}</p> }
 function PageState({ icon, title, detail, action, embedded = false }: { icon: ReactNode; title: string; detail?: string; action?: ReactNode; embedded?: boolean }) { return <div className={embedded ? "" : "md-page"}><Surface padding="lg" className="grid min-h-[320px] place-items-center rounded-[var(--md-radius-xl)] text-center"><div className="max-w-md"><span className="mx-auto grid size-11 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">{icon}</span><p className="mt-4 text-[15px] font-medium text-[var(--md-ink)]">{title}</p>{detail ? <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{detail}</p> : null}{action ? <div className="mt-4">{action}</div> : null}</div></Surface></div> }
 

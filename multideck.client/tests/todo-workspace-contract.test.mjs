@@ -1,0 +1,80 @@
+import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
+import test from "node:test"
+
+const repoRoot = resolve(import.meta.dirname, "../..")
+const read = (path) => readFileSync(resolve(repoRoot, path), "utf8")
+const page = read("multideck.client/src/pages/to-do-page.tsx")
+const home = read("multideck.client/src/pages/home-page.tsx")
+const components = read("multideck.client/src/components/multideck/todo-components.tsx")
+const sidebar = read("multideck.client/src/components/multideck/app-sidebar.tsx")
+const dexterPage = read("multideck.client/src/pages/agent-dexter-page.tsx")
+const gallery = read("multideck.client/src/data/multideck-data.ts")
+
+test("To Do sits between Inbox and Dexter and supports rapid Return entry", () => {
+  assert.ok(sidebar.indexOf("const todoSidebarItem") > sidebar.indexOf("const inboxSidebarItem"))
+  assert.ok(sidebar.indexOf("const todoSidebarItem") < sidebar.indexOf("const dexterSidebarItem"))
+  assert.match(page, /onSubmit=\{\(event\) => void addTask\(event\)\}/)
+  assert.match(page, /setQuickTitle\(""\)/)
+  assert.match(page, /quickFocusFrameRef\.current = window\.requestAnimationFrame/)
+  assert.match(page, /window\.cancelAnimationFrame\(quickFocusFrameRef\.current\)/)
+  assert.match(page, /new FormData\(event\.currentTarget\)\.get\("title"\)/)
+  assert.match(page, /event\.currentTarget\.form\?\.requestSubmit\(\)/)
+  assert.match(page, /className="h-10 flex-1 rounded-\[var\(--md-radius-lg\)\] border-0 bg-transparent/)
+  assert.match(page, /focus-visible:bg-transparent focus-visible:ring-0/)
+  assert.match(page, /style=\{\{ borderWidth: 0, boxShadow: "none", outline: "none" \}\}/)
+  assert.doesNotMatch(page, /<Plus aria-hidden=/)
+  assert.match(page, /Math\.floor\(Math\.random\(\) \* emptyStateCopy\.length\)/)
+  assert.match(page, /You’re all clear for today\./)
+  assert.match(page, /Nothing waiting here\./)
+})
+
+test("task rows use hairlines, optional icon priorities, and accessible completion motion", () => {
+  assert.match(page, /divide-y divide-\[var\(--md-line\)\]/)
+  assert.match(page, /task\.priority \? <TodoPriorityPill/)
+  assert.match(components, /ArrowDown/)
+  assert.match(components, /Minus/)
+  assert.match(components, /ArrowUp/)
+  assert.match(components, /Zap/)
+  assert.match(components, /pathLength: checked \? 1 : 0/)
+  assert.match(components, /useReducedMotion/)
+  assert.match(components, /aria-pressed=\{checked\}/)
+  assert.match(page, /heldTaskGroups\[task\.id\] \?\? task\.status/)
+  assert.match(page, /window\.setTimeout\(resolve, 260\)/)
+  assert.match(page, /className="min-w-0 overflow-hidden"/)
+  assert.match(page, /data-i18n-skip/)
+  assert.doesNotMatch(page, /Open task details|SideDrawer|selectedTaskId|task\.description/)
+  assert.doesNotMatch(page, /onClick=\{\(\) => openTask\(task\)\}/)
+})
+
+test("Home shows today's open tasks, completes them in place, and rotates true empty copy", () => {
+  assert.match(home, /listTodoTasks\(todayTaskDate, controller\.signal\)/)
+  assert.match(home, /\}, \[todayTaskDate\]\)/)
+  assert.match(home, /todoTasks\.filter\(\(task\) => task\.status === "open"\)/)
+  assert.match(home, /updateTodoTask\(task\.id, \{ status: "completed" \}\)/)
+  assert.match(home, /checked=\{completingTaskId === task\.id\}/)
+  assert.match(home, /window\.setTimeout\(resolve, 260\)/)
+  assert.match(home, /Math\.floor\(Math\.random\(\) \* todoEmptyPhrases\.length\)/)
+  assert.match(home, /"All clear\."/)
+  assert.match(home, /"Nothing to do\."/)
+  assert.match(home, /todoLoadState === "error"/)
+})
+
+test("Home follow-ups show the real subject and open the exact inbox thread", () => {
+  assert.match(home, /person\.subject \|\| t\("No subject"\)/)
+  assert.match(home, /provider: person\.provider/)
+  assert.match(home, /mailbox: person\.mailboxId/)
+  assert.match(home, /thread: person\.threadId/)
+})
+
+test("Dexter's contextual add control uses one stable arrow-loader-tick footprint", () => {
+  assert.match(dexterPage, /DexterTodoSuggestionAction/)
+  assert.match(dexterPage, /sourceDexterMessageId: sourceMessageId/)
+  assert.match(dexterPage, /<TodoActionStateIcon state=\{state\}/)
+  assert.match(components, /state === "loading"/)
+  assert.match(components, /state === "success"/)
+  assert.match(gallery, /id: "todo-completion-control"/)
+  assert.match(gallery, /id: "todo-priority-pill"/)
+  assert.match(gallery, /id: "todo-action-state-icon"/)
+})

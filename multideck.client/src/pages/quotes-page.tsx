@@ -4,6 +4,7 @@ import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import {
   AiEditing,
+  AiBeautify,
   BrainCircuit,
   CheckCircle2,
   CalendarDays,
@@ -23,18 +24,21 @@ import {
   Printer,
   ReceiptText,
   Radar,
-  RotateCcw,
-  Save,
   Route,
   Search,
+  Scissors,
   Send,
   Trash2,
   TriangleAlert,
+  Type,
+  WandSparkles,
+  X,
 } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -52,10 +56,14 @@ import {
 } from "@/components/multideck/unified-quote-charges-workspace"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DexterActionPill, SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
+import { AiPromptMorph } from "@/components/multideck/ai-prompt-morph"
+import { MailProviderMark } from "@/components/multideck/mailbox-provider-switch"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { CopyFeedbackTransition, CopyStatusIcon } from "@/components/multideck/copyable-field"
 import { mdMotion, reduceMotion } from "@/lib/motion"
+import { textareaSelectionAnchor, type TextareaSelection, type TextareaSelectionAnchor } from "@/lib/textarea-selection"
+import { listMailboxes, type Mailbox } from "@/lib/inbox-api"
 import { cn } from "@/lib/utils"
 import {
   getFinanceExchangeRates,
@@ -66,12 +74,26 @@ import {
 import { useLanguage } from "@/i18n/language-provider"
 import { systemPeople, type StatusTone } from "@/data/multideck-data"
 import { quoteRegisterRecords, type QuoteRegisterRecord } from "@/data/quote-register-data"
+import { getSalesQuote } from "@/lib/quote-api"
 import {
   getQuoteSources,
+  getQuoteIssueReadiness,
+  getQuoteIssueRecipients,
   getQuoteWorkflow,
+  issueQuoteWorkflow,
   openQuoteWorkflow,
+  prepareQuoteIssueEmail,
+  previewQuoteIssueEmail,
+  refineQuoteIssueEmail,
+  refreshQuoteIntelligence,
   saveQuoteWorkflow,
+  subscribeQuoteIntelligence,
   transitionQuoteWorkflow,
+  type QuoteIntelligenceRecentQuote,
+  type QuoteIntelligenceSnapshot,
+  type QuoteIssueReadiness,
+  type QuoteIssueExpiryPreset,
+  type QuoteIssueRecipient,
   type QuoteSavePayload,
   type QuoteWorkflowCharge,
   type QuoteWorkflowSources,
@@ -90,6 +112,13 @@ type QuoteCurrency = "GBP" | "USD" | "EUR" | "JPY" | "AUD" | "CAD"
 type QuoteWorkspaceTab = "overview" | "details" | "charges" | "documents" | "audit"
 
 const quoteWorkspaceTabs: QuoteWorkspaceTab[] = ["overview", "details", "charges", "documents", "audit"]
+const quoteIssueExpiryPresets: Array<{ value: QuoteIssueExpiryPreset; label: string }> = [
+  { value: "7", label: "7 days" },
+  { value: "14", label: "14 days" },
+  { value: "28", label: "28 days" },
+  { value: "90", label: "90 days" },
+  { value: "never", label: "Never" },
+]
 
 type JobRoe = {
   currency: Exclude<QuoteCurrency, "GBP">
@@ -174,6 +203,7 @@ type QuoteRecord = {
   via: string
   startDate?: string
   endDate?: string
+  deadline?: string
   validity: string
   direction?: string
   serviceLevel?: string
@@ -203,6 +233,16 @@ type QuoteRecord = {
   commodity?: string
   co2e?: string
   knownCargo?: string
+  packageQuantity?: string
+  packageType?: string
+  grossWeightKg?: string
+  volumeCbm?: string
+  chargeableWeightKg?: string
+  customsIncluded?: string
+  subjectToTerms?: string
+  terms?: string
+  customerNotes?: string
+  internalNotes?: string
   fmcTid?: string
   margin: string
   profit: number
@@ -350,8 +390,8 @@ const quoteQueue: QuoteRecord[] = [
 
 const newQuoteDraft: QuoteRecord = {
   id: "NEW",
-  status: "Draft",
-  statusTone: "neutral",
+  status: "Open",
+  statusTone: "green",
   localRef: "",
   quoteType: "",
   source: "",
@@ -392,6 +432,7 @@ const newQuoteDraft: QuoteRecord = {
   via: "",
   startDate: "",
   endDate: "",
+  deadline: "",
   validity: "",
   direction: "",
   serviceLevel: "",
@@ -416,6 +457,16 @@ const newQuoteDraft: QuoteRecord = {
   commodity: "",
   co2e: "",
   knownCargo: "",
+  packageQuantity: "",
+  packageType: "",
+  grossWeightKg: "",
+  volumeCbm: "",
+  chargeableWeightKg: "",
+  customsIncluded: "No",
+  subjectToTerms: "Subject to rate and space availability",
+  terms: "",
+  customerNotes: "",
+  internalNotes: "",
   fmcTid: "",
   margin: "",
   profit: 0,
@@ -532,37 +583,6 @@ const carriers = [
   { code: "BWO", name: "Bluewave Ocean", service: "Singapore relay", days: "55" },
   { code: "MSL", name: "Meridian Sea Lines", service: "Asia loop", days: "58" },
 ]
-
-const quoteStages = [
-  { id: "intake", label: "Intake", state: "done", progress: 100, summary: "Customer, routing, cargo, and service requirements are captured." },
-  { id: "costing", label: "Costing", state: "done", progress: 100, summary: "Supplier costs and selling rates are prepared." },
-  { id: "review", label: "Review", state: "current", progress: 50, summary: "Margin, terms, and exclusions are ready for commercial review." },
-  { id: "sent", label: "Sent", state: "todo", progress: 0, summary: "The customer quote has been issued and is awaiting a decision." },
-  { id: "outcome", label: "Outcome", state: "todo", progress: 0, summary: "The decision and reason are recorded for the next quote." },
-]
-
-const recentQuotes = [
-  { date: "07 Jul", lane: "Bristol -> Kobe", mode: "Sea FCL", revenue: 1566.42, cost: 1312.96, profit: 253.46, margin: "16.18%", status: "Pending", tone: "amber" },
-  { date: "06 Jul", lane: "Felixstowe -> Singapore", mode: "Sea LCL", revenue: 842.0, cost: 661.5, profit: 180.5, margin: "21.44%", status: "Won", tone: "green" },
-  { date: "06 Jul", lane: "Manchester -> Dubai", mode: "Air", revenue: 1240.0, cost: 1098.2, profit: 141.8, margin: "11.44%", status: "Pending", tone: "amber" },
-  { date: "05 Jul", lane: "Leeds -> Rotterdam", mode: "Road", revenue: 695.0, cost: 522.4, profit: 172.6, margin: "24.83%", status: "Won", tone: "green" },
-  { date: "05 Jul", lane: "Glasgow -> Hamburg", mode: "Sea FCL", revenue: 1890.0, cost: 1718.0, profit: 172.0, margin: "9.10%", status: "Lost", tone: "red" },
-  { date: "04 Jul", lane: "Southampton -> Kobe", mode: "Sea FCL", revenue: 940.0, cost: 746.25, profit: 193.75, margin: "20.61%", status: "Won", tone: "green" },
-  { date: "04 Jul", lane: "London Heathrow -> Kobe", mode: "Air", revenue: 2115.0, cost: 1844.2, profit: 270.8, margin: "12.80%", status: "Pending", tone: "amber" },
-  { date: "03 Jul", lane: "Liverpool -> Kobe", mode: "Sea FCL", revenue: 2760.0, cost: 2295.7, profit: 464.3, margin: "16.82%", status: "Won", tone: "green" },
-  { date: "03 Jul", lane: "Felixstowe -> Kobe", mode: "Sea LCL", revenue: 780.0, cost: 731.4, profit: 48.6, margin: "6.23%", status: "Lost", tone: "red" },
-  { date: "02 Jul", lane: "Bristol -> Kobe", mode: "Sea LCL", revenue: 1125.0, cost: 928.0, profit: 197.0, margin: "17.51%", status: "Won", tone: "green" },
-] satisfies Array<{
-  date: string
-  lane: string
-  mode: string
-  revenue: number
-  cost: number
-  profit: number
-  margin: string
-  status: string
-  tone: StatusTone
-}>
 
 function money(value: number, currency = "GBP") {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(value)
@@ -859,56 +879,48 @@ function InsightRow({
   )
 }
 
-function QuoteOverviewSignals({ quote, compact = false }: { quote: QuoteRecord; compact?: boolean }) {
+function quoteIntelligenceCohortLabel(cohort: QuoteIntelligenceSnapshot["metrics"]["historicalWinRate"]["cohort"]) {
+  return ({
+    customer_lane_mode_shipment: "Customer, lane, mode and shipment type",
+    customer_mode: "Customer and mode",
+    tenant_lane_mode: "Workspace lane and mode",
+    tenant_mode: "Workspace mode",
+    tenant_history: "Workspace history",
+  } as const)[cohort]
+}
+
+function QuoteOverviewSignals({
+  quote,
+  intelligence,
+  intelligenceUnavailable = false,
+  compact = false,
+}: {
+  quote: QuoteRecord
+  intelligence: QuoteIntelligenceSnapshot | null
+  intelligenceUnavailable?: boolean
+  compact?: boolean
+}) {
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
-  const successScore = 68
-  const needleAngle = -90 + (successScore / 100) * 180
+  const temperature = intelligence?.metrics.aiTemperature.value ?? null
+  const successScore = temperature?.score ?? null
+  const temperatureState = temperature?.label ?? (intelligenceUnavailable ? "Unavailable" : "Building baseline")
+  const temperatureTone: StatusTone = temperature?.label === "Hot" ? "red" : temperature?.label === "Warm" ? "amber" : temperature?.label === "Cold" ? "blue" : "neutral"
+  const needleAngle = -90 + ((successScore ?? 0) / 100) * 180
   const quoteMetadata = [
     { label: "Quote owner", value: salesRepresentativeValue(quote.salesRep) },
     { label: "Created", value: quote.createdAt ?? "—" },
     { label: "Operations owner", value: quote.opsRep ?? "—" },
     { label: "Valid until", value: quote.validity || "—" },
   ]
+  const temperatureEvidence = intelligence?.metrics.aiTemperature
+  const temperatureEvidenceDetail = intelligence && temperatureEvidence
+    ? `${t(quoteIntelligenceCohortLabel(temperatureEvidence.cohort))} · ${temperatureEvidence.evidenceCount} ${t("evidence records")} · ${intelligence.algorithmVersion} · ${t("Refreshed")} ${intelligence.calculatedAt ? new Date(intelligence.calculatedAt).toLocaleString() : t("Not yet")}`
+    : t(intelligenceUnavailable ? "Intelligence temporarily unavailable" : "Building baseline")
 
   return (
     <div className={cn("md-quote-signals grid min-w-0 gap-2", compact ? "md-quote-signals--compact" : "md-quote-signals--standard")}>
-      <div className="md-quote-stage-stack grid min-h-0 grid-rows-2 gap-2">
-        <Surface padding="none" className="md-quote-stage-panel flex min-h-0 items-center rounded-[var(--md-radius-xl)] p-1.5">
-          <div className="md-quote-stage-panel__steps" role="list" aria-label={t("Quote progress")}>
-            {quoteStages.map((stage) => (
-              <div
-                key={stage.label}
-                className="md-quote-stage-panel__step"
-                data-stage={stage.id}
-                data-state={stage.state}
-                style={{ "--md-quote-stage-progress": `${stage.progress}%` } as CSSProperties}
-                role="listitem"
-                aria-current={stage.state === "current" ? "step" : undefined}
-              >
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button type="button" aria-label={`${t(stage.label)}, ${stage.progress}%: ${t(stage.summary)}`}>
-                      <span className="md-quote-stage-panel__label md-quote-stage-panel__label--track" aria-hidden="true">
-                        <span>{t(stage.label)}</span>
-                        {stage.progress > 0 && stage.progress < 100 ? <small data-i18n-skip>{stage.progress}%</small> : null}
-                      </span>
-                      <span className="md-quote-stage-panel__label md-quote-stage-panel__label--fill" aria-hidden="true">
-                        <span>{t(stage.label)}</span>
-                        {stage.progress > 0 && stage.progress < 100 ? <small data-i18n-skip>{stage.progress}%</small> : null}
-                      </span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" sideOffset={8} className="md-quote-stage-tooltip">
-                    <strong>{t(stage.label)} <span aria-hidden="true" data-i18n-skip>· {stage.progress}%</span></strong>
-                    <span>{t(stage.summary)}</span>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            ))}
-          </div>
-        </Surface>
-
+      <div className="md-quote-stage-stack grid min-h-0">
         <Surface padding="none" className="md-quote-stage-metadata min-h-0 overflow-hidden rounded-[var(--md-radius-xl)] px-3 py-1.5">
           <dl className="grid h-full grid-cols-4 items-center gap-3">
             {quoteMetadata.map((item) => (
@@ -921,7 +933,7 @@ function QuoteOverviewSignals({ quote, compact = false }: { quote: QuoteRecord; 
         </Surface>
       </div>
 
-      <Surface padding="none" className="md-quote-temperature-panel relative overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-accent-abyss-deep)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12),0_10px_22px_var(--md-accent-veil-cast-a18)]">
+      <Surface padding="none" aria-live="polite" className="md-quote-temperature-panel relative overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-accent-abyss-deep)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12),0_10px_22px_var(--md-accent-veil-cast-a18)]">
         <span aria-hidden="true" className="pointer-events-none absolute inset-0">
           <SpectralBloomShader />
         </span>
@@ -929,12 +941,27 @@ function QuoteOverviewSignals({ quote, compact = false }: { quote: QuoteRecord; 
         <div className="relative z-10 flex items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="flex items-center gap-1 text-[11px] font-medium uppercase leading-3 tracking-[0.02em] text-white/68"><Radar className="size-3 text-white/85" strokeWidth={1.5} />{t("AI temperature")}</p>
-            <p className="mt-0.5 text-[13px] font-medium text-white">{successScore}% {t("likely to win")}</p>
+            <p className="mt-0.5 text-[13px] font-medium text-white">
+              {successScore === null ? t(intelligenceUnavailable ? "Intelligence temporarily unavailable" : "Building baseline") : `${successScore}% ${t("commercial momentum")}`}
+            </p>
           </div>
-          <StatusPill tone="amber" className="border-0 bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)]">{t("Warm")}</StatusPill>
+          <div className="flex shrink-0 items-center gap-1">
+            <Popover>
+              <PopoverTrigger asChild>
+                <button type="button" aria-label={t("About AI temperature")} className="relative grid size-7 place-items-center text-white/68 transition-colors after:absolute after:left-1/2 after:top-1/2 after:size-10 after:-translate-x-1/2 after:-translate-y-1/2 hover:text-white">
+                  <Info className="size-3.5" strokeWidth={1.5} />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="bottom" align="end" sideOffset={8} className="w-64 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 shadow-[var(--md-shadow-lift)]">
+                <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Commercial momentum evidence")}</p>
+                <p className="mt-1 text-[11px] leading-4 text-[var(--md-text)]">{temperatureEvidenceDetail}</p>
+              </PopoverContent>
+            </Popover>
+            <StatusPill tone={temperatureTone} className="border-0 bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)]">{t(temperatureState)}</StatusPill>
+          </div>
         </div>
         <div className="relative z-10 mx-auto h-[50px] w-full overflow-hidden">
-          <svg viewBox="0 0 220 124" className="h-full w-full" role="img" aria-label={t("AI quote likelihood gauge")}>
+          <svg viewBox="0 0 220 124" className="h-full w-full" role="img" aria-label={t("AI commercial momentum gauge")}>
             <defs>
               <linearGradient id="quote-temperature-gradient" x1="30" y1="104" x2="190" y2="104" gradientUnits="userSpaceOnUse">
                 <stop offset="0%" stopColor="var(--md-blue)" />
@@ -971,50 +998,89 @@ function QuoteOverviewSignals({ quote, compact = false }: { quote: QuoteRecord; 
   )
 }
 
-function getRecentQuoteIntelligence() {
-  const wonQuotes = recentQuotes.filter((quote) => quote.status === "Won")
-  const lostQuotes = recentQuotes.filter((quote) => quote.status === "Lost")
-  const pendingQuotes = recentQuotes.filter((quote) => quote.status === "Pending")
-  const wonRevenue = wonQuotes.reduce((sum, quote) => sum + quote.revenue, 0)
-  const wonCost = wonQuotes.reduce((sum, quote) => sum + quote.cost, 0)
-  const wonProfit = wonQuotes.reduce((sum, quote) => sum + quote.profit, 0)
-  const wonMargin = wonRevenue > 0 ? (wonProfit / wonRevenue) * 100 : 0
-  const lostMargin = lostQuotes.length > 0
-    ? lostQuotes.reduce((sum, quote) => sum + Number.parseFloat(quote.margin), 0) / lostQuotes.length
-    : 0
-  const targetRevenue = wonRevenue > 0 ? wonRevenue / wonQuotes.length : 0
-  const targetCost = wonCost > 0 ? wonCost / wonQuotes.length : 0
-  const targetProfit = targetRevenue - targetCost
-
-  return {
-    wonCount: wonQuotes.length,
-    lostCount: lostQuotes.length,
-    pendingCount: pendingQuotes.length,
-    winRate: `${Math.round((wonQuotes.length / recentQuotes.length) * 100)}%`,
-    wonMargin: `${wonMargin.toFixed(1)}%`,
-    lostMargin: `${lostMargin.toFixed(1)}%`,
-    targetRevenue,
-    targetCost,
-    targetProfit,
+function ClientPricingIntelligence({ intelligence, unavailable = false }: { intelligence: QuoteIntelligenceSnapshot | null; unavailable?: boolean }) {
+  const { t, language } = useLanguage()
+  if (!intelligence) {
+    const labels = ["Historical win rate", "Won price band", "Suggested pitch", "AI win likelihood", "Price confidence", "Margin headroom"]
+    return (
+      <div className="grid h-full gap-1.5 sm:grid-cols-3" aria-label={t(unavailable ? "Intelligence temporarily unavailable" : "Loading quote intelligence")} aria-busy={!unavailable} aria-live="polite">
+        {labels.map((label, index) => (
+          <div key={index} className="relative min-h-[96px] overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-accent-abyss-deep)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12)]">
+            {unavailable ? (
+              <div className="relative flex h-full flex-col justify-between text-white">
+                <p className="text-[9.5px] font-medium uppercase tracking-[0.02em] text-white/65">{t(label)}</p>
+                <p className="text-[24px] font-medium">—</p>
+                <p className="text-[9.5px] text-white/72">{t("Try again after the next quote update")}</p>
+              </div>
+            ) : (
+              <>
+                <span className="absolute inset-0 bg-[linear-gradient(110deg,transparent_20%,rgba(255,255,255,0.08)_45%,transparent_70%)] motion-safe:animate-pulse" />
+                <span className="relative block h-2.5 w-24 rounded-[var(--md-radius-sm)] bg-white/12" />
+                <span className="relative mt-3 block h-7 w-28 rounded-[var(--md-radius-md)] bg-white/14" />
+                <span className="relative mt-4 block h-2 w-32 rounded-[var(--md-radius-sm)] bg-white/10" />
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    )
   }
-}
 
-function ClientPricingIntelligence() {
-  const { t } = useLanguage()
-  const intelligence = getRecentQuoteIntelligence()
+  const currency = intelligence.currency || "GBP"
+  const historical = intelligence.metrics.historicalWinRate
+  const band = intelligence.metrics.wonPriceBand
+  const pitch = intelligence.metrics.suggestedPitch
+  const likelihood = intelligence.metrics.aiWinLikelihood
+  const confidence = intelligence.metrics.priceConfidence
+  const headroom = intelligence.metrics.marginHeadroom
+  const historicalValue = historical.value
+  const baseline = t("Building baseline")
+  const refreshed = intelligence.calculatedAt ? new Date(intelligence.calculatedAt).toLocaleString(language) : t("Not yet")
+  const cohortDetail = (metric: { cohort: typeof historical.cohort; evidenceCount: number }) =>
+    `${t(quoteIntelligenceCohortLabel(metric.cohort))} · ${metric.evidenceCount} ${t("evidence records")} · ${intelligence.algorithmVersion} · ${t("Refreshed")} ${refreshed}`
   const metrics = [
-    ["Historical win rate", intelligence.winRate, `${intelligence.wonCount} won / ${intelligence.lostCount} lost / ${intelligence.pendingCount} pending`, "Price position", "Current sell is inside the recent won range.", "text-[clamp(30px,2.4vw,36px)]", null],
-    ["Won price band", `${moneyWhole(intelligence.targetRevenue - 180)}–${moneyWhole(intelligence.targetRevenue + 180)}`, `${intelligence.wonMargin} average won margin`, "Customer focus", "Prioritise sea FCL and road lanes.", "text-[clamp(20px,1.45vw,22px)]", null],
-    ["Suggested pitch", money(intelligence.targetRevenue), `${money(intelligence.targetCost)} cost / ${money(intelligence.targetProfit)} profit`, "Margin warning", `Lost quotes averaged ${intelligence.lostMargin} margin.`, "text-[clamp(28px,2.2vw,34px)]", null],
-    ["AI win likelihood", "68%", "Lane, price and history signal", "AI confidence", "Modelled from customer quote history, current margin, and route fit.", "text-[clamp(28px,2.2vw,34px)]", ChartAnalysis],
-    ["Price confidence", "84%", "Inside the recent won range", "How this is scored", "Confidence rises when the proposed sell remains inside this customer's accepted price band.", "text-[clamp(28px,2.2vw,34px)]", Gauge],
-    ["Margin headroom", moneyWhole(intelligence.targetProfit), "Above estimated carrier cost", "AI margin view", `Suggested sell leaves ${money(intelligence.targetProfit)} above the estimated carrier cost.`, "text-[clamp(26px,2vw,32px)]", BrainCircuit],
-  ] as const
+    {
+      key: "historicalWinRate", label: "Historical win rate",
+      value: historicalValue?.ratePct === null || historicalValue?.ratePct === undefined ? baseline : `${historicalValue.ratePct}%`,
+      detail: historicalValue ? `${historicalValue.wins} ${t("won")} / ${historicalValue.losses} ${t("lost")} / ${historicalValue.pending} ${t("pending")}${historicalValue.lowEvidence ? ` · ${t("Low evidence")}` : ""}` : t("No resolved quotes yet"),
+      infoTitle: "Observed quote outcomes", infoDetail: cohortDetail(historical), valueSize: "text-[clamp(30px,2.4vw,36px)]", icon: null,
+    },
+    {
+      key: "wonPriceBand", label: "Won price band",
+      value: band.value ? `${moneyWhole(band.value.low, currency)}–${moneyWhole(band.value.high, currency)}` : baseline,
+      detail: band.value?.averageMarginPct === null || band.value?.averageMarginPct === undefined ? t("Needs five priced wins") : `${band.value.averageMarginPct}% ${t("average won margin")}`,
+      infoTitle: "Won pricing evidence", infoDetail: cohortDetail(band), valueSize: "text-[clamp(20px,1.45vw,22px)]", icon: null,
+    },
+    {
+      key: "suggestedPitch", label: "Suggested pitch",
+      value: pitch.value ? money(pitch.value.amount, currency) : pitch.status === "missing_input" ? t("Add quote costs") : baseline,
+      detail: pitch.value ? `${money(pitch.value.cost, currency)} ${t("cost")} / ${money(pitch.value.profit, currency)} ${t("profit")}` : t("Needs cost and real pricing evidence"),
+      infoTitle: "Evidence-based pitch", infoDetail: cohortDetail(pitch), valueSize: "text-[clamp(28px,2.2vw,34px)]", icon: null,
+    },
+    {
+      key: "aiWinLikelihood", label: "AI win likelihood",
+      value: likelihood.value ? `${likelihood.value.finalPct}%` : baseline,
+      detail: likelihood.value ? intelligence.ai?.status === "applied" ? `${t("Luna refinement")} ${likelihood.value.adjustmentPoints >= 0 ? "+" : ""}${likelihood.value.adjustmentPoints}` : t("Rules-only estimate") : t("Needs five resolved quotes"),
+      infoTitle: "Win likelihood evidence", infoDetail: [intelligence.ai?.cardExplanations.aiWinLikelihood, cohortDetail(likelihood)].filter(Boolean).join(" · "), valueSize: "text-[clamp(28px,2.2vw,34px)]", icon: ChartAnalysis,
+    },
+    {
+      key: "priceConfidence", label: "Price confidence",
+      value: confidence.value ? `${confidence.value.score}%` : baseline,
+      detail: confidence.value ? t("Sample, recency, spread and price position") : t("Needs five price observations"),
+      infoTitle: "How this is scored", infoDetail: cohortDetail(confidence), valueSize: "text-[clamp(28px,2.2vw,34px)]", icon: Gauge,
+    },
+    {
+      key: "marginHeadroom", label: "Margin headroom",
+      value: headroom.value ? moneyWhole(headroom.value.amount, currency) : headroom.status === "missing_input" ? t("Add quote costs") : baseline,
+      detail: headroom.value ? t("Suggested sell above carrier cost") : t("Needs an evidence-backed pitch"),
+      infoTitle: "Deterministic margin view", infoDetail: cohortDetail(headroom), valueSize: "text-[clamp(26px,2vw,32px)]", icon: BrainCircuit,
+    },
+  ]
 
   return (
-    <div className="grid h-full gap-1.5 sm:grid-cols-3">
-        {metrics.map(([label, value, detail, infoTitle, infoDetail, valueSize, AiMetricIcon]) => (
-          <div key={label} className="relative flex min-h-[96px] min-w-0 flex-col justify-between overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-accent-abyss-deep)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12),0_10px_22px_var(--md-accent-veil-cast-a18)]">
+    <div className="grid h-full gap-1.5 sm:grid-cols-3" aria-live="polite">
+        {metrics.map(({ key, label, value, detail, infoTitle, infoDetail, valueSize, icon: AiMetricIcon }) => (
+          <div key={key} className="relative flex min-h-[96px] min-w-0 flex-col justify-between overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-accent-abyss-deep)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12),0_10px_22px_var(--md-accent-veil-cast-a18)]">
             <span aria-hidden="true" className="pointer-events-none absolute inset-0">
               <SpectralBloomShader />
             </span>
@@ -1039,7 +1105,7 @@ function ClientPricingIntelligence() {
                 {AiMetricIcon ? <AiMetricIcon className="size-3 shrink-0 text-white/85" strokeWidth={1.5} /> : null}
                 <span className="truncate">{t(label)}</span>
               </p>
-              <p data-i18n-skip dir="ltr" className={cn("mt-1 whitespace-nowrap font-medium leading-[1.08] tracking-[-0.035em] tabular-nums text-white", valueSize)}>{value}</p>
+              <p dir="auto" className={cn("mt-1 whitespace-nowrap font-medium leading-[1.08] tracking-[-0.035em] tabular-nums text-white", valueSize)}>{value}</p>
             </div>
             <p className="relative z-10 mt-2 flex min-w-0 items-center gap-1.5 text-[9.5px] text-white/78">
               <span className="size-1.5 shrink-0 rounded-full bg-white/80" />
@@ -1051,49 +1117,41 @@ function ClientPricingIntelligence() {
   )
 }
 
-function RecentQuotesSummary({ quote }: { quote: QuoteRecord }) {
-  const { t } = useLanguage()
-  const [scope, setScope] = useState<"customer" | "destination">("customer")
-  const scopedQuotes = scope === "customer" ? recentQuotes.slice(0, 5) : recentQuotes.slice(5, 10)
-  const scopeDetail = scope === "customer"
-    ? quote.customer
-    : quote.destination || "JPUKB - Kobe"
-  const columns = useMemo<DataTableColumn<(typeof recentQuotes)[number]>[]>(() => [
-    { id: "date", label: "Date", width: 76, minWidth: 68, kind: "date", cell: (row) => <span data-i18n-skip dir="ltr" className="font-medium text-[var(--md-subtle)]">{row.date}</span> },
+function RecentQuotesSummary({ quote, intelligence, unavailable = false }: { quote: QuoteRecord; intelligence: QuoteIntelligenceSnapshot | null; unavailable?: boolean }) {
+  const { t, language } = useLanguage()
+  const rows = intelligence?.recentQuotes ?? []
+  const currency = intelligence?.currency || quote.currency || "GBP"
+  const dateFormatter = useMemo(() => new Intl.DateTimeFormat(language, { day: "2-digit", month: "short" }), [language])
+  const snapshotLabel = intelligence?.state === "ready" ? "Live evidence" : intelligence?.state === "updating" ? "Updating" : intelligence?.state === "rules_only" ? "Rules-only" : "Building baseline"
+  const columns = useMemo<DataTableColumn<QuoteIntelligenceRecentQuote>[]>(() => [
+    { id: "date", label: "Date", width: 76, minWidth: 68, kind: "date", cell: (row) => <span data-i18n-skip dir="ltr" className="font-medium text-[var(--md-subtle)]">{dateFormatter.format(new Date(row.date))}</span> },
     { id: "lane", label: "Origin → destination", width: 116, minWidth: 106, kind: "identity", cellTitle: (row) => row.lane, cell: (row) => <span data-i18n-skip dir="ltr" className="block truncate font-medium text-[var(--md-ink)]">{row.lane}</span> },
     { id: "mode", label: "Mode", width: 68, minWidth: 62, kind: "attribute", cell: (row) => <StatusPill kind="attribute" tone="blue" className="h-4 px-1.5 text-[9px]">{t(row.mode)}</StatusPill> },
-    { id: "revenue", label: "Revenue", width: 78, minWidth: 72, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr">{money(row.revenue)}</span> },
-    { id: "cost", label: "Cost", width: 72, minWidth: 68, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr" className="text-[var(--md-text)]">{money(row.cost)}</span> },
-    { id: "profit", label: "Profit", width: 74, minWidth: 68, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr" className="font-medium text-[var(--md-ink)]">{money(row.profit)}</span> },
-    { id: "margin", label: "Profit %", width: 66, minWidth: 62, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr">{row.margin}</span> },
-    { id: "status", label: "Status", width: 84, minWidth: 76, kind: "status", cell: (row) => <StatusPill kind="status" tone={row.tone} className="h-4 px-1.5 text-[9px]">{t(row.status)}</StatusPill> },
-  ], [t])
+    { id: "revenue", label: "Revenue", width: 78, minWidth: 72, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr">{row.revenue === null ? "—" : money(row.revenue, currency)}</span> },
+    { id: "cost", label: "Cost", width: 72, minWidth: 68, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr" className="text-[var(--md-text)]">{row.cost === null ? "—" : money(row.cost, currency)}</span> },
+    { id: "profit", label: "Profit", width: 74, minWidth: 68, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr" className="font-medium text-[var(--md-ink)]">{row.profit === null ? "—" : money(row.profit, currency)}</span> },
+    { id: "margin", label: "Profit %", width: 66, minWidth: 62, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr">{row.marginPct === null ? "—" : `${row.marginPct}%`}</span> },
+    { id: "status", label: "Status", width: 84, minWidth: 76, kind: "status", cell: (row) => <StatusPill kind="status" tone={row.status === "Won" ? "green" : row.status === "Lost" ? "red" : "amber"} className="h-4 px-1.5 text-[9px]">{t(row.status)}</StatusPill> },
+  ], [currency, dateFormatter, t])
 
   return (
     <Surface padding="none" className="h-full min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-white dark:bg-[var(--md-surface)]">
       <div className="flex min-h-10 flex-wrap items-center justify-between gap-2 bg-white px-2.5 py-1.5 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)] dark:bg-[var(--md-surface)]">
         <div className="min-w-0">
           <p className="text-[11px] font-medium text-[var(--md-ink)]">{t("Last five quotes")}</p>
-          <p data-i18n-skip dir="auto" className="truncate text-[9.5px] text-[var(--md-subtle)]">{scopeDetail}</p>
+          <p className="truncate text-[9.5px] text-[var(--md-subtle)]">
+            {intelligence ? t(quoteIntelligenceCohortLabel(intelligence.metrics.historicalWinRate.cohort)) : t(unavailable ? "Intelligence temporarily unavailable" : "Loading real quote history")}
+          </p>
         </div>
-        <div className="inline-flex shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-0.5 shadow-[var(--md-shadow-line)]" role="group" aria-label={t("Recent quote scope")}>
-          {(["customer", "destination"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={scope === option}
-              onClick={() => setScope(option)}
-              className={cn(
-                "h-6 rounded-[var(--md-radius-md)] px-2 text-[9.5px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.97]",
-                scope === option && "bg-white text-[var(--md-ink)] shadow-[var(--md-shadow-line)] dark:bg-[var(--md-surface-soft)]",
-              )}
-            >
-              {t(option === "customer" ? "Customer" : "Destination")}
-            </button>
-          ))}
-        </div>
+        {intelligence ? <StatusPill tone={intelligence.state === "ready" ? "green" : "amber"}>{t(snapshotLabel)}</StatusPill> : null}
       </div>
-      <DataTable ariaLabel="Recent quotes" columns={columns} rows={scopedQuotes} getRowKey={(row) => `${scope}-${row.date}-${row.lane}-${row.mode}`} minimumWidth={630} showToolbar={false} showColumnManager={false} className="h-[calc(100%-2.5rem)] rounded-none bg-white shadow-none dark:bg-[var(--md-surface)]" tableClassName="text-[9.5px]" />
+      {rows.length ? (
+        <DataTable ariaLabel="Recent quotes" columns={columns} rows={rows} getRowKey={(row) => row.id} minimumWidth={630} showToolbar={false} showColumnManager={false} className="h-[calc(100%-2.5rem)] rounded-none bg-white shadow-none dark:bg-[var(--md-surface)]" tableClassName="text-[9.5px]" />
+      ) : (
+        <div className="grid min-h-36 place-items-center px-4 text-center">
+          <div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t(unavailable ? "Intelligence temporarily unavailable" : "No comparable quotes yet")}</p><p className="mt-1 text-[10.5px] text-[var(--md-text)]">{t(unavailable ? "The saved quote is still available. Intelligence will retry after the next meaningful update." : "Real quote outcomes will appear here as the workspace builds history.")}</p></div>
+        </div>
+      )}
     </Surface>
   )
 }
@@ -2313,7 +2371,7 @@ function CargoWiseGroup({
   )
 }
 
-function QuoteCargoWiseOverviewPanel({ quote }: { quote: QuoteRecord }) {
+function QuoteCargoWiseOverviewPanel({ quote, intelligence, intelligenceUnavailable = false }: { quote: QuoteRecord; intelligence: QuoteIntelligenceSnapshot | null; intelligenceUnavailable?: boolean }) {
   const { t } = useLanguage()
   const currency = quote.currency || ""
   const displayMoney = (value: number) => currency ? money(value, currency) : value.toFixed(2)
@@ -2321,7 +2379,7 @@ function QuoteCargoWiseOverviewPanel({ quote }: { quote: QuoteRecord }) {
 
   return (
     <div className="md-quote-cargowise-overview grid gap-2">
-      <QuoteOverviewSignals quote={quote} compact />
+      <QuoteOverviewSignals quote={quote} intelligence={intelligence} intelligenceUnavailable={intelligenceUnavailable} compact />
 
       <div className="md-quote-cargowise-primary-grid grid min-w-0 gap-2">
         <CargoWiseGroup title="Quote header" compact>
@@ -2362,8 +2420,8 @@ function QuoteCargoWiseOverviewPanel({ quote }: { quote: QuoteRecord }) {
 
       <div className="md-quote-cargowise-intelligence-grid grid min-w-0 gap-2">
         <span className="sr-only">{t("Pricing and win-rate insights will appear here when this quote has real customer and rate history.")}</span>
-        <ClientPricingIntelligence />
-        <RecentQuotesSummary quote={quote} />
+        <ClientPricingIntelligence intelligence={intelligence} unavailable={intelligenceUnavailable} />
+        <RecentQuotesSummary quote={quote} intelligence={intelligence} unavailable={intelligenceUnavailable} />
       </div>
     </div>
   )
@@ -2653,7 +2711,6 @@ function QuoteCargoWiseDetailsPanel({
             <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Quote control")}</h4>
             <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
               <CargoWiseLookupField label="Customer ref" value={quote.localRef ?? ""} compact editable={false} />
-              <CargoWiseSelectField label="Status" value={quote.workflowStatus ?? ""} options={["DRF - Draft/WIP", "RTG - Rating", "REV - Review", "SNT - Sent", "FLW - Followed-up", "WRK - Working"]} compact editable={editable} onChange={(value) => onQuoteChange("workflowStatus", value)} />
               <CargoWiseLookupField label="Valid from" value={quote.startDate ?? ""} action="date" compact editable={editable} onChange={(value) => onQuoteChange("startDate", value)} />
               <CargoWiseLookupField label="Valid to" value={quote.endDate ?? ""} action="date" compact editable={editable} onChange={(value) => onQuoteChange("endDate", value)} />
               <CargoWiseSelectField label="Source" value={quote.source ?? ""} options={["NEW - New Shipper", "REN - Renewal", "REP - Repeat lane", "TND - Tender"]} compact editable={editable} onChange={(value) => onQuoteChange("source", value)} />
@@ -2699,7 +2756,6 @@ function QuoteCargoWiseDetailsPanel({
               <CargoWiseLookupField label="Agent ref" value={quote.agentReference ?? ""} compact editable={editable} onChange={(value) => onQuoteChange("agentReference", value)} />
               <CargoWiseLookupField label="Carrier ref" value={quote.carrierReference ?? ""} compact editable={editable} onChange={(value) => onQuoteChange("carrierReference", value)} />
               <CargoWiseSelectField label="Docs" value={quote.docsStatus ?? ""} options={["Draft", "Ready", "Sent", "Signed"]} compact editable={editable} onChange={(value) => onQuoteChange("docsStatus", value)} />
-              <CargoWiseSelectField label="Workflow" value={quote.workflow ?? ""} options={["Draft/WIP", "Rating", "Review", "Sent", "Followed-up", "Won", "Lost"]} compact editable={editable} onChange={(value) => onQuoteChange("workflow", value)} />
             </div>
           </div>
         </div>
@@ -2849,6 +2905,21 @@ function QuoteCargoWiseDetailsPanel({
           <CargoWiseField label="Lines" value={quote.invoiceLines ?? ""} editable={editable} onChange={(value) => onQuoteChange("invoiceLines", value)} />
           <CargoWiseSelectField label="Known cargo" value={quote.knownCargo ?? ""} options={["General merchandise", "Hazardous", "Temperature controlled", "Oversized"]} editable={editable} onChange={(value) => onQuoteChange("knownCargo", value)} span />
           <CargoWiseSelectField label="FMC TID" value={quote.fmcTid ?? ""} options={["Not required", "Required", "Pending"]} editable={editable} onChange={(value) => onQuoteChange("fmcTid", value)} span />
+          <CargoWiseField label="Packages / pieces" value={quote.packageQuantity ?? ""} editable={editable} onChange={(value) => onQuoteChange("packageQuantity", value)} />
+          <CargoWiseField label="Package type" value={quote.packageType ?? ""} editable={editable} onChange={(value) => onQuoteChange("packageType", value)} />
+          <CargoWiseField label="Gross weight (kg)" value={quote.grossWeightKg ?? ""} editable={editable} onChange={(value) => onQuoteChange("grossWeightKg", value)} />
+          <CargoWiseField label="Volume (CBM)" value={quote.volumeCbm ?? ""} editable={editable} onChange={(value) => onQuoteChange("volumeCbm", value)} />
+          <CargoWiseField label="Chargeable weight (kg)" value={quote.chargeableWeightKg ?? ""} editable={editable} onChange={(value) => onQuoteChange("chargeableWeightKg", value)} />
+          <CargoWiseSelectField label="Customs included" value={quote.customsIncluded ?? "No"} options={["No", "Yes"]} editable={editable} onChange={(value) => onQuoteChange("customsIncluded", value)} />
+        </div>
+      </CargoWiseGroup>
+
+      <CargoWiseGroup title="Customer terms">
+        <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-4">
+          <CargoWiseField label="Terms and conditions" value={quote.terms ?? ""} editable={editable} onChange={(value) => onQuoteChange("terms", value)} span />
+          <CargoWiseField label="Subject to rate / space" value={quote.subjectToTerms ?? ""} editable={editable} onChange={(value) => onQuoteChange("subjectToTerms", value)} span />
+          <CargoWiseField label="Customer notes" value={quote.customerNotes ?? ""} editable={editable} onChange={(value) => onQuoteChange("customerNotes", value)} span />
+          <CargoWiseField label="Response deadline (optional)" value={quote.deadline ?? ""} editable={editable} onChange={(value) => onQuoteChange("deadline", value)} />
         </div>
       </CargoWiseGroup>
 
@@ -3160,10 +3231,11 @@ function QuoteWorkspaceContext({
 }
 
 function quoteRecordFromRegister(quote: QuoteRegisterRecord): QuoteRecord {
+  const isLost = ["declined", "ghosted", "lost"].includes(quote.status.toLowerCase())
   return {
     id: quote.reference,
-    status: quote.status,
-    statusTone: quote.statusTone,
+    status: isLost ? "Lost" : "Open",
+    statusTone: isLost ? "red" : "green",
     quoteType: quote.quoteType,
     source: quote.quoteSource,
     workflowStatus: quote.workflowStage,
@@ -3211,24 +3283,84 @@ function getInitialQuoteRecord(quoteId?: string) {
 }
 
 function quoteLifecyclePresentation(lifecycle: string): { status: string; tone: StatusTone } {
-  const status = lifecycle ? lifecycle.charAt(0).toUpperCase() + lifecycle.slice(1) : "Draft"
-  if (lifecycle === "accepted") return { status, tone: "green" }
-  if (lifecycle === "declined") return { status, tone: "red" }
-  if (lifecycle === "sent") return { status, tone: "blue" }
-  return { status, tone: lifecycle === "ghosted" ? "neutral" : "amber" }
+  if (lifecycle === "declined" || lifecycle === "ghosted") return { status: "Lost", tone: "red" }
+  return { status: "Open", tone: "green" }
 }
 
-function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: QuoteWorkflowSources): QuoteRecord {
+function QuoteWorkspaceSkeleton() {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <div
+      className={cn("md-quote-skeleton", shouldReduceMotion && "md-quote-skeleton--still")}
+      role="status"
+      aria-label={t("Loading quote…")}
+    >
+      <div className="md-quote-skeleton__header md-quote-skeleton__block">
+        <span className="md-quote-skeleton__line w-24" />
+        <span className="md-quote-skeleton__line w-20" />
+        <span className="md-quote-skeleton__line w-12" />
+        <span className="md-quote-skeleton__spacer" />
+        <span className="md-quote-skeleton__line w-24" />
+        <span className="md-quote-skeleton__line w-36" />
+        <span className="md-quote-skeleton__line w-16" />
+      </div>
+      <div className="md-quote-skeleton__tabs md-quote-skeleton__block">
+        {Array.from({ length: 5 }, (_, index) => (
+          <span key={index} className="md-quote-skeleton__line" style={{ width: `${74 + index * 8}px`, animationDelay: `${index * 45}ms` }} />
+        ))}
+      </div>
+      <div className="md-quote-skeleton__facts">
+        {Array.from({ length: 4 }, (_, index) => (
+          <span key={index} className="md-quote-skeleton__block" style={{ animationDelay: `${100 + index * 45}ms` }} />
+        ))}
+      </div>
+      <div className="md-quote-skeleton__signals">
+        <span className="md-quote-skeleton__block" style={{ animationDelay: "220ms" }} />
+        <span className="md-quote-skeleton__block md-quote-skeleton__block--dark" style={{ animationDelay: "265ms" }} />
+      </div>
+      <div className="md-quote-skeleton__panels">
+        {Array.from({ length: 3 }, (_, index) => (
+          <span key={index} className="md-quote-skeleton__block" style={{ animationDelay: `${310 + index * 45}ms` }} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+async function loadQuoteWorkspace(reference: string) {
+  try {
+    return await getQuoteWorkflow(reference)
+  } catch {
+    // A tenant Edge Function can briefly miss its first request after going
+    // idle. The lightweight preview is already visible while this one quiet,
+    // read-only retry restores the full editable workspace.
+    await new Promise((resolve) => window.setTimeout(resolve, 180))
+    return getQuoteWorkflow(reference, { fresh: true })
+  }
+}
+
+const quoteLossReasons = [
+  "Price too high",
+  "Chose a competitor",
+  "Timing or project changed",
+  "Service or routing did not fit",
+  "No response from customer",
+  "Other",
+] as const
+
+function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: QuoteWorkflowSources | null): QuoteRecord {
   const record = workspace.quote
   const facts = record.shipmentFacts ?? {}
   const fact = (key: string) => typeof facts[key] === "string" ? String(facts[key]) : ""
-  const customer = lookups.organisations.find((option) => option.id === record.customerId)
+  const customer = lookups?.organisations.find((option) => option.id === record.customerId)
   const contact = customer?.contacts.find((option) => option.id === record.contactId)
-  const office = lookups.offices.find((option) => option.id === record.officeId)
-  const department = lookups.departments.find((option) => option.id === record.departmentId)
-  const salesOwner = lookups.users.find((option) => option.id === record.salesOwnerId)
-  const mode = lookups.modes.find((option) => option.code === record.mode)
-  const shipmentType = lookups.shipmentTypes.find((option) => option.code === record.shipmentType)
+  const office = lookups?.offices.find((option) => option.id === record.officeId)
+  const department = lookups?.departments.find((option) => option.id === record.departmentId)
+  const salesOwner = lookups?.users.find((option) => option.id === record.salesOwnerId)
+  const mode = lookups?.modes.find((option) => option.code === record.mode)
+  const shipmentType = lookups?.shipmentTypes.find((option) => option.code === record.shipmentType)
   const presentation = quoteLifecyclePresentation(record.lifecycle)
   return {
     ...newQuoteDraft,
@@ -3278,6 +3410,7 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     via: fact("routingVia"),
     startDate: record.validFrom ?? "",
     endDate: record.validTo ?? "",
+    deadline: record.deadline ?? "",
     validity: record.validTo ?? "",
     direction: record.direction ? record.direction.charAt(0).toUpperCase() + record.direction.slice(1) : "",
     serviceLevel: record.serviceLevel ?? "",
@@ -3307,6 +3440,16 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     commodity: fact("commodity"),
     co2e: fact("co2e"),
     knownCargo: fact("knownCargo"),
+    packageQuantity: fact("packageQuantity"),
+    packageType: fact("packageType"),
+    grossWeightKg: fact("grossWeightKg"),
+    volumeCbm: fact("volumeCbm"),
+    chargeableWeightKg: fact("chargeableWeightKg"),
+    customsIncluded: fact("customsIncluded") || "No",
+    subjectToTerms: fact("subjectToTerms"),
+    terms: record.terms ?? "",
+    customerNotes: record.customerNotes ?? "",
+    internalNotes: record.internalNotes ?? "",
     fmcTid: fact("fmcTid"),
     margin: workspace.totals.marginPct === null ? "" : `${workspace.totals.marginPct.toFixed(2)}%`,
     profit: workspace.totals.profit,
@@ -3396,6 +3539,7 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
     incoterm: quote.incoterm,
     validFrom: quote.startDate ?? "",
     validTo: quote.endDate ?? "",
+    deadline: quote.deadline ?? "",
     supplierId: quote.supplierId ?? "",
     supplierName: quote.supplier ?? "",
     carrierId: quote.carrierId ?? "",
@@ -3438,12 +3582,19 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
       commodity: quote.commodity,
       co2e: quote.co2e,
       knownCargo: quote.knownCargo,
+      packageQuantity: quote.packageQuantity,
+      packageType: quote.packageType,
+      grossWeightKg: quote.grossWeightKg,
+      volumeCbm: quote.volumeCbm,
+      chargeableWeightKg: quote.chargeableWeightKg,
+      customsIncluded: quote.customsIncluded,
+      subjectToTerms: quote.subjectToTerms,
       fmcTid: quote.fmcTid,
       jobRoes: quote.jobRoes,
     }),
-    customerNotes: "",
-    internalNotes: "",
-    terms: "",
+    customerNotes: quote.customerNotes ?? "",
+    internalNotes: quote.internalNotes ?? "",
+    terms: quote.terms ?? "",
     rateSourceType: quote.rateSource ?? "",
     rateSourceLabel: quote.rateSource ?? "",
     defaultMarkupPct: 15,
@@ -3515,62 +3666,139 @@ export function QuoteDetailPage({
   const [draftCharges, setDraftCharges] = useState<QuoteCharge[]>(initialCharges)
   const [quoteRefCopied, setQuoteRefCopied] = useState(false)
   const [saveFeedbackVisible, setSaveFeedbackVisible] = useState(false)
+  const [issueDialogOpen, setIssueDialogOpen] = useState(false)
+  const [issueReadiness, setIssueReadiness] = useState<QuoteIssueReadiness | null>(null)
+  const [issueReadinessLoading, setIssueReadinessLoading] = useState(false)
+  const [issueRecipients, setIssueRecipients] = useState<QuoteIssueRecipient[]>([])
+  const [issueMailboxes, setIssueMailboxes] = useState<Mailbox[]>([])
+  const [issueMailboxId, setIssueMailboxId] = useState("")
+  const [issueRecipientKey, setIssueRecipientKey] = useState("")
+  const [issueExpiryPreset, setIssueExpiryPreset] = useState<QuoteIssueExpiryPreset>("14")
+  const [issueEmailSubject, setIssueEmailSubject] = useState("")
+  const [issueEmailBody, setIssueEmailBody] = useState("")
+  const [issueEmailPreviewHtml, setIssueEmailPreviewHtml] = useState("")
+  const [issueDraftLoading, setIssueDraftLoading] = useState(false)
+  const [issuePreviewLoading, setIssuePreviewLoading] = useState(false)
+  const [issueEmailError, setIssueEmailError] = useState("")
+  const [issueRefinementOpen, setIssueRefinementOpen] = useState(false)
+  const [issueRefinementInstruction, setIssueRefinementInstruction] = useState("")
+  const [issueRefinementSelection, setIssueRefinementSelection] = useState<TextareaSelection | null>(null)
+  const [issueBodySelection, setIssueBodySelection] = useState<TextareaSelection | null>(null)
+  const [issueSelectionAnchor, setIssueSelectionAnchor] = useState<TextareaSelectionAnchor | null>(null)
+  const [issueRefining, setIssueRefining] = useState(false)
+  const [issuing, setIssuing] = useState(false)
+  const [issueDeliveryState, setIssueDeliveryState] = useState<"idle" | "sent">("idle")
+  const [issueNotice, setIssueNotice] = useState("")
+  const [lossDialogOpen, setLossDialogOpen] = useState(false)
+  const [lossReason, setLossReason] = useState("")
+  const [lossDetails, setLossDetails] = useState("")
   const [validationAttempted, setValidationAttempted] = useState(false)
   const [dexterOpen, setDexterOpen] = useState(false)
   const [lookups, setLookups] = useState<QuoteWorkflowSources | null>(null)
   const [workspace, setWorkspace] = useState<QuoteWorkflowWorkspace | null>(null)
+  const [intelligence, setIntelligence] = useState<QuoteIntelligenceSnapshot | null>(null)
+  const [intelligenceUnavailable, setIntelligenceUnavailable] = useState(false)
   const [currentQuoteId, setCurrentQuoteId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!isNewQuote)
   const [saving, setSaving] = useState(false)
   const [transitioning, setTransitioning] = useState(false)
   const [workflowError, setWorkflowError] = useState("")
   const quoteCopyResetTimerRef = useRef<number | null>(null)
   const saveFeedbackTimerRef = useRef<number | null>(null)
+  const autosaveTimerRef = useRef<number | null>(null)
+  const issuePreviewTimerRef = useRef<number | null>(null)
+  const issueBodyEditorRef = useRef<HTMLTextAreaElement | null>(null)
+  const selectedIssueRecipient = useMemo(
+    () => issueRecipients.find((recipient) => recipient.key === issueRecipientKey) ?? null,
+    [issueRecipientKey, issueRecipients],
+  )
 
   useEffect(() => () => {
     if (quoteCopyResetTimerRef.current !== null) window.clearTimeout(quoteCopyResetTimerRef.current)
     if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current)
+    if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current)
+    if (issuePreviewTimerRef.current !== null) window.clearTimeout(issuePreviewTimerRef.current)
   }, [])
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
+    let workspaceApplied = false
+    setLoading(!isNewQuote)
+    setIntelligence(null)
+    setIntelligenceUnavailable(false)
     setWorkflowError("")
     void (async () => {
       try {
-        const sourcesPromise = getQuoteSources()
+        // Lookup labels enrich the editor after the quote is already usable.
+        // Load them only after the workspace so they do not compete with the
+        // critical quote request or alarm the operator if enrichment is down.
+        const loadSources = () => getQuoteSources().catch(() => null)
         if (isNewQuote) {
-          const sources = await sourcesPromise
           const openedQuote = await openQuoteWorkflow()
           const openedWorkspace = await getQuoteWorkflow(openedQuote.reference)
           if (!cancelled) {
-            const openedQuoteRecord = quoteRecordFromWorkspace(openedWorkspace, sources)
+            const openedQuoteRecord = quoteRecordFromWorkspace(openedWorkspace, null)
             const openedCharges = quoteChargesFromWorkspace(openedWorkspace)
-            setLookups(sources)
             setWorkspace(openedWorkspace)
+            setIntelligence(openedWorkspace.intelligence)
+            setIntelligenceUnavailable(false)
             setCurrentQuoteId(openedWorkspace.quote.id)
             setSavedQuote(openedQuoteRecord)
             setDraftQuote(openedQuoteRecord)
             setSavedCharges(openedCharges)
             setDraftCharges(openedCharges)
             setActiveTab("details")
+            setLoading(false)
             navigate?.(`/quotes/${openedQuote.reference}`)
           }
+          const sources = await loadSources()
+          if (!cancelled && sources) setLookups(sources)
           return
         }
         const reference = quoteId?.toUpperCase() ?? ""
-        const [sources, loadedWorkspace] = await Promise.all([sourcesPromise, getQuoteWorkflow(reference)])
+        void getSalesQuote(reference)
+          .then((preview) => {
+            if (cancelled || workspaceApplied || !preview) return
+            const previewQuote = quoteRecordFromRegister(preview)
+            setSavedQuote(previewQuote)
+            setDraftQuote(previewQuote)
+            setSavedCharges([])
+            setDraftCharges([])
+            setActiveTab("overview")
+            setLoading(false)
+          })
+          .catch(() => {
+            // The full workspace request below remains the source of truth and
+            // owns the visible error state if this lightweight preview misses.
+          })
+        const loadedWorkspace = await loadQuoteWorkspace(reference)
         if (cancelled) return
-        const loadedQuote = quoteRecordFromWorkspace(loadedWorkspace, sources)
+        const canonicalReference = loadedWorkspace.quote.reference.trim().toUpperCase()
+        if (canonicalReference && canonicalReference !== reference) {
+          navigate?.(`/quotes/${encodeURIComponent(canonicalReference.toLowerCase())}`)
+          return
+        }
+        workspaceApplied = true
+        const loadedQuote = quoteRecordFromWorkspace(loadedWorkspace, null)
         const loadedCharges = quoteChargesFromWorkspace(loadedWorkspace)
-        setLookups(sources)
         setWorkspace(loadedWorkspace)
+        setIntelligence(loadedWorkspace.intelligence)
+        setIntelligenceUnavailable(false)
         setCurrentQuoteId(loadedWorkspace.quote.id)
         setSavedQuote(loadedQuote)
         setDraftQuote(loadedQuote)
         setSavedCharges(loadedCharges)
         setDraftCharges(loadedCharges)
         setActiveTab("overview")
+        setLoading(false)
+
+        const sources = await loadSources()
+        if (cancelled || !sources) return
+        const enrichedQuote = quoteRecordFromWorkspace(loadedWorkspace, sources)
+        const loadedSignature = JSON.stringify(loadedQuote)
+        setLookups(sources)
+        setSavedQuote((current) => JSON.stringify(current) === loadedSignature ? enrichedQuote : current)
+        setDraftQuote((current) => JSON.stringify(current) === loadedSignature ? enrichedQuote : current)
       } catch (error) {
         if (!cancelled) setWorkflowError(error instanceof Error ? error.message : "The quote could not be loaded.")
       } finally {
@@ -3582,20 +3810,91 @@ export function QuoteDetailPage({
     }
   }, [isNewQuote, quoteId])
 
+  useEffect(() => {
+    const reference = workspace?.quote.reference
+    if (!currentQuoteId || !reference) return
+    let active = true
+    const unsubscribe = subscribeQuoteIntelligence(currentQuoteId, (next) => {
+      if (active && next) {
+        setIntelligence(next)
+        setIntelligenceUnavailable(false)
+      }
+    })
+    const calculatedAt = intelligence?.calculatedAt ? new Date(intelligence.calculatedAt).getTime() : 0
+    const needsRefresh = !calculatedAt || Date.now() - calculatedAt > 15 * 60_000
+    if (needsRefresh) {
+      void refreshQuoteIntelligence(reference)
+        .then((next) => {
+          if (!active) return
+          setIntelligence(next)
+          setIntelligenceUnavailable(false)
+        })
+        .catch(() => { if (active) setIntelligenceUnavailable(true) })
+    }
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [currentQuoteId, workspace?.quote.reference])
+
   const activeCharges = draftCharges
   const activeTotals = useMemo(() => getChargeTotals(activeCharges), [activeCharges])
   const activeQuote = {
     ...draftQuote,
-    cost: activeTotals.cost,
-    revenue: activeTotals.revenue,
-    profit: activeTotals.profit,
-    margin: activeTotals.margin,
+    cost: workspace ? activeTotals.cost : draftQuote.cost,
+    revenue: workspace ? activeTotals.revenue : draftQuote.revenue,
+    profit: workspace ? activeTotals.profit : draftQuote.profit,
+    margin: workspace ? activeTotals.margin : draftQuote.margin,
   }
   const isDirty = JSON.stringify(draftQuote) !== JSON.stringify(savedQuote) || JSON.stringify(draftCharges) !== JSON.stringify(savedCharges)
+  const lifecycle = workspace?.quote.lifecycle ?? (currentQuoteId ? "draft" : "")
+  const quoteIsLost = lifecycle === "declined" || lifecycle === "ghosted"
+  const quoteHasFinalOutcome = quoteIsLost || lifecycle === "accepted"
   const heading = variant === "ai" ? "AI spot quote command" : "Spot quote"
   const visualTabTravelDirection = shouldReduceMotion
     ? 0
     : tabTravelDirection * (direction === "rtl" ? -1 : 1)
+
+  useEffect(() => {
+    if (!currentQuoteId || quoteHasFinalOutcome) {
+      setIssueReadiness(null)
+      return
+    }
+    let active = true
+    setIssueReadinessLoading(true)
+    void getQuoteIssueReadiness(currentQuoteId)
+      .then((readiness) => { if (active) setIssueReadiness(readiness) })
+      .catch(() => { if (active) setIssueReadiness(null) })
+      .finally(() => { if (active) setIssueReadinessLoading(false) })
+    return () => { active = false }
+  }, [currentQuoteId, savedQuote, quoteHasFinalOutcome])
+
+  useEffect(() => {
+    if (issuePreviewTimerRef.current !== null) window.clearTimeout(issuePreviewTimerRef.current)
+    if (!issueDialogOpen || !currentQuoteId || !issueRecipientKey || !issueEmailSubject.trim() || !issueEmailBody.trim() || issueDraftLoading) return
+    let active = true
+    issuePreviewTimerRef.current = window.setTimeout(() => {
+      issuePreviewTimerRef.current = null
+      setIssuePreviewLoading(true)
+      void previewQuoteIssueEmail(currentQuoteId, issueRecipientKey, issueEmailSubject, issueEmailBody, issueExpiryPreset)
+        .then((preview) => {
+          if (!active) return
+          setIssueEmailPreviewHtml(preview.previewHtml)
+          setIssueEmailError("")
+        })
+        .catch((error) => {
+          if (active) setIssueEmailError(error instanceof Error ? error.message : "The email preview could not be updated.")
+        })
+        .finally(() => { if (active) setIssuePreviewLoading(false) })
+    }, 320)
+    return () => {
+      active = false
+      if (issuePreviewTimerRef.current !== null) {
+        window.clearTimeout(issuePreviewTimerRef.current)
+        issuePreviewTimerRef.current = null
+      }
+    }
+  }, [currentQuoteId, issueDialogOpen, issueDraftLoading, issueEmailBody, issueEmailSubject, issueExpiryPreset, issueRecipientKey])
 
   function changeWorkspaceTab(nextTab: QuoteWorkspaceTab) {
     if (nextTab === activeTab) return
@@ -3755,6 +4054,8 @@ export function QuoteDetailPage({
     const loadedQuote = quoteRecordFromWorkspace(loadedWorkspace, sources)
     const loadedCharges = quoteChargesFromWorkspace(loadedWorkspace)
     setWorkspace(loadedWorkspace)
+    setIntelligence(loadedWorkspace.intelligence)
+    setIntelligenceUnavailable(false)
     setCurrentQuoteId(loadedWorkspace.quote.id)
     setSavedQuote(loadedQuote)
     setDraftQuote(loadedQuote)
@@ -3764,15 +4065,23 @@ export function QuoteDetailPage({
 
   async function saveChanges() {
     if (saving) return
+    const quoteSnapshot = draftQuote
+    const chargeSnapshot = draftCharges
     setSaving(true)
     setWorkflowError("")
     try {
-      const payload = quoteSavePayload(draftQuote, draftCharges, lookups)
+      const payload = quoteSavePayload(quoteSnapshot, chargeSnapshot, lookups)
       const result = await saveQuoteWorkflow(currentQuoteId, payload)
-      const sources = lookups ?? await getQuoteSources()
-      const loadedWorkspace = await getQuoteWorkflow(result.reference)
-      setLookups(sources)
-      applyLoadedWorkspace(loadedWorkspace, sources)
+      setCurrentQuoteId(result.quoteId)
+      setSavedQuote(quoteSnapshot)
+      setSavedCharges(chargeSnapshot)
+      setWorkspace((current) => current ? {
+        ...current,
+        quote: { ...current.quote, id: result.quoteId, reference: result.reference, lifecycle: result.lifecycle },
+      } : current)
+      void refreshQuoteIntelligence(result.reference)
+        .then((next) => { setIntelligence(next); setIntelligenceUnavailable(false) })
+        .catch(() => { if (!intelligence) setIntelligenceUnavailable(true) })
       setValidationAttempted(false)
       setSaveFeedbackVisible(true)
       if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current)
@@ -3780,7 +4089,7 @@ export function QuoteDetailPage({
         setSaveFeedbackVisible(false)
         saveFeedbackTimerRef.current = null
       }, 1800)
-      if (isNewQuote) navigate?.(`/quotes/${result.reference}`)
+      if (activeQuote.id !== result.reference) navigate?.(`/quotes/${result.reference}`)
     } catch (error) {
       setWorkflowError(error instanceof Error ? error.message : "The quote could not be saved.")
     } finally {
@@ -3788,55 +4097,225 @@ export function QuoteDetailPage({
     }
   }
 
-  const lifecycle = workspace?.quote.lifecycle ?? (currentQuoteId ? "draft" : "")
-  const nextLifecycle = lifecycle === "draft" || lifecycle === "revised"
-    ? "calculated"
-    : lifecycle === "calculated"
-      ? "sent"
-      : lifecycle === "sent"
-        ? "accepted"
-        : lifecycle === "declined" || lifecycle === "ghosted"
-          ? "revised"
-          : null
-  const nextLifecycleLabel = nextLifecycle === "calculated"
-    ? "Mark calculated"
-    : nextLifecycle === "sent"
-      ? "Mark sent"
-      : nextLifecycle === "accepted"
-        ? "Accept quote"
-        : nextLifecycle === "revised"
-          ? "Revise quote"
-          : "Accepted"
+  useEffect(() => {
+    if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current)
+    if (loading || !currentQuoteId || !isDirty || saving || transitioning) return
+    autosaveTimerRef.current = window.setTimeout(() => {
+      autosaveTimerRef.current = null
+      void saveChanges()
+    }, 650)
+    return () => {
+      if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current)
+    }
+  }, [currentQuoteId, draftCharges, draftQuote, isDirty, loading, saving, transitioning])
 
-  async function runNextLifecycleAction() {
-    if (!currentQuoteId || !nextLifecycle || transitioning || isDirty) return
+  async function markQuoteLost() {
+    const reason = lossReason === "Other"
+      ? lossDetails.trim()
+      : [lossReason, lossDetails.trim()].filter(Boolean).join(": ")
+    if (!currentQuoteId || !reason || transitioning || isDirty) return
     setTransitioning(true)
     setWorkflowError("")
     try {
-      await transitionQuoteWorkflow(currentQuoteId, nextLifecycle)
+      await transitionQuoteWorkflow(currentQuoteId, "declined", reason)
       const sources = lookups ?? await getQuoteSources()
       const reference = workspace?.quote.reference ?? savedQuote.id
-      const loadedWorkspace = await getQuoteWorkflow(reference)
+      const loadedWorkspace = await getQuoteWorkflow(reference, { fresh: true })
       setLookups(sources)
       applyLoadedWorkspace(loadedWorkspace, sources)
+      void refreshQuoteIntelligence(reference)
+        .then((next) => { setIntelligence(next); setIntelligenceUnavailable(false) })
+        .catch(() => { if (!loadedWorkspace.intelligence) setIntelligenceUnavailable(true) })
+      setLossDialogOpen(false)
+      setLossReason("")
+      setLossDetails("")
     } catch (error) {
-      setWorkflowError(error instanceof Error ? error.message : "The quote status could not be changed.")
+      setWorkflowError(error instanceof Error ? error.message : "The quote could not be marked lost.")
     } finally {
       setTransitioning(false)
     }
   }
 
-  function discardChanges() {
-    setDraftQuote(savedQuote)
-    setDraftCharges(savedCharges)
-    setValidationAttempted(false)
-    setSaveFeedbackVisible(false)
+  async function loadIssueEmailDraft(recipientKey: string, expiryPreset = issueExpiryPreset) {
+    if (!currentQuoteId || !recipientKey) return
+    setIssueDraftLoading(true)
+    setIssueEmailError("")
+    setIssueEmailSubject("")
+    setIssueEmailBody("")
+    setIssueEmailPreviewHtml("")
+    try {
+      const draft = await prepareQuoteIssueEmail(currentQuoteId, recipientKey, expiryPreset)
+      setIssueEmailSubject(draft.subject)
+      setIssueEmailBody(draft.bodyText)
+      setIssueEmailPreviewHtml(draft.previewHtml)
+    } catch (error) {
+      setIssueEmailError(error instanceof Error ? error.message : "Dexter could not prepare the quote email.")
+    } finally {
+      setIssueDraftLoading(false)
+    }
+  }
+
+  async function openIssueQuoteDialog() {
+    if (!currentQuoteId || saving || isDirty || quoteHasFinalOutcome) return
+    setIssueExpiryPreset("14")
+    setIssueRecipients([])
+    setIssueMailboxes([])
+    setIssueMailboxId("")
+    setIssueRecipientKey("")
+    setIssueEmailSubject("")
+    setIssueEmailBody("")
+    setIssueEmailPreviewHtml("")
+    setIssueEmailError("")
+    setIssueRefinementOpen(false)
+    setIssueRefinementInstruction("")
+    setIssueRefinementSelection(null)
+    setIssueBodySelection(null)
+    setIssueSelectionAnchor(null)
+    setIssueDeliveryState("idle")
+    setIssueDialogOpen(true)
+    setIssueReadinessLoading(true)
+    setWorkflowError("")
+    try {
+      const [readiness, options, connectedMailboxes] = await Promise.all([
+        getQuoteIssueReadiness(currentQuoteId),
+        getQuoteIssueRecipients(currentQuoteId),
+        listMailboxes().catch(() => []),
+      ])
+      setIssueReadiness(readiness)
+      setIssueRecipients(options.recipients)
+      const sendableMailboxes = connectedMailboxes
+        .filter((mailbox) => mailbox.outboundEnabled && mailbox.status === "connected")
+        .sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.address.localeCompare(right.address))
+      setIssueMailboxes(sendableMailboxes)
+      setIssueMailboxId(sendableMailboxes[0]?.id ?? "")
+      const savedEmail = savedQuote.customerEmail?.trim().toLowerCase()
+      const selected = options.recipients.find((recipient) => recipient.email.toLowerCase() === savedEmail) ?? options.recipients[0]
+      if (selected) {
+        setIssueRecipientKey(selected.key)
+        await loadIssueEmailDraft(selected.key, "14")
+      } else {
+        setIssueEmailError("Add a company email or a contact email before sending this quote.")
+      }
+      if (!sendableMailboxes.length) setIssueEmailError("Choose a connected mailbox that can send email.")
+    } catch (error) {
+      setIssueEmailError(error instanceof Error ? error.message : "Quote delivery details could not be loaded.")
+    } finally {
+      setIssueReadinessLoading(false)
+    }
+  }
+
+  function changeIssueRecipient(recipientKey: string) {
+    setIssueDeliveryState("idle")
+    setIssueRefinementOpen(false)
+    setIssueBodySelection(null)
+    setIssueSelectionAnchor(null)
+    setIssueRecipientKey(recipientKey)
+    void loadIssueEmailDraft(recipientKey)
+  }
+
+  function updateIssueBodySelection() {
+    const editor = issueBodyEditorRef.current
+    if (!editor) return
+    const start = editor.selectionStart
+    const end = editor.selectionEnd
+    const text = editor.value.slice(start, end)
+    if (end <= start || !text.trim()) {
+      setIssueBodySelection(null)
+      setIssueSelectionAnchor(null)
+      return
+    }
+    setIssueBodySelection({ start, end, text })
+    setIssueSelectionAnchor(textareaSelectionAnchor(editor, start))
+  }
+
+  function openIssueRefinement(selection: TextareaSelection | null = null, initialInstruction = "") {
+    if (issuing || issueDraftLoading || issueRefining) return
+    setIssueRefinementSelection(selection)
+    setIssueRefinementInstruction(initialInstruction)
+    setIssueEmailError("")
+    setIssueRefinementOpen(true)
+  }
+
+  function closeIssueRefinement() {
+    if (issueRefining) return
+    setIssueRefinementOpen(false)
+    setIssueRefinementInstruction("")
+    setIssueRefinementSelection(null)
+  }
+
+  async function performIssueRefinement(instruction: string, selection: TextareaSelection | null) {
+    const cleanInstruction = instruction.trim()
+    if (!currentQuoteId || !issueRecipientKey || !cleanInstruction || issueRefining || issuing) return
+    if (selection && issueEmailBody.slice(selection.start, selection.end) !== selection.text) {
+      setIssueEmailError("Select the text again before refining it.")
+      return
+    }
+    const snapshotSubject = issueEmailSubject
+    const snapshotBody = issueEmailBody
+    setIssueRefining(true)
+    setIssueEmailError("")
+    try {
+      const refined = await refineQuoteIssueEmail({
+        quoteId: currentQuoteId,
+        recipientKey: issueRecipientKey,
+        subject: snapshotSubject,
+        bodyText: snapshotBody,
+        instruction: cleanInstruction,
+        selection: selection ? { start: selection.start, end: selection.end } : null,
+      })
+      if (issueEmailSubject !== snapshotSubject || issueEmailBody !== snapshotBody) {
+        setIssueEmailError("Your draft changed while Dexter was refining it. Run the refinement again.")
+        return
+      }
+      setIssueEmailSubject(refined.subject)
+      setIssueEmailBody(refined.bodyText)
+      setIssueBodySelection(null)
+      setIssueSelectionAnchor(null)
+      setIssueRefinementSelection(null)
+      setIssueRefinementInstruction("")
+      setIssueRefinementOpen(false)
+    } catch (error) {
+      setIssueEmailError(error instanceof Error ? error.message : "Dexter could not refine this draft. Your current wording is unchanged.")
+    } finally {
+      setIssueRefining(false)
+    }
+  }
+
+  async function issueQuoteToCustomer() {
+    if (!currentQuoteId || !issueReadiness?.ready || !issueRecipientKey || !issueMailboxId || !issueEmailSubject.trim() || !issueEmailBody.trim() || issuing || issueDraftLoading || issuePreviewLoading) return
+    setIssuing(true)
+    setWorkflowError("")
+    setIssueNotice("")
+    let result: Awaited<ReturnType<typeof issueQuoteWorkflow>>
+    try {
+      result = await issueQuoteWorkflow(currentQuoteId, issueRecipientKey, issueMailboxId, issueEmailSubject, issueEmailBody, issueExpiryPreset)
+      if (!result.delivered) throw new Error("The email provider has not confirmed delivery. Nothing was marked as sent.")
+    } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "The quote could not be sent.")
+      setIssuing(false)
+      return
+    }
+
+    setIssueDeliveryState("sent")
+    setIssueNotice(`Quote ${result.reference} was sent to ${result.recipientEmail}.`)
+    await new Promise((resolve) => window.setTimeout(resolve, shouldReduceMotion ? 250 : 900))
+    setIssueDialogOpen(false)
+    try {
+      const sources = lookups ?? await getQuoteSources()
+      const loadedWorkspace = await getQuoteWorkflow(result.reference, { fresh: true })
+      setLookups(sources)
+      applyLoadedWorkspace(loadedWorkspace, sources)
+    } catch {
+      setWorkflowError("The quote was sent, but its latest status could not be refreshed. Reload the quote to update it.")
+    } finally {
+      setIssuing(false)
+    }
   }
 
   function renderActiveWorkspacePanel() {
     if (activeTab === "overview") {
       if (variant === "ai") return <QuoteAiOverviewPanel quote={savedQuote} />
-      if (variant === "cargowise") return <QuoteCargoWiseOverviewPanel quote={savedQuote} />
+      if (variant === "cargowise") return <QuoteCargoWiseOverviewPanel quote={savedQuote} intelligence={intelligence} intelligenceUnavailable={intelligenceUnavailable} />
       return <QuoteOverviewPanel quote={savedQuote} />
     }
 
@@ -3863,6 +4342,16 @@ export function QuoteDetailPage({
     return <AuditWorkspace records={quoteAuditRecords(workspace)} />
   }
 
+  if (loading) {
+    return (
+      <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={`${t("Quote")} ${activeQuote.id}`} className="min-w-0 max-w-full overflow-x-clip">
+        <main className="md-quote-workspace min-h-full min-w-0 max-w-full overflow-x-clip bg-[var(--md-analytics-bg)] px-3 py-3 sm:px-5 sm:py-4">
+          <QuoteWorkspaceSkeleton />
+        </main>
+      </DexterDockedPage>
+    )
+  }
+
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={`${t("Quote")} ${activeQuote.id}`} className="min-w-0 max-w-full overflow-x-clip">
       <main className="md-quote-workspace min-h-full min-w-0 max-w-full overflow-x-clip bg-[var(--md-analytics-bg)] px-3 py-3 sm:px-5 sm:py-4">
@@ -3872,17 +4361,17 @@ export function QuoteDetailPage({
               {t(workflowError)}
             </div>
           ) : null}
-          {loading ? (
-            <div role="status" aria-live="polite" className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-4 py-6 text-center text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-              {t("Loading quote…")}
+          {issueNotice ? (
+            <div role="status" aria-live="polite" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-green)_9%,var(--md-surface))] px-3 py-2 text-[12px] font-medium text-[var(--md-green)] shadow-[var(--md-shadow-line)]">
+              {t(issueNotice)}
             </div>
           ) : null}
-          <Tabs value={activeTab} onValueChange={(value) => changeWorkspaceTab(value as QuoteWorkspaceTab)} className={cn("min-w-0 max-w-full gap-2", loading && "pointer-events-none opacity-40")}>
+          <Tabs value={activeTab} onValueChange={(value) => changeWorkspaceTab(value as QuoteWorkspaceTab)} className="min-w-0 max-w-full gap-2">
             <div className="relative">
               <div className="md-quote-workspace-header grid min-w-0 items-stretch gap-2">
                 <div className="grid min-w-0 grid-rows-[auto_auto] gap-1.5">
                 <section
-                  className="md-quote-record-header flex min-w-0 gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-3 py-1.5 shadow-[var(--md-shadow-line)]"
+                  className="md-quote-record-header flex min-w-0 flex-col gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-3 py-1.5 shadow-[var(--md-shadow-line)] sm:flex-row sm:items-center"
                 >
           <div className="md-quote-record-identity flex min-w-0 items-center gap-1.5">
             <div className="min-w-0">
@@ -3911,31 +4400,27 @@ export function QuoteDetailPage({
                   />
                   <CopyStatusIcon copied={quoteRefCopied} iconClassName="size-3.5" className="shrink-0" />
                 </button>
-                <StatusPill tone={activeQuote.statusTone} className="h-6 shrink-0 px-2 text-[10px]">{activeQuote.status}</StatusPill>
+                <StatusPill kind="status" tone={activeQuote.statusTone} indicator={false} className="h-7 shrink-0 px-2 text-[11px]">{activeQuote.status}</StatusPill>
               </div>
             </div>
           </div>
-          <div className="md-quote-record-actions flex min-w-0 flex-nowrap items-center gap-1 md-scrollbar">
+          <div className="md-quote-record-actions flex w-full min-w-0 flex-wrap items-center gap-1 md-scrollbar sm:ms-auto sm:w-auto sm:flex-nowrap">
             <LayoutGroup id={`quote-actions-${activeQuote.id}`}>
               <AnimatePresence initial={false} mode="popLayout">
-                {isDirty ? (
+                {isDirty || saving ? (
                   <motion.div
-                    key="dirty-actions"
+                    key="autosave-progress"
                     layout
-                    className="flex shrink-0 items-center gap-1"
+                    role="status"
+                    aria-live="polite"
+                    className="flex h-8 shrink-0 items-center gap-1.5 px-2 text-[11px] font-medium text-[var(--md-subtle)]"
                     initial={{ opacity: 0, x: direction === "rtl" ? 6 : -6 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: direction === "rtl" ? 4 : -4 }}
                     transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
                   >
-                    <Button type="button" variant="ghost" onClick={discardChanges} className="h-8 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-[12px] shadow-[var(--md-shadow-line)]">
-                      <RotateCcw data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
-                      {t("Discard")}
-                    </Button>
-                    <Button type="button" onClick={() => void saveChanges()} disabled={saving} className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]">
-                      <Save data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
-                      {t(saving ? "Saving…" : "Save")}
-                    </Button>
+                    <span className="size-1.5 animate-pulse rounded-full bg-[var(--md-accent)]" aria-hidden="true" />
+                    {t("Saving…")}
                   </motion.div>
                 ) : saveFeedbackVisible ? (
                   <motion.div
@@ -3953,7 +4438,7 @@ export function QuoteDetailPage({
                   </motion.div>
                 ) : null}
               </AnimatePresence>
-              <motion.div layout="position" className="flex shrink-0 items-center gap-1" transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.layout)}>
+              <motion.div layout="position" className="flex min-w-0 flex-wrap items-center gap-1 sm:flex-nowrap" transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.layout)}>
                 <DexterActionPill
                   className="h-8 min-w-[102px] rounded-[var(--md-radius-lg)] px-2.5 text-[11px]"
                   onClick={() => setDexterOpen(true)}
@@ -3962,18 +4447,33 @@ export function QuoteDetailPage({
                   <Printer data-icon="inline-start" className="size-4" strokeWidth={1.4} />
                   {t("Print")}
                 </Button>
-                <Button
-                  type="button"
-                  disabled={!currentQuoteId || !nextLifecycle || transitioning || isDirty}
-                  aria-label={t(nextLifecycleLabel)}
-                  className="h-8 min-w-[132px] shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px]"
-                  onClick={() => void runNextLifecycleAction()}
-                >
-                  {nextLifecycle === "accepted"
-                    ? <CheckCircle2 data-icon="inline-start" className="size-4" strokeWidth={1.7} />
-                    : <Send data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
-                  {t(transitioning ? "Updating…" : nextLifecycleLabel)}
-                </Button>
+                {!quoteHasFinalOutcome ? (
+                  <>
+                  <Button
+                    type="button"
+                    disabled={!currentQuoteId || saving || isDirty || issuing}
+                    aria-label={t(issueReadiness?.ready ? "Send quote" : "Review quote readiness")}
+                    className={cn(
+                      "h-8 min-w-[118px] shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px]",
+                      (saving || isDirty) && "cursor-wait opacity-50 active:scale-100",
+                      !issueReadiness?.ready && "bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-surface-soft)]",
+                    )}
+                    title={t(issueReadiness?.ready ? "Send this saved quote securely" : "Review the fields required before sending")}
+                    onClick={() => void openIssueQuoteDialog()}
+                  >
+                    <Send data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+                    {t(issueReadiness?.ready ? "Send quote" : "Review to send")}
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={!currentQuoteId || isDirty || saving || transitioning}
+                    className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-status-red-bg)] px-2.5 text-[11px] font-normal text-[var(--md-status-red-ink)] shadow-none hover:bg-[color-mix(in_srgb,var(--md-status-red-bg)_82%,var(--md-red))]"
+                    onClick={() => setLossDialogOpen(true)}
+                  >
+                    {t("Mark lost")}
+                  </Button>
+                  </>
+                ) : null}
               </motion.div>
             </LayoutGroup>
           </div>
@@ -4042,6 +4542,288 @@ export function QuoteDetailPage({
           </Tabs>
         </div>
       </main>
+      <Dialog open={issueDialogOpen} onOpenChange={(open) => { if (!issuing && !issueRefining) setIssueDialogOpen(open) }}>
+        <DialogContent
+          dir={direction}
+          className="max-h-[calc(100dvh-24px)] overflow-y-auto rounded-[var(--md-radius-2xl)] sm:max-w-none"
+          style={{ width: "min(880px, calc(100vw - 32px))", maxWidth: "880px" }}
+        >
+          <DialogHeader className="text-start">
+            <DialogTitle>{t("Send quote to customer")}</DialogTitle>
+            <DialogDescription>{t("Choose the recipient, review Dexter’s email and confirm the secure quote link before sending.")}</DialogDescription>
+          </DialogHeader>
+          <div className="grid min-w-0 gap-5 sm:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] sm:items-start">
+            <div className="grid min-w-0 content-start gap-4">
+              {issueReadinessLoading ? (
+                <div role="status" className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2 text-[12px] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
+                  {t("Checking quote readiness…")}
+                </div>
+              ) : issueReadiness && !issueReadiness.ready ? (
+                <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,var(--md-surface))] px-3 py-3 shadow-[var(--md-shadow-line)]">
+                  <p className="text-[12px] font-medium text-[var(--md-amber-strong)]">{t("Complete these fields before sending")}</p>
+                  <ul className="mt-2 grid gap-1 text-[12px] text-[var(--md-text)]">
+                    {issueReadiness.missing.map((item) => <li key={item}>• {t(item)}</li>)}
+                  </ul>
+                </div>
+              ) : null}
+
+              <label className="grid gap-1.5 text-start text-[12px] font-medium text-[var(--md-text)]">
+                {t("From")}
+                <Select value={issueMailboxId} onValueChange={setIssueMailboxId} disabled={issuing || issueRefining || issueReadinessLoading || !issueMailboxes.length}>
+                  <SelectTrigger className="h-11 w-full rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]">
+                    <SelectValue placeholder={t("Choose a connected mailbox that can send email.")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {issueMailboxes.map((mailbox) => (
+                      <SelectItem key={mailbox.id} value={mailbox.id}>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <MailProviderMark provider={mailbox.provider} />
+                          <span className="truncate text-[12px] text-[var(--md-ink)]" data-i18n-skip dir="ltr">{mailbox.address}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+
+              <label className="grid gap-1.5 text-start text-[12px] font-medium text-[var(--md-text)]">
+                {t("Send to")}
+                <Select value={issueRecipientKey} onValueChange={changeIssueRecipient} disabled={issuing || issueRefining || issueReadinessLoading || !issueRecipients.length}>
+                  <SelectTrigger className="h-11 w-full rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]">
+                    {selectedIssueRecipient ? (
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Mail className="size-4 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
+                        <span className="truncate text-[12px]" data-i18n-skip dir="ltr">{selectedIssueRecipient.email}</span>
+                      </span>
+                    ) : (
+                      <SelectValue placeholder={t(issueReadinessLoading ? "Loading company contacts…" : "Choose a company contact")} />
+                    )}
+                  </SelectTrigger>
+                  <SelectContent>
+                    {issueRecipients.map((recipient) => (
+                      <SelectItem key={recipient.key} value={recipient.key}>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <Mail className="size-4 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
+                          <span className="truncate text-[12px] text-[var(--md-ink)]" data-i18n-skip dir="ltr">{recipient.email}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+
+              <label className="grid gap-1.5 text-start text-[12px] font-medium text-[var(--md-text)]">
+                {t("Subject")}
+                <Input value={issueEmailSubject} onChange={(event) => setIssueEmailSubject(event.target.value)} maxLength={200} disabled={issuing || issueDraftLoading || issueRefining} data-i18n-skip />
+              </label>
+
+              <div className="grid gap-2">
+                <label htmlFor="quote-issue-email-body" className="text-start text-[12px] font-medium text-[var(--md-text)]">{t("Email body")}</label>
+                <div className="relative">
+                  <AnimatePresence initial={false}>
+                    {issueBodySelection && issueSelectionAnchor ? (
+                      <motion.div
+                        key={`${issueBodySelection.start}-${issueBodySelection.end}`}
+                        role="group"
+                        aria-label={t("Selected text actions")}
+                        style={{ left: issueSelectionAnchor.left, top: issueSelectionAnchor.top }}
+                        className={cn(
+                          "absolute z-20 -translate-x-1/2 -translate-y-full rounded-full bg-[var(--md-surface-tint)] p-1 text-[var(--md-text)] shadow-[var(--md-shadow-lift)]",
+                          issueRefinementOpen && issueRefinementSelection ? "w-[360px] max-w-[calc(100%_-_16px)]" : "w-auto",
+                        )}
+                        initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 4, scale: 0.97, filter: "blur(4px)" }}
+                        animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+                        exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 3, scale: 0.98, filter: "blur(3px)" }}
+                        transition={{ duration: shouldReduceMotion ? 0 : 0.16, ease: [0.22, 1, 0.36, 1] }}
+                        onPointerDown={(event) => { if (!(issueRefinementOpen && issueRefinementSelection)) event.preventDefault() }}
+                      >
+                        {issueRefinementOpen && issueRefinementSelection ? (
+                          <form
+                            className="flex h-10 w-full items-center gap-1.5 px-1"
+                            onSubmit={(event) => {
+                              event.preventDefault()
+                              void performIssueRefinement(issueRefinementInstruction, issueRefinementSelection)
+                            }}
+                          >
+                            <AiBeautify className="ms-1 size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.5} aria-hidden="true" />
+                            <input
+                              value={issueRefinementInstruction}
+                              onChange={(event) => setIssueRefinementInstruction(event.target.value.slice(0, 800))}
+                              disabled={issueRefining}
+                              aria-label={t("Ask Dexter to refine the selected text")}
+                              placeholder={t("How should this selection change?")}
+                              className="h-full min-w-0 flex-1 bg-transparent text-[16px] font-normal text-[var(--md-ink)] outline-none placeholder:text-[color-mix(in_srgb,var(--md-text)_70%,transparent)] disabled:opacity-70 sm:text-[13px]"
+                              autoFocus
+                            />
+                            <button type="button" disabled={issueRefining} aria-label={t("Close refinement")} title={t("Close refinement")} onClick={closeIssueRefinement} className="grid size-8 shrink-0 place-items-center rounded-full text-[var(--md-subtle)] transition-colors hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] disabled:opacity-40 motion-reduce:transition-none">
+                              <X className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+                            </button>
+                            <button type="submit" disabled={issueRefining || !issueRefinementInstruction.trim()} aria-label={t("Refine selected text")} title={t("Refine selected text")} className="md-dexter-pill grid size-8 shrink-0 place-items-center rounded-full text-white shadow-[var(--md-shadow-line)] transition-[opacity,scale] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.96] disabled:opacity-40 motion-reduce:transition-none motion-reduce:active:scale-100">
+                              {issueRefining ? <WandSparkles className="size-3.5 animate-pulse motion-reduce:animate-none" strokeWidth={1.6} aria-hidden="true" /> : <Send className="size-3.5 rtl:-scale-x-100" strokeWidth={1.6} aria-hidden="true" />}
+                            </button>
+                          </form>
+                        ) : (
+                          <div className="flex items-center gap-0.5">
+                            <button type="button" onClick={() => openIssueRefinement(issueBodySelection)} className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[12px] font-medium transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] motion-reduce:transition-none">
+                              <AiBeautify className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+                              {t("Ask for changes")}
+                            </button>
+                            <span aria-hidden="true" className="mx-0.5 h-5 w-px bg-[color-mix(in_srgb,var(--md-ink)_8%,transparent)]" />
+                            <button type="button" aria-label={t("Make shorter")} title={t("Make shorter")} disabled={issueRefining} onClick={() => void performIssueRefinement("Make the selected text shorter without losing any facts or meaning.", issueBodySelection)} className="grid size-8 place-items-center rounded-full transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] disabled:opacity-40 motion-reduce:transition-none">
+                              <Scissors className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+                            </button>
+                            <button type="button" aria-label={t("Make clearer")} title={t("Make clearer")} disabled={issueRefining} onClick={() => void performIssueRefinement("Make the selected text clearer and more direct without changing its facts or meaning.", issueBodySelection)} className="grid size-8 place-items-center rounded-full transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] disabled:opacity-40 motion-reduce:transition-none">
+                              <WandSparkles className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+                            </button>
+                            <button type="button" aria-label={t("Change tone")} title={t("Change tone")} disabled={issueRefining} onClick={() => openIssueRefinement(issueBodySelection, "Make this sound ")} className="grid size-8 place-items-center rounded-full transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] disabled:opacity-40 motion-reduce:transition-none">
+                              <Type className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+                            </button>
+                          </div>
+                        )}
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
+                  <Textarea
+                    ref={issueBodyEditorRef}
+                    id="quote-issue-email-body"
+                    value={issueEmailBody}
+                    onChange={(event) => {
+                      setIssueEmailBody(event.target.value)
+                      setIssueBodySelection(null)
+                      setIssueSelectionAnchor(null)
+                    }}
+                    onSelect={updateIssueBodySelection}
+                    onKeyUp={updateIssueBodySelection}
+                    onMouseUp={updateIssueBodySelection}
+                    onScroll={updateIssueBodySelection}
+                    maxLength={6000}
+                    disabled={issuing || issueDraftLoading || issueRefining}
+                    className="min-h-[220px] resize-y rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] leading-5 shadow-[var(--md-shadow-line)]"
+                    data-i18n-skip
+                  />
+                </div>
+                <AiPromptMorph
+                  id="quote-issue-email-refinement"
+                  open={issueRefinementOpen && issueRefinementSelection === null}
+                  value={issueRefinementInstruction}
+                  busy={issueRefining}
+                  busyLabel={t("Refining draft…")}
+                  placeholder={t("How should this draft change?")}
+                  triggerLabel={t("Edit email draft")}
+                  inputLabel={t("Ask Dexter to refine this draft")}
+                  closeLabel={t("Close refinement")}
+                  submitLabel={t("Refine draft")}
+                  submitDisabled={!issueRefinementInstruction.trim()}
+                  maxLength={800}
+                  onOpenChange={(open) => open ? openIssueRefinement(null) : closeIssueRefinement()}
+                  onValueChange={setIssueRefinementInstruction}
+                  onSubmit={() => void performIssueRefinement(issueRefinementInstruction, null)}
+                />
+              </div>
+
+              <fieldset className="grid gap-2">
+                <legend className="text-start text-[12px] font-medium text-[var(--md-text)]">{t("Link expires after")}</legend>
+                <div className="flex flex-wrap gap-1.5">
+                  {quoteIssueExpiryPresets.map((preset) => (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      aria-pressed={issueExpiryPreset === preset.value}
+                      disabled={issuing || issueRefining}
+                      onClick={() => setIssueExpiryPreset(preset.value)}
+                      className={cn(
+                        "h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,transform] hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.98] motion-reduce:transition-none",
+                        issueExpiryPreset === preset.value && "bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]",
+                      )}
+                    >
+                      {t(preset.label)}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+
+              {issueEmailError ? <p role="alert" className="text-[12px] leading-5 text-[var(--md-red)]">{t(issueEmailError)}</p> : null}
+              {issueReadiness?.warnings.length ? (
+                <ul className="grid gap-1 text-[11px] text-[var(--md-subtle)]">
+                  {issueReadiness.warnings.map((warning) => <li key={warning}>{t(warning)}</li>)}
+                </ul>
+              ) : null}
+            </div>
+
+            <section aria-labelledby="quote-email-preview-heading" className="min-w-0">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <h2 id="quote-email-preview-heading" className="text-[13px] font-medium text-[var(--md-ink)]">{t("Live email preview")}</h2>
+                  <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("This is the branded email the customer will receive.")}</p>
+                </div>
+                {issuePreviewLoading ? <span role="status" className="text-[11px] text-[var(--md-accent)]">{t("Updating preview…")}</span> : null}
+              </div>
+              {issueEmailPreviewHtml ? (
+                <iframe
+                  title={t("Branded Multideck quote email preview")}
+                  sandbox=""
+                  srcDoc={issueEmailPreviewHtml}
+                  className="h-[min(64dvh,690px)] min-h-[500px] w-full rounded-[var(--md-radius-xl)] bg-white shadow-[var(--md-shadow-line)]"
+                />
+              ) : (
+                <div className="grid min-h-[500px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] px-6 text-center shadow-[var(--md-shadow-line)]">
+                  <div>
+                    <Mail className="mx-auto size-5 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
+                    <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t(issueDraftLoading ? "Preparing email preview…" : "Choose a recipient to preview the email")}</p>
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={issuing || issueRefining} onClick={() => setIssueDialogOpen(false)}>{t("Cancel")}</Button>
+            <Button
+              type="button"
+              disabled={!issueReadiness?.ready || issueReadinessLoading || !issueRecipientKey || !issueMailboxId || !issueEmailSubject.trim() || !issueEmailBody.trim() || !issueEmailPreviewHtml || issuing || issueDraftLoading || issuePreviewLoading || issueRefining}
+              onClick={() => void issueQuoteToCustomer()}
+              className={cn(
+                "transition-[background-color,color,transform] motion-reduce:transition-none",
+                issueDeliveryState === "sent" && "bg-[var(--md-status-green-bg)] text-[var(--md-status-green-ink)] hover:bg-[var(--md-status-green-bg)] disabled:opacity-100",
+              )}
+            >
+              {issueDeliveryState === "sent" ? <CheckCircle2 className="size-4" strokeWidth={1.6} aria-hidden="true" /> : <Send className="size-4" strokeWidth={1.4} aria-hidden="true" />}
+              {t(issueDeliveryState === "sent" ? "Quote sent" : issuing ? "Sending…" : "Send secure quote")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={lossDialogOpen} onOpenChange={(open) => { if (!transitioning) setLossDialogOpen(open) }}>
+        <DialogContent className="rounded-[var(--md-radius-2xl)] sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>{t("Why was this quote lost?")}</DialogTitle>
+            <DialogDescription>{t("Choose the main reason. This will be saved to the quote history and used in conversion reporting.")}</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {quoteLossReasons.map((reason) => (
+              <Button
+                key={reason}
+                type="button"
+                variant="ghost"
+                aria-pressed={lossReason === reason}
+                className={cn("h-auto min-h-10 justify-start whitespace-normal rounded-[var(--md-radius-lg)] px-3 py-2 text-start text-[12px] shadow-[var(--md-shadow-line)]", lossReason === reason && "bg-[var(--md-accent-a10)] text-[var(--md-accent)]")}
+                onClick={() => setLossReason(reason)}
+              >
+                {t(reason)}
+              </Button>
+            ))}
+          </div>
+          <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+            <span>{t(lossReason === "Other" ? "Reason" : "Additional detail (optional)")}</span>
+            <Textarea value={lossDetails} onChange={(event) => setLossDetails(event.target.value)} placeholder={t("Add useful context for the commercial team")} className="min-h-24 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]" />
+          </label>
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={transitioning} onClick={() => setLossDialogOpen(false)}>{t("Cancel")}</Button>
+            <Button type="button" disabled={!lossReason || (lossReason === "Other" && !lossDetails.trim()) || transitioning} className="bg-[var(--md-red)] text-white hover:bg-[var(--md-red-strong)]" onClick={() => void markQuoteLost()}>
+              {t(transitioning ? "Saving…" : "Mark quote lost")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DexterDockedPage>
   )
 }

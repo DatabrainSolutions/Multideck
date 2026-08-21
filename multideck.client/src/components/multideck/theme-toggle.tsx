@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { Moon02, Sun } from "@/components/icons/hugeicons"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/lib/theme-provider"
 import { useLanguage } from "@/i18n/language-provider"
 import { setThemeWithProfileIntent } from "@/lib/theme-preferences"
 import { cn } from "@/lib/utils"
@@ -16,11 +15,7 @@ export function ThemeToggle({ className, compact = false, showAppearanceLabel = 
   const { resolvedTheme, setTheme } = useTheme()
   const { direction, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => setMounted(true), [])
-
-  const isDark = mounted && resolvedTheme === "dark"
+  const isDark = resolvedTheme === "dark"
   const nextTheme = isDark ? "light" : "dark"
   const label = t(isDark ? "Switch to light mode" : "Switch to dark mode")
   const modeLabel = t(isDark ? "Dark mode" : "Light mode")

@@ -39,7 +39,7 @@ type CrmCreateAction = {
 
 const crmCreateActions: Partial<Record<string, CrmCreateAction>> = {
   "/crm/leads": { label: "New lead", eventName: topBarActionEvents.createCrmLead },
-  "/crm/accounts": { label: "New account", eventName: topBarActionEvents.createCrmAccount },
+  "/crm/accounts": { label: "New company", eventName: topBarActionEvents.createCrmAccount },
   "/crm/contacts": { label: "New contact", eventName: topBarActionEvents.createCrmContact },
   "/crm/contact-cards": { label: "New card", eventName: topBarActionEvents.createCrmContactCard },
   "/crm/deals": { label: "New deal", eventName: topBarActionEvents.createCrmDeal },
@@ -124,6 +124,7 @@ export function TopBar({
   const isRoadJob = /^\/road-control\/[^/]+$/.test(route) && !isRoadBooking
   const isRoadRoute = isRoadControl || isRoadBooking || isRoadJob
   const isQuotes = route === "/quotes"
+  const isTodo = route === "/to-do"
   const isWarehouse = route.startsWith("/warehouse")
   const isStandaloneExportRegister = route === "/customs/standalone/export"
   const isStandaloneImportRegister = route === "/customs/standalone/import"
@@ -257,9 +258,14 @@ export function TopBar({
         <>
           <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="hidden min-w-[210px] md:block" />
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
-            <CommandInput placeholder={isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search leads, accounts, contacts, or deals..." : isReportingRoute ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
+            <CommandInput placeholder={isTodo ? t("Task, tag, job, quote or customer…") : isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search leads, accounts, contacts, or deals..." : isReportingRoute ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
           </div>
-          {ratesTopBarAction ? (
+          {isTodo ? (
+            <Button aria-label={t("New task")} title={t("New task")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createTodoTask)}>
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("New task")}</span>
+            </Button>
+          ) : ratesTopBarAction ? (
             <>
               <Button
                 variant="ghost"
