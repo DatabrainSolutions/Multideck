@@ -49,7 +49,7 @@ export function DexterDockedPage({
 export function DexterCompanionSidebar({
   open,
   onClose,
-  contextLabel = "Customers",
+  contextLabel = "Companies",
   presentation = "fixed",
 }: {
   open: boolean
@@ -170,7 +170,7 @@ export function DexterCompanionSidebar({
                   {contextCounts ? (
                     <div className="md-dexter-context-card mt-4 grid grid-cols-3 gap-1 rounded-[14px] p-2" aria-label={t("Uses this page as context")}>
                       {[
-                        [t("Accounts"), contextCounts.accounts],
+                        [t("Companies"), contextCounts.accounts],
                         [t("Leads"), contextCounts.leads],
                         [t("Deals"), contextCounts.deals],
                       ].map(([label, value]) => (

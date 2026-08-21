@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import { Color, Mesh, Program, Renderer, Triangle } from "ogl"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/lib/theme-provider"
 import { useAccentBrandRamp, type ShaderStops } from "@/lib/accent-theme"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"

@@ -1,7 +1,7 @@
 import { Component, lazy, startTransition, Suspense, useCallback, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react"
 import type { Session } from "@supabase/supabase-js"
 import { MotionConfig } from "motion/react"
-import { ThemeProvider } from "next-themes"
+import { ThemeProvider } from "@/lib/theme-provider"
 import type { AdminRoute } from "@/pages/admin-page"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -29,13 +29,14 @@ import { rememberRecentWorkContext } from "@/lib/recent-work-context"
 import { invalidateWorkspaceBootstrap } from "@/lib/workspace-bootstrap"
 import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
-const OverviewPage = lazy(() => import("@/pages/overview-page").then((module) => ({ default: module.OverviewPage })))
+const HomePage = lazy(() => import("@/pages/home-page").then((module) => ({ default: module.HomePage })))
 const AgentDexterPage = lazy(() => import("@/pages/agent-dexter-page").then((module) => ({ default: module.AgentDexterPage })))
 const AuthFlowPage = lazy(() => import("@/pages/auth-flow-page").then((module) => ({ default: module.AuthFlowPage })))
 const ComponentsGalleryPage = lazy(() => import("@/pages/components-gallery-page").then((module) => ({ default: module.ComponentsGalleryPage })))
 const CustomerDetailPage = lazy(() => import("@/pages/customer-detail-page").then((module) => ({ default: module.CustomerDetailPage })))
 const CustomersPage = lazy(() => import("@/pages/customers-page").then((module) => ({ default: module.CustomersPage })))
 const InboxPage = lazy(() => import("@/pages/inbox-page").then((module) => ({ default: module.InboxPage })))
+const ToDoPage = lazy(() => import("@/pages/to-do-page").then((module) => ({ default: module.ToDoPage })))
 const DocumentsPage = lazy(() => import("@/pages/documents-page").then((module) => ({ default: module.DocumentsPage })))
 const CustomsDeclarationsPage = lazy(() => import("@/pages/customs-declarations-page").then((module) => ({ default: module.CustomsDeclarationsPage })))
 const ScreeningPage = lazy(() => import("@/pages/screening-page").then((module) => ({ default: module.ScreeningPage })))
@@ -50,7 +51,7 @@ const SettingsPage = lazy(() => import("@/pages/settings-page").then((module) =>
 const AdminPage = lazy(() => import("@/pages/admin-page").then((module) => ({ default: module.AdminPage })))
 const WarehousePage = lazy(() => import("@/pages/warehouse-page").then((module) => ({ default: module.WarehousePage })))
 const BookingDetailPage = lazy(() => import("@/pages/booking-detail-page").then((module) => ({ default: module.BookingDetailPage })))
-const BookingWizardPage = lazy(() => import("@/pages/booking-wizard-page").then((module) => ({ default: module.BookingWizardPage })))
+const BookingOpenPage = lazy(() => import("@/pages/booking-open-page").then((module) => ({ default: module.BookingOpenPage })))
 const ProvisionalBookingPage = lazy(() => import("@/pages/provisional-booking-page").then((module) => ({ default: module.ProvisionalBookingPage })))
 const BookingsPage = lazy(() => import("@/pages/bookings-page").then((module) => ({ default: module.BookingsPage })))
 const RoadControlPage = lazy(() => import("@/pages/road-control-page").then((module) => ({ default: module.RoadControlPage })))
@@ -70,6 +71,7 @@ const CrmSettingsPage = lazy(() => import("@/pages/crm-page").then((module) => (
 const ContactCardsPage = lazy(() => import("@/pages/contact-cards-page").then((module) => ({ default: module.ContactCardsPage })))
 const ContactCardDetailPage = lazy(() => import("@/pages/contact-cards-page").then((module) => ({ default: module.ContactCardDetailPage })))
 const ContactCardPublicPage = lazy(() => import("@/pages/contact-card-public-page").then((module) => ({ default: module.ContactCardPublicPage })))
+const QuoteResponsePage = lazy(() => import("@/pages/quote-response-page").then((module) => ({ default: module.QuoteResponsePage })))
 
 type AuthStatus = "checking" | "authenticated" | "unauthenticated"
 type ProfileMediaUrls = {
@@ -117,6 +119,7 @@ const validRoutes = new Set([
   "/crm/settings",
   "/customers",
   "/inbox",
+  "/to-do",
   "/documents",
   "/documents/templates",
   "/customs/standalone/export",
@@ -183,12 +186,16 @@ function isRoadJobDetailRoute(path: string) {
 }
 
 function isCustomsDeclarationEditRoute(path: string) {
-  return /^\/customs\/standalone\/(export|import)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(path)
+  return /^\/customs\/(standalone|job-related)\/(export|import)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(path)
 }
 
-/** The Marketing drive became Drive; old links still have to land somewhere real. */
+/** Old CRM links still land on their current product destination. */
 function getLegacyCrmRoute(path: string) {
-  return path === "/crm/marketing" ? "/crm/drive" : null
+  if (path === "/crm/marketing") return "/crm/drive"
+  if (path === "/crm/suppliers") return "/crm/accounts"
+  const supplierDetail = path.match(/^\/crm\/suppliers\/([^/]+)$/)
+  if (supplierDetail) return `/crm/accounts/${supplierDetail[1]}`
+  return null
 }
 
 const unavailableCrmRoutePrefixes = [
@@ -237,6 +244,11 @@ function isContactCardPublicRoute(path: string) {
   return /^\/card\/[^/]+$/.test(path)
 }
 
+/** Customer quote decisions use the same tenant App host without requiring a session. */
+function isQuoteResponseRoute(path: string) {
+  return /^\/quotes\/respond\/[^/]+$/.test(path)
+}
+
 function isCrmLeadConversionRoute(path: string) {
   return /^\/crm\/leads\/[^/]+\/convert$/.test(path)
 }
@@ -247,6 +259,9 @@ function isCustomerDetailRoute(path: string) {
 
 function getRoute() {
   if (window.location.pathname === "/app" || window.location.pathname === "/app/") return "/"
+  // Home lives at the workspace root. `/home` is the address people type, so it
+  // resolves to the same screen rather than a second identity for it.
+  if (window.location.pathname === "/home" || window.location.pathname === "/home/") return "/"
   const legacyBookingRoute = getLegacyBookingRoute(window.location.pathname)
   if (legacyBookingRoute) return legacyBookingRoute
   const legacyCrmRoute = getLegacyCrmRoute(window.location.pathname)
@@ -269,6 +284,7 @@ function getRoute() {
   if (isCrmLeadDetailRoute(window.location.pathname)) return window.location.pathname
   if (isContactCardDetailRoute(window.location.pathname)) return window.location.pathname
   if (isContactCardPublicRoute(window.location.pathname)) return window.location.pathname
+  if (isQuoteResponseRoute(window.location.pathname)) return window.location.pathname
   return validRoutes.has(window.location.pathname) ? window.location.pathname : "/"
 }
 
@@ -355,7 +371,10 @@ export default function App() {
   const isPasswordSetupRoute = route === "/auth" && (authMode === "reset-password" || authMode === "invite")
   // Shortcuts and the Dexter summon belong to the signed-in workspace. The
   // sign-in screen and the public contact card must stay inert.
-  const isWorkspaceRoute = !isContactCardPublicRoute(route) && route !== "/auth" && (authStatus === "authenticated" || isLocalNavigationLab)
+  const isWorkspaceRoute = !isContactCardPublicRoute(route)
+    && !isQuoteResponseRoute(route)
+    && route !== "/auth"
+    && (authStatus === "authenticated" || isLocalNavigationLab)
 
   const handleProfilePhotoChange = useCallback((profilePhoto: UserProfilePhoto | null, profilePhotoUrl: string | null) => {
     setCurrentUser((user) => user ? { ...user, profilePhoto, profilePhotoUrl } : user)
@@ -529,7 +548,7 @@ export default function App() {
   useEffect(() => {
     if (authStatus === "checking") return
 
-    if (isContactCardPublicRoute(route)) return
+    if (isContactCardPublicRoute(route) || isQuoteResponseRoute(route)) return
 
     if (authStatus === "unauthenticated" && route !== "/auth" && !isLocalNavigationLab) {
       rememberAuthReturnPath()
@@ -545,7 +564,7 @@ export default function App() {
 
   useEffect(() => {
     if (authStatus !== "authenticated" || currentUser?.actorType !== "customer") return
-    if (isContactCardPublicRoute(route) || canCustomerOpenRoute(currentUser, route)) return
+    if (isContactCardPublicRoute(route) || isQuoteResponseRoute(route) || canCustomerOpenRoute(currentUser, route)) return
     window.history.replaceState({}, "", currentUser.landingPath)
     startTransition(() => setRoute(getRoute()))
   }, [authStatus, currentUser, route])
@@ -604,7 +623,11 @@ export default function App() {
           <LanguageProfileSync />
           <TooltipProvider>
             <MotionConfig reducedMotion="user" transition={mdMotion.fast}>
-            {isContactCardPublicRoute(route) ? (
+            {isQuoteResponseRoute(route) ? (
+              <Suspense fallback={<RouteFallback fullScreen />}>
+                <QuoteResponsePage token={route.split("/").at(-1) ?? ""} />
+              </Suspense>
+            ) : isContactCardPublicRoute(route) ? (
               <Suspense fallback={<RouteFallback fullScreen />}>
                 <ContactCardPublicPage slug={route.split("/").at(-1) ?? ""} />
               </Suspense>
@@ -634,7 +657,7 @@ export default function App() {
                     />
                   ) : null}
                   {route === "/crm" ? <CrmOverviewPage /> : null}
-                  {route === "/crm/accounts" ? <CrmAccountsPage navigate={navigate} currentUser={currentUser} /> : null}
+                  {route === "/crm/accounts" ? <CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} /> : null}
                   {isCrmAccountDetailRoute(route) ? <CrmAccountDetailPage accountId={route.split("/").at(-1) ?? ""} navigate={navigate} /> : null}
                   {route === "/crm/leads" ? <CrmLeadsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isCrmLeadConversionRoute(route) ? <LeadConversionPage navigate={navigate} leadId={route.split("/").at(-2) ?? ""} /> : null}
@@ -650,6 +673,7 @@ export default function App() {
                   {route === "/customers" ? <CustomersPage navigate={navigate} /> : null}
                   {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/inbox" ? <InboxPage navigate={navigate} /> : null}
+                  {route === "/to-do" ? <ToDoPage operatorName={currentUser?.name} /> : null}
                   {route === "/documents" || route === "/documents/templates" ? <DocumentsPage navigate={navigate} /> : null}
                   {route.startsWith("/customs/") ? <CustomsDeclarationsPage route={route} navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/compliance/screening" ? <ScreeningPage /> : null}
@@ -677,9 +701,9 @@ export default function App() {
                   {route === "/road-control" ? <RoadControlPage navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/road-control/new" ? <DomesticRoadBookingPage navigate={navigate} /> : null}
                   {isRoadJobDetailRoute(route) ? <DomesticRoadBookingPage key={route} navigate={navigate} roadJobId={route.split("/").at(-1) ?? ""} /> : null}
-                  {route === "/bookings/new" ? <BookingWizardPage navigate={navigate} /> : null}
+                  {route === "/bookings/new" ? <BookingOpenPage navigate={navigate} /> : null}
                   {route === "/bookings/provisional" ? <ProvisionalBookingPage navigate={navigate} /> : null}
-                  {route === "/" ? <OverviewPage navigate={navigate} /> : null}
+                  {route === "/" ? <HomePage navigate={navigate} currentUser={currentUser} /> : null}
                 </Suspense>
               </AppShell>
             )}

@@ -2,6 +2,20 @@ export type ExportDeclarationCategory = string
 export type ExportDeclarationType = string
 export type DeclarationDirection = "export" | "import"
 
+export const customsTransactionNatureCodes = [
+  "11", "12", "13", "14", "19",
+  "21", "22", "23", "29",
+  "3",
+  "41", "42",
+  "51", "52",
+  "7", "8",
+  "91", "99",
+] as const
+
+const customsTransactionNatureCodeSet = new Set<string>(customsTransactionNatureCodes)
+
+export type CustomsCostApportionment = "value" | "gross_mass"
+
 export type CustomsCodeEntry = { id: string; code: string }
 export type CustomsPackageEntry = { id: string; kind: string; marks: string; count: string }
 export type CustomsPreviousDocumentEntry = { id: string; category: string; type: string; reference: string }
@@ -162,6 +176,14 @@ export type StandaloneExportDraft = {
   secondaryDefermentAccount: string
   freightChargeAmount: string
   freightChargeCurrency: string
+  freightChargeApportionment: CustomsCostApportionment
+  vatValueAdjustmentAmount: string
+  vatValueAdjustmentCurrency: string
+  vatValueAdjustmentApportionment: CustomsCostApportionment
+  insuranceCostAmount: string
+  insuranceCostCurrency: string
+  containerPackingCostAmount: string
+  containerPackingCostCurrency: string
   exitOffice: string
   supervisingOffice: string
   presentationOffice: string
@@ -314,7 +336,7 @@ export function createStandaloneDeclarationDraft(direction: DeclarationDirection
     previousDocumentReference: "",
     headerAdditionalInformationCode: "",
     headerAdditionalInformationDescription: "",
-    transactionNature: "",
+    transactionNature: "11",
     exchangeRate: "",
     tradeTerms: "",
     customsValuationMethod: "",
@@ -322,6 +344,14 @@ export function createStandaloneDeclarationDraft(direction: DeclarationDirection
     secondaryDefermentAccount: "",
     freightChargeAmount: "",
     freightChargeCurrency: "",
+    freightChargeApportionment: "value",
+    vatValueAdjustmentAmount: "",
+    vatValueAdjustmentCurrency: "",
+    vatValueAdjustmentApportionment: "value",
+    insuranceCostAmount: "",
+    insuranceCostCurrency: "",
+    containerPackingCostAmount: "",
+    containerPackingCostCurrency: "",
     exitOffice: "",
     supervisingOffice: "",
     presentationOffice: "",
@@ -397,6 +427,9 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
   requireGeneral("destinationCountry", "Select the destination country.")
   requireGeneral("borderMode", "Select the transport mode at the border.")
   requireGeneral("transactionNature", "Select the nature of transaction.")
+  if (draft.transactionNature.trim() && !customsTransactionNatureCodeSet.has(draft.transactionNature.trim())) {
+    issues.push({ id: "general-transaction-nature-format", scope: "general", field: "transactionNature", message: "Choose a valid nature of transaction code." })
+  }
   if (draft.direction === "import") {
     requireGeneral("representationType", "Select the type of representation.")
     requireGeneral("tradeTerms", "Add the trade terms.")
@@ -408,6 +441,33 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
       if (!draft.authorisationIdentifier.trim() || !/^[A-Z0-9]{1,4}$/.test(draft.authorisationCategory.trim().toUpperCase())) {
         issues.push({ id: "general-authorisation", scope: "general", field: !draft.authorisationIdentifier.trim() ? "authorisationIdentifier" : "authorisationCategory", message: "Complete both the authorisation identifier and category." })
       }
+    }
+
+    const importCosts = [
+      ["freightChargeAmount", "freightChargeCurrency", draft.freightChargeAmount, draft.freightChargeCurrency, "freight costs"],
+      ["vatValueAdjustmentAmount", "vatValueAdjustmentCurrency", draft.vatValueAdjustmentAmount, draft.vatValueAdjustmentCurrency, "VAT value adjustment"],
+      ["insuranceCostAmount", "insuranceCostCurrency", draft.insuranceCostAmount, draft.insuranceCostCurrency, "insurance costs"],
+      ["containerPackingCostAmount", "containerPackingCostCurrency", draft.containerPackingCostAmount, draft.containerPackingCostCurrency, "container and packing costs"],
+    ] as const
+    for (const [amountField, currencyField, amount, costCurrency, label] of importCosts) {
+      if (!amount.trim() && !costCurrency.trim()) continue
+      if (!positive(amount) || !/^[A-Z]{3}$/.test(costCurrency.trim().toUpperCase())) {
+        issues.push({
+          id: `general-${amountField}`,
+          scope: "general",
+          field: !positive(amount) ? amountField : currencyField,
+          message: `Enter a positive amount and three-letter currency for ${label}.`,
+        })
+      }
+    }
+    if (!(["value", "gross_mass"] as const).includes(draft.freightChargeApportionment)) {
+      issues.push({ id: "general-freight-apportionment", scope: "general", field: "freightChargeApportionment", message: "Choose how freight costs are apportioned." })
+    }
+    if (!(["value", "gross_mass"] as const).includes(draft.vatValueAdjustmentApportionment)) {
+      issues.push({ id: "general-vat-value-apportionment", scope: "general", field: "vatValueAdjustmentApportionment", message: "Choose how the VAT value adjustment is apportioned." })
+    }
+    if (draft.tradeTerms.trim().toUpperCase() === "EXW" && !positive(draft.freightChargeAmount)) {
+      issues.push({ id: "general-exw-freight", scope: "general", field: "freightChargeAmount", message: "EXW imports require freight costs for CDS valuation." })
     }
   }
   if (draft.direction === "export") requireGeneral("exitOffice", "Select the customs office of exit.")
@@ -465,7 +525,8 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
       itemNumber: index + 1,
       message,
     })
-    if (!/^\d{10}$/.test(item.commodityCode)) push("commodityCode", "Enter a 10-digit commodity code.")
+    const commodityCodeLength = draft.direction === "export" ? 8 : 10
+    if (!new RegExp(`^\\d{${commodityCodeLength}}$`).test(item.commodityCode)) push("commodityCode", `Enter ${commodityCodeLength === 8 ? "an" : "a"} ${commodityCodeLength}-digit commodity code.`)
     if (!item.description.trim()) push("description", "Add a goods description.")
     if (draft.direction === "export" && !item.consignor.trim()) push("consignor", "Add the consignor for this goods item.")
     if (!item.packageKind) push("packageKind", "Select a package kind.")
@@ -506,6 +567,17 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
     item.valuationAdjustments.forEach((entry) => {
       if ((entry.code || entry.currency || entry.amount) && (!entry.code || !entry.currency || !positive(entry.amount))) push("valuationAdjustments", "Complete every addition or deduction.")
     })
+    if (draft.direction === "import") {
+      const headerCostCodes = new Set([
+        positive(draft.freightChargeAmount) ? (draft.freightChargeApportionment === "gross_mass" ? "AQ" : "AP") : "",
+        positive(draft.vatValueAdjustmentAmount) ? (draft.vatValueAdjustmentApportionment === "gross_mass" ? "AW" : "AV") : "",
+        positive(draft.insuranceCostAmount) ? "AK" : "",
+        positive(draft.containerPackingCostAmount) ? "AD" : "",
+      ].filter(Boolean))
+      if (item.valuationAdjustments.some((entry) => headerCostCodes.has(entry.code.trim().toUpperCase()))) {
+        push("valuationAdjustments", "Remove the duplicate item adjustment already entered in Import costs.")
+      }
+    }
     item.domesticDutyTaxParties.forEach((entry) => {
       if ((entry.partyId || entry.roleCode) && (!entry.partyId || !/^(?:FR[1-5]|FR7)$/i.test(entry.roleCode))) push("domesticDutyTaxParties", "Complete every domestic duty tax party.")
     })

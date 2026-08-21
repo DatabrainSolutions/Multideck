@@ -269,8 +269,12 @@ function prepareInput(input: InvoiceInput, forceSpreadsheetNormalisation = false
 
 async function validateDeclaration(admin: SupabaseClient, actor: Actor, declarationId: string | null) {
   if (!declarationId) return
-  const { data, error } = await admin.from("Customs_Declarations").select("CUST_id")
-    .eq("CUST_id", declarationId).eq("CUST_CreatedBy", actor.authUserId).eq("CUST_IsDeleted", false).maybeSingle()
+  const { data, error } = await admin.rpc("customs_declaration_authorised", {
+    caller_auth_user_id: actor.authUserId,
+    requested_declaration_id: declarationId,
+    require_write: true,
+    require_draft: true,
+  })
   if (error) throw new HttpError(503, "The declaration could not be checked before import.")
   if (!data) throw new HttpError(403, "You cannot import an invoice into this declaration.")
 }

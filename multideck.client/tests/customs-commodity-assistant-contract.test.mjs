@@ -82,7 +82,8 @@ test("commodity lookup runs through the authenticated Multideck Edge Function", 
 
 test("applying a commodity preserves operator descriptions and maps selected certificates", () => {
   assert.match(pageSource, /if \(!item\.description\.trim\(\)\)/u)
-  assert.match(pageSource, /\/\^\\d\{10\}\$\/\.test\(enteredDescription\)/u)
+  assert.match(pageSource, /const exactCommodityPattern = searchDirection === "export" \? \/\^\\d\{8\}\(\?:\\d\{2\}\)\?\$\/ : \/\^\\d\{10\}\$\//u)
+  assert.match(pageSource, /exactCommodityPattern\.test\(enteredDescription\)/u)
   assert.match(pageSource, /detail\.description \|\| selectedSuggestion\.description/u)
   assert.match(pageSource, /existingCodes = new Set/u)
   assert.match(pageSource, /certificate\.category/u)

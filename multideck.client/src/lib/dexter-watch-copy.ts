@@ -36,6 +36,10 @@ function quotedTerms(value: string, t: Translate) {
 }
 
 export function readableWatchSummary(watch: DexterWatchCopyWatch, t: Translate) {
+  if (watch.capability === "todo") {
+    const field = watch.rule.field === "scheduledDate" ? t("Scheduled date") : t(watch.rule.field)
+    if (watch.rule.operator === "changed") return `${field} ${t("changes")}.`
+  }
   if (watch.capability !== "email") return watch.summary
 
   const value = watch.rule.value?.trim() ?? ""
@@ -74,7 +78,8 @@ export function readableWatchEvent(watch: DexterWatchCopyWatch, t: Translate) {
   if (!before || !after) return event.body
 
   if (field === "stage") return `${target} ${t("moved from")} ${before} ${t("to")} ${after}.`
-  if (field === "status") return `${target}: ${t("Status changed from")} ${before} ${t("to")} ${after}.`
+  if (field === "status") return `${target}: ${t("Status changed from")} ${t(before)} ${t("to")} ${t(after)}.`
+  if (watch.capability === "todo" && field === "scheduledDate") return `${target}: ${t("Scheduled date changed from")} ${before} ${t("to")} ${after}.`
 
   return `${target}: ${field} ${t("changed from")} ${before} ${t("to")} ${after}.`
 }

@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { AnimatePresence, motion, useInView, useReducedMotion } from "motion/react"
 import { AiBrain, Check, LayoutDashboard, Ship } from "@/components/icons/hugeicons"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/lib/theme-provider"
 import { StaticBloomShader } from "@/components/multideck/dexter-action-pill"
 import { useLanguage } from "@/i18n/language-provider"
 import {
@@ -187,7 +187,6 @@ export function AccentPicker({ className }: { className?: string }) {
   const { resolvedTheme } = useTheme()
   const { t, direction } = useLanguage()
   const reduceMotionEnabled = Boolean(useReducedMotion())
-  const [mounted, setMounted] = useState(false)
   const railRef = useRef<HTMLDivElement>(null)
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([])
   const [scrollCue, setScrollCue] = useState({ start: false, end: false })
@@ -198,10 +197,9 @@ export function AccentPicker({ className }: { className?: string }) {
   // each pill keeps a CSS gradient underneath so there is nothing to pop.
   const railNearby = useInView(railRef, { margin: "300px" })
 
-  // `resolvedTheme` is undefined until next-themes has read storage. Rendering the
-  // light ramp meanwhile would make all fifteen cards flip once on hydration.
-  useEffect(() => setMounted(true), [])
-  const isDark = mounted && resolvedTheme === "dark"
+  // The Multideck theme provider resolves storage before the first React render,
+  // so the accent grid never paints the light ramp before switching to dark.
+  const isDark = resolvedTheme === "dark"
 
   const activeIndex = accentPresets.findIndex((preset) => preset.id === activeId)
   const [focusIndex, setFocusIndex] = useState(() => Math.max(0, activeIndex))

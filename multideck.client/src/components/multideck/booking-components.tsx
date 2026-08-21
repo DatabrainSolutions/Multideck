@@ -13,8 +13,10 @@ import {
   CircleDollarSign,
   Container,
   Database,
+  ChevronDown,
   FileText,
-  KanbanSquare,
+  LayoutDashboard,
+  List,
   MessageCircle,
   PanelRightClose,
   Paperclip,
@@ -27,12 +29,12 @@ import {
   SlidersHorizontal,
   Star,
   ShieldCheck,
-  Table2,
   TriangleAlert,
   WalletCards,
   X,
 } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { MultideckDateRangePicker } from "@/components/multideck/date-picker"
 import { DexterActionPill, SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -41,6 +43,7 @@ import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { CustomsReadinessReview, type CustomsReadinessReviewIssue } from "@/components/multideck/customs-readiness-review"
 import { cn } from "@/lib/utils"
 import { useKanbanPointerDrag } from "@/lib/kanban-drag"
 import { mdMotion, reduceMotion } from "@/lib/motion"
@@ -64,7 +67,17 @@ import { FilterChips, SegmentedControl, TabsRail } from "./workflow-components"
 import { StatusPill, attributeToneFor, toneToVar } from "./status-pill"
 import { Surface } from "./surface"
 import { AnimatedList } from "./animated-list"
-import { getLiveBooking, type LiveBooking } from "@/lib/application-data-api"
+import type { LiveBooking } from "@/lib/application-data-api"
+import {
+  getBookingCustomsReadiness,
+  getBookingWorkflow,
+  saveBookingWorkflow,
+  sendBookingToCustoms,
+  uploadBookingCustomsDocument,
+  type BookingCustomsReadiness,
+  type BookingWorkflowEvent,
+  type BookingWorkflowWorkspace,
+} from "@/lib/booking-workflow-api"
 import { CopyFeedbackTransition, CopyStatusIcon } from "./copyable-field"
 
 export type Booking = (typeof bookings)[number]
@@ -72,11 +85,12 @@ export type OperatorJob = (typeof operatorJobs)[number]
 export const bookingViewModes = ["Table", "Board"] as const
 export type BookingViewMode = (typeof bookingViewModes)[number]
 export const bookingViewOptions = [
-  { value: "Table", label: "Table", icon: Table2 },
-  { value: "Board", label: "Board", icon: KanbanSquare },
+  { value: "Table", label: "Table", icon: List },
+  { value: "Board", label: "Board", icon: LayoutDashboard },
 ] as const
 const bookingDetailTabs = ["Overview", "Details", "Documents", "Customs", "Finance", "Audit"] as const
 type BookingDetailTab = (typeof bookingDetailTabs)[number]
+type BookingCustomsView = "source" | "review"
 export const bookingSearchFieldOptions = [
   { value: "any", label: "Any field", placeholder: "ID, invoice, customer, VIN..." },
   { value: "invoice", label: "Invoice", placeholder: "INV-MAR-8841" },
@@ -110,13 +124,88 @@ function getSearchFieldMeta(field: BookingSearchField) {
 }
 
 export function getBookingDetailPath(id: string) {
-  return `/bookings/${id.toLowerCase()}`
+  return `/bookings/${encodeURIComponent(id.toLowerCase())}`
 }
 
 type BookingDetailRecord = {
   id: string
   booking: LiveBooking
   job?: OperatorJob
+  workspace?: BookingWorkflowWorkspace
+}
+
+function bookingWorkspaceMode(value: string | null | undefined): LiveBooking["mode"] {
+  const normalized = String(value ?? "ROAD").trim().toUpperCase()
+  if (normalized === "SEA") return "OCEAN"
+  return ["OCEAN", "AIR", "ROAD", "MULTIMODAL", "FAS", "FSA"].includes(normalized)
+    ? normalized as LiveBooking["mode"]
+    : "ROAD"
+}
+
+function bookingWorkspaceDirection(value: string | null | undefined): LiveBooking["direction"] {
+  const normalized = String(value ?? "").trim().toLowerCase().replaceAll("_", " ")
+  if (normalized === "import") return "Import"
+  if (normalized === "export") return "Export"
+  if (normalized === "cross trade") return "Cross trade"
+  if (normalized === "domestic") return "Domestic"
+  return "Direction needed"
+}
+
+function bookingWorkspaceRecord(workspace: BookingWorkflowWorkspace): BookingDetailRecord {
+  const booking = workspace.booking
+  const route = workspace.routes[0]
+  const container = workspace.containers[0]
+  const lifecycle = String(booking.status ?? "draft").toLowerCase()
+  const displayStatus: LiveBooking["status"] = lifecycle.includes("exception")
+    ? "Exception"
+    : lifecycle.includes("delay")
+      ? "Delayed"
+      : "On track"
+  const statusTone: StatusTone = lifecycle === "draft" ? "neutral" : displayStatus === "Exception" ? "red" : displayStatus === "Delayed" ? "amber" : "green"
+  const routeLabel = [booking.origin, booking.destination].filter(Boolean).join(" → ")
+  const departureAt = route?.plannedDepartureAt ?? booking.readyDate ?? ""
+  const arrivalAt = route?.plannedArrivalAt ?? booking.predictedDeliveryAt ?? booking.requiredDeliveryDate ?? ""
+  return {
+    id: booking.bookingReference,
+    workspace,
+    booking: {
+      sourceId: booking.jobId,
+      id: booking.bookingReference,
+      customer: booking.customerName ?? "",
+      route: routeLabel,
+      carrier: booking.carrierName ?? "",
+      container: container?.number ?? container?.type ?? "",
+      mode: bookingWorkspaceMode(booking.mode),
+      value: booking.freightChargeAmount == null ? "" : `${booking.freightChargeCurrency ?? ""} ${booking.freightChargeAmount}`.trim(),
+      eta: arrivalAt ? String(arrivalAt).slice(0, 10) : "",
+      time: "",
+      currentLocation: booking.currentLocation ?? "",
+      status: displayStatus,
+      progress: lifecycle === "draft" ? 5 : lifecycle.includes("complete") ? 100 : 20,
+      owner: "",
+      tone: statusTone,
+      invoice: workspace.documents.find((document) => /commercial.?invoice/i.test(document.typeCode ?? document.title))?.fileName ?? "",
+      jobRef: booking.jobReference,
+      customerRef: "",
+      supplierRef: route?.carrierBookingReference ?? "",
+      origin: booking.origin ?? "",
+      destination: booking.destination ?? "",
+      vessel: route?.vessel ?? route?.flightNumber ?? route?.transportMeansName ?? "",
+      departureDate: departureAt ? String(departureAt).slice(0, 10) : "",
+      arrivalDate: arrivalAt ? String(arrivalAt).slice(0, 10) : "",
+      departureAt: String(departureAt ?? ""),
+      arrivalAt: String(arrivalAt ?? ""),
+      vin: route?.vehicleRegistration ?? "",
+      direction: bookingWorkspaceDirection(booking.direction),
+      shipmentType: container?.type ?? "",
+      isFavourite: false,
+      customFields: [
+        ...(booking.incoterm ? [{ label: "Incoterms", value: [booking.incoterm, booking.incotermLocation].filter(Boolean).join(" ") }] : []),
+        ...(booking.sourceQuoteId ? [{ label: "Source", value: "Accepted quote" }] : []),
+      ],
+      updatedAt: booking.updatedAt,
+    },
+  }
 }
 
 const statusTone: Record<BookingStatus, StatusTone> = {
@@ -418,7 +507,7 @@ export function BookingViewSwitch({
         const Icon = view.icon
         return (
           <>
-            <Icon className="size-3.5" strokeWidth={1.45} aria-hidden="true" />
+            <Icon className="size-4" strokeWidth={1.6} aria-hidden="true" />
             <span className="sr-only">{t(view.label)}</span>
           </>
         )
@@ -1013,16 +1102,28 @@ function BookingKanbanCardBody({ booking }: { booking: Booking }) {
 
 function BookingDetailHeader({
   activeTab,
+  customsReadiness,
   detailsDirty,
+  uploadingDocumentType,
+  onAttachDocument,
+  sendingToCustoms,
   onDiscardDetails,
+  onReviewCustoms,
   onSaveDetails,
+  onSendToCustoms,
   onTabChange,
   record,
 }: {
   activeTab: BookingDetailTab
+  customsReadiness: BookingCustomsReadiness | null
   detailsDirty: boolean
+  uploadingDocumentType: "commercial_invoice" | "packing_list" | null
+  onAttachDocument: (documentType: "commercial_invoice" | "packing_list") => void
+  sendingToCustoms: boolean
   onDiscardDetails: () => void
+  onReviewCustoms: () => void
   onSaveDetails: () => void
+  onSendToCustoms: () => void
   onTabChange: (tab: BookingDetailTab) => void
   record: BookingDetailRecord
 }) {
@@ -1032,9 +1133,8 @@ function BookingDetailHeader({
   const [bookingRefCopied, setBookingRefCopied] = useState(false)
   const bookingCopyResetTimerRef = useRef<number | null>(null)
   const tabs = bookingDetailTabs.map((label) => ({ id: label, label: t(label) }))
-  const statusLabel = record.job?.status ?? record.booking.status
-  const statusTone = record.job?.tone ?? record.booking.tone
-  const primaryAction = record.job?.task ?? (record.booking.status === "Exception" ? "Review blocker" : record.booking.progress === 100 ? "Close booking" : "Open workflow")
+  const statusLabel = record.workspace?.booking.status ?? record.job?.status ?? record.booking.status
+  const headerStatusTone = record.workspace?.booking.status === "draft" ? "neutral" : record.job?.tone ?? record.booking.tone
 
   useEffect(() => () => {
     if (bookingCopyResetTimerRef.current !== null) window.clearTimeout(bookingCopyResetTimerRef.current)
@@ -1133,7 +1233,7 @@ function BookingDetailHeader({
               />
               <CopyStatusIcon copied={bookingRefCopied} iconClassName="size-3.5" className="shrink-0" />
             </button>
-            <StatusPill kind="status" tone={statusTone} className="h-7 shrink-0 px-2.5 text-[11.5px] font-medium">{t(statusLabel)}</StatusPill>
+            <StatusPill kind="status" tone={headerStatusTone} className="h-7 shrink-0 px-2.5 text-[11.5px] font-medium">{t(statusLabel)}</StatusPill>
           </div>
           <span
             data-booking-route
@@ -1145,6 +1245,72 @@ function BookingDetailHeader({
             {record.booking.route}
           </span>
           <div className="flex shrink-0 items-center gap-1 overflow-x-auto">
+            {customsReadiness ? (
+              <Button
+                variant="ghost"
+                aria-label={`${t("Review customs readiness")}: ${customsReadiness.percent}% ${t("complete")}`}
+                className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2 text-[11px] font-medium shadow-[var(--md-shadow-line)]"
+                onClick={onReviewCustoms}
+              >
+                <span
+                  aria-hidden="true"
+                  className="grid size-5 shrink-0 place-items-center rounded-full"
+                  style={{ background: `conic-gradient(var(--md-accent) ${customsReadiness.percent}%, var(--md-line) 0)` }}
+                >
+                  <span className="size-3.5 rounded-full bg-[var(--md-surface-tint)]" />
+                </span>
+                <span>{t("Review customs readiness")}</span>
+                <span className="text-[var(--md-accent)]" dir="ltr">{customsReadiness.percent}%</span>
+              </Button>
+            ) : null}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex" tabIndex={!customsReadiness?.ready ? 0 : -1}>
+                  <Button
+                    variant={activeTab === "Documents" ? "outline" : "default"}
+                    className={cn(
+                      "h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px] font-medium",
+                      activeTab === "Documents" && "bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]",
+                    )}
+                    disabled={!customsReadiness?.ready || sendingToCustoms}
+                    onClick={onSendToCustoms}
+                  >
+                    <SendHorizontal data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
+                    {t(sendingToCustoms ? "Sending..." : "Send to customs")}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {!customsReadiness?.ready ? (
+                <TooltipContent side="bottom" className="max-w-[320px]">
+                  {t(customsReadiness?.missing[0]?.label ?? "Complete the Customs readiness checklist first.")}
+                </TooltipContent>
+              ) : null}
+            </Tooltip>
+            {activeTab === "Documents" ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    aria-label={t(uploadingDocumentType ? "Uploading document..." : "Attach document")}
+                    className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px] font-medium"
+                    disabled={Boolean(uploadingDocumentType)}
+                  >
+                    <Paperclip data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
+                    {t(uploadingDocumentType ? "Uploading document..." : "Attach document")}
+                    <ChevronDown className="size-3 opacity-70" strokeWidth={1.4} aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-[224px]">
+                  <DropdownMenuItem onSelect={() => onAttachDocument("commercial_invoice")}>
+                    <FileText className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+                    {t("Attach commercial invoice")}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onAttachDocument("packing_list")}>
+                    <FileText className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+                    {t("Attach packing list (optional)")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
             {activeTab === "Details" ? (
               detailsDirty ? (
                 <>
@@ -1158,16 +1324,7 @@ function BookingDetailHeader({
                   </Button>
                 </>
               ) : null
-            ) : (
-              <>
-                <Button variant="ghost" className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-[11px] font-medium shadow-[var(--md-shadow-line)]" onClick={() => toast.success(t("Update draft prepared"))}>
-                  {t("Prepare update")}
-                </Button>
-                <Button className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px] font-medium" onClick={() => toast.success(t("Workflow opened"))}>
-                  {t(primaryAction)}
-                </Button>
-              </>
-            )}
+            ) : null}
           </div>
         </section>
 
@@ -2198,12 +2355,10 @@ function BookingDecisionOverview({ record }: { record: BookingDetailRecord }) {
 function BookingRecordDetails({
   editable,
   onBookingChange,
-  onCustomFieldChange,
   record,
 }: {
   editable: boolean
   onBookingChange: (field: keyof LiveBooking, value: string | boolean) => void
-  onCustomFieldChange: (index: number, value: string) => void
   record: BookingDetailRecord
 }) {
   const { language, t } = useLanguage()
@@ -2215,8 +2370,21 @@ function BookingRecordDetails({
       : new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(updatedDate)
 
   const unavailable = t("Not available in the booking register")
+  const persistableFields = new Set<keyof LiveBooking>([
+    "mode",
+    "direction",
+    "currentLocation",
+    "origin",
+    "destination",
+    "shipmentType",
+    "container",
+    "departureDate",
+    "arrivalDate",
+    "vessel",
+    "vin",
+  ])
   const editField = (field: keyof LiveBooking) => ({
-    editable,
+    editable: editable && persistableFields.has(field),
     onChange: (value: string) => onBookingChange(field, value),
   })
 
@@ -2239,8 +2407,8 @@ function BookingRecordDetails({
             <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Ownership")}</h4>
             <div className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
               <BookingCargoWiseField label="Owner" value={record.booking.owner} {...editField("owner")} />
-              <BookingCargoWiseField label="Direction" value={record.booking.direction} options={["Import", "Export", "Domestic", "Cross trade"]} {...editField("direction")} />
-              <BookingCargoWiseField label="Favourite" value={record.booking.isFavourite ? "Yes" : "No"} options={["Yes", "No"]} editable={editable} onChange={(value) => onBookingChange("isFavourite", value === "Yes")} />
+              <BookingCargoWiseField label="Direction" value={record.booking.direction} options={["Direction needed", "Import", "Export", "Domestic", "Cross trade"]} {...editField("direction")} />
+              <BookingCargoWiseField label="Favourite" value={record.booking.isFavourite ? "Yes" : "No"} options={["Yes", "No"]} />
               <BookingCargoWiseField label="Current location" value={record.booking.currentLocation} {...editField("currentLocation")} />
               <BookingCargoWiseField label="Source ID" value={record.booking.sourceId} span />
             </div>
@@ -2311,7 +2479,7 @@ function BookingRecordDetails({
           <BookingCargoWiseField label="Booking value" value={record.booking.value} {...editField("value")} />
           <BookingCargoWiseField label="VIN" value={record.booking.vin} {...editField("vin")} />
           {record.booking.customFields.length
-            ? record.booking.customFields.map((field, index) => <BookingCargoWiseField key={`${field.label}-${index}`} label={field.label} value={field.value} editable={editable} onChange={(value) => onCustomFieldChange(index, value)} />)
+            ? record.booking.customFields.map((field, index) => <BookingCargoWiseField key={`${field.label}-${index}`} label={field.label} value={field.value} />)
             : <BookingCargoWiseField label="Custom fields" value={t("No additional fields recorded")} span />}
         </BookingCargoWiseGroup>
       </div>
@@ -2321,11 +2489,15 @@ function BookingRecordDetails({
   )
 }
 
-function UnavailableBookingSection({ title, detail, icon }: { title: string; detail: string; icon: ReactNode }) {
+function BookingWorkspaceSectionTitle({ children }: { children: ReactNode }) {
+  return <h2 className="px-5 pt-5 text-[15px] font-medium text-[var(--md-ink)]">{children}</h2>
+}
+
+function UnavailableBookingSection({ title, detail }: { title: string; detail: string }) {
   const { t } = useLanguage()
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-      <BookingSectionHeading icon={icon} title={t(title)} meta={t("Not connected")} />
+      <BookingWorkspaceSectionTitle>{t(title)}</BookingWorkspaceSectionTitle>
       <div className="px-5 py-10 text-center">
         <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("No connected data for this booking")}</h2>
         <p className="mx-auto mt-2 max-w-[560px] text-[13px] leading-6 text-[var(--md-text)]">{t(detail)}</p>
@@ -2336,11 +2508,26 @@ function UnavailableBookingSection({ title, detail, icon }: { title: string; det
 
 function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) {
   const { t } = useLanguage()
-  if (!hasPrototypeDetailData(record)) return <UnavailableBookingSection title="Documents" detail="The booking register does not include a document feed. Connect or sync the document system before document status can be shown here." icon={<FileText className="size-4" strokeWidth={1.5} />} />
+  if (record.workspace) {
+    const documents = record.workspace.documents
+    return (
+      <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+        <div className="px-5 py-2">
+          {documents.length ? documents.map((document) => (
+            <div key={document.id} className="grid gap-2 py-4 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] first:shadow-none md:grid-cols-[minmax(180px,1fr)_minmax(160px,1fr)_auto] md:items-center">
+              <div><p className="text-[13px] font-medium text-[var(--md-ink)]">{document.title}</p><p className="mt-1 text-[12px] text-[var(--md-text)]" dir="auto">{document.fileName ?? t("No file attached")}</p></div>
+              <p className="text-[12px] text-[var(--md-text)]">{t(document.typeCode ?? "Booking document")}</p>
+              <StatusPill tone={document.fileName ? "green" : "amber"}>{t(document.status ?? (document.fileName ? "Attached" : "Needs file"))}</StatusPill>
+            </div>
+          )) : <p className="py-8 text-center text-[13px] text-[var(--md-text)]">{t("No documents are attached to this booking yet.")}</p>}
+        </div>
+      </Surface>
+    )
+  }
+  if (!hasPrototypeDetailData(record)) return <UnavailableBookingSection title="Documents" detail="The booking register does not include a document feed. Connect or sync the document system before document status can be shown here." />
 
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-      <BookingSectionHeading icon={<FileText className="size-4" strokeWidth={1.5} />} title={t("Document set")} meta={t("Prototype fixture · not live")} />
       <div className="px-5 py-2">
         {[...bookingDocuments, ["CN export licence", "Not supplied", "required"]].map(([name, file, confidence]) => {
           const missing = confidence === "required"
@@ -2357,25 +2544,318 @@ function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) 
   )
 }
 
-function BookingCustomsWorkspace({ record }: { record: BookingDetailRecord }) {
+function BookingCustomsSourceEditor({
+  customsError,
+  navigate,
+  onSaved,
+  onViewChange,
+  readiness,
+  view,
+  workspace,
+}: {
+  customsError: string | null
+  navigate: (path: string) => void
+  onSaved: (workspace: BookingWorkflowWorkspace) => Promise<void>
+  onViewChange: (view: BookingCustomsView) => void
+  readiness: BookingCustomsReadiness | null
+  view: BookingCustomsView
+  workspace: BookingWorkflowWorkspace
+}) {
   const { t } = useLanguage()
-  if (!hasPrototypeDetailData(record)) return <UnavailableBookingSection title="Customs" detail="No customs case feed is connected to this prototype record. The booking status must not be treated as customs clearance." icon={<ShieldCheck className="size-4" strokeWidth={1.5} />} />
+  const booking = workspace.booking
+  const route = workspace.routes[0] ?? {}
+  const container = workspace.containers[0] ?? {}
+  const exporter = workspace.parties.find((party) => ["exporter", "shipper", "consignor"].includes(party.role.toLowerCase()))
+  const importer = workspace.parties.find((party) => ["importer", "consignee"].includes(party.role.toLowerCase()))
+  const cargo = workspace.cargo[0] ?? {}
+  const [form, setForm] = useState(() => ({
+    direction: String(booking.direction ?? "unknown"),
+    mode: String(booking.mode ?? ""),
+    origin: String(booking.origin ?? ""),
+    destination: String(booking.destination ?? ""),
+    incoterm: String(booking.incoterm ?? ""),
+    incotermLocation: String(booking.incotermLocation ?? ""),
+    freightChargeAmount: booking.freightChargeAmount == null ? "" : String(booking.freightChargeAmount),
+    freightChargeCurrency: String(booking.freightChargeCurrency ?? ""),
+    exporterName: String(exporter?.name ?? ""),
+    exporterAddress: String(exporter?.address ?? ""),
+    exporterCountry: String(exporter?.countryCode ?? ""),
+    exporterIdentifier: String(exporter?.identifierValue ?? ""),
+    importerName: String(importer?.name ?? ""),
+    importerAddress: String(importer?.address ?? ""),
+    importerCountry: String(importer?.countryCode ?? ""),
+    importerIdentifier: String(importer?.identifierValue ?? ""),
+    goodsDescription: String(cargo.description ?? ""),
+    packageQuantity: cargo.packageQuantity == null ? String(cargo.pieces ?? "") : String(cargo.packageQuantity),
+    packageType: String(cargo.packageType ?? ""),
+    grossWeightKg: cargo.grossWeightKg == null ? "" : String(cargo.grossWeightKg),
+    netWeightKg: cargo.netWeightKg == null ? "" : String(cargo.netWeightKg),
+    hsCode: String(cargo.hsCode ?? ""),
+    transportReference: String(
+      String(booking.mode ?? "").toLowerCase() === "air" ? route.flightNumber ?? ""
+        : String(booking.mode ?? "").toLowerCase() === "sea" ? route.voyageNumber ?? route.masterTransportReference ?? route.transportMeansName ?? ""
+          : String(booking.mode ?? "").toLowerCase() === "rail" ? route.railService ?? route.masterTransportReference ?? ""
+            : route.trailerNumber ?? route.vehicleRegistration ?? "",
+    ),
+    containerNumber: String(container.number ?? ""),
+  }))
+  const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState<"commercial_invoice" | "packing_list" | null>(null)
+
+  function field(key: keyof typeof form, label: string, options?: string[]) {
+    return (
+      <label className="grid min-w-0 gap-1 text-[11px] text-[var(--md-text)]">
+        <span>{t(label)}</span>
+        {options ? (
+          <select
+            className="h-9 min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] px-2.5 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+            value={form[key]}
+            onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))}
+          >
+            <option value="">{t("Choose")}</option>
+            {options.map((option) => (
+              <option
+                key={option}
+                value={key === "direction" && option === "Direction needed" ? "unknown" : option.toLowerCase().replaceAll(" ", "_")}
+              >
+                {t(option)}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <Input value={form[key]} onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))} />
+        )}
+      </label>
+    )
+  }
+
+  async function saveSourceData() {
+    if (saving) return false
+    setSaving(true)
+    try {
+      const otherParties = workspace.parties.filter((party) => !["exporter", "shipper", "consignor", "importer", "consignee"].includes(party.role.toLowerCase()))
+      const mode = form.mode.toLowerCase()
+      const saved = await saveBookingWorkflow(booking.jobId, {
+        customerId: booking.customerId ?? null,
+        carrierId: booking.carrierId ?? null,
+        supplierId: booking.supplierId ?? null,
+        status: booking.status,
+        direction: form.direction,
+        mode: form.mode,
+        origin: form.origin,
+        originUnlocode: booking.originUnlocode ?? null,
+        destination: form.destination,
+        destinationUnlocode: booking.destinationUnlocode ?? null,
+        readyDate: booking.readyDate ?? null,
+        requiredDeliveryDate: booking.requiredDeliveryDate ?? null,
+        predictedDeliveryAt: booking.predictedDeliveryAt ?? null,
+        trackingStatus: booking.trackingStatus ?? null,
+        currentLocation: booking.currentLocation ?? null,
+        internalNotes: booking.internalNotes ?? null,
+        incoterm: form.incoterm,
+        incotermLocation: form.incotermLocation,
+        freightChargeAmount: form.freightChargeAmount || null,
+        freightChargeCurrency: form.freightChargeCurrency,
+        collectionAddress: booking.collectionAddress ?? null,
+        deliveryAddress: booking.deliveryAddress ?? null,
+        route: {
+          ...route,
+          mode: form.mode,
+          origin: form.origin,
+          destination: form.destination,
+          flightNumber: mode === "air" ? form.transportReference : route.flightNumber ?? null,
+          trailerNumber: mode === "road" ? form.transportReference : route.trailerNumber ?? null,
+          railService: mode === "rail" ? form.transportReference : route.railService ?? null,
+          masterTransportReference: mode === "rail" || mode === "sea" ? form.transportReference : route.masterTransportReference ?? null,
+        },
+        parties: [
+          ...otherParties,
+          { ...exporter, role: "consignor", sequence: 10, name: form.exporterName, address: form.exporterAddress, countryCode: form.exporterCountry.toUpperCase(), identifierType: "eori", identifierValue: form.exporterIdentifier, isPrimary: true },
+          { ...importer, role: "consignee", sequence: 20, name: form.importerName, address: form.importerAddress, countryCode: form.importerCountry.toUpperCase(), identifierType: form.direction === "import" ? "eori" : importer?.identifierType ?? "eori", identifierValue: form.importerIdentifier, isPrimary: true },
+        ],
+        cargo: [
+          { ...cargo, lineNumber: 1, description: form.goodsDescription, pieces: form.packageQuantity || null, packageQuantity: form.packageQuantity || null, packageType: form.packageType, grossWeightKg: form.grossWeightKg || null, netWeightKg: form.netWeightKg || null, hsCode: form.hsCode },
+          ...workspace.cargo.slice(1),
+        ],
+        containers: mode === "sea"
+          ? [{ ...container, number: form.containerNumber, status: container.status ?? "planned" }, ...workspace.containers.slice(1)]
+          : workspace.containers,
+      })
+      await onSaved(saved)
+      toast.success(t("Customs source data saved"), { description: t("Readiness has been checked again.") })
+      return true
+    } catch (reason) {
+      toast.error(t("Customs source data could not be saved"), { description: reason instanceof Error ? reason.message : t("Your changes remain on screen. Try again.") })
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function attachDocument(documentType: "commercial_invoice" | "packing_list", file: File | undefined) {
+    if (!file || uploading) return
+    setUploading(documentType)
+    try {
+      await uploadBookingCustomsDocument(booking.jobId, documentType, file)
+      await onSaved(await getBookingWorkflow(booking.bookingReference))
+      toast.success(t(documentType === "commercial_invoice" ? "Commercial invoice attached" : "Packing list attached"), { description: file.name })
+    } catch (reason) {
+      toast.error(t("Document could not be attached"), { description: reason instanceof Error ? reason.message : t("Try attaching the file again.") })
+    } finally {
+      setUploading(null)
+    }
+  }
+
+  const fallbackTotalChecks = Math.max(readiness?.missing.length ?? 0, 16)
+  const totalChecks = readiness?.totalChecks ?? fallbackTotalChecks
+  const completeChecks = readiness?.completeChecks ?? Math.max(totalChecks - (readiness?.missing.length ?? totalChecks), 0)
+  const readinessPercent = readiness?.percent ?? Math.round(completeChecks * 100 / totalChecks)
+
+  function fixFields(issue: CustomsReadinessReviewIssue) {
+    if (issue.key === "direction") return field("direction", "Direction", ["Direction needed", "Import", "Export", "Domestic", "Cross trade"])
+    if (issue.key === "mode") return field("mode", "Transport mode", ["Sea", "Air", "Road", "Rail"])
+    if (issue.key === "origin") return field("origin", "Origin loading point / port")
+    if (issue.key === "destination") return field("destination", "Destination port / delivery point")
+    if (issue.key === "transport_reference") return field("transportReference", form.mode === "air" ? "Flight number" : form.mode === "sea" ? "Vessel or voyage number" : form.mode === "rail" ? "Rail service" : "Trailer or vehicle number")
+    if (issue.key === "incoterm") return field("incoterm", "Incoterms")
+    if (issue.key === "freight_amount") return field("freightChargeAmount", "Freight amount")
+    if (issue.key === "freight_currency") return field("freightChargeCurrency", "Freight currency")
+    if (issue.key === "exporter_name") return field("exporterName", "Consignor / shipper name")
+    if (issue.key === "exporter_address") return field("exporterAddress", "Consignor / shipper full address")
+    if (issue.key === "exporter_eori") return field("exporterIdentifier", "Exporter EORI")
+    if (issue.key === "importer_name") return field("importerName", "Importer name")
+    if (issue.key === "importer_address") return field("importerAddress", "Importer full address")
+    if (issue.key === "importer_identifier") return field("importerIdentifier", "Importer EORI or VAT number")
+    if (issue.key === "goods_description") return field("goodsDescription", "Goods description")
+    if (issue.key === "packages") return <div className="grid gap-3 sm:grid-cols-2">{field("packageQuantity", "Pieces / packages")}{field("packageType", "Package type")}</div>
+    if (issue.key === "gross_weight") return field("grossWeightKg", "Gross weight (kg)")
+    if (issue.key === "commercial_invoice") return (
+      <Button asChild variant="outline" className="h-9 rounded-[var(--md-radius-lg)] px-3 text-[12px]">
+        <label>{t(uploading === "commercial_invoice" ? "Attaching invoice..." : "Attach commercial invoice")}<input className="sr-only" type="file" aria-label={t("Attach commercial invoice")} accept=".pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx" disabled={Boolean(uploading)} onChange={(event) => { void attachDocument("commercial_invoice", event.target.files?.[0]); event.currentTarget.value = "" }} /></label>
+      </Button>
+    )
+    return null
+  }
+
+  if (view === "review") {
+    return (
+      <CustomsReadinessReview
+        completeChecks={completeChecks}
+        emptyDescription="Sending creates a job-related declaration for the Customs team. It does not submit anything to iCustoms or HMRC."
+        emptyTitle="Ready for Customs handoff"
+        headline="Ready to hand off to Customs?"
+        issues={readiness?.missing ?? []}
+        onBack={() => onViewChange("source")}
+        percent={readinessPercent}
+        renderFix={(issue, close) => {
+          if (issue.key === "customs_department" || issue.key === "customs_operator") {
+            return <><p className="text-[12px] leading-5 text-[var(--md-text)]">{t("This requirement is controlled by the Customs team setup for the booking office.")}</p><div className="mt-3 flex justify-end"><Button type="button" size="sm" onClick={() => { close(); navigate("/admin/users") }}>{t("Open team settings")}</Button></div></>
+          }
+          const fields = fixFields(issue)
+          return <><h3 className="mb-3 text-[12px] font-medium text-[var(--md-ink)]">{t(issue.section ?? "Booking")}</h3>{fields}<div className="mt-3 flex justify-end pt-3"><Button type="button" size="sm" disabled={saving || Boolean(uploading)} onClick={() => { void saveSourceData().then((saved) => { if (saved) close() }) }}>{t(saving ? "Saving..." : "Confirm")}</Button></div></>
+        }}
+        t={t}
+        title="Customs readiness"
+        totalChecks={totalChecks}
+      >
+        {customsError ? <p className="mt-4 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2 text-[12px] text-[var(--md-red)] shadow-[var(--md-shadow-line)]" role="alert">{customsError}</p> : null}
+        {!readiness && !customsError ? <p className="mt-4 text-[13px] text-[var(--md-text)]">{t("Checking the booking against Customs requirements...")}</p> : null}
+        {readiness?.warnings.length ? <div className="mt-4 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2.5 shadow-[var(--md-shadow-line)]">{readiness.warnings.map((warning) => <p key={warning.key} className="text-[12px] text-[var(--md-text)]">{t(warning.label)}</p>)}</div> : null}
+      </CustomsReadinessReview>
+    )
+  }
+
+  return (
+      <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+      <div className="grid gap-5 px-5 py-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {field("direction", "Direction", ["Direction needed", "Import", "Export", "Domestic", "Cross trade"])}
+          {field("mode", "Transport mode", ["Sea", "Air", "Road", "Rail"])}
+          {field("origin", "Origin loading point / port")}
+          {field("destination", "Destination port / delivery point")}
+          {field("transportReference", form.mode === "air" ? "Flight number" : form.mode === "sea" ? "Vessel or voyage number" : form.mode === "rail" ? "Rail service" : "Trailer or vehicle number")}
+          {form.mode === "sea" ? field("containerNumber", "Container number") : null}
+          {field("incoterm", "Incoterms")}
+          {field("freightChargeAmount", "Freight amount")}
+          {field("freightChargeCurrency", "Freight currency")}
+        </div>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3">
+            <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Consignor / shipper")}</p>
+            <div className="grid gap-3 sm:grid-cols-2">{field("exporterName", "Name")}{field("exporterCountry", "Country code")}{field("exporterAddress", "Full address")}{field("exporterIdentifier", "EORI")}</div>
+          </div>
+          <div className="grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3">
+            <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Importer")}</p>
+            <div className="grid gap-3 sm:grid-cols-2">{field("importerName", "Name")}{field("importerCountry", "Country code")}{field("importerAddress", "Full address")}{field("importerIdentifier", "EORI or VAT number")}</div>
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="xl:col-span-2">{field("goodsDescription", "Goods description")}</div>
+          {field("packageQuantity", "Pieces / packages")}
+          {field("packageType", "Package type")}
+          {field("grossWeightKg", "Gross weight (kg)")}
+          {field("netWeightKg", "Net weight (kg)")}
+          {field("hsCode", "Commodity code")}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--md-border)] pt-4">
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] shadow-[var(--md-shadow-line)]">
+              <label>{t(uploading === "commercial_invoice" ? "Attaching invoice..." : "Attach commercial invoice")}<input className="sr-only" type="file" aria-label={t("Attach commercial invoice")} accept=".pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx" disabled={Boolean(uploading)} onChange={(event) => { void attachDocument("commercial_invoice", event.target.files?.[0]); event.currentTarget.value = "" }} /></label>
+            </Button>
+            <Button asChild variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] shadow-[var(--md-shadow-line)]">
+              <label>{t(uploading === "packing_list" ? "Attaching packing list..." : "Attach packing list (optional)")}<input className="sr-only" type="file" aria-label={t("Attach packing list (optional)")} accept=".pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx" disabled={Boolean(uploading)} onChange={(event) => { void attachDocument("packing_list", event.target.files?.[0]); event.currentTarget.value = "" }} /></label>
+            </Button>
+          </div>
+          <Button className="h-9 rounded-[var(--md-radius-lg)] px-3 text-[12px]" disabled={saving} onClick={() => void saveSourceData()}>
+            <Save data-icon="inline-start" className="size-3.5" />{t(saving ? "Saving..." : "Save Customs source data")}
+          </Button>
+        </div>
+      </div>
+      </Surface>
+  )
+}
+
+function BookingCustomsWorkspace({
+  customsError,
+  navigate,
+  onWorkspaceSaved,
+  onViewChange,
+  readiness,
+  record,
+  view,
+}: {
+  customsError: string | null
+  navigate: (path: string) => void
+  onWorkspaceSaved: (workspace: BookingWorkflowWorkspace) => Promise<void>
+  onViewChange: (view: BookingCustomsView) => void
+  readiness: BookingCustomsReadiness | null
+  record: BookingDetailRecord
+  view: BookingCustomsView
+}) {
+  const { t } = useLanguage()
+  const declarations = record.workspace?.declarations ?? []
 
   return (
     <div className="flex flex-col gap-[var(--md-page-stack-gap)]">
-      <BookingBlockerSection record={record} />
-      <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-        <BookingSectionHeading icon={<ShieldCheck className="size-4" strokeWidth={1.5} />} title={t("Customs workstream")} meta={t("Prototype fixture · not live")} />
+      {record.workspace ? <BookingCustomsSourceEditor customsError={customsError} key={record.workspace.booking.updatedAt} navigate={navigate} onSaved={onWorkspaceSaved} onViewChange={onViewChange} readiness={readiness} view={view} workspace={record.workspace} /> : null}
+
+      {view === "source" ? <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+        <BookingSectionHeading icon={<FileText className="size-4" strokeWidth={1.5} />} title={t("Job-related declarations")} meta={`${declarations.length}`} />
         <div className="px-5 py-2">
-          {customsEntries.map(([title, detail, state, tone]) => (
-            <div key={title} className="grid gap-2 py-4 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] first:shadow-none md:grid-cols-[minmax(180px,0.8fr)_minmax(0,1.2fr)_auto] md:items-center">
-              <div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t(title)}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{detail}</p></div>
-              <p className="text-[12px] text-[var(--md-text)]">{t("Review source evidence before action")}</p>
-              <StatusPill tone={tone}>{t(state)}</StatusPill>
-            </div>
-          ))}
+          {declarations.length ? declarations.map((declaration) => (
+            <button
+              key={declaration.id}
+              type="button"
+              className="grid w-full gap-2 py-4 text-start shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] first:shadow-none md:grid-cols-[minmax(180px,1fr)_minmax(140px,0.6fr)_auto] md:items-center"
+              onClick={() => navigate(`/customs/job-related/${declaration.direction}/${declaration.id}`)}
+            >
+              <span><span className="block text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip>{declaration.localReference ?? declaration.customsReference ?? declaration.id}</span><span className="mt-1 block text-[12px] text-[var(--md-text)]">{t(`${declaration.direction} declaration`)}</span></span>
+              <span className="text-[12px] text-[var(--md-text)]" data-i18n-skip>{declaration.mrn ?? t("MRN not assigned")}</span>
+              <StatusPill tone={declaration.status === "rejected" ? "red" : declaration.status === "draft" ? "amber" : "green"}>{t(declaration.status)}</StatusPill>
+            </button>
+          )) : <p className="py-7 text-center text-[13px] text-[var(--md-text)]">{t("No job-related declaration has been created yet.")}</p>}
         </div>
-      </Surface>
+      </Surface> : null}
     </div>
   )
 }
@@ -2387,7 +2867,7 @@ function BookingFinanceWorkspace({ record }: { record: BookingDetailRecord }) {
   return (
     <div className="grid gap-[var(--md-page-stack-gap)] 2xl:grid-cols-[360px_minmax(0,1fr)]">
       <Surface padding="none" className="h-fit overflow-hidden rounded-[var(--md-radius-xl)]">
-        <BookingSectionHeading icon={<WalletCards className="size-4" strokeWidth={1.5} />} title={t("References and value")} meta={t("Booking register")} />
+        <BookingWorkspaceSectionTitle>{t("References and value")}</BookingWorkspaceSectionTitle>
         <BookingFactRows rows={[
           ["Booking value", record.booking.value],
           ["Invoice", record.booking.invoice || "Not raised"],
@@ -2398,19 +2878,50 @@ function BookingFinanceWorkspace({ record }: { record: BookingDetailRecord }) {
       </Surface>
       {hasFixture ? (
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-          <BookingSectionHeading icon={<CircleDollarSign className="size-4" strokeWidth={1.5} />} title={t("Cost lines")} meta={t("Prototype fixture · not live")} />
+          <BookingWorkspaceSectionTitle>{t("Cost lines")}</BookingWorkspaceSectionTitle>
           <BookingFactRows rows={costRows.map(([label, detail, amount]) => [label, `${amount} · ${detail}`] as const)} />
         </Surface>
       ) : (
-        <UnavailableBookingSection title="Cost ledger" detail="No supplier-cost or accounting feed is connected for this booking. The booking value above is the only finance field available in the register." icon={<CircleDollarSign className="size-4" strokeWidth={1.5} />} />
+        <UnavailableBookingSection title="Cost ledger" detail="No supplier-cost or accounting feed is connected for this booking. The booking value above is the only finance field available in the register." />
       )}
     </div>
   )
 }
 
 function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
-  const { t } = useLanguage()
-  if (!hasPrototypeDetailData(record)) return <UnavailableBookingSection title="Activity and audit" detail="No activity or audit feed is connected for this prototype record. A reliable event history will appear here only when source events are available." icon={<Activity className="size-4" strokeWidth={1.5} />} />
+  const { language, t } = useLanguage()
+  const events = record.workspace?.events ?? []
+  const eventTime = (event: BookingWorkflowEvent) => {
+    const date = new Date(event.occurredAt)
+    return Number.isNaN(date.getTime()) ? event.occurredAt : new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(date)
+  }
+
+  if (record.workspace) return (
+    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+      <BookingWorkspaceSectionTitle>{t("Activity and audit")}</BookingWorkspaceSectionTitle>
+      {events.length ? (
+        <div className="px-5 pb-2 pt-3">
+          {events.map((event) => (
+            <div key={event.id} className="grid gap-x-3 gap-y-1 py-4 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] first:shadow-none sm:grid-cols-[172px_12px_minmax(0,1fr)] sm:items-start">
+              <time className="text-[12px] text-[var(--md-text)]" dateTime={event.occurredAt}>{eventTime(event)}</time>
+              <span className="mt-1.5 size-2 rounded-full bg-[var(--md-accent)]" aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium leading-5 text-[var(--md-ink)]">{event.summary}</p>
+                <p className="mt-0.5 text-[12px] text-[var(--md-text)]">{event.actor || t("System")} · {t(event.type.replace(/_/g, " "))}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="px-5 py-10 text-center">
+          <h3 className="text-[15px] font-medium text-[var(--md-ink)]">{t("No activity recorded yet")}</h3>
+          <p className="mx-auto mt-2 max-w-[560px] text-[13px] leading-6 text-[var(--md-text)]">{t("Booking updates, document attachments and Customs handoffs will appear here.")}</p>
+        </div>
+      )}
+    </Surface>
+  )
+
+  if (!hasPrototypeDetailData(record)) return <UnavailableBookingSection title="Activity and audit" detail="The booking register does not include an activity feed yet." />
 
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
@@ -2430,18 +2941,28 @@ function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
 
 function BookingDetailTabPage({
   activeTab,
+  customsError,
+  customsReadiness,
+  customsView,
+  navigate,
+  onCustomsViewChange,
+  onWorkspaceSaved,
   onBookingChange,
-  onCustomFieldChange,
   record,
 }: {
   activeTab: BookingDetailTab
+  customsError: string | null
+  customsReadiness: BookingCustomsReadiness | null
+  customsView: BookingCustomsView
+  navigate: (path: string) => void
+  onCustomsViewChange: (view: BookingCustomsView) => void
+  onWorkspaceSaved: (workspace: BookingWorkflowWorkspace) => Promise<void>
   onBookingChange: (field: keyof LiveBooking, value: string | boolean) => void
-  onCustomFieldChange: (index: number, value: string) => void
   record: BookingDetailRecord
 }) {
-  if (activeTab === "Details") return <BookingRecordDetails editable onBookingChange={onBookingChange} onCustomFieldChange={onCustomFieldChange} record={record} />
+  if (activeTab === "Details") return <BookingRecordDetails editable onBookingChange={onBookingChange} record={record} />
   if (activeTab === "Documents") return <BookingDocumentsWorkspace record={record} />
-  if (activeTab === "Customs") return <BookingCustomsWorkspace record={record} />
+  if (activeTab === "Customs") return <BookingCustomsWorkspace customsError={customsError} navigate={navigate} onWorkspaceSaved={onWorkspaceSaved} onViewChange={onCustomsViewChange} readiness={customsReadiness} record={record} view={customsView} />
   if (activeTab === "Finance") return <BookingFinanceWorkspace record={record} />
   if (activeTab === "Audit") return <BookingActivityWorkspace record={record} />
   return <BookingDecisionOverview record={record} />
@@ -2598,8 +3119,18 @@ export function BookingDetailWorkspace({
   const [record, setRecord] = useState<BookingDetailRecord | null>(null)
   const [draftBooking, setDraftBooking] = useState<LiveBooking | null>(null)
   const [loadState, setLoadState] = useState<"loading" | "ready" | "not-found" | "error">("loading")
+  const [savingDetails, setSavingDetails] = useState(false)
+  const [customsReadiness, setCustomsReadiness] = useState<BookingCustomsReadiness | null>(null)
+  const [customsView, setCustomsView] = useState<BookingCustomsView>("source")
+  const [customsError, setCustomsError] = useState<string | null>(null)
+  const [sendingToCustoms, setSendingToCustoms] = useState(false)
+  const [pendingDocumentType, setPendingDocumentType] = useState<"commercial_invoice" | "packing_list" | null>(null)
+  const [uploadingDocumentType, setUploadingDocumentType] = useState<"commercial_invoice" | "packing_list" | null>(null)
+  const customsHandoffKeyRef = useRef<string | null>(null)
+  const bookingDocumentInputRef = useRef<HTMLInputElement | null>(null)
 
   function changeActiveTab(nextTab: BookingDetailTab) {
+    setCustomsView("source")
     setActiveTab(nextTab)
   }
 
@@ -2608,19 +3139,28 @@ export function BookingDetailWorkspace({
     const normalizedId = bookingId.trim().toUpperCase()
 
     setActiveTab("Overview")
+    setCustomsView("source")
     setRecord(null)
     setDraftBooking(null)
     setLoadState("loading")
 
-    void getLiveBooking(normalizedId).then((booking) => {
+    void getBookingWorkflow(normalizedId).then((workspace) => {
       if (cancelled) return
-      if (!booking) {
-        setLoadState("not-found")
+      const canonicalReference = workspace.booking.bookingReference.trim().toUpperCase()
+      if (canonicalReference && canonicalReference !== normalizedId) {
+        navigate(getBookingDetailPath(canonicalReference))
         return
       }
-      setRecord({ id: booking.id, booking })
-      setDraftBooking(booking)
+      const nextRecord = bookingWorkspaceRecord(workspace)
+      setRecord(nextRecord)
+      setDraftBooking(nextRecord.booking)
       setLoadState("ready")
+      setCustomsError(null)
+      void getBookingCustomsReadiness(workspace.booking.jobId).then((readiness) => {
+        if (!cancelled) setCustomsReadiness(readiness)
+      }).catch((reason) => {
+        if (!cancelled) setCustomsError(reason instanceof Error ? reason.message : t("Customs readiness could not be checked."))
+      })
     }).catch(() => {
       if (!cancelled) setLoadState("error")
     })
@@ -2674,23 +3214,133 @@ export function BookingDetailWorkspace({
     })
   }
 
-  function updateDraftCustomField(index: number, value: string) {
-    setDraftBooking((current) => current ? {
-      ...current,
-      customFields: current.customFields.map((field, fieldIndex) => fieldIndex === index ? { ...field, value } : field),
-    } : current)
-  }
-
   function discardDetails() {
     setDraftBooking(loadedRecord.booking)
   }
 
-  function saveDetails() {
-    if (!draftBooking || !detailsDirty) return
-    const savedBooking = { ...draftBooking, updatedAt: new Date().toISOString() }
-    setRecord({ ...loadedRecord, booking: savedBooking })
-    setDraftBooking(savedBooking)
-    toast.success(t("Booking changes saved"), { description: t("The updated details are available for this booking session.") })
+  async function applySavedWorkspace(workspace: BookingWorkflowWorkspace) {
+    const nextRecord = bookingWorkspaceRecord(workspace)
+    setRecord(nextRecord)
+    setDraftBooking(nextRecord.booking)
+    setCustomsReadiness(await getBookingCustomsReadiness(workspace.booking.jobId))
+    setCustomsError(null)
+  }
+
+  async function saveDetails() {
+    if (!draftBooking || !detailsDirty || savingDetails || !loadedRecord.workspace) return
+    const workspace = loadedRecord.workspace
+    const route = workspace.routes[0] ?? {}
+    const container = workspace.containers[0]
+    const modeCode = draftBooking.mode === "OCEAN" ? "sea" : draftBooking.mode.toLowerCase()
+    setSavingDetails(true)
+    try {
+      const savedWorkspace = await saveBookingWorkflow(workspace.booking.jobId, {
+        customerId: workspace.booking.customerId ?? null,
+        carrierId: workspace.booking.carrierId ?? null,
+        supplierId: workspace.booking.supplierId ?? null,
+        status: workspace.booking.status,
+        direction: draftBooking.direction,
+        mode: modeCode,
+        origin: draftBooking.origin,
+        originUnlocode: workspace.booking.originUnlocode ?? null,
+        destination: draftBooking.destination,
+        destinationUnlocode: workspace.booking.destinationUnlocode ?? null,
+        readyDate: draftBooking.departureDate || null,
+        requiredDeliveryDate: draftBooking.arrivalDate || null,
+        predictedDeliveryAt: draftBooking.arrivalAt || null,
+        trackingStatus: workspace.booking.trackingStatus ?? null,
+        currentLocation: draftBooking.currentLocation || null,
+        internalNotes: workspace.booking.internalNotes ?? null,
+        incoterm: workspace.booking.incoterm ?? null,
+        incotermLocation: workspace.booking.incotermLocation ?? null,
+        freightChargeAmount: workspace.booking.freightChargeAmount ?? null,
+        freightChargeCurrency: workspace.booking.freightChargeCurrency ?? null,
+        collectionAddress: workspace.booking.collectionAddress ?? null,
+        deliveryAddress: workspace.booking.deliveryAddress ?? null,
+        route: {
+          ...route,
+          mode: modeCode,
+          origin: draftBooking.origin,
+          destination: draftBooking.destination,
+          plannedDepartureAt: draftBooking.departureAt || draftBooking.departureDate || null,
+          plannedArrivalAt: draftBooking.arrivalAt || draftBooking.arrivalDate || null,
+          vessel: draftBooking.mode === "OCEAN" ? draftBooking.vessel || null : route.vessel ?? null,
+          flightNumber: draftBooking.mode === "AIR" ? draftBooking.vessel || null : route.flightNumber ?? null,
+          vehicleRegistration: draftBooking.vin || route.vehicleRegistration || null,
+        },
+        parties: workspace.parties,
+        cargo: workspace.cargo,
+        containers: container
+          ? [{ ...container, number: draftBooking.container || container.number, type: draftBooking.shipmentType || container.type }]
+          : draftBooking.container || draftBooking.shipmentType
+            ? [{ number: draftBooking.container || null, type: draftBooking.shipmentType || null, status: "planned" }]
+            : [],
+      })
+      await applySavedWorkspace(savedWorkspace)
+      toast.success(t("Booking changes saved"), { description: t("The booking workspace has been updated.") })
+    } catch (reason) {
+      toast.error(t("Booking could not be saved"), { description: reason instanceof Error ? reason.message : t("Your changes remain on screen. Try saving again.") })
+    } finally {
+      setSavingDetails(false)
+    }
+  }
+
+  async function sendToCustoms() {
+    if (!loadedRecord.workspace || !customsReadiness?.ready || sendingToCustoms) return
+    customsHandoffKeyRef.current ??= crypto.randomUUID()
+    setSendingToCustoms(true)
+    try {
+      const result = await sendBookingToCustoms(loadedRecord.workspace.booking.jobId, customsHandoffKeyRef.current)
+      customsHandoffKeyRef.current = null
+      toast.success(t(result.reused ? "Customs declaration reopened" : "Booking sent to Customs"), { description: result.reference })
+      if (result.canOpen) {
+        navigate(result.route)
+      } else {
+        setActiveTab("Customs")
+        try {
+          await applySavedWorkspace(await getBookingWorkflow(loadedRecord.workspace.booking.bookingReference))
+        } catch {
+          toast.warning(t("Booking sent; declaration status could not be refreshed"), { description: t("The Customs department still received the handoff.") })
+        }
+      }
+    } catch (reason) {
+      toast.error(t("Booking could not be sent to Customs"), { description: reason instanceof Error ? reason.message : t("Check the readiness list and try again.") })
+    } finally {
+      setSendingToCustoms(false)
+    }
+  }
+
+  function requestDocumentAttachment(documentType: "commercial_invoice" | "packing_list") {
+    if (uploadingDocumentType) return
+    setPendingDocumentType(documentType)
+    window.setTimeout(() => {
+      const input = bookingDocumentInputRef.current
+      if (!input) {
+        setPendingDocumentType(null)
+        return
+      }
+      input.value = ""
+      input.click()
+    }, 0)
+  }
+
+  async function uploadSelectedBookingDocument(file: File | undefined) {
+    const documentType = pendingDocumentType
+    if (!file || !documentType || !loadedRecord.workspace) {
+      setPendingDocumentType(null)
+      return
+    }
+    setPendingDocumentType(null)
+    setUploadingDocumentType(documentType)
+    try {
+      await uploadBookingCustomsDocument(loadedRecord.workspace.booking.jobId, documentType, file)
+      await applySavedWorkspace(await getBookingWorkflow(loadedRecord.workspace.booking.bookingReference))
+      toast.success(t(documentType === "commercial_invoice" ? "Commercial invoice attached" : "Packing list attached"), { description: file.name })
+    } catch (reason) {
+      toast.error(t("Document could not be attached"), { description: reason instanceof Error ? reason.message : t("Try attaching the file again.") })
+    } finally {
+      setUploadingDocumentType(null)
+    }
   }
 
   return (
@@ -2698,20 +3348,42 @@ export function BookingDetailWorkspace({
       <div className="grid w-full gap-2">
         <BookingDetailHeader
           activeTab={activeTab}
+          customsReadiness={customsReadiness}
           detailsDirty={detailsDirty}
+          uploadingDocumentType={uploadingDocumentType}
+          onAttachDocument={requestDocumentAttachment}
           onDiscardDetails={discardDetails}
-          onSaveDetails={saveDetails}
+          onReviewCustoms={() => {
+            setCustomsView("review")
+            setActiveTab("Customs")
+          }}
+          onSaveDetails={() => void saveDetails()}
+          onSendToCustoms={() => void sendToCustoms()}
           onTabChange={changeActiveTab}
           record={visibleRecord}
+          sendingToCustoms={sendingToCustoms}
         />
         <div className="relative min-h-px overflow-x-clip" data-booking-tab-panel>
           <BookingDetailTabPage
             activeTab={activeTab}
+            customsError={customsError}
+            customsReadiness={customsReadiness}
+            customsView={customsView}
+            navigate={navigate}
+            onCustomsViewChange={setCustomsView}
             onBookingChange={updateDraftBooking}
-            onCustomFieldChange={updateDraftCustomField}
+            onWorkspaceSaved={applySavedWorkspace}
             record={visibleRecord}
           />
         </div>
+        <input
+          ref={bookingDocumentInputRef}
+          className="sr-only"
+          type="file"
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx"
+          aria-label={t("Attach document")}
+          onChange={(event) => { void uploadSelectedBookingDocument(event.target.files?.[0]); event.currentTarget.value = "" }}
+        />
       </div>
     </main>
   )

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
-import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, Eye, FileCheck2, FileText, Plus, RefreshCw, Save, ScanText, Search, Send, Trash2 } from "@/components/icons/hugeicons"
+import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, Eye, FileCheck2, FileText, LoaderCircle, Plus, RefreshCw, Save, ScanText, Search, Send, Trash2, UserRound } from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -7,10 +7,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { CustomsReadinessReview } from "@/components/multideck/customs-readiness-review"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { PdfDocumentViewerDialog } from "@/components/multideck/pdf-document-viewer-dialog"
 import { RegisterFacetSelect, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
@@ -21,6 +22,7 @@ import { CustomsInvoiceImportWorkspace } from "@/pages/customs-invoice-import-wo
 import { useLanguage } from "@/i18n/language-provider"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import type { RegisterSort } from "@/lib/application-data-api"
+import type { FilterQuery } from "@/lib/advanced-filters"
 import { cn } from "@/lib/utils"
 import {
   createExportDeclarationItem,
@@ -32,12 +34,14 @@ import {
   type StandaloneExportDraft,
 } from "@/lib/customs-declaration"
 import { createEmptyCustomsReferenceData, useCustomsReferenceData, type CustomsCatalogCode, type CustomsReferenceData } from "@/lib/customs-reference-data"
-import { invalidateCustomsDeclarationPages, listCustomsDeclarationDraftsPage, loadStandaloneDeclarationDraft, reopenRejectedCustomsDeclaration, saveStandaloneDeclarationDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
+import { assignCustomsDeclaration, getCustomsDeclarationAssignment, invalidateCustomsDeclarationPages, listCustomsDeclarationAssignees, listCustomsDeclarationDraftsPage, loadStandaloneDeclarationDraft, reopenRejectedCustomsDeclaration, saveJobRelatedDeclarationDraft, saveStandaloneDeclarationDraft, type CustomsAssignee, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
 import { hasCustomsInvoiceImportRecovery, moveCustomsInvoiceImportRecovery } from "@/lib/customs-invoice-import-recovery"
 import { fetchCustomsDeclarationPdf, getCustomsDeclarationDocument, type CustomsDeclarationDocument } from "@/lib/customs-declaration-document-api"
 import { customsStatusPollDelay, isTerminalCustomsStatus, shouldPollCustomsStatus, shouldPollCustomsSubmission } from "@/lib/customs-status-lifecycle"
+import { getCustomer, listAccountsPage, type ApiCustomer, type ApiCustomerDetail } from "@/lib/customer-api"
 import { deleteICustomsProviderDraft, getICustomsCommodityDetails, getICustomsDeclarationState, ICustomsApiError, refreshICustomsDeclaration, saveICustomsProviderDraft, searchICustomsCommodities, startICustomsProviderDraft, submitICustomsDeclaration, validateICustomsDeclaration, type ICustomsCommodityCertificate, type ICustomsCommodityDetail, type ICustomsCommoditySuggestion, type ICustomsProviderIssue, type ICustomsWorkspaceState } from "@/lib/icustoms-api"
 import { mdMotion, reduceMotion } from "@/lib/motion"
+import { createProfilePhotoSignedUrls } from "@/lib/profile-photo"
 import iCustomsLogo from "@/assets/integrations/icustoms.svg"
 
 type DeclarationKind = "export" | "import"
@@ -61,7 +65,7 @@ function customsExportCategory(path: readonly string[]) {
   if (/^(exporter|importer|seller|buyer|consignee|carrier|declarant|representative|representation|authorisation)/.test(field)) return "Parties"
   if (/^(exportCountry|destinationCountry|border|inland|departure|arrival|goodsLocation|freightPayment|isContainerised|gvms|container|seal|routing)/.test(field)) return "Transport"
   if (/^(previousDocument|headerAdditionalInformation)/.test(field)) return "Documents"
-  if (/^(total|currency|transactionNature|exchangeRate|tradeTerms|customsValuation|primaryDeferment|secondaryDeferment|freightCharge)/.test(field)) return "Valuation"
+  if (/^(total|currency|transactionNature|exchangeRate|tradeTerms|customsValuation|primaryDeferment|secondaryDeferment|freightCharge|vatValueAdjustment|insuranceCost|containerPackingCost)/.test(field)) return "Valuation"
   if (/^(exitOffice|supervisingOffice|presentationOffice|warehouse|guarantee)/.test(field)) return "Offices and guarantees"
   return "Declaration"
 }
@@ -77,6 +81,30 @@ const CustomsBoxVisibilityContext = createContext(false)
 const CustomsReferenceDataContext = createContext<{ data: CustomsReferenceData; loading: boolean; error: string | null }>({ data: createEmptyCustomsReferenceData(), loading: true, error: null })
 const CompactCustomsFormContext = createContext(false)
 const CustomsDirectionContext = createContext<DeclarationKind>("export")
+type CustomsOrganisationDirectoryState = { companies: ApiCustomer[]; total: number; ready: boolean; error: boolean }
+const CustomsOrganisationDirectoryContext = createContext<CustomsOrganisationDirectoryState>({ companies: [], total: 0, ready: false, error: false })
+
+function useCustomsOrganisationDirectory(): CustomsOrganisationDirectoryState {
+  const [directory, setDirectory] = useState<CustomsOrganisationDirectoryState>({ companies: [], total: 0, ready: false, error: false })
+
+  useEffect(() => {
+    let active = true
+    listAccountsPage({
+      organisationType: "company",
+      sort: { id: "account", direction: "asc" },
+      limit: 100,
+      offset: 0,
+    }).then((page) => {
+      if (active) setDirectory({ companies: page.rows, total: page.total, ready: true, error: false })
+    }).catch((reason) => {
+      console.error("Customs organisation directory could not be prefetched.", reason)
+      if (active) setDirectory((current) => ({ ...current, ready: true, error: true }))
+    })
+    return () => { active = false }
+  }, [])
+
+  return directory
+}
 
 function readDeclarationFieldVisibility() {
   if (typeof window === "undefined") return defaultDeclarationFieldVisibility
@@ -114,10 +142,10 @@ export function CustomsDeclarationsPage({
   const jobRelated = route.startsWith("/customs/job-related")
   const kind: DeclarationKind = route.includes("/import") ? "import" : "export"
   const creating = route.endsWith("/new")
-  const editMatch = route.match(/^\/customs\/standalone\/(export|import)\/([0-9a-f-]{36})$/i)
+  const editMatch = route.match(/^\/customs\/(standalone|job-related)\/(export|import)\/([0-9a-f-]{36})$/i)
 
-  if (!jobRelated && (creating || editMatch)) {
-    return <StandaloneDeclarationEditor navigate={navigate} kind={kind} declarationId={editMatch?.[2]} />
+  if ((!jobRelated && creating) || editMatch) {
+    return <StandaloneDeclarationEditor navigate={navigate} kind={kind} declarationId={editMatch?.[3]} scope={jobRelated ? "job-related" : "standalone"} />
   }
 
   const base = jobRelated ? "/customs/job-related" : "/customs/standalone"
@@ -149,6 +177,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null)
   const [contextDeleteDraft, setContextDeleteDraft] = useState<CustomsDraftSummary | null>(null)
+  const assigneePhotoUrls = useCustomsAssigneePhotoUrls(drafts.map((draft) => draft.assignee).filter((assignee): assignee is CustomsAssignee => Boolean(assignee)))
 
   const deleteDraft = useCallback(async (draft: CustomsDraftSummary) => {
     if (draft.status.toLocaleLowerCase() !== "draft" || deletingDraftId) return
@@ -220,21 +249,22 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
 
   const columns = useMemo<DataTableColumn<CustomsDraftSummary>[]>(() => [
     {
-      id: "submittedBy",
-      label: "Submitted by",
-      headerContent: <span className="sr-only">{t("Submitted by")}</span>,
+      id: "assignedTo",
+      label: "Assigned to",
+      headerContent: <span className="sr-only">{t("Assigned to")}</span>,
       kind: "identity",
       align: "center",
       width: 64,
       minWidth: 64,
       maxWidth: 64,
       canPin: false,
-      cellTitle: (draft) => draft.submittedBy === currentUser?.id
-        ? currentUser.name ?? currentUser.email ?? t("Not available")
-        : t("Not available"),
+      cellTitle: (draft) => draft.assignee?.displayName
+        ?? (!draft.assignmentSupported && draft.submittedBy === currentUser?.id
+          ? currentUser.name ?? currentUser.email ?? t("Not available")
+          : t("Unassigned")),
       headerClassName: "px-3 [&>span]:justify-center",
       cellClassName: "px-3 py-2",
-      cell: (draft) => <DeclarationSubmitterAvatar draft={draft} currentUser={currentUser} t={t} />,
+      cell: (draft) => <DeclarationAssigneeAvatar draft={draft} assignee={draft.assignee} photoUrl={draft.assignee?.profilePhoto ? assigneePhotoUrls.get(draft.assignee.profilePhoto.path) ?? null : null} currentUser={currentUser} t={t} />,
     },
     {
       id: "reference",
@@ -338,7 +368,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
         t={t}
       />,
     },
-  ], [confirmingDeleteId, currentUser, deletingDraftId, jobRelated, requestDelete, shouldReduceMotion, t])
+  ], [assigneePhotoUrls, confirmingDeleteId, currentUser, deletingDraftId, jobRelated, requestDelete, shouldReduceMotion, t])
 
   const statuses = facets.statuses
   const destinations = facets.destinations
@@ -364,7 +394,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
         getRowKey={(draft) => draft.id}
         storageKey={`customs-${jobRelated ? "job-related" : "standalone"}-${kind}-register-v3`}
         rowClassName="hover:bg-[var(--md-hover)]"
-        onRowClick={!jobRelated ? (draft) => navigate(`/customs/standalone/${kind}/${draft.id}`) : undefined}
+        onRowClick={(draft) => navigate(`/customs/${jobRelated ? "job-related" : "standalone"}/${kind}/${draft.id}`)}
         rowAriaLabel={(draft) => draft.reference}
         serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "lastSaved", direction: "desc" }); setOffset(0) } }}
         pagination={{ offset, limit: customsRegisterPageSize, total, loading, onOffsetChange: setOffset }}
@@ -465,7 +495,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
               <FileCheck2 className="size-5" strokeWidth={1.4} />
             </div>
             <h3 className="mt-4 text-[16px] font-medium text-[var(--md-ink)]">
-              {t(!jobRelated ? (kind === "export" ? "Ready for the first standalone export" : "Ready for the first standalone import") : "This declaration flow is next")}
+              {t(!jobRelated ? (kind === "export" ? "Ready for the first standalone export" : "Ready for the first standalone import") : "No bookings have been sent to this Customs team yet")}
             </h3>
             <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">
               {t(!jobRelated
@@ -550,32 +580,216 @@ function DeclarationDeleteAction({ draft, confirming, deleting, disabled, should
   )
 }
 
-function DeclarationSubmitterAvatar({ draft, currentUser, t }: {
+function customsAssigneeInitials(assignee: CustomsAssignee) {
+  const initials = `${assignee.firstName?.[0] ?? ""}${assignee.lastName?.[0] ?? ""}`.trim()
+  return (initials || assignee.displayName.split(/\s+/).map((part) => part[0]).join("") || assignee.email[0] || "?").slice(0, 2).toLocaleUpperCase()
+}
+
+function useCustomsAssigneePhotoUrls(assignees: CustomsAssignee[]) {
+  const [photoUrls, setPhotoUrls] = useState<Map<string, string>>(new Map())
+  const photoKey = assignees.map((assignee) => assignee.profilePhoto?.path ?? "").filter(Boolean).sort().join("|")
+
+  useEffect(() => {
+    const photos = assignees.flatMap((assignee) => assignee.profilePhoto ? [assignee.profilePhoto] : [])
+    if (!photos.length) {
+      setPhotoUrls(new Map())
+      return
+    }
+    let active = true
+    void createProfilePhotoSignedUrls(photos)
+      .then((urls) => { if (active) setPhotoUrls(urls) })
+      .catch((reason) => console.warn("Customs assignee profile photos could not be loaded.", reason))
+    return () => { active = false }
+    // photoKey captures the stable storage paths without retriggering for array identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photoKey])
+
+  return photoUrls
+}
+
+function DeclarationAssigneeAvatar({ draft, assignee, photoUrl, currentUser, t }: {
   draft: CustomsDraftSummary
+  assignee: CustomsAssignee | null
+  photoUrl: string | null
   currentUser?: AuthUserSummary | null
   t: (text: string) => string
 }) {
-  const matchesCurrentUser = draft.submittedBy === currentUser?.id
-  const name = matchesCurrentUser
-    ? currentUser.name ?? currentUser.email ?? t("Not available")
-    : t("Not available")
-  const initials = matchesCurrentUser ? currentUser.initials : "?"
+  const legacyCurrentUser = !draft.assignmentSupported && draft.submittedBy === currentUser?.id ? currentUser : null
+  const name = assignee?.displayName ?? legacyCurrentUser?.name ?? legacyCurrentUser?.email ?? t("Unassigned")
+  const resolvedPhotoUrl = photoUrl ?? legacyCurrentUser?.profilePhotoUrl ?? null
 
   return (
     <span
       className="inline-grid place-items-center"
-      aria-label={`${t("Submitted by")}: ${name}`}
+      aria-label={`${t("Assigned to")}: ${name}`}
       title={name}
     >
       <Avatar size="sm" className="size-7 rounded-full">
-        {matchesCurrentUser && currentUser.profilePhotoUrl ? (
-          <AvatarImage src={currentUser.profilePhotoUrl} alt="" className="rounded-full object-cover" />
-        ) : null}
+        {resolvedPhotoUrl ? <AvatarImage src={resolvedPhotoUrl} alt="" className="rounded-full object-cover" /> : null}
         <AvatarFallback className="rounded-full bg-[var(--md-surface-tint)] text-[10px] font-medium text-[var(--md-ink)]" data-i18n-skip>
-          {initials}
+          {assignee ? customsAssigneeInitials(assignee) : legacyCurrentUser?.initials ?? <UserRound className="size-3.5 text-[var(--md-subtle)]" aria-hidden="true" />}
         </AvatarFallback>
       </Avatar>
     </span>
+  )
+}
+
+function DeclarationAssigneePicker({ declarationId, t }: { declarationId?: string; t: (text: string) => string }) {
+  const [open, setOpen] = useState(false)
+  const [assigned, setAssigned] = useState<CustomsAssignee | null>(null)
+  const [assignmentLoading, setAssignmentLoading] = useState(Boolean(declarationId))
+  const [assignmentError, setAssignmentError] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
+  const [users, setUsers] = useState<CustomsAssignee[]>([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [usersError, setUsersError] = useState<string | null>(null)
+  const [usersReloadToken, setUsersReloadToken] = useState(0)
+  const [savingUserId, setSavingUserId] = useState<string | null | undefined>(undefined)
+  const photoUrls = useCustomsAssigneePhotoUrls(assigned ? [assigned, ...users] : users)
+
+  const reloadAssignment = useCallback(() => {
+    if (!declarationId) {
+      setAssigned(null)
+      setAssignmentLoading(false)
+      setAssignmentError(null)
+      return
+    }
+    setAssignmentLoading(true)
+    setAssignmentError(null)
+    void getCustomsDeclarationAssignment(declarationId)
+      .then(setAssigned)
+      .catch((reason) => setAssignmentError(reason instanceof Error ? reason.message : "The declaration assignee could not be loaded."))
+      .finally(() => setAssignmentLoading(false))
+  }, [declarationId])
+
+  useEffect(reloadAssignment, [reloadAssignment])
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 220)
+    return () => window.clearTimeout(timer)
+  }, [search])
+  useEffect(() => setOffset(0), [debouncedSearch])
+
+  useEffect(() => {
+    if (!open || !declarationId) return
+    const controller = new AbortController()
+    setUsersLoading(true)
+    setUsersError(null)
+    listCustomsDeclarationAssignees(debouncedSearch, 50, offset, controller.signal)
+      .then((page) => {
+        setUsers((current) => offset === 0
+          ? page.users
+          : [...current, ...page.users.filter((user) => !current.some((candidate) => candidate.id === user.id))])
+        setTotal(page.total)
+      })
+      .catch((reason) => {
+        if (reason instanceof Error && reason.name === "AbortError") return
+        setUsersError(reason instanceof Error ? reason.message : "Workspace users could not be loaded.")
+      })
+      .finally(() => { if (!controller.signal.aborted) setUsersLoading(false) })
+    return () => controller.abort()
+  }, [debouncedSearch, declarationId, offset, open, usersReloadToken])
+
+  async function chooseAssignee(nextAssignee: CustomsAssignee | null) {
+    if (!declarationId || savingUserId !== undefined || (nextAssignee && !nextAssignee.canWorkCustoms)) return
+    setSavingUserId(nextAssignee?.id ?? null)
+    try {
+      await assignCustomsDeclaration(declarationId, nextAssignee?.id ?? null)
+      setAssigned(nextAssignee)
+      setOpen(false)
+      toast.success(t(nextAssignee ? "Declaration assigned" : "Declaration unassigned"), {
+        description: nextAssignee?.displayName,
+      })
+    } catch (reason) {
+      toast.error(t("Assignee could not be changed"), {
+        description: t(reason instanceof Error ? reason.message : "Try choosing the person again."),
+      })
+    } finally {
+      setSavingUserId(undefined)
+    }
+  }
+
+  const assignedPhotoUrl = assigned?.profilePhoto ? photoUrls.get(assigned.profilePhoto.path) ?? null : null
+  const triggerLabel = assignmentLoading ? t("Loading assignee") : assignmentError ? t("Assignee unavailable") : assigned?.displayName ?? t("Unassigned")
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9 max-w-[220px] gap-2 px-2.5"
+          disabled={!declarationId || assignmentLoading}
+          aria-label={`${t("Assigned to")}: ${triggerLabel}`}
+          title={assignmentError ? t(assignmentError) : t("Choose who is working on this declaration")}
+        >
+          <Avatar className="size-5 shrink-0 rounded-full">
+            {assignedPhotoUrl ? <AvatarImage src={assignedPhotoUrl} alt="" className="rounded-full object-cover" /> : null}
+            <AvatarFallback className="rounded-full bg-[var(--md-surface-tint)] text-[8px] font-medium text-[var(--md-ink)]" data-i18n-skip>
+              {assigned ? customsAssigneeInitials(assigned) : <UserRound className="size-3 text-[var(--md-subtle)]" aria-hidden="true" />}
+            </AvatarFallback>
+          </Avatar>
+          <span className="min-w-0 truncate text-[11.5px]">{triggerLabel}</span>
+          <ChevronDown className="size-3.5 shrink-0 text-[var(--md-subtle)]" aria-hidden="true" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" sideOffset={7} className="w-[min(340px,calc(100vw-24px))] overflow-hidden rounded-[var(--md-radius-xl)] p-0">
+        <div className="p-3 shadow-[var(--md-stroke-bottom)]">
+          <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Assigned to")}</p>
+          <p className="mt-1 text-[11px] leading-4 text-[var(--md-subtle)]">{t("Choose the workspace user responsible for this declaration.")}</p>
+          <div className="relative mt-3">
+            <Search className="pointer-events-none absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" aria-hidden="true" />
+            <Input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("Search workspace users…")} aria-label={t("Search workspace users")} className="h-9 rounded-[var(--md-radius-lg)] ps-9 text-[12px]" />
+          </div>
+        </div>
+        <div role="listbox" aria-label={t("Workspace users")} className="max-h-[320px] overflow-y-auto p-1.5">
+          <button
+            type="button"
+            role="option"
+            aria-selected={!assigned}
+            disabled={savingUserId !== undefined}
+            onClick={() => void chooseAssignee(null)}
+            className="flex min-h-11 w-full items-center gap-3 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-start hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] disabled:opacity-50"
+          >
+            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[var(--md-subtle)]"><UserRound className="size-4" aria-hidden="true" /></span>
+            <span className="min-w-0 flex-1 text-[12px] font-medium text-[var(--md-ink)]">{t("Unassigned")}</span>
+            {savingUserId === null ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : !assigned ? <CheckCircle2 className="size-4 text-[var(--md-accent)]" aria-hidden="true" /> : null}
+          </button>
+          {users.map((user) => {
+            const photoUrl = user.profilePhoto ? photoUrls.get(user.profilePhoto.path) ?? null : null
+            const isSelected = assigned?.id === user.id
+            return <button
+              key={user.id}
+              type="button"
+              role="option"
+              aria-selected={isSelected}
+              aria-disabled={!user.canWorkCustoms}
+              disabled={savingUserId !== undefined || !user.canWorkCustoms}
+              title={!user.canWorkCustoms ? t("This user does not have Customs access") : user.displayName}
+              onClick={() => void chooseAssignee(user)}
+              className="flex min-h-12 w-full items-center gap-3 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-start hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] disabled:opacity-50"
+            >
+              <Avatar className="size-8 shrink-0 rounded-full">
+                {photoUrl ? <AvatarImage src={photoUrl} alt="" className="rounded-full object-cover" /> : null}
+                <AvatarFallback className="rounded-full bg-[var(--md-accent-a11)] text-[10px] font-medium text-[var(--md-accent)]" data-i18n-skip>{customsAssigneeInitials(user)}</AvatarFallback>
+              </Avatar>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[12px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{user.displayName}</span>
+                <span className="block truncate text-[10.5px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{user.canWorkCustoms ? user.email : `${user.email} · ${t("No Customs access")}`}</span>
+              </span>
+              {savingUserId === user.id ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : isSelected ? <CheckCircle2 className="size-4 text-[var(--md-accent)]" aria-hidden="true" /> : null}
+            </button>
+          })}
+          {usersLoading && offset === 0 ? <div className="flex min-h-24 items-center justify-center gap-2 text-[12px] text-[var(--md-subtle)]" role="status"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{t("Loading workspace users")}</div> : null}
+          {usersError ? <div className="grid min-h-24 place-items-center gap-2 px-3 py-4 text-center" role="alert"><p className="text-[11.5px] text-[var(--md-subtle)]">{t("Workspace users could not be loaded.")}</p><Button type="button" variant="outline" size="sm" onClick={() => setUsersReloadToken((value) => value + 1)}>{t("Try again")}</Button></div> : null}
+          {!usersLoading && !usersError && users.length === 0 ? <p className="px-3 py-8 text-center text-[11.5px] text-[var(--md-subtle)]">{t("No workspace users match this search.")}</p> : null}
+          {!usersError && users.length < total ? <Button type="button" variant="ghost" className="mt-1 h-9 w-full" disabled={usersLoading} onClick={() => setOffset(users.length)}>{usersLoading ? t("Loading more users") : t("Show more users")}</Button> : null}
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -648,10 +862,11 @@ function formatDraftAmount(amount: number | null, currency: string | null) {
   }
 }
 
-function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { navigate: (path: string) => void; kind: DeclarationKind; declarationId?: string }) {
+function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "standalone" }: { navigate: (path: string) => void; kind: DeclarationKind; declarationId?: string; scope?: "standalone" | "job-related" }) {
   const { t } = useLanguage()
   const shouldReduceMotion = Boolean(useReducedMotion())
   const referenceData = useCustomsReferenceData(kind)
+  const organisationDirectory = useCustomsOrganisationDirectory()
   const [draft, setDraft] = useState<StandaloneExportDraft>(() => createStandaloneDeclarationDraft(kind))
   const [tab, setTab] = useState<EditorTab>("declaration")
   const [viewMode, setViewMode] = useState<EditorViewMode>("tabs")
@@ -698,7 +913,14 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   const activeItem = draft.items.find((item) => item.id === activeItemId) ?? draft.items[0]
   const issueFields = useMemo(() => new Set(validated ? completion.issues.map((issue) => issue.field) : []), [completion.issues, validated])
   const activeItemIssueFields = useMemo(() => new Set(validated ? completion.issues.filter((issue) => issue.itemId === activeItemId).map((issue) => issue.field) : []), [activeItemId, completion.issues, validated])
-  const registerPath = `/customs/standalone/${kind}`
+  const registerPath = `/customs/${scope}/${kind}`
+  const saveDeclarationDraft = useCallback((nextDraft: StandaloneExportDraft, nextDeclarationId?: string) => {
+    if (scope === "job-related") {
+      if (!nextDeclarationId) return Promise.reject(new Error("A job-related Customs declaration must be opened from its booking."))
+      return saveJobRelatedDeclarationDraft(nextDeclarationId, nextDraft)
+    }
+    return saveStandaloneDeclarationDraft(nextDraft, nextDeclarationId)
+  }, [scope])
 
   useEffect(() => {
     iCustomsBusyRef.current = iCustomsBusy
@@ -739,7 +961,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     setAutosaveStatus("saving")
     const createInitialDraft = async () => {
       try {
-        const saved = initialDraftServerRef.current ?? await saveStandaloneDeclarationDraft(draftRef.current)
+        const saved = initialDraftServerRef.current ?? await saveDeclarationDraft(draftRef.current)
         if (cancelled) return
         initialDraftServerRef.current = saved
         moveCustomsInvoiceImportRecovery("new", saved.id)
@@ -747,7 +969,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
         do {
           const latestDraft = { ...draftRef.current, multideckReference: saved.reference }
           savedSnapshot = JSON.stringify(latestDraft)
-          await saveStandaloneDeclarationDraft(latestDraft, saved.id)
+          await saveDeclarationDraft(latestDraft, saved.id)
         } while (!cancelled && JSON.stringify({ ...draftRef.current, multideckReference: saved.reference }) !== savedSnapshot)
         if (cancelled) return
         lastSavedDraftSnapshotRef.current = savedSnapshot
@@ -778,14 +1000,14 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     }
     void createInitialDraft()
     return () => { cancelled = true }
-  }, [declarationId, draftLoadAttempt, navigate, registerPath])
+  }, [declarationId, draftLoadAttempt, navigate, registerPath, saveDeclarationDraft])
 
   useEffect(() => {
     if (!declarationId) return
     let cancelled = false
     setLoadingDraft(true)
     setDraftLoadError(null)
-    loadStandaloneDeclarationDraft(declarationId, kind)
+    loadStandaloneDeclarationDraft(declarationId, kind, scope)
       .then((savedDraft) => {
         if (cancelled) return
         setDraft(savedDraft)
@@ -801,7 +1023,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
         if (!cancelled) setLoadingDraft(false)
       })
     return () => { cancelled = true }
-  }, [declarationId, draftLoadAttempt, kind])
+  }, [declarationId, draftLoadAttempt, kind, scope])
 
   useEffect(() => {
     if (!declarationId) return
@@ -847,6 +1069,10 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     setDraft((current) => ({ ...current, [field]: value }))
   }
 
+  function updateMany(values: Partial<StandaloneExportDraft>) {
+    setDraft((current) => ({ ...current, ...values }))
+  }
+
   function updateItem<K extends keyof ExportDeclarationItem>(field: K, value: ExportDeclarationItem[K]) {
     updateItemById(activeItem.id, field, value)
   }
@@ -868,7 +1094,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     const operation = autosaveQueueRef.current.then(async () => {
       if (snapshot === lastSavedDraftSnapshotRef.current) return
       try {
-        const saved = await saveStandaloneDeclarationDraft(nextDraft, declarationId)
+        const saved = await saveDeclarationDraft(nextDraft, declarationId)
         const persistedDraft = nextDraft.multideckReference === saved.reference
           ? nextDraft
           : { ...nextDraft, multideckReference: saved.reference }
@@ -886,7 +1112,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
 
     autosaveQueueRef.current = operation
     return operation
-  }, [declarationId])
+  }, [declarationId, saveDeclarationDraft])
 
   useEffect(() => {
     if (!declarationId || loadingDraft || draftLoadError || savingDraft || iCustomsBusy === "loading") return
@@ -924,7 +1150,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
       if (declarationId && providerWasRejected) {
         await reopenRejectedCustomsDeclaration(declarationId)
       }
-      const saved = await saveStandaloneDeclarationDraft(draft, declarationId)
+      const saved = await saveDeclarationDraft(draft, declarationId)
       savedLocally = true
       lastSavedDraftSnapshotRef.current = JSON.stringify({ ...draft, multideckReference: saved.reference })
       setAutosaveStatus("saved")
@@ -981,7 +1207,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
       if (declarationId && iCustomsState?.declaration.provider?.status === "rejected") {
         await reopenRejectedCustomsDeclaration(declarationId)
       }
-      const saved = await saveStandaloneDeclarationDraft(draft, declarationId)
+      const saved = await saveDeclarationDraft(draft, declarationId)
       moveCustomsInvoiceImportRecovery(invoiceImportRecoveryKey, saved.id)
       setDraft((current) => ({ ...current, multideckReference: saved.reference }))
       if (!hasProviderDraft) {
@@ -1027,7 +1253,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     let savedLocally = false
     try {
       await autosaveQueueRef.current
-      const saved = await saveStandaloneDeclarationDraft(draft, declarationId)
+      const saved = await saveDeclarationDraft(draft, declarationId)
       savedLocally = true
       const persistedDraft = { ...draft, multideckReference: saved.reference }
       lastSavedDraftSnapshotRef.current = JSON.stringify(persistedDraft)
@@ -1296,24 +1522,25 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   }
 
   if (draftLoadError && declarationId) {
-    return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><CircleAlert className="size-5 text-[var(--md-red)]" /><h1 className="mt-3 text-[18px] font-medium text-[var(--md-ink)]">{t("Saved declaration unavailable")}</h1><p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Your saved declaration is still intact. Try loading it again.")}</p><div className="mt-4 flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => setDraftLoadAttempt((attempt) => attempt + 1)}><RefreshCw className="size-4" />{t("Try again")}</Button><Button type="button" variant="ghost" onClick={() => navigate(registerPath)}>{t("Back to standalone declarations")}</Button></div></Surface>
+    return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><CircleAlert className="size-5 text-[var(--md-red)]" /><h1 className="mt-3 text-[18px] font-medium text-[var(--md-ink)]">{t("Saved declaration unavailable")}</h1><p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Your saved declaration is still intact. Try loading it again.")}</p><div className="mt-4 flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => setDraftLoadAttempt((attempt) => attempt + 1)}><RefreshCw className="size-4" />{t("Try again")}</Button><Button type="button" variant="ghost" onClick={() => navigate(registerPath)}>{t(scope === "job-related" ? "Back to job-related declarations" : "Back to standalone declarations")}</Button></div></Surface>
   }
 
   return (
     <CustomsDirectionContext.Provider value={kind}>
     <CustomsReferenceDataContext.Provider value={referenceData}>
+    <CustomsOrganisationDirectoryContext.Provider value={organisationDirectory}>
     <CustomsBoxVisibilityContext.Provider value={showCustomsBoxNumbers}>
     <div className="min-w-0 max-w-full space-y-4 overflow-x-clip" data-testid={`standalone-${kind}-editor`}>
       <header className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-8">
         <div className="flex min-w-0 flex-col items-start lg:flex-1">
           <button type="button" onClick={() => navigate(registerPath)} className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)] hover:text-[var(--md-accent)]">
-            <ArrowLeft className="size-3.5 rtl:rotate-180" /> {t("Back to standalone declarations")}
+            <ArrowLeft className="size-3.5 rtl:rotate-180" /> {t(scope === "job-related" ? "Back to job-related declarations" : "Back to standalone declarations")}
           </button>
           <h1 className="mt-3 text-start text-[26px] font-medium tracking-[-0.035em] text-[var(--md-ink)]">{t(declarationId ? (kind === "import" ? "Edit import declaration" : "Edit export declaration") : (kind === "import" ? "New import declaration" : "New export declaration"))}</h1>
           <p className="mt-1 text-[13px] text-[var(--md-text)]">{t(viewMode === "tabs" ? "Complete one focused section at a time. Move between sections whenever you need." : "Scan and complete the declaration in one compact form, with goods lines kept in Items.")}</p>
         </div>
-        <div className="flex min-w-0 max-w-full flex-col items-end gap-1.5 lg:max-w-[70%] lg:shrink-0">
-          <div className="flex min-h-4 max-w-full flex-wrap items-center justify-end gap-x-3 gap-y-1 text-end">
+        <div className="flex min-w-0 w-full max-w-full flex-col items-start gap-1.5 lg:w-auto lg:max-w-[70%] lg:shrink-0 lg:items-end">
+          <div className="flex min-h-4 max-w-full flex-wrap items-center justify-start gap-x-3 gap-y-1 text-start lg:justify-end lg:text-end">
             <span
               role={autosaveStatus === "error" ? "alert" : "status"}
               aria-live="polite"
@@ -1322,9 +1549,10 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
               {autosaveStatus === "saving" ? t("Saving automatically") : autosaveStatus === "error" ? t("Changes could not be saved") : null}
             </span>
             {autosaveStatus === "error" ? <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={() => { if (!declarationId) { initialDraftCreationRef.current = false; setDraftLoadAttempt((attempt) => attempt + 1); return } void queueAutosave(draft) }}><RefreshCw className="size-3.5" />{t("Retry save")}</Button> : null}
-            {iCustomsProviderReference ? <p className="max-w-full text-end text-[11px] text-[var(--md-subtle)]"><span className="font-medium text-[var(--md-text)]">{t("iCustoms correlation ID")}:</span> <span dir="ltr" className="break-all">{iCustomsProviderReference}</span></p> : null}
+            {iCustomsProviderReference ? <p className="max-w-full text-start text-[11px] text-[var(--md-subtle)] lg:text-end"><span className="font-medium text-[var(--md-text)]">{t("iCustoms correlation ID")}:</span> <span dir="ltr" className="break-all">{iCustomsProviderReference}</span></p> : null}
           </div>
-          <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2" data-customs-header-actions>
+          <div className="flex min-w-0 max-w-full flex-wrap items-center justify-start gap-2 lg:justify-end" data-customs-header-actions>
+            <DeclarationAssigneePicker declarationId={declarationId} t={t} />
             <span
               role="status"
               aria-label={`${t("Declaration status")}: ${t(titleCase(customsStatus))}`}
@@ -1390,7 +1618,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
       {referenceData.loading ? <Surface padding="sm" className="rounded-[var(--md-radius-lg)]"><p className="text-[11px] text-[var(--md-text)]">{t("Loading Customs reference data")}</p></Surface> : null}
       {referenceData.error ? <Surface padding="sm" className="rounded-[var(--md-radius-lg)]"><div className="flex items-center gap-2 text-[11px] text-[var(--md-red)]"><CircleAlert className="size-4 shrink-0" /><span><strong>{t("Customs reference data unavailable")}</strong> {t("Selection fields remain locked until the database catalogue is available.")}</span></div></Surface> : null}
 
-      {viewMode === "form" && formTab === "general" ? <GeneralFormView draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
+      {viewMode === "form" && formTab === "general" ? <GeneralFormView draft={draft} update={update} updateMany={updateMany} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
       {viewMode === "form" && formTab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} t={t} /> : null}
       {viewMode === "tabs" ? <div className="relative min-w-0 overflow-x-clip">
         <AnimatePresence initial={false} mode="popLayout">
@@ -1405,7 +1633,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
             className="min-w-0"
           >
             {tab === "declaration" ? <DeclarationSection draft={draft} update={update} showDataElements={showDataElements} issues={issueFields} t={t} /> : null}
-            {tab === "parties" ? <PartiesSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
+            {tab === "parties" ? <PartiesSection draft={draft} update={update} updateMany={updateMany} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
             {tab === "transport" ? <TransportSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
             {tab === "documents" ? <DocumentsSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
             {tab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} t={t} /> : null}
@@ -1432,6 +1660,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     </div>
     {invoiceImportOpen ? <CustomsInvoiceImportWorkspace key={invoiceImportRecoveryKey} recoveryKey={invoiceImportRecoveryKey} onClose={() => setInvoiceImportOpen(false)} onApply={applyInvoiceItems} existingItemCount={draft.items.length} /> : null}
     </CustomsBoxVisibilityContext.Provider>
+    </CustomsOrganisationDirectoryContext.Provider>
     </CustomsReferenceDataContext.Provider>
     </CustomsDirectionContext.Provider>
   )
@@ -1457,7 +1686,7 @@ type SectionProps = {
   t: (text: string) => string
 }
 
-function GeneralFormView(props: SectionProps & { showOptional: boolean }) {
+function GeneralFormView(props: SectionProps & { showOptional: boolean; updateMany: (values: Partial<StandaloneExportDraft>) => void }) {
   return <CompactCustomsFormContext.Provider value>
     <div className="grid gap-[var(--md-page-stack-gap-compact)]">
       <DeclarationSection {...props} />
@@ -1491,11 +1720,52 @@ function DeclarationSection({ draft, update, showDataElements, issues, highlight
   </SectionFrame>
 }
 
-function PartiesSection({ draft, update, showDataElements, showOptional, issues, highlightedField, t }: SectionProps & { showOptional: boolean }) {
+type CustomsOrganisationParty = "importer" | "exporter" | "consignee" | "declarant" | "carrier" | "representative"
+type CustomsAddressParty = Extract<CustomsOrganisationParty, "importer" | "exporter" | "consignee" | "declarant">
+
+const customsOrganisationTypesByParty: Record<CustomsOrganisationParty, readonly string[]> = {
+  importer: ["Importer", "Consignee", "Customer", "Key Customer Account"],
+  exporter: ["Exporter", "Consignor/Shipper", "Supplier"],
+  consignee: ["Consignee", "Customer", "Potential Customer", "Key Customer Account"],
+  declarant: ["Declarant", "Customs Broker", "Freight Forwarder"],
+  carrier: ["Carrier", "Shipping Line", "Airline", "Domestic Haulier", "International Haulier", "Supplier"],
+  representative: ["Representative", "Customs Broker", "Freight Forwarder", "Overseas Agent"],
+}
+
+function customsOrganisationTypeFilter(party: CustomsOrganisationParty): FilterQuery {
+  return {
+    match: "all",
+    groups: [{
+      id: `customs-${party}-types`,
+      match: "any",
+      conditions: customsOrganisationTypesByParty[party].map((type) => ({
+        id: `customs-${party}-${type.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+        field: "organisationTypes",
+        operator: "is",
+        value: type,
+      })),
+    }],
+  }
+}
+
+function customsPartyPatch(party: CustomsAddressParty, organisation: ApiCustomerDetail): Partial<StandaloneExportDraft> {
+  const address = organisation.address
+  return {
+    [party]: organisation.name,
+    [`${party}Name`]: organisation.name,
+    [`${party}AddressLine`]: [address?.line1, address?.line2].filter(Boolean).join(", "),
+    [`${party}City`]: address?.townCity ?? "",
+    [`${party}Postcode`]: address?.postZipCode ?? "",
+    [`${party}Country`]: address?.countryCode?.toUpperCase() ?? "",
+  } as Partial<StandaloneExportDraft>
+}
+
+function PartiesSection({ draft, update, updateMany, showDataElements, showOptional, issues, highlightedField, t }: SectionProps & { showOptional: boolean; updateMany: (values: Partial<StandaloneExportDraft>) => void }) {
   const direction = useContext(CustomsDirectionContext)
   const compact = useContext(CompactCustomsFormContext)
   const representationTypes = useReferenceOptions("representation_type", t, "Not specified")
   const countries = useReferenceOptions("country", t, "Select country")
+  const chooseOrganisation = (party: CustomsAddressParty) => (organisation: ApiCustomerDetail) => updateMany(customsPartyPatch(party, organisation))
   return <section aria-labelledby="customs-party-details-heading" className="min-w-0">
     <header className={cn("flex flex-col gap-1 px-1 sm:flex-row sm:items-center sm:justify-between sm:gap-6", compact ? "mb-2" : "mb-3")}>
       <h2 id="customs-party-details-heading" className={cn("shrink-0 font-medium text-[var(--md-ink)]", compact ? "text-[13px]" : "text-[15px]")}>{t("Party details")}</h2>
@@ -1505,7 +1775,7 @@ function PartiesSection({ draft, update, showDataElements, showOptional, issues,
       {direction === "import" ? <>
         <PartyFieldsGroup title={t("Importer")}>
           <PartyContactWarning values={[draft.importerName, draft.importerAddressLine, draft.importerCity, draft.importerPostcode, draft.importerCountry]} fields={["importerName", "importerAddressLine", "importerCity", "importerPostcode", "importerCountry"]} issues={issues} t={t} />
-          <TextField label={t("Importer")} dataElement="3/16" customsBox="8" required showDataElements={showDataElements} value={draft.importer} onChange={(value) => update("importer", value)} invalid={issues.has("importer")} fieldKey="importer" highlighted={highlightedField === "importer"} placeholder={t("Name or EORI")} />
+          <CustomsOrganisationField party="importer" label={t("Importer")} dataElement="3/16" customsBox="8" required showDataElements={showDataElements} value={draft.importer} onChange={(value) => update("importer", value)} onSelect={chooseOrganisation("importer")} invalid={issues.has("importer")} fieldKey="importer" highlighted={highlightedField === "importer"} />
           <TextField label={t("Importer legal name")} dataElement="3/16" customsBox="8" required showDataElements={showDataElements} value={draft.importerName} onChange={(value) => update("importerName", value)} invalid={issues.has("importerName")} fieldKey="importerName" highlighted={highlightedField === "importerName"} />
           <TextField label={t("Importer street address")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerAddressLine} onChange={(value) => update("importerAddressLine", value)} invalid={issues.has("importerAddressLine")} fieldKey="importerAddressLine" highlighted={highlightedField === "importerAddressLine"} />
           <TextField label={t("Importer town or city")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerCity} onChange={(value) => update("importerCity", value)} invalid={issues.has("importerCity")} fieldKey="importerCity" highlighted={highlightedField === "importerCity"} />
@@ -1515,7 +1785,7 @@ function PartiesSection({ draft, update, showDataElements, showOptional, issues,
       </> : null}
       <PartyFieldsGroup title={t("Exporter")}>
         <PartyContactWarning values={[draft.exporterName, draft.exporterAddressLine, draft.exporterCity, draft.exporterPostcode, draft.exporterCountry]} fields={["exporterName", "exporterAddressLine", "exporterCity", "exporterPostcode", "exporterCountry"]} issues={issues} t={t} />
-        <TextField label={t("Exporter")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporter} onChange={(value) => update("exporter", value)} invalid={issues.has("exporter")} fieldKey="exporter" highlighted={highlightedField === "exporter"} placeholder={t("Name or EORI")} />
+        <CustomsOrganisationField party="exporter" label={t("Exporter")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporter} onChange={(value) => update("exporter", value)} onSelect={chooseOrganisation("exporter")} invalid={issues.has("exporter")} fieldKey="exporter" highlighted={highlightedField === "exporter"} />
         <TextField label={t("Exporter legal name")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporterName} onChange={(value) => update("exporterName", value)} invalid={issues.has("exporterName")} fieldKey="exporterName" highlighted={highlightedField === "exporterName"} />
         <TextField label={t("Exporter street address")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterAddressLine} onChange={(value) => update("exporterAddressLine", value)} invalid={issues.has("exporterAddressLine")} fieldKey="exporterAddressLine" highlighted={highlightedField === "exporterAddressLine"} />
         <TextField label={t("Exporter town or city")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterCity} onChange={(value) => update("exporterCity", value)} invalid={issues.has("exporterCity")} fieldKey="exporterCity" highlighted={highlightedField === "exporterCity"} />
@@ -1524,7 +1794,7 @@ function PartiesSection({ draft, update, showDataElements, showOptional, issues,
       </PartyFieldsGroup>
       {direction === "export" ? <PartyFieldsGroup title={t("Consignee")}>
         <PartyContactWarning values={[draft.consigneeName, draft.consigneeAddressLine, draft.consigneeCity, draft.consigneePostcode, draft.consigneeCountry]} fields={["consigneeName", "consigneeAddressLine", "consigneeCity", "consigneePostcode", "consigneeCountry"]} issues={issues} t={t} />
-        <TextField label={t("Consignee")} dataElement="3/9" customsBox="8" required showDataElements={showDataElements} value={draft.consignee} onChange={(value) => update("consignee", value)} invalid={issues.has("consignee")} fieldKey="consignee" highlighted={highlightedField === "consignee"} placeholder={t("Name or EORI")} />
+        <CustomsOrganisationField party="consignee" label={t("Consignee")} dataElement="3/9" customsBox="8" required showDataElements={showDataElements} value={draft.consignee} onChange={(value) => update("consignee", value)} onSelect={chooseOrganisation("consignee")} invalid={issues.has("consignee")} fieldKey="consignee" highlighted={highlightedField === "consignee"} />
         <TextField label={t("Consignee legal name")} dataElement="3/9" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeName} onChange={(value) => update("consigneeName", value)} invalid={issues.has("consigneeName")} fieldKey="consigneeName" highlighted={highlightedField === "consigneeName"} />
         <TextField label={t("Consignee street address")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeAddressLine} onChange={(value) => update("consigneeAddressLine", value)} invalid={issues.has("consigneeAddressLine")} fieldKey="consigneeAddressLine" highlighted={highlightedField === "consigneeAddressLine"} />
         <TextField label={t("Consignee town or city")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeCity} onChange={(value) => update("consigneeCity", value)} invalid={issues.has("consigneeCity")} fieldKey="consigneeCity" highlighted={highlightedField === "consigneeCity"} />
@@ -1533,7 +1803,7 @@ function PartiesSection({ draft, update, showDataElements, showOptional, issues,
       </PartyFieldsGroup> : null}
       <PartyFieldsGroup title={t("Declarant")} className="xl:col-span-2" fieldsClassName="xl:grid-cols-3 2xl:grid-cols-3">
         <PartyContactWarning values={[draft.declarantName, draft.declarantAddressLine, draft.declarantCity, draft.declarantPostcode, draft.declarantCountry]} fields={["declarantName", "declarantAddressLine", "declarantCity", "declarantPostcode", "declarantCountry"]} issues={issues} t={t} />
-        <TextField label={t("Declarant")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarant} onChange={(value) => update("declarant", value)} invalid={issues.has("declarant")} fieldKey="declarant" highlighted={highlightedField === "declarant"} placeholder={t("Name or EORI")} />
+        <CustomsOrganisationField party="declarant" label={t("Declarant")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarant} onChange={(value) => update("declarant", value)} onSelect={chooseOrganisation("declarant")} invalid={issues.has("declarant")} fieldKey="declarant" highlighted={highlightedField === "declarant"} />
         <TextField label={t("Declarant legal name")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarantName} onChange={(value) => update("declarantName", value)} invalid={issues.has("declarantName")} fieldKey="declarantName" highlighted={highlightedField === "declarantName"} />
         <TextField label={t("Declarant street address")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantAddressLine} onChange={(value) => update("declarantAddressLine", value)} invalid={issues.has("declarantAddressLine")} fieldKey="declarantAddressLine" highlighted={highlightedField === "declarantAddressLine"} />
         <TextField label={t("Declarant town or city")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantCity} onChange={(value) => update("declarantCity", value)} invalid={issues.has("declarantCity")} fieldKey="declarantCity" highlighted={highlightedField === "declarantCity"} />
@@ -1541,8 +1811,8 @@ function PartiesSection({ draft, update, showDataElements, showOptional, issues,
         <SelectField label={t("Declarant country")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantCountry} onChange={(value) => update("declarantCountry", value)} invalid={issues.has("declarantCountry")} fieldKey="declarantCountry" highlighted={highlightedField === "declarantCountry"} options={countries} />
       </PartyFieldsGroup>
       <PartyFieldsGroup title={t(direction === "export" ? "Carrier & representation" : "Representation")} className="xl:col-span-2" fieldsClassName="xl:grid-cols-3 2xl:grid-cols-3">
-        {direction === "export" ? <TextField label={t("Carrier")} required showDataElements={showDataElements} value={draft.carrier} onChange={(value) => update("carrier", value)} invalid={issues.has("carrier")} fieldKey="carrier" highlighted={highlightedField === "carrier"} placeholder={t("Name or EORI")} /> : null}
-        {direction === "export" ? <TextField label={t("Representative")} dataElement="3/19" customsBox="14" showDataElements={showDataElements} value={draft.representative} onChange={(value) => update("representative", value)} placeholder={t("Name or EORI")} /> : null}
+        {direction === "export" ? <CustomsOrganisationField party="carrier" label={t("Carrier")} required showDataElements={showDataElements} value={draft.carrier} onChange={(value) => update("carrier", value)} onSelect={(organisation) => update("carrier", organisation.name)} invalid={issues.has("carrier")} fieldKey="carrier" highlighted={highlightedField === "carrier"} /> : null}
+        {direction === "export" ? <CustomsOrganisationField party="representative" label={t("Representative")} dataElement="3/19" customsBox="14" showDataElements={showDataElements} value={draft.representative} onChange={(value) => update("representative", value)} onSelect={(organisation) => update("representative", organisation.name)} /> : null}
         <SelectField label={t("Type of representation")} dataElement="3/21" customsBox="14" required={direction === "import"} showDataElements={showDataElements} value={draft.representationType} onChange={(value) => update("representationType", value)} invalid={issues.has("representationType")} fieldKey="representationType" highlighted={highlightedField === "representationType"} options={representationTypes} />
         {showOptional ? <><TextField label={t("Authorisation identifier")} showDataElements={showDataElements} value={draft.authorisationIdentifier} onChange={(value) => update("authorisationIdentifier", value)} /><TextField label={t("Authorisation category")} showDataElements={showDataElements} value={draft.authorisationCategory} onChange={(value) => update("authorisationCategory", value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4))} maxLength={4} /></> : null}
       </PartyFieldsGroup>
@@ -1604,6 +1874,11 @@ function DocumentsSection({ draft, update, showDataElements, showOptional, issue
   const previousDocumentCategories = useReferenceOptions("previous_document_category", t, "Select category")
   const previousDocumentTypes = useReferenceOptions("previous_document_type", t, "Select document type")
   const transactionNatures = useReferenceOptions("transaction_nature", t, "Select nature")
+  const currencies = useReferenceOptions("currency", t, "Select currency")
+  const apportionmentOptions = useMemo<ReadonlyArray<CustomsReferenceOptionTuple>>(() => [
+    ["value", t("By item value")],
+    ["gross_mass", t("By gross mass")],
+  ], [t])
   return <SectionFrame title={t(direction === "import" ? "Import terms" : "Documents and customs offices")} description={t(direction === "import" ? "Trade terms and the transaction details applied to every goods item." : "Previous documents, controlling offices and guarantees.")}>
     <FieldGrid>
       {direction === "export" ? <><SelectField label={t("Previous document category")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentCategory} onChange={(value) => update("previousDocumentCategory", value)} options={previousDocumentCategories} /><SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentType} onChange={(value) => update("previousDocumentType", value)} options={previousDocumentTypes} /><TextField label={t("Document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value.replace(/[^A-Za-z0-9-]/g, "").slice(0, 35))} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} maxLength={35} /></> : null}
@@ -1613,6 +1888,32 @@ function DocumentsSection({ draft, update, showDataElements, showOptional, issue
       {direction === "import" ? <TextField label={t("Trade terms")} dataElement="4/1" customsBox="20" required showDataElements={showDataElements} value={draft.tradeTerms} onChange={(value) => update("tradeTerms", value.toUpperCase().slice(0, 3))} invalid={issues.has("tradeTerms")} fieldKey="tradeTerms" highlighted={highlightedField === "tradeTerms"} maxLength={3} /> : <><TextField label={t("Exchange rate")} dataElement="4/15" customsBox="23" showDataElements={showDataElements} value={draft.exchangeRate} onChange={(value) => update("exchangeRate", value)} /><TextField label={t("Customs office of exit")} dataElement="5/12" customsBox="29" required showDataElements={showDataElements} value={draft.exitOffice} onChange={(value) => update("exitOffice", value)} invalid={issues.has("exitOffice")} fieldKey="exitOffice" highlighted={highlightedField === "exitOffice"} /></>}
       {showOptional && direction === "export" ? <><TextField label={t("Supervising office")} dataElement="5/27" showDataElements={showDataElements} value={draft.supervisingOffice} onChange={(value) => update("supervisingOffice", value)} /><TextField label={t("Customs office of presentation")} dataElement="5/26" showDataElements={showDataElements} value={draft.presentationOffice} onChange={(value) => update("presentationOffice", value)} /><TextField label={t("Warehouse type")} dataElement="2/7" customsBox="49" showDataElements={showDataElements} value={draft.warehouseType} onChange={(value) => update("warehouseType", value)} /><TextField label={t("Warehouse identifier")} dataElement="2/7" customsBox="49" showDataElements={showDataElements} value={draft.warehouseIdentifier} onChange={(value) => update("warehouseIdentifier", value)} /><TextField label={t("Guarantee type")} dataElement="8/2" customsBox="52" showDataElements={showDataElements} value={draft.guaranteeType} onChange={(value) => update("guaranteeType", value)} /><TextField label={t("GRN or guarantee ID")} dataElement="8/3" customsBox="52" showDataElements={showDataElements} value={draft.guaranteeReference} onChange={(value) => update("guaranteeReference", value)} /></> : null}
     </FieldGrid>
+    {direction === "import" ? <section aria-labelledby="customs-import-costs-heading" className="mt-4 border-t border-[var(--md-line)] pt-4">
+      <div className="mb-3 px-1">
+        <h3 id="customs-import-costs-heading" className="text-[13px] font-medium text-[var(--md-ink)]">{t("Import costs")}</h3>
+        <p className="mt-1 max-w-[72ch] text-[11px] leading-4 text-[var(--md-subtle)]">{t("Add only charges that are not already included in the item prices. Multideck applies the correct CDS additions codes and apportions declaration-level costs across the goods items.")}</p>
+      </div>
+      <div className="grid gap-x-6 gap-y-5 2xl:grid-cols-2">
+        <div role="group" aria-label={t("Freight costs")} className="grid gap-x-3 gap-y-4 lg:grid-cols-3">
+          <TextField label={t("Freight costs")} dataElement="4/9" customsBox="45" showDataElements={showDataElements} value={draft.freightChargeAmount} onChange={(value) => update("freightChargeAmount", value)} invalid={issues.has("freightChargeAmount")} fieldKey="freightChargeAmount" />
+          <SelectField label={t("Freight currency")} dataElement="4/9" customsBox="45" showDataElements={showDataElements} value={draft.freightChargeCurrency} onChange={(value) => update("freightChargeCurrency", value)} invalid={issues.has("freightChargeCurrency")} fieldKey="freightChargeCurrency" options={currencies} />
+          <SelectField label={t("Freight apportionment")} dataElement="4/9" customsBox="45" showDataElements={showDataElements} value={draft.freightChargeApportionment} onChange={(value) => update("freightChargeApportionment", value === "gross_mass" ? "gross_mass" : "value")} invalid={issues.has("freightChargeApportionment")} fieldKey="freightChargeApportionment" options={apportionmentOptions} />
+        </div>
+        <div role="group" aria-label={t("VAT value adjustment (AVV)")} className="grid gap-x-3 gap-y-4 lg:grid-cols-3">
+          <TextField label={t("VAT value adjustment (AVV)")} dataElement="4/9" customsBox="45" showDataElements={showDataElements} value={draft.vatValueAdjustmentAmount} onChange={(value) => update("vatValueAdjustmentAmount", value)} invalid={issues.has("vatValueAdjustmentAmount")} fieldKey="vatValueAdjustmentAmount" />
+          <SelectField label={t("AVV currency")} dataElement="4/9" customsBox="45" showDataElements={showDataElements} value={draft.vatValueAdjustmentCurrency} onChange={(value) => update("vatValueAdjustmentCurrency", value)} invalid={issues.has("vatValueAdjustmentCurrency")} fieldKey="vatValueAdjustmentCurrency" options={currencies} />
+          <SelectField label={t("AVV apportionment")} dataElement="4/9" customsBox="45" showDataElements={showDataElements} value={draft.vatValueAdjustmentApportionment} onChange={(value) => update("vatValueAdjustmentApportionment", value === "gross_mass" ? "gross_mass" : "value")} invalid={issues.has("vatValueAdjustmentApportionment")} fieldKey="vatValueAdjustmentApportionment" options={apportionmentOptions} />
+        </div>
+        <div role="group" aria-label={t("Insurance costs")} className="grid gap-x-3 gap-y-4 sm:grid-cols-2">
+          <TextField label={t("Insurance costs")} dataElement="4/9" customsBox="45" showDataElements={showDataElements} value={draft.insuranceCostAmount} onChange={(value) => update("insuranceCostAmount", value)} invalid={issues.has("insuranceCostAmount")} fieldKey="insuranceCostAmount" />
+          <SelectField label={t("Insurance currency")} dataElement="4/9" customsBox="45" showDataElements={showDataElements} value={draft.insuranceCostCurrency} onChange={(value) => update("insuranceCostCurrency", value)} invalid={issues.has("insuranceCostCurrency")} fieldKey="insuranceCostCurrency" options={currencies} />
+        </div>
+        <div role="group" aria-label={t("Containers and packing")} className="grid gap-x-3 gap-y-4 sm:grid-cols-2">
+          <TextField label={t("Containers and packing")} dataElement="4/9" customsBox="45" showDataElements={showDataElements} value={draft.containerPackingCostAmount} onChange={(value) => update("containerPackingCostAmount", value)} invalid={issues.has("containerPackingCostAmount")} fieldKey="containerPackingCostAmount" />
+          <SelectField label={t("Containers and packing currency")} dataElement="4/9" customsBox="45" showDataElements={showDataElements} value={draft.containerPackingCostCurrency} onChange={(value) => update("containerPackingCostCurrency", value)} invalid={issues.has("containerPackingCostCurrency")} fieldKey="containerPackingCostCurrency" options={currencies} />
+        </div>
+      </div>
+    </section> : null}
   </SectionFrame>
 }
 
@@ -1672,7 +1973,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
     },
     {
       id: "commodityCode", label: t("Commodity code"), width: 144, minWidth: 132, kind: "text", canPin: false,
-      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <div className="relative"><Input aria-label={`${t("Commodity code")} ${index + 1}`} className={cn(inputClass, "pe-8", validatedItemField(issues, missing, "commodityCode") && "ring-1 ring-[var(--md-red)]")} value={item.commodityCode} onChange={(event) => updateRow(item.id, "commodityCode", event.target.value.replace(/\D/g, "").slice(0, 10))} /><CommoditySmartSearch item={item} direction={declarationDirection} update={(field, value) => updateRow(item.id, field, value)} triggerClassName="absolute end-0 top-0" t={t} /></div> },
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <div className="relative"><Input aria-label={`${t("Commodity code")} ${index + 1}`} maxLength={declarationDirection === "export" ? 8 : 10} className={cn(inputClass, "pe-8", validatedItemField(issues, missing, "commodityCode") && "ring-1 ring-[var(--md-red)]")} value={item.commodityCode} onChange={(event) => updateRow(item.id, "commodityCode", event.target.value.replace(/\D/g, "").slice(0, declarationDirection === "export" ? 8 : 10))} /><CommoditySmartSearch item={item} direction={declarationDirection} update={(field, value) => updateRow(item.id, field, value)} triggerClassName="absolute end-0 top-0" t={t} /></div> },
     },
     {
       id: "description", label: t("Description of goods"), width: 200, minWidth: 200, kind: "long-text", canPin: false,
@@ -1869,13 +2170,16 @@ function CommoditySmartSearch({ item, direction, update, triggerClassName, trigg
   const [detailsBusy, setDetailsBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const dialogId = `commodity-smart-search-${item.id}-${triggerVariant}`
+  const exactCommodityPattern = searchDirection === "export" ? /^\d{8}(?:\d{2})?$/ : /^\d{10}$/
+  const declarationCommodityPattern = direction === "export" ? /^\d{8}$/ : /^\d{10}$/
 
   useEffect(() => {
     const resolvedQuery = query.trim()
     const requestId = ++liveRequestId.current
-    if (!open || resolvedQuery.length < 2 || /^\d{10}$/.test(resolvedQuery)) {
+    const isExactCommodity = searchDirection === "export" ? /^\d{8}(?:\d{2})?$/.test(resolvedQuery) : /^\d{10}$/.test(resolvedQuery)
+    if (!open || resolvedQuery.length < 2 || isExactCommodity) {
       setSuggestionsBusy(false)
-      if (resolvedQuery.length < 2 || /^\d{10}$/.test(resolvedQuery)) {
+      if (resolvedQuery.length < 2 || isExactCommodity) {
         setSuggestions([])
         setSuggestionsLoadedFor("")
       }
@@ -1903,7 +2207,7 @@ function CommoditySmartSearch({ item, direction, update, triggerClassName, trigg
     }, 320)
 
     return () => window.clearTimeout(timer)
-  }, [importCountry, open, query, t])
+  }, [importCountry, open, query, searchDirection, t])
 
   function resetSelection() {
     setSelectedSuggestion(null)
@@ -1932,7 +2236,7 @@ function CommoditySmartSearch({ item, direction, update, triggerClassName, trigg
     setTaxAndDuty(true)
     setDispatchedCountry(item.nonPreferentialOrigin || item.destinationCountry)
     resetSearchResults()
-    if (triggerVariant === "certificates" && /^\d{10}$/.test(item.commodityCode)) {
+    if (triggerVariant === "certificates" && declarationCommodityPattern.test(item.commodityCode)) {
       void loadDetails({ code: item.commodityCode, description: item.description.trim(), confidence: null }, true, direction)
     }
   }
@@ -1958,12 +2262,12 @@ function CommoditySmartSearch({ item, direction, update, triggerClassName, trigg
   async function runSearch() {
     const resolvedQuery = query.trim()
     if (resolvedQuery.length < 2) {
-      setError(t("Enter at least two characters or a 10-digit commodity code."))
+      setError(t(searchDirection === "export" ? "Enter at least two characters or an 8-digit commodity code." : "Enter at least two characters or a 10-digit commodity code."))
       return
     }
     setError(null)
     resetSelection()
-    if (/^\d{10}$/.test(resolvedQuery)) {
+    if (exactCommodityPattern.test(resolvedQuery)) {
       await loadDetails({ code: resolvedQuery, description: item.description.trim(), confidence: null })
       return
     }
@@ -2003,10 +2307,10 @@ function CommoditySmartSearch({ item, direction, update, triggerClassName, trigg
       return
     }
 
-    update("commodityCode", detail.code)
+    update("commodityCode", detail.code.replace(/\D/g, "").slice(0, direction === "export" ? 8 : 10))
     if (!item.description.trim()) {
       const enteredDescription = query.trim()
-      const resolvedDescription = /^\d{10}$/.test(enteredDescription)
+      const resolvedDescription = exactCommodityPattern.test(enteredDescription)
         ? detail.description || selectedSuggestion.description
         : enteredDescription || selectedSuggestion.description || detail.description
       if (resolvedDescription) update("description", resolvedDescription)
@@ -2056,7 +2360,7 @@ function CommoditySmartSearch({ item, direction, update, triggerClassName, trigg
   }
 
   const selectedCertificateCount = Object.values(selectedCertificates).filter(Boolean).length
-  const formattedCode = (code: string) => code.replace(/(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/, "$1 $2 $3 $4 $5")
+  const formattedCode = (code: string) => (searchDirection === "export" ? code.slice(0, 8) : code.slice(0, 10)).match(/.{1,2}/g)?.join(" ") ?? code
 
   const resolvedQuery = query.trim()
   const hasCurrentEmptyResult = suggestionsLoadedFor === resolvedQuery && resolvedQuery.length >= 2 && !suggestionsBusy && suggestions.length === 0 && !selectedSuggestion
@@ -2091,7 +2395,7 @@ function CommoditySmartSearch({ item, direction, update, triggerClassName, trigg
   }
 
   return <>
-    {triggerVariant === "certificates" ? <Button type="button" variant="outline" size="sm" disabled={!/^\d{10}$/.test(item.commodityCode)} aria-haspopup="dialog" aria-controls={dialogId} onClick={() => handleOpenChange(true)} className={cn("h-8 gap-1.5 px-2.5 text-[11px]", triggerClassName)}>
+    {triggerVariant === "certificates" ? <Button type="button" variant="outline" size="sm" disabled={!declarationCommodityPattern.test(item.commodityCode)} aria-haspopup="dialog" aria-controls={dialogId} onClick={() => handleOpenChange(true)} className={cn("h-8 gap-1.5 px-2.5 text-[11px]", triggerClassName)}>
       <FileCheck2 className="size-3.5" aria-hidden="true" />
       {t("Certificates list")}
     </Button> : <button type="button" aria-label={t("Smart commodity search")} aria-haspopup="dialog" aria-controls={dialogId} onClick={(event) => { event.stopPropagation(); handleOpenChange(true) }} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-accent-a10)] hover:text-[var(--md-accent)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] active:scale-[0.96]", open && "bg-[var(--md-accent-a10)] text-[var(--md-accent)]", triggerClassName)}>
@@ -2101,7 +2405,7 @@ function CommoditySmartSearch({ item, direction, update, triggerClassName, trigg
       <DialogContent id={dialogId} className={cn("flex max-h-[min(calc(100dvh-32px),780px)] flex-col gap-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-0", triggerVariant === "certificates" ? "sm:max-w-[680px]" : "sm:max-w-[760px]")} onOpenAutoFocus={(event) => { if (triggerVariant === "search") { event.preventDefault(); searchInput.current?.focus() } }}>
         <DialogHeader className="shrink-0 px-5 pb-0 pt-5 pe-14">
           <DialogTitle className="text-balance text-[22px] font-medium leading-[1.15] text-[var(--md-ink)]">{triggerVariant === "certificates" ? <>{t("Certificates for commodity")} <span className="whitespace-nowrap tabular-nums" dir="ltr">{formattedCode(item.commodityCode)}</span></> : t("Search for a commodity")}</DialogTitle>
-          <DialogDescription className="max-w-[65ch] text-pretty text-[12px] leading-[1.5] text-[var(--md-subtle)]">{triggerVariant === "certificates" ? item.description || t("Review the documents and legal declarations returned for this commodity code.") : t("Choose an import country and enter a product name or 10-digit commodity code.")}</DialogDescription>
+          <DialogDescription className="max-w-[65ch] text-pretty text-[12px] leading-[1.5] text-[var(--md-subtle)]">{triggerVariant === "certificates" ? item.description || t("Review the documents and legal declarations returned for this commodity code.") : t(searchDirection === "export" ? "Choose an import country and enter a product name or 8-digit commodity code." : "Choose an import country and enter a product name or 10-digit commodity code.")}</DialogDescription>
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
@@ -2139,7 +2443,7 @@ function CommoditySmartSearch({ item, direction, update, triggerClassName, trigg
           <div className="mt-4">
             <label htmlFor={`commodity-search-${item.id}`} className="mb-1.5 block text-[12px] font-medium text-[var(--md-text)]">{t("Commodity code or description")}</label>
             <div className="relative">
-              <Input ref={searchInput} id={`commodity-search-${item.id}`} value={query} onChange={(event) => { setQuery(event.target.value); setSuggestions([]); setSuggestionsLoadedFor(""); resetSelection(); setError(null) }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void runSearch() } }} placeholder={t("e.g. hardback books or 4901100000")} autoComplete="off" aria-autocomplete="list" aria-controls={`commodity-suggestions-${item.id}`} aria-expanded={showSuggestionPanel} className={cn("h-11 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] pe-12 text-base shadow-[var(--md-shadow-line)] sm:text-[14px]", showSuggestionPanel && "rounded-b-none")} />
+              <Input ref={searchInput} id={`commodity-search-${item.id}`} value={query} onChange={(event) => { setQuery(event.target.value); setSuggestions([]); setSuggestionsLoadedFor(""); resetSelection(); setError(null) }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void runSearch() } }} placeholder={t(searchDirection === "export" ? "e.g. hardback books or 49011000" : "e.g. hardback books or 4901100000")} autoComplete="off" aria-autocomplete="list" aria-controls={`commodity-suggestions-${item.id}`} aria-expanded={showSuggestionPanel} className={cn("h-11 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] pe-12 text-base shadow-[var(--md-shadow-line)] sm:text-[14px]", showSuggestionPanel && "rounded-b-none")} />
               <button type="button" aria-label={t("Search commodities")} disabled={detailsBusy} onClick={() => void runSearch()} className="absolute end-1 top-1 grid size-9 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-accent)] text-white outline-none transition-[background-color,opacity,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--md-accent)_88%,black)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-2 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-60">
                 {suggestionsBusy ? <RefreshCw className="size-4 animate-spin" aria-hidden="true" /> : <Search className="size-4" aria-hidden="true" />}
               </button>
@@ -2151,7 +2455,7 @@ function CommoditySmartSearch({ item, direction, update, triggerClassName, trigg
                   <span className="block text-[13px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{formattedCode(suggestion.code)}</span>
                   <span className="mt-0.5 line-clamp-2 block text-[12px] leading-[1.5] text-[var(--md-text)]">{suggestion.description}</span>
                 </motion.button>)}
-                {hasCurrentEmptyResult ? <div className="border-t border-[var(--md-line)] px-4 py-4 text-start"><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("No matching commodity codes were returned.")}</p><p className="mt-1 text-[11px] leading-[1.5] text-[var(--md-subtle)]">{t("Try a more specific product description or an exact 10-digit code.")}</p></div> : null}
+                {hasCurrentEmptyResult ? <div className="border-t border-[var(--md-line)] px-4 py-4 text-start"><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("No matching commodity codes were returned.")}</p><p className="mt-1 text-[11px] leading-[1.5] text-[var(--md-subtle)]">{t(searchDirection === "export" ? "Try a more specific product description or an exact 8-digit code." : "Try a more specific product description or an exact 10-digit code.")}</p></div> : null}
               </motion.div> : null}
             </AnimatePresence>
           </div>
@@ -2229,7 +2533,7 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
       <div className="min-w-0 space-y-3">
         <ItemDetailGroup title={t("Commodity")}>
           <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
-          <div className="relative"><TextField label={t("Commodity code")} dataElement="6/14" customsBox="33" required showDataElements={showDataElements} value={item.commodityCode} onChange={(value) => update("commodityCode", value.replace(/\D/g, "").slice(0, 10))} invalid={issues.has("commodityCode")} fieldKey="commodityCode" highlighted={highlightedField === "commodityCode"} inputClassName="pe-10" /><CommoditySmartSearch item={item} direction={declarationDirection} update={update} triggerClassName="absolute bottom-1 end-1" t={t} /></div>
+          <div className="relative"><TextField label={t("Commodity code")} dataElement="6/14" customsBox="33" required showDataElements={showDataElements} value={item.commodityCode} onChange={(value) => update("commodityCode", value.replace(/\D/g, "").slice(0, declarationDirection === "export" ? 8 : 10))} invalid={issues.has("commodityCode")} fieldKey="commodityCode" highlighted={highlightedField === "commodityCode"} maxLength={declarationDirection === "export" ? 8 : 10} inputClassName="pe-10" /><CommoditySmartSearch item={item} direction={declarationDirection} update={update} triggerClassName="absolute bottom-1 end-1" t={t} /></div>
           {declarationDirection === "export" ? <TextField label={t("UN dangerous goods code")} dataElement="6/12" customsBox="31" showDataElements={showDataElements} value={item.dangerousGoodsCode} onChange={(value) => update("dangerousGoodsCode", value)} /> : null}
           <TextAreaField label={t("Description of goods")} dataElement="6/8" customsBox="31" required showDataElements={showDataElements} value={item.description} onChange={(value) => update("description", value)} invalid={issues.has("description")} fieldKey="description" highlighted={highlightedField === "description"} />
           <div className="flex justify-start"><CommoditySmartSearch item={item} direction={declarationDirection} update={update} triggerVariant="certificates" t={t} /></div>
@@ -2515,6 +2819,14 @@ function CustomsReferenceCombobox({ label, value, onChange, options, placeholder
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault()
             setOpen(true)
+            return
+          }
+          if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey && !event.nativeEvent.isComposing) {
+            event.preventDefault()
+            setQuery(event.key)
+            setHighlightedIndex(-1)
+            setManualEntryError(false)
+            setOpen(true)
           }
         }}
         className={cn(
@@ -2595,7 +2907,7 @@ function ItemTableSelect({ label, value, onChange, options, invalid }: { label: 
 
 function mandatoryItemGaps(item: ExportDeclarationItem, declarationDirection: DeclarationKind = "export"): Array<keyof ExportDeclarationItem> {
   const missing: Array<keyof ExportDeclarationItem> = []
-  if (!/^\d{10}$/.test(item.commodityCode)) missing.push("commodityCode")
+  if (!(declarationDirection === "export" ? /^\d{8}$/ : /^\d{10}$/).test(item.commodityCode)) missing.push("commodityCode")
   if (!item.description.trim()) missing.push("description")
   if (!item.packageKind) missing.push("packageKind")
   if (!item.packageMarks.trim()) missing.push("packageMarks")
@@ -2641,7 +2953,6 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
 }) {
   const shouldReduceMotion = Boolean(useReducedMotion())
   const [openFixKey, setOpenFixKey] = useState<string | null>(null)
-  const [heldIssue, setHeldIssue] = useState<DeclarationIssue | null>(null)
   const provider = iCustomsState?.declaration.provider
   const hasProviderDraft = Boolean(iCustomsState?.declaration.hasCustomsDraft)
   const providerLifecycleStarted = Boolean(provider?.submittedAt && (shouldPollCustomsStatus(provider.status) || isTerminalCustomsStatus(provider.status)))
@@ -2656,13 +2967,8 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
     : null
   const readiness = declarationReadiness(completion, iCustomsIssues, iCustomsState)
 
-  const reviewIssues = heldIssue && !completion.issues.some((issue) => issue.id === heldIssue.id)
-    ? [...completion.issues, heldIssue]
-    : completion.issues
-
-  function openFix(key: string, issue?: DeclarationIssue) {
+  function openFix(key: string) {
     setOpenFixKey(key)
-    setHeldIssue(issue ?? null)
     window.setTimeout(() => {
       document.getElementById(`customs-review-fix-${key}`)?.querySelector<HTMLElement>("input, textarea, button")?.focus()
     }, 80)
@@ -2670,20 +2976,23 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
 
   function confirmFix() {
     setOpenFixKey(null)
-    setHeldIssue(null)
   }
 
   return <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-    <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
-      <div className="flex items-center justify-between gap-4"><span><p className="text-[12px] font-medium text-[var(--md-accent)]">{t("Declaration readiness")}</p><h2 className="mt-1 text-[22px] font-medium text-[var(--md-ink)]">{readiness.percent}% {t("complete")}</h2><p className="mt-1 text-[12px] text-[var(--md-text)]">{readiness.completeChecks}/{readiness.totalChecks} {t("readiness checks passed")}</p></span><div className="relative grid size-24 place-items-center rounded-full" style={{ background: `conic-gradient(var(--md-accent) ${readiness.percent}%, var(--md-line) 0)` }}><div className="grid size-[78px] place-items-center rounded-full bg-[var(--md-surface)] text-[17px] font-medium">{readiness.percent}%</div></div></div>
-      {reviewIssues.length ? <div className="mt-5 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]">{reviewIssues.slice(0, 14).map((issue) => {
-        const fixKey = `form-${issue.id}`
-        const expanded = openFixKey === fixKey
-        return <div key={issue.id} className="py-2">
-          <div className="flex min-h-11 items-center gap-3"><CircleAlert className="size-4 shrink-0 text-[var(--md-red)]" /><span className="min-w-0 flex-1 text-[12px] text-[var(--md-text)]">{issue.itemNumber ? `${t("Item")} ${issue.itemNumber}: ` : ""}{translateCustomsMessage(issue.message, t)}</span><Button type="button" variant="outline" size="sm" aria-expanded={expanded} aria-controls={`customs-review-fix-${fixKey}`} className="min-w-[64px] rounded-[var(--md-radius-md)]" onClick={() => openFix(fixKey, issue)}>{t("Fix")}<ChevronDown className={cn("size-3.5 transition-transform duration-200 motion-reduce:transition-none", expanded && "rotate-180")} /></Button></div>
-          <AnimatePresence initial={false}>{expanded ? <motion.div id={`customs-review-fix-${fixKey}`} initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={reduceMotion(shouldReduceMotion, mdMotion.panel)} className="overflow-hidden"><div className="ms-7 mt-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]"><ReviewFixSectionHeader draft={draft} issue={issue} t={t} /><ReviewFixFields draft={draft} issue={issue} update={update} updateItem={updateItem} t={t} /><div className="mt-3 flex justify-end border-t border-[var(--md-line)] pt-3"><Button type="button" size="sm" className="min-w-[88px] rounded-[var(--md-radius-md)]" onClick={confirmFix}>{t("Confirm")}</Button></div></div></motion.div> : null}</AnimatePresence>
-        </div>
-      })}</div> : <div className="mt-5 flex gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-4"><CheckCircle2 className="size-5 text-[var(--md-green)]" /><span className="text-[13px] text-[var(--md-text)]"><strong className="block text-[var(--md-ink)]">{t("Current form checks passed")}</strong>{t("Ready for secure server integration checks.")}</span></div>}
+    <CustomsReadinessReview
+      completeChecks={readiness.completeChecks}
+      emptyDescription="Ready for secure server integration checks."
+      emptyTitle="Current form checks passed"
+      issues={completion.issues.map((issue) => ({ key: issue.id, label: translateCustomsMessage(issue.message, t), itemNumber: issue.itemNumber }))}
+      percent={readiness.percent}
+      renderFix={(reviewIssue, close) => {
+        const issue = completion.issues.find((candidate) => candidate.id === reviewIssue.key)
+        if (!issue) return null
+        return <><ReviewFixSectionHeader draft={draft} issue={issue} t={t} /><ReviewFixFields draft={draft} issue={issue} update={update} updateItem={updateItem} t={t} /><div className="mt-3 flex justify-end border-t border-[var(--md-line)] pt-3"><Button type="button" size="sm" className="min-w-[88px] rounded-[var(--md-radius-md)]" onClick={close}>{t("Confirm")}</Button></div></>
+      }}
+      t={t}
+      totalChecks={readiness.totalChecks}
+    >
       {providerRejected && providerIssues.length ? <div role="alert" className="mt-5 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3">
         <div className="flex items-start gap-2"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-red)]" /><div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Customs rejected this declaration")}</p><p className="mt-0.5 text-[11px] leading-4 text-[var(--md-text)]">{t("Correct the fields below, then save a new customs draft before submitting again.")}</p></div></div>
         <div className="mt-3 space-y-2">{providerIssues.slice(0, 20).map((issue, index) => {
@@ -2695,7 +3004,7 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
           </div>
         })}</div>
       </div> : null}
-    </Surface>
+    </CustomsReadinessReview>
     <div className="space-y-4">
       <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Declaration summary")}</h2><dl className="mt-4 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]"><Summary label={t("Reference")} value={draft.multideckReference} /><Summary label={t("Category")} value={draft.declarationCategory} /><Summary label={t("Type")} value={draft.declarationType} /><Summary label={t("Items")} value={String(draft.items.length)} /><Summary label={t("Destination")} value={draft.destinationCountry || t("Not set")} /></dl></Surface>
       <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
@@ -2738,7 +3047,7 @@ type ReviewFieldMeta = {
 function reviewSectionForField(field: string): Exclude<EditorTab, "items" | "review"> {
   if (["importer", "exporter", "consignee", "carrier", "declarant", "representative", "seller", "buyer", "representationType", "authorisationIdentifier", "authorisationCategory"].includes(field) || /^(importer|exporter|consignee|declarant)(Name|AddressLine|City|Postcode|Country)$/.test(field)) return "parties"
   if (["exportCountry", "destinationCountry", "borderMode", "inlandMode", "containerId", "goodsLocationName", "goodsLocationIdentifier"].includes(field)) return "transport"
-  if (["exitOffice", "presentationOffice", "previousDocumentCategory", "previousDocumentType", "previousDocumentReference", "headerAdditionalInformationCode", "headerAdditionalInformationDescription", "transactionNature", "tradeTerms", "customsValuationMethod"].includes(field)) return "documents"
+  if (["exitOffice", "presentationOffice", "previousDocumentCategory", "previousDocumentType", "previousDocumentReference", "headerAdditionalInformationCode", "headerAdditionalInformationDescription", "transactionNature", "tradeTerms", "customsValuationMethod", "freightChargeAmount", "freightChargeCurrency", "freightChargeApportionment", "vatValueAdjustmentAmount", "vatValueAdjustmentCurrency", "vatValueAdjustmentApportionment", "insuranceCostAmount", "insuranceCostCurrency", "containerPackingCostAmount", "containerPackingCostCurrency"].includes(field)) return "documents"
   return "declaration"
 }
 
@@ -2784,6 +3093,14 @@ const reviewFieldMetaByKey: Record<string, ReviewFieldMeta> = {
   borderMode: { label: "Mode at border", dataElement: "7/4", customsBox: "25", catalog: "transport_mode" },
   transactionNature: { label: "Nature of transaction", dataElement: "8/5", customsBox: "24", catalog: "transaction_nature" },
   tradeTerms: { label: "Trade terms", dataElement: "4/1", customsBox: "20", maxLength: 3 },
+  freightChargeAmount: { label: "Freight costs", dataElement: "4/9", customsBox: "45" },
+  freightChargeCurrency: { label: "Freight currency", dataElement: "4/9", customsBox: "45", catalog: "currency" },
+  vatValueAdjustmentAmount: { label: "VAT value adjustment (AVV)", dataElement: "4/9", customsBox: "45" },
+  vatValueAdjustmentCurrency: { label: "AVV currency", dataElement: "4/9", customsBox: "45", catalog: "currency" },
+  insuranceCostAmount: { label: "Insurance costs", dataElement: "4/9", customsBox: "45" },
+  insuranceCostCurrency: { label: "Insurance currency", dataElement: "4/9", customsBox: "45", catalog: "currency" },
+  containerPackingCostAmount: { label: "Containers and packing", dataElement: "4/9", customsBox: "45" },
+  containerPackingCostCurrency: { label: "Containers and packing currency", dataElement: "4/9", customsBox: "45", catalog: "currency" },
   goodsLocationName: { label: "Name of place", dataElement: "5/23", customsBox: "30" },
   goodsLocationIdentifier: { label: "Goods location identifier", dataElement: "5/23", customsBox: "30" },
   isContainerised: { label: "Transported in container", dataElement: "7/2", customsBox: "19", catalog: "container_indicator" },
@@ -2794,7 +3111,7 @@ const reviewFieldMetaByKey: Record<string, ReviewFieldMeta> = {
   previousDocumentReference: { label: "Previous document reference", dataElement: "2/1", customsBox: "40", maxLength: 35 },
   headerAdditionalInformationCode: { label: "Additional information code", dataElement: "2/2", customsBox: "44", maxLength: 5 },
   headerAdditionalInformationDescription: { label: "Additional information description", dataElement: "2/2", customsBox: "44", maxLength: 512 },
-  commodityCode: { label: "Commodity code", dataElement: "6/14", customsBox: "33", maxLength: 10 },
+  commodityCode: { label: "Commodity code", dataElement: "6/14", customsBox: "33" },
   description: { label: "Description of goods", dataElement: "6/8", customsBox: "31", textarea: true },
   packageKind: { label: "Package kind", dataElement: "6/9", customsBox: "31", catalog: "package_kind" },
   packageMarks: { label: "Package marks", dataElement: "6/11", customsBox: "31" },
@@ -2910,7 +3227,7 @@ function ReviewFixField({ draft, itemId, field, update, updateItem, t }: {
     if (field === "headerAdditionalInformationCode") normalized = next.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5)
     if (field === "headerAdditionalInformationDescription") normalized = next.slice(0, 512)
     if (field === "previousDocumentReference") normalized = next.replace(/[^A-Za-z0-9-]/g, "").slice(0, 35)
-    if (field === "commodityCode") normalized = next.replace(/\D/g, "").slice(0, 10)
+    if (field === "commodityCode") normalized = next.replace(/\D/g, "").slice(0, draft.direction === "export" ? 8 : 10)
     if (field === "customsValuationMethod") normalized = next.replace(/\D/g, "").slice(0, 1)
     if (field === "preferenceCode") normalized = next.replace(/\D/g, "").slice(0, 3)
     if (item && itemId) updateItem(itemId, field as keyof ExportDeclarationItem, normalized as never)
@@ -2919,7 +3236,7 @@ function ReviewFixField({ draft, itemId, field, update, updateItem, t }: {
   const options = meta.catalog ? optionsByCatalog[meta.catalog] : undefined
   if (options) return <SelectField label={t(meta.label)} dataElement={meta.dataElement} customsBox={meta.customsBox} required showDataElements value={value} onChange={setValue} options={options} invalid fieldKey={`review-${itemId ?? "header"}-${field}`} />
   if (meta.textarea) return <TextAreaField label={t(meta.label)} dataElement={meta.dataElement} customsBox={meta.customsBox} required showDataElements value={value} onChange={setValue} invalid fieldKey={`review-${itemId ?? "header"}-${field}`} />
-  return <TextField label={t(meta.label)} dataElement={meta.dataElement} customsBox={meta.customsBox} required showDataElements value={value} onChange={setValue} invalid fieldKey={`review-${itemId ?? "header"}-${field}`} suffix={meta.suffix} maxLength={meta.maxLength} />
+  return <TextField label={t(meta.label)} dataElement={meta.dataElement} customsBox={meta.customsBox} required showDataElements value={value} onChange={setValue} invalid fieldKey={`review-${itemId ?? "header"}-${field}`} suffix={meta.suffix} maxLength={field === "commodityCode" ? (draft.direction === "export" ? 8 : 10) : meta.maxLength} />
 }
 
 function providerIssueTarget(issue: ICustomsProviderIssue) {
@@ -3056,6 +3373,246 @@ function FieldShell({ label, dataElement, customsBox, required, showDataElements
 function TextField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, placeholder, suffix, maxLength, inputType = "text", inputClassName }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; placeholder?: string; suffix?: string; maxLength?: number; inputType?: "text" | "date"; inputClassName?: string }) {
   const compact = useContext(CompactCustomsFormContext)
   return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><div className="relative"><Input type={inputType} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={maxLength} aria-invalid={invalid || undefined} dir="ltr" className={cn("border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "h-8 px-2 text-[11px]" : "h-9 text-[13px]", suffix && "pe-10", inputClassName)} />{suffix ? <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--md-subtle)]">{suffix}</span> : null}</div></FieldShell>
+}
+
+function CustomsOrganisationField({ party, label, value, onChange, onSelect, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey }: {
+  party: CustomsOrganisationParty
+  label: string
+  value: string
+  onChange: (value: string) => void
+  onSelect: (organisation: ApiCustomerDetail) => void
+  dataElement?: string
+  customsBox?: string
+  required?: boolean
+  showDataElements: boolean
+  invalid?: boolean
+  highlighted?: boolean
+  fieldKey?: string
+}) {
+  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}>
+    <CustomsOrganisationCombobox party={party} label={label} value={value} onChange={onChange} onSelect={onSelect} invalid={invalid} />
+  </FieldShell>
+}
+
+function CustomsOrganisationCombobox({ party, label, value, onChange, onSelect, invalid }: {
+  party: CustomsOrganisationParty
+  label: string
+  value: string
+  onChange: (value: string) => void
+  onSelect: (organisation: ApiCustomerDetail) => void
+  invalid?: boolean
+}) {
+  const { direction, t } = useLanguage()
+  const compact = useContext(CompactCustomsFormContext)
+  const directory = useContext(CustomsOrganisationDirectoryContext)
+  const [open, setOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [remoteCompanies, setRemoteCompanies] = useState<ApiCustomer[]>([])
+  const [remoteSearchTerm, setRemoteSearchTerm] = useState("")
+  const [remoteLoadError, setRemoteLoadError] = useState(false)
+  const [selectionError, setSelectionError] = useState(false)
+  const [highlightedIndex, setHighlightedIndex] = useState(-1)
+  const [selectingId, setSelectingId] = useState<string | null>(null)
+  const remoteRequestSequence = useRef(0)
+  const listId = useId()
+  const helpId = `${listId}-help`
+  const roleTypes = customsOrganisationTypesByParty[party]
+  const normalizedSearch = searchTerm.trim().normalize("NFKD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase()
+  const partyTypeNames = useMemo(() => new Set(roleTypes.map((type) => type.toLocaleLowerCase())), [roleTypes])
+  const localCompanies = useMemo(() => directory.companies.filter((company) => {
+    if (!company.types.some((type) => partyTypeNames.has(type.toLocaleLowerCase()))) return false
+    if (!normalizedSearch) return true
+    const searchable = [company.name, company.accountCode, company.location, company.industry, ...company.types]
+      .filter(Boolean)
+      .join(" ")
+      .normalize("NFKD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLocaleLowerCase()
+    return searchable.includes(normalizedSearch)
+  }), [directory.companies, normalizedSearch, partyTypeNames])
+  const companies = useMemo(() => {
+    const matchingRemoteCompanies = remoteSearchTerm === normalizedSearch ? remoteCompanies : []
+    const seen = new Set<string>()
+    return [...localCompanies, ...matchingRemoteCompanies].filter((company) => {
+      if (seen.has(company.id)) return false
+      seen.add(company.id)
+      return true
+    })
+  }, [localCompanies, normalizedSearch, remoteCompanies, remoteSearchTerm])
+  const loadError = (directory.error && !directory.companies.length) || selectionError
+  const optionId = highlightedIndex >= 0 && companies[highlightedIndex] ? `${listId}-option-${highlightedIndex}` : undefined
+
+  useEffect(() => {
+    if (!open || normalizedSearch.length < 2) {
+      remoteRequestSequence.current += 1
+      setRemoteCompanies([])
+      setRemoteSearchTerm("")
+      setRemoteLoadError(false)
+      return
+    }
+    const requestSequence = remoteRequestSequence.current + 1
+    remoteRequestSequence.current = requestSequence
+    const timer = window.setTimeout(() => {
+      listAccountsPage({
+        organisationType: "company",
+        search: searchTerm.trim(),
+        filterQuery: customsOrganisationTypeFilter(party),
+        sort: { id: "account", direction: "asc" },
+        limit: 50,
+        offset: 0,
+      }).then((page) => {
+        if (remoteRequestSequence.current !== requestSequence) return
+        setRemoteCompanies(page.rows)
+        setRemoteSearchTerm(normalizedSearch)
+        setRemoteLoadError(false)
+      }).catch((reason) => {
+        console.warn(`Customs ${party} organisation suggestions could not be refreshed.`, reason)
+        if (remoteRequestSequence.current === requestSequence) setRemoteLoadError(true)
+      })
+    }, 140)
+    return () => window.clearTimeout(timer)
+  }, [normalizedSearch, open, party, searchTerm])
+
+  useEffect(() => {
+    setHighlightedIndex((current) => current >= companies.length ? -1 : current)
+  }, [companies.length])
+
+  useEffect(() => {
+    if (!optionId) return
+    document.getElementById(optionId)?.scrollIntoView({ block: "nearest" })
+  }, [optionId])
+
+  async function choose(organisation: ApiCustomer) {
+    if (selectingId) return
+    setSelectingId(organisation.id)
+    setSelectionError(false)
+    onChange(organisation.name)
+    try {
+      const detail = await getCustomer(organisation.id)
+      onSelect(detail)
+      setOpen(false)
+      setSearchTerm("")
+      setHighlightedIndex(-1)
+    } catch (reason) {
+      console.error(`Customs ${party} organisation details could not be loaded.`, reason)
+      setSelectionError(true)
+    } finally {
+      setSelectingId(null)
+    }
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault()
+      setOpen(true)
+      setHighlightedIndex((current) => companies.length ? (current + 1) % companies.length : -1)
+      return
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault()
+      setOpen(true)
+      setHighlightedIndex((current) => companies.length ? (current <= 0 ? companies.length - 1 : current - 1) : -1)
+      return
+    }
+    if (event.key === "Home" && open && companies.length) {
+      event.preventDefault()
+      setHighlightedIndex(0)
+      return
+    }
+    if (event.key === "End" && open && companies.length) {
+      event.preventDefault()
+      setHighlightedIndex(companies.length - 1)
+      return
+    }
+    if (event.key === "Enter" && open && highlightedIndex >= 0 && companies[highlightedIndex]) {
+      event.preventDefault()
+      void choose(companies[highlightedIndex])
+      return
+    }
+    if (event.key === "Escape" && open) {
+      event.preventDefault()
+      setOpen(false)
+      setHighlightedIndex(-1)
+    }
+  }
+
+  return <Popover open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (!nextOpen) setHighlightedIndex(-1) }}>
+    <PopoverAnchor asChild>
+      <div className="relative">
+        <Input
+          role="combobox"
+          aria-label={label}
+          aria-autocomplete="list"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-activedescendant={optionId}
+          aria-describedby={loadError ? helpId : undefined}
+          aria-invalid={invalid || undefined}
+          aria-busy={selectingId !== null || undefined}
+          autoComplete="off"
+          spellCheck={false}
+          value={value}
+          onFocus={() => { setSearchTerm(""); setOpen(true) }}
+          onClick={() => setOpen(true)}
+          onChange={(event) => {
+            onChange(event.target.value)
+            setSearchTerm(event.target.value)
+            setHighlightedIndex(-1)
+            setOpen(true)
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={t("Name, EORI or company…")}
+          dir="ltr"
+          className={cn(
+            "border-0 bg-[var(--md-field-bg)] pe-9 shadow-[var(--md-shadow-line)]",
+            compact ? "h-8 px-2 pe-8 text-[11px]" : "h-9 text-[13px]",
+            invalid && "ring-1 ring-[var(--md-red)]",
+          )}
+        />
+        {selectingId ? <LoaderCircle className="pointer-events-none absolute end-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)] motion-reduce:animate-none" aria-hidden="true" /> : <ChevronDown className="pointer-events-none absolute end-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" aria-hidden="true" />}
+      </div>
+    </PopoverAnchor>
+    <PopoverContent
+      align="start"
+      sideOffset={5}
+      dir={direction}
+      onOpenAutoFocus={(event) => event.preventDefault()}
+      className="w-[var(--radix-popover-trigger-width)]! max-w-[calc(100vw-1rem)] rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-lift)]"
+    >
+      <p className="sr-only" role="status" aria-live="polite">{companies.length} {t("matching companies")}</p>
+      <div id={listId} role="listbox" aria-label={`${label} ${t("company options")}`} className="min-h-11 max-h-64 overflow-y-auto p-1 md-scrollbar">
+        {companies.map((company, index) => {
+          const matchingTypes = company.types.filter((type) => roleTypes.some((candidate) => candidate.toLocaleLowerCase() === type.toLocaleLowerCase()))
+          return <button
+            id={`${listId}-option-${index}`}
+            key={company.id}
+            type="button"
+            role="option"
+            tabIndex={-1}
+            aria-selected={company.name === value}
+            disabled={Boolean(selectingId)}
+            onMouseMove={() => setHighlightedIndex(index)}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => void choose(company)}
+            className={cn(
+              "flex min-h-11 w-full items-center gap-2.5 rounded-[var(--md-radius-md)] px-2.5 py-2 text-start hover:bg-[var(--md-hover)] disabled:opacity-60",
+              company.name === value && "bg-[var(--md-selected-bg)]",
+              index === highlightedIndex && "bg-[var(--md-hover)] ring-1 ring-inset ring-[var(--md-accent-a18)]",
+            )}
+          >
+            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[10px] font-medium text-[var(--md-ink)]" data-i18n-skip>{company.initials}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[12px] font-medium text-[var(--md-ink)]">{company.name}</span>
+              <span className="mt-0.5 block truncate text-[10.5px] text-[var(--md-subtle)]">{[matchingTypes.map((type) => t(type)).join(", "), company.location].filter(Boolean).join(" · ")}</span>
+            </span>
+            {selectingId === company.id ? <LoaderCircle className="size-3.5 shrink-0 animate-spin text-[var(--md-accent)] motion-reduce:animate-none" aria-label={t("Loading company details")} /> : company.name === value ? <CheckCircle2 className="size-3.5 shrink-0 text-[var(--md-accent)]" aria-hidden="true" /> : null}
+          </button>
+        })}
+        {!loadError && directory.ready && !companies.length && (!normalizedSearch || remoteSearchTerm === normalizedSearch || remoteLoadError) ? <p className="px-3 py-5 text-center text-[12px] text-[var(--md-subtle)]">{t("No companies of the right type match this search.")}</p> : null}
+        {loadError ? <p id={helpId} role="alert" className="px-3 py-4 text-[11px] leading-4 text-[var(--md-red)]"><strong className="block font-medium">{t("Company suggestions unavailable.")}</strong>{t("You can keep typing the party name or EORI manually.")}</p> : null}
+      </div>
+    </PopoverContent>
+  </Popover>
 }
 
 function TextAreaField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, className }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; className?: string }) {

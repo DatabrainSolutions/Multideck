@@ -5,7 +5,7 @@ import { getSupabaseSession, supabase } from "@/lib/supabase"
 
 type BookingMode = "OCEAN" | "AIR" | "ROAD" | "MULTIMODAL" | "FAS" | "FSA"
 type BookingStatus = "On track" | "Delayed" | "Exception"
-type BookingDirection = "Import" | "Export" | "Domestic" | "Cross trade"
+type BookingDirection = "Import" | "Export" | "Domestic" | "Cross trade" | "Direction needed"
 
 export type LiveBooking = {
   sourceId: string

@@ -14,9 +14,58 @@ import {
 } from "../_shared/backend.ts"
 
 type Row = Record<string, any>
+type OrganisationType = "company" | "customer" | "supplier"
+
+const organisationFilterFields = new Set([
+  "any", "name", "accountCode", "organisationTypes", "address", "country",
+  "contact", "contactEmail", "owner", "relationship", "lastContactAt",
+])
+const organisationFilterOperators = new Set([
+  "contains", "not-contains", "is", "is-not", "starts-with", "is-empty",
+  "is-not-empty", "on", "before", "after", "between",
+])
 
 function objectValue(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function organisationFilterQuery(value: string | null) {
+  if (!value) return null
+  if (value.length > 12_000) throw new HttpError(400, "Use fewer advanced filter conditions.")
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new HttpError(400, "The advanced filter is not valid.")
+  }
+  const query = objectValue(parsed)
+  const groups = Array.isArray(query.groups) ? query.groups : []
+  if (!groups.length || groups.length > 6) throw new HttpError(400, "Use between 1 and 6 advanced filter groups.")
+  let conditionCount = 0
+  const safeGroups = groups.map((candidate) => {
+    const group = objectValue(candidate)
+    const conditions = Array.isArray(group.conditions) ? group.conditions : []
+    if (!conditions.length || conditions.length > 8) throw new HttpError(400, "Use between 1 and 8 conditions in each filter group.")
+    conditionCount += conditions.length
+    return {
+      id: normalize(group.id),
+      match: group.match === "any" ? "any" : "all",
+      conditions: conditions.map((item) => {
+        const condition = objectValue(item)
+        const field = normalize(condition.field)
+        const operator = normalize(condition.operator)
+        if (!field || !organisationFilterFields.has(field) || !operator || !organisationFilterOperators.has(operator)) {
+          throw new HttpError(400, "The advanced filter contains an unsupported field or condition.")
+        }
+        const filterValue = normalize(condition.value) ?? ""
+        const valueTo = normalize(condition.valueTo) ?? ""
+        if (filterValue.length > 240 || valueTo.length > 240) throw new HttpError(400, "An advanced filter value is too long.")
+        return { id: normalize(condition.id), field, operator, value: filterValue, valueTo }
+      }),
+    }
+  })
+  if (conditionCount > 24) throw new HttpError(400, "Use no more than 24 advanced filter conditions.")
+  return { match: query.match === "any" ? "any" : "all", groups: safeGroups }
 }
 
 function countryCode(value: unknown) {
@@ -31,6 +80,23 @@ function contactName(contact: Row) {
 
 function occurredAt(message: Row) {
   return message.CommMessage_MessageDate ?? message.CommMessage_ReceivedAt ?? message.CommMessage_SentAt ?? message.CommMessage_CreatedAt
+}
+
+function organisationTypeIds(value: unknown, allowEmpty = false) {
+  if (!Array.isArray(value)) throw new HttpError(400, "Choose at least one company type.")
+  const ids = [...new Set(value.map((item) => normalize(item)).filter((item): item is string => Boolean(item)))]
+  if (!allowEmpty && !ids.length) throw new HttpError(400, "Choose at least one company type.")
+  if (ids.length > 12) throw new HttpError(400, "Choose no more than 12 company types.")
+  return ids
+}
+
+async function validateOrganisationTypeIds(admin: any, value: unknown, allowEmpty = false) {
+  const ids = organisationTypeIds(value, allowEmpty)
+  if (!ids.length) return ids
+  const { data, error } = await admin.from("Org_Types").select("OrgType_ID").in("OrgType_ID", ids)
+  if (error) throw new HttpError(500, error.message)
+  if ((data ?? []).length !== ids.length) throw new HttpError(400, "Choose valid company types.")
+  return ids
 }
 
 async function accessibleAccountIds(admin: any, companyId: string) {
@@ -48,7 +114,7 @@ async function requireExactAccountAccess(admin: any, actorUserId: string, accoun
   if (error) throw new HttpError(error.code === "42501" ? 403 : 500, error.message)
 }
 
-async function customerRows(admin: any, companyId: string, search?: string | null, accountId?: string | null, includeDetailSource = false, scopedIdsOverride?: string[], actorUserId?: string) {
+async function customerRows(admin: any, companyId: string, search?: string | null, accountId?: string | null, includeDetailSource = false, scopedIdsOverride?: string[], actorUserId?: string, organisationType: OrganisationType | "any" = "company") {
   if (accountId && actorUserId) await requireExactAccountAccess(admin, actorUserId, accountId)
   const accessibleIds = accountId && actorUserId ? [] : scopedIdsOverride ?? await accessibleAccountIds(admin, companyId)
   if (accountId && !actorUserId && !accessibleIds.includes(accountId)) return []
@@ -70,20 +136,25 @@ async function customerRows(admin: any, companyId: string, search?: string | nul
     const name = typeMap.get(link.OrgType_ID)
     if (name) linksByOrg.set(link.Org_ID, [...(linksByOrg.get(link.Org_ID) ?? []), name])
   }
-  const customerIds = [...linksByOrg.entries()]
-    .filter(([, names]) => names.some((name) => name.toLowerCase() === "customer"))
+  const matchingIds = [...linksByOrg.entries()]
+    .filter(([, names]) => organisationType === "any" || names.some((name) => name.toLowerCase() === organisationType))
     .map(([id]) => id)
 
   let query = admin.from("Org_Master").select("*").in("Org_id", scopedIds).order("Org_Name")
-  query = customerIds.length
-    ? query.or(`Org_CRMIsPotentialCustomer.eq.true,Org_id.in.(${customerIds.join(",")})`)
-    : query.eq("Org_CRMIsPotentialCustomer", true)
+  if (organisationType === "customer") {
+    query = matchingIds.length
+      ? query.or(`Org_CRMIsPotentialCustomer.eq.true,Org_id.in.(${matchingIds.join(",")})`)
+      : query.eq("Org_CRMIsPotentialCustomer", true)
+  } else if (organisationType === "supplier") {
+    if (!matchingIds.length) return []
+    query = query.in("Org_id", matchingIds)
+  }
   const { data: organisations, error } = await query
   if (error) throw new HttpError(500, error.message)
 
   const ids = (organisations ?? []).map((item: Row) => item.Org_id)
   const [{ data: addresses, error: addressError }, { data: contactCountsResult, error: contactCountError }, { data: profiles, error: profileError }] = await Promise.all([
-    ids.length ? admin.from("Org_Addresses").select("*").in("Org_ID", ids) : Promise.resolve({ data: [], error: null }),
+    ids.length ? admin.from("Org_Addresses").select("*").in("Org_ID", ids).eq("OrgAdd_IsActive", true) : Promise.resolve({ data: [], error: null }),
     ids.length ? admin.rpc("multideck_crm_contact_counts", { p_account_ids: ids }) : Promise.resolve({ data: [], error: null }),
     ids.length ? admin.from("CRM_AccountProfiles").select("*").in("CRMAccount_OrgID", ids).eq("CRMAccount_IsDeleted", false) : Promise.resolve({ data: [], error: null }),
   ])
@@ -114,7 +185,7 @@ async function customerRows(admin: any, companyId: string, search?: string | nul
       name: org.Org_Name,
       initials: initials(org.Org_Name),
       location,
-      industry: profile?.CRMAccount_Vertical ?? typeNames.find((name) => name.toLowerCase() !== "customer") ?? "Customer",
+      industry: profile?.CRMAccount_Vertical ?? typeNames.find((name) => !["customer", "supplier"].includes(name.toLowerCase())) ?? (organisationType === "supplier" ? "Supplier" : organisationType === "customer" ? "Customer" : "Company"),
       contactCount: contactCounts.get(org.Org_id) ?? 0,
       status: profile?.CRMAccount_Tier === "A" || profile?.CRMAccount_Tier === "Premium"
         ? "Premium"
@@ -130,6 +201,9 @@ async function customerRows(admin: any, companyId: string, search?: string | nul
       lastContactAt: profile?.CRMAccount_LastContactAt ?? null,
       nextActionDueAt: profile?.CRMAccount_NextActionDueAt ?? null,
       editVersion: profile?.CRMAccount_EditVersion ?? 1,
+      accountCode: org.Org_AccCode ?? null,
+      scopeCode: profile?.CRMAccount_ScopeCode ?? "standard",
+      isPotential: Boolean(org.Org_CRMIsPotentialCustomer),
       marketingOptIn: Boolean(org.Org_MarketingOptIn),
       marketingConsentSource: org.Org_MarketingConsentSource ?? null,
       marketingConsentUpdatedAt: org.Org_MarketingConsentUpdatedAt ?? null,
@@ -177,10 +251,10 @@ async function contactRows(admin: any, companyId: string, search?: string | null
   const orgIds = [...new Set((contacts ?? []).map((item: Row) => item.Org_ID))]
   const [organisationResult, emailResult, profileResult, identityResult, addressResult] = await Promise.all([
     orgIds.length ? admin.from("Org_Master").select("Org_id,Org_Name").in("Org_id", orgIds) : Promise.resolve({ data: [] }),
-    contactIds.length ? admin.from("OrgContact_Emails").select("*").in("OrgContact_ID", contactIds).order("OrgContactEmail_Type") : Promise.resolve({ data: [] }),
+    contactIds.length ? admin.from("OrgContact_Emails").select("*").in("OrgContact_ID", contactIds).eq("OrgContactEmail_IsActive", true).order("OrgContactEmail_IsPrimary", { ascending: false }).order("OrgContactEmail_ValidFrom", { ascending: false }) : Promise.resolve({ data: [] }),
     contactIds.length ? admin.from("CRM_ContactProfiles").select("*").in("CRMContact_OrgContactID", contactIds) : Promise.resolve({ data: [] }),
     contactIds.length ? admin.from("Comm_Identities").select("*").in("CommIdentity_ContactID", contactIds).eq("CommIdentity_IsDeleted", false) : Promise.resolve({ data: [] }),
-    orgIds.length ? admin.from("Org_Addresses").select("Org_ID,OrgAdd_TownCity,OrgAdd_Country").in("Org_ID", orgIds) : Promise.resolve({ data: [] }),
+    orgIds.length ? admin.from("Org_Addresses").select("Org_ID,OrgAdd_TownCity,OrgAdd_Country").in("Org_ID", orgIds).eq("OrgAdd_IsActive", true) : Promise.resolve({ data: [] }),
   ])
   const relatedError = [organisationResult, emailResult, profileResult, identityResult, addressResult].find((result) => result.error)?.error
   if (relatedError) throw new HttpError(500, relatedError.message)
@@ -258,8 +332,135 @@ async function recentEmails(admin: any, userId: string, permissions: string[], a
   }
 }
 
+async function organisationFoundation(admin: any, organisationId: string, profile: Row | null) {
+  const [addressResult, officeAssignmentResult, relatedDefaultResult, addressTypeResult] = await Promise.all([
+    admin.from("Org_Addresses").select("*").eq("Org_ID", organisationId).eq("OrgAdd_IsActive", true).order("Org_NameOverride").order("OrgAdd_TownCity"),
+    profile?.CRMAccount_ID
+      ? admin.from("CRM_AccountOfficeAssignments").select("*").eq("CRMAccountOffice_AccountID", profile.CRMAccount_ID).order("CRMAccountOffice_IsPrimary", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+    admin.from("Org_RelatedPartyDefaults").select("*").eq("OrgRelatedDefault_SourceOrgID", organisationId).order("OrgRelatedDefault_Priority"),
+    admin.from("sys_AddressTypes").select("*").eq("sys_AddressType_IsActive", true).order("sys_AddressType_SortOrder"),
+  ])
+  const firstError = [addressResult, officeAssignmentResult, relatedDefaultResult, addressTypeResult].find((result) => result.error)?.error
+  if (firstError) throw new HttpError(500, firstError.message)
+
+  const addresses = addressResult.data ?? []
+  const assignments = officeAssignmentResult.data ?? []
+  const defaults = relatedDefaultResult.data ?? []
+  const addressTypes = addressTypeResult.data ?? []
+  const addressIds = addresses.map((item: Row) => item.OrgAdd_ID)
+  const officeIds = assignments.map((item: Row) => item.CRMAccountOffice_OrgOfficeID)
+  const targetOrganisationIds = [...new Set(defaults.map((item: Row) => item.OrgRelatedDefault_TargetOrgID).filter(Boolean))]
+  const targetContactIds = [...new Set(defaults.map((item: Row) => item.OrgRelatedDefault_TargetContactID).filter(Boolean))]
+  const [capabilityResult, weeklyHoursResult, overrideResult, officeResult, targetOrganisationResult, targetContactResult] = await Promise.all([
+    addressIds.length ? admin.from("Org_AddressTypes").select("*").in("OrgAdd_ID", addressIds) : Promise.resolve({ data: [], error: null }),
+    addressIds.length ? admin.from("Org_AddressOpeningHours").select("*").in("OrgAddHours_OrgAddID", addressIds).order("OrgAddHours_DayOfWeek").order("OrgAddHours_OpensAt") : Promise.resolve({ data: [], error: null }),
+    addressIds.length ? admin.from("Org_AddressOpeningOverrides").select("*").in("OrgAddOverride_OrgAddID", addressIds).gte("OrgAddOverride_Date", new Date().toISOString().slice(0, 10)).order("OrgAddOverride_Date").limit(120) : Promise.resolve({ data: [], error: null }),
+    officeIds.length ? admin.from("cmp_Offices").select("Office_ID,Office_Name,Office_Code,Office_CountryCode,Office_TimeZone").in("Office_ID", officeIds).eq("Office_IsActive", true) : Promise.resolve({ data: [], error: null }),
+    targetOrganisationIds.length ? admin.from("Org_Master").select("Org_id,Org_Name,Org_AccCode").in("Org_id", targetOrganisationIds) : Promise.resolve({ data: [], error: null }),
+    targetContactIds.length ? admin.from("Org_Contacts").select("OrgContact_ID,OrgContact_FirstName,OrgContact_LastName").in("OrgContact_ID", targetContactIds) : Promise.resolve({ data: [], error: null }),
+  ])
+  const secondError = [capabilityResult, weeklyHoursResult, overrideResult, officeResult, targetOrganisationResult, targetContactResult].find((result) => result.error)?.error
+  if (secondError) throw new HttpError(500, secondError.message)
+
+  const addressTypeMap = new Map(addressTypes.map((item: Row) => [item.sys_AddressType_ID, item]))
+  const capabilitiesByAddress = new Map<string, Row[]>()
+  const hoursByAddress = new Map<string, Row[]>()
+  const overridesByAddress = new Map<string, Row[]>()
+  for (const item of capabilityResult.data ?? []) capabilitiesByAddress.set(item.OrgAdd_ID, [...(capabilitiesByAddress.get(item.OrgAdd_ID) ?? []), item])
+  for (const item of weeklyHoursResult.data ?? []) hoursByAddress.set(item.OrgAddHours_OrgAddID, [...(hoursByAddress.get(item.OrgAddHours_OrgAddID) ?? []), item])
+  for (const item of overrideResult.data ?? []) overridesByAddress.set(item.OrgAddOverride_OrgAddID, [...(overridesByAddress.get(item.OrgAddOverride_OrgAddID) ?? []), item])
+  const officeMap = new Map((officeResult.data ?? []).map((item: Row) => [item.Office_ID, item]))
+  const targetOrganisationMap = new Map((targetOrganisationResult.data ?? []).map((item: Row) => [item.Org_id, item]))
+  const targetContactMap = new Map((targetContactResult.data ?? []).map((item: Row) => [item.OrgContact_ID, item]))
+
+  return {
+    officeAssignments: assignments.flatMap((assignment: Row) => {
+      const office = officeMap.get(assignment.CRMAccountOffice_OrgOfficeID)
+      return office ? [{
+        officeId: office.Office_ID, name: office.Office_Name, code: office.Office_Code ?? null,
+        countryCode: office.Office_CountryCode ?? null, timeZone: office.Office_TimeZone ?? "UTC",
+        isPrimary: Boolean(assignment.CRMAccountOffice_IsPrimary),
+      }] : []
+    }),
+    addressCapabilities: addressTypes.map((item: Row) => ({
+      id: item.sys_AddressType_ID, code: item.sys_AddressType_Code, name: item.sys_AddressType_Description,
+    })),
+    addresses: addresses.map((address: Row) => ({
+      id: address.OrgAdd_ID,
+      name: address.Org_NameOverride ?? null,
+      line1: address.OrgAdd_Line1 ?? null,
+      line2: address.OrgAdd_Line2 ?? null,
+      townCity: address.OrgAdd_TownCity ?? null,
+      countyState: address.OrgAdd_CountyState ?? null,
+      postZipCode: address.OrgAdd_PostZipCode ?? null,
+      countryCode: address.OrgAdd_Country ?? null,
+      unlocode: address.OrgAdd_UNLOCODE ?? null,
+      email: address.OrgAdd_MainEmail ?? null,
+      phone: address.OrgAdd_MainPhone ?? null,
+      timeZone: address.OrgAdd_TimeZone ?? "UTC",
+      capabilities: (capabilitiesByAddress.get(address.OrgAdd_ID) ?? []).flatMap((link: Row) => {
+        const type = addressTypeMap.get(link.OrgAddType_Type)
+        return type ? [{ code: type.sys_AddressType_Code, name: type.sys_AddressType_Description, isDefault: Boolean(link.OrgAddType_IsDefault) }] : []
+      }),
+      weeklyHours: (hoursByAddress.get(address.OrgAdd_ID) ?? []).map((item: Row) => ({
+        id: item.OrgAddHours_ID, dayOfWeek: item.OrgAddHours_DayOfWeek,
+        opensAt: item.OrgAddHours_OpensAt, closesAt: item.OrgAddHours_ClosesAt, sortOrder: item.OrgAddHours_SortOrder,
+      })),
+      openingOverrides: (overridesByAddress.get(address.OrgAdd_ID) ?? []).map((item: Row) => ({
+        id: item.OrgAddOverride_ID, date: item.OrgAddOverride_Date, isClosed: Boolean(item.OrgAddOverride_IsClosed),
+        opensAt: item.OrgAddOverride_OpensAt ?? null, closesAt: item.OrgAddOverride_ClosesAt ?? null, note: item.OrgAddOverride_Note ?? null,
+      })),
+    })),
+    relatedPartyDefaults: defaults.map((item: Row) => {
+      const target = targetOrganisationMap.get(item.OrgRelatedDefault_TargetOrgID)
+      const contact = targetContactMap.get(item.OrgRelatedDefault_TargetContactID)
+      return {
+        id: item.OrgRelatedDefault_ID,
+        partyRoleCode: item.OrgRelatedDefault_PartyRoleCode,
+        destinationCountryCode: item.OrgRelatedDefault_DestinationCountryCode ?? null,
+        destinationUnlocode: item.OrgRelatedDefault_DestinationUNLOCODE ?? null,
+        destinationPostcode: item.OrgRelatedDefault_DestinationPostcode ?? null,
+        targetOrganisationId: item.OrgRelatedDefault_TargetOrgID,
+        targetOrganisationName: target?.Org_Name ?? "Unknown organisation",
+        targetOrganisationCode: target?.Org_AccCode ?? null,
+        targetAddressId: item.OrgRelatedDefault_TargetAddressID ?? null,
+        targetContactId: item.OrgRelatedDefault_TargetContactID ?? null,
+        targetContactName: contact ? contactName(contact) : null,
+        priority: item.OrgRelatedDefault_Priority,
+        effectiveFrom: item.OrgRelatedDefault_EffectiveFrom,
+        effectiveTo: item.OrgRelatedDefault_EffectiveTo ?? null,
+        isActive: Boolean(item.OrgRelatedDefault_IsActive),
+      }
+    }),
+  }
+}
+
+async function accountOperations(admin: any, organisationId: string, profile: Row | null) {
+  if (!profile?.CRMAccount_ID) return { operations: null }
+  const [profileResult, instructionsResult, documentsResult, addressResult] = await Promise.all([
+    admin.from("CRM_AccountOperationalProfiles").select("*").eq("CRMAccountOps_AccountID", profile.CRMAccount_ID).maybeSingle(),
+    admin.from("CRM_AccountOperationalInstructions").select("*").eq("CRMAccountInstruction_AccountID", profile.CRMAccount_ID).order("CRMAccountInstruction_Priority"),
+    admin.from("CRM_AccountDocumentRecords").select("*").eq("CRMAccountDocument_AccountID", profile.CRMAccount_ID).order("CRMAccountDocument_UpdatedAt", { ascending: false }),
+    admin.from("Org_AddressOperationalDetails").select("*").eq("OrgAddOperational_OrgID", organisationId),
+  ])
+  const firstError = [profileResult, instructionsResult, documentsResult, addressResult].find((result) => result.error)?.error
+  if (firstError?.code === "42P01" || firstError?.code === "PGRST205") return { operations: null }
+  if (firstError) throw new HttpError(500, firstError.message)
+  const row = profileResult.data
+  return { operations: {
+    roleProfiles: objectValue(row?.CRMAccountOps_RoleProfilesJSON),
+    invoicePreferences: objectValue(row?.CRMAccountOps_InvoicePreferencesJSON),
+    customs: objectValue(row?.CRMAccountOps_CustomsJSON),
+    privacy: objectValue(row?.CRMAccountOps_PrivacyJSON),
+    instructions: (instructionsResult.data ?? []).map((item: Row) => ({ id: item.CRMAccountInstruction_ID, kind: item.CRMAccountInstruction_KindCode, title: item.CRMAccountInstruction_Title, body: item.CRMAccountInstruction_Body, destinationCountryCode: item.CRMAccountInstruction_DestinationCountryCode, destinationUnlocode: item.CRMAccountInstruction_DestinationUNLOCODE, addressId: item.CRMAccountInstruction_AddressID, contactId: item.CRMAccountInstruction_ContactID, priority: item.CRMAccountInstruction_Priority, effectiveFrom: item.CRMAccountInstruction_EffectiveFrom, effectiveTo: item.CRMAccountInstruction_EffectiveTo, isActive: item.CRMAccountInstruction_IsActive })),
+    documents: (documentsResult.data ?? []).map((item: Row) => ({ id: item.CRMAccountDocument_ID, type: item.CRMAccountDocument_TypeCode, title: item.CRMAccountDocument_Title, notes: item.CRMAccountDocument_Notes, representationType: item.CRMAccountDocument_RepresentationType, sourceDocumentId: item.CRMAccountDocument_SourceDocumentID, externalReference: item.CRMAccountDocument_ExternalReference, validFrom: item.CRMAccountDocument_ValidFrom, validTo: item.CRMAccountDocument_ValidTo, status: item.CRMAccountDocument_StatusCode })),
+    addressOperations: (addressResult.data ?? []).map((item: Row) => ({ addressId: item.OrgAddOperational_OrgAddID, appointmentRequired: item.OrgAddOperational_AppointmentRequired, advanceBookingHours: item.OrgAddOperational_AdvanceBookingHours, bookingInstructions: item.OrgAddOperational_BookingInstructions, collectionInstructions: item.OrgAddOperational_CollectionInstructions, deliveryInstructions: item.OrgAddOperational_DeliveryInstructions })),
+  }}
+}
+
 async function accountDetail(admin: any, companyId: string, userId: string, permissions: string[], id: string) {
-  const summaryWithSource = (await customerRows(admin, companyId, null, id, true, undefined, userId))[0]
+  const summaryWithSource = (await customerRows(admin, companyId, null, id, true, undefined, userId, "any"))[0]
   if (!summaryWithSource) throw new HttpError(404, "Account not found.")
   const { __detailSource, ...summary } = summaryWithSource
   const { org, address, profile } = __detailSource
@@ -275,11 +476,13 @@ async function accountDetail(admin: any, companyId: string, userId: string, perm
   const accountId = profile?.CRMAccount_ID ?? null
   const contactIds = contactList.map((contact: Row) => contact.id)
   const contactEmails = contactList.map((contact: Row) => contact.email).filter(Boolean)
-  const [{ data: activities, error: activityError }, emailResult] = await Promise.all([
+  const [{ data: activities, error: activityError }, emailResult, foundation, operations] = await Promise.all([
     accountId
       ? admin.from("CRM_Activities").select("*").eq("CRMActivity_AccountID", accountId).eq("CRMActivity_IsDeleted", false).order("CRMActivity_ActivityAt", { ascending: false }).limit(20)
       : Promise.resolve({ data: [], error: null }),
     recentEmails(admin, userId, permissions, id, contactIds, contactEmails),
+    organisationFoundation(admin, id, profile ?? null),
+    accountOperations(admin, id, profile ?? null),
   ])
   if (activityError) throw new HttpError(500, activityError.message)
   const preference = engagement?.[0] ?? null
@@ -301,6 +504,9 @@ async function accountDetail(admin: any, companyId: string, userId: string, perm
     strategic: Boolean(profile?.CRMAccount_IsStrategic),
     trainingAllowed: Boolean(profile?.CRMAccount_IsTrainingAllowed),
     metadata: objectValue(profile?.CRMAccount_MetadataJSON),
+    accountCode: org.Org_AccCode ?? null,
+    scopeCode: profile?.CRMAccount_ScopeCode ?? "standard",
+    isPotential: Boolean(org.Org_CRMIsPotentialCustomer),
     address: address ? {
       id: address.OrgAdd_ID,
       line1: address.OrgAdd_Line1 ?? null,
@@ -339,6 +545,8 @@ async function accountDetail(admin: any, companyId: string, userId: string, perm
       type: item.CRMActivity_ActivityTypeCode,
     })),
     recentEmails: emailResult,
+    ...foundation,
+    ...operations,
   }
 }
 
@@ -354,8 +562,20 @@ async function contactDetail(admin: any, companyId: string, userId: string, perm
   })
   if (activityError) throw new HttpError(500, activityError.message)
   const activities = Array.isArray(activityResult) ? activityResult : []
-  const { data: consents, error: consentError } = await admin.from("Comm_ConsentPreferences").select("*").eq("CommConsent_ContactID", id).eq("CommConsent_ChannelCode", "email").order("CommConsent_EffectiveAt", { ascending: false }).limit(12)
-  if (consentError) throw new HttpError(500, consentError.message)
+  const [consentResult, employmentResult, emailHistoryResult] = await Promise.all([
+    admin.from("Comm_ConsentPreferences").select("*").eq("CommConsent_ContactID", id).eq("CommConsent_ChannelCode", "email").order("CommConsent_EffectiveAt", { ascending: false }).limit(12),
+    admin.from("CRM_ContactOrganisationAssignments").select("*").eq("CRMContactOrg_ContactID", id).order("CRMContactOrg_StartedAt", { ascending: false }).limit(50),
+    admin.from("OrgContact_Emails").select("*").eq("OrgContact_ID", id).order("OrgContactEmail_ValidFrom", { ascending: false }).limit(50),
+  ])
+  const historyError = [consentResult, employmentResult, emailHistoryResult].find((result) => result.error)?.error
+  if (historyError) throw new HttpError(500, historyError.message)
+  const employmentOrganisationIds = [...new Set((employmentResult.data ?? []).map((item: Row) => item.CRMContactOrg_OrgID))]
+  const { data: employmentOrganisations, error: employmentOrganisationError } = employmentOrganisationIds.length
+    ? await admin.from("Org_Master").select("Org_id,Org_Name,Org_AccCode").in("Org_id", employmentOrganisationIds)
+    : { data: [], error: null }
+  if (employmentOrganisationError) throw new HttpError(500, employmentOrganisationError.message)
+  const employmentOrganisationMap = new Map((employmentOrganisations ?? []).map((item: Row) => [item.Org_id, item]))
+  const consents = consentResult.data
   return {
     ...summary,
     metadata: objectValue(profile?.CRMContact_MetadataJSON),
@@ -369,12 +589,37 @@ async function contactDetail(admin: any, companyId: string, userId: string, perm
     })),
     activities,
     recentEmails: await recentEmails(admin, userId, permissions, summary.accountId, [id], summary.email ? [summary.email] : [], false),
+    employmentHistory: (employmentResult.data ?? []).map((item: Row) => {
+      const organisation = employmentOrganisationMap.get(item.CRMContactOrg_OrgID)
+      return {
+        id: item.CRMContactOrg_ID,
+        organisationId: item.CRMContactOrg_OrgID,
+        organisationName: organisation?.Org_Name ?? "Unknown organisation",
+        organisationCode: organisation?.Org_AccCode ?? null,
+        jobTitle: item.CRMContactOrg_JobTitle ?? null,
+        department: item.CRMContactOrg_Department ?? null,
+        role: item.CRMContactOrg_RoleCode ?? null,
+        startedAt: item.CRMContactOrg_StartedAt,
+        endedAt: item.CRMContactOrg_EndedAt ?? null,
+        isCurrent: Boolean(item.CRMContactOrg_IsCurrent),
+      }
+    }),
+    emailHistory: (emailHistoryResult.data ?? []).map((item: Row) => ({
+      id: item.OrgContactEmail_ID,
+      email: item.OrgContactEmail_Email,
+      isActive: Boolean(item.OrgContactEmail_IsActive),
+      isPrimary: Boolean(item.OrgContactEmail_IsPrimary),
+      validFrom: item.OrgContactEmail_ValidFrom,
+      validTo: item.OrgContactEmail_ValidTo ?? null,
+      supersededById: item.OrgContactEmail_SupersededBy ?? null,
+    })),
   }
 }
 
 async function updateAccount(admin: any, current: Row, permissions: string[], id: string, payload: Row) {
   const name = normalize(payload.name)
   if (!name) throw new HttpError(400, "Enter an account name.")
+  if (Object.hasOwn(payload, "orgTypeIds")) payload.orgTypeIds = await validateOrganisationTypeIds(admin, payload.orgTypeIds, true)
   const address = objectValue(payload.address)
   countryCode(address.countryCode)
   const { error } = await admin.rpc("multideck_crm_update_account", {
@@ -385,6 +630,24 @@ async function updateAccount(admin: any, current: Row, permissions: string[], id
   })
   if (error) throw crmWriteError(error, "The account could not be saved.")
   return accountDetail(admin, current.Company_ID, current.User_ID, permissions, id)
+}
+
+async function updateAccountTypes(admin: any, current: Row, id: string, payload: Row) {
+  const name = normalize(payload.name)
+  if (!name) throw new HttpError(400, "Enter an account name.")
+  const orgTypeIds = await validateOrganisationTypeIds(admin, payload.orgTypeIds, true)
+  const { data, error } = await admin.rpc("multideck_crm_update_account", {
+    p_actor_user_id: current.User_ID,
+    p_account_id: id,
+    p_expected_version: expectedVersion(payload.expectedVersion),
+    p_input: { name, orgTypeIds },
+  })
+  if (error) throw crmWriteError(error, "The company types could not be saved.")
+  return {
+    id: normalize(data?.id) ?? id,
+    editVersion: Number(data?.editVersion ?? payload.expectedVersion),
+    orgTypeIds,
+  }
 }
 
 async function updateContact(admin: any, current: Row, permissions: string[], id: string, payload: Row) {
@@ -399,6 +662,102 @@ async function updateContact(admin: any, current: Row, permissions: string[], id
   })
   if (error) throw crmWriteError(error, "The contact could not be saved.")
   return contactDetail(admin, current.Company_ID, current.User_ID, permissions, id)
+}
+
+async function updateOrganisationFoundation(admin: any, current: Row, permissions: string[], id: string, payload: Row) {
+  const scopeCode = normalize(payload.scopeCode)?.toLowerCase() ?? "standard"
+  if (!["standard", "national", "global"].includes(scopeCode)) throw new HttpError(400, "Choose a standard, national or global organisation scope.")
+  const accountCode = normalize(payload.accountCode)
+  if (!accountCode) throw new HttpError(400, "Enter an organisation code.")
+  if (Object.hasOwn(payload, "officeAssignments")) {
+    if (!Array.isArray(payload.officeAssignments) || payload.officeAssignments.length > 20) throw new HttpError(400, "Choose no more than 20 responsible offices.")
+    payload.officeAssignments = payload.officeAssignments.map((item) => {
+      const value = objectValue(item)
+      const officeId = normalize(value.officeId)
+      if (!officeId) throw new HttpError(400, "Choose valid responsible offices.")
+      return { officeId, isPrimary: value.isPrimary === true }
+    })
+  }
+  const { error } = await admin.rpc("multideck_crm_update_organisation_foundation", {
+    p_actor_user_id: current.User_ID,
+    p_account_id: id,
+    p_expected_version: expectedVersion(payload.expectedVersion),
+    p_input: { ...payload, scopeCode, accountCode },
+  })
+  if (error) throw crmWriteError(error, "The organisation setup could not be saved.")
+  return accountDetail(admin, current.Company_ID, current.User_ID, permissions, id)
+}
+
+function addressInput(payload: Row) {
+  const capabilities = Array.isArray(payload.capabilities) ? payload.capabilities.map((item) => {
+    const value = objectValue(item)
+    const code = normalize(value.code)?.toLowerCase()
+    if (!code) throw new HttpError(400, "Choose valid address capabilities.")
+    return { code, isDefault: value.isDefault === true }
+  }) : []
+  const weeklyHours = Array.isArray(payload.weeklyHours) ? payload.weeklyHours : []
+  const openingOverrides = Array.isArray(payload.openingOverrides) ? payload.openingOverrides : []
+  return { ...payload, countryCode: countryCode(payload.countryCode), capabilities, weeklyHours, openingOverrides }
+}
+
+async function upsertOrganisationAddress(admin: any, current: Row, permissions: string[], accountId: string, addressId: string | null, payload: Row) {
+  const { error } = await admin.rpc("multideck_crm_upsert_organisation_address", {
+    p_actor_user_id: current.User_ID,
+    p_account_id: accountId,
+    p_address_id: addressId,
+    p_expected_version: expectedVersion(payload.expectedVersion),
+    p_input: addressInput(payload),
+  })
+  if (error) throw crmWriteError(error, "The address could not be saved.")
+  return accountDetail(admin, current.Company_ID, current.User_ID, permissions, accountId)
+}
+
+async function archiveOrganisationAddress(admin: any, current: Row, permissions: string[], accountId: string, addressId: string, version: unknown) {
+  const { error } = await admin.rpc("multideck_crm_archive_organisation_address", {
+    p_actor_user_id: current.User_ID,
+    p_account_id: accountId,
+    p_address_id: addressId,
+    p_expected_version: expectedVersion(version),
+  })
+  if (error) throw crmWriteError(error, "The address could not be archived.")
+  return accountDetail(admin, current.Company_ID, current.User_ID, permissions, accountId)
+}
+
+async function transferContact(admin: any, current: Row, permissions: string[], contactId: string, payload: Row) {
+  const targetOrganisationId = normalize(payload.targetOrganisationId)
+  if (!targetOrganisationId) throw new HttpError(400, "Choose the contact's new organisation.")
+  const { error } = await admin.rpc("multideck_crm_transfer_contact", {
+    p_actor_user_id: current.User_ID,
+    p_contact_id: contactId,
+    p_target_org_id: targetOrganisationId,
+    p_expected_version: expectedVersion(payload.expectedVersion),
+    p_input: payload,
+  })
+  if (error) throw crmWriteError(error, "The contact could not be transferred.")
+  return contactDetail(admin, current.Company_ID, current.User_ID, permissions, contactId)
+}
+
+async function upsertRelatedPartyDefault(admin: any, current: Row, permissions: string[], accountId: string, ruleId: string | null, payload: Row) {
+  const { error } = await admin.rpc("multideck_crm_upsert_related_party_default", {
+    p_actor_user_id: current.User_ID,
+    p_source_org_id: accountId,
+    p_rule_id: ruleId,
+    p_expected_version: expectedVersion(payload.expectedVersion),
+    p_input: payload,
+  })
+  if (error) throw crmWriteError(error, "The related-party default could not be saved.")
+  return accountDetail(admin, current.Company_ID, current.User_ID, permissions, accountId)
+}
+
+async function replaceAccountOperations(admin: any, current: Row, permissions: string[], accountId: string, payload: Row) {
+  const { error } = await admin.rpc("multideck_crm_replace_account_operations", {
+    p_actor_user_id: current.User_ID,
+    p_org_id: accountId,
+    p_expected_version: expectedVersion(payload.expectedVersion),
+    p_input: payload,
+  })
+  if (error) throw crmWriteError(error, "The account operational details could not be saved.")
+  return accountDetail(admin, current.Company_ID, current.User_ID, permissions, accountId)
 }
 
 function crmWriteError(error: any, fallback: string): HttpError {
@@ -429,17 +788,22 @@ Deno.serve(async (request) => {
     if (request.method === "GET") {
       const permissions = await requirePermission(admin, current.User_ID, "Customers.Read")
       if (parts[0] === "reference") {
-        const [{ data: organisationTypes, error }, { data: relationshipStatuses, error: relationshipError }] = await Promise.all([
+        const [{ data: organisationTypes, error }, { data: relationshipStatuses, error: relationshipError }, { data: offices, error: officeError }] = await Promise.all([
           admin.from("Org_Types").select("OrgType_ID,OrgType_Name").order("OrgType_Order").order("OrgType_Name"),
           admin.from("sys_CRMRelationshipStatuses").select("CRMRelStatus_Code,CRMRelStatus_Name").eq("CRMRelStatus_IsActive", true).order("CRMRelStatus_SortOrder"),
+          admin.from("cmp_Offices").select("Office_ID,Office_Name,Office_Code,Office_CountryCode,Office_TimeZone").eq("Company_ID", current.Company_ID).eq("Office_IsActive", true).order("Office_Name"),
         ])
-        if (error || relationshipError) throw new HttpError(500, (error ?? relationshipError)?.message ?? "The CRM reference data could not be loaded.")
+        if (error || relationshipError || officeError) throw new HttpError(500, (error ?? relationshipError ?? officeError)?.message ?? "The CRM reference data could not be loaded.")
         return json(request, {
           organisationTypes: (organisationTypes ?? []).map((item: Row) => ({ id: item.OrgType_ID, name: item.OrgType_Name })),
           // Kept for rollout compatibility with older clients. Account owner
           // filters now come from the bounded register facets instead.
           owners: [],
           relationshipStatuses: (relationshipStatuses ?? []).map((item: Row) => ({ code: item.CRMRelStatus_Code, name: item.CRMRelStatus_Name })),
+          offices: (offices ?? []).map((item: Row) => ({
+            id: item.Office_ID, name: item.Office_Name, code: item.Office_Code ?? null,
+            countryCode: item.Office_CountryCode ?? null, timeZone: item.Office_TimeZone ?? "UTC",
+          })),
         })
       }
       if (parts[0] === "directory") {
@@ -480,16 +844,47 @@ Deno.serve(async (request) => {
         }
         throw new HttpError(400, "Contact lists require bounded paging.")
       }
+      if (parts[0] && parts[1] === "address-options") {
+        const params = new URL(request.url).searchParams
+        const { data, error } = await userDb.rpc("multideck_crm_organisation_address_options", {
+          p_org_id: parts[0],
+          p_capability_code: params.get("capability"),
+          p_at: params.get("at") || new Date().toISOString(),
+        })
+        if (error) throw new HttpError(error.code === "42501" ? 403 : 500, error.message)
+        return json(request, data)
+      }
+      if (parts[0] && parts[1] === "related-defaults" && parts[2] === "resolve") {
+        const params = new URL(request.url).searchParams
+        const role = normalize(params.get("role"))
+        if (!role) throw new HttpError(400, "Choose a related-party role.")
+        const { data, error } = await userDb.rpc("multideck_crm_resolve_related_party_default", {
+          p_source_org_id: parts[0],
+          p_party_role_code: role,
+          p_destination_country_code: params.get("country"),
+          p_destination_unlocode: params.get("unlocode"),
+          p_destination_postcode: params.get("postcode"),
+          p_on_date: params.get("onDate") || new Date().toISOString().slice(0, 10),
+        })
+        if (error) throw new HttpError(error.code === "42501" ? 403 : error.code === "22023" ? 400 : 500, error.message)
+        return json(request, data)
+      }
       if (parts[0]) return json(request, await accountDetail(admin, current.Company_ID, current.User_ID, permissions, parts[0]))
       const params = new URL(request.url).searchParams
       if (params.has("limit")) {
+        const organisationType = normalize(params.get("organisationType"))?.toLowerCase() ?? ""
+        if (organisationType !== "company" && organisationType !== "customer" && organisationType !== "supplier") {
+          throw new HttpError(400, "Choose companies, customers or suppliers.")
+        }
         const owner = params.get("owner")
-        const { data, error } = await userDb.rpc("multideck_crm_account_register_page", {
+        const { data, error } = await userDb.rpc("multideck_crm_organisation_register_page", {
+          p_organisation_type: organisationType,
           p_search: params.get("search"),
           p_marketing_scope: params.get("marketingScope"),
           p_relationship: params.get("relationship"),
           p_owner_id: owner && owner !== "__unassigned__" ? owner : null,
           p_unassigned: owner === "__unassigned__",
+          p_filter_query: organisationFilterQuery(params.get("filterQuery")),
           p_sort: params.get("sort") || "account",
           p_direction: params.get("direction") || "asc",
           p_limit: Number(params.get("limit") || 50),
@@ -498,17 +893,29 @@ Deno.serve(async (request) => {
         if (error) throw new HttpError(error.code === "42501" ? 403 : 500, error.message)
         const payload = objectValue(data)
         const ids = Array.isArray(payload.ids) ? payload.ids.filter((value): value is string => typeof value === "string") : []
-        const rows = await customerRows(admin, current.Company_ID, null, null, false, ids)
+        const rows = await customerRows(admin, current.Company_ID, null, null, false, ids, undefined, "any")
         const rowMap = new Map(rows.map((row: Row) => [row.id, row]))
         return json(request, { ...payload, rows: ids.flatMap((id) => rowMap.get(id) ? [rowMap.get(id)] : []) })
       }
-      throw new HttpError(400, "Account lists require bounded paging.")
+      throw new HttpError(400, "Organisation lists require bounded paging.")
     }
 
     if (request.method === "PATCH") {
       const permissions = await requirePermission(admin, current.User_ID, "Customers.Write")
+      if (parts[0] === "contacts" && parts[1] && parts[2] === "transfer") return json(request, await transferContact(admin, current, permissions, parts[1], await body<Row>(request)))
       if (parts[0] === "contacts" && parts[1]) return json(request, await updateContact(admin, current, permissions, parts[1], await body<Row>(request)))
+      if (parts[0] && parts[1] === "types") return json(request, await updateAccountTypes(admin, current, parts[0], await body<Row>(request)))
+      if (parts[0] && parts[1] === "foundation") return json(request, await updateOrganisationFoundation(admin, current, permissions, parts[0], await body<Row>(request)))
+      if (parts[0] && parts[1] === "addresses" && parts[2]) return json(request, await upsertOrganisationAddress(admin, current, permissions, parts[0], parts[2], await body<Row>(request)))
+      if (parts[0] && parts[1] === "related-defaults" && parts[2]) return json(request, await upsertRelatedPartyDefault(admin, current, permissions, parts[0], parts[2], await body<Row>(request)))
+      if (parts[0] && parts[1] === "operations") return json(request, await replaceAccountOperations(admin, current, permissions, parts[0], await body<Row>(request)))
       if (parts.length === 1) return json(request, await updateAccount(admin, current, permissions, parts[0], await body<Row>(request)))
+    }
+
+    if (request.method === "DELETE" && parts[0] && parts[1] === "addresses" && parts[2]) {
+      const permissions = await requirePermission(admin, current.User_ID, "Customers.Write")
+      const version = new URL(request.url).searchParams.get("expectedVersion")
+      return json(request, await archiveOrganisationAddress(admin, current, permissions, parts[0], parts[2], version))
     }
 
     if (request.method === "POST" && !parts.length) {
@@ -517,6 +924,7 @@ Deno.serve(async (request) => {
       const name = normalize(payload.name)
       if (!name) throw new HttpError(400, "Enter an account name.")
       countryCode(payload.countryCode)
+      payload.orgTypeIds = await validateOrganisationTypeIds(admin, payload.orgTypeIds)
       const { data, error } = await admin.rpc("multideck_crm_create_account", {
         p_actor_user_id: current.User_ID,
         p_input: payload,
@@ -524,7 +932,7 @@ Deno.serve(async (request) => {
       if (error) throw crmWriteError(error, "The account could not be created.")
       const id = String(data?.id ?? "")
       if (!id) throw new HttpError(500, "The account was created but could not be opened.")
-      return json(request, (await customerRows(admin, current.Company_ID, null, id, false, undefined, current.User_ID))[0], 201)
+      return json(request, (await customerRows(admin, current.Company_ID, null, id, false, undefined, current.User_ID, "any"))[0], 201)
     }
 
     if (request.method === "POST" && parts.length === 2 && parts[1] === "contacts") {
@@ -543,6 +951,14 @@ Deno.serve(async (request) => {
       })
       if (error) throw crmWriteError(error, "The contact could not be created.")
       return json(request, { id: data?.id, accountId: customerId, firstName, lastName, email, editVersion: data?.editVersion ?? 1 }, 201)
+    }
+    if (request.method === "POST" && parts[0] && parts[1] === "addresses" && parts.length === 2) {
+      const permissions = await requirePermission(admin, current.User_ID, "Customers.Write")
+      return json(request, await upsertOrganisationAddress(admin, current, permissions, parts[0], null, await body<Row>(request)), 201)
+    }
+    if (request.method === "POST" && parts[0] && parts[1] === "related-defaults" && parts.length === 2) {
+      const permissions = await requirePermission(admin, current.User_ID, "Customers.Write")
+      return json(request, await upsertRelatedPartyDefault(admin, current, permissions, parts[0], null, await body<Row>(request)), 201)
     }
     throw new HttpError(405, "Method not allowed.")
   } catch (error) {

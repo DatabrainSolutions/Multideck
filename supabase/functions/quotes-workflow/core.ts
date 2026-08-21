@@ -1,4 +1,7 @@
-export type QuoteWorkflowAction = "sources" | "workspace" | "save" | "transition" | "open" | "reference-settings" | "save-reference-settings"
+import { normaliseMultideckAppOrigin } from "../_shared/multideck-app-origin.ts"
+
+export type QuoteWorkflowAction = "sources" | "workspace" | "intelligence" | "save" | "transition" | "open" | "readiness" | "issue-options" | "issue-draft" | "issue-refine" | "issue-preview" | "issue" | "reference-settings" | "save-reference-settings" | "draft-reference-rule" | "branding"
+export type QuoteExpiryPreset = 7 | 14 | 28 | 90 | "never"
 
 export const quoteLifecycleActions = ["calculated", "sent", "revised", "accepted", "declined", "ghosted"] as const
 export type QuoteLifecycleAction = (typeof quoteLifecycleActions)[number]
@@ -20,7 +23,14 @@ export function optionalText(value: unknown, maximum = 2000) {
 
 export function parseReference(value: unknown) {
   const reference = requiredText(value, "Quote reference", 64).toUpperCase()
-  if (!/^[A-Z0-9 _./-]{1,64}$/.test(reference) || !/[0-9]/.test(reference)) throw new QuoteWorkflowError(400, "Choose a valid quote reference.")
+  if (
+    !/^[A-Z0-9 _./-]{1,64}$/.test(reference) ||
+    !/[0-9]/.test(reference) ||
+    reference.includes("..") ||
+    reference.includes("//") ||
+    reference.startsWith("/") ||
+    reference.endsWith("/")
+  ) throw new QuoteWorkflowError(400, "Choose a valid quote reference.")
   return reference
 }
 
@@ -33,10 +43,34 @@ export function parseUuid(value: unknown, label: string) {
 }
 
 export function parseAction(value: unknown): QuoteWorkflowAction {
-  if (["sources", "workspace", "save", "transition", "open", "reference-settings", "save-reference-settings"].includes(String(value))) {
+  if (["sources", "workspace", "intelligence", "save", "transition", "open", "readiness", "issue-options", "issue-draft", "issue-refine", "issue-preview", "issue", "reference-settings", "save-reference-settings", "draft-reference-rule", "branding"].includes(String(value))) {
     return value as QuoteWorkflowAction
   }
   throw new QuoteWorkflowError(400, "Choose a supported quote action.")
+}
+
+export function parseEmail(value: unknown) {
+  const email = requiredText(value, "Customer email", 320).toLowerCase()
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new QuoteWorkflowError(400, "Enter a valid customer email address.")
+  return email
+}
+
+export function parseQuoteResponseOrigin(value: unknown) {
+  const origin = normaliseMultideckAppOrigin(value)
+  if (!origin) throw new QuoteWorkflowError(400, "Open this quote from its Multideck workspace before sending it.")
+  return origin
+}
+
+export function buildQuoteResponseUrl(requestOrigin: unknown, token: string) {
+  const origin = parseQuoteResponseOrigin(requestOrigin)
+  return new URL(`/quotes/respond/${encodeURIComponent(token)}`, origin).toString()
+}
+
+export function parseExpiryPreset(value: unknown): QuoteExpiryPreset {
+  if (value === "never") return "never"
+  const days = Number(value ?? 14)
+  if (days === 7 || days === 14 || days === 28 || days === 90) return days
+  throw new QuoteWorkflowError(400, "Choose 7, 14, 28 or 90 days, or never.")
 }
 
 export function parseLifecycleAction(value: unknown): QuoteLifecycleAction {

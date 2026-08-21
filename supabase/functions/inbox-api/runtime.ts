@@ -3172,7 +3172,13 @@ async function recordDeliveryEvent(
   }
 }
 
-export async function sendMail(admin: Db, actor: Actor, body: Row, suppliedKey: string) {
+export async function sendMail(
+  admin: Db,
+  actor: Actor,
+  body: Row,
+  suppliedKey: string,
+  trustedOptions: { bodyHtml?: string } = {},
+) {
   await requirePermission(admin, actor, "Email.Send")
   if (!suppliedKey || suppliedKey.length > 200) throw new InboxHttpError(400, "An Idempotency-Key header is required when sending email.", "idempotency_key_required")
   const idempotencyKey = await sha256Hex(`${actor.userId}:${suppliedKey}`)
@@ -3206,7 +3212,8 @@ export async function sendMail(admin: Db, actor: Actor, body: Row, suppliedKey: 
     ? await sha256Hex([...new Set(externalRecipients.map((recipient) => recipient.address.toLowerCase()))].sort().join("\n"))
     : null
   const trackingUrl = trackingToken ? `${Deno.env.get("SUPABASE_URL")}/functions/v1/email-track/open?token=${encodeURIComponent(trackingToken)}` : null
-  const bodyHtml = trackingUrl ? `<div>${escapeTrackedHtml(bodyText)}</div><img src="${trackingUrl}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0" referrerpolicy="no-referrer">` : null
+  const trustedBodyHtml = cleanString(trustedOptions.bodyHtml, 2_000_000)
+  const bodyHtml = trustedBodyHtml || (trackingUrl ? `<div>${escapeTrackedHtml(bodyText)}</div><img src="${trackingUrl}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0" referrerpolicy="no-referrer">` : null)
   await result(admin.from("Comm_Messages").insert({
     CommMessage_ID: messageId, CommMessage_ThreadID: threadId, CommMessage_ParentMessageID: resolved.command === "forward" ? resolved.source?.CommMessage_ID : null,
     CommMessage_ReplyToMessageID: resolved.command.startsWith("reply") ? resolved.source?.CommMessage_ID : null, CommMessage_MailboxID: mailboxId,

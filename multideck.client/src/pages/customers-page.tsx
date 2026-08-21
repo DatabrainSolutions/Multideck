@@ -102,7 +102,8 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
       .then((reference) => {
         if (!active) return
         setCustomerReference(reference)
-        setNewCustomer((current) => current.orgTypeId ? current : { ...current, orgTypeId: reference.organisationTypes[0]?.id ?? "" })
+        const customerType = reference.organisationTypes.find((type) => type.name.trim().toLowerCase() === "customer") ?? reference.organisationTypes[0]
+        setNewCustomer((current) => current.orgTypeIds.length ? current : { ...current, orgTypeIds: customerType ? [customerType.id] : [] })
         setCustomerReferenceState("ready")
       })
       .catch((error) => {
@@ -153,7 +154,8 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
       await createCustomer(newCustomer)
       toast.success(t("Customer created"))
       setCreateOpen(false)
-      setNewCustomer(emptyCustomer(customerReference?.organisationTypes[0]?.id))
+      const customerType = customerReference?.organisationTypes.find((type) => type.name.trim().toLowerCase() === "customer") ?? customerReference?.organisationTypes[0]
+      setNewCustomer(emptyCustomer(customerType?.id))
       setReloadToken((value) => value + 1)
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : t("Unable to create the customer. Check the details and try again."))
@@ -194,7 +196,7 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
             <CustomerInput label={t("Customer name")} required value={newCustomer.name} onChange={(value) => updateNewCustomer("name", value)} />
             <label className="grid gap-1.5 text-start text-[13px] font-medium text-[var(--md-ink)]">
               <span>{t("Organisation type")} <span className="text-[var(--md-red)]">*</span></span>
-              <select value={newCustomer.orgTypeId} onChange={(event) => updateNewCustomer("orgTypeId", event.target.value)} required disabled={customerReferenceState !== "ready"} className="h-10 w-full rounded-[var(--md-radius-md)] border border-[rgba(11,20,19,0.12)] bg-white/65 px-3 text-[14px] outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] disabled:opacity-60">
+              <select value={newCustomer.orgTypeIds[0] ?? ""} onChange={(event) => updateNewCustomer("orgTypeIds", event.target.value ? [event.target.value] : [])} required disabled={customerReferenceState !== "ready"} className="h-10 w-full rounded-[var(--md-radius-md)] border border-[rgba(11,20,19,0.12)] bg-white/65 px-3 text-[14px] outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] disabled:opacity-60">
                 {customerReference?.organisationTypes.length ? customerReference.organisationTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>) : <option value="">{t("Loading organisation types")}</option>}
               </select>
               {customerReferenceState === "error" ? <span role="alert" className="flex flex-wrap items-center justify-between gap-2 text-[12px] font-normal text-[var(--md-red)]">{t("Organisation types could not be loaded. Try again before creating this account.")}<Button type="button" variant="outline" className="h-8" onClick={() => setCustomerReferenceReloadToken((value) => value + 1)}>{t("Try again")}</Button></span> : null}
@@ -268,7 +270,7 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
 }
 
 function emptyCustomer(orgTypeId = ""): CreateCustomerInput {
-  return { name: "", orgTypeId, addressLine1: null, townCity: null, postZipCode: null, countryCode: null, contactFirstName: null, contactLastName: null, contactEmail: null }
+  return { name: "", orgTypeIds: orgTypeId ? [orgTypeId] : [], addressLine1: null, townCity: null, postZipCode: null, countryCode: null, contactFirstName: null, contactLastName: null, contactEmail: null }
 }
 
 function CustomerInput({ label, hint, required, type = "text", value, onChange }: { label: string; hint?: string; required?: boolean; type?: string; value: string; onChange: (value: string) => void }) {

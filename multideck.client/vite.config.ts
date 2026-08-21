@@ -88,7 +88,7 @@ export default defineConfig(({ mode }) => {
           server.middlewares.use(async (req, res, next) => {
             const pathname = req.url?.split("?")[0]
 
-            if (!pathname || !appRoutes.has(pathname)) {
+            if (!pathname || (!appRoutes.has(pathname) && !pathname.startsWith("/quotes/respond/"))) {
               next()
               return
             }

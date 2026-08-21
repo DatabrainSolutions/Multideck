@@ -116,14 +116,32 @@ async function declarationForUser(
   user: User,
   declarationId: string,
   requireDraft = false,
+  requireWrite = requireDraft,
 ) {
-  let query = admin
+  const { data: authorised, error: authorisationError } = await admin.rpc(
+    "customs_declaration_authorised",
+    {
+      caller_auth_user_id: user.id,
+      requested_declaration_id: declarationId,
+      require_write: requireWrite,
+      require_draft: requireDraft,
+    },
+  );
+  if (authorisationError) throw new HttpError(500, authorisationError.message);
+  if (!authorised) {
+    throw new HttpError(
+      404,
+      requireDraft
+        ? "That Customs declaration is unavailable or can no longer be edited."
+        : "That Customs declaration was not found.",
+    );
+  }
+
+  const query = admin
     .from("Customs_Declarations")
     .select("*")
     .eq("CUST_id", declarationId)
-    .eq("CUST_CreatedBy", user.id)
     .eq("CUST_IsDeleted", false);
-  if (requireDraft) query = query.eq("CUST_Status", "draft");
   const { data, error } = await query.maybeSingle();
   if (error) throw new HttpError(500, error.message);
   if (!data) {
@@ -767,7 +785,7 @@ async function deleteProviderDraft(
     CUST_IsDeleted: true,
     CUST_UpdatedAt: now,
     CUST_UpdatedBy: actor.User_ID,
-  }).eq("CUST_id", declarationId).eq("CUST_CreatedBy", user.id).eq(
+  }).eq("CUST_id", declarationId).eq(
     "CUST_Status",
     "draft",
   ).eq("CUST_IsDeleted", false).select("CUST_id").maybeSingle();
@@ -947,7 +965,13 @@ async function refreshDeclaration(
   actor: Actor,
   declarationId: string,
 ) {
-  const declaration = await declarationForUser(admin, user, declarationId);
+  const declaration = await declarationForUser(
+    admin,
+    user,
+    declarationId,
+    false,
+    true,
+  );
   const latest = await latestSubmission(admin, declarationId);
   const correlationId = correlationFrom(declaration, latest);
   if (!correlationId || !latest) {
@@ -1031,10 +1055,6 @@ async function searchCommodities(input: Json) {
 }
 
 async function commodityDetails(input: Json) {
-  const commodityCode = text(input.commodityCode, 20).replace(/\D/g, "");
-  if (!/^\d{10}$/.test(commodityCode)) {
-    throw new HttpError(400, "Enter a valid 10-digit commodity code.");
-  }
   const direction = input.direction === "import"
     ? "import"
     : input.direction === "export"
@@ -1042,6 +1062,18 @@ async function commodityDetails(input: Json) {
     : null;
   if (!direction) {
     throw new HttpError(400, "Choose whether this is an import or export.");
+  }
+  const commodityCode = text(input.commodityCode, 20).replace(/\D/g, "");
+  const validCommodityCode = direction === "export"
+    ? /^\d{8}(?:\d{2})?$/.test(commodityCode)
+    : /^\d{10}$/.test(commodityCode);
+  if (!validCommodityCode) {
+    throw new HttpError(
+      400,
+      direction === "export"
+        ? "Enter a valid 8-digit export commodity code."
+        : "Enter a valid 10-digit import commodity code.",
+    );
   }
   const cacheKey = `${direction}:${commodityCode}`;
   let detail = cachedCommodityValue(commodityDetailCache, cacheKey);

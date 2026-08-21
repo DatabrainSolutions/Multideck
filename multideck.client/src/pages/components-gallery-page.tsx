@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { useTheme } from "next-themes"
-import { AiBrain, ArrowLeft, ArrowRight, Bell, BrainCircuit, Check, Clipboard, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, Pencil, Pin, Search, Settings2, Ship, Trash2, UserRound } from "@/components/icons/hugeicons"
+import { useTheme } from "@/lib/theme-provider"
+import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, PackageCheck, Pencil, Pin, Search, Settings2, Ship, Trash2, UserRound, Zap } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
@@ -74,6 +74,7 @@ import { CrmActivityTimeline, CrmContactTable, CrmForecastPanel, CrmLeadDetailPa
 import { CopyableField } from "@/components/multideck/copyable-field"
 import { ContactCardLayoutPicker, ContactCardSocialLinksEditor } from "@/components/multideck/contact-card-design"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
+import { OrganisationFoundationPanel } from "@/components/multideck/organisation-foundation-panel"
 import { AutomationRunHistory } from "@/components/multideck/contact-card-automation"
 import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { CrmPipelineEditor } from "@/components/multideck/crm-pipeline-editor"
@@ -85,8 +86,10 @@ import { MailboxProviderSwitch } from "@/components/multideck/mailbox-provider-s
 import { MailComposer, type ComposerState } from "@/components/multideck/mail-composer"
 import { ThreadSummary } from "@/components/multideck/thread-summary"
 import type { InboxThreadListItem, Mailbox, MailProvider, ThreadSummaryState } from "@/lib/inbox-api"
+import type { ApiCustomerDetail, CustomerReference } from "@/lib/customer-api"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, TablePillKindContext, toneToVar } from "@/components/multideck/status-pill"
+import { TodoActionStateIcon, TodoCompletionControl, TodoPriorityPicker, TodoPriorityPill } from "@/components/multideck/todo-components"
 import { ScreeningListFreshness, ScreeningMatchList, ScreeningMatchRow, ScreeningOutcomePill, ScreeningResultSummary } from "@/components/multideck/screening-components"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
 import { AuthIdentityManager, AuthProviderSelector } from "@/components/multideck/auth-provider-selector"
@@ -125,10 +128,20 @@ import {
   type DexterMentionItem,
   type DexterSpecialistId,
 } from "@/components/multideck/agent-dexter-components"
+import { HomeDexterLauncher } from "@/components/multideck/home-dexter-launcher"
+import { HomePromptRail, type HomePromptSuggestion } from "@/components/multideck/home-prompt-rail"
+import {
+  HomeDeckAction,
+  HomeDeckPanel,
+  HomeDeckRow,
+  HomeDeckTile,
+  homeDeckRowButtonClass,
+} from "@/components/multideck/home-deck-panel"
 import { DexterActionApproval } from "@/components/multideck/dexter-action-approval"
 import { DexterInlineCitation } from "@/components/multideck/dexter-inline-citation"
 import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
 import { DexterEmailComposeCard } from "@/components/multideck/dexter-email-compose-card"
+import { AiPromptMorph } from "@/components/multideck/ai-prompt-morph"
 import { WatchModeAurora } from "@/components/multideck/aurora-background"
 import { defaultDexterModelId, type DexterModelId } from "@/data/dexter-models"
 import { defaultDexterMentionItems } from "@/data/dexter-mentions"
@@ -188,6 +201,7 @@ import { PageSettingsMenu } from "@/components/multideck/page-settings-menu"
 import { AuditTimeline } from "@/components/multideck/audit-timeline"
 import { AuditWorkspace, QUOTE_AUDIT_SAMPLE_DATA } from "@/components/multideck/audit-workspace"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { CustomsReadinessReview } from "@/components/multideck/customs-readiness-review"
 import { UnifiedQuoteChargesWorkspace, type UnifiedQuoteChargeRow } from "@/components/multideck/unified-quote-charges-workspace"
 import { quoteMatchesSearch, quoteSearchFieldOptions, type QuoteSearchQuery } from "@/lib/quote-filters"
 import { matchesFilterQuery, type FilterFieldOption, type FilterQuery } from "@/lib/advanced-filters"
@@ -225,7 +239,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "register-toolbar", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "register-toolbar", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
   },
   {
     label: "Auth components",
@@ -240,7 +254,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
@@ -250,18 +264,42 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["dashboard-customise-panel", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+  },
+  {
+    label: "Home",
+    helper: "The launcher, its prompts, and the deck beneath it",
+    ids: ["home-dexter-launcher", "home-prompt-rail", "home-deck-panel"],
   },
   {
     label: "Feedback",
     helper: "Status and notifications",
-    ids: ["status-pill", "ai-edge-glow", "toast"],
+    ids: ["status-pill", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "ai-edge-glow", "toast"],
   },
   {
     label: "Settings",
     helper: "Configuration surfaces",
     ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card", "settings-progress-ring", "keyboard-shortcuts-panel"],
   },
+]
+
+const previewHomeSuggestions: HomePromptSuggestion[] = [
+  { id: "triage", title: "Work through what is due before cutoff", prompt: "Take my queue for today in deadline order and tell me exactly what to do on each one.", meta: "4 due", icon: Zap, specialistId: "ops" },
+  { id: "quotes", title: "Send the quotes that are ready", prompt: "Show me every quote that is ready to send, check each one, and draft the covering email.", meta: "2 ready", icon: PackageCheck, specialistId: "sales" },
+  { id: "risk", title: "Review the bookings most at risk", prompt: "Show me the bookings most at risk right now and what I should do next on each.", icon: BarChart3, specialistId: "analytics" },
+]
+
+const previewHomeJobs = [
+  { id: "MD-22455", customer: "Northwind GmbH" },
+  { id: "MD-22479", customer: "Marlow Apparel" },
+  { id: "MD-22414", customer: "Aldridge & Sons" },
+]
+
+const previewHomeClocks = [
+  { city: "Shanghai", gap: "closes in 20m", dot: "bg-[var(--md-red)]", tint: "bg-[color-mix(in_srgb,var(--md-red)_14%,var(--md-deck-surface))]" },
+  { city: "Dubai", gap: "closes in 55m", dot: "bg-[var(--md-amber)]", tint: "bg-[color-mix(in_srgb,var(--md-amber)_14%,var(--md-deck-surface))]" },
+  { city: "London", gap: "closes in 3h", dot: "bg-[var(--md-line-strong)]", tint: "" },
+  { city: "New York", gap: "closes in 7h", dot: "bg-[var(--md-line-strong)]", tint: "" },
 ]
 
 /** Deadlines are stamped relative to load so the buckets always demonstrate. */
@@ -1112,9 +1150,117 @@ const previewPurchaseOrderReference: WarehousePurchaseOrderReference = {
   ],
 }
 
+const previewOrganisationReference: CustomerReference = {
+  organisationTypes: [
+    { id: "gallery-type-customer", name: "Customer" },
+    { id: "gallery-type-supplier", name: "Supplier" },
+  ],
+  owners: [],
+  relationshipStatuses: [],
+  offices: [
+    { id: "gallery-office-fxt", name: "Felixstowe", code: "FXT", countryCode: "GB", timeZone: "Europe/London" },
+    { id: "gallery-office-lhr", name: "London Heathrow", code: "LHR", countryCode: "GB", timeZone: "Europe/London" },
+  ],
+}
+
+const previewOrganisationSeed: ApiCustomerDetail = {
+  id: "gallery-company-northstar",
+  name: "Northstar Components",
+  initials: "NC",
+  location: "Manchester, GB",
+  industry: "Industrial components",
+  contactCount: 3,
+  status: "Premium",
+  relationshipStatus: "active",
+  tier: "Premium",
+  segment: "Enterprise",
+  ownerId: null,
+  ownerName: null,
+  healthScore: 86,
+  lastContactAt: "2026-08-19T09:30:00Z",
+  nextActionDueAt: null,
+  marketingOptIn: true,
+  marketingConsentSource: "contract",
+  marketingConsentUpdatedAt: "2026-04-14T10:00:00Z",
+  types: ["Customer", "Supplier"],
+  editVersion: 4,
+  accountCode: "NOR-104-NAT",
+  scopeCode: "national",
+  isPotential: false,
+  customerSince: "2024-04-14",
+  vertical: "Manufacturing",
+  primaryMode: "Road",
+  primaryTradeLane: "UK domestic",
+  growthState: "Growing",
+  churnRiskScore: 12,
+  lifetimeValue: 284000,
+  currencyCode: "GBP",
+  summary: "National components company with time-critical plant deliveries.",
+  strategic: true,
+  trainingAllowed: false,
+  metadata: {},
+  address: { id: "gallery-address-main", line1: "Unit 14, Northgate Logistics Park", line2: null, townCity: "Manchester", countyState: "Greater Manchester", postZipCode: "M17 8QP", countryCode: "GB", mainEmail: "ops@northstar.example", mainPhone: "+44 161 555 0198" },
+  engagement: null,
+  contacts: [],
+  activeShipments: [],
+  activities: [],
+  recentEmails: { available: true, items: [] },
+  officeAssignments: [
+    { officeId: "gallery-office-fxt", name: "Felixstowe", code: "FXT", countryCode: "GB", timeZone: "Europe/London", isPrimary: true },
+    { officeId: "gallery-office-lhr", name: "London Heathrow", code: "LHR", countryCode: "GB", timeZone: "Europe/London", isPrimary: false },
+  ],
+  addressCapabilities: [
+    { id: 1, code: "main", name: "Main" },
+    { id: 2, code: "office", name: "Office" },
+    { id: 3, code: "postal", name: "Postal" },
+    { id: 4, code: "pickup", name: "Pickup" },
+    { id: 5, code: "delivery", name: "Delivery" },
+    { id: 6, code: "billing", name: "Billing" },
+  ],
+  addresses: [{
+    id: "gallery-address-main",
+    name: "Manchester operations",
+    line1: "Unit 14, Northgate Logistics Park",
+    line2: null,
+    townCity: "Manchester",
+    countyState: "Greater Manchester",
+    postZipCode: "M17 8QP",
+    countryCode: "GB",
+    unlocode: "GBMAN",
+    email: "ops@northstar.example",
+    phone: "+44 161 555 0198",
+    timeZone: "Europe/London",
+    capabilities: [
+      { code: "main", name: "Main", isDefault: true },
+      { code: "pickup", name: "Pickup", isDefault: true },
+      { code: "delivery", name: "Delivery", isDefault: true },
+    ],
+    weeklyHours: [1, 2, 3, 4, 5].map((dayOfWeek) => ({ id: `gallery-hours-${dayOfWeek}`, dayOfWeek, opensAt: "08:00", closesAt: "17:30", sortOrder: 0 })),
+    openingOverrides: [{ id: "gallery-override", date: "2026-08-31", isClosed: true, opensAt: null, closesAt: null, note: "Bank holiday" }],
+  }],
+  relatedPartyDefaults: [{
+    id: "gallery-related-default",
+    partyRoleCode: "delivery_agent",
+    destinationCountryCode: "NL",
+    destinationUnlocode: "NLRTM",
+    destinationPostcode: null,
+    targetOrganisationId: "gallery-company-northgate",
+    targetOrganisationName: "Northgate Benelux",
+    targetOrganisationCode: "NOR-220-GLB",
+    targetAddressId: null,
+    targetContactId: null,
+    targetContactName: null,
+    priority: 100,
+    effectiveFrom: "2026-01-01",
+    effectiveTo: null,
+    isActive: true,
+  }],
+}
+
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
   const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
+  const [previewTodoChecked, setPreviewTodoChecked] = useState(false)
   const [previewArrangeOrder, setPreviewArrangeOrder] = useState<string[]>(previewSidebarOrder)
   const [previewArrangePinned, setPreviewArrangePinned] = useState<string[]>([])
   const [previewPage, setPreviewPage] = useState(1)
@@ -1230,6 +1376,8 @@ function ComponentPreview({ id }: { id: string }) {
     }],
   })
   const [previewContactEmail, setPreviewContactEmail] = useState(marlowContacts[0].email)
+  const [previewAiPromptOpen, setPreviewAiPromptOpen] = useState(false)
+  const [previewAiPrompt, setPreviewAiPrompt] = useState("")
   const [previewDexterPrompt, setPreviewDexterPrompt] = useState("Prep Marlow's QBR and attach the latest open booking context.")
   const [previewDexterMentions, setPreviewDexterMentions] = useState<DexterMentionItem[]>([])
   const [previewDexterSpecialistId, setPreviewDexterSpecialistId] = useState<DexterSpecialistId>("auto")
@@ -1241,6 +1389,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewCrmLeadId, setPreviewCrmLeadId] = useState(previewCrmLeads[0].id)
   const [previewCrmContactEmail, setPreviewCrmContactEmail] = useState(crmContacts[0].email)
   const [previewContactCreateOpen, setPreviewContactCreateOpen] = useState(false)
+  const [previewOrganisation, setPreviewOrganisation] = useState<ApiCustomerDetail>(previewOrganisationSeed)
   const [previewDriveRenamingId, setPreviewDriveRenamingId] = useState<string | null>(null)
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
@@ -1376,6 +1525,29 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="grid w-full max-w-[640px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Workflow statuses</p><TablePillKindContext.Provider value="status"><div className="flex flex-wrap gap-2"><StatusPill tone="purple">New</StatusPill><StatusPill tone="orange">Contacted</StatusPill><StatusPill tone="blue">Qualified</StatusPill><StatusPill tone="amber">Nurturing</StatusPill><StatusPill tone="green">Converted</StatusPill><StatusPill tone="red">Disqualified</StatusPill></div></TablePillKindContext.Provider></div>
           <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Descriptive attributes</p><TablePillKindContext.Provider value="attribute"><div className="flex flex-wrap gap-2"><StatusPill tone="teal">Ocean</StatusPill><StatusPill tone="blue">Customer</StatusPill><StatusPill tone="amber">Express</StatusPill><StatusPill tone="neutral">Standard</StatusPill></div></TablePillKindContext.Provider></div>
+        </div>
+      ) : null}
+
+      {id === "todo-completion-control" ? (
+        <div className="flex w-full max-w-[420px] items-center gap-3 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <TodoCompletionControl checked={previewTodoChecked} label={previewTodoChecked ? t("Reopen task") : t("Mark task complete")} onChange={setPreviewTodoChecked} />
+          <div><p className={cn("text-[13px] font-medium text-[var(--md-ink)]", previewTodoChecked && "line-through text-[var(--md-subtle)]")}>Review revised delivery plan</p><p className="mt-1 text-[12px] text-[var(--md-text)]">Click the circle to inspect the completion motion.</p></div>
+        </div>
+      ) : null}
+
+      {id === "todo-priority-pill" ? (
+        <div className="flex w-full max-w-[520px] flex-wrap items-center justify-center gap-2 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <TodoPriorityPill priority="low" /><TodoPriorityPill priority="medium" /><TodoPriorityPill priority="high" /><TodoPriorityPill priority="urgent" />
+        </div>
+      ) : null}
+
+      {id === "todo-priority-picker" ? (
+        <div className="flex w-full max-w-[520px] items-center justify-center rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]"><TodoPriorityPicker value="high" ariaLabel="Priority" onValueChange={() => undefined} /></div>
+      ) : null}
+
+      {id === "todo-action-state-icon" ? (
+        <div className="flex w-full max-w-[520px] items-center justify-center gap-8 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
+          {(["idle","loading","success"] as const).map((state) => <div key={state} className="grid justify-items-center gap-2"><TodoActionStateIcon state={state} /><span className="text-[11px] capitalize text-[var(--md-text)]">{state}</span></div>)}
         </div>
       ) : null}
 
@@ -2629,6 +2801,20 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "customs-readiness-review" ? (
+        <div className="w-full max-w-[760px]">
+          <CustomsReadinessReview
+            completeChecks={11}
+            emptyDescription="Ready for secure server integration checks."
+            emptyTitle="Current form checks passed"
+            issues={[{ key: "exporter_eori", label: "Exporter EORI", section: "Parties" }, { key: "commercial_invoice", label: "Attached commercial invoice", section: "Documents" }]}
+            percent={69}
+            renderFix={(issue, close) => <><label className="grid gap-1 text-[11px] text-[var(--md-text)]"><span>{issue.label}</span><Input defaultValue="" /></label><div className="mt-3 flex justify-end"><Button size="sm" onClick={close}>Confirm</Button></div></>}
+            totalChecks={16}
+          />
+        </div>
+      ) : null}
+
       {id === "booking-ask-panel" ? (
         <div className="h-[620px] w-full max-w-[380px]">
           <BookingAskPanel />
@@ -2664,6 +2850,28 @@ function ComponentPreview({ id }: { id: string }) {
             </DexterInlineCitation>
             . I would prioritise it before the afternoon quote review.
           </p>
+        </div>
+      ) : null}
+
+      {id === "ai-prompt-morph" ? (
+        <div className="flex w-full max-w-[640px] justify-end rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <AiPromptMorph
+            id="gallery-ai-prompt"
+            open={previewAiPromptOpen}
+            value={previewAiPrompt}
+            placeholder="Describe the change…"
+            triggerLabel="Open AI prompt"
+            inputLabel="AI prompt"
+            closeLabel="Close AI prompt"
+            submitLabel="Send prompt"
+            submitDisabled={!previewAiPrompt.trim()}
+            onOpenChange={setPreviewAiPromptOpen}
+            onValueChange={setPreviewAiPrompt}
+            onSubmit={() => {
+              toast.success("Prompt ready")
+              setPreviewAiPromptOpen(false)
+            }}
+          />
         </div>
       ) : null}
 
@@ -2739,6 +2947,62 @@ function ComponentPreview({ id }: { id: string }) {
             onAccessModeChange={setPreviewDexterAccessMode}
             onRemoveAttachment={togglePreviewDexterAttachment}
             onSend={() => toast.success("Dexter conversation started")}
+          />
+        </div>
+      ) : null}
+
+      {id === "home-prompt-rail" ? (
+        <div className="w-full max-w-[620px]">
+          <HomePromptRail
+            suggestions={previewHomeSuggestions}
+            onPick={(prompt) => toast.success("Prompt handed to Dexter", { description: prompt })}
+          />
+        </div>
+      ) : null}
+
+      {id === "home-deck-panel" ? (
+        <div className="grid w-full max-w-[620px] grid-cols-2 gap-3">
+          <div className="aspect-[3/4]">
+            <HomeDeckPanel
+              title="My jobs"
+              count={2}
+              action={<HomeDeckAction onClick={() => toast.success("Scope switched")}>All</HomeDeckAction>}
+            >
+              {previewHomeJobs.map((job, index) => (
+                <HomeDeckRow key={job.id} index={index}>
+                  <button type="button" className={homeDeckRowButtonClass} onClick={() => toast.success(`${job.id} opened`)}>
+                    <span className="shrink-0 text-[12.5px] font-medium leading-4 tabular-nums text-[var(--md-ink)]" dir="ltr">{job.id}</span>
+                    <span className="min-w-0 flex-1 truncate text-[11.5px] leading-4 text-[var(--md-subtle)]">{job.customer}</span>
+                  </button>
+                </HomeDeckRow>
+              ))}
+            </HomeDeckPanel>
+          </div>
+          <div className="aspect-[3/4]">
+            <HomeDeckPanel variant="bare" title="Clocking off">
+              {previewHomeClocks.map((clock, index) => (
+                <HomeDeckTile key={clock.city} index={index} className={clock.tint}>
+                  <div className="flex items-baseline gap-2">
+                    <span aria-hidden="true" className={`size-1.5 shrink-0 translate-y-[-1px] rounded-full ${clock.dot}`} />
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium leading-4 text-[var(--md-ink)]">{clock.city}</span>
+                    <span className="shrink-0 text-[11.5px] leading-4 tabular-nums text-[var(--md-text)]">{clock.gap}</span>
+                  </div>
+                </HomeDeckTile>
+              ))}
+            </HomeDeckPanel>
+          </div>
+        </div>
+      ) : null}
+
+      {id === "home-dexter-launcher" ? (
+        <div className="w-full max-w-[760px]">
+          <HomeDexterLauncher
+            operatorName="Harry Phillips"
+            standfirst="Three jobs need you before today's cutoff."
+            suggestions={previewHomeSuggestions}
+            docked={false}
+            onDockedChange={() => undefined}
+            navigate={(path) => toast.success(`Navigate to ${path}`)}
           />
         </div>
       ) : null}
@@ -3199,6 +3463,12 @@ function ComponentPreview({ id }: { id: string }) {
             ]}
             onCreated={() => setPreviewContactCreateOpen(false)}
           />
+        </div>
+      ) : null}
+
+      {id === "organisation-foundation-panel" ? (
+        <div className="w-full max-w-[1120px]">
+          <OrganisationFoundationPanel account={previewOrganisation} reference={previewOrganisationReference} onChange={setPreviewOrganisation} />
         </div>
       ) : null}
 

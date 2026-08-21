@@ -14,6 +14,7 @@ const automationRuns = read("supabase/migrations/20260803223000_contact_card_aut
 const design = read("multideck.client/src/components/multideck/contact-card-design.tsx")
 const cardLayouts = read("multideck.client/src/lib/card-layout.ts")
 const publicView = read("multideck.client/src/components/multideck/contact-card-public-view.tsx")
+const publicPage = read("multideck.client/src/pages/contact-card-public-page.tsx")
 const tenantConsent = read("supabase/migrations/20260803224500_contact_card_tenant_marketing_consent.sql")
 const consentServiceRole = read("supabase/migrations/20260803224600_grant_marketing_consent_service_role.sql")
 const consentControl = read("multideck.client/src/components/multideck/marketing-opt-in-control.tsx")
@@ -42,6 +43,12 @@ test("contact-card registers and analytics are calculated by Supabase", () => {
   assert.match(data, /return card\.analytics\.totals/)
   assert.match(analyticsPanel, /const hasScans = totals\.scans > 0/)
   assert.doesNotMatch(data, /VISIT_WINDOW_MS|const counts = new Map|card\.scans\.filter/)
+})
+
+test("public card activity stays linked when the scan request is still resolving", () => {
+  assert.match(publicPage, /scanPromiseRef/)
+  assert.match(publicPage, /scanPromiseRef\.current\?\.then\(\(scanId\) => recordFormStarted/)
+  assert.match(publicPage, /scanIdRef\.current \?\? await scanPromiseRef\.current/)
 })
 
 test("contact-card automation suggestions use the real Dexter Edge Function", () => {

@@ -31,6 +31,11 @@ Deno.test("warehouse movement and status changes remain separate authority famil
   assert(!operatorAuthorisesAction("Move this pallet to bay A4", "change_warehouse_inventory_status"), "move incorrectly authorised status change")
 })
 
+Deno.test("marking a quote lost is a dedicated authority family", () => {
+  assert(operatorAuthorisesAction("Mark this quote lost because the customer chose a competitor", "mark_quote_lost"), "quote loss was not authorised")
+  assert(!operatorAuthorisesAction("Update the quote validity date", "mark_quote_lost"), "ordinary quote editing authorised quote loss")
+})
+
 Deno.test("Approve mode may prepare allowlisted work for an explicit operator decision", () => {
   const available = ["send_email", "update_booking"]
   const allowed = allowedActionsForPrompt("Summarise the booking", available, "approve")

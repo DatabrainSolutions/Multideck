@@ -20,13 +20,14 @@ export type FilterOperator =
   | "after"
   | "between"
 
-export type FilterFieldKind = "text" | "date"
+export type FilterFieldKind = "text" | "date" | "select"
 
 export type FilterFieldOption = {
   value: string
   label: string
   placeholder?: string
   kind?: FilterFieldKind
+  options?: Array<{ value: string; label: string }>
 }
 
 export type FilterCondition = {
@@ -67,8 +68,15 @@ export const dateFilterOperators: Array<{ value: FilterOperator; label: string }
   { value: "is-not-empty", label: "is not empty" },
 ]
 
+export const selectFilterOperators: Array<{ value: FilterOperator; label: string }> = [
+  { value: "is", label: "is" },
+  { value: "is-not", label: "is not" },
+  { value: "is-empty", label: "is empty" },
+  { value: "is-not-empty", label: "is not empty" },
+]
+
 export function filterOperatorsForKind(kind: FilterFieldKind = "text") {
-  return kind === "date" ? dateFilterOperators : textFilterOperators
+  return kind === "date" ? dateFilterOperators : kind === "select" ? selectFilterOperators : textFilterOperators
 }
 
 export function filterOperatorNeedsValue(operator: FilterOperator) {
@@ -80,7 +88,7 @@ export function filterOperatorNeedsRange(operator: FilterOperator) {
 }
 
 export function defaultFilterOperator(kind: FilterFieldKind = "text"): FilterOperator {
-  return kind === "date" ? "on" : "contains"
+  return kind === "date" ? "on" : kind === "select" ? "is" : "contains"
 }
 
 let idCounter = 0

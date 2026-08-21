@@ -4,9 +4,10 @@ import test from "node:test"
 
 const root = new URL("../", import.meta.url)
 const read = (path) => readFile(new URL(path, root), "utf8")
-const [migration, pagingMigration, supportingReadMigration, edgeFunction, config, dexter] = await Promise.all([
+const [migration, pagingMigration, refreshNoiseMigration, supportingReadMigration, edgeFunction, config, dexter] = await Promise.all([
   read("migrations/20260818134500_admin_audit_workspace.sql"),
   read("migrations/20260819110000_admin_audit_register_paging.sql"),
+  read("migrations/20260820190000_hide_session_refreshes_from_detailed_audit.sql"),
   read("migrations/20260819142000_admin_presence_inbox_reply_bounds.sql"),
   read("functions/admin-audit/index.ts"),
   read("config.toml"),
@@ -33,6 +34,12 @@ test("Activity and Detailed logs merge authentication and application audit evid
   assert.match(migration, /not in \('token_refreshed', 'token_revoked'\)/)
   assert.match(migration, /if p_detailed then/)
   assert.match(migration, /'auditedTableCount'/)
+})
+
+test("session refresh noise stays hidden from both audit views", () => {
+  const refreshFilters = refreshNoiseMigration.match(/coalesce\(auth_event\.payload->>'action', ''\) <> 'token_refreshed'/g) ?? []
+  assert.equal(refreshFilters.length, 3)
+  assert.match(refreshNoiseMigration, /p_detailed or coalesce\(auth_event\.payload->>'action', ''\) <> 'token_revoked'/)
 })
 
 test("active presence is event-like browser evidence and not inferred from an open session", () => {

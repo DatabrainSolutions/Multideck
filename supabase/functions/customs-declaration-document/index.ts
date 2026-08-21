@@ -109,18 +109,32 @@ Deno.serve(async (request) => {
       );
     }
 
+    const { data: authorised, error: authorisationError } = await context.admin
+      .rpc("customs_declaration_authorised", {
+        caller_auth_user_id: context.userId,
+        requested_declaration_id: declarationId,
+        require_write: false,
+        require_draft: false,
+      });
+    if (authorisationError) throw authorisationError;
+    if (!authorised) {
+      throw new FunctionError(
+        404,
+        "That declaration was not found.",
+        "Customs declaration access was not authorised",
+      );
+    }
+
     const { data: declaration, error: declarationError } = await context.admin
       .from("Customs_Declarations")
-      .select("*").eq("CUST_id", declarationId).eq(
-        "CUST_CreatedBy",
-        context.userId,
-      ).eq("CUST_IsDeleted", false).maybeSingle();
+      .select("*").eq("CUST_id", declarationId)
+      .eq("CUST_IsDeleted", false).maybeSingle();
     if (declarationError) throw declarationError;
     if (!declaration) {
       throw new FunctionError(
         404,
         "That declaration was not found.",
-        "Owned Customs declaration was not found",
+        "Authorised Customs declaration was not found",
       );
     }
 

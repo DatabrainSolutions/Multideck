@@ -42,7 +42,7 @@ const CARD_STATUS_LABEL: Record<ContactCardStatus, string> = {
 
 export function CardStatusPill({ status }: { status: ContactCardStatus }) {
   const { t } = useLanguage()
-  return <StatusPill tone={CARD_STATUS_TONE[status]}>{t(CARD_STATUS_LABEL[status])}</StatusPill>
+  return <StatusPill kind="status" tone={CARD_STATUS_TONE[status]} indicator={false}>{t(CARD_STATUS_LABEL[status])}</StatusPill>
 }
 
 export type AutomationHealth = { tone: StatusTone; label: string; detail: string }

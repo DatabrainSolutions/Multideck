@@ -382,6 +382,17 @@ export function AdvancedFilterPopover({
                             allowClear
                             triggerClassName="h-7 w-full gap-1.5 rounded-[var(--md-radius-md)] px-2 text-[12px] [&_svg]:size-3.5"
                           />
+                        ) : kind === "select" ? (
+                          <Select value={condition.value} onValueChange={(value) => updateCondition(group.id, condition.id, { value })}>
+                            <SelectTrigger size="sm" aria-label={t("Filter value")} className="h-7 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-2 text-[12px] font-normal text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
+                              <SelectValue placeholder={t(meta?.placeholder ?? "Choose a value")} />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-[320px]">
+                              {(meta?.options ?? []).map((option) => (
+                                <SelectItem key={option.value} value={option.value} className="text-[12px]">{t(option.label)}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         ) : (
                           <Input
                             value={condition.value}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { AiEditing, ArrowUp, Building2, List, ListOrdered, LoaderCircle, Megaphone, Plus, RefreshCw, Type, UserRound, UsersRound, X } from "@/components/icons/hugeicons"
+import { Building2, List, ListOrdered, LoaderCircle, Megaphone, Plus, RefreshCw, Type, UserRound, UsersRound } from "@/components/icons/hugeicons"
+import { AiPromptMorph } from "@/components/multideck/ai-prompt-morph"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
@@ -437,115 +437,28 @@ function AudienceStep({
 }
 
 function ComposeStep({ subject, message, direction, busy, onSubject, onMessage, onDirection, onAI, t }: { subject: string; message: string; direction: string; busy: boolean; onSubject: (value: string) => void; onMessage: (value: string) => void; onDirection: (value: string) => void; onAI: () => void; t: (text: string) => string }) {
-  const shouldReduceMotion = useReducedMotion()
   const [promptOpen, setPromptOpen] = useState(false)
-  const promptInputRef = useRef<HTMLInputElement>(null)
-  const promptTriggerRef = useRef<HTMLButtonElement>(null)
-  const promptWasOpenRef = useRef(false)
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      if (promptOpen) {
-        promptWasOpenRef.current = true
-        promptInputRef.current?.focus()
-      } else if (promptWasOpenRef.current) {
-        promptWasOpenRef.current = false
-        promptTriggerRef.current?.focus()
-      }
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [promptOpen])
-
-  function submitAIDraft(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (busy || (!direction.trim() && !subject.trim() && !message.trim())) return
-    onAI()
-  }
 
   return <>
     <label className="grid gap-2 text-[13px] font-medium text-[var(--md-ink)]">{t("Subject")}<SettingsInput value={subject} onChange={(event) => onSubject(event.target.value)} maxLength={200} placeholder={t("Add a clear subject")} /></label>
     <div className="grid gap-2 text-[13px] font-medium text-[var(--md-ink)]"><span>{t("Message")}</span><BroadcastMessageEditor value={message} onChange={onMessage} t={t} /><span className="text-[11px] font-normal leading-5 text-[var(--md-subtle)]">{t("Formatting is shown as it will appear in the email.")}</span></div>
     <div className="flex min-w-0 justify-end">
-      <motion.div
-        initial={false}
-        animate={{ width: promptOpen ? "100%" : 40 }}
-        transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-        className={cn(
-          "h-10 max-w-[520px] overflow-hidden rounded-full",
-          promptOpen && "bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]",
-        )}
-      >
-        <AnimatePresence initial={false} mode="popLayout">
-          {promptOpen ? (
-            <motion.form
-              key="ai-prompt"
-              id="broadcast-ai-prompt"
-              data-wizard-escape-contained="true"
-              className="flex h-10 w-full items-center gap-1.5 px-2"
-              initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, filter: "blur(4px)" }}
-              animate={{ opacity: 1, filter: "blur(0px)" }}
-              exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, filter: "blur(3px)" }}
-              transition={{ duration: shouldReduceMotion ? 0 : 0.14 }}
-              onSubmit={submitAIDraft}
-              onKeyDownCapture={(event) => {
-                if (event.key !== "Escape" || busy) return
-                event.preventDefault()
-                event.stopPropagation()
-                event.nativeEvent.stopImmediatePropagation()
-                setPromptOpen(false)
-              }}
-            >
-              <AiEditing className="ms-1 size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
-              <input
-                ref={promptInputRef}
-                value={direction}
-                onChange={(event) => onDirection(event.target.value.slice(0, 2000))}
-                disabled={busy}
-                aria-label={t("Ask Luna to draft this email")}
-                placeholder={t("How should this email be written?")}
-                className="h-full min-w-0 flex-1 bg-transparent text-[16px] text-[var(--md-ink)] outline-none placeholder:text-[color-mix(in_srgb,var(--md-text)_70%,transparent)] disabled:opacity-70 sm:text-[13px]"
-              />
-              <button
-                type="button"
-                disabled={busy}
-                aria-label={t("Close AI prompt")}
-                title={t("Close AI prompt")}
-                onClick={() => setPromptOpen(false)}
-                className="grid size-7 shrink-0 place-items-center rounded-full text-[var(--md-subtle)] transition-[background-color,color,scale] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.96] disabled:opacity-40 motion-reduce:transition-none motion-reduce:active:scale-100"
-              >
-                <X className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
-              </button>
-              <button
-                type="submit"
-                disabled={busy || (!direction.trim() && !subject.trim() && !message.trim())}
-                aria-label={t("Draft email with AI")}
-                title={t("Draft email with AI")}
-                className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,opacity,scale] duration-150 hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.96] disabled:opacity-40 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100"
-              >
-                {busy ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <ArrowUp className="size-3.5" strokeWidth={1.7} aria-hidden="true" />}
-              </button>
-            </motion.form>
-          ) : (
-            <motion.button
-              key="ai-pencil"
-              ref={promptTriggerRef}
-              type="button"
-              aria-expanded="false"
-              aria-controls="broadcast-ai-prompt"
-              aria-label={t("Ask Luna to draft this email")}
-              title={t("Ask Luna to draft this email")}
-              onClick={() => setPromptOpen(true)}
-              className="grid size-10 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-[background-color,color,scale] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"
-              initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.25, filter: "blur(4px)" }}
-              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-              exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.25, filter: "blur(4px)" }}
-              transition={{ type: "spring", duration: shouldReduceMotion ? 0 : 0.3, bounce: 0 }}
-            >
-              <AiEditing className="size-4" strokeWidth={1.4} aria-hidden="true" />
-            </motion.button>
-          )}
-        </AnimatePresence>
-      </motion.div>
+      <AiPromptMorph
+        id="broadcast-ai-prompt"
+        open={promptOpen}
+        value={direction}
+        busy={Boolean(busy)}
+        placeholder={t("How should this email be written?")}
+        triggerLabel={t("Ask Luna to draft this email")}
+        inputLabel={t("Ask Luna to draft this email")}
+        closeLabel={t("Close AI prompt")}
+        submitLabel={t("Draft email with AI")}
+        submitDisabled={!direction.trim() && !subject.trim() && !message.trim()}
+        containEscape
+        onOpenChange={setPromptOpen}
+        onValueChange={onDirection}
+        onSubmit={onAI}
+      />
     </div>
   </>
 }

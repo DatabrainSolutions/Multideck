@@ -41,6 +41,87 @@
   }
 }
 
+/* The public quote is intentionally isolated from the signed-in operator's
+   theme. First paint is always the light document experience; customers can
+   opt into this local dark palette without mutating the app theme. */
+.quote-response-shell[data-customer-theme="light"] {
+  --md-ink: #0b1413;
+  --md-text: #4f5b58;
+  --md-subtle: #687570;
+  --md-bg: #f3f4f4;
+  --md-sidebar-bg: #f7f8f8;
+  --md-surface: #ffffff;
+  --md-surface-soft: #f7f9f8;
+  --md-surface-tint: #eef1f0;
+  --md-hover: #e5eae8;
+  --md-line: #d7dedb;
+  --md-hairline: #e3e8e6;
+  --md-accent: #0a7068;
+  --md-accent-hover: #086f67;
+  --md-accent-a28: color-mix(in srgb, #0a7068 28%, transparent);
+  --md-green: #0a7068;
+  --md-red: #d14e4e;
+  --md-status-green-bg: #d1ffc8;
+  --md-status-green-ink: #0f5f00;
+  --md-status-amber-bg: #f2edb0;
+  --md-status-amber-ink: #746a00;
+  --md-status-red-bg: #ffc8c8;
+  --md-status-red-ink: #8b0000;
+  --md-pdf-stage: #e7ebe9;
+  --md-shadow-line: inset 0 0 0 1px var(--md-line);
+  --md-shadow-soft: 0 18px 50px rgba(11, 20, 19, 0.08), inset 0 0 0 1px rgba(11, 20, 19, 0.04);
+  --md-stroke-bottom: inset 0 -1px 0 var(--md-hairline);
+  --background: var(--md-bg);
+  --foreground: var(--md-ink);
+  --card: var(--md-surface);
+  --popover: var(--md-surface);
+  --secondary: var(--md-surface-tint);
+  --muted: var(--md-surface-tint);
+  --muted-foreground: var(--md-text);
+  --border: var(--md-line);
+  --input: var(--md-line);
+  --ring: var(--md-accent);
+}
+
+.quote-response-shell[data-customer-theme="dark"] {
+  --md-ink: #f1f5f3;
+  --md-text: #bac2bf;
+  --md-subtle: #909b97;
+  --md-bg: #111315;
+  --md-sidebar-bg: #171a1c;
+  --md-surface: #1b1e20;
+  --md-surface-soft: #222527;
+  --md-surface-tint: #292d30;
+  --md-hover: #33383b;
+  --md-line: #363c3e;
+  --md-hairline: #2f3436;
+  --md-accent: #53b7aa;
+  --md-accent-hover: #63c7ba;
+  --md-accent-a28: color-mix(in srgb, #53b7aa 28%, transparent);
+  --md-green: #53b7aa;
+  --md-red: #e07373;
+  --md-status-green-bg: #031300;
+  --md-status-green-ink: #a8ff98;
+  --md-status-amber-bg: #2c2900;
+  --md-status-amber-ink: #fff68e;
+  --md-status-red-bg: #250000;
+  --md-status-red-ink: #ffa2a2;
+  --md-pdf-stage: #101214;
+  --md-shadow-line: inset 0 0 0 1px var(--md-line);
+  --md-shadow-soft: 0 18px 50px rgba(0, 0, 0, 0.24), inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+  --md-stroke-bottom: inset 0 -1px 0 var(--md-hairline);
+  --background: var(--md-bg);
+  --foreground: var(--md-ink);
+  --card: var(--md-surface);
+  --popover: var(--md-surface);
+  --secondary: var(--md-surface-tint);
+  --muted: var(--md-surface-tint);
+  --muted-foreground: var(--md-text);
+  --border: var(--md-line);
+  --input: var(--md-line);
+  --ring: var(--md-accent);
+}
+
 .md-thinking-dot {
   opacity: 0.12;
   transform: scale(0.72);
@@ -322,6 +403,10 @@
   --md-surface: #ffffff;
   --md-surface-soft: #f7f9f8;
   --md-surface-tint: #eef1f0;
+  /* Home's deck sits back from the page rather than lifting off it: a block a
+     shade greyer than the background, so four of them along the foot of the
+     screen read as one quiet band under the prompt. */
+  --md-deck-surface: #ebeded;
   --md-table-pinned-bg: color-mix(in srgb, var(--md-accent) 7%, var(--md-surface));
   --md-table-pinned-selected-bg: color-mix(in srgb, var(--md-accent) 14%, var(--md-surface));
   --md-field-bg: #e5e9e7;
@@ -496,6 +581,7 @@
   --md-surface: #1b1e20;
   --md-surface-soft: #222527;
   --md-surface-tint: #292d30;
+  --md-deck-surface: #0c0e0f;
   --md-table-pinned-bg: color-mix(in srgb, var(--md-accent-deep) 52%, var(--md-surface));
   --md-table-pinned-selected-bg: color-mix(in srgb, var(--md-accent-deep) 68%, var(--md-surface));
   --md-field-bg: #303538;
@@ -697,6 +783,7 @@
   --md-surface: #ffffff;
   --md-surface-soft: #f7f9f8;
   --md-surface-tint: #eef1f0;
+  --md-deck-surface: #ebeded;
   --md-field-bg: #e5e9e7;
   --md-field-bg-hover: #dfe5e2;
   --md-selected-bg: #c8dcd6;
@@ -855,6 +942,25 @@ body,
   transition-duration: var(--md-motion);
   transition-property: background-color, border-color, box-shadow, color, opacity, transform, filter;
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The pill hugs its label until the remove slot opens. Growing a zero-width
+   child lets the outer pill expand every frame without moving the label. */
+.md-company-type-remove-slot {
+  transition:
+    inline-size var(--md-motion-fast),
+    margin-inline-start var(--md-motion-fast),
+    opacity var(--md-motion-fast),
+    translate var(--md-motion-fast),
+    scale var(--md-motion-fast);
+}
+
+/* This unlayered rule intentionally wins over the app-wide button transition
+   above, which otherwise masks component timing. */
+.md-company-type-remove {
+  transition:
+    background-color var(--md-motion-fast),
+    scale var(--md-motion-fast);
 }
 
 input::placeholder,
@@ -2253,31 +2359,6 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   }
 }
 
-::view-transition-old(root),
-  ::view-transition-new(root) {
-  animation-duration: 180ms;
-  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
-  mix-blend-mode: normal;
-}
-
-::view-transition-old(root) {
-  animation-name: md-theme-frame-out;
-}
-
-::view-transition-new(root) {
-  animation-name: md-theme-frame-in;
-}
-
-@keyframes md-theme-frame-out {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
-@keyframes md-theme-frame-in {
-  from { opacity: 0.72; }
-  to { opacity: 1; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2302,10 +2383,6 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     transform: none !important;
   }
 
-  ::view-transition-old(root),
-  ::view-transition-new(root) {
-    animation: none !important;
-  }
 }
 
 ::selection {

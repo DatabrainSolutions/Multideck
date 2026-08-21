@@ -11,11 +11,15 @@
          The key must stay in step with `themeStorageKey` in src/lib/theme-preferences.tsx;
          tests/theme-first-paint.test.ts fails if the two drift apart. -->
     <script>
+      var initialTheme = "light"
       try {
-        if (localStorage.getItem("multideck.theme") === "dark") document.documentElement.classList.add("dark")
+        if (localStorage.getItem("multideck.theme") === "dark") initialTheme = "dark"
       } catch (error) {
         // Private-mode Safari throws on storage access; the light default is fine.
       }
+      document.documentElement.classList.remove("light", "dark")
+      document.documentElement.classList.add(initialTheme)
+      document.documentElement.style.colorScheme = initialTheme
     </script>
   </head>
   <body>

@@ -236,3 +236,42 @@ export function customsDeclarationMentionItems(items: CustomsDraftSummary[]): De
 export function mergeDexterMentionItems(...groups: DexterMentionItem[][]) {
   return uniqueById(groups.flat())
 }
+
+/** One icon per record type, so a rebuilt mention still looks like itself. */
+const mentionTypeIcons: Record<DexterMentionType, LucideIcon> = {
+  email: Mail,
+  booking: Ship,
+  customer: Building2,
+  lead: UserRoundSearch,
+  deal: BriefcaseBusiness,
+  declaration: FileCheck2,
+  page: LayoutPanelTop,
+  quote: ReceiptText,
+  document: FileText,
+}
+
+/**
+ * The part of a mention that can cross a page boundary. Icons are React
+ * components and registers are loaded per screen, so a prompt written on Home
+ * carries this and the destination rebuilds the rest.
+ */
+export type DexterMentionSnapshot = Pick<DexterMentionItem, "id" | "type" | "title" | "meta" | "route">
+
+export function dexterMentionSnapshot(mention: DexterMentionItem): DexterMentionSnapshot {
+  return { id: mention.id, type: mention.type, title: mention.title, meta: mention.meta, route: mention.route }
+}
+
+/**
+ * Prefer the live record when the destination has already loaded it — its meta
+ * is fresher and it carries availability — and fall back to the snapshot so a
+ * mention is never silently dropped from a prompt in flight.
+ */
+export function restoreDexterMentionItems(
+  snapshots: DexterMentionSnapshot[],
+  known: DexterMentionItem[] = [],
+): DexterMentionItem[] {
+  return snapshots.map((snapshot) => known.find((item) => item.id === snapshot.id) ?? {
+    ...snapshot,
+    icon: mentionTypeIcons[snapshot.type] ?? LayoutPanelTop,
+  })
+}

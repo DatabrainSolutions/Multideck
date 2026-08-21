@@ -45,6 +45,52 @@ function join(values: unknown[], separator = " | ") {
   return values.map((value) => text(value)).filter(Boolean).join(separator);
 }
 
+function importCostLines(draft: Json) {
+  const freightByMass = text(draft.freightChargeApportionment) === "gross_mass";
+  const freightCode = text(draft.borderMode) === "4"
+    ? freightByMass ? "AS" : "AR"
+    : freightByMass
+    ? "AQ"
+    : "AP";
+  const vatCode = text(draft.vatValueAdjustmentApportionment) === "gross_mass"
+    ? "AW"
+    : "AV";
+  return uniqueLines([
+    text(draft.freightChargeAmount)
+      ? join([
+        freightCode,
+        "Freight",
+        draft.freightChargeAmount,
+        draft.freightChargeCurrency,
+      ], " ")
+      : "",
+    text(draft.vatValueAdjustmentAmount)
+      ? join([
+        vatCode,
+        "VAT value adjustment",
+        draft.vatValueAdjustmentAmount,
+        draft.vatValueAdjustmentCurrency,
+      ], " ")
+      : "",
+    text(draft.insuranceCostAmount)
+      ? join([
+        "AK",
+        "Insurance",
+        draft.insuranceCostAmount,
+        draft.insuranceCostCurrency,
+      ], " ")
+      : "",
+    text(draft.containerPackingCostAmount)
+      ? join([
+        "AD",
+        "Containers and packing",
+        draft.containerPackingCostAmount,
+        draft.containerPackingCostCurrency,
+      ], " ")
+      : "",
+  ]);
+}
+
 function uniqueLines(values: unknown[]) {
   return [...new Set(values.map((value) => text(value)).filter(Boolean))].join(
     "\n",
@@ -1140,13 +1186,22 @@ export function buildCustomsDeclarationDocumentDataset(
     auxiliary: tracked(
       "auxiliary",
       text(
-        isImport
-          ? join([draft.freightChargeAmount, draft.freightChargeCurrency])
-          : draft.sealIdentifier,
+        isImport ? importCostLines(draft) : draft.sealIdentifier,
       ),
       draftSource(
         ...(isImport
-          ? ["freightChargeAmount", "freightChargeCurrency"]
+          ? [
+            "freightChargeAmount",
+            "freightChargeCurrency",
+            "freightChargeApportionment",
+            "vatValueAdjustmentAmount",
+            "vatValueAdjustmentCurrency",
+            "vatValueAdjustmentApportionment",
+            "insuranceCostAmount",
+            "insuranceCostCurrency",
+            "containerPackingCostAmount",
+            "containerPackingCostCurrency",
+          ]
           : ["sealIdentifier"]),
       ),
     ),

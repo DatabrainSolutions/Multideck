@@ -247,7 +247,7 @@ export type DexterWatch = {
   id: string
   title: string
   summary: string
-  capability: "warehouse" | "leads" | "deals" | "quotes" | "email"
+  capability: "warehouse" | "leads" | "deals" | "quotes" | "email" | "todo" | "reference_settings"
   status: "active" | "paused"
   targetLabel?: string | null
   rule: { field: string; operator: string; value?: string }

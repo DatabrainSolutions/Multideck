@@ -491,3 +491,37 @@ The full reference and implementation captures were combined in one comparison i
 ## Final result
 
 passed
+
+---
+
+# Design QA
+
+Feature: Customer quote PDF document layout
+
+Source visual truth:
+- `/var/folders/lb/stflsq1d6llcfy2t4f_q0ny40000gn/T/codex-clipboard-6bf92a5e-de12-41cc-88ca-0bef698aab4d.png`
+- The source is a layout reference, not a branding or field-content specification.
+
+Implementation evidence:
+- Production Carbone HTML template: `supabase/functions/_shared/quote-pdf.ts`
+- Browser render from that template with representative freight data: `/Users/harryphillips/.codex/visualizations/2026/08/20/01a020a1-8587-7f92-92fd-55a34a6d909a/quote-pdf-redesign.png`
+- Reference and implementation inspected together: `/Users/harryphillips/.codex/visualizations/2026/08/20/01a020a1-8587-7f92-92fd-55a34a6d909a/quote-pdf-reference-comparison.png`
+- Format: A4 portrait, light document surface, Jenkar bird-mark asset in the top-right logo position.
+
+Comparison evidence:
+- The implementation preserves the reference's flat paper-native hierarchy: quote title and metadata, three identity columns, one full-width item band, right-aligned totals, and a quiet lower terms area.
+- Placeholder invoice content was replaced with quote number, issue and validity dates, billed-to identity, sender identity, customer reference, freight journey, shipment facts, charge notes, unit rates, quantities, currency-aware totals, terms, rate conditions, and customer notes.
+- The reference's blush item area was translated to a restrained pale sage surface so the document remains consistent with Multideck's green commercial language.
+- Rounded cards and nested containers were removed. Thin slate rules, whitespace and alignment carry the hierarchy.
+- The supplied Jenkar mark is a real Google Drive asset, not a recreated or placeholder logo.
+
+Checks:
+- A4 proportions and margins: passed.
+- Company logo placement and real transparent PNG rendering: passed in the production template render.
+- Freight-relevant content hierarchy: passed.
+- Charge table scan order and mixed-currency totals: passed.
+- Long-form terms and notes have controlled wrapping and avoid decorative chrome: passed.
+- Carbone loop markers for charges and totals remain intact: passed by contract tests.
+- No actionable P0/P1/P2 visual findings remain.
+
+final result: passed

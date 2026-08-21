@@ -18,21 +18,24 @@ function inlineHtml(value: string) {
     .replace(/__([^_]+)__/g, '<strong style="font-weight:600;color:#292929;">$1</strong>')
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
     .replace(/_([^_]+)_/g, "<em>$1</em>")
+    .replaceAll("\n", "<br>")
 }
 
 export function parseEmailMarkdown(value: string): EmailMarkdownBlock[] {
   const blocks: EmailMarkdownBlock[] = []
   const paragraph: string[] = []
-  let list: Extract<EmailMarkdownBlock, { type: "unordered-list" | "ordered-list" }> | null = null
+  let listType: "unordered-list" | "ordered-list" | null = null
+  let listItems: string[] = []
 
   const flushParagraph = () => {
     if (!paragraph.length) return
-    blocks.push({ type: "paragraph", text: paragraph.join(" ").trim() })
+    blocks.push({ type: "paragraph", text: paragraph.join("\n").trim() })
     paragraph.length = 0
   }
   const flushList = () => {
-    if (list?.items.length) blocks.push(list)
-    list = null
+    if (listType && listItems.length) blocks.push({ type: listType, items: listItems })
+    listType = null
+    listItems = []
   }
 
   for (const rawLine of value.replaceAll("\r\n", "\n").split("\n")) {
@@ -54,9 +57,11 @@ export function parseEmailMarkdown(value: string): EmailMarkdownBlock[] {
     if (unordered || ordered) {
       flushParagraph()
       const type = unordered ? "unordered-list" : "ordered-list"
-      if (list?.type !== type) flushList()
-      list ??= { type, items: [] }
-      list.items.push((unordered?.[1] ?? ordered?.[1] ?? "").trim())
+      if (listType !== type) {
+        flushList()
+        listType = type
+      }
+      listItems.push((unordered?.[1] ?? ordered?.[1] ?? "").trim())
       continue
     }
     flushList()

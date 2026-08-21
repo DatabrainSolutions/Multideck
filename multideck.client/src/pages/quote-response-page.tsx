@@ -1,0 +1,164 @@
+import { DotLottieReact } from "@lottiefiles/dotlottie-react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { useEffect, useState, type ReactNode } from "react"
+import { AlertTriangle, CheckCircle2, Download, FileText, LoaderCircle, MessageSquareText, Moon, Shield, Sun, XCircle, type LucideIcon } from "@/components/icons/hugeicons"
+import { errorStateAnimationData } from "@/assets/error-state-animation"
+import { BrandLockup } from "@/components/multideck/auth-flow"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { useLanguage } from "@/i18n/language-provider"
+import { releasePdfPageImages, renderPdfPageImages, type RenderedPdfPage } from "@/lib/customs-invoice-pdf-preview"
+import { getCustomerQuote, submitCustomerQuoteResponse, uploadCompetitorQuote, type QuoteResponseDecision, type QuoteResponseResult, type QuoteResponseView } from "@/lib/quote-response-api"
+import { cn } from "@/lib/utils"
+
+type CustomerTheme = "light" | "dark"
+type ResponseTone = "green" | "amber" | "red"
+
+const responseChoices: Array<{ id: QuoteResponseDecision; label: string; description: string; tone: ResponseTone; icon: LucideIcon }> = [
+  { id: "accepted", label: "Accept quote", description: "Confirm the quote and begin the booking.", tone: "green", icon: CheckCircle2 },
+  { id: "challenged", label: "Ask for changes", description: "Tell the freight team what should be reviewed.", tone: "amber", icon: MessageSquareText },
+  { id: "declined", label: "Decline quote", description: "Close the quote and share the reason.", tone: "red", icon: XCircle },
+]
+
+const toneClasses: Record<ResponseTone, string> = {
+  green: "bg-[var(--md-status-green-bg)] text-[var(--md-status-green-ink)]",
+  amber: "bg-[var(--md-status-amber-bg)] text-[var(--md-status-amber-ink)]",
+  red: "bg-[var(--md-status-red-bg)] text-[var(--md-status-red-ink)]",
+}
+
+function formatDate(value: string | null | undefined, locale?: string) {
+  if (!value) return "—"
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(date)
+}
+
+export function QuoteResponsePage({ token }: { token: string }) {
+  const { language, t, direction } = useLanguage()
+  const reducedMotion = Boolean(useReducedMotion())
+  const [view, setView] = useState<QuoteResponseView | null>(null)
+  const [decision, setDecision] = useState<QuoteResponseDecision | null>(null)
+  const [message, setMessage] = useState("")
+  const [competitorQuote, setCompetitorQuote] = useState<File | null>(null)
+  const [uploadedDocumentId, setUploadedDocumentId] = useState<string | null>(null)
+  const [result, setResult] = useState<QuoteResponseResult | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setError("")
+    void getCustomerQuote(token).then((next) => { if (active) setView(next) }).catch((cause: unknown) => {
+      if (active) setError(cause instanceof Error ? cause.message : "This quote could not be loaded.")
+    }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [token])
+
+  const activeView = view?.state === "active" ? view : null
+  const messageRequired = decision === "declined" || decision === "challenged"
+  const responseReady = Boolean(decision && (!messageRequired || message.trim()))
+
+  function chooseDecision(next: QuoteResponseDecision) {
+    setDecision(next)
+    setError("")
+    if (next !== "challenged") { setCompetitorQuote(null); setUploadedDocumentId(null) }
+  }
+
+  async function submitResponse() {
+    if (!decision || !responseReady || submitting) return
+    setSubmitting(true)
+    setError("")
+    try {
+      let documentId = uploadedDocumentId
+      if (decision === "challenged" && competitorQuote && !documentId) {
+        const upload = await uploadCompetitorQuote(token, competitorQuote)
+        documentId = upload.documentId
+        setUploadedDocumentId(documentId)
+      }
+      setResult(await submitCustomerQuoteResponse(token, decision, message, documentId))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Your response could not be submitted.")
+    } finally { setSubmitting(false) }
+  }
+
+  if (loading) return <QuoteResponseFrame><div role="status" className="grid min-h-[420px] place-items-center text-center"><div><LoaderCircle className="mx-auto size-6 animate-spin text-[var(--md-accent)] motion-reduce:animate-none" /><p className="mt-3 text-[14px] text-[var(--md-text)]">{t("Loading your secure quote…")}</p></div></div></QuoteResponseFrame>
+
+  if (result || view?.state === "responded") {
+    const answered = result?.decision ?? (view?.state === "responded" ? view.decision : undefined)
+    const tone = answered === "accepted" ? "green" : answered === "challenged" ? "amber" : "red"
+    return <QuoteResponseFrame><main className="mx-auto grid min-h-[520px] max-w-[620px] place-items-center px-5 py-12 text-center"><div><span className={cn("mx-auto grid size-12 place-items-center rounded-[var(--md-radius-lg)]", toneClasses[tone])}><CheckCircle2 className="size-6" /></span><h1 className="mt-5 text-balance text-[26px] font-medium tracking-[-0.035em] text-[var(--md-ink)]">{t(answered === "accepted" ? "Quote accepted" : answered === "challenged" ? "Review requested" : "Response received")}</h1><p className="mx-auto mt-3 max-w-[54ch] text-pretty text-[15px] leading-6 text-[var(--md-text)]">{t(answered === "accepted" ? "Thank you. The freight team has received your acceptance and the booking has been created." : answered === "challenged" ? "Thank you. The freight team will review your message and come back to you." : "Thank you. The freight team has received your response.")}</p>{result?.booking?.bookingReference ? <p className="mt-4 text-[13px] font-medium text-[var(--md-accent)]">{t("Booking reference")}: <span dir="ltr">{result.booking.bookingReference}</span></p> : null}<p className="mt-8 text-[12px] text-[var(--md-subtle)]">{t("You can close this page safely.")}</p></div></main></QuoteResponseFrame>
+  }
+
+  if (error && !activeView) return <QuoteResponseUnavailable message={error} />
+  if (view?.state === "expired" || view?.state === "revoked") return <QuoteResponseUnavailable message={view.state === "expired" ? "This secure quote link has expired. Please ask your freight contact for a new link." : "This quote link has been replaced. Please use the latest email from your freight team."} />
+  if (!activeView) return <QuoteResponseUnavailable message="This quote is no longer available." />
+
+  const selectedChoice = responseChoices.find((choice) => choice.id === decision) ?? null
+  const SelectedChoiceIcon = selectedChoice?.icon ?? MessageSquareText
+  const transition = reducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.22, 1, 0.36, 1] as const }
+  return <QuoteResponseFrame>
+    <main dir={direction} className="mx-auto grid w-full max-w-[1380px] gap-4 px-3 py-4 sm:px-5 sm:py-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-5">
+      <QuotePdfPreview document={activeView.document} reference={activeView.quote.reference} version={activeView.quote.versionNumber} />
+      <aside className="rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)] sm:p-5 lg:sticky lg:top-[78px]">
+        <div className="flex items-center gap-2 text-[var(--md-accent)]"><Shield className="size-4" /><span className="text-[12px] font-medium">{t("Secure response")}</span></div>
+        <h2 className="mt-3 text-balance text-[20px] font-medium tracking-[-0.025em] text-[var(--md-ink)]">{t("How would you like to respond?")}</h2>
+        <p className="mt-2 text-pretty text-[13px] leading-5 text-[var(--md-text)]">{t("Nothing is recorded until you confirm your choice.")}</p>
+        <div className="mt-4 grid gap-2">{responseChoices.map((choice) => {
+          const Icon = choice.icon
+          const selected = decision === choice.id
+          return <button key={choice.id} type="button" aria-pressed={selected} onClick={() => chooseDecision(choice.id)} className={cn("group flex min-h-[68px] items-start gap-3 rounded-[var(--md-radius-xl)] px-3.5 py-3 text-start outline-none transition-[box-shadow,filter,opacity,transform] duration-160 ease-[cubic-bezier(0.22,1,0.36,1)] hover:brightness-[0.98] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a28)] active:scale-[0.985] motion-reduce:transition-none motion-reduce:active:scale-100", toneClasses[choice.tone], selected ? "shadow-[inset_0_0_0_2px_currentColor]" : "opacity-[0.78] hover:opacity-100")}><span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,currentColor_9%,transparent)]"><Icon className="size-4" aria-hidden="true" /></span><span className="min-w-0"><span className="block text-[13px] font-medium">{t(choice.label)}</span><span className="mt-1 block text-pretty text-[11px] leading-4 opacity-75">{t(choice.description)}</span></span></button>
+        })}</div>
+        <AnimatePresence initial={false} mode="wait">{decision && selectedChoice ? <motion.div key={decision} initial={reducedMotion ? false : { opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={reducedMotion ? undefined : { opacity: 0, y: -3 }} transition={transition} className="mt-4 grid gap-3">
+          <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{t(decision === "accepted" ? "Message (optional)" : decision === "challenged" ? "What should we review?" : "Why are you declining?")}<Textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={4000} required={messageRequired} className="min-h-28 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface-tint)] text-[14px] leading-5 shadow-[var(--md-shadow-line)]" placeholder={t(decision === "challenged" ? "Tell the freight team what needs to change" : decision === "declined" ? "Give the team useful context" : "Add a note for the freight team")} /></label>
+          {decision === "challenged" ? <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{t("Competitor quote (optional)")}<span className="relative flex min-h-11 cursor-pointer items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"><FileText className="size-4 shrink-0" /><span className="min-w-0 truncate">{competitorQuote?.name || t("Attach PDF or image, up to 10 MB")}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" aria-label={t("Competitor quote (optional)")} className="absolute inset-0 cursor-pointer opacity-0 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a28)]" onChange={(event) => { setCompetitorQuote(event.target.files?.[0] ?? null); setUploadedDocumentId(null) }} /></span></label> : null}
+          {error ? <p role="alert" className="flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] px-3 py-2 text-[12px] leading-5 text-[var(--md-red)]"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{t(error)}</p> : null}
+          <Button type="button" disabled={!responseReady || submitting} onClick={() => void submitResponse()} className={cn("h-11 w-full rounded-[var(--md-radius-lg)] text-[13px] font-medium shadow-none hover:brightness-[0.97]", toneClasses[selectedChoice.tone])}>{submitting ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <SelectedChoiceIcon className="size-4" />}{t(submitting ? "Submitting response…" : decision === "accepted" ? "Confirm acceptance" : decision === "challenged" ? "Send review request" : "Confirm decline")}</Button>
+        </motion.div> : null}</AnimatePresence>
+        <p className="mt-4 text-pretty text-[11px] leading-4 text-[var(--md-subtle)]">{activeView.expiresAt ? <>{t("This private link expires on")} {formatDate(activeView.expiresAt, language)}. {t("Please do not forward it.")}</> : t("This private link stays active until you respond. Please do not forward it.")}</p>
+      </aside>
+    </main>
+  </QuoteResponseFrame>
+}
+
+function QuotePdfPreview({ document, reference, version }: { document: Extract<QuoteResponseView, { state: "active" }>["document"]; reference: string; version: number }) {
+  const { t } = useLanguage()
+  const reducedMotion = Boolean(useReducedMotion())
+  const [pages, setPages] = useState<RenderedPdfPage[]>([])
+  const [blobUrl, setBlobUrl] = useState("")
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  useEffect(() => {
+    const controller = new AbortController()
+    let received: RenderedPdfPage[] = []
+    let objectUrl = ""
+    setLoading(true); setError(""); setPages([])
+    void fetch(document.url, { signal: controller.signal, cache: "no-store" }).then(async (response) => {
+      if (!response.ok) throw new Error("The quote PDF could not be opened.")
+      const blob = await response.blob()
+      objectUrl = URL.createObjectURL(blob)
+      setBlobUrl(objectUrl)
+      await renderPdfPageImages(blob, { signal: controller.signal, onPage: (page) => { received = [...received, page]; setPages(received) } })
+    }).catch((cause: unknown) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "The quote PDF could not be opened.") }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => { controller.abort(); releasePdfPageImages(received); if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [document.url])
+  return <section aria-labelledby="quote-document-title" className="min-w-0 overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
+    <header className="flex min-h-[64px] items-center justify-between gap-3 px-4 shadow-[var(--md-stroke-bottom)] sm:px-5"><div className="min-w-0"><p id="quote-document-title" className="truncate text-[14px] font-medium text-[var(--md-ink)]"><span dir="ltr">{reference}</span></p><p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Quote PDF")} · {t("Version")} {version}</p></div><Button asChild variant="outline" size="sm" className="shrink-0 rounded-[var(--md-radius-lg)]"><a href={blobUrl || document.url} download={document.fileName}><Download className="size-4" />{t("Download PDF")}</a></Button></header>
+    <div dir="ltr" className="md-scrollbar min-h-[560px] overflow-auto bg-[var(--md-pdf-stage)] p-3 sm:min-h-[720px] sm:p-5 lg:max-h-[calc(100vh-150px)]">{pages.length ? <div className="mx-auto grid max-w-[860px] gap-4">{pages.map((page) => <motion.img key={page.page} src={page.url} alt={`${t("Quote PDF page")} ${page.page}`} className="block h-auto w-full bg-white shadow-[0_16px_48px_rgba(11,20,19,0.16)]" initial={reducedMotion ? false : { opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }} />)}</div> : <div className="grid min-h-[520px] place-items-center px-5 text-center"><div className="max-w-[320px]">{loading ? <LoaderCircle className="mx-auto size-5 animate-spin text-[var(--md-accent)] motion-reduce:animate-none" /> : <FileText className="mx-auto size-6 text-[var(--md-subtle)]" />}<p role={error ? "alert" : "status"} className={cn("mt-3 text-[13px] leading-5", error ? "text-[var(--md-red)]" : "text-[var(--md-text)]")}>{t(error || "Preparing the quote PDF…")}</p>{error ? <a href={document.url} className="mt-3 inline-flex text-[12px] font-medium text-[var(--md-accent)] underline underline-offset-4">{t("Open the PDF directly")}</a> : null}</div></div>}</div>
+  </section>
+}
+
+function QuoteResponseFrame({ children }: { children: ReactNode }) {
+  const { t, direction } = useLanguage()
+  const reducedMotion = Boolean(useReducedMotion())
+  const [theme, setTheme] = useState<CustomerTheme>(() => { try { return localStorage.getItem("multideck.quote-response.theme") === "dark" ? "dark" : "light" } catch { return "light" } })
+  useEffect(() => { try { localStorage.setItem("multideck.quote-response.theme", theme) } catch { /* Storage is optional. */ } }, [theme])
+  const ThemeIcon = theme === "light" ? Moon : Sun
+  return <div dir={direction} data-customer-theme={theme} className="quote-response-shell min-h-screen bg-[var(--md-bg)] text-[var(--md-ink)]" style={{ colorScheme: theme }}><header className="sticky top-0 z-30 flex min-h-[62px] items-center justify-between bg-[color-mix(in_srgb,var(--md-sidebar-bg)_90%,transparent)] px-4 shadow-[var(--md-stroke-bottom)] backdrop-blur-xl sm:px-6"><BrandLockup /><div className="flex items-center gap-2"><span className="hidden text-[11px] font-medium text-[var(--md-subtle)] sm:inline">{t("Secure quote")}</span><button type="button" aria-label={t(theme === "light" ? "Use dark mode" : "Use light mode")} aria-pressed={theme === "dark"} onClick={() => setTheme(theme === "light" ? "dark" : "light")} className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-[background,transform] duration-160 hover:bg-[var(--md-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a28)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"><AnimatePresence mode="wait" initial={false}><motion.span key={theme} initial={reducedMotion ? false : { opacity: 0, rotate: -14, scale: 0.85 }} animate={{ opacity: 1, rotate: 0, scale: 1 }} exit={reducedMotion ? undefined : { opacity: 0, rotate: 14, scale: 0.85 }} transition={reducedMotion ? { duration: 0 } : { duration: 0.16, ease: [0.22, 1, 0.36, 1] }}><ThemeIcon className="size-4" /></motion.span></AnimatePresence></button></div></header>{children}</div>
+}
+
+function QuoteResponseUnavailable({ message }: { message: string }) {
+  const { t } = useLanguage()
+  const reducedMotion = useReducedMotion()
+  return <QuoteResponseFrame><main className="mx-auto grid min-h-[520px] max-w-[620px] place-items-center px-5 py-12 text-center"><div><span className="mx-auto block size-[168px] sm:size-[184px]" aria-hidden="true"><DotLottieReact data={errorStateAnimationData} autoplay={!reducedMotion} loop={!reducedMotion} className="size-full" /></span><h1 className="mt-2 text-balance text-[24px] font-medium tracking-[-0.03em] text-[var(--md-ink)]">{t("Quote link unavailable")}</h1><p role="alert" className="mx-auto mt-3 max-w-[54ch] text-pretty text-[15px] leading-6 text-[var(--md-text)]">{t(message)}</p></div></main></QuoteResponseFrame>
+}

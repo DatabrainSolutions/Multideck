@@ -43,6 +43,7 @@ export function AppShell({
   currentUser?: AuthUserSummary | null
 }) {
   const isSettingsRoute = route === "/settings"
+  const isHomeRoute = route === "/"
   const isAgentRoute = route === "/agent-dexter"
   const isInboxRoute = route === "/inbox"
   const isDocumentsRoute = route === "/documents"
@@ -51,7 +52,10 @@ export function AppShell({
     && route !== "/bookings/provisional"
   // Routes that own the whole viewport: they scroll their own panes, so the shell
   // must not add page padding, a top bar, or a second scroll axis around them.
-  const isFullHeightRoute = isAgentRoute || isInboxRoute || isDocumentsRoute
+  // Home is one of them because its prompt has to sit at exactly the height the
+  // Dexter conversation's does — any page padding between them would show up as
+  // a jump the moment a conversation starts.
+  const isFullHeightRoute = isHomeRoute || isAgentRoute || isInboxRoute || isDocumentsRoute
   const isChromeTightRoute = route.startsWith("/quotes/") || isBookingDetailRoute || route === "/bookings/provisional"
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed()
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)

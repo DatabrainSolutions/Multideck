@@ -139,7 +139,7 @@ function Timeline({ card, granularity }: { card: ContactCard; granularity: "hour
 
   return (
     <div>
-      <div className="rounded-[var(--md-radius-lg)] bg-white/54 p-3 shadow-[var(--md-shadow-line)]">
+      <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)]">
         <ChartContainer config={TIMELINE_CONFIG} className="md-chart-container h-[240px] w-full min-w-0 max-w-full [aspect-ratio:auto]">
           <ComposedChart data={points} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
             <defs>

@@ -4,6 +4,12 @@ import test from "node:test"
 import { renderEmailMarkdown } from "../functions/_shared/email-markdown.ts"
 import { emailMarkdownToEditorHtml } from "../../multideck.client/src/lib/email-markdown-editor.ts"
 
+test("email markdown preserves deliberate line breaks inside a paragraph", () => {
+  const rendered = renderEmailMarkdown("Kind regards,\nHarry")
+  assert.match(rendered.html, /Kind regards,<br>Harry/)
+  assert.equal(rendered.text, "Kind regards,\nHarry")
+})
+
 const edge = readFileSync(new URL("../functions/developer-broadcasts/index.ts", import.meta.url), "utf8")
 const client = readFileSync(new URL("../../multideck.client/src/components/multideck/broadcast-settings.tsx", import.meta.url), "utf8")
 const phrases = readFileSync(new URL("../../multideck.client/src/i18n/broadcast-settings-phrases.ts", import.meta.url), "utf8")
