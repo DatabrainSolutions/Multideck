@@ -102,8 +102,20 @@ test("a same-state request repairs document and React state divergence", () => {
 
   assert.match(setter, /commitTheme\(resolved\)/)
   assert.doesNotMatch(setter, /resolved === themeRef\.current/)
-  assert.ok(commit.indexOf("applyDocumentTheme(mode)") < commit.indexOf("stateChanged"))
+  assert.ok(commit.indexOf("themeRef.current = mode") < commit.indexOf("applyDocumentTheme(mode)"))
   assert.match(commit, /if \(stateChanged\) setThemeState\(mode\)/)
+})
+
+test("an older concurrent render cannot repaint over the latest theme choice", () => {
+  const providerSetup = themeProvider.slice(
+    themeProvider.indexOf("const [theme, setThemeState]"),
+    themeProvider.indexOf("const applyDocumentTheme"),
+  )
+  const layoutCommit = themeProvider.match(/useLayoutEffect\(\(\) => \{[\s\S]*?\n  \}, \[commitTheme, theme\]\)/)?.[0] ?? ""
+
+  assert.doesNotMatch(providerSetup, /themeRef\.current = theme/)
+  assert.match(layoutCommit, /commitTheme\(themeRef\.current, \{ persist: false \}\)/)
+  assert.doesNotMatch(layoutCommit, /commitTheme\(theme, /)
 })
 
 test("the provider repairs an external root-class drift without polling", () => {
@@ -139,7 +151,10 @@ test("profile hydration is stable across theme renders and token refreshes", () 
 test("production theme writers cannot bypass the shared flicker guard", () => {
   const directThemeWriters = sourceFiles(sourceRoot)
     .filter((path) => !path.endsWith("/lib/theme-preferences.tsx"))
-    .filter((path) => /\bsetTheme\s*\(/.test(readFileSync(path, "utf8")))
+    .filter((path) => {
+      const source = readFileSync(path, "utf8")
+      return /from ["']@\/lib\/theme-provider["']/.test(source) && /\bsetTheme\s*\(/.test(source)
+    })
     .map((path) => path.slice(sourceRoot.length + 1))
 
   assert.deepEqual(

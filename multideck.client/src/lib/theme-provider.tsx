@@ -85,7 +85,6 @@ export function ThemeProvider({
   const [theme, setThemeState] = useState<ThemeMode>(() => readStoredTheme(storageKey, defaultTheme))
   const themeRef = useRef(theme)
   const releaseTransitionRef = useRef<(() => void) | null>(null)
-  themeRef.current = theme
 
   const applyDocumentTheme = useCallback((mode: ThemeMode) => {
     if (documentHasTheme(mode)) return
@@ -114,6 +113,12 @@ export function ThemeProvider({
   }, [disableTransitionOnChange])
 
   const commitTheme = useCallback((mode: ThemeMode, { persist = true } = {}) => {
+    // The ref is the synchronous authority for user intent. Update it before
+    // touching the document so a MutationObserver or an older concurrent
+    // render can only reconcile towards the newest deliberate choice.
+    const stateChanged = themeRef.current !== mode
+    themeRef.current = mode
+
     // Apply the document synchronously. React state can temporarily survive HMR
     // while the root class does not; even a same-state request must repair that
     // divergence instead of returning early and leaving the page stuck.
@@ -128,8 +133,6 @@ export function ThemeProvider({
       }
     }
 
-    const stateChanged = themeRef.current !== mode
-    themeRef.current = mode
     if (stateChanged) setThemeState(mode)
   }, [applyDocumentTheme, storageKey])
 
@@ -141,7 +144,9 @@ export function ThemeProvider({
   }, [commitTheme])
 
   useLayoutEffect(() => {
-    commitTheme(theme, { persist: false })
+    // A render that began before a click may still commit afterwards. Never let
+    // that older render repaint over the synchronous choice held in the ref.
+    commitTheme(themeRef.current, { persist: false })
   }, [commitTheme, theme])
 
   useEffect(() => {
