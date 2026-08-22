@@ -1,5 +1,5 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert@1"
-import { buildQuoteResponseUrl, parseAction, parseExpiryPreset, parseLifecycleAction, parseReference, validateSavePayload } from "./core.ts"
+import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.14"
+import { buildQuoteResponseUrl, buildSimpleQuoteEmailDraft, parseAction, parseDeliveryMode, parseExpiryPreset, parseLifecycleAction, parseReference, validateSavePayload } from "./core.ts"
 
 Deno.test("accepts the explicit quote workflow actions", () => {
   assertEquals(parseAction("save"), "save")
@@ -17,6 +17,31 @@ Deno.test("accepts only the quote link expiry presets shown to operators", () =>
   assertEquals(parseExpiryPreset("never"), "never")
   assertThrows(() => parseExpiryPreset(30))
   assertThrows(() => parseExpiryPreset(91))
+})
+
+Deno.test("accepts only the two quote delivery modes", () => {
+  assertEquals(parseDeliveryMode(undefined), "standard")
+  assertEquals(parseDeliveryMode("standard"), "standard")
+  assertEquals(parseDeliveryMode("simple"), "simple")
+  assertThrows(() => parseDeliveryMode("branded"))
+})
+
+Deno.test("builds a concise deterministic Simple quote email", () => {
+  assertEquals(buildSimpleQuoteEmailDraft({
+    reference: "Q-1042",
+    origin: "Felixstowe",
+    destination: "Rotterdam",
+    totalLabel: "£1,250.00",
+    recipientFirstName: "Alex",
+    senderFirstName: "Harry",
+  }), {
+    subject: "Quote Q-1042 – Felixstowe to Rotterdam",
+    bodyText: "Hi Alex, our quote for Felixstowe to Rotterdam is £1,250.00. I’ve attached the full quote for your reference. Thank you, Harry",
+  })
+  assertEquals(buildSimpleQuoteEmailDraft({ reference: "Q-1042", totalLabel: "shown in the attached quote" }), {
+    subject: "Quote Q-1042",
+    bodyText: "Hello, our quote for quote Q-1042 is shown in the attached quote. I’ve attached the full quote for your reference. Thank you",
+  })
 })
 
 Deno.test("rejects unsupported actions and malformed references", () => {

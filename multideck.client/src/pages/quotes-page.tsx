@@ -17,6 +17,7 @@ import {
   Gauge,
   Info,
   ListChecks,
+  LoaderCircle,
   Mail,
   MessageSquareText,
   Maximize2,
@@ -59,6 +60,7 @@ import { DataTable, type DataTableColumn } from "@/components/multideck/data-tab
 import { DexterActionPill, SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { AiPromptMorph } from "@/components/multideck/ai-prompt-morph"
 import { MailProviderMark } from "@/components/multideck/mailbox-provider-switch"
+import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { CopyFeedbackTransition, CopyStatusIcon } from "@/components/multideck/copyable-field"
@@ -94,8 +96,10 @@ import {
   type QuoteIntelligenceRecentQuote,
   type QuoteIntelligenceSnapshot,
   type QuoteIssueReadiness,
+  type QuoteDeliveryMode,
   type QuoteIssueExpiryPreset,
   type QuoteIssueRecipient,
+  type QuoteIssueRecipientInput,
   type QuoteSavePayload,
   type QuoteWorkflowCharge,
   type QuoteWorkflowSources,
@@ -121,6 +125,11 @@ const quoteIssueExpiryPresets: Array<{ value: QuoteIssueExpiryPreset; label: str
   { value: "90", label: "90 days" },
   { value: "never", label: "Never" },
 ]
+const quoteDeliveryModes = ["standard", "simple"] as const satisfies readonly QuoteDeliveryMode[]
+
+function validEmailAddress(value: string) {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value.trim())
+}
 
 type JobRoe = {
   currency: Exclude<QuoteCurrency, "GBP">
@@ -3286,6 +3295,7 @@ function getInitialQuoteRecord(quoteId?: string) {
 
 function quoteLifecyclePresentation(lifecycle: string): { status: string; tone: StatusTone } {
   if (lifecycle === "declined" || lifecycle === "ghosted") return { status: "Lost", tone: "red" }
+  if (lifecycle === "accepted") return { status: "Accepted", tone: "green" }
   return { status: "Open", tone: "green" }
 }
 
@@ -3723,7 +3733,9 @@ export function QuoteDetailPage({
   const [issueRecipients, setIssueRecipients] = useState<QuoteIssueRecipient[]>([])
   const [issueMailboxes, setIssueMailboxes] = useState<Mailbox[]>([])
   const [issueMailboxId, setIssueMailboxId] = useState("")
-  const [issueRecipientKey, setIssueRecipientKey] = useState("")
+  const [issueRecipientEmail, setIssueRecipientEmail] = useState("")
+  const [issueRecipientSuggestionsOpen, setIssueRecipientSuggestionsOpen] = useState(false)
+  const [issueDeliveryMode, setIssueDeliveryMode] = useState<QuoteDeliveryMode>("standard")
   const [issueExpiryPreset, setIssueExpiryPreset] = useState<QuoteIssueExpiryPreset>("14")
   const [issueEmailSubject, setIssueEmailSubject] = useState("")
   const [issueEmailBody, setIssueEmailBody] = useState("")
@@ -3740,6 +3752,7 @@ export function QuoteDetailPage({
   const [issuing, setIssuing] = useState(false)
   const [issueDeliveryState, setIssueDeliveryState] = useState<"idle" | "sent">("idle")
   const [issueNotice, setIssueNotice] = useState("")
+  const [winDialogOpen, setWinDialogOpen] = useState(false)
   const [lossDialogOpen, setLossDialogOpen] = useState(false)
   const [lossReason, setLossReason] = useState("")
   const [lossDetails, setLossDetails] = useState("")
@@ -3760,9 +3773,15 @@ export function QuoteDetailPage({
   const issuePreviewTimerRef = useRef<number | null>(null)
   const issueBodyEditorRef = useRef<HTMLTextAreaElement | null>(null)
   const selectedIssueRecipient = useMemo(
-    () => issueRecipients.find((recipient) => recipient.key === issueRecipientKey) ?? null,
-    [issueRecipientKey, issueRecipients],
+    () => issueRecipients.find((recipient) => recipient.email.toLowerCase() === issueRecipientEmail.trim().toLowerCase()) ?? null,
+    [issueRecipientEmail, issueRecipients],
   )
+  const resolvedIssueRecipient = useMemo<QuoteIssueRecipientInput | null>(() => {
+    const email = issueRecipientEmail.trim().toLowerCase()
+    if (!validEmailAddress(email)) return null
+    const saved = issueRecipients.find((recipient) => recipient.email.toLowerCase() === email)
+    return saved ? { source: "saved", key: saved.key } : { source: "manual", email }
+  }, [issueRecipientEmail, issueRecipients])
 
   useEffect(() => () => {
     if (quoteCopyResetTimerRef.current !== null) window.clearTimeout(quoteCopyResetTimerRef.current)
@@ -3922,12 +3941,12 @@ export function QuoteDetailPage({
 
   useEffect(() => {
     if (issuePreviewTimerRef.current !== null) window.clearTimeout(issuePreviewTimerRef.current)
-    if (!issueDialogOpen || !currentQuoteId || !issueRecipientKey || !issueEmailSubject.trim() || !issueEmailBody.trim() || issueDraftLoading) return
+    if (!issueDialogOpen || !currentQuoteId || !resolvedIssueRecipient || !issueEmailSubject.trim() || !issueEmailBody.trim() || issueDraftLoading) return
     let active = true
     issuePreviewTimerRef.current = window.setTimeout(() => {
       issuePreviewTimerRef.current = null
       setIssuePreviewLoading(true)
-      void previewQuoteIssueEmail(currentQuoteId, issueRecipientKey, issueEmailSubject, issueEmailBody, issueExpiryPreset)
+      void previewQuoteIssueEmail(currentQuoteId, resolvedIssueRecipient, issueDeliveryMode, issueEmailSubject, issueEmailBody, issueExpiryPreset)
         .then((preview) => {
           if (!active) return
           setIssueEmailPreviewHtml(preview.previewHtml)
@@ -3945,7 +3964,7 @@ export function QuoteDetailPage({
         issuePreviewTimerRef.current = null
       }
     }
-  }, [currentQuoteId, issueDialogOpen, issueDraftLoading, issueEmailBody, issueEmailSubject, issueExpiryPreset, issueRecipientKey])
+  }, [currentQuoteId, issueDeliveryMode, issueDialogOpen, issueDraftLoading, issueEmailBody, issueEmailSubject, issueExpiryPreset, resolvedIssueRecipient])
 
   function changeWorkspaceTab(nextTab: QuoteWorkspaceTab) {
     if (nextTab === activeTab) return
@@ -4185,15 +4204,47 @@ export function QuoteDetailPage({
     }
   }
 
-  async function loadIssueEmailDraft(recipientKey: string, expiryPreset = issueExpiryPreset) {
-    if (!currentQuoteId || !recipientKey) return
+  async function markQuoteWon() {
+    if (!currentQuoteId || transitioning || isDirty) return
+    setTransitioning(true)
+    setWorkflowError("")
+    try {
+      await transitionQuoteWorkflow(currentQuoteId, "accepted")
+      const sources = lookups ?? await getQuoteSources()
+      const reference = workspace?.quote.reference ?? savedQuote.id
+      const loadedWorkspace = await getQuoteWorkflow(reference, { fresh: true })
+      setLookups(sources)
+      applyLoadedWorkspace(loadedWorkspace, sources)
+      setWinDialogOpen(false)
+    } catch (error) {
+      try {
+        const sources = lookups ?? await getQuoteSources()
+        const reference = workspace?.quote.reference ?? savedQuote.id
+        const loadedWorkspace = await getQuoteWorkflow(reference, { fresh: true })
+        if (loadedWorkspace.quote.lifecycle === "accepted") {
+          setLookups(sources)
+          applyLoadedWorkspace(loadedWorkspace, sources)
+          setWinDialogOpen(false)
+          return
+        }
+      } catch {
+        // Keep the original transition error when the recovery read is unavailable.
+      }
+      setWorkflowError(error instanceof Error ? error.message : "The quote could not be marked won.")
+    } finally {
+      setTransitioning(false)
+    }
+  }
+
+  async function loadIssueEmailDraft(recipient: QuoteIssueRecipientInput, deliveryMode = issueDeliveryMode, expiryPreset = issueExpiryPreset) {
+    if (!currentQuoteId) return
     setIssueDraftLoading(true)
     setIssueEmailError("")
     setIssueEmailSubject("")
     setIssueEmailBody("")
     setIssueEmailPreviewHtml("")
     try {
-      const draft = await prepareQuoteIssueEmail(currentQuoteId, recipientKey, expiryPreset)
+      const draft = await prepareQuoteIssueEmail(currentQuoteId, recipient, deliveryMode, expiryPreset)
       setIssueEmailSubject(draft.subject)
       setIssueEmailBody(draft.bodyText)
       setIssueEmailPreviewHtml(draft.previewHtml)
@@ -4210,7 +4261,9 @@ export function QuoteDetailPage({
     setIssueRecipients([])
     setIssueMailboxes([])
     setIssueMailboxId("")
-    setIssueRecipientKey("")
+    setIssueRecipientEmail("")
+    setIssueRecipientSuggestionsOpen(false)
+    setIssueDeliveryMode("standard")
     setIssueEmailSubject("")
     setIssueEmailBody("")
     setIssueEmailPreviewHtml("")
@@ -4240,8 +4293,8 @@ export function QuoteDetailPage({
       const savedEmail = savedQuote.customerEmail?.trim().toLowerCase()
       const selected = options.recipients.find((recipient) => recipient.email.toLowerCase() === savedEmail) ?? options.recipients[0]
       if (selected) {
-        setIssueRecipientKey(selected.key)
-        await loadIssueEmailDraft(selected.key, "14")
+        setIssueRecipientEmail(selected.email)
+        await loadIssueEmailDraft({ source: "saved", key: selected.key }, "standard", "14")
       } else {
         setIssueEmailError("Add a company email or a contact email before sending this quote.")
       }
@@ -4253,13 +4306,39 @@ export function QuoteDetailPage({
     }
   }
 
-  function changeIssueRecipient(recipientKey: string) {
+  function changeIssueRecipient(recipient: QuoteIssueRecipient) {
     setIssueDeliveryState("idle")
     setIssueRefinementOpen(false)
     setIssueBodySelection(null)
     setIssueSelectionAnchor(null)
-    setIssueRecipientKey(recipientKey)
-    void loadIssueEmailDraft(recipientKey)
+    setIssueRecipientEmail(recipient.email)
+    setIssueRecipientSuggestionsOpen(false)
+    void loadIssueEmailDraft({ source: "saved", key: recipient.key })
+  }
+
+  function updateIssueRecipientEmail(value: string) {
+    const email = value.slice(0, 320)
+    setIssueRecipientEmail(email)
+    setIssueDeliveryState("idle")
+    setIssueEmailError("")
+  }
+
+  function prepareTypedIssueRecipient() {
+    if (!resolvedIssueRecipient) {
+      setIssueEmailError(issueRecipientEmail.trim() ? "Enter a valid customer email address." : "Choose a company contact or enter an email address.")
+      return
+    }
+    void loadIssueEmailDraft(resolvedIssueRecipient)
+  }
+
+  function changeIssueDeliveryMode(mode: QuoteDeliveryMode) {
+    if (mode === issueDeliveryMode) return
+    setIssueDeliveryMode(mode)
+    setIssueDeliveryState("idle")
+    setIssueRefinementOpen(false)
+    setIssueBodySelection(null)
+    setIssueSelectionAnchor(null)
+    if (resolvedIssueRecipient) void loadIssueEmailDraft(resolvedIssueRecipient, mode)
   }
 
   function updateIssueBodySelection() {
@@ -4294,7 +4373,7 @@ export function QuoteDetailPage({
 
   async function performIssueRefinement(instruction: string, selection: TextareaSelection | null) {
     const cleanInstruction = instruction.trim()
-    if (!currentQuoteId || !issueRecipientKey || !cleanInstruction || issueRefining || issuing) return
+    if (!currentQuoteId || !resolvedIssueRecipient || issueDeliveryMode !== "standard" || !cleanInstruction || issueRefining || issuing) return
     if (selection && issueEmailBody.slice(selection.start, selection.end) !== selection.text) {
       setIssueEmailError("Select the text again before refining it.")
       return
@@ -4306,7 +4385,8 @@ export function QuoteDetailPage({
     try {
       const refined = await refineQuoteIssueEmail({
         quoteId: currentQuoteId,
-        recipientKey: issueRecipientKey,
+        recipient: resolvedIssueRecipient,
+        deliveryMode: issueDeliveryMode,
         subject: snapshotSubject,
         bodyText: snapshotBody,
         instruction: cleanInstruction,
@@ -4331,13 +4411,13 @@ export function QuoteDetailPage({
   }
 
   async function issueQuoteToCustomer() {
-    if (!currentQuoteId || !issueReadiness?.ready || !issueRecipientKey || !issueMailboxId || !issueEmailSubject.trim() || !issueEmailBody.trim() || issuing || issueDraftLoading || issuePreviewLoading) return
+    if (!currentQuoteId || !issueReadiness?.ready || !resolvedIssueRecipient || !issueMailboxId || !issueEmailSubject.trim() || !issueEmailBody.trim() || issuing || issueDraftLoading || issuePreviewLoading) return
     setIssuing(true)
     setWorkflowError("")
     setIssueNotice("")
     let result: Awaited<ReturnType<typeof issueQuoteWorkflow>>
     try {
-      result = await issueQuoteWorkflow(currentQuoteId, issueRecipientKey, issueMailboxId, issueEmailSubject, issueEmailBody, issueExpiryPreset)
+      result = await issueQuoteWorkflow(currentQuoteId, resolvedIssueRecipient, issueDeliveryMode, issueMailboxId, issueEmailSubject, issueEmailBody, issueExpiryPreset)
       if (!result.delivered) throw new Error("The email provider has not confirmed delivery. Nothing was marked as sent.")
     } catch (error) {
       setWorkflowError(error instanceof Error ? error.message : "The quote could not be sent.")
@@ -4423,7 +4503,10 @@ export function QuoteDetailPage({
               <div className="md-quote-workspace-header grid min-w-0 items-stretch gap-2">
                 <div className="grid min-w-0 grid-rows-[auto_auto] gap-1.5">
                 <section
-                  className="md-quote-record-header flex min-w-0 flex-col gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-3 py-1.5 shadow-[var(--md-shadow-line)] sm:flex-row sm:items-center"
+                  className={cn(
+                    "md-quote-record-header flex min-w-0 flex-col gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-3 py-1.5 shadow-[var(--md-shadow-line)] transition-colors sm:flex-row sm:items-center",
+                    lifecycle === "accepted" && "bg-[var(--md-status-green-bg)]",
+                  )}
                 >
           <div className="md-quote-record-identity flex min-w-0 items-center gap-1.5">
             <div className="min-w-0">
@@ -4453,6 +4536,16 @@ export function QuoteDetailPage({
                   <CopyStatusIcon copied={quoteRefCopied} iconClassName="size-3.5" className="shrink-0" />
                 </button>
                 <StatusPill kind="status" tone={activeQuote.statusTone} indicator={false} className="h-7 shrink-0 px-2 text-[11px]">{activeQuote.status}</StatusPill>
+                {lifecycle === "accepted" && workspace?.linkedBooking ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-7 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 text-[11px] text-[var(--md-status-green-ink)] shadow-[var(--md-shadow-line)]"
+                    onClick={() => navigate?.(`/bookings/${workspace.linkedBooking?.bookingReference.toLowerCase()}`)}
+                  >
+                    {t("Booking")} <span data-i18n-skip dir="ltr">{workspace.linkedBooking.bookingReference}</span>
+                  </Button>
+                ) : null}
               </div>
             </div>
           </div>
@@ -4516,6 +4609,16 @@ export function QuoteDetailPage({
                     <Send data-icon="inline-start" className="size-4" strokeWidth={1.4} />
                     {t(issueReadiness?.ready ? "Send quote" : "Review to send")}
                   </Button>
+                  {workspace?.latestIssue?.deliveryStatus === "sent" && (workspace.latestIssue.responseControlsEnabled === false || workspace.latestIssue.deliveryMode === "simple") ? (
+                    <Button
+                      type="button"
+                      disabled={!currentQuoteId || isDirty || saving || transitioning}
+                      className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-status-green-bg)] px-2.5 text-[11px] font-normal text-[var(--md-status-green-ink)] shadow-none hover:bg-[color-mix(in_srgb,var(--md-status-green-bg)_82%,var(--md-green))]"
+                      onClick={() => setWinDialogOpen(true)}
+                    >
+                      {t("Mark won")}
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     disabled={!currentQuoteId || isDirty || saving || transitioning}
@@ -4602,8 +4705,23 @@ export function QuoteDetailPage({
         >
           <DialogHeader className="text-start">
             <DialogTitle>{t("Send quote to customer")}</DialogTitle>
-            <DialogDescription>{t("Choose the recipient, review Dexter’s email and confirm the secure quote link before sending.")}</DialogDescription>
+            <DialogDescription>{t(issueDeliveryMode === "standard" ? "Send a branded quote email with a secure response link and PDF." : "Send a short plain email with the quote PDF attached.")}</DialogDescription>
           </DialogHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-1.5 shadow-[var(--md-shadow-line)]">
+            <div className="min-w-0 px-1.5 text-start">
+              <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Email style")}</p>
+              <p className="text-[11px] text-[var(--md-subtle)]">{t(issueDeliveryMode === "standard" ? "Branded and fully presented" : "Short and direct")}</p>
+            </div>
+            <SegmentedControl
+              options={quoteDeliveryModes}
+              value={issueDeliveryMode}
+              onChange={changeIssueDeliveryMode}
+              ariaLabel={t("Quote email style")}
+              disabled={issuing || issueDraftLoading || issueRefining}
+              renderOption={(mode) => t(mode === "standard" ? "Standard" : "Simple")}
+              className="shrink-0"
+            />
+          </div>
           <div className="grid min-w-0 gap-5 sm:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] sm:items-start">
             <div className="grid min-w-0 content-start gap-4">
               {issueReadinessLoading ? (
@@ -4638,31 +4756,46 @@ export function QuoteDetailPage({
                 </Select>
               </label>
 
-              <label className="grid gap-1.5 text-start text-[12px] font-medium text-[var(--md-text)]">
-                {t("Send to")}
-                <Select value={issueRecipientKey} onValueChange={changeIssueRecipient} disabled={issuing || issueRefining || issueReadinessLoading || !issueRecipients.length}>
-                  <SelectTrigger className="h-11 w-full rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]">
-                    {selectedIssueRecipient ? (
-                      <span className="flex min-w-0 items-center gap-2">
-                        <Mail className="size-4 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
-                        <span className="truncate text-[12px]" data-i18n-skip dir="ltr">{selectedIssueRecipient.email}</span>
-                      </span>
-                    ) : (
-                      <SelectValue placeholder={t(issueReadinessLoading ? "Loading company contacts…" : "Choose a company contact")} />
-                    )}
-                  </SelectTrigger>
-                  <SelectContent>
-                    {issueRecipients.map((recipient) => (
-                      <SelectItem key={recipient.key} value={recipient.key}>
-                        <span className="flex min-w-0 items-center gap-2">
+              <div className="grid gap-1.5 text-start text-[12px] font-medium text-[var(--md-text)]">
+                <label htmlFor="quote-recipient-email">{t("Send to")}</label>
+                <Popover open={issueRecipientSuggestionsOpen} onOpenChange={setIssueRecipientSuggestionsOpen}>
+                  <PopoverTrigger asChild>
+                    <div className="relative">
+                      <Mail className="pointer-events-none absolute start-3 top-1/2 z-10 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
+                      <Input
+                        id="quote-recipient-email"
+                        name="quote-recipient-email"
+                        type="email"
+                        inputMode="email"
+                        autoComplete="email"
+                        value={issueRecipientEmail}
+                        dir="ltr"
+                        aria-invalid={Boolean(issueRecipientEmail.trim() && !resolvedIssueRecipient)}
+                        aria-describedby="quote-recipient-email-hint"
+                        placeholder={t(issueReadinessLoading ? "Loading company contacts…" : "Choose a contact or enter an email")}
+                        disabled={issuing || issueRefining || issueReadinessLoading}
+                        className="h-11 ps-9 text-base sm:text-[13px]"
+                        onFocus={() => setIssueRecipientSuggestionsOpen(true)}
+                        onChange={(event) => updateIssueRecipientEmail(event.target.value)}
+                        onBlur={() => window.setTimeout(() => { prepareTypedIssueRecipient(); setIssueRecipientSuggestionsOpen(false) }, 120)}
+                        data-i18n-skip
+                      />
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] min-w-[260px] rounded-[var(--md-radius-xl)] p-1.5" onOpenAutoFocus={(event) => event.preventDefault()}>
+                    <p className="px-2 py-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]">{t("Company contacts")}</p>
+                    <div className="max-h-52 overflow-y-auto">
+                      {issueRecipients.map((recipient) => (
+                        <button key={recipient.key} type="button" className="flex w-full items-center gap-2 rounded-[var(--md-radius-lg)] px-2 py-2 text-start transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)]" onMouseDown={(event) => event.preventDefault()} onClick={() => changeIssueRecipient(recipient)}>
                           <Mail className="size-4 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
-                          <span className="truncate text-[12px] text-[var(--md-ink)]" data-i18n-skip dir="ltr">{recipient.email}</span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </label>
+                          <span className="min-w-0"><span className="block truncate text-[12px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{recipient.name}</span><span className="block truncate text-[11px] text-[var(--md-text)]" data-i18n-skip dir="ltr">{recipient.email}</span></span>
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <span id="quote-recipient-email-hint" className={cn("text-[10.5px] font-normal leading-4", issueRecipientEmail.trim() && !resolvedIssueRecipient ? "text-[var(--md-red)]" : "text-[var(--md-subtle)]")}>{t(issueRecipientEmail.trim() && !resolvedIssueRecipient ? "Enter a valid customer email address." : selectedIssueRecipient ? "Saved company contact" : resolvedIssueRecipient?.source === "manual" ? "This address is used for this send only. Saved quote and CRM contact details will not change." : "Select a saved contact or type any valid email address.")}</span>
+              </div>
 
               <label className="grid gap-1.5 text-start text-[12px] font-medium text-[var(--md-text)]">
                 {t("Subject")}
@@ -4673,7 +4806,7 @@ export function QuoteDetailPage({
                 <label htmlFor="quote-issue-email-body" className="text-start text-[12px] font-medium text-[var(--md-text)]">{t("Email body")}</label>
                 <div className="relative">
                   <AnimatePresence initial={false}>
-                    {issueBodySelection && issueSelectionAnchor ? (
+                    {issueDeliveryMode === "standard" && issueBodySelection && issueSelectionAnchor ? (
                       <motion.div
                         key={`${issueBodySelection.start}-${issueBodySelection.end}`}
                         role="group"
@@ -4750,11 +4883,11 @@ export function QuoteDetailPage({
                     onScroll={updateIssueBodySelection}
                     maxLength={6000}
                     disabled={issuing || issueDraftLoading || issueRefining}
-                    className="min-h-[220px] resize-y rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] leading-5 shadow-[var(--md-shadow-line)]"
+                    className={cn("resize-y rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] leading-5 shadow-[var(--md-shadow-line)]", issueDeliveryMode === "simple" ? "min-h-[150px]" : "min-h-[220px]")}
                     data-i18n-skip
                   />
                 </div>
-                <AiPromptMorph
+                {issueDeliveryMode === "standard" ? <AiPromptMorph
                   id="quote-issue-email-refinement"
                   open={issueRefinementOpen && issueRefinementSelection === null}
                   value={issueRefinementInstruction}
@@ -4770,10 +4903,10 @@ export function QuoteDetailPage({
                   onOpenChange={(open) => open ? openIssueRefinement(null) : closeIssueRefinement()}
                   onValueChange={setIssueRefinementInstruction}
                   onSubmit={() => void performIssueRefinement(issueRefinementInstruction, null)}
-                />
+                /> : <p className="text-[10.5px] leading-4 text-[var(--md-subtle)]">{t("Simple emails stay short and unbranded. Edit the wording directly before sending.")}</p>}
               </div>
 
-              <fieldset className="grid gap-2">
+              {issueDeliveryMode === "standard" ? <fieldset className="grid gap-2">
                 <legend className="text-start text-[12px] font-medium text-[var(--md-text)]">{t("Link expires after")}</legend>
                 <div className="flex flex-wrap gap-1.5">
                   {quoteIssueExpiryPresets.map((preset) => (
@@ -4792,7 +4925,13 @@ export function QuoteDetailPage({
                     </button>
                   ))}
                 </div>
-              </fieldset>
+              </fieldset> : <p className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2 text-start text-[10.5px] leading-4 text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">{t("Simple emails do not include customer response controls. Record the outcome with Mark won or Mark lost in Multideck.")}</p>}
+
+              <div className="flex items-center gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2.5 shadow-[var(--md-shadow-line)]">
+                <span className="grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><FileText className="size-4" strokeWidth={1.4} aria-hidden="true" /></span>
+                <span className="min-w-0 text-start"><span className="block text-[12px] font-medium text-[var(--md-ink)]">{t("Quote PDF")}</span><span className="block text-[10.5px] leading-4 text-[var(--md-subtle)]">{t("Generated from this saved quote and attached automatically.")}</span></span>
+                <StatusPill kind="attribute" tone="green" className="ms-auto shrink-0">{t("Attached")}</StatusPill>
+              </div>
 
               {issueEmailError ? <p role="alert" className="text-[12px] leading-5 text-[var(--md-red)]">{t(issueEmailError)}</p> : null}
               {issueReadiness?.warnings.length ? (
@@ -4806,7 +4945,7 @@ export function QuoteDetailPage({
               <div className="mb-2 flex items-center justify-between gap-3">
                 <div>
                   <h2 id="quote-email-preview-heading" className="text-[13px] font-medium text-[var(--md-ink)]">{t("Live email preview")}</h2>
-                  <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("This is the branded email the customer will receive.")}</p>
+                  <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t(issueDeliveryMode === "standard" ? "This is the branded email the customer will receive." : "This is the plain email the customer will receive.")}</p>
                 </div>
                 {issuePreviewLoading ? <span role="status" className="text-[11px] text-[var(--md-accent)]">{t("Updating preview…")}</span> : null}
               </div>
@@ -4831,7 +4970,7 @@ export function QuoteDetailPage({
             <Button type="button" variant="ghost" disabled={issuing || issueRefining} onClick={() => setIssueDialogOpen(false)}>{t("Cancel")}</Button>
             <Button
               type="button"
-              disabled={!issueReadiness?.ready || issueReadinessLoading || !issueRecipientKey || !issueMailboxId || !issueEmailSubject.trim() || !issueEmailBody.trim() || !issueEmailPreviewHtml || issuing || issueDraftLoading || issuePreviewLoading || issueRefining}
+              disabled={!issueReadiness?.ready || issueReadinessLoading || !resolvedIssueRecipient || !issueMailboxId || !issueEmailSubject.trim() || !issueEmailBody.trim() || !issueEmailPreviewHtml || issuing || issueDraftLoading || issuePreviewLoading || issueRefining}
               onClick={() => void issueQuoteToCustomer()}
               className={cn(
                 "transition-[background-color,color,transform] motion-reduce:transition-none",
@@ -4840,6 +4979,25 @@ export function QuoteDetailPage({
             >
               {issueDeliveryState === "sent" ? <CheckCircle2 className="size-4" strokeWidth={1.6} aria-hidden="true" /> : <Send className="size-4" strokeWidth={1.4} aria-hidden="true" />}
               {t(issueDeliveryState === "sent" ? "Quote sent" : issuing ? "Sending…" : "Send secure quote")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={winDialogOpen} onOpenChange={(open) => { if (!transitioning) setWinDialogOpen(open) }}>
+        <DialogContent className="rounded-[var(--md-radius-2xl)] sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>{t("Mark this quote won?")}</DialogTitle>
+            <DialogDescription>{t("This accepts the quote and creates its booking. If a booking already exists for this quote, Multideck will reuse it.")}</DialogDescription>
+          </DialogHeader>
+          <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-status-green-bg)] px-3 py-3 text-start shadow-[var(--md-shadow-line)]">
+            <p className="text-[12px] font-medium text-[var(--md-status-green-ink)]">{t("The quote will remain in Quotes as Accepted.")}</p>
+            <p className="mt-1 text-[11px] leading-5 text-[var(--md-text)]">{t("The new booking will keep its operational status and show From quote as its source.")}</p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={transitioning} onClick={() => setWinDialogOpen(false)}>{t("Cancel")}</Button>
+            <Button type="button" disabled={transitioning} className="bg-[var(--md-status-green-bg)] text-[var(--md-status-green-ink)] hover:bg-[color-mix(in_srgb,var(--md-status-green-bg)_82%,var(--md-green))]" onClick={() => void markQuoteWon()}>
+              {transitioning ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <CheckCircle2 className="size-4" />}
+              {t(transitioning ? "Creating booking…" : "Mark won and create booking")}
             </Button>
           </DialogFooter>
         </DialogContent>

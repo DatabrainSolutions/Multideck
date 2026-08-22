@@ -198,6 +198,24 @@ export type QuoteWorkflowWorkspace = {
   versions: QuoteWorkflowVersion[]
   events: QuoteWorkflowEvent[]
   customerResponse: QuoteWorkflowCustomerResponse | null
+  latestIssue: null | {
+    responseLinkId: string
+    quoteDocumentId: string | null
+    deliveryMode: QuoteDeliveryMode
+    responseControlsEnabled: boolean
+    recipientSource: "saved" | "manual"
+    recipientName: string | null
+    recipientEmail: string
+    deliveryStatus: "pending" | "sent" | "failed"
+    responseStatus: "active" | "responded" | "expired" | "revoked"
+    createdAt: string
+  }
+  linkedBooking: null | {
+    jobId: string
+    bookingReference: string
+    status: string
+    requiresCustomerLink: boolean
+  }
   intelligence: QuoteIntelligenceSnapshot | null
 }
 
@@ -259,6 +277,8 @@ export type QuoteIssueResult = {
   expiresAt: string | null
   recipientEmail: string
   delivered: boolean
+  deliveryMode: QuoteDeliveryMode
+  responseControlsEnabled: boolean
   quoteDocumentId?: string
 }
 
@@ -278,6 +298,11 @@ export type QuoteIssueRecipient = {
   email: string
 }
 
+export type QuoteDeliveryMode = "standard" | "simple"
+export type QuoteIssueRecipientInput =
+  | { source: "saved"; key: string }
+  | { source: "manual"; email: string }
+
 export type QuoteIssueExpiryPreset = "7" | "14" | "28" | "90" | "never"
 
 export type QuoteIssueEmailDraft = {
@@ -287,6 +312,7 @@ export type QuoteIssueEmailDraft = {
   personalised: boolean
   sampleCount: number
   model: string | null
+  deliveryMode: QuoteDeliveryMode
 }
 
 let quoteSourcesPromise: Promise<QuoteWorkflowSources> | null = null
@@ -386,13 +412,14 @@ export function getQuoteIssueRecipients(quoteId: string) {
   return invoke<{ recipients: QuoteIssueRecipient[] }>({ action: "issue-options", quoteId }, "Quote contacts could not be loaded.")
 }
 
-export function prepareQuoteIssueEmail(quoteId: string, recipientKey: string, expiryPreset: QuoteIssueExpiryPreset) {
-  return invoke<QuoteIssueEmailDraft>({ action: "issue-draft", quoteId, recipientKey, expiryPreset }, "Dexter could not prepare the quote email.")
+export function prepareQuoteIssueEmail(quoteId: string, recipient: QuoteIssueRecipientInput, deliveryMode: QuoteDeliveryMode, expiryPreset: QuoteIssueExpiryPreset) {
+  return invoke<QuoteIssueEmailDraft>({ action: "issue-draft", quoteId, recipient, deliveryMode, expiryPreset }, "The quote email could not be prepared.")
 }
 
 export function refineQuoteIssueEmail(input: {
   quoteId: string
-  recipientKey: string
+  recipient: QuoteIssueRecipientInput
+  deliveryMode: QuoteDeliveryMode
   subject: string
   bodyText: string
   instruction: string
@@ -401,13 +428,13 @@ export function refineQuoteIssueEmail(input: {
   return invoke<{ subject: string; bodyText: string; model: string }>({ action: "issue-refine", ...input }, "Dexter could not refine this draft. Your wording is unchanged.")
 }
 
-export function previewQuoteIssueEmail(quoteId: string, recipientKey: string, subject: string, bodyText: string, expiryPreset: QuoteIssueExpiryPreset) {
-  return invoke<{ previewHtml: string }>({ action: "issue-preview", quoteId, recipientKey, subject, bodyText, expiryPreset }, "The email preview could not be updated.")
+export function previewQuoteIssueEmail(quoteId: string, recipient: QuoteIssueRecipientInput, deliveryMode: QuoteDeliveryMode, subject: string, bodyText: string, expiryPreset: QuoteIssueExpiryPreset) {
+  return invoke<{ previewHtml: string; deliveryMode: QuoteDeliveryMode }>({ action: "issue-preview", quoteId, recipient, deliveryMode, subject, bodyText, expiryPreset }, "The email preview could not be updated.")
 }
 
-export function issueQuoteWorkflow(quoteId: string, recipientKey: string, mailboxId: string, subject: string, bodyText: string, expiryPreset: QuoteIssueExpiryPreset) {
+export function issueQuoteWorkflow(quoteId: string, recipient: QuoteIssueRecipientInput, deliveryMode: QuoteDeliveryMode, mailboxId: string, subject: string, bodyText: string, expiryPreset: QuoteIssueExpiryPreset) {
   quoteWorkspaceCache.clear()
-  return invoke<QuoteIssueResult>({ action: "issue", quoteId, recipientKey, mailboxId, subject, bodyText, expiryPreset }, "The quote could not be sent.")
+  return invoke<QuoteIssueResult>({ action: "issue", quoteId, recipient, deliveryMode, mailboxId, subject, bodyText, expiryPreset }, "The quote could not be sent.")
 }
 
 export function refreshQuoteIntelligence(reference: string) {

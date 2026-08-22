@@ -2,6 +2,7 @@ import { normaliseMultideckAppOrigin } from "../_shared/multideck-app-origin.ts"
 
 export type QuoteWorkflowAction = "sources" | "workspace" | "intelligence" | "save" | "transition" | "open" | "readiness" | "issue-options" | "issue-draft" | "issue-refine" | "issue-preview" | "issue" | "reference-settings" | "save-reference-settings" | "draft-reference-rule" | "branding"
 export type QuoteExpiryPreset = 7 | 14 | 28 | 90 | "never"
+export type QuoteDeliveryMode = "standard" | "simple"
 
 export const quoteLifecycleActions = ["calculated", "sent", "revised", "accepted", "declined", "ghosted"] as const
 export type QuoteLifecycleAction = (typeof quoteLifecycleActions)[number]
@@ -71,6 +72,33 @@ export function parseExpiryPreset(value: unknown): QuoteExpiryPreset {
   const days = Number(value ?? 14)
   if (days === 7 || days === 14 || days === 28 || days === 90) return days
   throw new QuoteWorkflowError(400, "Choose 7, 14, 28 or 90 days, or never.")
+}
+
+export function parseDeliveryMode(value: unknown): QuoteDeliveryMode {
+  if (value === undefined || value === null || value === "standard") return "standard"
+  if (value === "simple") return "simple"
+  throw new QuoteWorkflowError(400, "Choose Standard or Simple quote delivery.")
+}
+
+export function buildSimpleQuoteEmailDraft(input: {
+  reference: string
+  origin?: string | null
+  destination?: string | null
+  totalLabel: string
+  recipientFirstName?: string | null
+  senderFirstName?: string | null
+}) {
+  const reference = requiredText(input.reference, "Quote reference", 64)
+  const origin = optionalText(input.origin, 180) ?? ""
+  const destination = optionalText(input.destination, 180) ?? ""
+  const totalLabel = requiredText(input.totalLabel, "Quote total", 180)
+  const recipientFirstName = optionalText(input.recipientFirstName, 80) ?? ""
+  const senderFirstName = optionalText(input.senderFirstName, 80) ?? ""
+  const route = origin && destination ? `${origin} to ${destination}` : `quote ${reference}`
+  return {
+    subject: origin && destination ? `Quote ${reference} – ${origin} to ${destination}` : `Quote ${reference}`,
+    bodyText: `${recipientFirstName ? `Hi ${recipientFirstName},` : "Hello,"} our quote for ${route} is ${totalLabel}. I’ve attached the full quote for your reference. ${senderFirstName ? `Thank you, ${senderFirstName}` : "Thank you"}`,
+  }
 }
 
 export function parseLifecycleAction(value: unknown): QuoteLifecycleAction {

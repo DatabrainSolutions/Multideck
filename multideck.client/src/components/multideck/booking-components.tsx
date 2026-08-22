@@ -1234,6 +1234,7 @@ function BookingDetailHeader({
               <CopyStatusIcon copied={bookingRefCopied} iconClassName="size-3.5" className="shrink-0" />
             </button>
             <StatusPill kind="status" tone={headerStatusTone} className="h-7 shrink-0 px-2.5 text-[11.5px] font-medium">{t(statusLabel)}</StatusPill>
+            {record.workspace?.booking.sourceQuoteId ? <StatusPill kind="attribute" tone="teal" className="h-7 shrink-0 px-2.5 text-[11px]">{t("From quote")}</StatusPill> : null}
           </div>
           <span
             data-booking-route

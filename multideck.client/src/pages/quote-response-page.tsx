@@ -1,6 +1,6 @@
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { AlertTriangle, CheckCircle2, Download, FileText, LoaderCircle, MessageSquareText, Moon, Shield, Sun, XCircle, type LucideIcon } from "@/components/icons/hugeicons"
 import { errorStateAnimationData } from "@/assets/error-state-animation"
 import { BrandLockup } from "@/components/multideck/auth-flow"
@@ -34,6 +34,29 @@ function formatDate(value: string | null | undefined, locale?: string) {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(date)
 }
 
+function quoteResponseSummary(view: Extract<QuoteResponseView, { state: "active" }>, locale?: string) {
+  const quote = view.quote.snapshot.quote ?? {}
+  const totals = new Map<string, number>()
+  for (const charge of quote.charges ?? []) {
+    if (charge.showToCustomer === false) continue
+    const currency = String(charge.sellCurrency || quote.currency || "GBP").toUpperCase()
+    const amount = Number(charge.sellAmount ?? charge.sellLocal ?? 0)
+    if (Number.isFinite(amount)) totals.set(currency, (totals.get(currency) ?? 0) + amount)
+  }
+  const price = Array.from(totals.entries()).map(([currency, amount]) => {
+    try {
+      return new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 2 }).format(amount)
+    } catch {
+      return `${currency} ${amount.toFixed(2)}`
+    }
+  }).join(" · ") || "—"
+  return {
+    route: [quote.loadingPoint, quote.dischargePoint].filter(Boolean).join(" → ") || "—",
+    price,
+    validUntil: formatDate(quote.validTo, locale),
+  }
+}
+
 export function QuoteResponsePage({ token }: { token: string }) {
   const { language, t, direction } = useLanguage()
   const reducedMotion = Boolean(useReducedMotion())
@@ -49,6 +72,8 @@ export function QuoteResponsePage({ token }: { token: string }) {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
+  const [validationAttempted, setValidationAttempted] = useState(false)
+  const messageInputRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
     let active = true
@@ -62,8 +87,6 @@ export function QuoteResponsePage({ token }: { token: string }) {
 
   const activeView = view?.state === "active" ? view : null
   const messageRequired = decision === "challenged"
-  const responseReady = Boolean(decision && (!messageRequired || message.trim()))
-
   function chooseDecision(next: QuoteResponseDecision) {
     if (decision !== next) {
       setMessage("")
@@ -72,6 +95,7 @@ export function QuoteResponsePage({ token }: { token: string }) {
     }
     setDecision(next)
     setError("")
+    setValidationAttempted(false)
     if (next === "declined") {
       setLossReason("")
       setLossDetails("")
@@ -80,7 +104,13 @@ export function QuoteResponsePage({ token }: { token: string }) {
   }
 
   async function submitResponse(nextDecision = decision, nextMessage = message) {
-    if (!nextDecision || (nextDecision === "challenged" && !nextMessage.trim()) || submitting) return
+    if (!nextDecision || submitting) return
+    if (nextDecision === "challenged" && !nextMessage.trim()) {
+      setValidationAttempted(true)
+      setError("Tell the freight team what needs to change.")
+      window.requestAnimationFrame(() => messageInputRef.current?.focus())
+      return
+    }
     setSubmitting(true)
     setError("")
     try {
@@ -101,7 +131,8 @@ export function QuoteResponsePage({ token }: { token: string }) {
   if (result || view?.state === "responded") {
     const answered = result?.decision ?? (view?.state === "responded" ? view.decision : undefined)
     const tone = answered === "accepted" ? "green" : answered === "challenged" ? "amber" : "red"
-    return <QuoteResponseFrame><main className="mx-auto grid min-h-[520px] max-w-[620px] place-items-center px-5 py-12 text-center"><div><span className={cn("mx-auto grid size-12 place-items-center rounded-[var(--md-radius-lg)]", toneClasses[tone])}><CheckCircle2 className="size-6" /></span><h1 className="mt-5 text-balance text-[26px] font-medium tracking-[-0.035em] text-[var(--md-ink)]">{t(answered === "accepted" ? "Quote accepted" : answered === "challenged" ? "Review requested" : "Response received")}</h1><p className="mx-auto mt-3 max-w-[54ch] text-pretty text-[15px] leading-6 text-[var(--md-text)]">{t(answered === "accepted" ? "Thank you. The freight team has received your acceptance and the booking has been created." : answered === "challenged" ? "Thank you. The freight team will review your message and come back to you." : "Thank you. The freight team has received your response.")}</p>{result?.booking?.bookingReference ? <p className="mt-4 text-[13px] font-medium text-[var(--md-accent)]">{t("Booking reference")}: <span dir="ltr">{result.booking.bookingReference}</span></p> : null}<p className="mt-8 text-[12px] text-[var(--md-subtle)]">{t("You can close this page safely.")}</p></div></main></QuoteResponseFrame>
+    const OutcomeIcon = answered === "accepted" ? CheckCircle2 : answered === "challenged" ? MessageSquareText : XCircle
+    return <QuoteResponseFrame><main className="mx-auto grid min-h-[520px] max-w-[620px] place-items-center px-5 py-12 text-center"><div role="status"><span className={cn("mx-auto grid size-12 place-items-center rounded-[var(--md-radius-lg)]", toneClasses[tone])}><OutcomeIcon className="size-6" aria-hidden="true" /></span><h1 className="mt-5 text-balance text-[26px] font-medium tracking-[-0.035em] text-[var(--md-ink)]">{t(answered === "accepted" ? "Quote accepted" : answered === "challenged" ? "Review requested" : "Quote declined")}</h1><p className="mx-auto mt-3 max-w-[54ch] text-pretty text-[15px] leading-6 text-[var(--md-text)]">{t(answered === "accepted" ? "Thank you. The freight team has received your acceptance and the booking has been created." : answered === "challenged" ? "Thank you. The freight team will review your message and come back to you." : "Thank you. The freight team has received your response.")}</p>{result?.booking?.bookingReference ? <p className="mt-4 text-[13px] font-medium text-[var(--md-accent)]">{t("Booking reference")}: <span dir="ltr">{result.booking.bookingReference}</span></p> : null}<p className="mt-8 text-[12px] text-[var(--md-subtle)]">{t("You can close this page safely.")}</p></div></main></QuoteResponseFrame>
   }
 
   if (error && !activeView) return <QuoteResponseUnavailable message={error} />
@@ -109,25 +140,29 @@ export function QuoteResponsePage({ token }: { token: string }) {
   if (!activeView) return <QuoteResponseUnavailable message="This quote is no longer available." />
 
   const selectedChoice = responseChoices.find((choice) => choice.id === decision) ?? null
+  const summary = quoteResponseSummary(activeView, language)
   const SelectedChoiceIcon = selectedChoice?.icon ?? MessageSquareText
   const transition = reducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.22, 1, 0.36, 1] as const }
   return <QuoteResponseFrame>
     <main dir={direction} className="mx-auto grid w-full max-w-[1380px] gap-4 px-3 py-4 sm:px-5 sm:py-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-5">
-      <QuotePdfPreview document={activeView.document} reference={activeView.quote.reference} version={activeView.quote.versionNumber} />
-      <aside className="rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)] sm:p-5 lg:sticky lg:top-[78px]">
+      <div className="order-2 min-w-0 lg:order-1"><QuotePdfPreview document={activeView.document} reference={activeView.quote.reference} version={activeView.quote.versionNumber} /></div>
+      <aside className="order-1 rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)] sm:p-5 lg:order-2 lg:sticky lg:top-[78px]">
         <div className="flex items-center gap-2 text-[var(--md-accent)]"><Shield className="size-4" /><span className="text-[12px] font-medium">{t("Secure response")}</span></div>
-        <h2 className="mt-3 text-balance text-[20px] font-medium tracking-[-0.025em] text-[var(--md-ink)]">{t("How would you like to respond?")}</h2>
+        <dl className="mt-3 grid grid-cols-2 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]">
+          {[["Quote", activeView.quote.reference], ["Total", summary.price], ["Route", summary.route], ["Valid until", summary.validUntil]].map(([label, value], index) => <div key={label} className={cn("min-w-0 px-2.5 py-2", index < 2 && "border-b border-[var(--md-line)]", index % 2 === 0 && "border-e border-[var(--md-line)]")}><dt className="text-[10px] font-medium text-[var(--md-subtle)]">{t(label)}</dt><dd className="mt-0.5 truncate text-[11.5px] font-medium tabular-nums text-[var(--md-ink)]" title={value} data-i18n-skip dir={label === "Route" ? "auto" : "ltr"}>{value}</dd></div>)}
+        </dl>
+        <h2 id="quote-response-choice-heading" className="mt-3 text-balance text-[20px] font-medium tracking-[-0.025em] text-[var(--md-ink)]">{t("How would you like to respond?")}</h2>
         <p className="mt-2 text-pretty text-[13px] leading-5 text-[var(--md-text)]">{t("Nothing is recorded until you confirm your choice.")}</p>
-        <div className="mt-4 grid gap-2">{responseChoices.map((choice) => {
+        <div role="group" aria-labelledby="quote-response-choice-heading" className="mt-4 grid gap-2">{responseChoices.map((choice) => {
           const Icon = choice.icon
           const selected = decision === choice.id
-          return <button key={choice.id} type="button" aria-pressed={selected} onClick={() => chooseDecision(choice.id)} className={cn("group flex min-h-[68px] items-start gap-3 rounded-[var(--md-radius-xl)] px-3.5 py-3 text-start outline-none transition-[box-shadow,filter,opacity,transform] duration-160 ease-[cubic-bezier(0.22,1,0.36,1)] hover:brightness-[0.98] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a28)] active:scale-[0.985] motion-reduce:transition-none motion-reduce:active:scale-100", toneClasses[choice.tone], selected ? "shadow-[inset_0_0_0_2px_currentColor]" : "opacity-[0.78] hover:opacity-100")}><span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,currentColor_9%,transparent)]"><Icon className="size-4" aria-hidden="true" /></span><span className="min-w-0"><span className="block text-[13px] font-medium">{t(choice.label)}</span><span className="mt-1 block text-pretty text-[11px] leading-4 opacity-75">{t(choice.description)}</span></span></button>
+          return <button key={choice.id} type="button" aria-pressed={selected} onClick={() => chooseDecision(choice.id)} className={cn("group flex min-h-[68px] items-start gap-3 rounded-[var(--md-radius-xl)] px-3.5 py-3 text-start outline-none shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,filter,transform] duration-160 ease-[cubic-bezier(0.22,1,0.36,1)] hover:brightness-[0.98] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a28)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100", selected ? cn(toneClasses[choice.tone], "shadow-[inset_0_0_0_2px_currentColor]") : choice.id === "accepted" ? toneClasses.green : choice.id === "declined" ? "bg-[var(--md-surface-tint)] text-[var(--md-status-red-ink)]" : "bg-[var(--md-surface-tint)] text-[var(--md-ink)]")}><span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,currentColor_9%,transparent)]"><Icon className="size-4" aria-hidden="true" /></span><span className="min-w-0"><span className="block text-[13px] font-medium">{t(choice.label)}</span><span className="mt-1 block text-pretty text-[11px] leading-4 opacity-75">{t(choice.description)}</span></span></button>
         })}</div>
         <AnimatePresence initial={false} mode="wait">{decision && decision !== "declined" && selectedChoice ? <motion.div key={decision} initial={reducedMotion ? false : { opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={reducedMotion ? undefined : { opacity: 0, y: -3 }} transition={transition} className="mt-4 grid gap-3">
-          <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{t(decision === "accepted" ? "Message (optional)" : "What should we review?")}<Textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={4000} required={messageRequired} className="min-h-28 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface-tint)] text-[14px] leading-5 shadow-[var(--md-shadow-line)]" placeholder={t(decision === "challenged" ? "Tell the freight team what needs to change" : "Add a note for the freight team")} /></label>
+          <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{t(decision === "accepted" ? "Message (optional)" : "What should we review?")}<Textarea ref={messageInputRef} value={message} onChange={(event) => { setMessage(event.target.value); if (event.target.value.trim()) { setValidationAttempted(false); setError("") } }} maxLength={4000} required={messageRequired} aria-invalid={validationAttempted && messageRequired && !message.trim()} aria-describedby={validationAttempted && messageRequired && !message.trim() ? "quote-response-message-error" : undefined} className="min-h-28 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface-tint)] text-base leading-5 shadow-[var(--md-shadow-line)] sm:text-[14px]" placeholder={t(decision === "challenged" ? "Tell the freight team what needs to change" : "Add a note for the freight team")} /></label>
           {decision === "challenged" ? <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{t("Supporting attachment (optional)")}<span className="relative flex min-h-11 cursor-pointer items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"><FileText className="size-4 shrink-0" /><span className="min-w-0 truncate">{competitorQuote?.name || t("Attach PDF or image, up to 10 MB")}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" aria-label={t("Supporting attachment (optional)")} className="absolute inset-0 cursor-pointer opacity-0 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a28)]" onChange={(event) => { setCompetitorQuote(event.target.files?.[0] ?? null); setUploadedDocumentId(null) }} /></span></label> : null}
-          {error ? <p role="alert" className="flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] px-3 py-2 text-[12px] leading-5 text-[var(--md-red)]"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{t(error)}</p> : null}
-          <Button type="button" disabled={!responseReady || submitting} onClick={() => void submitResponse()} className={cn("h-11 w-full rounded-[var(--md-radius-lg)] text-[13px] font-medium shadow-none hover:brightness-[0.97]", toneClasses[selectedChoice.tone])}>{submitting ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <SelectedChoiceIcon className="size-4" />}{t(submitting ? "Submitting response…" : decision === "accepted" ? "Confirm acceptance" : decision === "challenged" ? "Send review request" : "Confirm decline")}</Button>
+          {error ? <p id="quote-response-message-error" role="alert" className="flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] px-3 py-2 text-[12px] leading-5 text-[var(--md-red)]"><AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{t(error)}</p> : null}
+          <Button type="button" disabled={submitting} aria-busy={submitting} onClick={() => void submitResponse()} className={cn("h-11 w-full rounded-[var(--md-radius-lg)] text-[13px] font-medium shadow-none hover:brightness-[0.97]", toneClasses[selectedChoice.tone])}>{submitting ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <SelectedChoiceIcon className="size-4" aria-hidden="true" />}{t(submitting ? "Submitting response…" : decision === "accepted" ? "Confirm acceptance" : decision === "challenged" ? "Send review request" : "Confirm decline")}</Button>
         </motion.div> : null}</AnimatePresence>
         <p className="mt-4 text-pretty text-[11px] leading-4 text-[var(--md-subtle)]">{activeView.expiresAt ? <>{t("This private link expires on")} {formatDate(activeView.expiresAt, language)}. {t("Please do not forward it.")}</> : t("This private link stays active until you respond. Please do not forward it.")}</p>
       </aside>

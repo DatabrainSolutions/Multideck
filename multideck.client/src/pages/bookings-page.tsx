@@ -304,6 +304,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
           <div className="flex items-center gap-2">
             <span className="size-2 shrink-0 rounded-full" style={{ background: toneToVar(booking.tone) }} />
             <span className="truncate text-[13px] font-medium text-[var(--md-accent)]">{booking.id}</span>
+            {getCustomField(booking, ["Source"]) === "Accepted quote" ? <StatusPill kind="attribute" tone="teal" className="h-5 shrink-0 px-1.5 text-[9.5px]">{t("From quote")}</StatusPill> : null}
           </div>
           <p className="mt-1.5 truncate ps-4 text-[11px] text-[var(--md-text)]" title={booking.jobRef || booking.customerRef}>
             {booking.jobRef || booking.customerRef || t("No linked reference")}

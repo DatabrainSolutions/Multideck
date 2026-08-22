@@ -1,8 +1,10 @@
 import { authenticateRequest, corsHeaders, FunctionError, jsonResponse, signedUrlLifetimeSeconds, templateSourcesBucket } from "../_shared/document-functions.ts"
 import {
   buildQuoteResponseUrl,
+  buildSimpleQuoteEmailDraft,
   optionalText,
   parseAction,
+  parseDeliveryMode,
   parseEmail,
   parseExpiryPreset,
   parseLifecycleAction,
@@ -13,12 +15,14 @@ import {
   requiredText,
   toClientError,
   validateSavePayload,
+  type QuoteDeliveryMode,
 } from "./core.ts"
 import { readQuoteIntelligence, refreshQuoteIntelligence } from "../quote-intelligence/runtime.ts"
 import { renderBrandedEmail } from "../_shared/email-template.ts"
 import { governedModelFetch } from "../_shared/model-gateway.ts"
 import { generateQuotePdf, removeGeneratedQuotePdf, type GeneratedQuotePdf, type QuotePdfDataset } from "../_shared/quote-pdf.ts"
 import { sendMail as sendConnectedMailbox, type Actor as InboxActor } from "../inbox-api/runtime.ts"
+import { base64Encode, OUTBOUND_ATTACHMENT_LIMITS } from "../inbox-api/core.ts"
 
 type Row = Record<string, unknown>
 type ReferenceRuleTarget = "quote" | "booking" | "customer"
@@ -179,6 +183,29 @@ function renderQuoteEmail(subject: string, bodyText: string, reference: string, 
       : "This private link remains active until you respond. Please do not forward it.",
     locale: "en",
   })
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;")
+}
+
+function renderSimpleQuoteEmail(subject: string, bodyText: string) {
+  const text = bodyText.trim()
+  return {
+    text,
+    html: `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title></head><body style="box-sizing:border-box;margin:0;padding:24px;background:#fff;color:#16201f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><p style="margin:0;white-space:pre-wrap;font-size:15px;line-height:1.6">${escapeHtml(text)}</p></body></html>`,
+  }
+}
+
+function renderQuoteDeliveryEmail(mode: QuoteDeliveryMode, subject: string, bodyText: string, reference: string, url: string, expiresAt: string | null) {
+  return mode === "simple"
+    ? renderSimpleQuoteEmail(subject, bodyText)
+    : renderQuoteEmail(subject, bodyText, reference, url, expiresAt)
 }
 
 async function operatorContext(admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"], authUserId: string) {
@@ -454,7 +481,7 @@ async function quotePdfDataset(
 
 type QuoteIssueRecipient = {
   key: string
-  kind: "contact" | "general"
+  kind: "contact" | "general" | "manual"
   id: string
   name: string
   email: string
@@ -577,13 +604,27 @@ async function resolvedQuoteRecipient(
   admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"],
   authUserId: string,
   quoteIdValue: unknown,
-  recipientKeyValue: unknown,
+  recipientValue: unknown,
+  legacyRecipientKeyValue?: unknown,
 ) {
   const context = await quoteIssueContext(admin, authUserId, quoteIdValue)
-  const recipientKey = requiredText(recipientKeyValue, "Quote recipient", 80)
+  const requested = isObject(recipientValue) ? recipientValue : {}
+  const source = cleanString(requested.source, 20) || "saved"
+  if (source === "manual") {
+    const email = parseEmail(requested.email)
+    const saved = context.recipients.find((candidate) => candidate.email === email)
+    if (saved) return { ...context, recipient: saved, recipientSource: "saved" as const }
+    return {
+      ...context,
+      recipient: { key: `manual:${email}`, kind: "manual" as const, id: email, name: "", email },
+      recipientSource: "manual" as const,
+    }
+  }
+  if (source !== "saved") throw new QuoteWorkflowError(400, "Choose a saved contact or enter a valid email address.")
+  const recipientKey = requiredText(requested.key ?? legacyRecipientKeyValue, "Quote recipient", 80)
   const recipient = context.recipients.find((candidate) => candidate.key === recipientKey)
   if (!recipient) throw new QuoteWorkflowError(400, "Choose a recipient saved on this quote or its customer.")
-  return { ...context, recipient }
+  return { ...context, recipient, recipientSource: "saved" as const }
 }
 
 function defaultQuoteEmailDraft(reference: string, recipient: QuoteIssueRecipient, senderFirstName: string) {
@@ -597,6 +638,53 @@ function defaultQuoteEmailDraft(reference: string, recipient: QuoteIssueRecipien
       ["Kind regards,", senderFirstName].filter(Boolean).join("\n"),
     ].join("\n\n"),
   }
+}
+
+function currentVersionSnapshot(version: Row) {
+  const snapshot = isObject(version.CusQuoteVersion_SnapshotJSON) ? version.CusQuoteVersion_SnapshotJSON : {}
+  return isObject(snapshot.quote) ? snapshot.quote : snapshot
+}
+
+function simpleQuoteEmailDraft(context: Awaited<ReturnType<typeof resolvedQuoteRecipient>>, version: Row) {
+  const quote = currentVersionSnapshot(version)
+  const rawCharges = Array.isArray(quote.charges) ? quote.charges : []
+  const totals = new Map<string, number>()
+  for (const item of rawCharges) {
+    if (!isObject(item) || item.showToCustomer === false) continue
+    const currency = printable(item.sellCurrency || quote.currency || context.quote.CusQuoteHeader_CurrencyCode, "GBP").toUpperCase()
+    const amount = Number(item.sellAmount ?? item.sellLocal ?? 0)
+    if (Number.isFinite(amount)) totals.set(currency, (totals.get(currency) ?? 0) + amount)
+  }
+  const totalLabel = Array.from(totals.entries()).map(([currency, amount]) => moneyLabel(amount, currency)).join(" and ") || "shown in the attached quote"
+  const origin = printable(quote.loadingPoint || context.quote.CusQuoteHeader_LoadingPoint, "")
+  const destination = printable(quote.dischargePoint || context.quote.CusQuoteHeader_DischargePoint, "")
+  const givenName = context.recipient.kind === "contact" ? context.recipient.name.split(/\s+/, 1)[0] : ""
+  return {
+    ...buildSimpleQuoteEmailDraft({
+      reference: context.reference,
+      origin,
+      destination,
+      totalLabel,
+      recipientFirstName: givenName,
+      senderFirstName: context.operator.firstName,
+    }),
+    personalised: false,
+    sampleCount: 0,
+    model: null,
+  }
+}
+
+async function currentQuoteVersion(
+  admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"],
+  quoteId: string,
+) {
+  const { data, error } = await admin.from("CusQuote_Versions")
+    .select("CusQuoteVersion_ID,CusQuoteVersion_Number,CusQuoteVersion_SnapshotJSON,CusQuoteVersion_CreatedAt")
+    .eq("CusQuoteHeader_ID", quoteId)
+    .eq("CusQuoteVersion_IsCurrent", true)
+    .maybeSingle()
+  if (error || !data) throw error ?? new QuoteWorkflowError(400, "Save the quote before sending it.")
+  return data as Row
 }
 
 function modelOutputText(payload: Row) {
@@ -983,15 +1071,25 @@ async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateReque
   const { data: office, error: officeError } = await admin.from("cmp_Offices").select("Company_ID").eq("Office_ID", officeId).maybeSingle()
   if (officeError || !office || String(office.Company_ID) !== operator.companyId) throw new QuoteWorkflowError(403, "That quote is outside this workspace.")
   const customerId = quote.CusQuoteHeader_CustomerID ? String(quote.CusQuoteHeader_CustomerID) : ""
-  const [customerResult, chargeResult, partyResult, versionResult, eventResult, intelligence] = await Promise.all([
+  const [customerResult, chargeResult, partyResult, versionResult, eventResult, latestIssueResult, linkedBookingResult, intelligence] = await Promise.all([
     customerId ? admin.from("Org_Master").select("Org_id,Org_Name").eq("Org_id", customerId).maybeSingle() : Promise.resolve({ data: null, error: null }),
     admin.from("CusQuote_Lines").select("*").eq("CusQuoteHeader_ID", quote.CusQuoteHeader_ID).order("CusQuoteLine_Number"),
     admin.from("CusQuote_Parties").select("*").eq("CusQuoteHeader_ID", quote.CusQuoteHeader_ID),
     admin.from("CusQuote_Versions").select("*").eq("CusQuoteHeader_ID", quote.CusQuoteHeader_ID).order("CusQuoteVersion_Number", { ascending: false }),
     admin.from("CusQuote_Events").select("*,cmp_Users(User_Firstname,User_Lastname)").eq("CusQuoteHeader_ID", quote.CusQuoteHeader_ID).order("CusQuoteEvent_OccurredAt", { ascending: false }).limit(100),
+    admin.rpc("quote_workflow_latest_customer_response_issue", {
+      caller_auth_user_id: authUserId,
+      requested_quote_id: quote.CusQuoteHeader_ID,
+    }),
+    admin.from("Job_Header")
+      .select("Job_ID,Job_BookingReference,Job_Status,Job_Customer,Job_SourceQuoteID")
+      .eq("Job_SourceQuoteID", quote.CusQuoteHeader_ID)
+      .eq("Job_IsDeleted", false)
+      .limit(1)
+      .maybeSingle(),
     readQuoteIntelligence(admin, String(quote.CusQuoteHeader_ID)),
   ])
-  const firstError = customerResult.error || chargeResult.error || partyResult.error || versionResult.error || eventResult.error
+  const firstError = customerResult.error || chargeResult.error || partyResult.error || versionResult.error || eventResult.error || latestIssueResult.error || linkedBookingResult.error
   if (firstError) throw firstError
   const events = eventResult.data ?? []
   const customerResponseEvent = events.find((event) => ["customer_accepted", "customer_declined", "customer_challenged"].includes(String(event.CusQuoteEvent_TypeCode)))
@@ -1075,7 +1173,28 @@ async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateReque
     },
     charges,
     totals: { ...totals, profit: totals.sell - totals.cost, marginPct: totals.sell ? ((totals.sell - totals.cost) / totals.sell) * 100 : null },
-    versions: versionResult.data ?? [], events, customerResponse, intelligence,
+    versions: versionResult.data ?? [],
+    events,
+    customerResponse,
+    latestIssue: latestIssueResult.data ? {
+      responseLinkId: String(latestIssueResult.data.responseLinkId),
+      quoteDocumentId: latestIssueResult.data.quoteDocumentId ? String(latestIssueResult.data.quoteDocumentId) : null,
+      deliveryMode: String(latestIssueResult.data.deliveryMode || "standard"),
+      responseControlsEnabled: latestIssueResult.data.responseControlsEnabled !== false,
+      recipientSource: String(latestIssueResult.data.recipientSource || "saved"),
+      recipientName: latestIssueResult.data.recipientName ? String(latestIssueResult.data.recipientName) : null,
+      recipientEmail: String(latestIssueResult.data.recipientEmail),
+      deliveryStatus: String(latestIssueResult.data.deliveryStatus),
+      responseStatus: String(latestIssueResult.data.responseStatus),
+      createdAt: String(latestIssueResult.data.createdAt),
+    } : null,
+    linkedBooking: linkedBookingResult.data ? {
+      jobId: String(linkedBookingResult.data.Job_ID),
+      bookingReference: String(linkedBookingResult.data.Job_BookingReference),
+      status: String(linkedBookingResult.data.Job_Status),
+      requiresCustomerLink: !linkedBookingResult.data.Job_Customer,
+    } : null,
+    intelligence,
   }
 }
 
@@ -1136,34 +1255,40 @@ Deno.serve(async (request) => {
       return jsonResponse(request, { recipients: context.recipients })
     }
     if (action === "issue-draft") {
-      const context = await resolvedQuoteRecipient(admin, userId, body.quoteId, body.recipientKey)
-      const draft = await prepareQuoteEmailDraft(admin, context)
+      const context = await resolvedQuoteRecipient(admin, userId, body.quoteId, body.recipient, body.recipientKey)
+      const deliveryMode = parseDeliveryMode(body.deliveryMode)
+      const draft = deliveryMode === "simple"
+        ? simpleQuoteEmailDraft(context, await currentQuoteVersion(admin, String(context.quote.CusQuoteHeader_ID)))
+        : await prepareQuoteEmailDraft(admin, context)
       const expiryPreset = parseExpiryPreset(body.expiryPreset)
       const previewOrigin = parseQuoteResponseOrigin(request.headers.get("Origin"))
       const previewUrl = buildQuoteResponseUrl(previewOrigin, "preview")
       const expiresAt = expiryPreset === "never" ? null : new Date(Date.now() + expiryPreset * 86_400_000).toISOString()
-      const preview = renderQuoteEmail(draft.subject, draft.bodyText, context.reference, previewUrl, expiresAt)
-      return jsonResponse(request, { ...draft, previewHtml: preview.html })
+      const preview = renderQuoteDeliveryEmail(deliveryMode, draft.subject, draft.bodyText, context.reference, previewUrl, expiresAt)
+      return jsonResponse(request, { ...draft, deliveryMode, previewHtml: preview.html })
     }
     if (action === "issue-refine") {
-      const context = await resolvedQuoteRecipient(admin, userId, body.quoteId, body.recipientKey)
+      if (parseDeliveryMode(body.deliveryMode) === "simple") throw new QuoteWorkflowError(400, "Simple quote emails use a direct editable message without Dexter refinement.")
+      const context = await resolvedQuoteRecipient(admin, userId, body.quoteId, body.recipient, body.recipientKey)
       return jsonResponse(request, await refineQuoteEmailDraft(admin, context, body))
     }
     if (action === "issue-preview") {
-      const context = await resolvedQuoteRecipient(admin, userId, body.quoteId, body.recipientKey)
+      const context = await resolvedQuoteRecipient(admin, userId, body.quoteId, body.recipient, body.recipientKey)
+      const deliveryMode = parseDeliveryMode(body.deliveryMode)
       const subject = requiredText(body.subject, "Email subject", 200)
       const bodyText = requiredText(body.bodyText, "Email body", 6_000)
       const expiryPreset = parseExpiryPreset(body.expiryPreset)
       const previewOrigin = parseQuoteResponseOrigin(request.headers.get("Origin"))
       const previewUrl = buildQuoteResponseUrl(previewOrigin, "preview")
       const expiresAt = expiryPreset === "never" ? null : new Date(Date.now() + expiryPreset * 86_400_000).toISOString()
-      const preview = renderQuoteEmail(subject, bodyText, context.reference, previewUrl, expiresAt)
-      return jsonResponse(request, { previewHtml: preview.html })
+      const preview = renderQuoteDeliveryEmail(deliveryMode, subject, bodyText, context.reference, previewUrl, expiresAt)
+      return jsonResponse(request, { deliveryMode, previewHtml: preview.html })
     }
     if (action === "issue") {
-      const context = await resolvedQuoteRecipient(admin, userId, body.quoteId, body.recipientKey)
+      const context = await resolvedQuoteRecipient(admin, userId, body.quoteId, body.recipient, body.recipientKey)
+      const deliveryMode = parseDeliveryMode(body.deliveryMode)
       const quoteId = String(context.quote.CusQuoteHeader_ID)
-      const recipientName = context.recipient.name
+      const recipientName = context.recipient.name || null
       const recipientEmail = context.recipient.email
       const subject = requiredText(body.subject, "Email subject", 200)
       const bodyText = requiredText(body.bodyText, "Email body", 6_000)
@@ -1173,12 +1298,7 @@ Deno.serve(async (request) => {
       const expiresAt = expiryPreset === "never" ? null : new Date(Date.now() + expiryPreset * 86_400_000).toISOString()
       const responseOrigin = parseQuoteResponseOrigin(request.headers.get("Origin"))
       const responseUrl = buildQuoteResponseUrl(responseOrigin, token)
-      const { data: version, error: versionError } = await admin.from("CusQuote_Versions")
-        .select("CusQuoteVersion_ID,CusQuoteVersion_Number,CusQuoteVersion_SnapshotJSON,CusQuoteVersion_CreatedAt")
-        .eq("CusQuoteHeader_ID", quoteId)
-        .eq("CusQuoteVersion_IsCurrent", true)
-        .maybeSingle()
-      if (versionError || !version) throw versionError ?? new QuoteWorkflowError(400, "Save the quote before sending it.")
+      const version = await currentQuoteVersion(admin, quoteId)
       let quoteDocument: GeneratedQuotePdf
       try {
         quoteDocument = await generateQuotePdf({
@@ -1188,17 +1308,29 @@ Deno.serve(async (request) => {
           quoteId,
           quoteVersionId: String(version.CusQuoteVersion_ID),
           reference: context.reference,
-          dataset: await quotePdfDataset(admin, context, version as Row),
+          dataset: await quotePdfDataset(admin, context, version),
         })
       } catch (renderError) {
         if (renderError instanceof FunctionError) throw new QuoteWorkflowError(renderError.status, renderError.clientMessage, renderError.auditMessage)
         throw renderError
       }
-      const { data, error } = await admin.rpc("quote_workflow_issue_customer_response", {
+      const { data: quotePdfBlob, error: quotePdfDownloadError } = await admin.storage.from(quoteDocument.bucket).download(quoteDocument.path)
+      if (quotePdfDownloadError || !quotePdfBlob) {
+        await removeGeneratedQuotePdf(admin, quoteDocument)
+        throw new QuoteWorkflowError(502, "The quote PDF could not be attached. Try sending the quote again.", quotePdfDownloadError?.message || "Generated quote PDF download failed")
+      }
+      const quotePdfBytes = new Uint8Array(await quotePdfBlob.arrayBuffer())
+      if (!quotePdfBytes.byteLength || quotePdfBytes.byteLength > OUTBOUND_ATTACHMENT_LIMITS.maxFileBytes) {
+        await removeGeneratedQuotePdf(admin, quoteDocument)
+        throw new QuoteWorkflowError(413, "The generated quote PDF is too large to email. Reduce the quote document and try again.")
+      }
+      const { data, error } = await admin.rpc("quote_workflow_issue_customer_response_v2", {
         caller_auth_user_id: userId,
         requested_quote_id: quoteId,
         requested_recipient_name: recipientName,
         requested_recipient_email: recipientEmail,
+        requested_recipient_source: context.recipientSource,
+        requested_delivery_mode: deliveryMode,
         requested_response_origin: responseOrigin,
         requested_token_hash: await sha256Hex(token),
         requested_expires_at: expiresAt,
@@ -1222,8 +1354,22 @@ Deno.serve(async (request) => {
         await removeGeneratedQuotePdf(admin, quoteDocument)
         throw bindError ?? new QuoteWorkflowError(502, "The quote PDF could not be linked. Try sending the quote again.")
       }
+      if (deliveryMode === "simple") {
+        const { data: disabled, error: disableError } = await admin.rpc("quote_workflow_disable_customer_response", {
+          requested_response_link_id: issued.responseLinkId,
+        })
+        if (disableError || disabled !== true) {
+          await admin.rpc("quote_workflow_mark_customer_response_delivery", {
+            requested_response_link_id: issued.responseLinkId,
+            requested_status: "failed",
+            requested_provider_id: null,
+            requested_error: "Customer response controls could not be disabled for Simple delivery.",
+          })
+          throw disableError ?? new QuoteWorkflowError(502, "The Simple quote email could not be prepared safely. Try sending it again.")
+        }
+      }
       try {
-        const rendered = renderQuoteEmail(subject, bodyText, issued.reference, responseUrl, issued.expiresAt)
+        const rendered = renderQuoteDeliveryEmail(deliveryMode, subject, bodyText, issued.reference, responseUrl, issued.expiresAt)
         const inboxActor: InboxActor = {
           userId: context.operator.userId,
           authUserId: context.operator.authUserId,
@@ -1243,9 +1389,13 @@ Deno.serve(async (request) => {
           addedCc: [],
           addedBcc: [],
           removedAddresses: [],
-          attachments: [],
+          attachments: [{
+            fileName: quoteDocument.fileName,
+            mimeType: quoteDocument.mimeType,
+            contentBase64: base64Encode(quotePdfBytes),
+          }],
           trackOpens: false,
-        }, `quote:${issued.responseLinkId}`, { bodyHtml: rendered.html })
+        }, `quote:${issued.responseLinkId}`, deliveryMode === "standard" ? { bodyHtml: rendered.html } : {})
         if (delivery.status !== "sent") throw new Error("The connected mail provider did not confirm the quote email as sent.")
         await admin.rpc("quote_workflow_mark_customer_response_delivery", {
           requested_response_link_id: issued.responseLinkId,
@@ -1253,7 +1403,7 @@ Deno.serve(async (request) => {
           requested_provider_id: delivery.messageId ?? delivery.id ?? null,
           requested_error: null,
         })
-        return jsonResponse(request, { ...issued, quoteDocumentId: quoteDocument.documentId, delivered: true })
+        return jsonResponse(request, { ...issued, deliveryMode, responseControlsEnabled: deliveryMode === "standard", quoteDocumentId: quoteDocument.documentId, delivered: true })
       } catch (deliveryError) {
         await admin.rpc("quote_workflow_mark_customer_response_delivery", {
           requested_response_link_id: issued.responseLinkId,

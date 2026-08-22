@@ -35,8 +35,9 @@ test("quote issue renders an immutable Carbone PDF before delivery and binds it 
   assert.match(renderer, /providerRequestId/)
   assert.match(renderer, /generatedDocumentsBucket/)
   assert.match(renderer, /DOCStoredObject_ConcernCode: "quote"/)
-  assert.ok(workflow.indexOf("generateQuotePdf({") < workflow.indexOf('admin.rpc("quote_workflow_issue_customer_response"'))
+  assert.ok(workflow.indexOf("generateQuotePdf({") < workflow.indexOf('admin.rpc("quote_workflow_issue_customer_response_v2"'))
   assert.ok(workflow.indexOf('admin.rpc("quote_workflow_bind_customer_response_document"') < workflow.indexOf("await sendConnectedMailbox("))
+  assert.match(workflow, /attachments:\s*\[\{[\s\S]*contentBase64:\s*base64Encode\(quotePdfBytes\)/)
 })
 
 test("the public endpoint only signs the version-bound private PDF", () => {

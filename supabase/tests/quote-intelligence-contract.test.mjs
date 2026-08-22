@@ -44,10 +44,15 @@ test("pricing evidence uses persisted exchange rates and excludes missing conver
 })
 
 test("workspace reads cached intelligence while deterministic refresh remains separate from first paint", () => {
+  const workspaceStart = workflow.indexOf("async function quoteWorkspace")
+  const workspaceEnd = workflow.indexOf("\n}\n\nDeno.serve", workspaceStart)
+  const workspaceReader = workspaceStart >= 0 && workspaceEnd > workspaceStart
+    ? workflow.slice(workspaceStart, workspaceEnd + 2)
+    : ""
   assert.match(workflowCore, /"intelligence"/)
-  assert.match(workflow, /readQuoteIntelligence/)
+  assert.match(workspaceReader, /readQuoteIntelligence/)
   assert.match(workflow, /action === "intelligence"/)
-  assert.doesNotMatch(workflow, /gpt-5\.6-luna|governedModelFetch/)
+  assert.doesNotMatch(workspaceReader, /gpt-5\.6-luna|governedModelFetch/)
   assert.match(clientApi, /subscribeQuoteIntelligence/)
   assert.match(clientApi, /postgres_changes/)
   assert.doesNotMatch(clientApi, /setInterval|poll/i)
