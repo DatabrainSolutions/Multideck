@@ -3705,6 +3705,12 @@ function QuoteCustomerResponsePanel({ response }: { response: NonNullable<QuoteW
   )
 }
 
+function shouldShowQuoteCustomerResponse(response: QuoteWorkflowWorkspace["customerResponse"]) {
+  if (!response) return false
+  if (response.decision !== "accepted") return true
+  return Boolean(response.message?.trim() || response.attachment)
+}
+
 export function QuoteDetailPage({
   variant = "operator",
   quoteId,
@@ -4443,12 +4449,13 @@ export function QuoteDetailPage({
 
   function renderActiveWorkspacePanel() {
     if (activeTab === "overview") {
+      const customerResponse = workspace?.customerResponse ?? null
       const overview = variant === "ai"
         ? <QuoteAiOverviewPanel quote={savedQuote} />
         : variant === "cargowise"
           ? <QuoteCargoWiseOverviewPanel quote={savedQuote} intelligence={intelligence} intelligenceUnavailable={intelligenceUnavailable} />
           : <QuoteOverviewPanel quote={savedQuote} />
-      return <div className="grid gap-2">{workspace?.customerResponse ? <QuoteCustomerResponsePanel response={workspace.customerResponse} /> : null}{overview}</div>
+      return <div className="grid gap-2">{shouldShowQuoteCustomerResponse(customerResponse) && customerResponse ? <QuoteCustomerResponsePanel response={customerResponse} /> : null}{overview}</div>
     }
 
     if (activeTab === "details") {
