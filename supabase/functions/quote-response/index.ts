@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2.108.2"
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
   assertCompetitorQuote,
   isQuoteResponseOriginAllowed,
@@ -21,7 +21,21 @@ type PublicQuoteView = Record<string, unknown> & {
   quote?: { id?: unknown }
 }
 
-async function attachQuoteDocument(admin: ReturnType<typeof createClient>, value: unknown) {
+type Db = SupabaseClient<any, "public", any, any, any>
+
+type StoredQuoteDocument = {
+  DOCStoredObject_Container: string
+  DOCStoredObject_BlobName: string
+  DOCStoredObject_OriginalFileName: string | null
+  DOCStoredObject_MimeType: string
+  DOCStoredObject_AggregateID: string
+  DOCStoredObject_ConcernCode: string
+  DOCStoredObject_AggregateType: string
+  DOCStoredObject_StatusCode: string
+  DOCStoredObject_DeletedAt: string | null
+}
+
+async function attachQuoteDocument(admin: Db, value: unknown) {
   const view = value && typeof value === "object" && !Array.isArray(value) ? value as PublicQuoteView : null
   if (!view || view.state !== "active") return value
   const documentId = typeof view.documentId === "string" ? view.documentId : ""
@@ -34,18 +48,19 @@ async function attachQuoteDocument(admin: ReturnType<typeof createClient>, value
     .select("DOCStoredObject_Container,DOCStoredObject_BlobName,DOCStoredObject_OriginalFileName,DOCStoredObject_MimeType,DOCStoredObject_AggregateID,DOCStoredObject_ConcernCode,DOCStoredObject_AggregateType,DOCStoredObject_StatusCode,DOCStoredObject_DeletedAt")
     .eq("DOCStoredObject_ID", documentId)
     .maybeSingle()
-  if (storedError || !stored
-      || stored.DOCStoredObject_ConcernCode !== "quote"
-      || stored.DOCStoredObject_AggregateType !== "CusQuote_Header"
-      || String(stored.DOCStoredObject_AggregateID) !== quoteId
-      || stored.DOCStoredObject_MimeType !== "application/pdf"
-      || stored.DOCStoredObject_StatusCode !== "active"
-      || stored.DOCStoredObject_DeletedAt) {
+  const storedObject = stored as StoredQuoteDocument | null
+  if (storedError || !storedObject
+      || storedObject.DOCStoredObject_ConcernCode !== "quote"
+      || storedObject.DOCStoredObject_AggregateType !== "CusQuote_Header"
+      || String(storedObject.DOCStoredObject_AggregateID) !== quoteId
+      || storedObject.DOCStoredObject_MimeType !== "application/pdf"
+      || storedObject.DOCStoredObject_StatusCode !== "active"
+      || storedObject.DOCStoredObject_DeletedAt) {
     throw new QuoteResponseError(410, "This quote document is no longer available. Ask your freight contact for a new link.")
   }
   const { data: signed, error: signedError } = await admin.storage
-    .from(String(stored.DOCStoredObject_Container))
-    .createSignedUrl(String(stored.DOCStoredObject_BlobName), signedUrlLifetimeSeconds)
+    .from(String(storedObject.DOCStoredObject_Container))
+    .createSignedUrl(String(storedObject.DOCStoredObject_BlobName), signedUrlLifetimeSeconds)
   if (signedError || !signed?.signedUrl) {
     throw new QuoteResponseError(503, "The quote document could not be opened. Refresh this page and try again.")
   }
@@ -54,7 +69,7 @@ async function attachQuoteDocument(admin: ReturnType<typeof createClient>, value
     ...publicView,
     document: {
       url: signed.signedUrl,
-      fileName: String(stored.DOCStoredObject_OriginalFileName || "Quote.pdf"),
+      fileName: String(storedObject.DOCStoredObject_OriginalFileName || "Quote.pdf"),
       mimeType: "application/pdf",
       expiresAt: new Date(Date.now() + signedUrlLifetimeSeconds * 1000).toISOString(),
     },
