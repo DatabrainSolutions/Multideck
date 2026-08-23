@@ -3925,14 +3925,15 @@ export function QuoteDetailPage({
   const isDirty = JSON.stringify(draftQuote) !== JSON.stringify(savedQuote) || JSON.stringify(draftCharges) !== JSON.stringify(savedCharges)
   const lifecycle = workspace?.quote.lifecycle ?? (currentQuoteId ? "draft" : "")
   const quoteIsLost = lifecycle === "declined" || lifecycle === "ghosted"
-  const quoteHasFinalOutcome = quoteIsLost || lifecycle === "accepted"
+  const quoteCanBeIssued = !quoteIsLost
+  const quoteHasAcceptedHistory = lifecycle === "accepted" || Boolean(workspace?.events.some((event) => event.CusQuoteEvent_TypeCode === "customer_accepted"))
   const heading = variant === "ai" ? "AI spot quote command" : "Spot quote"
   const visualTabTravelDirection = shouldReduceMotion
     ? 0
     : tabTravelDirection * (direction === "rtl" ? -1 : 1)
 
   useEffect(() => {
-    if (!currentQuoteId || quoteHasFinalOutcome) {
+    if (!currentQuoteId || !quoteCanBeIssued) {
       setIssueReadiness(null)
       return
     }
@@ -3943,7 +3944,7 @@ export function QuoteDetailPage({
       .catch(() => { if (active) setIssueReadiness(null) })
       .finally(() => { if (active) setIssueReadinessLoading(false) })
     return () => { active = false }
-  }, [currentQuoteId, savedQuote, quoteHasFinalOutcome])
+  }, [currentQuoteId, quoteCanBeIssued, savedQuote])
 
   useEffect(() => {
     if (issuePreviewTimerRef.current !== null) window.clearTimeout(issuePreviewTimerRef.current)
@@ -4148,8 +4149,11 @@ export function QuoteDetailPage({
     try {
       const payload = quoteSavePayload(quoteSnapshot, chargeSnapshot, lookups)
       const result = await saveQuoteWorkflow(currentQuoteId, payload)
+      const savedPresentation = quoteLifecyclePresentation(result.lifecycle)
+      const savedSnapshot = { ...quoteSnapshot, status: savedPresentation.status, statusTone: savedPresentation.tone }
       setCurrentQuoteId(result.quoteId)
-      setSavedQuote(quoteSnapshot)
+      setSavedQuote(savedSnapshot)
+      setDraftQuote(savedSnapshot)
       setSavedCharges(chargeSnapshot)
       setWorkspace((current) => current ? {
         ...current,
@@ -4262,7 +4266,7 @@ export function QuoteDetailPage({
   }
 
   async function openIssueQuoteDialog() {
-    if (!currentQuoteId || saving || isDirty || quoteHasFinalOutcome) return
+    if (!currentQuoteId || saving || isDirty || !quoteCanBeIssued) return
     setIssueExpiryPreset("14")
     setIssueRecipients([])
     setIssueMailboxes([])
@@ -4599,22 +4603,22 @@ export function QuoteDetailPage({
                   <Printer data-icon="inline-start" className="size-4" strokeWidth={1.4} />
                   {t("Print")}
                 </Button>
-                {!quoteHasFinalOutcome ? (
+                {quoteCanBeIssued ? (
                   <>
                   <Button
                     type="button"
                     disabled={!currentQuoteId || saving || isDirty || issuing}
-                    aria-label={t(issueReadiness?.ready ? "Send quote" : "Review quote readiness")}
+                    aria-label={t(quoteHasAcceptedHistory ? "Resend quote" : issueReadiness?.ready ? "Send quote" : "Review quote readiness")}
                     className={cn(
                       "h-8 min-w-[118px] shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px]",
                       (saving || isDirty) && "cursor-wait opacity-50 active:scale-100",
                       !issueReadiness?.ready && "bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-surface-soft)]",
                     )}
-                    title={t(issueReadiness?.ready ? "Send this saved quote securely" : "Review the fields required before sending")}
+                    title={t(quoteHasAcceptedHistory ? "Send the latest saved version and start a new customer response" : issueReadiness?.ready ? "Send this saved quote securely" : "Review the fields required before sending")}
                     onClick={() => void openIssueQuoteDialog()}
                   >
                     <Send data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-                    {t(issueReadiness?.ready ? "Send quote" : "Review to send")}
+                    {t(quoteHasAcceptedHistory ? issueReadiness?.ready ? "Resend quote" : "Review to resend" : issueReadiness?.ready ? "Send quote" : "Review to send")}
                   </Button>
                   {workspace?.latestIssue?.deliveryStatus === "sent" && (workspace.latestIssue.responseControlsEnabled === false || workspace.latestIssue.deliveryMode === "simple") ? (
                     <Button
@@ -4626,14 +4630,14 @@ export function QuoteDetailPage({
                       {t("Mark won")}
                     </Button>
                   ) : null}
-                  <Button
+                  {lifecycle !== "accepted" ? <Button
                     type="button"
                     disabled={!currentQuoteId || isDirty || saving || transitioning}
                     className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-status-red-bg)] px-2.5 text-[11px] font-normal text-[var(--md-status-red-ink)] shadow-none hover:bg-[color-mix(in_srgb,var(--md-status-red-bg)_82%,var(--md-red))]"
                     onClick={() => setLossDialogOpen(true)}
                   >
                     {t("Mark lost")}
-                  </Button>
+                  </Button> : null}
                   </>
                 ) : null}
               </motion.div>
@@ -4711,8 +4715,8 @@ export function QuoteDetailPage({
           style={{ width: "min(880px, calc(100vw - 32px))", maxWidth: "880px" }}
         >
           <DialogHeader className="text-start">
-            <DialogTitle>{t("Send quote to customer")}</DialogTitle>
-            <DialogDescription>{t(issueDeliveryMode === "standard" ? "Send a branded quote email with a secure response link and PDF." : "Send a short plain email with the quote PDF attached.")}</DialogDescription>
+            <DialogTitle>{t(quoteHasAcceptedHistory ? "Resend quote to customer" : "Send quote to customer")}</DialogTitle>
+            <DialogDescription>{t(quoteHasAcceptedHistory ? "This sends the latest saved information and price as a new quote version. The customer's next response becomes the current outcome." : issueDeliveryMode === "standard" ? "Send a branded quote email with a secure response link and PDF." : "Send a short plain email with the quote PDF attached.")}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-1.5 shadow-[var(--md-shadow-line)]">
             <div className="min-w-0 px-1.5 text-start">
@@ -4985,7 +4989,7 @@ export function QuoteDetailPage({
               )}
             >
               {issueDeliveryState === "sent" ? <CheckCircle2 className="size-4" strokeWidth={1.6} aria-hidden="true" /> : <Send className="size-4" strokeWidth={1.4} aria-hidden="true" />}
-              {t(issueDeliveryState === "sent" ? "Quote sent" : issuing ? "Sending…" : "Send secure quote")}
+              {t(issueDeliveryState === "sent" ? "Quote sent" : issuing ? "Sending…" : quoteHasAcceptedHistory ? "Resend secure quote" : "Send secure quote")}
             </Button>
           </DialogFooter>
         </DialogContent>

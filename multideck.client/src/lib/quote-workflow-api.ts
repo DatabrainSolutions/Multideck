@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import { invalidateRegisterPages } from "@/lib/application-data-api"
 
 export type QuoteSourceOption = {
   id: string
@@ -435,6 +436,11 @@ export function previewQuoteIssueEmail(quoteId: string, recipient: QuoteIssueRec
 export function issueQuoteWorkflow(quoteId: string, recipient: QuoteIssueRecipientInput, deliveryMode: QuoteDeliveryMode, mailboxId: string, subject: string, bodyText: string, expiryPreset: QuoteIssueExpiryPreset) {
   quoteWorkspaceCache.clear()
   return invoke<QuoteIssueResult>({ action: "issue", quoteId, recipient, deliveryMode, mailboxId, subject, bodyText, expiryPreset }, "The quote could not be sent.")
+    .then((result) => {
+      invalidateRegisterPages("quotes:")
+      invalidateRegisterPages("dashboard:")
+      return result
+    })
 }
 
 export function refreshQuoteIntelligence(reference: string) {
@@ -527,11 +533,19 @@ export function subscribeQuoteIntelligence(quoteId: string, onChange: (snapshot:
 export async function saveQuoteWorkflow(quoteId: string | null, quote: QuoteSavePayload) {
   const result = await invoke<{ quoteId: string; reference: string; lifecycle: string }>({ action: "save", quoteId, quote }, "The quote could not be saved.")
   quoteWorkspaceCache.delete(result.reference.trim().toUpperCase())
+  invalidateRegisterPages("quotes:")
+  invalidateRegisterPages("dashboard:")
   return result
 }
 
 export function transitionQuoteWorkflow(quoteId: string, transition: "calculated" | "sent" | "revised" | "accepted" | "declined" | "ghosted", note?: string, followUpAt?: string) {
+  quoteWorkspaceCache.clear()
   return invoke<{ quoteId: string; lifecycle: string; versionId?: string | null }>({ action: "transition", quoteId, transition, note, followUpAt }, "The quote action could not be completed.")
+    .then((result) => {
+      invalidateRegisterPages("quotes:")
+      invalidateRegisterPages("dashboard:")
+      return result
+    })
 }
 
 /** @deprecated Quote-to-booking is the next delivery phase and is not active. */

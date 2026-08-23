@@ -20,8 +20,9 @@ import type { QuoteRegisterRecord } from "@/data/quote-register-data"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
 import { type RegisterSort } from "@/lib/application-data-api"
-import { listSalesQuotesPage } from "@/lib/quote-api"
+import { listSalesQuotesPage, subscribeSalesQuotes } from "@/lib/quote-api"
 import type { AuthUserSummary } from "@/lib/auth-user"
+import { cn } from "@/lib/utils"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
 const quoteTableStorageKey = "quote-register"
@@ -83,6 +84,7 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
   const [availableQuoteTotal, setAvailableQuoteTotal] = useState(0)
   const [quotesLoading, setQuotesLoading] = useState(true)
   const [quotesError, setQuotesError] = useState<string | null>(null)
+  const [quoteRevision, setQuoteRevision] = useState(0)
 
   useEffect(() => {
     const timer = globalThis.setTimeout(() => setDebouncedQuickSearch(quickSearch), 250)
@@ -111,7 +113,9 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
       if (!controller.signal.aborted) setQuotesLoading(false)
     })
     return () => controller.abort()
-  }, [currentUser?.name, debouncedQuickSearch, page, rowsPerPage, scope, search, serverSort])
+  }, [currentUser?.name, debouncedQuickSearch, page, quoteRevision, rowsPerPage, scope, search, serverSort])
+
+  useEffect(() => subscribeSalesQuotes(() => setQuoteRevision((revision) => revision + 1)), [])
 
   /** Lets the filter panel show how many quotes a draft would return before it is applied. */
   const countDraftMatches = useCallback((draft: QuoteSearchQuery) => listSalesQuotesPage({
@@ -180,7 +184,7 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
           </span>
         ),
       }),
-      textColumn("status", "Status", 132, { kind: "status", cell: (quote) => <StatusPill tone={quote.statusTone}>{t(quote.status)}</StatusPill> }),
+      textColumn("status", "Status", 132, { kind: "status", cell: (quote) => <StatusPill tone={quote.statusTone} indicator={false} className={cn(quote.status === "Accepted" && "bg-[var(--md-surface)] text-[var(--md-status-green-ink)] shadow-[var(--md-shadow-line)]")}>{t(quote.status)}</StatusPill> }),
       textColumn("customer", "Customer", 190),
       textColumn("origin", "Origin port / airport", 170, { ltr: true }),
       textColumn("destination", "Destination port / airport", 188, { ltr: true }),
@@ -251,7 +255,12 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
         getRowKey={(quote) => quote.reference}
         storageKey={quoteTableStorageKey}
         serverSorting={{ value: serverSort, onChange: setServerSort }}
-        rowClassName="hover:bg-[var(--md-hover)]"
+        rowClassName={(quote) => cn(
+          "transition-colors",
+          quote.status === "Accepted"
+            ? "bg-[var(--md-status-green-bg)] hover:bg-[color-mix(in_srgb,var(--md-status-green-bg)_82%,var(--md-green))]"
+            : "hover:bg-[var(--md-hover)]",
+        )}
         onRowClick={(quote) => navigate(`/quotes/${quote.reference.toLowerCase()}`)}
         toolbarTabs={(
           <RegisterViewSwitch

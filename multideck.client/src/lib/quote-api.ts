@@ -1,7 +1,7 @@
 import type { StatusTone } from "@/data/multideck-data"
 import type { QuoteRegisterRecord } from "@/data/quote-register-data"
 import { filterQueryIsEmpty, type FilterQuery } from "@/lib/advanced-filters"
-import { readCachedRegisterPage, type RegisterSort } from "@/lib/application-data-api"
+import { invalidateRegisterPages, readCachedRegisterPage, type RegisterSort } from "@/lib/application-data-api"
 import { getSupabaseSession, supabase } from "@/lib/supabase"
 
 type SalesQuoteRow = {
@@ -68,12 +68,25 @@ function tone(value: string): StatusTone {
 }
 
 function mapQuote(row: SalesQuoteRow): QuoteRegisterRecord {
-  const lost = ["declined", "ghosted", "lost"].includes(row.Quote_Status.trim().toLowerCase())
+  const lifecycle = row.Quote_Status.trim().toLowerCase()
+  const presentation = lifecycle === "accepted"
+    ? { status: "Accepted", statusTone: "green" as StatusTone }
+    : ["declined", "ghosted", "lost"].includes(lifecycle)
+      ? { status: "Lost", statusTone: "red" as StatusTone }
+      : lifecycle === "sent"
+        ? { status: "Sent", statusTone: "teal" as StatusTone }
+        : lifecycle === "calculated"
+          ? { status: "Ready", statusTone: "blue" as StatusTone }
+          : lifecycle === "revised"
+            ? { status: "Revised", statusTone: "amber" as StatusTone }
+            : lifecycle === "draft"
+              ? { status: "Open", statusTone: "amber" as StatusTone }
+              : { status: row.Quote_Status || "Open", statusTone: tone(row.Quote_Status_Tone) }
   return {
     createdAt: row.Created_At,
     reference: row.Quote_Reference,
-    status: lost ? "Lost" : "Open",
-    statusTone: lost ? "red" : "green",
+    status: presentation.status,
+    statusTone: presentation.statusTone,
     customer: row.Customer_Name,
     origin: row.Origin,
     destination: row.Destination,
@@ -110,6 +123,19 @@ function mapQuote(row: SalesQuoteRow): QuoteRegisterRecord {
     priorityTone: tone(row.Priority_Tone),
     quoteSource: row.Quote_Source,
   }
+}
+
+export function subscribeSalesQuotes(onChange: () => void) {
+  const client = supabase
+  if (!client) return () => undefined
+  const channel = client
+    .channel(`quote-register-${crypto.randomUUID()}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "CusQuote_Header" }, () => {
+      invalidateRegisterPages("quotes:")
+      onChange()
+    })
+    .subscribe()
+  return () => { void client.removeChannel(channel) }
 }
 
 const dashboardQuoteCompatibilityColumns = [

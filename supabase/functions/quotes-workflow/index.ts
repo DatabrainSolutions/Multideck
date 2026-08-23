@@ -1324,7 +1324,7 @@ Deno.serve(async (request) => {
         await removeGeneratedQuotePdf(admin, quoteDocument)
         throw new QuoteWorkflowError(413, "The generated quote PDF is too large to email. Reduce the quote document and try again.")
       }
-      const { data, error } = await admin.rpc("quote_workflow_issue_customer_response_v2", {
+      const { data, error } = await admin.rpc("quote_workflow_issue_customer_response_v3", {
         caller_auth_user_id: userId,
         requested_quote_id: quoteId,
         requested_recipient_name: recipientName,
