@@ -10,6 +10,7 @@ import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
 import { InlineField, InlineFieldGroup, InlineSelectField, InlineToggleChip } from "@/components/multideck/inline-field"
 import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { OrganisationFoundationPanel } from "@/components/multideck/organisation-foundation-panel"
+import { PhoneCallLinkedRecordSection } from "@/components/multideck/phone-call-components"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
@@ -702,6 +703,8 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
                   <Empty text={t("Add the people you deal with at this account.")} />
                 )}
               </Panel>
+
+              <PhoneCallLinkedRecordSection recordType="company" recordId={currentAccount.id} navigate={navigate} />
 
               <Panel title={t("Active shipments")} meta={String(currentAccount.activeShipments.length)}>
                 {currentAccount.activeShipments.length ? (

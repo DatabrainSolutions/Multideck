@@ -1047,6 +1047,7 @@ export function AppSidebar({
   const isInboxRoute = route === "/inbox"
   const canManageWarehouseUsers = hasPermission(currentUser, "Warehouse.Users.ManageOwn")
   const canReadDocuments = hasPermission(currentUser, "Documents.Read")
+  const canReadPhoneCalls = hasPermission(currentUser, "CRM.PhoneCalls.Read")
   const canShowDocumentBuilder = import.meta.env.DEV || canReadDocuments
   const canOpenAdmin = isTenantAdministrator(currentUser)
   const isCrmRoute = route === "/crm" || route.startsWith("/crm/")
@@ -1076,7 +1077,7 @@ export function AppSidebar({
         if (area.id !== "sales-crm") return area
         return {
           ...area,
-          destinations: area.destinations.map((destination) => destination.id === "crm-leads-opportunities"
+          destinations: area.destinations.filter((destination) => destination.id !== "crm-phone-calls" || canReadPhoneCalls).map((destination) => destination.id === "crm-leads-opportunities"
             ? {
                 ...destination,
                 children: destination.children?.map((item) => {
@@ -1093,7 +1094,7 @@ export function AppSidebar({
     const destinations = customerWarehouseNavigation.filter((item) =>
       item.route !== "/warehouse/users" || canManageWarehouseUsers)
     return [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations }]
-  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, crmDealCount, crmLeadCount])
+  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, canReadPhoneCalls, crmDealCount, crmLeadCount])
   const initialArea = isSettingsRoute
     ? undefined
     : isCustomer

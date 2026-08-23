@@ -13,6 +13,8 @@ import { AppShortcuts } from "@/components/multideck/app-shortcuts"
 import { DexterSummon } from "@/components/multideck/dexter-summon"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { LanguageProvider, useLanguage } from "@/i18n/language-provider"
+import { defaultLanguage, isLanguageCode } from "@/i18n/languages"
+import { translateText } from "@/i18n/translate"
 import { mdMotion } from "@/lib/motion"
 import { rememberAuthReturnPath, takeAuthReturnPath } from "@/lib/auth-routing"
 import { isTenantAdministrator, summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
@@ -57,6 +59,7 @@ const BookingsPage = lazy(() => import("@/pages/bookings-page").then((module) =>
 const RoadControlPage = lazy(() => import("@/pages/road-control-page").then((module) => ({ default: module.RoadControlPage })))
 const DomesticRoadBookingPage = lazy(() => import("@/pages/domestic-road-booking-page").then((module) => ({ default: module.DomesticRoadBookingPage })))
 const CrmOverviewPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmOverviewPage })))
+const CrmPhoneCallsPage = lazy(() => import("@/pages/crm-phone-calls-page").then((module) => ({ default: module.CrmPhoneCallsPage })))
 const CrmAccountsPage = lazy(() => import("@/pages/crm-accounts-page").then((module) => ({ default: module.CrmAccountsPage })))
 const CrmAccountDetailPage = lazy(() => import("@/pages/crm-account-detail-page").then((module) => ({ default: module.CrmAccountDetailPage })))
 const CrmLeadsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmLeadsPage })))
@@ -110,6 +113,7 @@ const validRoutes = new Set([
   "/auth",
   "/components",
   "/crm",
+  "/crm/phone-calls",
   "/crm/accounts",
   "/crm/contact-cards",
   "/crm/contacts",
@@ -222,6 +226,10 @@ function isCrmLeadDetailRoute(path: string) {
   return /^\/crm\/leads\/[^/]+$/.test(path)
 }
 
+function isCrmPhoneCallDetailRoute(path: string) {
+  return /^\/crm\/phone-calls\/[^/]+$/.test(path)
+}
+
 function isCrmAccountDetailRoute(path: string) {
   return /^\/crm\/accounts\/[^/]+$/.test(path)
 }
@@ -278,6 +286,7 @@ function getRoute() {
   if (isWarehouseItemDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCustomerDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmAccountDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isCrmPhoneCallDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmContactDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmDealDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmLeadConversionRoute(window.location.pathname)) return window.location.pathname
@@ -308,7 +317,17 @@ function RouteFallback({ fullScreen = false }: { fullScreen?: boolean }) {
 }
 
 function WorkspaceFailureFallback({ error }: { error?: Error | null }) {
-  const { t } = useLanguage()
+  // Keep the last-resort recovery view independent from React context. During
+  // provider teardown (for example after an HMR failure), asking the fallback
+  // to read LanguageContext can make the error boundary fail a second time.
+  const documentLanguage = typeof document === "undefined" ? null : document.documentElement.lang
+  const storedLanguage = typeof window === "undefined" ? null : window.localStorage.getItem("multideck.language")
+  const language = isLanguageCode(documentLanguage)
+    ? documentLanguage
+    : isLanguageCode(storedLanguage)
+      ? storedLanguage
+      : defaultLanguage
+  const t = (text: string) => translateText(text, language)
 
   return (
     <main className="grid min-h-screen place-items-center bg-[var(--md-bg)] px-[var(--md-page-pad)] text-[var(--md-ink)]">
@@ -657,6 +676,8 @@ export default function App() {
                     />
                   ) : null}
                   {route === "/crm" ? <CrmOverviewPage /> : null}
+                  {route === "/crm/phone-calls" ? <CrmPhoneCallsPage navigate={navigate} currentUser={currentUser} /> : null}
+                  {isCrmPhoneCallDetailRoute(route) ? <CrmPhoneCallsPage callId={route.split("/").at(-1) ?? ""} navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/crm/accounts" ? <CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} /> : null}
                   {isCrmAccountDetailRoute(route) ? <CrmAccountDetailPage accountId={route.split("/").at(-1) ?? ""} navigate={navigate} /> : null}
                   {route === "/crm/leads" ? <CrmLeadsPage navigate={navigate} currentUser={currentUser} /> : null}

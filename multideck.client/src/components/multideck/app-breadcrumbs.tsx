@@ -31,6 +31,7 @@ const staticLeafLabels: Record<string, string> = {
   "/bookings/provisional": "Provisional booking",
   "/components": "Components",
   "/crm": "CRM",
+  "/crm/phone-calls": "Phone calls",
   "/crm/accounts": "Companies",
   "/crm/contacts": "Contacts",
   "/crm/deals": "Deals",
@@ -64,6 +65,7 @@ const crmChildLabels: Record<string, string> = {
   contacts: "Contacts",
   deals: "Deals",
   leads: "Leads",
+  "phone-calls": "Phone calls",
   settings: "CRM settings",
 }
 
@@ -165,6 +167,16 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
       { label: "CRM", route: "/crm" },
       { label: "Leads", route: "/crm/leads" },
       recordBreadcrumb(leafLabel, crmLeadMatch[1], "Lead"),
+    ]
+  }
+
+  const crmPhoneCallMatch = route.match(/^\/crm\/phone-calls\/([^/]+)$/)
+  if (crmPhoneCallMatch) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "CRM", route: "/crm" },
+      { label: "Phone calls", route: "/crm/phone-calls" },
+      recordBreadcrumb(leafLabel, crmPhoneCallMatch[1], "Call"),
     ]
   }
 

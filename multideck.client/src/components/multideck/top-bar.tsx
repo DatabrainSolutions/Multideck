@@ -258,7 +258,7 @@ export function TopBar({
         <>
           <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="hidden min-w-[210px] md:block" />
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
-            <CommandInput placeholder={isTodo ? t("Task, tag, job, quote or customer…") : isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search leads, accounts, contacts, or deals..." : isReportingRoute ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
+            <CommandInput placeholder={isTodo ? t("Task, tag, job, quote or customer…") : isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search calls, leads, companies, contacts, or deals..." : isReportingRoute ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
           </div>
           {isTodo ? (
             <Button aria-label={t("New task")} title={t("New task")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createTodoTask)}>

@@ -9,6 +9,7 @@ import { adminPhrases } from "./admin-phrases"
 import { todoPhrases } from "./todo-phrases"
 import { quoteIntelligencePhrases } from "./quote-intelligence-phrases"
 import { quoteResponsePhrases } from "./quote-response-phrases"
+import { phoneCallsPhrases } from "./phone-calls-phrases"
 
 type WordDictionary = Record<string, string>
 type PhraseDictionary = Record<string, Partial<Record<LanguageCode, string>>>
@@ -1182,6 +1183,7 @@ const userManagementPhrases: PhraseDictionary = {
 }
 
 const phrases: PhraseDictionary = {
+  ...phoneCallsPhrases,
   ...quoteIntelligencePhrases,
   ...quoteResponsePhrases,
   ...quoteCustomerResponsePhrases,

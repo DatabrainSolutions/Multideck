@@ -83,6 +83,7 @@ import {
 } from "@/components/multideck/crm-dashboard"
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import { Pagination } from "@/components/multideck/pagination"
+import { PhoneCallLinkedRecordSection } from "@/components/multideck/phone-call-components"
 import { RegisterFacetSelect, RegisterRevalidatingMark, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
@@ -2224,6 +2225,8 @@ export function CrmLeadDetailPage({
         onMarketingOptInChange={changeLeadMarketingOptIn}
         onContactMarketingOptInChange={changeContactMarketingOptIn}
       />
+
+      <PhoneCallLinkedRecordSection recordType="lead" recordId={lead.id} navigate={navigate} />
 
       {/* The panel above reads the lead. This is where it is changed — the same
           inline fields the account, contact and deal records use, so one record

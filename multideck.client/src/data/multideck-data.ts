@@ -46,6 +46,7 @@ import {
   PackagePlus,
   Palette,
   Plane,
+  Phone,
   ReceiptText,
   QrCode,
   Radar,
@@ -4073,6 +4074,206 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     usageCode: `<div className="flex flex-col gap-5">\n  <DexterPulsePanel />\n  <AccountPanel />\n</div>`,
   },
   {
+    id: "phone-call-metric-strip",
+    name: "Phone Call Metric Strip",
+    category: "CRM",
+    description: "A compact evidence-labelled read of the call measures that affect staffing and follow-up.",
+    details: "Use at the start of a phone-call overview. Each measure carries its evidence source, so provider-confirmed 3CX outcomes stay distinct from Multideck-derived follow-up analysis.",
+    foundOn: [{ label: "Phone calls overview", route: "/crm/phone-calls" }, { label: "Components", route: "/components?component=phone-call-metric-strip" }],
+    componentCode: `<PhoneCallMetricStrip metrics={overview.metrics} />`,
+    usageCode: `<PhoneCallMetricStrip metrics={phoneCallOverview.metrics} />`,
+  },
+  {
+    id: "phone-call-analysis-launcher",
+    name: "Phone Call Analysis Launcher",
+    category: "CRM",
+    description: "Focused, on-demand entry points into Dexter analysis using the live calls in the selected period.",
+    details: "Reserved for a dedicated aggregate-analysis workspace. The Phone Calls product keeps Dexter analysis scoped to an individual call, where the transcript and CRM evidence are available together.",
+    foundOn: [{ label: "Components", route: "/components?component=phone-call-analysis-launcher" }],
+    componentCode: `<PhoneCallAnalysisLauncher totalCalls={overview.analysisScope.totalCalls} onAnalyse={openDexterAnalysis} />`,
+    usageCode: `<PhoneCallAnalysisLauncher\n  totalCalls={overview.analysisScope.totalCalls}\n  onAnalyse={(focus) => handOffToDexter(focus, selectedPeriod)}\n/>`,
+  },
+  {
+    id: "phone-call-provider-health",
+    name: "Phone Call Provider Health",
+    category: "CRM",
+    description: "A live, evidence-based connection check for ElevenLabs, Twilio and the 3CX collector.",
+    details: "Use in an integration-diagnostics surface rather than the customer-facing analytics overview. Health comes from tenant-scoped provider cursors; an absent collector is shown as Not connected rather than inferred from an empty call list.",
+    foundOn: [{ label: "Components", route: "/components?component=phone-call-provider-health" }],
+    componentCode: `<PhoneCallProviderHealth providers={overview.providerStatus} />`,
+    usageCode: `<PhoneCallProviderHealth providers={phoneCallOverview.providerStatus} />`,
+  },
+  {
+    id: "phone-call-volume-chart",
+    name: "Phone Call Volume Chart",
+    category: "CRM",
+    description: "A provider-confirmed inbound and outbound call trend with answered, missed, and answer-rate context.",
+    details: "Use when operators need to compare volume and coverage over time. The stacked outcomes use the 3CX source label and keep the derived analysis elsewhere.",
+    foundOn: [{ label: "Phone calls overview", route: "/crm/phone-calls" }, { label: "Components", route: "/components?component=phone-call-volume-chart" }],
+    componentCode: `<PhoneCallVolumeChart data={overview.volumeSeries} timezone={overview.timezone} />`,
+    usageCode: `<PhoneCallVolumeChart data={volumeSeries} timezone="Europe/London" />`,
+  },
+  {
+    id: "phone-call-attention-list",
+    name: "Phone Call Attention List",
+    category: "CRM",
+    description: "An exception-first list of unmatched callers and generated follow-up that still needs review.",
+    details: "Use in a dedicated exception queue. The Phone Calls overview stays analytical; identity matching and generated actions are reviewed inside each shareable call record.",
+    foundOn: [{ label: "Components", route: "/components?component=phone-call-attention-list" }],
+    componentCode: `<PhoneCallAttentionList items={overview.attention} onOpen={openCall} onViewAll={openRegister} />`,
+    usageCode: `<PhoneCallAttentionList items={attention} onOpen={(id) => navigate('/crm/phone-calls/' + id)} onViewAll={showCalls} />`,
+  },
+  {
+    id: "phone-call-reason-list",
+    name: "Phone Call Reason List",
+    category: "CRM",
+    description: "A ranked view of common call reasons derived from completed call summaries.",
+    details: "Use to spot demand patterns worth acting on. Keep the derived provenance in the panel copy and never present the reason grouping as a provider outcome.",
+    foundOn: [{ label: "Phone calls overview", route: "/crm/phone-calls" }, { label: "Components", route: "/components?component=phone-call-reason-list" }],
+    componentCode: `<PhoneCallReasonList reasons={overview.reasons} />`,
+    usageCode: `<PhoneCallReasonList reasons={commonReasons} />`,
+  },
+  {
+    id: "phone-call-coverage",
+    name: "Phone Call Coverage",
+    category: "CRM",
+    description: "Matched, review, and unmatched coverage for people, companies, and leads referenced by calls.",
+    details: "Use to expose CRM coverage and matching risk. Review and unmatched states remain visually and semantically distinct from a confirmed link.",
+    foundOn: [{ label: "Phone calls overview", route: "/crm/phone-calls" }, { label: "Components", route: "/components?component=phone-call-coverage" }],
+    componentCode: `<PhoneCallCoverage items={overview.coverage} />`,
+    usageCode: `<PhoneCallCoverage items={companyAndLeadCoverage} />`,
+  },
+  {
+    id: "phone-call-status",
+    name: "Phone Call Status",
+    category: "CRM",
+    description: "Compact outcome, identity-match, and transcript states for phone call registers and records.",
+    details: "Use these states together so operators can distinguish what happened on the line, whether the caller is safely linked to CRM, and whether every provider transcript segment is available. A match warning never implies that Multideck has chosen a customer.",
+    foundOn: [{ label: "Phone calls", route: "/crm/phone-calls" }, { label: "Phone call detail", route: "/crm/phone-calls/preview" }, { label: "Components", route: "/components?component=phone-call-status" }],
+    componentCode: `<PhoneCallOutcomePill outcome="answered" />
+<PhoneCallMatchPill status="review" />
+<PhoneCallTranscriptPill status="partial" />`,
+    usageCode: `<DataTable
+  rows={calls}
+  columns={[
+    { id: "outcome", cell: (call) => <PhoneCallOutcomePill outcome={call.outcome} /> },
+    { id: "match", cell: (call) => <PhoneCallMatchPill status={call.matchStatus} /> },
+    { id: "transcript", cell: (call) => <PhoneCallTranscriptPill status={call.transcriptStatus} /> },
+  ]}
+/>`,
+  },
+  {
+    id: "unified-phone-call-transcript",
+    name: "Unified Phone Call Transcript",
+    category: "CRM",
+    description: "One chronological conversation across the Agent greeting and the transferred Handler portion.",
+    details: "Use on a phone call record. The default conversation uses human role labels, adding the handler name only when it is present in the transcript evidence. Provider provenance stays in the optional audit detail, and partial states never imply that missing Handler speech is available.",
+    foundOn: [{ label: "Phone call detail", route: "/crm/phone-calls/preview" }, { label: "Components", route: "/components?component=unified-phone-call-transcript" }],
+    componentCode: `export function UnifiedPhoneCallTranscript({ call, showProvenance = false }) {
+  return call.transcriptSegments.map((segment, index) => (
+    <Fragment key={segment.id}>
+      {index > 0 && call.transcriptSegments[index - 1].source !== segment.source
+        ? <ConversationBoundary label={segment.source === "3cx" ? "Handler conversation begins" : "Agent conversation resumes"} />
+        : null}
+      <TranscriptRow
+        segment={segment}
+        speakerRole={segment.speakerRole === "receptionist" ? "Agent" : segment.speakerRole === "employee" ? "Handler" : segment.speakerRole}
+        showAuditDetail={showProvenance}
+      />
+    </Fragment>
+  ))
+}`,
+    usageCode: `<UnifiedPhoneCallTranscript
+  call={phoneCall}
+  showProvenance={showProvenance}
+/>`,
+  },
+  {
+    id: "phone-call-linked-record",
+    name: "Linked Phone Calls",
+    category: "CRM",
+    description: "A compact, expandable phone-call history for safely matched Lead and Company records.",
+    details: "Use only with immutable lead or company IDs. The server returns confirmed links, the client rechecks the full call before revealing its unified Agent-to-Handler transcript, and ambiguous or unmatched calls remain in Phone Calls for review.",
+    foundOn: [{ label: "Lead records", route: "/crm/leads" }, { label: "Company records", route: "/crm/accounts" }, { label: "Components", route: "/components?component=phone-call-linked-record" }],
+    componentCode: `export function PhoneCallLinkedRecordSection({ recordType, recordId, navigate }) {
+  useEffect(() => {
+    listPhoneCalls({
+      offset: 0,
+      limit: 5,
+      timezone,
+      matchStatus: "matched",
+      companyId: recordType === "company" ? recordId : null,
+      leadId: recordType === "lead" ? recordId : null,
+    }).then((result) => setCalls(result.rows))
+  }, [recordId, recordType, timezone])
+
+  async function openConversation(callId) {
+    const detail = await getPhoneCall(callId)
+    const safelyLinked = detail.matchStatus === "matched" && (recordType === "company" ? detail.company?.id === recordId : detail.lead?.id === recordId)
+    if (!safelyLinked) throw new Error("This call is no longer safely linked to this record.")
+    setExpandedCall(detail)
+  }
+
+  return <PhoneCallLinkedRecordView calls={calls} expandedCall={expandedCall} onToggle={openConversation} onOpenFullCall={(callId) => navigate(\`/crm/phone-calls/\${callId}\`)} />
+}`,
+    usageCode: `<PhoneCallLinkedRecordSection
+  recordType="lead"
+  recordId={lead.id}
+  navigate={navigate}
+/>`,
+  },
+  {
+    id: "phone-call-identity-match-review",
+    name: "Phone Call Identity Match Review",
+    category: "CRM",
+    description: "A safe caller-to-contact, company, or lead review surface for exact, ambiguous, and unmatched calls.",
+    details: "Use when a phone call may belong to an existing CRM record. Show the evidence behind every candidate and require Link, Create contact, or Leave unmatched; never silently attach an ambiguous caller.",
+    foundOn: [{ label: "Phone call detail", route: "/crm/phone-calls/preview" }, { label: "Components", route: "/components?component=phone-call-identity-match-review" }],
+    componentCode: `export function PhoneCallIdentityMatchReview({ call, onLink, onCreateContact, onLeaveUnmatched }) {
+  return (
+    <section>
+      <PhoneCallMatchPill status={call.matchStatus} />
+      {call.matchCandidates.map((candidate) => (
+        <MatchCandidate key={candidate.id} candidate={candidate} onLink={() => onLink(candidate)} />
+      ))}
+      <Button onClick={onCreateContact}>Create contact</Button>
+      <Button variant="ghost" onClick={onLeaveUnmatched}>Leave unmatched</Button>
+    </section>
+  )
+}`,
+    usageCode: `<PhoneCallIdentityMatchReview
+  call={phoneCall}
+  onLink={reviewCandidate}
+  onCreateContact={createReviewedContact}
+  onLeaveUnmatched={leaveCallUnmatched}
+/>`,
+  },
+  {
+    id: "phone-call-suggested-actions",
+    name: "Phone Call Suggested Actions",
+    category: "CRM",
+    description: "Editable, reviewable actions inferred from a call before any task or CRM record changes.",
+    details: "Use for specific next steps such as adding a revised quote request to the To Do list or linking a call to a reviewed lead candidate. The operator can edit, approve, or dismiss each suggestion; arbitrary lead IDs are never accepted and generation is never treated as approval.",
+    foundOn: [{ label: "Phone call detail", route: "/crm/phone-calls/preview" }, { label: "Components", route: "/components?component=phone-call-suggested-actions" }],
+    componentCode: `export function PhoneCallSuggestedActions({ actions, leadCandidates, onReview }) {
+  const safeLeads = leadCandidates.filter((candidate) => candidate.recordType === "lead")
+  return actions.map((action) => (
+    <SuggestedAction key={action.id} action={action}>
+      {action.type === "lead_link" ? <SafeLeadPicker options={safeLeads} /> : null}
+      <Button onClick={() => edit(action)}>Edit suggestion</Button>
+      <Button onClick={() => onReview(action, "approve", reviewedDraft(action))}>Approve</Button>
+      <Button variant="ghost" onClick={() => onReview(action, "dismiss")}>Dismiss</Button>
+    </SuggestedAction>
+  ))
+}`,
+    usageCode: `<PhoneCallSuggestedActions
+  actions={phoneCall.suggestedActions}
+  leadCandidates={phoneCall.matchCandidates}
+  busyId={savingActionId}
+  onReview={reviewSuggestedAction}
+/>`,
+  },
+  {
     id: "crm-sales-command-center",
     name: "CRM Sales Command Center",
     category: "CRM",
@@ -4893,6 +5094,17 @@ export const galleryIcons = {
   "booking-checklist": ClipboardCheck,
   "booking-ask-panel": MessageCircle,
   "crm-metrics-grid": BarChart3,
+  "phone-call-metric-strip": BarChart3,
+  "phone-call-analysis-launcher": Sparkles,
+  "phone-call-provider-health": Gauge,
+  "phone-call-volume-chart": ChartAnalysis,
+  "phone-call-attention-list": TriangleAlert,
+  "phone-call-reason-list": ListOrdered,
+  "phone-call-coverage": Users,
+  "phone-call-status": Phone,
+  "unified-phone-call-transcript": MessageCircle,
+  "phone-call-identity-match-review": Users,
+  "phone-call-suggested-actions": Sparkles,
   "crm-pipeline-board": BriefcaseBusiness,
   "crm-asset-folder-card": Boxes,
   "crm-asset-row": FileText,

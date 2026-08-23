@@ -81,7 +81,7 @@ const MAX_PROMPT_CHARACTERS = 4_000
 const MAX_HISTORY_MESSAGES = 30
 const MAX_TOOL_ROUNDS = 4
 const MAX_TOOL_CALLS = 6
-const PROMPT_VERSION = "freight-coworker-2026-08-19-personal-todo"
+const PROMPT_VERSION = "freight-coworker-2026-08-22-phone-calls"
 const EMAIL_STYLE_TOOL = "load_operator_email_style"
 const PREPARE_EMAIL_DRAFT_TOOL = "prepare_email_draft"
 const DEXTER_SCOPE_REDIRECT_TOOL = "redirect_off_topic_request"
@@ -1227,6 +1227,8 @@ function watchTargetLabel(capability: string, record: JsonObject) {
       ? ["name"]
       : capability === "quotes"
         ? ["quoteNumber"]
+        : capability === "phone_calls"
+          ? ["callerName", "companyName", "phoneNumber"]
       : capability === "bookings"
           ? ["bookingReference", "jobReference", "customerReference"]
           : capability === "reference_settings"
@@ -1315,6 +1317,23 @@ function addDomainCitations(domain: string, value: unknown) {
         const title = cleanString(record.name, 240) || "Customer"
         return recordId
           ? addRecordCitation(record, title, `/customers/${encodeURIComponent(recordId)}`, "Customer record")
+          : record
+      }),
+    }
+  }
+
+  if (domain === "phone_calls" && Array.isArray(data)) {
+    return {
+      ...value,
+      data: data.map((record) => {
+        if (!isObject(record)) return record
+        const recordId = cleanString(record.recordId, 80)
+        const title = cleanString(record.callerName, 240)
+          || cleanString(record.companyName, 240)
+          || cleanString(record.phoneNumber, 80)
+          || "Phone call"
+        return recordId
+          ? addRecordCitation(record, title, `/crm/phone-calls/${encodeURIComponent(recordId)}`, "CRM phone call record")
           : record
       }),
     }
@@ -1656,6 +1675,7 @@ Never infer a rate, contract term, customs decision, carrier commitment, availab
 Rates and contracts are connected for tenant-safe reading and deterministic watches. Commercial changes are not an allowlisted Dexter action: direct the operator to Rates & Contracts for the reviewed, versioned workflow instead of claiming you changed pricing.
 Quote intelligence is cached evidence, not a live model opinion. When a quote record includes quoteIntelligence, explain its cohort, evidence count, algorithm version and freshness; distinguish the deterministic result from any bounded Luna adjustment. Never invent a missing metric, treat a low-sample outcome rate as certain, or imply that opening a quote caused an AI call.
 Quote delivery evidence may show Standard or Simple email mode, the recipient, attached quote PDF, customer decision, and a linked booking. Standard emails include the secure customer response link; Simple emails are plain, PDF-only messages without customer response controls, so their outcome must be recorded with the allowlisted Mark quote won or Mark quote lost actions after operator approval. Sending a quote email is not a chat action: direct the operator to the quote's Send quote dialog so they can choose the mailbox, review or override the recipient, inspect the exact message and approve the external send.
+The phone_calls domain contains tenant-authorised call facts, provider evidence, match state, transcript availability, summaries and follow-up suggestions. Treat 3CX and Twilio statuses as provider evidence and call reasons, coverage, summaries and recommendations as derived. Never claim a partial transcript is complete or choose a caller match. Use review_phone_call_suggestion only for the exact pending suggestion the operator asked to approve, edit or dismiss; the reviewed action remains the permission boundary before a To Do task or CRM link changes.
 The todo domain is the signed-in operator's private To Do list. Query it for that operator's tasks, dates, priorities, links and record tags. Never imply that one user can see or change another user's tasks.
 When information is missing, name the smallest missing input and say what the operator can do next.
 For customs, sanctions, tax, dangerous goods, or regulatory questions, explain the operational position without presenting uncertain guidance as legal certainty.

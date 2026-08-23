@@ -919,7 +919,7 @@ export function DataTable<Row>({
                   <span className="inline-flex min-w-0 items-center gap-1.5">
                     <GripVertical className="size-3 -ms-1 text-[var(--md-subtle)] opacity-0 transition-opacity group-hover/header:opacity-70" strokeWidth={1.3} aria-hidden="true" />
                     {column.sortValue ? (
-                      <button type="button" onClick={() => toggleSort(column)} className="inline-flex min-w-0 items-center gap-1.5 rounded-[var(--md-radius-xs)] text-start outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--md-accent)_24%,transparent)]" aria-label={`${t("Sort column")}: ${t(column.label)}`}>
+                      <button type="button" onClick={() => toggleSort(column)} className="inline-flex min-h-6 min-w-0 items-center gap-1.5 rounded-[var(--md-radius-xs)] text-start outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--md-accent)_24%,transparent)]" aria-label={`${t("Sort column")}: ${t(column.label)}`}>
                         <span className="truncate">{column.headerContent ?? t(column.label)}</span>
                         {sort?.id === column.id ? (sort.direction === "asc" ? <ArrowUp className="size-3 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} /> : <ArrowDown className="size-3 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} />) : <ArrowUpDown className="size-3 shrink-0 text-[var(--md-subtle)] opacity-55" strokeWidth={1.35} />}
                       </button>

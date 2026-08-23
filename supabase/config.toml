@@ -495,6 +495,11 @@ verify_jwt = true
 [functions.icustoms-webhook]
 verify_jwt = false
 
+# Provider callbacks and the tenant-local 3CX sync worker use route-specific
+# signatures/secrets. Browser routes still validate the Supabase user JWT.
+[functions.phone-calls]
+verify_jwt = false
+
 [functions.screening]
 verify_jwt = true
 

@@ -35,6 +35,7 @@ import {
   PackagePlus,
   Palette,
   Plane,
+  Phone,
   ReceiptText,
   ScanText,
   Settings2,
@@ -132,6 +133,7 @@ export const sidebarAreas: SidebarArea[] = [
     icon: BriefcaseBusiness,
     destinations: [
       { id: "crm-dashboard", label: "Dashboard", icon: LayoutDashboard, route: "/crm" },
+      { id: "crm-phone-calls", label: "Phone calls", icon: Phone, route: "/crm/phone-calls" },
       {
         id: "crm-leads-opportunities",
         label: "Leads & opportunities",
@@ -253,6 +255,7 @@ export const sidebarSecondary: NavItem[] = [
 
 export const crmSidebarItems: NavItem[] = [
   { label: "CRM overview", value: "Live", icon: LayoutDashboard, route: "/crm" },
+  { label: "Phone calls", icon: Phone, route: "/crm/phone-calls" },
   { label: "Leads", icon: Users, route: "/crm/leads" },
   { label: "Contact cards", icon: IdCard, route: "/crm/contact-cards" },
   { label: "Contacts", icon: Mail, route: "/crm/contacts" },

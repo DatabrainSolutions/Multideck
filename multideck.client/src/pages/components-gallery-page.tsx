@@ -200,6 +200,22 @@ import { DexterCompanionSidebar } from "@/components/multideck/dexter-companion-
 import { PageSettingsMenu } from "@/components/multideck/page-settings-menu"
 import { AuditTimeline } from "@/components/multideck/audit-timeline"
 import { AuditWorkspace, QUOTE_AUDIT_SAMPLE_DATA } from "@/components/multideck/audit-workspace"
+import {
+  PhoneCallAnalysisLauncher,
+  PhoneCallAttentionList,
+  PhoneCallCoverage,
+  PhoneCallIdentityMatchReview,
+  PhoneCallLinkedRecordPreview,
+  PhoneCallMatchPill,
+  PhoneCallMetricStrip,
+  PhoneCallOutcomePill,
+  PhoneCallProviderHealth,
+  PhoneCallReasonList,
+  PhoneCallSourceBoundaryPreview,
+  PhoneCallSuggestedActions,
+  PhoneCallTranscriptPill,
+  PhoneCallVolumeChart,
+} from "@/components/multideck/phone-call-components"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { CustomsReadinessReview } from "@/components/multideck/customs-readiness-review"
 import { UnifiedQuoteChargesWorkspace, type UnifiedQuoteChargeRow } from "@/components/multideck/unified-quote-charges-workspace"
@@ -258,8 +274,8 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   },
   {
     label: "CRM",
-    helper: "Leads, contacts, deals, activity, Drive, settings",
-    ids: ["crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "drive-folder-tile", "drive-file-tile", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "contact-create-dialog", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
+    helper: "Calls, leads, contacts, deals, activity, Drive, settings",
+    ids: ["phone-call-metric-strip", "phone-call-analysis-launcher", "phone-call-provider-health", "phone-call-volume-chart", "phone-call-attention-list", "phone-call-reason-list", "phone-call-coverage", "phone-call-status", "unified-phone-call-transcript", "phone-call-linked-record", "phone-call-identity-match-review", "phone-call-suggested-actions", "crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "drive-folder-tile", "drive-file-tile", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "contact-create-dialog", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
   },
   {
     label: "Agent Dexter",
@@ -1256,6 +1272,69 @@ const previewOrganisationSeed: ApiCustomerDetail = {
     isActive: true,
   }],
 }
+
+const previewPhoneCallMatch = {
+  callerName: "Alex Thompson",
+  callerPhone: "+44 7712 345678",
+  capturedCallerName: "Alex Thompson",
+  capturedCompanyName: "Global Retail",
+  callReason: "A revised quote for a Hamburg shipment",
+  company: null,
+  contact: null,
+  lead: null,
+  matchStatus: "review" as const,
+  matchCandidates: [
+    { id: "company-global-retail", recordType: "company" as const, name: "Global Retail Group", secondaryLabel: "Company · phone and name match", confidence: "high" as const, reasons: ["Phone match", "Name match"] },
+    { id: "lead-global-rfq", recordType: "lead" as const, name: "Global Retail Group — May RFQ", secondaryLabel: "Lead · company name match", confidence: "medium" as const, reasons: ["Company match"] },
+  ],
+}
+
+const previewPhoneCallActions = [
+  { id: "action-quote", type: "todo" as const, title: "Alex asked for a revised quote — add this to the To Do list?", reason: "Alex requested the revised quote during the receptionist portion of the call.", confidence: "high" as const, draft: { title: "Prepare revised 40ft quote for Global Retail Group.", scheduledDate: "2026-08-22", leadId: null, leadLabel: null }, status: "pending" as const, error: null, todoTaskId: null, todoTaskStatus: null, todoCompletedAt: null, reviewedAt: null },
+  { id: "action-lead", type: "lead_link" as const, title: "Attach this call to lead “Global Retail Group — May RFQ”?", reason: "The company and request are similar, but need review.", confidence: "medium" as const, draft: { title: null, scheduledDate: null, leadId: "lead-global-rfq", leadLabel: "Global Retail Group — May RFQ" }, status: "pending" as const, error: null, todoTaskId: null, todoTaskStatus: null, todoCompletedAt: null, reviewedAt: null },
+]
+
+const previewPhoneCallMetrics = [
+  { id: "volume", label: "Calls", value: "184", comparison: "+12% vs prior period", detail: "112 inbound · 72 outbound", tone: "neutral" as const, evidence: { kind: "derived" as const, source: "multideck" as const, observedAt: null } },
+  { id: "answer-rate", label: "Answer rate", value: "86%", comparison: "+4 points", detail: "158 answered", tone: "green" as const, evidence: { kind: "provider_confirmed" as const, source: "3cx" as const, observedAt: null } },
+  { id: "missed", label: "Missed", value: "14", comparison: "−3 calls", detail: "7 need follow-up", tone: "red" as const, evidence: { kind: "provider_confirmed" as const, source: "3cx" as const, observedAt: null } },
+  { id: "transfer", label: "Transfer acceptance", value: "78%", comparison: "+6 points", detail: "Receptionist to team", tone: "blue" as const, evidence: { kind: "provider_confirmed" as const, source: "twilio" as const, observedAt: null } },
+  { id: "handling", label: "Avg. handling", value: "04:18", comparison: null, detail: "Answered calls", tone: "neutral" as const, evidence: { kind: "derived" as const, source: "multideck" as const, observedAt: null } },
+  { id: "followup", label: "Follow-up completion", value: "63%", comparison: "+9 points", detail: "12 of 19 approved follow-ups completed", tone: "teal" as const, evidence: { kind: "derived" as const, source: "multideck" as const, observedAt: null } },
+]
+
+const previewPhoneCallVolume = [
+  { period: "Mon", inboundAnswered: 18, inboundMissed: 3, outboundAnswered: 8, outboundMissed: 1, answerRate: 86 },
+  { period: "Tue", inboundAnswered: 22, inboundMissed: 2, outboundAnswered: 11, outboundMissed: 2, answerRate: 90 },
+  { period: "Wed", inboundAnswered: 19, inboundMissed: 5, outboundAnswered: 9, outboundMissed: 1, answerRate: 79 },
+  { period: "Thu", inboundAnswered: 25, inboundMissed: 2, outboundAnswered: 12, outboundMissed: 1, answerRate: 92 },
+  { period: "Fri", inboundAnswered: 21, inboundMissed: 4, outboundAnswered: 10, outboundMissed: 2, answerRate: 84 },
+]
+
+const previewPhoneCallAttention = [
+  { id: "attention-1", callId: "call-1", title: "Alex asked for a revised quote", occurredAt: "2026-08-22T09:21:03Z", stateLabel: "Suggested action", tone: "amber" as const },
+  { id: "attention-2", callId: "call-2", title: "Unknown caller needs identity review", occurredAt: "2026-08-22T08:42:00Z", stateLabel: "Unmatched caller", tone: "red" as const },
+]
+
+const previewPhoneCallReasons = [
+  { id: "quote", label: "Quote request", count: 34, share: 32, evidence: { kind: "derived" as const, source: "multideck" as const, observedAt: null } },
+  { id: "tracking", label: "Shipment tracking", count: 26, share: 25, evidence: { kind: "derived" as const, source: "multideck" as const, observedAt: null } },
+  { id: "documents", label: "Documents", count: 18, share: 17, evidence: { kind: "derived" as const, source: "multideck" as const, observedAt: null } },
+]
+
+const previewPhoneCallCoverage = [
+  { id: "company" as const, label: "Company", count: 132, share: 72 },
+  { id: "contact" as const, label: "Contact", count: 118, share: 64 },
+  { id: "lead" as const, label: "Lead", count: 84, share: 46 },
+  { id: "needs_review" as const, label: "Needs review", count: 31, share: 17 },
+  { id: "unmatched" as const, label: "Unmatched", count: 21, share: 11 },
+]
+
+const previewPhoneCallProviders = [
+  { provider: "elevenlabs" as const, label: "ElevenLabs receptionist", detail: "Exact-agent conversation reconciliation", state: "healthy" as const, lastAttemptAt: "2026-08-22T10:00:00Z", lastSucceededAt: "2026-08-22T10:00:00Z", lastFailedAt: null, consecutiveFailures: 0, errorCode: null },
+  { provider: "twilio" as const, label: "Twilio screening", detail: "Screening and transfer Sync polling", state: "healthy" as const, lastAttemptAt: "2026-08-22T10:00:00Z", lastSucceededAt: "2026-08-22T10:00:00Z", lastFailedAt: null, consecutiveFailures: 0, errorCode: null },
+  { provider: "3cx" as const, label: "3CX employee calls", detail: "3CX call-detail and transcript collector", state: "not_configured" as const, lastAttemptAt: null, lastSucceededAt: null, lastFailedAt: null, consecutiveFailures: 0, errorCode: null },
+]
 
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
@@ -3684,6 +3763,79 @@ function ComponentPreview({ id }: { id: string }) {
             source="manual_override"
             updatedAt="2026-08-03T14:30:00.000Z"
             onCheckedChange={async (checked) => setPreviewMarketingOptIn(checked)}
+          />
+        </div>
+      ) : null}
+
+      {id === "phone-call-status" ? (
+        <div className="flex w-full max-w-[760px] flex-wrap items-center gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <PhoneCallOutcomePill outcome="answered" />
+          <PhoneCallOutcomePill outcome="missed" />
+          <PhoneCallMatchPill status="matched" />
+          <PhoneCallMatchPill status="review" />
+          <PhoneCallMatchPill status="unmatched" />
+          <PhoneCallTranscriptPill status="complete" />
+          <PhoneCallTranscriptPill status="partial" />
+        </div>
+      ) : null}
+
+      {id === "phone-call-metric-strip" ? (
+        <div className="w-full max-w-[1120px]"><PhoneCallMetricStrip metrics={previewPhoneCallMetrics} /></div>
+      ) : null}
+
+      {id === "phone-call-analysis-launcher" ? (
+        <div className="w-full max-w-[920px]"><PhoneCallAnalysisLauncher totalCalls={184} onAnalyse={(focus) => toast.success(`Dexter analysis opened · ${focus}`)} /></div>
+      ) : null}
+
+      {id === "phone-call-provider-health" ? (
+        <div className="w-full max-w-[620px]"><PhoneCallProviderHealth providers={previewPhoneCallProviders} /></div>
+      ) : null}
+
+      {id === "phone-call-volume-chart" ? (
+        <div className="w-full max-w-[920px]"><PhoneCallVolumeChart data={previewPhoneCallVolume} timezone="Europe/London" /></div>
+      ) : null}
+
+      {id === "phone-call-attention-list" ? (
+        <div className="w-full max-w-[620px]"><PhoneCallAttentionList items={previewPhoneCallAttention} onOpen={() => toast.success("Call review opened")} onViewAll={() => toast.success("Calls register opened")} /></div>
+      ) : null}
+
+      {id === "phone-call-reason-list" ? (
+        <div className="w-full max-w-[520px]"><PhoneCallReasonList reasons={previewPhoneCallReasons} /></div>
+      ) : null}
+
+      {id === "phone-call-coverage" ? (
+        <div className="w-full max-w-[520px]"><PhoneCallCoverage items={previewPhoneCallCoverage} /></div>
+      ) : null}
+
+      {id === "unified-phone-call-transcript" ? (
+        <div className="w-full max-w-[920px]">
+          <PhoneCallSourceBoundaryPreview />
+        </div>
+      ) : null}
+
+      {id === "phone-call-linked-record" ? (
+        <div className="w-full max-w-[920px]">
+          <PhoneCallLinkedRecordPreview />
+        </div>
+      ) : null}
+
+      {id === "phone-call-identity-match-review" ? (
+        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <PhoneCallIdentityMatchReview
+            call={previewPhoneCallMatch}
+            onLink={(candidate) => toast.success(`${candidate.name} selected for review`)}
+            onCreateContact={() => toast.success("Create-contact review opened")}
+            onLeaveUnmatched={() => toast.success("Call left unmatched")}
+          />
+        </div>
+      ) : null}
+
+      {id === "phone-call-suggested-actions" ? (
+        <div className="w-full max-w-[720px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <PhoneCallSuggestedActions
+            actions={previewPhoneCallActions}
+            leadCandidates={previewPhoneCallMatch.matchCandidates}
+            onReview={(action, decision) => toast.success(`${action.title} · ${decision}`)}
           />
         </div>
       ) : null}
