@@ -297,7 +297,21 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
       minWidth: 104,
       resizable: true,
       sortValue: (draft) => draft.status,
-      cell: (draft) => <StatusPill tone={customsStatusTone(draft.status)}>{t(titleCase(draft.status))}</StatusPill>,
+      cell: (draft) => {
+        const outcome = declarationRegisterOutcome(draft.status)
+        return (
+          <StatusPill
+            tone={customsStatusTone(draft.status)}
+            indicator={!outcome}
+            className={cn(
+              outcome === "cleared" && "bg-[var(--md-surface)] text-[var(--md-status-green-ink)] shadow-[var(--md-shadow-line)]",
+              outcome === "rejected" && "bg-[var(--md-surface)] text-[var(--md-status-red-ink)] shadow-[var(--md-shadow-line)]",
+            )}
+          >
+            {t(titleCase(draft.status))}
+          </StatusPill>
+        )
+      },
     },
     {
       id: "traderReference",
@@ -393,7 +407,14 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
         rows={loadError ? [] : drafts}
         getRowKey={(draft) => draft.id}
         storageKey={`customs-${jobRelated ? "job-related" : "standalone"}-${kind}-register-v3`}
-        rowClassName="hover:bg-[var(--md-hover)]"
+        rowClassName={(draft) => cn(
+          "transition-colors",
+          declarationRegisterOutcome(draft.status) === "cleared"
+            ? "bg-[var(--md-status-green-bg)] hover:bg-[color-mix(in_srgb,var(--md-status-green-bg)_82%,var(--md-green))]"
+            : declarationRegisterOutcome(draft.status) === "rejected"
+              ? "bg-[var(--md-status-red-bg)] hover:bg-[color-mix(in_srgb,var(--md-status-red-bg)_82%,var(--md-red))]"
+              : "hover:bg-[var(--md-hover)]",
+        )}
         onRowClick={(draft) => navigate(`/customs/${jobRelated ? "job-related" : "standalone"}/${kind}/${draft.id}`)}
         rowAriaLabel={(draft) => draft.reference}
         serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "lastSaved", direction: "desc" }); setOffset(0) } }}
@@ -3310,11 +3331,18 @@ function providerIssueFieldLabel(issue: ICustomsProviderIssue) {
 
 function customsStatusTone(status: string): "green" | "amber" | "red" | "blue" | "neutral" | "teal" {
   const normalizedStatus = status.trim().toLocaleLowerCase()
-  if (["submitted", "accepted", "released", "cleared"].includes(normalizedStatus)) return "green"
-  if (["rejected", "error"].includes(normalizedStatus)) return "red"
+  if (["submitted", "accepted", "released", "cleared", "completed"].includes(normalizedStatus)) return "green"
+  if (["rejected", "error", "lost"].includes(normalizedStatus)) return "red"
   if (normalizedStatus === "draft") return "amber"
   if (normalizedStatus === "acknowledged") return "blue"
   return "neutral"
+}
+
+function declarationRegisterOutcome(status: string): "cleared" | "rejected" | null {
+  const normalizedStatus = status.trim().toLocaleLowerCase()
+  if (normalizedStatus === "cleared") return "cleared"
+  if (normalizedStatus === "rejected") return "rejected"
+  return null
 }
 
 function providerIssueGuidance(issue: ICustomsProviderIssue) {

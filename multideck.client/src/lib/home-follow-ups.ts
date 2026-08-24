@@ -1,5 +1,6 @@
 import { listThreads, loadInboxWorkspace } from "@/lib/inbox-api"
 import type { InboxThreadListItem, MailAddress, Mailbox } from "@/lib/inbox-contract"
+import { isHumanFollowUpCandidate } from "@/lib/home-follow-up-filter"
 
 export type HomeFollowUp = {
   threadId: string
@@ -54,6 +55,11 @@ export async function loadHomeFollowUps(limit = 4, signal?: AbortSignal): Promis
     if (thread.unreadCount === 0 || thread.archived) continue
     const participant = firstOutsider(thread, ownAddresses)
     if (!participant) continue
+    if (!isHumanFollowUpCandidate({
+      subject: thread.subject,
+      preview: thread.preview,
+      participant,
+    })) continue
 
     const key = participant.address.toLocaleLowerCase()
     const waitingFor = thread.lastMessageAt ? now - new Date(thread.lastMessageAt).getTime() : 0
