@@ -50,7 +50,6 @@ import {
   CARD_SOCIAL_LABELS,
   defaultBranding,
   type CardBranding,
-  type CardHeaderStyle,
   type CardLayout,
   type CardSocialKind,
   type CardSocialLink,
@@ -105,13 +104,6 @@ const STYLE_PRESETS: CardStylePreset[] = [
   { id: "tinted", label: "Tinted", detail: "Page washed in your colour", branding: { layout: "classic", headerStyle: "band", theme: "tinted", cornerStyle: "soft" } },
   { id: "midnight", label: "Midnight", detail: "Dark and quiet", branding: { layout: "spotlight", headerStyle: "none", theme: "dark", cornerStyle: "soft" } },
 ]
-
-const HEADER_CHOICES = [
-  { id: "none", label: "None", detail: "Straight into the page" },
-  { id: "bar", label: "Rule", detail: "A thin accent edge" },
-  { id: "band", label: "Band", detail: "Logo on colour" },
-  { id: "cover", label: "Cover", detail: "A field to sit over" },
-] as const satisfies ReadonlyArray<{ id: CardHeaderStyle; label: string; detail: string }>
 
 const THEME_CHOICES = [
   { id: "light", label: "Light" },
@@ -700,7 +692,7 @@ function OptionTile({
       )}
     >
       <span
-        className="relative block overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.06)]"
+        className="relative block overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] shadow-[inset_0_0_0_1px_var(--md-hairline)]"
         style={{ aspectRatio: aspect }}
       >
         {children}
@@ -969,39 +961,6 @@ export function ContactCardLayoutPicker({
           onSelect={() => onChange(preset.id)}
         >
           <CardMiniature branding={{ ...base, layout: preset.id }} content={content} />
-        </OptionTile>
-      ))}
-    </TileGroup>
-  )
-}
-
-/** The top of the page: nothing, a rule, a logo band, or a field to sit over. */
-export function ContactCardHeaderPicker({
-  value,
-  onChange,
-  branding,
-  content,
-}: {
-  value: CardHeaderStyle
-  onChange: (value: CardHeaderStyle) => void
-  branding?: CardBranding
-  content?: CardMiniatureContent
-}) {
-  const { t } = useLanguage()
-  const base = useMemo(() => branding ?? defaultBranding(), [branding])
-
-  return (
-    <TileGroup label={t("Header")} className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-      {HEADER_CHOICES.map((choice) => (
-        <OptionTile
-          key={choice.id}
-          selected={value === choice.id}
-          label={t(choice.label)}
-          detail={t(choice.detail)}
-          aspect="1 / 1"
-          onSelect={() => onChange(choice.id)}
-        >
-          <CardMiniature branding={{ ...base, headerStyle: choice.id }} content={content} />
         </OptionTile>
       ))}
     </TileGroup>
@@ -1428,10 +1387,6 @@ export function CardDesignPanel({ card, profilePhotoUrl }: { card: ContactCard; 
           <div className="mt-4 divide-y divide-[var(--md-hairline)]">
             <DesignRow label={t("Layout")}>
               <ContactCardLayoutPicker branding={branding} content={content} value={branding.layout} onChange={(layout) => apply({ layout })} />
-            </DesignRow>
-
-            <DesignRow label={t("Header")} hint={t("The band shows your logo, or your company name when there is no logo yet.")}>
-              <ContactCardHeaderPicker branding={branding} content={content} value={branding.headerStyle} onChange={(headerStyle) => apply({ headerStyle })} />
             </DesignRow>
 
             <DesignRow label={t("Corners")} hint={t("Applies to the fields, the buttons and any panel they sit on.")}>
