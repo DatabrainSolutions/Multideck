@@ -39,7 +39,7 @@ import {
 } from "@/components/multideck/contact-card-components"
 import { AutomationEnableRow, CardAutomationPanel } from "@/components/multideck/contact-card-automation"
 import { CardAnalyticsPanel } from "@/components/multideck/contact-card-analytics"
-import { CardDesignPanel, ContactCardSocialLinksEditor } from "@/components/multideck/contact-card-design"
+import { CardDesignPanel, CardQrPanel, ContactCardSocialLinksEditor } from "@/components/multideck/contact-card-design"
 import { useLanguage } from "@/i18n/language-provider"
 import { getApiTeamUsersByIds, type ApiTeamUser } from "@/lib/api"
 import { mdMotion, reduceMotion } from "@/lib/motion"
@@ -61,7 +61,7 @@ import {
   useContactCard,
   useContactCardStore,
 } from "@/lib/contact-card-store"
-import type { ContactCard } from "@/data/contact-card-data"
+import type { CardExchange, ContactCard } from "@/data/contact-card-data"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 
 type ContactCardSortState = { id: string; direction: "asc" | "desc" } | null
@@ -497,17 +497,22 @@ export function ContactCardsPage({ navigate, currentUser }: { navigate: (path: s
 /* Detail                                                                      */
 /* -------------------------------------------------------------------------- */
 
-const TABS = ["Overview", "Design", "Automation", "Analytics", "Settings"] as const
+const TABS = ["Overview", "Design", "QR code", "Automation", "Analytics", "Settings"] as const
 type CardTab = (typeof TABS)[number]
+
+/** Tab labels carry spaces; the query string should not. */
+function tabSlug(tab: CardTab) {
+  return tab.toLowerCase().replace(/\s+/g, "-")
+}
 
 function readTab(): CardTab {
   const value = new URLSearchParams(window.location.search).get("tab")
-  const match = TABS.find((tab) => tab.toLowerCase() === value)
+  const match = TABS.find((tab) => tabSlug(tab) === value)
   return match ?? "Overview"
 }
 
 export function ContactCardDetailPage({ cardId, navigate, currentUser }: { cardId: string; navigate: (path: string) => void; currentUser: AuthUserSummary | null }) {
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
   const canWrite = hasPermission(currentUser, "CRM.Write")
   const shouldReduceMotion = useReducedMotion()
   const { card, status, error } = useContactCard(cardId)
@@ -518,6 +523,10 @@ export function ContactCardDetailPage({ cardId, navigate, currentUser }: { cardI
   const [statusSaving, setStatusSaving] = useState(false)
   const [automationSaving, setAutomationSaving] = useState(false)
   const visibleTabs = canWrite ? TABS : (["Overview", "Analytics"] as const)
+  const exchangeDateTime = useMemo(
+    () => new Intl.DateTimeFormat(language, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
+    [language],
+  )
 
   useEffect(() => {
     if (!canWrite && tab !== "Overview" && tab !== "Analytics") selectTab("Overview")
@@ -559,7 +568,7 @@ export function ContactCardDetailPage({ cardId, navigate, currentUser }: { cardI
     setTab(next)
     const url = new URL(window.location.href)
     if (next === "Overview") url.searchParams.delete("tab")
-    else url.searchParams.set("tab", next.toLowerCase())
+    else url.searchParams.set("tab", tabSlug(next))
     window.history.replaceState({}, "", url)
   }
 
@@ -632,6 +641,59 @@ export function ContactCardDetailPage({ cardId, navigate, currentUser }: { cardI
   }
 
   const totals = cardTotals(card)
+  const recentExchanges = [...card.exchanges].reverse().slice(0, 8)
+  const exchangeColumns: DataTableColumn<CardExchange>[] = [
+    {
+      id: "contact",
+      label: t("Contact"),
+      kind: "identity",
+      minWidth: 220,
+      canHide: false,
+      sortValue: (exchange) => `${exchange.firstName} ${exchange.lastName}`,
+      cell: (exchange) => (
+        <div className="min-w-0">
+          <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">
+            {exchange.firstName} {exchange.lastName}
+          </p>
+          <p className="mt-0.5 truncate text-[12px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">
+            {exchange.email}
+          </p>
+        </div>
+      ),
+    },
+    {
+      id: "company",
+      label: t("Company"),
+      kind: "text",
+      minWidth: 180,
+      sortValue: (exchange) => exchange.company,
+      cell: (exchange) => (
+        <span className="block truncate text-[12.5px] text-[var(--md-text)]" data-i18n-skip dir="auto">
+          {exchange.company || "—"}
+        </span>
+      ),
+    },
+    {
+      id: "shared",
+      label: t("Shared"),
+      kind: "date",
+      minWidth: 160,
+      sortValue: (exchange) => new Date(exchange.at).getTime(),
+      cell: (exchange) => <bdi className="text-[12px] text-[var(--md-subtle)] tabular-nums">{exchangeDateTime.format(new Date(exchange.at))}</bdi>,
+    },
+    {
+      id: "status",
+      label: t("Status"),
+      kind: "status",
+      minWidth: 150,
+      sortValue: (exchange) => exchange.outcome,
+      cell: (exchange) => (
+        <StatusPill kind="status" tone={exchange.outcome === "created" ? "teal" : "neutral"} indicator={false}>
+          {t(exchange.outcome === "created" ? "New lead" : "Matched existing")}
+        </StatusPill>
+      ),
+    },
+  ]
 
   return (
     <div className="md-page md-page-stack">
@@ -743,41 +805,28 @@ export function ContactCardDetailPage({ cardId, navigate, currentUser }: { cardI
                   />
                 </div>
 
-                <Surface padding="md" className="p-5">
+                <section className="grid gap-3">
                   <SectionHeader title={t("Recent exchanges")} meta={t("The most recent people who shared their details.")} />
-                  <div className="mt-3">
-                    {card.exchanges.length === 0 ? (
-                      <PanelMessage
-                        icon={QrCode}
-                        title={t("No exchanges yet")}
-                        body={t("Share the code and the first contacts will appear here.")}
-                      />
-                    ) : (
-                      <ul className="divide-y divide-[rgba(11,20,19,0.06)]">
-                        {[...card.exchanges].reverse().slice(0, 8).map((exchange) => (
-                          <li key={exchange.id} className="flex items-start justify-between gap-4 py-2.5">
-                            <div className="min-w-0">
-                              <p className="truncate text-[13px] text-[var(--md-ink)]" data-i18n-skip dir="auto">
-                                {exchange.firstName} {exchange.lastName}
-                              </p>
-                              <p className="mt-0.5 truncate text-[12px] text-[var(--md-subtle)]" data-i18n-skip dir="auto">
-                                {exchange.company}
-                              </p>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-3">
-                              <span className="text-[12px] text-[var(--md-subtle)] tabular-nums">
-                                {new Date(exchange.at).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                              </span>
-                              <StatusPill kind="status" tone={exchange.outcome === "created" ? "teal" : "neutral"} indicator={false}>
-                                {t(exchange.outcome === "created" ? "New lead" : "Matched existing")}
-                              </StatusPill>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
+                  <DataTable
+                    ariaLabel={t("Recent exchanges")}
+                    columns={exchangeColumns}
+                    rows={recentExchanges}
+                    getRowKey={(exchange) => exchange.id}
+                    storageKey={`contact-card-exchanges-${card.id}`}
+                    minimumWidth={720}
+                    showToolbar={false}
+                    showColumnManager={false}
+                    enableSelectionExport={false}
+                    rowClassName="h-[58px]"
+                    emptyState={(
+                      <div className="mx-auto max-w-md px-5 py-6 text-center">
+                        <QrCode className="mx-auto size-5 text-[var(--md-accent)]" strokeWidth={1.4} />
+                        <p className="mt-2 text-[13px] font-medium text-[var(--md-ink)]">{t("No exchanges yet")}</p>
+                        <p className="mt-1 text-[12px] leading-5 text-[var(--md-subtle)]">{t("Share the code and the first contacts will appear here.")}</p>
+                      </div>
                     )}
-                  </div>
-                </Surface>
+                  />
+                </section>
               </div>
 
               <div className="grid content-start gap-[var(--md-page-stack-gap)] xl:order-2 xl:sticky xl:top-[var(--md-page-stack-gap)]">
@@ -787,6 +836,8 @@ export function ContactCardDetailPage({ cardId, navigate, currentUser }: { cardI
           ) : null}
 
           {canWrite && tab === "Design" ? <CardDesignPanel card={card} profilePhotoUrl={ownerProfilePhotoUrl} /> : null}
+
+          {canWrite && tab === "QR code" ? <CardQrPanel card={card} /> : null}
 
           {tab === "Analytics" ? <CardAnalyticsPanel card={card} status={status} /> : null}
 

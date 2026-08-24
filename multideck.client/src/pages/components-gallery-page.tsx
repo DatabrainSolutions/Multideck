@@ -72,7 +72,7 @@ import {
 } from "@/components/multideck/customer-components"
 import { CrmActivityTimeline, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
 import { CopyableField } from "@/components/multideck/copyable-field"
-import { ContactCardLayoutPicker, ContactCardSocialLinksEditor } from "@/components/multideck/contact-card-design"
+import { CardMiniature, CardStylePresetPicker, ContactCardHeaderPicker, ContactCardLayoutPicker, ContactCardSocialLinksEditor, QrStylePicker } from "@/components/multideck/contact-card-design"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
 import { OrganisationFoundationPanel } from "@/components/multideck/organisation-foundation-panel"
 import { AutomationRunHistory } from "@/components/multideck/contact-card-automation"
@@ -145,7 +145,8 @@ import { AiPromptMorph } from "@/components/multideck/ai-prompt-morph"
 import { WatchModeAurora } from "@/components/multideck/aurora-background"
 import { defaultDexterModelId, type DexterModelId } from "@/data/dexter-models"
 import { defaultDexterMentionItems } from "@/data/dexter-mentions"
-import type { AutomationRun, CardLayout, CardSocialLink } from "@/data/contact-card-data"
+import { defaultBranding } from "@/data/contact-card-data"
+import type { AutomationRun, CardBranding, CardLayout, CardSocialLink } from "@/data/contact-card-data"
 import {
   AreaChartCard,
   BarChartCard,
@@ -1380,6 +1381,7 @@ function ComponentPreview({ id }: { id: string }) {
     { itemId: "gallery-item-rsj", sku: "MAR-RSJ-118", supplierItemCode: "YH-1440", description: "Rain shell jacket · navy · mixed sizes", quantity: 780, uomCode: "EA", unitPrice: 18.4, taxRate: 0, requestedDeliveryDate: "2026-08-18" },
   ])
   const [previewContactLayout, setPreviewContactLayout] = useState<CardLayout>("editorial")
+  const [previewCardBranding, setPreviewCardBranding] = useState<CardBranding>(() => ({ ...defaultBranding("#3f5f8a"), layout: "spotlight", headerStyle: "cover" }))
   const [previewMarketingOptIn, setPreviewMarketingOptIn] = useState(true)
   const [previewSocialLinks, setPreviewSocialLinks] = useState<CardSocialLink[]>([
     { id: "gallery-linkedin", kind: "linkedin", value: "linkedin.com/in/maya-stone", enabled: true },
@@ -3738,9 +3740,54 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "card-miniature" ? (
+        <div className="grid w-full max-w-[860px] grid-cols-2 gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)] sm:grid-cols-4">
+          {(["classic", "editorial", "compact", "spotlight"] as const).map((layout) => (
+            <div key={layout} className="grid gap-1.5">
+              <div className="aspect-[3/4] overflow-hidden rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]">
+                <CardMiniature branding={{ ...previewCardBranding, layout }} />
+              </div>
+              <p className="px-0.5 text-[12px] text-[var(--md-subtle)]">{layout}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {id === "contact-card-style-picker" ? (
+        <div className="w-full max-w-[860px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <CardStylePresetPicker
+            branding={previewCardBranding}
+            onChange={(update) => setPreviewCardBranding((branding) => ({ ...branding, ...update }))}
+          />
+        </div>
+      ) : null}
+
       {id === "contact-card-layout-picker" ? (
         <div className="w-full max-w-[860px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
-          <ContactCardLayoutPicker value={previewContactLayout} onChange={setPreviewContactLayout} />
+          <ContactCardLayoutPicker
+            branding={{ ...previewCardBranding, layout: previewContactLayout }}
+            value={previewContactLayout}
+            onChange={setPreviewContactLayout}
+          />
+        </div>
+      ) : null}
+
+      {id === "contact-card-header-picker" ? (
+        <div className="w-full max-w-[860px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <ContactCardHeaderPicker
+            branding={previewCardBranding}
+            value={previewCardBranding.headerStyle}
+            onChange={(headerStyle) => setPreviewCardBranding((branding) => ({ ...branding, headerStyle }))}
+          />
+        </div>
+      ) : null}
+
+      {id === "contact-card-qr-style-picker" ? (
+        <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <QrStylePicker
+            branding={previewCardBranding}
+            onChange={(update) => setPreviewCardBranding((branding) => ({ ...branding, ...update }))}
+          />
         </div>
       ) : null}
 

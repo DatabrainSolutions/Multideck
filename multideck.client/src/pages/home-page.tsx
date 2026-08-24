@@ -36,6 +36,7 @@ import { dashboardPriorityBucket, type DashboardPriorityItem } from "@/lib/dashb
 import { listLiveBookingsPage, type LiveBooking } from "@/lib/application-data-api"
 import { listTodoTasks, updateTodoTask, type TodoTask } from "@/lib/todo-api"
 import { loadHomeFollowUps, type HomeFollowUp } from "@/lib/home-follow-ups"
+import { formatFollowUpRecommendation } from "@/lib/follow-up-recommendation"
 import { readRecentWorkContext } from "@/lib/recent-work-context"
 import { useStarredJobs } from "@/lib/starred-jobs"
 import type { AuthUserSummary } from "@/lib/auth-user"
@@ -323,14 +324,15 @@ export function HomePage({
     }
 
     if (waiting) {
+      const recommendation = formatFollowUpRecommendation(waiting.recommendationCode, t)
       built.push({
-        id: `follow-${waiting.threadId}`,
-        title: t("Reply to {name}").replace("{name}", waiting.name),
-        prompt: t("Draft a reply to {name} ({address}) about “{subject}”. They have been waiting {gap}.")
+        id: `follow-${waiting.threadId ?? `${waiting.recordType}-${waiting.recordId ?? waiting.name}`}`,
+        title: `${recommendation} · ${waiting.name}`,
+        prompt: t("Review the conversation with {name} ({address}) about “{subject}”. The recommended next action is: {action}. Help me complete it.")
           .replace("{name}", waiting.name)
-          .replace("{address}", waiting.address)
+          .replace("{address}", waiting.address ?? t("No email address recorded"))
           .replace("{subject}", waiting.subject)
-          .replace("{gap}", formatWait(waiting.waitingFor)),
+          .replace("{action}", recommendation),
         meta: t("waiting {gap}").replace("{gap}", formatWait(waiting.waitingFor)),
         icon: Mail,
         specialistId: "customer",
@@ -508,7 +510,7 @@ export function HomePage({
       id: "follow-ups",
       module: (
         <HomeDeckPanel
-          title="Following up"
+          title="Who needs following up"
           count={followUps.length}
           action={<HomeDeckAction onClick={() => navigate("/inbox")}>{t("Inbox")}</HomeDeckAction>}
         >
@@ -518,12 +520,16 @@ export function HomePage({
                 type="button"
                 className={`${homeDeckRowButtonClass} items-start`}
                 onClick={() => {
-                  const thread = new URLSearchParams({
-                    provider: person.provider,
-                    mailbox: person.mailboxId,
-                    thread: person.threadId,
-                  })
-                  navigate(`/inbox?${thread.toString()}`)
+                  if (person.threadId && person.mailboxId) {
+                    const thread = new URLSearchParams({ mailbox: person.mailboxId, thread: person.threadId })
+                    navigate(`/inbox?${thread.toString()}`)
+                    return
+                  }
+                  if (person.recordType === "lead" && person.recordId) navigate(`/crm/leads/${person.recordId}`)
+                  else if (person.recordType === "contact" && person.recordId) navigate(`/crm/contacts/${person.recordId}`)
+                  else if (person.recordType === "account" && person.recordId) navigate(`/crm/accounts/${person.recordId}`)
+                  else if (person.recordType === "deal" && person.recordId) navigate(`/crm/deals/${person.recordId}`)
+                  else if (person.recordType === "quote" && person.recordId) navigate(`/quotes/${person.recordId}`)
                 }}
               >
                 <span className="min-w-0 flex-1">
@@ -531,7 +537,7 @@ export function HomePage({
                     {person.name}
                   </span>
                   <span className="mt-0.5 block truncate text-[11.5px] leading-4 text-[var(--md-subtle)]" dir="auto">
-                    {person.subject || t("No subject")}
+                    {formatFollowUpRecommendation(person.recommendationCode, t)}
                   </span>
                 </span>
                 <span className="shrink-0 text-[11.5px] leading-4 tabular-nums text-[var(--md-subtle)]" dir="ltr">
@@ -540,7 +546,7 @@ export function HomePage({
               </button>
             </HomeDeckRow>
           )) : (
-            <HomeDeckEmpty>{t("Nobody is waiting on a reply. Unanswered email shows up here.")}</HomeDeckEmpty>
+            <HomeDeckEmpty>{t("Nobody needs a follow-up right now. New replies and due CRM actions will appear here.")}</HomeDeckEmpty>
           )}
         </HomeDeckPanel>
       ),

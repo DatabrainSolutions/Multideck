@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { mdMotion, staggerRamp } from "@/lib/motion"
+import { formatFollowUpRecommendation } from "@/lib/follow-up-recommendation"
 import type {
   CrmDashboardData,
   CrmDashboardFollowUp,
@@ -443,7 +444,7 @@ const QueueRow = memo(function QueueRow({
           ) : null}
         </>
       }
-      sub={opportunity.subject}
+      sub={formatFollowUpRecommendation(opportunity.recommendationCode, t)}
       status={<StatusPill kind="status" tone={tone}>{t(bucketLabel[bucket])}</StatusPill>}
       sideInteractive={opportunity.canCreate}
       side={
@@ -537,7 +538,7 @@ export function CrmFollowUpQueue({
         <EmptyState
           icon={Inbox}
           title={t("No follow-up opportunities right now.")}
-          body={t("Human replies, overdue sent email, and due CRM activity will appear here automatically.")}
+          body={t("Actionable replies, overdue conversations, and due CRM actions will appear here automatically.")}
         />
       )}
     </Panel>

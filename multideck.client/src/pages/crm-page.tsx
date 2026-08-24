@@ -1257,7 +1257,11 @@ export function CrmOverviewPage() {
 
   const openFollowUp = useCallback((opportunity: CrmFollowUpOpportunity) => {
     if (opportunity.recordType === "lead" && opportunity.recordId) window.location.href = `/crm/leads/${opportunity.recordId}`
+    else if (opportunity.recordType === "deal" && opportunity.recordId) window.location.href = `/crm/deals/${opportunity.recordId}`
+    else if (opportunity.recordType === "quote" && opportunity.recordId) window.location.href = `/quotes/${opportunity.recordId}`
     else if (opportunity.threadId && opportunity.mailboxId) window.location.href = `/inbox?mailbox=${encodeURIComponent(opportunity.mailboxId)}&thread=${encodeURIComponent(opportunity.threadId)}`
+    else if (opportunity.recordType === "contact" && opportunity.recordId) window.location.href = `/crm/contacts/${opportunity.recordId}`
+    else if (opportunity.recordType === "account" && opportunity.recordId) window.location.href = `/crm/accounts/${opportunity.recordId}`
   }, [])
 
   const renderCreate = useCallback((opportunity: CrmFollowUpOpportunity) => (

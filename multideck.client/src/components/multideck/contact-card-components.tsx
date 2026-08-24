@@ -181,21 +181,15 @@ export function QrCodeImage({
 }
 
 /**
- * The physical-world handoff: the code, the link, and the two downloads a
- * printer will actually ask for.
+ * The two files a printer actually asks for, rasterised and vectorised from the
+ * same styled symbol shown on screen.
+ *
+ * Shared by the share panel and the design tab, so a code can be exported from
+ * wherever it was last looked at and both places hand over identical artwork.
  */
-export function CardCodePanel({
-  card,
-  className,
-  compact = false,
-}: {
-  card: ContactCard
-  className?: string
-  compact?: boolean
-}) {
+export function CardQrDownloads({ card, className }: { card: ContactCard; className?: string }) {
   const { t } = useLanguage()
-  const url = cardPublicUrl(card)
-  const { matrix, style } = useQrCode(url, card.branding)
+  const { matrix, style } = useQrCode(cardPublicUrl(card), card.branding)
   const [downloading, setDownloading] = useState<"png" | "svg" | null>(null)
 
   async function downloadPng() {
@@ -227,6 +221,55 @@ export function CardCodePanel({
   }
 
   return (
+    <div className={cn("grid gap-2", className)}>
+      <Button
+        variant="outline"
+        className="h-10 rounded-[var(--md-radius-md)] text-[13px]"
+        onClick={downloadPng}
+        disabled={!matrix || downloading !== null}
+      >
+        {downloading === "png" ? (
+          <LoaderCircle data-icon="inline-start" className="animate-spin" strokeWidth={1.4} />
+        ) : (
+          <Download data-icon="inline-start" strokeWidth={1.4} />
+        )}
+        {t("PNG")}
+      </Button>
+      <Button
+        variant="outline"
+        className="h-10 rounded-[var(--md-radius-md)] text-[13px]"
+        onClick={downloadSvg}
+        disabled={!matrix || downloading !== null}
+      >
+        {downloading === "svg" ? (
+          <LoaderCircle data-icon="inline-start" className="animate-spin" strokeWidth={1.4} />
+        ) : (
+          <Download data-icon="inline-start" strokeWidth={1.4} />
+        )}
+        {t("SVG")}
+      </Button>
+    </div>
+  )
+}
+
+/**
+ * The physical-world handoff: the code, the link, and the two downloads a
+ * printer will actually ask for.
+ */
+export function CardCodePanel({
+  card,
+  className,
+  compact = false,
+}: {
+  card: ContactCard
+  className?: string
+  compact?: boolean
+}) {
+  const { t } = useLanguage()
+  const url = cardPublicUrl(card)
+  const { matrix, style } = useQrCode(url, card.branding)
+
+  return (
     <Surface padding="md" className={cn("flex flex-col gap-5 p-5", className)}>
       <SectionHeader
         title={t("Share this card")}
@@ -250,34 +293,7 @@ export function CardCodePanel({
         </CopyableField>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Button
-          variant="outline"
-          className="h-10 rounded-[var(--md-radius-md)] text-[13px]"
-          onClick={downloadPng}
-          disabled={!matrix || downloading !== null}
-        >
-          {downloading === "png" ? (
-            <LoaderCircle data-icon="inline-start" className="animate-spin" strokeWidth={1.4} />
-          ) : (
-            <Download data-icon="inline-start" strokeWidth={1.4} />
-          )}
-          {t("PNG")}
-        </Button>
-        <Button
-          variant="outline"
-          className="h-10 rounded-[var(--md-radius-md)] text-[13px]"
-          onClick={downloadSvg}
-          disabled={!matrix || downloading !== null}
-        >
-          {downloading === "svg" ? (
-            <LoaderCircle data-icon="inline-start" className="animate-spin" strokeWidth={1.4} />
-          ) : (
-            <Download data-icon="inline-start" strokeWidth={1.4} />
-          )}
-          {t("SVG")}
-        </Button>
-      </div>
+      <CardQrDownloads card={card} className="sm:grid-cols-2" />
 
       <Button
         variant="ghost"

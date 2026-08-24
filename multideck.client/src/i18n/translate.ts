@@ -10,6 +10,7 @@ import { todoPhrases } from "./todo-phrases"
 import { quoteIntelligencePhrases } from "./quote-intelligence-phrases"
 import { quoteResponsePhrases } from "./quote-response-phrases"
 import { phoneCallsPhrases } from "./phone-calls-phrases"
+import { contactCardDesignPhrases } from "./contact-card-design-phrases"
 
 type WordDictionary = Record<string, string>
 type PhraseDictionary = Record<string, Partial<Record<LanguageCode, string>>>
@@ -1200,6 +1201,7 @@ const phrases: PhraseDictionary = {
   ...dexterWritingProfilePhrases,
   ...drivePhrases,
   ...userManagementPhrases,
+  ...contactCardDesignPhrases,
   "Booking": { de: "Buchung", fr: "Réservation", ar: "حجز" },
   "Broadcast": { de: "Aussendung", fr: "Diffusion", ar: "رسالة جماعية" },
   "Report": { de: "Bericht", fr: "Rapport", ar: "تقرير" },
@@ -4045,6 +4047,23 @@ const phrases: PhraseDictionary = {
   "Human replies and CRM activity are checked automatically. Sent email is prompted after 3 days, then 5 days after the next attempt.": { de: "Persönliche Antworten und CRM-Aktivitäten werden automatisch geprüft. Gesendete E-Mails werden nach 3 Tagen und nach dem nächsten Versuch nach 5 Tagen erinnert.", fr: "Les réponses humaines et l’activité CRM sont vérifiées automatiquement. Un e-mail envoyé est relancé après 3 jours, puis 5 jours après la tentative suivante.", ar: "يتم فحص الردود البشرية ونشاط إدارة العملاء تلقائيًا. تتم المطالبة بمتابعة البريد المرسل بعد 3 أيام، ثم بعد 5 أيام من المحاولة التالية." },
   "Replies due": { de: "Antworten fällig", fr: "Réponses dues", ar: "ردود مستحقة" },
   "Who needs following up": { de: "Wer eine Nachfassaktion braucht", fr: "Qui doit être relancé", ar: "من يحتاج إلى متابعة" },
+  "Answer their question": { de: "Frage beantworten", fr: "Répondre à sa question", ar: "أجب عن سؤاله" },
+  "Answer their pricing question": { de: "Preisfrage beantworten", fr: "Répondre à sa question sur le prix", ar: "أجب عن سؤاله حول السعر" },
+  "Confirm the collection or delivery timing": { de: "Abhol- oder Lieferzeit bestätigen", fr: "Confirmer l’heure d’enlèvement ou de livraison", ar: "أكد توقيت الاستلام أو التسليم" },
+  "Send the requested documents": { de: "Angeforderte Dokumente senden", fr: "Envoyer les documents demandés", ar: "أرسل المستندات المطلوبة" },
+  "Resolve the concern and reply": { de: "Anliegen klären und antworten", fr: "Résoudre le problème et répondre", ar: "عالج المشكلة ورد" },
+  "Review the attachment and reply": { de: "Anhang prüfen und antworten", fr: "Vérifier la pièce jointe et répondre", ar: "راجع المرفق ورد" },
+  "Reply with the next step": { de: "Mit dem nächsten Schritt antworten", fr: "Répondre avec la prochaine étape", ar: "رد بالخطوة التالية" },
+  "Check whether they want to proceed with the quote": { de: "Klären, ob das Angebot angenommen werden soll", fr: "Vérifier s’il souhaite donner suite au devis", ar: "تحقق مما إذا كان يريد المتابعة بالعرض" },
+  "Ask for the outstanding documents": { de: "Fehlende Dokumente anfordern", fr: "Demander les documents manquants", ar: "اطلب المستندات المتبقية" },
+  "Confirm the agreed next step": { de: "Vereinbarten nächsten Schritt bestätigen", fr: "Confirmer la prochaine étape convenue", ar: "أكد الخطوة التالية المتفق عليها" },
+  "Make a personal final check-in": { de: "Ein letztes persönliches Nachfassen senden", fr: "Faire une dernière relance personnelle", ar: "أجر متابعة شخصية أخيرة" },
+  "Follow up on the last conversation": { de: "Beim letzten Gespräch nachfassen", fr: "Relancer après la dernière conversation", ar: "تابع المحادثة الأخيرة" },
+  "Make first contact": { de: "Erstkontakt aufnehmen", fr: "Prendre un premier contact", ar: "ابدأ التواصل الأول" },
+  "Complete the planned follow-up": { de: "Geplante Nachfassaktion erledigen", fr: "Effectuer la relance planifiée", ar: "أكمل المتابعة المخططة" },
+  "Review the conversation with {name} ({address}) about “{subject}”. The recommended next action is: {action}. Help me complete it.": { de: "Prüfe das Gespräch mit {name} ({address}) über „{subject}“. Die empfohlene nächste Aktion lautet: {action}. Hilf mir, sie abzuschließen.", fr: "Examine la conversation avec {name} ({address}) au sujet de « {subject} ». La prochaine action recommandée est : {action}. Aide-moi à la réaliser.", ar: "راجع المحادثة مع {name} ({address}) حول «{subject}». الإجراء التالي الموصى به هو: {action}. ساعدني في إكماله." },
+  "Nobody needs a follow-up right now. New replies and due CRM actions will appear here.": { de: "Derzeit ist keine Nachfassaktion nötig. Neue Antworten und fällige CRM-Aktionen erscheinen hier.", fr: "Aucune relance n’est nécessaire pour le moment. Les nouvelles réponses et actions CRM dues apparaîtront ici.", ar: "لا أحد يحتاج إلى متابعة الآن. ستظهر هنا الردود الجديدة وإجراءات إدارة العملاء المستحقة." },
+  "Actionable replies, overdue conversations, and due CRM actions will appear here automatically.": { de: "Handlungsrelevante Antworten, überfällige Gespräche und fällige CRM-Aktionen erscheinen hier automatisch.", fr: "Les réponses nécessitant une action, les conversations en retard et les actions CRM dues apparaîtront ici automatiquement.", ar: "ستظهر هنا تلقائيًا الردود القابلة للتنفيذ والمحادثات المتأخرة وإجراءات إدارة العملاء المستحقة." },
   "Prioritised from live email and CRM activity": { de: "Aus Live-E-Mails und CRM-Aktivitäten priorisiert", fr: "Priorisé à partir des e-mails et de l’activité CRM en direct", ar: "مرتبة حسب البريد المباشر ونشاط إدارة العملاء" },
   "Checked": { de: "Geprüft", fr: "Vérifié", ar: "آخر فحص" },
   "Person or account": { de: "Person oder Konto", fr: "Personne ou compte", ar: "الشخص أو الحساب" },
@@ -4097,6 +4116,12 @@ const phrases: PhraseDictionary = {
   "Account created": { de: "Konto erstellt", fr: "Compte créé", ar: "تم إنشاء الحساب" },
   "New account": { de: "Neues Konto", fr: "Nouveau compte", ar: "حساب جديد" },
   "New card": { de: "Neue Karte", fr: "Nouvelle carte", ar: "بطاقة جديدة" },
+  "Recent exchanges": { de: "Letzte Kontakte", fr: "Échanges récents", ar: "عمليات التبادل الأخيرة" },
+  "The most recent people who shared their details.": { de: "Die neuesten Personen, die ihre Kontaktdaten geteilt haben.", fr: "Les dernières personnes ayant partagé leurs coordonnées.", ar: "أحدث الأشخاص الذين شاركوا بيانات التواصل الخاصة بهم." },
+  "No exchanges yet": { de: "Noch keine Kontakte", fr: "Aucun échange pour le moment", ar: "لا توجد عمليات تبادل بعد" },
+  "Share the code and the first contacts will appear here.": { de: "Teilen Sie den Code. Die ersten Kontakte erscheinen dann hier.", fr: "Partagez le code : les premiers contacts apparaîtront ici.", ar: "شارك الرمز وستظهر جهات الاتصال الأولى هنا." },
+  "Matched existing": { de: "Bestehender Kontakt", fr: "Contact existant", ar: "تمت المطابقة مع جهة موجودة" },
+  "Completed exchanges": { de: "Abgeschlossene Kontakte", fr: "Échanges terminés", ar: "عمليات التبادل المكتملة" },
   "Create a QR contact card": { de: "QR-Kontaktkarte erstellen", fr: "Créer une carte de contact QR", ar: "إنشاء بطاقة تواصل برمز QR" },
   "A card represents one person. The public page, lead source and any automation can be set up afterwards.": { de: "Eine Karte steht für eine Person. Die öffentliche Seite, die Lead-Quelle und Automatisierungen können anschließend eingerichtet werden.", fr: "Une carte représente une personne. La page publique, la source du prospect et les automatisations peuvent être configurées ensuite.", ar: "تمثل البطاقة شخصًا واحدًا. ويمكن إعداد الصفحة العامة ومصدر العميل المحتمل وأي أتمتة لاحقًا." },
   "Person": { de: "Person", fr: "Personne", ar: "الشخص" },

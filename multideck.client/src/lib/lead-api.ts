@@ -1,6 +1,7 @@
 import { callCrmMutation, callCrmRpc, CrmSupabaseError } from "@/lib/crm-supabase"
 import { invalidateCrmResources, readCachedCrmResource, type CrmReadOptions } from "@/lib/crm-read-cache"
 import { fallbackEngagementSignal, getCrmEngagementSignals, type CrmEngagementSignal } from "@/lib/crm-engagement"
+import type { FollowUpRecommendationCode } from "@/lib/follow-up-recommendation"
 import { getSupabaseSession, supabase } from "@/lib/supabase"
 
 export type ApiLead = {
@@ -126,7 +127,7 @@ export type CrmFollowUpOpportunity = {
   source: "email" | "activity"
   threadId: string | null
   mailboxId: string | null
-  recordType: "lead" | "contact" | "account" | "unmatched"
+  recordType: "lead" | "contact" | "account" | "deal" | "quote" | "unmatched"
   recordId: string | null
   companyName: string | null
   personName: string | null
@@ -142,6 +143,8 @@ export type CrmFollowUpOpportunity = {
   location: string | null
   canCreate: boolean
   outboundAttempts: number
+  /** Optional during a migration rollout; the client uses a safe generic action until the RPC is upgraded. */
+  recommendationCode?: FollowUpRecommendationCode
 }
 
 export type CrmFollowUpData = {

@@ -6,7 +6,10 @@ const migration = readFileSync(new URL("../migrations/20260803150000_crm_shawn_e
 const companyDashboard = readFileSync(new URL("../migrations/20260808000440_crm_dashboard_company_deals.sql", import.meta.url), "utf8")
 const dexter = readFileSync(new URL("../migrations/20260803152000_dexter_crm_essentials.sql", import.meta.url), "utf8")
 const followUps = readFileSync(new URL("../migrations/20260803212017_crm_follow_up_opportunities.sql", import.meta.url), "utf8")
+const contextualFollowUps = readFileSync(new URL("../migrations/20260824153000_contextual_follow_up_recommendations.sql", import.meta.url), "utf8")
 const page = readFileSync(new URL("../../multideck.client/src/pages/crm-page.tsx", import.meta.url), "utf8")
+const homePage = readFileSync(new URL("../../multideck.client/src/pages/home-page.tsx", import.meta.url), "utf8")
+const homeFollowUps = readFileSync(new URL("../../multideck.client/src/lib/home-follow-ups.ts", import.meta.url), "utf8")
 const app = readFileSync(new URL("../../multideck.client/src/App.tsx", import.meta.url), "utf8")
 const translations = readFileSync(new URL("../../multideck.client/src/i18n/translate.ts", import.meta.url), "utf8")
 const forms = readFileSync(new URL("../../multideck.client/src/pages/crm-forms-page.tsx", import.meta.url), "utf8")
@@ -15,6 +18,7 @@ const crmComponents = readFileSync(new URL("../../multideck.client/src/component
 const pipelineEditor = readFileSync(new URL("../../multideck.client/src/components/multideck/crm-pipeline-editor.tsx", import.meta.url), "utf8")
 const demoIsolation = readFileSync(new URL("../migrations/20260818092918_crm_demo_lead_isolation.sql", import.meta.url), "utf8")
 const qaLeadMarkers = readFileSync(new URL("../migrations/20260818093051_crm_mark_qa_leads_demo.sql", import.meta.url), "utf8")
+const dexterFunction = readFileSync(new URL("../functions/agent-dexter/index.ts", import.meta.url), "utf8")
 
 test("CRM dashboard keeps personal work user-scoped and uses company-visible deals", () => {
   assert.match(migration, /multideck_crm_get_dashboard/)
@@ -49,6 +53,27 @@ test("follow-up opportunities are deterministic, mailbox-scoped and require revi
   assert.match(dashboard, /className="md-crm-row-open-target"/)
   assert.match(dashboard, /sideInteractive=\{opportunity\.canCreate\}/)
   assert.doesNotMatch(dashboard, /role=\{onOpen \? "button"/)
+})
+
+test("Home and CRM share a contextual follow-up queue without exposing ranking reasons", () => {
+  assert.match(contextualFollowUps, /_multideck_crm_get_follow_up_candidates_v1/)
+  assert.match(contextualFollowUps, /CommDelivery_EventTypeCode[\s\S]*\(bounce\|fail\|reject\)/)
+  assert.match(contextualFollowUps, /has_acknowledgement/)
+  assert.match(contextualFollowUps, /has_closed_conversation/)
+  assert.match(contextualFollowUps, /CRMLead_FirstResponseDueAt/)
+  assert.match(contextualFollowUps, /CRMOppty_NextActionDueAt/)
+  assert.match(contextualFollowUps, /CusQuoteHeader_FollowUpAt/)
+  assert.match(contextualFollowUps, /recommendationCode/)
+  assert.match(contextualFollowUps, /person_rank = 1/)
+  assert.match(contextualFollowUps, /never the internal ranking reasons/)
+  assert.doesNotMatch(contextualFollowUps, /'recommendationReason'/)
+  assert.doesNotMatch(contextualFollowUps, /'rankingReasons'/)
+  assert.match(homeFollowUps, /getCrmFollowUpOpportunities/)
+  assert.doesNotMatch(homeFollowUps, /listThreads|unreadCount/)
+  assert.match(homePage, /formatFollowUpRecommendation/)
+  assert.match(dashboard, /formatFollowUpRecommendation/)
+  assert.match(dexterFunction, /exact hidden ordering or ranking reasons/)
+  assert.match(dexterFunction, /existing event-driven Watching for you adapters/)
 })
 
 test("deal stages localise counts and empty states", () => {
