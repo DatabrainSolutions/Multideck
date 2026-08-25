@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { AiBrain, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, PencilEdit01, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
+import { AiBrain, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, PencilEdit01, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Star, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -496,6 +496,40 @@ function SidebarSectionItem({ children, layout = false }: { children: ReactNode;
 }
 
 const areasScopeId = "areas"
+const favouritesScopeId = "favourites"
+const maximumSidebarFavourites = 2
+
+type SidebarFavourite = {
+  id: string
+  item: NavItem
+  areaId: string
+  destinationId?: string
+}
+
+function sidebarFavouriteId(areaId: string, destinationId?: string, route?: string) {
+  if (!destinationId) return `area:${areaId}`
+  return route ? `destination:${areaId}:${destinationId}:${route}` : `destination:${areaId}:${destinationId}`
+}
+
+function sidebarFavouriteCandidates(areas: SidebarArea[]) {
+  const candidates = new Map<string, SidebarFavourite>()
+
+  areas.forEach((area) => {
+    const areaId = sidebarFavouriteId(area.id)
+    candidates.set(areaId, { id: areaId, item: { label: area.label, icon: area.icon }, areaId: area.id })
+
+    area.destinations.forEach((destination) => {
+      const destinationId = sidebarFavouriteId(area.id, destination.id, destination.route)
+      candidates.set(destinationId, { id: destinationId, item: destination, areaId: area.id, destinationId: destination.id })
+      destination.children?.forEach((child) => {
+        const childId = sidebarFavouriteId(area.id, destination.id, child.route ?? child.label)
+        candidates.set(childId, { id: childId, item: child, areaId: area.id, destinationId: destination.id })
+      })
+    })
+  })
+
+  return candidates
+}
 
 function SidebarArrangeHeader({ label, onExit }: { label: string; onExit: () => void }) {
   const { t } = useLanguage()
@@ -538,6 +572,10 @@ function CustomisableSidebarSection({
   collapsed,
   arranging,
   onArrangingChange,
+  favouriteIds,
+  favouriteLimitReached,
+  favouriteIdForItem,
+  onToggleFavourite,
   className,
 }: {
   scopeId: string
@@ -549,6 +587,10 @@ function CustomisableSidebarSection({
   collapsed: boolean
   arranging: boolean
   onArrangingChange: (arranging: boolean) => void
+  favouriteIds?: Set<string>
+  favouriteLimitReached?: boolean
+  favouriteIdForItem?: (id: string) => string | null
+  onToggleFavourite?: (id: string) => void
   className?: string
 }) {
   const { t } = useLanguage()
@@ -592,10 +634,19 @@ function CustomisableSidebarSection({
   const rows: ReactNode[] = []
   orderedIds.forEach((id, index) => {
     const pinned = index < pinnedIds.length
+    const favouriteId = favouriteIdForItem?.(id) ?? null
+    const favourite = Boolean(favouriteId && favouriteIds?.has(favouriteId))
 
     rows.push(
       <SidebarSectionItem key={id} layout>
-        <SidebarItemMenu pinned={pinned} onTogglePin={() => togglePin(id)} onReorder={() => onArrangingChange(true)}>
+        <SidebarItemMenu
+          pinned={pinned}
+          onTogglePin={() => togglePin(id)}
+          favourite={favourite}
+          onToggleFavourite={favouriteId && onToggleFavourite ? () => onToggleFavourite(favouriteId) : undefined}
+          favouriteDisabled={Boolean(favouriteLimitReached && !favourite)}
+          onReorder={() => onArrangingChange(true)}
+        >
           {renderItem(id, pinned)}
           {pinned && !collapsed ? (
             <button
@@ -1095,6 +1146,14 @@ export function AppSidebar({
       item.route !== "/warehouse/users" || canManageWarehouseUsers)
     return [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations }]
   }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, canReadPhoneCalls, crmDealCount, crmLeadCount])
+  const favouriteCandidates = useMemo(() => sidebarFavouriteCandidates(availableAreas), [availableAreas])
+  const { scope: favouritesScope, save: saveFavourites } = useSidebarLayoutScope(favouritesScopeId)
+  const favouriteIds = useMemo(
+    () => favouritesScope.pinned.filter((id) => favouriteCandidates.has(id)).slice(0, maximumSidebarFavourites),
+    [favouriteCandidates, favouritesScope.pinned],
+  )
+  const favouriteIdSet = useMemo(() => new Set(favouriteIds), [favouriteIds])
+  const favouriteLimitReached = favouriteIds.length >= maximumSidebarFavourites
   const initialArea = isSettingsRoute
     ? undefined
     : isCustomer
@@ -1342,6 +1401,27 @@ export function AppSidebar({
     setExpandedDestinationIds(new Set(activeDestinationIds(area, route)))
   }
 
+  function toggleSidebarFavourite(id: string) {
+    const next = favouriteIdSet.has(id)
+      ? favouriteIds.filter((entry) => entry !== id)
+      : favouriteLimitReached ? favouriteIds : [...favouriteIds, id]
+    saveFavourites(next.length > 0 ? { order: [], pinned: next } : null)
+  }
+
+  function openSidebarFavourite(favourite: SidebarFavourite) {
+    if (favourite.item.route) {
+      navigate(favourite.item.route)
+      return
+    }
+
+    const area = availableAreas.find((entry) => entry.id === favourite.areaId)
+    if (!area) return
+    openArea(area)
+    if (favourite.destinationId) {
+      setExpandedDestinationIds((current) => new Set(current).add(favourite.destinationId!))
+    }
+  }
+
   function setArranging(scopeId: string, arranging: boolean) {
     // Rows need their labels to be arrangeable, so a collapsed rail opens first.
     if (arranging && collapsed) onCollapsedChange?.(false)
@@ -1449,6 +1529,25 @@ export function AppSidebar({
     </SidebarSectionItem>
   )
 
+  const favouriteSidebarItems = favouriteIds.map((id) => {
+    const favourite = favouriteCandidates.get(id)
+    if (!favourite) return null
+
+    return (
+      <SidebarSectionItem key={id} layout>
+        <SidebarItemMenu favourite onToggleFavourite={() => toggleSidebarFavourite(id)}>
+          <SidebarNavItem
+            item={favourite.item}
+            isActive={favourite.item.route ? routeMatches(favourite.item, route) : false}
+            onClick={() => openSidebarFavourite(favourite)}
+            collapsed={collapsed}
+            trailing={<Star className="size-3.5 text-[var(--md-accent)]" fill="currentColor" strokeWidth={1.3} />}
+          />
+        </SidebarItemMenu>
+      </SidebarSectionItem>
+    )
+  })
+
   const dexterSidebarItem = (
     <SidebarSectionItem>
       <SidebarNavItem
@@ -1519,7 +1618,7 @@ export function AppSidebar({
         >
           <div>
         {isSettingsRoute || isCustomer || isAgentRoute || isInboxRoute ? null : (
-          <SidebarSection>{homeSidebarItem}{inboxSidebarItem}{todoSidebarItem}{dexterSidebarItem}</SidebarSection>
+          <SidebarSection>{homeSidebarItem}{inboxSidebarItem}{todoSidebarItem}{favouriteSidebarItems}{dexterSidebarItem}</SidebarSection>
         )}
 
         <AnimatePresence mode="popLayout" initial={false}>
@@ -1899,6 +1998,15 @@ export function AppSidebar({
                 collapsed={collapsed}
                 arranging={arrangingScopeId === activeArea.id}
                 onArrangingChange={(next) => setArranging(activeArea.id, next)}
+                favouriteIds={favouriteIdSet}
+                favouriteLimitReached={favouriteLimitReached}
+                favouriteIdForItem={(id) => {
+                  const promoted = nestedDestinationsById.get(id)
+                  if (promoted) return sidebarFavouriteId(activeArea.id, promoted.parentId, promoted.item.route ?? promoted.item.label)
+                  const destination = destinationsById.get(id)
+                  return destination ? sidebarFavouriteId(activeArea.id, destination.id, destination.route) : null
+                }}
+                onToggleFavourite={toggleSidebarFavourite}
                 renderItem={(id, pinned) => {
                   const promotedDestination = nestedDestinationsById.get(id)
                   if (promotedDestination) {
@@ -1948,6 +2056,7 @@ export function AppSidebar({
                               <AnimatePresence initial={false}>
                                 {destination.children?.map((child) => {
                                   const childId = nestedDestinationId(destination.id, child)
+                                  const favouriteId = sidebarFavouriteId(activeArea.id, destination.id, child.route ?? child.label)
                                   if (activeAreaPinnedIds.has(childId)) return null
 
                                   return (
@@ -1960,7 +2069,12 @@ export function AppSidebar({
                                       transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
                                       className="overflow-hidden"
                                     >
-                                      <SidebarItemMenu onTogglePin={() => toggleActiveAreaPin(childId)}>
+                                      <SidebarItemMenu
+                                        onTogglePin={() => toggleActiveAreaPin(childId)}
+                                        favourite={favouriteIdSet.has(favouriteId)}
+                                        onToggleFavourite={() => toggleSidebarFavourite(favouriteId)}
+                                        favouriteDisabled={favouriteLimitReached && !favouriteIdSet.has(favouriteId)}
+                                      >
                                         <SidebarNavItem
                                           item={child}
                                           isActive={routeMatches(child, route)}
@@ -2004,6 +2118,10 @@ export function AppSidebar({
                 collapsed={collapsed}
                 arranging={arrangingScopeId === areasScopeId}
                 onArrangingChange={(next) => setArranging(areasScopeId, next)}
+                favouriteIds={favouriteIdSet}
+                favouriteLimitReached={favouriteLimitReached}
+                favouriteIdForItem={(id) => sidebarFavouriteId(id)}
+                onToggleFavourite={toggleSidebarFavourite}
                 renderItem={(id, pinned) => {
                   const area = availableAreas.find((entry) => entry.id === id)
                   if (!area) return null

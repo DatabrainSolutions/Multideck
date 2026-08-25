@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useTheme } from "@/lib/theme-provider"
-import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, PackageCheck, Pencil, Pin, Search, Settings2, Ship, Trash2, UserRound, Zap } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, PackageCheck, Pencil, Pin, Search, Settings2, Ship, Star, Trash2, UserRound, Zap } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
@@ -1403,6 +1403,7 @@ function QuoteDetailControlsPreview() {
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
   const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
+  const [previewSidebarFavouriteIds, setPreviewSidebarFavouriteIds] = useState<string[]>([])
   const [previewTodoChecked, setPreviewTodoChecked] = useState(false)
   const [previewArrangeOrder, setPreviewArrangeOrder] = useState<string[]>(previewSidebarOrder)
   const [previewArrangePinned, setPreviewArrangePinned] = useState<string[]>([])
@@ -2068,24 +2069,36 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "sidebar-item-menu" ? (
         <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
-          <p className="mb-2 px-2 text-[11px] text-[var(--md-subtle)]">Right-click a row to pin or reorder it.</p>
+          <p className="mb-2 px-2 text-[11px] text-[var(--md-subtle)]">Right-click a row to pin, favourite or reorder it.</p>
           {previewSidebarRows.map((row) => {
             const pinned = previewSidebarPinnedIds.includes(row.id)
+            const favourite = previewSidebarFavouriteIds.includes(row.id)
 
             return (
               <SidebarItemMenu
                 key={row.id}
                 pinned={pinned}
+                favourite={favourite}
+                favouriteDisabled={!favourite && previewSidebarFavouriteIds.length >= 2}
                 onTogglePin={() =>
                   setPreviewSidebarPinnedIds((current) =>
                     current.includes(row.id) ? current.filter((entry) => entry !== row.id) : [...current, row.id],
+                  )
+                }
+                onToggleFavourite={() =>
+                  setPreviewSidebarFavouriteIds((current) =>
+                    current.includes(row.id)
+                      ? current.filter((entry) => entry !== row.id)
+                      : current.length < 2 ? [...current, row.id] : current,
                   )
                 }
                 onReorder={() => undefined}
               >
                 <SidebarNavItem
                   item={{ label: row.label, icon: row.icon }}
-                  trailing={pinned ? <Pin className="size-3 -rotate-[32deg] text-[var(--md-accent)]" strokeWidth={1.6} /> : undefined}
+                  trailing={favourite
+                    ? <Star className="size-3 text-[var(--md-accent)]" fill="currentColor" strokeWidth={1.3} />
+                    : pinned ? <Pin className="size-3 -rotate-[32deg] text-[var(--md-accent)]" strokeWidth={1.6} /> : undefined}
                   onClick={() => undefined}
                 />
               </SidebarItemMenu>
