@@ -100,8 +100,6 @@ function preloadImage(url: string) {
   })
 }
 
-import { DesignProbePage } from "@/pages/design-probe-page"
-
 const validRoutes = new Set([
   "/",
   "/agent-dexter",
@@ -700,7 +698,7 @@ export default function App() {
                   {route === "/documents" || route === "/documents/templates" ? <DocumentsPage navigate={navigate} /> : null}
                   {route.startsWith("/customs/") ? <CustomsDeclarationsPage route={route} navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/compliance/screening" ? <ScreeningPage /> : null}
-                  {route === "/playground/navigation" ? <DesignProbePage /> : null}
+                  {route === "/playground/navigation" ? <NavigationLabPage /> : null}
                   {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/quotes/new" ? <QuoteDetailPage key={route} variant="cargowise" quoteId="NEW" navigate={navigate} /> : null}
                   {route !== "/quotes/new" && isQuoteDetailRoute(route) ? <QuoteDetailPage key={route} variant="cargowise" quoteId={route.split("/").at(-1)} navigate={navigate} /> : null}

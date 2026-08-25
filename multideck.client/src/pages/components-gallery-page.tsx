@@ -72,7 +72,7 @@ import {
 } from "@/components/multideck/customer-components"
 import { CrmActivityTimeline, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
 import { CopyableField } from "@/components/multideck/copyable-field"
-import { CardMiniature, CardStylePresetPicker, ContactCardHeaderPicker, ContactCardLayoutPicker, ContactCardSocialLinksEditor, QrStylePicker } from "@/components/multideck/contact-card-design"
+import { CardMiniature, CardStylePresetPicker, ContactCardLayoutPicker, ContactCardSocialLinksEditor, QrStylePicker } from "@/components/multideck/contact-card-design"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
 import { OrganisationFoundationPanel } from "@/components/multideck/organisation-foundation-panel"
 import { AutomationRunHistory } from "@/components/multideck/contact-card-automation"
@@ -3744,7 +3744,7 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="grid w-full max-w-[860px] grid-cols-2 gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)] sm:grid-cols-4">
           {(["classic", "editorial", "compact", "spotlight"] as const).map((layout) => (
             <div key={layout} className="grid gap-1.5">
-              <div className="aspect-[3/4] overflow-hidden rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]">
+              <div className="aspect-[2/3] overflow-hidden rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]">
                 <CardMiniature branding={{ ...previewCardBranding, layout }} />
               </div>
               <p className="px-0.5 text-[12px] text-[var(--md-subtle)]">{layout}</p>
@@ -3768,16 +3768,6 @@ function ComponentPreview({ id }: { id: string }) {
             branding={{ ...previewCardBranding, layout: previewContactLayout }}
             value={previewContactLayout}
             onChange={setPreviewContactLayout}
-          />
-        </div>
-      ) : null}
-
-      {id === "contact-card-header-picker" ? (
-        <div className="w-full max-w-[860px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
-          <ContactCardHeaderPicker
-            branding={previewCardBranding}
-            value={previewCardBranding.headerStyle}
-            onChange={(headerStyle) => setPreviewCardBranding((branding) => ({ ...branding, headerStyle }))}
           />
         </div>
       ) : null}

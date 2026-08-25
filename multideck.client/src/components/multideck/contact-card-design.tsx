@@ -455,13 +455,10 @@ export function CardMiniature({
           : {}),
       }}
     >
-      <div className="grid" style={{ gap: spec.field.gap }}>
-        <div className="grid" style={{ gap: spec.field.gap, gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
-          {field(t("First name"))}
-          {field(t("Last name"))}
-        </div>
-        {field(t("Work email"))}
-      </div>
+      {/* One field, not the whole form. The button has to land inside the frame
+          for every arrangement, and a thumbnail only needs to say where the form
+          starts and what the action looks like. */}
+      {field(t("Work email"))}
       <div
         className="mt-6 grid w-full place-items-center font-medium"
         style={{ height: 54, borderRadius: theme.radiusField, backgroundColor: theme.actionBg, color: theme.actionInk, fontSize: 15 }}
@@ -500,7 +497,13 @@ export function CardMiniature({
       className={cn("relative size-full overflow-hidden", className)}
       style={{ backgroundColor: theme.pageBg }}
     >
-      <div style={{ width: DESIGN_WIDTH, transform: `scale(${scale})`, transformOrigin: "top left", opacity: scale ? 1 : 0 }}>
+      {/* Anchored to the physical top-left and scaled from that corner, so the
+          render lands inside the frame in a right-to-left language too. The card
+          itself still inherits the page direction and mirrors with it. */}
+      <div
+        className="absolute top-0"
+        style={{ left: 0, width: DESIGN_WIDTH, transform: `scale(${scale})`, transformOrigin: "top left", opacity: scale ? 1 : 0 }}
+      >
         {header}
         <div
           className={cn("mx-auto", spec.centred && "text-center")}
@@ -957,7 +960,9 @@ export function ContactCardLayoutPicker({
           selected={value === preset.id}
           label={t(preset.label)}
           detail={t(preset.detail)}
-          aspect="3 / 4"
+          /* Four across is narrower than three, so the frame has to be taller for
+             the tallest arrangement to still show its button. */
+          aspect="2 / 3"
           onSelect={() => onChange(preset.id)}
         >
           <CardMiniature branding={{ ...base, layout: preset.id }} content={content} />
