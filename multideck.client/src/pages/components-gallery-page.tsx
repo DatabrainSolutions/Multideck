@@ -75,6 +75,30 @@ import { CopyableField } from "@/components/multideck/copyable-field"
 import { CardMiniature, CardStylePresetPicker, ContactCardLayoutPicker, ContactCardSocialLinksEditor, QrStylePicker } from "@/components/multideck/contact-card-design"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
 import { OrganisationFoundationPanel } from "@/components/multideck/organisation-foundation-panel"
+import {
+  AmountCurrencyField,
+  CargoCharacteristicsField,
+  CompactCombobox,
+  CompactFieldRow,
+  CompactSectionShell,
+  IncotermField,
+  LocationFields,
+  NumberUnitField,
+  RecurrenceBuilder,
+} from "@/components/multideck/quote-details/quote-detail-fields"
+import {
+  EMPTY_CARGO_CHARACTERISTICS,
+  EMPTY_HAZARDOUS_DETAILS,
+  EMPTY_LOCATION,
+  EMPTY_RECURRENCE,
+  type AmountCurrencyValue,
+  type CargoCharacteristics,
+  type HazardousDetails,
+  type IncotermCode,
+  type LocationValue,
+  type NumberUnitValue,
+  type RecurrenceValue,
+} from "@/components/multideck/quote-details/quote-detail-model"
 import { AutomationRunHistory } from "@/components/multideck/contact-card-automation"
 import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { CrmPipelineEditor } from "@/components/multideck/crm-pipeline-editor"
@@ -1337,6 +1361,45 @@ const previewPhoneCallProviders = [
   { provider: "3cx" as const, label: "3CX employee calls", detail: "3CX call-detail and transcript collector", state: "not_configured" as const, lastAttemptAt: null, lastSucceededAt: null, lastFailedAt: null, consecutiveFailures: 0, errorCode: null },
 ]
 
+function QuoteDetailControlsPreview() {
+  const [company, setCompany] = useState("Brook Taverner Ltd")
+  const [incoterm, setIncoterm] = useState<IncotermCode | "">("FCA")
+  const [namedPlace, setNamedPlace] = useState("Antwerp")
+  const [location, setLocation] = useState<LocationValue>({ ...EMPTY_LOCATION, countryCode: "BE", countryName: "Belgium", place: "Antwerp", unlocode: "BEANR" })
+  const [transit, setTransit] = useState<NumberUnitValue>({ value: "10", unit: "Days" })
+  const [recurrence, setRecurrence] = useState<RecurrenceValue>({ ...EMPTY_RECURRENCE, mode: "interval", interval: "2", unit: "week" })
+  const [amount, setAmount] = useState<AmountCurrencyValue>({ amount: "18000", currency: "EUR" })
+  const [characteristics, setCharacteristics] = useState<CargoCharacteristics>(EMPTY_CARGO_CHARACTERISTICS)
+  const [hazardous, setHazardous] = useState<HazardousDetails>(EMPTY_HAZARDOUS_DETAILS)
+  const organisationOptions = [
+    { id: "brook", value: "Brook Taverner Ltd", label: "Brook Taverner Ltd", description: "BROOKTAV · Customer" },
+    { id: "med", value: "Mediterranean Spice Trading", label: "Mediterranean Spice Trading", description: "MEDIT0001 · Supplier" },
+    { id: "pacific", value: "Pacific Goods Co", label: "Pacific Goods Co", description: "PACIF001 · Customer" },
+  ]
+  const locations = [
+    { id: "beanr", countryCode: "BE", countryName: "Belgium", place: "Antwerp", unlocode: "BEANR", kind: "port" as const, recommended: true },
+    { id: "gbfxt", countryCode: "GB", countryName: "United Kingdom", place: "Felixstowe", unlocode: "GBFXT", kind: "port" as const },
+    { id: "cnsha", countryCode: "CN", countryName: "China", place: "Shanghai", unlocode: "CNSHA", kind: "port" as const },
+  ]
+  const locationCountries = locations.map(({ countryCode, countryName }) => ({ code: countryCode, name: countryName }))
+
+  return (
+    <CompactSectionShell title="Quote detail controls" meta="Content-shaped fields with linked freight data" className="w-full max-w-[980px]">
+      <div className="grid gap-4">
+        <CompactFieldRow>
+          <CompactCombobox label="Shipper" value={company} options={organisationOptions} recommendedOptions={[organisationOptions[0]]} recommendedLabel="Current, recent & related" allLabel="All organisations" onValueChange={setCompany} width="grow" />
+          <NumberUnitField label="Transit time" value={transit} units={[{ value: "Hours", label: "Hours" }, { value: "Days", label: "Days" }, { value: "Weeks", label: "Weeks" }]} onChange={setTransit} />
+          <AmountCurrencyField label="Goods value" value={amount} currencies={["GBP", "EUR", "USD"]} onChange={setAmount} />
+        </CompactFieldRow>
+        <IncotermField value={incoterm} onValueChange={setIncoterm} namedLocation={namedPlace} onNamedLocationChange={setNamedPlace} />
+        <LocationFields label="Origin" value={location} options={locations} countries={locationCountries} onChange={setLocation} />
+        <RecurrenceBuilder value={recurrence} onChange={setRecurrence} />
+        <CargoCharacteristicsField value={characteristics} onChange={setCharacteristics} hazardousDetails={hazardous} onHazardousDetailsChange={setHazardous} />
+      </div>
+    </CompactSectionShell>
+  )
+}
+
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
   const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
@@ -1601,6 +1664,8 @@ function ComponentPreview({ id }: { id: string }) {
           </div>
         </Surface>
       ) : null}
+
+      {id === "quote-detail-controls" ? <QuoteDetailControlsPreview /> : null}
 
       {id === "status-pill" ? (
         <div className="grid w-full max-w-[640px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">

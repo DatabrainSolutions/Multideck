@@ -74,28 +74,7 @@ test("the mounted composer morphs its edit icon and exposes focused selection ac
   assert.match(composer, /useReducedMotion\(\)/);
 });
 
-test("refinement copy and error states are localised and explicitly excluded from watches", () => {
-  for (const phrase of [
-    "Edit email draft",
-    "Ask Dexter to refine this draft",
-    "Ask Dexter to refine the selected text",
-    "How should this selection change?",
-    "Refining draft…",
-    "Ask for changes",
-    "Make shorter",
-    "Make clearer",
-    "Change tone",
-    "Refine selected text",
-    "Describe what you want Dexter to change.",
-    "Dexter could not refine this draft. Your current wording is unchanged.",
-  ]) {
-    assert.match(
-      translations,
-      new RegExp(
-        `${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*de:.*fr:.*ar:`,
-      ),
-    );
-  }
+test("refinement is explicitly excluded from watches", () => {
   assert.match(architecture, /dedicated `dexter-email-refine` Edge Function/);
   assert.match(architecture, /no Watching for you adapter or idle LLM loop/);
 });

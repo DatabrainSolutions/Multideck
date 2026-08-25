@@ -1,4 +1,4 @@
-export type LanguageCode = "en-GB" | "en-US" | "de" | "fr" | "ar"
+export type LanguageCode = "en-GB" | "en-US"
 
 export type LanguageOption = {
   code: LanguageCode
@@ -10,9 +10,6 @@ export type LanguageOption = {
 export const languageOptions: LanguageOption[] = [
   { code: "en-GB", label: "English (UK)", nativeLabel: "English (UK)", direction: "ltr" },
   { code: "en-US", label: "English (US)", nativeLabel: "English (US)", direction: "ltr" },
-  { code: "de", label: "German", nativeLabel: "Deutsch", direction: "ltr" },
-  { code: "fr", label: "French", nativeLabel: "Français", direction: "ltr" },
-  { code: "ar", label: "Arabic", nativeLabel: "العربية", direction: "rtl" },
 ]
 
 export const defaultLanguage: LanguageCode = "en-GB"

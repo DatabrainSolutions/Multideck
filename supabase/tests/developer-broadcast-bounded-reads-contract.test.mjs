@@ -4,12 +4,11 @@ import test from "node:test"
 
 const root = new URL("../", import.meta.url)
 const read = (path) => readFile(new URL(path, root), "utf8")
-const [migration, edge, clientApi, client, phrases] = await Promise.all([
+const [migration, edge, clientApi, client] = await Promise.all([
   read("migrations/20260819114000_developer_broadcast_bounded_reads.sql"),
   read("functions/developer-broadcasts/index.ts"),
   read("../multideck.client/src/lib/developer-broadcast-api.ts"),
   read("../multideck.client/src/components/multideck/broadcast-settings.tsx"),
-  read("../multideck.client/src/i18n/broadcast-settings-phrases.ts"),
 ])
 
 test("Developer Broadcast user selection is an exact bounded service-role page", () => {
@@ -63,12 +62,9 @@ test("the user picker is server searched, cached and never loads the full worksp
   assert.match(client, /"Load more users"/)
 })
 
-test("history and recipient previews remain network bounded with localised recovery controls", () => {
+test("history and recipient previews remain network bounded with recovery controls", () => {
   assert.match(edge, /preview\.recipients\.filter\(\(recipient\) => recipient\.status === "excluded"\)\.slice\(0, 50\)/)
   assert.match(edge, /selection\.userIds\.length > 500/)
   assert.match(client, /getBroadcastState\(await accessToken\(\), \{ historyLimit: state\.historyLimit \?\? 20, historyOffset: state\.history\.length \}\)/)
   assert.match(client, /"Load older broadcasts"/)
-  assert.match(phrases, /"Load older broadcasts": \{ de: .* fr: .* ar:/)
-  assert.match(phrases, /"Search users": \{ de: .* fr: .* ar:/)
-  assert.match(phrases, /"Load more users": \{ de: .* fr: .* ar:/)
 })

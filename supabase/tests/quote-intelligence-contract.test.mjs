@@ -5,7 +5,7 @@ import test from "node:test"
 const root = new URL("../../", import.meta.url)
 const read = (path) => readFile(new URL(path, root), "utf8")
 
-const [migration, worker, engine, runtime, workflow, workflowCore, clientApi, page, phrases, dexter, watchMigration] = await Promise.all([
+const [migration, worker, engine, runtime, workflow, workflowCore, clientApi, page, dexter, watchMigration] = await Promise.all([
   read("supabase/migrations/20260820123000_quote_intelligence.sql"),
   read("supabase/functions/quote-intelligence-worker/index.ts"),
   read("supabase/functions/quote-intelligence/core.ts"),
@@ -14,7 +14,6 @@ const [migration, worker, engine, runtime, workflow, workflowCore, clientApi, pa
   read("supabase/functions/quotes-workflow/core.ts"),
   read("multideck.client/src/lib/quote-workflow-api.ts"),
   read("multideck.client/src/pages/quotes-page.tsx"),
-  read("multideck.client/src/i18n/quote-intelligence-phrases.ts"),
   read("supabase/functions/agent-dexter/index.ts"),
   read("supabase/migrations/20260802140000_dexter_watching_for_you.sql"),
 ])
@@ -74,15 +73,12 @@ test("Luna is batched, governed, fingerprint-bound and limited to one eligible d
   assert.match(worker, /usage_allowance_reached/)
 })
 
-test("the quote UI contains no intelligence fixtures and localises sparse and failure states", () => {
+test("the quote UI contains no intelligence fixtures and exposes sparse and failure states", () => {
   assert.doesNotMatch(page, /£1,092|£1,272\.40|Lane, price and history signal|Inside the recent won range/)
   assert.match(page, /Building baseline/)
   assert.match(page, /Low evidence/)
   assert.match(page, /Intelligence temporarily unavailable/)
   assert.match(page, /aria-live="polite"/)
-  assert.match(phrases, /ar:/)
-  assert.match(phrases, /Building baseline/)
-  assert.match(phrases, /Intelligence temporarily unavailable/)
 })
 
 test("Dexter reads evidence and freshness while watches stay deterministic and transition-deduped", () => {

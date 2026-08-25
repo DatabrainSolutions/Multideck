@@ -11355,7 +11355,7 @@ begin
     raise exception 'Authentication is required.';
   end if;
 
-  if p_locale is null or p_locale not in ('en-GB', 'en-US', 'de', 'fr', 'ar') then
+  if p_locale is null or p_locale not in ('en-GB', 'en-US') then
     raise exception 'The language is invalid.' using errcode = '22023';
   end if;
 
@@ -13724,7 +13724,7 @@ CREATE TABLE IF NOT EXISTS "public"."cmp_Users" (
     CONSTRAINT "CK_cmp_Users_AccentPreset" CHECK ((("User_AccentPreset" IS NULL) OR ("User_AccentPreset" = ANY (ARRAY['teal'::"text", 'meadow'::"text", 'sky'::"text", 'ocean'::"text", 'indigo'::"text", 'violet'::"text", 'plum'::"text", 'rose'::"text", 'ember'::"text", 'graphite'::"text", 'lime'::"text", 'gold'::"text", 'coral'::"text", 'cobalt'::"text", 'fuchsia'::"text"])))),
     CONSTRAINT "CK_cmp_Users_CoverPhoto" CHECK (((("User_CoverPhotoBucket" IS NULL) AND ("User_CoverPhotoPath" IS NULL) AND ("User_CoverPhotoMimeType" IS NULL) AND ("User_CoverPhotoSizeBytes" IS NULL) AND ("User_CoverPhotoUpdatedAt" IS NULL)) OR ((("User_CoverPhotoBucket")::"text" = 'profile-photos'::"text") AND ("User_CoverPhotoPath" IS NOT NULL) AND (("User_CoverPhotoMimeType")::"text" = ANY ((ARRAY['image/jpeg'::character varying, 'image/png'::character varying, 'image/webp'::character varying])::"text"[])) AND (("User_CoverPhotoSizeBytes" >= 1) AND ("User_CoverPhotoSizeBytes" <= 5242880)) AND ("User_CoverPhotoUpdatedAt" IS NOT NULL)))),
     CONSTRAINT "CK_cmp_Users_DefaultInboxProvider" CHECK ((("User_DefaultInboxProviderCode" IS NULL) OR ("User_DefaultInboxProviderCode" = ANY (ARRAY['gmail'::"text", 'outlook'::"text"])))),
-    CONSTRAINT "CK_cmp_Users_Locale" CHECK ((("User_Locale" IS NULL) OR ("User_Locale" = ANY (ARRAY['en-GB'::"text", 'en-US'::"text", 'de'::"text", 'fr'::"text", 'ar'::"text"])))),
+    CONSTRAINT "CK_cmp_Users_Locale" CHECK ((("User_Locale" IS NULL) OR ("User_Locale" = ANY (ARRAY['en-GB'::"text", 'en-US'::"text"])))),
     CONSTRAINT "CK_cmp_Users_ProfilePhoto" CHECK (((("User_ProfilePhotoBucket" IS NULL) AND ("User_ProfilePhotoPath" IS NULL) AND ("User_ProfilePhotoMimeType" IS NULL) AND ("User_ProfilePhotoSizeBytes" IS NULL) AND ("User_ProfilePhotoUpdatedAt" IS NULL)) OR ((("User_ProfilePhotoBucket")::"text" = 'profile-photos'::"text") AND ("User_ProfilePhotoPath" IS NOT NULL) AND (("User_ProfilePhotoMimeType")::"text" = ANY ((ARRAY['image/jpeg'::character varying, 'image/png'::character varying, 'image/webp'::character varying])::"text"[])) AND (("User_ProfilePhotoSizeBytes" >= 1) AND ("User_ProfilePhotoSizeBytes" <= 5242880)) AND ("User_ProfilePhotoUpdatedAt" IS NOT NULL)))),
     CONSTRAINT "CK_cmp_Users_SidebarLayout" CHECK ("private"."is_valid_sidebar_layout"("User_SidebarLayout")),
     CONSTRAINT "CK_cmp_Users_TablePinnedColumns" CHECK ("private"."is_valid_table_pinned_columns"("User_TablePinnedColumns")),

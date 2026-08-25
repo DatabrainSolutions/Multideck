@@ -1,6 +1,6 @@
 import { renderEmailMarkdown } from "./email-markdown.ts"
 
-export type EmailLocale = "en" | "de" | "fr" | "ar"
+export type EmailLocale = "en"
 
 type BrandedEmailOptions = {
   subject: string
@@ -24,8 +24,8 @@ const defaults = {
 }
 
 export function normaliseLocale(value: unknown): EmailLocale {
-  const locale = String(value ?? "").trim().toLowerCase().split(/[-_]/, 1)[0]
-  return locale === "de" || locale === "fr" || locale === "ar" ? locale : "en"
+  void value
+  return "en"
 }
 
 export function escapeHtml(value: string) {
@@ -57,8 +57,8 @@ export function safeMultideckUrl(value: unknown, fallback = defaults.appUrl) {
 }
 
 export function renderBrandedEmail(options: BrandedEmailOptions) {
-  const direction = options.locale === "ar" ? "rtl" : "ltr"
-  const align = options.locale === "ar" ? "right" : "left"
+  const direction = "ltr"
+  const align = "left"
   const structuredBody = options.bodyFormat === "markdown"
     ? renderEmailMarkdown(options.body.join("\n\n"), direction)
     : null

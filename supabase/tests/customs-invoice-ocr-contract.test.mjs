@@ -108,13 +108,12 @@ test("purchase order PDFs reuse the authenticated cached extraction boundary and
 })
 
 test("the client uploads immediately, restores server results and applies reviewed lines", async () => {
-  const [transport, preview, recovery, workspace, declarations, phrases, folderAnimation, importLogic, dexter] = await Promise.all([
+  const [transport, preview, recovery, workspace, declarations, folderAnimation, importLogic, dexter] = await Promise.all([
     read("multideck.client/src/lib/customs-invoice-import-api.ts"),
     read("multideck.client/src/lib/customs-invoice-pdf-preview.ts"),
     read("multideck.client/src/lib/customs-invoice-import-recovery.ts"),
     read("multideck.client/src/pages/customs-invoice-import-workspace.tsx"),
     read("multideck.client/src/pages/customs-declarations-page.tsx"),
-    read("multideck.client/src/i18n/customs-declaration-phrases.ts"),
     read("multideck.client/src/assets/animations/docs-folder.json"),
     read("multideck.client/src/lib/customs-invoice-import.ts"),
     read("supabase/functions/agent-dexter/index.ts"),
@@ -168,7 +167,6 @@ test("the client uploads immediately, restores server results and applies review
   assert.match(workspace, /Invoice import/)
   assert.match(declarations, /Import invoice/)
   assert.doesNotMatch(workspace, /Mistral|\bOCR\b|API key|AI extraction/i)
-  assert.doesNotMatch(phrases, /Mistral|\bOCR\b|AI extraction/i)
   assert.match(folderAnimation, /"nm":"Folder"/)
   assert.match(importLogic, /include: Boolean\(line\.description\.trim\(\)\)/)
   assert.match(dexter, /The dedicated commercial-invoice importer remains the safest route/)

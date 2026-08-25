@@ -253,14 +253,3 @@ test("Dexter clearly declines high-impact identity writes and idle user watches"
   assert.match(dexter, /deliberately not connected to Dexter writes or Watching for you/)
   assert.match(dexter, /direct a tenant administrator to Admin > Users/)
 })
-
-test("new user-management language is available in German, French, and Arabic", () => {
-  for (const phrase of ["Developer / Users", "Invite a user", "Invited", "Resend invite", "Delete invite", "Delete this invitation?", "Create a role", "Saved roles", "Role access", "Edit user permissions", "Read & write", "Edit user", "Deactivated", "Permanently delete this user?", "Reassign active work before deletion", "Type {name} to confirm", "Copy name", "Name copied", "Set your password", "Invite expires", "Never (until accepted)", "Reset password", "Resetting password", "Password reset", "Password could not be reset", "Passwords do not match."]) {
-    const start = translations.indexOf(`"${phrase}"`)
-    assert.notEqual(start, -1, `${phrase} is missing`)
-    const entry = translations.slice(start, start + 700)
-    assert.match(entry, /de:/)
-    assert.match(entry, /fr:/)
-    assert.match(entry, /ar:/)
-  }
-})

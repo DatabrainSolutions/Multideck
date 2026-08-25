@@ -648,7 +648,7 @@ export function AuditWorkspace({
     <div className={cn("min-w-0 space-y-[var(--md-page-stack-gap)]", className)}>
       <Surface padding="md" className="rounded-[var(--md-radius-xl)]">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <SectionHeader title={t(title)} meta={t(description)} />
+          <SectionHeader title={t(title)} meta={t(description)} className="min-w-0 flex-1" />
           <SegmentedControl
             options={["summary", "detailed"] as const}
             value={activeView}

@@ -220,6 +220,17 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
     }))
   }, [account])
 
+  const quoteTerms = useMemo(() => {
+    const stored = account?.metadata.quoteTerms
+    const record = stored && typeof stored === "object" ? stored as Record<string, unknown> : {}
+    return {
+      terms: typeof record.terms === "string" ? record.terms : "",
+      subjectTo: typeof record.subjectTo === "string" ? record.subjectTo : "",
+      notes: typeof record.notes === "string" ? record.notes : "",
+      deadline: typeof record.deadline === "string" ? record.deadline : "",
+    }
+  }, [account])
+
   const moments = useMemo<Moment[]>(() => {
     if (!account) return []
     const activities = account.activities.map((activity) => ({
@@ -537,6 +548,48 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
                   }}
                 />
               ) : null}
+
+              <Zone title={t("Quote defaults")}>
+                <p className="mb-3 max-w-3xl text-[12px] leading-5 text-[var(--md-text)]">
+                  {t("These terms, notes and the default response deadline are copied into quotes and managed on this company record.")}
+                </p>
+                <InlineFieldGroup stacked directEdit>
+                  <div className="grid gap-x-3 gap-y-3 lg:grid-cols-2">
+                    <InlineField
+                      label="Terms and conditions"
+                      kind="textarea"
+                      align="start"
+                      value={quoteTerms.terms}
+                      placeholder="Agreed trading terms for this customer"
+                      onSave={(terms) => patch({ metadata: { ...currentAccount.metadata, quoteTerms: { ...quoteTerms, terms } } })}
+                    />
+                    <InlineField
+                      label="Subject to rate / space"
+                      kind="textarea"
+                      align="start"
+                      value={quoteTerms.subjectTo}
+                      placeholder="Default rate, space and equipment caveats"
+                      onSave={(subjectTo) => patch({ metadata: { ...currentAccount.metadata, quoteTerms: { ...quoteTerms, subjectTo } } })}
+                    />
+                    <InlineField
+                      label="Customer quote notes"
+                      kind="textarea"
+                      align="start"
+                      value={quoteTerms.notes}
+                      placeholder="Instructions or notes to carry into each new quote"
+                      onSave={(notes) => patch({ metadata: { ...currentAccount.metadata, quoteTerms: { ...quoteTerms, notes } } })}
+                    />
+                    <InlineField
+                      label="Default response deadline"
+                      kind="date"
+                      align="start"
+                      value={quoteTerms.deadline}
+                      placeholder="Select date"
+                      onSave={(deadline) => patch({ metadata: { ...currentAccount.metadata, quoteTerms: { ...quoteTerms, deadline } } })}
+                    />
+                  </div>
+                </InlineFieldGroup>
+              </Zone>
 
               <Zone title={t("How we contact them")}>
                 <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)]">

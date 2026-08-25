@@ -22,12 +22,16 @@ const auditTriggerRepair = read(
 const preferenceAuditContext = read(
   "supabase/migrations/20260818093641_profile_preference_audit_context.sql",
 )
+const englishOnlyLocales = read(
+  "supabase/migrations/20260825090000_english_only_interface_locales.sql",
+)
 const languageProfileSync = read("multideck.client/src/lib/language-preferences.tsx")
 const edgeFunction = read("supabase/functions/agent-dexter/index.ts")
 const app = read("multideck.client/src/App.tsx")
 
 test("language preferences are bounded and stored only against the authenticated profile", () => {
-  assert.match(migration, /"User_Locale" in \('en-GB', 'en-US', 'de', 'fr', 'ar'\)/)
+  assert.match(englishOnlyLocales, /"User_Locale" in \('en-GB', 'en-US'\)/)
+  assert.doesNotMatch(englishOnlyLocales, /'de'|'fr'|'ar'/)
   assert.match(migration, /v_auth_user_id uuid := auth\.uid\(\)/)
   assert.match(migration, /where "Auth_User_ID" = v_auth_user_id/)
   assert.match(migration, /revoke all on function public\.get_current_user_language_preference\(\) from public, anon/)

@@ -171,7 +171,7 @@ test("Approve mode keeps email actions inline while Full access executes the sam
   assert.match(architecture, /immediate operator-requested actions/)
 })
 
-test("settings, localisation and the component catalogue expose the finished product surface", () => {
+test("settings and the component catalogue expose the finished product surface", () => {
   assert.match(settings, /Write emails like me/)
   assert.match(settings, /Eligible messages/)
   assert.match(settings, /Last refreshed/)
@@ -181,22 +181,6 @@ test("settings, localisation and the component catalogue expose the finished pro
   assert.match(galleryData, /id: "dexter-email-compose-card"/)
   assert.match(galleryData, /label: "Agent Dexter", route: "\/agent-dexter"/)
   assert.match(galleryPage, /<DexterEmailComposeCard/)
-  for (const phrase of [
-    "Personal email style",
-    "Write emails like me",
-    "Eligible messages",
-    "Last refreshed",
-    "Editable email draft",
-    "Create draft",
-    "Creating draft",
-    "Draft created",
-    "Send email",
-    "Nothing is sent until you select the paper plane.",
-    "The provider result is unknown. Your draft is safe. Check your connection, then select the plane again to recover the same send without duplicating it.",
-    "You do not have permission to send from this mailbox. Choose another mailbox or ask an administrator for send access.",
-  ]) {
-    assert.match(translations, new RegExp(`${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*de:.*fr:.*ar:`))
-  }
 })
 
 test("writing-profile preference changes are an explicit Watching for you exception", () => {

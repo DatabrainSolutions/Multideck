@@ -5,7 +5,6 @@ import test from "node:test"
 const app = await readFile(new URL("../src/App.tsx", import.meta.url), "utf8")
 const navigation = await readFile(new URL("../src/data/navigation-data.ts", import.meta.url), "utf8")
 const reportsPage = await readFile(new URL("../src/pages/reports-page.tsx", import.meta.url), "utf8")
-const phrases = await readFile(new URL("../src/i18n/reporting-phrases.ts", import.meta.url), "utf8")
 const topBar = await readFile(new URL("../src/components/multideck/top-bar.tsx", import.meta.url), "utf8")
 const dataTable = await readFile(new URL("../src/components/multideck/data-table.tsx", import.meta.url), "utf8")
 
@@ -80,21 +79,4 @@ test("Reporting headings stay outside the reusable table-control toolbar", () =>
 test("contextual top-bar actions use the requested Reporting language", () => {
   assert.match(topBar, /aria-label=\{t\("Create report"\)\}[\s\S]*dispatchTopBarAction\(topBarActionEvents\.startReportDraft\)/u)
   assert.match(topBar, /aria-label=\{t\("Set up scheduled report"\)\}[\s\S]*dispatchTopBarAction\(topBarActionEvents\.startReportSchedule\)/u)
-})
-
-test("critical Reporting copy is registered for every app language", () => {
-  for (const label of [
-    "Reporting",
-    "Reports",
-    "Scheduled reports",
-    "Create report",
-    "Set up scheduled report",
-    "Downloading…",
-    "Downloaded",
-    "No scheduled reports yet",
-    "Setup checked",
-  ]) {
-    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-    assert.match(phrases, new RegExp(`"${escaped}": \\{ de: .+ fr: .+ ar: .+ \\}`))
-  }
 })

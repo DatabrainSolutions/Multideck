@@ -57,6 +57,4 @@ test("the client keeps the initial read bounded and can prepend older pages with
   assert.match(page, /if \(seen\.has\(message\.id\)\) return false/)
   assert.match(page, /viewport\.scrollTop = previousScrollTop \+ Math\.max\(0, viewport\.scrollHeight - previousScrollHeight\)/)
   assert.match(page, /t\("Load earlier messages"\)/)
-  assert.match(translations, /"Load earlier messages": \{ de: .* fr: .* ar:/)
-  assert.match(translations, /"Earlier messages could not be loaded\.": \{ de: .* fr: .* ar:/)
 })

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowUpRight, Search, X } from "@/components/icons/hugeicons"
+import { ArrowUpRight, FlaskConical, LoaderCircle, Search, X } from "@/components/icons/hugeicons"
+import { toast } from "sonner"
 
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
@@ -21,6 +22,7 @@ import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
 import { type RegisterSort } from "@/lib/application-data-api"
 import { listSalesQuotesPage, subscribeSalesQuotes } from "@/lib/quote-api"
+import { createDevelopmentQuoteFixture } from "@/lib/quote-development-fixture"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { cn } from "@/lib/utils"
 
@@ -85,6 +87,7 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
   const [quotesLoading, setQuotesLoading] = useState(true)
   const [quotesError, setQuotesError] = useState<string | null>(null)
   const [quoteRevision, setQuoteRevision] = useState(0)
+  const [creatingTestQuote, setCreatingTestQuote] = useState(false)
 
   useEffect(() => {
     const timer = globalThis.setTimeout(() => setDebouncedQuickSearch(quickSearch), 250)
@@ -131,6 +134,22 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
     setQuickSearch("")
     setSearch(createEmptyQuoteSearch())
     setPage(1)
+  }
+
+  async function createTestQuote() {
+    if (creatingTestQuote) return
+    setCreatingTestQuote(true)
+    try {
+      const created = await createDevelopmentQuoteFixture()
+      toast.success(t("Test quote created"), { description: created.reference })
+      navigate(`/quotes/${created.reference.toLowerCase()}`)
+    } catch (error) {
+      toast.error(t("Test quote could not be created"), {
+        description: error instanceof Error ? error.message : t("Try again from the development workspace."),
+      })
+    } finally {
+      setCreatingTestQuote(false)
+    }
   }
 
   useEffect(() => setPage(1), [quickSearch, rowsPerPage, scope, search, serverSort])
@@ -272,7 +291,8 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
           />
         )}
         toolbarSearch={(
-          <div className="relative min-w-[128px] max-w-[280px] flex-1 sm:min-w-[200px] sm:flex-none">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:flex-none sm:flex-nowrap">
+            <div className="relative min-w-[128px] max-w-[280px] flex-1 sm:min-w-[200px] sm:flex-none">
               <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.35} aria-hidden="true" />
               <Input
                 type="text"
@@ -296,6 +316,23 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
                   <X className="size-3.5" strokeWidth={1.4} />
                 </Button>
               ) : null}
+            </div>
+            {import.meta.env.DEV ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={creatingTestQuote}
+                aria-label={t("Create a fully populated test quote")}
+                className="h-8 shrink-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-2.5 text-[11px] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"
+                onClick={() => void createTestQuote()}
+              >
+                {creatingTestQuote
+                  ? <LoaderCircle data-icon="inline-start" className="size-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.5} aria-hidden="true" />
+                  : <FlaskConical data-icon="inline-start" className="size-3.5" strokeWidth={1.45} aria-hidden="true" />}
+                {t(creatingTestQuote ? "Creating…" : "Create test quote")}
+              </Button>
+            ) : null}
           </div>
         )}
         toolbarFilters={(

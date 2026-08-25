@@ -924,22 +924,27 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
   if (officeError || userError) throw officeError ?? userError
   const officeIds = (offices ?? []).map((row) => String(row.Office_ID))
   const userIds = (users ?? []).map((row) => String(row.User_ID))
+  const { data: accessibleRows, error: accessibleError } = await admin.rpc("multideck_crm_accessible_account_ids", {
+    p_company_id: operator.companyId,
+  })
+  if (accessibleError) throw accessibleError
+  const accessibleOrganisationIds = Array.from(new Set(
+    (accessibleRows ?? []).map((row: Row) => String(row.account_id || "")).filter(Boolean),
+  )).slice(0, 500)
+  const accessibleOrganisationIdSet = new Set(accessibleOrganisationIds)
   const leadFilter = [
     userIds.length ? `CRMLead_OwnerUserID.in.(${userIds.join(",")})` : null,
     userIds.length ? `CRMLead_CreatedBy.in.(${userIds.join(",")})` : null,
     officeIds.length ? `CRMLead_OrgOfficeID.in.(${officeIds.join(",")})` : null,
   ].filter(Boolean).join(",")
-  const accountFilter = [
-    userIds.length ? `CRMAccount_OwnerUserID.in.(${userIds.join(",")})` : null,
-    officeIds.length ? `CRMAccount_OrgOfficeID.in.(${officeIds.join(",")})` : null,
-  ].filter(Boolean).join(",")
+  const noRows = () => Promise.resolve({ data: [] as Row[], error: null })
+  const today = new Date().toISOString().slice(0, 10)
   const [
     leadResult,
     accountResult,
     organisationResult,
     addressResult,
     contactResult,
-    emailResult,
     organisationTypeResult,
     typeResult,
     departmentResult,
@@ -947,35 +952,100 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
     shipmentTypeResult,
     currencyResult,
     commodityResult,
+    countryResult,
+    relatedDefaultResult,
+    quoteHistoryResult,
   ] = await Promise.all([
     leadFilter
       ? admin.from("CRM_Leads").select("CRMLead_ID,CRMLead_CompanyName,CRMLead_PersonName,CRMLead_Email,CRMLead_ModeCode,CRMLead_DirectionCode,CRMLead_TradeLane").or(leadFilter).eq("CRMLead_IsDeleted", false).neq("CRMLead_StatusCode", "converted").order("CRMLead_UpdatedAt", { ascending: false }).limit(100)
       : Promise.resolve({ data: [], error: null }),
-    accountFilter
-      ? admin.from("CRM_AccountProfiles").select("CRMAccount_OrgID,CRMAccount_PrimaryModeCode,CRMAccount_PrimaryTradeLane").or(accountFilter).order("CRMAccount_UpdatedAt", { ascending: false }).limit(100)
-      : Promise.resolve({ data: [], error: null }),
-    admin.from("Org_Master").select("Org_id,Org_Name,Org_AccCode").order("Org_Name").limit(500),
-    admin.from("Org_Addresses").select("OrgAdd_ID,Org_ID,Org_NameOverride,OrgAdd_Line1,OrgAdd_Line2,OrgAdd_TownCity,OrgAdd_CountyState,OrgAdd_PostZipCode,OrgAdd_Country,OrgAdd_UNLOCODE,OrgAdd_MainEmail,OrgAdd_MainPhone").limit(1500),
-    admin.from("Org_Contacts").select("OrgContact_ID,Org_ID,OrgContact_FirstName,OrgContact_LastName").limit(1500),
-    admin.from("OrgContact_Emails").select("OrgContact_ID,OrgContactEmail_Email").limit(1500),
-    admin.from("Org_Master_Type").select("Org_ID,OrgType_ID").limit(2000),
+    accessibleOrganisationIds.length
+      ? admin.from("CRM_AccountProfiles").select("CRMAccount_OrgID,CRMAccount_PrimaryModeCode,CRMAccount_PrimaryTradeLane,CRMAccount_MetadataJSON").in("CRMAccount_OrgID", accessibleOrganisationIds).order("CRMAccount_UpdatedAt", { ascending: false }).limit(500)
+      : noRows(),
+    accessibleOrganisationIds.length
+      ? admin.from("Org_Master").select("Org_id,Org_Name,Org_AccCode").in("Org_id", accessibleOrganisationIds).order("Org_Name").limit(500)
+      : noRows(),
+    accessibleOrganisationIds.length
+      ? admin.from("Org_Addresses").select("OrgAdd_ID,Org_ID,Org_NameOverride,OrgAdd_Line1,OrgAdd_Line2,OrgAdd_TownCity,OrgAdd_CountyState,OrgAdd_PostZipCode,OrgAdd_Country,OrgAdd_UNLOCODE,OrgAdd_MainEmail,OrgAdd_MainPhone").in("Org_ID", accessibleOrganisationIds).eq("OrgAdd_IsActive", true).limit(2000)
+      : noRows(),
+    accessibleOrganisationIds.length
+      ? admin.from("Org_Contacts").select("OrgContact_ID,Org_ID,OrgContact_FirstName,OrgContact_LastName").in("Org_ID", accessibleOrganisationIds).limit(2000)
+      : noRows(),
+    accessibleOrganisationIds.length
+      ? admin.from("Org_Master_Type").select("Org_ID,OrgType_ID").in("Org_ID", accessibleOrganisationIds).limit(2500)
+      : noRows(),
     admin.from("Org_Types").select("OrgType_ID,OrgType_Name").order("OrgType_Order"),
     admin.from("cmp_Departments").select("Department_ID,Department_Name").eq("Company_ID", operator.companyId).eq("Department_IsActive", true).order("Department_Name"),
     admin.from("sys_CusQuoteShipmentModes").select("CQSM_Code,CQSM_Name").eq("CQSM_IsActive", true).order("CQSM_SortOrder"),
     admin.from("sys_CusQuoteShipmentTypes").select("CQST_Code,CQST_Name").eq("CQST_IsActive", true).order("CQST_SortOrder"),
     admin.from("sys_Currency").select("Currency_ID,Currency_Code,Currency_Name").not("Currency_Code", "is", null).order("Currency_Code"),
     admin.from("sys_CommodityCode").select("RH_PK,RH_Code,RH_Description").eq("RH_IsActive", true).order("RH_Description").limit(500),
+    admin.from("RefCountry").select("RN_Code,RN_Desc,RN_IsoAlpha3Code").eq("RN_IsActive", true).not("RN_Code", "is", null).not("RN_Desc", "is", null).order("RN_Desc").limit(300),
+    accessibleOrganisationIds.length
+      ? admin.from("Org_RelatedPartyDefaults")
+        .select("OrgRelatedDefault_ID,OrgRelatedDefault_SourceOrgID,OrgRelatedDefault_PartyRoleCode,OrgRelatedDefault_DestinationCountryCode,OrgRelatedDefault_DestinationUNLOCODE,OrgRelatedDefault_DestinationPostcode,OrgRelatedDefault_TargetOrgID,OrgRelatedDefault_TargetAddressID,OrgRelatedDefault_TargetContactID,OrgRelatedDefault_Priority")
+        .eq("OrgRelatedDefault_CompanyID", operator.companyId)
+        .in("OrgRelatedDefault_SourceOrgID", accessibleOrganisationIds)
+        .eq("OrgRelatedDefault_IsActive", true)
+        .lte("OrgRelatedDefault_EffectiveFrom", today)
+        .or(`OrgRelatedDefault_EffectiveTo.is.null,OrgRelatedDefault_EffectiveTo.gte.${today}`)
+        .order("OrgRelatedDefault_Priority")
+        .limit(1500)
+      : noRows(),
+    accessibleOrganisationIds.length && officeIds.length
+      ? admin.from("CusQuote_Header")
+        .select("CusQuoteHeader_ID,CusQuoteHeader_CustomerID,CusQuoteHeader_CreatedDate,CusQuoteHeader_LastEditedDate")
+        .in("CusQuoteHeader_CustomerID", accessibleOrganisationIds)
+        .eq("CusQuoteHeader_IsDeleted", false)
+        .or(`CusQuoteHeader_OrgOfficeID.in.(${officeIds.join(",")}),OrgOffice_ID.in.(${officeIds.join(",")})`)
+        .order("CusQuoteHeader_LastEditedDate", { ascending: false })
+        .limit(1000)
+      : noRows(),
   ])
   const firstError = leadResult.error || accountResult.error || organisationResult.error
-    || addressResult.error || contactResult.error || emailResult.error
+    || addressResult.error || contactResult.error
     || organisationTypeResult.error || typeResult.error || departmentResult.error
     || modeResult.error || shipmentTypeResult.error || currencyResult.error || commodityResult.error
+    || countryResult.error || relatedDefaultResult.error || quoteHistoryResult.error
   if (firstError) throw firstError
+  const contactIds = (contactResult.data ?? []).map((row) => String(row.OrgContact_ID)).filter(Boolean)
+  const quoteIds = (quoteHistoryResult.data ?? []).map((row) => String(row.CusQuoteHeader_ID)).filter(Boolean)
+  const [activeEmailResult, partyHistoryResult] = await Promise.all([
+    contactIds.length
+      ? admin.from("OrgContact_Emails")
+        .select("OrgContact_ID,OrgContactEmail_Email,OrgContactEmail_IsPrimary")
+        .in("OrgContact_ID", contactIds)
+        .eq("OrgContactEmail_IsActive", true)
+        .order("OrgContactEmail_IsPrimary", { ascending: false })
+        .limit(3000)
+      : noRows(),
+    quoteIds.length
+      ? admin.from("CusQuote_Parties")
+        .select("CusQuoteParty_ID,CusQuoteHeader_ID,CusQuoteParty_RoleCode,CusQuoteParty_OrgID")
+        .in("CusQuoteHeader_ID", quoteIds)
+        .not("CusQuoteParty_OrgID", "is", null)
+        .limit(3000)
+      : noRows(),
+  ])
+  if (activeEmailResult.error || partyHistoryResult.error) throw activeEmailResult.error ?? partyHistoryResult.error
   const organisationNames = new Map((organisationResult.data ?? []).map((row) => [String(row.Org_id), String(row.Org_Name)]))
-  const emailsByContact = new Map<string, string>()
-  for (const row of emailResult.data ?? []) {
+  const quoteTermsByOrganisation = new Map((accountResult.data ?? []).map((row) => {
+    const metadata = row.CRMAccount_MetadataJSON && typeof row.CRMAccount_MetadataJSON === "object" ? row.CRMAccount_MetadataJSON as Row : {}
+    const quoteTerms = metadata.quoteTerms && typeof metadata.quoteTerms === "object" ? metadata.quoteTerms as Row : {}
+    return [String(row.CRMAccount_OrgID), {
+      terms: typeof quoteTerms.terms === "string" ? quoteTerms.terms : "",
+      subjectTo: typeof quoteTerms.subjectTo === "string" ? quoteTerms.subjectTo : "",
+      notes: typeof quoteTerms.notes === "string" ? quoteTerms.notes : "",
+      deadline: typeof quoteTerms.deadline === "string" ? quoteTerms.deadline : "",
+    }] as const
+  }))
+  const emailsByContact = new Map<string, string[]>()
+  for (const row of activeEmailResult.data ?? []) {
     const contactId = String(row.OrgContact_ID)
-    if (!emailsByContact.has(contactId)) emailsByContact.set(contactId, String(row.OrgContactEmail_Email))
+    const email = String(row.OrgContactEmail_Email || "").trim()
+    if (!email) continue
+    const current = emailsByContact.get(contactId) ?? []
+    if (!current.includes(email)) emailsByContact.set(contactId, [...current, email])
   }
   const addressesByOrganisation = new Map<string, Row[]>()
   for (const row of addressResult.data ?? []) {
@@ -994,6 +1064,89 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
     const typeName = typeNames.get(String(row.OrgType_ID))
     if (typeName) typesByOrganisation.set(organisationId, [...(typesByOrganisation.get(organisationId) ?? []), typeName])
   }
+  const quoteContextById = new Map((quoteHistoryResult.data ?? []).map((row) => [String(row.CusQuoteHeader_ID), {
+    customerId: String(row.CusQuoteHeader_CustomerID || ""),
+    usedAt: String(row.CusQuoteHeader_LastEditedDate || row.CusQuoteHeader_CreatedDate || ""),
+  }]))
+  type HistoricalRecommendation = {
+    customerId: string
+    role: string
+    organisationId: string
+    usageCount: number
+    lastUsedAt: string | null
+    latestSourceId: string
+  }
+  const historicalByKey = new Map<string, HistoricalRecommendation>()
+  for (const row of partyHistoryResult.data ?? []) {
+    const quoteContext = quoteContextById.get(String(row.CusQuoteHeader_ID))
+    const role = String(row.CusQuoteParty_RoleCode || "").toLowerCase()
+    const organisationId = String(row.CusQuoteParty_OrgID || "")
+    if (!quoteContext?.customerId || !["shipper", "consignee"].includes(role) || !accessibleOrganisationIdSet.has(organisationId)) continue
+    const key = `${quoteContext.customerId}:${role}:${organisationId}`
+    const current = historicalByKey.get(key)
+    if (!current) {
+      historicalByKey.set(key, {
+        customerId: quoteContext.customerId,
+        role,
+        organisationId,
+        usageCount: 1,
+        lastUsedAt: quoteContext.usedAt || null,
+        latestSourceId: String(row.CusQuoteParty_ID),
+      })
+      continue
+    }
+    current.usageCount += 1
+    if (quoteContext.usedAt && (!current.lastUsedAt || quoteContext.usedAt > current.lastUsedAt)) {
+      current.lastUsedAt = quoteContext.usedAt
+      current.latestSourceId = String(row.CusQuoteParty_ID)
+    }
+  }
+  const recommendationsByOrganisation = new Map<string, Row[]>()
+  const coveredHistoricalKeys = new Set<string>()
+  for (const row of relatedDefaultResult.data ?? []) {
+    const sourceOrganisationId = String(row.OrgRelatedDefault_SourceOrgID || "")
+    const role = String(row.OrgRelatedDefault_PartyRoleCode || "").toLowerCase()
+    const targetOrganisationId = String(row.OrgRelatedDefault_TargetOrgID || "")
+    if (!accessibleOrganisationIdSet.has(sourceOrganisationId) || !accessibleOrganisationIdSet.has(targetOrganisationId)) continue
+    const historyKey = `${sourceOrganisationId}:${role}:${targetOrganisationId}`
+    const history = historicalByKey.get(historyKey)
+    coveredHistoricalKeys.add(historyKey)
+    const recommendation = {
+      id: String(row.OrgRelatedDefault_ID),
+      role,
+      organisationId: targetOrganisationId,
+      addressId: row.OrgRelatedDefault_TargetAddressID ? String(row.OrgRelatedDefault_TargetAddressID) : null,
+      contactId: row.OrgRelatedDefault_TargetContactID ? String(row.OrgRelatedDefault_TargetContactID) : null,
+      priority: Number(row.OrgRelatedDefault_Priority || 100),
+      source: "saved_default",
+      usageCount: history?.usageCount ?? 0,
+      lastUsedAt: history?.lastUsedAt ?? null,
+      destinationCountryCode: row.OrgRelatedDefault_DestinationCountryCode ? String(row.OrgRelatedDefault_DestinationCountryCode) : null,
+      destinationUnlocode: row.OrgRelatedDefault_DestinationUNLOCODE ? String(row.OrgRelatedDefault_DestinationUNLOCODE) : null,
+      destinationPostcode: row.OrgRelatedDefault_DestinationPostcode ? String(row.OrgRelatedDefault_DestinationPostcode) : null,
+      evidence: { sourceTable: "Org_RelatedPartyDefaults", sourceId: String(row.OrgRelatedDefault_ID) },
+    }
+    recommendationsByOrganisation.set(sourceOrganisationId, [...(recommendationsByOrganisation.get(sourceOrganisationId) ?? []), recommendation])
+  }
+  for (const [historyKey, history] of historicalByKey) {
+    if (coveredHistoricalKeys.has(historyKey)) continue
+    const recommendation = {
+      id: `quote-history:${history.role}:${history.organisationId}`,
+      role: history.role,
+      organisationId: history.organisationId,
+      addressId: null,
+      contactId: null,
+      priority: 1000,
+      source: "quote_history",
+      usageCount: history.usageCount,
+      lastUsedAt: history.lastUsedAt,
+      destinationCountryCode: null,
+      destinationUnlocode: null,
+      destinationPostcode: null,
+      evidence: { sourceTable: "CusQuote_Parties", sourceId: history.latestSourceId },
+    }
+    recommendationsByOrganisation.set(history.customerId, [...(recommendationsByOrganisation.get(history.customerId) ?? []), recommendation])
+  }
   const organisations = (organisationResult.data ?? []).map((row) => {
     const id = String(row.Org_id)
     return {
@@ -1005,16 +1158,34 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
         id: String(address.OrgAdd_ID),
         label: String(address.Org_NameOverride || address.OrgAdd_UNLOCODE || address.OrgAdd_TownCity || "Address"),
         address: [address.OrgAdd_Line1, address.OrgAdd_Line2, address.OrgAdd_TownCity, address.OrgAdd_CountyState, address.OrgAdd_PostZipCode, address.OrgAdd_Country].filter(Boolean).join(", "),
+        line1: address.OrgAdd_Line1 ? String(address.OrgAdd_Line1) : null,
+        line2: address.OrgAdd_Line2 ? String(address.OrgAdd_Line2) : null,
+        townCity: address.OrgAdd_TownCity ? String(address.OrgAdd_TownCity) : null,
+        countyState: address.OrgAdd_CountyState ? String(address.OrgAdd_CountyState) : null,
+        postcode: address.OrgAdd_PostZipCode ? String(address.OrgAdd_PostZipCode) : null,
+        country: address.OrgAdd_Country ? String(address.OrgAdd_Country) : null,
+        countryCode: address.OrgAdd_Country ? String(address.OrgAdd_Country) : null,
+        unlocode: address.OrgAdd_UNLOCODE ? String(address.OrgAdd_UNLOCODE) : null,
         email: address.OrgAdd_MainEmail ? String(address.OrgAdd_MainEmail) : null,
         phone: address.OrgAdd_MainPhone ? String(address.OrgAdd_MainPhone) : null,
       })),
       contacts: (contactsByOrganisation.get(id) ?? []).map((contact) => ({
         id: String(contact.OrgContact_ID),
         name: [contact.OrgContact_FirstName, contact.OrgContact_LastName].filter(Boolean).join(" "),
-        email: emailsByContact.get(String(contact.OrgContact_ID)) ?? null,
+        email: emailsByContact.get(String(contact.OrgContact_ID))?.[0] ?? null,
+        emails: emailsByContact.get(String(contact.OrgContact_ID)) ?? [],
       })),
+      quoteTerms: quoteTermsByOrganisation.get(id) ?? null,
+      relatedPartyRecommendations: (recommendationsByOrganisation.get(id) ?? [])
+        .sort((left, right) => Number(left.priority || 0) - Number(right.priority || 0)
+          || Number(right.usageCount || 0) - Number(left.usageCount || 0)
+          || String(right.lastUsedAt || "").localeCompare(String(left.lastUsedAt || "")))
+        .slice(0, 30),
     }
   })
+  // Dexter already reads these company details and related-party defaults from
+  // the bounded customers domain. This sources action only enriches existing
+  // quote read evidence; it introduces no new mutation or watchable event.
   return {
     sources: [
       ...(accountResult.data ?? []).map((row) => ({
@@ -1028,8 +1199,9 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
       })),
     ],
     organisations,
-    suppliers: organisations.filter((row) => row.types.some((type) => /supplier|carrier|shipping line|haulier|freight forwarder/i.test(type))),
+    suppliers: organisations.filter((row) => row.types.some((type) => /supplier|freight forwarder/i.test(type))),
     carriers: organisations.filter((row) => row.types.some((type) => /carrier|shipping line|haulier|freight forwarder/i.test(type))),
+    agents: organisations.filter((row) => row.types.some((type) => /\bagents?\b/i.test(type))),
     offices: (offices ?? []).map((row) => ({ id: String(row.Office_ID), code: String(row.Office_Code || ""), name: String(row.Office_Name) })),
     departments: (departmentResult.data ?? []).map((row) => ({ id: String(row.Department_ID), name: String(row.Department_Name) })),
     users: (users ?? []).map((row) => ({ id: String(row.User_ID), name: [row.User_Firstname, row.User_Lastname].filter(Boolean).join(" ") || String(row.User_Email), email: String(row.User_Email) })),
@@ -1037,6 +1209,7 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
     shipmentTypes: (shipmentTypeResult.data ?? []).map((row) => ({ code: String(row.CQST_Code), name: String(row.CQST_Name) })),
     currencies: (currencyResult.data ?? []).map((row) => ({ id: String(row.Currency_ID), code: String(row.Currency_Code), name: String(row.Currency_Name || row.Currency_Code) })),
     commodities: (commodityResult.data ?? []).map((row) => ({ id: String(row.RH_PK || ""), code: String(row.RH_Code || ""), name: String(row.RH_Description || row.RH_Code || "") })),
+    countries: (countryResult.data ?? []).map((row) => ({ code: String(row.RN_Code), name: String(row.RN_Desc), alpha3: row.RN_IsoAlpha3Code ? String(row.RN_IsoAlpha3Code) : null })),
   }
 }
 

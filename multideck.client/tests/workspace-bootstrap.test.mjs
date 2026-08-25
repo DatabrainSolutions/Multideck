@@ -49,12 +49,12 @@ test("updates cached preferences after a local-first write", async () => {
     },
   }))
 
-  updateWorkspaceBootstrapPreferences({ themeMode: "dark", locale: "ar" })
+  updateWorkspaceBootstrapPreferences({ themeMode: "dark", locale: "en-US" })
   const cached = await getOrCreateWorkspaceBootstrap("token-a", async () => assert.fail("cache missed"))
 
   assert.equal(cached, session)
   assert.equal(cached.workspace.preferences.themeMode, "dark")
-  assert.equal(cached.workspace.preferences.locale, "ar")
+  assert.equal(cached.workspace.preferences.locale, "en-US")
 })
 
 test("a failed bootstrap is discarded so the same session can retry", async () => {

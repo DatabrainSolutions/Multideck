@@ -45,7 +45,7 @@ import {
 type JsonObject = Record<string, unknown>
 type DexterSupabaseClient = SupabaseClient<any, "public", any, any, any>
 type DexterModelLane = "fast" | "smart" | "worker"
-type DexterLocale = "en-GB" | "en-US" | "de" | "fr" | "ar"
+type DexterLocale = "en-GB" | "en-US"
 type ConversationMessage = { id?: string; role: "user" | "assistant"; content: string }
 type DexterAttachment = { id: string; type: string; title: string }
 type DataDomain = { code: string; name: string; description: string }
@@ -189,9 +189,7 @@ function parseModelLane(value: unknown): DexterModelLane {
 }
 
 function parseLocale(value: unknown): DexterLocale {
-  return value === "en-US" || value === "de" || value === "fr" || value === "ar"
-    ? value
-    : "en-GB"
+  return value === "en-US" ? value : "en-GB"
 }
 
 function readLocalePreference(value: unknown): DexterLocale | null {
@@ -199,8 +197,7 @@ function readLocalePreference(value: unknown): DexterLocale | null {
   if (!isObject(row)) return null
 
   const candidate = cleanString(row.locale, 20)
-  return candidate === "en-GB" || candidate === "en-US" || candidate === "de" ||
-      candidate === "fr" || candidate === "ar"
+  return candidate === "en-GB" || candidate === "en-US"
     ? candidate
     : null
 }
@@ -209,9 +206,7 @@ function localeInstruction(locale: DexterLocale) {
   return {
     "en-GB": "Write natural British English. Use British spelling, punctuation, date conventions, and freight terminology. Do not Americanise words such as organise, prioritise, colour, metre, or licence.",
     "en-US": "Write natural American English. Use American spelling, punctuation, date conventions, and freight terminology.",
-    de: "Write natural professional German. Use the formal Sie register unless the operator clearly uses another register. Keep established freight abbreviations unchanged where German operators normally use them.",
-    fr: "Write natural professional French as used in France. Use the formal vous register unless the operator clearly uses another register. Keep established freight abbreviations unchanged where French operators normally use them.",
-    ar: "Write clear professional Modern Standard Arabic. Keep record references, codes, email addresses, routes, and established freight abbreviations readable in their original script.",
+
   }[locale]
 }
 
@@ -261,27 +256,7 @@ function actionCopy(
       completed: `${detail} completed. The approved change is now saved.`,
       prepared: `I have prepared this change for your review: ${detail}`,
     },
-    de: {
-      create_email_draft: "E-Mail-Entwurf erstellen",
-      send_email: "E-Mail senden",
-      declined: "Abgelehnt. Es wurden keine Workspace-Daten geändert.",
-      completed: `${detail} wurde abgeschlossen. Die genehmigte Änderung ist jetzt gespeichert.`,
-      prepared: `Ich habe diese Änderung zur Prüfung vorbereitet: ${detail}`,
-    },
-    fr: {
-      create_email_draft: "Créer un brouillon d’e-mail",
-      send_email: "Envoyer l’e-mail",
-      declined: "Refusé. Aucune donnée de l’espace de travail n’a été modifiée.",
-      completed: `${detail} est terminé. La modification approuvée est maintenant enregistrée.`,
-      prepared: `J’ai préparé cette modification pour validation : ${detail}`,
-    },
-    ar: {
-      create_email_draft: "إنشاء مسودة بريد",
-      send_email: "إرسال البريد",
-      declined: "تم الرفض. لم يتم تغيير أي بيانات في مساحة العمل.",
-      completed: `اكتمل ${detail}. تم حفظ التغيير المعتمد الآن.`,
-      prepared: `أعددت هذا التغيير لمراجعتك: ${detail}`,
-    },
+
   }[locale]
 
   return sanitiseAnswer(copy[kind])
@@ -293,9 +268,7 @@ function extractedActionCopy(locale: DexterLocale, fileName: string, detail: str
   return sanitiseAnswer({
     "en-GB": `I extracted the information from “${safeFileName}”. Review the fields below, then approve the change if they are correct. ${safeDetail}`,
     "en-US": `I extracted the information from “${safeFileName}”. Review the fields below, then approve the change if they are correct. ${safeDetail}`,
-    de: `Ich habe die Informationen aus „${safeFileName}“ extrahiert. Prüfen Sie die Felder unten und genehmigen Sie die Änderung, wenn sie korrekt sind. ${safeDetail}`,
-    fr: `J’ai extrait les informations de « ${safeFileName} ». Vérifiez les champs ci-dessous, puis approuvez la modification s’ils sont corrects. ${safeDetail}`,
-    ar: `استخرجت المعلومات من «${safeFileName}». راجع الحقول أدناه، ثم وافق على التغيير إذا كانت صحيحة. ${safeDetail}`,
+
   }[locale])
 }
 
@@ -303,9 +276,7 @@ function scopeRedirectCopy(locale: DexterLocale) {
   return {
     "en-GB": "I’m here for freight and the work around it, so I can’t help with that request. I can help with shipments, quotes, customers, suppliers, customs, warehouse work, exceptions, documents, emails, or Multideck records. If it connects to a freight task, tell me the context and I’ll help.",
     "en-US": "I’m here for freight and the work around it, so I can’t help with that request. I can help with shipments, quotes, customers, suppliers, customs, warehouse work, exceptions, documents, emails, or Multideck records. If it connects to a freight task, tell me the context and I’ll help.",
-    de: "Ich bin für Fracht und die damit verbundene Arbeit da, daher kann ich bei dieser Anfrage nicht helfen. Ich kann Sie bei Sendungen, Angeboten, Kunden, Lieferanten, Zoll, Lagerarbeit, Ausnahmen, Dokumenten, E-Mails oder Multideck-Datensätzen unterstützen. Wenn es um eine Frachtaufgabe geht, nennen Sie mir den Zusammenhang.",
-    fr: "Je suis là pour le fret et le travail qui l’entoure, je ne peux donc pas répondre à cette demande. Je peux vous aider avec les expéditions, devis, clients, fournisseurs, douanes, opérations d’entrepôt, exceptions, documents, e-mails ou données Multideck. Si cela concerne une tâche de fret, donnez-moi le contexte.",
-    ar: "أنا هنا للمساعدة في أعمال الشحن وما يرتبط بها، لذلك لا يمكنني المساعدة في هذا الطلب. يمكنني المساعدة في الشحنات وعروض الأسعار والعملاء والموردين والجمارك والمستودعات والاستثناءات والمستندات ورسائل البريد الإلكتروني وسجلات Multideck. إذا كان الطلب مرتبطاً بمهمة شحن، فأخبرني بالسياق.",
+
   }[locale]
 }
 
@@ -313,9 +284,7 @@ function customsWatchTargetCopy(locale: DexterLocale) {
   return {
     "en-GB": "Choose or @ mention the exact Customs declaration you want Dexter to watch.",
     "en-US": "Choose or @ mention the exact Customs declaration you want Dexter to watch.",
-    de: "Wählen oder erwähnen Sie mit @ genau die Zollanmeldung, die Dexter beobachten soll.",
-    fr: "Choisissez ou mentionnez avec @ la déclaration en douane précise que Dexter doit surveiller.",
-    ar: "اختر إقرار الجمارك المحدد الذي تريد من ديكستر مراقبته أو أشر إليه باستخدام @.",
+
   }[locale]
 }
 
@@ -458,69 +427,7 @@ function actionDisplayName(locale: DexterLocale, actionCode: string, fallback: s
       [COMPLETE_TODO_TASK_ACTION]: "Complete To Do task",
       [DELETE_TODO_TASK_ACTION]: "Remove To Do task",
     },
-    de: {
-      [CREATE_CUSTOMS_DECLARATION_ACTION]: "Zollanmeldungsentwurf erstellen",
-      [UPDATE_CUSTOMS_DECLARATION_ACTION]: "Zollanmeldungsentwurf bearbeiten",
-      [SAVE_CUSTOMS_PROVIDER_DRAFT_ACTION]: "Zollentwurf in iCustoms speichern",
-      [SUBMIT_CUSTOMS_DECLARATION_ACTION]: "Zollanmeldung an iCustoms übermitteln",
-      [SEND_BOOKING_TO_CUSTOMS_ACTION]: "Buchung an den Zoll senden",
-      [CREATE_TODO_TASK_ACTION]: "Aufgabe hinzufügen",
-      [UPDATE_TODO_TASK_ACTION]: "Aufgabe bearbeiten",
-      [COMPLETE_TODO_TASK_ACTION]: "Aufgabe erledigen",
-      [DELETE_TODO_TASK_ACTION]: "Aufgabe entfernen",
-      update_warehouse_order: "Lagerauftrag bearbeiten",
-      receive_warehouse_order: "Wareneingang buchen",
-      dispatch_warehouse_order: "Warenausgang buchen",
-      cancel_warehouse_order: "Lagerauftrag stornieren",
-      move_warehouse_inventory: "Lagerbestand verschieben",
-      move_warehouse_handling_unit: "Lagerobjekt verschieben",
-      consolidate_warehouse_handling_units: "Lagerobjekte konsolidieren",
-      change_warehouse_inventory_status: "Bestandsstatus ändern",
-      record_warehouse_sample: "Lagerprobe erfassen",
-      resolve_warehouse_location_exception: "Lagerplatzabweichung klären",
-    },
-    fr: {
-      [CREATE_CUSTOMS_DECLARATION_ACTION]: "Créer un brouillon de déclaration en douane",
-      [UPDATE_CUSTOMS_DECLARATION_ACTION]: "Modifier le brouillon de déclaration en douane",
-      [SAVE_CUSTOMS_PROVIDER_DRAFT_ACTION]: "Enregistrer le brouillon dans iCustoms",
-      [SUBMIT_CUSTOMS_DECLARATION_ACTION]: "Soumettre la déclaration à iCustoms",
-      [SEND_BOOKING_TO_CUSTOMS_ACTION]: "Envoyer la réservation à la douane",
-      [CREATE_TODO_TASK_ACTION]: "Ajouter une tâche",
-      [UPDATE_TODO_TASK_ACTION]: "Modifier une tâche",
-      [COMPLETE_TODO_TASK_ACTION]: "Terminer une tâche",
-      [DELETE_TODO_TASK_ACTION]: "Supprimer une tâche",
-      update_warehouse_order: "Modifier l’ordre d’entrepôt",
-      receive_warehouse_order: "Enregistrer l’entrée de marchandises",
-      dispatch_warehouse_order: "Enregistrer la sortie de marchandises",
-      cancel_warehouse_order: "Annuler l’ordre d’entrepôt",
-      move_warehouse_inventory: "Déplacer le stock",
-      move_warehouse_handling_unit: "Déplacer l’objet d’entrepôt",
-      consolidate_warehouse_handling_units: "Regrouper les objets d’entrepôt",
-      change_warehouse_inventory_status: "Modifier le statut du stock",
-      record_warehouse_sample: "Enregistrer un échantillon",
-      resolve_warehouse_location_exception: "Résoudre l’anomalie d’emplacement",
-    },
-    ar: {
-      [CREATE_CUSTOMS_DECLARATION_ACTION]: "إنشاء مسودة إقرار جمركي",
-      [UPDATE_CUSTOMS_DECLARATION_ACTION]: "تعديل مسودة الإقرار الجمركي",
-      [SAVE_CUSTOMS_PROVIDER_DRAFT_ACTION]: "حفظ مسودة الجمارك في iCustoms",
-      [SUBMIT_CUSTOMS_DECLARATION_ACTION]: "تقديم الإقرار الجمركي إلى iCustoms",
-      [SEND_BOOKING_TO_CUSTOMS_ACTION]: "إرسال الحجز إلى الجمارك",
-      [CREATE_TODO_TASK_ACTION]: "إضافة مهمة",
-      [UPDATE_TODO_TASK_ACTION]: "تعديل مهمة",
-      [COMPLETE_TODO_TASK_ACTION]: "إكمال مهمة",
-      [DELETE_TODO_TASK_ACTION]: "إزالة مهمة",
-      update_warehouse_order: "تعديل أمر المستودع",
-      receive_warehouse_order: "تسجيل إدخال البضائع",
-      dispatch_warehouse_order: "تسجيل إخراج البضائع",
-      cancel_warehouse_order: "إلغاء أمر المستودع",
-      move_warehouse_inventory: "نقل مخزون المستودع",
-      move_warehouse_handling_unit: "نقل وحدة المناولة",
-      consolidate_warehouse_handling_units: "دمج وحدات المناولة",
-      change_warehouse_inventory_status: "تغيير حالة المخزون",
-      record_warehouse_sample: "تسجيل عينة مستودع",
-      resolve_warehouse_location_exception: "حل استثناء موقع المستودع",
-    },
+
   }[locale]
   return actionNames[actionCode] ?? fallback
 }
@@ -1919,32 +1826,24 @@ function emailDraftCopy(
       ? {
           "en-GB": "I’ve sent the email through the connected mailbox. The confirmed copy is below.",
           "en-US": "I’ve sent the email through the connected mailbox. The confirmed copy is below.",
-          de: "Ich habe die E-Mail über das verbundene Postfach gesendet. Die bestätigte Kopie sehen Sie unten.",
-          fr: "J’ai envoyé l’e-mail via la boîte connectée. La copie confirmée se trouve ci-dessous.",
-          ar: "أرسلت البريد عبر صندوق البريد المتصل. تظهر النسخة المؤكدة أدناه.",
+
         }[locale]
       : {
           "en-GB": "I’ve created the draft in the connected mailbox. The confirmed copy is below.",
           "en-US": "I’ve created the draft in the connected mailbox. The confirmed copy is below.",
-          de: "Ich habe den Entwurf im verbundenen Postfach erstellt. Die bestätigte Kopie sehen Sie unten.",
-          fr: "J’ai créé le brouillon dans la boîte connectée. La copie confirmée se trouve ci-dessous.",
-          ar: "أنشأت المسودة في صندوق البريد المتصل. تظهر النسخة المؤكدة أدناه.",
+
         }[locale]
   }
   return requestedAction === "send"
     ? {
         "en-GB": "I’ve prepared the email below. Check the recipients, mailbox and wording, then select Send email.",
         "en-US": "I’ve prepared the email below. Check the recipients, mailbox, and wording, then select Send email.",
-        de: "Ich habe die E-Mail unten vorbereitet. Prüfen Sie Empfänger, Postfach und Wortlaut und wählen Sie dann „E-Mail senden“.",
-        fr: "J’ai préparé l’e-mail ci-dessous. Vérifiez les destinataires, la boîte d’envoi et le texte, puis sélectionnez « Envoyer l’e-mail ».",
-        ar: "أعددت البريد أدناه. راجع المستلمين وصندوق الإرسال والنص، ثم اختر إرسال البريد.",
+
       }[locale]
     : {
         "en-GB": "I’ve prepared the email below. Check the recipients, mailbox and wording, then select Create draft.",
         "en-US": "I’ve prepared the email below. Check the recipients, mailbox, and wording, then select Create draft.",
-        de: "Ich habe die E-Mail unten vorbereitet. Prüfen Sie Empfänger, Postfach und Wortlaut und wählen Sie dann „Entwurf erstellen“.",
-        fr: "J’ai préparé l’e-mail ci-dessous. Vérifiez les destinataires, la boîte d’envoi et le texte, puis sélectionnez « Créer le brouillon ».",
-        ar: "أعددت البريد أدناه. راجع المستلمين وصندوق الإرسال والنص، ثم اختر إنشاء مسودة.",
+
       }[locale]
 }
 
@@ -2049,9 +1948,7 @@ function emailPreparedChanges(locale: DexterLocale, draft: JsonObject) {
   const labels = ({
     "en-GB": ["Mailbox", "To", "Cc", "Bcc", "Subject", "Message", "Default send-capable mailbox"],
     "en-US": ["Mailbox", "To", "Cc", "Bcc", "Subject", "Message", "Default send-capable mailbox"],
-    de: ["Postfach", "An", "Cc", "Bcc", "Betreff", "Nachricht", "Standardpostfach mit Sendeberechtigung"],
-    fr: ["Boîte", "À", "Cc", "Cci", "Objet", "Message", "Boîte d’envoi par défaut"],
-    ar: ["صندوق البريد", "إلى", "نسخة", "نسخة مخفية", "الموضوع", "الرسالة", "صندوق الإرسال الافتراضي"],
+
   } satisfies Record<DexterLocale, string[]>)[locale]
   return [
     { field: labels[0], before: null, after: cleanString(draft.mailboxId, 80) || labels[6] },
@@ -2087,9 +1984,7 @@ async function securePreparedEmailAction(input: {
   const description = ({
     "en-GB": actionCode === SEND_EMAIL_ACTION ? "Send this exact email once through the selected authorised mailbox." : "Create this exact draft once in the selected authorised mailbox.",
     "en-US": actionCode === SEND_EMAIL_ACTION ? "Send this exact email once through the selected authorized mailbox." : "Create this exact draft once in the selected authorized mailbox.",
-    de: actionCode === SEND_EMAIL_ACTION ? "Diese E-Mail einmal über das ausgewählte autorisierte Postfach senden." : "Diesen Entwurf einmal im ausgewählten autorisierten Postfach erstellen.",
-    fr: actionCode === SEND_EMAIL_ACTION ? "Envoyer cet e-mail une seule fois via la boîte autorisée sélectionnée." : "Créer ce brouillon une seule fois dans la boîte autorisée sélectionnée.",
-    ar: actionCode === SEND_EMAIL_ACTION ? "إرسال هذا البريد مرة واحدة عبر صندوق البريد المصرح المحدد." : "إنشاء هذه المسودة مرة واحدة في صندوق البريد المصرح المحدد.",
+
   } satisfies Record<DexterLocale, string>)[input.locale]
   const changes = emailPreparedChanges(input.locale, input.draft)
   const prepared = await prepareServerAction(input.admin, input.actor, {
@@ -2241,9 +2136,7 @@ function customsDraftSummary(locale: DexterLocale, argumentsValue: JsonObject, d
     const labels = {
       "en-GB": { direction: "Direction", draft: "Declaration draft", import: "Import declaration", export: "Export declaration", traderReference: "Trader reference", value: "Value", exporter: "Exporter", importer: "Importer", consignee: "Consignee", destination: "Destination", goodsItems: "Goods items", noGoodsItems: "No goods items supplied" },
       "en-US": { direction: "Direction", draft: "Declaration draft", import: "Import declaration", export: "Export declaration", traderReference: "Trader reference", value: "Value", exporter: "Exporter", importer: "Importer", consignee: "Consignee", destination: "Destination", goodsItems: "Goods items", noGoodsItems: "No goods items supplied" },
-      de: { direction: "Richtung", draft: "Zollanmeldungsentwurf", import: "Einfuhranmeldung", export: "Ausfuhranmeldung", traderReference: "Händlerreferenz", value: "Wert", exporter: "Ausführer", importer: "Einführer", consignee: "Empfänger", destination: "Bestimmungsland", goodsItems: "Warenpositionen", noGoodsItems: "Keine Warenpositionen angegeben" },
-      fr: { direction: "Sens", draft: "Brouillon de déclaration", import: "Déclaration d'importation", export: "Déclaration d'exportation", traderReference: "Référence déclarant", value: "Valeur", exporter: "Exportateur", importer: "Importateur", consignee: "Destinataire", destination: "Destination", goodsItems: "Articles", noGoodsItems: "Aucun article fourni" },
-      ar: { direction: "الاتجاه", draft: "مسودة الإقرار", import: "إقرار استيراد", export: "إقرار تصدير", traderReference: "مرجع التاجر", value: "القيمة", exporter: "المصدّر", importer: "المستورد", consignee: "المرسل إليه", destination: "الوجهة", goodsItems: "بنود البضائع", noGoodsItems: "لم يتم إدخال بنود للبضائع" },
+
     }[locale]
     const values = [
       [labels.direction, direction === "import" ? labels.import : direction === "export" ? labels.export : labels.draft],
@@ -2271,9 +2164,7 @@ function actionChanges(locale: DexterLocale, actionCode: string, argumentsValue:
     const labels = {
       "en-GB": { title: "Task", scheduled_date: "Scheduled date", priority: "Priority", status: "Status", links: "Links", tags: "Tags", open: "Open", completed: "Completed", deleted: "Removed" },
       "en-US": { title: "Task", scheduled_date: "Scheduled date", priority: "Priority", status: "Status", links: "Links", tags: "Tags", open: "Open", completed: "Completed", deleted: "Removed" },
-      de: { title: "Aufgabe", scheduled_date: "Geplantes Datum", priority: "Priorität", status: "Status", links: "Links", tags: "Tags", open: "Offen", completed: "Erledigt", deleted: "Entfernt" },
-      fr: { title: "Tâche", scheduled_date: "Date prévue", priority: "Priorité", status: "Statut", links: "Liens", tags: "Étiquettes", open: "Ouverte", completed: "Terminée", deleted: "Supprimée" },
-      ar: { title: "المهمة", scheduled_date: "التاريخ المجدول", priority: "الأولوية", status: "الحالة", links: "الروابط", tags: "الوسوم", open: "مفتوحة", completed: "مكتملة", deleted: "تمت إزالتها" },
+
     }[locale]
     if (actionCode === COMPLETE_TODO_TASK_ACTION || actionCode === DELETE_TODO_TASK_ACTION) {
       const after = actionCode === COMPLETE_TODO_TASK_ACTION ? labels.completed : labels.deleted
@@ -2360,9 +2251,7 @@ function preparedActionDescription(
     const title = cleanString(args.title, 300) || cleanString(currentRecord?.title, 300) || {
       "en-GB": "this task",
       "en-US": "this task",
-      de: "diese Aufgabe",
-      fr: "cette tâche",
-      ar: "هذه المهمة",
+
     }[locale]
     const date = cleanString(args.scheduled_date, 12) || cleanString(currentRecord?.scheduledDate, 12)
     const descriptions = {
@@ -2378,24 +2267,7 @@ function preparedActionDescription(
         complete: `Mark “${title}” complete in your private To Do list.`,
         delete: `Remove “${title}” from your private To Do list.`,
       },
-      de: {
-        create: `„${title}“${date ? ` für ${date}` : ""} zu deiner privaten Aufgabenliste hinzufügen.`,
-        update: `Änderungen an „${title}“ in deiner privaten Aufgabenliste speichern.`,
-        complete: `„${title}“ in deiner privaten Aufgabenliste als erledigt markieren.`,
-        delete: `„${title}“ aus deiner privaten Aufgabenliste entfernen.`,
-      },
-      fr: {
-        create: `Ajouter « ${title} » à votre liste privée${date ? ` pour le ${date}` : ""}.`,
-        update: `Enregistrer les modifications de « ${title} » dans votre liste privée.`,
-        complete: `Marquer « ${title} » comme terminée dans votre liste privée.`,
-        delete: `Supprimer « ${title} » de votre liste privée.`,
-      },
-      ar: {
-        create: `إضافة «${title}» إلى قائمة مهامك الخاصة${date ? ` بتاريخ ${date}` : ""}.`,
-        update: `حفظ التغييرات على «${title}» في قائمة مهامك الخاصة.`,
-        complete: `وضع علامة مكتملة على «${title}» في قائمة مهامك الخاصة.`,
-        delete: `إزالة «${title}» من قائمة مهامك الخاصة.`,
-      },
+
     }[locale]
     return sanitiseAnswer(
       actionCode === CREATE_TODO_TASK_ACTION
@@ -2424,27 +2296,21 @@ function preparedActionDescription(
     return sanitiseAnswer({
       "en-GB": `${isCreate ? "Create" : "Save changes to"} this ${draftLabel} Customs draft${itemCount === null ? "" : ` with ${itemCount} goods item${itemCount === 1 ? "" : "s"}`}.${isCreate ? " This creates its editable iCustoms draft but does not submit anything to HMRC." : " This updates the Multideck recovery record; submitting to HMRC remains a separate approved action."}`,
       "en-US": `${isCreate ? "Create" : "Save changes to"} this ${draftLabel} Customs draft${itemCount === null ? "" : ` with ${itemCount} goods item${itemCount === 1 ? "" : "s"}`}.${isCreate ? " This creates its editable iCustoms draft but does not submit anything to HMRC." : " This updates the Multideck recovery record; submitting to HMRC remains a separate approved action."}`,
-      de: `${isCreate ? "Erstelle" : "Speichere Änderungen an"} diesem ${draftLabel === "import" ? "Einfuhr" : draftLabel === "export" ? "Ausfuhr" : "Zoll"}-Anmeldungsentwurf${itemCount === null ? "" : ` mit ${itemCount} Warenposition${itemCount === 1 ? "" : "en"}`}.${isCreate ? " Dadurch wird der bearbeitbare iCustoms-Entwurf erstellt, aber nichts an HMRC übermittelt." : " Dadurch wird der Multideck-Wiederherstellungsdatensatz aktualisiert; die Übermittlung an HMRC bleibt eine separate genehmigte Aktion."}`,
-      fr: `${isCreate ? "Créer" : "Enregistrer les modifications de"} ce brouillon de déclaration ${draftLabel === "import" ? "d'importation" : draftLabel === "export" ? "d'exportation" : "en douane"}${itemCount === null ? "" : ` avec ${itemCount} article${itemCount === 1 ? "" : "s"}`}.${isCreate ? " Cela crée son brouillon iCustoms modifiable sans rien soumettre au HMRC." : " Cela met à jour la copie de récupération Multideck ; la soumission au HMRC reste une action approuvée distincte."}`,
-      ar: `${isCreate ? "إنشاء" : "حفظ تعديلات"} مسودة إقرار ${draftLabel === "import" ? "استيراد" : draftLabel === "export" ? "تصدير" : "جمركي"}${itemCount === null ? "" : ` مع ${itemCount} من بنود البضائع`}.${isCreate ? " سيؤدي ذلك إلى إنشاء مسودة iCustoms قابلة للتعديل دون تقديم أي شيء إلى HMRC." : " سيؤدي ذلك إلى تحديث سجل الاسترداد في Multideck؛ ويظل التقديم إلى HMRC إجراءً منفصلاً يتطلب الموافقة."}`,
+
     }[locale])
   }
   if (actionCode === SAVE_CUSTOMS_PROVIDER_DRAFT_ACTION) {
     return sanitiseAnswer({
       "en-GB": "Validate the current declaration and save it as a draft in the configured iCustoms environment. This will not submit the declaration.",
       "en-US": "Validate the current declaration and save it as a draft in the configured iCustoms environment. This will not submit the declaration.",
-      de: "Die aktuelle Anmeldung prüfen und als Entwurf in der konfigurierten iCustoms-Umgebung speichern. Sie wird nicht übermittelt.",
-      fr: "Valider la déclaration actuelle et l'enregistrer comme brouillon dans l'environnement iCustoms configuré. Elle ne sera pas soumise.",
-      ar: "تحقق من الإقرار الحالي واحفظه كمسودة في بيئة iCustoms المهيأة. لن يتم تقديم الإقرار.",
+
     }[locale])
   }
   if (actionCode === SUBMIT_CUSTOMS_DECLARATION_ACTION) {
     return sanitiseAnswer({
       "en-GB": "Submit the validated declaration once to the configured iCustoms environment. This is an external filing step and does not prove acceptance by customs.",
       "en-US": "Submit the validated declaration once to the configured iCustoms environment. This is an external filing step and does not prove acceptance by customs.",
-      de: "Die geprüfte Anmeldung einmal an die konfigurierte iCustoms-Umgebung übermitteln. Dies ist ein externer Einreichungsschritt und beweist keine Annahme durch den Zoll.",
-      fr: "Soumettre une seule fois la déclaration validée à l'environnement iCustoms configuré. Il s'agit d'une transmission externe, qui ne prouve pas son acceptation par les douanes.",
-      ar: "قدّم الإقرار الذي تم التحقق منه مرة واحدة إلى بيئة iCustoms المهيأة. هذه خطوة تقديم خارجية ولا تثبت قبول الجمارك للإقرار.",
+
     }[locale])
   }
   if (actionCode !== ATTACH_EMAIL_DOCUMENT_ACTION) return sanitiseAnswer(fallback)

@@ -3,9 +3,8 @@ import { readFile } from "node:fs/promises"
 import test from "node:test"
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8")
-const [adminPage, phrases, workflowApi, aiPromptMorph, broadcastSettings, galleryPage, galleryData] = await Promise.all([
+const [adminPage, workflowApi, aiPromptMorph, broadcastSettings, galleryPage, galleryData] = await Promise.all([
   read("../src/pages/admin-page.tsx"),
-  read("../src/i18n/admin-phrases.ts"),
   read("../src/lib/quote-workflow-api.ts"),
   read("../src/components/multideck/ai-prompt-morph.tsx"),
   read("../src/components/multideck/broadcast-settings.tsx"),
@@ -94,25 +93,7 @@ test("the picker chooses one numeric or alphabetic continuous sequence", () => {
   assert.match(adminPage, /t\("Restore default"\)/)
 })
 
-test("unsafe recipes require exactly one continuous sequence and visible copy is localised", () => {
+test("unsafe recipes require exactly one continuous sequence", () => {
   assert.match(adminPage, /counterTokens\.length !== 1/)
   assert.match(adminPage, /Every reference rule needs one continuous sequence\./)
-  for (const phrase of [
-    "Reference recipe",
-    "Describe the reference you want…",
-    "Working…",
-    "Crafting rule…",
-    "Restore default",
-    "Change the next value?",
-    "Restore default",
-    "Sequence format",
-    "4 letters",
-    "5 digits",
-    "6 digits",
-    "7 letters",
-  ]) {
-    const start = phrases.indexOf(`"${phrase}"`)
-    assert.ok(start >= 0, `missing phrase ${phrase}`)
-    assert.match(phrases.slice(start, start + 600), /de: "[^"]+"[\s\S]*?fr: "[^"]+"[\s\S]*?ar: "[^"]+"/)
-  }
 })

@@ -65,5 +65,4 @@ test("the sidebar caches pages, debounces search and explicitly loads older conv
   assert.match(sidebar, /conversations\.forEach\(\(conversation\) => byId\.set\(conversation\.id, conversation\)\)/)
   assert.match(sidebar, /loadDexterConversations\(dexterConversationSearch, dexterConversations\.length\)/)
   assert.match(sidebar, /"Load older conversations"/)
-  assert.match(translations, /"Load older conversations": \{ de: .* fr: .* ar:/)
 })

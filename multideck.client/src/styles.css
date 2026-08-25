@@ -411,6 +411,8 @@
   --md-table-pinned-selected-bg: color-mix(in srgb, var(--md-accent) 14%, var(--md-surface));
   --md-field-bg: #e5e9e7;
   --md-field-bg-hover: #dfe5e2;
+  --md-field-locked-bg: color-mix(in srgb, var(--md-accent) 9%, var(--md-surface));
+  --md-field-locked-line: color-mix(in srgb, var(--md-accent) 42%, var(--md-surface));
   --md-selected-bg: #c8dcd6;
   --md-selected-text: #145b54;
   --md-accent: #0a7068;
@@ -586,6 +588,8 @@
   --md-table-pinned-selected-bg: color-mix(in srgb, var(--md-accent-deep) 68%, var(--md-surface));
   --md-field-bg: #303538;
   --md-field-bg-hover: #373d40;
+  --md-field-locked-bg: color-mix(in srgb, var(--md-accent) 12%, var(--md-surface));
+  --md-field-locked-line: color-mix(in srgb, var(--md-accent) 48%, var(--md-surface));
   --md-selected-bg: #263b37;
   --md-selected-text: #b9e9df;
   --md-accent: #69d4c2;

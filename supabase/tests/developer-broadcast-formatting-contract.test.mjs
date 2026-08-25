@@ -12,7 +12,6 @@ test("email markdown preserves deliberate line breaks inside a paragraph", () =>
 
 const edge = readFileSync(new URL("../functions/developer-broadcasts/index.ts", import.meta.url), "utf8")
 const client = readFileSync(new URL("../../multideck.client/src/components/multideck/broadcast-settings.tsx", import.meta.url), "utf8")
-const phrases = readFileSync(new URL("../../multideck.client/src/i18n/broadcast-settings-phrases.ts", import.meta.url), "utf8")
 
 test("broadcast email Markdown becomes safe headings, lists, emphasis and readable plain text", () => {
   const rendered = renderEmailMarkdown(`# Overview\n\n## What changed\n\n- **Faster** loading\n• Clearer errors\n\n### Next steps\n\n1. Review\n2. Confirm\n\n<script>alert(1)</script>`)
@@ -44,5 +43,4 @@ test("AI drafting requires structured copy and preview delivery share the same r
   assert.match(client, /function BroadcastMessageEditor/)
   assert.match(client, /contentEditable/)
   assert.doesNotMatch(client, /Formatting: ## subheading/)
-  assert.match(phrases, /"Formatting is shown as it will appear in the email\."[\s\S]* ar:/)
 })

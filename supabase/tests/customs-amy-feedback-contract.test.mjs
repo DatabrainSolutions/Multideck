@@ -5,13 +5,12 @@ import test from "node:test"
 const root = new URL("../../", import.meta.url)
 const read = (path) => readFile(new URL(path, root), "utf8")
 
-const [referenceMigration, jobHandoffMigration, dexterParityMigration, declarationModel, declarationPage, declarationPhrases, provider, providerEdge, dexterRuntime] = await Promise.all([
+const [referenceMigration, jobHandoffMigration, dexterParityMigration, declarationModel, declarationPage, provider, providerEdge, dexterRuntime] = await Promise.all([
   read("supabase/migrations/20260820163000_customs_transaction_nature_reference.sql"),
   read("supabase/migrations/20260820151000_job_customs_handoff.sql"),
   read("supabase/migrations/20260820151500_job_customs_dexter_parity.sql"),
   read("multideck.client/src/lib/customs-declaration.ts"),
   read("multideck.client/src/pages/customs-declarations-page.tsx"),
-  read("multideck.client/src/i18n/customs-declaration-phrases.ts"),
   read("supabase/functions/_shared/icustoms.ts"),
   read("supabase/functions/icustoms-api/index.ts"),
   read("supabase/functions/agent-dexter/index.ts"),
@@ -46,7 +45,6 @@ test("exports require eight commodity digits while imports retain ten", () => {
 test("visible import costs map onto official CDS DE 4\/9 codes before provider submission", () => {
   for (const label of ["Freight costs", "VAT value adjustment (AVV)", "Insurance costs", "Containers and packing"]) {
     assert.match(declarationPage, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
-    assert.match(declarationPhrases, new RegExp(`"${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}": \\{[^}]*ar:`))
   }
   for (const code of ["AP", "AQ", "AV", "AW", "AK", "AD"]) {
     assert.match(provider, new RegExp(`"${code}"`))

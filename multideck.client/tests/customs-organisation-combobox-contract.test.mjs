@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises"
 import test from "node:test"
 
 const source = await readFile(new URL("../src/pages/customs-declarations-page.tsx", import.meta.url), "utf8")
-const phrases = await readFile(new URL("../src/i18n/customs-declaration-phrases.ts", import.meta.url), "utf8")
 
 test("Customs party fields use a typeable CRM organisation combobox", () => {
   assert.match(source, /function CustomsOrganisationCombobox\(/u)
@@ -52,19 +51,8 @@ test("the company menu matches its field width without explanatory header copy",
   assert.doesNotMatch(source, /\{t\("Showing companies typed as"\)\}/u)
 })
 
-test("organisation suggestions retain keyboard, mobile and localisation support", () => {
+test("organisation suggestions retain keyboard and mobile support", () => {
   for (const key of ["ArrowDown", "ArrowUp", "Home", "End", "Enter", "Escape"]) assert.match(source, new RegExp(`event\\.key === "${key}"`, "u"))
   assert.match(source, /dir=\{direction\}/u)
   assert.match(source, /min-h-11/u)
-  for (const phrase of [
-    "Name, EORI or company…",
-    "Showing companies typed as",
-    "matching companies",
-    "company options",
-    "Loading companies",
-    "Loading company details",
-    "No companies of the right type match this search.",
-    "Company suggestions unavailable.",
-    "You can keep typing the party name or EORI manually.",
-  ]) assert.ok(phrases.includes(`"${phrase}"`), `missing Customs translation: ${phrase}`)
 })

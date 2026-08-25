@@ -726,9 +726,6 @@ test("Dexter attaches clickable inline citations only to records returned by its
   assert.match(dexterPage, /<DexterInlineCitation href=\{href\} title=\{title \?\? undefined\}>/)
   assert.match(dexterCitation, /href=\{href\}/)
   assert.match(dexterCitation, /aria-label=\{`\$\{t\("Open source"\)\}: \$\{sourceTitle\}`\}/)
-  assert.match(translations, /"Open source": \{ de:/)
-  assert.match(translations, /"Previous source": \{ de:/)
-  assert.match(translations, /"Next source": \{ de:/)
 })
 
 test("workspace searches recover guarded typos without turning weak candidates into facts", () => {
@@ -771,8 +768,6 @@ test("Dexter response data and decisions adapt for narrow, RTL, and reduced-moti
   assert.match(clientStyles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.md-dexter-markdown--streaming > :last-child::after[\s\S]*animation: none/)
   assert.match(dexterApproval, /motion-reduce:animate-none/)
   assert.match(dexterApproval, /<bdi>\{value === null/)
-  assert.match(translations, /"Approve": \{[\s\S]*ar: "موافقة"/)
-  assert.match(translations, /"Deny": \{[\s\S]*ar: "رفض"/)
 })
 
 test("Dexter follows the signed-in operator's locale and freight voice", () => {

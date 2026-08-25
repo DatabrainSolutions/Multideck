@@ -99,7 +99,7 @@ import {
   type SettingsSectionId,
 } from "@/data/settings-navigation"
 import { homeNavItem, inboxNavItem, sidebarAreas } from "@/data/navigation-data"
-import { languageOptions, getLanguageOption } from "@/i18n/languages"
+import { getLanguageOption, languageOptions } from "@/i18n/languages"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   createApiAuthorizationRole,
@@ -304,32 +304,27 @@ function ClockDisplaySetting() {
 
 function LanguageSettingField({
   label = "Language",
-  description = "This changes every Multideck screen and flips layout direction for right-to-left languages.",
+  description = "Choose the English format Multideck uses for dates, times and numbers.",
 }: {
   label?: string
   description?: string
 }) {
-  const { language, setLanguage, direction } = useLanguage()
+  const { language, setLanguage } = useLanguage()
   const selectedLanguage = getLanguageOption(language)
   const languageLabels = languageOptions.map((option) => `${option.label} - ${option.nativeLabel}`)
   const selectedLabel = `${selectedLanguage.label} - ${selectedLanguage.nativeLabel}`
 
   return (
     <SettingsFieldRow label={label} description={description}>
-      <div className="grid gap-2">
-        <SettingsSelect
-          value={selectedLabel}
-          options={languageLabels}
-          ariaLabel="App language"
-          onChange={(nextLabel) => {
-            const nextLanguage = languageOptions.find((option) => nextLabel.startsWith(option.label))
-            if (nextLanguage) setLanguage(nextLanguage.code)
-          }}
-        />
-        <p className="text-[12px] leading-5 text-[var(--md-text)]">
-          {direction === "rtl" ? "Right-to-left layout is active." : "Left-to-right layout is active."}
-        </p>
-      </div>
+      <SettingsSelect
+        value={selectedLabel}
+        options={languageLabels}
+        ariaLabel="App language"
+        onChange={(nextLabel) => {
+          const nextLanguage = languageOptions.find((option) => nextLabel.startsWith(option.label))
+          if (nextLanguage) setLanguage(nextLanguage.code)
+        }}
+      />
     </SettingsFieldRow>
   )
 }

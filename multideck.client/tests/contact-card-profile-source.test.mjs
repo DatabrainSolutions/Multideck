@@ -34,9 +34,3 @@ test("the live profile photo takes precedence over the legacy card snapshot", ()
   assert.match(contactCardStore, /contact-card-profile\?slug=/)
   assert.match(contactCardStore, /person: \{ \.\.\.card\.person, \.\.\.ownerProfile \}/)
 })
-
-test("new profile-owned card copy is translated for supported RTL and European languages", () => {
-  assert.match(translations, /"Update profile": \{ de: "Profil aktualisieren", fr: "Mettre à jour le profil", ar: "تحديث الملف الشخصي" \}/)
-  assert.match(translations, /"Show phone number": \{ de:/)
-  assert.match(translations, /"Managed in profile settings": \{ de:/)
-})

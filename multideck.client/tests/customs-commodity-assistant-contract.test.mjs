@@ -7,7 +7,6 @@ const clientSource = readFileSync(new URL("../src/lib/icustoms-api.ts", import.m
 const edgeSource = readFileSync(new URL("../../supabase/functions/icustoms-api/index.ts", import.meta.url), "utf8")
 const sharedICustomsSource = readFileSync(new URL("../../supabase/functions/_shared/icustoms.ts", import.meta.url), "utf8")
 const dexterSource = readFileSync(new URL("../../supabase/functions/agent-dexter/index.ts", import.meta.url), "utf8")
-const phraseSource = readFileSync(new URL("../src/i18n/customs-declaration-phrases.ts", import.meta.url), "utf8")
 const commodityAssistantSource = pageSource.slice(
   pageSource.indexOf("function CommoditySmartSearch"),
   pageSource.indexOf("\nfunction ItemDetailsEditor"),
@@ -117,17 +116,6 @@ test("repeatable Customs item groups remain addable, removable, and mapped to iC
   }
   assert.match(pageSource, /function RepeatableCustomsRow/u)
   assert.match(pageSource, /onRemove/u)
-})
-
-test("the smart commodity search copy participates in the app language system", () => {
-  assert.match(phraseSource, /"Smart commodity search"/u)
-  assert.match(phraseSource, /"Search for a commodity"/u)
-  assert.match(phraseSource, /"Certificates list"/u)
-  assert.match(phraseSource, /"Certificates for commodity"/u)
-  assert.match(phraseSource, /"Save certificates"/u)
-  assert.match(phraseSource, /"Select country"/u)
-  assert.match(phraseSource, /"Save commodity"/u)
-  assert.match(phraseSource, /ar:\s*\{/u)
 })
 
 test("Dexter and Watching state the human-review boundary for live classification", () => {

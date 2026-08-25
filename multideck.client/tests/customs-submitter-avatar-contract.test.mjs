@@ -5,7 +5,6 @@ import test from "node:test"
 const appSource = await readFile(new URL("../src/App.tsx", import.meta.url), "utf8")
 const apiSource = await readFile(new URL("../src/lib/customs-drafts-api.ts", import.meta.url), "utf8")
 const pageSource = await readFile(new URL("../src/pages/customs-declarations-page.tsx", import.meta.url), "utf8")
-const translations = await readFile(new URL("../src/i18n/customs-declaration-phrases.ts", import.meta.url), "utf8")
 
 test("the declaration register resolves the assigned workspace user on each saved row", () => {
   assert.match(apiSource, /assignedUserId: string \| null/u)
@@ -24,9 +23,4 @@ test("the declaration register preserves profile pictures in a narrow assignee a
   assert.match(pageSource, /<AvatarImage src=\{resolvedPhotoUrl\} alt=""/u)
   assert.match(pageSource, /!draft\.assignmentSupported && draft\.submittedBy === currentUser\?\.id/u)
   assert.match(pageSource, /aria-label=\{`\$\{t\("Assigned to"\)\}: \$\{name\}`\}/u)
-})
-
-test("the assignee workflow is available in every supported declaration language", () => {
-  assert.match(translations, /"Choose the workspace user responsible for this declaration\.": \{ de: "[^"]+", fr: "[^"]+", ar: "[^"]+" \}/u)
-  assert.match(translations, /"Declaration assigned": \{ de: "[^"]+", fr: "[^"]+", ar: "[^"]+" \}/u)
 })

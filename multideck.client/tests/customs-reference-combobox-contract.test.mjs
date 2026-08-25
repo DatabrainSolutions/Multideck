@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises"
 import test from "node:test"
 
 const source = await readFile(new URL("../src/pages/customs-declarations-page.tsx", import.meta.url), "utf8")
-const phrases = await readFile(new URL("../src/i18n/customs-declaration-phrases.ts", import.meta.url), "utf8")
 
 test("catalogue-backed Customs fields share a searchable structured combobox", () => {
   assert.match(source, /function CustomsReferenceCombobox\(/u)
@@ -38,12 +37,9 @@ test("combobox supports the expected keyboard and screen-reader model", () => {
   assert.match(source, /role="status" aria-live="polite"/u)
 })
 
-test("search controls retain mobile targets, RTL direction, and localised states", () => {
+test("search controls retain mobile targets and direction-safe layout", () => {
   assert.match(source, /dir=\{direction\}/u)
   assert.match(source, /h-11[\s\S]*sm:h-9/u)
   assert.match(source, /min-h-11/u)
   assert.match(source, /start-3/u)
-  for (const phrase of ["Search options for", "Search by code or name…", "matching options", "Type an exact code or choose a listed option.", "No matching reference options", "Clear selection"]) {
-    assert.ok(phrases.includes(`"${phrase}"`))
-  }
 })

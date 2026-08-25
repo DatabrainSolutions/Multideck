@@ -224,6 +224,175 @@ begin
 
 end $$;
 
+-- Quote-detail company and linked-location examples. These are deliberately
+-- separate from generic development fixtures because quote source lookups
+-- exclude records marked developmentFixture=true.
+do $$
+declare
+  v_company uuid;
+  v_office uuid;
+  v_owner uuid;
+  v_currency uuid;
+  v_fixture record;
+  v_metadata jsonb;
+begin
+  select office."Company_ID", office."Office_ID"
+    into v_company, v_office
+  from public."CusQuote_Header" quote
+  join public."cmp_Offices" office
+    on office."Office_ID" = coalesce(quote."CusQuoteHeader_OrgOfficeID", quote."OrgOffice_ID")
+  where quote."CusQuoteHeader_CustomerReference" = 'JQ20013'
+  order by quote."CusQuoteHeader_CreatedDate" desc
+  limit 1;
+
+  if v_company is null or v_office is null then
+    raise exception 'Quote demo seed requires the JQ20013 workspace and office.';
+  end if;
+
+  select "User_ID" into v_owner
+  from public."cmp_Users"
+  where "Company_ID" = v_company and "User_AccessStatus" = 'active'
+  order by (lower("User_Email") = 'harry@databrain.solutions') desc, "User_ID"
+  limit 1;
+
+  select "Currency_ID" into v_currency
+  from public."sys_Currency"
+  where "Currency_Code" = 'GBP'
+  limit 1;
+
+  if v_owner is null or v_currency is null then
+    raise exception 'Quote demo seed requires an active workspace user and GBP currency.';
+  end if;
+
+  if exists (
+    select 1 from public."Org_Master"
+    where (
+      "Org_AccCode" = any(array['QDEMO-CUS','QDEMO-SUP','QDEMO-CAR','QDEMO-AGT','QDEMO-SHP','QDEMO-CON'])
+      or "Org_Name" = any(array['Northstar Apparel Demo','Meridian Freight Demo','North Sea Line Demo','Gulf Customs Partners Demo','Karachi Textiles Demo','Bristol Receiving Demo'])
+    )
+    and "Org_id" <> all(array[
+      '51f00000-0000-4000-8000-000000000001'::uuid,'51f00000-0000-4000-8000-000000000002'::uuid,
+      '51f00000-0000-4000-8000-000000000003'::uuid,'51f00000-0000-4000-8000-000000000004'::uuid,
+      '51f00000-0000-4000-8000-000000000005'::uuid,'51f00000-0000-4000-8000-000000000006'::uuid
+    ])
+  ) then
+    raise exception 'Quote demo organisation code or name collides with a non-fixture record.';
+  end if;
+
+  if exists (
+    select 1 from public."OrgContact_Emails"
+    where "OrgContactEmail_Email" = any(array[
+      'quotes@northstar-apparel.example.test','rates@meridian-freight.example.test','services@north-sea-line.example.test',
+      'clearance@gulf-customs.example.test','exports@karachi-textiles.example.test','receiving@bristol-depot.example.test'
+    ])
+    and "OrgContactEmail_ID" <> all(array[
+      '55f00000-0000-4000-8000-000000000001'::uuid,'55f00000-0000-4000-8000-000000000002'::uuid,
+      '55f00000-0000-4000-8000-000000000003'::uuid,'55f00000-0000-4000-8000-000000000004'::uuid,
+      '55f00000-0000-4000-8000-000000000005'::uuid,'55f00000-0000-4000-8000-000000000006'::uuid
+    ])
+  ) then
+    raise exception 'Quote demo email collides with a non-fixture record.';
+  end if;
+
+  for v_fixture in
+    select * from (values
+      ('51f00000-0000-4000-8000-000000000001'::uuid,'52f00000-0000-4000-8000-000000000001'::uuid,'53f00000-0000-4000-8000-000000000001'::uuid,'54f00000-0000-4000-8000-000000000001'::uuid,'55f00000-0000-4000-8000-000000000001'::uuid,'QDEMO-CUS','Northstar Apparel Demo','Customer','1 Harbour Exchange Square','London','E14 9GE','GB','GBLON','Maya','Collins','quotes@northstar-apparel.example.test',true),
+      ('51f00000-0000-4000-8000-000000000002'::uuid,'52f00000-0000-4000-8000-000000000002'::uuid,'53f00000-0000-4000-8000-000000000002'::uuid,'54f00000-0000-4000-8000-000000000002'::uuid,'55f00000-0000-4000-8000-000000000002'::uuid,'QDEMO-SUP','Meridian Freight Demo','Supplier','40 Wilhelminakade','Rotterdam','3072 AP','NL','NLRTM','Sanne','De Vries','rates@meridian-freight.example.test',false),
+      ('51f00000-0000-4000-8000-000000000003'::uuid,'52f00000-0000-4000-8000-000000000003'::uuid,'53f00000-0000-4000-8000-000000000003'::uuid,'54f00000-0000-4000-8000-000000000003'::uuid,'55f00000-0000-4000-8000-000000000003'::uuid,'QDEMO-CAR','North Sea Line Demo','Shipping Line','Am Sandtorkai 50','Hamburg','20457','DE','DEHAM','Lukas','Weber','services@north-sea-line.example.test',false),
+      ('51f00000-0000-4000-8000-000000000004'::uuid,'52f00000-0000-4000-8000-000000000004'::uuid,'53f00000-0000-4000-8000-000000000004'::uuid,'54f00000-0000-4000-8000-000000000004'::uuid,'55f00000-0000-4000-8000-000000000004'::uuid,'QDEMO-AGT','Gulf Customs Partners Demo','Overseas Agent','Jebel Ali Free Zone','Dubai','00000','AE','AEDXB','Amira','Hassan','clearance@gulf-customs.example.test',false),
+      ('51f00000-0000-4000-8000-000000000005'::uuid,'52f00000-0000-4000-8000-000000000005'::uuid,'53f00000-0000-4000-8000-000000000005'::uuid,'54f00000-0000-4000-8000-000000000005'::uuid,'55f00000-0000-4000-8000-000000000005'::uuid,'QDEMO-SHP','Karachi Textiles Demo','Consignor/Shipper','Port Qasim Trade Centre','Karachi','75020','PK','PKKHI','Adeel','Khan','exports@karachi-textiles.example.test',false),
+      ('51f00000-0000-4000-8000-000000000006'::uuid,'52f00000-0000-4000-8000-000000000006'::uuid,'53f00000-0000-4000-8000-000000000006'::uuid,'54f00000-0000-4000-8000-000000000006'::uuid,'55f00000-0000-4000-8000-000000000006'::uuid,'QDEMO-CON','Bristol Receiving Demo','Consignee','Royal Portbury Dock','Bristol','BS20 7XH','GB','GBBRS','Olivia','Reed','receiving@bristol-depot.example.test',false)
+    ) fixture(org_id,profile_id,address_id,contact_id,email_id,code,name,type_name,line1,town_city,postcode,country_code,unlocode,first_name,last_name,email,is_customer)
+  loop
+    insert into public."Org_Master"(
+      "Org_id","Org_Name","Org_BaseCurrency","Org_CRMRelationshipStatusCode","Org_CRMIsLead",
+      "Org_CRMIsPotentialCustomer","Org_CRMUpdatedAt","Org_AccCode"
+    ) values (
+      v_fixture.org_id,v_fixture.name,v_currency,'active_customer',
+      false,v_fixture.is_customer,now(),v_fixture.code
+    )
+    on conflict ("Org_id") do update set
+      "Org_Name"=excluded."Org_Name","Org_BaseCurrency"=excluded."Org_BaseCurrency",
+      "Org_CRMRelationshipStatusCode"=excluded."Org_CRMRelationshipStatusCode",
+      "Org_CRMIsPotentialCustomer"=excluded."Org_CRMIsPotentialCustomer","Org_CRMUpdatedAt"=now(),"Org_AccCode"=excluded."Org_AccCode";
+
+    v_metadata := jsonb_build_object('quoteDemoFixture',true,'source','supabase_seed_quote_sources');
+    if v_fixture.is_customer then
+      v_metadata := v_metadata || jsonb_build_object('quoteTerms',jsonb_build_object(
+        'terms','Northstar Apparel standard trading terms apply to this quotation.',
+        'subjectTo','Subject to carrier space, equipment and final sailing confirmation.',
+        'notes','Prioritise the earliest direct service and advise of any transshipment.',
+        'deadline',(current_date + 7)::text
+      ));
+    end if;
+
+    insert into public."CRM_AccountProfiles"(
+      "CRMAccount_ID","CRMAccount_OrgID","CRMAccount_RelationshipStatusCode","CRMAccount_OwnerUserID",
+      "CRMAccount_OrgOfficeID","CRMAccount_Tier","CRMAccount_Segment","CRMAccount_Vertical",
+      "CRMAccount_PrimaryModeCode","CRMAccount_PrimaryTradeLane","CRMAccount_MetadataJSON",
+      "CRMAccount_CreatedBy","CRMAccount_UpdatedBy","CRMAccount_CompanyID","CRMAccount_ScopeCode","CRMAccount_IsDeleted"
+    ) values (
+      v_fixture.profile_id,v_fixture.org_id,'active_customer',v_owner,
+      v_office,'B','Quote workflow demo',v_fixture.type_name,'sea',v_fixture.unlocode || ' route',v_metadata,
+      v_owner,v_owner,v_company,'standard',false
+    )
+    on conflict ("CRMAccount_OrgID") do update set
+      "CRMAccount_RelationshipStatusCode"=excluded."CRMAccount_RelationshipStatusCode","CRMAccount_OwnerUserID"=excluded."CRMAccount_OwnerUserID",
+      "CRMAccount_OrgOfficeID"=excluded."CRMAccount_OrgOfficeID","CRMAccount_Tier"=excluded."CRMAccount_Tier",
+      "CRMAccount_Segment"=excluded."CRMAccount_Segment","CRMAccount_Vertical"=excluded."CRMAccount_Vertical",
+      "CRMAccount_PrimaryModeCode"=excluded."CRMAccount_PrimaryModeCode","CRMAccount_PrimaryTradeLane"=excluded."CRMAccount_PrimaryTradeLane",
+      "CRMAccount_MetadataJSON"=excluded."CRMAccount_MetadataJSON","CRMAccount_UpdatedAt"=now(),"CRMAccount_UpdatedBy"=excluded."CRMAccount_UpdatedBy","CRMAccount_IsDeleted"=false;
+
+    delete from public."Org_Master_Type" where "Org_ID"=v_fixture.org_id;
+    insert into public."Org_Master_Type"("Org_ID","OrgType_ID")
+    select v_fixture.org_id,"OrgType_ID" from public."Org_Types" where lower("OrgType_Name")=lower(v_fixture.type_name) order by "OrgType_Order" limit 1;
+
+    insert into public."Org_Addresses"(
+      "OrgAdd_ID","Org_ID","Org_NameOverride","OrgAdd_Line1","OrgAdd_TownCity","OrgAdd_PostZipCode","OrgAdd_Country",
+      "OrgAdd_UNLOCODE","OrgAdd_MainEmail","OrgAdd_IsActive","OrgAdd_TimeZone","OrgAdd_UpdatedBy"
+    ) values (
+      v_fixture.address_id,v_fixture.org_id,v_fixture.town_city || ' office',v_fixture.line1,v_fixture.town_city,v_fixture.postcode,
+      v_fixture.country_code,v_fixture.unlocode,v_fixture.email,true,'UTC',v_owner
+    )
+    on conflict ("OrgAdd_ID") do update set
+      "Org_ID"=excluded."Org_ID","Org_NameOverride"=excluded."Org_NameOverride","OrgAdd_Line1"=excluded."OrgAdd_Line1",
+      "OrgAdd_TownCity"=excluded."OrgAdd_TownCity","OrgAdd_PostZipCode"=excluded."OrgAdd_PostZipCode","OrgAdd_Country"=excluded."OrgAdd_Country",
+      "OrgAdd_UNLOCODE"=excluded."OrgAdd_UNLOCODE","OrgAdd_MainEmail"=excluded."OrgAdd_MainEmail","OrgAdd_IsActive"=true,
+      "OrgAdd_UpdatedAt"=now(),"OrgAdd_UpdatedBy"=excluded."OrgAdd_UpdatedBy";
+
+    insert into public."Org_Contacts"("OrgContact_ID","Org_ID","OrgContact_FirstName","OrgContact_LastName")
+    values (v_fixture.contact_id,v_fixture.org_id,v_fixture.first_name,v_fixture.last_name)
+    on conflict ("OrgContact_ID") do update set "Org_ID"=excluded."Org_ID","OrgContact_FirstName"=excluded."OrgContact_FirstName","OrgContact_LastName"=excluded."OrgContact_LastName";
+
+    insert into public."OrgContact_Emails"(
+      "OrgContactEmail_ID","OrgContactEmail_Email","OrgContactEmail_Type","OrgContact_ID","OrgContactEmail_IsActive","OrgContactEmail_IsPrimary"
+    ) values (v_fixture.email_id,v_fixture.email,1,v_fixture.contact_id,true,true)
+    on conflict ("OrgContactEmail_ID") do update set
+      "OrgContactEmail_Email"=excluded."OrgContactEmail_Email","OrgContact_ID"=excluded."OrgContact_ID",
+      "OrgContactEmail_IsActive"=true,"OrgContactEmail_IsPrimary"=true,"OrgContactEmail_ValidTo"=null;
+  end loop;
+
+  if (select count(*) from public."Org_Master_Type" where "Org_ID"::text like '51f00000-0000-4000-8000-%') <> 6 then
+    raise exception 'Quote demo seed requires all six organisation types.';
+  end if;
+
+  insert into public."Org_RelatedPartyDefaults"(
+    "OrgRelatedDefault_ID","OrgRelatedDefault_CompanyID","OrgRelatedDefault_SourceOrgID","OrgRelatedDefault_PartyRoleCode",
+    "OrgRelatedDefault_TargetOrgID","OrgRelatedDefault_TargetAddressID","OrgRelatedDefault_TargetContactID",
+    "OrgRelatedDefault_Priority","OrgRelatedDefault_IsActive","OrgRelatedDefault_CreatedBy","OrgRelatedDefault_UpdatedBy"
+  ) values
+    ('56f00000-0000-4000-8000-000000000001',v_company,'51f00000-0000-4000-8000-000000000001','shipper','51f00000-0000-4000-8000-000000000005','53f00000-0000-4000-8000-000000000005','54f00000-0000-4000-8000-000000000005',10,true,v_owner,v_owner),
+    ('56f00000-0000-4000-8000-000000000002',v_company,'51f00000-0000-4000-8000-000000000001','consignee','51f00000-0000-4000-8000-000000000006','53f00000-0000-4000-8000-000000000006','54f00000-0000-4000-8000-000000000006',20,true,v_owner,v_owner)
+  on conflict ("OrgRelatedDefault_ID") do update set
+    "OrgRelatedDefault_CompanyID"=excluded."OrgRelatedDefault_CompanyID","OrgRelatedDefault_SourceOrgID"=excluded."OrgRelatedDefault_SourceOrgID",
+    "OrgRelatedDefault_PartyRoleCode"=excluded."OrgRelatedDefault_PartyRoleCode","OrgRelatedDefault_TargetOrgID"=excluded."OrgRelatedDefault_TargetOrgID",
+    "OrgRelatedDefault_TargetAddressID"=excluded."OrgRelatedDefault_TargetAddressID","OrgRelatedDefault_TargetContactID"=excluded."OrgRelatedDefault_TargetContactID",
+    "OrgRelatedDefault_Priority"=excluded."OrgRelatedDefault_Priority","OrgRelatedDefault_IsActive"=true,"OrgRelatedDefault_UpdatedAt"=now(),"OrgRelatedDefault_UpdatedBy"=excluded."OrgRelatedDefault_UpdatedBy";
+
+  delete from public."AI_DexterWatchSignals"
+  where "AIDexterWatchSignal_SourceID"::text like any(array['51f00000-0000-4000-8000-%','52f00000-0000-4000-8000-%','53f00000-0000-4000-8000-%','56f00000-0000-4000-8000-%']);
+end $$;
+
 -- Reproducible document-template jobs. These rows use reserved IDs, synthetic
 -- organisations, and a clearly marked note so they cannot be mistaken for
 -- customer freight. Re-running the seed never updates an existing job.

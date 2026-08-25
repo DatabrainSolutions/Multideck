@@ -13,6 +13,10 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .md-quote-workspace-header--details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .md-quote-record-header {
     align-items: stretch;
     flex-direction: column;
@@ -72,6 +76,10 @@
 
     .md-quote-cargowise-totals {
       grid-column: auto;
+    }
+
+    .md-quote-workspace-header--details {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 

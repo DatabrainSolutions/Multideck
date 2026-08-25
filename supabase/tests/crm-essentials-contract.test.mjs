@@ -134,9 +134,6 @@ test("lead transfers lock, reject stale owners, update open opportunities and no
   assert.match(leadDetailPage, /requestsToReview\.map/)
   assert.match(leadDetailPage, /currentPendingRequest/)
   assert.match(app, /<CrmLeadDetailPage[^>]*currentUser=\{currentUser\}/)
-  for (const phrase of ["Manage ownership", "Ownership request pending", "Send ownership request", "Reason for overriding ownership"]) {
-    assert.ok(translations.includes(`"${phrase}": { de:`), `${phrase} must be localised`)
-  }
 })
 
 test("deal winning is conversion-stage validated, permissioned and idempotent", () => {

@@ -3,7 +3,7 @@ import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email
 import { normaliseLocale, renderBrandedEmail } from "../_shared/email-template.ts"
 import { authorizationCatalogueReadModel, isLegacyCustomRoleName, isPendingInvitation, singleTeamUserReadModel, SYSTEM_ROLES, teamCatalogueReadModel, teamUsersByIdsReadModel, teamUsersPageCompatibilityReadModel } from "../_shared/team-read-model.ts"
 
-type DeletionEmailLocale = "en" | "de" | "fr" | "ar"
+type DeletionEmailLocale = "en"
 
 const deletionEmailCopy: Record<DeletionEmailLocale, {
   subject: string
@@ -22,33 +22,6 @@ const deletionEmailCopy: Record<DeletionEmailLocale, {
     body: ["A workspace administrator has deleted your Multideck account. Your sign-in and access to this workspace have been removed.", "You do not need to take any action."],
     eyebrow: "Account update",
     footer: "If you believe this was a mistake, reply to this email and the Multideck team will help.",
-  },
-  de: {
-    subject: "Dein Multideck-Konto wurde gelöscht",
-    preview: "Dein Zugang zum Multideck-Arbeitsbereich wurde entfernt.",
-    title: "Dein Konto wurde gelöscht",
-    greeting: (name) => `Hallo ${name},`,
-    body: ["Ein Administrator hat dein Multideck-Konto gelöscht. Deine Anmeldung und dein Zugang zu diesem Arbeitsbereich wurden entfernt.", "Du musst nichts weiter tun."],
-    eyebrow: "Kontoaktualisierung",
-    footer: "Wenn du glaubst, dass dies ein Fehler war, antworte auf diese E-Mail. Das Multideck-Team hilft dir weiter.",
-  },
-  fr: {
-    subject: "Votre compte Multideck a été supprimé",
-    preview: "Votre accès à l’espace Multideck a été supprimé.",
-    title: "Votre compte a été supprimé",
-    greeting: (name) => `Bonjour ${name},`,
-    body: ["Un administrateur a supprimé votre compte Multideck. Votre connexion et votre accès à cet espace ont été retirés.", "Vous n’avez aucune action à effectuer."],
-    eyebrow: "Mise à jour du compte",
-    footer: "Si vous pensez qu’il s’agit d’une erreur, répondez à cet e-mail. L’équipe Multideck vous aidera.",
-  },
-  ar: {
-    subject: "تم حذف حساب Multideck الخاص بك",
-    preview: "تمت إزالة وصولك إلى مساحة عمل Multideck.",
-    title: "تم حذف حسابك",
-    greeting: (name) => `مرحبًا ${name}،`,
-    body: ["حذف مسؤول مساحة العمل حساب Multideck الخاص بك. تمت إزالة تسجيل دخولك ووصولك إلى مساحة العمل هذه.", "لا يلزمك اتخاذ أي إجراء."],
-    eyebrow: "تحديث الحساب",
-    footer: "إذا كنت تعتقد أن هذا حدث عن طريق الخطأ، فرد على هذه الرسالة وسيساعدك فريق Multideck.",
   },
 }
 

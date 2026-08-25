@@ -6,7 +6,6 @@ const settingsSource = await readFile(new URL("../src/pages/settings-page.tsx", 
 const navigationSource = await readFile(new URL("../src/data/settings-navigation.ts", import.meta.url), "utf8")
 const sidebarNavigationSource = await readFile(new URL("../src/data/navigation-data.ts", import.meta.url), "utf8")
 const adminPageSource = await readFile(new URL("../src/pages/admin-page.tsx", import.meta.url), "utf8")
-const translationsSource = `${await readFile(new URL("../src/i18n/translate.ts", import.meta.url), "utf8")}\n${await readFile(new URL("../src/i18n/admin-phrases.ts", import.meta.url), "utf8")}`
 
 test("permissions are merged into the tenant-admin Users surface", () => {
   assert.doesNotMatch(navigationSource, /\{ id: "users"/u)
@@ -53,20 +52,6 @@ test("user details and permissions swap inside one stable, retargetable dialog s
   assert.doesNotMatch(usersTab, /filter: "blur/u)
 })
 
-test("new merged access copy is available in every supported language", () => {
-  for (const phrase of [
-    "People, roles and access",
-    "Admin / Users",
-    "Make a role",
-    "Back to user details",
-    "Choose permissions for a reusable workspace role. You can assign it to more people later.",
-  ]) {
-    const start = translationsSource.indexOf(`\"${phrase}\"`)
-    assert.ok(start >= 0, `missing translation entry for ${phrase}`)
-    assert.match(translationsSource.slice(start, start + 700), /\{ de: "[^"]+", fr: "[^"]+", ar: "[^"]+" \}/u)
-  }
-})
-
 test("password reset is personalised, compact and removes the duplicate user identity block", () => {
   const resetDialog = settingsSource.slice(settingsSource.indexOf('<Dialog open={Boolean(passwordCandidate)}'), settingsSource.indexOf('<Dialog open={Boolean(editingUser)}'))
   assert.doesNotMatch(resetDialog, /<TeamUserIdentity/u)
@@ -75,15 +60,4 @@ test("password reset is personalised, compact and removes the duplicate user ide
   assert.match(resetDialog, /\{resetPasswordTitle\}/u)
   assert.match(resetDialog, /\{resetPasswordAction\}/u)
   assert.match(settingsSource, /t\("Reset \{name\}’s password"\)\.replace\("\{name\}", passwordCandidateName\)/u)
-
-  for (const phrase of [
-    "Reset {name}’s password",
-    "Resetting {name}’s password",
-    "Choose a new password for {name}. It will be used at the next sign-in. Existing sessions will stay active.",
-    "Use at least 8 characters. Share the new password with {name} securely.",
-  ]) {
-    const start = translationsSource.indexOf(`\"${phrase}\"`)
-    assert.ok(start >= 0, `missing password-reset translation entry for ${phrase}`)
-    assert.match(translationsSource.slice(start, start + 700), /\{ de: "[^"]+", fr: "[^"]+", ar: "[^"]+" \}|de: "[^"]+"[\s\S]*?fr: "[^"]+"[\s\S]*?ar: "[^"]+"/u)
-  }
 })

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises"
 import test from "node:test"
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8")
-const [app, authUser, sidebar, navigation, settingsNavigation, settingsPage, adminPage, adminApi, phrases, gallery] = await Promise.all([
+const [app, authUser, sidebar, navigation, settingsNavigation, settingsPage, adminPage, adminApi, gallery] = await Promise.all([
   read("../src/App.tsx"),
   read("../src/lib/auth-user.ts"),
   read("../src/components/multideck/app-sidebar.tsx"),
@@ -12,7 +12,6 @@ const [app, authUser, sidebar, navigation, settingsNavigation, settingsPage, adm
   read("../src/pages/settings-page.tsx"),
   read("../src/pages/admin-page.tsx"),
   read("../src/lib/admin-audit-api.ts"),
-  read("../src/i18n/admin-phrases.ts"),
   read("../src/data/multideck-data.ts"),
 ])
 
@@ -58,7 +57,6 @@ test("audit screens use the canonical bounded table, refresh automatically and o
   assert.match(adminPage, /<AvatarImage src=\{currentUser\.profilePhotoUrl\}/)
   assert.match(adminPage, /<ul className="flex flex-wrap items-center gap-2">/)
   assert.doesNotMatch(adminPage, /Seen in this workspace during the last two minutes\./)
-  assert.match(phrases, /"See sign-ins, sign-outs and operator actions in the workspace\.": \{ de: "[^"]+", fr: "[^"]+", ar: "[^"]+" \}/)
   assert.match(adminPage, /auditRefreshIntervalMs = 60_000/)
   assert.match(adminPage, /window\.setInterval\(\(\) => \{[\s\S]*?void load\(controller\.signal\)[\s\S]*?\}, auditRefreshIntervalMs\)/)
   assert.doesNotMatch(adminPage, /Field-level audit currently covers/)
@@ -88,7 +86,6 @@ test("audit actor pills distinguish people from system-generated events", () => 
   assert.doesNotMatch(adminPage, /showEmail/)
   assert.doesNotMatch(adminPage, /\{row\.actorEmail\}<\/p>/)
   assert.match(adminPage, /row\.actorName \|\| fallbackLabel/)
-  assert.match(phrases, /"Workspace user": \{ de: "[^"]+", fr: "[^"]+", ar: "[^"]+" \}/)
 })
 
 test("audit logs do not render user or user-session identifiers", () => {
@@ -98,11 +95,6 @@ test("audit logs do not render user or user-session identifiers", () => {
   assert.match(adminPage, /return identifier \? `\$\{type\} · \$\{identifier\}` : type/)
 })
 
-test("Admin copy supports every app language and DataTable quick links point to the new routes", () => {
-  for (const phrase of ["Admin", "Active log", "Detailed log", "Active now", "IP address", "Before", "After"]) {
-    const start = phrases.indexOf(`"${phrase}"`)
-    assert.ok(start >= 0, `missing Admin phrase ${phrase}`)
-    assert.match(phrases.slice(start, start + 500), /de: "[^"]+"[\s\S]*?fr: "[^"]+"[\s\S]*?ar: "[^"]+"/)
-  }
+test("DataTable quick links point to the Admin routes", () => {
   for (const route of ["/admin/users", "/admin/ai-usage", "/admin/broadcast", "/admin/activity", "/admin/detailed-log"]) assert.match(gallery, new RegExp(route.replaceAll("/", "\\/")))
 })

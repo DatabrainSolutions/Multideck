@@ -175,10 +175,7 @@ function getSnapshot(range: DashboardRange) {
 }
 
 function getLanguageLocale(language: LanguageCode) {
-  if (language === "de") return "de-DE"
-  if (language === "fr") return "fr-FR"
-  if (language === "ar") return "ar-GB-u-ca-gregory"
-  return "en-GB"
+  return language
 }
 
 function getDateKey(date: Date) {

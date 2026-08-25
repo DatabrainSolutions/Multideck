@@ -11,14 +11,61 @@ export type QuoteSourceOption = {
 }
 
 export type QuoteSupplierOption = { id: string; name: string }
+export type QuoteOrganisationAddress = {
+  id: string
+  label: string
+  address: string
+  line1?: string | null
+  line2?: string | null
+  townCity?: string | null
+  countyState?: string | null
+  postcode?: string | null
+  country?: string | null
+  countryCode?: string | null
+  unlocode?: string | null
+  email?: string | null
+  phone?: string | null
+}
+export type QuoteOrganisationContact = {
+  id: string
+  name: string
+  email?: string | null
+  emails: string[]
+}
+export type QuoteRelatedPartyRecommendation = {
+  id: string
+  role: string
+  organisationId: string
+  addressId?: string | null
+  contactId?: string | null
+  priority: number
+  source: "saved_default" | "quote_history"
+  usageCount: number
+  lastUsedAt?: string | null
+  destinationCountryCode?: string | null
+  destinationUnlocode?: string | null
+  destinationPostcode?: string | null
+  evidence: {
+    sourceTable: "Org_RelatedPartyDefaults" | "CusQuote_Parties"
+    sourceId: string
+  }
+}
 export type QuoteOrganisationOption = QuoteSupplierOption & {
   code: string
   types: string[]
-  addresses: Array<{ id: string; label: string; address: string; email?: string | null; phone?: string | null }>
-  contacts: Array<{ id: string; name: string; email?: string | null }>
+  addresses: QuoteOrganisationAddress[]
+  contacts: QuoteOrganisationContact[]
+  relatedPartyRecommendations: QuoteRelatedPartyRecommendation[]
+  quoteTerms?: {
+    terms: string
+    subjectTo: string
+    notes: string
+    deadline: string
+  } | null
 }
 export type QuoteLookupOption = { id: string; name: string; code?: string }
 export type QuoteCodeOption = { code: string; name: string }
+export type QuoteCountryOption = { code: string; name: string; alpha3?: string | null }
 export type QuotePartyDraft = { orgId?: string | null; name: string; address?: string | null; contact?: string | null }
 
 export type QuoteWorkflowCharge = {
@@ -230,6 +277,7 @@ export type QuoteWorkflowSources = {
   organisations: QuoteOrganisationOption[]
   suppliers: QuoteSupplierOption[]
   carriers: QuoteSupplierOption[]
+  agents: QuoteSupplierOption[]
   offices: QuoteLookupOption[]
   departments: QuoteLookupOption[]
   users: Array<QuoteLookupOption & { email: string }>
@@ -237,6 +285,7 @@ export type QuoteWorkflowSources = {
   shipmentTypes: QuoteCodeOption[]
   currencies: Array<QuoteCodeOption & { id: string }>
   commodities: Array<QuoteCodeOption & { id: string }>
+  countries: QuoteCountryOption[]
 }
 
 export type QuoteReferenceSettings = {

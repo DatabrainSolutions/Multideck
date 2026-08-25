@@ -67,17 +67,3 @@ test("wizard validation uses the same field marker and focuses the first missing
   assert.match(bookingWizard, /setFocusFieldLabel\(missingCurrent\[0\]\)/u)
   assert.match(customs, /function CustomsReferenceCombobox[\s\S]*aria-invalid=\{invalid \|\| undefined\}/u)
 })
-
-test("new validation guidance is localised including Arabic", () => {
-  for (const phrase of [
-    "Enter a valid work email.",
-    "Email or password is incorrect. Check both and try again.",
-    "Unable to sign you in right now. Check your connection and try again.",
-    "This field is required.",
-  ]) {
-    const entry = translations.slice(translations.indexOf(`\"${phrase}\"`), translations.indexOf(`\"${phrase}\"`) + 500)
-    assert.match(entry, /de:/u)
-    assert.match(entry, /fr:/u)
-    assert.match(entry, /ar:/u)
-  }
-})

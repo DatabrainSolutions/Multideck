@@ -5,7 +5,7 @@ import test from "node:test"
 const root = new URL("../../", import.meta.url)
 const read = (path) => readFile(new URL(path, root), "utf8")
 
-const [core, workflow, migration, quotePage, responsePage, bookingPage, bookingComponents, api, dexter, phrases] = await Promise.all([
+const [core, workflow, migration, quotePage, responsePage, bookingPage, bookingComponents, api, dexter] = await Promise.all([
   read("supabase/functions/quotes-workflow/core.ts"),
   read("supabase/functions/quotes-workflow/index.ts"),
   read("supabase/migrations/20260822090000_quote_delivery_modes_and_won_parity.sql"),
@@ -15,7 +15,6 @@ const [core, workflow, migration, quotePage, responsePage, bookingPage, bookingC
   read("multideck.client/src/components/multideck/booking-components.tsx"),
   read("multideck.client/src/lib/quote-workflow-api.ts"),
   read("supabase/functions/agent-dexter/index.ts"),
-  read("multideck.client/src/i18n/quote-response-phrases.ts"),
 ])
 
 test("Standard and Simple delivery are explicit, persisted modes", () => {
@@ -104,18 +103,4 @@ test("Dexter can read delivery evidence, propose won or lost, and watches remain
   assert.match(dexter, /Standard emails include the secure customer response link/)
   assert.match(dexter, /Simple emails are plain, PDF-only messages without customer response controls/)
   assert.match(dexter, /Mark quote won/)
-})
-
-test("new quote flow copy is registered with the app language layer", () => {
-  for (const phrase of [
-    "Simple",
-    "Send a short plain email with the quote PDF attached.",
-    "Simple emails do not include customer response controls. Record the outcome with Mark won or Mark lost in Multideck.",
-    "Mark won and create booking",
-    "From quote",
-    "Choose a company contact or enter an email address.",
-    "Enter a valid customer email address.",
-    "Attached",
-    "This address is used for this send only. Saved quote and CRM contact details will not change.",
-  ]) assert.match(phrases, new RegExp(`"${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`))
 })

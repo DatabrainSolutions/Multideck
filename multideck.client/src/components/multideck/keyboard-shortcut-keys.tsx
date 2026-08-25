@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 /**
  * Draws a binding as keycaps.
  *
- * Always left-to-right, even in Arabic: "⌘ then K" describes a physical keyboard,
+ * Always left-to-right: "⌘ then K" describes a physical keyboard,
  * and a keyboard does not mirror. The word between the steps is the only part
  * that translates, which is why it sits outside the `data-i18n-skip` group.
  */

@@ -30,9 +30,6 @@ export type MultideckDateRangeComparison = {
 }
 
 function getLanguageLocale(language: LanguageCode) {
-  if (language === "de") return "de-DE"
-  if (language === "fr") return "fr-FR"
-  if (language === "ar") return "ar-GB-u-ca-gregory"
   return language
 }
 
