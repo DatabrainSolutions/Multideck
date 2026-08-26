@@ -11,6 +11,7 @@ import { InlineField, InlineFieldGroup, InlineSelectField, InlineToggleChip } fr
 import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { OrganisationFoundationPanel } from "@/components/multideck/organisation-foundation-panel"
 import { PhoneCallLinkedRecordSection } from "@/components/multideck/phone-call-components"
+import { ScoreExplanationPopover } from "@/components/multideck/score-explanation-popover"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
@@ -21,7 +22,7 @@ import { Switch } from "@/components/ui/switch"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, staggerRamp } from "@/lib/motion"
 import { cn } from "@/lib/utils"
-import { CustomerApiError, getCustomer, getCustomerReference, updateAccount, updateAccountCompanyTypes, type ApiCustomerDetail, type CustomerReference, type UpdateAccountInput } from "@/lib/customer-api"
+import { CustomerApiError, getCustomer, getCustomerReference, updateAccount, updateAccountCompanyTypes, type AccountScoreExplanation, type ApiCustomerDetail, type CustomerReference, type UpdateAccountInput } from "@/lib/customer-api"
 import { CustomerWarehouseAccess } from "@/pages/customer-detail-page"
 
 type CustomField = { id: string; label: string; value: string }
@@ -469,8 +470,8 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
                 churn are calculated signals: operators can read them here but
                 cannot silently override the underlying percentage. */}
             <div className="grid grid-cols-2 bg-[var(--md-surface-soft)] shadow-[var(--md-stroke-bottom)] lg:grid-cols-4">
-              <ScoreCell label={t("Health")} score={currentAccount.healthScore} tone="health" />
-              <ScoreCell label={t("Churn risk")} score={currentAccount.churnRiskScore} tone="risk" />
+              <ScoreCell label={t("Health")} score={currentAccount.healthScore} tone="health" explanation={currentAccount.scoreExplanations?.health ?? null} />
+              <ScoreCell label={t("Churn risk")} score={currentAccount.churnRiskScore} tone="risk" explanation={currentAccount.scoreExplanations?.churnRisk ?? null} />
               <StatCell label={t("Contacts")} value={String(currentAccount.contacts.length)} />
               <StatCell label={t("Active shipments")} value={String(currentAccount.activeShipments.length)} note={openExceptions ? `${openExceptions} ${t(openExceptions === 1 ? "open exception" : "open exceptions")}` : undefined} noteTone="amber" />
             </div>
@@ -851,19 +852,21 @@ function StatCell({ label, value, note, noteTone }: { label: string; value: stri
  * The ring says whether it is a good eighty-two — which for churn risk is the
  * opposite of what it means for health.
  */
-function ScoreCell({ label, score, tone }: { label: string; score: number | null; tone: "health" | "risk" }) {
+function ScoreCell({ label, score, tone, explanation }: { label: string; score: number | null; tone: "health" | "risk"; explanation: AccountScoreExplanation | null }) {
   const colour = score == null ? "var(--md-subtle)" : tone === "health" ? (score >= 70 ? "var(--md-green)" : score >= 40 ? "var(--md-amber)" : "var(--md-red)") : score >= 60 ? "var(--md-red)" : score >= 30 ? "var(--md-amber)" : "var(--md-green)"
 
   return (
-    <div className="flex min-w-0 items-center gap-2.5 border-[var(--md-line)] px-4 py-3 sm:px-5 lg:border-e">
-      <ProgressRing ratio={(score ?? 0) / 100} size={34} thickness={3.5} color={colour} trackOpacity={0.16} />
-      <div className="min-w-0">
-        <p className="flex items-center gap-1 text-[11px] leading-3 text-[var(--md-subtle)]">
-          {tone === "health" ? <Health className="size-3" strokeWidth={1.4} aria-hidden="true" /> : null}
-          {label}
-        </p>
-        <p className="mt-1 text-[18px] font-medium leading-6 tabular-nums text-[var(--md-ink)]">{score == null ? "—" : `${Math.round(score)}%`}</p>
-      </div>
+    <div className="min-w-0 border-[var(--md-line)] p-1.5 sm:px-2.5 lg:border-e">
+      <ScoreExplanationPopover kind={tone === "health" ? "health" : "churnRisk"} score={score} explanation={explanation} className="px-2.5 py-1.5">
+        <ProgressRing ratio={(score ?? 0) / 100} size={34} thickness={3.5} color={colour} trackOpacity={0.16} />
+        <span className="min-w-0">
+          <span className="flex items-center gap-1 text-[11px] leading-3 text-[var(--md-subtle)]">
+            {tone === "health" ? <Health className="size-3" strokeWidth={1.4} aria-hidden="true" /> : null}
+            {label}
+          </span>
+          <span className="mt-1 block text-[18px] font-medium leading-6 tabular-nums text-[var(--md-ink)]">{score == null ? "—" : `${Math.round(score)}%`}</span>
+        </span>
+      </ScoreExplanationPopover>
     </div>
   )
 }
@@ -954,7 +957,7 @@ function MomentRow({ moment, last, onOpen }: { moment: Moment; last: boolean; on
   )
 
   return (
-    <li className="relative">
+    <li id={`activity-${moment.id}`} className="relative scroll-mt-24">
       {/* The thread that makes a run of rows read as one run of time. It starts
           below the disc and reaches the next one, so the column never breaks. */}
       {last ? null : <span aria-hidden="true" className="absolute bottom-0 start-[19px] top-8 w-px bg-[var(--md-line)]" />}

@@ -39,6 +39,7 @@ import {
   X,
 } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -67,7 +68,18 @@ import { DexterDockedPage } from "@/components/multideck/dexter-companion-sideba
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { MultideckDatePicker } from "@/components/multideck/date-picker"
 import { CopyFeedbackTransition, CopyStatusIcon } from "@/components/multideck/copyable-field"
-import { CustomerAvatar } from "@/components/multideck/customer-components"
+import { AutoPopulatedInput, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
+import type { AuthUserSummary } from "@/lib/auth-user"
+import { getApiTeamUsersByIds } from "@/lib/api"
+import { createProfilePhotoSignedUrl, createProfilePhotoSignedUrls } from "@/lib/profile-photo"
+import { supabase } from "@/lib/supabase"
+import {
+  loadUnlocodeDirectory,
+  loadUnlocodeDirectoryMetadata,
+  unlocodeKind,
+  type UnlocodeDirectoryRecord,
+} from "@/lib/unlocode-directory"
+import { LifecycleNotes } from "@/components/multideck/lifecycle-notes"
 import {
   AmountCurrencyField,
   CargoCharacteristicsField,
@@ -144,9 +156,9 @@ type QuoteParty = {
 }
 
 type QuoteCurrency = "GBP" | "USD" | "EUR" | "JPY" | "AUD" | "CAD"
-type QuoteWorkspaceTab = "overview" | "details" | "charges" | "documents" | "audit"
+type QuoteWorkspaceTab = "overview" | "details" | "charges" | "documents" | "notes" | "audit"
 
-const quoteWorkspaceTabs: QuoteWorkspaceTab[] = ["overview", "details", "charges", "documents", "audit"]
+const quoteWorkspaceTabs: QuoteWorkspaceTab[] = ["overview", "details", "charges", "documents", "notes", "audit"]
 
 const LockPasswordSolidRoundedIcon = [["path", {
   d: "M12 3.25C10.067 3.25 8.5 4.817 8.5 6.75V8.31016C9.61773 8.27048 10.7654 8.25 12 8.25C13.2346 8.25 14.3823 8.27048 15.5 8.31016V6.75C15.5 4.817 13.933 3.25 12 3.25ZM6.5 6.75V8.52712C4.93233 9.00686 3.74925 10.3861 3.52452 12.0552C3.37636 13.1556 3.25 14.3118 3.25 15.5C3.25 16.6882 3.37636 17.8444 3.52452 18.9448C3.79609 20.9618 5.46716 22.5555 7.52522 22.6501C8.95364 22.7158 10.4042 22.75 12 22.75C13.5958 22.75 15.0464 22.7158 16.4748 22.6501C18.5328 22.5555 20.2039 20.9618 20.4755 18.9448C20.6236 17.8444 20.75 16.6882 20.75 15.5C20.75 14.3118 20.6236 13.1556 20.4755 12.0552C20.2508 10.3861 19.0677 9.00686 17.5 8.52712V6.75C17.5 3.71243 15.0376 1.25 12 1.25C8.96243 1.25 6.5 3.71243 6.5 6.75ZM17 15.4902C17 14.9379 16.5523 14.4902 16 14.4902C15.4477 14.4902 15 14.9379 15 15.4902V15.5002C15 16.0525 15.4477 16.5002 16 16.5002C16.5523 16.5002 17 16.0525 17 15.5002V15.4902ZM12 14.4902C12.5523 14.4902 13 14.9379 13 15.4902V15.5002C13 16.0525 12.5523 16.5002 12 16.5002C11.4477 16.5002 11 16.0525 11 15.5002V15.4902C11 14.9379 11.4477 14.4902 12 14.4902ZM9 15.4902C9 14.9379 8.55228 14.4902 8 14.4902C7.44772 14.4902 7 14.9379 7 15.4902V15.5002C7 16.0525 7.44772 16.5002 8 16.5002C8.55228 16.5002 9 16.0525 9 15.5002V15.4902Z",
@@ -779,6 +791,33 @@ function salesRepresentativeValue(salesRep?: string, emptyWhenMissing = false) {
 function personInitials(name?: string) {
   const words = name?.trim().split(/\s+/).filter(Boolean) ?? []
   return words.length > 0 ? words.slice(0, 2).map((word) => word.charAt(0).toUpperCase()).join("") : "?"
+}
+
+function QuotePersonAvatar({
+  name,
+  photoUrl,
+  className,
+  fallbackClassName,
+}: {
+  name?: string
+  photoUrl?: string | null
+  className?: string
+  fallbackClassName?: string
+}) {
+  return (
+    <Avatar className={cn("size-8 rounded-full", className)}>
+      {photoUrl ? <AvatarImage src={photoUrl} alt="" className="rounded-full object-cover" /> : null}
+      <AvatarFallback
+        className={cn(
+          "rounded-full bg-[var(--md-accent-a12)] text-[10.5px] font-medium text-[var(--md-accent)] dark:bg-[var(--md-accent-a14)]",
+          fallbackClassName,
+        )}
+        data-i18n-skip
+      >
+        {personInitials(name)}
+      </AvatarFallback>
+    </Avatar>
+  )
 }
 
 const carrierOfficeOptions: Record<string, string[]> = {
@@ -3328,6 +3367,8 @@ function QuoteCompactInput({
   type = "text",
   dir = "auto",
   placeholder,
+  autoPopulated,
+  autoPopulationDescription,
   className,
 }: {
   label: string
@@ -3340,12 +3381,14 @@ function QuoteCompactInput({
   type?: "text" | "date" | "number" | "email"
   dir?: "auto" | "ltr" | "rtl"
   placeholder?: string
+  autoPopulated?: boolean
+  autoPopulationDescription?: string
   className?: string
 }) {
   const { t } = useLanguage()
   const id = useId()
   const locked = !onChange
-  const input = (
+  const input = locked ? (
     <div className="relative">
       <Input
         id={id}
@@ -3354,11 +3397,10 @@ function QuoteCompactInput({
         type={type}
         value={value}
         disabled={disabled}
-        readOnly={locked}
+        readOnly
         aria-required={required || undefined}
         aria-invalid={invalid || undefined}
         placeholder={placeholder ? t(placeholder) : undefined}
-        onChange={(event) => onChange?.(event.target.value)}
         className={cn(
           "h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px] read-only:border read-only:border-[var(--md-field-locked-line)] read-only:bg-[var(--md-field-locked-bg)] read-only:text-[var(--md-ink)] read-only:shadow-none",
           locked && "pe-8",
@@ -3366,6 +3408,22 @@ function QuoteCompactInput({
       />
       {locked ? <HugeiconsIcon icon={LockPasswordSolidRoundedIcon} className="pointer-events-none absolute end-2 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-accent)]" aria-hidden="true" /> : null}
     </div>
+  ) : (
+    <AutoPopulatedInput
+      id={id}
+      data-i18n-skip
+      dir={dir}
+      type={type}
+      value={value}
+      disabled={disabled}
+      aria-required={required || undefined}
+      aria-invalid={invalid || undefined}
+      placeholder={placeholder ? t(placeholder) : undefined}
+      autoPopulated={autoPopulated}
+      autoPopulationDescription={autoPopulationDescription}
+      onChange={(event) => onChange?.(event.target.value)}
+      className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]"
+    />
   )
   return (
     <CompactFieldShell label={label} htmlFor={id} width={width} required={required} invalid={invalid} className={className}>
@@ -3611,12 +3669,36 @@ function QuoteDetailsPanelV2({
   const { direction, language, t } = useLanguage()
   const [rateRequestOpen, setRateRequestOpen] = useState(false)
   const [confirmingCarrierId, setConfirmingCarrierId] = useState<string | null>(null)
+  const [unlocodeDirectory, setUnlocodeDirectory] = useState<readonly UnlocodeDirectoryRecord[]>([])
+  const [unlocodeDirectoryStatus, setUnlocodeDirectoryStatus] = useState<"loading" | "ready" | "error">("loading")
+  const [unlocodeDirectoryCount, setUnlocodeDirectoryCount] = useState(0)
   const organisations = lookups?.organisations ?? []
   const currencies = lookups?.currencies.map((option) => option.code) ?? ["GBP", "EUR", "USD"]
   const modes = lookups?.modes.map((option) => option.name) ?? cargoWiseModeOptions
   const shipmentTypes = lookups?.shipmentTypes.map((option) => `${option.code} - ${option.name}`) ?? shipmentTypeOptions(quote.mode)
   const countries = lookups?.countries ?? []
   const customerOrganisation = organisations.find((option) => option.id === quote.customerId)
+  const customerSourceContact = customerOrganisation?.contacts?.[0]
+  const customerAutoPopulationDescription = customerOrganisation
+    ? `Filled from ${customerOrganisation.name}. Edit this field to override it for this quote.`
+    : undefined
+
+  useEffect(() => {
+    let cancelled = false
+    setUnlocodeDirectoryStatus("loading")
+    void Promise.all([loadUnlocodeDirectory(), loadUnlocodeDirectoryMetadata()])
+      .then(([records, metadata]) => {
+        if (cancelled) return
+        setUnlocodeDirectory(records)
+        setUnlocodeDirectoryCount(metadata.recordCount)
+        setUnlocodeDirectoryStatus("ready")
+      })
+      .catch(() => {
+        if (cancelled) return
+        setUnlocodeDirectoryStatus("error")
+      })
+    return () => { cancelled = true }
+  }, [])
   const supplierOptions = useMemo(() => supplierOptionsFromQuote(quote), [quote.supplierOptionsJson, quote.supplierId, quote.supplier, quote.carrierId, quote.carrier])
   const organisationOptions: CompactComboboxOption[] = organisations.map((organisation) => ({
     id: organisation.id,
@@ -3626,6 +3708,7 @@ function QuoteDetailsPanelV2({
     keywords: [organisation.code, ...(organisation.types ?? [])],
   }))
   type OrganisationRole = "customer" | "supplier" | "carrier" | "agent" | "shipper" | "consignee"
+  const organisationRecentOptionLimit = 10
   const organisationHasRole = (organisationId: string | undefined, role: OrganisationRole) => {
     if (!organisationId) return false
     const organisation = organisations.find((item) => item.id === organisationId)
@@ -3659,18 +3742,42 @@ function QuoteDetailsPanelV2({
     })
   }
 
-  const locationOptions = useMemo<LocationOption[]>(() => {
+  const officialLocationOptions = useMemo<LocationOption[]>(() => {
     const regionNames = typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames([language], { type: "region" }) : null
-    return organisations.flatMap((organisation) => (organisation.addresses ?? []).flatMap((address) => {
-    const place = address.townCity?.trim() ?? ""
-    const countryCode = (address.countryCode || address.country || "").trim().toLocaleUpperCase()
-    const countryName = countryCode.length === 2 ? regionNames?.of(countryCode) || address.country?.trim() || countryCode : address.country?.trim() || countryCode
-    const unlocode = address.unlocode?.trim().toLocaleUpperCase() ?? ""
-    if (!place && !countryName && !unlocode) return []
-    const recommended = [quote.customerId, quote.shipperOrgId, quote.consigneeOrgId].includes(organisation.id)
-    return [{ id: address.id, place, countryName, countryCode, unlocode, recommended }]
+    const countryNames = new Map(countries.map((country) => [country.code.toLocaleUpperCase(), country.name]))
+    return unlocodeDirectory.map(([countryCode, locationCode, place, nameWithoutDiacritics, functions]) => ({
+      id: `unlocode:${countryCode}${locationCode}`,
+      countryCode,
+      countryName: countryNames.get(countryCode) || regionNames?.of(countryCode) || countryCode,
+      place,
+      unlocode: `${countryCode}${locationCode}`,
+      kind: unlocodeKind(functions),
+      aliases: nameWithoutDiacritics ? [nameWithoutDiacritics] : [],
     }))
-  }, [organisations, quote.customerId, quote.shipperOrgId, quote.consigneeOrgId, language])
+  }, [countries, language, unlocodeDirectory])
+
+  const locationOptions = useMemo<LocationOption[]>(() => {
+    const optionsByUnlocode = new Map(officialLocationOptions.map((option) => [option.unlocode, option]))
+    const unlinkedOptions: LocationOption[] = []
+    const regionNames = typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames([language], { type: "region" }) : null
+
+    organisations.forEach((organisation) => (organisation.addresses ?? []).forEach((address) => {
+      const place = address.townCity?.trim() ?? ""
+      const countryCode = (address.countryCode || address.country || "").trim().toLocaleUpperCase()
+      const countryName = countryCode.length === 2 ? regionNames?.of(countryCode) || address.country?.trim() || countryCode : address.country?.trim() || countryCode
+      const unlocode = address.unlocode?.trim().toLocaleUpperCase() ?? ""
+      if (!place && !countryName && !unlocode) return
+      const recommended = [quote.customerId, quote.shipperOrgId, quote.consigneeOrgId].includes(organisation.id)
+      const official = unlocode ? optionsByUnlocode.get(unlocode) : null
+      if (official) {
+        if (recommended) optionsByUnlocode.set(unlocode, { ...official, recommended: true })
+        return
+      }
+      unlinkedOptions.push({ id: `organisation-address:${address.id}`, place, countryName, countryCode, unlocode, recommended })
+    }))
+
+    return [...optionsByUnlocode.values(), ...unlinkedOptions]
+  }, [officialLocationOptions, organisations, quote.customerId, quote.shipperOrgId, quote.consigneeOrgId, language])
 
   const originLocation: LocationValue = {
     countryCode: quote.originCountry?.length === 2 ? quote.originCountry : "",
@@ -3840,6 +3947,11 @@ function QuoteDetailsPanelV2({
     const title = role === "shipper" ? "Shipper" : role === "consignee" ? "Consignee" : "Agent"
     const name = role === "shipper" ? quote.shipperName ?? "" : role === "consignee" ? quote.consigneeName ?? "" : quote.agentName ?? ""
     const selectedId = role === "shipper" ? quote.shipperOrgId : role === "consignee" ? quote.consigneeOrgId : quote.agentOrgId
+    const selectedOrganisation = organisations.find((item) => item.id === selectedId)
+    const selectedContact = selectedOrganisation?.contacts?.[0]
+    const autoPopulationDescription = selectedOrganisation
+      ? `Filled from ${selectedOrganisation.name}. Edit this field to override it for this quote.`
+      : undefined
     const code = role === "shipper" ? quote.shipperCode ?? "" : role === "consignee" ? quote.consigneeCode ?? "" : quote.agentCode ?? ""
     const address = role === "shipper" ? quote.shipperAddress ?? "" : role === "consignee" ? quote.consigneeAddress ?? "" : quote.agentAddress ?? ""
     const contact = role === "shipper" ? quote.shipperContact ?? "" : role === "consignee" ? quote.consigneeContact ?? "" : quote.agentContact ?? ""
@@ -3868,6 +3980,7 @@ function QuoteDetailsPanelV2({
             value={name}
             options={filteredOptions}
             recommendedOptions={preferredOptions}
+            recommendedOptionLimit={organisationRecentOptionLimit}
             recommendedLabel="Current, recent & related"
             allLabel={`All ${role}s`}
             emptyLabel="No matching company"
@@ -3882,11 +3995,11 @@ function QuoteDetailsPanelV2({
             }}
             onOptionSelect={(option) => option.id && selectOrganisation(role, option.id)}
           />
-          <QuoteCompactInput label="Code" value={code} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperCode" : role === "consignee" ? "consigneeCode" : "agentCode", value)} />
+          <QuoteCompactInput label="Code" value={code} width="full" className="col-span-5" disabled={!editable} autoPopulated={matchesAutoPopulation(code, selectedOrganisation?.code)} autoPopulationDescription={autoPopulationDescription} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperCode" : role === "consignee" ? "consigneeCode" : "agentCode", value)} />
           <QuoteCompactInput label={`${title} ref`} value={reference} width="full" className="col-span-7" disabled={!editable} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperReference" : role === "consignee" ? "consigneeReference" : "agentReference", value)} />
-          <QuoteCompactInput label="Address" value={address} width="full" className="col-span-12" disabled={!editable} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperAddress" : role === "consignee" ? "consigneeAddress" : "agentAddress", value)} />
-          <QuoteCompactInput label="Contact" value={contact} width="full" className="col-span-12" disabled={!editable} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact", value)} />
-          <QuoteCompactInput label="Email" value={email} type="email" width="full" className="col-span-12" disabled={!editable} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail", value)} />
+          <QuoteCompactInput label="Address" value={address} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(address, selectedOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={autoPopulationDescription} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperAddress" : role === "consignee" ? "consigneeAddress" : "agentAddress", value)} />
+          <QuoteCompactInput label="Contact" value={contact} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(contact, selectedContact?.name)} autoPopulationDescription={autoPopulationDescription} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact", value)} />
+          <QuoteCompactInput label="Email" value={email} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(email, selectedContact?.email)} autoPopulationDescription={autoPopulationDescription} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail", value)} />
         </div>
       </CompactSectionShell>
     )
@@ -3918,12 +4031,12 @@ function QuoteDetailsPanelV2({
         <CompactSectionShell title="Customer data">
           <div className="grid min-w-0 grid-cols-12 gap-x-2 gap-y-1.5">
             <CompactCombobox label="Customer" value={quote.customer} options={organisationOptions.filter((option) => organisationHasRole(option.id, "customer"))} onValueChange={(value) => { onQuoteChange("customer", value); if (customerOrganisation && customerOrganisation.name !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search customers or type manually" allLabel="All customers" emptyLabel="No matching customer company" disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customer.trim()} width="full" className="col-span-12" />
-            <QuoteCompactInput label="Code" value={quote.clientCode ?? ""} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange("clientCode", value)} />
+            <QuoteCompactInput label="Code" value={quote.clientCode ?? ""} width="full" className="col-span-5" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.clientCode, customerOrganisation?.code)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuoteChange("clientCode", value)} />
             <QuoteCompactInput label="Customer ref" value={quote.localRef ?? ""} width="full" className="col-span-7" disabled={!editable} onChange={(value) => onQuoteChange("localRef", value)} />
             <QuoteCompactInput label="Customer PO" value={quote.customerPO ?? ""} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange("customerPO", value)} />
-            <QuoteCompactInput label="Contact" value={quote.customerContact ?? ""} width="full" className="col-span-7" disabled={!editable} onChange={(value) => onQuoteChange("customerContact", value)} />
-            <QuoteCompactInput label="Address" value={quote.customerAddress ?? ""} width="full" className="col-span-12" disabled={!editable} onChange={(value) => onQuoteChange("customerAddress", value)} />
-            <QuoteCompactInput label="Email" value={quote.customerEmail ?? ""} type="email" width="full" className="col-span-12" disabled={!editable} onChange={(value) => onQuoteChange("customerEmail", value)} />
+            <QuoteCompactInput label="Contact" value={quote.customerContact ?? ""} width="full" className="col-span-7" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerContact, customerSourceContact?.name)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuoteChange("customerContact", value)} />
+            <QuoteCompactInput label="Address" value={quote.customerAddress ?? ""} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerAddress, customerOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuoteChange("customerAddress", value)} />
+            <QuoteCompactInput label="Email" value={quote.customerEmail ?? ""} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerEmail, customerSourceContact?.email)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuoteChange("customerEmail", value)} />
           </div>
         </CompactSectionShell>
         {roleCard("agent")}
@@ -3935,8 +4048,8 @@ function QuoteDetailsPanelV2({
         <div className="grid gap-2">
           <IncotermField value={selectedIncoterm} onValueChange={(value) => onQuoteChange("incoterm", value)} namedLocation={quote.incotermPlace ?? ""} onNamedLocationChange={(value) => onQuoteChange("incotermPlace", value)} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && (!selectedIncoterm || Boolean(getIncotermDefinition(selectedIncoterm) && !quote.incotermPlace?.trim()))} disabled={!editable} />
           <div className="grid gap-2 xl:grid-cols-2">
-            <LocationFields label="From" value={originLocation} options={locationOptions} countries={countries} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} />
-            <LocationFields label="To" value={destinationLocation} options={locationOptions} countries={countries} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} />
+            <LocationFields label="From" value={originLocation} options={locationOptions} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} />
+            <LocationFields label="To" value={destinationLocation} options={locationOptions} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} />
           </div>
           <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(11rem,0.8fr)_minmax(10rem,0.6fr)_minmax(27rem,1.8fr)] lg:items-start">
             <QuoteCompactInput label="Via" value={quote.via} width="full" disabled={!editable} onChange={(value) => onQuoteChange("via", value)} />
@@ -3969,7 +4082,7 @@ function QuoteDetailsPanelV2({
                 cell: (carrier) => {
                   const selectedCarrier = organisations.find((item) => item.id === carrier.carrierId)
                   const carrierSequence = supplier.carriers.indexOf(carrier) + 1
-                  return <div className="flex min-w-0 items-center gap-1.5"><span data-i18n-skip dir="ltr" aria-label={`${t("Carrier ID")} ${carrierSequence}`} className="inline-grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[11px] font-medium text-[var(--md-ink)]">{carrierSequence}</span><CompactCombobox label="Carrier" value={carrier.carrierName} options={carrierDirectory} recommendedOptions={relatedOptions("carrier")} recommendedLabel="Suggested carriers" allLabel="All organisations" onValueChange={(value) => patchCarrier(supplier.id, carrier.id, { carrierName: value, carrierId: selectedCarrier?.name === value ? carrier.carrierId : "" })} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) patchCarrier(supplier.id, carrier.id, { carrierId: item.id, carrierName: item.name, carrierOffice: item.addresses?.[0]?.label ?? "" }) }} placeholder="TBC or search carriers" disabled={!editable} width="full" className="min-w-0 flex-1 [&>div:first-child]:sr-only" /></div>
+                  return <div className="flex min-w-0 items-center gap-1.5"><span data-i18n-skip dir="ltr" aria-label={`${t("Carrier ID")} ${carrierSequence}`} className="inline-grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[11px] font-medium text-[var(--md-ink)]">{carrierSequence}</span><CompactCombobox label="Carrier" value={carrier.carrierName} options={carrierDirectory} recommendedOptions={relatedOptions("carrier")} recommendedOptionLimit={organisationRecentOptionLimit} recommendedLabel="Suggested carriers" allLabel="All organisations" onValueChange={(value) => patchCarrier(supplier.id, carrier.id, { carrierName: value, carrierId: selectedCarrier?.name === value ? carrier.carrierId : "" })} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) patchCarrier(supplier.id, carrier.id, { carrierId: item.id, carrierName: item.name, carrierOffice: item.addresses?.[0]?.label ?? "" }) }} placeholder="TBC or search carriers" disabled={!editable} width="full" className="min-w-0 flex-1 [&>div:first-child]:sr-only" /></div>
                 },
               },
               {
@@ -3983,7 +4096,7 @@ function QuoteDetailsPanelV2({
                 cellClassName: "px-2 py-1.5",
                 cell: (carrier) => {
                   const selectedCarrier = organisations.find((item) => item.id === carrier.carrierId)
-                  return <CompactCombobox label="Carrier office" value={carrier.carrierOffice} options={(selectedCarrier?.addresses ?? []).map((address) => ({ id: address.id, value: address.label, label: address.label, description: address.address }))} onValueChange={(value) => patchCarrier(supplier.id, carrier.id, { carrierOffice: value })} placeholder="Select or type office" disabled={!editable || !carrier.carrierName} width="full" className="[&>div:first-child]:sr-only" />
+                  return <CompactCombobox label="Carrier office" value={carrier.carrierOffice} options={(selectedCarrier?.addresses ?? []).map((address) => ({ id: address.id, value: address.label, label: address.label, description: address.address }))} onValueChange={(value) => patchCarrier(supplier.id, carrier.id, { carrierOffice: value })} placeholder="Select or type office" disabled={!editable || !carrier.carrierName} width="full" className="[&>div:first-child]:sr-only" autoPopulated={matchesAutoPopulation(carrier.carrierOffice, selectedCarrier?.addresses?.[0]?.label)} autoPopulationDescription={selectedCarrier ? `Filled from ${selectedCarrier.name}. Edit this field to override it for this quote.` : undefined} />
                 },
               },
               {
@@ -4041,9 +4154,9 @@ function QuoteDetailsPanelV2({
             return (
               <section key={supplier.id} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
                 <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_1.75rem] items-start gap-x-2 gap-y-1.5 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_1.75rem] xl:grid-cols-[minmax(16rem,2fr)_minmax(12rem,1fr)_minmax(14rem,1.2fr)_1.75rem]">
-                  <CompactCombobox label={`${t("Supplier")} ${supplierIndex + 1}`} value={supplier.supplierName} options={supplierDirectory} recommendedOptions={relatedOptions("supplier")} recommendedLabel="Suggested suppliers" allLabel="All organisations" onValueChange={(value) => patchSupplier(supplier.id, { supplierName: value, supplierId: selectedSupplier?.name === value ? supplier.supplierId : "" })} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) patchSupplier(supplier.id, { supplierId: item.id, supplierName: item.name, supplierOffice: item.addresses?.[0]?.label ?? "", contact: item.contacts?.[0]?.email ?? item.contacts?.[0]?.name ?? "" }) }} placeholder="Search suppliers or type manually" disabled={!editable} width="full" className="col-start-1" />
-                  <CompactCombobox label="Supplier office" value={supplier.supplierOffice} options={(selectedSupplier?.addresses ?? []).map((address) => ({ id: address.id, value: address.label, label: address.label, description: address.address }))} onValueChange={(value) => patchSupplier(supplier.id, { supplierOffice: value })} placeholder="Select or type office" disabled={!editable} width="full" className="col-span-2 md:col-span-1" />
-                  <CompactCombobox label="Contact" value={supplier.contact} options={(selectedSupplier?.contacts ?? []).map((contact) => ({ id: contact.id, value: contact.email || contact.name, label: contact.name, description: contact.email ?? "" }))} onValueChange={(value) => patchSupplier(supplier.id, { contact: value })} placeholder="Contact or email" disabled={!editable} width="full" className="col-span-2 md:col-span-2 xl:col-span-1" />
+                  <CompactCombobox label={`${t("Supplier")} ${supplierIndex + 1}`} value={supplier.supplierName} options={supplierDirectory} recommendedOptions={relatedOptions("supplier")} recommendedOptionLimit={organisationRecentOptionLimit} recommendedLabel="Suggested suppliers" allLabel="All organisations" onValueChange={(value) => patchSupplier(supplier.id, { supplierName: value, supplierId: selectedSupplier?.name === value ? supplier.supplierId : "" })} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) patchSupplier(supplier.id, { supplierId: item.id, supplierName: item.name, supplierOffice: item.addresses?.[0]?.label ?? "", contact: item.contacts?.[0]?.email ?? item.contacts?.[0]?.name ?? "" }) }} placeholder="Search suppliers or type manually" disabled={!editable} width="full" className="col-start-1" />
+                  <CompactCombobox label="Supplier office" value={supplier.supplierOffice} options={(selectedSupplier?.addresses ?? []).map((address) => ({ id: address.id, value: address.label, label: address.label, description: address.address }))} onValueChange={(value) => patchSupplier(supplier.id, { supplierOffice: value })} placeholder="Select or type office" disabled={!editable} width="full" className="col-span-2 md:col-span-1" autoPopulated={matchesAutoPopulation(supplier.supplierOffice, selectedSupplier?.addresses?.[0]?.label)} autoPopulationDescription={selectedSupplier ? `Filled from ${selectedSupplier.name}. Edit this field to override it for this quote.` : undefined} />
+                  <CompactCombobox label="Contact" value={supplier.contact} options={(selectedSupplier?.contacts ?? []).map((contact) => ({ id: contact.id, value: contact.email || contact.name, label: contact.name, description: contact.email ?? "" }))} onValueChange={(value) => patchSupplier(supplier.id, { contact: value })} placeholder="Contact or email" disabled={!editable} width="full" className="col-span-2 md:col-span-2 xl:col-span-1" autoPopulated={matchesAutoPopulation(supplier.contact, selectedSupplier?.contacts?.[0]?.email || selectedSupplier?.contacts?.[0]?.name)} autoPopulationDescription={selectedSupplier ? `Filled from ${selectedSupplier.name}. Edit this field to override it for this quote.` : undefined} />
                   <Button type="button" variant="ghost" size="icon-sm" disabled={!editable || supplierOptions.length === 1} title={supplierOptions.length === 1 ? t("At least one supplier is required") : undefined} onClick={() => persistSupplierOptions(supplierOptions.filter((item) => item.id !== supplier.id))} aria-label={t("Remove supplier")} className="col-start-2 row-start-1 mt-5 size-7 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-red)] md:col-start-3 xl:col-start-4"><Trash2 className="size-3.5" /></Button>
                 </div>
                 <div className="mt-1.5 grid gap-1.5">
@@ -4102,8 +4215,8 @@ function QuoteDetailsPanelV2({
       <div className="grid gap-2 xl:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1.28fr)] xl:items-start">
         <CompactSectionShell title="Customs agents" meta="Choose origin and destination clearance separately">
           <div className="grid gap-1.5">
-            <CompactCombobox label="Origin customs agent" value={quote.originCustomsAgentName ?? ""} options={organisationOptions.filter((option) => organisationHasRole(option.id, "agent"))} recommendedOptions={relatedOptions("agent")} onValueChange={(value) => { onQuoteChange("originCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.originCustomsAgentId); if (selected?.name !== value) onQuoteChange("originCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) { onQuoteChange("originCustomsAgentId", item.id); onQuoteChange("originCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
-            <CompactCombobox label="Destination customs agent" value={quote.destinationCustomsAgentName ?? ""} options={organisationOptions.filter((option) => organisationHasRole(option.id, "agent"))} recommendedOptions={relatedOptions("agent")} onValueChange={(value) => { onQuoteChange("destinationCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.destinationCustomsAgentId); if (selected?.name !== value) onQuoteChange("destinationCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) { onQuoteChange("destinationCustomsAgentId", item.id); onQuoteChange("destinationCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
+            <CompactCombobox label="Origin customs agent" value={quote.originCustomsAgentName ?? ""} options={organisationOptions.filter((option) => organisationHasRole(option.id, "agent"))} recommendedOptions={relatedOptions("agent")} recommendedOptionLimit={organisationRecentOptionLimit} onValueChange={(value) => { onQuoteChange("originCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.originCustomsAgentId); if (selected?.name !== value) onQuoteChange("originCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) { onQuoteChange("originCustomsAgentId", item.id); onQuoteChange("originCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
+            <CompactCombobox label="Destination customs agent" value={quote.destinationCustomsAgentName ?? ""} options={organisationOptions.filter((option) => organisationHasRole(option.id, "agent"))} recommendedOptions={relatedOptions("agent")} recommendedOptionLimit={organisationRecentOptionLimit} onValueChange={(value) => { onQuoteChange("destinationCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.destinationCustomsAgentId); if (selected?.name !== value) onQuoteChange("destinationCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) { onQuoteChange("destinationCustomsAgentId", item.id); onQuoteChange("destinationCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
           </div>
         </CompactSectionShell>
 
@@ -4314,6 +4427,9 @@ function QuoteWorkspaceContext({
     },
     documents: {
       items: [["Quote", quote.id], ["Customer", quote.customer], ["Document status", quote.docsStatus ?? "Draft"], ["Workflow", quote.workflow ?? "Review"]],
+    },
+    notes: {
+      items: [["Quote", quote.id], ["Customer", quote.customer], ["Lifecycle", quote.workflowStatus ?? quote.status], ["Carries to", "Booking and Customs"]],
     },
     audit: {
       items: [["Quote", quote.id], ["Status", quote.workflowStatus ?? quote.status], ["Owner", salesRepresentativeValue(quote.salesRep)], ["Valid from", quote.startDate ?? "—"]],
@@ -4909,10 +5025,12 @@ export function QuoteDetailPage({
   variant = "operator",
   quoteId,
   navigate,
+  currentUser,
 }: {
   variant?: QuotePageVariant
   quoteId?: string
   navigate?: (path: string) => void
+  currentUser?: AuthUserSummary | null
 }) {
   const { t, direction } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
@@ -4923,6 +5041,8 @@ export function QuoteDetailPage({
   const [tabTravelDirection, setTabTravelDirection] = useState(1)
   const [savedQuote, setSavedQuote] = useState<QuoteRecord>(initialQuote)
   const [draftQuote, setDraftQuote] = useState<QuoteRecord>(initialQuote)
+  const [currentUserProfilePhotoUrl, setCurrentUserProfilePhotoUrl] = useState<string | null>(currentUser?.profilePhotoUrl ?? null)
+  const [salesUserPhotoUrls, setSalesUserPhotoUrls] = useState<Map<string, string>>(() => new Map())
   const [savedCharges, setSavedCharges] = useState<QuoteCharge[]>(initialCharges)
   const [draftCharges, setDraftCharges] = useState<QuoteCharge[]>(initialCharges)
   const [quoteRefCopied, setQuoteRefCopied] = useState(false)
@@ -4957,6 +5077,23 @@ export function QuoteDetailPage({
   const [lossReason, setLossReason] = useState("")
   const [lossDetails, setLossDetails] = useState("")
   const [validationAttempted, setValidationAttempted] = useState(false)
+
+  useEffect(() => {
+    if (!currentUser?.profilePhoto) {
+      setCurrentUserProfilePhotoUrl(null)
+      return
+    }
+    if (currentUser.profilePhotoUrl) {
+      setCurrentUserProfilePhotoUrl(currentUser.profilePhotoUrl)
+      return
+    }
+
+    let cancelled = false
+    void createProfilePhotoSignedUrl(currentUser.profilePhoto)
+      .then((url) => { if (!cancelled) setCurrentUserProfilePhotoUrl(url) })
+      .catch(() => { if (!cancelled) setCurrentUserProfilePhotoUrl(null) })
+    return () => { cancelled = true }
+  }, [currentUser?.profilePhoto, currentUser?.profilePhotoUrl])
   const [dexterOpen, setDexterOpen] = useState(false)
   const [lookups, setLookups] = useState<QuoteWorkflowSources | null>(null)
   const [workspace, setWorkspace] = useState<QuoteWorkflowWorkspace | null>(null)
@@ -4982,6 +5119,34 @@ export function QuoteDetailPage({
     const saved = issueRecipients.find((recipient) => recipient.email.toLowerCase() === email)
     return saved ? { source: "saved", key: saved.key } : { source: "manual", email }
   }, [issueRecipientEmail, issueRecipients])
+
+  useEffect(() => {
+    const userIds = lookups?.users.map((person) => person.id).filter(Boolean) ?? []
+    if (!supabase || userIds.length === 0) {
+      setSalesUserPhotoUrls(new Map())
+      return
+    }
+
+    let cancelled = false
+    void supabase.auth.getSession()
+      .then(({ data, error }) => {
+        if (error) throw error
+        if (!data.session) return []
+        return getApiTeamUsersByIds(data.session.access_token, userIds)
+      })
+      .then(async (users) => {
+        const photos = users.flatMap((person) => person.profilePhoto ? [person.profilePhoto] : [])
+        const signedUrls = await createProfilePhotoSignedUrls(photos)
+        if (cancelled) return
+        setSalesUserPhotoUrls(new Map(users.flatMap((person) => {
+          const url = person.profilePhoto ? signedUrls.get(person.profilePhoto.path) : null
+          return url ? [[person.id, url] as const] : []
+        })))
+      })
+      .catch(() => { if (!cancelled) setSalesUserPhotoUrls(new Map()) })
+
+    return () => { cancelled = true }
+  }, [lookups?.users])
 
   useEffect(() => () => {
     if (quoteCopyResetTimerRef.current !== null) window.clearTimeout(quoteCopyResetTimerRef.current)
@@ -5113,6 +5278,15 @@ export function QuoteDetailPage({
     profit: workspace ? activeTotals.profit : draftQuote.profit,
     margin: workspace ? activeTotals.margin : draftQuote.margin,
   }
+  const profilePhotoForSalesUser = (userId?: string, email?: string) => {
+    const teamPhotoUrl = userId ? salesUserPhotoUrls.get(userId) : null
+    if (teamPhotoUrl) return teamPhotoUrl
+    if (!currentUserProfilePhotoUrl) return null
+    if (userId && currentUser?.internalUserId === userId) return currentUserProfilePhotoUrl
+    if (email && currentUser?.email && email.trim().toLowerCase() === currentUser.email.trim().toLowerCase()) return currentUserProfilePhotoUrl
+    return null
+  }
+  const activeSalesUser = lookups?.users.find((person) => person.id === activeQuote.salesOwnerId)
   const isDirty = JSON.stringify(draftQuote) !== JSON.stringify(savedQuote) || JSON.stringify(draftCharges) !== JSON.stringify(savedCharges)
   const lifecycle = workspace?.quote.lifecycle ?? (currentQuoteId ? "draft" : "")
   const quoteIsLost = lifecycle === "declined" || lifecycle === "ghosted"
@@ -5688,6 +5862,7 @@ export function QuoteDetailPage({
     }
 
     if (activeTab === "documents") return <DocumentWorkspace documents={quoteCustomerResponseDocuments(workspace)} />
+    if (activeTab === "notes") return <LifecycleNotes subjectType="quote" subjectId={currentQuoteId} />
     return <AuditWorkspace records={quoteAuditRecords(workspace)} />
   }
 
@@ -5813,7 +5988,10 @@ export function QuoteDetailPage({
                           aria-label={`${t("Sales representative")}: ${activeQuote.salesRep || t("Unassigned")}`}
                           className="grid size-8 shrink-0 place-items-center rounded-full outline-none transition-[box-shadow,transform] duration-150 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"
                         >
-                          <CustomerAvatar initials={personInitials(activeQuote.salesRep)} size="sm" className="size-8 rounded-full text-[10.5px]" />
+                          <QuotePersonAvatar
+                            name={activeQuote.salesRep}
+                            photoUrl={profilePhotoForSalesUser(activeQuote.salesOwnerId, activeSalesUser?.email)}
+                          />
                         </button>
                       </PopoverTrigger>
                     </TooltipTrigger>
@@ -5835,7 +6013,12 @@ export function QuoteDetailPage({
                             updateDraftQuote("salesOwnerId", person.id)
                           }}
                         >
-                          <CustomerAvatar initials={personInitials(person.name)} size="sm" className="size-7 rounded-full text-[9.5px]" />
+                          <QuotePersonAvatar
+                            name={person.name}
+                            photoUrl={profilePhotoForSalesUser(person.id, person.email)}
+                            className="size-7"
+                            fallbackClassName="text-[9.5px]"
+                          />
                           <span className="min-w-0 truncate">{person.name}</span>
                         </button>
                       ))}
@@ -5912,6 +6095,10 @@ export function QuoteDetailPage({
                   <TabsTrigger value="documents" className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]">
                     <FileText data-icon="inline-start" className="size-4" strokeWidth={1.3} />
                     {t("Documents")}
+                  </TabsTrigger>
+                  <TabsTrigger value="notes" className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]">
+                    <MessageSquareText data-icon="inline-start" className="size-4" strokeWidth={1.3} />
+                    {t("Notes")}
                   </TabsTrigger>
                   <TabsTrigger value="audit" className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]">
                     <Clock3 data-icon="inline-start" className="size-4" strokeWidth={1.3} />

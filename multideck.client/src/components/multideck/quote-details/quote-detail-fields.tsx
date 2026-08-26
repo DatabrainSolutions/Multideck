@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react"
 import { Check, ChevronDown, Info, Search, StickyNote, TriangleAlert } from "@/components/icons/hugeicons"
+import { AutoPopulatedInput, AutoPopulationIndicator, useAutoPopulationMorph } from "@/components/multideck/auto-populated-field"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -36,7 +37,6 @@ import { cn } from "@/lib/utils"
 import {
   EMPTY_HAZARDOUS_DETAILS,
   INCOTERMS_2020,
-  filterLocationOptions,
   getIncotermDefinition,
   resolveLinkedLocation,
   type AmountCurrencyValue,
@@ -133,6 +133,53 @@ export function CompactFieldShell({
   )
 }
 
+/** Editable value derived from other operator inputs, with unobtrusive provenance. */
+export function AutoFilledField({
+  label,
+  value,
+  emptyLabel = "Select a location",
+  width = "medium",
+  valueDirection = "auto",
+  autoPopulated = false,
+  autoPopulationDescription = "Filled from the selected country and location. You can edit this value manually.",
+  onChange,
+  disabled,
+  className,
+}: {
+  label: string
+  value: string
+  emptyLabel?: string
+  width?: CompactFieldWidth
+  valueDirection?: "auto" | "ltr" | "rtl"
+  autoPopulated?: boolean
+  autoPopulationDescription?: string
+  onChange?: (value: string) => void
+  disabled?: boolean
+  className?: string
+}) {
+  const { t } = useLanguage()
+  const inputId = useId()
+
+  return (
+    <CompactFieldShell label={label} htmlFor={inputId} width={width} className={className}>
+      <AutoPopulatedInput
+        id={inputId}
+        data-i18n-skip
+        dir={valueDirection}
+        value={value}
+        placeholder={t(emptyLabel)}
+        disabled={disabled}
+        readOnly={!onChange}
+        aria-live="polite"
+        autoPopulated={autoPopulated}
+        autoPopulationDescription={autoPopulationDescription}
+        onChange={(event) => onChange?.(event.target.value)}
+        className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]"
+      />
+    </CompactFieldShell>
+  )
+}
+
 export interface CompactComboboxOption {
   id?: string
   value: string
@@ -161,6 +208,7 @@ function deduplicateComboboxOptions(options: readonly CompactComboboxOption[]) {
 
 const MAX_RECENT_COMBOBOX_OPTIONS = 3
 const VISIBLE_DIRECTORY_COMBOBOX_OPTIONS = 4
+const MAX_RENDERED_COMBOBOX_OPTIONS = 100
 
 /**
  * Editable combobox with prioritised suggestions above a hairline and the full
@@ -171,6 +219,7 @@ export function CompactCombobox({
   value,
   options,
   recommendedOptions = [],
+  recommendedOptionLimit = MAX_RECENT_COMBOBOX_OPTIONS,
   onValueChange,
   onOptionSelect,
   placeholder = "Type or select",
@@ -178,17 +227,21 @@ export function CompactCombobox({
   allLabel = "All options",
   emptyLabel = "No matching options",
   allowCustom = true,
+  resultLimit = MAX_RENDERED_COMBOBOX_OPTIONS,
   disabled,
   required,
   invalid,
   width = "medium",
   valueDirection = "auto",
   className,
+  autoPopulated = false,
+  autoPopulationDescription,
 }: {
   label: string
   value: string
   options: readonly CompactComboboxOption[]
   recommendedOptions?: readonly CompactComboboxOption[]
+  recommendedOptionLimit?: number
   onValueChange: (value: string) => void
   onOptionSelect?: (option: CompactComboboxOption) => void
   placeholder?: string
@@ -196,12 +249,15 @@ export function CompactCombobox({
   allLabel?: string
   emptyLabel?: string
   allowCustom?: boolean
+  resultLimit?: number
   disabled?: boolean
   required?: boolean
   invalid?: boolean
   width?: CompactFieldWidth
   valueDirection?: "auto" | "ltr" | "rtl"
   className?: string
+  autoPopulated?: boolean
+  autoPopulationDescription?: string
 }) {
   const { t } = useLanguage()
   const inputId = useId()
@@ -211,11 +267,12 @@ export function CompactCombobox({
   const [activeIndex, setActiveIndex] = useState(0)
   const keyboardNavigationRef = useRef(false)
   const pointerFocusRef = useRef(false)
+  const inputMorphRef = useAutoPopulationMorph<HTMLInputElement>(autoPopulated, value)
   const query = open ? search.trim() : ""
   const recommended = useMemo(
     () => deduplicateComboboxOptions(recommendedOptions.filter((option) => matchesComboboxOption(option, query)))
-      .slice(0, MAX_RECENT_COMBOBOX_OPTIONS),
-    [query, recommendedOptions],
+      .slice(0, Math.max(0, recommendedOptionLimit)),
+    [query, recommendedOptionLimit, recommendedOptions],
   )
   const recommendedIds = useMemo(() => new Set(recommended.map((option) => option.id || `${option.value}:${option.label}`)), [recommended])
   const remaining = useMemo(
@@ -223,14 +280,21 @@ export function CompactCombobox({
       .filter((option) => !recommendedIds.has(option.id || `${option.value}:${option.label}`)),
     [options, query, recommendedIds],
   )
-  const visibleOptions = useMemo(() => [...recommended, ...remaining], [recommended, remaining])
+  const displayedRemaining = useMemo(
+    () => remaining.slice(0, Math.max(1, resultLimit)),
+    [remaining, resultLimit],
+  )
+  const visibleOptions = useMemo(() => [...recommended, ...displayedRemaining], [displayedRemaining, recommended])
   const visibleOptionKey = visibleOptions.map((option) => option.id || `${option.value}:${option.label}`).join("|")
   const selectedOption = useMemo(
     () => deduplicateComboboxOptions([...recommendedOptions, ...options])
       .find((option) => normalizeSearch(option.value) === normalizeSearch(value)),
     [options, recommendedOptions, value],
   )
-  const hasExactMatch = visibleOptions.some((option) => normalizeSearch(option.value) === normalizeSearch(value))
+  const hasExactMatch = useMemo(
+    () => [...recommendedOptions, ...options].some((option) => normalizeSearch(option.value) === normalizeSearch(value)),
+    [options, recommendedOptions, value],
+  )
 
   useEffect(() => setActiveIndex(0), [query, visibleOptionKey])
   useEffect(() => {
@@ -274,13 +338,14 @@ export function CompactCombobox({
     <CompactFieldShell label={label} htmlFor={inputId} required={required} invalid={invalid} width={width} className={className}>
       <Popover open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (!nextOpen) setSearch("") }}>
         <PopoverAnchor asChild>
-          <div className="premium-stroke-soft flex min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] transition-colors hover:bg-[var(--md-field-bg-hover)] focus-within:bg-[var(--md-field-bg-hover)] focus-within:ring-3 focus-within:ring-[var(--md-accent-a14)]">
+          <div data-auto-populated={autoPopulated || undefined} className="md-auto-populated-control premium-stroke-soft relative flex min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] transition-colors hover:bg-[var(--md-field-bg-hover)] focus-within:bg-[var(--md-field-bg-hover)] focus-within:ring-3 focus-within:ring-[var(--md-accent-a14)]">
             {selectedOption?.iconText ? (
               <span data-i18n-skip aria-hidden="true" className="grid h-8 shrink-0 place-items-center ps-2.5 text-[15px] leading-none">
                 {selectedOption.iconText}
               </span>
             ) : null}
             <Input
+              ref={inputMorphRef}
               id={inputId}
               data-i18n-skip
               dir={valueDirection}
@@ -315,6 +380,7 @@ export function CompactCombobox({
               onKeyDown={handleKeyDown}
               className="h-8 flex-1 rounded-[var(--md-radius-lg)] bg-transparent px-2.5 text-[12px] shadow-none ring-0 hover:bg-transparent focus-visible:bg-transparent focus-visible:ring-0"
             />
+            <AutoPopulationIndicator active={autoPopulated} description={autoPopulationDescription} inline />
             <Button
               type="button"
               variant="ghost"
@@ -336,7 +402,7 @@ export function CompactCombobox({
           align="start"
           sideOffset={5}
           onOpenAutoFocus={(event) => event.preventDefault()}
-          className="w-[var(--radix-popover-trigger-width)] min-w-[220px] gap-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-lift)]"
+          className="max-h-[min(24rem,var(--radix-popover-content-available-height))] w-[var(--radix-popover-trigger-width)] min-w-[220px] gap-0 overflow-y-auto overscroll-contain rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-lift)] [scrollbar-width:thin]"
         >
           {recommended.length ? (
             <OptionGroupLabel label={recommendedLabel}>
@@ -353,15 +419,15 @@ export function CompactCombobox({
               ))}
             </OptionGroupLabel>
           ) : null}
-          {recommended.length && remaining.length ? <div className="mx-1 my-1 h-px bg-[var(--md-line)]" aria-hidden="true" /> : null}
-          {remaining.length ? (
+          {recommended.length && displayedRemaining.length ? <div className="mx-1 my-1 h-px bg-[var(--md-line)]" aria-hidden="true" /> : null}
+          {displayedRemaining.length ? (
             <div className="relative">
               <div
                 className="max-h-[10rem] overflow-y-auto overscroll-contain pb-2 [scrollbar-width:thin]"
                 style={{ scrollbarGutter: "stable" }}
               >
                 <OptionGroupLabel label={recommended.length ? allLabel : ""}>
-                  {remaining.map((option, optionIndex) => {
+                  {displayedRemaining.map((option, optionIndex) => {
                     const index = recommended.length + optionIndex
                     return (
                       <ComboboxOptionRow
@@ -377,13 +443,18 @@ export function CompactCombobox({
                   })}
                 </OptionGroupLabel>
               </div>
-              {remaining.length > VISIBLE_DIRECTORY_COMBOBOX_OPTIONS ? (
+              {displayedRemaining.length > VISIBLE_DIRECTORY_COMBOBOX_OPTIONS ? (
                 <div
                   aria-hidden="true"
                   className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-[var(--md-surface)] via-[var(--md-surface)]/75 to-transparent backdrop-blur-[1px] [mask-image:linear-gradient(to_top,black,transparent)]"
                 />
               ) : null}
             </div>
+          ) : null}
+          {remaining.length > displayedRemaining.length ? (
+            <p className="px-2 py-1.5 text-[10.5px] leading-4 text-[var(--md-subtle)]">
+              {t("Showing first")} <span data-i18n-skip>{displayedRemaining.length.toLocaleString()}</span> {t("of")} <span data-i18n-skip>{remaining.length.toLocaleString()}</span>. {t("Type to narrow results.")}
+            </p>
           ) : null}
           {!visibleOptions.length ? (
             <p className="px-2 py-2 text-[11.5px] text-[var(--md-subtle)]">{t(emptyLabel)}</p>
@@ -747,6 +818,8 @@ export function LocationFields({
   value,
   options,
   countries,
+  directoryStatus,
+  directoryCount,
   onChange,
   disabled,
   required,
@@ -757,6 +830,8 @@ export function LocationFields({
   value: LocationValue
   options: readonly LocationOption[]
   countries: readonly CountryReferenceOption[]
+  directoryStatus?: "loading" | "ready" | "error"
+  directoryCount?: number
   onChange: (value: LocationValue) => void
   disabled?: boolean
   required?: boolean
@@ -764,20 +839,18 @@ export function LocationFields({
   className?: string
 }) {
   const { t } = useLanguage()
-  const filteredCountryPool = filterLocationOptions(options, { place: value.place, unlocode: value.unlocode })
-  const filteredPlacePool = filterLocationOptions(options, { countryName: value.countryName || value.countryCode, unlocode: value.unlocode })
-  const filteredCodePool = filterLocationOptions(options, { countryName: value.countryName || value.countryCode, place: value.place })
-  // Never leave a linked lookup at a dead end when legacy quote data is only
-  // partially structured. Keep the useful filter when it matches; otherwise
-  // expose the directory so choosing one value can repair and autofill all three.
-  const countryPool = filteredCountryPool.length ? filteredCountryPool : options
-  const placePool = filteredPlacePool.length ? filteredPlacePool : options
-  const codePool = filteredCodePool.length ? filteredCodePool : options
-  const locationCountryCodes = new Set(countryPool.map((option) => option.countryCode).filter(Boolean))
-  const availableCountries = (value.place.trim() || value.unlocode.trim()) && locationCountryCodes.size
-    ? countries.filter((country) => locationCountryCodes.has(country.code))
-    : countries
-  const countryOptions = uniqueBy(availableCountries, (country) => country.code).map((country) => ({
+  const selectedCountry = value.countryName || value.countryCode
+  const selectedCountryReference = countries.find((country) => (
+    normalizeSearch(country.code) === normalizeSearch(selectedCountry)
+    || normalizeSearch(country.name) === normalizeSearch(selectedCountry)
+  ))
+  // Country and location are the operator inputs. UN/LOCODE is derived from
+  // the exact location they select, so an existing code must never trap the
+  // place directory on the previous choice.
+  const placePool = selectedCountryReference
+    ? options.filter((option) => normalizeSearch(option.countryCode) === normalizeSearch(selectedCountryReference.code))
+    : []
+  const countryOptions = uniqueBy(countries, (country) => country.code).map((country) => ({
     id: `country:${country.code}`,
     value: country.name,
     label: country.name,
@@ -792,16 +865,18 @@ export function LocationFields({
     description: [option.unlocode, option.kind ? t(option.kind.replaceAll("-", " ")) : ""].filter(Boolean).join(" · "),
     keywords: [option.countryCode, option.countryName, option.unlocode, ...(option.aliases ?? [])],
   }))
-  const unlocodeOptions = uniqueBy(codePool.filter((option) => option.unlocode.trim()), (option) => option.id || option.unlocode).map((option) => ({
-    id: option.id || option.unlocode,
-    value: option.unlocode,
-    label: `${option.unlocode} · ${option.place}`,
-    description: option.countryName,
-    keywords: [option.countryCode, option.countryName, option.place, ...(option.aliases ?? [])],
-  }))
-  const recommendedCountries = countryOptions.filter((option) => countryPool.some((location) => location.recommended && `country:${location.countryCode}` === option.id))
-  const recommendedPlaces = placeOptions.filter((option) => placePool.some((location) => location.recommended && (location.id || location.unlocode || `${location.countryCode}:${location.place}`) === option.id))
-  const recommendedCodes = unlocodeOptions.filter((option) => codePool.some((location) => location.recommended && (location.id || location.unlocode) === option.id))
+  const recommendedCountryCodes = new Set(options.filter((location) => location.recommended).map((location) => location.countryCode))
+  const recommendedPlaceIds = new Set(placePool.filter((location) => location.recommended).map((location) => location.id || location.unlocode || `${location.countryCode}:${location.place}`))
+  const recommendedCountries = countryOptions.filter((option) => recommendedCountryCodes.has(option.id.replace("country:", "")))
+  const recommendedPlaces = placeOptions.filter((option) => recommendedPlaceIds.has(option.id ?? ""))
+  const resolvedLocation = value.place.trim()
+    ? placePool.find((option) => normalizeSearch(option.place) === normalizeSearch(value.place))
+    : undefined
+  const unlocodeAutoPopulated = Boolean(
+    value.unlocode.trim()
+    && resolvedLocation?.unlocode
+    && normalizeSearch(resolvedLocation.unlocode) === normalizeSearch(value.unlocode),
+  )
 
   function applySelectedOption(option: CompactComboboxOption) {
     const location = options.find((candidate) => (candidate.id || candidate.unlocode || `${candidate.countryCode}:${candidate.place}`) === option.id)
@@ -816,11 +891,20 @@ export function LocationFields({
 
   return (
     <fieldset className={cn("min-w-0", className)}>
-      <legend className="mb-1.5 text-[11px] font-medium text-[var(--md-ink)]">{t(label)}</legend>
+      <legend className="mb-1.5 flex items-baseline gap-1.5 text-[11px] font-medium text-[var(--md-ink)]">
+        {t(label)}
+        {directoryStatus ? (
+          <span className="font-normal text-[10px] text-[var(--md-subtle)]">
+            {directoryStatus === "loading" ? t("Loading official UN/LOCODE directory…") : null}
+            {directoryStatus === "ready" && directoryCount ? <><span data-i18n-skip>{directoryCount.toLocaleString()}</span> {t("official locations")}</> : null}
+            {directoryStatus === "error" ? t("Official directory unavailable — manual entry still works") : null}
+          </span>
+        ) : null}
+      </legend>
       <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(8rem,0.85fr)_minmax(12rem,1.35fr)_minmax(7rem,0.55fr)]">
         <CompactCombobox label="Country" value={value.countryName} options={countryOptions} recommendedOptions={recommendedCountries} onValueChange={applyCountryInput} placeholder="Country name or code" disabled={disabled} required={required} invalid={invalid && !value.countryName} width="full" />
-        <CompactCombobox label="Town, city or port" value={value.place} options={placeOptions} recommendedOptions={recommendedPlaces} onValueChange={(input) => onChange(resolveLinkedLocation(options, value, "place", input))} onOptionSelect={applySelectedOption} placeholder="Type a place" disabled={disabled} required={required} invalid={invalid && !value.place} width="full" />
-        <CompactCombobox label="UN/LOCODE" value={value.unlocode} options={unlocodeOptions} recommendedOptions={recommendedCodes} onValueChange={(input) => onChange(resolveLinkedLocation(options, value, "unlocode", input))} onOptionSelect={applySelectedOption} placeholder="GBFXT" disabled={disabled} required={required} invalid={invalid && !value.unlocode} width="full" valueDirection="ltr" />
+        <CompactCombobox label="Town, city or port" value={value.place} options={placeOptions} recommendedOptions={recommendedPlaces} onValueChange={(input) => onChange(resolveLinkedLocation(options, value, "place", input))} onOptionSelect={applySelectedOption} placeholder={selectedCountryReference ? "Type a place" : "Select country first"} disabled={disabled || !selectedCountryReference} required={required} invalid={invalid && !value.place} width="full" />
+        <AutoFilledField label="UN/LOCODE" value={value.unlocode} emptyLabel="Select country and location" width="full" valueDirection="ltr" autoPopulated={unlocodeAutoPopulated} disabled={disabled} onChange={(input) => onChange({ ...value, unlocode: input.toLocaleUpperCase().replace(/\s+/g, "") })} />
       </div>
     </fieldset>
   )
@@ -878,7 +962,7 @@ export function CargoCharacteristicsField({
             onClick={() => toggle(key)}
             className={cn(
               "h-7 rounded-[var(--md-radius-lg)] px-2 text-[11px] font-normal transition-[background-color,color,box-shadow]",
-              value[key] && "border-transparent bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent-hover)]",
+              value[key] && "border-transparent bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent-hover)] dark:bg-[var(--md-accent)] dark:text-[var(--md-accent-ink)] dark:hover:bg-[var(--md-accent-hover)]",
             )}
           >
             {key === "hazardous" ? <TriangleAlert className="size-3.5" aria-hidden="true" /> : null}

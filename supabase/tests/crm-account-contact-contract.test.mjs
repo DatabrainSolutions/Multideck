@@ -20,6 +20,8 @@ const organisationFoundation = readFileSync(new URL("../../multideck.client/src/
 const organisationFoundationMigration = readFileSync(new URL("../migrations/20260820110000_crm_organisation_contact_address_foundation.sql", import.meta.url), "utf8")
 const accountOperations = readFileSync(new URL("../../multideck.client/src/components/multideck/account-operations-workspace.tsx", import.meta.url), "utf8")
 const accountOperationsMigration = readFileSync(new URL("../migrations/20260820162000_crm_account_operational_detail.sql", import.meta.url), "utf8")
+const scoreExplanations = readFileSync(new URL("../functions/customers/score-explanations.ts", import.meta.url), "utf8")
+const scoreExplanationPopover = readFileSync(new URL("../../multideck.client/src/components/multideck/score-explanation-popover.tsx", import.meta.url), "utf8")
 
 test("account and contact product routes use the authenticated customer API rather than fixture arrays", () => {
   assert.match(customerApi, /edgeFetch\("customers"/)
@@ -158,9 +160,9 @@ test("account editing uses existing CRM reference data and preserves the current
   assert.match(accountDetail, /saveQueueRef\.current\.then\(async \(\) =>/)
   assert.match(accountDetail, /const current = accountRef\.current/)
   assert.match(accountDetail, /await updateAccount\(accountId, \{ \.\.\.next, metadata \}, current\.editVersion\)/)
-  assert.match(accountDetail, /<ScoreCell label=\{t\("Health"\)\} score=\{currentAccount\.healthScore\} tone="health" \/>/)
-  assert.match(accountDetail, /<ScoreCell label=\{t\("Churn risk"\)\} score=\{currentAccount\.churnRiskScore\} tone="risk" \/>/)
-  assert.match(accountDetail, /function ScoreCell\(\{ label, score, tone \}/)
+  assert.match(accountDetail, /<ScoreCell label=\{t\("Health"\)\} score=\{currentAccount\.healthScore\} tone="health" explanation=\{currentAccount\.scoreExplanations\?\.health \?\? null\} \/>/)
+  assert.match(accountDetail, /<ScoreCell label=\{t\("Churn risk"\)\} score=\{currentAccount\.churnRiskScore\} tone="risk" explanation=\{currentAccount\.scoreExplanations\?\.churnRisk \?\? null\} \/>/)
+  assert.match(accountDetail, /function ScoreCell\(\{ label, score, tone, explanation \}/)
   assert.match(accountDetail, /<ProgressRing ratio=\{\(score \?\? 0\) \/ 100\}/)
   assert.match(accountDetail, /<header[\s\S]*<HeadingField value=\{currentAccount\.name\}/)
   assert.doesNotMatch(accountDetail, /<aside[\s\S]*Company details/)
@@ -172,6 +174,26 @@ test("account editing uses existing CRM reference data and preserves the current
   assert.match(customers, /CRM_CustomerEngagementPreferences/)
   assert.match(accountDetail, /CustomerWarehouseAccess customerId=\{currentAccount\.id\}/)
   assert.match(accountDetail, /<Zone title=\{t\("Profile"\)}>\s*<InlineFieldGroup stacked directEdit>/)
+})
+
+test("account score explanations require current, permission-visible evidence and remain accessible", () => {
+  assert.match(customers, /resolveAccountScoreExplanations/)
+  assert.match(customers, /admin\.from\("CRM_AIInsights"\)/)
+  assert.match(customers, /CRMAIInsight_TargetUserID\.is\.null,CRMAIInsight_TargetUserID\.eq\.\$\{userId\}/)
+  assert.match(customers, /emailResult\.available \? emailResult\.items : \[\]/)
+  assert.match(scoreExplanations, /matchesScore/)
+  assert.match(scoreExplanations, /closedStatuses/)
+  assert.match(scoreExplanations, /resolvedSources\.some\(\(source\) => source === null\)/)
+  assert.match(scoreExplanations, /crm_activities/)
+  assert.match(scoreExplanations, /comm_threads/)
+  assert.match(scoreExplanations, /job_header/)
+  assert.doesNotMatch(scoreExplanations, /reference\.claim|reference\.title|reference\.href/)
+  assert.match(scoreExplanationPopover, /<HoverCard/)
+  assert.match(scoreExplanationPopover, /aria-haspopup="dialog"/)
+  assert.match(scoreExplanationPopover, /onClick=\{\(\) => setOpen/)
+  assert.match(scoreExplanationPopover, /motion-reduce:animate-none/)
+  assert.match(scoreExplanationPopover, /DexterInlineCitation/)
+  assert.match(scoreExplanationPopover, /No evidence-backed explanation is recorded for this score/)
 })
 
 test("account operations are contextual, persisted and available to booking workflows", () => {

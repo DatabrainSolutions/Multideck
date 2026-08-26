@@ -142,6 +142,22 @@ export type ApiRecentEmail = {
   hasAttachments: boolean
 }
 
+export type AccountScoreEvidenceSource = {
+  id: string
+  kind: "activity" | "email" | "shipment"
+  claim: string
+  title: string
+  href: string
+  observedAt: string | null
+}
+
+export type AccountScoreExplanation = {
+  summary: string
+  confidence: number | null
+  calculatedAt: string | null
+  sources: AccountScoreEvidenceSource[]
+}
+
 export type ApiContact = {
   id: string
   accountId: string
@@ -264,6 +280,10 @@ export type ApiCustomerDetail = ApiCustomer & {
     type: string
   }[]
   recentEmails: { available: boolean; items: ApiRecentEmail[] }
+  scoreExplanations?: {
+    health: AccountScoreExplanation | null
+    churnRisk: AccountScoreExplanation | null
+  }
   officeAssignments: OrganisationOfficeAssignment[]
   addressCapabilities: { id: number; code: string; name: string }[]
   addresses: OrganisationAddress[]

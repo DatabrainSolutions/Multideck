@@ -31,6 +31,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Switch } from "@/components/ui/switch"
 import { MultideckDateRangePicker } from "@/components/multideck/date-picker"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { AutoPopulatedInput, AutoPopulatedTextarea, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { bookings } from "@/data/multideck-data"
@@ -821,6 +822,8 @@ function TextField({
   missing,
   dir = "auto",
   action,
+  autoPopulated,
+  autoPopulationDescription,
 }: {
   label: string
   value: string
@@ -832,10 +835,12 @@ function TextField({
   missing?: boolean
   dir?: "auto" | "ltr"
   action?: ReactNode
+  autoPopulated?: boolean
+  autoPopulationDescription?: string
 }) {
   return (
     <FieldShell label={label} helper={helper} required={required} missing={missing} action={action}>
-      <Input
+      <AutoPopulatedInput
         type={type}
         value={value}
         placeholder={placeholder}
@@ -847,6 +852,8 @@ function TextField({
         )}
         dir={dir}
         aria-invalid={missing || undefined}
+        autoPopulated={autoPopulated}
+        autoPopulationDescription={autoPopulationDescription}
       />
     </FieldShell>
   )
@@ -953,16 +960,20 @@ function TextAreaField({
   onChange,
   placeholder,
   helper,
+  autoPopulated,
+  autoPopulationDescription,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   placeholder?: string
   helper?: string
+  autoPopulated?: boolean
+  autoPopulationDescription?: string
 }) {
   return (
     <FieldShell label={label} helper={helper}>
-      <Textarea
+      <AutoPopulatedTextarea
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
@@ -971,6 +982,8 @@ function TextAreaField({
           fieldBoundaryShadow,
         )}
         dir="auto"
+        autoPopulated={autoPopulated}
+        autoPopulationDescription={autoPopulationDescription}
       />
     </FieldShell>
   )
@@ -1064,6 +1077,8 @@ function ComboField({
   clearable,
   clearTone = "default",
   onClear,
+  autoPopulated,
+  autoPopulationDescription,
 }: {
   label: string
   value: string
@@ -1077,6 +1092,8 @@ function ComboField({
   clearable?: boolean
   clearTone?: "default" | "danger"
   onClear?: () => void
+  autoPopulated?: boolean
+  autoPopulationDescription?: string
 }) {
   const [open, setOpen] = useState(false)
   const normalizedValue = value.trim().toLowerCase()
@@ -1087,7 +1104,7 @@ function ComboField({
   return (
     <FieldShell label={label} required={required} missing={missing} action={action}>
       <div className="relative z-0 min-w-0 focus-within:z-50">
-        <Input
+        <AutoPopulatedInput
           value={value}
           placeholder={placeholder}
           onFocus={() => setOpen(true)}
@@ -1109,6 +1126,9 @@ function ComboField({
           role="combobox"
           aria-expanded={open && !disabled}
           aria-invalid={missing || undefined}
+          autoPopulated={autoPopulated}
+          autoPopulationDescription={autoPopulationDescription}
+          indicatorClassName={clearable && value ? "end-8" : undefined}
         />
         {clearable && value && !disabled ? (
           <button
@@ -1461,7 +1481,7 @@ function PartyRow({
   office,
   reference,
   companyMissing,
-  companyLocked,
+  companyAutoPopulated,
   actions,
   onCompanyReset,
   onCompanyChange,
@@ -1475,7 +1495,7 @@ function PartyRow({
   office: string
   reference: string
   companyMissing?: boolean
-  companyLocked?: boolean
+  companyAutoPopulated?: boolean
   actions?: ReactNode
   onCompanyReset: () => void
   onCompanyChange: (value: string) => void
@@ -1566,7 +1586,8 @@ function PartyRow({
           placeholder="Select company"
           required={label !== "Notify Party"}
           missing={companyMissing}
-          disabled={companyLocked}
+          autoPopulated={companyAutoPopulated}
+          autoPopulationDescription="Copied from the selected customer. Edit this field to override it for this booking."
           clearable
           clearTone="danger"
           onClear={onCompanyReset}
@@ -1581,6 +1602,8 @@ function PartyRow({
           options={officeOptions}
           placeholder={company ? "Select office" : "Select company first"}
           action={addAddressButton}
+          autoPopulated={matchesAutoPopulation(office, officeOptions[0])}
+          autoPopulationDescription="Filled from the selected company. Edit this field to override it for this booking."
         />
         <ComboField
           label="Contact"
@@ -1589,6 +1612,8 @@ function PartyRow({
           options={contactOptions}
           placeholder={office ? "Select contact" : "Select office first"}
           action={addContactButton}
+          autoPopulated={matchesAutoPopulation(contact, contactOptions[0])}
+          autoPopulationDescription="Filled from the selected office. Edit this field to override it for this booking."
         />
         <TextField
           label="Reference"
@@ -2481,6 +2506,10 @@ function StepContent({
             office={data.customerOffice}
             reference={data.customerReference}
             companyMissing={missing.has("Customer")}
+            companyAutoPopulated={Boolean(
+              (data.source === "quote" && data.quoteNumber && matchesAutoPopulation(data.customer, data.quoteCustomer))
+              || (data.source === "existing" && data.templateBookingId && matchesAutoPopulation(data.customer, data.bookingCustomer)),
+            )}
             actions={
               <CustomerRoleCheckboxes
                 isShipper={data.customerIsShipper}
@@ -2504,7 +2533,7 @@ function StepContent({
             office={data.shipperOffice}
             reference={data.supplierReference}
             companyMissing={missing.has("Shipper")}
-            companyLocked={data.customerIsShipper && Boolean(data.customer)}
+            companyAutoPopulated={data.customerIsShipper && matchesAutoPopulation(data.shipper, data.customer)}
             onCompanyReset={resetShipper}
             onCompanyChange={(value) => {
               update("shipper", value)
@@ -2521,7 +2550,7 @@ function StepContent({
             office={data.consigneeOffice}
             reference={data.consigneeReference}
             companyMissing={missing.has("Consignee")}
-            companyLocked={data.customerIsConsignee && Boolean(data.customer)}
+            companyAutoPopulated={data.customerIsConsignee && matchesAutoPopulation(data.consignee, data.customer)}
             onCompanyReset={resetConsignee}
             onCompanyChange={(value) => {
               update("consignee", value)
@@ -2537,7 +2566,7 @@ function StepContent({
             contact={data.notifyPartyContact}
             office={data.notifyPartyOffice}
             reference={data.notifyPartyReference}
-            companyLocked={data.customerIsNotifyParty && Boolean(data.customer)}
+            companyAutoPopulated={data.customerIsNotifyParty && matchesAutoPopulation(data.notifyParty, data.customer)}
             onCompanyReset={resetNotifyParty}
             onCompanyChange={(value) => {
               update("notifyParty", value)
@@ -2585,28 +2614,20 @@ function StepContent({
                   required
                   missing={missing.has("Collection address")}
                 />
-                <BrandedCheckbox
-                  label="Manually override address"
-                  checked={data.collectionAddressManual}
-                  onChange={(checked) => {
-                    if (checked && data.collectionAddress && addressRecordForOffice(data.collectionAddress)) {
-                      update("collectionAddress", fullAddressForOffice(data.collectionAddress))
-                    }
-                    update("collectionAddressManual", checked)
-                  }}
-                  className="w-fit"
-                />
                 <FieldShell label="Full address" required missing={missing.has("Collection address")}>
-                  <Textarea
+                  <AutoPopulatedTextarea
                     value={data.collectionAddressManual ? data.collectionAddress : fullAddressForOffice(data.collectionAddress)}
-                    onChange={(event) => update("collectionAddress", event.target.value)}
-                    readOnly={!data.collectionAddressManual}
+                    onChange={(event) => {
+                      update("collectionAddressManual", true)
+                      update("collectionAddress", event.target.value)
+                    }}
                     placeholder="Enter the full collection address"
+                    autoPopulated={!data.collectionAddressManual && Boolean(addressRecordForOffice(data.collectionAddress))}
+                    autoPopulationDescription="Filled from the selected shipper address. Edit this field to override it for this booking."
                     className={cn(
                       "min-h-[132px] rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface-tint)] px-3 py-2.5 text-[13px] leading-[18px]",
                       fieldBoundaryShadow,
                       missing.has("Collection address") && missingFieldClass,
-                      !data.collectionAddressManual && "text-[var(--md-text)]",
                     )}
                     dir="auto"
                     aria-invalid={missing.has("Collection address") || undefined}
@@ -2633,7 +2654,7 @@ function StepContent({
                 <TextField label="Collection reference" value={data.collectionReference} onChange={(value) => update("collectionReference", value)} placeholder="Gate pass, warehouse ref, supplier ref" dir="ltr" />
               </div>
             </div>
-            <TextAreaField label="Collection notes" value={data.accessRestrictions} onChange={(value) => update("accessRestrictions", value)} placeholder="Default notes from the collection address, editable for this booking" helper="Later this can default from the selected shipper office or warehouse record." />
+            <TextAreaField label="Collection notes" value={data.accessRestrictions} onChange={(value) => update("accessRestrictions", value)} placeholder="Default notes from the collection address, editable for this booking" helper="Later this can default from the selected shipper office or warehouse record." autoPopulated={matchesAutoPopulation(data.accessRestrictions, notesForOffice(data.collectionAddress))} autoPopulationDescription="Filled from the selected collection address. Edit this field to override it for this booking." />
           </motion.section>
 
           <motion.section variants={fieldMotion} className={cn(fieldPanelClass, "grid content-start gap-3")}>
@@ -2652,28 +2673,20 @@ function StepContent({
                   required
                   missing={missing.has("Delivery address")}
                 />
-                <BrandedCheckbox
-                  label="Manually override address"
-                  checked={data.deliveryAddressManual}
-                  onChange={(checked) => {
-                    if (checked && data.deliveryAddress && addressRecordForOffice(data.deliveryAddress)) {
-                      update("deliveryAddress", fullAddressForOffice(data.deliveryAddress))
-                    }
-                    update("deliveryAddressManual", checked)
-                  }}
-                  className="w-fit"
-                />
                 <FieldShell label="Full address" required missing={missing.has("Delivery address")}>
-                  <Textarea
+                  <AutoPopulatedTextarea
                     value={data.deliveryAddressManual ? data.deliveryAddress : fullAddressForOffice(data.deliveryAddress)}
-                    onChange={(event) => update("deliveryAddress", event.target.value)}
-                    readOnly={!data.deliveryAddressManual}
+                    onChange={(event) => {
+                      update("deliveryAddressManual", true)
+                      update("deliveryAddress", event.target.value)
+                    }}
                     placeholder="Enter the full delivery address"
+                    autoPopulated={!data.deliveryAddressManual && Boolean(addressRecordForOffice(data.deliveryAddress))}
+                    autoPopulationDescription="Filled from the selected consignee address. Edit this field to override it for this booking."
                     className={cn(
                       "min-h-[132px] rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface-tint)] px-3 py-2.5 text-[13px] leading-[18px]",
                       fieldBoundaryShadow,
                       missing.has("Delivery address") && missingFieldClass,
-                      !data.deliveryAddressManual && "text-[var(--md-text)]",
                     )}
                     dir="auto"
                     aria-invalid={missing.has("Delivery address") || undefined}
@@ -2700,7 +2713,7 @@ function StepContent({
                 <TextField label="Delivery reference" value={data.deliveryReference} onChange={(value) => update("deliveryReference", value)} placeholder="Booking slot, DC ref, customer ref" dir="ltr" />
               </div>
             </div>
-            <TextAreaField label="Delivery notes" value={data.bookingNotes} onChange={(value) => update("bookingNotes", value)} placeholder="Default notes from the delivery address, editable for this booking" helper="Later this can default from the selected consignee office or delivery record." />
+            <TextAreaField label="Delivery notes" value={data.bookingNotes} onChange={(value) => update("bookingNotes", value)} placeholder="Default notes from the delivery address, editable for this booking" helper="Later this can default from the selected consignee office or delivery record." autoPopulated={matchesAutoPopulation(data.bookingNotes, notesForOffice(data.deliveryAddress))} autoPopulationDescription="Filled from the selected delivery address. Edit this field to override it for this booking." />
           </motion.section>
         </FieldGroup>
       </StepShell>
@@ -2860,9 +2873,9 @@ function StepContent({
                   <p className="text-[13px] font-medium text-[var(--md-ink)]">From</p>
                   <div className="grid gap-3">
                     <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)]">
-                      <TextField label="Code" value={transportDraft.fromCode} onChange={(value) => updateTransportDraft("fromCode", value.toUpperCase())} placeholder="CNSHA / PVG" dir="ltr" action={<DexterCodeHint />} />
-                      <TextField label="Name" value={transportDraft.fromName} onChange={(value) => updateTransportDraft("fromName", value)} placeholder="Shanghai" required missing={missing.has("First origin") && !data.transportLegs.length} />
-                      <TextField label="Country" value={transportDraft.fromCountry} onChange={(value) => updateTransportDraft("fromCountry", value)} placeholder="China" />
+                      <TextField label="Code" value={transportDraft.fromCode} onChange={(value) => updateTransportDraft("fromCode", value.toUpperCase())} placeholder="CNSHA / PVG" dir="ltr" action={<DexterCodeHint />} autoPopulated={matchesAutoPopulation(transportDraft.fromCode, collectionLocation.code)} autoPopulationDescription="Filled from the collection location. Edit this field to override it for this route leg." />
+                      <TextField label="Name" value={transportDraft.fromName} onChange={(value) => updateTransportDraft("fromName", value)} placeholder="Shanghai" required missing={missing.has("First origin") && !data.transportLegs.length} autoPopulated={matchesAutoPopulation(transportDraft.fromName, collectionLocation.name)} autoPopulationDescription="Filled from the collection location. Edit this field to override it for this route leg." />
+                      <TextField label="Country" value={transportDraft.fromCountry} onChange={(value) => updateTransportDraft("fromCountry", value)} placeholder="China" autoPopulated={matchesAutoPopulation(transportDraft.fromCountry, collectionLocation.country)} autoPopulationDescription="Filled from the collection location. Edit this field to override it for this route leg." />
                     </div>
                   </div>
                 </div>
@@ -2877,9 +2890,9 @@ function StepContent({
                   <p className="text-[13px] font-medium text-[var(--md-ink)]">To</p>
                   <div className="grid gap-3">
                     <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)]">
-                      <TextField label="Code" value={transportDraft.toCode} onChange={(value) => updateTransportDraft("toCode", value.toUpperCase())} placeholder="GBFXT / LHR" dir="ltr" action={<DexterCodeHint />} />
-                      <TextField label="Name" value={transportDraft.toName} onChange={(value) => updateTransportDraft("toName", value)} placeholder="Felixstowe" required missing={missing.has("Final destination") && !data.transportLegs.length} />
-                      <TextField label="Country" value={transportDraft.toCountry} onChange={(value) => updateTransportDraft("toCountry", value)} placeholder="United Kingdom" />
+                      <TextField label="Code" value={transportDraft.toCode} onChange={(value) => updateTransportDraft("toCode", value.toUpperCase())} placeholder="GBFXT / LHR" dir="ltr" action={<DexterCodeHint />} autoPopulated={matchesAutoPopulation(transportDraft.toCode, deliveryLocation.code)} autoPopulationDescription="Filled from the delivery location. Edit this field to override it for this route leg." />
+                      <TextField label="Name" value={transportDraft.toName} onChange={(value) => updateTransportDraft("toName", value)} placeholder="Felixstowe" required missing={missing.has("Final destination") && !data.transportLegs.length} autoPopulated={matchesAutoPopulation(transportDraft.toName, deliveryLocation.name)} autoPopulationDescription="Filled from the delivery location. Edit this field to override it for this route leg." />
+                      <TextField label="Country" value={transportDraft.toCountry} onChange={(value) => updateTransportDraft("toCountry", value)} placeholder="United Kingdom" autoPopulated={matchesAutoPopulation(transportDraft.toCountry, deliveryLocation.country)} autoPopulationDescription="Filled from the delivery location. Edit this field to override it for this route leg." />
                     </div>
                   </div>
                 </div>

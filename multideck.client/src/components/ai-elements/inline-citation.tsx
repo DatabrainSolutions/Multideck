@@ -93,7 +93,7 @@ export function InlineCitationCardBody({ className, ...props }: InlineCitationCa
       align="start"
       sideOffset={8}
       className={cn(
-        "relative w-[min(320px,calc(100vw-24px))] overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]",
+        "relative w-[min(320px,calc(100vw-24px))] overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] motion-reduce:animate-none motion-reduce:transition-none",
         className,
       )}
       {...props}

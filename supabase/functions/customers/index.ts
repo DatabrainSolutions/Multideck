@@ -12,6 +12,7 @@ import {
   requirePermission,
   routeParts,
 } from "../_shared/backend.ts"
+import { resolveAccountScoreExplanations } from "./score-explanations.ts"
 
 type Row = Record<string, any>
 type OrganisationType = "company" | "customer" | "supplier"
@@ -476,16 +477,50 @@ async function accountDetail(admin: any, companyId: string, userId: string, perm
   const accountId = profile?.CRMAccount_ID ?? null
   const contactIds = contactList.map((contact: Row) => contact.id)
   const contactEmails = contactList.map((contact: Row) => contact.email).filter(Boolean)
-  const [{ data: activities, error: activityError }, emailResult, foundation, operations] = await Promise.all([
+  const [{ data: activities, error: activityError }, emailResult, foundation, operations, insightResult] = await Promise.all([
     accountId
       ? admin.from("CRM_Activities").select("*").eq("CRMActivity_AccountID", accountId).eq("CRMActivity_IsDeleted", false).order("CRMActivity_ActivityAt", { ascending: false }).limit(20)
       : Promise.resolve({ data: [], error: null }),
     recentEmails(admin, userId, permissions, id, contactIds, contactEmails),
     organisationFoundation(admin, id, profile ?? null),
     accountOperations(admin, id, profile ?? null),
+    accountId
+      ? admin.from("CRM_AIInsights")
+        .select("CRMAIInsight_ID,CRMAIInsight_InsightTypeCode,CRMAIInsight_StatusCode,CRMAIInsight_Summary,CRMAIInsight_ConfidenceScore,CRMAIInsight_EvidenceJSON,CRMAIInsight_CreatedAt")
+        .eq("CRMAIInsight_AccountID", accountId)
+        .or(`CRMAIInsight_TargetUserID.is.null,CRMAIInsight_TargetUserID.eq.${userId}`)
+        .order("CRMAIInsight_CreatedAt", { ascending: false })
+        .limit(20)
+      : Promise.resolve({ data: [], error: null }),
   ])
   if (activityError) throw new HttpError(500, activityError.message)
+  if (insightResult.error) throw new HttpError(500, insightResult.error.message)
   const preference = engagement?.[0] ?? null
+  const activeShipments = (shipments ?? []).map((item: Row) => ({
+    id: item.Job_ID,
+    reference: `${item.Job_Period}-${item.Job_Number}`,
+    route: [item.Job_OriginNameSnapshot, item.Job_DestinationNameSnapshot].filter(Boolean).join(" → "),
+    mode: item.Job_TransportModeSummary,
+    status: item.Job_TrackingStatus ?? item.Job_Status,
+    eta: item.Job_PredictedDeliveryAt,
+    openExceptionCount: item.Job_OpenExceptionCount ?? 0,
+  }))
+  const accountActivities = (activities ?? []).map((item: Row) => ({
+    id: item.CRMActivity_ID,
+    subject: item.CRMActivity_Subject,
+    summary: item.CRMActivity_Summary,
+    occurredAt: item.CRMActivity_ActivityAt,
+    type: item.CRMActivity_ActivityTypeCode,
+  }))
+  const scoreExplanations = resolveAccountScoreExplanations({
+    accountId: id,
+    healthScore: profile?.CRMAccount_HealthScore ?? null,
+    churnRiskScore: profile?.CRMAccount_ChurnRiskScore ?? null,
+    insights: insightResult.data ?? [],
+    activities: accountActivities,
+    emails: emailResult.available ? emailResult.items : [],
+    shipments: activeShipments,
+  })
   return {
     ...summary,
     customerSince: profile?.CRMAccount_CreatedAt ?? org.Org_CRMUpdatedAt,
@@ -528,23 +563,10 @@ async function accountDetail(admin: any, companyId: string, userId: string, perm
       notes: preference.CRMCustEngPref_Notes ?? null,
     } : null,
     contacts: contactList,
-    activeShipments: (shipments ?? []).map((item: Row) => ({
-      id: item.Job_ID,
-      reference: `${item.Job_Period}-${item.Job_Number}`,
-      route: [item.Job_OriginNameSnapshot, item.Job_DestinationNameSnapshot].filter(Boolean).join(" → "),
-      mode: item.Job_TransportModeSummary,
-      status: item.Job_TrackingStatus ?? item.Job_Status,
-      eta: item.Job_PredictedDeliveryAt,
-      openExceptionCount: item.Job_OpenExceptionCount ?? 0,
-    })),
-    activities: (activities ?? []).map((item: Row) => ({
-      id: item.CRMActivity_ID,
-      subject: item.CRMActivity_Subject,
-      summary: item.CRMActivity_Summary,
-      occurredAt: item.CRMActivity_ActivityAt,
-      type: item.CRMActivity_ActivityTypeCode,
-    })),
+    activeShipments,
+    activities: accountActivities,
     recentEmails: emailResult,
+    scoreExplanations,
     ...foundation,
     ...operations,
   }

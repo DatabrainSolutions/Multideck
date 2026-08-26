@@ -45,6 +45,7 @@ import {
   PackageMinus,
   PackagePlus,
   Palette,
+  Pencil,
   Plane,
   Phone,
   ReceiptText,
@@ -2115,17 +2116,61 @@ export const galleryComponents = [
     usageCode: `<Surface tone="panel" padding="md">\n  <SectionHeader title="Live bookings" meta="updated 41s ago" />\n  <BookingRow booking={booking} />\n</Surface>`,
   },
   {
+    id: "auto-populated-field",
+    name: "Auto-populated Field",
+    category: "Forms",
+    description: "An editable field state for values copied or derived from linked records, with quiet provenance and a reversible manual override.",
+    details: "The field starts with normal styling, then a derived value resolves through a short blur-to-sharp morph into the accent tint and stroke. Only the icon carries the explanation; hover or focus opens the provenance tooltip. Editing the value returns the field to its normal state immediately. Use this for editable derived values, not inherited fields that must remain locked.",
+    foundOn: [
+      { label: "Quote details", route: "/quotes/jq20015" },
+      { label: "New booking", route: "/bookings/new" },
+      { label: "Components", route: "/components?component=auto-populated-field" },
+    ],
+    componentCode: `export {\n  AutoPopulatedInput,\n  AutoPopulatedTextarea,\n  AutoPopulationIndicator,\n  matchesAutoPopulation,\n} from "@/components/multideck/auto-populated-field"`,
+    usageCode: `<AutoPopulatedInput\n  value={address}\n  onChange={(event) => setAddress(event.target.value)}\n  autoPopulated={address === customer.address}\n  autoPopulationDescription="Filled from the selected customer. Edit this field to override it for this quote."\n/>`,
+  },
+  {
     id: "quote-detail-controls",
     name: "Quote Detail Controls",
     category: "Forms",
-    description: "Compact freight-aware form controls for organisation recommendations, linked locations, Incoterms, values, units, recurrence and cargo characteristics.",
-    details: "Use these controls in quote and booking detail workflows where expected input length should shape the field. Organisation comboboxes keep current, recent and related records above a hairline, retain the full directory below it, and allow manual typing. Location fields keep country, place and UN/LOCODE mutually filtered; conditional details use progressive disclosure.",
+    description: "Compact freight-aware form controls for organisation recommendations, linked locations, derived values, Incoterms, units, recurrence and cargo characteristics.",
+    details: "Use these controls in quote and booking detail workflows where expected input length should shape the field. Organisation comboboxes keep current, recent and related records above a hairline and retain the full directory below it. Location fields ask for country and port/location, then derive an editable UN/LOCODE from the official directory. Derived values use the shared auto-populated state until the operator overrides them.",
     foundOn: [
       { label: "Quote details", route: "/quotes/jq20013" },
       { label: "Components", route: "/components?component=quote-detail-controls" },
     ],
-    componentCode: `export {\n  CompactCombobox,\n  LocationFields,\n  IncotermField,\n  AmountCurrencyField,\n  NumberUnitField,\n  RecurrenceBuilder,\n  CargoCharacteristicsField,\n} from "@/components/multideck/quote-details/quote-detail-fields"`,
-    usageCode: `<CompactCombobox\n  label="Shipper"\n  value={shipperName}\n  recommendedOptions={recentAndRelatedShippers}\n  options={allOrganisations}\n  recommendedLabel="Current, recent & related"\n  allLabel="All organisations"\n  onValueChange={setShipperName}\n/>\n\n<LocationFields label="Origin" value={origin} options={savedLocations} countries={countries} onChange={setOrigin} />\n<IncotermField value={incoterm} namedLocation={namedPlace} onNamedLocationChange={setNamedPlace} />\n<AmountCurrencyField label="Goods value" value={goodsValue} currencies={currencies} onChange={setGoodsValue} />`,
+    componentCode: `export {\n  CompactCombobox,\n  LocationFields,\n  AutoFilledField,\n  IncotermField,\n  AmountCurrencyField,\n  NumberUnitField,\n  RecurrenceBuilder,\n  CargoCharacteristicsField,\n} from "@/components/multideck/quote-details/quote-detail-fields"`,
+    usageCode: `<CompactCombobox\n  label="Shipper"\n  value={shipperName}\n  recommendedOptions={recentAndRelatedShippers}\n  options={allOrganisations}\n  recommendedLabel="Current, recent & related"\n  allLabel="All organisations"\n  onValueChange={setShipperName}\n/>\n\n<LocationFields label="Origin" value={origin} options={unlocodeDirectory} countries={countries} onChange={setOrigin} />\n<AutoFilledField label="UN/LOCODE" value={origin.unlocode} onChange={setUnlocode} autoPopulated={origin.unlocode === resolvedUnlocode} valueDirection="ltr" />\n<IncotermField value={incoterm} namedLocation={namedPlace} onNamedLocationChange={setNamedPlace} />\n<AmountCurrencyField label="Goods value" value={goodsValue} currencies={currencies} onChange={setGoodsValue} />`,
+  },
+  {
+    id: "inline-fields",
+    name: "Inline Fields",
+    category: "Forms",
+    description: "Record fields that read as calm facts and become editable in place without shifting the surrounding layout.",
+    details: "Use on detail surfaces where operators review more often than they edit. Text, select, switch and grouped variants share keyboard-safe save, error and confirmation behaviour; direct-edit mode is available for compact forms that should always expose their controls.",
+    foundOn: [
+      { label: "CRM account details", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" },
+      { label: "CRM contact details", route: "/crm/contacts" },
+      { label: "CRM deal details", route: "/crm/deals" },
+      { label: "Components", route: "/components?component=inline-fields" },
+    ],
+    componentCode: `export {\n  InlineField,\n  InlineSelectField,\n  InlineSwitchField,\n  InlineFieldGroup,\n  InlineFieldCard,\n} from "@/components/multideck/inline-field"`,
+    usageCode: `<InlineFieldCard title="Account facts">\n  <InlineField label="Account name" value={account.name} onSave={saveName} required />\n  <InlineSelectField label="Type" value={account.type} options={accountTypes} onSave={saveType} />\n</InlineFieldCard>`,
+  },
+  {
+    id: "wizard-dialog",
+    name: "Wizard Dialog",
+    category: "Forms",
+    description: "A reusable staged creation dialog with an always-visible step map, stable body height and drawer presentation for register-led work.",
+    details: "Use when a record needs several meaningful groups of inputs. Every step stays reachable, Back and Next preserve context, validation happens at the real submit boundary, focus returns to the opening control, and the same component can present as a dialog or trailing drawer.",
+    foundOn: [
+      { label: "CRM accounts", route: "/crm/accounts" },
+      { label: "Contact cards", route: "/crm/contact-cards" },
+      { label: "Reports", route: "/reports" },
+      { label: "Components", route: "/components?component=wizard-dialog" },
+    ],
+    componentCode: `export function WizardDialog({ open, onOpenChange, steps, activeStepId, onStepChange, onSubmit, children }) {\n  return (\n    <Dialog open={open} onOpenChange={onOpenChange}>\n      <DialogContent>\n        <WizardStepRail steps={steps} activeStepId={activeStepId} onStepChange={onStepChange} />\n        <WizardStepContent activeStepId={activeStepId}>{children}</WizardStepContent>\n        <WizardFooter onBack={goBack} onNext={goNext} onSubmit={onSubmit} />\n      </DialogContent>\n    </Dialog>\n  )\n}`,
+    usageCode: `<WizardDialog\n  open={open}\n  onOpenChange={setOpen}\n  title="New account"\n  steps={steps}\n  activeStepId={activeStepId}\n  onStepChange={setActiveStepId}\n  submitLabel="Create account"\n  onSubmit={createAccount}\n>\n  {activeStepId === "details" ? <AccountDetailsFields /> : <AccountOwnershipFields />}\n</WizardDialog>`,
   },
   {
     id: "status-pill",
@@ -2217,16 +2262,6 @@ export const galleryComponents = [
     ],
     componentCode: `export function KeyboardShortcutsPanel({ className, compact = false }) {\n  const bindings = useShortcutBindings()\n  const [query, setQuery] = useState("")\n  const [recording, setRecording] = useState(null)\n  const [lastChange, setLastChange] = useState(null)\n\n  const groups = useMemo(\n    () => shortcutGroups\n      .map((group) => ({ group, items: shortcutDefinitions.filter((d) => d.group === group.id && matches(d)) }))\n      .filter((entry) => entry.items.length > 0),\n    [matches],\n  )\n\n  return (\n    <div className={className}>\n      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search shortcuts" />\n      <Button onClick={resetAllShortcutBindings} disabled={customisedShortcutCount() === 0}>Reset all</Button>\n      {groups.map(({ group, items }) => (\n        <section key={group.id}>\n          <h3>{group.label}</h3>\n          {items.map((definition, index) => (\n            <ShortcutRow\n              key={definition.id}\n              definition={definition}\n              binding={bindings[definition.id]}\n              customised={isShortcutCustomised(definition.id)}\n              recording={recording}\n              index={index}\n              onStartRecording={() => setRecording({ shortcutId: definition.id, steps: [] })}\n              onCommit={(binding) => writeShortcutBinding(definition.id, binding)}\n              onReset={() => resetShortcutBinding(definition.id)}\n              onDisable={() => writeShortcutBinding(definition.id, null)}\n            />\n          ))}\n        </section>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `// As a settings section\n<section className="md-settings-panel overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">\n  <KeyboardShortcutsPanel />\n</section>\n\n// Or over whatever the operator is working on, opened by its own shortcut\n<Dialog open={overviewOpen} onOpenChange={setOverviewOpen}>\n  <DialogContent className="max-w-[720px] gap-0 overflow-hidden p-0">\n    <DialogHeader><DialogTitle>Keyboard shortcuts</DialogTitle></DialogHeader>\n    <div className="md-scrollbar max-h-[560px] overflow-y-auto">\n      <KeyboardShortcutsPanel compact />\n    </div>\n  </DialogContent>\n</Dialog>`,
-  },
-  {
-    id: "ai-edge-glow",
-    name: "AI Edge Glow",
-    category: "Feedback",
-    description: "The Dexter working-state motif: a soft animated screen edge that tells operators AI is actively reading, checking, or preparing something.",
-    details: "Use only while an AI process is running. Wrap the current screen or workflow area so the glow sits behind the existing UI and never replaces clear progress copy.",
-    foundOn: [{ label: "Components", route: "/components?component=ai-edge-glow" }],
-    componentCode: `export function AIEdgeGlow({ active = true, intensity = "active", variant = "surface", className, contentClassName, children }) {\n  return (\n    <div\n      className={cn(\n        "md-ai-edge-glow",\n        active && "md-ai-edge-glow--active",\n        intensity === "subtle" && "md-ai-edge-glow--subtle",\n        variant === "screen" && "md-ai-edge-glow--screen",\n        className,\n      )}\n      data-active={active ? "true" : "false"}\n    >\n      <span className="md-ai-edge-glow__wash" aria-hidden />\n      <span className="md-ai-edge-glow__signal" aria-hidden />\n      <span className="md-ai-edge-glow__frame" aria-hidden />\n      <div className={cn("relative z-10 h-full w-full", contentClassName)}>{children}</div>\n    </div>\n  )\n}`,
-    usageCode: `<AIEdgeGlow active={isExtracting} variant="screen" className="min-h-screen rounded-none">\n  <NewJobWorkspace />\n</AIEdgeGlow>\n\n<AIEdgeGlow active={isCheckingRates} intensity="subtle" className="rounded-[var(--md-radius-2xl)]">\n  <RatesPanel />\n</AIEdgeGlow>`,
   },
   {
     id: "home-dexter-launcher",
@@ -2967,6 +3002,43 @@ export const galleryComponents = [
     usageCode: `<AuditTimeline\n  events={quoteAuditEvents}\n  title="Audit and workflow"\n  description="Quote changes and next actions."\n/>`,
   },
   {
+    id: "lifecycle-notes",
+    name: "Lifecycle Notes",
+    category: "Operations",
+    description: "A shared operational note thread that follows a quote into its booking and Customs declaration, with exact tenant people and department tags.",
+    details: "Use when context must survive a freight workflow handoff. Notes are immutable, permission-checked at the current record, and clearly labelled when they were carried from an earlier lifecycle stage. Type @ to search active people and departments in the current tenant.",
+    foundOn: [
+      { label: "Quote notes", route: "/quotes/Q-19158" },
+      { label: "Booking notes", route: "/bookings/md-22455" },
+      { label: "Job-related Customs notes", route: "/customs/job-related/export" },
+      { label: "Components", route: "/components?component=lifecycle-notes" },
+    ],
+    componentCode: `export function LifecycleNotes({ subjectType, subjectId }) {
+  const [notes, setNotes] = useState([])
+  const [draft, setDraft] = useState("")
+  const [mentions, setMentions] = useState([])
+
+  useEffect(() => {
+    getLifecycleNotes(subjectType, subjectId).then((page) => setNotes(page.notes))
+  }, [subjectType, subjectId])
+
+  return (
+    <Surface>
+      <NoteComposer
+        value={draft}
+        mentions={mentions}
+        onAdd={() => addLifecycleNote(subjectType, subjectId, draft, mentions)}
+      />
+      {notes.map((note) => <LifecycleNoteRow key={note.id} note={note} />)}
+    </Surface>
+  )
+}`,
+    usageCode: `<LifecycleNotes
+  subjectType="booking"
+  subjectId={booking.jobId}
+/>`,
+  },
+  {
     id: "audit-workspace",
     name: "Audit Workspace",
     category: "Operations",
@@ -3160,51 +3232,6 @@ export const DotGridLoader = memo(function DotGridLoader({ label, size = "md", d
     onToggleStar={() => void toggleStar(item)}
   />
 ))}`,
-  },
-  {
-    id: "mailbox-provider-switch",
-    name: "Mailbox Provider Switch",
-    category: "Operations",
-    description: "The provider toggle and mailbox picker for a connected mail workspace, with Shared and Group labels.",
-    details: "Use to choose which mail account a workspace is reading. The provider toggle reuses the shared Segmented Control, and the Gmail and Outlook marks come from the local auth brand assets rather than a remote logo URL. Personal mailboxes are listed before shared and group ones, each labelled explicitly, because sending from the wrong address is the expensive mistake in an operations inbox. An expired connection surfaces its own Reconnect action instead of failing silently.",
-    foundOn: [{ label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=mailbox-provider-switch" }],
-    componentCode: `export function MailboxProviderSwitch({ providers, provider, onProviderChange, mailboxes, selectedMailboxId, onMailboxChange, onReconnect }) {
-  const personal = mailboxes.filter((mailbox) => mailbox.kind === "personal")
-  const shared = mailboxes.filter((mailbox) => mailbox.kind !== "personal")
-  const needsReconnect = mailboxes.some((mailbox) => mailbox.status === "reauthorization_required")
-
-  return (
-    <div className="flex min-h-0 flex-col gap-3">
-      <SegmentedControl
-        options={providers}
-        value={provider}
-        onChange={onProviderChange}
-        ariaLabel="Mail provider"
-        renderOption={(option) => (
-          <>
-            <MailProviderMark provider={option} className="size-4" />
-            <span className="truncate">{mailProviderLabels[option]}</span>
-          </>
-        )}
-      />
-      {needsReconnect ? <ReconnectNotice onReconnect={() => onReconnect(provider)} /> : null}
-      {[{ label: "Personal", items: personal }, { label: "Shared mailboxes", items: shared }]
-        .filter((group) => group.items.length > 0)
-        .map((group) => (
-          <MailboxGroup key={group.label} {...group} selectedMailboxId={selectedMailboxId} onMailboxChange={onMailboxChange} />
-        ))}
-    </div>
-  )
-}`,
-    usageCode: `<MailboxProviderSwitch
-  providers={["gmail", "outlook"]}
-  provider={provider}
-  onProviderChange={changeProvider}
-  mailboxes={providerMailboxes}
-  selectedMailboxId={mailboxId}
-  onMailboxChange={changeMailbox}
-  onReconnect={(target) => void reconnect(target)}
-/>`,
   },
   {
     id: "email-delivery-status",
@@ -5001,6 +5028,16 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     usageCode: `<MarketingOptInControl\n  checked={lead.marketingOptIn}\n  source={lead.marketingConsentSource}\n  updatedAt={lead.marketingConsentUpdatedAt}\n  onCheckedChange={(checked) => setMarketingOptIn("lead", lead.id, checked)}\n/>`,
   },
   {
+    id: "score-explanation-popover",
+    name: "Score Explanation Popover",
+    category: "CRM",
+    description: "A compact explanation for calculated account scores, grounded in permission-visible source records.",
+    details: "Use on health, churn, risk, or readiness scores. A reason is shown only when its score matches the current percentage and every citation resolves to a real record the operator can already access; otherwise the component explains that supporting evidence is unavailable.",
+    foundOn: [{ label: "Account details", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "Components", route: "/components?component=score-explanation-popover" }],
+    componentCode: `export function ScoreExplanationPopover({ kind, score, explanation, children }) {\n  return (\n    <HoverCard>\n      <HoverCardTrigger asChild>\n        <button aria-label={\`Show \${kind} score explanation\`}>{children}</button>\n      </HoverCardTrigger>\n      <HoverCardContent>\n        {explanation ? (\n          <>\n            <p>{explanation.summary}</p>\n            {explanation.sources.map((source) => (\n              <DexterInlineCitation key={source.id} href={source.href} title={source.title}>\n                {source.claim}\n              </DexterInlineCitation>\n            ))}\n          </>\n        ) : <p>No evidence-backed explanation is recorded for this score.</p>}\n      </HoverCardContent>\n    </HoverCard>\n  )\n}`,
+    usageCode: `<ScoreExplanationPopover\n  kind="health"\n  score={account.healthScore}\n  explanation={account.scoreExplanations.health}\n>\n  <AccountScoreValue value={account.healthScore} />\n</ScoreExplanationPopover>`,
+  },
+  {
     id: "screening-outcome-pill",
     name: "Screening Outcome Pill",
     category: "Operations",
@@ -5065,7 +5102,9 @@ export const galleryIcons = {
   "todo-action-state-icon": ClipboardCheck,
   "todo-priority-picker": ClipboardCheck,
   kbd: KeyRound,
-  "ai-edge-glow": BrainCircuit,
+  "inline-fields": Pencil,
+  "wizard-dialog": ListOrdered,
+  "side-drawer": LayoutDashboard,
   "dashboard-customise-panel": AiEditing,
   "ai-prompt-morph": AiEditing,
   "dexter-action-pill": AiBrain,
@@ -5083,6 +5122,7 @@ export const galleryIcons = {
   "scatter-chart": ChartScatter,
   "mixed-chart": ChartNoAxesCombined,
   "audit-timeline": Clock3,
+  "lifecycle-notes": MessageCircle,
   "booking-row": Ship,
   "interactive-map": Globe2,
   command: ScanText,
@@ -5190,6 +5230,7 @@ export const galleryIcons = {
   "contact-card-social-links-editor": Users,
   "automation-run-history": Workflow,
   "marketing-opt-in-control": BadgeCheck,
+  "score-explanation-popover": Gauge,
   "screening-outcome-pill": ShieldCheck,
   "screening-list-freshness": ShieldCheck,
   "screening-match-row": ShieldCheck,

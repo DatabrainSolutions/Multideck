@@ -44,6 +44,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { CustomsReadinessReview, type CustomsReadinessReviewIssue } from "@/components/multideck/customs-readiness-review"
+import { LifecycleNotes } from "@/components/multideck/lifecycle-notes"
 import { cn } from "@/lib/utils"
 import { useKanbanPointerDrag } from "@/lib/kanban-drag"
 import { mdMotion, reduceMotion } from "@/lib/motion"
@@ -88,7 +89,7 @@ export const bookingViewOptions = [
   { value: "Table", label: "Table", icon: List },
   { value: "Board", label: "Board", icon: LayoutDashboard },
 ] as const
-const bookingDetailTabs = ["Overview", "Details", "Documents", "Customs", "Finance", "Audit"] as const
+const bookingDetailTabs = ["Overview", "Details", "Documents", "Customs", "Finance", "Notes", "Audit"] as const
 type BookingDetailTab = (typeof bookingDetailTabs)[number]
 type BookingCustomsView = "source" | "review"
 export const bookingSearchFieldOptions = [
@@ -2965,6 +2966,7 @@ function BookingDetailTabPage({
   if (activeTab === "Documents") return <BookingDocumentsWorkspace record={record} />
   if (activeTab === "Customs") return <BookingCustomsWorkspace customsError={customsError} navigate={navigate} onWorkspaceSaved={onWorkspaceSaved} onViewChange={onCustomsViewChange} readiness={customsReadiness} record={record} view={customsView} />
   if (activeTab === "Finance") return <BookingFinanceWorkspace record={record} />
+  if (activeTab === "Notes") return <LifecycleNotes subjectType="booking" subjectId={record.workspace?.booking.jobId ?? null} />
   if (activeTab === "Audit") return <BookingActivityWorkspace record={record} />
   return <BookingDecisionOverview record={record} />
 }

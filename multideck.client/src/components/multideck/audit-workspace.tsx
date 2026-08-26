@@ -252,6 +252,8 @@ const emptyFilters: QuoteAuditFilters = {
   eventType: "all",
 }
 
+const auditFilterControlClass = "!h-10 text-[12px]"
+
 function parseFilterBoundary(value: string, includeMinuteEnd = false) {
   if (!value) return null
   const timestamp = new Date(value).getTime()
@@ -678,8 +680,8 @@ export function AuditWorkspace({
                 title="From date and time"
                 description="Pick the start of the audit period."
                 defaultTime="00:00"
-                triggerClassName="h-10 text-[12px]"
-                timeClassName="h-10 text-[12px]"
+                triggerClassName={auditFilterControlClass}
+                timeClassName={auditFilterControlClass}
               />
             </div>
 
@@ -693,15 +695,15 @@ export function AuditWorkspace({
                 title="To date and time"
                 description="Pick the end of the audit period."
                 defaultTime="23:59"
-                triggerClassName="h-10 text-[12px]"
-                timeClassName="h-10 text-[12px]"
+                triggerClassName={auditFilterControlClass}
+                timeClassName={auditFilterControlClass}
               />
             </div>
 
             <div className="grid min-w-0 gap-1.5">
               <label htmlFor={`${filterId}-actor`} className="text-[10.5px] font-medium text-[var(--md-text)]">{t("Actor or sender")}</label>
               <Select value={filters.actor} onValueChange={(actor) => setFilters((current) => ({ ...current, actor }))}>
-                <SelectTrigger id={`${filterId}-actor`} className="w-full min-w-0 text-[12px]" aria-label={t("Filter by actor or sender")}>
+                <SelectTrigger id={`${filterId}-actor`} className={cn(auditFilterControlClass, "w-full min-w-0")} aria-label={t("Filter by actor or sender")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -717,7 +719,7 @@ export function AuditWorkspace({
                 value={filters.eventType}
                 onValueChange={(eventType) => setFilters((current) => ({ ...current, eventType: eventType as QuoteAuditFilters["eventType"] }))}
               >
-                <SelectTrigger id={`${filterId}-event-type`} className="w-full min-w-0 text-[12px]" aria-label={t("Filter by event type")}>
+                <SelectTrigger id={`${filterId}-event-type`} className={cn(auditFilterControlClass, "w-full min-w-0")} aria-label={t("Filter by event type")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -736,7 +738,7 @@ export function AuditWorkspace({
               variant="ghost"
               onClick={resetFilters}
               disabled={!hasFilters}
-              className="w-full justify-center text-[12px] xl:w-auto"
+              className={cn(auditFilterControlClass, "w-full justify-center xl:w-auto")}
             >
               <FilterX className="size-3.5" strokeWidth={1.4} />
               {t("Clear filters")}

@@ -72,6 +72,7 @@ import {
 } from "@/components/multideck/customer-components"
 import { CrmActivityTimeline, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
 import { CopyableField } from "@/components/multideck/copyable-field"
+import { AutoPopulatedInput, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
 import { CardMiniature, CardStylePresetPicker, ContactCardLayoutPicker, ContactCardSocialLinksEditor, QrStylePicker } from "@/components/multideck/contact-card-design"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
 import { OrganisationFoundationPanel } from "@/components/multideck/organisation-foundation-panel"
@@ -106,10 +107,9 @@ import { ChoiceControl, FilterChips, SegmentedControl, TabsRail } from "@/compon
 import { EmailMessageRenderer } from "@/components/multideck/email-message-renderer"
 import { EmailDeliveryStatus } from "@/components/multideck/email-delivery-status"
 import { InboxThreadRow } from "@/components/multideck/inbox-thread-row"
-import { MailboxProviderSwitch } from "@/components/multideck/mailbox-provider-switch"
 import { MailComposer, type ComposerState } from "@/components/multideck/mail-composer"
 import { ThreadSummary } from "@/components/multideck/thread-summary"
-import type { InboxThreadListItem, Mailbox, MailProvider, ThreadSummaryState } from "@/lib/inbox-api"
+import type { InboxThreadListItem, Mailbox, ThreadSummaryState } from "@/lib/inbox-api"
 import type { ApiCustomerDetail, CustomerReference } from "@/lib/customer-api"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, TablePillKindContext, toneToVar } from "@/components/multideck/status-pill"
@@ -163,6 +163,7 @@ import {
 } from "@/components/multideck/home-deck-panel"
 import { DexterActionApproval } from "@/components/multideck/dexter-action-approval"
 import { DexterInlineCitation } from "@/components/multideck/dexter-inline-citation"
+import { ScoreExplanationPopover } from "@/components/multideck/score-explanation-popover"
 import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
 import { DexterEmailComposeCard } from "@/components/multideck/dexter-email-compose-card"
 import { AiPromptMorph } from "@/components/multideck/ai-prompt-morph"
@@ -209,7 +210,6 @@ import {
 } from "@/components/multideck/settings-components"
 import { Table, TableBody } from "@/components/ui/table"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
-import { AIEdgeGlow } from "@/components/multideck/ai-edge-glow"
 import { DashboardCustomisePanel } from "@/components/multideck/dashboard-customise-panel"
 import { MultideckDatePicker, MultideckDateRangePicker, MultideckDateTimePicker, type MultideckDateRange } from "@/components/multideck/date-picker"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
@@ -225,6 +225,7 @@ import { DexterCompanionSidebar } from "@/components/multideck/dexter-companion-
 import { PageSettingsMenu } from "@/components/multideck/page-settings-menu"
 import { AuditTimeline } from "@/components/multideck/audit-timeline"
 import { AuditWorkspace, QUOTE_AUDIT_SAMPLE_DATA } from "@/components/multideck/audit-workspace"
+import { LifecycleNotes, type LifecycleNotesPreviewState } from "@/components/multideck/lifecycle-notes"
 import {
   PhoneCallAnalysisLauncher,
   PhoneCallAttentionList,
@@ -251,6 +252,9 @@ import { DocumentEvidenceViewer } from "@/components/multideck/document-evidence
 import { PdfDocumentViewerDialog } from "@/components/multideck/pdf-document-viewer-dialog"
 import { DocumentExtractionProgress } from "@/components/multideck/document-extraction-progress"
 import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/components/multideck/document-workspace"
+import { InlineField, InlineFieldCard, InlineSelectField } from "@/components/multideck/inline-field"
+import { SideDrawer } from "@/components/multideck/side-drawer"
+import { WizardDialog } from "@/components/multideck/wizard-dialog"
 import { useLanguage } from "@/i18n/language-provider"
 
 type GalleryIconKey = keyof typeof galleryIcons
@@ -270,7 +274,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Design system",
     helper: "Tokens, type, surfaces",
-    ids: ["colours", "typography", "surface"],
+    ids: ["colours", "hugeicons-system", "typography", "surface"],
   },
   {
     label: "Chart components",
@@ -280,7 +284,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "register-toolbar", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "register-toolbar", "auto-populated-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
   },
   {
     label: "Auth components",
@@ -295,17 +299,17 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
     helper: "Calls, leads, contacts, deals, activity, Drive, settings",
-    ids: ["phone-call-metric-strip", "phone-call-analysis-launcher", "phone-call-provider-health", "phone-call-volume-chart", "phone-call-attention-list", "phone-call-reason-list", "phone-call-coverage", "phone-call-status", "unified-phone-call-transcript", "phone-call-linked-record", "phone-call-identity-match-review", "phone-call-suggested-actions", "crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "drive-folder-tile", "drive-file-tile", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "contact-create-dialog", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
+    ids: ["phone-call-metric-strip", "phone-call-analysis-launcher", "phone-call-provider-health", "phone-call-volume-chart", "phone-call-attention-list", "phone-call-reason-list", "phone-call-coverage", "phone-call-status", "unified-phone-call-transcript", "phone-call-linked-record", "phone-call-identity-match-review", "phone-call-suggested-actions", "crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "drive-folder-tile", "drive-file-tile", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "contact-create-dialog", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder", "organisation-foundation-panel", "marketing-opt-in-control", "score-explanation-popover"],
   },
   {
     label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
   },
   {
     label: "Home",
@@ -315,12 +319,22 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Feedback",
     helper: "Status and notifications",
-    ids: ["status-pill", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "ai-edge-glow", "toast"],
+    ids: ["status-pill", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "toast"],
   },
   {
     label: "Settings",
     helper: "Configuration surfaces",
     ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card", "settings-progress-ring", "keyboard-shortcuts-panel"],
+  },
+  {
+    label: "Inbox",
+    helper: "Mail, threads, and delivery evidence",
+    ids: ["inbox-thread-row", "email-message-renderer", "thread-summary", "mail-composer"],
+  },
+  {
+    label: "Contact cards",
+    helper: "Identity, QR, and automation controls",
+    ids: ["card-miniature", "contact-card-style-picker", "contact-card-layout-picker", "contact-card-qr-style-picker", "contact-card-social-links-editor", "automation-run-history"],
   },
 ]
 
@@ -329,6 +343,35 @@ const previewHomeSuggestions: HomePromptSuggestion[] = [
   { id: "quotes", title: "Send the quotes that are ready", prompt: "Show me every quote that is ready to send, check each one, and draft the covering email.", meta: "2 ready", icon: PackageCheck, specialistId: "sales" },
   { id: "risk", title: "Review the bookings most at risk", prompt: "Show me the bookings most at risk right now and what I should do next on each.", icon: BarChart3, specialistId: "analytics" },
 ]
+
+const previewLifecycleNotes: LifecycleNotesPreviewState = {
+  canWrite: true,
+  targets: [
+    { type: "user", id: "preview-user-maya", label: "Maya Stone", detail: "Customs coordinator" },
+    { type: "department", id: "preview-department-customs", label: "Customs", detail: "Department" },
+    { type: "department", id: "preview-department-operations", label: "Operations", detail: "Department" },
+  ],
+  notes: [
+    {
+      id: "preview-booking-note",
+      subjectType: "booking",
+      subjectId: "preview-booking",
+      body: "Original invoice is in the document workspace. @Customs please check the preference statement before submission.",
+      author: { id: "preview-user-theo", name: "Theo Grant" },
+      mentions: [{ type: "department", id: "preview-department-customs", label: "Customs" }],
+      createdAt: "2026-08-25T10:26:00.000Z",
+    },
+    {
+      id: "preview-quote-note",
+      subjectType: "quote",
+      subjectId: "preview-quote",
+      body: "Customer approved the sea option and asked us to keep the Friday delivery window. @Operations",
+      author: { id: "preview-user-maya", name: "Maya Stone" },
+      mentions: [{ type: "department", id: "preview-department-operations", label: "Operations" }],
+      createdAt: "2026-08-25T09:42:00.000Z",
+    },
+  ],
+}
 
 const previewHomeJobs = [
   { id: "MD-22455", customer: "Northwind GmbH" },
@@ -1417,8 +1460,6 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewChoiceMode, setPreviewChoiceMode] = useState("OCEAN")
   const [previewInboxThreadId, setPreviewInboxThreadId] = useState("preview-thread-1")
   const [previewInboxStarred, setPreviewInboxStarred] = useState<Set<string>>(new Set(["preview-thread-1"]))
-  const [previewMailProvider, setPreviewMailProvider] = useState<MailProvider>("gmail")
-  const [previewMailboxId, setPreviewMailboxId] = useState("preview-mbx")
   const [previewSummaryState, setPreviewSummaryState] = useState<ThreadSummaryState>(previewInboxSummary)
   const [previewComposer, setPreviewComposer] = useState<ComposerState>({
     mode: "reply_all",
@@ -1463,7 +1504,11 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewSettingsTab, setPreviewSettingsTab] = useState("profile")
   const [previewSettingsChoice, setPreviewSettingsChoice] = useState("Always ask")
   const [previewSettingsOption, setPreviewSettingsOption] = useState("Suggest")
-  const [previewScreenGlow, setPreviewScreenGlow] = useState(false)
+  const [previewInlineCompany, setPreviewInlineCompany] = useState("Marlow Apparel")
+  const [previewInlineType, setPreviewInlineType] = useState("Customer")
+  const [previewSideDrawerOpen, setPreviewSideDrawerOpen] = useState(false)
+  const [previewWizardOpen, setPreviewWizardOpen] = useState(false)
+  const [previewWizardStep, setPreviewWizardStep] = useState("details")
   const [summonPreviewQuestion, setSummonPreviewQuestion] = useState("Is this account safe to book again?")
   const [summonPreviewAnswer, setSummonPreviewAnswer] = useState("")
   // The prompt only reads the kind and the label off its target, so the preview
@@ -1537,18 +1582,13 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewOrganisation, setPreviewOrganisation] = useState<ApiCustomerDetail>(previewOrganisationSeed)
   const [previewDriveRenamingId, setPreviewDriveRenamingId] = useState<string | null>(null)
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
+  const previewAutoPopulationSource = "1 Harbour Exchange Square, London, E14 9GE, GB"
+  const [previewAutoPopulationValue, setPreviewAutoPopulationValue] = useState(previewAutoPopulationSource)
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
   const previewNow = useLiveNow()
   const countPreviewBookingMatches = useCallback((query: FilterQuery) => (
     bookings.filter((booking) => matchesFilterQuery(booking, query, previewBookingFilterValue)).length
   ), [])
-  useEffect(() => {
-    if (!previewScreenGlow) return undefined
-
-    const timeoutId = window.setTimeout(() => setPreviewScreenGlow(false), 4200)
-    return () => window.clearTimeout(timeoutId)
-  }, [previewScreenGlow])
-
   function togglePreviewCustomer(id: string) {
     setPreviewSelectedIds((current) => {
       const next = new Set(current)
@@ -1581,9 +1621,82 @@ function ComponentPreview({ id }: { id: string }) {
 
   return (
     <div className="grid min-h-[430px] min-w-0 place-items-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-[var(--md-gap-xl)]">
-      {previewScreenGlow ? (
-        <div className="pointer-events-none fixed inset-0 z-[9999]" aria-hidden>
-          <AIEdgeGlow active variant="screen" className="h-screen w-screen rounded-none" />
+      {id === "inline-fields" ? (
+        <div className="w-full max-w-[620px]">
+          <InlineFieldCard title="Account facts" meta="Select a value to edit it">
+            <InlineField label="Account name" value={previewInlineCompany} required onSave={setPreviewInlineCompany} />
+            <InlineSelectField
+              label="Relationship"
+              value={previewInlineType}
+              options={[
+                { value: "Customer", label: "Customer" },
+                { value: "Prospect", label: "Prospect" },
+                { value: "Partner", label: "Partner" },
+              ]}
+              onSave={setPreviewInlineType}
+            />
+          </InlineFieldCard>
+        </div>
+      ) : null}
+
+      {id === "auto-populated-field" ? (
+        <div className="grid w-full max-w-[520px] gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
+          <label htmlFor="gallery-auto-populated-address" className="text-[12px] font-medium text-[var(--md-ink)]">Customer address</label>
+          <AutoPopulatedInput
+            id="gallery-auto-populated-address"
+            value={previewAutoPopulationValue}
+            onChange={(event) => setPreviewAutoPopulationValue(event.target.value)}
+            autoPopulated={matchesAutoPopulation(previewAutoPopulationValue, previewAutoPopulationSource)}
+            autoPopulationDescription="Filled from the selected customer. Edit this field to override it for this quote."
+          />
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[11px] leading-4 text-[var(--md-subtle)]">Edit the address to return it to normal.</p>
+            <Button type="button" variant="ghost" size="sm" className="h-7 rounded-[var(--md-radius-md)] px-2 text-[11px]" onClick={() => setPreviewAutoPopulationValue(previewAutoPopulationSource)}>Refill from customer</Button>
+          </div>
+        </div>
+      ) : null}
+
+      {id === "wizard-dialog" ? (
+        <div className="grid w-full max-w-[620px] place-items-center rounded-[var(--md-radius-xl)] bg-white/54 p-8 shadow-[var(--md-shadow-line)]">
+          <Button onClick={() => { setPreviewWizardStep("details"); setPreviewWizardOpen(true) }}>Open account wizard</Button>
+          <WizardDialog
+            open={previewWizardOpen}
+            onOpenChange={setPreviewWizardOpen}
+            title="New account"
+            description="Add the details the operations team needs to begin work."
+            steps={[
+              { id: "details", label: "Details", complete: true },
+              { id: "ownership", label: "Ownership" },
+              { id: "review", label: "Review" },
+            ]}
+            activeStepId={previewWizardStep}
+            onStepChange={setPreviewWizardStep}
+            submitLabel="Create account"
+            onSubmit={() => { setPreviewWizardOpen(false); toast.success("Preview account created") }}
+          >
+            {previewWizardStep === "details" ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Input aria-label="Account name" defaultValue="Northwind Components" />
+                <Input aria-label="Primary email" defaultValue="ops@northwind.example" />
+              </div>
+            ) : previewWizardStep === "ownership" ? (
+              <Select defaultValue="maya"><SelectTrigger aria-label="Account owner"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="maya">Maya Stone</SelectItem><SelectItem value="theo">Theo Grant</SelectItem></SelectContent></Select>
+            ) : (
+              <p className="text-[13px] leading-5 text-[var(--md-text)]">Northwind Components will be assigned to Maya Stone.</p>
+            )}
+          </WizardDialog>
+        </div>
+      ) : null}
+
+      {id === "side-drawer" ? (
+        <div className="grid w-full max-w-[620px] place-items-center rounded-[var(--md-radius-xl)] bg-white/54 p-8 shadow-[var(--md-shadow-line)]">
+          <Button onClick={() => setPreviewSideDrawerOpen(true)}>Open record drawer</Button>
+          <SideDrawer open={previewSideDrawerOpen} onClose={() => setPreviewSideDrawerOpen(false)} eyebrow="Account" title="Marlow Apparel">
+            <div className="grid gap-4 p-4">
+              <p className="text-[13px] leading-5 text-[var(--md-text)]">A focused detail surface that keeps the current register close at hand.</p>
+              <InlineField label="Owner" value="Maya Stone" readOnly />
+            </div>
+          </SideDrawer>
         </div>
       ) : null}
 
@@ -1801,52 +1914,6 @@ function ComponentPreview({ id }: { id: string }) {
               onContinueInDexter={() => toast.success("Opening this thread in the Dexter workspace")}
             />
           </div>
-        </div>
-      ) : null}
-
-      {id === "ai-edge-glow" ? (
-        <div className="flex w-full max-w-[820px] flex-col gap-3">
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-9 rounded-[var(--md-radius-md)] bg-white/64 px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/82"
-              onClick={() => setPreviewScreenGlow(true)}
-            >
-              {previewScreenGlow ? "Effect running" : "Trigger screen effect"}
-            </Button>
-          </div>
-
-          <AIEdgeGlow className="min-h-[430px] w-full" contentClassName="p-[var(--md-gap-lg)] sm:p-[var(--md-page-stack-gap)]">
-            <div className="flex h-full flex-col justify-between rounded-[var(--md-radius-lg)] bg-white/28 p-[var(--md-gap-lg)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.38)] backdrop-blur-[2px] sm:p-[var(--md-page-stack-gap)]">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="size-8 rounded-[var(--md-radius-md)] bg-white/40 shadow-[var(--md-shadow-line)]" />
-                  <span className="h-3 w-28 rounded-full bg-[var(--md-ink)]/16" />
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="size-1.5 rounded-full bg-[var(--md-accent)]/70" />
-                  <span className="size-1.5 rounded-full bg-[var(--md-accent)]/50" />
-                  <span className="size-1.5 rounded-full bg-[var(--md-accent)]/35" />
-                </div>
-              </div>
-
-              <div className="mx-auto grid w-full max-w-[560px] gap-2.5">
-                {[0, 1, 2, 3, 4].map((item) => (
-                  <div key={item} className="grid grid-cols-[22px_120px_1fr] items-center gap-4 rounded-[var(--md-radius-md)] bg-white/48 px-4 py-3 shadow-[var(--md-shadow-line)]">
-                    <span className="size-3 rounded-full bg-[var(--md-accent)]/62" />
-                    <span className="h-2 rounded-full bg-[var(--md-text)]/18" />
-                    <span className="h-2 rounded-full bg-[var(--md-ink)]/12" />
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span className="h-10 w-40 rounded-[var(--md-radius-md)] bg-[var(--md-accent)]/92 shadow-[var(--md-shadow-line)]" />
-                <span className="h-10 w-24 rounded-[var(--md-radius-md)] bg-white/36 shadow-[var(--md-shadow-line)]" />
-              </div>
-            </div>
-          </AIEdgeGlow>
         </div>
       ) : null}
 
@@ -2165,6 +2232,12 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "lifecycle-notes" ? (
+        <div className="w-full max-w-[820px]">
+          <LifecycleNotes subjectType="customs" subjectId="preview-declaration" previewState={previewLifecycleNotes} />
+        </div>
+      ) : null}
+
       {id === "audit-workspace" ? (
         <div className="w-full max-w-[1120px]">
           <AuditWorkspace records={QUOTE_AUDIT_SAMPLE_DATA} />
@@ -2397,24 +2470,6 @@ function ComponentPreview({ id }: { id: string }) {
               openTrackingEnabled: true,
               confidence: "confirmed",
             }}
-          />
-        </div>
-      ) : null}
-
-      {id === "mailbox-provider-switch" ? (
-        <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-white/50 p-3 shadow-[var(--md-shadow-line)]">
-          <MailboxProviderSwitch
-            providers={["gmail", "outlook"]}
-            provider={previewMailProvider}
-            onProviderChange={(next) => {
-              setPreviewMailProvider(next)
-              const first = previewMailboxes.find((mailbox) => mailbox.provider === next)
-              if (first) setPreviewMailboxId(first.id)
-            }}
-            mailboxes={previewMailboxes.filter((mailbox) => mailbox.provider === previewMailProvider)}
-            selectedMailboxId={previewMailboxId}
-            onMailboxChange={(mailbox) => setPreviewMailboxId(mailbox.id)}
-            onReconnect={() => toast.success("Would open the provider sign-in")}
           />
         </div>
       ) : null}
@@ -3879,6 +3934,30 @@ function ComponentPreview({ id }: { id: string }) {
             updatedAt="2026-08-03T14:30:00.000Z"
             onCheckedChange={async (checked) => setPreviewMarketingOptIn(checked)}
           />
+        </div>
+      ) : null}
+
+      {id === "score-explanation-popover" ? (
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-5 shadow-[var(--md-shadow-line)]">
+          <ScoreExplanationPopover
+            kind="health"
+            score={75}
+            explanation={{
+              summary: "Health is supported by stable shipment volumes and the latest account review.",
+              confidence: 0.82,
+              calculatedAt: "2026-08-25T08:00:00.000Z",
+              sources: [
+                { id: "activity:preview", kind: "activity", claim: "Quarterly review confirmed stable volumes", title: "Quarterly account review", href: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001#activity-preview", observedAt: "2026-08-24T10:00:00.000Z" },
+                { id: "shipment:preview", kind: "shipment", claim: "MD-22455 · Felixstowe → Rotterdam", title: "MD-22455", href: "/bookings/md-22455", observedAt: "2026-08-28T12:00:00.000Z" },
+              ],
+            }}
+            className="max-w-[220px] bg-[var(--md-surface)] px-3 py-2.5 shadow-[var(--md-shadow-line)]"
+          >
+            <span className="min-w-0">
+              <span className="block text-[11px] text-[var(--md-subtle)]">Health</span>
+              <span className="mt-1 block text-[18px] font-medium tabular-nums text-[var(--md-ink)]">75%</span>
+            </span>
+          </ScoreExplanationPopover>
         </div>
       ) : null}
 

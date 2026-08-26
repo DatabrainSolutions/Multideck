@@ -1900,21 +1900,11 @@ export function AppSidebar({
               exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.996 }}
               transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
             >
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-label={collapsed ? t("Back to all areas") : undefined}
-                title={collapsed ? t("Back to all areas") : undefined}
-                className={cn(
-                  "h-9 w-full justify-start gap-2 rounded-[var(--md-radius-md)] px-2 text-[13px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
-                  collapsed && "justify-center px-0",
-                )}
+              <SidebarNavItem
+                item={{ label: "All areas", icon: ArrowLeft }}
+                collapsed={collapsed}
                 onClick={() => navigate("/")}
-              >
-                <ArrowLeft data-icon="inline-start" className="size-4" strokeWidth={1.2} />
-                <span className={cn(collapsed && "sr-only")}>{t("All areas")}</span>
-              </Button>
+              />
 
               <div className={cn("mt-3 flex items-center gap-2 px-2", collapsed && "justify-center px-0")}>
                 <Settings className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} aria-hidden="true" />
@@ -1959,23 +1949,13 @@ export function AppSidebar({
               exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.996 }}
               transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
             >
-              {isCustomer || arrangingScopeId === activeArea.id ? null : <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-label={collapsed ? t("Back to all areas") : undefined}
-                title={collapsed ? t("Back to all areas") : undefined}
-                className={cn(
-                  "h-9 w-full justify-start gap-2 rounded-[var(--md-radius-md)] px-2 text-[13px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
-                  collapsed && "justify-center px-0",
-                )}
-                onClick={() => {
-                  setActiveAreaId(null)
-                }}
-              >
-                <ArrowLeft data-icon="inline-start" className="size-4" strokeWidth={1.2} />
-                <span className={cn(collapsed && "sr-only")}>{t("All areas")}</span>
-              </Button>}
+              {isCustomer || arrangingScopeId === activeArea.id ? null : (
+                <SidebarNavItem
+                  item={{ label: "All areas", icon: ArrowLeft }}
+                  collapsed={collapsed}
+                  onClick={() => setActiveAreaId(null)}
+                />
+              )}
 
               {arrangingScopeId === activeArea.id ? (
                 <SidebarArrangeHeader label={t(activeArea.label)} onExit={() => setArranging(activeArea.id, false)} />

@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { CustomsReadinessReview } from "@/components/multideck/customs-readiness-review"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
+import { LifecycleNotes } from "@/components/multideck/lifecycle-notes"
 import { PdfDocumentViewerDialog } from "@/components/multideck/pdf-document-viewer-dialog"
 import { RegisterFacetSelect, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { Surface } from "@/components/multideck/surface"
@@ -45,9 +46,9 @@ import { createProfilePhotoSignedUrls } from "@/lib/profile-photo"
 import iCustomsLogo from "@/assets/integrations/icustoms.svg"
 
 type DeclarationKind = "export" | "import"
-type EditorTab = "declaration" | "parties" | "transport" | "documents" | "items" | "review"
+type EditorTab = "declaration" | "parties" | "transport" | "documents" | "items" | "notes" | "review"
 type EditorViewMode = "tabs" | "form"
-type FormTab = "general" | "items"
+type FormTab = "general" | "items" | "notes"
 type CustomsStatusLifecycle = { phase: "idle" | "waiting" | "checking" | "complete" | "timed-out" | "error"; message?: string }
 type DeclarationFieldVisibility = { dataElements: boolean; customsBoxNumbers: boolean; optionalFields: boolean }
 
@@ -1479,6 +1480,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
     { id: "transport", label: t("Transport") },
     { id: "documents", label: t(kind === "import" ? "Import terms" : "Documents & offices") },
     { id: "items", label: `${t("Items")} (${draft.items.length})` },
+    { id: "notes", label: t("Notes") },
     { id: "review", label: t("Review") },
   ]
   const customsStatus = iCustomsState?.declaration.provider?.status ?? iCustomsState?.declaration.status ?? "draft"
@@ -1621,7 +1623,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
 
       {viewMode === "tabs" ? <LayoutGroup id={`customs-${kind}-sections`}>
         <nav className="relative isolate max-w-full overflow-x-auto rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Declaration sections")}>
-          <div className="grid min-w-[840px] grid-cols-6 gap-1">
+          <div className="grid min-w-[980px] grid-cols-7 gap-1">
             {editorTabs.map((entry, index) => (
               <button
                 key={entry.id}
@@ -1652,9 +1654,10 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
         tabs={[
           { label: t("General") },
           { label: t("Items"), value: String(draft.items.length) },
+          { label: t("Notes") },
         ]}
-        activeTab={formTab === "general" ? t("General") : t("Items")}
-        onChange={(nextTab) => setFormTab(nextTab === t("Items") ? "items" : "general")}
+        activeTab={formTab === "general" ? t("General") : formTab === "items" ? t("Items") : t("Notes")}
+        onChange={(nextTab) => setFormTab(nextTab === t("Items") ? "items" : nextTab === t("Notes") ? "notes" : "general")}
         className="px-1"
       />}
 
@@ -1663,6 +1666,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
 
       {viewMode === "form" && formTab === "general" ? <GeneralFormView draft={draft} update={update} updateMany={updateMany} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
       {viewMode === "form" && formTab === "items" ? <ItemsSection declarationCategory={draft.declarationCategory} items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} t={t} /> : null}
+      {viewMode === "form" && formTab === "notes" ? <LifecycleNotes subjectType="customs" subjectId={declarationId ?? null} /> : null}
       {viewMode === "tabs" ? <div className="relative min-w-0 overflow-x-clip">
         <AnimatePresence initial={false} mode="popLayout">
           <motion.div
@@ -1680,6 +1684,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
             {tab === "transport" ? <TransportSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
             {tab === "documents" ? <DocumentsSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
             {tab === "items" ? <ItemsSection declarationCategory={draft.declarationCategory} items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} t={t} /> : null}
+            {tab === "notes" ? <LifecycleNotes subjectType="customs" subjectId={declarationId ?? null} /> : null}
             {tab === "review" ? <ReviewSection draft={draft} completion={completion} iCustomsState={iCustomsState} iCustomsBusy={iCustomsBusy} iCustomsIssues={iCustomsIssues} statusLifecycle={statusLifecycle} pdfAvailable={declarationPdfAvailable} pdfBusy={pdfBusy} pdfLoadError={pdfLoadError} savingDraft={savingDraft} update={update} updateItem={updateItemById} onOpenPdf={() => void openDeclarationPdf()} onRefresh={() => void recoverFromICustoms()} onCreateDraft={() => void createOrUpdateICustomsDraft()} onSaveDraft={() => void saveDraft(false)} onSubmit={() => void prepareSubmitToICustoms()} t={t} /> : null}
           </motion.div>
         </AnimatePresence>

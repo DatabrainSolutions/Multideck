@@ -36,7 +36,9 @@ function citationLabel(href: string) {
     }
   }
   if (href.startsWith("/crm/leads/")) return "Lead"
+  if (href.startsWith("/crm/accounts/")) return "Account"
   if (href.startsWith("/crm/deals")) return "Deal"
+  if (href.startsWith("/bookings/")) return "Booking"
   if (href.startsWith("/quotes")) return "Quote"
   if (href.startsWith("/warehouse/inventory")) return "Inventory"
   if (href.startsWith("/warehouse/orders")) return "Warehouse order"
