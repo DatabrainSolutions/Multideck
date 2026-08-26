@@ -99,6 +99,8 @@ test("route inputs derive UN/LOCODE while Incoterms, transit and repeat frequenc
   assert.ok((details.match(/<LocationFields\b/gu) ?? []).length >= 2, "From and To must both use linked location fields.")
   assert.match(fields, /CompactCombobox label="Country"/u)
   assert.match(fields, /CompactCombobox label="Town, city or port"/u)
+  assert.match(fields, /grid size-8 shrink-0 place-items-center overflow-visible text-\[15px\] leading-5/u)
+  assert.match(fields, /inline-grid size-5 shrink-0 place-items-center overflow-visible text-\[15px\] leading-5/u)
   assert.match(fields, /export function AutoFilledField/u)
   assert.match(fields, /AutoFilledField label="UN\/LOCODE"/u)
   assert.doesNotMatch(fields, /Fills automatically/u)

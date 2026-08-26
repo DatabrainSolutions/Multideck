@@ -340,7 +340,7 @@ export function CompactCombobox({
         <PopoverAnchor asChild>
           <div data-auto-populated={autoPopulated || undefined} className="md-auto-populated-control premium-stroke-soft relative flex min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] transition-colors hover:bg-[var(--md-field-bg-hover)] focus-within:bg-[var(--md-field-bg-hover)] focus-within:ring-3 focus-within:ring-[var(--md-accent-a14)]">
             {selectedOption?.iconText ? (
-              <span data-i18n-skip aria-hidden="true" className="grid h-8 shrink-0 place-items-center ps-2.5 text-[15px] leading-none">
+              <span data-i18n-skip aria-hidden="true" className="grid size-8 shrink-0 place-items-center overflow-visible text-[15px] leading-5">
                 {selectedOption.iconText}
               </span>
             ) : null}
@@ -517,7 +517,7 @@ function ComboboxOptionRow({
       onClick={onSelect}
       onPointerMove={onPointerMove}
     >
-      {option.iconText ? <span aria-hidden="true" className="shrink-0 text-[15px] leading-none">{option.iconText}</span> : null}
+      {option.iconText ? <span aria-hidden="true" className="inline-grid size-5 shrink-0 place-items-center overflow-visible text-[15px] leading-5">{option.iconText}</span> : null}
       <span className="min-w-0 flex-1">
         <span className="block truncate font-medium text-[var(--md-ink)]">{option.label}</span>
         {option.description ? <span className="block truncate text-[10.5px] text-[var(--md-subtle)]">{option.description}</span> : null}
