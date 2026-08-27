@@ -6,8 +6,8 @@
  * unit tested and so a binding can be parsed during the first paint.
  *
  * A binding is one of two things:
- * - a `chord`: one or two key steps. Two steps make a sequence ("G" then "B"),
- *   which is how the navigation shortcuts avoid competing with browser chords.
+ * - a `chord`: one or two key steps. A step may contain simultaneous keys
+ *   ("H" + "J"), while two steps make a sequence ("G" then "B").
  * - a `pointer`: a mouse gesture with modifiers, which is what makes
  *   "hold the platform modifier and double-click anything" expressible as a
  *   customisable shortcut rather than a hardcoded listener.
@@ -20,6 +20,8 @@
 export type ShortcutStep = {
   /** Layout-independent key name: "K", "7", "/", "Enter", "ArrowUp", "F2". */
   key: string
+  /** Present only when two or more non-modifier keys must be held together. */
+  keys?: string[]
   mod: boolean
   shift: boolean
   alt: boolean
@@ -32,6 +34,7 @@ export type ShortcutBinding =
   | { kind: "pointer"; gesture: ShortcutPointerGesture; mod: boolean; shift: boolean; alt: boolean }
 
 export const maxShortcutSteps = 2
+export const maxShortcutKeysPerStep = 2
 
 const namedKeys = [
   "Enter",
@@ -103,15 +106,46 @@ export function emptyStep(): ShortcutStep {
   return { key: "", mod: false, shift: false, alt: false }
 }
 
-export function chord(key: string, modifiers: Partial<Omit<ShortcutStep, "key">> = {}): ShortcutBinding {
+export function chord(key: string, modifiers: Partial<Omit<ShortcutStep, "key" | "keys">> = {}): ShortcutBinding {
   return { kind: "chord", steps: [{ ...emptyStep(), ...modifiers, key }] }
+}
+
+function normalizedStepKeys(keys: string[]) {
+  return [...new Set(keys.map(normalizeKeyName).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b))
+    .slice(0, maxShortcutKeysPerStep)
+}
+
+/** All non-modifier keys in a step, including legacy single-key bindings. */
+export function shortcutStepKeys(step: ShortcutStep) {
+  return normalizedStepKeys(step.keys?.length ? step.keys : [step.key])
+}
+
+/** A simultaneous chord such as H + J. Key order is intentionally irrelevant. */
+export function multiKeyChord(
+  keys: string[],
+  modifiers: Partial<Omit<ShortcutStep, "key" | "keys">> = {},
+): ShortcutBinding {
+  const normalized = normalizedStepKeys(keys)
+  if (normalized.length === 0) return { kind: "chord", steps: [] }
+  const step: ShortcutStep = { ...emptyStep(), ...modifiers, key: normalized[0] }
+  if (normalized.length > 1) step.keys = normalized
+  return { kind: "chord", steps: [step] }
+}
+
+/** Combines two captured presses into one simultaneous step. */
+export function combineShortcutSteps(first: ShortcutStep, second: ShortcutStep): ShortcutStep | null {
+  if (first.mod !== second.mod || first.shift !== second.shift || first.alt !== second.alt) return null
+  const keys = normalizedStepKeys([...shortcutStepKeys(first), ...shortcutStepKeys(second)])
+  if (keys.length < 2) return null
+  return { ...first, key: keys[0], keys }
 }
 
 export function sequence(first: string, second: string): ShortcutBinding {
   return { kind: "chord", steps: [{ ...emptyStep(), key: first }, { ...emptyStep(), key: second }] }
 }
 
-export function pointerGesture(modifiers: Partial<Omit<ShortcutStep, "key">> = {}): ShortcutBinding {
+export function pointerGesture(modifiers: Partial<Omit<ShortcutStep, "key" | "keys">> = {}): ShortcutBinding {
   return { kind: "pointer", gesture: "double-click", mod: true, shift: false, alt: false, ...modifiers }
 }
 
@@ -169,6 +203,11 @@ function keyFromCode(code: string | undefined) {
   }
 }
 
+/** Canonical physical key name used by both matching and held-key tracking. */
+export function keyNameFromEvent(event: Pick<ShortcutKeyEvent, "key" | "code">) {
+  return keyFromCode(event.code) || normalizeKeyName(event.key)
+}
+
 const modifierKeyNames = new Set(["Shift", "Control", "Alt", "Meta", "CapsLock", "AltGraph", "Dead", "Unidentified", "Process"])
 
 export type ShortcutKeyEvent = {
@@ -196,22 +235,29 @@ export function stepFromEvent(event: ShortcutKeyEvent, platform = shortcutPlatfo
   if (isModifierOnlyEvent(event)) return null
 
   const { mod } = readModifier(event, platform)
-  const key = keyFromCode(event.code) || normalizeKeyName(event.key)
+  const key = keyNameFromEvent(event)
   if (!key) return null
 
   return { key, mod, shift: event.shiftKey, alt: event.altKey }
 }
 
-export function matchesStep(step: ShortcutStep, event: ShortcutKeyEvent, platform = shortcutPlatform()) {
+export function matchesStep(
+  step: ShortcutStep,
+  event: ShortcutKeyEvent,
+  platform = shortcutPlatform(),
+  pressedKeys?: ReadonlySet<string>,
+) {
   if (isModifierOnlyEvent(event)) return false
 
   const { mod, foreign } = readModifier(event, platform)
   if (mod !== step.mod || foreign) return false
   if (event.shiftKey !== step.shift || event.altKey !== step.alt) return false
 
-  const fromCode = keyFromCode(event.code)
-  const fromKey = normalizeKeyName(event.key)
-  return step.key === fromCode || step.key === fromKey
+  const expectedKeys = shortcutStepKeys(step)
+  const eventKey = keyNameFromEvent(event)
+  if (!expectedKeys.includes(eventKey)) return false
+  if (expectedKeys.length === 1) return true
+  return Boolean(pressedKeys && expectedKeys.every((key) => pressedKeys.has(key)))
 }
 
 export function matchesPointerBinding(
@@ -230,7 +276,7 @@ function serializeStep(step: ShortcutStep) {
   if (step.mod) parts.push("Mod")
   if (step.alt) parts.push("Alt")
   if (step.shift) parts.push("Shift")
-  parts.push(step.key)
+  parts.push(...shortcutStepKeys(step))
   return parts.join("+")
 }
 
@@ -253,15 +299,20 @@ function parseStep(value: string): ShortcutStep | null {
   if (parts.length === 0) return null
 
   const step = emptyStep()
+  const keys: string[] = []
   for (const part of parts) {
     const lower = part.toLowerCase()
     if (lower === "mod" || lower === "cmd" || lower === "meta" || lower === "ctrl" || lower === "control") step.mod = true
     else if (lower === "shift") step.shift = true
     else if (lower === "alt" || lower === "option" || lower === "opt") step.alt = true
-    else step.key = normalizeKeyName(part)
+    else keys.push(normalizeKeyName(part))
   }
 
-  return step.key ? step : null
+  const normalized = normalizedStepKeys(keys)
+  if (normalized.length === 0) return null
+  step.key = normalized[0]
+  if (normalized.length > 1) step.keys = normalized
+  return step
 }
 
 export function parseBinding(value: string | null | undefined): ShortcutBinding | null {
@@ -300,24 +351,27 @@ export function bindingTokens(binding: ShortcutBinding | null, platform = shortc
   if (!binding) return []
 
   const labels = modifierLabels(platform)
-  const decorate = (source: { mod: boolean; alt: boolean; shift: boolean }, key: string) => {
+  const decorate = (source: { mod: boolean; alt: boolean; shift: boolean }, keys: string[]) => {
     const tokens: string[] = []
     if (source.mod) tokens.push(labels.mod)
     if (source.alt) tokens.push(labels.alt)
     if (source.shift) tokens.push(labels.shift)
-    tokens.push(key)
+    tokens.push(...keys)
     return tokens
   }
 
-  if (binding.kind === "pointer") return [decorate(binding, "Double-click")]
-  return binding.steps.map((step) => decorate(step, keyLabels[step.key] ?? step.key))
+  if (binding.kind === "pointer") return [decorate(binding, ["Double-click"])]
+  return binding.steps.map((step) => decorate(
+    step,
+    shortcutStepKeys(step).map((key) => keyLabels[key] ?? key),
+  ))
 }
 
 /** A single flat label, for tooltips, `title` attributes and screen readers. */
 export function bindingLabel(binding: ShortcutBinding | null, platform = shortcutPlatform()) {
   const tokens = bindingTokens(binding, platform)
   if (tokens.length === 0) return ""
-  return tokens.map((step) => step.join(" ")).join(" then ")
+  return tokens.map((step) => step.join(" + ")).join(" then ")
 }
 
 /** The `aria-keyshortcuts` form, which is specified in terms of real key names. */
@@ -325,6 +379,9 @@ export function bindingAriaKeyshortcuts(binding: ShortcutBinding | null) {
   if (!binding || binding.kind !== "chord" || binding.steps.length !== 1) return undefined
 
   const [step] = binding.steps
+  // ARIA's grammar permits one non-modifier key per shortcut, not simultaneous
+  // printable keys, so a custom H + J chord is described by its visible label.
+  if (shortcutStepKeys(step).length !== 1) return undefined
   const parts: string[] = []
   if (step.mod) parts.push("Meta", "Control")
   if (step.alt) parts.push("Alt")
@@ -352,14 +409,16 @@ export function isSequenceBinding(binding: ShortcutBinding | null) {
 export function bindingSurvivesTyping(binding: ShortcutBinding | null) {
   if (!binding) return false
   if (binding.kind === "pointer") return true
-  return binding.steps.length === 1 && (binding.steps[0].mod || binding.steps[0].alt)
+  if (binding.steps.length !== 1) return false
+  const step = binding.steps[0]
+  return shortcutStepKeys(step).length > 1 || step.mod || step.alt || step.key === "Fn" || /^F(?:[1-9]|1[0-2])$/.test(step.key)
 }
 
 export function isReservedBinding(binding: ShortcutBinding | null) {
   if (!binding || binding.kind !== "chord" || binding.steps.length !== 1) return false
 
   const [step] = binding.steps
-  return step.mod && !step.alt && !step.shift && reservedModKeys.has(step.key)
+  return shortcutStepKeys(step).length === 1 && step.mod && !step.alt && !step.shift && reservedModKeys.has(step.key)
 }
 
 const editableInputTypes = new Set([

@@ -85,7 +85,7 @@ test("company quote defaults are stored on the organisation and copied into a se
   assert.match(accountDetail, /Default response deadline/u)
 })
 
-test("route inputs derive UN/LOCODE while Incoterms, transit and repeat frequency use linked compact controls", () => {
+test("route inputs derive UN/LOCODE while transit and repeat frequency use linked compact controls", () => {
   for (const field of [
     "originCountry",
     "originTown",
@@ -113,26 +113,8 @@ test("route inputs derive UN/LOCODE while Incoterms, transit and repeat frequenc
   assert.match(fields, /UN\/LOCODE is derived from/u)
   assert.match(fields, /onOptionSelect=\{applySelectedOption\}/u)
 
-  assert.match(details, /<IncotermField\b/u)
-  assert.match(model, /export const INCOTERMS_2020/u)
-  const terms = {
-    EXW: "Ex Works",
-    FCA: "Free Carrier",
-    CPT: "Carriage Paid To",
-    CIP: "Carriage and Insurance Paid To",
-    DAP: "Delivered at Place",
-    DPU: "Delivered at Place Unloaded",
-    DDP: "Delivered Duty Paid",
-    FAS: "Free Alongside Ship",
-    FOB: "Free On Board",
-    CFR: "Cost and Freight",
-    CIF: "Cost, Insurance and Freight",
-  }
-  for (const [term, name] of Object.entries(terms)) {
-    assert.match(model, new RegExp(`code:\\s*"${term}"[\\s\\S]{0,100}name:\\s*"${escaped(name)}"`, "u"), `${term} needs its Incoterms 2020 description.`)
-  }
-  assert.match(fields, /const term = getIncotermDefinition\(value\)/u)
-  assert.match(fields, /term && namedLocation !== undefined && onNamedLocationChange/u)
+  assert.doesNotMatch(details, /<IncotermField\b/u)
+  assert.doesNotMatch(details, /QuoteCompactInput label="Email" value=\{quote\.customerEmail/u)
 
   assert.match(details, /<NumberUnitField[\s\S]{0,300}(?:transitDays|Transit time)/u)
   assert.match(details, /<RecurrenceBuilder/u)

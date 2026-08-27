@@ -35,6 +35,15 @@ import {
   updateThreadState,
   updateAutomaticReply,
 } from "./runtime.ts"
+import {
+  applySuggestedUpdate,
+  attachSuggestedDocument,
+  dismissSuggestedUpdate,
+  listSuggestedUpdates,
+  searchSuggestedUpdateBookings,
+  suggestedUpdateSettings,
+  updateSuggestedUpdateSettings,
+} from "./suggested-updates.ts"
 
 const allowedOrigins = readAllowedOrigins({
   EMAIL_ALLOWED_REDIRECT_ORIGINS: Deno.env.get("EMAIL_ALLOWED_REDIRECT_ORIGINS"),
@@ -96,6 +105,27 @@ Deno.serve(async (request) => {
     }
     if (method === "GET" && path.length === 1 && path[0] === "ai-context-sources") {
       return jsonResponse(request, allowedOrigins, await aiContextSources(clients.admin, actor))
+    }
+    if (method === "GET" && path.length === 1 && path[0] === "suggested-updates") {
+      return jsonResponse(request, allowedOrigins, await listSuggestedUpdates(clients.admin, actor, new URL(request.url)))
+    }
+    if (method === "GET" && path.length === 2 && path[0] === "suggested-updates" && path[1] === "settings") {
+      return jsonResponse(request, allowedOrigins, await suggestedUpdateSettings(clients.admin, actor))
+    }
+    if (method === "GET" && path.length === 2 && path[0] === "suggested-updates" && path[1] === "bookings") {
+      return jsonResponse(request, allowedOrigins, await searchSuggestedUpdateBookings(clients.admin, actor, new URL(request.url)))
+    }
+    if (method === "PATCH" && path.length === 4 && path[0] === "suggested-updates" && path[1] === "settings" && path[2] === "mailboxes") {
+      return jsonResponse(request, allowedOrigins, await updateSuggestedUpdateSettings(clients.admin, actor, path[3], await readJson(request)))
+    }
+    if (method === "POST" && path.length === 3 && path[0] === "suggested-updates" && path[2] === "apply") {
+      return jsonResponse(request, allowedOrigins, await applySuggestedUpdate(clients.admin, actor, path[1], await readJson(request)))
+    }
+    if (method === "POST" && path.length === 3 && path[0] === "suggested-updates" && path[2] === "attach") {
+      return jsonResponse(request, allowedOrigins, await attachSuggestedDocument(clients.admin, actor, path[1], await readJson(request)))
+    }
+    if (method === "POST" && path.length === 3 && path[0] === "suggested-updates" && path[2] === "dismiss") {
+      return jsonResponse(request, allowedOrigins, await dismissSuggestedUpdate(clients.admin, actor, path[1]))
     }
     if (method === "POST" && path.length === 3 && path[0] === "mailboxes" && path[2] === "sync") {
       return jsonResponse(request, allowedOrigins, await syncMailbox(clients.admin, actor, path[1]))

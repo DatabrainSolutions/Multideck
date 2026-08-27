@@ -65,6 +65,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { AccentPicker } from "@/components/multideck/accent-picker"
@@ -77,6 +78,7 @@ import { ShortcutKeys } from "@/components/multideck/keyboard-shortcut-keys"
 import { KeyboardShortcutsPanel } from "@/components/multideck/keyboard-shortcuts-panel"
 import { Pagination } from "@/components/multideck/pagination"
 import { StatusPill } from "@/components/multideck/status-pill"
+import { normalizeTagTerms, TagEntryField } from "@/components/multideck/tag-entry-field"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import {
   SettingsChoiceGroup,
@@ -163,8 +165,18 @@ import {
   saveDefaultInboxProvider,
 } from "@/lib/inbox-provider-preference"
 import { useShortcutBinding } from "@/lib/keyboard-shortcuts"
+import {
+  readPreferredMicrophone,
+  savePreferredMicrophone,
+  systemDefaultMicrophone,
+} from "@/lib/dictation-preferences"
+import {
+  getTranscriptionPreferences,
+  saveTranscriptionPreferences,
+  TranscriptionError,
+} from "@/lib/transcription-api"
 import { DEXTER_CONVERSATIONS_CHANGED_EVENT } from "@/lib/dexter-navigation"
-import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, useAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
+import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, useAiAgentName, writeAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { getSupabaseSession, supabase } from "@/lib/supabase"
 import {
@@ -227,6 +239,7 @@ function MobileSettingsTabs({
   onBack: () => void
 }) {
   const { t } = useLanguage()
+  const aiAgentName = useAiAgentName()
   const active = getSettingsSection(activeTab)
   const ActiveIcon = active.icon
 
@@ -254,7 +267,7 @@ function MobileSettingsTabs({
           >
             {settingsNavigationGroups.map((group) => (
               <optgroup key={group.label} label={t(group.label)}>
-                {group.items.map((item) => <option key={item.id} value={item.id}>{t(item.label)}</option>)}
+                {group.items.map((item) => <option key={item.id} value={item.id}>{item.id === "dexter" ? aiAgentName : t(item.label)}</option>)}
               </optgroup>
             ))}
           </select>
@@ -2072,7 +2085,7 @@ function ShortcutsTab() {
       <SettingsPageHeader
         eyebrow="Personal / Keyboard shortcuts"
         title="Keyboard shortcuts"
-        description="Every shortcut in Multideck, and the keys they are on. Record a new one by clicking its keys and pressing what you would rather use — two plain keys in a row make a sequence."
+        description="Every shortcut in Multideck, and the keys they are on. Hold two keys together for a chord such as H + J, or press two plain keys in a row for a sequence."
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SummonSpotlight />
@@ -2098,19 +2111,70 @@ function writingProfileErrorCopy(
   return t(fallback)
 }
 
+type MicrophoneOption = { id: string; label: string }
+
+const maximumTranscriptionTerms = 100
+
+function DexterFieldGroup({
+  label,
+  description,
+  children,
+  labelFor,
+  className,
+}: {
+  label: string
+  description?: string
+  children: ReactNode
+  labelFor?: string
+  className?: string
+}) {
+  const descriptionId = labelFor && description ? `${labelFor}-description` : undefined
+
+  return (
+    <div className={cn("min-w-0", className)}>
+      <div className="min-w-0">
+        {labelFor ? (
+          <label htmlFor={labelFor} className="text-[13px] font-medium text-[var(--md-ink)]">{label}</label>
+        ) : (
+          <p className="text-[13px] font-medium text-[var(--md-ink)]">{label}</p>
+        )}
+        {description ? <p id={descriptionId} className="mt-1 max-w-[58ch] text-[12px] leading-5 text-[var(--md-text)]">{description}</p> : null}
+      </div>
+      <div className="mt-3 min-w-0">{children}</div>
+    </div>
+  )
+}
+
 function AgentDexterTab() {
   const { language, t } = useLanguage()
+  const aiAgentName = useAiAgentName()
+  const shortcut = useShortcutBinding("dictation.toggle")
+  const [agentNameDraft, setAgentNameDraft] = useState(aiAgentName)
   const [profile, setProfile] = useState<DexterWritingProfile | null>(null)
   const [profileText, setProfileText] = useState("")
-  const [loading, setLoading] = useState(true)
+  const [profileLoading, setProfileLoading] = useState(true)
   const [operation, setOperation] = useState<"consent" | "save" | "refresh" | "reset" | "toggle" | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [profileError, setProfileError] = useState<string | null>(null)
   const [featureUnavailable, setFeatureUnavailable] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
+  const [microphones, setMicrophones] = useState<MicrophoneOption[]>([])
+  const [selectedMicrophone, setSelectedMicrophone] = useState(readPreferredMicrophone)
+  const [dictionary, setDictionary] = useState<string[]>([])
+  const [transcriptionLoading, setTranscriptionLoading] = useState(true)
+  const [transcriptionError, setTranscriptionError] = useState<string | null>(null)
+  const confirmedDictionaryRef = useRef<string[]>([])
+  const pendingDictionarySaveRef = useRef<{ revision: number; terms: string[] } | null>(null)
+  const dictionarySaveInFlightRef = useRef(false)
+  const dictionaryRevisionRef = useRef(0)
+  const dictionaryMountedRef = useRef(true)
+
+  const terms = normalizeTagTerms(dictionary, maximumTranscriptionTerms)
+  const agentNameDirty = agentNameDraft.trim().length > 0 && agentNameDraft.trim() !== aiAgentName
+  const personalised = useCallback((copy: string) => t(copy).replaceAll("Dexter", aiAgentName), [aiAgentName, t])
 
   const loadProfile = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+    setProfileLoading(true)
+    setProfileError(null)
     try {
       const next = await getDexterWritingProfile()
       setProfile(next)
@@ -2119,31 +2183,87 @@ function AgentDexterTab() {
     } catch (loadError) {
       const unavailable = loadError instanceof DexterWritingProfileError && loadError.code === "feature_disabled"
       setFeatureUnavailable(unavailable)
-      setError(writingProfileErrorCopy(loadError, "Unable to load your email writing profile.", t))
+      setProfileError(writingProfileErrorCopy(loadError, "Unable to load your email writing profile.", t))
     } finally {
-      setLoading(false)
+      setProfileLoading(false)
     }
+  }, [t])
+
+  const loadMicrophones = useCallback(async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      setMicrophones([])
+      return
+    }
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    let microphoneIndex = 0
+    setMicrophones(devices.filter((device) => device.kind === "audioinput").map((device) => {
+      microphoneIndex += 1
+      return { id: device.deviceId, label: device.label || `${t("Microphone")} ${microphoneIndex}` }
+    }))
   }, [t])
 
   useEffect(() => {
     void loadProfile()
   }, [loadProfile])
 
+  useEffect(() => {
+    setAgentNameDraft(aiAgentName)
+  }, [aiAgentName])
+
+  useEffect(() => {
+    dictionaryMountedRef.current = true
+    return () => {
+      dictionaryMountedRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    getTranscriptionPreferences()
+      .then((preferences) => {
+        if (cancelled) return
+        const value = normalizeTagTerms(preferences.customVocabulary, maximumTranscriptionTerms)
+        setDictionary(value)
+        confirmedDictionaryRef.current = value
+      })
+      .catch((loadError) => {
+        if (!cancelled) setTranscriptionError(loadError instanceof Error ? loadError.message : t("Transcription settings could not be loaded."))
+      })
+      .finally(() => {
+        if (!cancelled) setTranscriptionLoading(false)
+      })
+    void loadMicrophones().catch(() => undefined)
+    const refresh = () => void loadMicrophones().catch(() => undefined)
+    navigator.mediaDevices?.addEventListener?.("devicechange", refresh)
+    return () => {
+      cancelled = true
+      navigator.mediaDevices?.removeEventListener?.("devicechange", refresh)
+    }
+  }, [loadMicrophones, t])
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (!url.searchParams.has("view") && !url.hash) return
+    url.searchParams.delete("view")
+    url.hash = ""
+    window.history.replaceState({}, "", `${url.pathname}${url.search}`)
+  }, [])
+
   function acceptProfile(next: DexterWritingProfile) {
     setProfile(next)
     setProfileText(next.profileText)
-    setError(null)
+    setProfileError(null)
   }
 
   async function learnStyle() {
     if (operation) return
     setOperation("consent")
-    setError(null)
+    setProfileError(null)
     try {
       acceptProfile(await consentToDexterWritingProfile())
-      toast.success(t("Dexter has learned your email writing style."))
+      toast.success(personalised("Dexter has learned your email writing style."))
     } catch (learnError) {
-      setError(writingProfileErrorCopy(learnError, "Dexter could not create your writing profile. Try again.", t))
+      setProfileError(writingProfileErrorCopy(learnError, "Dexter could not create your writing profile. Try again.", t).replaceAll("Dexter", aiAgentName))
     } finally {
       setOperation(null)
     }
@@ -2156,11 +2276,11 @@ function AgentDexterTab() {
       return
     }
     setOperation("toggle")
-    setError(null)
+    setProfileError(null)
     try {
       acceptProfile(await updateDexterWritingProfile(enabled, profileText))
     } catch (toggleError) {
-      setError(writingProfileErrorCopy(toggleError, "Dexter could not update this setting. Try again.", t))
+      setProfileError(writingProfileErrorCopy(toggleError, "Dexter could not update this setting. Try again.", t).replaceAll("Dexter", aiAgentName))
     } finally {
       setOperation(null)
     }
@@ -2169,12 +2289,12 @@ function AgentDexterTab() {
   async function saveProfile() {
     if (!profile || operation) return
     setOperation("save")
-    setError(null)
+    setProfileError(null)
     try {
       acceptProfile(await updateDexterWritingProfile(profile.enabled, profileText))
       toast.success(t("Email writing profile saved"))
     } catch (saveError) {
-      setError(writingProfileErrorCopy(saveError, "Dexter could not save your writing profile. Try again.", t))
+      setProfileError(writingProfileErrorCopy(saveError, "Dexter could not save your writing profile. Try again.", t).replaceAll("Dexter", aiAgentName))
     } finally {
       setOperation(null)
     }
@@ -2183,12 +2303,12 @@ function AgentDexterTab() {
   async function refreshProfile() {
     if (operation) return
     setOperation("refresh")
-    setError(null)
+    setProfileError(null)
     try {
       acceptProfile(await refreshDexterWritingProfile())
       toast.success(t("Email writing profile refreshed"))
     } catch (refreshError) {
-      setError(writingProfileErrorCopy(refreshError, "Dexter could not refresh your writing profile. Your saved profile is unchanged.", t))
+      setProfileError(writingProfileErrorCopy(refreshError, "Dexter could not refresh your writing profile. Your saved profile is unchanged.", t).replaceAll("Dexter", aiAgentName))
     } finally {
       setOperation(null)
     }
@@ -2197,139 +2317,267 @@ function AgentDexterTab() {
   async function resetProfile() {
     if (operation) return
     setOperation("reset")
-    setError(null)
+    setProfileError(null)
     try {
       acceptProfile(await resetDexterWritingProfile())
       setResetOpen(false)
       toast.success(t("Email writing profile reset"))
     } catch (resetError) {
-      setError(writingProfileErrorCopy(resetError, "Dexter could not reset your writing profile. Nothing was deleted.", t))
+      setProfileError(writingProfileErrorCopy(resetError, "Dexter could not reset your writing profile. Nothing was deleted.", t).replaceAll("Dexter", aiAgentName))
     } finally {
       setOperation(null)
     }
   }
 
+  function saveAgentName() {
+    const nextName = agentNameDraft.trim()
+    if (!nextName) return
+    writeAiAgentName(nextName)
+    toast.success(t("Assistant name updated"), { description: t("The new name now appears across Multideck on this device.") })
+  }
+
+  async function flushDictionarySaves() {
+    if (dictionarySaveInFlightRef.current) return
+    dictionarySaveInFlightRef.current = true
+    try {
+      while (pendingDictionarySaveRef.current) {
+        const pending = pendingDictionarySaveRef.current
+        pendingDictionarySaveRef.current = null
+        try {
+          const preferences = await saveTranscriptionPreferences(pending.terms)
+          const confirmed = normalizeTagTerms(preferences.customVocabulary, maximumTranscriptionTerms)
+          confirmedDictionaryRef.current = confirmed
+          if (dictionaryMountedRef.current && pending.revision === dictionaryRevisionRef.current) {
+            setDictionary(confirmed)
+          }
+        } catch (saveError) {
+          if (dictionaryMountedRef.current && pending.revision === dictionaryRevisionRef.current) {
+            setDictionary(confirmedDictionaryRef.current)
+            const message = saveError instanceof TranscriptionError ? saveError.message : t("Transcription settings were not saved. Try again.")
+            setTranscriptionError(message)
+          }
+        }
+      }
+    } finally {
+      dictionarySaveInFlightRef.current = false
+    }
+  }
+
+  function updateDictionary(nextTerms: string[]) {
+    const value = normalizeTagTerms(nextTerms, maximumTranscriptionTerms)
+    if (value.join("\n") === terms.join("\n")) return
+    const revision = dictionaryRevisionRef.current + 1
+    dictionaryRevisionRef.current = revision
+    setDictionary(value)
+    setTranscriptionError(null)
+    pendingDictionarySaveRef.current = { revision, terms: value }
+    void flushDictionarySaves()
+  }
+
   const busy = operation !== null
   const dirty = Boolean(profile && profileText !== profile.profileText)
-  const formattedRefresh = profile?.lastGeneratedAt
-    ? new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(new Date(profile.lastGeneratedAt))
-    : t("Not yet")
-  const statusMessage = loading
-    ? t("Loading your private writing profile...")
-    : profile?.status === "processing" || operation === "consent" || operation === "refresh"
-      ? t("Dexter is learning the patterns in your eligible sent emails. You can leave this page.")
+  const profileNotice = profileError
+    ?? (profile?.status === "processing" || operation === "consent" || operation === "refresh"
+      ? personalised("Dexter is updating your writing profile. You can leave this page.")
       : profile?.status === "insufficient"
-        ? t("Dexter needs at least 10 eligible sent emails before it can learn your style.")
+        ? personalised("Dexter needs at least 10 eligible sent emails before it can learn your style.")
         : profile?.status === "error"
-          ? t("Dexter could not create the profile. Your previous profile is unchanged.")
-          : profile?.status === "ready"
-            ? t("Ready. Dexter uses this only when you ask it to write an email.")
-            : t("Nothing has been analysed. Turn this on when you want Dexter to learn how you write.")
+          ? personalised("Dexter could not update your writing profile. Your previous profile is unchanged.")
+          : null)
+  const profileUpdatedLabel = profile?.lastGeneratedAt
+    ? new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(new Date(profile.lastGeneratedAt))
+    : t("Not yet updated")
+
+  const microphoneOptions = [
+    { id: systemDefaultMicrophone, label: t("System default") },
+    ...microphones.filter((microphone) => microphone.id && microphone.id !== "default"),
+  ]
+  if (selectedMicrophone !== systemDefaultMicrophone && !microphoneOptions.some((option) => option.id === selectedMicrophone)) {
+    microphoneOptions.push({ id: selectedMicrophone, label: t("Previously selected microphone") })
+  }
+
+  const writingPreferences = featureUnavailable ? (
+    <p role="status" className="text-[13px] leading-5 text-[var(--md-text)] md:col-span-2">{profileError}</p>
+  ) : (
+    <>
+      <DexterFieldGroup
+        label={t("Write emails like me")}
+        description={personalised("When on, Dexter applies your private style profile only to email drafts, replies and rewrites.")}
+        labelFor="dexter-writing-style"
+      >
+        <div className="flex min-h-10 items-center justify-between gap-4 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 shadow-[var(--md-shadow-line)]">
+          <span className="text-[12px] font-medium text-[var(--md-text)]">{t(profile?.enabled ? "On" : "Off")}</span>
+          <Switch
+            id="dexter-writing-style"
+            aria-describedby="dexter-writing-style-description"
+            checked={profile?.enabled === true}
+            disabled={profileLoading || busy}
+            onCheckedChange={(checked) => void toggleStyle(checked)}
+          />
+        </div>
+      </DexterFieldGroup>
+      <DexterFieldGroup label={t("Writing profile updates")} description={t("Relearn from recent eligible sent emails whenever your writing style changes.")}>
+        <div>
+          <div className="flex min-h-10 flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 shadow-[var(--md-shadow-line)]">
+            <span className="text-[12px] text-[var(--md-text)]">{profileUpdatedLabel}</span>
+            {profile?.exists ? (
+              <Button type="button" variant="ghost" disabled={busy} className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-ink)] hover:bg-[var(--md-hover)]" onClick={() => void refreshProfile()}>
+                {operation === "refresh" ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <History className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
+                {t(operation === "refresh" ? "Updating" : "Update from sent emails")}
+              </Button>
+            ) : !profileLoading ? (
+              <Button type="button" variant="ghost" disabled={busy} className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-ink)] hover:bg-[var(--md-hover)]" onClick={() => void learnStyle()}>
+                {operation === "consent" ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <WandSparkles className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
+                {t(operation === "consent" ? "Learning your style" : "Learn my email style")}
+              </Button>
+            ) : null}
+          </div>
+          {profileNotice ? (
+            <p role={profileError || profile?.status === "error" ? "alert" : "status"} aria-live="polite" className={cn("mt-2 text-[12px] leading-5", profileError || profile?.status === "error" ? "text-[var(--md-red)]" : "text-[var(--md-text)]")}>
+              {profileNotice}
+            </p>
+          ) : null}
+        </div>
+      </DexterFieldGroup>
+      <DexterFieldGroup label={t("Writing profile")} description={personalised("Edit the guidance Dexter applies. Keep facts, names, prices and commitments out of this profile.")} labelFor="dexter-writing-profile" className="md:col-span-2">
+        <div>
+          <SettingsTextarea
+            id="dexter-writing-profile"
+            value={profileText}
+            maxLength={2400}
+            disabled={profileLoading || busy || !profile?.exists}
+            aria-describedby="dexter-writing-profile-description dexter-writing-profile-count"
+            className="min-h-[220px] resize-y text-[16px] leading-[1.6] sm:text-[14px]"
+            placeholder={t("Your tone, structure, greetings, sign-offs and preferred terminology will appear here.")}
+            onChange={(event) => setProfileText(event.target.value)}
+          />
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <span id="dexter-writing-profile-count" className="text-[11.5px] tabular-nums text-[var(--md-subtle)]">{profileText.length.toLocaleString(language)} / 2,400</span>
+            <Button type="button" disabled={!dirty || busy} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100" onClick={() => void saveProfile()}>
+              {operation === "save" ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
+              {t(operation === "save" ? "Saving profile" : "Save profile")}
+            </Button>
+          </div>
+        </div>
+      </DexterFieldGroup>
+    </>
+  )
+
+  const content = (
+    <>
+      <SettingsPageHeader
+        title={aiAgentName}
+        description={personalised("Set how Dexter is named, how it writes and how voice input works for you.")}
+        descriptionPlacement="under-title"
+      />
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
+        <SettingsPanel title={t("Personal assistant")} description={t("Your personal name for the assistant appears throughout Multideck on this device.")}>
+          <div className="px-5 py-5">
+            <DexterFieldGroup label={t("Assistant name")} description={t("Use a short name you will recognise in navigation, prompts and conversation.")} labelFor="dexter-assistant-name" className="max-w-[640px]">
+              <form className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]" onSubmit={(event) => { event.preventDefault(); saveAgentName() }}>
+                <SettingsInput id="dexter-assistant-name" aria-describedby="dexter-assistant-name-description" value={agentNameDraft} maxLength={32} onChange={(event) => setAgentNameDraft(event.target.value)} />
+                <Button type="submit" disabled={!agentNameDirty} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100">
+                  {t("Save name")}
+                </Button>
+              </form>
+            </DexterFieldGroup>
+          </div>
+        </SettingsPanel>
+
+        <SettingsPanel title={t("Writing preferences")} description={t("Built from up to 40 eligible emails sent in the last 12 months. Only the compact style profile is kept.")}>
+          <div className="grid gap-x-6 gap-y-7 px-5 py-5 md:grid-cols-2">
+            {writingPreferences}
+          </div>
+        </SettingsPanel>
+
+        <SettingsPanel title={t("Voice and transcription")} description={t("Choose your microphone, shortcut and the uncommon terms dictation should recognise.")}>
+          <div className="grid gap-x-6 gap-y-7 px-5 py-5 md:grid-cols-2">
+            {transcriptionError ? (
+              <div role="alert" className="flex items-start gap-2 text-[12.5px] leading-5 text-[var(--md-red)] md:col-span-2">
+                <CircleAlert className="mt-0.5 size-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+                <span>{t(transcriptionError)}</span>
+              </div>
+            ) : null}
+            <DexterFieldGroup label={t("Microphone")} description={t("System default follows the input selected in your browser or operating system.")} labelFor="transcription-microphone">
+              <Select value={selectedMicrophone} onValueChange={(value) => { setSelectedMicrophone(value); savePreferredMicrophone(value) }}>
+                <SelectTrigger id="transcription-microphone" aria-describedby="transcription-microphone-description" className="h-10 min-w-0 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-field-bg)] px-3 text-[16px] shadow-[var(--md-shadow-line)] sm:text-[13px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
+                  {microphoneOptions.map((option) => <SelectItem key={option.id} value={option.id} data-i18n-skip={option.id !== systemDefaultMicrophone ? true : undefined}>{option.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </DexterFieldGroup>
+            <DexterFieldGroup label={t("Dictation shortcut")} description={t("Focus a text field and hold the shortcut while speaking. Release it to transcribe.")}>
+              <div className="flex min-h-10 flex-wrap items-center gap-3">
+                <ShortcutKeys binding={shortcut} />
+                <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 text-[12px] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)]" onClick={() => {
+                  window.history.pushState({}, "", "/settings?tab=shortcuts")
+                  window.dispatchEvent(new PopStateEvent("popstate"))
+                  document.querySelector("main")?.scrollTo({ top: 0, behavior: "auto" })
+                }}>
+                  {t("Change shortcut")}
+                </Button>
+              </div>
+            </DexterFieldGroup>
+            <DexterFieldGroup label={t("Custom dictionary")} description={t("Saved privately to your profile. Add terms the speech model may mishear.")} labelFor="transcription-dictionary" className="md:col-span-2">
+              <div>
+                <TagEntryField
+                  id="transcription-dictionary"
+                  terms={terms}
+                  onTermsChange={updateDictionary}
+                  maxTerms={maximumTranscriptionTerms}
+                  disabled={transcriptionLoading}
+                  placeholder={t("Add a word or phrase")}
+                  inputLabel={t("Add dictionary terms")}
+                  addLabel={t("Add term")}
+                  removeLabel={(term) => `${t("Remove")} ${term}`}
+                  duplicateMessage={t("That term is already in the dictionary.")}
+                  limitMessage={t("The dictionary can contain up to 100 terms.")}
+                />
+                <div className="mt-2 flex items-center">
+                  <span className="text-[11.5px] tabular-nums text-[var(--md-subtle)]">{terms.length} / {maximumTranscriptionTerms} {t("terms")}</span>
+                </div>
+              </div>
+            </DexterFieldGroup>
+          </div>
+        </SettingsPanel>
+
+        <SettingsPanel title={t("Privacy and control")} description={t("See what is retained, what always needs your approval and what you can remove.")}>
+          <div className="grid gap-x-6 gap-y-7 px-5 py-5 md:grid-cols-2 lg:grid-cols-3">
+            <DexterFieldGroup label={t("Recording handling")} description={t("Audio is sent securely for transcription and is not kept in Multideck. Transcript history is not stored by this feature.")}>
+              <span className="inline-flex min-h-9 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+                <ShieldCheck className="size-3.5 text-[var(--md-green)]" strokeWidth={1.5} aria-hidden="true" />
+                {t("No recording history")}
+              </span>
+            </DexterFieldGroup>
+            <DexterFieldGroup label={t("Sending approval")} description={personalised("Dexter never sends automatically. Only selecting the paper plane on an editable draft sends the email.")}>
+              <span className="inline-flex min-h-9 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+                <ShieldCheck className="size-3.5 text-[var(--md-green)]" strokeWidth={1.5} aria-hidden="true" />
+                {t("Operator click required")}
+              </span>
+            </DexterFieldGroup>
+            <DexterFieldGroup label={t("Reset writing profile")} description={t("Delete the derived profile and stop future refreshes. Your original sent emails remain in their provider and Inbox history.")}>
+              <Button type="button" variant="ghost" disabled={!profile?.exists || busy} className="h-10 rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 text-[13px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.12)]" onClick={() => setResetOpen(true)}>
+                <Trash2 className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+                {t("Reset profile")}
+              </Button>
+            </DexterFieldGroup>
+          </div>
+        </SettingsPanel>
+      </div>
+    </>
+  )
 
   return (
     <>
-      <SettingsPageHeader
-        title={t("Dexter")}
-        description={t("Let Dexter learn the tone and structure of your sent emails. It never uses this profile for ordinary answers or as a source of facts.")}
-        actions={
-          profile?.exists ? (
-            <Button type="button" variant="ghost" disabled={busy} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)]" onClick={() => void refreshProfile()}>
-              {operation === "refresh" ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <History className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
-              {t(operation === "refresh" ? "Refreshing" : "Refresh now")}
-            </Button>
-          ) : undefined
-        }
-      />
-      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
-        <SettingsPanel
-          title={t("Personal email style")}
-          description={t("Built from up to 40 eligible emails you sent in the last 12 months. Dexter stores only the compact style profile, not copied email bodies.")}
-        >
-          {featureUnavailable ? (
-            <div className="px-5 py-4">
-              <p role="status" className="text-[13px] leading-5 text-[var(--md-text)]">{error}</p>
-            </div>
-          ) : (
-            <>
-              <SettingsToggleRow
-                title={t("Write emails like me")}
-                description={t("When on, Dexter applies your private style profile only to email drafts, replies and rewrites.")}
-                checked={profile?.enabled === true}
-                disabled={loading || busy}
-                onCheckedChange={(checked) => void toggleStyle(checked)}
-                meta={<span>{t(profile?.enabled ? "On" : "Off")}</span>}
-              />
-              <SettingsFieldRow label={t("Profile status")} description={t("Learning never sends mail and never changes operational records.")} align="start">
-                <div>
-                  <p role={error ? "alert" : "status"} aria-live="polite" className={cn("text-[13px] leading-5", error ? "text-[var(--md-red)]" : "text-[var(--md-text)]")}>
-                    {error ?? statusMessage}
-                  </p>
-                  {!profile?.exists && !loading ? (
-                    <Button type="button" disabled={busy} className="mt-3 h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] active:scale-[0.96] motion-reduce:active:scale-100" onClick={() => void learnStyle()}>
-                      {operation === "consent" ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <WandSparkles className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
-                      {t(operation === "consent" ? "Learning your style" : "Learn my email style")}
-                    </Button>
-                  ) : null}
-                </div>
-              </SettingsFieldRow>
-              <SettingsFieldRow label={t("Eligible history")} description={t("Automated mail, trivial replies, quoted threads, footers and unproven shared-mailbox messages are excluded.")} align="start">
-                <dl className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2.5 shadow-[var(--md-shadow-line)]">
-                    <dt className="text-[11.5px] text-[var(--md-subtle)]">{t("Eligible messages")}</dt>
-                    <dd className="mt-1 text-[16px] font-medium tabular-nums text-[var(--md-ink)]">{profile?.eligibleMessageCount ?? 0}</dd>
-                  </div>
-                  <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2.5 shadow-[var(--md-shadow-line)]">
-                    <dt className="text-[11.5px] text-[var(--md-subtle)]">{t("Last refreshed")}</dt>
-                    <dd className="mt-1 text-[13px] font-medium text-[var(--md-ink)]">{formattedRefresh}</dd>
-                  </div>
-                </dl>
-              </SettingsFieldRow>
-              <SettingsFieldRow label={t("Writing profile")} description={t("Edit the guidance Dexter applies. Keep facts, names, prices and commitments out of this profile.")} align="start" labelFor="dexter-writing-profile">
-                <div>
-                  <SettingsTextarea
-                    id="dexter-writing-profile"
-                    value={profileText}
-                    maxLength={2400}
-                    disabled={loading || busy || !profile?.exists}
-                    aria-describedby="dexter-writing-profile-count"
-                    className="min-h-[260px] resize-y text-[16px] leading-[1.6] sm:text-[14px]"
-                    placeholder={t("Your tone, structure, greetings, sign-offs and preferred terminology will appear here.")}
-                    onChange={(event) => setProfileText(event.target.value)}
-                  />
-                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                    <span id="dexter-writing-profile-count" className="text-[11.5px] tabular-nums text-[var(--md-subtle)]">{profileText.length.toLocaleString(language)} / 2,400</span>
-                    <Button type="button" disabled={!dirty || busy} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100" onClick={() => void saveProfile()}>
-                      {operation === "save" ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
-                      {t(operation === "save" ? "Saving profile" : "Save profile")}
-                    </Button>
-                  </div>
-                </div>
-              </SettingsFieldRow>
-            </>
-          )}
-        </SettingsPanel>
-
-        <SettingsPanel title={t("Privacy and control")} description={t("This is your personal preference. It is never shared across the company and does not create Watching for you activity.")}>
-          <SettingsFieldRow label={t("Reset writing profile")} description={t("Delete the derived profile and stop future refreshes. Your original sent emails remain in their provider and Inbox history.")}>
-            <Button type="button" variant="ghost" disabled={!profile?.exists || busy} className="h-10 rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 text-[13px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.12)]" onClick={() => setResetOpen(true)}>
-              <Trash2 className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
-              {t("Reset profile")}
-            </Button>
-          </SettingsFieldRow>
-          <SettingsFieldRow label={t("Sending approval")} description={t("Dexter never sends automatically. Only selecting the paper plane on an editable draft sends the email.")}>
-            <span className="inline-flex min-h-9 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-              <ShieldCheck className="size-3.5 text-[var(--md-green)]" strokeWidth={1.5} aria-hidden="true" />
-              {t("Operator click required")}
-            </span>
-          </SettingsFieldRow>
-        </SettingsPanel>
-      </div>
+      {content}
 
       <Dialog open={resetOpen} onOpenChange={setResetOpen}>
         <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[440px]">
           <DialogHeader className="text-start">
             <DialogTitle>{t("Reset email writing profile?")}</DialogTitle>
-            <DialogDescription>{t("This deletes Dexter’s derived style profile and stops monthly refreshes. It does not delete any email from Gmail, Outlook or Inbox.")}</DialogDescription>
+            <DialogDescription>{personalised("This deletes Dexter’s derived style profile and stops monthly refreshes. It does not delete any email from Gmail, Outlook or Inbox.")}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button type="button" variant="ghost" disabled={operation === "reset"} onClick={() => setResetOpen(false)}>{t("Cancel")}</Button>
@@ -4345,7 +4593,7 @@ export function AdminBillingContent() {
       <SettingsPageHeader
         eyebrow="Workspace / Billing"
         title="Billing"
-        description="Keep the plan, seats, payment method, and invoice history understandable without mixing them into operational AI usage."
+        description="Keep the plan, seats, payment method, and invoice history understandable without mixing them into operational usage."
         actions={compactAction("Download invoices", () => toast.success("Invoices prepared"))}
       />
       <div className="mt-[var(--md-page-stack-gap)] grid gap-3 sm:grid-cols-3">
@@ -4454,10 +4702,10 @@ function AiUsageOverviewScreen({
     <>
       <SettingsPageHeader
         icon={ChartAnalysis}
-        eyebrow="Workspace / AI usage"
-        title="AI usage"
-        description="What Dexter gave back this month, what it cost, and how much of the included allowance is left."
-        actions={compactAction("Export usage", () => toast.success("AI usage export prepared"))}
+        eyebrow="Workspace / Usage"
+        title="Usage"
+        description="See what this workspace has used, what is included, and any extra usage for the current month."
+        actions={compactAction("Export usage", () => toast.success("Usage export prepared"))}
       />
       <AiUsageOverview
         usage={usage}
@@ -4541,10 +4789,10 @@ function AiUsageHistoryScreen({
     <>
       <SettingsPageHeader
         icon={History}
-        eyebrow="Workspace / AI usage / History"
-        title="Usage history"
+        eyebrow="Workspace / Usage / AI history"
+        title="AI usage history"
         description="Every Dexter response recorded this month, with the tokens each one used."
-        actions={compactAction("Back to AI usage", onBack)}
+        actions={compactAction("Back to Usage", onBack)}
       />
       <section className="md-ai-usage md-ai-panel mt-[var(--md-page-stack-gap)] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
         <div className="flex flex-col gap-4 px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
@@ -4665,11 +4913,11 @@ export function AdminAiUsageContent() {
   }, [])
 
   useEffect(() => {
-    document.title = `${view === "history" ? "Usage history" : "AI usage"} · Admin · Multideck`
+    document.title = `${view === "history" ? "AI usage history" : "Usage"} · Admin · Multideck`
   }, [view])
 
   function changeView(nextView: "overview" | "history") {
-    const nextPath = nextView === "history" ? "/admin/ai-usage?view=history" : "/admin/ai-usage"
+    const nextPath = nextView === "history" ? "/admin/usage?view=history" : "/admin/usage"
     window.history.pushState({}, "", nextPath)
     setView(nextView)
     window.dispatchEvent(new PopStateEvent("popstate"))
@@ -4892,11 +5140,11 @@ function DocsTab() {
       steps: ["Choose the closest existing role.", "Review sensitive finance, user, and document permissions.", "Save the role and verify it against an assigned user."],
     },
     {
-      title: "Read billing and AI usage",
+      title: "Read billing and usage",
       detail: "Understand plan cost, invoices, and value created by AI.",
       category: "Billing",
       icon: CreditCard,
-      steps: ["Use Billing for plan, seats, payment, and invoices.", "Use AI usage for volume, spend, and accepted output.", "Compare saved time and acceptance before changing the budget."],
+      steps: ["Use Billing for plan, seats, payment, and invoices.", "Use Usage for the workspace's included services and extra usage.", "Open AI history when you need Dexter request and token detail."],
     },
   ]
   const normalizedQuery = query.trim().toLowerCase()
@@ -5286,6 +5534,7 @@ export function SettingsPage({
   onCoverPhotoChange: (photo: UserProfilePhoto | null) => void
 }) {
   const shouldReduceMotion = useReducedMotion()
+  const aiAgentName = useAiAgentName()
   const [activeTab, setActiveTab] = useState<SettingsSectionId>(readSettingsSectionFromUrl)
   const activeItem = getSettingsSection(activeTab)
 
@@ -5294,7 +5543,7 @@ export function SettingsPage({
     const adminRoutes: Record<string, string> = {
       permissions: "/admin/users",
       users: "/admin/users",
-      "ai-usage": "/admin/ai-usage",
+      "ai-usage": "/admin/usage",
       broadcast: "/admin/broadcast",
       billing: "/admin/billing",
     }
@@ -5309,8 +5558,8 @@ export function SettingsPage({
   }, [currentUser, navigate])
 
   useEffect(() => {
-    document.title = `${activeItem.label} · Settings · Multideck`
-  }, [activeItem.label])
+    document.title = `${activeItem.id === "dexter" ? aiAgentName : activeItem.label} · Settings · Multideck`
+  }, [activeItem.id, activeItem.label, aiAgentName])
 
   function changeTab(tab: SettingsSectionId) {
     setActiveTab(tab)

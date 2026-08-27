@@ -87,7 +87,6 @@ import {
   CompactFieldRow,
   CompactFieldShell,
   CompactSectionShell,
-  IncotermField,
   LocationFields,
   NumberUnitField,
   RecurrenceBuilder,
@@ -97,8 +96,6 @@ import {
   EMPTY_CARGO_CHARACTERISTICS,
   EMPTY_HAZARDOUS_DETAILS,
   EMPTY_RECURRENCE,
-  getIncotermDefinition,
-  isIncotermCode,
   type CargoCharacteristics,
   type HazardousDetails,
   type LocationOption,
@@ -4007,8 +4004,6 @@ function QuoteDetailsPanelV2({
 
   const originIsUs = [originLocation.countryCode, originLocation.countryName, originLocation.unlocode.slice(0, 2)]
     .some((value) => ["US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"].includes(value.trim().toLocaleUpperCase()))
-  const selectedIncoterm = isIncotermCode(quote.incoterm) ? quote.incoterm : ""
-
   return (
     <div dir={direction} className="grid items-start gap-2">
       <CompactSectionShell title="Job data" meta="Core quote controls">
@@ -4036,7 +4031,6 @@ function QuoteDetailsPanelV2({
             <QuoteCompactInput label="Customer PO" value={quote.customerPO ?? ""} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange("customerPO", value)} />
             <QuoteCompactInput label="Contact" value={quote.customerContact ?? ""} width="full" className="col-span-7" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerContact, customerSourceContact?.name)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuoteChange("customerContact", value)} />
             <QuoteCompactInput label="Address" value={quote.customerAddress ?? ""} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerAddress, customerOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuoteChange("customerAddress", value)} />
-            <QuoteCompactInput label="Email" value={quote.customerEmail ?? ""} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerEmail, customerSourceContact?.email)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuoteChange("customerEmail", value)} />
           </div>
         </CompactSectionShell>
         {roleCard("agent")}
@@ -4046,7 +4040,6 @@ function QuoteDetailsPanelV2({
 
       <CompactSectionShell title="Route & service" meta="Linked country, place and UN/LOCODE fields">
         <div className="grid gap-2">
-          <IncotermField value={selectedIncoterm} onValueChange={(value) => onQuoteChange("incoterm", value)} namedLocation={quote.incotermPlace ?? ""} onNamedLocationChange={(value) => onQuoteChange("incotermPlace", value)} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && (!selectedIncoterm || Boolean(getIncotermDefinition(selectedIncoterm) && !quote.incotermPlace?.trim()))} disabled={!editable} />
           <div className="grid gap-2 xl:grid-cols-2">
             <LocationFields label="From" value={originLocation} options={locationOptions} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} />
             <LocationFields label="To" value={destinationLocation} options={locationOptions} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} />

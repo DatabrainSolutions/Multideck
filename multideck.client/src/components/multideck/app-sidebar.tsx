@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { AiBrain, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, PencilEdit01, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Star, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
+import { AiBrain, AiEditing, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, PencilEdit01, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Star, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -821,6 +821,7 @@ function InboxContextSidebar({
         ? "Add a Google Group inbox in Settings."
         : "Add a shared Outlook mailbox in Settings.",
     },
+    { view: "suggested", label: "Suggested updates", icon: AiEditing, enabled: hasMailbox },
     { view: "sent", label: "Sent items", icon: Send, enabled: hasMailbox },
     { view: "drafts", label: "Drafts", icon: FileText, enabled: hasMailbox },
     { view: "archive", label: "Archive", icon: Archive, enabled: hasMailbox },
@@ -904,6 +905,7 @@ function InboxContextSidebar({
               <SidebarNavItem
                 item={{ label: item.label, icon: item.icon, value: item.value }}
                 isActive={item.view === view && !folderId}
+                accent={item.view === "suggested" ? "dexter" : "default"}
                 onClick={item.enabled ? () => select(item.view) : undefined}
                 collapsed={collapsed}
                 activeLayoutId={activeFolderLayoutId}
@@ -951,7 +953,7 @@ function InboxContextSidebar({
         ))}
       </SidebarSection>
 
-      {folderRows.length > 0 && !collapsed ? (
+      {view !== "suggested" && folderRows.length > 0 && !collapsed ? (
         <div className="mt-3">
           <button
             type="button"
@@ -1923,7 +1925,7 @@ export function AppSidebar({
                       {group.items.map((item) => (
                         <SidebarSectionItem key={item.id}>
                           <SidebarNavItem
-                            item={{ label: item.label, icon: item.icon }}
+                            item={{ label: item.id === "dexter" ? aiAgentName : item.label, icon: item.icon }}
                             isActive={activeSettingsSection === item.id}
                             onClick={() => openSettingsSection(item.id)}
                             collapsed={collapsed}
@@ -2250,15 +2252,15 @@ export function AppSidebar({
               <>
                 <button
                   type="button"
-                  aria-label={aiUsagePercent === null ? t("AI usage") : `${t("AI usage")}: ${Math.round(aiUsagePercent)}%`}
+                  aria-label={aiUsagePercent === null ? t("Usage") : `${t("Usage")}: ${Math.round(aiUsagePercent)}%`}
                   className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
                   onClick={() => {
                     setAccountMenuOpen(false)
-                    navigate("/admin/ai-usage")
+                    navigate("/admin/usage")
                   }}
                 >
                   <ChartAnalysis data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-                  <span className="min-w-0 flex-1 truncate">{t("AI usage")}</span>
+                  <span className="min-w-0 flex-1 truncate">{t("Usage")}</span>
                   <svg
                     aria-hidden="true"
                     viewBox="0 0 24 24"

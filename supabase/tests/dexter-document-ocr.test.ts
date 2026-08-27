@@ -23,12 +23,12 @@ Deno.test("Dexter keeps page-labelled OCR evidence bounded and marks the page li
     blocks: [{ type: "text" }],
   }))
   const result = normaliseDexterOcrResult({
-    model: "mistral-ocr-4-0",
+    model: "mistral-ocr-latest",
     pages,
     usage_info: { pages_processed: 30 },
   })
 
-  assertEquals(result.model, "mistral-ocr-4-0")
+  assertEquals(result.model, "mistral-ocr-latest")
   assertEquals(result.pages.length, 30)
   assertEquals(result.pages[0].page, 1)
   assertEquals(result.pages[0].confidence, 0.94)

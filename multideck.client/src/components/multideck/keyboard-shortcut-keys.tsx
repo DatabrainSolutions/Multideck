@@ -37,15 +37,17 @@ export function ShortcutKeys({
           {stepIndex > 0 ? <span className="text-[11px] text-[var(--md-subtle)]">then</span> : null}
           <KbdGroup dir="ltr" data-i18n-skip>
             {tokens.map((token, tokenIndex) => (
-              <Kbd
-                key={`${token}-${tokenIndex}`}
-                className={cn(
-                  "h-[22px] min-w-[22px] rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-1.5 text-[11.5px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
-                  keyClassName,
-                )}
-              >
-                {token}
-              </Kbd>
+              <span key={`${token}-${tokenIndex}`} className="inline-flex items-center gap-1">
+                {tokenIndex > 0 ? <span className="text-[10px] text-[var(--md-subtle)]">+</span> : null}
+                <Kbd
+                  className={cn(
+                    "h-[22px] min-w-[22px] rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-1.5 text-[11.5px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+                    keyClassName,
+                  )}
+                >
+                  {token}
+                </Kbd>
+              </span>
             ))}
           </KbdGroup>
         </span>

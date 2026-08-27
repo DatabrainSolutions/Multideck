@@ -96,6 +96,7 @@ type ProviderFolderCatalogueEntry = {
 // Historical indexing is intentionally shallow per run. Large provider pages
 // keep the mailbox lease occupied and can delay the ten-second live pass.
 const GMAIL_BACKFILL_PAGE_SIZE = 20
+const GMAIL_LIVE_CATCHUP_BATCH_SIZE = 10
 const OUTLOOK_BACKFILL_PAGE_SIZE = 20
 const FOLDER_CATALOG_REFRESH_MS = 15 * 60 * 1000
 const MAX_PROVIDER_FOLDERS = 500
@@ -1014,6 +1015,74 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
     return fetched.filter((message): message is ProviderMessage => message !== null)
   }
 
+  const readRecentLiveMessages = async (cursorToPreserve = ""): Promise<ProviderSync> => {
+    const recentUrl = new URL(`${base}/messages`)
+    // Listing more IDs than we process lets each pass discard known mail while
+    // keeping provider detail reads and database writes within the Edge budget.
+    recentUrl.searchParams.set("maxResults", "50")
+    recentUrl.searchParams.set("includeSpamTrash", "true")
+    recentUrl.searchParams.set(
+      "q",
+      [groupAddress ? gmailGroupQuery(groupAddress) : "", "newer_than:1d"].filter(Boolean).join(" "),
+    )
+    const recent = await providerJson(recentUrl.toString(), token)
+    const listedIds: string[] = (Array.isArray(recent.messages) ? recent.messages : [])
+      .map((entry: Row) => cleanString(entry.id, 240))
+      .filter(Boolean)
+    const known = listedIds.length
+      ? await result<Row[]>(admin.from("Comm_Messages")
+        .select("CommMessage_ID,CommMessage_ThreadID,CommMessage_ProviderMessageID")
+        .eq("CommMessage_MailboxID", mailbox.CommMailbox_ID)
+        .in("CommMessage_ProviderMessageID", listedIds)) ?? []
+      : []
+    const knownIds = new Set(known.map((row) => cleanString(row.CommMessage_ProviderMessageID, 240)))
+    const knownMessageIds = known.map((row) => cleanString(row.CommMessage_ID, 80)).filter(Boolean)
+    const knownThreadIds = [...new Set(known.map((row) => cleanString(row.CommMessage_ThreadID, 80)).filter(Boolean))]
+    const [memberships, threadSummaries] = await Promise.all([
+      knownMessageIds.length
+        ? result<Row[]>(admin.from("Comm_MessageFolders")
+          .select("CommMessageFolder_MessageID")
+          .in("CommMessageFolder_MessageID", knownMessageIds)) ?? []
+        : [],
+      knownThreadIds.length
+        ? result<Row[]>(admin.from("Comm_Threads")
+          .select("CommThread_ID,CommThread_LastMessageID")
+          .in("CommThread_ID", knownThreadIds)) ?? []
+        : [],
+    ])
+    const mappedMessageIds = new Set(memberships.map((row) => cleanString(row.CommMessageFolder_MessageID, 80)))
+    const summarisedThreadIds = new Set(threadSummaries
+      .filter((row) => cleanString(row.CommThread_LastMessageID, 80))
+      .map((row) => cleanString(row.CommThread_ID, 80)))
+    const incompleteProviderIds = new Set(known.flatMap((row) => {
+      const messageId = cleanString(row.CommMessage_ID, 80)
+      const threadId = cleanString(row.CommMessage_ThreadID, 80)
+      return !mappedMessageIds.has(messageId) || !summarisedThreadIds.has(threadId)
+        ? [cleanString(row.CommMessage_ProviderMessageID, 240)]
+        : []
+    }))
+    const newIds = listedIds
+      // A previous Edge deadline may have inserted the provider message before
+      // its folder and thread summary were committed. Re-fetch those IDs so
+      // the normal known-message path can finish the durable record.
+      .filter((id: string) => !knownIds.has(id) || incompleteProviderIds.has(id))
+      .slice(0, GMAIL_LIVE_CATCHUP_BATCH_SIZE)
+    return {
+      messages: await fetchMessages(newIds),
+      removedProviderMessageIds,
+      cursor: cursorToPreserve,
+      hasMore: true,
+      index: {
+        initial: true,
+        reset: false,
+        processed: 0,
+        totalEstimate: Number.isFinite(Number(mailbox.CommMailbox_IndexTotalEstimate))
+          ? Math.max(0, Number(mailbox.CommMailbox_IndexTotalEstimate))
+          : null,
+      },
+    }
+  }
+
   // The frequent worker only drains new mail. Historical page advancement is
   // left to the separate backfill run so an old inbox cannot delay today's
   // messages or cause the same 100-message page to be fetched every ten seconds.
@@ -1051,40 +1120,16 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
     }
   }
 
+  if (options.liveOnly && historyPage) {
+    // A large Gmail History delta can span many continuation pages. The
+    // minute backfill advances that durable cursor; the ten-second live pass
+    // still reads today's newest IDs so current operator mail never queues
+    // behind older label churn.
+    return await readRecentLiveMessages(startingCursor)
+  }
+
   if (options.liveOnly && !cursor) {
-    const recentUrl = new URL(`${base}/messages`)
-    recentUrl.searchParams.set("maxResults", "50")
-    recentUrl.searchParams.set("includeSpamTrash", "true")
-    recentUrl.searchParams.set(
-      "q",
-      [groupAddress ? gmailGroupQuery(groupAddress) : "", "newer_than:1d"].filter(Boolean).join(" "),
-    )
-    const recent = await providerJson(recentUrl.toString(), token)
-    const listedIds: string[] = (Array.isArray(recent.messages) ? recent.messages : [])
-      .map((entry: Row) => cleanString(entry.id, 240))
-      .filter(Boolean)
-    const known = listedIds.length
-      ? await result<Row[]>(admin.from("Comm_Messages")
-        .select("CommMessage_ProviderMessageID")
-        .eq("CommMessage_MailboxID", mailbox.CommMailbox_ID)
-        .in("CommMessage_ProviderMessageID", listedIds)) ?? []
-      : []
-    const knownIds = new Set(known.map((row) => cleanString(row.CommMessage_ProviderMessageID, 240)))
-    const newIds = listedIds.filter((id: string) => !knownIds.has(id))
-    return {
-      messages: await fetchMessages(newIds),
-      removedProviderMessageIds,
-      cursor: "",
-      hasMore: true,
-      index: {
-        initial: true,
-        reset: false,
-        processed: 0,
-        totalEstimate: Number.isFinite(Number(mailbox.CommMailbox_IndexTotalEstimate))
-          ? Math.max(0, Number(mailbox.CommMailbox_IndexTotalEstimate))
-          : null,
-      },
-    }
+    return await readRecentLiveMessages()
   }
 
   if ((cursor && !snapshot && !historyPage) || historyPage) {
@@ -1101,6 +1146,7 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
         : history.historyId
     } catch (error) {
       if (!(error instanceof InboxHttpError) || error.providerStatus !== 404) throw error
+      if (options.liveOnly) return await readRecentLiveMessages()
       cursor = ""
       hasMore = false
       resetSnapshot = true
@@ -1557,6 +1603,7 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
   const knownMessageIds = new Map(knownByProvider.map((row) => [row.CommMessage_ProviderMessageID, row.CommMessage_ID]))
   const knownMessageIdsByInternet = new Map(knownByInternet.map((row) => [row.CommMessage_InternetMessageID, row.CommMessage_ID]))
   const knownRowsById = new Map([...knownByInternet, ...knownByProvider].map((row) => [row.CommMessage_ID, row]))
+  const reconciledThreadIds = new Set<string>()
   const existingMessageIdFor = (incoming: ProviderMessage) => (
     knownMessageIds.get(cleanString(incoming.providerMessageId, 240))
     ?? knownMessageIdsByInternet.get(cleanString(incoming.internetMessageId, 500))
@@ -1572,6 +1619,12 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
     const existingMessageId = existingMessageIdFor(incoming)
     if (!existingMessageId) continue
     await persistFolders(admin, mailbox.CommMailbox_ID, existingMessageId, incoming.folders)
+    await result<number>(admin.rpc("multideck_inbox_enqueue_suggestions", {
+      p_message_id: existingMessageId,
+      p_actor_user_id: actor.userId,
+      p_classifier_version: "inbox-triage-v1",
+      p_extractor_version: "inbox-extract-v1",
+    }), "Suggested updates could not inspect this message.")
     const identityPatch: Row = {
       CommMessage_IsSpam: incoming.isSpam,
       CommMessage_IsDraft: incoming.isDraft,
@@ -1583,6 +1636,7 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
     if (incoming.internetMessageId) identityPatch.CommMessage_InternetMessageID = cleanString(incoming.internetMessageId, 500)
     await result(admin.from("Comm_Messages").update(identityPatch).eq("CommMessage_ID", existingMessageId))
     const knownRow = knownRowsById.get(existingMessageId)
+    if (knownRow?.CommMessage_ThreadID) reconciledThreadIds.add(cleanString(knownRow.CommMessage_ThreadID, 80))
     const senderIsMailbox = incoming.from.some((address) => address.address === mailbox.CommMailbox_NormalizedAddress)
     if (!senderIsMailbox && incoming.deliveryReport) {
       const deliveryTarget = await result<Row>(admin.from("Comm_Messages")
@@ -1636,6 +1690,11 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
         )
       }
     }
+  }
+  if (reconciledThreadIds.size) {
+    await result(admin.rpc("_multideck_refresh_retained_email_threads", {
+      p_thread_ids: [...reconciledThreadIds],
+    }), "Reconciled email threads could not be refreshed.")
   }
   for (const incoming of messages.filter((message) => !matchedProviderIds.has(cleanString(message.providerMessageId, 240))).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))) {
     const providerThreadId = cleanString(incoming.providerThreadId, 240)
@@ -1761,6 +1820,12 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
       CommThread_UpdatedAt: now, CommThread_UpdatedBy: actor.userId,
     }).eq("CommThread_ID", threadId))
     await persistFolders(admin, mailbox.CommMailbox_ID, messageId, incoming.folders)
+    await result<number>(admin.rpc("multideck_inbox_enqueue_suggestions", {
+      p_message_id: messageId,
+      p_actor_user_id: actor.userId,
+      p_classifier_version: "inbox-triage-v1",
+      p_extractor_version: "inbox-extract-v1",
+    }), "Suggested updates could not inspect this message.")
   }
   const now = new Date().toISOString()
   for (const folderCursor of sync.folderCursors ?? []) {

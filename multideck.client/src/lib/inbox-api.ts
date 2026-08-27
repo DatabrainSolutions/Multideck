@@ -84,6 +84,106 @@ export type MailboxSyncResult = {
   indexPercent: number
 }
 
+export type InboxSuggestedUpdateField = {
+  id: string
+  code: "planned_arrival_at" | "vessel" | "voyage_number" | "destination_terminal" | "gross_weight_kg"
+  label: string
+  currentValue: unknown
+  proposedValue: unknown
+  confidence: number
+  selectedByDefault: boolean
+  appliedAt: string | null
+  evidence: Record<string, unknown>
+}
+
+export type InboxSuggestedUpdate = {
+  id: string
+  status: "needs_match" | "ready" | "no_changes" | "applying" | "applied" | "dismissed" | "failed" | "superseded"
+  documentType: "booking_confirmation" | "commercial_invoice"
+  targetType: "booking" | "supplier_invoice" | null
+  targetId: string | null
+  targetLabel: string | null
+  matchMethod: string | null
+  matchConfidence: number | null
+  sourceFileName: string
+  sourceSubject: string | null
+  sourceMessageId: string
+  sourceMailboxId: string
+  sourceThreadId: string | null
+  sourceAttachmentId: string
+  summary: string
+  extracted: Record<string, unknown>
+  evidence: Record<string, unknown>
+  fields: InboxSuggestedUpdateField[]
+  createdAt: string
+  updatedAt: string
+  appliedAt: string | null
+  dismissedAt: string | null
+  jobDocumentId: string | null
+}
+
+export type InboxSuggestionMailboxSetting = {
+  mailboxId: string
+  address: string
+  displayName: string
+  kind: string
+  enabled: boolean
+  documentTypes: Array<"booking_confirmation" | "commercial_invoice">
+}
+
+export type InboxSuggestedBookingOption = {
+  id: string
+  reference: string
+  customer: string
+  route: string
+  status: string
+  updatedAt: string | null
+}
+
+function normalizeSuggestedUpdateField(value: unknown): InboxSuggestedUpdateField {
+  const row = readRecord(value)
+  const code = readText(pickField(row, "code")) as InboxSuggestedUpdateField["code"]
+  return {
+    id: readText(pickField(row, "id")), code,
+    label: readText(pickField(row, "label")),
+    currentValue: pickField(row, "currentValue", "current_value") ?? null,
+    proposedValue: pickField(row, "proposedValue", "proposed_value") ?? null,
+    confidence: Number(pickField(row, "confidence")) || 0,
+    selectedByDefault: readFlag(pickField(row, "selectedByDefault", "selected_by_default")),
+    appliedAt: readOptionalText(pickField(row, "appliedAt", "applied_at")),
+    evidence: readRecord(pickField(row, "evidence")),
+  }
+}
+
+function normalizeSuggestedUpdate(value: unknown): InboxSuggestedUpdate {
+  const row = readRecord(value)
+  return {
+    id: readText(pickField(row, "id")),
+    status: readText(pickField(row, "status")) as InboxSuggestedUpdate["status"],
+    documentType: readText(pickField(row, "documentType", "document_type")) as InboxSuggestedUpdate["documentType"],
+    targetType: readOptionalText(pickField(row, "targetType", "target_type")) as InboxSuggestedUpdate["targetType"],
+    targetId: readOptionalText(pickField(row, "targetId", "target_id")),
+    targetLabel: readOptionalText(pickField(row, "targetLabel", "target_label")),
+    matchMethod: readOptionalText(pickField(row, "matchMethod", "match_method")),
+    matchConfidence: pickField(row, "matchConfidence", "match_confidence") === null ? null : Number(pickField(row, "matchConfidence", "match_confidence")) || null,
+    sourceFileName: readText(pickField(row, "sourceFileName", "source_file_name")),
+    sourceSubject: readOptionalText(pickField(row, "sourceSubject", "source_subject")),
+    sourceMessageId: readText(pickField(row, "sourceMessageId", "source_message_id")),
+    sourceMailboxId: readText(pickField(row, "sourceMailboxId", "source_mailbox_id")),
+    sourceThreadId: readOptionalText(pickField(row, "sourceThreadId", "source_thread_id")),
+    sourceAttachmentId: readText(pickField(row, "sourceAttachmentId", "source_attachment_id")),
+    summary: readText(pickField(row, "summary")),
+    extracted: readRecord(pickField(row, "extracted")),
+    evidence: readRecord(pickField(row, "evidence")),
+    fields: readList(pickField(row, "fields")).map(normalizeSuggestedUpdateField).filter((field) => field.id),
+    createdAt: readText(pickField(row, "createdAt", "created_at")),
+    updatedAt: readText(pickField(row, "updatedAt", "updated_at")),
+    appliedAt: readOptionalText(pickField(row, "appliedAt", "applied_at")),
+    dismissedAt: readOptionalText(pickField(row, "dismissedAt", "dismissed_at")),
+    jobDocumentId: readOptionalText(pickField(row, "jobDocumentId", "job_document_id")),
+  }
+}
+
 function configurationError() {
   return new InboxApiError("Inbox is not configured for this workspace.", { code: "server" })
 }
@@ -327,6 +427,87 @@ export async function listDexterEmailContextSources(): Promise<DexterEmailContex
       const source = Array.isArray(payload) ? payload : readList(pickField(readRecord(payload), "sources", "items"))
       return source.map(normalizeDexterEmailContextSource)
     },
+  })
+}
+
+export async function listInboxSuggestedUpdates(): Promise<InboxSuggestedUpdate[]> {
+  return inboxRequest("/suggested-updates", {
+    method: "GET",
+    normalize: (payload) => readList(pickField(readRecord(payload), "suggestions", "items"))
+      .map(normalizeSuggestedUpdate).filter((suggestion) => suggestion.id),
+  })
+}
+
+export async function loadInboxSuggestionSettings(): Promise<InboxSuggestionMailboxSetting[]> {
+  return inboxRequest("/suggested-updates/settings", {
+    method: "GET",
+    normalize: (payload) => readList(pickField(readRecord(payload), "mailboxes", "items")).map((value) => {
+      const row = readRecord(value)
+      return {
+        mailboxId: readText(pickField(row, "mailboxId", "mailbox_id")),
+        address: readText(pickField(row, "address")),
+        displayName: readText(pickField(row, "displayName", "display_name")),
+        kind: readText(pickField(row, "kind")),
+        enabled: readFlag(pickField(row, "enabled")),
+        documentTypes: readList(pickField(row, "documentTypes", "document_types"))
+          .map((item) => readText(item))
+          .filter((item): item is InboxSuggestionMailboxSetting["documentTypes"][number] => item === "booking_confirmation" || item === "commercial_invoice"),
+      }
+    }).filter((setting) => setting.mailboxId),
+  })
+}
+
+export async function updateInboxSuggestionSettings(mailboxId: string, enabled: boolean) {
+  return inboxRequest(`/suggested-updates/settings/mailboxes/${encodeURIComponent(mailboxId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled, documentTypes: ["booking_confirmation", "commercial_invoice"] }),
+    normalize: (payload) => {
+      const row = readRecord(payload)
+      return { enabled: readFlag(pickField(row, "enabled")), queued: readCount(pickField(row, "queued")) }
+    },
+  })
+}
+
+export async function applyInboxSuggestedUpdate(suggestionId: string, selectedFieldIds: string[]) {
+  return inboxRequest(`/suggested-updates/${encodeURIComponent(suggestionId)}/apply`, {
+    method: "POST",
+    body: JSON.stringify({ selectedFieldIds }),
+    normalize: (payload) => readRecord(payload),
+  })
+}
+
+export async function searchInboxSuggestedUpdateBookings(search = ""): Promise<InboxSuggestedBookingOption[]> {
+  const query = new URLSearchParams()
+  if (search.trim()) query.set("search", search.trim())
+  return inboxRequest(`/suggested-updates/bookings${query.size ? `?${query.toString()}` : ""}`, {
+    method: "GET",
+    normalize: (payload) => readList(pickField(readRecord(payload), "bookings", "items")).map((value) => {
+      const row = readRecord(value)
+      return {
+        id: readText(pickField(row, "id")),
+        reference: readText(pickField(row, "reference")),
+        customer: readText(pickField(row, "customer")),
+        route: readText(pickField(row, "route")),
+        status: readText(pickField(row, "status")),
+        updatedAt: readOptionalText(pickField(row, "updatedAt", "updated_at")),
+      }
+    }).filter((booking) => booking.id && booking.reference),
+  })
+}
+
+export async function attachInboxSuggestedDocument(suggestionId: string, bookingId: string) {
+  return inboxRequest(`/suggested-updates/${encodeURIComponent(suggestionId)}/attach`, {
+    method: "POST",
+    body: JSON.stringify({ bookingId }),
+    normalize: (payload) => readRecord(payload),
+  })
+}
+
+export async function dismissInboxSuggestedUpdate(suggestionId: string) {
+  return inboxRequest(`/suggested-updates/${encodeURIComponent(suggestionId)}/dismiss`, {
+    method: "POST",
+    body: JSON.stringify({}),
+    normalize: (payload) => readRecord(payload),
   })
 }
 

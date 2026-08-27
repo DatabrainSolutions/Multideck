@@ -122,13 +122,14 @@ function referencePatternError(pattern: string, target: ReferenceRuleTarget, com
   return null
 }
 
-export type AdminRoute = "/admin/users" | "/admin/ai-usage" | "/admin/broadcast" | "/admin/billing" | "/admin/system-preferences" | "/admin/activity" | "/admin/detailed-log"
+export type AdminRoute = "/admin/users" | "/admin/usage" | "/admin/ai-usage" | "/admin/broadcast" | "/admin/billing" | "/admin/system-preferences" | "/admin/activity" | "/admin/detailed-log"
 type AuditCategory = "all" | "authentication" | "application"
 const auditRefreshIntervalMs = 60_000
 
 const adminRouteTitles: Record<AdminRoute, string> = {
   "/admin/users": "Users",
-  "/admin/ai-usage": "AI usage",
+  "/admin/usage": "Usage",
+  "/admin/ai-usage": "Usage",
   "/admin/broadcast": "Broadcast",
   "/admin/billing": "Billing",
   "/admin/system-preferences": "System Preferences",
@@ -832,7 +833,7 @@ export function AdminPage({ route, currentUser }: { route: AdminRoute; currentUs
 
   const content = route === "/admin/users"
     ? <AdminUsersContent />
-    : route === "/admin/ai-usage"
+    : route === "/admin/usage" || route === "/admin/ai-usage"
       ? <AdminAiUsageContent />
       : route === "/admin/broadcast"
         ? <AdminBroadcastContent />

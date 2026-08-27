@@ -1,5 +1,5 @@
 /**
- * The value and allowance model behind Settings → AI usage.
+ * The value model behind Admin → Usage.
  *
  * Everything here is derived from figures Dexter actually records for this
  * company: how many actions ran, how much workspace context each one read, and

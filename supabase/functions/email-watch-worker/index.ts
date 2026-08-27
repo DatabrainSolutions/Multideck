@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 import { cleanString, InboxHttpError, normalizeEmail } from "../inbox-api/core.ts"
 import { syncMailbox, type Actor } from "../inbox-api/runtime.ts"
+import { processInboxSuggestionJobs } from "../_shared/inbox-suggested-updates.ts"
 
 type Row = Record<string, any>
 
@@ -60,6 +61,40 @@ function retryableSyncError(error: unknown) {
   return error.status === 429 || error.status >= 500
 }
 
+async function orderMailboxesBySyncFreshness(admin: any, mailboxRows: Row[]) {
+  const mailboxIds = mailboxRows
+    .map((mailbox) => cleanString(mailbox.mailbox_id, 80))
+    .filter(Boolean)
+  if (!mailboxIds.length) return mailboxRows
+
+  const { data, error } = await admin
+    .from("Comm_Mailboxes")
+    .select("CommMailbox_ID,CommMailbox_LiveSyncedAt,CommMailbox_LastSyncedAt")
+    .in("CommMailbox_ID", mailboxIds)
+
+  if (error || !Array.isArray(data)) return mailboxRows
+
+  const freshness = new Map<string, number>()
+  for (const mailbox of data) {
+    const mailboxId = cleanString(mailbox.CommMailbox_ID, 80)
+    if (!mailboxId) continue
+    const parsed = Date.parse(
+      cleanString(mailbox.CommMailbox_LiveSyncedAt ?? mailbox.CommMailbox_LastSyncedAt, 80),
+    )
+    freshness.set(mailboxId, Number.isFinite(parsed) ? parsed : 0)
+  }
+
+  // An owner can expose several group mailboxes through one OAuth connection.
+  // Always start with the stalest mailbox so an Edge runtime deadline cannot
+  // repeatedly starve the same personal Inbox at the end of a stable RPC order.
+  return [...mailboxRows].sort((left, right) => {
+    const leftId = cleanString(left.mailbox_id, 80)
+    const rightId = cleanString(right.mailbox_id, 80)
+    const ageDifference = (freshness.get(leftId) ?? 0) - (freshness.get(rightId) ?? 0)
+    return ageDifference || leftId.localeCompare(rightId)
+  })
+}
+
 async function syncMailboxWithRetry(admin: any, actor: Actor, mailboxId: string, liveOnly: boolean) {
   const maximumAttempts = 3
   let lastError: unknown
@@ -95,6 +130,11 @@ Deno.serve(async (request) => {
     ) {
       return json({ code: "worker_unauthorized" }, 401)
     }
+
+    // Give one expensive, strongly gated document job the full Edge runtime.
+    // Provider mail sync can safely continue on the next ten-second pass, but
+    // an OCR job must not be interrupted after publishing only half a review.
+    const suggestedUpdates = mode === "live" ? await processInboxSuggestionJobs(admin, 1) : []
 
     const workerLeaseToken = crypto.randomUUID()
     const ownerLimit = mode === "backfill" ? 2 : 5
@@ -139,10 +179,12 @@ Deno.serve(async (request) => {
         } else if (!Array.isArray(mailboxRows) || mailboxRows.length === 0) {
           failures.push("No readable connected mailbox is available.")
         } else {
+          const orderedMailboxes = await orderMailboxesBySyncFreshness(admin, mailboxRows)
           // Mailboxes sharing one OAuth connection are deliberately processed
           // sequentially to avoid refresh-token races. Per-mailbox database
-          // leases make overlapping cron invocations harmless.
-          for (const mailbox of mailboxRows) {
+          // leases make overlapping cron invocations harmless. Stalest-first
+          // ordering prevents one mailbox being starved by a runtime deadline.
+          for (const mailbox of orderedMailboxes) {
             const mailboxId = cleanString(mailbox.mailbox_id, 80)
             if (!mailboxId) continue
             try {
@@ -255,7 +297,10 @@ Deno.serve(async (request) => {
       }
     }
 
-    return json({ ok: true, mode, owners: results.length, results })
+    // Provider sync and suggestion extraction share the same bounded worker,
+    // but remain separate leases. Strong metadata gates mean this does not call
+    // a model for ordinary attachments or while the queue is idle.
+    return json({ ok: true, mode, owners: results.length, results, suggestedUpdates })
   } catch (error) {
     console.error("email-watch-worker failed", error instanceof Error ? error.message : "unknown")
     return json({ code: "worker_failed", message: "Email watch checks could not finish." }, 503)

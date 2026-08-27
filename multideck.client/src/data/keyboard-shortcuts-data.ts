@@ -13,6 +13,7 @@
 
 import {
   AiBrain,
+  AudioWaveform,
   ArrowLeftRight,
   Compass,
   MousePointerClick,
@@ -22,7 +23,7 @@ import {
 } from "@/components/icons/hugeicons"
 import { chord, pointerGesture, sequence, type ShortcutBinding } from "@/lib/keyboard-shortcut-binding"
 
-export type ShortcutGroupId = "dexter" | "navigation" | "search" | "interface" | "create"
+export type ShortcutGroupId = "dictation" | "dexter" | "navigation" | "search" | "interface" | "create"
 
 export type ShortcutDefinition = {
   id: string
@@ -43,45 +44,60 @@ export type ShortcutGroup = {
 
 export const shortcutGroups: ShortcutGroup[] = [
   {
+    id: "dictation",
+    label: "Dictation",
+    description: "Speak into the field you are editing.",
+    icon: AudioWaveform,
+  },
+  {
     id: "dexter",
     label: "Dexter",
-    description: "Summon the agent where you already are, or open its workspace.",
+    description: "Summon Dexter here or open its workspace.",
     icon: AiBrain,
   },
   {
     id: "search",
     label: "Search and command",
-    description: "Jump to a record, or find a shortcut you have forgotten.",
+    description: "Find a record or shortcut.",
     icon: Search,
   },
   {
     id: "navigation",
     label: "Go to",
-    description: "Mostly two-key runs: press G, release it, then press the second key.",
+    description: "Press G, then a destination key.",
     icon: Compass,
   },
   {
     id: "create",
     label: "Create",
-    description: "Start the work an operator starts most often.",
+    description: "Start common operator work.",
     icon: SquareDashed,
   },
   {
     id: "interface",
     label: "Interface",
-    description: "Reshape the shell without leaving the keyboard.",
+    description: "Control the workspace shell.",
     icon: ArrowLeftRight,
   },
 ]
 
 export const shortcutDefinitions: ShortcutDefinition[] = [
+  // ── Dictation ─────────────────────────────────────────────────────────────
+  {
+    id: "dictation.toggle",
+    group: "dictation",
+    label: "Hold to dictate",
+    description: "Hold to speak; release to insert the transcript.",
+    defaultBinding: chord("Fn"),
+    signature: true,
+  },
+
   // ── Dexter ────────────────────────────────────────────────────────────────
   {
     id: "dexter.summon",
     group: "dexter",
     label: "Summon Dexter on anything",
-    description:
-      "Hold the modifier and double-click a field, chart, table or panel. Dexter opens against that thing with its context already attached.",
+    description: "Modifier-double-click to open Dexter with context.",
     defaultBinding: pointerGesture({ mod: true }),
     signature: true,
   },
@@ -89,7 +105,7 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     id: "dexter.summonKeyboard",
     group: "dexter",
     label: "Summon Dexter from the keyboard",
-    description: "The same summon without a mouse. Uses whatever is focused, or opens the area picker.",
+    description: "Summons Dexter for the focused item.",
     defaultBinding: chord("D", { mod: true }),
     signature: true,
   },
@@ -97,14 +113,14 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     id: "dexter.workspace",
     group: "dexter",
     label: "Open the Dexter workspace",
-    description: "Leave the summon behind and move to the full conversation surface.",
+    description: "Opens the full Dexter conversation.",
     defaultBinding: chord("J", { mod: true }),
   },
   {
     id: "dexter.newConversation",
     group: "dexter",
     label: "Start a new Dexter conversation",
-    description: "Clears the composer and begins a fresh thread.",
+    description: "Starts a fresh Dexter thread.",
     defaultBinding: chord("O", { mod: true, shift: true }),
   },
 
@@ -113,21 +129,21 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     id: "search.focus",
     group: "search",
     label: "Search bookings and quotes",
-    description: "Focuses the command bar at the top of the workspace.",
+    description: "Focuses the workspace command bar.",
     defaultBinding: chord("K", { mod: true }),
   },
   {
     id: "search.quickFocus",
     group: "search",
     label: "Quick search",
-    description: "The bare-key route to the same command bar, for when your hands are already on the letters.",
+    description: "Opens the command bar with one key.",
     defaultBinding: chord("/"),
   },
   {
     id: "shortcuts.overview",
     group: "search",
     label: "Show keyboard shortcuts",
-    description: "Opens this list over whatever you are working on.",
+    description: "Opens the shortcut list.",
     defaultBinding: chord("/", { mod: true }),
   },
 
@@ -136,77 +152,77 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     id: "goto.overview",
     group: "navigation",
     label: "Go to Overview",
-    description: "The operations cockpit.",
+    description: "Open the operations cockpit.",
     defaultBinding: sequence("G", "H"),
   },
   {
     id: "goto.bookings",
     group: "navigation",
     label: "Go to Bookings",
-    description: "The live booking register.",
+    description: "Open the booking register.",
     defaultBinding: sequence("G", "B"),
   },
   {
     id: "goto.quotes",
     group: "navigation",
     label: "Go to Quotes",
-    description: "The quote register.",
+    description: "Open the quote register.",
     defaultBinding: sequence("G", "Q"),
   },
   {
     id: "goto.roadControl",
     group: "navigation",
     label: "Go to Road control",
-    description: "Domestic road jobs and the control board.",
+    description: "Open domestic road control.",
     defaultBinding: sequence("G", "R"),
   },
   {
     id: "goto.customers",
     group: "navigation",
     label: "Go to Customers",
-    description: "Customer accounts.",
+    description: "Open customer accounts.",
     defaultBinding: sequence("G", "C"),
   },
   {
     id: "goto.leads",
     group: "navigation",
     label: "Go to Leads",
-    description: "The CRM lead register.",
+    description: "Open the CRM lead register.",
     defaultBinding: sequence("G", "L"),
   },
   {
     id: "goto.deals",
     group: "navigation",
     label: "Go to Deals",
-    description: "The pipeline board.",
+    description: "Open the pipeline board.",
     defaultBinding: sequence("G", "D"),
   },
   {
     id: "goto.contactCards",
     group: "navigation",
     label: "Go to Contact cards",
-    description: "Shareable QR contact cards.",
+    description: "Open shareable contact cards.",
     defaultBinding: sequence("G", "V"),
   },
   {
     id: "goto.warehouse",
     group: "navigation",
     label: "Go to Warehouse",
-    description: "Inventory, goods in and goods out.",
+    description: "Open inventory and warehouse flows.",
     defaultBinding: sequence("G", "W"),
   },
   {
     id: "goto.reports",
     group: "navigation",
     label: "Go to Reports",
-    description: "Report library and templates.",
+    description: "Open reports and templates.",
     defaultBinding: sequence("G", "E"),
   },
   {
     id: "goto.settings",
     group: "navigation",
     label: "Go to Settings",
-    description: "Your profile, workspace and this shortcut list.",
+    description: "Open your workspace settings.",
     defaultBinding: chord(",", { mod: true }),
   },
 
@@ -215,21 +231,21 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     id: "create.booking",
     group: "create",
     label: "New booking",
-    description: "Opens the booking wizard.",
+    description: "Open the booking wizard.",
     defaultBinding: chord("B", { mod: true, shift: true }),
   },
   {
     id: "create.quote",
     group: "create",
     label: "New quote",
-    description: "Opens the quote register ready to draft.",
+    description: "Open Quotes ready to draft.",
     defaultBinding: chord("Q", { mod: true, shift: true }),
   },
   {
     id: "create.lead",
     group: "create",
     label: "New lead",
-    description: "Opens the lead register ready to capture.",
+    description: "Open Leads ready to capture.",
     defaultBinding: chord("L", { mod: true, shift: true }),
   },
 
@@ -238,28 +254,28 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     id: "interface.sidebar",
     group: "interface",
     label: "Collapse or expand the sidebar",
-    description: "Widens the working area without losing your place.",
+    description: "Toggle the sidebar width.",
     defaultBinding: chord("\\", { mod: true }),
   },
   {
     id: "interface.theme",
     group: "interface",
     label: "Switch light and dark",
-    description: "Flips the theme for this browser.",
+    description: "Switch this browser's theme.",
     defaultBinding: chord("M", { mod: true, shift: true }),
   },
   {
     id: "interface.back",
     group: "interface",
     label: "Back",
-    description: "Steps back through the pages you opened.",
+    description: "Return to the previous page.",
     defaultBinding: chord("[", { mod: true }),
   },
   {
     id: "interface.forward",
     group: "interface",
     label: "Forward",
-    description: "Steps forward again.",
+    description: "Move to the next page.",
     defaultBinding: chord("]", { mod: true }),
   },
 ]

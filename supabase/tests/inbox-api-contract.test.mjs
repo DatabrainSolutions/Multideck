@@ -12,6 +12,8 @@ const threadPageMigration = await readFile(new URL("../migrations/20260803166000
 const automaticReplyAuditMigration = await readFile(new URL("../migrations/20260804130000_inbox_automatic_reply_audit.sql", import.meta.url), "utf8")
 const providerFolderMigration = await readFile(new URL("../migrations/20260804203000_inbox_provider_folder_catalog.sql", import.meta.url), "utf8")
 const retentionMigration = await readFile(new URL("../migrations/20260805100000_inbox_twelve_month_retention.sql", import.meta.url), "utf8")
+const restoredIndexMigration = await readFile(new URL("../migrations/20260826172500_restore_dexter_email_indexing.sql", import.meta.url), "utf8")
+const newMailOnlyMigration = await readFile(new URL("../migrations/20260826173000_inbox_new_mail_only.sql", import.meta.url), "utf8")
 const trackingIntegrityMigration = await readFile(new URL("../migrations/20260810075358_inbox_email_tracking_event_integrity.sql", import.meta.url), "utf8")
 const automaticReceiptGuardMigration = await readFile(new URL("../migrations/20260810093500_inbox_automated_receipt_reply_guard.sql", import.meta.url), "utf8")
 const dexterEmailContext = await readFile(new URL("../functions/agent-dexter/email-context.ts", import.meta.url), "utf8")
@@ -304,6 +306,27 @@ test("provider detail reads are bounded and cannot hang the Edge request indefin
   assert.match(runtime, /mapWithConcurrency\([\s\S]+?Array\.isArray\(page\.value\)/)
   assert.match(runtime, /setTimeout\(\(\) => controller\.abort\(\), 15_000\)/)
   assert.match(runtime, /provider_timeout/)
+})
+
+test("an expired Gmail cursor drains current mail in bounded live batches", () => {
+  assert.match(runtime, /const GMAIL_LIVE_CATCHUP_BATCH_SIZE = 10/)
+  assert.match(runtime, /const readRecentLiveMessages = async \(cursorToPreserve = ""\): Promise<ProviderSync>/)
+  assert.match(runtime, /\.slice\(0, GMAIL_LIVE_CATCHUP_BATCH_SIZE\)/)
+  assert.match(runtime, /if \(options\.liveOnly\) return await readRecentLiveMessages\(\)/)
+  assert.match(runtime, /if \(options\.liveOnly && historyPage\)/)
+  assert.match(runtime, /return await readRecentLiveMessages\(startingCursor\)/)
+  assert.match(runtime, /const incompleteProviderIds = new Set/)
+  assert.match(runtime, /!knownIds\.has\(id\) \|\| incompleteProviderIds\.has\(id\)/)
+  assert.match(runtime, /_multideck_refresh_retained_email_threads/)
+})
+
+test("provider sync restores Dexter indexing and new-mail-only scheduling", () => {
+  assert.match(restoredIndexMigration, /create or replace function public\.multideck_index_dexter_email_body/)
+  assert.match(restoredIndexMigration, /left\([\s\S]+512000/)
+  assert.match(restoredIndexMigration, /grant execute on function public\.multideck_index_dexter_email_body\(uuid, text\)[\s\S]+to service_role/)
+  assert.match(newMailOnlyMigration, /jobname = 'multideck-email-index-backfill'/)
+  assert.match(newMailOnlyMigration, /cron\.unschedule\(v_job_id\)/)
+  assert.doesNotMatch(newMailOnlyMigration, /cron\.schedule/)
 })
 
 test("Microsoft Graph failures retain a safe provider code without logging credentials or request URLs", () => {

@@ -225,7 +225,7 @@ export const sidebarAreas: SidebarArea[] = [
     icon: Settings2,
     destinations: [
       { id: "admin-users", label: "Users", icon: Users, route: "/admin/users" },
-      { id: "admin-ai-usage", label: "AI usage", icon: ChartAnalysis, route: "/admin/ai-usage" },
+      { id: "admin-usage", label: "Usage", icon: ChartAnalysis, route: "/admin/usage" },
       { id: "admin-broadcast", label: "Broadcast", icon: Megaphone, route: "/admin/broadcast" },
       { id: "admin-billing", label: "Billing", icon: CreditCard, route: "/admin/billing" },
       { id: "admin-system-preferences", label: "System Preferences", icon: Settings2, route: "/admin/system-preferences" },

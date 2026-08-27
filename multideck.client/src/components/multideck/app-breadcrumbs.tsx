@@ -20,7 +20,8 @@ type AppBreadcrumb = {
 const staticLeafLabels: Record<string, string> = {
   "/agent-dexter": "Agent Dexter",
   "/admin/users": "Users",
-  "/admin/ai-usage": "AI usage",
+  "/admin/usage": "Usage",
+  "/admin/ai-usage": "Usage",
   "/admin/broadcast": "Broadcast",
   "/admin/billing": "Billing",
   "/admin/system-preferences": "System Preferences",

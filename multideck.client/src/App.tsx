@@ -11,6 +11,7 @@ import { AppShortcuts } from "@/components/multideck/app-shortcuts"
 // for the first second after a page load is worse than no shortcut, and the summon
 // only pays for its shader once it is actually opened.
 import { DexterSummon } from "@/components/multideck/dexter-summon"
+import { DictationController } from "@/components/multideck/dictation-controller"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { LanguageProvider, useLanguage } from "@/i18n/language-provider"
 import { defaultLanguage, isLanguageCode } from "@/i18n/languages"
@@ -104,6 +105,7 @@ const validRoutes = new Set([
   "/",
   "/agent-dexter",
   "/admin/users",
+  "/admin/usage",
   "/admin/ai-usage",
   "/admin/broadcast",
   "/admin/billing",
@@ -732,6 +734,7 @@ export default function App() {
               <>
                 <AppShortcuts navigate={navigate} />
                 <DexterSummon navigate={navigate} />
+                <DictationController />
               </>
             ) : null}
             </MotionConfig>

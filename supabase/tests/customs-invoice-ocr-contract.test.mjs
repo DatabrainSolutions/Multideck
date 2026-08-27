@@ -44,7 +44,7 @@ test("customs invoice extraction remains authenticated, private, versioned and M
   assert.match(edge, /validateDeclaration/)
   assert.doesNotMatch(edge, /data:application\/pdf;base64|bytesToBase64/)
   assert.match(edge, /Server-Timing/)
-  assert.match(shared, /MISTRAL_OCR_MODEL = "mistral-ocr-4-0"/)
+  assert.match(shared, /MISTRAL_OCR_MODEL = "mistral-ocr-latest"/)
   assert.match(shared, /COMMERCIAL_INVOICE_SCHEMA_VERSION = 3/)
   assert.match(shared, /MAX_COMMERCIAL_INVOICE_BYTES = 10 \* 1024 \* 1024/)
   assert.match(shared, /strict: true/)
