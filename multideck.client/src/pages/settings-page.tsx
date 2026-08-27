@@ -1846,6 +1846,7 @@ function NotificationsTab() {
     preferences.quote_reminder,
     preferences.product_updates,
     preferences.dexter_watch,
+    preferences.lifecycle_note_mention,
   ].filter(Boolean).length
 
   return (
@@ -1886,6 +1887,12 @@ function NotificationsTab() {
       <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
         <div className="space-y-[var(--md-page-stack-gap)]">
           <SettingsPanel title="Operational alerts" description="Email the updates that need attention away from the Multideck workspace.">
+            <SettingsToggleRow
+              title={t("Note mentions")}
+              description={t("Send a branded Multideck email when a person or department tags you in an operational note. In-app alerts remain on.")}
+              checked={preferences.lifecycle_note_mention}
+              onCheckedChange={(checked) => setEmailPreference("lifecycle_note_mention", checked)}
+            />
             <SettingsToggleRow
               title={t("Dexter watch alerts")}
               description={t("Email when one of your personal Dexter watch conditions becomes true. In-app alerts remain on.")}

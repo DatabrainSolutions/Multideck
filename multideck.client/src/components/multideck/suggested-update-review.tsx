@@ -128,16 +128,15 @@ function ManualBookingAttachment({ busy, onAttach }: { busy: boolean; onAttach: 
 
   return (
     <div className="min-w-0">
-      <Button
+      <DexterActionPill
         type="button"
         aria-expanded={open}
         disabled={busy}
-        className="h-10 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3.5 text-[12.5px] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]"
+        icon={Link2}
+        label={t("Add to booking")}
+        className="h-10 min-w-[132px] px-3.5 text-[12.5px]"
         onClick={() => setOpen((current) => !current)}
-      >
-        <Link2 className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
-        {t("Add to booking")}
-      </Button>
+      />
       <AnimatePresence initial={false}>
         {open ? (
           <motion.div

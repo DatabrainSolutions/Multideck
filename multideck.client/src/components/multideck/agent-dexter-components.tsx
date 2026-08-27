@@ -572,6 +572,8 @@ const mentionTypeLabels: Record<DexterMentionType, string> = {
   page: "Page",
   quote: "Quote",
   document: "Document",
+  user: "Workspace user",
+  department: "Department",
 }
 
 export function DexterMentionText({
@@ -657,6 +659,8 @@ export function DexterMentionInput({
   onCommand,
   onSend,
   animateProgrammaticMentions = false,
+  ariaLabel = "Message Dexter",
+  sendShortcut = "enter",
 }: {
   value: string
   items?: DexterMentionItem[]
@@ -674,6 +678,8 @@ export function DexterMentionInput({
   onSend: (value: string) => void
   /** Preserve real inline mention tokens when a controlled demo or restored draft changes the value. */
   animateProgrammaticMentions?: boolean
+  ariaLabel?: string
+  sendShortcut?: "enter" | "mod-enter"
 }) {
   const { direction, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
@@ -696,7 +702,7 @@ export function DexterMentionInput({
   const results = useMemo(() => {
     const normalizedQuery = query?.trim().toLocaleLowerCase() ?? ""
     if (!normalizedQuery) {
-      const typeOrder: DexterMentionType[] = ["email", "booking", "customer", "lead", "deal", "declaration", "page", "quote", "document"]
+      const typeOrder: DexterMentionType[] = ["user", "department", "email", "booking", "customer", "lead", "deal", "declaration", "page", "quote", "document"]
       const firstFromEachType = typeOrder.flatMap((type) => items.filter((item) => item.type === type).slice(0, 1))
       const additionalItems = typeOrder.flatMap((type) => items.filter((item) => item.type === type).slice(1, 2))
       return [...firstFromEachType, ...additionalItems].slice(0, 8)
@@ -1021,7 +1027,10 @@ export function DexterMentionInput({
       return
     }
 
-    if (event.key !== "Enter" || event.shiftKey || event.altKey) return
+    const shouldSend = sendShortcut === "mod-enter"
+      ? event.key === "Enter" && (event.metaKey || event.ctrlKey)
+      : event.key === "Enter" && !event.shiftKey && !event.altKey
+    if (!shouldSend) return
     event.preventDefault()
     const liveValue = editorRef.current ? readMentionEditorValue(editorRef.current) : value
     if (liveValue.trim()) onSend(liveValue)
@@ -1179,7 +1188,7 @@ export function DexterMentionInput({
         contentEditable
         suppressContentEditableWarning
         role="combobox"
-        aria-label={t("Message Dexter")}
+        aria-label={t(ariaLabel)}
         aria-autocomplete="list"
         aria-expanded={query !== null}
         aria-controls={query !== null ? listId : undefined}

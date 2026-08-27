@@ -24,6 +24,8 @@ export type LifecycleNote = {
   }
   mentions: LifecycleNoteMention[]
   createdAt: string
+  updatedAt?: string | null
+  deletedAt?: string | null
 }
 
 export type LifecycleNotesPage = {
@@ -96,6 +98,23 @@ export async function addLifecycleNote(
     p_subject_id: subjectId,
     p_body: body,
     p_mentions: mentions.map(({ type, id }) => ({ type, id })),
+  })
+  if (error) throw error
+  return data as LifecycleNote
+}
+
+export async function updateLifecycleNote(noteId: string, body: string): Promise<LifecycleNote> {
+  const { data, error } = await requireClient().rpc("multideck_update_lifecycle_note", {
+    p_note_id: noteId,
+    p_body: body,
+  })
+  if (error) throw error
+  return data as LifecycleNote
+}
+
+export async function deleteLifecycleNote(noteId: string): Promise<LifecycleNote> {
+  const { data, error } = await requireClient().rpc("multideck_delete_lifecycle_note", {
+    p_note_id: noteId,
   })
   if (error) throw error
   return data as LifecycleNote

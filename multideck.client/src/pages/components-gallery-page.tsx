@@ -350,6 +350,7 @@ const previewHomeSuggestions: HomePromptSuggestion[] = [
 
 const previewLifecycleNotes: LifecycleNotesPreviewState = {
   canWrite: true,
+  currentUserId: "preview-user-maya",
   targets: [
     { type: "user", id: "preview-user-maya", label: "Maya Stone", detail: "Customs coordinator" },
     { type: "department", id: "preview-department-customs", label: "Customs", detail: "Department" },
@@ -2012,11 +2013,15 @@ function ComponentPreview({ id }: { id: string }) {
             <DictationStatusPill
               phase={previewDictationPhase}
               level={0.72}
-              message={previewDictationPhase === "error" ? t("No clear audio detected") : undefined}
+              message={previewDictationPhase === "allowance"
+                ? t("Contact admin to increase usage")
+                : previewDictationPhase === "error"
+                  ? t("No clear audio detected")
+                  : undefined}
             />
           </div>
           <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label={t("Dictation status preview")}>
-            {(["transcribing", "polishing", "complete", "error"] as DictationStatusPhase[]).map((state) => (
+            {(["transcribing", "polishing", "complete", "allowance", "error"] as DictationStatusPhase[]).map((state) => (
               <Button
                 key={state}
                 type="button"
@@ -2024,11 +2029,11 @@ function ComponentPreview({ id }: { id: string }) {
                 variant={previewDictationPhase === state ? "default" : "outline"}
                 onClick={() => setPreviewDictationPhase(state)}
               >
-                {t(state === "transcribing" ? "Transcribing" : state === "polishing" ? "Polishing" : state === "complete" ? "Complete" : "Error")}
+                {t(state === "transcribing" ? "Transcribing" : state === "polishing" ? "Polishing" : state === "complete" ? "Complete" : state === "allowance" ? "Out of usage" : "Error")}
               </Button>
             ))}
           </div>
-          <p className="max-w-[520px] text-center text-[11.5px] leading-5 text-[var(--md-subtle)]">{t("The bottom-centred pill is the only visible dictation feedback. Its width and indicator morph continuously between speaking, polishing and completion.")}</p>
+          <p className="max-w-[520px] text-center text-[11.5px] leading-5 text-[var(--md-subtle)]">{t("The bottom-centred pill is the only visible dictation feedback. Its width and indicator morph continuously between speaking, polishing, completion, allowance and failure states.")}</p>
         </div>
       ) : null}
 

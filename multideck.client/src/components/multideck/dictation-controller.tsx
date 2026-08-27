@@ -40,7 +40,7 @@ function transcriptionFailureLabel(error: unknown) {
   if (!(error instanceof TranscriptionError)) return "Transcription failed"
   if (error.code === "no_speech_detected" || error.code === "empty_transcript") return "No clear audio detected"
   if (error.code === "transcription_timeout") return "Transcription timed out"
-  if (error.code === "transcription_allowance_reached") return "Contact admin to increase transcription usage"
+  if (error.code === "transcription_allowance_reached") return "Contact admin to increase usage"
   if (error.code === "not_configured" || error.code === "transcription_unavailable") return "Dictation temporarily unavailable"
   return "Transcription failed"
 }
@@ -283,10 +283,10 @@ export function DictationController() {
     }, 1_000)
   }, [changePhase])
 
-  const showError = useCallback((message: string) => {
+  const showError = useCallback((message: string, failurePhase: "error" | "allowance" = "error") => {
     if (completionTimerRef.current !== null) window.clearTimeout(completionTimerRef.current)
     setStatusMessage(t(message))
-    changePhase("error")
+    changePhase(failurePhase)
     completionTimerRef.current = window.setTimeout(() => {
       completionTimerRef.current = null
       setStatusMessage(null)
@@ -329,7 +329,8 @@ export function DictationController() {
       }
       showComplete()
     } catch (error) {
-      showError(transcriptionFailureLabel(error))
+      const allowanceReached = error instanceof TranscriptionError && error.code === "transcription_allowance_reached"
+      showError(transcriptionFailureLabel(error), allowanceReached ? "allowance" : "error")
     }
   }, [changePhase, showComplete, showError])
 

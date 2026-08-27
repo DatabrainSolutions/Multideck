@@ -21,7 +21,7 @@ import type { ApiDeal } from "@/lib/deal-api"
 import type { ApiLead } from "@/lib/lead-api"
 import type { DexterEmailContextSource, MailProvider } from "@/lib/inbox-contract"
 
-export type DexterMentionType = "email" | "booking" | "customer" | "lead" | "deal" | "declaration" | "page" | "quote" | "document"
+export type DexterMentionType = "email" | "booking" | "customer" | "lead" | "deal" | "declaration" | "page" | "quote" | "document" | "user" | "department"
 
 export type DexterMentionItem = {
   id: string
@@ -248,6 +248,8 @@ const mentionTypeIcons: Record<DexterMentionType, LucideIcon> = {
   page: LayoutPanelTop,
   quote: ReceiptText,
   document: FileText,
+  user: UserRoundSearch,
+  department: Building2,
 }
 
 /**

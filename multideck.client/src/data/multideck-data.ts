@@ -2280,14 +2280,14 @@ export const galleryComponents = [
     id: "dictation-status-pill",
     name: "Dictation Status Pill",
     category: "Feedback",
-    description: "The Figma-matched bottom-centred capsule that carries push-to-talk from a reacting soundwave through polishing dots to completion or a clear failure.",
-    details: "Use as the app-wide dictation status and leave the active field visually unchanged. One stable pill hugs each label while its width retargets; the same five shapes collapse from a live soundwave into three bouncing dots, then resolve into a tick or error mark. Failures use a red surface with a light-red inner glow, remain readable for four seconds, and share the same downward exit. Reduced motion preserves every state without continuous movement.",
+    description: "The Figma-matched bottom-centred capsule that carries push-to-talk from a reacting soundwave through polishing dots to completion, allowance guidance or a clear failure.",
+    details: "Use as the app-wide dictation status and leave the active field visually unchanged. One stable pill hugs each label while its width retargets; the same five shapes collapse from a live soundwave into three bouncing dots, then resolve into a tick, allowance warning or error mark. An exhausted allowance uses an amber surface and directs the operator to an administrator; failures use red with a light-red inner glow. Both remain readable for four seconds and share the same downward exit. Reduced motion preserves every state without continuous movement.",
     foundOn: [
       { label: "Workspace text fields", route: "/" },
       { label: "Dexter voice settings", route: "/settings?tab=dexter#voice" },
       { label: "Components", route: "/components?component=dictation-status-pill" },
     ],
-    componentCode: `export function DictationStatusPill({ phase, level = 0.45, message }) {\n  const shouldReduceMotion = useReducedMotion()\n  const { t } = useLanguage()\n  const label = phase === "error" ? message || t("Transcription failed") : phase === "transcribing" ? t("Transcribing") : phase === "polishing" ? t("Polishing") : t("Complete")\n\n  return (\n    <motion.div layout="size" data-state={phase} role={phase === "error" ? "alert" : "status"} aria-live={phase === "error" ? "assertive" : "polite"}>\n      <AnimatePresence initial={false} mode="popLayout">\n        <motion.span key={phase}>{label}</motion.span>\n      </AnimatePresence>\n      <span aria-hidden>\n        {shapeIds.map((shapeId, index) => (\n          <motion.span key={shapeId} animate={shapeTarget(index, phase, level, shouldReduceMotion)} />\n        ))}\n      </span>\n    </motion.div>\n  )\n}`,
+    componentCode: `export function DictationStatusPill({ phase, level = 0.45, message }) {\n  const shouldReduceMotion = useReducedMotion()\n  const { t } = useLanguage()\n  const urgent = phase === "allowance" || phase === "error"\n  const label = phase === "allowance" ? message || t("Transcription usage limit reached") : phase === "error" ? message || t("Transcription failed") : phase === "transcribing" ? t("Transcribing") : phase === "polishing" ? t("Polishing") : t("Complete")\n\n  return (\n    <motion.div layout="size" data-state={phase} role={urgent ? "alert" : "status"} aria-live={urgent ? "assertive" : "polite"}>\n      <AnimatePresence initial={false} mode="popLayout">\n        <motion.span key={phase}>{label}</motion.span>\n      </AnimatePresence>\n      <span aria-hidden>\n        {shapeIds.map((shapeId, index) => (\n          <motion.span key={shapeId} animate={shapeTarget(index, phase, level, shouldReduceMotion)} />\n        ))}\n      </span>\n    </motion.div>\n  )\n}`,
     usageCode: `<AnimatePresence initial={false}>\n  {phase === "idle" ? null : (\n    <motion.div key="dictation-status" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }}>\n      <DictationStatusPill phase={phase} level={microphoneLevel} />\n    </motion.div>\n  )}\n</AnimatePresence>`,
   },
   {
@@ -3069,7 +3069,7 @@ export const galleryComponents = [
     name: "Lifecycle Notes",
     category: "Operations",
     description: "A shared operational note thread that follows a quote into its booking and Customs declaration, with exact tenant people and department tags.",
-    details: "Use when context must survive a freight workflow handoff. Notes are immutable, permission-checked at the current record, and clearly labelled when they were carried from an earlier lifecycle stage. Type @ to search active people and departments in the current tenant.",
+    details: "Use when context must survive a freight workflow handoff. Notes are permission-checked at the current record and clearly labelled when carried from an earlier lifecycle stage. Authors can edit or soft-delete their own notes without removing the timeline evidence. Type @ to search active people and departments in the current tenant.",
     foundOn: [
       { label: "Quote notes", route: "/quotes/Q-19158" },
       { label: "Booking notes", route: "/bookings/md-22455" },

@@ -1537,6 +1537,17 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
+/* Lifecycle notes use Dexter's composer geometry without a field stroke. The
+   soft lift keeps keyboard focus visible while the nested surfaces carry the
+   boundary themselves. */
+.md-lifecycle-note-composer:focus-within {
+  box-shadow: 0 18px 42px rgba(42, 52, 50, 0.14);
+}
+
+.dark .md-lifecycle-note-composer:focus-within {
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+}
+
 /* ── Dexter inline mentions ──────────────────────────────────────────────────
    A selected workspace object keeps the footprint of text, but becomes a
    durable reference. Light mode uses the pale fill/deep edge pairing; dark mode
@@ -6522,6 +6533,14 @@ html.md-summon-picking {
 
 .dark .md-dictation-status-pill {
   background: color-mix(in srgb, var(--md-accent-deep) 58%, var(--md-accent) 42%);
+}
+
+.md-dictation-status-pill[data-state="allowance"],
+.dark .md-dictation-status-pill[data-state="allowance"] {
+  background: color-mix(in srgb, var(--md-amber) 70%, #78350f 30%);
+  box-shadow:
+    inset 0 0 7.8px color-mix(in srgb, #fde68a 88%, #ffffff 12%),
+    0 10px 24px color-mix(in srgb, var(--md-amber) 24%, transparent);
 }
 
 .md-dictation-status-pill[data-state="error"],

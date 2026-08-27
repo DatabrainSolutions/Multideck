@@ -3,12 +3,13 @@ import { useLanguage } from "@/i18n/language-provider"
 import { mdEase, mdMotion, reduceMotion } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
-export type DictationStatusPhase = "transcribing" | "polishing" | "complete" | "error"
+export type DictationStatusPhase = "transcribing" | "polishing" | "complete" | "allowance" | "error"
 
 const figmaMinimumWidths: Record<DictationStatusPhase, number> = {
   transcribing: 181,
   polishing: 134,
   complete: 149,
+  allowance: 292,
   error: 149,
 }
 
@@ -61,6 +62,43 @@ function shapeTarget(
       transition: shouldReduceMotion
         ? { duration: 0 }
         : { duration: 0.78, repeat: Number.POSITIVE_INFINITY, ease: mdEase, delay: dotIndex * 0.04 },
+    }
+  }
+
+  if (phase === "allowance") {
+    if (index === 2) {
+      return {
+        width: 2,
+        height: 10,
+        x: -1,
+        y: -6,
+        opacity: 1,
+        rotate: 0,
+        scale: 1,
+        transition: reduceMotion(shouldReduceMotion, mdMotion.spring),
+      }
+    }
+    if (index === 3) {
+      return {
+        width: 2.5,
+        height: 2.5,
+        x: -1.25,
+        y: 5,
+        opacity: 1,
+        rotate: 0,
+        scale: 1,
+        transition: reduceMotion(shouldReduceMotion, mdMotion.spring),
+      }
+    }
+    return {
+      width: 2,
+      height: 2,
+      x: 0,
+      y: -1,
+      opacity: 0,
+      rotate: 0,
+      scale: 0,
+      transition: reduceMotion(shouldReduceMotion, mdMotion.micro),
     }
   }
 
@@ -140,7 +178,10 @@ export function DictationStatusPill({
   const { t } = useLanguage()
   const shouldReduceMotion = Boolean(useReducedMotion())
   const boundedLevel = Math.min(Math.max(level, 0), 1)
-  const label = phase === "error"
+  const isUrgent = phase === "error" || phase === "allowance"
+  const label = phase === "allowance"
+    ? message || t("Transcription usage limit reached")
+    : phase === "error"
     ? message || t("Transcription failed")
     : phase === "transcribing"
     ? t("Transcribing")
@@ -156,8 +197,8 @@ export function DictationStatusPill({
       className={cn("md-dictation-status-pill", className)}
       style={{ minWidth: figmaMinimumWidths[phase] }}
       transition={reduceMotion(shouldReduceMotion, mdMotion.spring)}
-      role={phase === "error" ? "alert" : "status"}
-      aria-live={phase === "error" ? "assertive" : "polite"}
+      role={isUrgent ? "alert" : "status"}
+      aria-live={isUrgent ? "assertive" : "polite"}
       aria-atomic="true"
     >
       <AnimatePresence initial={false} mode="popLayout">

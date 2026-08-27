@@ -338,7 +338,7 @@ export function CompactCombobox({
     <CompactFieldShell label={label} htmlFor={inputId} required={required} invalid={invalid} width={width} className={className}>
       <Popover open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (!nextOpen) setSearch("") }}>
         <PopoverAnchor asChild>
-          <div data-auto-populated={autoPopulated || undefined} className="md-auto-populated-control premium-stroke-soft relative flex min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] transition-colors hover:bg-[var(--md-field-bg-hover)] focus-within:bg-[var(--md-field-bg-hover)] focus-within:ring-3 focus-within:ring-[var(--md-accent-a14)]">
+          <div data-auto-populated={autoPopulated || undefined} className="md-auto-populated-control premium-stroke-soft relative flex min-w-0 items-center rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] transition-colors hover:bg-[var(--md-field-bg-hover)] focus-within:bg-[var(--md-field-bg-hover)] focus-within:ring-3 focus-within:ring-[var(--md-accent-a14)]">
             {selectedOption?.iconText ? (
               <span data-i18n-skip aria-hidden="true" className="grid size-8 shrink-0 place-items-center overflow-visible text-[15px] leading-5">
                 {selectedOption.iconText}
