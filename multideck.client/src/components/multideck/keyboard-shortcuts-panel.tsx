@@ -10,6 +10,7 @@ import {
   bindingLabel,
   bindingsEqual,
   bindingTokens,
+  combineShortcutSteps,
   isReservedBinding,
   maxShortcutSteps,
   pointerGesture,
@@ -85,8 +86,11 @@ function ShortcutRecorder({
   const wellRef = useRef<HTMLDivElement>(null)
   const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const stepsRef = useRef(recording.steps)
+  const heldKeysRef = useRef(new Set<string>())
+  const callbacksRef = useRef({ onStepsChange, onCommit, onCancel })
   const mounted = useIsMounted()
   stepsRef.current = recording.steps
+  callbacksRef.current = { onStepsChange, onCommit, onCancel }
 
   const clearTimer = useCallback(() => {
     if (!commitTimer.current) return
@@ -106,10 +110,15 @@ function ShortcutRecorder({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      if (event.repeat) {
+        event.preventDefault()
+        return
+      }
+
       if (event.key === "Escape") {
         event.preventDefault()
         clearTimer()
-        onCancel()
+        callbacksRef.current.onCancel()
         return
       }
 
@@ -122,34 +131,69 @@ function ShortcutRecorder({
 
       const bare = !step.mod && !step.alt
       const previous = stepsRef.current
+      const heldTogether = previous.length === 1 && heldKeysRef.current.has(previous[0].key)
+      const combined = heldTogether ? combineShortcutSteps(previous[0], step) : null
       const canExtend = previous.length === 1 && !previous[0].mod && !previous[0].alt && bare
+
+      heldKeysRef.current.add(step.key)
+
+      if (combined) {
+        clearTimer()
+        callbacksRef.current.onCommit(stepsToBinding([combined]))
+        return
+      }
 
       if (canExtend) {
         clearTimer()
-        onCommit(stepsToBinding([previous[0], step]))
+        callbacksRef.current.onCommit(stepsToBinding([previous[0], step]))
         return
       }
 
-      onStepsChange([step])
+      // Keep the capture state synchronous. A second physical key can arrive
+      // before React has rendered the first one, which is exactly how H + J is
+      // distinguished from the sequential H then J gesture.
+      stepsRef.current = [step]
+      callbacksRef.current.onStepsChange([step])
       clearTimer()
 
+      // Modifier chords must settle during keydown. Operating-system gestures
+      // such as ⌘ + M can blur or minimise the browser before keyup, which would
+      // otherwise cancel the recorder before the preference was saved.
       if (!bare) {
-        onCommit(stepsToBinding([step]))
+        callbacksRef.current.onCommit(stepsToBinding([step]))
         return
       }
 
-      // A bare key might be the leader of a sequence, so it settles after a beat.
+      // A bare key might lead a sequence and any key might gain a second key
+      // held alongside it, so the first press settles after a short beat.
       commitTimer.current = setTimeout(() => {
         commitTimer.current = null
-        if (mounted.current) onCommit(stepsToBinding([step]))
+        if (mounted.current) callbacksRef.current.onCommit(stepsToBinding([step]))
       }, sequenceCaptureWindow)
     }
 
+    function handleKeyUp(event: KeyboardEvent) {
+      const step = stepFromEvent(event, shortcutPlatform())
+      if (step) heldKeysRef.current.delete(step.key)
+    }
+
+    function handleBlur() {
+      heldKeysRef.current.clear()
+    }
+
     window.addEventListener("keydown", handleKeyDown, { capture: true })
-    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true })
-  }, [clearTimer, mounted, onCancel, onCommit, onStepsChange])
+    window.addEventListener("keyup", handleKeyUp, { capture: true })
+    window.addEventListener("blur", handleBlur)
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, { capture: true })
+      window.removeEventListener("keyup", handleKeyUp, { capture: true })
+      window.removeEventListener("blur", handleBlur)
+      heldKeysRef.current.clear()
+    }
+  }, [clearTimer, mounted])
 
   function handleDoubleClick(event: React.MouseEvent) {
+    if (definition.id === "dictation.toggle") return
     const platform = shortcutPlatform()
     const mod = platform === "apple" ? event.metaKey : event.ctrlKey
     if (!mod && !event.altKey && !event.shiftKey) return
@@ -250,7 +294,7 @@ function ShortcutRow({
     >
       <div className="min-w-0">
         <p className="flex items-center gap-2 text-[13px] font-medium text-[var(--md-ink)]">
-          {definition.signature ? (
+          {binding?.kind === "pointer" ? (
             <MousePointerClick className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
           ) : null}
           <span className="truncate">{t(definition.label)}</span>

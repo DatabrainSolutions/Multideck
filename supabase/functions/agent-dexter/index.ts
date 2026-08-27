@@ -1138,6 +1138,8 @@ function watchTargetLabel(capability: string, record: JsonObject) {
           ? ["callerName", "companyName", "phoneNumber"]
       : capability === "bookings"
           ? ["bookingReference", "jobReference", "customerReference"]
+        : capability === "inbox_suggestions"
+          ? ["targetLabel", "sourceFileName", "summary"]
           : capability === "reference_settings"
             ? ["name"]
           : capability === "rates"
@@ -1603,6 +1605,7 @@ Available write actions:
 ${actionSummary || "- None for this operator."}
 
 Uploaded PDF, Excel, CSV, Word, OpenDocument and image files can be read only through the listed server-side document extraction tool. Every accepted source is validated and prepared as a PDF before Mistral OCR. Document extraction is read-only and never grants permission to change a workspace record. Interactive conversion or OCR execution is not a Watching for you source event; any applied destination record continues to use its existing deterministic event adapter.
+Inbox suggested updates are connected through the inbox_suggestions domain. They are created only from authorised Inbox-folder documents after deterministic triage and bounded extraction. Query that domain before discussing a suggestion. Use apply_inbox_suggested_update only for the exact ready suggestion and exact field IDs the operator explicitly approved; the action rechecks current booking values, attaches the source document, audits the result, and fails if the booking changed. Never treat extraction confidence as approval, apply an unchecked field, or claim that an unmatched document created a booking. Watching for you reacts to persisted suggestion status changes and makes no recurring model calls.
 
 Forms creation, persistence, sending, reminders and electronic signatures are not connected yet. State that plainly and never imply the Forms preview is operational.
 Warehouse customer-user invitations and access-link emails are available only from the customer's Warehouse customer access panel. They are not connected to Dexter writes or Watching for you. Never claim to send or watch them; direct the operator to that customer panel.
@@ -1610,6 +1613,7 @@ Workspace user invitations, password resets, department catalogue and membership
 Admin Active log, Detailed log, authentication IP addresses and live workspace presence are deliberately unavailable to Dexter reads, writes and Watching for you. They contain sensitive security evidence and field-level before/after values. Never claim to inspect or monitor them; direct a tenant administrator to Admin.
 Developer broadcast history is available to Dexter as permission-gated read evidence, and Watching for you can react to deterministic broadcast status and count changes. Drafting, audience changes and sending remain in Settings > Developer > Broadcast because the administrator must review the exact branded email and recipient snapshot before explicit confirmation. These high-impact message actions are deliberately not Dexter write actions. Never claim to draft, edit or send a broadcast from chat; direct the operator to the Broadcast wizard.
 Mailbox automatic replies are available only from the selected mailbox's Inbox settings. They are not connected to Dexter reads, writes, or Watching for you because provider settings do not emit a tenant-safe watch event here. Never claim to inspect, change, or watch an out-of-office setting; direct the operator to Inbox settings.
+App-wide dictation and transcription preferences are input assistance, not a Dexter business-data domain. Recordings, transcripts, microphone choice, custom vocabulary and allowance details are deliberately unavailable to Dexter reads, writes and Watching for you. If asked to inspect, change or watch them, say so plainly and direct the operator to Settings > Dexter > Transcription. Never claim that dictation creates a watch event.
 Gmail labels and Outlook folders are read-only provider organisation. When read_email_thread returns folders, use those visible names as context and never invent a missing label or folder. Label changes and folder moves do not emit a dedicated tenant-safe watch event in this release, so never claim that Watching for you can monitor those organisational changes; direct the operator to Inbox to browse them.
 Email search covers Multideck's rolling retained window: 12 calendar months for useful mail and 30 days for Spam and Trash. If search_email returns outsideRetentionWindow=true, explain that the requested period is outside Multideck's retained window; never claim that Gmail or Microsoft has no older email.
 Dexter has connected read and approval-safe write support for warehouse goods in, goods out, inventory, locations, facilities, items and orders. Use only the listed actions: create or edit setup records and orders; receive an exact inbound order; dispatch an exact outbound order; cancel or reschedule a non-final order; create, move or consolidate handling units; move stock; change stock status; record a sample; report a location empty; or resolve an exact location exception. These actions always run through the authenticated Warehouse Edge Function and its existing validation, permission and audit boundaries. Never invent scan evidence, quantities, locations, lots, damage, custody details or physical confirmation. Ask for the missing evidence before preparing a physical warehouse action.
@@ -3053,13 +3057,33 @@ Deno.serve(async (request) => {
   }
 
   if (operation === "usage") {
-    const { data, error } = await userClient.rpc("multideck_dexter_get_usage")
-    return error || !isObject(data)
-      ? json(request, {
+    const [activityResult, categoriesResult] = await Promise.all([
+      userClient.rpc("multideck_dexter_get_usage"),
+      userClient.rpc("multideck_get_usage_categories"),
+    ])
+    if (activityResult.error || categoriesResult.error || !isObject(activityResult.data) || !isObject(categoriesResult.data)) {
+      return json(request, {
         code: "dexter_usage_unavailable",
-        message: rpcErrorMessage(error, "Dexter usage is unavailable."),
+        message: rpcErrorMessage(activityResult.error || categoriesResult.error, "Usage is unavailable."),
       }, 503)
-      : json(request, { usage: data })
+    }
+
+    const usage: Record<string, unknown> = { ...activityResult.data, ...categoriesResult.data }
+    for (const internalField of [
+      "currency",
+      "includedUsageGbp",
+      "usageGbp",
+      "includedUsageRemainingGbp",
+      "extraUsageConfigured",
+      "billingReady",
+      "extraUsageEnabled",
+      "extraUsageGbp",
+      "extraUsageLimitGbp",
+      "extraUsageRemainingGbp",
+      "usageStatus",
+      "usageAllowed",
+    ]) delete usage[internalField]
+    return json(request, { usage })
   }
 
   if (operation === "usage-history") {

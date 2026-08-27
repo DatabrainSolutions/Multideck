@@ -1,4 +1,7 @@
-export const MISTRAL_OCR_MODEL = "mistral-ocr-4-0"
+// Use Mistral's stable OCR alias so request features such as page confidence
+// scores stay paired with the provider version that supports them. Pinning 4.0
+// while sending 4.1-era options causes the provider to reject valid PDFs.
+export const MISTRAL_OCR_MODEL = "mistral-ocr-latest"
 export const COMMERCIAL_INVOICE_SCHEMA_VERSION = 3
 export const MAX_COMMERCIAL_INVOICE_BYTES = 10 * 1024 * 1024
 

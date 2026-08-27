@@ -73,6 +73,7 @@ import {
 import { CrmActivityTimeline, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
 import { CopyableField } from "@/components/multideck/copyable-field"
 import { AutoPopulatedInput, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
+import { TagEntryField } from "@/components/multideck/tag-entry-field"
 import { CardMiniature, CardStylePresetPicker, ContactCardLayoutPicker, ContactCardSocialLinksEditor, QrStylePicker } from "@/components/multideck/contact-card-design"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
 import { OrganisationFoundationPanel } from "@/components/multideck/organisation-foundation-panel"
@@ -113,6 +114,7 @@ import type { InboxThreadListItem, Mailbox, ThreadSummaryState } from "@/lib/inb
 import type { ApiCustomerDetail, CustomerReference } from "@/lib/customer-api"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, TablePillKindContext, toneToVar } from "@/components/multideck/status-pill"
+import { UsageAllowanceCard, type UsageAllowanceCategory } from "@/components/multideck/usage-allowance-card"
 import { TodoActionStateIcon, TodoCompletionControl, TodoPriorityPicker, TodoPriorityPill } from "@/components/multideck/todo-components"
 import { ScreeningListFreshness, ScreeningMatchList, ScreeningMatchRow, ScreeningOutcomePill, ScreeningResultSummary } from "@/components/multideck/screening-components"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
@@ -219,7 +221,8 @@ import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterSummonPrompt } from "@/components/multideck/dexter-summon-prompt"
 import { ShortcutKeys } from "@/components/multideck/keyboard-shortcut-keys"
 import { KeyboardShortcutsPanel } from "@/components/multideck/keyboard-shortcuts-panel"
-import { chord, pointerGesture, sequence } from "@/lib/keyboard-shortcut-binding"
+import { DictationStatusPill, type DictationStatusPhase } from "@/components/multideck/dictation-status-pill"
+import { chord, multiKeyChord, pointerGesture, sequence } from "@/lib/keyboard-shortcut-binding"
 import type { SummonTarget } from "@/lib/dexter-summon-context"
 import { DexterCompanionSidebar } from "@/components/multideck/dexter-companion-sidebar"
 import { PageSettingsMenu } from "@/components/multideck/page-settings-menu"
@@ -249,6 +252,7 @@ import { quoteMatchesSearch, quoteSearchFieldOptions, type QuoteSearchQuery } fr
 import { matchesFilterQuery, type FilterFieldOption, type FilterQuery } from "@/lib/advanced-filters"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { DocumentEvidenceViewer } from "@/components/multideck/document-evidence-viewer"
+import { SuggestedUpdateReview } from "@/components/multideck/suggested-update-review"
 import { PdfDocumentViewerDialog } from "@/components/multideck/pdf-document-viewer-dialog"
 import { DocumentExtractionProgress } from "@/components/multideck/document-extraction-progress"
 import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/components/multideck/document-workspace"
@@ -284,7 +288,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "register-toolbar", "auto-populated-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
   },
   {
     label: "Auth components",
@@ -299,7 +303,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
@@ -319,12 +323,12 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Feedback",
     helper: "Status and notifications",
-    ids: ["status-pill", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "toast"],
+    ids: ["status-pill", "dictation-status-pill", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "toast"],
   },
   {
     label: "Settings",
     helper: "Configuration surfaces",
-    ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card", "settings-progress-ring", "keyboard-shortcuts-panel"],
+    ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card", "usage-allowance-card", "settings-progress-ring", "keyboard-shortcuts-panel"],
   },
   {
     label: "Inbox",
@@ -1148,6 +1152,97 @@ function DocumentEvidenceViewerPreview() {
   )
 }
 
+const previewSuggestedUpdate = {
+  id: "suggestion-preview",
+  status: "ready",
+  documentType: "booking_confirmation",
+  targetType: "booking",
+  targetId: "booking-preview",
+  targetLabel: "B-990001",
+  matchMethod: "booking_reference",
+  matchConfidence: 0.99,
+  sourceFileName: "Northstar-booking-confirmation-B-990001.pdf",
+  sourceSubject: "Updated booking confirmation · B-990001",
+  sourceMessageId: "message-preview",
+  sourceMailboxId: "mailbox-preview",
+  sourceThreadId: "thread-preview",
+  sourceAttachmentId: "attachment-preview",
+  summary: "The carrier has moved arrival by two days and supplied the final vessel, voyage and destination terminal.",
+  extracted: {},
+  evidence: {},
+  fields: [
+    { id: "arrival", code: "planned_arrival_at", label: "Planned arrival", currentValue: "2026-09-12T08:00:00Z", proposedValue: "2026-09-14T10:30:00Z", confidence: 0.99, selectedByDefault: true, appliedAt: null, evidence: {} },
+    { id: "vessel", code: "vessel", label: "Vessel", currentValue: null, proposedValue: "MV Sakura Meridian", confidence: 0.98, selectedByDefault: true, appliedAt: null, evidence: {} },
+    { id: "voyage", code: "voyage_number", label: "Voyage", currentValue: null, proposedValue: "SM482E", confidence: 0.98, selectedByDefault: true, appliedAt: null, evidence: {} },
+    { id: "terminal", code: "destination_terminal", label: "Destination terminal", currentValue: null, proposedValue: "Trinity Terminal", confidence: 0.96, selectedByDefault: true, appliedAt: null, evidence: {} },
+    { id: "weight", code: "gross_weight_kg", label: "Gross weight", currentValue: 1240, proposedValue: 1260, confidence: 0.92, selectedByDefault: false, appliedAt: null, evidence: {} },
+  ],
+  createdAt: "2026-08-26T12:00:00Z",
+  updatedAt: "2026-08-26T12:00:00Z",
+  appliedAt: null,
+  dismissedAt: null,
+  jobDocumentId: null,
+} satisfies import("@/lib/inbox-api").InboxSuggestedUpdate
+
+function SuggestedUpdateReviewPreview() {
+  const previewModes = ["Needs review", "Applied", "No match", "Ambiguous"] as const
+  const [mode, setMode] = useState<(typeof previewModes)[number]>("Needs review")
+  const [selectedFieldIds, setSelectedFieldIds] = useState(new Set(previewSuggestedUpdate.fields.filter((field) => field.selectedByDefault).map((field) => field.id)))
+  const suggestion: import("@/lib/inbox-api").InboxSuggestedUpdate = mode === "Applied"
+    ? {
+      ...previewSuggestedUpdate,
+      status: "applied",
+      appliedAt: "2026-08-26T12:08:00Z",
+      fields: previewSuggestedUpdate.fields.map((field, index) => ({ ...field, appliedAt: index < 3 ? "2026-08-26T12:08:00Z" : null })),
+    }
+    : mode === "No match"
+      ? {
+        ...previewSuggestedUpdate,
+        status: "needs_match",
+        targetType: null,
+        targetId: null,
+        targetLabel: null,
+        matchMethod: null,
+        matchConfidence: null,
+        summary: "The sender was recognised, but the document did not include enough shipment evidence to attach it safely.",
+        evidence: { matching: { matchState: "no_match", sender: { address: "ops@northstar-lines.com", domain: "northstar-lines.com", resolution: "unique_sender_domain" }, candidates: [] } },
+        fields: [],
+      }
+      : mode === "Ambiguous"
+        ? {
+          ...previewSuggestedUpdate,
+          status: "needs_match",
+          targetType: null,
+          targetId: null,
+          targetLabel: null,
+          matchMethod: null,
+          matchConfidence: null,
+          summary: "Two active Northstar bookings share the same route and arrival window, so neither was selected automatically.",
+          evidence: { matching: { matchState: "ambiguous", sender: { address: "ops@northstar-lines.com", domain: "northstar-lines.com", resolution: "unique_sender_domain" }, candidates: [{ id: "booking-a", label: "B-990001", score: 0.89 }, { id: "booking-b", label: "B-990014", score: 0.87 }] } },
+          fields: [],
+        }
+        : previewSuggestedUpdate
+
+  return (
+    <div className="grid w-full max-w-[1040px] gap-3">
+      <div className="flex justify-center">
+        <SegmentedControl options={previewModes} value={mode} onChange={setMode} ariaLabel="Suggested update state" />
+      </div>
+      <div className="h-[680px] overflow-hidden rounded-[var(--md-radius-xl)] shadow-[var(--md-shadow-line)]">
+        <SuggestedUpdateReview
+          suggestion={suggestion}
+          selectedFieldIds={selectedFieldIds}
+          onToggleField={(fieldId, selected) => setSelectedFieldIds((current) => { const next = new Set(current); if (selected) next.add(fieldId); else next.delete(fieldId); return next })}
+          onApply={() => toast.success("Would apply selected changes")}
+          onAttachToBooking={() => toast.success("Would add the document to the selected booking")}
+          onDismiss={() => toast.info("Would dismiss suggestion")}
+          onOpenSource={() => toast.info("Would open source email")}
+        />
+      </div>
+    </div>
+  )
+}
+
 function PdfDocumentViewerDialogPreview() {
   const [open, setOpen] = useState(false)
   const previewPdf = useMemo(createGalleryDeclarationPdf, [])
@@ -1448,6 +1543,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
   const [previewSidebarFavouriteIds, setPreviewSidebarFavouriteIds] = useState<string[]>([])
   const [previewTodoChecked, setPreviewTodoChecked] = useState(false)
+  const [previewDictationPhase, setPreviewDictationPhase] = useState<DictationStatusPhase>("transcribing")
   const [previewArrangeOrder, setPreviewArrangeOrder] = useState<string[]>(previewSidebarOrder)
   const [previewArrangePinned, setPreviewArrangePinned] = useState<string[]>([])
   const [previewPage, setPreviewPage] = useState(1)
@@ -1584,6 +1680,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
   const previewAutoPopulationSource = "1 Harbour Exchange Square, London, E14 9GE, GB"
   const [previewAutoPopulationValue, setPreviewAutoPopulationValue] = useState(previewAutoPopulationSource)
+  const [previewDictionaryTerms, setPreviewDictionaryTerms] = useState(["Multideck", "Jenkar", "UN/LOCODE", "Incoterms"])
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
   const previewNow = useLiveNow()
   const countPreviewBookingMatches = useCallback((query: FilterQuery) => (
@@ -1653,6 +1750,22 @@ function ComponentPreview({ id }: { id: string }) {
             <p className="text-[11px] leading-4 text-[var(--md-subtle)]">Edit the address to return it to normal.</p>
             <Button type="button" variant="ghost" size="sm" className="h-7 rounded-[var(--md-radius-md)] px-2 text-[11px]" onClick={() => setPreviewAutoPopulationValue(previewAutoPopulationSource)}>Refill from customer</Button>
           </div>
+        </div>
+      ) : null}
+
+      {id === "tag-entry-field" ? (
+        <div className="w-full max-w-[680px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)] dark:bg-white/[0.035]">
+          <TagEntryField
+            terms={previewDictionaryTerms}
+            onTermsChange={setPreviewDictionaryTerms}
+            inputLabel={t("Add dictionary terms")}
+            placeholder={t("Add a word or phrase")}
+            addLabel={t("Add term")}
+            removeLabel={(term) => `${t("Remove")} ${term}`}
+            duplicateMessage={t("That term is already in the dictionary.")}
+            limitMessage={t("The dictionary can contain up to 100 terms.")}
+          />
+          <p className="mt-2 text-[11.5px] text-[var(--md-subtle)]">{t("Press Enter or use commas to add several terms.")}</p>
         </div>
       ) : null}
 
@@ -1874,6 +1987,7 @@ function ComponentPreview({ id }: { id: string }) {
           {[
             { label: "Search bookings and quotes", binding: chord("K", { mod: true }) },
             { label: "New booking", binding: chord("B", { mod: true, shift: true }) },
+            { label: "Start dictation", binding: multiKeyChord(["H", "J"]) },
             { label: "Go to Bookings", binding: sequence("G", "B") },
             { label: "Summon Dexter", binding: pointerGesture({ mod: true }) },
             { label: "Turned off", binding: null },
@@ -1889,6 +2003,32 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "keyboard-shortcuts-panel" ? (
         <div className="w-full max-w-[820px] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
           <KeyboardShortcutsPanel />
+        </div>
+      ) : null}
+
+      {id === "dictation-status-pill" ? (
+        <div className="grid w-full max-w-[640px] place-items-center gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div className="grid min-h-[72px] place-items-center">
+            <DictationStatusPill
+              phase={previewDictationPhase}
+              level={0.72}
+              message={previewDictationPhase === "error" ? t("No clear audio detected") : undefined}
+            />
+          </div>
+          <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label={t("Dictation status preview")}>
+            {(["transcribing", "polishing", "complete", "error"] as DictationStatusPhase[]).map((state) => (
+              <Button
+                key={state}
+                type="button"
+                size="sm"
+                variant={previewDictationPhase === state ? "default" : "outline"}
+                onClick={() => setPreviewDictationPhase(state)}
+              >
+                {t(state === "transcribing" ? "Transcribing" : state === "polishing" ? "Polishing" : state === "complete" ? "Complete" : "Error")}
+              </Button>
+            ))}
+          </div>
+          <p className="max-w-[520px] text-center text-[11.5px] leading-5 text-[var(--md-subtle)]">{t("The bottom-centred pill is the only visible dictation feedback. Its width and indicator morph continuously between speaking, polishing and completion.")}</p>
         </div>
       ) : null}
 
@@ -2225,6 +2365,8 @@ function ComponentPreview({ id }: { id: string }) {
           <DocumentEvidenceViewerPreview />
         </div>
       ) : null}
+
+      {id === "suggested-update-review" ? <SuggestedUpdateReviewPreview /> : null}
 
       {id === "audit-timeline" ? (
         <div className="w-full max-w-[820px]">
@@ -3863,6 +4005,27 @@ function ComponentPreview({ id }: { id: string }) {
             ]}
             actionLabel="Review"
           />
+        </div>
+      ) : null}
+
+      {id === "usage-allowance-card" ? (
+        <div className="grid w-full max-w-[920px] grid-cols-[repeat(auto-fit,minmax(min(100%,224px),1fr))] gap-3">
+          {([
+            { id: "ai", label: "AI usage", description: "Dexter requests and AI-assisted work across this workspace.", unit: "percent", included: 100, used: 42, extra: 0, usedPercent: 42, enabled: true, dataState: "live", teamUsage: [
+              { userId: "elena", name: "Elena Moreno", email: "elena@example.com", initials: "EM", usage: 72 },
+              { userId: "marcus", name: "Marcus Chen", email: "marcus@example.com", initials: "MC", usage: 54 },
+              { userId: "priya", name: "Priya Shah", email: "priya@example.com", initials: "PS", usage: 38 },
+              { userId: "tom", name: "Tom Becker", email: "tom@example.com", initials: "TB", usage: 16 },
+            ] },
+            { id: "ocr", label: "OCR usage", description: "Pages read from PDFs and images. Includes 1,000 pages per plan user.", unit: "pages", included: 25000, used: 684, extra: 0, usedPercent: 2.74, enabled: true, dataState: "live", teamUsage: [
+              { userId: "priya", name: "Priya Shah", email: "priya@example.com", initials: "PS", usage: 286 },
+              { userId: "elena", name: "Elena Moreno", email: "elena@example.com", initials: "EM", usage: 224 },
+              { userId: "marcus", name: "Marcus Chen", email: "marcus@example.com", initials: "MC", usage: 174 },
+              { userId: "tom", name: "Tom Becker", email: "tom@example.com", initials: "TB", usage: 0 },
+            ] },
+            { id: "tracking", label: "Shipment tracking", description: "Shipments monitored through the workspace tracking service.", unit: "shipments", included: 250, used: 0, extra: 0, usedPercent: 0, enabled: true, dataState: "not_connected" },
+            { id: "documents", label: "Generated documents", description: "Operational documents created from approved Multideck templates.", unit: "documents", included: 2000, used: 2128, extra: 128, usedPercent: 106.4, enabled: true, dataState: "live" },
+          ] satisfies UsageAllowanceCategory[]).map((category) => <UsageAllowanceCard key={category.id} category={category} />)}
         </div>
       ) : null}
 

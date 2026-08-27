@@ -11,6 +11,7 @@ import {
   isSequenceBinding,
   matchesPointerBinding,
   matchesStep,
+  multiKeyChord,
   parseBinding,
   pointerGesture,
   sequence,
@@ -30,6 +31,7 @@ test("a binding round-trips through its stored form", () => {
     chord("B", { mod: true, shift: true }),
     chord("Enter", { alt: true }),
     sequence("G", "B"),
+    multiKeyChord(["H", "J"]),
     pointerGesture({ mod: true }),
   ]
 
@@ -43,6 +45,7 @@ test("the stored form names the intent, not the platform key", () => {
   // only possible if the modifier is stored as "Mod".
   assert.equal(serializeBinding(chord("K", { mod: true })), "Mod+K")
   assert.equal(serializeBinding(sequence("G", "B")), "G B")
+  assert.equal(serializeBinding(multiKeyChord(["J", "H"])), "H+J")
   assert.equal(serializeBinding(pointerGesture({ mod: true })), "Mod+DoubleClick")
 })
 
@@ -74,6 +77,18 @@ test("an extra modifier does not satisfy a plainer binding", () => {
 
   assert.ok(!matchesStep(step, keyEvent({ key: "b", metaKey: true, shiftKey: true }), "apple"))
   assert.ok(!matchesStep(step, keyEvent({ key: "b", metaKey: true, altKey: true }), "apple"))
+})
+
+test("simultaneous non-modifier keys are order independent and require both keys", () => {
+  const binding = multiKeyChord(["J", "H"])
+  const step = binding.kind === "chord" ? binding.steps[0] : null
+  assert.ok(step)
+
+  assert.deepEqual(bindingTokens(binding, "apple"), [["H", "J"]])
+  assert.equal(bindingLabel(binding, "apple"), "H + J")
+  assert.ok(!matchesStep(step, keyEvent({ key: "h", code: "KeyH" }), "apple", new Set(["H"])))
+  assert.ok(matchesStep(step, keyEvent({ key: "j", code: "KeyJ" }), "apple", new Set(["H", "J"])))
+  assert.ok(matchesStep(step, keyEvent({ key: "h", code: "KeyH" }), "apple", new Set(["J", "H"])))
 })
 
 test("the physical code wins over the character the layout produced", () => {
@@ -128,15 +143,16 @@ test("keycaps read in the platform's own glyphs", () => {
 
 test("a sequence reads as two steps in its flat label", () => {
   assert.equal(bindingLabel(sequence("G", "B"), "apple"), "G then B")
-  assert.equal(bindingLabel(chord(",", { mod: true }), "apple"), "⌘ ,")
+  assert.equal(bindingLabel(chord(",", { mod: true }), "apple"), "⌘ + ,")
   assert.ok(isSequenceBinding(sequence("G", "B")))
   assert.ok(!isSequenceBinding(chord("K", { mod: true })))
 })
 
-test("only modifier chords are safe to fire while typing", () => {
+test("modifier and simultaneous chords are safe to fire while typing", () => {
   // A bare "/" or a "G B" run belongs to the field the operator is in.
   assert.ok(bindingSurvivesTyping(chord("K", { mod: true })))
   assert.ok(bindingSurvivesTyping(chord("Enter", { alt: true })))
+  assert.ok(bindingSurvivesTyping(multiKeyChord(["H", "J"])))
   assert.ok(!bindingSurvivesTyping(chord("/")))
   assert.ok(!bindingSurvivesTyping(sequence("G", "B")))
   assert.ok(!bindingSurvivesTyping(null))
@@ -156,8 +172,9 @@ test("browser-owned chords are flagged, and ⌘D is not", () => {
 test("aria-keyshortcuts advertises both platform spellings", () => {
   assert.equal(bindingAriaKeyshortcuts(chord("K", { mod: true })), "Meta+K Control+K")
   assert.equal(bindingAriaKeyshortcuts(chord("/")), "/")
-  // Sequences and pointer gestures have no ARIA spelling, so nothing is claimed.
+  // Sequences, simultaneous chords and pointer gestures have no ARIA spelling.
   assert.equal(bindingAriaKeyshortcuts(sequence("G", "B")), undefined)
+  assert.equal(bindingAriaKeyshortcuts(multiKeyChord(["H", "J"])), undefined)
   assert.equal(bindingAriaKeyshortcuts(pointerGesture({ mod: true })), undefined)
 })
 

@@ -13,7 +13,7 @@ export function StatusPill({
   className,
 }: {
   tone?: StatusTone
-  /** Table pills use the filled Figma palette; non-table pills retain the compact dot treatment. */
+  /** Status and attribute pills share the established filled table treatment. */
   kind?: "status" | "attribute"
   indicator?: ReactNode | false
   children: ReactNode
@@ -21,25 +21,21 @@ export function StatusPill({
 }) {
   const tableKind = useContext(TablePillKindContext)
   const resolvedKind = kind ?? tableKind ?? "status"
-  const filledTablePill = tableKind !== null || kind === "status"
-  const showIndicator = indicator !== false && (indicator != null || !filledTablePill)
+  const showIndicator = indicator !== false && indicator != null
 
   return (
     <Badge
       variant="secondary"
       data-pill-kind={resolvedKind}
       data-tone={tone}
-      data-table-pill={filledTablePill ? "true" : undefined}
+      data-table-pill="true"
       className={cn(
-        "md-status-pill h-[21px] rounded-full bg-[var(--md-surface)] px-[9px] text-[11.5px] font-medium leading-none tabular-nums text-[var(--md-ink)] shadow-[0_0_0_1px_var(--md-line)]",
-        filledTablePill && "h-6 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-normal shadow-none",
-        filledTablePill && tableToneClass[tone],
+        "md-status-pill h-6 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-normal leading-none tabular-nums shadow-none",
+        tableToneClass[tone],
         className,
       )}
     >
-      {showIndicator ? (indicator ?? (
-        <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: toneToVar(tone) }} />
-      )) : null}
+      {showIndicator ? indicator : null}
       {children}
     </Badge>
   )

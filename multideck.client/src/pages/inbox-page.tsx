@@ -58,6 +58,7 @@ import {
 } from "@/components/multideck/mail-composer"
 import { ThreadSummary, type ThreadSummarySource } from "@/components/multideck/thread-summary"
 import { useLanguage } from "@/i18n/language-provider"
+import { InboxSuggestedUpdatesWorkspace } from "@/components/multideck/inbox-suggested-updates-workspace"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import {
   InboxApiError,
@@ -815,6 +816,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
     mailboxId,
     folder,
     folderId,
+    view,
     selectedFolder,
     refreshAccounts,
     adjustMailboxUnread,
@@ -1864,6 +1866,8 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
             detail: t("Multideck resolves the full list from the message you are replying to when it sends."),
           }
         : null
+  if (view === "suggested") return <InboxSuggestedUpdatesWorkspace mailboxes={mailboxes} />
+
   const emptyFolderTitle = selectedFolder
     ? t("No messages in this folder")
     : folder === "archive"

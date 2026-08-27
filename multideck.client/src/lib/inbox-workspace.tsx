@@ -35,7 +35,7 @@ import {
   loadDefaultInboxProvider,
 } from "@/lib/inbox-provider-preference"
 
-export type InboxNavigationView = "all" | "shared" | "sent" | "drafts" | "archive" | "spam" | "trash"
+export type InboxNavigationView = "all" | "shared" | "suggested" | "sent" | "drafts" | "archive" | "spam" | "trash"
 export type InboxAccountLoadState = "idle" | "loading" | "ready" | "error"
 
 type InboxWorkspaceValue = {
@@ -70,7 +70,7 @@ type InboxWorkspaceValue = {
 const InboxWorkspaceContext = createContext<InboxWorkspaceValue | null>(null)
 const threadDetailCacheTtlMs = 60_000
 
-const supportedViews = new Set<InboxNavigationView>(["all", "shared", "sent", "drafts", "archive", "spam", "trash"])
+const supportedViews = new Set<InboxNavigationView>(["all", "shared", "suggested", "sent", "drafts", "archive", "spam", "trash"])
 
 function readInitialSelection() {
   if (typeof window === "undefined" || window.location.pathname !== "/inbox") {
@@ -374,7 +374,7 @@ export function InboxWorkspaceProvider({
   // or selection, so the rest of Multideck never downloads email bodies merely
   // because the authenticated shell mounted.
   useEffect(() => {
-    if (!active || accountState !== "ready" || !mailboxId) return
+    if (!active || accountState !== "ready" || !mailboxId || view === "suggested") return
     void fetchThreadPage({ mailboxId, folder: folderForView(view), folderId, limit: 25 })
       .catch(() => undefined)
   }, [accountState, active, fetchThreadPage, folderId, mailboxId, view])

@@ -3,7 +3,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 type Db = SupabaseClient<any, "public", any, any, any>
 type JsonObject = Record<string, unknown>
 
-export type ModelPurpose = "dexter_chat" | "email_compose" | "email_refine" | "writing_profile" | "document_ocr" | "invoice_ocr" | "quote_intelligence" | "reference_rule"
+export type ModelPurpose = "dexter_chat" | "email_compose" | "email_refine" | "writing_profile" | "document_ocr" | "invoice_ocr" | "inbox_document_extraction" | "quote_intelligence" | "reference_rule"
 export type DataCategory = "operator_instruction" | "business_record" | "email_content" | "document_content" | "personal_style" | "contact_details"
 
 export type ModelGatewayContext = {
@@ -123,10 +123,17 @@ export async function settleModelEgress(context: ModelGatewayContext, input: {
   if (error) console.error("Dexter model egress settlement failed", { reservationId: input.reservationId, code: error.code })
 }
 
-function usageFrom(provider: "openai" | "mistral", payload: JsonObject) {
+function usageFrom(provider: "openai" | "mistral", payload: JsonObject, estimatedInputUnits = 0) {
   if (provider === "mistral") {
     const usage = payload.usage_info && typeof payload.usage_info === "object" ? payload.usage_info as JsonObject : {}
-    return { inputUnits: Math.max(0, Number(usage.pages_processed) || 0), outputUnits: 0 }
+    const processedPages = Math.max(0, Number(usage.pages_processed) || 0)
+    return {
+      // OCR is sold and governed per page. Retain the reserved page count when
+      // Mistral succeeds without returning usage_info so a real OCR request can
+      // never disappear from the workspace ledger.
+      inputUnits: processedPages > 0 ? processedPages : Math.max(0, Math.floor(estimatedInputUnits)),
+      outputUnits: 0,
+    }
   }
   const usage = payload.usage && typeof payload.usage === "object" ? payload.usage as JsonObject : {}
   return {
@@ -155,7 +162,9 @@ export async function governedModelFetch(context: ModelGatewayContext, input: {
     const requestId = response.headers.get("x-request-id") || response.headers.get("request-id") || null
     const clone = response.clone()
     const payload = await clone.json().catch(() => null) as JsonObject | null
-    const usage = payload ? usageFrom(input.provider, payload) : { inputUnits: 0, outputUnits: 0 }
+    const usage = payload
+      ? usageFrom(input.provider, payload, input.estimatedInputUnits)
+      : { inputUnits: input.provider === "mistral" ? Math.max(0, Math.floor(input.estimatedInputUnits ?? 0)) : 0, outputUnits: 0 }
     await settleModelEgress(context, {
       reservationId,
       outcome: response.ok ? "succeeded" : "failed",

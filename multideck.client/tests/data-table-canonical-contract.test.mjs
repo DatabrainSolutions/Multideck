@@ -59,11 +59,12 @@ test("table scrollbars stay hidden without disabling horizontal overflow", () =>
   assert.match(styleSource, /\.md-table-scroll::-webkit-scrollbar\s*\{[^}]*display: none;/su)
 })
 
-test("semantic pill colour is confined to the indicator", () => {
-  assert.match(statusPillSource, /bg-\[var\(--md-surface\)\]/u)
-  assert.match(statusPillSource, /text-\[var\(--md-ink\)\]/u)
-  assert.match(statusPillSource, /shadow-\[0_0_0_1px_var\(--md-line\)\]/u)
-  assert.match(statusPillSource, /backgroundColor: toneToVar\(tone\)/u)
+test("every semantic pill uses the established filled table treatment", () => {
+  assert.match(statusPillSource, /data-table-pill="true"/u)
+  assert.match(statusPillSource, /h-6 rounded-\[var\(--md-radius-md\)\]/u)
+  assert.match(statusPillSource, /tableToneClass\[tone\]/u)
+  assert.doesNotMatch(statusPillSource, /size-1\.5 shrink-0 rounded-full/u)
+  assert.doesNotMatch(statusPillSource, /filledTablePill/u)
   assert.doesNotMatch(styleSource, /\.md-email-status-pill--[^\s{]+\s*\{/u)
 })
 

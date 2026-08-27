@@ -3,6 +3,7 @@ import { HugeiconsIcon, type HugeiconsIconProps, type IconSvgElement } from "@hu
 import {
   Activity03Icon as Activity03IconData,
   ActivityIcon as ActivityIconData,
+  AudioWaveformIcon as AudioWaveformIconData,
   AiBeautifyIcon as AiBeautifyIconData,
   AiBrain01Icon as AiBrain01IconData,
   AiEditingIcon as AiEditingIconData,
@@ -43,6 +44,7 @@ import {
   CalendarClockIcon as CalendarClockIconData,
   CalendarDaysIcon as CalendarDaysIconData,
   CameraIcon as CameraIconData,
+  CameraMicrophone01Icon as CameraMicrophone01IconData,
   Cancel01Icon as Cancel01IconData,
   CancelCircleIcon as CancelCircleIconData,
   CargoShipIcon as CargoShipIconData,
@@ -335,6 +337,7 @@ export const LinkedinBrand = createMultideckIcon(Linkedin02IconData, "LinkedinBr
 export const WhatsappBrand = createMultideckIcon(WhatsappIconData, "WhatsappBrand")
 
 export const Activity = createMultideckIcon(ActivityIconData, "Activity")
+export const AudioWaveform = createMultideckIcon(AudioWaveformIconData, "AudioWaveform")
 export const Health = createMultideckIcon(Activity03IconData, "Health")
 export const AlarmClock = createMultideckIcon(AlarmClockIconData, "AlarmClock")
 export const AlertCircle = createMultideckIcon(AlertCircleIconData, "AlertCircle")
@@ -374,6 +377,7 @@ export const Calculator = createMultideckIcon(CalculatorIconData, "Calculator")
 export const CalendarClock = createMultideckIcon(CalendarClockIconData, "CalendarClock")
 export const CalendarDays = createMultideckIcon(CalendarDaysIconData, "CalendarDays")
 export const Camera = createMultideckIcon(CameraIconData, "Camera")
+export const Microphone = createMultideckIcon(CameraMicrophone01IconData, "Microphone")
 export const ChartArea = createMultideckIcon(ChartAreaIconData, "ChartArea")
 export const ChartAnalysis = createMultideckIcon(ChartAnalysisIconData, "ChartAnalysis")
 export const ChartBar = createMultideckIcon(ChartColumnIconData, "ChartBar")

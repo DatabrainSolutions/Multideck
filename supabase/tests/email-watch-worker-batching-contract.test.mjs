@@ -27,6 +27,14 @@ test("the worker never enumerates every active provider owner", () => {
   assert.doesNotMatch(worker, /\.from\("Comm_ProviderConnections"\)[\s\S]*\.select\("CommConn_UserID"\)/)
 })
 
+test("an owner with several mailboxes is processed stalest-first", () => {
+  assert.match(worker, /async function orderMailboxesBySyncFreshness/)
+  assert.match(worker, /CommMailbox_ID,CommMailbox_LiveSyncedAt,CommMailbox_LastSyncedAt/)
+  assert.match(worker, /const orderedMailboxes = await orderMailboxesBySyncFreshness/)
+  assert.match(worker, /for \(const mailbox of orderedMailboxes\)/)
+  assert.match(worker, /\(freshness\.get\(leftId\) \?\? 0\) - \(freshness\.get\(rightId\) \?\? 0\)/)
+})
+
 test("the worker proof uses local records only", () => {
   assert.match(benchmark, /const ownerCount = 10_000/)
   assert.match(benchmark, /const liveBatchSize = 5/)

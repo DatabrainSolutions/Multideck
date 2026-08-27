@@ -1,5 +1,6 @@
 import type { DexterModelId } from "@/data/dexter-models"
 import type { AutomationAction, AutomationCondition } from "@/data/contact-card-data"
+import type { UserProfilePhoto } from "@/lib/profile-photo"
 import { invalidateRegisterPages, readCachedRegisterPage } from "@/lib/application-data-api"
 import { retainStreamedEmailAttachments } from "@/lib/dexter-streamed-attachments"
 import {
@@ -154,23 +155,36 @@ export type DexterModelUsage = {
   totalTokens: number
 }
 
+export type UsageAllowanceCategory = {
+  id: "ai" | "ocr" | "tracking" | "documents" | "customs"
+  label: string
+  description: string
+  unit: "percent" | "pages" | "shipments" | "documents" | "declarations"
+  included: number
+  used: number
+  extra: number
+  usedPercent: number
+  enabled: boolean
+  dataState: "live" | "pending_sync" | "not_connected"
+  teamUsage?: UsageContributor[]
+}
+
+export type UsageContributor = {
+  userId: string
+  name: string
+  email?: string | null
+  initials: string
+  usage: number
+  profilePhoto?: UserProfilePhoto | null
+}
+
 export type DexterUsage = {
   periodStart: string
   periodEnd: string
-  planCode: "25" | "50" | "75" | "enterprise"
-  currency: "GBP"
-  includedUsageGbp: number
-  usageGbp: number
-  includedUsageRemainingGbp: number
+  planCode: "10" | "25" | "50" | "enterprise"
+  seatCount?: number
+  categories?: UsageAllowanceCategory[]
   includedUsagePercent: number
-  extraUsageConfigured: boolean
-  billingReady: boolean
-  extraUsageEnabled: boolean
-  extraUsageGbp: number
-  extraUsageLimitGbp: number | null
-  extraUsageRemainingGbp: number | null
-  usageStatus: "unused" | "included" | "near_limit" | "extra_usage" | "paused" | "extra_limit_reached"
-  usageAllowed: boolean
   /** Legacy action allowance retained while older tenant functions roll forward. */
   includedActionsLimit: number
   actionsUsed: number

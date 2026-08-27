@@ -26,11 +26,13 @@ import {
   bindingSurvivesTyping,
   isEditableTarget,
   isModifierOnlyEvent,
+  keyNameFromEvent,
   matchesPointerBinding,
   matchesStep,
   parseBinding,
   serializeBinding,
   shortcutPlatform,
+  shortcutStepKeys,
   stepFromEvent,
   type ShortcutBinding,
   type ShortcutPlatform,
@@ -341,17 +343,23 @@ export function findShortcutConflicts(id: string, binding: ShortcutBinding | nul
       if (!other) return false
       if (serializeBinding(other) === serialized) return true
 
-      // A single key that is also a sequence leader would swallow the sequence.
+      // A single key that is also a sequence or simultaneous-chord leader can
+      // fire before the longer shortcut is complete.
       if (!leader || other.kind !== "chord") return false
       const otherLeader = other.steps[0]
-      const oneIsSequence = binding.kind === "chord" && binding.steps.length !== other.steps.length
-      return oneIsSequence && serializeStepPair(leader) === serializeStepPair(otherLeader)
+      if (leader.mod !== otherLeader.mod || leader.shift !== otherLeader.shift || leader.alt !== otherLeader.alt) return false
+      const keys = shortcutStepKeys(leader)
+      const otherKeys = shortcutStepKeys(otherLeader)
+      const oneStartsWithTheOther = keys.every((key) => otherKeys.includes(key)) || otherKeys.every((key) => keys.includes(key))
+      const differentShape = binding.kind === "chord"
+        && (binding.steps.length !== other.steps.length || keys.length !== otherKeys.length)
+      return differentShape && oneStartsWithTheOther
     })
     .map((definition) => definition.id)
 }
 
 function serializeStepPair(step: { key: string; mod: boolean; shift: boolean; alt: boolean }) {
-  return `${step.mod ? "1" : "0"}${step.shift ? "1" : "0"}${step.alt ? "1" : "0"}${step.key}`
+  return `${step.mod ? "1" : "0"}${step.shift ? "1" : "0"}${step.alt ? "1" : "0"}${shortcutStepKeys(step).join("+")}`
 }
 
 export function useShortcutBindings(): ShortcutBindingMap {
@@ -426,6 +434,57 @@ let suspendCount = 0
 /** Shortcut ids that stay live through a suspension, reference counted. */
 const exemptions = new Map<string, number>()
 let attached = false
+const pressedKeys = new Set<string>()
+
+type SuppressedEditableKey = {
+  key: string
+  text: string | null
+  target: EventTarget | null
+}
+
+let suppressedEditableKey: SuppressedEditableKey | null = null
+
+function editableText(event: KeyboardEvent) {
+  if (event.metaKey || event.ctrlKey || event.altKey) return null
+  if (event.key === " ") return " "
+  return event.key.length === 1 ? event.key : null
+}
+
+/** Restores an ordinary printable key when it was held alone, not as a chord. */
+function replaySuppressedEditableKey() {
+  const suppressed = suppressedEditableKey
+  suppressedEditableKey = null
+  if (!suppressed?.text || !(suppressed.target instanceof HTMLElement)) return
+
+  const target = suppressed.target
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+    const supportedInput = target instanceof HTMLTextAreaElement
+      || new Set(["text", "search", "email", "url", "tel", "password"]).has(target.type)
+    if (!supportedInput || target.disabled || target.readOnly) return
+
+    const start = target.selectionStart ?? target.value.length
+    const end = target.selectionEnd ?? start
+    const next = `${target.value.slice(0, start)}${suppressed.text}${target.value.slice(end)}`
+    const prototype = target instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype
+    const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set
+    setter?.call(target, next)
+    const cursor = start + suppressed.text.length
+    target.setSelectionRange(cursor, cursor)
+    target.dispatchEvent(new InputEvent("input", {
+      bubbles: true,
+      data: suppressed.text,
+      inputType: "insertText",
+    }))
+    return
+  }
+
+  const editable = target.isContentEditable ? target : target.closest<HTMLElement>('[contenteditable="true"]')
+  if (!editable) return
+  editable.focus({ preventScroll: true })
+  document.execCommand("insertText", false, suppressed.text)
+}
 
 function setPending(next: PendingSequence | null, stepKey: string | null) {
   pending = next
@@ -513,11 +572,17 @@ function activeBindingEntries(): ActiveEntry[] {
 
 function handleKeyDown(event: KeyboardEvent) {
   if (event.defaultPrevented) return
+  if (event.isComposing) return
   if (isModifierOnlyEvent(event)) return
+  if (event.repeat) {
+    if (suppressedEditableKey?.key === keyNameFromEvent(event)) event.preventDefault()
+    return
+  }
 
   const platform = shortcutPlatform()
   const step = stepFromEvent(event, platform)
   if (!step) return
+  pressedKeys.add(step.key)
 
   const typing = isEditableTarget(event.target)
   // Blocked shortcuts are filtered out rather than short-circuiting the whole
@@ -525,12 +590,49 @@ function handleKeyDown(event: KeyboardEvent) {
   const entries = activeBindingEntries().filter(({ id }) => !isBlocked(id))
   if (entries.length === 0) return
 
+  // Bare simultaneous chords such as H + J are valid inside text fields. The
+  // first key is held briefly; if it is released alone, its normal character is
+  // restored. If the second key arrives while the first is down, neither leaks
+  // into the field and the shortcut fires once.
+  if (typing) {
+    const simultaneous = entries.filter(({ binding }) =>
+      binding.kind === "chord"
+      && binding.steps.length === 1
+      && shortcutStepKeys(binding.steps[0]).length > 1,
+    )
+
+    const complete = simultaneous.find(({ binding }) =>
+      binding.kind === "chord" && matchesStep(binding.steps[0], event, platform, pressedKeys),
+    )
+    if (complete) {
+      event.preventDefault()
+      suppressedEditableKey = null
+      runHandlers(complete.id, event)
+      return
+    }
+
+    const prefix = simultaneous.find(({ binding }) => {
+      if (binding.kind !== "chord") return false
+      const keys = shortcutStepKeys(binding.steps[0])
+      return keys.includes(step.key) && matchesStep(binding.steps[0], event, platform, new Set(keys))
+    })
+    if (prefix) {
+      event.preventDefault()
+      if (suppressedEditableKey && suppressedEditableKey.key !== step.key) replaySuppressedEditableKey()
+      suppressedEditableKey = { key: step.key, text: editableText(event), target: event.target }
+      return
+    }
+
+    // An unrelated second key means the held key was ordinary typing.
+    if (suppressedEditableKey) replaySuppressedEditableKey()
+  }
+
   // 1. Continue a sequence that is already underway.
   if (pending && pendingStepKey) {
     for (const { id, binding } of entries) {
       if (binding.kind !== "chord" || binding.steps.length < 2) continue
       if (serializeStepPair(binding.steps[0]) !== pendingStepKey) continue
-      if (!matchesStep(binding.steps[1], event, platform)) continue
+      if (!matchesStep(binding.steps[1], event, platform, pressedKeys)) continue
 
       event.preventDefault()
       setPending(null, null)
@@ -546,7 +648,7 @@ function handleKeyDown(event: KeyboardEvent) {
   for (const { id, binding } of entries) {
     if (binding.kind !== "chord" || binding.steps.length !== 1) continue
     if (typing && !bindingSurvivesTyping(binding)) continue
-    if (!matchesStep(binding.steps[0], event, platform)) continue
+    if (!matchesStep(binding.steps[0], event, platform, pressedKeys)) continue
 
     event.preventDefault()
     if (runHandlers(id, event)) return
@@ -557,15 +659,31 @@ function handleKeyDown(event: KeyboardEvent) {
   if (typing) return
 
   const candidates = entries.filter(({ binding }) =>
-    binding.kind === "chord" && binding.steps.length > 1 && matchesStep(binding.steps[0], event, platform),
+    binding.kind === "chord" && binding.steps.length > 1 && matchesStep(binding.steps[0], event, platform, pressedKeys),
   )
   if (candidates.length === 0) return
 
   event.preventDefault()
   setPending(
-    { id: candidates[0].id, tokens: [step.key], candidates: candidates.map(({ id }) => id) },
-    serializeStepPair(step),
+    {
+      id: candidates[0].id,
+      tokens: shortcutStepKeys(candidates[0].binding.kind === "chord" ? candidates[0].binding.steps[0] : step),
+      candidates: candidates.map(({ id }) => id),
+    },
+    serializeStepPair(candidates[0].binding.kind === "chord" ? candidates[0].binding.steps[0] : step),
   )
+}
+
+function handleKeyUp(event: KeyboardEvent) {
+  const key = keyNameFromEvent(event)
+  pressedKeys.delete(key)
+  if (suppressedEditableKey?.key === key) replaySuppressedEditableKey()
+}
+
+function handleWindowBlur() {
+  suppressedEditableKey = null
+  pressedKeys.clear()
+  setPending(null, null)
 }
 
 /**
@@ -598,6 +716,8 @@ function attachListeners() {
   if (attached || typeof window === "undefined") return
   attached = true
   window.addEventListener("keydown", handleKeyDown, { capture: true })
+  window.addEventListener("keyup", handleKeyUp, { capture: true })
+  window.addEventListener("blur", handleWindowBlur)
   window.addEventListener("mousedown", handleMouseDown, { capture: true })
   window.addEventListener("dblclick", handleDoubleClick, { capture: true })
 }
@@ -606,9 +726,13 @@ function detachListeners() {
   if (!attached || typeof window === "undefined") return
   attached = false
   window.removeEventListener("keydown", handleKeyDown, { capture: true })
+  window.removeEventListener("keyup", handleKeyUp, { capture: true })
+  window.removeEventListener("blur", handleWindowBlur)
   window.removeEventListener("mousedown", handleMouseDown, { capture: true })
   window.removeEventListener("dblclick", handleDoubleClick, { capture: true })
   setPending(null, null)
+  suppressedEditableKey = null
+  pressedKeys.clear()
 }
 
 function registerShortcutHandler(id: string, handler: ShortcutHandler) {

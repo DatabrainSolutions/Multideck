@@ -844,8 +844,8 @@
   text-align: center;
 }
 
-/* Every pill inside an operator table uses the flat Figma treatment. Non-table
-   pills retain the shared badge hairline and leading indicator. */
+/* Every status and attribute pill uses the same flat operator-table treatment.
+   A single footprint keeps status language consistent across lists and detail views. */
 .md-status-pill[data-table-pill="true"] {
   box-shadow: none;
 }
@@ -6485,5 +6485,82 @@ html.md-summon-picking {
   .md-crm-shader-fallback__plasma,
   .md-crm-shader-fallback__rings {
     animation: none;
+  }
+}
+/* Push-to-talk never changes a field's appearance. One Figma-matched capsule
+   owns the whole status journey at the bottom of the viewport instead. */
+.md-dictation-status-dock {
+  position: fixed;
+  z-index: 220;
+  inset-inline: 0;
+  bottom: max(18px, calc(env(safe-area-inset-bottom) + 12px));
+  display: flex;
+  justify-content: center;
+  padding-inline: var(--md-page-pad);
+  pointer-events: none;
+}
+
+.md-dictation-status-pill {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  width: max-content;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  overflow: hidden;
+  padding-inline: 14px;
+  border-radius: 19px;
+  color: #ffffff;
+  background: var(--md-accent-tint);
+  box-shadow:
+    inset 0 0 7.8px color-mix(in srgb, var(--md-accent-lift-strong) 92%, #ffffff 8%),
+    0 10px 24px var(--md-accent-deep-a18);
+  isolation: isolate;
+}
+
+.dark .md-dictation-status-pill {
+  background: color-mix(in srgb, var(--md-accent-deep) 58%, var(--md-accent) 42%);
+}
+
+.md-dictation-status-pill[data-state="error"],
+.dark .md-dictation-status-pill[data-state="error"] {
+  background: color-mix(in srgb, var(--md-red) 82%, #7f1d1d 18%);
+  box-shadow:
+    inset 0 0 7.8px color-mix(in srgb, #fecaca 86%, #ffffff 14%),
+    0 10px 24px color-mix(in srgb, var(--md-red) 22%, transparent);
+}
+
+.md-dictation-status-pill__label {
+  flex: none;
+  color: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.55;
+  white-space: nowrap;
+}
+
+.md-dictation-status-pill__indicator {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 24px;
+  height: 20px;
+}
+
+.md-dictation-status-pill__shape {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  border-radius: 999px;
+  background: #d9d9d9;
+  transform-origin: 50% 50%;
+}
+
+@media (max-width: 640px) {
+  .md-dictation-status-dock {
+    bottom: max(14px, calc(env(safe-area-inset-bottom) + 10px));
   }
 }

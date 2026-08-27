@@ -1,26 +1,21 @@
 import { memo, useMemo, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
-import { Activity, ChartAnalysis, ChevronRight, Cpu, Info, MessageCircle, WandSparkles, type LucideIcon } from "@/components/icons/hugeicons"
+import { Activity, ChevronRight, Cpu, Info, MessageCircle, WandSparkles, type LucideIcon } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { CountUpValue } from "@/components/multideck/rolling-digits"
 import { DashboardAreaChart } from "@/components/multideck/dashboard-area-chart"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
-import { StatusPill } from "@/components/multideck/status-pill"
 import { SectionHeader } from "@/components/multideck/surface"
+import { StatusPill } from "@/components/multideck/status-pill"
+import { UsageAllowanceCard, type UsageAllowanceCategory } from "@/components/multideck/usage-allowance-card"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { dexterModelPrices, estimateDexterModelCost } from "@/lib/dexter-costs"
-import {
-  describeDexterAllowance,
-  dexterWorkRates,
-  estimateDexterValue,
-  type DexterAllowancePace,
-} from "@/lib/dexter-value"
+import { dexterWorkRates, estimateDexterValue } from "@/lib/dexter-value"
 import type { DexterUsage } from "@/lib/dexter-api"
 import type { AreaChartPoint } from "@/lib/area-chart"
-import type { StatusTone } from "@/data/multideck-data"
 import usageFieldDeep from "@/assets/ai-usage/usage-field-deep.webp"
 import usageFieldDawn from "@/assets/ai-usage/usage-field-dawn.webp"
 
@@ -41,28 +36,10 @@ function moneyDigits(value: number) {
   return groupNumber(Math.round(value))
 }
 
-function gbp(value: number) {
-  return `£${moneyDigits(value)}`
-}
-
 function compactTokens(value: number) {
   if (value >= 1_000_000) return `${groupNumber(value / 1_000_000, 1)}M`
   if (value >= 1_000) return `${groupNumber(value / 1_000, 1)}k`
   return groupNumber(value)
-}
-
-const paceTone: Record<DexterAllowancePace, StatusTone> = {
-  unused: "neutral",
-  "on-track": "teal",
-  watch: "amber",
-  over: "red",
-}
-
-const paceLabel: Record<DexterAllowancePace, string> = {
-  unused: "No usage yet",
-  "on-track": "On pace",
-  watch: "Close to the limit",
-  over: "Projected to exceed",
 }
 
 /* --------------------------------------------------------------------------
@@ -413,202 +390,108 @@ function LedgerRow({
 }
 
 /* --------------------------------------------------------------------------
-   Allowance
+   Product allowances
    -------------------------------------------------------------------------- */
 
-function AllowanceCard({
-  usage,
-  isLoading,
-  onViewHistory,
-}: {
-  usage: DexterUsage | null
-  isLoading: boolean
-  onViewHistory: () => void
-}) {
+function UsageAllowances({ usage, isLoading }: { usage: DexterUsage | null; isLoading: boolean }) {
   const { t, language } = useLanguage()
-  const shouldReduceMotion = useReducedMotion()
-  const includedGbp = usage?.includedUsageGbp ?? 350
-  const usedGbp = usage?.usageGbp ?? 0
-
-  const allowance = useMemo(
-    () => describeDexterAllowance({
-      // Work in pence so the existing projection helper retains useful
-      // decimals without changing its integer-safe chart contract.
-      limit: includedGbp * 100,
-      used: usedGbp * 100,
-      periodStart: usage?.periodStart,
-      periodEnd: usage?.periodEnd,
-    }),
-    [includedGbp, usage?.periodEnd, usage?.periodStart, usedGbp],
-  )
-
-  const periodEndLabel = allowance.periodEnd
-    ? new Intl.DateTimeFormat(language, { day: "numeric", month: "short" }).format(allowance.periodEnd)
+  const planCode = usage?.planCode ?? "25"
+  const seatCount = Math.max(1, usage?.seatCount ?? (planCode === "10" ? 10 : planCode === "25" ? 25 : 50))
+  const fallbackCategories: UsageAllowanceCategory[] = usage ? [
+    {
+      id: "ai",
+      label: "AI usage",
+      description: "Dexter requests and AI-assisted work across this workspace.",
+      unit: "percent",
+      included: 100,
+      used: Math.max(0, usage.includedUsagePercent),
+      extra: Math.max(usage.includedUsagePercent - 100, 0),
+      usedPercent: Math.max(0, usage.includedUsagePercent),
+      enabled: true,
+      dataState: "live",
+    },
+    {
+      id: "ocr",
+      label: "OCR usage",
+      description: "Pages read from PDFs and images. Includes 1,000 pages per plan user.",
+      unit: "pages",
+      included: seatCount * 1000,
+      used: 0,
+      extra: 0,
+      usedPercent: 0,
+      enabled: true,
+      dataState: "pending_sync",
+    },
+    {
+      id: "tracking",
+      label: "Shipment tracking",
+      description: "Shipments monitored through the workspace tracking service.",
+      unit: "shipments",
+      included: planCode === "10" ? 100 : planCode === "50" || planCode === "enterprise" ? 500 : 250,
+      used: 0,
+      extra: 0,
+      usedPercent: 0,
+      enabled: true,
+      dataState: "not_connected",
+    },
+    {
+      id: "documents",
+      label: "Generated documents",
+      description: "Operational documents created from approved Multideck templates.",
+      unit: "documents",
+      included: 2000,
+      used: 0,
+      extra: 0,
+      usedPercent: 0,
+      enabled: true,
+      dataState: "pending_sync",
+    },
+  ] : []
+  const categories = (usage?.categories?.length ? usage.categories : fallbackCategories).filter((category) => category.enabled)
+  const periodEnd = usage?.periodEnd
+    ? new Intl.DateTimeFormat(language, { day: "numeric", month: "short" }).format(new Date(usage.periodEnd))
     : ""
-  const daysLeft = Math.max(0, Math.round(allowance.remainingDays))
-  // The projection only paints the part that has not happened yet, so the two
-  // segments read as "spent" and "expected" rather than overlapping claims.
-  const projectionWidth = Math.max(0, allowance.projectedPercent - allowance.usedPercent)
-  const statusTone: StatusTone = usage?.usageStatus === "paused" || usage?.usageStatus === "extra_limit_reached"
-    ? "red"
-    : usage?.usageStatus === "near_limit"
-      ? "amber"
-      : usage?.usageStatus === "extra_usage"
-        ? "teal"
-        : paceTone[allowance.pace]
-  const statusLabel = usage?.usageStatus === "paused"
-    ? "Allowance used"
-    : usage?.usageStatus === "extra_limit_reached"
-      ? "Extra usage limit reached"
-      : usage?.usageStatus === "extra_usage"
-        ? "Pay as you go active"
-        : paceLabel[allowance.pace]
-  const extraUsageCopy = usage?.extraUsageEnabled
-    ? usage.usageStatus === "extra_usage"
-      ? "Included usage is used. New requests are now charged as extra usage."
-      : "Pay as you go starts automatically after the included allowance."
-    : usage?.extraUsageConfigured && !usage.billingReady
-      ? "Billing setup is incomplete. Dexter pauses when the included allowance is used."
-      : "Not set up. Dexter pauses when the included allowance is used."
 
   return (
-    <section
-      aria-busy={isLoading}
-      className="md-ai-panel overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)] sm:p-6"
-    >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="flex items-center gap-1.5 text-[15px] font-medium text-[var(--md-ink)]">
-              <ChartAnalysis className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
-              <span>{t("Monthly AI allowance")}</span>
-            </h2>
-            <StatusPill tone={statusTone}>{t(statusLabel)}</StatusPill>
-          </div>
-          <p className="mt-1 text-[12.5px] leading-5 text-[var(--md-text)]">
-            {t("Pooled across this workspace")} · {t("Resets")} <span data-i18n-skip>{periodEndLabel}</span> · <span data-i18n-skip>{daysLeft}</span> {t("days left")}
+    <section aria-labelledby="usage-allowances-heading" aria-busy={isLoading}>
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 id="usage-allowances-heading" className="text-[16px] font-medium tracking-[-0.012em] text-[var(--md-ink)]">{t("Monthly usage")}</h2>
+          <p className="mt-1 max-w-[66ch] text-pretty text-[12.5px] leading-5 text-[var(--md-text)]">
+            {t("Included allowances reflect the full allowance for everyone on this plan")}{periodEnd ? <> · {t("Resets")} <span data-i18n-skip>{periodEnd}</span></> : null}
           </p>
         </div>
-        <div className="flex items-end gap-4 sm:flex-col sm:items-end">
-          <p className="text-[30px] font-medium leading-none tracking-[-0.03em] tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>
-            <CountUpValue value={gbp(allowance.used / 100)} />
-            <span className="text-[var(--md-subtle)]">/{gbp(allowance.limit / 100)}</span>
+        {usage?.planCode ? <p className="text-[11.5px] font-medium text-[var(--md-subtle)]" data-i18n-skip>Multideck {usage.planCode}</p> : null}
+      </div>
+
+      {isLoading && categories.length === 0 ? (
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,224px),1fr))] gap-3" role="status" aria-label={t("Loading usage allowances")}>
+          {Array.from({ length: 4 }, (_, index) => (
+            <div key={index} className="min-h-[218px] animate-pulse rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)] motion-reduce:animate-none">
+              <span className="block size-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)]" />
+              <span className="mt-5 block h-4 w-24 rounded-full bg-[var(--md-surface-soft)]" />
+              <span className="mt-3 block h-3 w-full rounded-full bg-[var(--md-surface-soft)]" />
+              <span className="mt-2 block h-3 w-2/3 rounded-full bg-[var(--md-surface-soft)]" />
+            </div>
+          ))}
+        </div>
+      ) : categories.length === 0 ? (
+        <div className="rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] px-5 py-8 text-center shadow-[var(--md-shadow-soft)]" role="status">
+          <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Usage categories are temporarily unavailable")}</p>
+          <p className="mx-auto mt-1 max-w-[54ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">
+            {t("Try again to load this month's included and extra usage. AI activity remains available below.")}
           </p>
-          <Button
-            type="button"
-            variant="ghost"
-            className="md-ai-ghost-button h-8 w-fit rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
-            onClick={onViewHistory}
-          >
-            {t("Usage history")}
-            <ChevronRight className="size-3.5 rtl:rotate-180" strokeWidth={1.4} aria-hidden="true" />
-          </Button>
         </div>
-      </div>
-
-      <div
-        role="img"
-        aria-label={`${t("Monthly AI allowance")}: ${gbp(allowance.used / 100)} / ${gbp(allowance.limit / 100)}. ${t("Projected")} ${gbp(allowance.projectedActions / 100)}.`}
-        data-pace={allowance.pace}
-        className="md-ai-allowance-meter relative mt-6 h-[54px] overflow-hidden rounded-[var(--md-radius-lg)]"
-      >
-        <span aria-hidden="true" className="md-ai-allowance-meter__weave" />
-
-        <motion.span
-          aria-hidden="true"
-          className="md-ai-allowance-meter__projection absolute inset-y-0"
-          style={{ insetInlineStart: `${allowance.usedPercent}%` }}
-          initial={{ width: "0%", opacity: 0 }}
-          animate={{ width: `${projectionWidth}%`, opacity: 1 }}
-          transition={reduceMotion(Boolean(shouldReduceMotion), { ...mdMotion.morph, delay: 0.12 })}
-        />
-
-        <motion.span
-          aria-hidden="true"
-          className="md-ai-allowance-meter__fill absolute inset-y-0 start-0"
-          initial={{ width: "0%" }}
-          animate={{ width: `${allowance.usedPercent}%` }}
-          transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.morph)}
-        />
-
-        <motion.span
-          aria-hidden="true"
-          title={`${t("Even pace for today")}: ${Math.round(allowance.pacePercent)}%`}
-          className="md-ai-allowance-meter__pace absolute inset-y-0"
-          style={{ insetInlineStart: `${allowance.pacePercent}%` }}
-          initial={{ opacity: 0, scaleY: 0.4 }}
-          animate={{ opacity: 1, scaleY: 1 }}
-          transition={reduceMotion(Boolean(shouldReduceMotion), { ...mdMotion.enter, delay: 0.34 })}
-        />
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-[11.5px] text-[var(--md-text)]">
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-          <LegendKey className="md-ai-key--used" label="Used" />
-          <LegendKey className="md-ai-key--projected" label="Projected by period end" />
-          <LegendKey className="md-ai-key--pace" label="Even pace for today" />
+      ) : (
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,224px),1fr))] gap-3">
+          {categories.map((category) => <UsageAllowanceCard key={category.id} category={category} />)}
         </div>
-        {/* One sentence explains the consequence, including whether paid
-            continuation is ready, without exposing provider terminology. */}
-        {allowance.pace === "over" ? (
-          <p className={usage?.extraUsageEnabled ? "text-[var(--md-text)]" : "text-[var(--md-red)]"}>
-            {usage?.extraUsageEnabled ? (
-              <><span data-i18n-skip>{gbp((allowance.projectedActions - allowance.limit) / 100)}</span>{" "}{t("projected extra usage at this pace")}</>
-            ) : (
-              <>{t("Dexter will pause at")} <span data-i18n-skip>{gbp(includedGbp)}</span> {t("unless extra usage is set up")}</>
-            )}
-          </p>
-        ) : null}
-      </div>
+      )}
 
-      <div className="mt-5 grid gap-4 border-t border-[var(--md-line)] pt-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Figure label="Remaining" value={gbp(allowance.remaining / 100)} detail="Included usage left" />
-        <Figure label="Current pace" value={gbp(allowance.actionsPerDay / 100)} detail="Usage a day" />
-        <Figure
-          label="Projected total"
-          value={gbp(allowance.projectedActions / 100)}
-          detail={`${Math.round(allowance.projectedPercent)}% of the allowance`}
-        />
-        <Figure
-          label="Safe daily pace"
-          value={gbp(allowance.sustainablePerDay / 100)}
-          detail="Keeps you inside the limit"
-        />
-      </div>
-
-      <div className="mt-5 flex flex-col gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)] sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Extra usage")}</p>
-            <StatusPill tone={usage?.extraUsageEnabled ? "teal" : "neutral"}>
-              {t(usage?.extraUsageEnabled ? "Ready" : "Not set up")}
-            </StatusPill>
-          </div>
-          <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(extraUsageCopy)}</p>
-        </div>
-        <div className="shrink-0 text-start sm:text-end">
-          <p className="text-[11px] text-[var(--md-subtle)]">{t("Extra usage this month")}</p>
-          <p className="mt-0.5 text-[17px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>
-            {gbp(usage?.extraUsageGbp ?? 0)}
-          </p>
-          {usage?.extraUsageLimitGbp != null ? (
-            <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">
-              {t("Monthly limit")} <span dir="ltr" data-i18n-skip>{gbp(usage.extraUsageLimitGbp)}</span>
-            </p>
-          ) : null}
-        </div>
-      </div>
+      <p className="mt-3 text-[11.5px] leading-5 text-[var(--md-subtle)]">
+        {t("Extra usage is shown separately. Billing and automatic top-ups are not available yet.")}
+      </p>
     </section>
-  )
-}
-
-function LegendKey({ label, className }: { label: string; className: string }) {
-  const { t } = useLanguage()
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span aria-hidden="true" className={cn("md-ai-key", className)} />
-      {t(label)}
-    </span>
   )
 }
 
@@ -795,6 +678,20 @@ export function AiUsageOverview({
         </div>
       ) : null}
 
+      <UsageAllowances usage={usage} isLoading={isLoading} />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-[16px] font-medium tracking-[-0.012em] text-[var(--md-ink)]">{t("AI activity")}</h2>
+          <p className="mt-1 max-w-[66ch] text-pretty text-[12.5px] leading-5 text-[var(--md-text)]">
+            {t("Understand how Dexter is being used and the desk time it returns.")}
+          </p>
+        </div>
+        <Button type="button" variant="outline" className="h-9 self-start rounded-[var(--md-radius-lg)] px-3.5 text-[12.5px] font-medium sm:self-auto" onClick={onViewHistory}>
+          {t("View AI history")}
+        </Button>
+      </div>
+
       <ValueHero
         actions={actions}
         inputTokens={usage?.inputTokens ?? 0}
@@ -803,8 +700,6 @@ export function AiUsageOverview({
         hasCostData={hasCostData}
         isLoading={isLoading}
       />
-
-      <AllowanceCard usage={usage} isLoading={isLoading} onViewHistory={onViewHistory} />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {tiles.map(([Icon, label, value, detail]) => (

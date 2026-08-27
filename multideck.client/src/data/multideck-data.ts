@@ -2130,6 +2130,19 @@ export const galleryComponents = [
     usageCode: `<AutoPopulatedInput\n  value={address}\n  onChange={(event) => setAddress(event.target.value)}\n  autoPopulated={address === customer.address}\n  autoPopulationDescription="Filled from the selected customer. Edit this field to override it for this quote."\n/>`,
   },
   {
+    id: "tag-entry-field",
+    name: "Tag Entry Field",
+    category: "Forms",
+    description: "A compact single-line control for adding one term or pasting a comma-separated list, then reviewing each value as a removable tag.",
+    details: "Use for short controlled lists such as transcription vocabulary. Enter, comma and multi-value paste all add terms; duplicates are ignored, limits are announced, and each tag remains keyboard-removable. New tags pop into place with transform-only motion and reduced-motion support.",
+    foundOn: [
+      { label: "Dexter voice settings", route: "/settings?tab=dexter#voice" },
+      { label: "Components", route: "/components?component=tag-entry-field" },
+    ],
+    componentCode: `export { TagEntryField, normalizeTagTerms } from "@/components/multideck/tag-entry-field"`,
+    usageCode: `<TagEntryField\n  terms={terms}\n  onTermsChange={setTerms}\n  inputLabel="Add dictionary terms"\n  placeholder="Add a word or phrase"\n  addLabel="Add term"\n  removeLabel={(term) => \`Remove \${term}\`}\n  duplicateMessage="That term is already in the dictionary."\n  limitMessage="The dictionary can contain up to 100 terms."\n/>`,
+  },
+  {
     id: "quote-detail-controls",
     name: "Quote Detail Controls",
     category: "Forms",
@@ -2176,10 +2189,10 @@ export const galleryComponents = [
     id: "status-pill",
     name: "Status Pill",
     category: "Feedback",
-    description: "Compact semantic pills for every workflow status and descriptive attribute shown in a table.",
-    details: "Every pill rendered inside an operator table uses the filled green, yellow, red, blue, orange, or purple semantic palette. The cyan information family uses a quieter, lower-saturation treatment in light mode, while dark mode retains the approved deep cyan pair. Pills outside tables keep the quieter surface shell and leading dot.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "To Do list", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n  const filledTablePill = tableKind !== null || kind === "status"\n\n  return (\n    <Badge\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill={filledTablePill ? "true" : undefined}\n      className={cn(baseClass, filledTablePill && filledTableClass, filledTablePill && tableToneClass[tone], className)}\n    >\n      {indicator ?? (!filledTablePill ? <span className="size-1.5 rounded-full" style={{ backgroundColor: toneToVar(tone) }} /> : null)}\n      {children}\n    </Badge>\n  )\n}`,
+    description: "The single compact semantic pill treatment for workflow statuses and descriptive attributes across Multideck.",
+    details: "Every status and attribute pill uses the established filled operator-table palette and footprint, whether it appears in a table, list, header, inspector, or history view. Optional icons may reinforce meaning, but the component never adds a competing dot or outlined treatment.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "To Do list", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n\n  return (\n    <Badge\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill="true"\n      className={cn(filledPillClass, toneClass[tone], className)}\n    >\n      {indicator !== false ? indicator : null}\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill kind="status" tone="purple">New</StatusPill>\n<StatusPill kind="status" tone="orange">Contacted</StatusPill>\n<StatusPill kind="status" tone="blue">Qualified</StatusPill>\n<StatusPill kind="status" tone="amber">Nurturing</StatusPill>\n<StatusPill kind="status" tone="green">Converted</StatusPill>\n<StatusPill kind="status" tone="red">Disqualified</StatusPill>\n\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
   },
   {
@@ -2241,13 +2254,13 @@ export const galleryComponents = [
     name: "Shortcut Keys",
     category: "Controls",
     description: "A saved keyboard binding drawn as keycaps, in the modifier glyphs of the operator's own platform.",
-    details: "Use anywhere a shortcut is worth advertising: beside a control, inside a menu row, or in the shortcut editor. It resolves ⌘ against Ctrl for you, and draws a two-key sequence as two groups joined by \"then\" rather than one unreadable run of glyphs. Keycaps always read left to right, including in right-to-left languages, because they describe a physical keyboard and a keyboard does not mirror.",
+    details: "Use anywhere a shortcut is worth advertising: beside a control, inside a menu row, or in the shortcut editor. It resolves ⌘ against Ctrl, joins simultaneous keys with +, and draws a two-step sequence as two groups joined by \"then\". Keycaps always read left to right, including in right-to-left languages, because they describe a physical keyboard and a keyboard does not mirror.",
     foundOn: [
       { label: "Keyboard shortcuts", route: "/settings?tab=shortcuts" },
       { label: "Overview", route: "/" },
       { label: "Components", route: "/components?component=shortcut-keys" },
     ],
-    componentCode: `export function ShortcutKeys({ binding, className, keyClassName, emptyLabel = "Not set" }) {\n  const platform = usePlatformShortcutLabels()\n  const steps = useMemo(() => bindingTokens(binding, platform), [binding, platform])\n\n  if (steps.length === 0) return <span className={className}>{emptyLabel}</span>\n\n  return (\n    <span className={cn("inline-flex flex-wrap items-center gap-1.5", className)}>\n      {steps.map((tokens, stepIndex) => (\n        <span key={stepIndex} className="inline-flex items-center gap-1.5">\n          {stepIndex > 0 ? <span className="text-[11px] text-[var(--md-subtle)]">then</span> : null}\n          <KbdGroup dir="ltr" data-i18n-skip>\n            {tokens.map((token, tokenIndex) => (\n              <Kbd key={\`\${token}-\${tokenIndex}\`} className={keyClassName}>{token}</Kbd>\n            ))}\n          </KbdGroup>\n        </span>\n      ))}\n    </span>\n  )\n}`,
+    componentCode: `export function ShortcutKeys({ binding, className, keyClassName, emptyLabel = "Not set" }) {\n  const platform = usePlatformShortcutLabels()\n  const steps = useMemo(() => bindingTokens(binding, platform), [binding, platform])\n\n  if (steps.length === 0) return <span className={className}>{emptyLabel}</span>\n\n  return (\n    <span className={cn("inline-flex flex-wrap items-center gap-1.5", className)}>\n      {steps.map((tokens, stepIndex) => (\n        <span key={stepIndex} className="inline-flex items-center gap-1.5">\n          {stepIndex > 0 ? <span className="text-[11px] text-[var(--md-subtle)]">then</span> : null}\n          <KbdGroup dir="ltr" data-i18n-skip>\n            {tokens.map((token, tokenIndex) => (\n              <span key={\`\${token}-\${tokenIndex}\`} className="inline-flex items-center gap-1">\n                {tokenIndex > 0 ? <span aria-hidden="true">+</span> : null}\n                <Kbd className={keyClassName}>{token}</Kbd>\n              </span>\n            ))}\n          </KbdGroup>\n        </span>\n      ))}\n    </span>\n  )\n}`,
     usageCode: `// From a saved binding\n<ShortcutKeys binding={useShortcutBinding("search.focus")} />\n\n// Or straight from a shortcut id\n<ShortcutHint shortcutId="dexter.summon" />\n\n// Inside a field, so the hint follows whatever the operator rebound it to\n<span className="pointer-events-none absolute inset-y-0 end-2 my-auto flex h-fit items-center">\n  <ShortcutKeys binding={searchShortcut} keyClassName="bg-[var(--md-surface-tint)]" emptyLabel="" />\n</span>`,
   },
   {
@@ -2255,13 +2268,27 @@ export const galleryComponents = [
     name: "Keyboard Shortcuts Panel",
     category: "Settings",
     description: "The editable shortcut list: grouped rows, live keycaps, an inline recorder, conflict warnings and per-row reset.",
-    details: "Use as the whole body of a settings section, or inside a dialog for an in-place shortcut reference. Clicking a row's keys opens a recorder that takes over the keyboard, so pressing ⌘\\\\ records ⌘\\\\ rather than collapsing the sidebar underneath. Two plain keys in a row become a sequence; holding the modifier and double-clicking inside the recorder captures a mouse gesture instead. Duplicate bindings are shown rather than blocked, because an operator mid-swap between two shortcuts is a normal state and a silently shadowed shortcut looks like a bug in the app. Every change writes through to the signed-in operator's profile.",
+    details: "Use as the whole body of a settings section, or inside a dialog for an in-place shortcut reference. Clicking a row's keys opens a recorder that takes over the keyboard. Hold two non-modifier keys together for a simultaneous chord such as H + J, press them one after another for a sequence, or hold a modifier and double-click inside the recorder for a mouse gesture. Duplicate bindings are shown rather than blocked, because an operator mid-swap between two shortcuts is a normal state and a silently shadowed shortcut looks like a bug in the app. Every change writes through to the signed-in operator's profile.",
     foundOn: [
       { label: "Keyboard shortcuts", route: "/settings?tab=shortcuts" },
       { label: "Components", route: "/components?component=keyboard-shortcuts-panel" },
     ],
     componentCode: `export function KeyboardShortcutsPanel({ className, compact = false }) {\n  const bindings = useShortcutBindings()\n  const [query, setQuery] = useState("")\n  const [recording, setRecording] = useState(null)\n  const [lastChange, setLastChange] = useState(null)\n\n  const groups = useMemo(\n    () => shortcutGroups\n      .map((group) => ({ group, items: shortcutDefinitions.filter((d) => d.group === group.id && matches(d)) }))\n      .filter((entry) => entry.items.length > 0),\n    [matches],\n  )\n\n  return (\n    <div className={className}>\n      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search shortcuts" />\n      <Button onClick={resetAllShortcutBindings} disabled={customisedShortcutCount() === 0}>Reset all</Button>\n      {groups.map(({ group, items }) => (\n        <section key={group.id}>\n          <h3>{group.label}</h3>\n          {items.map((definition, index) => (\n            <ShortcutRow\n              key={definition.id}\n              definition={definition}\n              binding={bindings[definition.id]}\n              customised={isShortcutCustomised(definition.id)}\n              recording={recording}\n              index={index}\n              onStartRecording={() => setRecording({ shortcutId: definition.id, steps: [] })}\n              onCommit={(binding) => writeShortcutBinding(definition.id, binding)}\n              onReset={() => resetShortcutBinding(definition.id)}\n              onDisable={() => writeShortcutBinding(definition.id, null)}\n            />\n          ))}\n        </section>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `// As a settings section\n<section className="md-settings-panel overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">\n  <KeyboardShortcutsPanel />\n</section>\n\n// Or over whatever the operator is working on, opened by its own shortcut\n<Dialog open={overviewOpen} onOpenChange={setOverviewOpen}>\n  <DialogContent className="max-w-[720px] gap-0 overflow-hidden p-0">\n    <DialogHeader><DialogTitle>Keyboard shortcuts</DialogTitle></DialogHeader>\n    <div className="md-scrollbar max-h-[560px] overflow-y-auto">\n      <KeyboardShortcutsPanel compact />\n    </div>\n  </DialogContent>\n</Dialog>`,
+  },
+  {
+    id: "dictation-status-pill",
+    name: "Dictation Status Pill",
+    category: "Feedback",
+    description: "The Figma-matched bottom-centred capsule that carries push-to-talk from a reacting soundwave through polishing dots to completion or a clear failure.",
+    details: "Use as the app-wide dictation status and leave the active field visually unchanged. One stable pill hugs each label while its width retargets; the same five shapes collapse from a live soundwave into three bouncing dots, then resolve into a tick or error mark. Failures use a red surface with a light-red inner glow, remain readable for four seconds, and share the same downward exit. Reduced motion preserves every state without continuous movement.",
+    foundOn: [
+      { label: "Workspace text fields", route: "/" },
+      { label: "Dexter voice settings", route: "/settings?tab=dexter#voice" },
+      { label: "Components", route: "/components?component=dictation-status-pill" },
+    ],
+    componentCode: `export function DictationStatusPill({ phase, level = 0.45, message }) {\n  const shouldReduceMotion = useReducedMotion()\n  const { t } = useLanguage()\n  const label = phase === "error" ? message || t("Transcription failed") : phase === "transcribing" ? t("Transcribing") : phase === "polishing" ? t("Polishing") : t("Complete")\n\n  return (\n    <motion.div layout="size" data-state={phase} role={phase === "error" ? "alert" : "status"} aria-live={phase === "error" ? "assertive" : "polite"}>\n      <AnimatePresence initial={false} mode="popLayout">\n        <motion.span key={phase}>{label}</motion.span>\n      </AnimatePresence>\n      <span aria-hidden>\n        {shapeIds.map((shapeId, index) => (\n          <motion.span key={shapeId} animate={shapeTarget(index, phase, level, shouldReduceMotion)} />\n        ))}\n      </span>\n    </motion.div>\n  )\n}`,
+    usageCode: `<AnimatePresence initial={false}>\n  {phase === "idle" ? null : (\n    <motion.div key="dictation-status" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }}>\n      <DictationStatusPill phase={phase} level={microphoneLevel} />\n    </motion.div>\n  )}\n</AnimatePresence>`,
   },
   {
     id: "home-dexter-launcher",
@@ -2989,6 +3016,42 @@ export const galleryComponents = [
   onSelectBox={setActiveLineId}
   title="Your invoice"
   empty="The document preview is still being prepared."
+/>`,
+  },
+  {
+    id: "suggested-update-review",
+    name: "Suggested Update Review",
+    category: "Operations",
+    description: "A review surface that compares an inbox document with a live record and lets the operator apply only selected differences.",
+    details: "Use after a document has been classified and matched. Keep source, match confidence, current values, proposed values and the final approval in one continuous surface. Default uncertain fields off, preserve the source email link, and never apply a change merely because the document was read.",
+    foundOn: [
+      { label: "Inbox suggested updates", route: "/inbox?view=suggested" },
+      { label: "Components", route: "/components?component=suggested-update-review" },
+    ],
+    componentCode: `export function SuggestedUpdateReview({ suggestion, selectedFieldIds, onToggleField, onApply }) {
+  return (
+    <section>
+      <header>{suggestion.sourceFileName} → {suggestion.targetLabel}</header>
+      {suggestion.fields.map((field) => (
+        <label key={field.id}>
+          <Checkbox checked={selectedFieldIds.has(field.id)} onCheckedChange={(checked) => onToggleField(field.id, checked === true)} />
+          <span>{field.label}</span>
+          <span>{field.currentValue}</span>
+          <ArrowRight />
+          <span>{field.proposedValue}</span>
+        </label>
+      ))}
+      <Button onClick={onApply}>Apply selected changes</Button>
+    </section>
+  )
+}`,
+    usageCode: `<SuggestedUpdateReview
+  suggestion={suggestion}
+  selectedFieldIds={selectedFieldIds}
+  onToggleField={toggleField}
+  onApply={applySelectedChanges}
+  onDismiss={dismissSuggestion}
+  onOpenSource={openSourceEmail}
 />`,
   },
   {
@@ -4783,6 +4846,57 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     usageCode: `<SettingsSummaryCard\n  title="At a glance"\n  rows={[\n    ["Member since", "Jan 2024"],\n    ["Bookings handled", "1,847"],\n    ["Role", "Admin - Ops"],\n  ]}\n/>`,
   },
   {
+    id: "usage-allowance-card",
+    name: "Usage Allowance Card",
+    category: "Data",
+    description: "A service-specific monthly usage card that keeps included, extra, and top-contributor usage visible in the unit customers understand.",
+    details: "Use on Admin Usage for separately metered services. AI and OCR cards include a quiet top-three team summary and an all-team Multideck table; other services stop after their allowance totals. Keep provider prices and internal currency allocations out of customer-facing copy.",
+    foundOn: [
+      { label: "Usage", route: "/admin/usage" },
+      { label: "Components", route: "/components?component=usage-allowance-card" },
+    ],
+    componentCode: `export function UsageAllowanceCard({ category }) {
+  const progress = Math.max(0, Math.min(100, category.usedPercent))
+
+  return (
+    <article aria-label={category.label + ": " + category.used + " of " + category.included}>
+      <header>
+        <CategoryIcon category={category.id} />
+        <StatusPill>{category.extra > 0 ? "Extra usage" : "Included"}</StatusPill>
+      </header>
+      <h2>{category.label}</h2>
+      <p>{category.description}</p>
+      <strong>{category.used} {category.unit}</strong>
+      <UsageProgress value={progress} category={category.id} />
+      <dl>
+        <div><dt>Included</dt><dd>{category.included}</dd></div>
+        <div><dt>Extra usage</dt><dd>{category.extra}</dd></div>
+      </dl>
+      {category.teamUsage ? <TopTeamUsage users={category.teamUsage.slice(0, 3)} /> : null}
+    </article>
+  )
+}`,
+    usageCode: `<UsageAllowanceCard
+  category={{
+    id: "ocr",
+    label: "OCR usage",
+    description: "Pages read from PDFs and images. Includes 1,000 pages per plan user.",
+    unit: "pages",
+    included: 25000,
+    used: 684,
+    extra: 0,
+    usedPercent: 2.74,
+    enabled: true,
+    dataState: "live",
+    teamUsage: [
+      { userId: "priya", name: "Priya Shah", initials: "PS", usage: 286 },
+      { userId: "elena", name: "Elena Moreno", initials: "EM", usage: 224 },
+      { userId: "marcus", name: "Marcus Chen", initials: "MC", usage: 174 },
+    ],
+  }}
+/>`,
+  },
+  {
     id: "settings-progress-ring",
     name: "Settings Progress Ring",
     category: "Data",
@@ -4791,7 +4905,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     foundOn: [
       { label: "Profile", route: "/settings" },
       { label: "Security", route: "/settings?tab=security" },
-      { label: "AI usage", route: "/admin/ai-usage" },
+      { label: "Usage", route: "/admin/usage" },
       { label: "Components", route: "/components?component=settings-progress-ring" },
     ],
     componentCode: `export function SettingsProgressRing({ value, label, detail, tone = "accent" }) {

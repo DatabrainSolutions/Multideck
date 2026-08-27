@@ -486,6 +486,9 @@ verify_jwt = true
 [functions.customs-invoice-ocr]
 verify_jwt = true
 
+[functions.transcription]
+verify_jwt = true
+
 [functions.customs-invoice-preview-cleanup]
 verify_jwt = false
 
