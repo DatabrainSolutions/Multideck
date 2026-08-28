@@ -580,7 +580,7 @@ export function subscribeQuoteIntelligence(quoteId: string, onChange: (snapshot:
 }
 
 export async function saveQuoteWorkflow(quoteId: string | null, quote: QuoteSavePayload) {
-  const result = await invoke<{ quoteId: string; reference: string; lifecycle: string }>({ action: "save", quoteId, quote }, "The quote could not be saved.")
+  const result = await invoke<{ quoteId: string; reference: string; lifecycle: string; versionId?: string | null }>({ action: "save", quoteId, quote }, "The quote could not be saved.")
   quoteWorkspaceCache.delete(result.reference.trim().toUpperCase())
   invalidateRegisterPages("quotes:")
   invalidateRegisterPages("dashboard:")

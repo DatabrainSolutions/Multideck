@@ -4041,8 +4041,8 @@ function QuoteDetailsPanelV2({
       <CompactSectionShell title="Route & service" meta="Linked country, place and UN/LOCODE fields">
         <div className="grid gap-2">
           <div className="grid gap-2 xl:grid-cols-2">
-            <LocationFields label="From" value={originLocation} options={locationOptions} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} />
-            <LocationFields label="To" value={destinationLocation} options={locationOptions} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} />
+            <LocationFields mode={quote.mode} label="Origin from" value={originLocation} options={locationOptions} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} />
+            <LocationFields mode={quote.mode} label="Destination to" value={destinationLocation} options={locationOptions} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} />
           </div>
           <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(11rem,0.8fr)_minmax(10rem,0.6fr)_minmax(27rem,1.8fr)] lg:items-start">
             <QuoteCompactInput label="Via" value={quote.via} width="full" disabled={!editable} onChange={(value) => onQuoteChange("via", value)} />
@@ -4405,7 +4405,7 @@ function QuoteWorkspaceContext({
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto md-scrollbar">
-          <DataTable ariaLabel="Job ROE" columns={jobRoeColumns} rows={jobRoes} getRowKey={(roe) => roe.currency} selectedRowKey={selectedJobRoe} onRowClick={(roe) => setSelectedJobRoe(roe.currency)} minimumWidth={400} showToolbar={false} showColumnManager={false} className="rounded-none shadow-none" tableClassName="table-fixed text-[9px]" />
+          <DataTable ariaLabel="Job ROE" columns={jobRoeColumns} rows={jobRoes} getRowKey={(roe) => roe.currency} selectedRowKey={selectedJobRoe} onRowClick={(roe) => setSelectedJobRoe(roe.currency)} minimumWidth={400} showToolbar={false} showColumnManager={false} className="md-quote-job-roe-table rounded-none shadow-none" tableClassName="table-fixed text-[9px]" />
         </div>
       </Surface>
     )
@@ -4562,6 +4562,8 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
   const facts = record.shipmentFacts ?? {}
   const fact = (key: string) => typeof facts[key] === "string" ? String(facts[key]) : ""
   const customer = lookups?.organisations.find((option) => option.id === record.customerId)
+  const customerTerms = customer?.quoteTerms
+  const hasCustomerTerms = Boolean(customerTerms && [customerTerms.terms, customerTerms.subjectTo, customerTerms.notes, customerTerms.deadline].some((value) => value?.trim()))
   const contact = customer?.contacts.find((option) => option.id === record.contactId)
   const shipperOrganisation = lookups?.organisations.find((option) => option.id === record.shipper?.orgId)
   const office = lookups?.offices.find((option) => option.id === record.officeId)
@@ -4634,7 +4636,7 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     via: fact("routingVia"),
     startDate: record.validFrom ?? "",
     endDate: record.validTo ?? "",
-    deadline: record.deadline ?? customer?.quoteTerms?.deadline ?? "",
+    deadline: record.deadline?.trim() || customerTerms?.deadline?.trim() || "",
     validity: record.validTo ?? "",
     direction: record.direction ? record.direction.charAt(0).toUpperCase() + record.direction.slice(1) : "",
     serviceLevel: record.serviceLevel ?? "",
@@ -4693,10 +4695,10 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     originCustomsAgentName: fact("originCustomsAgentName"),
     destinationCustomsAgentId: fact("destinationCustomsAgentId"),
     destinationCustomsAgentName: fact("destinationCustomsAgentName"),
-    subjectToTerms: fact("subjectToTerms") || customer?.quoteTerms?.subjectTo || "",
-    customerTermsSource: fact("customerTermsSource") || record.customerName,
-    terms: record.terms ?? customer?.quoteTerms?.terms ?? "",
-    customerNotes: record.customerNotes ?? customer?.quoteTerms?.notes ?? "",
+    subjectToTerms: fact("subjectToTerms") || customerTerms?.subjectTo?.trim() || "",
+    customerTermsSource: hasCustomerTerms ? record.customerName : fact("customerTermsSource"),
+    terms: customerTerms?.terms?.trim() || record.terms?.trim() || "",
+    customerNotes: record.customerNotes?.trim() || customerTerms?.notes?.trim() || "",
     internalNotes: record.internalNotes ?? "",
     fmcTid: fact("fmcTid"),
     margin: workspace.totals.marginPct === null ? "" : `${workspace.totals.marginPct.toFixed(2)}%`,
@@ -4740,6 +4742,19 @@ function compactQuoteFacts(values: Record<string, unknown>) {
   }))
 }
 
+function quoteDirectionForSave(quote: QuoteRecord) {
+  const supported = new Set(["import", "export", "domestic", "cross trade", "cross_trade"])
+  return [quote.direction, quote.quoteType]
+    .map((value) => value?.trim().toLowerCase() ?? "")
+    .find((value) => supported.has(value)) ?? quote.direction ?? ""
+}
+
+const quoteUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function uuidOrNull(value?: string | null) {
+  return value && quoteUuidPattern.test(value) ? value : null
+}
+
 function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: QuoteWorkflowSources | null): QuoteSavePayload {
   const mode = lookups?.modes.find((option) => option.name === quote.mode)?.code ?? quote.mode
   const shipmentTypeLabel = quote.shipmentType?.split(" - ", 1)[0] ?? ""
@@ -4747,7 +4762,10 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
   const mappedCharges: QuoteWorkflowCharge[] = charges.map((line) => ({
     id: line.id ?? crypto.randomUUID(),
     description: line.description || line.code,
-    supplierId: line.supplierId,
+    // The compact charge workspace includes display-only party IDs for its
+    // demo/current-party options. Only real organisation UUIDs can be sent
+    // to the quote workflow database function.
+    supplierId: uuidOrNull(line.supplierId),
     costCurrency: line.costCurrency,
     costAmount: line.costAmount,
     costLocal: line.localCost,
@@ -4775,7 +4793,7 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
     officeId: quote.officeId ?? "",
     departmentId: quote.departmentId ?? "",
     salesOwnerId: quote.salesOwnerId ?? "",
-    direction: quote.direction ?? "",
+    direction: quoteDirectionForSave(quote),
     mode,
     shipmentType,
     serviceLevel: quote.serviceLevel ?? "",
@@ -5100,6 +5118,7 @@ export function QuoteDetailPage({
   const quoteCopyResetTimerRef = useRef<number | null>(null)
   const saveFeedbackTimerRef = useRef<number | null>(null)
   const autosaveTimerRef = useRef<number | null>(null)
+  const failedSaveFingerprintRef = useRef<string | null>(null)
   const issuePreviewTimerRef = useRef<number | null>(null)
   const issueBodyEditorRef = useRef<HTMLTextAreaElement | null>(null)
   const selectedIssueRecipient = useMemo(
@@ -5507,11 +5526,19 @@ export function QuoteDetailPage({
     if (saving) return
     const quoteSnapshot = draftQuote
     const chargeSnapshot = draftCharges
+    const snapshotFingerprint = JSON.stringify([quoteSnapshot, chargeSnapshot])
+    if (failedSaveFingerprintRef.current === snapshotFingerprint) return
     setSaving(true)
     setWorkflowError("")
+    let saveTimeoutId: number | null = null
     try {
       const payload = quoteSavePayload(quoteSnapshot, chargeSnapshot, lookups)
-      const result = await saveQuoteWorkflow(currentQuoteId, payload)
+      const result = await Promise.race([
+        saveQuoteWorkflow(currentQuoteId, payload),
+        new Promise<never>((_, reject) => {
+          saveTimeoutId = window.setTimeout(() => reject(new Error("The quote could not be saved.")), 8000)
+        }),
+      ])
       const savedPresentation = quoteLifecyclePresentation(result.lifecycle)
       const savedSnapshot = { ...quoteSnapshot, status: savedPresentation.status, statusTone: savedPresentation.tone }
       setCurrentQuoteId(result.quoteId)
@@ -5519,10 +5546,25 @@ export function QuoteDetailPage({
       setDraftQuote((current) => JSON.stringify(current) === JSON.stringify(quoteSnapshot) ? savedSnapshot : current)
       setSavedCharges(chargeSnapshot)
       setDraftCharges((current) => JSON.stringify(current) === JSON.stringify(chargeSnapshot) ? chargeSnapshot : current)
+      failedSaveFingerprintRef.current = null
       setWorkspace((current) => current ? {
         ...current,
         quote: { ...current.quote, id: result.quoteId, reference: result.reference, lifecycle: result.lifecycle },
       } : current)
+      // The save endpoint creates an immutable version. Refresh only the
+      // existing workflow metadata so Audit/history is current without
+      // replacing the quote draft the operator may already be editing.
+      void getQuoteWorkflow(result.reference, { fresh: true })
+        .then((fresh) => {
+          setWorkspace((current) => current ? {
+            ...current,
+            versions: fresh.versions,
+            events: fresh.events,
+            latestIssue: fresh.latestIssue,
+            linkedBooking: fresh.linkedBooking,
+          } : current)
+        })
+        .catch(() => undefined)
       void refreshQuoteIntelligence(result.reference)
         .then((next) => { setIntelligence(next); setIntelligenceUnavailable(false) })
         .catch(() => { if (!intelligence) setIntelligenceUnavailable(true) })
@@ -5539,15 +5581,18 @@ export function QuoteDetailPage({
       // after every autosave. New quotes already navigate when they are opened;
       // edits must remain on the active route.
     } catch (error) {
+      failedSaveFingerprintRef.current = snapshotFingerprint
       setWorkflowError(error instanceof Error ? error.message : "The quote could not be saved.")
     } finally {
+      if (saveTimeoutId !== null) window.clearTimeout(saveTimeoutId)
       setSaving(false)
     }
   }
 
   useEffect(() => {
     if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current)
-    if (loading || !currentQuoteId || !isDirty || saving || transitioning) return
+    const currentDraftFingerprint = JSON.stringify([draftQuote, draftCharges])
+    if (loading || !currentQuoteId || !isDirty || saving || transitioning || failedSaveFingerprintRef.current === currentDraftFingerprint) return
     autosaveTimerRef.current = window.setTimeout(() => {
       autosaveTimerRef.current = null
       void saveChanges()
@@ -5952,8 +5997,11 @@ export function QuoteDetailPage({
                     exit={{ opacity: 0, x: direction === "rtl" ? 4 : -4 }}
                     transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
                   >
-                    <span className="size-1.5 animate-pulse rounded-full bg-[var(--md-accent)]" aria-hidden="true" />
-                    {t("Saving…")}
+                    <span className={cn(
+                      "size-1.5 rounded-full",
+                      saving ? "animate-pulse bg-[var(--md-accent)]" : workflowError ? "bg-[var(--md-amber)]" : "bg-[var(--md-accent)]",
+                    )} aria-hidden="true" />
+                    {t(saving ? "Saving…" : workflowError ? "Not saved" : "Unsaved changes")}
                   </motion.div>
                 ) : saveFeedbackVisible ? (
                   <motion.div

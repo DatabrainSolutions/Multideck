@@ -400,6 +400,27 @@ async function quotePdfDataset(
   const snapshot = isObject(version.CusQuoteVersion_SnapshotJSON) ? version.CusQuoteVersion_SnapshotJSON : {}
   const quote = isObject(snapshot.quote) ? snapshot.quote : snapshot
   const facts = isObject(quote.shipmentFacts) ? quote.shipmentFacts : {}
+  const customerTermsResult = context.quote.CusQuoteHeader_CustomerID
+    ? await admin
+      .from("CRM_AccountProfiles")
+      .select("CRMAccount_MetadataJSON")
+      .eq("CRMAccount_OrgID", context.quote.CusQuoteHeader_CustomerID)
+      .eq("CRMAccount_IsDeleted", false)
+      .maybeSingle()
+    : { data: null, error: null }
+  if (customerTermsResult.error) throw customerTermsResult.error
+  const customerMetadata = isObject(customerTermsResult.data?.CRMAccount_MetadataJSON)
+    ? customerTermsResult.data.CRMAccount_MetadataJSON
+    : {}
+  const organisationQuoteTerms = isObject(customerMetadata.quoteTerms) ? customerMetadata.quoteTerms : {}
+  const effectiveTerms = printable(
+    organisationQuoteTerms.terms || quote.terms || context.quote.CusQuoteHeader_TermsText,
+    "Please refer to the agreed trading terms for this quotation.",
+  )
+  const effectiveCustomerNotes = printable(
+    quote.customerNotes || context.quote.CusQuoteHeader_CustomerNotes || organisationQuoteTerms.notes,
+    "No additional notes.",
+  )
   const rawCharges = Array.isArray(quote.charges) ? quote.charges : Array.isArray(snapshot.charges) ? snapshot.charges : []
   const charges = rawCharges.filter((item) => isObject(item) && item.showToCustomer !== false).map((item) => {
     const charge = item as Row
@@ -473,9 +494,9 @@ async function quotePdfDataset(
     ],
     charges: charges.map(({ currency: _currency, rawAmount: _rawAmount, ...charge }) => charge),
     totals: Array.from(totals.entries()).map(([currency, amount]) => ({ label: totals.size > 1 ? `Total ${currency}` : "Total", amount: moneyLabel(amount, currency) })),
-    terms: printable(quote.terms, "Please refer to the agreed trading terms for this quotation."),
+    terms: effectiveTerms,
     conditions: printable(facts.subjectToTerms, "Rates are subject to carrier changes, equipment and space availability until the booking is confirmed."),
-    customerNotes: printable(quote.customerNotes, "No additional notes."),
+    customerNotes: effectiveCustomerNotes,
   }
 }
 
@@ -525,7 +546,7 @@ async function quoteIssueContext(
   const quoteId = parseUuid(quoteIdValue, "Quote")
   const { data: quote, error: quoteError } = await admin
     .from("CusQuote_Header")
-    .select("CusQuoteHeader_ID,CusQuoteHeader_CustomerID,CusQuoteHeader_CustomerNameSnapshot,CusQuoteHeader_ContactNameSnapshot,CusQuoteHeader_ContactEmailSnapshot,CusQuoteHeader_CustomerReference,CusQuoteHeader_Number,CusQuoteHeader_OrgOfficeID,OrgOffice_ID,CusQuoteHeader_LoadingPoint,CusQuoteHeader_DischargePoint,CusQuoteHeader_ModeCode,CusQuoteHeader_ShipmentTypeCode,CusQuoteHeader_ServiceLevel,CusQuoteHeader_ValidTo,CusQuoteHeader_CustomerNotes")
+    .select("CusQuoteHeader_ID,CusQuoteHeader_CustomerID,CusQuoteHeader_CustomerNameSnapshot,CusQuoteHeader_ContactNameSnapshot,CusQuoteHeader_ContactEmailSnapshot,CusQuoteHeader_CustomerReference,CusQuoteHeader_Number,CusQuoteHeader_OrgOfficeID,OrgOffice_ID,CusQuoteHeader_LoadingPoint,CusQuoteHeader_DischargePoint,CusQuoteHeader_ModeCode,CusQuoteHeader_ShipmentTypeCode,CusQuoteHeader_ServiceLevel,CusQuoteHeader_ValidTo,CusQuoteHeader_CustomerNotes,CusQuoteHeader_TermsText")
     .eq("CusQuoteHeader_ID", quoteId)
     .eq("CusQuoteHeader_IsDeleted", false)
     .maybeSingle()

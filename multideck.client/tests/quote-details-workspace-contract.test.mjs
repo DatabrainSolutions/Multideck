@@ -109,9 +109,18 @@ test("route inputs derive UN/LOCODE while transit and repeat frequency use linke
   assert.doesNotMatch(fields, /CompactCombobox label="UN\/LOCODE"/u)
   assert.match(fields, /sm:grid-cols-\[minmax\(8rem,0\.85fr\)_minmax\(12rem,1\.35fr\)_minmax\(7rem,0\.55fr\)\]/u)
   assert.match(model, /export function filterLocationOptions/u)
+  assert.match(model, /export function filterLocationsForMode/u)
+  assert.match(model, /startsWith\("air"\)[\s\S]*option\.kind === "airport"/u)
+  assert.match(model, /startsWith\("sea"\)[\s\S]*option\.kind === "port"/u)
+  assert.match(model, /startsWith\("road"\)[\s\S]*\["port", "city", "airport"\]/u)
+  assert.match(fields, /const modeOptions = filterLocationsForMode\(options, mode\)/u)
+  assert.match(details, /<LocationFields mode=\{quote\.mode\}/u)
   assert.match(model, /export function resolveLinkedLocation/u)
   assert.match(fields, /UN\/LOCODE is derived from/u)
   assert.match(fields, /onOptionSelect=\{applySelectedOption\}/u)
+  assert.match(fields, /const \[inputValue, setInputValue\] = useState\(value\)/u)
+  assert.match(fields, /setSearch\(inputValue\)/u)
+  assert.match(fields, /aria-label=\{t\(`Clear \$\{label\}`\)\}/u)
 
   assert.doesNotMatch(details, /<IncotermField\b/u)
   assert.doesNotMatch(details, /QuoteCompactInput label="Email" value=\{quote\.customerEmail/u)
@@ -186,6 +195,12 @@ test("autosave updates an existing quote in place without remounting its route",
   assert.ok(saveStart > -1 && saveEnd > saveStart, "The quote save handler must remain present.")
   assert.match(saveChanges, /saveQuoteWorkflow\(currentQuoteId, payload\)/u)
   assert.doesNotMatch(saveChanges, /navigate\?\.\(/u, "Autosave must not replace the route and reset focus or scroll.")
+  assert.match(saveChanges, /failedSaveFingerprintRef/u)
+  assert.match(saveChanges, /Promise\.race\(\[/u)
+  assert.match(saveChanges, /setTimeout\(\(\) => reject\(new Error\("The quote could not be saved\."\)\), 8000\)/u)
+  assert.match(page, /saving \? "Saving…" : workflowError \? "Not saved" : "Unsaved changes"/u)
+  assert.match(page, /const quoteUuidPattern = \/\^\[0-9a-f\]\{8\}/u)
+  assert.match(page, /supplierId: uuidOrNull\(line\.supplierId\)/u)
 })
 
 test("quote dates use the shared branded calendar picker", () => {
@@ -287,8 +302,11 @@ test("new quote detail fields load and save through the real workspace payload",
     "originCustomsAgentName",
     "destinationCustomsAgentId",
     "destinationCustomsAgentName",
-    "customerTermsSource",
   ]) expectRoundTrip(field)
+
+  assert.match(page, /customerTermsSource:\s*hasCustomerTerms\s*\?\s*record\.customerName\s*:\s*fact\("customerTermsSource"\)/u)
+  assert.match(page, /terms:\s*customerTerms\?\.terms\?\.trim\(\)\s*\|\|\s*record\.terms\?\.trim\(\)/u)
+  assert.match(page, /customerNotes:\s*record\.customerNotes\?\.trim\(\)\s*\|\|\s*customerTerms\?\.notes\?\.trim\(\)/u)
 
   assert.match(page, /incotermPlace:\s*fact\("namedPlace"\)/u)
   assert.match(page, /namedPlace:\s*quote\.incotermPlace/u)

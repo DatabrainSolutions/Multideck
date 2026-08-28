@@ -233,11 +233,12 @@ function SearchablePartySelect({
           aria-expanded={open}
           aria-controls={listId}
           aria-label={t(role === "supplier" ? "Select supplier" : "Select customer")}
+          title={selected ? `${selected.code} · ${selected.name}` : t(role === "supplier" ? "Select supplier" : "Select customer")}
           disabled={disabled}
-          className="flex h-8 w-full min-w-0 items-center justify-between gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-start text-[11px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,box-shadow,opacity,transform] duration-160 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-field-bg-hover)] focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-55"
+          className="flex h-8 w-full min-w-0 items-center justify-between gap-1.5 overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-start text-[11px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,box-shadow,opacity,transform] duration-160 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-field-bg-hover)] focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-55"
         >
           {selected ? (
-            <span data-i18n-skip dir="auto" className="min-w-0 truncate">
+            <span data-i18n-skip dir="auto" className="block min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
               <span dir="ltr" className="font-medium text-[var(--md-ink)]">{selected.code}</span>
               <span className="text-[var(--md-subtle)]"> · </span>
               <span>{selected.name}</span>
@@ -798,6 +799,7 @@ export function UnifiedQuoteChargesWorkspace({
     {
       id: "cost",
       label: "Cost",
+      kind: "number",
       width: 132,
       minWidth: 112,
       maxWidth: 180,
@@ -823,6 +825,7 @@ export function UnifiedQuoteChargesWorkspace({
     {
       id: "baseCost",
       label: "Base cost",
+      kind: "number",
       width: 126,
       minWidth: 110,
       resizable: true,
@@ -835,6 +838,7 @@ export function UnifiedQuoteChargesWorkspace({
     {
       id: "sell",
       label: "Sell",
+      kind: "number",
       width: 132,
       minWidth: 112,
       maxWidth: 180,
@@ -860,6 +864,7 @@ export function UnifiedQuoteChargesWorkspace({
     {
       id: "baseSell",
       label: "Base sell",
+      kind: "number",
       width: 126,
       minWidth: 110,
       resizable: true,
@@ -872,6 +877,7 @@ export function UnifiedQuoteChargesWorkspace({
     {
       id: "profit",
       label: "Profit",
+      kind: "number",
       width: 126,
       minWidth: 110,
       resizable: true,
@@ -884,11 +890,16 @@ export function UnifiedQuoteChargesWorkspace({
     {
       id: "customer",
       label: "Customer",
-      width: 220,
-      minWidth: 170,
-      maxWidth: 340,
+      width: 180,
+      minWidth: 150,
+      maxWidth: 280,
       resizable: true,
       sortValue: (row) => parties.find((party) => party.id === row.customerId)?.name ?? "",
+      cellClassName: "overflow-hidden",
+      cellTitle: (row) => {
+        const customer = parties.find((party) => party.id === row.customerId)
+        return customer ? `${customer.code} · ${customer.name}` : t("Select customer")
+      },
       cell: (row) => <SearchablePartySelect value={row.customerId} parties={parties} role="customer" disabled={readOnly} onValueChange={(customerId) => updateRow(row.id, { customerId })} />,
     },
     {
@@ -989,7 +1000,7 @@ export function UnifiedQuoteChargesWorkspace({
             {!readOnly ? <Button type="button" variant="outline" size="sm" onClick={addRow}><Plus data-icon="inline-start" />{t("Add charge")}</Button> : null}
           </div>
         )}
-        className="rounded-[var(--md-radius-xl)] !bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)] [&_th]:!bg-[var(--md-surface)] [&_td]:!bg-[var(--md-surface)] [&_tr[data-state=selected]_td]:!bg-[var(--md-selected-bg)]"
+        className="md-unified-quote-charges-table rounded-[var(--md-radius-xl)] !bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)] [&_th]:!bg-[var(--md-surface)] [&_td]:!bg-[var(--md-surface)] [&_tr[data-state=selected]_td]:!bg-[var(--md-selected-bg)]"
         tableClassName="text-[11px] [&_th]:h-9 [&_td]:h-11 [&_td]:px-2 [&_td]:py-1.5"
       />
 

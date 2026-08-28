@@ -28,7 +28,7 @@ const AdminBroadcastContent = lazy(() => import("@/components/multideck/broadcas
 function normaliseReferencePatternInput(value: string) {
   const trimmed = value.trim().toUpperCase()
   if (!trimmed) return { pattern: "", nextNumber: null as number | null }
-  if (/\{(?:NUMBER|LETTERS)(?::\d{1,2})?\}/.test(trimmed)) return { pattern: trimmed.replace(/\{(NUMBER|LETTERS)\}/g, "{$1:4}"), nextNumber: null as number | null }
+  if (/\{(?:DIRECTION|NUMBER|LETTERS)(?::\d{1,2})?\}/.test(trimmed)) return { pattern: trimmed.replace(/\{(NUMBER|LETTERS)\}/g, "{$1:4}"), nextNumber: null as number | null }
   const numberedPrefix = trimmed.match(/^(.*?)(\d+)$/)
   if (numberedPrefix) return { pattern: `${numberedPrefix[1]}{NUMBER:${numberedPrefix[2].length}}`, nextNumber: Number(numberedPrefix[2]) }
   return { pattern: `${trimmed}{NUMBER:4}`, nextNumber: null as number | null }
@@ -40,18 +40,18 @@ function referenceCounterWidth(pattern: string) {
 
 type ReferenceRecipeChunk =
   | { kind: "literal"; value: string; start: number; end: number }
-  | { kind: "token"; token: "NUMBER" | "LETTERS" | "COMPANY" | "MULTIDECK"; width: number | null; start: number; end: number }
+  | { kind: "token"; token: "DIRECTION" | "NUMBER" | "LETTERS" | "COMPANY" | "MULTIDECK"; width: number | null; start: number; end: number }
 
 function referenceRecipeChunks(pattern: string): ReferenceRecipeChunk[] {
   const chunks: ReferenceRecipeChunk[] = []
-  const tokenPattern = /\{(NUMBER|LETTERS|COMPANY|MULTIDECK)(?::(\d{1,2}))?\}/gi
+  const tokenPattern = /\{(DIRECTION|NUMBER|LETTERS|COMPANY|MULTIDECK)(?::(\d{1,2}))?\}/gi
   let cursor = 0
   for (const match of pattern.matchAll(tokenPattern)) {
     const start = match.index ?? cursor
     if (start > cursor) chunks.push({ kind: "literal", value: pattern.slice(cursor, start), start: cursor, end: start })
     chunks.push({
       kind: "token",
-      token: match[1].toUpperCase() as "NUMBER" | "LETTERS" | "COMPANY" | "MULTIDECK",
+      token: match[1].toUpperCase() as "DIRECTION" | "NUMBER" | "LETTERS" | "COMPANY" | "MULTIDECK",
       width: match[2] ? Number(match[2]) : null,
       start,
       end: start + match[0].length,
@@ -106,6 +106,7 @@ function referencePreview(pattern: string, value: number, companyName: string) {
     (_match, width: string | undefined) => width ? seed.slice(0, Number(width)) : seed,
   )
   return replaceSeed(replaceSeed(pattern.toUpperCase(), "COMPANY", company), "MULTIDECK", "MULTIDECK")
+    .replace(/\{DIRECTION(?::\d{1,2})?\}/i, "I")
     .replace(/\{(?:NUMBER|LETTERS)(?::\d{1,2})?\}/i, formatReferenceCounter(value, pattern))
 }
 
@@ -114,9 +115,9 @@ function referencePatternError(pattern: string, target: ReferenceRuleTarget, com
   const counterTokens = normalized.match(/\{(?:NUMBER|LETTERS)(?::\d{1,2})?\}/g) ?? []
   if (counterTokens.length !== 1) return "Every reference rule needs one continuous sequence."
   const tokens = normalized.match(/\{[^}]*\}/g) ?? []
-  if (tokens.some((token) => !/^\{(?:NUMBER|LETTERS|COMPANY|MULTIDECK)(?::\d{1,2})?\}$/.test(token))) return "That rule contains an unsupported part."
+  if (tokens.some((token) => !/^\{(?:DIRECTION|NUMBER|LETTERS|COMPANY|MULTIDECK)(?::\d{1,2})?\}$/.test(token))) return "That rule contains an unsupported part."
   if (tokens.some((token) => { const match = token.match(/:(\d{1,2})\}/); const width = Number(match?.[1]); return Boolean(match) && (width < 1 || width > 18) })) return "Rule lengths must be between 1 and 18 characters."
-  const literal = normalized.replace(/\{(?:NUMBER|LETTERS|COMPANY|MULTIDECK)(?::\d{1,2})?\}/g, "")
+  const literal = normalized.replace(/\{(?:DIRECTION|NUMBER|LETTERS|COMPANY|MULTIDECK)(?::\d{1,2})?\}/g, "")
   if (!normalized || /[^A-Z0-9 _./-]/.test(literal) || /[{}]/.test(literal)) return "That rule contains unsupported characters."
   if (target === "customer" && referencePreview(normalized, 1, companyName).length > 8) return "Customer references must remain within eight characters."
   return null
@@ -555,6 +556,7 @@ function SystemPreferencesContent() {
     const tokenLabel = (chunk: Extract<ReferenceRecipeChunk, { kind: "token" }>) => {
       if (chunk.token === "NUMBER") return chunk.width && chunk.width > 1 ? `${chunk.width} ${t("digit number")}` : t("Number")
       if (chunk.token === "LETTERS") return chunk.width && chunk.width > 1 ? `${chunk.width} ${t("letter sequence")}` : t("Letters")
+      if (chunk.token === "DIRECTION") return chunk.width ? `${t("Direction")} · ${t("first")} ${chunk.width}` : t("Direction")
       if (chunk.token === "COMPANY") return chunk.width ? `${t("Company")} · ${t("first")} ${chunk.width}` : t("Company")
       return chunk.width ? `${t("Multideck")} · ${t("first")} ${chunk.width}` : t("Multideck")
     }

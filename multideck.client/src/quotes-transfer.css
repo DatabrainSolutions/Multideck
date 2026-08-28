@@ -172,6 +172,40 @@
     overflow: auto;
   }
 
+  /* Keep dense existing charge columns available inside their own scroll
+     region. The scrollbar is intentionally local to these tables so the
+     quote workspace itself never shifts or clips the right-hand fields. */
+  .md-unified-quote-charges-table [data-slot="table-container"],
+  .md-quote-job-roe-table [data-slot="table-container"] {
+    inline-size: 100%;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--md-subtle) 48%, transparent) var(--md-surface-soft);
+  }
+
+  .md-unified-quote-charges-table [data-slot="table-container"]::-webkit-scrollbar,
+  .md-quote-job-roe-table [data-slot="table-container"]::-webkit-scrollbar {
+    display: block;
+    block-size: 6px;
+  }
+
+  .md-unified-quote-charges-table [data-slot="table-container"]::-webkit-scrollbar-track,
+  .md-quote-job-roe-table [data-slot="table-container"]::-webkit-scrollbar-track {
+    border-radius: 999px;
+    background: var(--md-surface-soft);
+  }
+
+  .md-unified-quote-charges-table [data-slot="table-container"]::-webkit-scrollbar-thumb,
+  .md-quote-job-roe-table [data-slot="table-container"]::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--md-subtle) 48%, transparent);
+  }
+
   @media (max-width: 860px) {
     .md-charge-split-workspace__panes {
       grid-template-columns: 1fr;

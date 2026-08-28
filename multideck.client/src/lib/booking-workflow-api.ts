@@ -106,6 +106,22 @@ export type BookingWorkflowDeclaration = {
   updatedAt?: string | null
 }
 
+export type BookingWorkflowCharge = {
+  id?: string
+  lineNumber?: number
+  supplierId?: string | null
+  description?: string | null
+  internalNotes?: string | null
+  customerNotes?: string | null
+  costRoe?: number | null
+  costAmount?: number | null
+  costLocal?: number | null
+  sellRoe?: number | null
+  sellAmount?: number | null
+  sellLocal?: number | null
+  showToCustomer?: boolean
+}
+
 export type BookingWorkflowEvent = {
   id: string
   type: string
@@ -162,7 +178,7 @@ export type BookingWorkflowWorkspace = {
   routes: BookingWorkflowRoute[]
   documents: BookingWorkflowDocument[]
   declarations: BookingWorkflowDeclaration[]
-  charges: Array<Record<string, unknown>>
+  charges: BookingWorkflowCharge[]
   events: BookingWorkflowEvent[]
   sourceQuote?: Record<string, unknown> | null
 }

@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react"
-import { Check, ChevronDown, Info, Search, StickyNote, TriangleAlert } from "@/components/icons/hugeicons"
+import { Check, ChevronDown, Info, Search, StickyNote, TriangleAlert, X } from "@/components/icons/hugeicons"
 import { AutoPopulatedInput, AutoPopulationIndicator, useAutoPopulationMorph } from "@/components/multideck/auto-populated-field"
 import { Button } from "@/components/ui/button"
 import {
@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils"
 import {
   EMPTY_HAZARDOUS_DETAILS,
   INCOTERMS_2020,
+  filterLocationsForMode,
   getIncotermDefinition,
   resolveLinkedLocation,
   type AmountCurrencyValue,
@@ -264,6 +265,7 @@ export function CompactCombobox({
   const listId = useId()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
+  const [inputValue, setInputValue] = useState(value)
   const [activeIndex, setActiveIndex] = useState(0)
   const keyboardNavigationRef = useRef(false)
   const pointerFocusRef = useRef(false)
@@ -296,6 +298,10 @@ export function CompactCombobox({
     [options, recommendedOptions, value],
   )
 
+  useEffect(() => {
+    if (!open) setInputValue(value)
+  }, [open, value])
+
   useEffect(() => setActiveIndex(0), [query, visibleOptionKey])
   useEffect(() => {
     if (!open || !keyboardNavigationRef.current) return
@@ -303,6 +309,7 @@ export function CompactCombobox({
   }, [activeIndex, listId, open])
 
   function selectOption(option: CompactComboboxOption) {
+    setInputValue(option.value)
     onValueChange(option.value)
     onOptionSelect?.(option)
     setSearch("")
@@ -358,29 +365,52 @@ export function CompactCombobox({
               aria-invalid={invalid || undefined}
               autoComplete="off"
               disabled={disabled}
-              value={value}
+              value={inputValue}
               placeholder={t(placeholder)}
               onPointerDown={() => { pointerFocusRef.current = true }}
               onPointerCancel={() => { pointerFocusRef.current = false }}
               onFocus={() => {
-                setSearch("")
-                if (!pointerFocusRef.current) setOpen(true)
+                if (!pointerFocusRef.current) {
+                  setSearch(inputValue)
+                  setOpen(true)
+                }
               }}
               onClick={() => {
                 pointerFocusRef.current = false
-                setSearch("")
+                setSearch(inputValue)
                 setOpen(true)
               }}
               onChange={(event) => {
                 if (!allowCustom) return
-                onValueChange(event.target.value)
-                setSearch(event.target.value)
+                const nextValue = event.target.value
+                setInputValue(nextValue)
+                onValueChange(nextValue)
+                setSearch(nextValue)
                 setOpen(true)
               }}
               onKeyDown={handleKeyDown}
               className="h-8 flex-1 rounded-[var(--md-radius-lg)] bg-transparent px-2.5 text-[12px] shadow-none ring-0 hover:bg-transparent focus-visible:bg-transparent focus-visible:ring-0"
             />
             <AutoPopulationIndicator active={autoPopulated} description={autoPopulationDescription} inline />
+            {allowCustom && inputValue ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                disabled={disabled}
+                aria-label={t(`Clear ${label}`)}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  setInputValue("")
+                  setSearch("")
+                  onValueChange("")
+                  setOpen(true)
+                }}
+                className="m-0.5 size-7 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)]"
+              >
+                <X className="size-3.5" aria-hidden="true" />
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="ghost"
@@ -815,6 +845,7 @@ function uniqueBy<T>(items: readonly T[], key: (item: T) => string) {
 
 export function LocationFields({
   label,
+  mode,
   value,
   options,
   countries,
@@ -827,6 +858,7 @@ export function LocationFields({
   className,
 }: {
   label: string
+  mode?: string
   value: LocationValue
   options: readonly LocationOption[]
   countries: readonly CountryReferenceOption[]
@@ -844,11 +876,12 @@ export function LocationFields({
     normalizeSearch(country.code) === normalizeSearch(selectedCountry)
     || normalizeSearch(country.name) === normalizeSearch(selectedCountry)
   ))
+  const modeOptions = filterLocationsForMode(options, mode)
   // Country and location are the operator inputs. UN/LOCODE is derived from
   // the exact location they select, so an existing code must never trap the
   // place directory on the previous choice.
   const placePool = selectedCountryReference
-    ? options.filter((option) => normalizeSearch(option.countryCode) === normalizeSearch(selectedCountryReference.code))
+    ? modeOptions.filter((option) => normalizeSearch(option.countryCode) === normalizeSearch(selectedCountryReference.code))
     : []
   const countryOptions = uniqueBy(countries, (country) => country.code).map((country) => ({
     id: `country:${country.code}`,
@@ -865,7 +898,7 @@ export function LocationFields({
     description: [option.unlocode, option.kind ? t(option.kind.replaceAll("-", " ")) : ""].filter(Boolean).join(" · "),
     keywords: [option.countryCode, option.countryName, option.unlocode, ...(option.aliases ?? [])],
   }))
-  const recommendedCountryCodes = new Set(options.filter((location) => location.recommended).map((location) => location.countryCode))
+  const recommendedCountryCodes = new Set(modeOptions.filter((location) => location.recommended).map((location) => location.countryCode))
   const recommendedPlaceIds = new Set(placePool.filter((location) => location.recommended).map((location) => location.id || location.unlocode || `${location.countryCode}:${location.place}`))
   const recommendedCountries = countryOptions.filter((option) => recommendedCountryCodes.has(option.id.replace("country:", "")))
   const recommendedPlaces = placeOptions.filter((option) => recommendedPlaceIds.has(option.id ?? ""))
@@ -879,13 +912,13 @@ export function LocationFields({
   )
 
   function applySelectedOption(option: CompactComboboxOption) {
-    const location = options.find((candidate) => (candidate.id || candidate.unlocode || `${candidate.countryCode}:${candidate.place}`) === option.id)
+    const location = modeOptions.find((candidate) => (candidate.id || candidate.unlocode || `${candidate.countryCode}:${candidate.place}`) === option.id)
     if (location) onChange({ countryCode: location.countryCode, countryName: location.countryName, place: location.place, unlocode: location.unlocode })
   }
 
   function applyCountryInput(input: string) {
     const exact = countries.find((country) => normalizeSearch(country.code) === normalizeSearch(input) || normalizeSearch(country.name) === normalizeSearch(input))
-    const resolved = resolveLinkedLocation(options, value, "country", exact?.name ?? input)
+    const resolved = resolveLinkedLocation(modeOptions, value, "country", exact?.name ?? input)
     onChange(exact ? { ...resolved, countryCode: exact.code, countryName: exact.name } : resolved)
   }
 

@@ -916,7 +916,11 @@ export function DataTable<Row>({
                   style={{ width: columnWidth(column), minWidth: columnWidth(column), ...stickyStyle(column) }}
                   className={cn("group/header relative z-[1] bg-[var(--md-surface-soft)] pe-3 text-[12px] font-medium text-[var(--md-text)] transition-[background,box-shadow,opacity] duration-200", columnAlignment(column), isPinned && "z-[3] bg-[var(--md-table-pinned-bg)]", isPinned && (direction === "rtl" ? "shadow-[-2px_0_0_var(--md-line)]" : "shadow-[2px_0_0_var(--md-line)]"), draggingId === column.id && "opacity-40", resizingId === column.id && "bg-[var(--md-surface-tint)]", column.headerClassName)}
                 >
-                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                  <span className={cn(
+                    "inline-flex min-w-0 items-center gap-1.5",
+                    columnAlignment(column) === "text-end" && "w-full justify-end",
+                    columnAlignment(column) === "text-center" && "w-full justify-center",
+                  )}>
                     <GripVertical className="size-3 -ms-1 text-[var(--md-subtle)] opacity-0 transition-opacity group-hover/header:opacity-70" strokeWidth={1.3} aria-hidden="true" />
                     {column.sortValue ? (
                       <button type="button" onClick={() => toggleSort(column)} className="inline-flex min-h-6 min-w-0 items-center gap-1.5 rounded-[var(--md-radius-xs)] text-start outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--md-accent)_24%,transparent)]" aria-label={`${t("Sort column")}: ${t(column.label)}`}>

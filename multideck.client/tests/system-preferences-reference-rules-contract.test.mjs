@@ -97,3 +97,16 @@ test("unsafe recipes require exactly one continuous sequence", () => {
   assert.match(adminPage, /counterTokens\.length !== 1/)
   assert.match(adminPage, /Every reference rule needs one continuous sequence\./)
 })
+
+test("directional booking recipes keep the visible recipe while supporting Import and Export", async () => {
+  const migration = await read("../../supabase/migrations/20260826110000_directional_quote_booking_references.sql")
+  assert.match(adminPage, /DIRECTION/u)
+  assert.match(adminPage, /chunk\.token === "DIRECTION"[\s\S]*t\("Direction"\)[\s\S]*t\("first"\)/u)
+  assert.match(migration, /\{DIRECTION(?::[0-9]{1,2})?\}/u)
+  assert.match(migration, /when 'import' then 'I'/u)
+  assert.match(migration, /when 'export' then 'E'/u)
+  assert.match(migration, /booking_api\.allocate_reference\(company_id, 'default', direction_code\)/u)
+  assert.match(migration, /facts->>'quoteType'/u)
+  assert.match(migration, /Job_BookingReferenceSequenceKey/u)
+  assert.match(migration, /J\{DIRECTION:1\}\{NUMBER:7\}/u)
+})

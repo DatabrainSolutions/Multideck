@@ -76,6 +76,7 @@ import {
   sendBookingToCustoms,
   uploadBookingCustomsDocument,
   type BookingCustomsReadiness,
+  type BookingWorkflowCharge,
   type BookingWorkflowEvent,
   type BookingWorkflowWorkspace,
 } from "@/lib/booking-workflow-api"
@@ -152,10 +153,42 @@ function bookingWorkspaceDirection(value: string | null | undefined): LiveBookin
   return "Direction needed"
 }
 
+type BookingQuoteHandoff = {
+  quote: Record<string, unknown>
+  facts: Record<string, unknown>
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function recordText(record: Record<string, unknown>, key: string) {
+  const value = record[key]
+  return typeof value === "string" || typeof value === "number" ? String(value) : ""
+}
+
+function bookingQuoteHandoff(workspace: BookingWorkflowWorkspace): BookingQuoteHandoff {
+  const sourceSnapshot = workspace.booking.sourceSnapshot ?? {}
+  const acceptedSnapshot = asRecord(sourceSnapshot.acceptedSnapshot)
+  const quote = asRecord(acceptedSnapshot.quote)
+  return { quote, facts: asRecord(quote.shipmentFacts) }
+}
+
+function bookingParty(workspace: BookingWorkflowWorkspace, role: string) {
+  return workspace.parties.find((party) => party.role.toLowerCase() === role)
+}
+
 function bookingWorkspaceRecord(workspace: BookingWorkflowWorkspace): BookingDetailRecord {
   const booking = workspace.booking
   const route = workspace.routes[0]
   const container = workspace.containers[0]
+  const quoteHandoff = bookingQuoteHandoff(workspace)
+  const quote = quoteHandoff.quote
+  const facts = quoteHandoff.facts
+  const containerTypes = [...new Set(workspace.containers.map((item) => item.type).filter(Boolean))].join(", ")
+  const containerSummary = workspace.containers.length > 1
+    ? `${workspace.containers.length} × ${containerTypes || "container"}`
+    : container?.number ?? container?.type ?? containerTypes
   const lifecycle = String(booking.status ?? "draft").toLowerCase()
   const displayStatus: LiveBooking["status"] = lifecycle.includes("exception")
     ? "Exception"
@@ -175,7 +208,7 @@ function bookingWorkspaceRecord(workspace: BookingWorkflowWorkspace): BookingDet
       customer: booking.customerName ?? "",
       route: routeLabel,
       carrier: booking.carrierName ?? "",
-      container: container?.number ?? container?.type ?? "",
+      container: containerSummary,
       mode: bookingWorkspaceMode(booking.mode),
       value: booking.freightChargeAmount == null ? "" : `${booking.freightChargeCurrency ?? ""} ${booking.freightChargeAmount}`.trim(),
       eta: arrivalAt ? String(arrivalAt).slice(0, 10) : "",
@@ -187,8 +220,8 @@ function bookingWorkspaceRecord(workspace: BookingWorkflowWorkspace): BookingDet
       tone: statusTone,
       invoice: workspace.documents.find((document) => /commercial.?invoice/i.test(document.typeCode ?? document.title))?.fileName ?? "",
       jobRef: booking.jobReference,
-      customerRef: "",
-      supplierRef: route?.carrierBookingReference ?? "",
+      customerRef: recordText(quote, "customerReference") || recordText(facts, "customerReference"),
+      supplierRef: recordText(facts, "supplierReference") || (route?.carrierBookingReference ?? ""),
       origin: booking.origin ?? "",
       destination: booking.destination ?? "",
       vessel: route?.vessel ?? route?.flightNumber ?? route?.transportMeansName ?? "",
@@ -198,9 +231,12 @@ function bookingWorkspaceRecord(workspace: BookingWorkflowWorkspace): BookingDet
       arrivalAt: String(arrivalAt ?? ""),
       vin: route?.vehicleRegistration ?? "",
       direction: bookingWorkspaceDirection(booking.direction),
-      shipmentType: container?.type ?? "",
+      shipmentType: recordText(quote, "shipmentType") || recordText(facts, "shipmentType") || "",
       isFavourite: false,
       customFields: [
+        ...(recordText(quote, "quoteType") || recordText(facts, "quoteType") ? [{ label: "Quote type", value: recordText(quote, "quoteType") || recordText(facts, "quoteType") }] : []),
+        ...(recordText(quote, "reference") ? [{ label: "Quote ref", value: recordText(quote, "reference") }] : []),
+        ...(recordText(facts, "customerPO") ? [{ label: "Customer PO", value: recordText(facts, "customerPO") }] : []),
         ...(booking.incoterm ? [{ label: "Incoterms", value: [booking.incoterm, booking.incotermLocation].filter(Boolean).join(" ") }] : []),
         ...(booking.sourceQuoteId ? [{ label: "Source", value: "Accepted quote" }] : []),
       ],
@@ -2372,6 +2408,18 @@ function BookingRecordDetails({
       : new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(updatedDate)
 
   const unavailable = t("Not available in the booking register")
+  const workspace = record.workspace
+  const quoteHandoff = workspace ? bookingQuoteHandoff(workspace) : { quote: {}, facts: {} }
+  const quote = quoteHandoff.quote
+  const facts = quoteHandoff.facts
+  const customer = workspace?.booking
+  const shipper = workspace ? bookingParty(workspace, "shipper") : undefined
+  const consignee = workspace ? bookingParty(workspace, "consignee") : undefined
+  const cargo = workspace?.cargo[0]
+  const quoteType = recordText(quote, "direction") || recordText(facts, "quoteType")
+  const quoteReference = recordText(quote, "reference") || recordText(asRecord(workspace?.sourceQuote), "reference")
+  const value = (source: Record<string, unknown>, key: string, fallback = "") => recordText(source, key) || fallback
+  const cargoValue = (key: keyof NonNullable<typeof cargo>) => cargo && cargo[key] != null ? String(cargo[key]) : ""
   const persistableFields = new Set<keyof LiveBooking>([
     "mode",
     "direction",
@@ -2402,6 +2450,8 @@ function BookingRecordDetails({
               <BookingCargoWiseField label="Status" value={record.booking.status} options={["On track", "Delayed", "Exception"]} {...editField("status")} />
               <BookingCargoWiseField label="Progress" value={`${record.booking.progress}%`} />
               <BookingCargoWiseField label="Mode" value={record.booking.mode} options={["OCEAN", "AIR", "ROAD", "FAS", "FSA"]} {...editField("mode")} />
+              <BookingCargoWiseField label="Quote type" value={quoteType} />
+              <BookingCargoWiseField label="Shipment type" value={record.booking.shipmentType} />
               <BookingCargoWiseField label="Last updated" value={updatedAt} />
             </div>
           </div>
@@ -2419,6 +2469,8 @@ function BookingRecordDetails({
             <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("References")}</h4>
             <div className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
               <BookingCargoWiseField label="Customer ref" value={record.booking.customerRef} {...editField("customerRef")} />
+              <BookingCargoWiseField label="Quote ref" value={quoteReference} />
+              <BookingCargoWiseField label="Customer PO" value={value(facts, "customerPO")} />
               <BookingCargoWiseField label="Supplier ref" value={record.booking.supplierRef} {...editField("supplierRef")} />
               <BookingCargoWiseField label="Invoice" value={record.booking.invoice} {...editField("invoice")} />
               <BookingCargoWiseField label="Documents" value={t("Not connected")} />
@@ -2430,22 +2482,27 @@ function BookingRecordDetails({
 
       <div className="grid items-stretch gap-[var(--md-page-stack-gap-compact)] xl:grid-cols-[1.26fr_1.08fr_1fr]">
         <BookingCargoWiseGroup title="Customer" className="[--md-field-label-width:64px]">
-          <BookingCargoWiseField label="Name" value={record.booking.customer} span {...editField("customer")} />
-          <BookingCargoWiseField label="Code / ref" value={record.booking.customerRef} span {...editField("customerRef")} />
-          <BookingCargoWiseField label="Address" value={unavailable} span />
-          <BookingCargoWiseField label="Contact" value={unavailable} span />
+          <BookingCargoWiseField label="Name" value={record.booking.customer || value(quote, "customerName")} span {...editField("customer")} />
+          <BookingCargoWiseField label="Code / ref" value={value(facts, "clientCode", customer?.customerCode ?? "") || record.booking.customerRef} span {...editField("customerRef")} />
+          <BookingCargoWiseField label="Address" value={value(facts, "customerAddress", value(quote, "customerAddress")) || unavailable} span />
+          <BookingCargoWiseField label="Contact" value={value(facts, "customerContact", value(quote, "contactName")) || unavailable} span />
+          <BookingCargoWiseField label="Email" value={value(facts, "customerEmail", value(quote, "contactEmail")) || unavailable} span />
         </BookingCargoWiseGroup>
         <BookingCargoWiseGroup title="Shipper" className="[--md-field-label-width:64px]">
-          <BookingCargoWiseField label="Name" value={unavailable} span />
-          <BookingCargoWiseField label="Reference" value={record.booking.supplierRef} span {...editField("supplierRef")} />
+          <BookingCargoWiseField label="Code" value={value(facts, "shipperCode", shipper?.identifierValue ?? "")} span />
+          <BookingCargoWiseField label="Name" value={shipper?.name || value(quote, "shipperName") || unavailable} span />
+          <BookingCargoWiseField label="Reference" value={value(facts, "shipperReference")} span />
           <BookingCargoWiseField label="Collection" value={record.booking.origin} span {...editField("origin")} />
-          <BookingCargoWiseField label="Address" value={unavailable} span />
+          <BookingCargoWiseField label="Address" value={shipper?.address || value(quote, "shipperAddress") || unavailable} span />
+          <BookingCargoWiseField label="Contact" value={shipper?.contactName || value(facts, "shipperContact") || unavailable} span />
         </BookingCargoWiseGroup>
         <BookingCargoWiseGroup title="Consignee" className="[--md-field-label-width:64px]">
-          <BookingCargoWiseField label="Name" value={unavailable} span />
-          <BookingCargoWiseField label="Reference" value={t("Not supplied")} span />
+          <BookingCargoWiseField label="Code" value={value(facts, "consigneeCode", consignee?.identifierValue ?? "")} span />
+          <BookingCargoWiseField label="Name" value={consignee?.name || value(quote, "consigneeName") || unavailable} span />
+          <BookingCargoWiseField label="Reference" value={value(facts, "consigneeReference")} span />
           <BookingCargoWiseField label="Delivery" value={record.booking.destination} span {...editField("destination")} />
-          <BookingCargoWiseField label="Address" value={unavailable} span />
+          <BookingCargoWiseField label="Address" value={consignee?.address || value(quote, "consigneeAddress") || unavailable} span />
+          <BookingCargoWiseField label="Contact" value={consignee?.contactName || value(facts, "consigneeContact") || unavailable} span />
         </BookingCargoWiseGroup>
       </div>
 
@@ -2457,8 +2514,11 @@ function BookingRecordDetails({
               <div className="grid gap-1.5 md:grid-cols-2">
                 <BookingCargoWiseField label="Shipment type" value={record.booking.shipmentType} {...editField("shipmentType")} />
                 <BookingCargoWiseField label="Equipment / load" value={record.booking.container} {...editField("container")} />
+                <BookingCargoWiseField label="HBL mode" value={value(facts, "hblMode")} />
+                <BookingCargoWiseField label="Incoterms" value={[workspace?.booking.incoterm, workspace?.booking.incotermLocation].filter(Boolean).join(" ")} />
                 <BookingCargoWiseField label="From" value={record.booking.origin} {...editField("origin")} />
                 <BookingCargoWiseField label="To" value={record.booking.destination} {...editField("destination")} />
+                <BookingCargoWiseField label="Via" value={value(facts, "routingVia")} />
                 <BookingCargoWiseField label="Departure" value={record.booking.departureDate} {...editField("departureDate")} />
                 <BookingCargoWiseField label="Arrival" value={record.booking.arrivalDate} {...editField("arrivalDate")} />
                 <BookingCargoWiseField label="ETA" value={record.booking.eta} {...editField("eta")} />
@@ -2479,12 +2539,30 @@ function BookingRecordDetails({
 
         <BookingCargoWiseGroup title="Goods" contentClassName="md:grid-cols-2">
           <BookingCargoWiseField label="Booking value" value={record.booking.value} {...editField("value")} />
+          <BookingCargoWiseField label="Goods value" value={[value(facts, "goodsValue"), value(facts, "goodsValueCurrency", record.booking.value ? record.booking.value.split(" ")[0] : "")].filter(Boolean).join(" ")} />
+          <BookingCargoWiseField label="Commodity" value={cargo?.commodity || value(facts, "commodity")} />
+          <BookingCargoWiseField label="Known cargo" value={value(facts, "knownCargo")} />
+          <BookingCargoWiseField label="Packages / pieces" value={cargoValue("packageQuantity") || value(facts, "packageQuantity")} />
+          <BookingCargoWiseField label="Package type" value={cargo?.packageType || value(facts, "packageType")} />
+          <BookingCargoWiseField label="Gross weight (kg)" value={cargoValue("grossWeightKg") || value(facts, "grossWeightKg")} />
+          <BookingCargoWiseField label="Volume (CBM)" value={cargoValue("volumeCbm") || value(facts, "volumeCbm")} />
+          <BookingCargoWiseField label="Chargeable weight (kg)" value={value(facts, "chargeableWeightKg")} />
+          <BookingCargoWiseField label="Customs included" value={value(facts, "customsIncluded")} />
           <BookingCargoWiseField label="VIN" value={record.booking.vin} {...editField("vin")} />
           {record.booking.customFields.length
             ? record.booking.customFields.map((field, index) => <BookingCargoWiseField key={`${field.label}-${index}`} label={field.label} value={field.value} />)
             : <BookingCargoWiseField label="Custom fields" value={t("No additional fields recorded")} span />}
         </BookingCargoWiseGroup>
       </div>
+
+      <BookingCargoWiseGroup title="Customer terms">
+        <div className="grid gap-1.5 md:grid-cols-2">
+          <BookingCargoWiseField label="Terms and conditions" value={workspace?.booking.sourceQuoteId ? value(quote, "terms") || unavailable : unavailable} span />
+          <BookingCargoWiseField label="Subject to rate / space" value={value(facts, "subjectToTerms") || unavailable} span />
+          <BookingCargoWiseField label="Customer notes" value={value(quote, "customerNotes") || workspace?.booking.internalNotes || unavailable} span />
+          <BookingCargoWiseField label="Response deadline" value={value(quote, "deadline") || workspace?.booking.customerDeadline || unavailable} />
+        </div>
+      </BookingCargoWiseGroup>
 
       <BookingAvailabilityInspector record={record} />
     </div>
@@ -2864,7 +2942,23 @@ function BookingCustomsWorkspace({
 
 function BookingFinanceWorkspace({ record }: { record: BookingDetailRecord }) {
   const { t } = useLanguage()
-  const hasFixture = hasPrototypeDetailData(record)
+  const liveCharges = record.workspace?.charges ?? []
+  const liveChargeRows: Array<readonly [string, string]> = liveCharges.map((charge: BookingWorkflowCharge, index) => {
+    const description = typeof charge.description === "string" && charge.description.trim()
+      ? charge.description.trim()
+      : `${t("Charge")} ${index + 1}`
+    const currency = typeof record.workspace?.booking.freightChargeCurrency === "string"
+      ? record.workspace.booking.freightChargeCurrency.trim().toUpperCase()
+      : ""
+    const cost = typeof charge.costLocal === "number" ? charge.costLocal : Number(charge.costLocal ?? 0)
+    const sell = typeof charge.sellLocal === "number" ? charge.sellLocal : Number(charge.sellLocal ?? 0)
+    const amount = Number.isFinite(sell) && sell !== 0 ? sell : Number.isFinite(cost) ? cost : 0
+    const amountLabel = `${currency ? `${currency} ` : ""}${amount.toFixed(2)}`
+    const detail = Number.isFinite(sell) && sell !== 0
+      ? `${t("Sell")} ${amountLabel}`
+      : `${t("Cost")} ${amountLabel}`
+    return [`${index + 1}. ${description}`, detail] as const
+  })
 
   return (
     <div className="grid gap-[var(--md-page-stack-gap)] 2xl:grid-cols-[360px_minmax(0,1fr)]">
@@ -2878,10 +2972,14 @@ function BookingFinanceWorkspace({ record }: { record: BookingDetailRecord }) {
           ["Supplier reference", record.booking.supplierRef || "Not supplied"],
         ]} />
       </Surface>
-      {hasFixture ? (
+      {record.workspace ? (
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
           <BookingWorkspaceSectionTitle>{t("Cost lines")}</BookingWorkspaceSectionTitle>
-          <BookingFactRows rows={costRows.map(([label, detail, amount]) => [label, `${amount} · ${detail}`] as const)} />
+          {liveChargeRows.length ? (
+            <BookingFactRows rows={liveChargeRows} />
+          ) : (
+            <p className="px-5 py-6 text-[12px] text-[var(--md-text)]">{t("No quote charges have been transferred to this booking yet.")}</p>
+          )}
         </Surface>
       ) : (
         <UnavailableBookingSection title="Cost ledger" detail="No supplier-cost or accounting feed is connected for this booking. The booking value above is the only finance field available in the register." />
@@ -3274,7 +3372,9 @@ export function BookingDetailWorkspace({
         parties: workspace.parties,
         cargo: workspace.cargo,
         containers: container
-          ? [{ ...container, number: draftBooking.container || container.number, type: draftBooking.shipmentType || container.type }]
+          ? workspace.containers.map((item, index) => index === 0
+            ? { ...item, number: draftBooking.container || item.number, type: draftBooking.shipmentType || item.type }
+            : item)
           : draftBooking.container || draftBooking.shipmentType
             ? [{ number: draftBooking.container || null, type: draftBooking.shipmentType || null, status: "planned" }]
             : [],

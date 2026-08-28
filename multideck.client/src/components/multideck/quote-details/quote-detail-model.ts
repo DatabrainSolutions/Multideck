@@ -224,6 +224,20 @@ export function filterLocationOptions(options: readonly LocationOption[], value:
   ))
 }
 
+/** Keeps the place directory relevant to the selected transport mode. */
+export function filterLocationsForMode(options: readonly LocationOption[], mode: string | null | undefined) {
+  const normalizedMode = (mode ?? "").trim().toLocaleLowerCase()
+  if (!normalizedMode || normalizedMode.includes("multimodal")) return options
+
+  return options.filter((option) => {
+    if (normalizedMode.startsWith("air")) return option.kind === "airport"
+    if (normalizedMode.startsWith("sea")) return option.kind === "port"
+    if (normalizedMode.startsWith("road")) return !option.kind || ["port", "city", "airport"].includes(option.kind)
+    if (normalizedMode.startsWith("rail")) return !option.kind || ["rail-terminal", "inland-terminal", "city"].includes(option.kind)
+    return true
+  })
+}
+
 function exactCountry(option: LocationOption, value: string) {
   const query = searchKey(value)
   return searchKey(option.countryName) === query || searchKey(option.countryCode) === query
@@ -259,7 +273,7 @@ export function resolveLinkedLocation(
 
     const countryMatches = options.filter((option) => exactCountry(option, input))
     const country = countryMatches[0]
-    if (!country) return next
+    if (!country) return { ...next, countryCode: "", place: "", unlocode: "" }
 
     const normalized = { ...next, countryCode: country.countryCode, countryName: country.countryName }
     const compatible = countryMatches.filter((option) => (
