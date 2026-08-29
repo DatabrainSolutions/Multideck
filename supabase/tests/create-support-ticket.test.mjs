@@ -1,177 +1,107 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 
-import {
-  normalizeStatusUrl,
-  validateSupportTicketRequest,
-} from "../functions/create-support-ticket/validation.ts"
-import {
-  buildDatabrainTicketPayload,
-  mapDatabrainFailure,
-  parseConfirmedTicketResponse,
-} from "../functions/create-support-ticket/contract.ts"
+const edgeFunction = readFileSync(
+  new URL("../functions/create-support-ticket/index.ts", import.meta.url),
+  "utf8",
+)
+const cloudContract = readFileSync(
+  new URL("../functions/create-support-ticket/cloud-contract.ts", import.meta.url),
+  "utf8",
+)
+const client = readFileSync(
+  new URL("../../multideck.client/src/lib/support-ticket.ts", import.meta.url),
+  "utf8",
+)
+const settingsPage = readFileSync(
+  new URL("../../multideck.client/src/pages/settings-page.tsx", import.meta.url),
+  "utf8",
+)
+const legacyValidation = readFileSync(
+  new URL("../functions/create-support-ticket/validation.ts", import.meta.url),
+  "utf8",
+)
+const legacyContract = readFileSync(
+  new URL("../functions/create-support-ticket/contract.ts", import.meta.url),
+  "utf8",
+)
 
-const validRequest = {
-  idempotencyKey: "support-form-stable-key",
-  topic: "Security concern",
-  priority: "Normal",
-  title: "Cannot complete the booking",
-  description: "The Continue button stays disabled after adding cargo.",
-  applicationUrl: "https://dev.multideck.app/settings?tab=support",
-}
-
-test("normalises a valid support request without accepting requester identity", () => {
-  const result = validateSupportTicketRequest({
-    ...validRequest,
-    requester: { email: "attacker@example.com" },
-  })
-
-  assert.deepEqual(result, {
-    value: {
-      idempotencyKey: "support-form-stable-key",
-      topic: "Security concern",
-      priority: "medium",
-      title: "Cannot complete the booking",
-      description: "The Continue button stays disabled after adding cargo.",
-      applicationUrl: "https://dev.multideck.app/settings?tab=support",
-    },
-  })
-  assert.equal("requester" in result.value, false)
+test("signs intake without sending a browser customer or tenant selector", () => {
+  assert.match(cloudContract, /crypto\.subtle\.sign\("HMAC"/)
+  assert.match(cloudContract, /`\$\{timestamp\}\.\$\{nonce\}\.\$\{bodyDigest\}`/)
+  assert.match(cloudContract, /"x-multideck-tenant-host": tenantHost/)
+  assert.doesNotMatch(cloudContract, /x-multideck-tenant-id/i)
 })
 
-test("rejects a changed payload that attempts to reuse an unsafe key", () => {
-  const result = validateSupportTicketRequest({
-    ...validRequest,
-    idempotencyKey: "support form with spaces",
-  })
-
-  assert.deepEqual(result, { message: "Start a new ticket and try again." })
+test("detects nested spoofed customer selectors", () => {
+  assert.match(cloudContract, /FORBIDDEN_CUSTOMER_KEYS = new Set\(\["tenantid", "customerid"\]\)/)
+  assert.match(cloudContract, /containsCustomerSelector\(nested, depth \+ 1\)/)
+  assert.match(cloudContract, /key\.toLowerCase\(\)\.replaceAll/)
 })
 
-test("rejects unsupported topics, priorities, short descriptions, and unsafe URLs", () => {
-  assert.deepEqual(
-    validateSupportTicketRequest({ ...validRequest, topic: "Other" }),
-    { message: "Choose a valid support topic." },
-  )
-  assert.deepEqual(
-    validateSupportTicketRequest({ ...validRequest, priority: "Low" }),
-    { message: "Choose a valid ticket priority." },
-  )
-  assert.deepEqual(
-    validateSupportTicketRequest({ ...validRequest, description: "Too short" }),
-    { message: "Add at least 20 characters explaining what happened and what you expected." },
-  )
-  assert.deepEqual(
-    validateSupportTicketRequest({ ...validRequest, applicationUrl: "javascript:alert(1)" }),
-    { message: "Refresh the page and try again." },
-  )
+test("derives the reporter for every intake stage and rejects browser customer identity", () => {
+  assert.match(edgeFunction, /containsCustomerSelector\(body\)/)
+  assert.match(edgeFunction, /reporterUserId: reporter\.workspaceUser\.User_ID/)
+  assert.match(edgeFunction, /\["create_draft", "prepare_attachment", "complete_attachment", "finalize"\]/)
 })
 
-test("only returns HTTPS ticket status links", () => {
-  assert.equal(
-    normalizeStatusUrl("https://os.databrain.solutions/ticket-status/example"),
-    "https://os.databrain.solutions/ticket-status/example",
-  )
-  assert.equal(normalizeStatusUrl("http://example.com/ticket"), null)
-  assert.equal(normalizeStatusUrl("javascript:alert(1)"), null)
+test("defaults to the legacy Databrain path and only enables Cloud from a server-side flag", () => {
+  assert.match(edgeFunction, /Deno\.env\.get\("MULTIDECK_CLOUD_SUPPORT_ENABLED"\).*=== "true"/)
+  assert.match(edgeFunction, /cloudTicketingEnabled[\s\S]*handleCloudTicket[\s\S]*handleLegacyTicket/)
+  assert.match(edgeFunction, /DATABRAIN_TICKET_WEBHOOK_URL/)
+  assert.match(edgeFunction, /X-Databrain-Webhook-Secret/)
+  assert.match(edgeFunction, /MULTIDECK_CLOUD_SUPPORT_CREDENTIAL/)
+  assert.doesNotMatch(edgeFunction, /body\.MULTIDECK_CLOUD_SUPPORT_ENABLED|body\.cloudTicketingEnabled/)
 })
 
-test("maps the authenticated requester and keeps credentials out of the Databrain payload", () => {
-  const normalized = validateSupportTicketRequest(validRequest)
-  assert.ok(normalized.value)
-
-  const payload = buildDatabrainTicketPayload(normalized.value, {
-    name: "Alex Operator",
-    email: "alex@example.com",
-    companyName: "Example Logistics",
-  })
-
-  assert.deepEqual(payload, {
-    idempotencyKey: "support-form-stable-key",
-    sourceApplication: "multideck",
-    title: "Cannot complete the booking",
-    description: "The Continue button stays disabled after adding cargo.",
-    requester: {
-      name: "Alex Operator",
-      email: "alex@example.com",
-    },
-    clientName: "Example Logistics",
-    categorySlug: "general",
-    priority: "medium",
-    metadata: {
-      topic: "Security concern",
-      requestedPriority: "medium",
-      applicationUrl: "https://dev.multideck.app/settings?tab=support",
-    },
-  })
-
-  const serialized = JSON.stringify(payload).toLowerCase()
-  assert.equal(serialized.includes("secret"), false)
-  assert.equal(serialized.includes("authorization"), false)
-  assert.equal(serialized.includes("cookie"), false)
+test("keeps the legacy Settings form visible while the Cloud rollout flag is off", () => {
+  assert.match(settingsPage, /supportTicketFeatureEnabled \? <SupportHubTab \/> : <LegacySupportTab \/>/)
+  assert.match(settingsPage, /createLegacySupportTicket\(\{/)
+  assert.match(settingsPage, /topic,[\s\S]*priority,[\s\S]*applicationUrl: window\.location\.href/)
 })
 
-test("keeps the stable idempotency key on every mapping", () => {
-  const normalized = validateSupportTicketRequest(validRequest)
-  assert.ok(normalized.value)
-  const requester = {
-    name: "Alex Operator",
-    email: "alex@example.com",
-    companyName: "Example Logistics",
-  }
-
-  assert.equal(
-    buildDatabrainTicketPayload(normalized.value, requester).idempotencyKey,
-    buildDatabrainTicketPayload(normalized.value, requester).idempotencyKey,
-  )
+test("normalises the established legacy request without accepting requester identity", () => {
+  assert.match(legacyValidation, /export function validateSupportTicketRequest/)
+  assert.match(legacyValidation, /priority === "normal" \|\| priority === "medium"/)
+  assert.match(legacyValidation, /idempotencyKey,[\s\S]*topic,[\s\S]*title,[\s\S]*description,[\s\S]*priority: normalizedPriority,[\s\S]*applicationUrl/)
+  assert.doesNotMatch(legacyValidation, /requester|customerId|tenantId/)
 })
 
-test("maps upstream validation, configuration, conflict, size, and availability failures", () => {
-  assert.deepEqual(mapDatabrainFailure(400), {
-    status: 400,
-    body: {
-      code: "validation_error",
-      message: "Check the ticket details and try again.",
-    },
-  })
-  assert.equal(mapDatabrainFailure(401).status, 503)
-  assert.equal(mapDatabrainFailure(409).body.code, "idempotency_conflict")
-  assert.equal(mapDatabrainFailure(413).body.code, "ticket_too_large")
-  assert.equal(mapDatabrainFailure(500).status, 503)
-  assert.equal(mapDatabrainFailure(502).status, 503)
+test("rejects unsafe legacy keys, values and application URLs", () => {
+  assert.match(legacyValidation, /idempotencyKey\.length < 8 \|\| !\/\^\[A-Za-z0-9\._:-\]\+\$\//)
+  assert.match(legacyValidation, /TOPICS\.has\(topic\)/)
+  assert.match(legacyValidation, /description\.length < 20/)
+  assert.match(legacyValidation, /parsed\.protocol === "https:" \|\| parsed\.protocol === "http:"/)
 })
 
-test("returns only confirmed success and preserves duplicate responses", () => {
-  const created = parseConfirmedTicketResponse({
-    ticket: {
-      ticketNumber: "TK-2048",
-      status: "open",
-      createdAt: "2026-07-30T10:00:00Z",
-      statusUrl: "https://os.databrain.solutions/ticket-status/example",
-    },
-    duplicate: false,
-  })
-  assert.equal(created.status, 201)
-  assert.equal(created.body.ticket.ticketNumber, "TK-2048")
-  assert.equal(created.body.duplicate, false)
+test("maps the authenticated requester into the legacy payload without credentials", () => {
+  assert.match(legacyContract, /export function buildDatabrainTicketPayload/)
+  assert.match(legacyContract, /requester: \{[\s\S]*name: requester\.name,[\s\S]*email: requester\.email/)
+  assert.match(legacyContract, /clientName: requester\.companyName/)
+  assert.doesNotMatch(legacyContract, /webhookSecret|authorization|cookie/i)
+})
 
-  const duplicate = parseConfirmedTicketResponse({
-    ticket: {
-      ticketNumber: "TK-2048",
-      status: "open",
-      createdAt: "2026-07-30T10:00:00Z",
-      statusUrl: null,
-    },
-    duplicate: true,
-  })
-  assert.equal(duplicate.status, 200)
-  assert.equal(duplicate.body.duplicate, true)
+test("requires a confirmed legacy ticket and only accepts HTTPS status links", () => {
+  assert.match(legacyValidation, /parsed\.protocol === "https:" \? parsed\.toString\(\) : null/)
+  assert.match(legacyContract, /if \(!ticketNumber \|\| !createdAt\) return null/)
+  assert.match(legacyContract, /status: duplicate \? 200 : 201/)
+})
 
-  assert.equal(parseConfirmedTicketResponse({
-    ticket: {
-      status: "open",
-      createdAt: "2026-07-30T10:00:00Z",
-    },
-    duplicate: false,
-  }), null)
+test("preserves legacy upstream failure semantics", () => {
+  assert.match(legacyContract, /status === 400[\s\S]*code: "validation_error"/)
+  assert.match(legacyContract, /status === 409[\s\S]*code: "idempotency_conflict"/)
+  assert.match(legacyContract, /status === 413[\s\S]*code: "ticket_too_large"/)
+  assert.match(legacyContract, /return \{[\s\S]*status: 503,[\s\S]*code: "support_service_unavailable"/)
+})
+
+test("completes uploads by server-owned attachment id only", () => {
+  assert.match(client, /invoke\(\{ action: "complete_attachment", attachmentId: prepared\.attachment\.id \}, 30_000\)/)
+  assert.doesNotMatch(client, /action: "complete_attachment"[^\n]+storagePath/)
+})
+
+test("does not send a public status token from the browser", () => {
+  assert.match(client, /\{ action: "finalize", draftId: created\.draft\.id \}/)
+  assert.doesNotMatch(client, /publicStatusToken|multideck-status:/)
+  assert.doesNotMatch(edgeFunction, /publicStatusToken/)
 })

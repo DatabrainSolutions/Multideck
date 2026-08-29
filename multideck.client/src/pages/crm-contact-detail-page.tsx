@@ -88,10 +88,7 @@ const contactChannelOptions = [
 const contactLanguageOptions = [
   { value: unsetContactValue, label: "Not recorded" },
   { value: "en-GB", label: "British English" },
-  { value: "en", label: "English" },
-  { value: "fr", label: "French" },
-  { value: "de", label: "German" },
-  { value: "ar", label: "Arabic" },
+  { value: "en-US", label: "American English" },
 ] as const
 
 function includeCurrentOption(
@@ -104,10 +101,7 @@ function includeCurrentOption(
 }
 
 const languageCodeAliases: Record<string, string> = {
-  arabic: "ar",
   english: "en",
-  french: "fr",
-  german: "de",
 }
 
 export function CrmContactDetailPage({ contactId, navigate }: { contactId: string; navigate: (path: string) => void }) {

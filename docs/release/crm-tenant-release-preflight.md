@@ -24,7 +24,7 @@ The two Jenkar passes mean the absent legacy CRM view/function surfaces are not 
 7. Build the tenant frontend with only that project's public Supabase URL/key and the exact tenant/root host values. Production must fail closed on a hostname mismatch.
 8. Run the SQL preflight against the exact target and require every row to pass. Separately verify the deployed Edge Function names, versions and source parity.
 9. Provision only an approved pilot roster and clean pilot data. Do not copy test fixtures, Auth users, secrets or customer records between projects.
-10. Run authenticated happy, failure and refresh journeys for Dashboard, Accounts, Contacts, Leads, Deals, Contact cards, Drive and pipeline settings on desktop and mobile, including keyboard and Arabic/RTL checks.
+10. Run authenticated happy, failure and refresh journeys for Dashboard, Accounts, Contacts, Leads, Deals, Contact cards, Drive and pipeline settings on desktop and mobile, including keyboard and both supported English regional settings.
 11. Run bidirectional cross-project denial using approved test identities: Auth tokens, direct API reads/writes, Storage paths, Edge Functions, deep links and sign-out/session boundaries must not cross projects.
 12. Run the agreed matched performance traces and confirm bounded collection, recent-email and Drive reads before broad-volume release.
 

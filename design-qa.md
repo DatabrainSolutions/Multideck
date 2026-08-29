@@ -33,7 +33,7 @@ Patches made after QA:
 - Reduced overlap-card chrome for cramped event columns.
 - Added click-to-inspect event detail popovers for narrow or overlapping calendar blocks.
 - Strengthened the event detail popover surface so it reads as an inspection panel over the calendar grid.
-- Polished German and French translations for the new calendar labels.
+- Polished the English calendar labels.
 
 Focused region comparison:
 - Focused comparison was not needed beyond the full-view reference/implementation pair because the key fidelity requirement is structural: hourly grid, day columns, timed cards, overlap behaviour, and customer colour key. The browser test directly verifies those interaction and layout states.
@@ -77,7 +77,7 @@ Required fidelity surfaces:
 - Spacing and layout rhythm: the compact action rail stays inside the annotated `83px` allowance and preserves row alignment.
 - Colours and visual tokens: existing neutral action surfaces remain unchanged; the added handoff uses the real Dexter shader and a restrained surface shadow.
 - Image quality and assets: no duplicate graphic asset was introduced; the existing live Dexter shader component is reused.
-- Copy and content: the queue copy is unchanged. `Hand over to Dexter` and the generated task prompt are supplied through the app language layer in English, German, French, and Arabic.
+- Copy and content: the queue copy is unchanged. `Hand over to Dexter` and the generated task prompt are supplied in English through the app copy layer.
 
 Comparison history:
 - Pass 1 finding: complete and open actions were hidden until hover, leaving the rail visually empty and undiscoverable; no direct Dexter handoff existed.
@@ -89,7 +89,7 @@ Responsive, accessibility, and interaction checks:
 - Handoff is approval-safe: it opens Dexter and prefills the composer but does not send the message automatically.
 - The prompt includes task, reference, customer, route context, and current status so Dexter receives useful operating context.
 - The permanent rail remains visible without pointer hover and does not depend on colour alone for meaning.
-- The existing open-arrow RTL treatment is preserved; the Dexter and complete symbols are direction-neutral.
+- The existing open-arrow treatment is preserved; the Dexter and complete symbols remain visually neutral.
 - A fresh local dashboard tab reported no console errors after load.
 - `npx tsc -b --pretty false`, `npm run build`, `node --test --experimental-strip-types tests/dexter-navigation.test.ts`, and `git diff --check` pass. The production build reports only the existing large-chunk advisory.
 
@@ -150,12 +150,12 @@ Responsive, accessibility, and interaction checks:
 - Hover was exercised with a real pointer move; moving the pointer away returned the overlay opacity to `0` after the 150ms transition.
 - Keyboard users retain the same stroke through `:focus-visible`, alongside the existing accessible focus ring; pointer clicks do not leave a focus-visible outline behind.
 - Reduced-motion users receive the same state change without the opacity transition.
-- The treatment uses no directional offsets, so RTL layout remains unaffected.
+- The treatment uses no unnecessary directional offsets.
 - A fresh local dashboard tab reported no console errors after load.
 - `npm run build` and `git diff --check` pass. The production build reports only the existing large-chunk advisory.
 
 Component and scope check:
-- The existing `SidebarNavItem` is reused; no new reusable component or visible copy was introduced, so no components-gallery or localisation entry is required.
+- The existing `SidebarNavItem` is reused; no new reusable component or visible copy was introduced, so no components-gallery or copy entry is required.
 - Only the Dexter accent treatment changed. Home, Inbox, area navigation, dashboard content, routing, authentication, tenant, provider, backend, and deployment behaviour are unchanged.
 
 Findings:
@@ -192,7 +192,7 @@ Required fidelity surfaces:
 - KPI composition: all four summaries render area sparklines and no bar sparklines. The delta chips measure `18px` high and `36.5px` wide for the current `0%` values, so they hug content instead of filling the row.
 - Colour: Air uses the dashboard blue token and Road uses the amber token; the plotted series, fills, and legend swatches inherit those distinct colours consistently.
 - Image quality and assets: no raster product assets were introduced. The supplied images are layout and density references only.
-- Copy: the removed filters do not leave orphan labels. The empty live-bookings sentence was made localisable in English, German, French, and Arabic.
+- Copy: the removed filters do not leave orphan labels. The empty live-bookings sentence is covered by the English copy layer.
 
 Full-view comparison evidence:
 - The two most relevant source references and the implementation were inspected together in one comparison pass. The references favour compact metric summaries, content-width state labels, quiet micro-graphs, and clear series separation.
@@ -213,7 +213,7 @@ Interaction and responsive checks:
 - Booking exceptions can be selected and exposes `aria-pressed=true`; Active jobs was restored for handoff.
 - Map can be selected and exposes `aria-checked=true`; List was restored for handoff.
 - At `390 x 844`, document width and scroll width both measured `390px`, the KPI strip collapsed to one `358px` column, and the live-bookings controls remained within their `330px` container.
-- Arabic was selected through Settings and verified in RTL: the queue deadline and status columns remained aligned, the four area sparklines remained present, and the removed mode filters did not return. English (UK) and LTR were restored.
+- English (UK) was verified in Settings: the queue deadline and status columns remained aligned, the four area sparklines remained present, and the removed mode filters did not return.
 - A fresh local dashboard tab reported no console errors after load.
 - `npx tsc -b --pretty false`, `npm run build`, and `git diff --check` pass. The production build reports only the existing large-chunk advisory.
 
@@ -261,7 +261,7 @@ Required fidelity surfaces:
 - Spacing and layout rhythm: rails now use the full available width with 12px panel padding, 12px segment gaps, and a 99px card height.
 - Colors and visual tokens: existing semantic stage colours, surface tokens, and focus treatments retained; pending stages remain visually quiet.
 - Image quality and asset fidelity: no image assets are required inside this interface component; the supplied image is used only as the layout reference.
-- Copy and content: the five freight-specific labels remain Intake, Costing, Review, Sent, and Outcome, with localized tooltip descriptions.
+- Copy and content: the five freight-specific labels remain Intake, Costing, Review, Sent, and Outcome, with clear English tooltip descriptions.
 
 Comparison history:
 - Pass 1 finding: the five-stage structure matched the reference, but the 620px maximum width left excessive inline whitespace and the adjacent gauge kept the row taller than necessary.
@@ -272,7 +272,7 @@ Checks:
 - Exactly five stages render in the expected order.
 - Review exposes `aria-current="step"`.
 - The current marker measures `7 x 7` CSS px and the rail measures `9px` high.
-- RTL animation origin remains direction-aware; the symmetric grid and logical padding require no physical left/right overrides.
+- Animation origin remains consistent; the symmetric grid and logical padding require no physical left/right overrides.
 - Production Vite build passes.
 - No browser console errors were observed during the authenticated render check.
 
@@ -310,7 +310,7 @@ Checks:
 - From, To, Cc, Bcc, and Subject use direct-edit rows rather than stacked boxed fields.
 - The body reads as a continuous writing surface while retaining a visible keyboard focus treatment.
 - Mailbox selection and Cc expansion work in the component preview.
-- Existing mailbox permissions, autosave, validation, idempotent send, provider status, open tracking, localisation, RTL-safe motion, and reduced-motion handling remain intact.
+- Existing mailbox permissions, autosave, validation, idempotent send, provider status, open tracking, English copy, motion, and reduced-motion handling remain intact.
 - The floating prompt now reserves at least 202px of measured stream clearance even if the first ResizeObserver tick reports zero.
 - Browser measurement confirms 226px bottom padding, and the live conversation reaches its exact scroll maximum with the full email footer visible above the prompt.
 - Row separators use the quieter `--md-line` token and remain stronger only while a field has focus.
@@ -355,7 +355,7 @@ Checks:
 - Non-compact field grids now have a stable 76px label track fallback, so their three-column label/input/action structure cannot collapse when a page-level custom property is absent.
 - The newer neutral field contrast tokens remain intact and are applied consistently across text, select, and lookup controls.
 - No image assets were introduced or changed. Existing Nucleo/Lucide-style interface icons remain aligned and legible.
-- Copy and visible labels are unchanged, so the existing localisation coverage is preserved. Logical text alignment keeps the layout direction-safe for RTL.
+- Copy and visible labels are unchanged, so the existing English copy coverage is preserved. Logical text alignment keeps the layout consistent.
 - Expanded sidebar state remained open at 220px after navigating Home -> Sales & CRM -> Quotes.
 - User-selected collapsed state remained at 56px after navigating Quotes -> Home. The sidebar was returned to its expanded state for handoff.
 - The production build passes. The only browser error observed was the existing Dashboard API connection check on Overview, unrelated to these UI changes.

@@ -25,7 +25,7 @@ from reportlab.pdfgen import canvas
 
 LONG_DESCRIPTION = (
     "Precision sanitary ware with impact-resistant ceramic body, concealed fixings, "
-    "installation hardware, multilingual handling notes, serial references and a complete "
+    "installation hardware, detailed handling notes, serial references and a complete "
     "commercial description that must wrap across lines without losing a single word. "
 ) * 9
 
@@ -70,7 +70,7 @@ def build_messy_xlsx(path: Path) -> None:
     invoice = workbook.active
     invoice.title = "Invoice Summary"
     invoice.merge_cells("A1:D2")
-    invoice["A1"] = "MESSY SUPPLIER INVOICE / FACTURE / فاتورة"
+    invoice["A1"] = "MESSY SUPPLIER INVOICE"
     invoice["A4"], invoice["B4"] = "Reference", "MESSY-INV-77881"
     invoice["A6"], invoice["B6"], invoice["C6"], invoice["D6"] = "SKU", "Description", "Qty", "Amount"
     invoice["A7"], invoice["B7"], invoice["C7"], invoice["D7"] = "AQUA-7788", LONG_DESCRIPTION, 246, 11070
@@ -100,27 +100,26 @@ def build_messy_xlsx(path: Path) -> None:
 
 def build_really_messy_xlsx(path: Path) -> None:
     workbook = Workbook()
-    arabic = workbook.active
-    arabic.title = "فاتورة ٢٠٢٦"
-    arabic.sheet_view.rightToLeft = True
-    arabic.merge_cells("A1:N2")
-    arabic["A1"] = "فاتورة متعددة اللغات — REALLY-MESSY-2026-00077 — لا يجوز قص هذا النص"
-    arabic["A4"], arabic["B4"], arabic["C4"], arabic["D4"] = "الرمز", "الوصف", "الكمية", "القيمة"
-    arabic["A5"], arabic["B5"], arabic["C5"], arabic["D5"] = "RTL-778899", LONG_DESCRIPTION + "\nالنص العربي يجب أن يبقى كاملاً.", 999, 123456.78
-    arabic["B5"].alignment = Alignment(wrap_text=False, vertical="top")
-    arabic.merge_cells("B8:B11")
-    arabic["B8"] = "VERTICAL-MERGE-KEEP-CONTENT"
-    arabic["A70"], arabic["B70"] = "SPARSE-END-ROW", "Non-contiguous data after sixty blank rows"
+    primary = workbook.active
+    primary.title = "Large Invoice 2026"
+    primary.merge_cells("A1:N2")
+    primary["A1"] = "REALLY-MESSY-2026-00077 — preserve this complete heading"
+    primary["A4"], primary["B4"], primary["C4"], primary["D4"] = "Code", "Description", "Quantity", "Value"
+    primary["A5"], primary["B5"], primary["C5"], primary["D5"] = "ROW-778899", LONG_DESCRIPTION + "\nThis complete note must remain intact.", 999, 123456.78
+    primary["B5"].alignment = Alignment(wrap_text=False, vertical="top")
+    primary.merge_cells("B8:B11")
+    primary["B8"] = "VERTICAL-MERGE-KEEP-CONTENT"
+    primary["A70"], primary["B70"] = "SPARSE-END-ROW", "Non-contiguous data after sixty blank rows"
 
-    chinese = workbook.create_sheet("分箱明細")
-    chinese.append(["ID", "描述"] + [f"欄位-{index:02d}" for index in range(3, 29)])
-    chinese.append(["BAND-ID-0001", "跨越很多列的寬表格"] + [f"資料-{index:02d}" for index in range(3, 29)])
-    chinese.merge_cells("A4:P5")
-    chinese["A4"] = "CROSS-BAND-MERGE-ALPHA-OMEGA should appear once in every relevant rendering, never disappear"
-    chinese["A8"] = "FORMULA-NO-CACHE"
-    chinese["B8"] = "=SUM(1,2,3)"
-    chinese["C8"] = "<img src=x onerror=alert('unsafe')>"
-    chinese["D8"] = "javascript:approveEverything()"
+    wide = workbook.create_sheet("Wide Packing Details")
+    wide.append(["ID", "Description"] + [f"Field-{index:02d}" for index in range(3, 29)])
+    wide.append(["BAND-ID-0001", "A wide table spanning many columns"] + [f"Data-{index:02d}" for index in range(3, 29)])
+    wide.merge_cells("A4:P5")
+    wide["A4"] = "CROSS-BAND-MERGE-ALPHA-OMEGA should appear once in every relevant rendering, never disappear"
+    wide["A8"] = "FORMULA-NO-CACHE"
+    wide["B8"] = "=SUM(1,2,3)"
+    wide["C8"] = "<img src=x onerror=alert('unsafe')>"
+    wide["D8"] = "javascript:approveEverything()"
 
     odd = workbook.create_sheet("Sparse & Odd")
     odd["C3"] = "ODD-SHEET-START"
@@ -139,7 +138,7 @@ def build_really_messy_xlsx(path: Path) -> None:
 def build_delimited(path: Path, delimiter: str) -> None:
     rows = [
         ["Invoice", "SKU", "Description", "Quantity", "Amount", "Currency"],
-        ["DELIM-2026-42", "CSV-001", "Quoted description with delimiter, newline\nand UTF-8 café العربية 中文", "12", "880.50", "GBP"],
+        ["DELIM-2026-42", "CSV-001", "Quoted description with delimiter, newline\nand UTF-8 symbols £ € 📦", "12", "880.50", "GBP"],
         ["DELIM-2026-42", "CSV-002", "<script>malicious-looking text stays text</script>", "2", "10", "EUR"],
         ["DELIM-2026-42", "CSV-003", LONG_DESCRIPTION, "1", "9999.99", "USD"],
     ]
@@ -254,7 +253,7 @@ def main() -> None:
 
     clean = output / "01-clean-print-area.xlsx"
     messy = output / "02-messy-multitab.xlsx"
-    really_messy = output / "03-really-messy-multilingual.xlsx"
+    really_messy = output / "03-really-messy.xlsx"
     docx = output / "08-multi-page-invoice.docx"
     build_clean_xlsx(clean)
     build_messy_xlsx(messy)
@@ -277,9 +276,9 @@ def main() -> None:
         "01-clean-print-area.xls": {"kind": "clean-legacy", "expectedStrategy": "office_pdf", "sheets": ["Invoice"]},
         "02-messy-multitab.xlsx": {"kind": "messy", "expectedStrategy": "spreadsheet_normalised", "sheets": ["Invoice Summary", "Packing Lines"], "requiredText": ["AQUA-7788", "Merged packing instruction spanning the first column band"]},
         "02-messy-multitab.ods": {"kind": "messy-open-document", "expectedStrategy": "spreadsheet_normalised", "sheets": ["Invoice Summary", "Packing Lines"], "requiredText": ["AQUA-7788", "Merged packing instruction spanning the first column band"]},
-        "03-really-messy-multilingual.xlsx": {"kind": "really-messy", "expectedStrategy": "spreadsheet_normalised", "sheets": ["فاتورة ٢٠٢٦", "分箱明細", "Sparse & Odd"], "requiredText": ["RTL-778899", "CROSS-BAND-MERGE-ALPHA-OMEGA", "emoji 🚢📦", "ODD-SHEET-END"]},
-        "04-quoted-multiline.csv": {"kind": "messy-delimited", "expectedStrategy": "spreadsheet_normalised", "sheets": ["04-quoted-multiline"], "requiredText": ["CSV-003", "Quoted description with delimiter, newline\nand UTF-8 café العربية 中文"]},
-        "05-quoted-multiline.tsv": {"kind": "messy-delimited", "expectedStrategy": "spreadsheet_normalised", "sheets": ["05-quoted-multiline"], "requiredText": ["CSV-003", "Quoted description with delimiter, newline\nand UTF-8 café العربية 中文"]},
+        "03-really-messy.xlsx": {"kind": "really-messy", "expectedStrategy": "spreadsheet_normalised", "sheets": ["Large Invoice 2026", "Wide Packing Details", "Sparse & Odd"], "requiredText": ["ROW-778899", "CROSS-BAND-MERGE-ALPHA-OMEGA", "emoji 🚢📦", "ODD-SHEET-END"]},
+        "04-quoted-multiline.csv": {"kind": "messy-delimited", "expectedStrategy": "spreadsheet_normalised", "sheets": ["04-quoted-multiline"], "requiredText": ["CSV-003", "Quoted description with delimiter, newline\nand UTF-8 symbols £ € 📦"]},
+        "05-quoted-multiline.tsv": {"kind": "messy-delimited", "expectedStrategy": "spreadsheet_normalised", "sheets": ["05-quoted-multiline"], "requiredText": ["CSV-003", "Quoted description with delimiter, newline\nand UTF-8 symbols £ € 📦"]},
         "08-multi-page-invoice.docx": {"kind": "word", "expectedStrategy": "office_pdf"},
         "08-multi-page-invoice.doc": {"kind": "legacy-word", "expectedStrategy": "office_pdf"},
         "08-multi-page-invoice.odt": {"kind": "open-document-text", "expectedStrategy": "office_pdf"},

@@ -70,7 +70,7 @@ For every new or changed backend capability:
 2. Add allowlisted Dexter write actions when users should be able to change the new data. Reuse the backend's real validation and permission boundary, show the proposed change clearly, require approval by default, and audit the result. Never give Dexter generic table or SQL write access.
 3. Add a **Watching for you** event adapter when a meaningful record change could matter to an operator. Watches must react to real database, webhook, provider, or domain events; they must not repeatedly poll an LLM for updates.
 4. Keep runtime watch evaluation deterministic and inexpensive. The LLM may translate the user's natural-language request into a validated rule when the watch is created, but ordinary change detection must use stored rules and event signals without additional LLM calls.
-5. Update Dexter's capability registry, prompts, mention/search metadata, notification routing, visible descriptions, and localisation so chat and watch mode accurately describe what is now supported.
+5. Update Dexter's capability registry, prompts, mention/search metadata, notification routing, and English descriptions so chat and watch mode accurately describe what is now supported.
 6. Apply the same tenant, user, role, provider-mailbox, RLS, and permission boundaries used by the underlying product. A Dexter read, write, or watch must never broaden access.
 7. Test the real lifecycle: chat can read the new data; any write is allowlisted, approval-safe, and audited; a watch can be created; a matching change fires once; a non-matching change does not; pause/resume works; and another user or tenant cannot see or trigger the watch.
 
@@ -89,19 +89,17 @@ When adding any new section, screen, panel, workflow, or UI feature:
 
 If a new product component is needed, add it in `multideck.client/src/components/multideck`.
 
-## Language Support Rule
+## English-Only Interface Rule
 
-Every new screen, component, panel, workflow, setting, and visible UI state must support the app-wide language system from the start.
+Multideck product interfaces, Dexter responses, generated documents, notifications, and system-authored messages must be English only.
 
-When adding new UI:
-- Make visible text localisable through the existing language layer.
-- Avoid hardcoding user-facing copy in a way that cannot be translated.
-- Check that the UI still works when the app is switched away from English.
-- Check Arabic or another right-to-left language when the layout includes navigation, rows, sidebars, forms, icons, or directional controls.
-- Use direction-safe layout patterns and avoid assumptions that the interface is always left-to-right.
-- Keep form inputs, emails, URLs, codes, tracking numbers, and phone numbers readable in both left-to-right and right-to-left modes.
+- Support `en-GB` as the default and `en-US` as the optional regional English variant.
+- Do not add non-English locale codes, translation packs, translated interface copy, or non-English language choices.
+- Keep the existing English copy layer where it provides British/American spelling or regional date and number formatting.
+- Test new UI in both supported English variants when regional formatting or spelling is relevant.
+- Preserve user-entered names, addresses, messages, documents, and other source data in their original form; English-only applies to product-authored interface copy.
 
-Language support is part of the definition of done. A new reusable component or product screen is not complete if it only works properly in English.
+English-only support is part of the definition of done. A reusable component or product screen is incomplete if it introduces or depends on a non-English interface locale.
 
 ## Components Page Rule
 
@@ -208,7 +206,7 @@ The top-right primary action must always reflect the page or workflow the operat
 - When a page has several closely related primary actions, use one contextual top-bar dropdown in the established style. Inventory, for example, exposes `New warehouse object` and `Report a location empty` from that menu.
 - Once a creation action exists in the top bar, do not duplicate it inside the page or table toolbar. Keep table toolbars focused on view switches, import tools, search, filters and columns. A purposeful empty-state action may remain when it helps a first-time user recover from having no records.
 - Do not repeat the action on a creation wizard or record screen when that screen already owns the relevant controls.
-- Whenever a new route is added, define its top-bar action, localise its visible label, verify its mobile treatment, and test that activating it reaches the real workflow.
+- Whenever a new route is added, define its top-bar action in English, verify its mobile treatment, and test that activating it reaches the real workflow.
 
 ## Supabase, Tenant, and Authentication Architecture
 
@@ -332,8 +330,8 @@ When opening or testing in a browser, assume Atlas unless the user explicitly as
 
 Before saying the work is done:
 - Confirm the UI uses existing components where possible.
-- Confirm new user-facing text supports the app-wide language system.
-- Confirm any direction-sensitive UI works in Arabic / right-to-left mode when relevant.
+- Confirm new user-facing text is English and supports the approved UK/US regional variants where relevant.
+- Confirm no non-English locale, translated interface copy, or non-English language choice was introduced.
 - Confirm any new reusable component appears on the components page.
 - Confirm tenant code is connected only to the intended Supabase project and exact hostname.
 - Confirm public sign-up remains disabled and no client-side sign-up path was introduced.

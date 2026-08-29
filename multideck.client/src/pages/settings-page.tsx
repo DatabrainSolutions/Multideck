@@ -80,6 +80,13 @@ import { Pagination } from "@/components/multideck/pagination"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { normalizeTagTerms, TagEntryField } from "@/components/multideck/tag-entry-field"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
+import { openSupportTicket } from "@/components/multideck/support-ticket-dialog"
+import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
+import {
+  createLegacySupportTicket,
+  SupportTicketError,
+  type LegacySupportTicketResponse,
+} from "@/lib/support-ticket"
 import {
   SettingsChoiceGroup,
   SettingsFieldRow,
@@ -128,11 +135,6 @@ import {
   type ApiTeamUserDeletionImpact,
   type ApiTeamUsersPageResponse,
 } from "@/lib/api"
-import {
-  createSupportTicket,
-  SupportTicketError,
-  type CreateSupportTicketResponse,
-} from "@/lib/support-ticket"
 import { getDexterUsage, getDexterUsageHistory, type DexterUsage, type DexterUsageEntry, type DexterUsageHistoryPage } from "@/lib/dexter-api"
 import {
   consentToDexterWritingProfile,
@@ -317,7 +319,7 @@ function ClockDisplaySetting() {
 
 function LanguageSettingField({
   label = "Language",
-  description = "Choose the English format Multideck uses for dates, times and numbers.",
+  description = "Choose the language and regional format Multideck uses across the app.",
 }: {
   label?: string
   description?: string
@@ -5252,15 +5254,15 @@ function DocsTab() {
   )
 }
 
-function SupportTab() {
+function LegacySupportTab() {
   const { t } = useLanguage()
   const [topic, setTopic] = useState("Workflow question")
-  const [priority, setPriority] = useState("Normal")
+  const [priority, setPriority] = useState<"Normal" | "High" | "Urgent">("Normal")
   const [subject, setSubject] = useState("")
   const [message, setMessage] = useState("")
   const [formError, setFormError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [ticketResult, setTicketResult] = useState<CreateSupportTicketResponse | null>(null)
+  const [ticketResult, setTicketResult] = useState<LegacySupportTicketResponse | null>(null)
   const [canStartNewTicket, setCanStartNewTicket] = useState(false)
   const idempotencyKeyRef = useRef<string | null>(null)
 
@@ -5275,13 +5277,11 @@ function SupportTab() {
 
     const trimmedSubject = subject.trim()
     const trimmedMessage = message.trim()
-
     if (!trimmedSubject) {
       setFormError(t("Add a short subject so support can route the request."))
       document.getElementById("support-subject")?.focus()
       return
     }
-
     if (trimmedMessage.length < 20) {
       setFormError(t("Add at least 20 characters explaining what happened and what you expected."))
       document.getElementById("support-message")?.focus()
@@ -5292,12 +5292,11 @@ function SupportTab() {
     setCanStartNewTicket(false)
     setTicketResult(null)
     setIsSubmitting(true)
-
     try {
       const session = await getSupabaseSession()
       if (!session) throw new Error(t("Sign in again before creating a support ticket."))
 
-      const result = await createSupportTicket({
+      const result = await createLegacySupportTicket({
         idempotencyKey: getIdempotencyKey(),
         topic,
         priority,
@@ -5305,19 +5304,14 @@ function SupportTab() {
         description: trimmedMessage,
         applicationUrl: window.location.href,
       })
-
       setTicketResult(result)
       setSubject("")
       setMessage("")
       idempotencyKeyRef.current = null
-      toast.success(
-        result.duplicate
-          ? t("Ticket already received")
-          : t("Support ticket created"),
-        { description: `${result.ticket.ticketNumber} · ${t("Databrain OS confirmed the ticket.")}` },
-      )
+      toast.success(result.duplicate ? t("Ticket already received") : t("Support ticket created"), {
+        description: `${result.ticket.ticketNumber} · ${t("Databrain OS confirmed the ticket.")}`,
+      })
     } catch (error) {
-      console.error("Support ticket submission failed.", error instanceof SupportTicketError ? error.code : "unknown")
       if (error instanceof SupportTicketError) {
         setFormError(t(error.message))
         setCanStartNewTicket(error.code === "idempotency_conflict")
@@ -5359,7 +5353,7 @@ function SupportTab() {
                 options={["Normal", "High", "Urgent"]}
                 value={priority}
                 ariaLabel={t("Support priority")}
-                onChange={setPriority}
+                onChange={(value) => setPriority(value as "Normal" | "High" | "Urgent")}
               />
             </SettingsFieldRow>
             <SettingsFieldRow label={t("Subject")} labelFor="support-subject">
@@ -5447,25 +5441,50 @@ function SupportTab() {
             </div>
           </SettingsPanel>
         </form>
-        <aside className="space-y-[var(--md-page-stack-gap)] xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
-          <SettingsSummaryCard
-            title={t("Support cover")}
-            rows={[
-              [t("Plan"), t("Operations")],
-              [t("Response target"), t("4 working hours")],
-              [t("Coverage"), t("Mon–Fri, 08:00–18:00")],
-              [t("Open tickets"), "1"],
-            ]}
-          />
-          <section className="rounded-[var(--md-radius-2xl)] bg-[var(--md-accent-abyss)] p-5 text-white shadow-[var(--md-shadow-soft)]">
-            <LifeBuoy className="size-5 text-white/70" strokeWidth={1.3} aria-hidden="true" />
-            <p className="mt-5 text-[15px] font-medium">{t("Security incident?")}</p>
-            <p className="mt-2 text-pretty text-[12px] leading-5 text-white/65">{t("Mark the ticket as urgent. The subject will be routed with security context included.")}</p>
-            <a href="mailto:security@multideck.app" className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-[var(--md-radius-lg)] bg-white/10 px-3 text-[12px] font-medium text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] transition-[background-color,scale] hover:bg-white/15 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-white/30 motion-reduce:active:scale-100">
-              {t("Contact security")}
-              <ExternalLink className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
-            </a>
-          </section>
+        <aside className="xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
+          <SettingsPanel title={t("What to include")} description={t("The clearest tickets are usually resolved fastest.")}>
+            <ul className="grid gap-3 px-5 py-5 text-[12px] leading-5 text-[var(--md-text)]">
+              <li><span className="font-medium text-[var(--md-ink)]">{t("Reference")}</span><br />{t("Booking, quote, shipment, customer, or invoice ID.")}</li>
+              <li><span className="font-medium text-[var(--md-ink)]">{t("Expected result")}</span><br />{t("What you expected Multideck to do.")}</li>
+              <li><span className="font-medium text-[var(--md-ink)]">{t("Visible result")}</span><br />{t("What happened instead, including the exact error message.")}</li>
+            </ul>
+          </SettingsPanel>
+        </aside>
+      </div>
+    </>
+  )
+}
+
+function SupportHubTab() {
+  const { t } = useLanguage()
+  return (
+    <>
+      <SettingsPageHeader
+        eyebrow={t("Resources / Support")}
+        title={t("Support")}
+        description={t("Tell the support team what you need without losing the page or workflow you are working in.")}
+      />
+      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
+        <SettingsPanel title={t("Create a support ticket")} description={t("The same focused ticket experience is available here and from the bottom of the sidebar.")}>
+          <div className="flex flex-col gap-5 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="max-w-xl">
+              <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Give support the full context in one go")}</p>
+              <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Choose the request type, explain the impact, and capture or attach a screenshot for bugs. Your company and reporter details are added securely.")}</p>
+            </div>
+            {supportTicketFeatureEnabled ? <Button type="button" className="min-h-11 shrink-0 rounded-[var(--md-radius-lg)] sm:min-h-10" onClick={openSupportTicket}>
+              <TicketCheck className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+              {t("Submit a ticket")}
+            </Button> : <p className="max-w-xs text-[12px] leading-5 text-[var(--md-subtle)]">{t("Ticket submission is being enabled for this workspace in a controlled rollout.")}</p>}
+          </div>
+        </SettingsPanel>
+        <aside className="xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
+          <SettingsPanel title={t("What happens next")} description={t("Your ticket is stored in Multideck Cloud and linked to this workspace automatically.")}>
+            <ol className="grid gap-3 px-5 py-5 text-[12px] leading-5 text-[var(--md-text)]">
+              <li><span className="font-medium text-[var(--md-ink)]">{t("1. Confirmation")}</span><br />{t("You receive a ticket reference and secure status link only after Cloud confirms it is saved.")}</li>
+              <li><span className="font-medium text-[var(--md-ink)]">{t("2. Review")}</span><br />{t("The support team sees your impact, diagnostics, and any screenshots together.")}</li>
+              <li><span className="font-medium text-[var(--md-ink)]">{t("3. Reply")}</span><br />{t("Public replies and meaningful status changes arrive in a Multideck-branded email.")}</li>
+            </ol>
+          </SettingsPanel>
         </aside>
       </div>
     </>
@@ -5514,7 +5533,7 @@ function TabContent({
     case "docs":
       return <DocsTab />
     case "support":
-      return <SupportTab />
+      return supportTicketFeatureEnabled ? <SupportHubTab /> : <LegacySupportTab />
     default:
       return (
         <ProfileTab

@@ -3,7 +3,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import type { Session } from "@supabase/supabase-js"
 import { BrandLockup } from "@/components/BrandLockup"
 import { PrimaryButton, TextButton } from "@/components/FormControls"
-import { isRtl, t, textDirection } from "@/i18n"
+import { t } from "@/i18n"
 import type { WorkspaceConfiguration } from "@/auth/workspace"
 import { colors, radius, shadow, spacing, type } from "@/theme/tokens"
 
@@ -46,8 +46,8 @@ export function HomeScreen({ session, workspace, onSignOut, onChangeWorkspace }:
 }
 
 const directionalText = {
-  textAlign: isRtl ? "right" as const : "left" as const,
-  writingDirection: textDirection,
+  textAlign: "left" as const,
+  writingDirection: "ltr" as const,
 }
 
 const styles = StyleSheet.create({
@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: "center",
-    flexDirection: isRtl ? "row-reverse" : "row",
+    flexDirection: "row",
     justifyContent: "space-between",
     paddingHorizontal: spacing.page,
     paddingVertical: spacing.lg,
@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.backgroundStrong,
     borderRadius: radius.lg,
-    flexDirection: isRtl ? "row-reverse" : "row",
+    flexDirection: "row",
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
     color: colors.inkSoft,
     fontSize: type.meta,
     fontWeight: "500",
-    writingDirection: textDirection,
+    writingDirection: "ltr",
   },
   content: {
     flex: 1,

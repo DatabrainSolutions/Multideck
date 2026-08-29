@@ -204,6 +204,7 @@ export function TopBar({
           <SheetDescription className="sr-only">{t("Mobile navigation for Multideck")}</SheetDescription>
           <AppSidebar
             route={route}
+            currentUser={currentUser}
             navigate={(path) => {
               setMobileSidebarOpen(false)
               navigate(path)

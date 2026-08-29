@@ -139,16 +139,15 @@ Component naming rule:
 - Screen-specific components are allowed only when the content is genuinely domain-specific, such as `CustomerDetailHero`, `ActiveShipmentsPanel`, or `PrimaryContactsPanel`.
 - Customer screens should pass customer data into generic primitives rather than creating parallel customer-only controls.
 
-## Language And Direction
+## English Product Copy
 
-Multideck must treat language support as a product-system requirement, not a later pass.
+Multideck product-authored copy is English only.
 
-- New screens and reusable components should work with the app-wide language system from the start.
-- User-facing copy should be localisable rather than trapped inside one-off hardcoded strings.
-- Layouts should remain calm and readable when text length changes between languages.
-- Arabic and other right-to-left languages must flip reading direction cleanly for navigation, sidebars, tables, forms, rows, and directional controls.
-- Inputs that contain emails, URLs, shipment IDs, codes, tracking numbers, or phone numbers should stay readable with direction-safe handling.
-- Any component added to the gallery should be checked in a non-English language, and in right-to-left mode when it has direction-sensitive layout.
+- Use British English by default, with the supported American English variant where regional spelling or formatting differs.
+- Do not add non-English interface translations or language choices.
+- Keep layouts calm and readable when English copy changes length.
+- Preserve user-entered names, addresses, messages, documents, and identifiers in their original form.
+- Any component added to the gallery should be checked in both supported English variants when regional formatting or spelling is relevant.
 
 ## Page Rules
 

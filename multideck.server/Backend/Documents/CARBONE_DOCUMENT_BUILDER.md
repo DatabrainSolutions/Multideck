@@ -33,7 +33,7 @@ Outside the Studio flow, the browser receives only workspace summaries and short
 |---|---|
 | UI | `multideck.client/src/pages/documents-page.tsx` provides the document centre, published-template cards, a guided create workspace with embedded Carbone Studio, recent documents, error states, and fresh secure downloads. |
 | Browser API | `multideck.client/src/lib/document-builder-api.ts` is the typed client for the four Edge Functions. |
-| Localisation | Document-centre text is translated into English, German, French, and Arabic; the Arabic view is covered by an RTL test. |
+| Product copy | Document-centre text is English only, with British English as the default. |
 | Edge gateway | `document-builder-workspace`, `document-studio`, `render-document`, and `document-download` authenticate the Supabase user before using the service client. |
 | Shared security | `_shared/document-functions.ts` centralises JWT validation, service-key handling, UUID validation, safe errors, CORS, file-size limits, and signed-link lifetime. |
 | Database API | The `document_api` schema contains service-role-only, security-definer functions for authorisation, dataset assembly, completion, failure, workspace listing, and download authorisation. |
@@ -237,7 +237,7 @@ Do not place any Carbone or Supabase secret in a browser `.env` variable. In par
 1. Start with an editable DOCX or ODT source document.
 2. Use the data contract above. Examples include `d.job.number`, `d.customer.name`, `d.customer.address.line1`, and arrays under `d.cargo` and `d.routing`.
 3. Ensure optional values and empty arrays produce a clean layout rather than `null`, empty table rows, or broken punctuation.
-4. Test long customer names, a multi-line address, no shipper address, no routing, multiple cargo lines, multiple route legs, large weights, and RTL text.
+4. Test long customer names, a multi-line address, no shipper address, no routing, multiple cargo lines, multiple route legs, and large weights.
 5. Upload the template to Carbone once. Retain the returned template ID.
 6. After every production template change, retain the new immutable Carbone version ID. Published MultiDeck versions should use `versionId`; use the mutable template ID only during controlled development.
 7. Keep the editable source in the tenant's private `multideck-template-sources` bucket, catalogued against its Multideck template version and backed by the reviewed provisioning package. Carbone IDs are rendering references, not the source-of-truth design files.
@@ -455,7 +455,7 @@ Use staging first. Record the render job ID and correlation ID for each test.
 - Empty optional data produces a polished document.
 - A long/multi-line dataset does not overlap, clip, or create unexpected blank pages.
 - The page remains usable at desktop and narrow widths.
-- Arabic UI renders right-to-left; an RTL document sample is reviewed separately if RTL output is required.
+- Product-authored UI and document labels render in English.
 - Recent documents lists the output and a fresh download works after the original link expires.
 
 ### Negative security acceptance
@@ -523,7 +523,7 @@ The Job Confirmation release is complete only when:
 - the migrations, server permission sync, four functions, secrets, and operational route are deployed to staging and production through the normal reviewed process;
 - Lee has supplied the backed-up source template and pinned Carbone version ID;
 - the data-source, template, and version records are present and unambiguous;
-- all functional, negative-security, audit, layout, and RTL checks above pass;
+- all functional, negative-security, audit, and layout checks above pass;
 - the Supabase security and performance advisors show no new document-builder issue;
 - credential rotation, rollback, support ownership, and retention owners are recorded;
 - the product owner signs off the rendered PDF against an approved Job Confirmation sample.

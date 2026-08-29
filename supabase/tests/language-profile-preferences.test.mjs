@@ -31,7 +31,6 @@ const app = read("multideck.client/src/App.tsx")
 
 test("language preferences are bounded and stored only against the authenticated profile", () => {
   assert.match(englishOnlyLocales, /"User_Locale" in \('en-GB', 'en-US'\)/)
-  assert.doesNotMatch(englishOnlyLocales, /'de'|'fr'|'ar'/)
   assert.match(migration, /v_auth_user_id uuid := auth\.uid\(\)/)
   assert.match(migration, /where "Auth_User_ID" = v_auth_user_id/)
   assert.match(migration, /revoke all on function public\.get_current_user_language_preference\(\) from public, anon/)

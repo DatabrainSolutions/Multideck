@@ -3,7 +3,6 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, Text
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BrandLockup } from "./BrandLockup"
 import { useWarehouseShell } from "./WarehouseShell"
-import { isRtl, textDirection } from "@/i18n"
 import { colors, radius, shadow, spacing, type } from "@/theme/tokens"
 import { wt } from "@/warehouse/i18n"
 
@@ -25,7 +24,7 @@ export function WarehouseScreen({ title, subtitle, onBack, actions, children }: 
         {shell?.facility ? <View style={styles.facilityBadge}><View style={styles.facilityDot} /><Text numberOfLines={1} style={styles.facilityBadgeText}>{shell.facility.name}</Text></View> : null}
       </View>
       {onBack || actions ? <View style={styles.secondaryBar}>
-        {onBack ? <Pressable accessibilityRole="button" onPress={onBack} style={styles.backButton}><Text style={styles.backText}>{isRtl ? "→" : "←"} {wt("back")}</Text></Pressable> : <View />}
+        {onBack ? <Pressable accessibilityRole="button" onPress={onBack} style={styles.backButton}><Text style={styles.backText}>{"←"} {wt("back")}</Text></Pressable> : <View />}
         {actions}
       </View> : null}
       <ScrollView contentContainerStyle={styles.content} keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled">
@@ -56,7 +55,7 @@ export function WarehouseScreen({ title, subtitle, onBack, actions, children }: 
 }
 
 function DrawerAction({ label, onPress, danger = false }: { label: string; onPress: () => void; danger?: boolean }) {
-  return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.drawerAction, pressed && styles.menuButtonPressed]}><Text style={[styles.drawerActionText, danger && styles.drawerActionDanger]}>{label}</Text><Text style={[styles.drawerActionArrow, danger && styles.drawerActionDanger]}>{isRtl ? "←" : "→"}</Text></Pressable>
+  return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.drawerAction, pressed && styles.menuButtonPressed]}><Text style={[styles.drawerActionText, danger && styles.drawerActionDanger]}>{label}</Text><Text style={[styles.drawerActionArrow, danger && styles.drawerActionDanger]}>{"→"}</Text></Pressable>
 }
 
 export function ScanField({ value, onChangeText, onSubmit, placeholder = wt("searchOrScan"), autoFocus = false, multiline = false }: { value: string; onChangeText: (value: string) => void; onSubmit?: () => void; placeholder?: string; autoFocus?: boolean; multiline?: boolean }) {
@@ -86,7 +85,7 @@ export function ActionTile({ label, detail, icon, code, onPress, disabled = fals
     <Pressable accessibilityLabel={label} accessibilityRole="button" disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.tile, pressed && styles.tilePressed, disabled && styles.tileDisabled]}>
       <View accessible={false} style={styles.tileIcon}><Text style={styles.tileIconText}>{icon ?? code}</Text></View>
       <View style={styles.tileCopy}><Text style={styles.tileLabel}>{label}</Text>{detail ? <Text style={styles.tileDetail}>{detail}</Text> : null}</View>
-      <Text style={styles.tileArrow}>{isRtl ? "←" : "→"}</Text>
+      <Text style={styles.tileArrow}>{"→"}</Text>
     </Pressable>
   )
 }
@@ -132,19 +131,19 @@ export function WarningState({ message }: { message: string }) { return <View st
 export function EmptyState({ message = wt("noResults") }: { message?: string }) { return <View style={styles.stateEmpty}><Text style={styles.stateText}>{message}</Text></View> }
 export function SuccessState({ message }: { message: string }) { return <View style={styles.success}><Text style={styles.successText}>{message}</Text></View> }
 
-const directional = { textAlign: isRtl ? "right" as const : "left" as const, writingDirection: textDirection }
+const directional = { textAlign: "left" as const, writingDirection: "ltr" as const }
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.background, flex: 1 },
-  topBar: { alignItems: "center", flexDirection: isRtl ? "row-reverse" : "row", gap: spacing.md, justifyContent: "space-between", minHeight: 72, paddingHorizontal: spacing.page },
-  secondaryBar: { alignItems: "center", flexDirection: isRtl ? "row-reverse" : "row", justifyContent: "space-between", minHeight: 52, paddingHorizontal: spacing.page },
+  topBar: { alignItems: "center", flexDirection: "row", gap: spacing.md, justifyContent: "space-between", minHeight: 72, paddingHorizontal: spacing.page },
+  secondaryBar: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", minHeight: 52, paddingHorizontal: spacing.page },
   menuButton: { alignItems: "center", backgroundColor: colors.surface, borderRadius: radius.xl, justifyContent: "center", minHeight: 50, paddingHorizontal: spacing.md, ...shadow.surface },
   menuButtonPressed: { opacity: 0.62 },
   backButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.sm },
-  backText: { color: colors.accent, fontSize: type.label, fontWeight: "600", writingDirection: textDirection },
-  facilityBadge: { alignItems: "center", backgroundColor: colors.backgroundStrong, borderRadius: radius.lg, flexDirection: isRtl ? "row-reverse" : "row", flexShrink: 1, gap: spacing.sm, maxWidth: 180, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  backText: { color: colors.accent, fontSize: type.label, fontWeight: "600", writingDirection: "ltr" },
+  facilityBadge: { alignItems: "center", backgroundColor: colors.backgroundStrong, borderRadius: radius.lg, flexDirection: "row", flexShrink: 1, gap: spacing.sm, maxWidth: 180, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   facilityDot: { backgroundColor: colors.accent, borderRadius: 4, height: 7, width: 7 },
-  facilityBadgeText: { color: colors.inkSoft, flexShrink: 1, fontSize: type.meta, fontWeight: "600", writingDirection: textDirection },
+  facilityBadgeText: { color: colors.inkSoft, flexShrink: 1, fontSize: type.meta, fontWeight: "600", writingDirection: "ltr" },
   content: { flexGrow: 1, paddingBottom: 48, paddingHorizontal: spacing.page, paddingTop: spacing.md },
   title: { color: colors.ink, fontSize: 26, fontWeight: "600", letterSpacing: -0.4, ...directional },
   subtitle: { color: colors.text, fontSize: type.body, lineHeight: 22, marginBottom: spacing.xl, marginTop: spacing.sm, ...directional },
@@ -152,7 +151,7 @@ const styles = StyleSheet.create({
   scanInput: { backgroundColor: colors.surface, borderColor: colors.accent, borderRadius: radius.xl, borderWidth: 2, color: colors.ink, fontSize: 18, fontWeight: "500", minHeight: 62, paddingHorizontal: spacing.lg, textAlign: "left", writingDirection: "ltr", ...shadow.surface },
   scanInputMultiline: { minHeight: 96, paddingTop: spacing.lg, textAlignVertical: "top" },
   scanHint: { color: colors.subtle, fontSize: 11, marginTop: spacing.sm, ...directional },
-  tile: { alignItems: "center", backgroundColor: colors.surface, borderRadius: radius.xxl, flexDirection: isRtl ? "row-reverse" : "row", gap: spacing.md, marginBottom: spacing.md, minHeight: 72, padding: spacing.lg, ...shadow.surface },
+  tile: { alignItems: "center", backgroundColor: colors.surface, borderRadius: radius.xxl, flexDirection: "row", gap: spacing.md, marginBottom: spacing.md, minHeight: 72, padding: spacing.lg, ...shadow.surface },
   tilePressed: { opacity: 0.78, transform: [{ scale: 0.995 }] },
   tileDisabled: { opacity: 0.58 },
   tileIcon: { alignItems: "center", backgroundColor: colors.accentAbyss, borderRadius: radius.lg, height: 48, justifyContent: "center", width: 48 },
@@ -167,18 +166,18 @@ const styles = StyleSheet.create({
   buttonSecondary: { backgroundColor: colors.surface, borderColor: colors.hairline, borderWidth: 1 },
   buttonPressed: { opacity: 0.82 },
   buttonDisabled: { opacity: 0.48 },
-  buttonText: { color: colors.surface, fontSize: type.body, fontWeight: "600", writingDirection: textDirection },
+  buttonText: { color: colors.surface, fontSize: type.body, fontWeight: "600", writingDirection: "ltr" },
   buttonTextSecondary: { color: colors.accent },
   card: { backgroundColor: colors.surface, borderRadius: radius.xxl, marginBottom: spacing.md, padding: spacing.lg, ...shadow.surface },
-  cardHeader: { alignItems: "flex-start", flexDirection: isRtl ? "row-reverse" : "row", gap: spacing.md, justifyContent: "space-between" },
+  cardHeader: { alignItems: "flex-start", flexDirection: "row", gap: spacing.md, justifyContent: "space-between" },
   cardTitleWrap: { flex: 1 },
   cardTitle: { color: colors.ink, fontSize: 16, fontWeight: "600", ...directional },
   cardMeta: { color: colors.text, fontSize: type.meta, lineHeight: 18, marginTop: spacing.xs, ...directional },
   status: { backgroundColor: colors.backgroundStrong, borderRadius: radius.lg, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
   statusText: { color: colors.inkSoft, fontSize: 11, fontWeight: "600" },
-  metricRow: { flexDirection: isRtl ? "row-reverse" : "row", gap: spacing.sm, marginTop: spacing.lg },
+  metricRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg },
   metric: { backgroundColor: colors.backgroundStrong, borderRadius: radius.lg, flex: 1, padding: spacing.md },
-  metricValue: { color: colors.ink, fontSize: 18, fontWeight: "600", textAlign: isRtl ? "right" : "left" },
+  metricValue: { color: colors.ink, fontSize: 18, fontWeight: "600", textAlign: "left" },
   metricLabel: { color: colors.subtle, fontSize: 10, marginTop: 2, ...directional },
   state: { alignItems: "center", backgroundColor: colors.surface, borderRadius: radius.xxl, marginVertical: spacing.lg, padding: spacing.section, ...shadow.surface },
   stateError: { alignItems: "center", backgroundColor: colors.surface, borderRadius: radius.xxl, marginVertical: spacing.lg, padding: spacing.section, ...shadow.surface },
@@ -186,24 +185,24 @@ const styles = StyleSheet.create({
   stateIcon: { alignItems: "center", backgroundColor: colors.backgroundStrong, borderRadius: radius.lg, height: 44, justifyContent: "center", marginBottom: spacing.md, width: 44 },
   stateIconError: { alignItems: "center", backgroundColor: colors.dangerSurface, borderRadius: radius.lg, height: 44, justifyContent: "center", marginBottom: spacing.md, width: 44 },
   stateIconErrorText: { color: colors.danger, fontSize: 22, fontWeight: "600", lineHeight: 26 },
-  stateTitle: { color: colors.ink, fontSize: 15, fontWeight: "600", textAlign: "center", writingDirection: textDirection },
-  stateText: { color: colors.text, fontSize: type.label, lineHeight: 20, marginTop: spacing.xs, maxWidth: 380, textAlign: "center", writingDirection: textDirection },
+  stateTitle: { color: colors.ink, fontSize: 15, fontWeight: "600", textAlign: "center", writingDirection: "ltr" },
+  stateText: { color: colors.text, fontSize: type.label, lineHeight: 20, marginTop: spacing.xs, maxWidth: 380, textAlign: "center", writingDirection: "ltr" },
   stateAction: { alignSelf: "stretch", marginTop: spacing.sm },
   warning: { backgroundColor: colors.dangerSurface, borderRadius: radius.lg, marginVertical: spacing.md, padding: spacing.lg },
   warningText: { color: colors.danger, fontSize: type.label, lineHeight: 20, ...directional },
   success: { backgroundColor: "#e7f4ef", borderRadius: radius.lg, marginVertical: spacing.lg, padding: spacing.lg },
   successText: { color: colors.accent, fontSize: type.label, lineHeight: 20, ...directional },
   drawer: { backgroundColor: colors.background, flex: 1, paddingHorizontal: spacing.page },
-  drawerHeader: { alignItems: "center", flexDirection: isRtl ? "row-reverse" : "row", justifyContent: "space-between", minHeight: 76 },
+  drawerHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", minHeight: 76 },
   drawerClose: { alignItems: "center", backgroundColor: colors.surface, borderRadius: radius.xl, height: 52, justifyContent: "center", width: 52, ...shadow.surface },
   drawerCloseText: { color: colors.text, fontSize: 28, fontWeight: "300", lineHeight: 30 },
   drawerContext: { backgroundColor: colors.backgroundStrong, borderRadius: radius.xxl, marginTop: spacing.lg, padding: spacing.xl },
   drawerWorkspace: { color: colors.ink, fontSize: 17, fontWeight: "600", ...directional },
   drawerEmail: { color: colors.text, fontSize: type.meta, marginTop: spacing.xs, textAlign: "left", writingDirection: "ltr" },
-  drawerFacility: { alignItems: "center", flexDirection: isRtl ? "row-reverse" : "row", gap: spacing.sm, marginTop: spacing.lg },
+  drawerFacility: { alignItems: "center", flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg },
   drawerFacilityText: { color: colors.inkSoft, fontSize: type.label, fontWeight: "600", ...directional },
   drawerMenu: { gap: spacing.md, paddingTop: spacing.xl },
-  drawerAction: { alignItems: "center", backgroundColor: colors.surface, borderRadius: radius.xxl, flexDirection: isRtl ? "row-reverse" : "row", justifyContent: "space-between", minHeight: 72, paddingHorizontal: spacing.xl, ...shadow.surface },
+  drawerAction: { alignItems: "center", backgroundColor: colors.surface, borderRadius: radius.xxl, flexDirection: "row", justifyContent: "space-between", minHeight: 72, paddingHorizontal: spacing.xl, ...shadow.surface },
   drawerActionText: { color: colors.ink, fontSize: 16, fontWeight: "600", ...directional },
   drawerActionArrow: { color: colors.subtle, fontSize: 22 },
   drawerActionDanger: { color: colors.danger },

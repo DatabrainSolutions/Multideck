@@ -17,7 +17,7 @@ Before adding styles, inspect `multideck.client/src/styles.css` and root `design
 2. Classify every column by data type and purpose. Explicitly classify each pill-bearing column as **status** or **attribute** before styling it; ask the user when that distinction is genuinely ambiguous.
 3. Apply the column, pill, colour, disclosure, accessibility, surface, and toolbar checks below.
 4. Flag date/time columns when sequence is the primary story. If table versus timeline is ambiguous, build both variants and let the user choose.
-5. Verify realistic data, empty/loading/error/disabled states, keyboard access, responsive behaviour, RTL where relevant, and light/dark modes.
+5. Verify realistic data, empty/loading/error/disabled states, keyboard access, responsive behaviour, both supported English regional settings where relevant, and light/dark modes.
 6. Finish with a short diff summary: what changed, why, and which rule triggered each change.
 
 ## Column checklist

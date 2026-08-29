@@ -43,5 +43,6 @@ test("editable contact codes use labelled choices instead of exposing database v
   assert.match(detail, /InlineSelectField label="Language"/)
   assert.match(detail, /\{ value: "decision_maker", label: "Decision maker" \}/)
   assert.match(detail, /\{ value: "en-GB", label: "British English" \}/)
+  assert.match(detail, /\{ value: "en-US", label: "American English" \}/)
   assert.doesNotMatch(detail, /<InlineField label="Role" value=\{currentContact\.role/)
 })

@@ -2,7 +2,7 @@ import { useEffect, useState, type PropsWithChildren, type ReactNode } from "rea
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BrandLockup } from "./BrandLockup"
-import { isRtl, t, textDirection } from "@/i18n"
+import { t } from "@/i18n"
 import { colors, radius, spacing, type } from "@/theme/tokens"
 
 type AuthScreenProps = PropsWithChildren<{
@@ -40,7 +40,7 @@ export function AuthScreen({ title, description, badge, children }: AuthScreenPr
             <View style={styles.glowTwo} />
             <BrandLockup inverted />
             <View style={[styles.brandCopy, keyboardVisible && styles.brandCopyKeyboard]}>
-              <View style={[styles.privateBadge, keyboardVisible && styles.privateBadgeKeyboard, isRtl && styles.rowRtl]}>
+              <View style={[styles.privateBadge, keyboardVisible && styles.privateBadgeKeyboard]}>
                 <View style={styles.statusDot} />
                 <Text style={[styles.privateBadgeText, styles.directionalText]}>{t("privateWorkspace")}</Text>
               </View>
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
   },
   brandCopyKeyboard: {
     alignItems: "flex-end",
-    flexDirection: isRtl ? "row-reverse" : "row",
+    flexDirection: "row",
     marginTop: spacing.sm,
     paddingBottom: 0,
   },
@@ -128,9 +128,6 @@ const styles = StyleSheet.create({
   },
   privateBadgeKeyboard: {
     marginBottom: 0,
-  },
-  rowRtl: {
-    flexDirection: "row-reverse",
   },
   statusDot: {
     backgroundColor: colors.accentLift,
@@ -180,7 +177,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   directionalText: {
-    textAlign: isRtl ? "right" : "left",
-    writingDirection: textDirection,
+    textAlign: "left",
+    writingDirection: "ltr",
   },
 })

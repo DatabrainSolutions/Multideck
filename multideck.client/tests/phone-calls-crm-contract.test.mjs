@@ -216,7 +216,7 @@ test("phone-call review workflows preserve focus, unsaved edits, and recoverable
   assert.match(components, /ref=\{rootRef\} tabIndex=\{-1\}/u)
 })
 
-test("phone-call matching and derived analytics expose readable evidence in RTL layouts", () => {
+test("phone-call matching and derived analytics expose readable evidence", () => {
   assert.match(components, /candidate\.reasons\.join\(" · "\)/u)
   assert.match(components, /candidate\.secondaryLabel \? <p[^>]+dir="auto"/u)
   assert.match(components, /const recordTypeLabel = candidate\.recordType/u)

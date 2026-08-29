@@ -576,17 +576,14 @@ function findDexterTableColumn(headers: string[], patterns: RegExp[]) {
 }
 
 const dexterLeadColumnPatterns = {
-  lead: [/\blead\b/i, /\bcompany\b/i, /unternehmen|firma/i, /entreprise|prospect/i, /الشركة|العميل المحتمل/],
-  route: [/\broute\b/i, /\blane\b/i, /strecke/i, /itinéraire|trajet/i, /المسار/],
-  status: [/\bstatus\b/i, /\bstage\b/i, /phase/i, /statut|étape/i, /الحالة|المرحلة/],
-  service: [/\bservice\b/i, /dienstleistung/i, /الخدمة/],
-  value: [/\bvalue\b/i, /\bamount\b/i, /wert|betrag/i, /valeur|montant/i, /القيمة|المبلغ/],
+  lead: [/\blead\b/i, /\bcompany\b/i, /\bprospect\b/i],
+  route: [/\broute\b/i, /\blane\b/i],
+  status: [/\bstatus\b/i, /\bstage\b/i, /\bphase\b/i],
+  service: [/\bservice\b/i],
+  value: [/\bvalue\b/i, /\bamount\b/i],
   action: [
     /\bnext action\b/i,
     /\bfollow-up\b/i,
-    /nächste.*aktion|nachverfolg/i,
-    /prochaine.*action|suivi/i,
-    /الإجراء التالي|المتابعة/,
   ],
 }
 

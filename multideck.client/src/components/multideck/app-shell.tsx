@@ -7,9 +7,11 @@ import { Button } from "@/components/ui/button"
 import { moveTabToAdjacentField } from "@/components/ui/field-tab-navigation"
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { AppSidebar } from "./app-sidebar"
+import { SupportTicketDialog } from "./support-ticket-dialog"
 import { TopBar } from "./top-bar"
 import { cn } from "@/lib/utils"
 import { InboxWorkspaceProvider } from "@/lib/inbox-workspace"
+import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
 
 const warehouseItemsScrollKey = "multideck:warehouse:items:scroll-top"
 
@@ -147,6 +149,7 @@ export function AppShell({
           {children}
         </main>
       </div>
+      {supportTicketFeatureEnabled ? <SupportTicketDialog currentUser={currentUser} /> : null}
     </div>
   )
 

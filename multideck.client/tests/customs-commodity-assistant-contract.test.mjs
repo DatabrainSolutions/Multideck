@@ -51,7 +51,7 @@ test("certificates stay behind an explicit disclosure", () => {
   assert.match(pageSource, /certificatesOpen \? <motion\.div/u)
 })
 
-test("commodity dialogs keep responsive, unclipped, RTL-safe geometry and reduced motion", () => {
+test("commodity dialogs keep responsive, unclipped geometry and reduced motion", () => {
   assert.match(commodityAssistantSource, /flex max-h-\[min\(calc\(100dvh-32px\),780px\)\] flex-col/u)
   assert.match(commodityAssistantSource, /min-h-0 flex-1 overflow-y-auto overscroll-contain/u)
   assert.match(commodityAssistantSource, /shrink-0 border-t/u)

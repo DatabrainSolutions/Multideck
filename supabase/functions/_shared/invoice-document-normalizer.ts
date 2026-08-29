@@ -780,7 +780,7 @@ async function legacyWordHtml(bytes: Uint8Array, fileName: string) {
     ).join("")
     return {
       distinctiveSourceText,
-      html: `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>${escapeHtml(fileName)}</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;color:#202020;font-family:Arial,"Arial Unicode MS","Noto Sans","Noto Sans Arabic","Noto Sans CJK SC",sans-serif;font-size:9pt;line-height:1.35}h1{margin:0 0 8mm;font-size:15pt}h2{margin:6mm 0 2mm;font-size:10pt}.document-text{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;tab-size:4}section+section{break-before:page}</style></head><body><h1 dir="auto">${escapeHtml(fileName)}</h1>${renderedSections}</body></html>`,
+      html: `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>${escapeHtml(fileName)}</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;color:#202020;font-family:Arial,"Arial Unicode MS","Noto Sans",sans-serif;font-size:9pt;line-height:1.35}h1{margin:0 0 8mm;font-size:15pt}h2{margin:6mm 0 2mm;font-size:10pt}.document-text{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;tab-size:4}section+section{break-before:page}</style></head><body><h1>${escapeHtml(fileName)}</h1>${renderedSections}</body></html>`,
     }
   } catch (error) {
     if (error instanceof InvoiceDocumentPreparationError) throw error

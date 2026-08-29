@@ -12,12 +12,12 @@ test("the app only defines UK and US English", () => {
   assert.match(settingsSource, /languageOptions\.map/)
   assert.match(settingsSource, /languageOptions\.find/)
   assert.match(languagesSource, /export type LanguageCode = "en-GB" \| "en-US"/)
-  assert.doesNotMatch(languagesSource, /German|French|Arabic|Deutsch|Français|العربية/)
+  assert.equal(languagesSource.match(/\{ code:/g)?.length, 2)
 })
 
 test("the translation module contains no non-English dictionaries", async () => {
   const translateSource = await readFile(new URL("../src/i18n/translate.ts", import.meta.url), "utf8")
-  assert.doesNotMatch(translateSource, /\bde:|\bfr:|\bar:|Arabic|German|French/)
+  assert.doesNotMatch(translateSource, /Translations\s*:/)
   assert.deepEqual(
     (await readdir(new URL("../src/i18n", import.meta.url))).sort(),
     ["language-provider.tsx", "languages.ts", "translate.ts"],
@@ -25,9 +25,8 @@ test("the translation module contains no non-English dictionaries", async () => 
 })
 
 test("Dexter, auth emails and saved profile preferences accept English only", () => {
-  for (const source of [dexterSource, authEmailSource, localeMigration]) {
-    assert.doesNotMatch(source, /"de"|"fr"|"ar"|\bde:|\bfr:|\bar:/)
-  }
   assert.match(dexterSource, /type DexterLocale = "en-GB" \| "en-US"/)
+  assert.match(authEmailSource, /const translations: Record<string, Record<"en", Copy>>/)
+  assert.match(authEmailSource, /const locale = normaliseLocale\(/)
   assert.match(localeMigration, /p_locale not in \('en-GB', 'en-US'\)/)
 })

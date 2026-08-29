@@ -3,7 +3,7 @@ import { StyleSheet, Text, TextInput, View } from "react-native"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { AuthScreen } from "@/components/AuthScreen"
 import { Feedback, Field, PrimaryButton, TextButton } from "@/components/FormControls"
-import { isRtl, t, textDirection } from "@/i18n"
+import { t } from "@/i18n"
 import type { WorkspaceConfiguration } from "@/auth/workspace"
 import { colors, radius, spacing, type } from "@/theme/tokens"
 
@@ -96,10 +96,10 @@ export function SignInScreen({ client, workspace, onChangeWorkspace }: SignInScr
 const styles = StyleSheet.create({
   workspaceBadge: {
     alignItems: "center",
-    alignSelf: isRtl ? "flex-end" : "flex-start",
+    alignSelf: "flex-start",
     backgroundColor: colors.backgroundStrong,
     borderRadius: radius.lg,
-    flexDirection: isRtl ? "row-reverse" : "row",
+    flexDirection: "row",
     gap: spacing.sm,
     marginBottom: spacing.lg,
     paddingHorizontal: spacing.md,
@@ -115,14 +115,14 @@ const styles = StyleSheet.create({
     color: colors.inkSoft,
     fontSize: type.meta,
     fontWeight: "500",
-    writingDirection: textDirection,
+    writingDirection: "ltr",
   },
   help: {
     color: colors.text,
     fontSize: type.meta,
     lineHeight: 19,
     marginTop: spacing.lg,
-    textAlign: isRtl ? "right" : "left",
-    writingDirection: textDirection,
+    textAlign: "left",
+    writingDirection: "ltr",
   },
 })

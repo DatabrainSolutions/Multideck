@@ -47,7 +47,7 @@ const FALLBACK_LINE_HEIGHT_RATIO = 1.45
 /**
  * `pop` is the default: the whole value swaps in one springy scale, so the feedback lands at once.
  * `slot` is the per-character blur slot used by the quote reference in the Quotes header.
- * `wipe` is the single fade-and-wipe used by values that are long, wrapped, or right-to-left.
+ * `wipe` is the single fade-and-wipe used by values that are long or wrapped.
  */
 export type CopyFeedbackEffect = "auto" | "pop" | "slot" | "wipe"
 

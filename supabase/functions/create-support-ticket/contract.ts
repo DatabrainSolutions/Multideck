@@ -61,13 +61,7 @@ export function buildDatabrainTicketPayload(
 
 export function mapDatabrainFailure(status: number): FunctionFailure {
   if (status === 400) {
-    return {
-      status: 400,
-      body: {
-        code: "validation_error",
-        message: "Check the ticket details and try again.",
-      },
-    }
+    return { status: 400, body: { code: "validation_error", message: "Check the ticket details and try again." } }
   }
   if (status === 409) {
     return {
@@ -79,13 +73,7 @@ export function mapDatabrainFailure(status: number): FunctionFailure {
     }
   }
   if (status === 413) {
-    return {
-      status: 413,
-      body: {
-        code: "ticket_too_large",
-        message: "Shorten the ticket details and try again.",
-      },
-    }
+    return { status: 413, body: { code: "ticket_too_large", message: "Shorten the ticket details and try again." } }
   }
 
   return {

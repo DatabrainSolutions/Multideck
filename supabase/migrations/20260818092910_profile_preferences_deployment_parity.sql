@@ -20,7 +20,7 @@ begin
       add constraint "CK_cmp_Users_Locale"
       check (
         "User_Locale" is null
-        or "User_Locale" in ('en-GB', 'en-US', 'de', 'fr', 'ar')
+        or "User_Locale" in ('en-GB', 'en-US')
       );
   end if;
 end
@@ -54,7 +54,7 @@ begin
     raise exception 'Authentication is required.';
   end if;
 
-  if p_locale is null or p_locale not in ('en-GB', 'en-US', 'de', 'fr', 'ar') then
+  if p_locale is null or p_locale not in ('en-GB', 'en-US') then
     raise exception 'The language is invalid.' using errcode = '22023';
   end if;
 

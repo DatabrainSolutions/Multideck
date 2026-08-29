@@ -7,7 +7,6 @@ import {
   TextInput,
   View,
 } from "react-native"
-import { isRtl, textDirection } from "@/i18n"
 import { colors, radius, shadow, spacing, type } from "@/theme/tokens"
 
 type FieldProps = ComponentProps<typeof TextInput> & {
@@ -25,7 +24,7 @@ export const Field = forwardRef<TextInput, FieldProps>(function Field({ label, s
           ref={ref}
           placeholderTextColor="rgba(104,117,112,0.55)"
           style={[styles.input, suffix ? styles.inputWithSuffix : undefined, style]}
-          textAlign={inputProps.textContentType === "emailAddress" || suffix ? "left" : isRtl ? "right" : "left"}
+          textAlign={inputProps.textContentType === "emailAddress" || suffix ? "left" : "left"}
         />
         {suffix ? <Text style={styles.suffix}>{suffix}</Text> : null}
       </View>
@@ -87,8 +86,8 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: type.label,
     fontWeight: "500",
-    textAlign: isRtl ? "right" : "left",
-    writingDirection: textDirection,
+    textAlign: "left",
+    writingDirection: "ltr",
   },
   inputShell: {
     backgroundColor: colors.surface,
@@ -141,7 +140,7 @@ const styles = StyleSheet.create({
     color: colors.surface,
     fontSize: type.body,
     fontWeight: "500",
-    writingDirection: textDirection,
+    writingDirection: "ltr",
   },
   textButton: {
     alignSelf: "center",
@@ -152,7 +151,7 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: type.label,
     fontWeight: "500",
-    writingDirection: textDirection,
+    writingDirection: "ltr",
   },
   disabledText: {
     opacity: 0.5,
@@ -168,7 +167,7 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: type.label,
     lineHeight: 20,
-    textAlign: isRtl ? "right" : "left",
-    writingDirection: textDirection,
+    textAlign: "left",
+    writingDirection: "ltr",
   },
 })

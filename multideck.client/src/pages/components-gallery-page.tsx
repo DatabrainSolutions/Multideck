@@ -259,6 +259,7 @@ import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/component
 import { InlineField, InlineFieldCard, InlineSelectField } from "@/components/multideck/inline-field"
 import { SideDrawer } from "@/components/multideck/side-drawer"
 import { WizardDialog } from "@/components/multideck/wizard-dialog"
+import { ScreenshotCaptureEditor, SupportTicketAttachmentPreview } from "@/components/multideck/support-ticket-dialog"
 import { useLanguage } from "@/i18n/language-provider"
 
 type GalleryIconKey = keyof typeof galleryIcons
@@ -321,6 +322,11 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
     ids: ["home-dexter-launcher", "home-prompt-rail", "home-deck-panel"],
   },
   {
+    label: "Support",
+    helper: "Ticket evidence and review",
+    ids: ["ticket-screenshot-editor", "ticket-attachment-preview"],
+  },
+  {
     label: "Feedback",
     helper: "Status and notifications",
     ids: ["status-pill", "dictation-status-pill", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "toast"],
@@ -347,6 +353,39 @@ const previewHomeSuggestions: HomePromptSuggestion[] = [
   { id: "quotes", title: "Send the quotes that are ready", prompt: "Show me every quote that is ready to send, check each one, and draft the covering email.", meta: "2 ready", icon: PackageCheck, specialistId: "sales" },
   { id: "risk", title: "Review the bookings most at risk", prompt: "Show me the bookings most at risk right now and what I should do next on each.", icon: BarChart3, specialistId: "analytics" },
 ]
+
+function createGalleryTicketScreenshot() {
+  const canvas = document.createElement("canvas")
+  canvas.width = 1200
+  canvas.height = 720
+  const context = canvas.getContext("2d")
+  if (!context) return new File([], "multideck-dashboard.png", { type: "image/png" })
+
+  const roundedRect = (x: number, y: number, width: number, height: number, radius: number, fill: string) => {
+    context.beginPath()
+    context.roundRect(x, y, width, height, radius)
+    context.fillStyle = fill
+    context.fill()
+  }
+  context.fillStyle = "#eef1f0"
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  roundedRect(36, 34, 236, 652, 22, "#102825")
+  roundedRect(304, 34, 860, 84, 22, "#ffffff")
+  roundedRect(304, 148, 528, 538, 22, "#ffffff")
+  roundedRect(862, 148, 302, 260, 22, "#dceae7")
+  roundedRect(862, 438, 302, 248, 22, "#ffffff")
+  roundedRect(332, 178, 240, 18, 9, "#0a7068")
+  roundedRect(332, 216, 438, 10, 5, "#ccd4d1")
+  roundedRect(332, 244, 390, 10, 5, "#d8dedc")
+  roundedRect(332, 292, 472, 156, 16, "#f3f5f4")
+  roundedRect(332, 478, 206, 160, 16, "#e6edeb")
+  roundedRect(566, 478, 238, 160, 16, "#f3f5f4")
+
+  const encoded = canvas.toDataURL("image/png").split(",")[1] ?? ""
+  const binary = window.atob(encoded)
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+  return new File([bytes], "multideck-dashboard.png", { type: "image/png", lastModified: 1_775_000_000_000 })
+}
 
 const previewLifecycleNotes: LifecycleNotesPreviewState = {
   canWrite: true,
@@ -1606,6 +1645,8 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewSideDrawerOpen, setPreviewSideDrawerOpen] = useState(false)
   const [previewWizardOpen, setPreviewWizardOpen] = useState(false)
   const [previewWizardStep, setPreviewWizardStep] = useState("details")
+  const [previewTicketScreenshot, setPreviewTicketScreenshot] = useState(createGalleryTicketScreenshot)
+  const [previewTicketAttachmentVisible, setPreviewTicketAttachmentVisible] = useState(true)
   const [summonPreviewQuestion, setSummonPreviewQuestion] = useState("Is this account safe to book again?")
   const [summonPreviewAnswer, setSummonPreviewAnswer] = useState("")
   // The prompt only reads the kind and the label off its target, so the preview
@@ -1767,6 +1808,33 @@ function ComponentPreview({ id }: { id: string }) {
             limitMessage={t("The dictionary can contain up to 100 terms.")}
           />
           <p className="mt-2 text-[11.5px] text-[var(--md-subtle)]">{t("Press Enter or use commas to add several terms.")}</p>
+        </div>
+      ) : null}
+
+      {id === "ticket-screenshot-editor" ? (
+        <div className="w-full max-w-[960px]">
+          <ScreenshotCaptureEditor
+            file={previewTicketScreenshot}
+            onChange={setPreviewTicketScreenshot}
+            onCancel={() => setPreviewTicketScreenshot(createGalleryTicketScreenshot())}
+          />
+        </div>
+      ) : null}
+
+      {id === "ticket-attachment-preview" ? (
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
+          {previewTicketAttachmentVisible ? (
+            <SupportTicketAttachmentPreview
+              file={previewTicketScreenshot}
+              onEdit={() => toast.success("Screenshot editor opened")}
+              onRemove={() => setPreviewTicketAttachmentVisible(false)}
+            />
+          ) : (
+            <div className="flex min-h-16 items-center justify-between gap-3 px-2">
+              <p className="text-[12px] text-[var(--md-subtle)]">The attachment was removed from this preview.</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => setPreviewTicketAttachmentVisible(true)}>Restore</Button>
+            </div>
+          )}
         </div>
       ) : null}
 

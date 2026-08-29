@@ -497,9 +497,8 @@ export function CardMiniature({
       className={cn("relative size-full overflow-hidden", className)}
       style={{ backgroundColor: theme.pageBg }}
     >
-      {/* Anchored to the physical top-left and scaled from that corner, so the
-          render lands inside the frame in a right-to-left language too. The card
-          itself still inherits the page direction and mirrors with it. */}
+      {/* Anchored to the physical top-left and scaled from that corner so the
+          render lands consistently inside the preview frame. */}
       <div
         className="absolute top-0"
         style={{ left: 0, width: DESIGN_WIDTH, transform: `scale(${scale})`, transformOrigin: "top left", opacity: scale ? 1 : 0 }}
@@ -604,8 +603,7 @@ const TILE_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "E
  * A grid of tiles that behaves like one radio group.
  *
  * The keyboard contract is the ARIA one: a single tab stop, arrows move the
- * choice, Home and End jump to the ends, and the horizontal arrows mirror in a
- * right-to-left language. It reads the tiles from the DOM rather than taking a
+ * choice, and Home and End jump to the ends. It reads the tiles from the DOM rather than taking a
  * list, so the same wrapper serves a grid of card previews, a row of colour
  * swatches and a set of code patterns without any of them repeating the wiring.
  */

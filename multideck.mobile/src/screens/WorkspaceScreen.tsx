@@ -2,7 +2,7 @@ import { useState } from "react"
 import { StyleSheet, Text } from "react-native"
 import { AuthScreen } from "@/components/AuthScreen"
 import { Feedback, Field, PrimaryButton } from "@/components/FormControls"
-import { t, isRtl, textDirection } from "@/i18n"
+import { t } from "@/i18n"
 import { discoverWorkspace, isValidWorkspaceSlug, normalizeWorkspaceSlug, type WorkspaceConfiguration } from "@/auth/workspace"
 import { colors, spacing, type } from "@/theme/tokens"
 
@@ -62,7 +62,7 @@ const styles = StyleSheet.create({
     fontSize: type.meta,
     lineHeight: 19,
     marginTop: spacing.lg,
-    textAlign: isRtl ? "right" : "left",
-    writingDirection: textDirection,
+    textAlign: "left",
+    writingDirection: "ltr",
   },
 })

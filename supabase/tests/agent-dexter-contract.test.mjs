@@ -123,6 +123,9 @@ const purchaseOrderStrictSchemaMigration = read(
 const dexterActionToolSchemaFixMigration = read(
   "supabase/migrations/20260819221701_fix_dexter_action_tool_schemas.sql",
 )
+const dexterMentionSources = read(
+  "multideck.client/src/lib/dexter-mention-sources.ts",
+)
 
 test("Dexter uses the shared allowlisted CORS boundary", () => {
   assert.match(edgeFunction, /import \{ corsHeaders \} from "\.\.\/_shared\/backend\.ts"/)
@@ -150,7 +153,7 @@ test("Dexter action tools stay OpenAI strict-schema compatible", () => {
 })
 
 test("Dexter redirects off-topic requests without narrowing useful freight work", () => {
-  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-08-19-personal-todo"/)
+  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-08-29-support-english"/)
   assert.match(edgeFunction, /# Scope boundary/)
   assert.match(edgeFunction, /Dexter is for freight forwarding and the work required to operate a freight-forwarding business/)
   assert.match(edgeFunction, /Examples include sports fixtures, recipes and cooking, entertainment, celebrity news, general trivia/)
@@ -265,10 +268,10 @@ test("Customs declarations are connected to Dexter with explicit import/export p
   assert.match(dexterMentions, /DexterMentionType = [^\n]*"declaration"/)
   assert.match(dexterMentions, /export function customsDeclarationMentionItems\(items: CustomsDraftSummary\[\]\)/)
   assert.match(dexterMentions, /id: `declaration:\$\{declaration\.id\}`/)
-  assert.match(dexterPage, /listCustomsDeclarationDraftsPage\("export", "standalone", \{[\s\S]*limit: 50,[\s\S]*sort: \{ id: "lastSaved", direction: "desc" \}/)
-  assert.match(dexterPage, /declarationResult\.status === "fulfilled" \? customsDeclarationMentionItems\(declarationResult\.value\.rows\) : \[\]/)
+  assert.match(dexterMentionSources, /listCustomsDeclarationDraftsPage\("export", "standalone", \{[\s\S]*limit: 50,[\s\S]*sort: \{ id: "lastSaved", direction: "desc" \}/)
+  assert.match(dexterMentionSources, /declarationResult\.status === "fulfilled" \? customsDeclarationMentionItems\(declarationResult\.value\.rows\) : \[\]/)
   assert.match(dexterComponents, /declaration: "Declaration"/)
-  assert.match(translations, /a booking or declaration reference/)
+  assert.match(dexterComponents, /a booking or declaration reference/)
 })
 
 test("Dexter creates and edits connected warehouse, booking and Customs records through explicit product boundaries", () => {
@@ -499,7 +502,7 @@ test("Approve pauses before writes while Full access executes only registered ac
   assert.match(dexterSecurityMigration, /grant execute on function public\.multideck_dexter_execute_prepared_action\(uuid,uuid,uuid,uuid\) to service_role/)
   assert.match(dexterSecurityMigration, /AIDexterPrepared_Status"='succeeded'/)
   assert.match(edgeFunction, /requiresExplicitActionApproval\(actionCode, input\.accessMode\)/)
-  assert.match(edgeFunction, /Sending email is the exception: always prepare the exact message/)
+  assert.match(edgeFunction, /Sending email and creating a support ticket are exceptions: always prepare the exact action/)
 })
 
 test("untrusted Home email subjects cannot turn a suggestion into an automatic send", () => {
@@ -615,8 +618,8 @@ test("live deals are exact @ mentions in Dexter chat and Watch mode", () => {
   assert.match(dexterMentions, /route: `\/crm\/deals\?record=\$\{encodeURIComponent\(deal\.id\)\}`/)
   assert.match(dexterComponents, /deal: "Deal"/)
   assert.match(dexterComponents, /"lead", "deal", "declaration", "page"/)
-  assert.match(dexterPage, /dealResult\.status === "fulfilled" \? dealMentionItems\(dealResult\.value\.rows\) : \[\]/)
-  assert.match(dexterPage, /listDealsPage\(\{ limit: 50, offset: 0, sort: \{ id: "created", direction: "desc" \} \}\)/)
+  assert.match(dexterMentionSources, /dealResult\.status === "fulfilled" \? dealMentionItems\(dealResult\.value\.rows\) : \[\]/)
+  assert.match(dexterMentionSources, /listDealsPage\(\{ limit: 50, offset: 0, sort: \{ id: "created", direction: "desc" \} \}\)/)
   assert.match(dexterPage, /\["booking", "lead", "deal", "declaration", "quote"\]/)
   assert.match(dexterCompanion, /listAccountsPage\(\{ limit: 25, offset: 0 \}\)/)
   assert.match(dexterCompanion, /listLeadsPage\(\{ limit: 25, offset: 0 \}\)/)
@@ -759,12 +762,11 @@ test("Dexter never fills evidence gaps with invented people, data, or outcomes",
   assert.match(edgeFunction, /makes no unsupported factual claim, clearly labels any inference/)
 })
 
-test("Dexter response data and decisions adapt for narrow, RTL, and reduced-motion views", () => {
+test("Dexter response data and decisions adapt for narrow and reduced-motion views", () => {
   assert.match(clientStyles, /@container dexter-table \(max-width: 900px\)[\s\S]*\.md-dexter-markdown__table-wrap--leads \.md-dexter-markdown__table-scroll[\s\S]*display: none/)
   assert.match(clientStyles, /@container dexter-table \(max-width: 900px\)[\s\S]*\.md-dexter-markdown__table-wrap--leads \.md-dexter-markdown__records[\s\S]*display: block/)
   assert.match(clientStyles, /@container dexter-table \(max-width: 700px\)[\s\S]*\.md-dexter-markdown__table-scroll[\s\S]*display: none/)
   assert.match(clientStyles, /@container dexter-table \(max-width: 700px\)[\s\S]*\.md-dexter-markdown__records[\s\S]*display: block/)
-  assert.match(clientStyles, /\[dir="rtl"\] \.md-dexter-markdown blockquote/)
   assert.match(clientStyles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.md-dexter-markdown--streaming > :last-child::after[\s\S]*animation: none/)
   assert.match(dexterApproval, /motion-reduce:animate-none/)
   assert.match(dexterApproval, /<bdi>\{value === null/)

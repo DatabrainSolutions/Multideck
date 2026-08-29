@@ -126,7 +126,7 @@ Current Multideck components:
 - `LineChartCard`, `AreaChartCard`, `BarChartCard`, `StackedBarChartCard`, `DonutChartCard`, `FunnelChartCard`, `HeatmapChartCard`, `RadialGoalChartCard`, `ScatterChartCard`, and `MixedChartCard`: reusable report-ready visualization components.
 - `ReportVisualizationBlock`: report-builder adapter for chart variants such as single bars, comparison bars, pie charts with or without keys, and variable-step funnels.
 - `CommandInput`: search and jump entry point. Shows the live `search.focus` binding and claims it while it is on screen.
-- `ShortcutKeys` / `ShortcutHint`: a saved keyboard binding drawn as keycaps in the operator's own platform glyphs. Sequences read as two groups joined by "then"; keycaps stay left-to-right in right-to-left languages because they describe a physical keyboard.
+- `ShortcutKeys` / `ShortcutHint`: a saved keyboard binding drawn as keycaps in the operator's own platform glyphs. Sequences read as two groups joined by "then".
 - `KeyboardShortcutsPanel`: the editable shortcut list — grouped rows, inline recorder, conflict warnings, per-row reset. Used by the Keyboard shortcuts settings section and by the ⌘/ overlay.
 - `AppShortcuts`: the one place every shell-level shortcut is bound, so the settings list and the real behaviour cannot drift apart. Also draws the sequence hint while a two-key run is half typed.
 - `DexterSummon` / `DexterSummonPrompt`: the summon gesture. Hold the platform modifier and double-click anything, or press ⌘D / Ctrl+D, and Dexter traces that element with a shader ring and opens a stripped prompt box against it, carrying that element's context. With nothing named, the screen dims lightly and the same ring becomes an area picker.
@@ -159,16 +159,15 @@ Component naming rule:
 - Screen-specific components are allowed only when the content is genuinely domain-specific, such as `CustomerDetailHero`, `ActiveBookingsPanel`, or `PrimaryContactsPanel`.
 - Customer screens should pass customer data into generic primitives rather than creating parallel customer-only controls.
 
-## Language And Direction
+## English Product Copy
 
-Multideck must treat language support as a product-system requirement, not a later pass.
+Multideck product-authored copy is English only.
 
-- New screens and reusable components should work with the app-wide language system from the start.
-- User-facing copy should be localisable rather than trapped inside one-off hardcoded strings.
-- Layouts should remain calm and readable when text length changes between languages.
-- Arabic and other right-to-left languages must flip reading direction cleanly for navigation, sidebars, tables, forms, rows, and directional controls.
-- Inputs that contain emails, URLs, booking IDs, codes, tracking numbers, or phone numbers should stay readable with direction-safe handling.
-- Any component added to the gallery should be checked in a non-English language, and in right-to-left mode when it has direction-sensitive layout.
+- Use British English by default, with the supported American English variant where regional spelling or formatting differs.
+- Do not add non-English interface translations or language choices.
+- Keep layouts calm and readable when English copy changes length.
+- Preserve user-entered names, addresses, messages, documents, and identifiers in their original form.
+- Any component added to the gallery should be checked in both supported English variants when regional formatting or spelling is relevant.
 
 ## Page Rules
 
@@ -273,7 +272,7 @@ Dropdowns should feel anchored, compact, and unambiguous:
 - Keep 4px menu padding, 32px minimum option rows, and a small gap between rows so dense forms remain easy to scan.
 - Hover uses the neutral interaction surface; selected options keep the selected surface, stronger text, and a check indicator.
 - Menus enter in 220ms with a subtle fade, blur, and scale. Options follow top-to-bottom with a short stagger. Reduced-motion mode removes these transitions.
-- Use logical inline spacing and start alignment so the same component remains direction-safe in right-to-left languages.
+- Use logical inline spacing and start alignment so components remain structurally consistent.
 
 ## Build Rule
 

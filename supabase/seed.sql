@@ -137,7 +137,7 @@ begin
       "CRMContact_InfluenceLevel" = case when contact."OrgContact_FirstName" in ('Amelia', 'Camille', 'Priya', 'Kenji') then 'high' else 'medium' end,
       "CRMContact_RelationshipStrength" = case when contact."OrgContact_FirstName" in ('Amelia', 'Priya', 'Maja') then 82 else 68 end,
       "CRMContact_PreferredChannelCode" = 'email',
-      "CRMContact_PreferredLanguageCode" = case when org."Org_Name" = 'Atelier Maison' then 'fr' else 'en-GB' end,
+      "CRMContact_PreferredLanguageCode" = 'en-GB',
       "CRMContact_ConsentSalesContact" = contact."OrgContact_FirstName" not in ('Maya', 'Markus'),
       "CRMContact_ConsentMarketing" = contact."OrgContact_FirstName" in ('Amelia', 'Camille', 'Priya', 'Maja', 'Kenji', 'Nadia'),
       "CRMContact_Notes" = case

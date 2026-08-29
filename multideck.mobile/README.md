@@ -38,7 +38,7 @@ and publishable key.
 Add product screens under `src/screens` and register them in the authenticated stack in `App.tsx`.
 Shared native components belong in `src/components`; tokens stay in `src/theme/tokens.ts`. General
 copy belongs in `src/i18n/index.ts` and warehouse copy in `src/warehouse/i18n.ts`. Directional
-layouts must use `isRtl` and keep emails, URLs, codes, and references left-to-right.
+layouts use the English left-to-right interface while keeping emails, URLs, codes, and references readable.
 
 ## Warehouse handheld workflows
 

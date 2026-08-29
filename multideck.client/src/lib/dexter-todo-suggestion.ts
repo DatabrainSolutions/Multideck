@@ -23,13 +23,13 @@ function offsetDate(days: number, now: Date) {
 }
 
 const weekdayTerms = [
-  ["sunday","sonntag","dimanche"],
-  ["monday","montag","lundi"],
-  ["tuesday","dienstag","mardi"],
-  ["wednesday","mittwoch","mercredi"],
-  ["thursday","donnerstag","jeudi"],
-  ["friday","freitag","vendredi"],
-  ["saturday","samstag","samedi"],
+  ["sunday"],
+  ["monday"],
+  ["tuesday"],
+  ["wednesday"],
+  ["thursday"],
+  ["friday"],
+  ["saturday"],
 ] as const
 
 function scheduledDateFrom(text: string, now: Date) {
@@ -38,8 +38,8 @@ function scheduledDateFrom(text: string, now: Date) {
     const parsed = new Date(`${iso}T12:00:00`)
     if (!Number.isNaN(parsed.getTime()) && localDateKey(parsed) === iso) return iso
   }
-  if (/\b(tomorrow|morgen|demain)\b|غد[اً]?/i.test(text)) return offsetDate(1,now)
-  if (/\b(today|heute|aujourd['’]hui)\b|اليوم/i.test(text)) return localDateKey(now)
+  if (/\btomorrow\b/i.test(text)) return offsetDate(1,now)
+  if (/\btoday\b/i.test(text)) return localDateKey(now)
   const lower = text.toLowerCase()
   for (let day = 0; day < weekdayTerms.length; day += 1) {
     if (!weekdayTerms[day].some((term) => lower.includes(term))) continue
@@ -50,10 +50,10 @@ function scheduledDateFrom(text: string, now: Date) {
 }
 
 function priorityFrom(text: string): TodoPriority | null {
-  if (/\b(urgent|asap|immediately|critical)\b|عاجل|dringend|urgente/i.test(text)) return "urgent"
-  if (/\bhigh(?:\s+priority)?\b|hoch|élevée|عالية/i.test(text)) return "high"
-  if (/\bmedium(?:\s+priority)?\b|mittel|moyenne|متوسطة/i.test(text)) return "medium"
-  if (/\blow(?:\s+priority)?\b|niedrig|faible|منخفضة/i.test(text)) return "low"
+  if (/\b(urgent|asap|immediately|critical)\b/i.test(text)) return "urgent"
+  if (/\bhigh(?:\s+priority)?\b/i.test(text)) return "high"
+  if (/\bmedium(?:\s+priority)?\b/i.test(text)) return "medium"
+  if (/\blow(?:\s+priority)?\b/i.test(text)) return "low"
   return null
 }
 

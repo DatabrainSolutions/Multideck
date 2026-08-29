@@ -31,6 +31,7 @@ import {
   Globe2,
   Grid3X3,
   House,
+  Image,
   KeyRound,
   Layers3,
   LayoutDashboard,
@@ -2143,6 +2144,34 @@ export const galleryComponents = [
     usageCode: `<TagEntryField\n  terms={terms}\n  onTermsChange={setTerms}\n  inputLabel="Add dictionary terms"\n  placeholder="Add a word or phrase"\n  addLabel="Add term"\n  removeLabel={(term) => \`Remove \${term}\`}\n  duplicateMessage="That term is already in the dictionary."\n  limitMessage="The dictionary can contain up to 100 terms."\n/>`,
   },
   {
+    id: "ticket-screenshot-editor",
+    name: "Ticket Screenshot Editor",
+    category: "Controls",
+    description: "A focused screenshot review surface for cropping evidence, highlighting the relevant area, or blurring sensitive details before an image is attached to a support ticket.",
+    details: "Use after browser screen capture or image upload and before the ticket is sent. The editor keeps one task in view, supports pointer and touch selection, offers bounded undo, exports a fresh PNG, and uses the shared English copy layer. It is a reusable evidence editor, not the full ticket-submission flow.",
+    foundOn: [
+      { label: "App sidebar ticket action", route: "/" },
+      { label: "Settings support action", route: "/settings?tab=support" },
+      { label: "Components", route: "/components?component=ticket-screenshot-editor" },
+    ],
+    componentCode: `export function ScreenshotCaptureEditor({ file, onChange, onCancel }) {\n  const [tool, setTool] = useState("highlight")\n  const [history, setHistory] = useState([])\n  const [selection, setSelection] = useState(null)\n\n  return (\n    <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)]">\n      <canvas onPointerDown={startSelection} onPointerMove={moveSelection} onPointerUp={finishSelection} />\n      <Button onClick={() => setTool("crop")}>Crop</Button>\n      <Button onClick={() => setTool("highlight")}>Highlight</Button>\n      <Button onClick={() => setTool("redact")}>Blur / redact</Button>\n      <Button disabled={!selection} onClick={applySelection}>Apply</Button>\n      <Button disabled={!history.length} onClick={undo}>Undo</Button>\n      <Button onClick={onCancel}>Cancel</Button>\n      <Button onClick={exportPng}>Use screenshot</Button>\n    </div>\n  )\n}`,
+    usageCode: `const [screenshot, setScreenshot] = useState(capturedFile)\n\n<ScreenshotCaptureEditor\n  file={screenshot}\n  onChange={(editedPng) => {\n    setScreenshot(editedPng)\n    closeEditor()\n  }}\n  onCancel={closeEditor}\n/>`,
+  },
+  {
+    id: "ticket-attachment-preview",
+    name: "Ticket Attachment Preview",
+    category: "Controls",
+    description: "A compact, readable image row that confirms exactly which screenshot will be sent with a support ticket and keeps edit and remove actions close to the evidence.",
+    details: "Use in a ticket attachment list after validation has accepted a PNG, JPEG, or WebP file. The filename and file size remain readable, the image has a useful accessible name, and object URLs are revoked when the preview changes or unmounts.",
+    foundOn: [
+      { label: "App sidebar ticket action", route: "/" },
+      { label: "Settings support action", route: "/settings?tab=support" },
+      { label: "Components", route: "/components?component=ticket-attachment-preview" },
+    ],
+    componentCode: `export function SupportTicketAttachmentPreview({ file, onEdit, onRemove, previewUrl }) {\n  const objectUrl = useMemo(\n    () => previewUrl ? null : URL.createObjectURL(file),\n    [file, previewUrl],\n  )\n  const url = previewUrl ?? objectUrl ?? ""\n\n  useEffect(() => () => {\n    if (objectUrl) URL.revokeObjectURL(objectUrl)\n  }, [objectUrl])\n\n  return (\n    <div className="flex items-center gap-2 rounded-[var(--md-radius-lg)]">\n      <img src={url} alt={file.name} />\n      <span className="min-w-0 flex-1" dir="auto">{file.name}</span>\n      <Button onClick={onEdit}>Edit</Button>\n      <Button aria-label="Remove screenshot" onClick={onRemove}>Remove</Button>\n    </div>\n  )\n}`,
+    usageCode: `{attachments.map((file) => (\n  <SupportTicketAttachmentPreview\n    key={file.name}\n    file={file}\n    onEdit={() => setEditingFile(file)}\n    onRemove={() => setAttachments((current) =>\n      current.filter((candidate) => candidate !== file)\n    )}\n  />\n))}`,
+  },
+  {
     id: "quote-detail-controls",
     name: "Quote Detail Controls",
     category: "Forms",
@@ -2254,7 +2283,7 @@ export const galleryComponents = [
     name: "Shortcut Keys",
     category: "Controls",
     description: "A saved keyboard binding drawn as keycaps, in the modifier glyphs of the operator's own platform.",
-    details: "Use anywhere a shortcut is worth advertising: beside a control, inside a menu row, or in the shortcut editor. It resolves ⌘ against Ctrl, joins simultaneous keys with +, and draws a two-step sequence as two groups joined by \"then\". Keycaps always read left to right, including in right-to-left languages, because they describe a physical keyboard and a keyboard does not mirror.",
+    details: "Use anywhere a shortcut is worth advertising: beside a control, inside a menu row, or in the shortcut editor. It resolves ⌘ against Ctrl, joins simultaneous keys with +, and draws a two-step sequence as two groups joined by \"then\".",
     foundOn: [
       { label: "Keyboard shortcuts", route: "/settings?tab=shortcuts" },
       { label: "Overview", route: "/" },
@@ -2722,7 +2751,7 @@ export const galleryComponents = [
     name: "App Breadcrumbs",
     category: "Navigation",
     description: "The shared route trail for showing where an operator is and returning to the parent workspace without losing context.",
-    details: "Use in the app header for list, detail, and nested workflow routes. Keep ancestor items actionable, the current page non-interactive, dynamic references left-to-right, and every static label localised.",
+    details: "Use in the app header for list, detail, and nested workflow routes. Keep ancestor items actionable, the current page non-interactive, dynamic references readable, and every static label in the shared English copy layer.",
     foundOn: [{ label: "App shell", route: "/" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Road control", route: "/road-control" }, { label: "Components", route: "/components?component=app-breadcrumbs" }],
     componentCode: `export function AppBreadcrumbs({ route, navigate, leafLabel }) {\n  const { direction, t } = useLanguage()\n  const trail = getAppBreadcrumbTrail(route, leafLabel)\n\n  function openRoute(event, path) {\n    if (!navigate || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return\n    event.preventDefault()\n    navigate(path)\n  }\n\n  return (\n    <Breadcrumb dir={direction}>\n      <BreadcrumbList>\n        {trail.map((item, index) => {\n          const isCurrent = index === trail.length - 1\n          return (\n            <Fragment key={item.route ?? item.label}>\n              {index > 0 ? <BreadcrumbSeparator /> : null}\n              <BreadcrumbItem>\n                {isCurrent ? (\n                  <BreadcrumbPage>{t(item.label)}</BreadcrumbPage>\n                ) : (\n                  <BreadcrumbLink asChild>\n                    <a href={item.route} onClick={(event) => openRoute(event, item.route)}>\n                      {t(item.label)}\n                    </a>\n                  </BreadcrumbLink>\n                )}\n              </BreadcrumbItem>\n            </Fragment>\n          )\n        })}\n      </BreadcrumbList>\n    </Breadcrumb>\n  )\n}`,
     usageCode: `<AppBreadcrumbs\n  route="/crm/leads/northstar-components/convert"\n  leafLabel="Northstar Components"\n  navigate={navigate}\n/>`,
@@ -2732,7 +2761,7 @@ export const galleryComponents = [
     name: "Area Sidebar Navigation",
     category: "Navigation",
     description: "The two-level Multideck navigation pattern: Dexter stays first in every rail, followed by stable product areas or area-specific destinations with optional dropdown groups.",
-    details: "Keep Dexter permanently mounted at the top and use its shared shader treatment in both navigation levels, so changing areas never restarts the shader. Selecting a CSV-backed area replaces only the remaining rail without changing the page; destinations can link directly or disclose smaller page links. The shared active surface, motion, collapsed state and RTL behavior remain consistent across both levels.",
+    details: "Keep Dexter permanently mounted at the top and use its shared shader treatment in both navigation levels, so changing areas never restarts the shader. Selecting a CSV-backed area replaces only the remaining rail without changing the page; destinations can link directly or disclose smaller page links. The shared active surface, motion and collapsed state remain consistent across both levels.",
     foundOn: [{ label: "App shell", route: "/" }, { label: "Operations", route: "/bookings" }, { label: "Sales & CRM", route: "/crm" }, { label: "Components", route: "/components?component=sidebar" }],
     componentCode: `export function AppSidebar({ route, navigate }) {\n  const [activeAreaId, setActiveAreaId] = useState(findAreaForRoute(route)?.id ?? null)\n  const [expandedIds, setExpandedIds] = useState(new Set())\n  const activeArea = sidebarAreas.find((area) => area.id === activeAreaId)\n\n  return (\n    <aside className="relative flex h-full flex-col bg-[var(--md-sidebar-bg)]">\n      <SidebarNavItem\n        item={{ label: "Agent Dexter", icon: AiBrain, route: "/agent-dexter" }}\n        accent="dexter"\n        onClick={() => navigate("/agent-dexter")}\n      />\n      <AnimatePresence mode="popLayout" initial={false}>\n        {activeArea ? (\n          <motion.nav key={activeArea.id}>\n            <button onClick={() => setActiveAreaId(null)}>All areas</button>\n            {activeArea.destinations.map((destination) => (\n              <div key={destination.id}>\n                <SidebarNavItem\n                  item={destination}\n                  expanded={destination.children ? expandedIds.has(destination.id) : undefined}\n                  onClick={destination.children\n                    ? () => toggleExpanded(destination.id)\n                    : destination.route ? () => navigate(destination.route) : undefined}\n                />\n                {expandedIds.has(destination.id)\n                  ? destination.children?.map((child) => (\n                      <SidebarNavItem key={child.label} item={child} nested onClick={() => navigate(child.route)} />\n                    ))\n                  : null}\n              </div>\n            ))}\n          </motion.nav>\n        ) : (\n          <motion.nav key="areas">\n            {sidebarAreas.map((area) => (\n              <SidebarNavItem key={area.id} item={area} onClick={() => setActiveAreaId(area.id)} />\n            ))}\n          </motion.nav>\n        )}\n      </AnimatePresence>\n    </aside>\n  )\n}`,
     usageCode: `<AppSidebar route={route} navigate={navigate} />`,
@@ -2764,7 +2793,7 @@ export const galleryComponents = [
     description: "The sidebar appearance switch for moving between light and dark mode without leaving the workspace.",
     details: "Use in persistent navigation surfaces where the user's preference should feel immediate and calm. The shared theme boundary owns the visual change and cross-tab update, while profile persistence runs behind it and can never repaint an older choice. The thumb and persistent sun and moon layers communicate the new state without remounting; reduced-motion users receive the same clear state without spatial movement.",
     foundOn: [{ label: "Overview sidebar", route: "/" }, { label: "Customisation", route: "/settings?tab=customisation" }, { label: "Components", route: "/components" }],
-    componentCode: `export function ThemeToggle({ compact = false, showAppearanceLabel = true }) {\n  const { resolvedTheme, setTheme } = useTheme()\n  const { direction, t } = useLanguage()\n  const shouldReduceMotion = useReducedMotion()\n  const [pendingTheme, setPendingTheme] = useState(null)\n  const isDark = (pendingTheme ?? resolvedTheme) === "dark"\n\n  return (\n    <button\n      type="button"\n      role="switch"\n      aria-checked={isDark}\n      aria-label={t(isDark ? "Switch to light mode" : "Switch to dark mode")}\n      onClick={() => setPendingTheme(toggleThemeWithProfileIntent(setTheme))}\n    >\n      {compact ? null : (\n        <span>\n          {showAppearanceLabel ? <span>{t("Appearance")}</span> : null}\n          <span>{t(isDark ? "Dark mode" : "Light mode")}</span>\n        </span>\n      )}\n      <span className="relative h-[30px] w-12 rounded-full">\n        <motion.span\n          initial={false}\n          animate={{ x: compact ? 0 : isDark ? (direction === "rtl" ? -18 : 18) : 0 }}\n          transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", duration: 0.3, bounce: 0 }}\n        >\n          <motion.span initial={false} animate={{ opacity: isDark ? 0 : 1, scale: isDark ? 0.25 : 1 }}><Sun /></motion.span>\n          <motion.span initial={false} animate={{ opacity: isDark ? 1 : 0, scale: isDark ? 1 : 0.25 }}><Moon /></motion.span>\n        </motion.span>\n      </span>\n    </button>\n  )\n}`,
+    componentCode: `export function ThemeToggle({ compact = false, showAppearanceLabel = true }) {\n  const { resolvedTheme, setTheme } = useTheme()\n  const { t } = useLanguage()\n  const shouldReduceMotion = useReducedMotion()\n  const [pendingTheme, setPendingTheme] = useState(null)\n  const isDark = (pendingTheme ?? resolvedTheme) === "dark"\n\n  return (\n    <button\n      type="button"\n      role="switch"\n      aria-checked={isDark}\n      aria-label={t(isDark ? "Switch to light mode" : "Switch to dark mode")}\n      onClick={() => setPendingTheme(toggleThemeWithProfileIntent(setTheme))}\n    >\n      {compact ? null : (\n        <span>\n          {showAppearanceLabel ? <span>{t("Appearance")}</span> : null}\n          <span>{t(isDark ? "Dark mode" : "Light mode")}</span>\n        </span>\n      )}\n      <span className="relative h-[30px] w-12 rounded-full">\n        <motion.span\n          initial={false}\n          animate={{ x: compact ? 0 : isDark ? 18 : 0 }}\n          transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", duration: 0.3, bounce: 0 }}\n        >\n          <motion.span initial={false} animate={{ opacity: isDark ? 0 : 1, scale: isDark ? 0.25 : 1 }}><Sun /></motion.span>\n          <motion.span initial={false} animate={{ opacity: isDark ? 1 : 0, scale: isDark ? 1 : 0.25 }}><Moon /></motion.span>\n        </motion.span>\n      </span>\n    </button>\n  )\n}`,
     usageCode: `<ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange enableSystem={false} storageKey="multideck.theme">\n  <AppShell>\n    <ThemeToggle />\n  </AppShell>\n</ThemeProvider>`,
   },
   {
@@ -2872,7 +2901,7 @@ export const galleryComponents = [
     name: "Date Pickers",
     category: "Controls",
     description: "The shared branded date controls for a single date, date and time, or a range with optional comparison.",
-    details: "Use these instead of browser-native date inputs. Every variant shares the glass calendar, date formatting, RTL-safe layout, constrained dates, and the rebranded Calendar Days icon; date-time fields add a compact branded time control.",
+    details: "Use these instead of browser-native date inputs. Every variant shares the glass calendar, English regional date formatting, constrained dates, and the rebranded Calendar Days icon; date-time fields add a compact branded time control.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Quote details", route: "/quotes/jq20013" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=date-range-picker" }],
     componentCode: `export function MultideckDatePicker({ value, onChange, minDate, maxDate }) {\n  return <MultideckDateRangePicker value={{ start: value, end: value }} onChange={(range) => onChange(range.start)} minDate={minDate} maxDate={maxDate} />\n}\n\nexport function MultideckDateTimePicker({ value, onChange }) {\n  const date = value.slice(0, 10)\n  const time = value.slice(11, 16)\n  return (\n    <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-2">\n      <MultideckDatePicker value={date} onChange={(nextDate) => onChange((nextDate ?? "") + "T" + time)} />\n      <BrandedTimeInput value={time} onChange={(nextTime) => onChange(date + "T" + nextTime)} />\n    </div>\n  )\n}`,
     usageCode: `const [expiryDate, setExpiryDate] = useState("2026-06-04")\nconst [appointment, setAppointment] = useState("2026-06-04T09:30")\n\n<MultideckDatePicker\n  value={expiryDate}\n  onChange={(date) => setExpiryDate(date ?? "")}\n  title="Expiry date"\n/>\n\n<MultideckDateTimePicker\n  value={appointment}\n  onChange={setAppointment}\n  title="Appointment"\n/>`,
@@ -3242,7 +3271,7 @@ export const DotGridLoader = memo(function DotGridLoader({ label, size = "md", d
     name: "Multi-select Menu",
     category: "Navigation",
     description: "A compact checkbox menu for fields that can hold several choices without expanding the form.",
-    details: "Use when choices can be combined, such as multimodal freight transport or warehouse access. Options may be plain translated strings or stable values with data-driven labels. It supports required, invalid, disabled, RTL, and translated states.",
+    details: "Use when choices can be combined, such as multimodal freight transport or warehouse access. Options may be plain English strings or stable values with data-driven labels. It supports required, invalid, and disabled states.",
     foundOn: [{ label: "Quote details", route: "/quotes" }, { label: "Company profiles", route: "/crm/accounts" }, { label: "Customer warehouse access", route: "/customers" }, { label: "Components", route: "/components?component=multi-select-menu" }],
     componentCode: `export function MultiSelectMenu({ value, options, onValueChange, placeholder }) {\n  const items = options.map((option) => typeof option === "string" ? { value: option, label: option } : option)\n  const selectedLabels = items.filter((option) => value.includes(option.value)).map((option) => option.label)\n  const toggle = (optionValue) => onValueChange(value.includes(optionValue) ? value.filter((item) => item !== optionValue) : [...value, optionValue])\n  return (\n    <DropdownMenu>\n      <DropdownMenuTrigger asChild><Button>{selectedLabels.length ? selectedLabels.join(" + ") : placeholder}</Button></DropdownMenuTrigger>\n      <DropdownMenuContent>{items.map((option) => <DropdownMenuCheckboxItem key={option.value} checked={value.includes(option.value)} onCheckedChange={() => toggle(option.value)}>{option.label}</DropdownMenuCheckboxItem>)}</DropdownMenuContent>\n    </DropdownMenu>\n  )\n}`,
     usageCode: `<MultiSelectMenu\n  value={warehouseIds}\n  options={warehouses.map((warehouse) => ({\n    value: warehouse.id,\n    label: \`\${warehouse.code} · \${warehouse.name}\`,\n  }))}\n  onValueChange={setWarehouseIds}\n  placeholder="Select warehouses"\n  label="Warehouses"\n/>`,
@@ -3557,7 +3586,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Warehouse Form Field",
     category: "Operations",
     description: "A calm, reusable labelled field wrapper for warehouse forms: label, optional required marker, the control, and a single hint-or-error line.",
-    details: "Use inside the Facilities and Items create/edit dialogs and any warehouse form. It keeps every field aligned and shows FluentValidation messages from the API next to the right input. Localised automatically and direction-safe, so codes such as SKU, HS code, and country codes stay readable in right-to-left mode.",
+    details: "Use inside the Facilities and Items create/edit dialogs and any warehouse form. It keeps every field aligned, uses the shared English copy layer, and shows API validation messages next to the right input. Codes such as SKU, HS code, and country codes remain readable.",
     foundOn: [{ label: "Warehouse", route: "/warehouse" }, { label: "Components", route: "/components?component=warehouse-form-field" }],
     componentCode: `export function WarehouseFormField({ label, htmlFor, hint, error, required, className, children }) {\n  return (\n    <div className={cn("grid gap-1.5", className)}>\n      <label htmlFor={htmlFor} className="flex items-center gap-1 text-[12px] font-medium text-[var(--md-ink)]">\n        {label}\n        {required ? <span className="text-[var(--md-red)]" aria-hidden="true">*</span> : null}\n      </label>\n      {children}\n      {error ? (\n        <p className="flex items-center gap-1 text-[11.5px] text-[var(--md-red)]">\n          <AlertCircle className="size-3" strokeWidth={1.5} aria-hidden="true" />\n          {error}\n        </p>\n      ) : hint ? (\n        <p className="text-[11.5px] leading-4 text-[var(--md-subtle)]">{hint}</p>\n      ) : null}\n    </div>\n  )\n}`,
     usageCode: `<WarehouseFormField label="Facility code" htmlFor="facility-code" required hint="A short unique code, e.g. FXT-DC1." error={firstFieldError(errors, "Code")}>\n  <Input id="facility-code" dir="ltr" value={form.code} onChange={(event) => update("code", event.target.value)} className={fieldControlClass} />\n</WarehouseFormField>`,
@@ -3946,7 +3975,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Dexter Mention Input",
     category: "Agent Dexter",
     description: "An accessible rich prompt field that turns @ searches into durable inline references to bookings, customers, leads, quotes, documents, and Multideck pages.",
-    details: "Use inside Dexter composers when an operator needs to ground a request in workspace context without opening a separate attachment flow. The menu keeps focus in the prompt, supports arrows, Enter, Tab, Escape, paste, deletion, RTL, and reduced motion, then sends the selected records as structured context.",
+    details: "Use inside Dexter composers when an operator needs to ground a request in workspace context without opening a separate attachment flow. The menu keeps focus in the prompt, supports arrows, Enter, Tab, Escape, paste, deletion, and reduced motion, then sends the selected records as structured context.",
     foundOn: [
       { label: "Agent Dexter", route: "/agent-dexter" },
       { label: "Bookings", route: "/bookings" },
@@ -4124,14 +4153,13 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Side Drawer",
     category: "Operations",
     description: "The inset slide-in panel used for detail and settings surfaces, with modal and register-inspector modes, direction-aware motion, Escape handling, and focus restore.",
-    details: "Use modal mode when a settings task needs exclusive focus. Use non-modal mode when an operator should keep a register visible and switch directly between records, as on Warehouse locations. The panel leans in from its docked edge, flips under right-to-left, and becomes instant when reduced motion is preferred. Pass an icon only when the drawer is a settings surface rather than a record.",
+    details: "Use modal mode when a settings task needs exclusive focus. Use non-modal mode when an operator should keep a register visible and switch directly between records, as on Warehouse locations. The panel leans in from its docked edge and becomes instant when reduced motion is preferred. Pass an icon only when the drawer is a settings surface rather than a record.",
     foundOn: [{ label: "CRM deals", route: "/crm/deals" }, { label: "Warehouse locations", route: "/warehouse/locations" }, { label: "Components", route: "/components" }],
     componentCode: `export function SideDrawer({ open, onClose, eyebrow, title, icon: Icon, width = 480, modal = true, children }) {
   const { direction, t } = useLanguage()
   const reduce = Boolean(useReducedMotion())
 
-  // The panel leans in from whichever edge it is docked to, which flips under right-to-left.
-  const offset = direction === "rtl" ? -40 : 40
+  const offset = 40
 
   return (
     <AnimatePresence initial={false}>
@@ -4605,7 +4633,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "CRM Contact Table",
     category: "CRM",
     description: "A relationship contact table for account stakeholders, preferences, last touch, and quick actions.",
-    details: "Use when contacts need to be scanned across leads. Emails and phone numbers should remain readable in right-to-left layouts.",
+    details: "Use when contacts need to be scanned across leads. Emails and phone numbers should remain readable at every supported viewport.",
     foundOn: [{ label: "CRM contacts", route: "/crm/contacts" }, { label: "Components", route: "/components" }],
     componentCode: `export function CrmContactTable({ contacts = crmContacts, selectedEmail, onSelectContact }) {\n  return (\n    <Table>\n      <TableHeader>{/* contact, account, relationship, last touch, actions */}</TableHeader>\n      <TableBody>\n        {contacts.map((contact) => (\n          <TableRow key={contact.email} onClick={() => onSelectContact?.(contact)}>\n            <TableCell>\n              <CustomerAvatar initials={contact.initials} tone={contact.tone} />\n              <span>{contact.name}</span>\n              <span data-i18n-skip dir="ltr">{contact.email}</span>\n            </TableCell>\n            <TableCell>{contact.account}</TableCell>\n            <TableCell><StatusPill>{contact.relationship}</StatusPill></TableCell>\n          </TableRow>\n        ))}\n      </TableBody>\n    </Table>\n  )\n}`,
     usageCode: `<CrmContactTable\n  contacts={crmContacts}\n  selectedEmail={selectedEmail}\n  onSelectContact={(contact) => setSelectedEmail(contact.email)}\n/>`,
@@ -4652,7 +4680,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Copyable Field",
     category: "CRM",
     description: "A text value with a nearby hover and keyboard copy affordance, then the shared blur-slot feedback that changes the value to Copied.",
-    details: "Use for useful text values such as emails, websites, phone numbers, addresses, references, dates, and commercial figures. The transition is chosen from the value itself, so no page has to pick one: short single-line text uses the same letter-by-letter blur slot as the Quotes header reference, while wrapped, very long, and right-to-left values fade and wipe as one block so feedback stays fast and text shaping stays intact. Values narrower than the word Copied grow their box first and hold it open until the value has slotted back, so nothing overlaps or clips. The control sits on the first line of the value. Keep links functional, copy the canonical value, and leave images and missing values non-interactive.",
+    details: "Use for useful text values such as emails, websites, phone numbers, addresses, references, dates, and commercial figures. The transition is chosen from the value itself, so no page has to pick one: short single-line text uses the same letter-by-letter blur slot as the Quotes header reference, while wrapped or very long values fade and wipe as one block so feedback stays fast. Values narrower than the word Copied grow their box first and hold it open until the value has slotted back, so nothing overlaps or clips. The control sits on the first line of the value. Keep links functional, copy the canonical value, and leave images and missing values non-interactive.",
     foundOn: [{ label: "CRM lead detail", route: "/crm/leads" }, { label: "Quote detail header", route: "/quotes/3" }, { label: "Components", route: "/components?component=copyable-field" }],
     componentCode: `export function CopyableField({ label, value, copyValue = value, children }) {
   const [copied, setCopied] = useState(false)
@@ -5176,7 +5204,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Screening Match Row",
     category: "Operations",
     description: "One compact government-list match card with the sanctions programme, UK list reference, and expandable listing rationale.",
-    details: "Stack these beneath a screening result. Keep the first read thin and scannable, with the full listing rationale available on demand in both left-to-right and right-to-left layouts.",
+    details: "Stack these beneath a screening result. Keep the first read thin and scannable, with the full listing rationale available on demand.",
     foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Customer detail", route: "/customers" }, { label: "Components", route: "/components?component=screening-match-row" }],
     componentCode: `export function ScreeningMatchRow({ match }) {\n  return (\n    <article className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 py-3 shadow-[var(--md-shadow-line)]">\n      <div className="flex items-start justify-between gap-3">\n        <p>{match.listedName}</p>\n        <StatusPill tone={match.matchKind === "exact" ? "red" : "amber"}>\n          {match.matchKind === "exact" ? "Exact name" : "Similar name"}\n        </StatusPill>\n      </div>\n      <div className="grid gap-3 sm:grid-cols-2">\n        <ScreeningFact label="Sanctions programme" value={match.regime} />\n        <ScreeningFact label="UK list reference" value={match.ukRef} />\n      </div>\n      <details>\n        <summary>Why listed</summary>\n        <p>{match.listingNotes}</p>\n      </details>\n    </article>\n  )\n}`,
     usageCode: `{check.matches.map((match) => (\n  <ScreeningMatchRow key={match.groupId + match.listedName} match={match} />\n))}`,
@@ -5350,4 +5378,6 @@ export const galleryIcons = {
   "screening-match-row": ShieldCheck,
   "screening-match-list": ShieldCheck,
   "screening-result-summary": ShieldCheck,
+  "ticket-screenshot-editor": Image,
+  "ticket-attachment-preview": Image,
 } satisfies Record<string, LucideIcon>

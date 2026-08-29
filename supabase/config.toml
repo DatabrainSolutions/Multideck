@@ -385,6 +385,9 @@ deno_version = 2
 [functions.create-support-ticket]
 verify_jwt = true
 
+[functions.support-ticket-callback]
+verify_jwt = false
+
 [functions.document-builder-workspace]
 verify_jwt = true
 

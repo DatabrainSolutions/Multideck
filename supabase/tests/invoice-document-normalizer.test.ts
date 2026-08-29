@@ -371,7 +371,7 @@ Deno.test("retries unreadable legacy Word conversion through a DOCX intermediate
 })
 
 Deno.test("preserves quoted UTF-8 CSV newlines and rejects mismatched, encrypted and macro sources before conversion", async () => {
-  const csv = new TextEncoder().encode('sku,description,value\nA-1,"first line\nsecond line café العربية 中文",10\n')
+  const csv = new TextEncoder().encode('sku,description,value\nA-1,"first line\nsecond line with symbols £ € 📦",10\n')
   const previousFetch = globalThis.fetch
   let renderedHtml = ""
   globalThis.fetch = async (_input, init) => {
@@ -382,7 +382,7 @@ Deno.test("preserves quoted UTF-8 CSV newlines and rejects mismatched, encrypted
     Deno.env.set("CARBONE_URL", "https://carbone.example.test")
     Deno.env.set("CARBONE_API_TOKEN", "test-token")
     await prepareInvoiceDocument({ bytes: csv, fileName: "invoice.csv", providerMimeType: "text/csv" })
-    assertStringIncludes(renderedHtml, "first line\nsecond line café العربية 中文")
+    assertStringIncludes(renderedHtml, "first line\nsecond line with symbols £ € 📦")
   } finally {
     globalThis.fetch = previousFetch
     Deno.env.delete("CARBONE_URL")

@@ -12,6 +12,6 @@ Deno.test("hard scope guard preserves freight context and ordinary useful reques
   assertEquals(isClearlyOffTopicPrompt("Arrange freight for a shipment of rugby equipment"), false)
   assertEquals(isClearlyOffTopicPrompt("Extract the recipe ingredients for this food cargo customs entry"), false)
   assertEquals(isClearlyOffTopicPrompt("When is the next carrier sailing for booking MD-1042?"), false)
-  assertEquals(isClearlyOffTopicPrompt("Translate this customer update into French"), false)
+  assertEquals(isClearlyOffTopicPrompt("Rewrite this customer update in plain English"), false)
   assertEquals(isClearlyOffTopicPrompt("Hello Dexter"), false)
 })
