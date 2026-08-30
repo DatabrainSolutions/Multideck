@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { AlertCircle, Camera, Check, FileImage, ImageUp, RotateCcw, TicketCheck, Trash2, Upload } from "@/components/icons/hugeicons"
 
-import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
@@ -15,15 +15,20 @@ import { cn } from "@/lib/utils"
 export const SUPPORT_TICKET_OPEN_EVENT = "multideck:open-support-ticket"
 export function openSupportTicket() { window.dispatchEvent(new Event(SUPPORT_TICKET_OPEN_EVENT)) }
 
-type Draft = { ticketType: SupportTicketType; impact: SupportTicketImpact; title: string; description: string; expectedBehaviour: string; actualBehaviour: string; desiredOutcome: string }
-type ValidatedField = "title" | "description" | "expectedBehaviour" | "actualBehaviour" | "desiredOutcome"
+type Draft = { ticketType: SupportTicketType; impact: SupportTicketImpact; title: string; description: string; actualBehaviour: string; desiredOutcome: string }
+type ValidatedField = "title" | "description" | "actualBehaviour" | "desiredOutcome"
 type FieldErrors = Partial<Record<ValidatedField, string>>
-type EditorTool = "crop" | "highlight" | "redact"
-const emptyDraft: Draft = { ticketType: "bug", impact: "slowed_down", title: "", description: "", expectedBehaviour: "", actualBehaviour: "", desiredOutcome: "" }
+type EditorTool = "crop" | "highlight"
+const emptyDraft: Draft = { ticketType: "bug", impact: "slowed_down", title: "", description: "", actualBehaviour: "", desiredOutcome: "" }
 const typeLabels: Record<SupportTicketType, string> = { bug: "Bug", feature_request: "Feature request", question: "Question", account_billing: "Account & billing", security_concern: "Security concern" }
 const impactLabels: Record<SupportTicketImpact, string> = { blocked: "I’m blocked", slowed_down: "This is slowing me down", no_immediate_blocker: "No immediate blocker" }
+const impactTones: Record<SupportTicketImpact, { background: string; ink: string; indicator: string }> = {
+  blocked: { background: "--md-status-red-bg", ink: "--md-status-red-ink", indicator: "--md-red" },
+  slowed_down: { background: "--md-status-amber-bg", ink: "--md-status-amber-ink", indicator: "--md-amber" },
+  no_immediate_blocker: { background: "--md-status-green-bg", ink: "--md-status-green-ink", indicator: "--md-green" },
+}
 const ticketTypes = Object.keys(typeLabels) as SupportTicketType[]
-const impactOptions = Object.keys(impactLabels) as SupportTicketImpact[]
+const impactOptions: SupportTicketImpact[] = ["no_immediate_blocker", "slowed_down", "blocked"]
 const draftStorageKey = "multideck.support-ticket.draft.v2"
 const allowedAttachmentTypes = new Set(["image/png", "image/jpeg", "image/webp"])
 const maximumAttachmentCount = 5
@@ -32,21 +37,93 @@ const maximumAttachmentTotalBytes = 25 * 1024 * 1024
 const fieldIds: Record<ValidatedField, string> = {
   title: "support-ticket-title",
   description: "support-ticket-description",
-  expectedBehaviour: "support-ticket-expected",
   actualBehaviour: "support-ticket-actual",
   desiredOutcome: "support-ticket-outcome",
 }
 
-function readDraft() { try { const value = JSON.parse(window.localStorage.getItem(draftStorageKey) || "null") as Partial<Draft> | null; return value ? { ...emptyDraft, ...value } : emptyDraft } catch { return emptyDraft } }
+function readDraft() {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(draftStorageKey) || "null") as (Partial<Draft> & { expectedBehaviour?: unknown }) | null
+    if (!value) return emptyDraft
+    const cleaned = { ...value }
+    delete cleaned.expectedBehaviour
+    return { ...emptyDraft, ...cleaned }
+  } catch { return emptyDraft }
+}
 function browserName() { const source = navigator.userAgent; return source.includes("Edg/") ? "Microsoft Edge" : source.includes("Chrome/") ? "Chrome" : source.includes("Firefox/") ? "Firefox" : source.includes("Safari/") ? "Safari" : "Browser" }
 function operatingSystem() { const source = navigator.userAgent; return source.includes("Mac OS") ? "macOS" : source.includes("Windows") ? "Windows" : source.includes("Android") ? "Android" : /iPhone|iPad/.test(source) ? "iOS" : "Other" }
-function isDirty(draft: Draft, files: File[]) { return Boolean(draft.title || draft.description || draft.expectedBehaviour || draft.actualBehaviour || draft.desiredOutcome || files.length) }
+function isDirty(draft: Draft, files: File[]) { return Boolean(draft.title || draft.description || draft.actualBehaviour || draft.desiredOutcome || files.length) }
 function fileKey(file: File) { return `${file.name}-${file.size}-${file.lastModified}` }
 
 function useCompactViewport() {
   const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 639px)").matches)
   useEffect(() => { const query = window.matchMedia("(max-width: 639px)"); const update = () => setCompact(query.matches); query.addEventListener("change", update); return () => query.removeEventListener("change", update) }, [])
   return compact
+}
+
+function ImpactPillSelector({ value, onChange, labels, ariaLabel }: { value: SupportTicketImpact; onChange: (value: SupportTicketImpact) => void; labels: Record<SupportTicketImpact, string>; ariaLabel: string }) {
+  const shouldReduceMotion = useReducedMotion()
+
+  function moveSelection(event: ReactKeyboardEvent<HTMLButtonElement>, current: SupportTicketImpact) {
+    const isArrow = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
+    if (!isArrow && event.key !== "Home" && event.key !== "End") return
+    event.preventDefault()
+    const currentIndex = Math.max(impactOptions.indexOf(current), 0)
+    const isRtl = window.getComputedStyle(event.currentTarget).direction === "rtl"
+    const horizontalStep = event.key === "ArrowRight" ? (isRtl ? -1 : 1) : event.key === "ArrowLeft" ? (isRtl ? 1 : -1) : 0
+    const verticalStep = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? impactOptions.length - 1
+        : (currentIndex + horizontalStep + verticalStep + impactOptions.length) % impactOptions.length
+    onChange(impactOptions[nextIndex])
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("button")[nextIndex]?.focus()
+  }
+
+  return <div role="radiogroup" aria-label={ariaLabel} className="grid grid-cols-1 min-[480px]:grid-cols-3 gap-2">
+    {impactOptions.map((option) => {
+      const selected = value === option
+      const tone = impactTones[option]
+      return <motion.button
+        key={option}
+        type="button"
+        role="radio"
+        aria-checked={selected}
+        tabIndex={selected ? 0 : -1}
+        whileTap={shouldReduceMotion ? undefined : { scale: 0.96 }}
+        onClick={() => onChange(option)}
+        onKeyDown={(event) => moveSelection(event, option)}
+        className={cn(
+          "flex min-h-11 min-w-0 items-center gap-2 rounded-full bg-[var(--md-surface)] px-3 py-2 text-[12px] font-medium leading-4 text-[var(--md-text)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,color,box-shadow,scale] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] motion-reduce:transition-none",
+          selected && "hover:bg-[var(--impact-background)]",
+        )}
+        style={selected ? {
+          "--impact-background": `var(${tone.background})`,
+          backgroundColor: `var(${tone.background})`,
+          color: `var(${tone.ink})`,
+          boxShadow: `inset 0 0 0 1px color-mix(in srgb, var(${tone.ink}) 18%, transparent), var(--md-shadow-line)`,
+        } as CSSProperties : undefined}
+      >
+        <span aria-hidden="true" className="grid size-4 shrink-0 place-items-center">
+          <span className="size-2.5 rounded-full shadow-[inset_0_0_0_1px_rgba(255,255,255,0.36)]" style={{ backgroundColor: `var(${tone.indicator})` }} />
+        </span>
+        <span className="min-w-0 flex-1 text-center text-pretty">{labels[option]}</span>
+        <span aria-hidden="true" className="relative grid size-4 shrink-0 place-items-center">
+          <AnimatePresence initial={false}>
+            {selected ? <motion.span
+              key={`${option}-selected`}
+              className="absolute inset-0 grid place-items-center"
+              initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.25, filter: "blur(4px)" }}
+              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+              exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.25, filter: "blur(4px)" }}
+              transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", duration: 0.3, bounce: 0 }}
+            ><Check className="size-4" /></motion.span> : null}
+          </AnimatePresence>
+        </span>
+      </motion.button>
+    })}
+  </div>
 }
 
 export function ScreenshotCaptureEditor({ file, onChange, onCancel }: { file: File; onChange: (file: File) => void; onCancel: () => void }) {
@@ -94,8 +171,7 @@ export function ScreenshotCaptureEditor({ file, onChange, onCancel }: { file: Fi
     const canvas = canvasRef.current, region = selection; if (!canvas || !region || region.width < 4 || region.height < 4) return
     const context = canvas.getContext("2d"); if (!context) return; snapshot()
     if (tool === "crop") { const pixels = context.getImageData(region.x, region.y, region.width, region.height); canvas.width = Math.round(region.width); canvas.height = Math.round(region.height); canvas.getContext("2d")?.putImageData(pixels, 0, 0) }
-    else if (tool === "highlight") { context.save(); context.strokeStyle = "#d14e4e"; context.lineWidth = Math.max(3, canvas.width / 400); context.fillStyle = "rgba(209,78,78,0.10)"; context.fillRect(region.x, region.y, region.width, region.height); context.strokeRect(region.x, region.y, region.width, region.height); context.restore() }
-    else { const small = document.createElement("canvas"); small.width = Math.max(1, Math.round(region.width / 18)); small.height = Math.max(1, Math.round(region.height / 18)); small.getContext("2d")?.drawImage(canvas, region.x, region.y, region.width, region.height, 0, 0, small.width, small.height); context.save(); context.imageSmoothingEnabled = false; context.drawImage(small, 0, 0, small.width, small.height, region.x, region.y, region.width, region.height); context.restore() }
+    else { context.save(); context.strokeStyle = "#d14e4e"; context.lineWidth = Math.max(3, canvas.width / 400); context.fillStyle = "rgba(209,78,78,0.10)"; context.fillRect(region.x, region.y, region.width, region.height); context.strokeRect(region.x, region.y, region.width, region.height); context.restore() }
     setSelection(null)
   }
   function undo() { const source = history.at(-1), canvas = canvasRef.current; if (!source || !canvas) return; const image = new Image(); image.onload = () => { canvas.width = image.width; canvas.height = image.height; canvas.getContext("2d")?.drawImage(image, 0, 0); setHistory((current) => current.slice(0, -1)); setSelection(null) }; image.src = source }
@@ -104,7 +180,7 @@ export function ScreenshotCaptureEditor({ file, onChange, onCancel }: { file: Fi
   return <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
     <p id="screenshot-editor-instructions" className="sr-only">{t("Press Enter to create a selection. Use Arrow keys to move it, Shift and Arrow keys to resize it, and Escape to clear it.")}</p>
     <div className="relative overflow-hidden rounded-[calc(var(--md-radius-xl)-8px)] bg-[var(--md-bg)] outline outline-1 outline-black/10 dark:outline-white/10"><canvas ref={canvasRef} tabIndex={0} role="img" aria-label={t("Screenshot editing canvas")} aria-describedby="screenshot-editor-instructions" className="block max-h-[46vh] w-full touch-none object-contain outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a24)]" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onKeyDown={keyboardSelect} />{selection ? <span aria-hidden="true" className="pointer-events-none absolute border-2 border-[var(--md-red)] bg-[rgba(209,78,78,0.08)]" style={{ left: `${selection.x / (canvasRef.current?.width || 1) * 100}%`, top: `${selection.y / (canvasRef.current?.height || 1) * 100}%`, width: `${selection.width / (canvasRef.current?.width || 1) * 100}%`, height: `${selection.height / (canvasRef.current?.height || 1) * 100}%` }} /> : null}</div>
-    <div className="flex flex-wrap items-center gap-2"><span className="text-[11px] text-[var(--md-subtle)]">{t("Drag over the area to edit")}</span>{(["crop","highlight","redact"] as EditorTool[]).map((value) => <Button key={value} type="button" size="sm" variant={tool === value ? "default" : "outline"} onClick={() => setTool(value)}>{t(value === "crop" ? "Crop" : value === "highlight" ? "Highlight" : "Blur / redact")}</Button>)}<Button type="button" size="sm" variant="outline" disabled={!selection} onClick={applySelection}>{t("Apply")}</Button><Button type="button" size="sm" variant="ghost" disabled={!history.length} onClick={undo}><RotateCcw className="size-3.5" />{t("Undo")}</Button><Button type="button" size="sm" variant="ghost" onClick={reset}>{t("Reset")}</Button><span className="min-w-0 flex-1" /><Button type="button" size="sm" variant="ghost" onClick={onCancel}>{t("Cancel")}</Button><Button type="button" size="sm" onClick={useScreenshot}><Check className="size-3.5" />{t("Use screenshot")}</Button></div>
+    <div className="flex flex-wrap items-center gap-2"><span className="text-[11px] text-[var(--md-subtle)]">{t("Drag over the area to edit")}</span>{(["crop","highlight"] as EditorTool[]).map((value) => <Button key={value} type="button" size="sm" variant={tool === value ? "default" : "outline"} onClick={() => setTool(value)}>{t(value === "crop" ? "Crop" : "Highlight")}</Button>)}<Button type="button" size="sm" variant="outline" disabled={!selection} onClick={applySelection}>{t("Apply")}</Button><Button type="button" size="sm" variant="ghost" disabled={!history.length} onClick={undo}><RotateCcw className="size-3.5" />{t("Undo")}</Button><Button type="button" size="sm" variant="ghost" onClick={reset}>{t("Reset")}</Button><span className="min-w-0 flex-1" /><Button type="button" size="sm" variant="ghost" onClick={onCancel}>{t("Cancel")}</Button><Button type="button" size="sm" onClick={useScreenshot}><Check className="size-3.5" />{t("Use screenshot")}</Button></div>
   </div>
 }
 
@@ -120,6 +196,7 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [result, setResult] = useState<CreateSupportTicketResponse | null>(null)
+  const [closeConfirmationOpen, setCloseConfirmationOpen] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
   const surfaceRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -133,6 +210,7 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
       setError(null)
       setFieldErrors({})
       setProgress("")
+      setCloseConfirmationOpen(false)
       setOpen(true)
     }
     window.addEventListener(SUPPORT_TICKET_OPEN_EVENT, handle)
@@ -153,14 +231,19 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
     setDraft((current) => ({
       ...current,
       ticketType,
-      expectedBehaviour: ticketType === "bug" ? current.expectedBehaviour : "",
       actualBehaviour: ticketType === "bug" ? current.actualBehaviour : "",
       desiredOutcome: ticketType === "feature_request" ? current.desiredOutcome : "",
     }))
     if (ticketType !== "bug") { setFiles([]); setEditingFile(null) }
     setFieldErrors({}); setError(null); setResult(null)
   }
-  function requestClose(next: boolean) { if (!next && isDirty(draft, files) && !result && !window.confirm(t("Close this ticket? Your draft will be saved for next time."))) return; setOpen(next); if (!next) setEditingFile(null) }
+  function closeTicketRequest() { setCloseConfirmationOpen(false); setOpen(false); setEditingFile(null) }
+  function requestClose(next: boolean) {
+    if (next) { setOpen(true); return }
+    if (submitting) return
+    if (isDirty(draft, files) && !result) { setCloseConfirmationOpen(true); return }
+    closeTicketRequest()
+  }
   function addFiles(next: File[]) {
     if (next.some((file) => !allowedAttachmentTypes.has(file.type))) { setError(t("Attach PNG, JPEG, or WebP images only.")); return }
     if (next.some((file) => file.size > maximumAttachmentBytes)) { setError(t("Each screenshot must be 10 MB or smaller.")); return }
@@ -189,7 +272,6 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
     const next: FieldErrors = {}
     if (draft.title.trim().length < 4) next.title = t("Add a short summary so support can recognise the issue.")
     if (draft.description.trim().length < 10) next.description = t("Add a little more detail so the team can act on the first reply.")
-    if (draft.ticketType === "bug" && draft.expectedBehaviour.trim().length < 3) next.expectedBehaviour = t("Describe what you expected to happen.")
     if (draft.ticketType === "bug" && draft.actualBehaviour.trim().length < 3) next.actualBehaviour = t("Describe what happened instead.")
     if (draft.ticketType === "feature_request" && draft.desiredOutcome.trim().length < 3) next.desiredOutcome = t("Describe the outcome you would like.")
     return next
@@ -207,7 +289,7 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
     setFieldErrors({})
     setSubmitting(true); setError(null); setResult(null)
     try {
-      const response = await createSupportTicket({ idempotencyKey: idempotencyRef.current, ticketType: draft.ticketType, impact: draft.impact, title: draft.title.trim(), description: draft.description.trim(), expectedBehaviour: draft.ticketType === "bug" ? draft.expectedBehaviour.trim() || null : null, actualBehaviour: draft.ticketType === "bug" ? draft.actualBehaviour.trim() || null : null, desiredOutcome: draft.ticketType === "feature_request" ? draft.desiredOutcome.trim() || null : null, attachments: draft.ticketType === "bug" ? files : [], context: { route: `${window.location.pathname}${window.location.search}`, appVersion: import.meta.env.VITE_APP_VERSION ?? "local", browser: browserName(), browserVersion: navigator.userAgent.match(/(?:Chrome|Firefox|Version|Edg)\/([\d.]+)/)?.[1] ?? "Unknown", operatingSystem: operatingSystem(), locale: navigator.language, viewport: `${window.innerWidth}×${window.innerHeight}` }, onProgress: (state) => setProgress(t(state === "creating" ? "Creating secure ticket" : state === "preparing_attachments" ? "Preparing screenshots" : state === "uploading" ? "Uploading screenshots" : "Confirming ticket")) })
+      const response = await createSupportTicket({ idempotencyKey: idempotencyRef.current, ticketType: draft.ticketType, impact: draft.impact, title: draft.title.trim(), description: draft.description.trim(), expectedBehaviour: null, actualBehaviour: draft.ticketType === "bug" ? draft.actualBehaviour.trim() || null : null, desiredOutcome: draft.ticketType === "feature_request" ? draft.desiredOutcome.trim() || null : null, attachments: draft.ticketType === "bug" ? files : [], context: { route: `${window.location.pathname}${window.location.search}`, appVersion: import.meta.env.VITE_APP_VERSION ?? "local", browser: browserName(), browserVersion: navigator.userAgent.match(/(?:Chrome|Firefox|Version|Edg)\/([\d.]+)/)?.[1] ?? "Unknown", operatingSystem: operatingSystem(), locale: navigator.language, viewport: `${window.innerWidth}×${window.innerHeight}` }, onProgress: (state) => setProgress(t(state === "creating" ? "Creating secure ticket" : state === "preparing_attachments" ? "Preparing screenshots" : state === "uploading" ? "Uploading screenshots" : "Confirming ticket")) })
       setResult(response); setDraft(emptyDraft); setFiles([]); window.localStorage.removeItem(draftStorageKey); idempotencyRef.current = `multideck-support-${crypto.randomUUID()}`
     } catch (submitError) { setError(submitError instanceof SupportTicketError ? t(submitError.message) : t("Support is temporarily unavailable. Your ticket details are still here; try again.")) }
     finally { setSubmitting(false); setProgress("") }
@@ -220,8 +302,8 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
       {draft.ticketType === "security_concern" ? <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-status-amber-bg)] px-3 py-2.5 text-[12px] leading-5 text-[var(--md-status-amber-ink)]"><strong>{t("Keep secrets out of the ticket.")}</strong> {t("Do not include passwords, API keys, access tokens, or recovery codes.")}</div> : null}
       <Field label={t("Summary")} htmlFor="support-ticket-title" error={fieldErrors.title}><Input id="support-ticket-title" value={draft.title} maxLength={180} dir="auto" aria-invalid={Boolean(fieldErrors.title) || undefined} aria-describedby={fieldErrors.title ? "support-ticket-title-error" : undefined} onChange={(event) => change("title", event.target.value)} placeholder={t("A short description of the issue")} /></Field>
       <Field label={t("Description")} htmlFor="support-ticket-description" error={fieldErrors.description}><Textarea id="support-ticket-description" value={draft.description} maxLength={12000} dir="auto" aria-invalid={Boolean(fieldErrors.description) || undefined} aria-describedby={fieldErrors.description ? "support-ticket-description-error" : undefined} onChange={(event) => change("description", event.target.value)} className="min-h-28" placeholder={t("Tell us what you were trying to do and anything the team should know.")} /></Field>
-      <fieldset className="grid gap-1.5"><legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("What is the impact to you?")}</legend><SegmentedControl options={impactOptions} value={draft.impact} onChange={(value) => change("impact", value)} ariaLabel={t("Customer impact")} renderOption={(value) => t(impactLabels[value])} className="grid w-full grid-cols-1 min-[480px]:grid-cols-3 [&>button]:h-auto [&>button]:min-h-10 [&>button]:whitespace-normal [&>button]:px-2 [&>button]:py-2 [&>button>span]:justify-center" /></fieldset>
-      {draft.ticketType === "bug" ? <div className="grid gap-4 sm:grid-cols-2"><Field label={t("Expected behaviour")} htmlFor="support-ticket-expected" error={fieldErrors.expectedBehaviour}><Textarea id="support-ticket-expected" value={draft.expectedBehaviour} dir="auto" aria-invalid={Boolean(fieldErrors.expectedBehaviour) || undefined} aria-describedby={fieldErrors.expectedBehaviour ? "support-ticket-expected-error" : undefined} onChange={(event) => change("expectedBehaviour", event.target.value)} className="min-h-24" /></Field><Field label={t("What happened")} htmlFor="support-ticket-actual" error={fieldErrors.actualBehaviour}><Textarea id="support-ticket-actual" value={draft.actualBehaviour} dir="auto" aria-invalid={Boolean(fieldErrors.actualBehaviour) || undefined} aria-describedby={fieldErrors.actualBehaviour ? "support-ticket-actual-error" : undefined} onChange={(event) => change("actualBehaviour", event.target.value)} className="min-h-24" /></Field></div> : null}
+      <fieldset className="grid gap-1.5"><legend className="w-full px-4 py-1.5 text-center text-[12px] font-medium text-balance text-[var(--md-ink)]">{t("What is the impact to you?")}</legend><ImpactPillSelector value={draft.impact} onChange={(value) => change("impact", value)} ariaLabel={t("Customer impact")} labels={{ blocked: t(impactLabels.blocked), slowed_down: t(impactLabels.slowed_down), no_immediate_blocker: t(impactLabels.no_immediate_blocker) }} /></fieldset>
+      {draft.ticketType === "bug" ? <Field label={t("What happened")} htmlFor="support-ticket-actual" error={fieldErrors.actualBehaviour}><Textarea id="support-ticket-actual" value={draft.actualBehaviour} dir="auto" aria-invalid={Boolean(fieldErrors.actualBehaviour) || undefined} aria-describedby={fieldErrors.actualBehaviour ? "support-ticket-actual-error" : undefined} onChange={(event) => change("actualBehaviour", event.target.value)} className="min-h-24" /></Field> : null}
       {draft.ticketType === "feature_request" ? <Field label={t("What outcome would you like?")} htmlFor="support-ticket-outcome" error={fieldErrors.desiredOutcome}><Textarea id="support-ticket-outcome" value={draft.desiredOutcome} dir="auto" aria-invalid={Boolean(fieldErrors.desiredOutcome) || undefined} aria-describedby={fieldErrors.desiredOutcome ? "support-ticket-outcome-error" : undefined} onChange={(event) => change("desiredOutcome", event.target.value)} className="min-h-24" /></Field> : null}
       {draft.ticketType === "bug" ? <fieldset className="grid gap-1.5"><legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("Screenshot (optional)")}</legend><div onDragOver={(event) => event.preventDefault()} onDrop={drop} className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]"><p className="mb-2 text-[11px] leading-5 text-[var(--md-subtle)]">{t("Your browser will ask what to share. Multideck captures one frame and stops sharing immediately.")}</p><div className="flex flex-wrap items-center gap-2"><Button type="button" variant="outline" size="sm" onClick={() => void captureScreenshot()}><Camera className="size-3.5" />{t("Capture screenshot")}</Button><Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="size-3.5" />{t("Upload")}</Button><span className="text-[11px] text-[var(--md-subtle)]">{t("You can also paste or drop an image here")}</span><input ref={fileInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="sr-only" aria-label={t("Upload screenshots")} onChange={fileChange} /></div><p className="mt-2 text-[10px] leading-4 text-[var(--md-subtle)]">{t("Up to five PNG, JPEG, or WebP images; 10 MB each and 25 MB total.")}</p>{files.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{files.map((file) => <SupportTicketAttachmentPreview key={fileKey(file)} file={file} onEdit={() => setEditingFile(file)} onRemove={() => setFiles((current) => current.filter((candidate) => candidate !== file))} />)}</div> : null}</div></fieldset> : null}
       <details className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 py-2.5 shadow-[var(--md-shadow-line)]"><summary className="cursor-pointer text-[12px] font-medium text-[var(--md-ink)]">{t("What we’ll share")}</summary><p className="mt-2 text-[11px] leading-5 text-[var(--md-subtle)]">{t("This diagnostic context helps the support team investigate without another round of questions.")}</p><dl className="mt-2 grid gap-2 text-[11px] sm:grid-cols-3"><ContextMini label={t("Current page")} value={`${window.location.pathname}${window.location.search}`} /><ContextMini label={t("App version")} value={import.meta.env.VITE_APP_VERSION ?? "local"} /><ContextMini label={t("Browser")} value={browserName()} /><ContextMini label={t("Operating system")} value={operatingSystem()} /><ContextMini label={t("Locale")} value={navigator.language} /><ContextMini label={t("Viewport")} value={`${window.innerWidth}×${window.innerHeight}`} /></dl></details>
@@ -232,7 +314,21 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
 
   const header = <><DialogHeader className="px-4 pe-14 pt-4 sm:px-6 sm:pe-16 sm:pt-5"><DialogTitle className="text-[18px] font-medium text-[var(--md-ink)]">{t("Submit a ticket")}</DialogTitle><DialogDescription className="max-w-[58ch] text-[12px] leading-5 text-[var(--md-text)]">{t("Give the support team enough context to act on the first reply.")}</DialogDescription></DialogHeader></>
   const sheetHeader = <SheetHeader className="px-4 pe-14 pb-2 pt-4"><SheetTitle className="text-[18px]">{t("Submit a ticket")}</SheetTitle><SheetDescription className="text-[12px] leading-5">{t("Give the support team enough context to act on the first reply.")}</SheetDescription></SheetHeader>
-  return compact ? <Sheet open={open} onOpenChange={requestClose}><SheetContent ref={surfaceRef} side="bottom" className="h-[min(94dvh,900px)] max-h-[calc(100dvh-env(safe-area-inset-top))] rounded-t-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)]" showCloseButton={!submitting} closeLabel={t("Close")}>{sheetHeader}{form}</SheetContent></Sheet> : <Dialog open={open} onOpenChange={requestClose}><DialogContent ref={surfaceRef} className="h-[min(88dvh,820px)] gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)] sm:max-w-[760px]" showCloseButton={!submitting} closeLabel={t("Close")}>{header}{form}</DialogContent></Dialog>
+  return <>
+    {compact ? <Sheet open={open} onOpenChange={requestClose}><SheetContent ref={surfaceRef} side="bottom" className="h-[min(94dvh,900px)] max-h-[calc(100dvh-env(safe-area-inset-top))] rounded-t-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)]" showCloseButton={!submitting} closeLabel={t("Close")}>{sheetHeader}{form}</SheetContent></Sheet> : <Dialog open={open} onOpenChange={requestClose}><DialogContent ref={surfaceRef} className="h-[min(88dvh,820px)] gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)] sm:max-w-[760px]" showCloseButton={!submitting} closeLabel={t("Close")}>{header}{form}</DialogContent></Dialog>}
+    <Dialog open={closeConfirmationOpen} onOpenChange={setCloseConfirmationOpen}>
+      <DialogContent className="gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[440px]" closeLabel={t("Keep editing")}>
+        <DialogHeader className="gap-2 px-5 pb-5 pe-14 pt-5 text-start sm:px-6 sm:pb-6 sm:pe-16 sm:pt-6">
+          <DialogTitle className="text-[18px] leading-[1.25]">{t("Close this ticket request?")}</DialogTitle>
+          <DialogDescription className="text-[13px] leading-5 text-[var(--md-text)]">{t("Your written draft will be here next time. Screenshots are kept only for this session.")}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="m-0 rounded-b-[var(--md-radius-2xl)] px-5 py-4 sm:px-6">
+          <Button type="button" variant="ghost" onClick={closeTicketRequest}>{t("Close request")}</Button>
+          <Button type="button" onClick={() => setCloseConfirmationOpen(false)}>{t("Keep editing")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </>
 }
 
 function Field({ label, htmlFor, error, children }: { label: string; htmlFor: string; error?: string; children: ReactNode }) { return <label htmlFor={htmlFor} className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{label}{children}{error ? <span id={`${htmlFor}-error`} className="text-[11px] font-normal leading-4 text-[var(--md-red)]">{error}</span> : null}</label> }
@@ -240,8 +336,17 @@ function ContextFact({ label, value }: { label: string; value: string }) { retur
 function ContextMini({ label, value }: { label: string; value: string }) { return <div><dt className="text-[var(--md-subtle)]">{label}</dt><dd className="mt-0.5 truncate text-[var(--md-text)]" data-i18n-skip dir="auto">{value}</dd></div> }
 export function SupportTicketAttachmentPreview({ file, onEdit, onRemove, previewUrl }: { file: File; onEdit: () => void; onRemove: () => void; previewUrl?: string }) {
   const { t } = useLanguage()
-  const objectUrl = useMemo(() => previewUrl ? null : URL.createObjectURL(file), [file, previewUrl])
+  const [objectUrl, setObjectUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (previewUrl) {
+      setObjectUrl(null)
+      return
+    }
+    const nextObjectUrl = URL.createObjectURL(file)
+    setObjectUrl(nextObjectUrl)
+    return () => URL.revokeObjectURL(nextObjectUrl)
+  }, [file, previewUrl])
   const url = previewUrl ?? objectUrl ?? ""
-  useEffect(() => () => { if (objectUrl) URL.revokeObjectURL(objectUrl) }, [objectUrl])
-  return <div className="flex min-w-0 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-2 shadow-[var(--md-shadow-line)]"><img src={url} alt={file.name} className="size-12 rounded-[var(--md-radius-md)] object-cover outline outline-1 outline-black/10 dark:outline-white/10" /><span className="min-w-0 flex-1"><span className="block truncate text-[11px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{file.name}</span><span className="text-[10px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{Math.max(1, Math.round(file.size / 1024))} KB</span></span><Button type="button" variant="ghost" size="sm" onClick={onEdit}>{t("Edit")}</Button><Button type="button" variant="ghost" size="icon-sm" aria-label={t("Remove screenshot")} onClick={onRemove}><Trash2 className="size-3.5" /></Button></div>
+  const previewClassName = "size-12 shrink-0 rounded-[var(--md-radius-md)] object-cover outline outline-1 outline-black/10 dark:outline-white/10"
+  return <div className="flex min-w-0 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-2 shadow-[var(--md-shadow-line)]">{url ? <img src={url} alt="" className={previewClassName} /> : <span aria-hidden="true" className={cn(previewClassName, "bg-[var(--md-surface-tint)]")} />}<span className="min-w-0 flex-1"><span className="block truncate text-[11px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{file.name}</span><span className="text-[10px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{Math.max(1, Math.round(file.size / 1024))} KB</span></span><Button type="button" variant="ghost" size="sm" onClick={onEdit}>{t("Edit")}</Button><Button type="button" variant="ghost" size="icon-sm" aria-label={t("Remove screenshot")} onClick={onRemove}><Trash2 className="size-3.5" /></Button></div>
 }

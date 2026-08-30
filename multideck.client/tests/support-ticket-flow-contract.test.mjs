@@ -49,6 +49,14 @@ test("conditional fields and screenshots cannot leak after the ticket type chang
   assert.match(client, /normalizeSupportTicketConditionalFields\(request\.ticketType, request\)/)
 })
 
+test("bug tickets ask what happened without retaining an expected-behaviour field", () => {
+  assert.doesNotMatch(dialog, /Expected behaviour/)
+  assert.doesNotMatch(dialog, /support-ticket-expected/)
+  assert.match(dialog, /expectedBehaviour: null, actualBehaviour:/)
+  assert.match(dialog, /delete cleaned\.expectedBehaviour/)
+  assert.match(dialog, /<Field label=\{t\("What happened"\)\} htmlFor="support-ticket-actual"/)
+})
+
 test("a persisted ticket is not presented as success without a valid secure status URL", () => {
   assert.equal(isSecureSupportStatusUrl("https://support.multideck.app/ticket/token"), true)
   assert.equal(isSecureSupportStatusUrl("http://support.multideck.app/ticket/token"), false)
@@ -73,4 +81,24 @@ test("the ticket form uses the wide desktop dialog and reflows dense choices on 
   assert.match(dialog, /grid-cols-1 min-\[480px\]:grid-cols-3/)
   assert.match(dialog, /sm:\[&>button\]:w-auto/)
   assert.match(dialog, /closeLabel=\{t\("Close"\)\}/)
+})
+
+test("impact choices use severity pills with an animated selected icon", () => {
+  assert.match(dialog, /const impactOptions: SupportTicketImpact\[\] = \["no_immediate_blocker", "slowed_down", "blocked"\]/)
+  assert.match(dialog, /blocked: \{ background: "--md-status-red-bg", ink: "--md-status-red-ink", indicator: "--md-red" \}/)
+  assert.match(dialog, /slowed_down: \{ background: "--md-status-amber-bg", ink: "--md-status-amber-ink", indicator: "--md-amber" \}/)
+  assert.match(dialog, /no_immediate_blocker: \{ background: "--md-status-green-bg", ink: "--md-status-green-ink", indicator: "--md-green" \}/)
+  assert.match(dialog, /role="radiogroup"[\s\S]*?rounded-full[\s\S]*?<AnimatePresence initial=\{false\}>/)
+  assert.match(dialog, /opacity: 0, scale: 0\.25, filter: "blur\(4px\)"/)
+  assert.match(dialog, /type: "spring", duration: 0\.3, bounce: 0/)
+  assert.match(dialog, /useReducedMotion\(\)/)
+})
+
+test("closing a started ticket uses the branded draft confirmation", () => {
+  assert.doesNotMatch(dialog, /window\.confirm\(t\("Close this ticket/)
+  assert.match(dialog, /Close this ticket request\?/)
+  assert.match(dialog, /Your written draft will be here next time\. Screenshots are kept only for this session\./)
+  assert.match(dialog, /Close request/)
+  assert.match(dialog, /Keep editing/)
+  assert.match(dialog, /if \(submitting\) return/)
 })

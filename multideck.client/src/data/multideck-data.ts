@@ -2147,14 +2147,14 @@ export const galleryComponents = [
     id: "ticket-screenshot-editor",
     name: "Ticket Screenshot Editor",
     category: "Controls",
-    description: "A focused screenshot review surface for cropping evidence, highlighting the relevant area, or blurring sensitive details before an image is attached to a support ticket.",
+    description: "A focused screenshot review surface for cropping evidence or highlighting the relevant area before an image is attached to a support ticket.",
     details: "Use after browser screen capture or image upload and before the ticket is sent. The editor keeps one task in view, supports pointer and touch selection, offers bounded undo, exports a fresh PNG, and uses the shared English copy layer. It is a reusable evidence editor, not the full ticket-submission flow.",
     foundOn: [
       { label: "App sidebar ticket action", route: "/" },
       { label: "Settings support action", route: "/settings?tab=support" },
       { label: "Components", route: "/components?component=ticket-screenshot-editor" },
     ],
-    componentCode: `export function ScreenshotCaptureEditor({ file, onChange, onCancel }) {\n  const [tool, setTool] = useState("highlight")\n  const [history, setHistory] = useState([])\n  const [selection, setSelection] = useState(null)\n\n  return (\n    <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)]">\n      <canvas onPointerDown={startSelection} onPointerMove={moveSelection} onPointerUp={finishSelection} />\n      <Button onClick={() => setTool("crop")}>Crop</Button>\n      <Button onClick={() => setTool("highlight")}>Highlight</Button>\n      <Button onClick={() => setTool("redact")}>Blur / redact</Button>\n      <Button disabled={!selection} onClick={applySelection}>Apply</Button>\n      <Button disabled={!history.length} onClick={undo}>Undo</Button>\n      <Button onClick={onCancel}>Cancel</Button>\n      <Button onClick={exportPng}>Use screenshot</Button>\n    </div>\n  )\n}`,
+    componentCode: `export function ScreenshotCaptureEditor({ file, onChange, onCancel }) {\n  const [tool, setTool] = useState("highlight")\n  const [history, setHistory] = useState([])\n  const [selection, setSelection] = useState(null)\n\n  return (\n    <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)]">\n      <canvas onPointerDown={startSelection} onPointerMove={moveSelection} onPointerUp={finishSelection} />\n      <Button onClick={() => setTool("crop")}>Crop</Button>\n      <Button onClick={() => setTool("highlight")}>Highlight</Button>\n      <Button disabled={!selection} onClick={applySelection}>Apply</Button>\n      <Button disabled={!history.length} onClick={undo}>Undo</Button>\n      <Button onClick={onCancel}>Cancel</Button>\n      <Button onClick={exportPng}>Use screenshot</Button>\n    </div>\n  )\n}`,
     usageCode: `const [screenshot, setScreenshot] = useState(capturedFile)\n\n<ScreenshotCaptureEditor\n  file={screenshot}\n  onChange={(editedPng) => {\n    setScreenshot(editedPng)\n    closeEditor()\n  }}\n  onCancel={closeEditor}\n/>`,
   },
   {
@@ -2162,13 +2162,13 @@ export const galleryComponents = [
     name: "Ticket Attachment Preview",
     category: "Controls",
     description: "A compact, readable image row that confirms exactly which screenshot will be sent with a support ticket and keeps edit and remove actions close to the evidence.",
-    details: "Use in a ticket attachment list after validation has accepted a PNG, JPEG, or WebP file. The filename and file size remain readable, the image has a useful accessible name, and object URLs are revoked when the preview changes or unmounts.",
+    details: "Use in a ticket attachment list after validation has accepted a PNG, JPEG, or WebP file. The filename and file size provide the accessible description, while object URLs are refreshed safely and revoked when the preview changes or unmounts.",
     foundOn: [
       { label: "App sidebar ticket action", route: "/" },
       { label: "Settings support action", route: "/settings?tab=support" },
       { label: "Components", route: "/components?component=ticket-attachment-preview" },
     ],
-    componentCode: `export function SupportTicketAttachmentPreview({ file, onEdit, onRemove, previewUrl }) {\n  const objectUrl = useMemo(\n    () => previewUrl ? null : URL.createObjectURL(file),\n    [file, previewUrl],\n  )\n  const url = previewUrl ?? objectUrl ?? ""\n\n  useEffect(() => () => {\n    if (objectUrl) URL.revokeObjectURL(objectUrl)\n  }, [objectUrl])\n\n  return (\n    <div className="flex items-center gap-2 rounded-[var(--md-radius-lg)]">\n      <img src={url} alt={file.name} />\n      <span className="min-w-0 flex-1" dir="auto">{file.name}</span>\n      <Button onClick={onEdit}>Edit</Button>\n      <Button aria-label="Remove screenshot" onClick={onRemove}>Remove</Button>\n    </div>\n  )\n}`,
+    componentCode: `export function SupportTicketAttachmentPreview({ file, onEdit, onRemove, previewUrl }) {\n  const [objectUrl, setObjectUrl] = useState(null)\n\n  useEffect(() => {\n    if (previewUrl) {\n      setObjectUrl(null)\n      return\n    }\n    const nextObjectUrl = URL.createObjectURL(file)\n    setObjectUrl(nextObjectUrl)\n    return () => URL.revokeObjectURL(nextObjectUrl)\n  }, [file, previewUrl])\n\n  const url = previewUrl ?? objectUrl ?? ""\n  const previewClassName = "size-12 shrink-0 object-cover"\n\n  return (\n    <div className="flex items-center gap-2 rounded-[var(--md-radius-lg)]">\n      {url\n        ? <img src={url} alt="" className={previewClassName} />\n        : <span aria-hidden="true" className={previewClassName} />}\n      <span className="min-w-0 flex-1" dir="auto">{file.name}</span>\n      <Button onClick={onEdit}>Edit</Button>\n      <Button aria-label="Remove screenshot" onClick={onRemove}>Remove</Button>\n    </div>\n  )\n}`,
     usageCode: `{attachments.map((file) => (\n  <SupportTicketAttachmentPreview\n    key={file.name}\n    file={file}\n    onEdit={() => setEditingFile(file)}\n    onRemove={() => setAttachments((current) =>\n      current.filter((candidate) => candidate !== file)\n    )}\n  />\n))}`,
   },
   {
