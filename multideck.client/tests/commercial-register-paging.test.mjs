@@ -72,6 +72,10 @@ test("the Quotes register error state avoids repeated copy and offers a real ret
   assert.doesNotMatch(quotesPage, /\{t\("Quotes could not be loaded\."\)\} <span/)
 })
 
+test("the Quotes register does not show a duplicate Dexter entry point", () => {
+  assert.doesNotMatch(quotesPage, /DexterActionPill|DexterDockedPage|dexterOpen/)
+})
+
 test("the 100,000-record proof is local-only and cannot write Supabase data", () => {
   assert.match(benchmark, /const recordCount = 100_000/)
   assert.match(benchmark, /REGISTER_BENCHMARK_VARIANT/)

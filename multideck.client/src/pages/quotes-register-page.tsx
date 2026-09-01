@@ -5,8 +5,6 @@ import { toast } from "sonner"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { RegisterViewSwitch } from "@/components/multideck/register-toolbar"
-import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
-import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { Pagination } from "@/components/multideck/pagination"
 import { Input } from "@/components/ui/input"
 import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
@@ -91,7 +89,6 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(10)
   const [serverSort, setServerSort] = useState<RegisterSort | null>(() => readSavedSort(quoteTableStorageKey, { id: "updatedAt", direction: "desc" }))
-  const [dexterOpen, setDexterOpen] = useState(false)
   const [quotes, setQuotes] = useState<QuoteRegisterRecord[]>([])
   const [quoteTotal, setQuoteTotal] = useState(0)
   const [availableQuoteTotal, setAvailableQuoteTotal] = useState(0)
@@ -262,8 +259,8 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
   }, [language, t])
 
   return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Quotes")} className="md-page md-page-stack-compact">
-      <header className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+    <div className="md-page md-page-stack-compact">
+      <header className="min-w-0">
         <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-5">
           <h1 className="shrink-0 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Quotes")}</h1>
           <div className="min-w-0 text-[12px] leading-5">
@@ -274,9 +271,6 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
               {t("Search, review and open every customer quote from one place.")}
             </p>
           </div>
-        </div>
-        <div className="lg:justify-self-end">
-          <DexterActionPill onClick={() => setDexterOpen(true)} />
         </div>
       </header>
 
@@ -417,6 +411,6 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
           setPage(1)
         }}
       />
-    </DexterDockedPage>
+    </div>
   )
 }
