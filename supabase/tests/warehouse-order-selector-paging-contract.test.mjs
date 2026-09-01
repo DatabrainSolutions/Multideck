@@ -20,7 +20,7 @@ test("Warehouse order setup returns only small reference data", () => {
 test("item and location selectors are capped before rows reach the browser", () => {
   assert.match(route, /path\[2\] === "items"[\s\S]*boundedPage\(url, 25, 50\)/)
   assert.match(route, /warehouse_edge_item_selector_page/)
-  assert.match(route, /path\[2\] === "locations"[\s\S]*requireInternal\(actor\)[\s\S]*boundedPage\(url, 25, 50\)/)
+  assert.match(route, /path\[2\] === "locations"[\s\S]*requireInternalWarehouseRead\(actor\)[\s\S]*boundedPage\(url, 25, 50\)/)
   assert.match(route, /warehouse_edge_location_selector_page/)
   assert.match(migration, /limit v_limit \+ 1[\s\S]*'hasMore'/)
 })

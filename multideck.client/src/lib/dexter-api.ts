@@ -227,6 +227,8 @@ export type DexterUploadedDocument = {
   fileName: string
   mimeType: string
   sizeBytes: number
+  /** Browser-only object URL for an image selected in this session. */
+  previewUrl?: string
 }
 
 export type DexterWatchEmailContext = {

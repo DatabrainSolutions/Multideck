@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { HttpError, bodyObject, boundedPage, clean, companyFacilityIds, many, requireInternal, uuid } from "../shared/mod.ts";
+import { HttpError, bodyObject, boundedPage, clean, companyFacilityIds, many, requireInternalWarehouseRead, requireInternalWarehouseWrite, uuid } from "../shared/mod.ts";
 
 async function mapPurchaseOrders(admin, rows, context) {
   if (!rows.length) return [];
@@ -92,7 +92,7 @@ async function mapPurchaseOrders(admin, rows, context) {
 
 export async function handlePurchaseOrders(request, path, url, admin, actor) {
   if (request.method === "GET" && path[1] === "reference" && path[2] === "organisations") {
-    requireInternal(actor);
+    requireInternalWarehouseRead(actor);
     const { limit, offset } = boundedPage(url, 25, 50);
     let query = admin.from("Org_Master").select("Org_id,Org_Name");
     const term = clean(url.searchParams.get("search"), 160);
@@ -108,7 +108,7 @@ export async function handlePurchaseOrders(request, path, url, admin, actor) {
     };
   }
   if (request.method === "GET" && path[1] === "reference" && path[2] === "items") {
-    requireInternal(actor);
+    requireInternalWarehouseRead(actor);
     const { limit, offset } = boundedPage(url, 25, 50);
     const facilityIds = await companyFacilityIds(admin, actor);
     const requestedFacilityId = clean(url.searchParams.get("facilityId"));
@@ -132,7 +132,7 @@ export async function handlePurchaseOrders(request, path, url, admin, actor) {
     throw new HttpError(500, error.message);
   }
   if (request.method === "GET" && path[1] === "reference" && url.searchParams.get("scope") === "setup") {
-    requireInternal(actor);
+    requireInternalWarehouseRead(actor);
     const facilityIds = await companyFacilityIds(admin, actor);
     const facilities = facilityIds.length ? await many(admin.from("WMS_Facilities")
       .select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name")
@@ -153,7 +153,7 @@ export async function handlePurchaseOrders(request, path, url, admin, actor) {
     ? uuid(path[1], "purchase order")
     : null;
   if (directPurchaseOrderId) {
-    requireInternal(actor);
+    requireInternalWarehouseRead(actor);
     const facilityIds = await companyFacilityIds(admin, actor);
     if (!facilityIds.length) throw new HttpError(404, "This purchase order does not exist in your workspace.");
     const rows = await many(admin.from("WMS_PurchaseOrders")
@@ -179,7 +179,7 @@ export async function handlePurchaseOrders(request, path, url, admin, actor) {
   }
   const boundedList = request.method === "GET" && !path[1] && url.searchParams.has("limit");
   if (boundedList) {
-    requireInternal(actor);
+    requireInternalWarehouseRead(actor);
     const facilityIds = await companyFacilityIds(admin, actor);
     const { limit, offset } = boundedPage(url);
     if (!facilityIds.length) return { rows: [], total: 0, limit, offset, facets: [] };
@@ -206,7 +206,7 @@ export async function handlePurchaseOrders(request, path, url, admin, actor) {
     throw new HttpError(400, "Warehouse purchase-order lists require bounded paging.");
   }
   if (request.method === "GET" && path[1] === "next-number") {
-    requireInternal(actor);
+    requireInternalWarehouseRead(actor);
     const facilityId = uuid(url.searchParams.get("facilityId"), "warehouse");
     const facilityIds = await companyFacilityIds(admin, actor);
     if (!facilityIds.includes(facilityId)) throw new HttpError(403, "You do not have access to this warehouse.");
@@ -244,7 +244,7 @@ export async function handlePurchaseOrders(request, path, url, admin, actor) {
         ? path[2].replace("-", "_")
         : null;
   if (!action) throw new HttpError(404, "Warehouse purchase order endpoint not found.");
-  requireInternal(actor);
+  requireInternalWarehouseWrite(actor);
   const facilityIds = await companyFacilityIds(admin, actor);
   const { data, error } = await admin.rpc("warehouse_edge_purchase_order_mutation", {
     p_action: action,

@@ -12,6 +12,13 @@
       "versionCode": 1,
       "softwareKeyboardLayoutMode": "resize"
     },
-    "plugins": []
+    "plugins": [
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ]
+    ]
   }
 }

@@ -17,7 +17,6 @@ import {
   oneOrNull,
   requireCapability,
   requireCustomerScope,
-  requireInternal,
   required,
   uuid,
 } from "../shared/mod.ts";

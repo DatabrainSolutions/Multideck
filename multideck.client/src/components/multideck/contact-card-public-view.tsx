@@ -40,6 +40,7 @@ export function PublicCardShell({
   card,
   preview,
   scale = 1,
+  deviceSafeAreaTop,
   className,
   children,
 }: {
@@ -47,6 +48,8 @@ export function PublicCardShell({
   preview: boolean
   /** Shrinks type and spacing proportionally inside the design preview frame. */
   scale?: number
+  /** Optional device-frame inset. Public browser cards leave this unset. */
+  deviceSafeAreaTop?: string
   className?: string
   children: ReactNode
 }) {
@@ -55,6 +58,12 @@ export function PublicCardShell({
 
   const style = { ...cardThemeVariables(theme), fontSize: `${scale}rem` } as CSSProperties
   const spec = resolveCardLayout(card?.branding.layout)
+  const headerStyle = card?.branding.headerStyle ?? "bar"
+  const contentSafeTop = deviceSafeAreaTop && (headerStyle === "none" || headerStyle === "bar")
+    ? headerStyle === "bar"
+      ? `max(${spec.padTop}px, calc(${deviceSafeAreaTop} - 6px))`
+      : `max(${spec.padTop}px, ${deviceSafeAreaTop})`
+    : spec.padTop
 
   return (
     <div
@@ -69,14 +78,14 @@ export function PublicCardShell({
         </div>
       ) : null}
 
-      <CardHeader card={card} spec={spec} />
+      <CardHeader card={card} spec={spec} deviceSafeAreaTop={deviceSafeAreaTop} />
 
       <main
         className={cn("mx-auto w-full", spec.centred && "text-center")}
         style={{
           maxWidth: spec.maxWidth,
           paddingInline: spec.padX,
-          paddingTop: spec.padTop,
+          paddingTop: contentSafeTop,
           paddingBottom: spec.padBottom,
         }}
       >
@@ -86,7 +95,15 @@ export function PublicCardShell({
   )
 }
 
-function CardHeader({ card, spec }: { card: ContactCard | null; spec: CardLayoutSpec }) {
+function CardHeader({
+  card,
+  spec,
+  deviceSafeAreaTop,
+}: {
+  card: ContactCard | null
+  spec: CardLayoutSpec
+  deviceSafeAreaTop?: string
+}) {
   if (!card) return null
   const { headerStyle, accent, logoDataUrl } = card.branding
 
@@ -98,7 +115,16 @@ function CardHeader({ card, spec }: { card: ContactCard | null; spec: CardLayout
 
   if (headerStyle === "band") {
     return (
-      <div className="w-full py-5" style={{ backgroundColor: accent, color: readableInk(accent), paddingInline: spec.padX }}>
+      <div
+        className="w-full py-5"
+        style={{
+          backgroundColor: accent,
+          color: readableInk(accent),
+          paddingInline: spec.padX,
+          // The colour can extend behind device hardware; readable content cannot.
+          paddingTop: deviceSafeAreaTop ? `max(20px, ${deviceSafeAreaTop})` : undefined,
+        }}
+      >
         <div className={cn("mx-auto flex items-center gap-3", spec.centred && "justify-center")} style={{ maxWidth: spec.maxWidth - spec.padX * 2 }}>
           {logoDataUrl ? (
             <img src={logoDataUrl} alt="" className="h-7 max-w-[132px] object-contain" />

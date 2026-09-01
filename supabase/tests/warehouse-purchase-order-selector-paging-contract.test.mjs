@@ -20,7 +20,7 @@ test("stock owners and items are separate capped server pages", () => {
   assert.match(route, /path\[2\] === "organisations"[\s\S]*boundedPage\(url, 25, 50\)/)
   assert.match(route, /\.range\(offset, offset \+ limit\)/)
   assert.match(route, /path\[2\] === "items"[\s\S]*warehouse_edge_item_selector_page/)
-  assert.match(route, /requireInternal\(actor\)/)
+  assert.match(route, /requireInternalWarehouseRead\(actor\)/)
   assert.match(migration, /p_facility_id = any\(coalesce\(p_allowed_facility_ids/)
   assert.match(migration, /p_customer_org_id = any\(p_allowed_org_ids\)/)
 })

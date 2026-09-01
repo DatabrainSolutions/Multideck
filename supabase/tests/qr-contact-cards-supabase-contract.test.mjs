@@ -25,6 +25,8 @@ const contactCardDexter = read("multideck.client/src/components/multideck/contac
 const dexterApi = read("multideck.client/src/lib/dexter-api.ts")
 const dexterFunction = read("supabase/functions/agent-dexter/index.ts")
 const crmFieldMappings = read("supabase/migrations/20260811085329_contact_card_crm_field_mappings.sql")
+const automaticLeadMapping = read("supabase/migrations/20260830223000_contact_card_automatic_lead_mapping_notes.sql")
+const securityHardening = read("supabase/migrations/20260830230000_security_scan_high_risk_hardening.sql")
 
 test("QR cards have no local demo-store fallback", () => {
   assert.doesNotMatch(store, /localStorage|createSeedCards|resetContactCards/)
@@ -60,15 +62,33 @@ test("contact-card automation suggestions use the real Dexter Edge Function", ()
   assert.doesNotMatch(contactCardDexter, /deterministic stand-in|Math\.random|proposeAutomation/)
 })
 
-test("contact cards always create or update CRM leads using allowlisted field mappings", () => {
+test("contact cards automatically map lead fields and add configured notes", () => {
   assert.match(crmFieldMappings, /apply_contact_card_crm_field_mappings/)
-  assert.match(crmFieldMappings, /duplicateHandling/)
-  assert.match(crmFieldMappings, /mappedFields/)
   assert.match(crmFieldMappings, /perform private\.apply_contact_card_crm_field_mappings/)
-  assert.match(automation, /CRM field mapping/)
-  assert.match(automation, /duplicateHandling: "update"/)
-  assert.match(dexterFunction, /Allowed sources: firstName, lastName, email, company, phone, marketingConsent, cardName, fixed/)
+  assert.match(automaticLeadMapping, /CRMLead_PersonName/)
+  assert.match(automaticLeadMapping, /CRMLead_Email/)
+  assert.match(automaticLeadMapping, /CRMLead_CompanyName/)
+  assert.match(automaticLeadMapping, /CRMLead_Phone/)
+  assert.match(automaticLeadMapping, /customNotes/)
+  assert.match(automaticLeadMapping, /insert into public\."CRM_Notes"/)
+  assert.match(automaticLeadMapping, /CRMNote_LeadID/)
+  assert.match(automaticLeadMapping, /CRMNote_SourceTable" = 'CRM_ContactCards'/)
+  assert.match(automation, /Lead creation/)
+  assert.match(automation, /Custom notes/)
+  assert.doesNotMatch(automation.slice(automation.indexOf("function CrmFieldMappingPanel"), automation.indexOf("export function CardAutomationPanel")), /Form to CRM fields|Add field|fieldMappings/)
+  assert.match(automation, /duplicateHandling: "create"/)
+  assert.match(dexterFunction, /Never ask the user to map those fields/)
+  assert.match(dexterFunction, /customNotes/)
   assert.match(dexterFunction, /const actionKinds = new Set\(\["add-to-crm"\]\)/)
+})
+
+test("anonymous contact-card submissions cannot update existing CRM records or disclose internal identifiers", () => {
+  assert.match(securityHardening, /"Scan_ExchangedAt" is null[\s\S]*for update/)
+  assert.match(securityHardening, /v_recent_count >= 20 or v_daily_count >= 500/)
+  assert.doesNotMatch(securityHardening, /select "CRMLead_ID" into v_lead/)
+  assert.match(securityHardening, /'outcome', 'created', 'automationOutcome', v_run_status/)
+  assert.doesNotMatch(securityHardening, /'leadId'|'exchangeId'|'runId'/)
+  assert.match(store, /id: crypto\.randomUUID\(\)/)
 })
 
 test("contact cards expose four layouts, social links and a real QR test path", () => {

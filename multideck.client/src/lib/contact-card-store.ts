@@ -826,9 +826,9 @@ export async function submitExchange(cardId: string, scanId: string | null, inpu
     const exchange: CardExchange = { id: crypto.randomUUID(), ...input, at: new Date().toISOString(), outcome: "created", automationOutcome: "none", automationDetail: "Preview submission — nothing was saved." }
     return { outcome: exchange.outcome, exchange }
   }
-  const result = await callRpc<{ outcome: CardExchange["outcome"]; exchangeId: string; automationOutcome: "succeeded" | "failed" | "skipped" | "running" }>("multideck_contact_card_submit_exchange", { p_slug: card.slug, p_scan_id: scanId, p_input: input })
+  const result = await callRpc<{ outcome: CardExchange["outcome"]; automationOutcome: "succeeded" | "failed" | "skipped" | "running" }>("multideck_contact_card_submit_exchange", { p_slug: card.slug, p_scan_id: scanId, p_input: input })
   const automationOutcome: CardExchange["automationOutcome"] = result.automationOutcome === "succeeded" ? "ran" : result.automationOutcome === "running" ? "none" : result.automationOutcome
-  const exchange: CardExchange = { id: result.exchangeId, ...input, email: input.email.trim().toLowerCase(), at: new Date().toISOString(), outcome: result.outcome, automationOutcome, automationDetail: automationOutcome === "ran" ? "Connected CRM actions completed." : automationOutcome === "failed" ? "An automation step failed. The input was preserved for rerun." : "The automation was off or a condition did not match." }
+  const exchange: CardExchange = { id: crypto.randomUUID(), ...input, email: input.email.trim().toLowerCase(), at: new Date().toISOString(), outcome: result.outcome, automationOutcome, automationDetail: automationOutcome === "ran" ? "Connected CRM actions completed." : automationOutcome === "failed" ? "An automation step failed. The input was preserved for rerun." : "The automation was off or a condition did not match." }
   return { outcome: result.outcome, exchange }
 }
 

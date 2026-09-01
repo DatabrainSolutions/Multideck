@@ -2,6 +2,7 @@ import { authenticate, body, corsHeaders, currentInternalUser, failure, HttpErro
 import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
 import { normaliseLocale, renderBrandedEmail } from "../_shared/email-template.ts"
 import { authorizationCatalogueReadModel, isLegacyCustomRoleName, isPendingInvitation, singleTeamUserReadModel, SYSTEM_ROLES, teamCatalogueReadModel, teamUsersByIdsReadModel, teamUsersPageCompatibilityReadModel } from "../_shared/team-read-model.ts"
+import { getPasswordPolicyError } from "../_shared/password-policy.ts"
 
 type DeletionEmailLocale = "en"
 
@@ -292,7 +293,8 @@ async function setUserAccessStatus(admin: any, current: any, targetId: string, s
 
 async function resetTeamUserPassword(admin: any, current: any, targetId: string, payload: any) {
   const password = typeof payload.password === "string" ? payload.password : ""
-  if (password.length < 8 || password.length > 128) throw new HttpError(400, "The password must be between 8 and 128 characters.")
+  const passwordPolicyError = getPasswordPolicyError(password)
+  if (passwordPolicyError) throw new HttpError(400, passwordPolicyError)
 
   const { data: target, error: targetError } = await admin.from("cmp_Users")
     .select("User_ID,Auth_User_ID,User_Email,User_AccessStatus")

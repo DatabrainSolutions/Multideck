@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
-import { authenticate, corsHeaders, currentInternalUser, HttpError, json, routeParts } from "../_shared/backend.ts"
+import { authenticate, corsHeaders, currentInternalUser, HttpError, json, requirePermission, routeParts } from "../_shared/backend.ts"
 import { governedModelFetch, type ModelGatewayContext } from "../_shared/model-gateway.ts"
 import {
   COMMERCIAL_INVOICE_SCHEMA_VERSION,
@@ -45,6 +45,7 @@ Deno.serve(async (request) => {
     const actor = actorFromProfile(profile, user.id)
     const path = routeParts(request, functionName)
 
+    await requirePermission(admin, actor.userId, "Customs.Write")
     await cleanupExpiredPreparedPdfs(admin)
     if (request.method === "POST" && path.length === 0) return await extractInvoice(request, admin, actor)
     if (request.method === "GET" && path.length === 1) return await readExtraction(request, admin, actor, path[0])

@@ -17,6 +17,7 @@ import {
 } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Iphone, IPHONE_CONTENT_SAFE_TOP } from "@/components/ui/iphone"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { CopyableField } from "@/components/multideck/copyable-field"
@@ -1201,31 +1202,28 @@ function CardPreview({ card }: { card: ContactCard }) {
         />
       </div>
 
-      {/* A plain device frame: bezel, no ornament, so the page inside is the subject. */}
-      <div className="mx-auto w-full max-w-[372px] rounded-[38px] bg-[var(--md-ink)] p-2.5 shadow-[var(--md-shadow-lift)]">
-        <div className="h-[620px] overflow-y-auto overflow-x-hidden rounded-[28px] md-scrollbar">
-          <PublicCardShell card={card} preview={false}>
-            <PublicCardPhases
-              phase={phase}
-              form={
-                <PublicCardForm
-                  card={card}
-                  values={EMPTY_PUBLIC_FORM}
-                  errors={{}}
-                  submitting={false}
-                  slow={false}
-                  submitError={null}
-                  onChange={() => undefined}
-                  onSubmit={(event) => event.preventDefault()}
-                  interactive={false}
-                />
-              }
-              exchange={<PublicCardExchange card={card} onAddToContacts={() => undefined} downloaded={false} interactive={false} />}
-            />
-            <PublicCardFooter />
-          </PublicCardShell>
-        </div>
-      </div>
+      <Iphone className="mx-auto block h-[min(68dvh,680px)] w-auto max-w-full drop-shadow-[0_24px_34px_rgba(4,12,11,0.18)]">
+        <PublicCardShell card={card} preview={false} deviceSafeAreaTop={IPHONE_CONTENT_SAFE_TOP}>
+          <PublicCardPhases
+            phase={phase}
+            form={
+              <PublicCardForm
+                card={card}
+                values={EMPTY_PUBLIC_FORM}
+                errors={{}}
+                submitting={false}
+                slow={false}
+                submitError={null}
+                onChange={() => undefined}
+                onSubmit={(event) => event.preventDefault()}
+                interactive={false}
+              />
+            }
+            exchange={<PublicCardExchange card={card} onAddToContacts={() => undefined} downloaded={false} interactive={false} />}
+          />
+          <PublicCardFooter />
+        </PublicCardShell>
+      </Iphone>
 
       <Button
         variant="ghost"

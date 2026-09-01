@@ -260,32 +260,48 @@ export function TabsRail({
 
   return (
     <div role="tablist" className={cn("relative flex gap-[var(--md-page-stack-gap)] overflow-x-auto shadow-[inset_0_-1px_0_rgba(11,20,19,0.08)] md-scrollbar", className)}>
-      {tabs.map((tab) => (
-        <button
-          key={tab.id ?? tab.label}
-          type="button"
-          role="tab"
-          aria-selected={activeTab === (tab.id ?? tab.label)}
-          tabIndex={activeTab === (tab.id ?? tab.label) ? 0 : -1}
-          className={cn(
-            "relative flex h-12 shrink-0 items-center gap-2 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:text-[var(--md-ink)]",
-            activeTab === (tab.id ?? tab.label) && "text-[var(--md-ink)]",
-          )}
-          onClick={() => onChange(tab.id ?? tab.label)}
-          onKeyDown={(event) => moveChoiceFocus(event, tabIds, activeTab, onChange)}
-        >
-          {activeTab === (tab.id ?? tab.label) ? (
-            <motion.span
-              aria-hidden="true"
-              layoutId={`${railId}-active-tab`}
-              className="absolute inset-x-0 bottom-[-1px] h-0.5 rounded-full bg-[var(--md-accent)]"
-              transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.page)}
-            />
-          ) : null}
-          {tab.label}
-          {tab.value ? <span className="rounded-[var(--md-radius-sm)] bg-[rgba(90,103,100,0.08)] px-2 py-0.5 text-[12px] text-[var(--md-text)] tabular-nums">{tab.value}</span> : null}
-        </button>
-      ))}
+      {tabs.map((tab) => {
+        const tabId = tab.id ?? tab.label
+        const selected = activeTab === tabId
+
+        return (
+          <button
+            key={tabId}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            tabIndex={selected ? 0 : -1}
+            className={cn(
+              "relative flex h-12 shrink-0 items-center gap-2 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:text-[var(--md-accent)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)]",
+              selected && "text-[var(--md-accent)]",
+            )}
+            onClick={() => onChange(tabId)}
+            onKeyDown={(event) => moveChoiceFocus(event, tabIds, activeTab, onChange)}
+          >
+            {selected ? (
+              <motion.span
+                aria-hidden="true"
+                layoutId={`${railId}-active-tab`}
+                className="absolute inset-x-0 bottom-[-1px] h-[3px] rounded-full bg-[var(--md-accent)]"
+                transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.page)}
+              />
+            ) : null}
+            {tab.label}
+            {tab.value ? (
+              <span
+                className={cn(
+                  "rounded-[var(--md-radius-sm)] px-2 py-0.5 text-[12px] font-medium tabular-nums transition-[background-color,color,box-shadow] duration-200",
+                  selected
+                    ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)]"
+                    : "bg-[var(--md-accent-a10)] text-[var(--md-accent)]",
+                )}
+              >
+                {tab.value}
+              </span>
+            ) : null}
+          </button>
+        )
+      })}
     </div>
   )
 }

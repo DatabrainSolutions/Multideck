@@ -9,6 +9,7 @@ import {
   bool,
   clean,
   companyFacilityIds,
+  companyOfficeIds,
   cors,
   id,
   many,
@@ -18,7 +19,8 @@ import {
   postgrestSearchPattern,
   requireCapability,
   requireCustomerScope,
-  requireInternal,
+  requireInternalWarehouseRead,
+  requireInternalWarehouseWrite,
   required,
   uuid,
 } from "../shared/mod.ts";
@@ -48,9 +50,14 @@ function mapFacility(row, typeNames, officeNames) {
   };
 }
 export async function handleFacilities(request, path, url, admin, actor) {
-  requireInternal(actor);
+  if (request.method === "GET") requireInternalWarehouseRead(actor);
+  else requireInternalWarehouseWrite(actor);
   const types = await many(admin.from("sys_WMSFacilityTypes").select("*").eq("WMSFacilityType_IsActive", true));
-  const offices = await many(admin.from("cmp_Offices").select("Office_ID,Office_Name,Office_Address,Company_ID").eq("Company_ID", actor.companyId));
+  const officeIds = await companyOfficeIds(admin, actor);
+  const offices = officeIds.length ? await many(admin.from("cmp_Offices")
+    .select("Office_ID,Office_Name,Office_Address,Company_ID")
+    .eq("Company_ID", actor.companyId)
+    .in("Office_ID", officeIds)) : [];
   const typeNames = new Map(types.map((row)=>[
       row.WMSFacilityType_Code,
       row.WMSFacilityType_Name
@@ -60,7 +67,6 @@ export async function handleFacilities(request, path, url, admin, actor) {
       row.Office_Name
     ]));
   if (request.method === "GET" && path.length === 1 && url.searchParams.has("limit")) {
-    requireInternal(actor);
     const facilityIds = await companyFacilityIds(admin, actor);
     const { limit, offset } = boundedPage(url);
     if (!facilityIds.length) return { rows: [], total: 0, limit, offset };

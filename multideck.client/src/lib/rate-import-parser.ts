@@ -38,7 +38,33 @@ function xmlText(xml: string) {
 }
 
 async function parseXlsx(file: File) {
-  const archive = unzipSync(new Uint8Array(await file.arrayBuffer()))
+  const maximumArchiveEntries = 128
+  const maximumExpandedBytes = 32 * 1024 * 1024
+  const maximumSelectedEntryBytes = 8 * 1024 * 1024
+  const maximumCompressionRatio = 200
+  let archiveEntries = 0
+  let expandedBytes = 0
+  let selectedWorksheet = false
+  const archive = unzipSync(new Uint8Array(await file.arrayBuffer()), {
+    filter: (entry) => {
+      archiveEntries += 1
+      expandedBytes += entry.originalSize
+      if (archiveEntries > maximumArchiveEntries || expandedBytes > maximumExpandedBytes) {
+        throw new Error("This spreadsheet expands beyond the safe import limit.")
+      }
+      if (entry.size > 0 && entry.originalSize / entry.size > maximumCompressionRatio) {
+        throw new Error("This spreadsheet has an unsafe compression ratio.")
+      }
+      const sharedStrings = entry.name === "xl/sharedStrings.xml"
+      const worksheet = !selectedWorksheet && /^xl\/worksheets\/sheet\d+\.xml$/.test(entry.name)
+      if (!sharedStrings && !worksheet) return false
+      if (entry.originalSize > maximumSelectedEntryBytes) {
+        throw new Error("This spreadsheet contains a worksheet that is too large to import safely.")
+      }
+      if (worksheet) selectedWorksheet = true
+      return true
+    },
+  })
   const sharedXml = archive["xl/sharedStrings.xml"] ? strFromU8(archive["xl/sharedStrings.xml"]) : ""
   const sharedDoc = new DOMParser().parseFromString(sharedXml, "application/xml")
   const shared = Array.from(sharedDoc.querySelectorAll("si")).map((cell) => Array.from(cell.querySelectorAll("t")).map((node) => node.textContent ?? "").join(""))

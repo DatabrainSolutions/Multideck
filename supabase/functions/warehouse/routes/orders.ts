@@ -17,7 +17,8 @@ import {
   oneOrNull,
   requireCapability,
   requireCustomerScope,
-  requireInternal,
+  requireInternalWarehouseRead,
+  requireInternalWarehouseWrite,
   required,
   uuid,
 } from "../shared/mod.ts";
@@ -229,7 +230,7 @@ export async function handleOrders(request, path, url, admin, actor) {
     throw new HttpError(500, error.message);
   }
   if (request.method === "GET" && path[1] === "reference" && path[2] === "locations") {
-    requireInternal(actor);
+    requireInternalWarehouseRead(actor);
     const { limit, offset } = boundedPage(url, 25, 50);
     const facilityIds = await companyFacilityIds(admin, actor);
     const requestedFacilityId = clean(url.searchParams.get("facilityId"));
@@ -334,7 +335,7 @@ export async function handleOrders(request, path, url, admin, actor) {
     ? uuid(path[1], "order")
     : null;
   if (availabilityOrderId) {
-    requireInternal(actor);
+    requireInternalWarehouseRead(actor);
     const facilityIds = await companyFacilityIds(admin, actor);
     if (!facilityIds.length) return [];
     const { data, error } = await admin.rpc("warehouse_edge_order_availability", {
@@ -428,6 +429,8 @@ export async function handleOrders(request, path, url, admin, actor) {
     } else {
       throw new HttpError(403, "This operation is reserved for the warehouse team.");
     }
+  } else {
+    requireInternalWarehouseWrite(actor);
   }
   const targetCustomerOrgId = action === "create"
     ? uuid(input.customerOrgId, "customer")

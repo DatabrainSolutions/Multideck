@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { DexterActionPill, SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
+import { ImageLightbox, type ImageLightboxControls } from "@/components/multideck/image-lightbox"
 import { ModelProviderGlyph, ModelStrengthMeter } from "@/components/multideck/model-glyphs"
 import { ProgressiveBlur } from "@/components/multideck/progressive-blur"
 import { cn } from "@/lib/utils"
@@ -110,6 +111,8 @@ export type DexterAttachment = {
   meta: string
   tone: StatusTone
   icon: LucideIcon
+  /** Present only for local image uploads that can open without another request. */
+  previewUrl?: string
 }
 
 export type DexterHistoryItem = {
@@ -158,6 +161,57 @@ function AttachmentIcon({ attachment }: { attachment: DexterAttachment }) {
     <span className="grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
       <Icon className="size-3.5" strokeWidth={1.2} />
     </span>
+  )
+}
+
+function DexterImageAttachmentPreview({
+  attachment,
+  lightbox,
+  onRemove,
+}: {
+  attachment: DexterAttachment & { previewUrl: string }
+  lightbox: ImageLightboxControls
+  onRemove?: (id: string) => void
+}) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <motion.span
+      layout={!shouldReduceMotion}
+      initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.94 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.94 }}
+      transition={reduceMotion(Boolean(shouldReduceMotion), { type: "spring", duration: 0.28, bounce: 0 })}
+      className="grid w-16 gap-1.5"
+    >
+      <motion.button
+        ref={(node) => lightbox.registerTrigger(attachment.id, node)}
+        type="button"
+        layoutId={lightbox.layoutIdFor(attachment.id)}
+        aria-label={`${t("Open image preview")}: ${attachment.title}`}
+        title={t("Open image preview")}
+        whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+        transition={shouldReduceMotion ? { duration: 0 } : { layout: { type: "spring", duration: 0.28, bounce: 0 }, scale: { duration: 0.12 } }}
+        onClick={() => lightbox.open(attachment.id)}
+        className="size-16 overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)] outline-none ring-offset-2 ring-offset-[var(--md-composer-panel-bg)] hover:ring-1 hover:ring-[var(--md-accent-a20)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]"
+      >
+        <img src={attachment.previewUrl} alt="" className="size-full rounded-[var(--md-radius-lg)] object-cover" />
+      </motion.button>
+      {onRemove ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-lg"
+          aria-label={`${t("Remove")} ${attachment.title}`}
+          title={t("Remove attachment")}
+          onClick={() => onRemove(attachment.id)}
+          className="mx-auto rounded-[var(--md-radius-md)] text-[var(--md-red)] hover:bg-[var(--md-status-red-bg)] hover:text-[var(--md-status-red-ink)]"
+        >
+          <Trash2 className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+        </Button>
+      ) : null}
+    </motion.span>
   )
 }
 
@@ -1290,6 +1344,9 @@ export function DexterPromptComposer({
   const maxRows = compact ? 168 : 232
   const activeMentions = selectedMentions ?? internalMentions
   const handleMentionsChange = onMentionsChange ?? setInternalMentions
+  const imageLightboxItems = useMemo(() => attachments.flatMap((attachment) => attachment.previewUrl
+    ? [{ id: attachment.id, src: attachment.previewUrl, alt: attachment.title }]
+    : []), [attachments])
 
   return (
     <div
@@ -1327,39 +1384,49 @@ export function DexterPromptComposer({
                 exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0, marginBottom: 0 }}
                 transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.panel)}
               >
-                <AnimatePresence initial={false} mode="popLayout">
-                  {attachments.map((attachment) => {
-                    const Icon = attachment.icon
+                <ImageLightbox items={imageLightboxItems}>
+                  {(imageLightbox) => <AnimatePresence initial={false} mode="popLayout">
+                    {attachments.map((attachment) => {
+                      if (attachment.previewUrl) {
+                        return <DexterImageAttachmentPreview
+                          key={attachment.id}
+                          attachment={attachment as DexterAttachment & { previewUrl: string }}
+                          lightbox={imageLightbox}
+                          onRemove={onRemoveAttachment}
+                        />
+                      }
+                      const Icon = attachment.icon
 
-                    return (
-                      <motion.span
-                        key={attachment.id}
-                        layout={!shouldReduceMotion}
-                        initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.86 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.86 }}
-                        transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
-                        className="inline-flex h-8 max-w-full items-center gap-2 rounded-full bg-[var(--md-accent-a08)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[0_0_0_1px_var(--md-accent-a20)]"
-                      >
-                        <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} />
-                        <span className="truncate">{attachment.title}</span>
-                        <span className="hidden text-[var(--md-subtle)] sm:inline">
-                          {t(attachment.type === "uploaded_document" ? "Computer file" : attachment.type)}
-                        </span>
-                        {onRemoveAttachment ? (
-                          <button
-                            type="button"
-                            className="-me-1 grid size-5 shrink-0 place-items-center rounded-full text-[var(--md-subtle)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-90 motion-reduce:transition-none motion-reduce:active:scale-100"
-                            onClick={() => onRemoveAttachment(attachment.id)}
-                            aria-label={`${t("Remove")} ${attachment.title}`}
-                          >
-                            <X className="size-3" strokeWidth={1.4} />
-                          </button>
-                        ) : null}
-                      </motion.span>
-                    )
-                  })}
-                </AnimatePresence>
+                      return (
+                        <motion.span
+                          key={attachment.id}
+                          layout={!shouldReduceMotion}
+                          initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.86 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.86 }}
+                          transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
+                          className="inline-flex h-8 max-w-full items-center gap-2 rounded-full bg-[var(--md-accent-a08)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[0_0_0_1px_var(--md-accent-a20)]"
+                        >
+                          <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} />
+                          <span className="truncate">{attachment.title}</span>
+                          <span className="hidden text-[var(--md-subtle)] sm:inline">
+                            {t(attachment.type === "uploaded_document" ? "Computer file" : attachment.type)}
+                          </span>
+                          {onRemoveAttachment ? (
+                            <button
+                              type="button"
+                              className="-me-1 grid size-5 shrink-0 place-items-center rounded-full text-[var(--md-subtle)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-90 motion-reduce:transition-none motion-reduce:active:scale-100"
+                              onClick={() => onRemoveAttachment(attachment.id)}
+                              aria-label={`${t("Remove")} ${attachment.title}`}
+                            >
+                              <X className="size-3" strokeWidth={1.4} />
+                            </button>
+                          ) : null}
+                        </motion.span>
+                      )
+                    })}
+                  </AnimatePresence>}
+                </ImageLightbox>
               </motion.div>
             ) : null}
           </AnimatePresence>

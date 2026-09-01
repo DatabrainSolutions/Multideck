@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
+import { requiresExplicitActionApproval } from "./email-approval.mjs"
 
 type JsonObject = Record<string, unknown>
 type Db = SupabaseClient<any, "public", any, any, any>
@@ -40,6 +41,22 @@ function clean(value: unknown, maximum: number) {
 
 function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID.test(value)
+}
+
+function actionTargetIds(value: unknown, propertyName = "", target = new Set<string>()) {
+  if (Array.isArray(value)) {
+    if (/(?:^|_)ids$/i.test(propertyName) || /Ids$/.test(propertyName)) {
+      value.filter(isUuid).forEach((id) => target.add(id))
+    }
+    value.forEach((item) => actionTargetIds(item, "", target))
+    return target
+  }
+  if (!value || typeof value !== "object") {
+    if ((/(?:^|_)id$/i.test(propertyName) || /Id$/.test(propertyName)) && isUuid(value)) target.add(value)
+    return target
+  }
+  Object.entries(value as JsonObject).forEach(([key, item]) => actionTargetIds(item, key, target))
+  return target
 }
 
 function emailAddressesFromDraft(argumentsValue: JsonObject) {
@@ -335,13 +352,19 @@ export async function prepareServerAction(admin: Db, actor: DexterActor, input: 
   const recipientConstraints = Array.isArray(intent?.AIDexterIntent_RecipientConstraintsJSON)
     ? intent.AIDexterIntent_RecipientConstraintsJSON.map((value: unknown) => clean(value, 320).toLowerCase()).filter(Boolean)
     : []
-  const proposedTarget = clean(input.arguments.target_id, 80)
+  const proposedTargetIds = [...actionTargetIds(input.arguments)]
   if (intentError || !intent || intent.AIDexterIntent_AccessMode !== input.accessMode || !allowed.includes(input.actionCode)) {
     await securityEvent(admin, actor, "intent_mismatch", "warning", { actionCode: input.actionCode, intentPlanId: input.intentPlanId })
     throw new Error("action_outside_operator_intent")
   }
-  if (input.accessMode === "full" && proposedTarget && (targetConstraints.length === 0 || !isUuid(proposedTarget) || !targetConstraints.includes(proposedTarget))) {
-    await securityEvent(admin, actor, "target_substitution_denied", "high", { actionCode: input.actionCode, intentPlanId: input.intentPlanId })
+  if (input.accessMode === "full" &&
+      !requiresExplicitActionApproval(input.actionCode, input.accessMode) &&
+      proposedTargetIds.some((targetId) => !targetConstraints.includes(targetId))) {
+    await securityEvent(admin, actor, "target_substitution_denied", "high", {
+      actionCode: input.actionCode,
+      intentPlanId: input.intentPlanId,
+      targetCount: proposedTargetIds.length,
+    })
     throw new Error("target_outside_operator_intent")
   }
   const proposedRecipients = emailAddressesFromDraft(input.arguments)
@@ -355,7 +378,7 @@ export async function prepareServerAction(admin: Db, actor: DexterActor, input: 
     throw new Error("recipient_outside_operator_intent")
   }
   const id = crypto.randomUUID()
-  const target = proposedTarget
+  const target = proposedTargetIds[0] ?? ""
   const expiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString()
   const { error } = await admin.from("AI_DexterPreparedActions").insert({
     AIDexterPrepared_ID: id,
@@ -370,6 +393,7 @@ export async function prepareServerAction(admin: Db, actor: DexterActor, input: 
     AIDexterPrepared_TargetID: isUuid(target) ? target : null,
     AIDexterPrepared_TargetJSON: {
       ...(isUuid(target) ? { recordId: target } : {}),
+      ...(proposedTargetIds.length ? { recordIds: proposedTargetIds } : {}),
       ...(proposedRecipients.length ? { recipients: proposedRecipients } : {}),
     },
     AIDexterPrepared_Title: clean(input.title, 240),

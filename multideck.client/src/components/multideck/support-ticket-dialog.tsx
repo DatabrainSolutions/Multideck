@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { AlertCircle, Camera, Check, FileImage, ImageUp, RotateCcw, TicketCheck, Trash2, Upload } from "@/components/icons/hugeicons"
+import { AlertCircle, Camera, Check, FileImage, ImageUp, Pencil, RotateCcw, TicketCheck, Trash2, Upload, X } from "@/components/icons/hugeicons"
 
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ImageLightbox, type ImageLightboxControls } from "@/components/multideck/image-lightbox"
 import { Input } from "@/components/ui/input"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
@@ -54,6 +55,26 @@ function browserName() { const source = navigator.userAgent; return source.inclu
 function operatingSystem() { const source = navigator.userAgent; return source.includes("Mac OS") ? "macOS" : source.includes("Windows") ? "Windows" : source.includes("Android") ? "Android" : /iPhone|iPad/.test(source) ? "iOS" : "Other" }
 function isDirty(draft: Draft, files: File[]) { return Boolean(draft.title || draft.description || draft.actualBehaviour || draft.desiredOutcome || files.length) }
 function fileKey(file: File) { return `${file.name}-${file.size}-${file.lastModified}` }
+
+function useAttachmentPreviewUrls(files: File[]) {
+  const urlsRef = useRef(new Map<File, string>())
+  const [urls, setUrls] = useState(new Map<File, string>())
+
+  useEffect(() => {
+    const nextUrls = new Map<File, string>()
+    files.forEach((file) => nextUrls.set(file, urlsRef.current.get(file) ?? URL.createObjectURL(file)))
+    urlsRef.current.forEach((url, file) => { if (!nextUrls.has(file)) URL.revokeObjectURL(url) })
+    urlsRef.current = nextUrls
+    setUrls(new Map(nextUrls))
+  }, [files])
+
+  useEffect(() => () => {
+    urlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+    urlsRef.current.clear()
+  }, [])
+
+  return urls
+}
 
 function useCompactViewport() {
   const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 639px)").matches)
@@ -201,6 +222,7 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
   const surfaceRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const idempotencyRef = useRef(`multideck-support-${crypto.randomUUID()}`)
+  const attachmentPreviewUrls = useAttachmentPreviewUrls(files)
   const companyName = currentUser?.organisations[0]?.name ?? t("Your Multideck workspace")
   const reporterName = currentUser?.name ?? currentUser?.email ?? t("Signed-in user")
 
@@ -295,7 +317,7 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
     finally { setSubmitting(false); setProgress("") }
   }
 
-  const form = <div className="flex min-h-0 flex-1 flex-col"><div className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 sm:px-6 sm:pb-6">
+  const renderForm = (imageLightbox: ImageLightboxControls) => <div className="flex min-h-0 flex-1 flex-col"><div className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 sm:px-6 sm:pb-6">
     {result ? <div className="grid min-h-[420px] place-items-center text-center" role="status" aria-live="polite"><div className="max-w-md"><span className="mx-auto grid size-16 place-items-center rounded-full bg-[var(--md-status-green-bg)] text-[var(--md-status-green-ink)] shadow-[var(--md-shadow-line)]"><Check className="size-7" /></span><h3 className="mt-5 text-[22px] font-medium tracking-[-0.02em] text-[var(--md-ink)]">{t("Ticket {reference} submitted").replace("{reference}", result.ticket.ticketNumber)}</h3><p className="mt-2 text-[13px] leading-6 text-[var(--md-text)]">{t("We’ve received your ticket. The support team can now review the full context and will reply by email.")}</p><div className="mt-6 flex flex-wrap justify-center gap-2"><Button variant="outline" onClick={() => requestClose(false)}>{t("Done")}</Button>{result.ticket.statusUrl ? <Button asChild><a href={result.ticket.statusUrl} target="_blank" rel="noreferrer">{t("View status")}</a></Button> : null}</div></div></div> : <form ref={formRef} onSubmit={submit} aria-busy={submitting || undefined} className="grid gap-5 pt-2">
       <div className="grid gap-2 min-[440px]:grid-cols-2"><ContextFact label={t("Company")} value={companyName} /><ContextFact label={t("Reporter")} value={reporterName} /></div>
       <fieldset><legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("What can we help with?")}</legend><div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">{ticketTypes.map((type, index) => <button key={type} type="button" aria-pressed={draft.ticketType === type} onClick={() => selectTicketType(type)} className={cn("flex min-h-[72px] min-w-0 flex-col items-center justify-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-3 py-2.5 text-center text-[11.5px] font-medium leading-4 text-[var(--md-text)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,color,scale] hover:bg-[var(--md-hover)] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] motion-reduce:transition-none motion-reduce:active:scale-100", index === ticketTypes.length - 1 && "col-span-2 sm:col-span-1", draft.ticketType === type && "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)] ring-1 ring-[var(--md-accent-a20)]")}>{type === "security_concern" ? <AlertCircle className="mb-1 size-4 shrink-0" /> : type === "bug" ? <TicketCheck className="mb-1 size-4 shrink-0" /> : <FileImage className="mb-1 size-4 shrink-0" />}<span className="min-w-0 text-balance">{t(typeLabels[type])}</span></button>)}</div></fieldset>
@@ -305,7 +327,34 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
       <fieldset className="grid gap-1.5"><legend className="w-full px-4 py-1.5 text-center text-[12px] font-medium text-balance text-[var(--md-ink)]">{t("What is the impact to you?")}</legend><ImpactPillSelector value={draft.impact} onChange={(value) => change("impact", value)} ariaLabel={t("Customer impact")} labels={{ blocked: t(impactLabels.blocked), slowed_down: t(impactLabels.slowed_down), no_immediate_blocker: t(impactLabels.no_immediate_blocker) }} /></fieldset>
       {draft.ticketType === "bug" ? <Field label={t("What happened")} htmlFor="support-ticket-actual" error={fieldErrors.actualBehaviour}><Textarea id="support-ticket-actual" value={draft.actualBehaviour} dir="auto" aria-invalid={Boolean(fieldErrors.actualBehaviour) || undefined} aria-describedby={fieldErrors.actualBehaviour ? "support-ticket-actual-error" : undefined} onChange={(event) => change("actualBehaviour", event.target.value)} className="min-h-24" /></Field> : null}
       {draft.ticketType === "feature_request" ? <Field label={t("What outcome would you like?")} htmlFor="support-ticket-outcome" error={fieldErrors.desiredOutcome}><Textarea id="support-ticket-outcome" value={draft.desiredOutcome} dir="auto" aria-invalid={Boolean(fieldErrors.desiredOutcome) || undefined} aria-describedby={fieldErrors.desiredOutcome ? "support-ticket-outcome-error" : undefined} onChange={(event) => change("desiredOutcome", event.target.value)} className="min-h-24" /></Field> : null}
-      {draft.ticketType === "bug" ? <fieldset className="grid gap-1.5"><legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("Screenshot (optional)")}</legend><div onDragOver={(event) => event.preventDefault()} onDrop={drop} className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]"><p className="mb-2 text-[11px] leading-5 text-[var(--md-subtle)]">{t("Your browser will ask what to share. Multideck captures one frame and stops sharing immediately.")}</p><div className="flex flex-wrap items-center gap-2"><Button type="button" variant="outline" size="sm" onClick={() => void captureScreenshot()}><Camera className="size-3.5" />{t("Capture screenshot")}</Button><Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="size-3.5" />{t("Upload")}</Button><span className="text-[11px] text-[var(--md-subtle)]">{t("You can also paste or drop an image here")}</span><input ref={fileInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="sr-only" aria-label={t("Upload screenshots")} onChange={fileChange} /></div><p className="mt-2 text-[10px] leading-4 text-[var(--md-subtle)]">{t("Up to five PNG, JPEG, or WebP images; 10 MB each and 25 MB total.")}</p>{files.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{files.map((file) => <SupportTicketAttachmentPreview key={fileKey(file)} file={file} onEdit={() => setEditingFile(file)} onRemove={() => setFiles((current) => current.filter((candidate) => candidate !== file))} />)}</div> : null}</div></fieldset> : null}
+      {draft.ticketType === "bug" ? <fieldset className="grid gap-1.5">
+        <legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("Screenshot (optional)")}</legend>
+        <div onDragOver={(event) => event.preventDefault()} onDrop={drop} className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
+          <p className="mb-2 text-[11px] leading-5 text-[var(--md-subtle)]">{t("Your browser will ask what to share. Multideck captures one frame and stops sharing immediately.")}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => void captureScreenshot()}><Camera className="size-3.5" />{t("Capture screenshot")}</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="size-3.5" />{t("Upload")}</Button>
+            <span className="text-[11px] text-[var(--md-subtle)]">{t("You can also paste or drop an image here")}</span>
+            <input ref={fileInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="sr-only" aria-label={t("Upload screenshots")} onChange={fileChange} />
+          </div>
+          <p className="mt-2 text-[10px] leading-4 text-[var(--md-subtle)]">{t("Up to five PNG, JPEG, or WebP images; 10 MB each and 25 MB total.")}</p>
+          {files.length ? <div className="mt-3 flex flex-wrap gap-3" role="list" aria-label={t("Attached screenshots")}>
+            {files.map((file) => {
+              const key = fileKey(file)
+              return <SupportTicketAttachmentPreview
+                key={key}
+                file={file}
+                previewUrl={attachmentPreviewUrls.get(file)}
+                layoutId={imageLightbox.layoutIdFor(key)}
+                thumbnailRef={(node) => imageLightbox.registerTrigger(key, node)}
+                onOpen={() => imageLightbox.open(key)}
+                onEdit={() => setEditingFile(file)}
+                onRemove={() => setFiles((current) => current.filter((candidate) => candidate !== file))}
+              />
+            })}
+          </div> : null}
+        </div>
+      </fieldset> : null}
       <details className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 py-2.5 shadow-[var(--md-shadow-line)]"><summary className="cursor-pointer text-[12px] font-medium text-[var(--md-ink)]">{t("What we’ll share")}</summary><p className="mt-2 text-[11px] leading-5 text-[var(--md-subtle)]">{t("This diagnostic context helps the support team investigate without another round of questions.")}</p><dl className="mt-2 grid gap-2 text-[11px] sm:grid-cols-3"><ContextMini label={t("Current page")} value={`${window.location.pathname}${window.location.search}`} /><ContextMini label={t("App version")} value={import.meta.env.VITE_APP_VERSION ?? "local"} /><ContextMini label={t("Browser")} value={browserName()} /><ContextMini label={t("Operating system")} value={operatingSystem()} /><ContextMini label={t("Locale")} value={navigator.language} /><ContextMini label={t("Viewport")} value={`${window.innerWidth}×${window.innerHeight}`} /></dl></details>
       {error ? <p role="alert" className="flex items-start gap-2 text-[12px] leading-5 text-[var(--md-red)]"><AlertCircle className="mt-0.5 size-4 shrink-0" />{error}</p> : <p role="status" aria-live="polite" className="text-[12px] text-[var(--md-subtle)]">{progress || t("Your draft text is saved on this device until the ticket is confirmed.")}</p>}
     </form>}
@@ -314,28 +363,54 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
 
   const header = <><DialogHeader className="px-4 pe-14 pt-4 sm:px-6 sm:pe-16 sm:pt-5"><DialogTitle className="text-[18px] font-medium text-[var(--md-ink)]">{t("Submit a ticket")}</DialogTitle><DialogDescription className="max-w-[58ch] text-[12px] leading-5 text-[var(--md-text)]">{t("Give the support team enough context to act on the first reply.")}</DialogDescription></DialogHeader></>
   const sheetHeader = <SheetHeader className="px-4 pe-14 pb-2 pt-4"><SheetTitle className="text-[18px]">{t("Submit a ticket")}</SheetTitle><SheetDescription className="text-[12px] leading-5">{t("Give the support team enough context to act on the first reply.")}</SheetDescription></SheetHeader>
-  return <>
-    {compact ? <Sheet open={open} onOpenChange={requestClose}><SheetContent ref={surfaceRef} side="bottom" className="h-[min(94dvh,900px)] max-h-[calc(100dvh-env(safe-area-inset-top))] rounded-t-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)]" showCloseButton={!submitting} closeLabel={t("Close")}>{sheetHeader}{form}</SheetContent></Sheet> : <Dialog open={open} onOpenChange={requestClose}><DialogContent ref={surfaceRef} className="h-[min(88dvh,820px)] gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)] sm:max-w-[760px]" showCloseButton={!submitting} closeLabel={t("Close")}>{header}{form}</DialogContent></Dialog>}
-    <Dialog open={closeConfirmationOpen} onOpenChange={setCloseConfirmationOpen}>
-      <DialogContent className="gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[440px]" closeLabel={t("Keep editing")}>
-        <DialogHeader className="gap-2 px-5 pb-5 pe-14 pt-5 text-start sm:px-6 sm:pb-6 sm:pe-16 sm:pt-6">
-          <DialogTitle className="text-[18px] leading-[1.25]">{t("Close this ticket request?")}</DialogTitle>
-          <DialogDescription className="text-[13px] leading-5 text-[var(--md-text)]">{t("Your written draft will be here next time. Screenshots are kept only for this session.")}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter className="m-0 rounded-b-[var(--md-radius-2xl)] px-5 py-4 sm:px-6">
-          <Button type="button" variant="ghost" onClick={closeTicketRequest}>{t("Close request")}</Button>
-          <Button type="button" onClick={() => setCloseConfirmationOpen(false)}>{t("Keep editing")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  </>
+  const lightboxItems = files.flatMap((file) => {
+    const src = attachmentPreviewUrls.get(file)
+    return src ? [{ id: fileKey(file), src, alt: file.name }] : []
+  })
+  return <ImageLightbox
+    items={lightboxItems}
+    labels={{
+      title: t("Screenshot preview"),
+      close: t("Close screenshot preview"),
+      previous: t("Previous screenshot"),
+      next: t("Next screenshot"),
+      position: (position, total) => t("Screenshot {position} of {total}").replace("{position}", String(position)).replace("{total}", String(total)),
+      instructions: t("Use the Left and Right Arrow keys to move between screenshots."),
+    }}
+  >
+    {(imageLightbox) => <>
+      {compact ? <Sheet open={open} onOpenChange={requestClose}><SheetContent ref={surfaceRef} side="bottom" className="h-[min(94dvh,900px)] max-h-[calc(100dvh-env(safe-area-inset-top))] rounded-t-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)]" showCloseButton={!submitting} closeLabel={t("Close")}>{sheetHeader}{renderForm(imageLightbox)}</SheetContent></Sheet> : <Dialog open={open} onOpenChange={requestClose}><DialogContent ref={surfaceRef} className="h-[min(88dvh,820px)] gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)] sm:max-w-[760px]" showCloseButton={!submitting} closeLabel={t("Close")}>{header}{renderForm(imageLightbox)}</DialogContent></Dialog>}
+      <Dialog open={closeConfirmationOpen} onOpenChange={setCloseConfirmationOpen}>
+        <DialogContent className="gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[440px]" closeLabel={t("Keep editing")}>
+          <DialogHeader className="gap-2 px-5 pb-5 pe-14 pt-5 text-start sm:px-6 sm:pb-6 sm:pe-16 sm:pt-6">
+            <DialogTitle className="text-[18px] leading-[1.25]">{t("Close this ticket request?")}</DialogTitle>
+            <DialogDescription className="text-[13px] leading-5 text-[var(--md-text)]">{t("Your written draft will be here next time. Screenshots are kept only for this session.")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="m-0 rounded-b-[var(--md-radius-2xl)] px-5 py-4 sm:px-6">
+            <Button type="button" variant="ghost" onClick={closeTicketRequest}>{t("Close request")}</Button>
+            <Button type="button" onClick={() => setCloseConfirmationOpen(false)}>{t("Keep editing")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>}
+  </ImageLightbox>
 }
 
 function Field({ label, htmlFor, error, children }: { label: string; htmlFor: string; error?: string; children: ReactNode }) { return <label htmlFor={htmlFor} className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{label}{children}{error ? <span id={`${htmlFor}-error`} className="text-[11px] font-normal leading-4 text-[var(--md-red)]">{error}</span> : null}</label> }
 function ContextFact({ label, value }: { label: string; value: string }) { return <div className="min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 py-2.5 shadow-[var(--md-shadow-line)]"><p className="text-[11px] text-[var(--md-subtle)]">{label}</p><p className="mt-0.5 break-words text-[12px] font-medium leading-4 text-[var(--md-ink)]" data-i18n-skip dir="auto">{value}</p></div> }
 function ContextMini({ label, value }: { label: string; value: string }) { return <div><dt className="text-[var(--md-subtle)]">{label}</dt><dd className="mt-0.5 truncate text-[var(--md-text)]" data-i18n-skip dir="auto">{value}</dd></div> }
-export function SupportTicketAttachmentPreview({ file, onEdit, onRemove, previewUrl }: { file: File; onEdit: () => void; onRemove: () => void; previewUrl?: string }) {
+
+export function SupportTicketAttachmentPreview({ file, onOpen, onEdit, onRemove, previewUrl, layoutId, thumbnailRef }: {
+  file: File
+  onOpen: () => void
+  onEdit: () => void
+  onRemove: () => void
+  previewUrl?: string
+  layoutId?: string
+  thumbnailRef?: (node: HTMLButtonElement | null) => void
+}) {
   const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   useEffect(() => {
     if (previewUrl) {
@@ -347,6 +422,24 @@ export function SupportTicketAttachmentPreview({ file, onEdit, onRemove, preview
     return () => URL.revokeObjectURL(nextObjectUrl)
   }, [file, previewUrl])
   const url = previewUrl ?? objectUrl ?? ""
-  const previewClassName = "size-12 shrink-0 rounded-[var(--md-radius-md)] object-cover outline outline-1 outline-black/10 dark:outline-white/10"
-  return <div className="flex min-w-0 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-2 shadow-[var(--md-shadow-line)]">{url ? <img src={url} alt="" className={previewClassName} /> : <span aria-hidden="true" className={cn(previewClassName, "bg-[var(--md-surface-tint)]")} />}<span className="min-w-0 flex-1"><span className="block truncate text-[11px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{file.name}</span><span className="text-[10px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{Math.max(1, Math.round(file.size / 1024))} KB</span></span><Button type="button" variant="ghost" size="sm" onClick={onEdit}>{t("Edit")}</Button><Button type="button" variant="ghost" size="icon-sm" aria-label={t("Remove screenshot")} onClick={onRemove}><Trash2 className="size-3.5" /></Button></div>
+  const previewClassName = "size-full rounded-[var(--md-radius-lg)] object-cover"
+  return <div role="listitem" className="grid w-20 gap-1.5">
+    <motion.button
+      ref={thumbnailRef}
+      type="button"
+      layoutId={layoutId}
+      aria-label={`${t("Open screenshot preview")}: ${file.name}`}
+      title={t("Open screenshot preview")}
+      whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+      transition={shouldReduceMotion ? { duration: 0 } : { layout: { type: "spring", duration: 0.28, bounce: 0 }, scale: { duration: 0.12 } }}
+      onClick={onOpen}
+      className="size-20 overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] outline-none ring-offset-2 ring-offset-[var(--md-surface-soft)] hover:ring-1 hover:ring-[var(--md-accent-a20)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]"
+    >
+      {url ? <img src={url} alt="" className={previewClassName} /> : <span aria-hidden="true" className={cn("block", previewClassName, "bg-[var(--md-surface-tint)]")} />}
+    </motion.button>
+    <div className="grid grid-cols-2 gap-1">
+      <Button type="button" variant="ghost" size="icon-lg" aria-label={t("Edit screenshot")} title={t("Edit screenshot")} onClick={onEdit} className="rounded-[var(--md-radius-md)]"><Pencil className="size-3.5" /></Button>
+      <Button type="button" variant="ghost" size="icon-lg" aria-label={t("Remove screenshot")} title={t("Remove screenshot")} onClick={onRemove} className="rounded-[var(--md-radius-md)] text-[var(--md-red)] hover:bg-[var(--md-status-red-bg)] hover:text-[var(--md-status-red-ink)]"><Trash2 className="size-3.5" /></Button>
+    </div>
+  </div>
 }

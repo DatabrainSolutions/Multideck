@@ -30,7 +30,7 @@ test("the Edge path enforces an internal actor and authorised facilities without
   const availabilityBranch = route.indexOf("const availabilityOrderId")
   assert.ok(availabilityBranch >= 0)
   assert.doesNotMatch(route, /orderContext|loadOrders/)
-  assert.match(route, /if \(availabilityOrderId\) \{[\s\S]*requireInternal\(actor\)[\s\S]*companyFacilityIds\(admin, actor\)/)
+  assert.match(route, /if \(availabilityOrderId\) \{[\s\S]*requireInternalWarehouseRead\(actor\)[\s\S]*companyFacilityIds\(admin, actor\)/)
   assert.match(route, /warehouse_edge_order_availability[\s\S]*p_allowed_facility_ids: facilityIds[\s\S]*p_limit_per_item: 25[\s\S]*p_total_limit: 500/)
 })
 

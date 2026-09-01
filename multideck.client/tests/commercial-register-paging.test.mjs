@@ -65,6 +65,13 @@ test("server totals power metrics, pagination, and asynchronous advanced-filter 
   assert.match(quotesPage, /totalCount=\{availableQuoteTotal\}/)
 })
 
+test("the Quotes register error state avoids repeated copy and offers a real retry", () => {
+  assert.match(quotesPage, /isRepeatedQuoteLoadError\(quotesError, quotesErrorTitle\)/)
+  assert.match(quotesPage, /onClick=\{\(\) => setQuoteRevision\(\(revision\) => revision \+ 1\)\}/)
+  assert.match(quotesPage, /\{t\("Try again"\)\}/)
+  assert.doesNotMatch(quotesPage, /\{t\("Quotes could not be loaded\."\)\} <span/)
+})
+
 test("the 100,000-record proof is local-only and cannot write Supabase data", () => {
   assert.match(benchmark, /const recordCount = 100_000/)
   assert.match(benchmark, /REGISTER_BENCHMARK_VARIANT/)

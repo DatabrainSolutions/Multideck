@@ -242,6 +242,8 @@ type QuoteCharge = {
   sellExchange: number
   costRoeSource: "job" | "override"
   sellRoeSource: "job" | "override"
+  calculationBasis?: string | null
+  quantity?: number | null
   department: string
   internalNotes?: string
   additionalDetail?: string
@@ -1862,15 +1864,15 @@ function QuoteChargesPanel({
     <>
       <Tabs value={chargeView} onValueChange={(value) => setChargeView(value as "split" | "tabs")}>
         <TabsList className="h-8 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-0.5 shadow-[var(--md-shadow-line)]">
-          <TabsTrigger value="split" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-[var(--md-surface)] data-[state=active]:shadow-[var(--md-shadow-line)]">{t("Side by side")}</TabsTrigger>
-          <TabsTrigger value="tabs" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-[var(--md-surface)] data-[state=active]:shadow-[var(--md-shadow-line)]">{t("Tabbed")}</TabsTrigger>
+          <TabsTrigger value="split" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-transparent data-[state=active]:shadow-none">{t("Side by side")}</TabsTrigger>
+          <TabsTrigger value="tabs" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-transparent data-[state=active]:shadow-none">{t("Tabbed")}</TabsTrigger>
         </TabsList>
       </Tabs>
       {chargeView === "tabs" ? (
         <Tabs value={activeChargeSide} onValueChange={(value) => setActiveChargeSide(value as ChargePanelSide)}>
           <TabsList className="h-8 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-0.5 shadow-[var(--md-shadow-line)]">
-            <TabsTrigger value="in" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-[var(--md-surface)] data-[state=active]:shadow-[var(--md-shadow-line)]">{t("Supplier")}</TabsTrigger>
-            <TabsTrigger value="out" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-[var(--md-surface)] data-[state=active]:shadow-[var(--md-shadow-line)]">{t("Customer")}</TabsTrigger>
+            <TabsTrigger value="in" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-transparent data-[state=active]:shadow-none">{t("Supplier")}</TabsTrigger>
+            <TabsTrigger value="out" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-transparent data-[state=active]:shadow-none">{t("Customer")}</TabsTrigger>
           </TabsList>
         </Tabs>
       ) : null}
@@ -2137,6 +2139,8 @@ function UnifiedQuoteChargesPanel({
       sellRoe: charge.sellExchange,
       costRoeSource: charge.costRoeSource === "override" ? "manual" : "rate",
       sellRoeSource: charge.sellRoeSource === "override" ? "manual" : "rate",
+      calculationBasis: charge.calculationBasis,
+      quantity: charge.quantity,
       baseCost: charge.localCost,
       baseSell: charge.localSell,
       profit: charge.localSell - charge.localCost,
@@ -2166,6 +2170,8 @@ function UnifiedQuoteChargesPanel({
         sellAmount: row.sell,
         sellExchange: sellRoe,
         sellRoeSource: row.sellRoeSource === "manual" ? "override" : "job",
+        calculationBasis: row.calculationBasis ?? current?.calculationBasis ?? "fixed",
+        quantity: row.quantity ?? current?.quantity ?? 1,
         localSell: row.baseSell ?? (sellRoe > 0 ? row.sell / sellRoe : 0),
         department: current?.department ?? quote.department ?? "SEA",
         internalNotes: current?.internalNotes ?? "",
@@ -4727,6 +4733,8 @@ function quoteChargesFromWorkspace(workspace: QuoteWorkflowWorkspace): QuoteChar
     sellExchange: line.sellRoe,
     costRoeSource: "job",
     sellRoeSource: "job",
+    calculationBasis: line.calculationBasis,
+    quantity: line.quantity,
     department: "",
     internalNotes: line.internalNotes ?? "",
     additionalDetail: line.customerNotes ?? "",
@@ -4774,8 +4782,8 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
     sellAmount: line.sellAmount,
     sellLocal: line.localSell,
     sellRoe: line.sellExchange,
-    calculationBasis: "fixed",
-    quantity: 1,
+    calculationBasis: line.calculationBasis ?? "fixed",
+    quantity: line.quantity ?? 1,
     sourceLabel: line.creditor,
     internalNotes: line.internalNotes,
     customerNotes: line.additionalDetail,

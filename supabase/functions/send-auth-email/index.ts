@@ -2,6 +2,7 @@ import { Webhook } from "npm:standardwebhooks@1.0.0"
 import { normaliseLocale, renderBrandedEmail, safeMultideckUrl } from "../_shared/email-template.ts"
 import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
 import { createInvitationTicket, parseInvitationExpiry, type InvitationExpiry } from "../_shared/invitation-ticket.ts"
+import { buildPasswordRecoveryUrl } from "./recovery-link.ts"
 
 type AuthEmailData = {
   token?: string
@@ -97,6 +98,14 @@ async function verificationUrl(emailData: AuthEmailData, useInvitationTicket = f
     const confirmationUrl = new URL(redirectTo)
     confirmationUrl.searchParams.set("ticket", await createInvitationTicket(userId, serviceRoleKey, expiry))
     return confirmationUrl.toString()
+  }
+
+  if (actionType === "recovery") {
+    return buildPasswordRecoveryUrl(
+      Deno.env.get("APP_URL") ?? "",
+      emailData.redirect_to ?? emailData.site_url ?? "",
+      tokenHash,
+    )
   }
 
   return `${projectUrl}/auth/v1/verify?token=${encodeURIComponent(tokenHash)}&type=${encodeURIComponent(actionType)}&redirect_to=${encodeURIComponent(redirectTo)}`

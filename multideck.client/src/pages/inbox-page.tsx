@@ -36,6 +36,7 @@ import { Switch } from "@/components/ui/switch"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { EmailMessageRenderer } from "@/components/multideck/email-message-renderer"
 import { EmailDeliveryStatus } from "@/components/multideck/email-delivery-status"
+import { ImageLightbox, type ImageLightboxControls } from "@/components/multideck/image-lightbox"
 import { InboxThreadRow, formatThreadTimestamp, threadParticipantLabel } from "@/components/multideck/inbox-thread-row"
 import { PageSettingsMenu } from "@/components/multideck/page-settings-menu"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
@@ -681,6 +682,133 @@ function AttachmentRow({ attachment }: { attachment: MailAttachment }) {
   )
 }
 
+function InboxImageAttachment({
+  attachment,
+  src,
+  lightbox,
+}: {
+  attachment: MailAttachment
+  src: string
+  lightbox: ImageLightboxControls
+}) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+
+  function download() {
+    const link = document.createElement("a")
+    link.href = src
+    link.download = attachment.fileName || "attachment"
+    link.rel = "noopener noreferrer"
+    link.hidden = true
+    document.body.append(link)
+    link.click()
+    link.remove()
+  }
+
+  return (
+    <div className="grid w-20 gap-1.5">
+      <motion.button
+        ref={(node) => lightbox.registerTrigger(attachment.id, node)}
+        type="button"
+        layoutId={lightbox.layoutIdFor(attachment.id)}
+        aria-label={`${t("Open image preview")}: ${attachment.fileName}`}
+        title={t("Open image preview")}
+        whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+        transition={shouldReduceMotion ? { duration: 0 } : { layout: { type: "spring", duration: 0.28, bounce: 0 }, scale: { duration: 0.12 } }}
+        onClick={() => lightbox.open(attachment.id)}
+        className="size-20 overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)] outline-none ring-offset-2 ring-offset-[var(--md-surface)] hover:ring-1 hover:ring-[var(--md-accent-a20)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]"
+      >
+        <img src={src} alt="" className="size-full rounded-[var(--md-radius-lg)] object-cover" />
+      </motion.button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-lg"
+        aria-label={`${t("Download")} ${attachment.fileName}`}
+        title={t("Download")}
+        onClick={download}
+        className="mx-auto rounded-[var(--md-radius-md)]"
+      >
+        <Download className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+      </Button>
+    </div>
+  )
+}
+
+function MessageAttachments({ attachments }: { attachments: MailAttachment[] }) {
+  const { t } = useLanguage()
+  const visibleAttachments = useMemo(() => attachments.filter((attachment) => !attachment.isInline), [attachments])
+  const imageAttachments = useMemo(() => visibleAttachments.filter((attachment) =>
+    attachment.mimeType?.startsWith("image/") && attachment.scanStatus === "clean",
+  ), [visibleAttachments])
+  const imageKey = imageAttachments.map((attachment) => attachment.id).join("|")
+  const [imageSources, setImageSources] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const [failedImageIds, setFailedImageIds] = useState<ReadonlySet<string>>(() => new Set())
+
+  useEffect(() => {
+    let cancelled = false
+    const opened: Array<{ url: string; revoke: () => void }> = []
+    setImageSources(new Map())
+    setFailedImageIds(new Set())
+    if (!imageAttachments.length) return
+
+    void Promise.all(imageAttachments.map(async (attachment) => {
+      try {
+        const result = await getAttachmentBlobUrl(attachment.id)
+        if (cancelled) {
+          result.revoke()
+          return null
+        }
+        opened.push(result)
+        return { id: attachment.id, url: result.url }
+      } catch {
+        return { id: attachment.id, url: null }
+      }
+    })).then((results) => {
+      if (cancelled) return
+      setImageSources(new Map(results.flatMap((result) => result?.url ? [[result.id, result.url] as const] : [])))
+      setFailedImageIds(new Set(results.flatMap((result) => result && !result.url ? [result.id] : [])))
+    })
+
+    return () => {
+      cancelled = true
+      opened.forEach((result) => result.revoke())
+    }
+    // The scalar key prevents a parent array identity change from fetching the
+    // same private attachments again while this message stays expanded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageKey])
+
+  const lightboxItems = imageAttachments.flatMap((attachment) => {
+    const src = imageSources.get(attachment.id)
+    return src ? [{ id: attachment.id, src, alt: attachment.fileName }] : []
+  })
+
+  return (
+    <div className="mt-3">
+      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--md-subtle)]">
+        <span data-i18n-skip dir="ltr" className="tabular-nums">{visibleAttachments.length}</span>{" "}
+        {t("attachments")}
+      </p>
+      <ImageLightbox items={lightboxItems}>
+        {(imageLightbox) => <div className="flex flex-wrap items-start gap-2">
+          {visibleAttachments.map((attachment) => {
+            const isPreviewableImage = attachment.mimeType?.startsWith("image/") && attachment.scanStatus === "clean"
+            const src = imageSources.get(attachment.id)
+            if (isPreviewableImage && src) {
+              return <InboxImageAttachment key={attachment.id} attachment={attachment} src={src} lightbox={imageLightbox} />
+            }
+            if (isPreviewableImage && !failedImageIds.has(attachment.id)) {
+              return <span key={attachment.id} role="status" aria-label={`${t("Loading preview")}: ${attachment.fileName}`} className="grid size-20 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]"><Loader2 className="size-4 animate-spin motion-reduce:animate-none" strokeWidth={1.5} aria-hidden="true" /></span>
+            }
+            return <AttachmentRow key={attachment.id} attachment={attachment} />
+          })}
+        </div>}
+      </ImageLightbox>
+    </div>
+  )
+}
+
 function MessageCard({
   message,
   expanded,
@@ -777,23 +905,7 @@ function MessageCard({
                 bodyText={message.bodyText}
                 inlineAttachments={message.attachments}
               />
-              {message.attachments.filter((attachment) => !attachment.isInline).length > 0 ? (
-                <div className="mt-3">
-                  <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--md-subtle)]">
-                    <span data-i18n-skip dir="ltr" className="tabular-nums">
-                      {message.attachments.filter((attachment) => !attachment.isInline).length}
-                    </span>{" "}
-                    {t("attachments")}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {message.attachments
-                      .filter((attachment) => !attachment.isInline)
-                      .map((attachment) => (
-                        <AttachmentRow key={attachment.id} attachment={attachment} />
-                      ))}
-                  </div>
-                </div>
-              ) : null}
+              {message.attachments.some((attachment) => !attachment.isInline) ? <MessageAttachments attachments={message.attachments} /> : null}
             </div>
           </motion.div>
         ) : null}

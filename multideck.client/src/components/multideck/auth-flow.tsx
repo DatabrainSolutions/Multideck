@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import type { Provider } from "@supabase/supabase-js"
 import { ArrowRight, Building2, Clock3, KeyRound, Loader2, Mail, ShieldCheck, TriangleAlert } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -8,7 +8,9 @@ import { AuthProviderSelector, type AuthProviderId } from "@/components/multidec
 import { takeAuthReturnPath } from "@/lib/auth-routing"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
-import { ensurePasswordUpdateSession, isSupabaseConfigured, isWorkspaceRouterHost, multideckRootHost, supabase, supabaseConfigurationError } from "@/lib/supabase"
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_POLICY_DESCRIPTION, getPasswordPolicyError } from "@/lib/password-policy"
+import { clearVerifiedPasswordRecovery, hasVerifiedPasswordRecovery } from "@/lib/password-recovery"
+import { getSupabaseSession, initialPasswordRecoveryLink, isSupabaseConfigured, isWorkspaceRouterHost, multideckRootHost, supabase, supabaseConfigurationError, verifyPasswordRecoveryLink } from "@/lib/supabase"
 import authPanelBackdrop from "@/assets/auth/auth-panel-backdrop.jpg"
 import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
@@ -38,6 +40,8 @@ type AuthFieldErrors = {
 type InviteVerification = {
   ticket: string
 }
+
+type RecoveryView = "checking" | "confirmation" | "form" | "success" | "partial-success" | "invalid"
 
 function readInviteVerification(): InviteVerification | null {
   if (typeof window === "undefined") return null
@@ -152,6 +156,16 @@ function isInvalidCredentialsError(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : ""
 
   return code === "invalid_credentials" || message.includes("invalid login credentials")
+}
+
+function isInvalidRecoveryError(error: unknown) {
+  const code = getAuthErrorCode(error).toLowerCase()
+  const message = error instanceof Error ? error.message.toLowerCase() : ""
+  return code.includes("otp")
+    || code.includes("token")
+    || message.includes("expired")
+    || message.includes("invalid")
+    || message.includes("already been used")
 }
 
 function BrandLockup({ inverted = false, centered = false }: { inverted?: boolean; centered?: boolean }) {
@@ -764,8 +778,8 @@ function ResetPasswordPanel({
       <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">{t(inviteMode ? "Set your password" : "Choose a new password")}</h2>
       <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
         {t(inviteMode
-          ? "Create a password with at least 8 characters. You’ll be signed in to your Multideck workspace when it is ready."
-          : "Use at least 8 characters. A unique password is easier to remember and harder to guess.")}
+          ? `${PASSWORD_POLICY_DESCRIPTION} You’ll be signed in to your Multideck workspace when it is ready.`
+          : PASSWORD_POLICY_DESCRIPTION)}
       </p>
 
       <AuthAlert tone="error">{error ? t(error) : null}</AuthAlert>
@@ -789,12 +803,14 @@ function ResetPasswordPanel({
           dir="ltr"
           disabled={isSubmitting}
           required
-          minLength={8}
+          minLength={PASSWORD_MIN_LENGTH}
+          maxLength={PASSWORD_MAX_LENGTH}
           aria-invalid={Boolean(fieldErrors.newPassword)}
-          aria-describedby={fieldErrors.newPassword ? "new-password-error" : undefined}
+          aria-describedby={fieldErrors.newPassword ? "new-password-hint new-password-error" : "new-password-hint"}
           type="password"
           className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
         />
+        <p id="new-password-hint" className="mt-2 text-[12px] leading-5 text-[var(--md-text)]">{t(PASSWORD_POLICY_DESCRIPTION)}</p>
         <AuthFieldError id="new-password-error">{fieldErrors.newPassword}</AuthFieldError>
         <label className="mt-4 block text-[13px] font-medium text-[var(--md-ink)]" htmlFor="confirm-password">Confirm new password</label>
         <Input
@@ -806,7 +822,8 @@ function ResetPasswordPanel({
           dir="ltr"
           disabled={isSubmitting}
           required
-          minLength={8}
+          minLength={PASSWORD_MIN_LENGTH}
+          maxLength={PASSWORD_MAX_LENGTH}
           aria-invalid={Boolean(fieldErrors.confirmation)}
           aria-describedby={fieldErrors.confirmation ? "confirm-password-error" : undefined}
           type="password"
@@ -818,6 +835,92 @@ function ResetPasswordPanel({
           {t(isSubmitting ? (inviteMode ? "Creating your password" : "Updating password") : (inviteMode ? "Create my password" : "Update password"))}
         </Button>
       </form>
+    </div>
+  )
+}
+
+function PasswordRecoveryCheckingPanel() {
+  return (
+    <div className="w-full max-w-[520px]" role="status" aria-live="polite">
+      <BrandLockup />
+      <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
+        <Loader2 className="size-5 animate-spin motion-reduce:animate-none" strokeWidth={1.5} aria-hidden="true" />
+      </div>
+      <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">Checking your recovery link</h2>
+      <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">We’re checking whether this browser has already confirmed the secure link.</p>
+    </div>
+  )
+}
+
+function PasswordRecoveryConfirmationPanel({ onContinue, onBack, isSubmitting, error }: {
+  onContinue: () => void | Promise<void>
+  onBack: () => void
+  isSubmitting: boolean
+  error?: string | null
+}) {
+  return (
+    <div className="w-full max-w-[520px]">
+      <BrandLockup />
+      <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
+        <ShieldCheck className="size-5" strokeWidth={1.4} aria-hidden="true" />
+      </div>
+      <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">Continue securely</h2>
+      <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
+        Confirm that you opened this link intentionally. Your one-time recovery link is not used until you continue.
+      </p>
+      <AuthAlert tone="error">{error}</AuthAlert>
+      <Button
+        type="button"
+        autoFocus
+        disabled={isSubmitting}
+        className="mt-7 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]"
+        onClick={() => void onContinue()}
+      >
+        {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin motion-reduce:animate-none" strokeWidth={1.5} /> : <ShieldCheck data-icon="inline-start" className="me-2 size-4" strokeWidth={1.5} />}
+        {isSubmitting ? "Confirming recovery link" : error ? "Try again securely" : "Continue securely"}
+      </Button>
+      <button type="button" disabled={isSubmitting} className="mt-6 text-[13px] font-medium text-[var(--md-accent)] disabled:opacity-50" onClick={onBack}>
+        Back to sign in
+      </button>
+    </div>
+  )
+}
+
+function PasswordRecoveryUnavailablePanel({ onRequestNew, onBack }: { onRequestNew: () => void; onBack: () => void }) {
+  return (
+    <div className="w-full max-w-[520px]">
+      <BrandLockup />
+      <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-red-a08)] text-[var(--md-red)]">
+        <TriangleAlert className="size-5" strokeWidth={1.5} aria-hidden="true" />
+      </div>
+      <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">Recovery link unavailable</h2>
+      <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
+        This recovery link is invalid, expired, or has already been used. Request a new link to continue safely.
+      </p>
+      <Button type="button" autoFocus className="mt-7 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]" onClick={onRequestNew}>
+        Request a new link
+      </Button>
+      <button type="button" className="mt-6 text-[13px] font-medium text-[var(--md-accent)]" onClick={onBack}>Back to sign in</button>
+    </div>
+  )
+}
+
+function PasswordRecoverySuccessPanel({ partial, onContinue }: { partial: boolean; onContinue: () => void }) {
+  return (
+    <div className="w-full max-w-[520px]" role="status" aria-live="polite">
+      <BrandLockup />
+      <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
+        {partial ? <TriangleAlert className="size-5" strokeWidth={1.5} aria-hidden="true" /> : <ShieldCheck className="size-5" strokeWidth={1.4} aria-hidden="true" />}
+      </div>
+      <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">Password changed</h2>
+      <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
+        {partial
+          ? "Your new password is ready, but Multideck could not confirm that every other session was signed out. Do not reset it again. Review your sessions in Login & security."
+          : "Your new password is ready. Other active sessions have been signed out and this browser remains securely signed in."}
+      </p>
+      <Button type="button" autoFocus className="mt-7 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]" onClick={onContinue}>
+        Continue to Login &amp; security
+      </Button>
     </div>
   )
 }
@@ -1012,7 +1115,37 @@ export function AuthFlow({
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({})
   const [inviteVerification] = useState<InviteVerification | null>(() => galleryMode ? null : readInviteVerification())
+  const [recoveryView, setRecoveryView] = useState<RecoveryView>(() => galleryMode ? "form" : "checking")
   const inviteLinkAvailable = galleryMode || initialStep !== "accept-invite" || Boolean(inviteVerification)
+
+  useEffect(() => {
+    if (galleryMode || initialStep !== "reset-password") return
+    let cancelled = false
+
+    if (initialPasswordRecoveryLink.kind === "invalid") {
+      clearVerifiedPasswordRecovery()
+      setRecoveryView("invalid")
+      return
+    }
+    if (initialPasswordRecoveryLink.kind !== "missing") {
+      setRecoveryView("confirmation")
+      return
+    }
+
+    void getSupabaseSession()
+      .then((session) => {
+        if (!cancelled) setRecoveryView(hasVerifiedPasswordRecovery(session) ? "form" : "invalid")
+      })
+      .catch((sessionError) => {
+        console.error(sessionError)
+        clearVerifiedPasswordRecovery()
+        if (!cancelled) setRecoveryView("invalid")
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [galleryMode, initialStep])
 
   const goToApp = useCallback(() => {
     const destination = takeAuthReturnPath()
@@ -1054,6 +1187,40 @@ export function AuthFlow({
     setMessage(null)
     setFieldErrors({ [field]: detail })
     focusAuthControl(controlId)
+  }
+
+  async function continuePasswordRecovery() {
+    clearFeedback()
+    setIsSubmitting(true)
+    try {
+      await verifyPasswordRecoveryLink(initialPasswordRecoveryLink)
+      setRecoveryView("form")
+      setMessage("Recovery link confirmed. Choose your new password.")
+      focusAuthControl("new-password")
+    } catch (verificationError) {
+      if (isInvalidRecoveryError(verificationError)) {
+        clearVerifiedPasswordRecovery()
+        setRecoveryView("invalid")
+      } else {
+        console.error(verificationError)
+        setError("We couldn’t confirm the recovery link. Check your connection and try again.")
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  function requestNewRecoveryLink() {
+    clearVerifiedPasswordRecovery()
+    clearFeedback()
+    setStep("forgot-password")
+    focusAuthControl("recovery-email")
+  }
+
+  function continueToSecurity() {
+    const destination = "/settings?tab=security"
+    if (navigate) navigate(destination)
+    else window.location.assign(destination)
   }
 
   async function sendMagicLink() {
@@ -1178,8 +1345,9 @@ export function AuthFlow({
   async function updatePassword() {
     clearFeedback()
 
-    if (password.length < 8) {
-      showFieldError("newPassword", "Use at least 8 characters for your new password.", "new-password")
+    const passwordPolicyError = getPasswordPolicyError(password)
+    if (passwordPolicyError) {
+      showFieldError("newPassword", passwordPolicyError, "new-password")
       return
     }
     if (password !== passwordConfirmation) {
@@ -1221,20 +1389,34 @@ export function AuthFlow({
         return
       }
 
-      const passwordSession = await ensurePasswordUpdateSession()
-      if (!passwordSession) throw new Error("The password link does not contain an active session.")
+      const passwordSession = await getSupabaseSession()
+      if (!hasVerifiedPasswordRecovery(passwordSession)) {
+        clearVerifiedPasswordRecovery()
+        setRecoveryView("invalid")
+        setIsSubmitting(false)
+        return
+      }
       const { error: updateError } = await supabase.auth.updateUser({ password })
       if (updateError) throw updateError
 
-      toast.success("Password updated", { description: "Your new password is ready to use." })
-      window.history.replaceState({}, "", "/settings?tab=security")
-      if (navigate) navigate("/settings?tab=security")
-      else window.location.assign("/settings?tab=security")
+      clearVerifiedPasswordRecovery()
+      const { error: revokeError } = await supabase.auth.signOut({ scope: "others" })
+      setPassword("")
+      setPasswordConfirmation("")
+      if (revokeError) {
+        console.error(revokeError)
+        setRecoveryView("partial-success")
+        toast.warning("Password changed", { description: "Review your other sessions in Login & security." })
+      } else {
+        setRecoveryView("success")
+        toast.success("Password changed", { description: "Other active sessions have been signed out." })
+      }
+      setIsSubmitting(false)
     } catch (updateError) {
       console.error(updateError)
       setError(step === "accept-invite"
         ? "This invitation link is invalid, expired, or already completed. Ask your workspace administrator to resend it."
-        : "Unable to update your password. Request a fresh recovery link and try again.")
+        : "Unable to update your password. Your recovery session is still available, so you can try again.")
       setIsSubmitting(false)
     }
   }
@@ -1329,6 +1511,7 @@ export function AuthFlow({
   }
 
   function goToSignIn(resetEmail = false) {
+    if (step === "reset-password") clearVerifiedPasswordRecovery()
     clearFeedback()
     setStep("signin")
     setCode("")
@@ -1403,7 +1586,22 @@ export function AuthFlow({
         />
       ) : null}
       {step === "accept-invite" && !inviteLinkAvailable ? <InviteLinkUnavailablePanel /> : null}
-      {(step === "reset-password" || step === "accept-invite") && inviteLinkAvailable ? (
+      {step === "reset-password" && recoveryView === "checking" ? <PasswordRecoveryCheckingPanel /> : null}
+      {step === "reset-password" && recoveryView === "confirmation" ? (
+        <PasswordRecoveryConfirmationPanel
+          onContinue={continuePasswordRecovery}
+          onBack={() => goToSignIn(false)}
+          isSubmitting={isSubmitting}
+          error={error}
+        />
+      ) : null}
+      {step === "reset-password" && recoveryView === "invalid" ? (
+        <PasswordRecoveryUnavailablePanel onRequestNew={requestNewRecoveryLink} onBack={() => goToSignIn(false)} />
+      ) : null}
+      {step === "reset-password" && (recoveryView === "success" || recoveryView === "partial-success") ? (
+        <PasswordRecoverySuccessPanel partial={recoveryView === "partial-success"} onContinue={continueToSecurity} />
+      ) : null}
+      {((step === "reset-password" && recoveryView === "form") || step === "accept-invite") && inviteLinkAvailable ? (
         <ResetPasswordPanel
           password={password}
           confirmation={passwordConfirmation}

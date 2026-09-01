@@ -1737,6 +1737,7 @@ export function AgentDexterPage({
   const streamRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
   const computerFileInputRef = useRef<HTMLInputElement>(null)
+  const composerUploadedDocumentsRef = useRef(composerUploadedDocuments)
   const stickToBottomRef = useRef(false)
   const pendingScrollToLatestRef = useRef(false)
   const isScrollingToLatestRef = useRef(false)
@@ -1764,6 +1765,16 @@ export function AgentDexterPage({
     activePromptAbortControllerRef.current?.abort()
     activePromptAbortControllerRef.current = null
     promptSubmissionInFlightRef.current = false
+  }, [])
+
+  useEffect(() => {
+    composerUploadedDocumentsRef.current = composerUploadedDocuments
+  }, [composerUploadedDocuments])
+
+  useEffect(() => () => {
+    composerUploadedDocumentsRef.current.forEach((document) => {
+      if (document.previewUrl) URL.revokeObjectURL(document.previewUrl)
+    })
   }, [])
 
   useEffect(() => {
@@ -1805,8 +1816,12 @@ export function AgentDexterPage({
     window.history.replaceState(window.history.state, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`)
     setComposerValue(t("Help me with this generated document for job {jobNumber}.").replace("{jobNumber}", handoff.jobNumber))
     setIsUploadingDocument(true)
-    void uploadDexterDocument(new File([handoff.blob], handoff.fileName, { type: handoff.mimeType }))
-      .then((document) => setComposerUploadedDocuments([document]))
+    const file = new File([handoff.blob], handoff.fileName, { type: handoff.mimeType })
+    void uploadDexterDocument(file)
+      .then((document) => setComposerUploadedDocuments([{
+        ...document,
+        previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+      }]))
       .catch((handoffError) => setUploadError(handoffError instanceof Error ? handoffError.message : t("Dexter could not upload that document.")))
       .finally(() => setIsUploadingDocument(false))
   }, [t])
@@ -1850,6 +1865,7 @@ export function AgentDexterPage({
       meta: `${Math.max(1, Math.ceil(document.sizeBytes / 1024)).toLocaleString()} KB`,
       tone: "teal" as const,
       icon: FileText,
+      previewUrl: document.previewUrl,
     })),
   ], [attachedItems, composerEmailAttachments, composerEmailUpdates, composerUploadedDocuments, t])
   const attachedContextItems = useMemo(
@@ -2208,8 +2224,14 @@ export function AgentDexterPage({
     const selectionWasTruncated = files.length > remaining
     setIsUploadingDocument(true)
     setUploadError(selectionWasTruncated ? t("Only the first three files were selected.") : null)
-    const results = await Promise.allSettled(selected.map((file) => uploadDexterDocument(file)))
-    const uploaded = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : [])
+    const results = await Promise.allSettled(selected.map(async (file) => ({
+      document: await uploadDexterDocument(file),
+      file,
+    })))
+    const uploaded = results.flatMap((result) => result.status === "fulfilled" ? [{
+      ...result.value.document,
+      previewUrl: result.value.file.type.startsWith("image/") ? URL.createObjectURL(result.value.file) : undefined,
+    }] : [])
     const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected")
     if (uploaded.length) {
       setComposerUploadedDocuments((current) => {
@@ -2223,6 +2245,14 @@ export function AgentDexterPage({
       setUploadError(failed.reason instanceof Error ? failed.reason.message : t("Dexter could not upload that document."))
     }
     setIsUploadingDocument(false)
+  }
+
+  function removeComposerUploadedDocument(id: string) {
+    setComposerUploadedDocuments((current) => current.filter((document) => {
+      if (document.id !== id) return true
+      if (document.previewUrl) URL.revokeObjectURL(document.previewUrl)
+      return false
+    }))
   }
 
   function handleComposerAttachmentAction() {
@@ -3164,7 +3194,7 @@ export function AgentDexterPage({
                   onCommand={handleSlashCommand}
                   onRemoveAttachment={(id) => {
                     if (composerUploadedDocuments.some((document) => document.id === id)) {
-                      setComposerUploadedDocuments((current) => current.filter((document) => document.id !== id))
+                      removeComposerUploadedDocument(id)
                       return
                     }
                     if (composerEmailUpdates.some((context) => context.messageId === id)) {
@@ -3458,7 +3488,7 @@ export function AgentDexterPage({
                         onCommand={handleSlashCommand}
                         onRemoveAttachment={(id) => {
                           if (composerUploadedDocuments.some((document) => document.id === id)) {
-                            setComposerUploadedDocuments((current) => current.filter((document) => document.id !== id))
+                            removeComposerUploadedDocument(id)
                             return
                           }
                           if (composerEmailUpdates.some((context) => context.messageId === id)) {

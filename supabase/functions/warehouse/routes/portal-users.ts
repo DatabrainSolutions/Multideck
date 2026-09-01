@@ -17,10 +17,29 @@ import {
   oneOrNull,
   requireCapability,
   requireCustomerScope,
-  requireInternal,
+  requireInternalPermission,
   required,
   uuid,
 } from "../shared/mod.ts";
+
+async function requireInternalCustomerScope(admin, actor, customerOrgId, requestedFacilityIds = []) {
+  if (!actor.companyId) return;
+  const allowedFacilityIds = new Set(await companyFacilityIds(admin, actor));
+  if (!allowedFacilityIds.size) throw new HttpError(403, "You are not assigned to a warehouse that can manage this customer.");
+  const links = await many(admin.from("WMS_CustomerFacilityAccess")
+    .select("WMSCustomerFacilityAccess_FacilityID")
+    .eq("WMSCustomerFacilityAccess_CustomerOrgID", customerOrgId)
+    .eq("WMSCustomerFacilityAccess_IsActive", true));
+  const linkedFacilityIds = links.map((row)=>row.WMSCustomerFacilityAccess_FacilityID);
+  const submittedFacilityIds = Array.isArray(requestedFacilityIds) ? requestedFacilityIds.filter((value)=>typeof value === "string") : [];
+  const targetFacilityIds = submittedFacilityIds.length ? submittedFacilityIds : linkedFacilityIds;
+  const linkedFacilityIdSet = new Set(linkedFacilityIds);
+  if (!targetFacilityIds.length ||
+      linkedFacilityIds.some((facilityId)=>!allowedFacilityIds.has(facilityId)) ||
+      targetFacilityIds.some((facilityId)=>!allowedFacilityIds.has(facilityId) || !linkedFacilityIdSet.has(facilityId))) {
+    throw new HttpError(403, "You can manage portal users only for customers in your assigned warehouses.");
+  }
+}
 export async function handlePortal(request, path, url, admin, actor) {
   requireCapability(actor, "warehouse_orders:read");
   if (request.method === "GET" && path[1] === "reference") {
@@ -60,9 +79,12 @@ export async function handlePortal(request, path, url, admin, actor) {
     if (!customerOrgId) throw new HttpError(400, "Choose a customer.");
     if (!actor.companyId) {
       requireCapability(actor, "warehouse_users:manage");
-      if (!actor.organisationIds.has(customerOrgId)) {
+      if (!actor.manageableOrganisationIds.has(customerOrgId)) {
         throw new HttpError(403, "You can only manage users for your organisation.");
       }
+    } else {
+      requireInternalPermission(actor, "Users.Read");
+      await requireInternalCustomerScope(admin, actor, customerOrgId);
     }
     const { limit, offset } = boundedPage(url);
     const { data, error } = await admin.rpc("warehouse_edge_portal_users_page", {
@@ -92,10 +114,13 @@ export async function handlePortal(request, path, url, admin, actor) {
   const targetCustomerOrgId = customerOrgId ?? uuid(input.customerOrgId, "customer");
   if (!actor.companyId) {
     requireCapability(actor, "warehouse_users:manage");
-    if (!actor.organisationIds.has(targetCustomerOrgId)) {
+    if (!actor.manageableOrganisationIds.has(targetCustomerOrgId)) {
       throw new HttpError(403, "You can only manage users for your organisation.");
     }
-  } else requireInternal(actor);
+  } else {
+    requireInternalPermission(actor, action === "update" || action === "revoke" ? "Users.Manage" : "Users.Invite");
+    await requireInternalCustomerScope(admin, actor, targetCustomerOrgId, input.facilityIds);
+  }
 
   if (action === "access-link") {
     const portalUserId = uuid(path[4], "portal user");

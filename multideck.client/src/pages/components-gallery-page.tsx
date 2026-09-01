@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { motion, useReducedMotion } from "motion/react"
 import { useTheme } from "@/lib/theme-provider"
 import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, PackageCheck, Pencil, Pin, Search, Settings2, Ship, Star, Trash2, UserRound, Zap } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -6,6 +7,7 @@ import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
 import toastSuccessIcon from "@/assets/toasts/toast-success.png"
 import { Button } from "@/components/ui/button"
+import { Iphone } from "@/components/ui/iphone"
 import {
   Context,
   ContextContent,
@@ -260,6 +262,7 @@ import { InlineField, InlineFieldCard, InlineSelectField } from "@/components/mu
 import { SideDrawer } from "@/components/multideck/side-drawer"
 import { WizardDialog } from "@/components/multideck/wizard-dialog"
 import { ScreenshotCaptureEditor, SupportTicketAttachmentPreview } from "@/components/multideck/support-ticket-dialog"
+import { ImageLightbox } from "@/components/multideck/image-lightbox"
 import { useLanguage } from "@/i18n/language-provider"
 
 type GalleryIconKey = keyof typeof galleryIcons
@@ -267,7 +270,7 @@ type GalleryIconKey = keyof typeof galleryIcons
 const sectionLinks = ["Introduction", "Components", "Usage", "Theming", "Tokens"]
 const rightRail = ["Purpose", "Preview", "Code", "Usage", "Token dependency"]
 const galleryTabTriggerClass =
-  "relative h-10 rounded-none border-0 bg-transparent px-0 pr-8 text-[14px] font-medium text-[var(--md-text)] shadow-none after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-[calc(100%-2rem)] after:rounded-full after:bg-[var(--md-ink)] after:opacity-0 focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-none data-active:border-transparent data-active:bg-transparent data-active:shadow-none data-active:after:opacity-100 data-[state=active]:border-transparent data-[state=active]:bg-transparent data-[state=active]:text-[var(--md-ink)] data-[state=active]:shadow-none data-[state=active]:after:opacity-100"
+  "relative h-10 rounded-none border-0 bg-transparent px-0 pr-8 text-[14px] font-medium text-[var(--md-text)] shadow-none after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-[calc(100%-2rem)] after:rounded-full after:bg-[var(--md-accent)] after:opacity-0 focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-none data-active:border-transparent data-active:bg-transparent data-active:text-[var(--md-accent)] data-active:shadow-none data-active:after:opacity-100 data-[state=active]:border-transparent data-[state=active]:bg-transparent data-[state=active]:text-[var(--md-accent)] data-[state=active]:shadow-none data-[state=active]:after:opacity-100"
 type GalleryComponent = (typeof galleryComponents)[number]
 type GallerySidebarGroup = {
   label: string
@@ -289,7 +292,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
   },
   {
     label: "Auth components",
@@ -344,7 +347,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Contact cards",
     helper: "Identity, QR, and automation controls",
-    ids: ["card-miniature", "contact-card-style-picker", "contact-card-layout-picker", "contact-card-qr-style-picker", "contact-card-social-links-editor", "automation-run-history"],
+    ids: ["iphone-device-frame", "card-miniature", "contact-card-style-picker", "contact-card-layout-picker", "contact-card-qr-style-picker", "contact-card-social-links-editor", "automation-run-history"],
   },
 ]
 
@@ -386,6 +389,17 @@ function createGalleryTicketScreenshot() {
   const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
   return new File([bytes], "multideck-dashboard.png", { type: "image/png", lastModified: 1_775_000_000_000 })
 }
+
+function galleryLightboxImage(label: string, background: string, accent: string) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 900"><rect width="900" height="900" rx="72" fill="${background}"/><path d="M84 612C242 486 324 558 448 430C562 312 676 318 816 188V816H84Z" fill="${accent}" opacity=".2"/><circle cx="654" cy="246" r="92" fill="${accent}" opacity=".48"/><rect x="84" y="84" width="732" height="732" rx="46" fill="none" stroke="${accent}" stroke-opacity=".5" stroke-width="8"/><text x="110" y="752" fill="${accent}" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="92" font-weight="600">${label}</text></svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+
+const galleryLightboxItems = [
+  { id: "gallery-image-sea", src: galleryLightboxImage("SEA", "#dceae7", "#0a7068"), alt: "Sea freight preview" },
+  { id: "gallery-image-road", src: galleryLightboxImage("ROAD", "#eee8dc", "#9a651d"), alt: "Road freight preview" },
+  { id: "gallery-image-air", src: galleryLightboxImage("AIR", "#e2e8ef", "#42698d"), alt: "Air freight preview" },
+]
 
 const previewLifecycleNotes: LifecycleNotesPreviewState = {
   canWrite: true,
@@ -1580,6 +1594,7 @@ function QuoteDetailControlsPreview() {
 
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
   const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
   const [previewSidebarFavouriteIds, setPreviewSidebarFavouriteIds] = useState<string[]>([])
   const [previewTodoChecked, setPreviewTodoChecked] = useState(false)
@@ -1821,11 +1836,37 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "image-lightbox" ? (
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
+          <ImageLightbox items={galleryLightboxItems}>
+            {(imageLightbox) => <div className="flex flex-wrap items-start gap-3" role="list" aria-label={t("Image previews")}>
+              {galleryLightboxItems.map((image) => (
+                <div key={image.id} role="listitem">
+                  <motion.button
+                    ref={(node) => imageLightbox.registerTrigger(image.id, node)}
+                    type="button"
+                    layoutId={imageLightbox.layoutIdFor(image.id)}
+                    aria-label={`${t("Open image preview")}: ${image.alt}`}
+                    whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+                    transition={shouldReduceMotion ? { duration: 0 } : { layout: { type: "spring", duration: 0.28, bounce: 0 }, scale: { duration: 0.12 } }}
+                    onClick={() => imageLightbox.open(image.id)}
+                    className="size-20 overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] outline-none ring-offset-2 ring-offset-[var(--md-surface-soft)] hover:ring-1 hover:ring-[var(--md-accent-a20)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]"
+                  >
+                    <img src={image.src} alt="" className="size-full rounded-[var(--md-radius-lg)] object-cover" />
+                  </motion.button>
+                </div>
+              ))}
+            </div>}
+          </ImageLightbox>
+        </div>
+      ) : null}
+
       {id === "ticket-attachment-preview" ? (
         <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
           {previewTicketAttachmentVisible ? (
             <SupportTicketAttachmentPreview
               file={previewTicketScreenshot}
+              onOpen={() => toast.success("Image preview opened")}
               onEdit={() => toast.success("Screenshot editor opened")}
               onRemove={() => setPreviewTicketAttachmentVisible(false)}
             />
@@ -4107,6 +4148,21 @@ function ComponentPreview({ id }: { id: string }) {
           <SettingsProgressRing value={86} label="Profile readiness" detail="Identity details are ready for customer-facing ownership." />
           <SettingsProgressRing value={68} label="Monthly AI budget" detail="EUR 1,024 of EUR 1,500 used." tone="blue" />
         </div>
+      ) : null}
+
+      {id === "iphone-device-frame" ? (
+        <Iphone className="w-full max-w-[260px] drop-shadow-[0_24px_34px_rgba(4,12,11,0.18)]">
+          <div className="flex min-h-full flex-col bg-[var(--md-ink)] px-6 pb-8 pt-20 text-white">
+            <span className="mx-auto size-16 rounded-full bg-[var(--md-accent)] shadow-[var(--md-shadow-line)]" />
+            <h3 className="mt-6 text-center text-[22px] font-medium">Let&apos;s stay in touch</h3>
+            <p className="mt-3 text-center text-[13px] leading-5 text-white/70">A real mobile surface can scroll inside the device frame.</p>
+            <div className="mt-8 grid gap-3 rounded-[var(--md-radius-xl)] bg-white/8 p-4">
+              <span className="text-[11px] text-white/65">Work email</span>
+              <span className="h-11 rounded-[var(--md-radius-lg)] bg-white/8 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]" />
+              <span className="mt-2 grid h-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[12px] font-medium">Share my details</span>
+            </div>
+          </div>
+        </Iphone>
       ) : null}
 
       {id === "card-miniature" ? (

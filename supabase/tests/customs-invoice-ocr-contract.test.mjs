@@ -34,6 +34,7 @@ test("customs invoice extraction remains authenticated, private, versioned and M
   assert.match(edge, /image_limit: 0/)
   assert.match(edge, /Ignore logos, product photography, signatures, stamps and other decorative images/)
   assert.match(edge, /validateInvoiceDocumentSource/)
+  assert.ok(edge.indexOf('requirePermission(admin, actor.userId, "Customs.Write")') < edge.indexOf("cleanupExpiredPreparedPdfs(admin)"))
   assert.match(edge, /sha256Hex\(input\.bytes\)/)
   assert.match(edge, /createSignedUrl\(stored\.objectPath, signedUrlLifetimeSeconds\)/)
   assert.match(edge, /Customs_InvoiceExtractions/)

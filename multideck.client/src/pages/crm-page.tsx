@@ -2493,7 +2493,7 @@ function EmailMarketingTabs({
                 aria-selected={selected}
                 className={`inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium transition-[background,color,box-shadow,transform] duration-150 active:scale-[0.96] ${
                   selected
-                    ? "bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
+                    ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16),var(--md-shadow-line)]"
                     : "text-[var(--md-text)] hover:bg-[color-mix(in_srgb,var(--md-surface)_62%,transparent)] hover:text-[var(--md-ink)]"
                 }`}
                 onClick={() => onSelect(section.id)}

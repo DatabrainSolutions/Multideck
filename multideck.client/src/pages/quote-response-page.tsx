@@ -1,9 +1,10 @@
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { AlertTriangle, CheckCircle2, Download, FileText, LoaderCircle, MessageSquareText, Moon, Shield, Sun, XCircle, type LucideIcon } from "@/components/icons/hugeicons"
+import { AlertTriangle, CheckCircle2, Download, FileText, LoaderCircle, MessageSquareText, Moon, Shield, Sun, Trash2, XCircle, type LucideIcon } from "@/components/icons/hugeicons"
 import { errorStateAnimationData } from "@/assets/error-state-animation"
 import { BrandLockup } from "@/components/multideck/auth-flow"
+import { ImageLightbox } from "@/components/multideck/image-lightbox"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
@@ -64,6 +65,7 @@ export function QuoteResponsePage({ token }: { token: string }) {
   const [decision, setDecision] = useState<QuoteResponseDecision | null>(null)
   const [message, setMessage] = useState("")
   const [competitorQuote, setCompetitorQuote] = useState<File | null>(null)
+  const [competitorPreviewUrl, setCompetitorPreviewUrl] = useState("")
   const [uploadedDocumentId, setUploadedDocumentId] = useState<string | null>(null)
   const [declineDialogOpen, setDeclineDialogOpen] = useState(false)
   const [lossReason, setLossReason] = useState("")
@@ -84,6 +86,16 @@ export function QuoteResponsePage({ token }: { token: string }) {
     }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [token])
+
+  useEffect(() => {
+    if (!competitorQuote?.type.startsWith("image/")) {
+      setCompetitorPreviewUrl("")
+      return
+    }
+    const previewUrl = URL.createObjectURL(competitorQuote)
+    setCompetitorPreviewUrl(previewUrl)
+    return () => URL.revokeObjectURL(previewUrl)
+  }, [competitorQuote])
 
   const activeView = view?.state === "active" ? view : null
   const messageRequired = decision === "challenged"
@@ -160,7 +172,54 @@ export function QuoteResponsePage({ token }: { token: string }) {
         })}</div>
         <AnimatePresence initial={false} mode="wait">{decision && decision !== "declined" && selectedChoice ? <motion.div key={decision} initial={reducedMotion ? false : { opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={reducedMotion ? undefined : { opacity: 0, y: -3 }} transition={transition} className="mt-4 grid gap-3">
           <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{t(decision === "accepted" ? "Message (optional)" : "What should we review?")}<Textarea ref={messageInputRef} value={message} onChange={(event) => { setMessage(event.target.value); if (event.target.value.trim()) { setValidationAttempted(false); setError("") } }} maxLength={4000} required={messageRequired} aria-invalid={validationAttempted && messageRequired && !message.trim()} aria-describedby={validationAttempted && messageRequired && !message.trim() ? "quote-response-message-error" : undefined} className="min-h-28 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface-tint)] text-base leading-5 shadow-[var(--md-shadow-line)] sm:text-[14px]" placeholder={t(decision === "challenged" ? "Tell the freight team what needs to change" : "Add a note for the freight team")} /></label>
-          {decision === "challenged" ? <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{t("Supporting attachment (optional)")}<span className="relative flex min-h-11 cursor-pointer items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"><FileText className="size-4 shrink-0" /><span className="min-w-0 truncate">{competitorQuote?.name || t("Attach PDF or image, up to 10 MB")}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" aria-label={t("Supporting attachment (optional)")} className="absolute inset-0 cursor-pointer opacity-0 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a28)]" onChange={(event) => { setCompetitorQuote(event.target.files?.[0] ?? null); setUploadedDocumentId(null) }} /></span></label> : null}
+          {decision === "challenged" ? (
+            <div className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">
+              <span>{t("Supporting attachment (optional)")}</span>
+              {competitorQuote?.type.startsWith("image/") && competitorPreviewUrl ? (
+                <ImageLightbox items={[{
+                  id: `quote-response-${competitorQuote.name}-${competitorQuote.lastModified}`,
+                  src: competitorPreviewUrl,
+                  alt: competitorQuote.name,
+                }]}>
+                  {({ open, layoutIdFor, registerTrigger }) => {
+                    const imageId = `quote-response-${competitorQuote.name}-${competitorQuote.lastModified}`
+                    return (
+                      <div role="list" aria-label={t("Supporting images")}>
+                        <div role="listitem" className="grid w-20 gap-1.5">
+                          <motion.button
+                            ref={(node) => registerTrigger(imageId, node)}
+                            type="button"
+                            layoutId={layoutIdFor(imageId)}
+                            aria-label={t("Open image preview: {name}").replace("{name}", competitorQuote.name)}
+                            onClick={() => open(imageId)}
+                            className="size-20 overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a28)]"
+                          >
+                            <img src={competitorPreviewUrl} alt="" className="size-full rounded-[var(--md-radius-lg)] object-cover" />
+                          </motion.button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-lg"
+                            aria-label={t("Remove supporting image")}
+                            onClick={() => { setCompetitorQuote(null); setUploadedDocumentId(null) }}
+                            className="w-full rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-red)]"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  }}
+                </ImageLightbox>
+              ) : (
+                <label className="relative flex min-h-11 cursor-pointer items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+                  <FileText className="size-4 shrink-0" />
+                  <span className="min-w-0 truncate">{competitorQuote?.name || t("Attach PDF or image, up to 10 MB")}</span>
+                  <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" aria-label={t("Supporting attachment (optional)")} className="absolute inset-0 cursor-pointer opacity-0 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a28)]" onChange={(event) => { setCompetitorQuote(event.target.files?.[0] ?? null); setUploadedDocumentId(null) }} />
+                </label>
+              )}
+            </div>
+          ) : null}
           {error ? <p id="quote-response-message-error" role="alert" className="flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] px-3 py-2 text-[12px] leading-5 text-[var(--md-red)]"><AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{t(error)}</p> : null}
           <Button type="button" disabled={submitting} aria-busy={submitting} onClick={() => void submitResponse()} className={cn("h-11 w-full rounded-[var(--md-radius-lg)] text-[13px] font-medium shadow-none hover:brightness-[0.97]", toneClasses[selectedChoice.tone])}>{submitting ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <SelectedChoiceIcon className="size-4" aria-hidden="true" />}{t(submitting ? "Submitting response…" : decision === "accepted" ? "Confirm acceptance" : decision === "challenged" ? "Send review request" : "Confirm decline")}</Button>
         </motion.div> : null}</AnimatePresence>

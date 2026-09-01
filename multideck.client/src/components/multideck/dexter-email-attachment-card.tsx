@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react"
 import { ChevronUp, Download, Eye, FileText, Loader2, Mail, MessageCircle } from "@/components/icons/hugeicons"
+import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 
 import gmailLogo from "@/assets/integrations/gmail.svg"
 import outlookLogo from "@/assets/integrations/outlook.png"
 import { Button } from "@/components/ui/button"
+import { ImageLightbox } from "@/components/multideck/image-lightbox"
 import { useLanguage } from "@/i18n/language-provider"
 import type { DexterEmailAttachment } from "@/lib/dexter-api"
 import { getAttachmentBlobUrl } from "@/lib/inbox-api"
@@ -40,15 +42,43 @@ export function DexterEmailAttachmentCard({
   onAskDexter?: (attachment: DexterEmailAttachment) => void
 }) {
   const { language, t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
   const kind = useMemo(() => previewKind(attachment.mimeType), [attachment.mimeType])
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewText, setPreviewText] = useState<string | null>(null)
   const [previewRevoke, setPreviewRevoke] = useState<(() => void) | null>(null)
+  const [imagePreviewFailed, setImagePreviewFailed] = useState(false)
   const [busyAction, setBusyAction] = useState<"view" | "download" | null>(null)
   const providerLogo = attachment.provider === "gmail" ? gmailLogo : outlookLogo
   const unavailable = Boolean(attachment.limitation)
 
   useEffect(() => () => previewRevoke?.(), [previewRevoke])
+
+  useEffect(() => {
+    if (kind !== "image" || unavailable) return
+    let cancelled = false
+    setImagePreviewFailed(false)
+    setBusyAction("view")
+    void loadAttachment(attachment.id)
+      .then((opened) => {
+        if (cancelled) {
+          opened.revoke()
+          return
+        }
+        setPreviewUrl(opened.url)
+        setPreviewRevoke(() => opened.revoke)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setImagePreviewFailed(true)
+          toast.error(t("This attachment could not be opened."))
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBusyAction(null)
+      })
+    return () => { cancelled = true }
+  }, [attachment.id, kind, loadAttachment, t, unavailable])
 
   async function view() {
     if (!kind || busyAction) return
@@ -61,6 +91,7 @@ export function DexterEmailAttachmentCard({
     }
 
     setBusyAction("view")
+    if (kind === "image") setImagePreviewFailed(false)
     try {
       const opened = await loadAttachment(attachment.id)
       setPreviewUrl(opened.url)
@@ -70,6 +101,7 @@ export function DexterEmailAttachmentCard({
         setPreviewText((await response.text()).slice(0, 200_000))
       }
     } catch {
+      if (kind === "image") setImagePreviewFailed(true)
       toast.error(t("This attachment could not be opened."))
     } finally {
       setBusyAction(null)
@@ -98,20 +130,44 @@ export function DexterEmailAttachmentCard({
     }
   }
 
-  return (
-    <section className={variant === "watch"
+  const imageLightboxItems = kind === "image" && previewUrl
+    ? [{ id: attachment.id, src: previewUrl, alt: attachment.fileName }]
+    : []
+
+  return <ImageLightbox items={imageLightboxItems}>
+    {(imageLightbox) => <section className={variant === "watch"
       ? "w-full min-w-0 overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]"
       : "max-w-[560px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]"}>
-      <div className="grid min-w-0 grid-cols-[40px_minmax(0,1fr)] items-center gap-3 p-3">
-        <span className="relative grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
-          <FileText className="size-[18px]" strokeWidth={1.35} aria-hidden="true" />
-          <img
-            src={providerLogo}
-            alt=""
-            aria-hidden="true"
-            className="absolute -bottom-1 -end-1 size-[17px] rounded-[5px] bg-[var(--md-surface)] p-[2px] shadow-[var(--md-shadow-line)]"
-          />
-        </span>
+      <div className={kind === "image" ? "grid min-w-0 grid-cols-[64px_minmax(0,1fr)] items-center gap-3 p-3" : "grid min-w-0 grid-cols-[40px_minmax(0,1fr)] items-center gap-3 p-3"}>
+        {kind === "image" && !imagePreviewFailed ? previewUrl ? (
+          <motion.button
+            ref={(node) => imageLightbox.registerTrigger(attachment.id, node)}
+            type="button"
+            layoutId={imageLightbox.layoutIdFor(attachment.id)}
+            aria-label={`${t("Open image preview")}: ${attachment.fileName}`}
+            title={t("Open image preview")}
+            whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+            transition={shouldReduceMotion ? { duration: 0 } : { layout: { type: "spring", duration: 0.28, bounce: 0 }, scale: { duration: 0.12 } }}
+            onClick={() => imageLightbox.open(attachment.id)}
+            className="size-16 overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] outline-none ring-offset-2 ring-offset-[var(--md-surface-tint)] hover:ring-1 hover:ring-[var(--md-accent-a20)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]"
+          >
+            <img src={previewUrl} alt="" className="size-full rounded-[var(--md-radius-lg)] object-cover" />
+          </motion.button>
+        ) : (
+          <span role="status" aria-label={t("Loading preview")} className="grid size-16 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
+            <Loader2 className="size-4 animate-spin motion-reduce:animate-none" strokeWidth={1.5} aria-hidden="true" />
+          </span>
+        ) : (
+          <span className="relative grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
+            <FileText className="size-[18px]" strokeWidth={1.35} aria-hidden="true" />
+            <img
+              src={providerLogo}
+              alt=""
+              aria-hidden="true"
+              className="absolute -bottom-1 -end-1 size-[17px] rounded-[5px] bg-[var(--md-surface)] p-[2px] shadow-[var(--md-shadow-line)]"
+            />
+          </span>
+        )}
         <span className="min-w-0">
           <bdi dir="auto" data-i18n-skip className="block truncate text-[13px] font-medium text-[var(--md-ink)]" title={attachment.fileName}>
             {attachment.fileName}
@@ -123,7 +179,7 @@ export function DexterEmailAttachmentCard({
           </span>
         </span>
         <span className="col-span-2 flex min-w-0 flex-wrap items-center justify-end gap-1">
-          {kind && !unavailable ? (
+          {kind && (kind !== "image" || imagePreviewFailed) && !unavailable ? (
             <Button
               type="button"
               variant="ghost"
@@ -178,11 +234,9 @@ export function DexterEmailAttachmentCard({
         </p>
       ) : null}
 
-      {previewUrl ? (
+      {previewUrl && kind !== "image" ? (
         <div className="border-t border-[var(--md-line)] bg-[var(--md-surface)] p-2">
-          {kind === "image" ? (
-            <img src={previewUrl} alt={attachment.fileName} className="mx-auto max-h-[520px] max-w-full rounded-[var(--md-radius-lg)] object-contain" />
-          ) : kind === "pdf" ? (
+          {kind === "pdf" ? (
             <iframe
               src={previewUrl}
               title={`${t("Preview")} ${attachment.fileName}`}
@@ -207,6 +261,6 @@ export function DexterEmailAttachmentCard({
           </a>
         ) : null}
       </div>
-    </section>
-  )
+    </section>}
+  </ImageLightbox>
 }

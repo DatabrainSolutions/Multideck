@@ -17,13 +17,15 @@ import {
   oneOrNull,
   requireCapability,
   requireCustomerScope,
-  requireInternal,
+  requireInternalWarehouseRead,
+  requireInternalWarehouseWrite,
   required,
   uuid,
 } from "../shared/mod.ts";
 
 export async function handleLocations(request, path, url, admin, actor) {
-  requireInternal(actor);
+  if (request.method === "GET") requireInternalWarehouseRead(actor);
+  else requireInternalWarehouseWrite(actor);
   const facilityId = uuid(path[1], "facility"), scoped = await companyFacilityIds(admin, actor);
   if (!scoped.includes(facilityId)) {
     throw new HttpError(404, "This facility does not exist in your workspace.");

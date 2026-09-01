@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { bodyObject, companyFacilityIds, HttpError, requireInternal } from "../shared/mod.ts";
+import { bodyObject, companyFacilityIds, HttpError, requireInternalWarehouseWrite } from "../shared/mod.ts";
 
 const actions = new Set([
   "create_hu",
@@ -13,7 +13,7 @@ const actions = new Set([
 ]);
 
 export async function handleInventoryAction(request, path, admin, actor) {
-  requireInternal(actor);
+  requireInternalWarehouseWrite(actor);
   if (request.method !== "POST" || path[1] !== "actions" || !actions.has(path[2])) {
     throw new HttpError(404, "Warehouse inventory action not found.");
   }

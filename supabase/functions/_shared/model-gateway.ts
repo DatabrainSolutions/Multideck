@@ -3,7 +3,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 type Db = SupabaseClient<any, "public", any, any, any>
 type JsonObject = Record<string, unknown>
 
-export type ModelPurpose = "dexter_chat" | "email_compose" | "email_refine" | "writing_profile" | "document_ocr" | "invoice_ocr" | "inbox_document_extraction" | "quote_intelligence" | "reference_rule"
+export type ModelPurpose = "dexter_chat" | "developer_broadcast" | "email_compose" | "email_refine" | "writing_profile" | "document_ocr" | "invoice_ocr" | "inbox_document_extraction" | "quote_intelligence" | "reference_rule"
 export type DataCategory = "operator_instruction" | "business_record" | "email_content" | "document_content" | "personal_style" | "contact_details"
 
 export type ModelGatewayContext = {

@@ -233,6 +233,8 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
     sellRoe: charge.sellRoe,
     costRoeSource: "manual",
     sellRoeSource: "manual",
+    calculationBasis: charge.calculationBasis,
+    quantity: charge.quantity,
   })), [charges, record.customerId, record.supplierId])
 
   function updateRecord<K extends keyof QuoteWorkflowRecord>(field: K, value: QuoteWorkflowRecord[K]) {
@@ -266,7 +268,8 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
         ...(existing ?? emptyCharge(record.currency ?? "GBP")), id: row.id, description: row.description,
         supplierId: row.supplierId, costCurrency: row.costCurrency, costAmount: row.cost, costLocal,
         costRoe: row.costRoe ?? 1, sellCurrency: row.sellCurrency, sellAmount: row.sell, sellLocal,
-        sellRoe: row.sellRoe ?? 1, appliedMarkupPct: appliedMarkup,
+        sellRoe: row.sellRoe ?? 1, calculationBasis: row.calculationBasis ?? existing?.calculationBasis ?? "fixed",
+        quantity: row.quantity ?? existing?.quantity ?? 1, appliedMarkupPct: appliedMarkup,
       }
     }))
   }

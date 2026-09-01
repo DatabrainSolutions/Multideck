@@ -1,5 +1,6 @@
 import { adminClient, body, corsHeaders, failure, HttpError, json } from "../_shared/backend.ts"
 import { verifyInvitationTicket } from "../_shared/invitation-ticket.ts"
+import { getPasswordPolicyError } from "../_shared/password-policy.ts"
 
 type AcceptInvitationRequest = {
   ticket?: string
@@ -14,7 +15,8 @@ Deno.serve(async (request) => {
     const payload = await body<AcceptInvitationRequest>(request)
     const ticket = payload.ticket?.trim() ?? ""
     const password = payload.password ?? ""
-    if (password.length < 8 || password.length > 128) throw new HttpError(400, "Use a password between 8 and 128 characters.")
+    const passwordPolicyError = getPasswordPolicyError(password)
+    if (passwordPolicyError) throw new HttpError(400, passwordPolicyError)
 
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     let userId = ""

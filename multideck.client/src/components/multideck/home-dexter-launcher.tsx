@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { FileText, MessageSquareText, Radar } from "@/components/icons/hugeicons"
 import { useLanguage } from "@/i18n/language-provider"
@@ -99,6 +99,8 @@ export function HomeDexterLauncher({
   const [composerTouched, setComposerTouched] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const handoverPendingRef = useRef(false)
+  const previewOwnershipTransferredRef = useRef(false)
+  const uploadedDocumentsRef = useRef(uploadedDocuments)
   const clientSessionIdRef = useRef(crypto.randomUUID())
   const accessModeInFlightRef = useRef(false)
   const { mentionItems } = useDexterMentionSources(composerTouched)
@@ -118,7 +120,19 @@ export function HomeDexterLauncher({
     meta: `${Math.max(1, Math.ceil(document.sizeBytes / 1024)).toLocaleString()} KB`,
     tone: "teal" as const,
     icon: FileText,
+    previewUrl: document.previewUrl,
   })), [uploadedDocuments])
+
+  useEffect(() => {
+    uploadedDocumentsRef.current = uploadedDocuments
+  }, [uploadedDocuments])
+
+  useEffect(() => () => {
+    if (previewOwnershipTransferredRef.current) return
+    uploadedDocumentsRef.current.forEach((document) => {
+      if (document.previewUrl) URL.revokeObjectURL(document.previewUrl)
+    })
+  }, [])
 
   // The same estimate the workspace shows, so the meter does not jump the
   // moment the prompt lands in Dexter.
@@ -159,6 +173,7 @@ export function HomeDexterLauncher({
     const message = prompt.trim()
     if (!message || isHandingOver) return
     setIsHandingOver(true)
+    previewOwnershipTransferredRef.current = true
     rememberDexterHomeHandoff({
       prompt: message,
       specialistId,
@@ -232,8 +247,14 @@ export function HomeDexterLauncher({
     const truncated = files.length > remaining
     setIsUploadingDocument(true)
     setComposerError(truncated ? t("Only the first three files were selected.") : null)
-    const results = await Promise.allSettled(selected.map((file) => uploadDexterDocument(file)))
-    const uploaded = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : [])
+    const results = await Promise.allSettled(selected.map(async (file) => ({
+      document: await uploadDexterDocument(file),
+      file,
+    })))
+    const uploaded = results.flatMap((result) => result.status === "fulfilled" ? [{
+      ...result.value.document,
+      previewUrl: result.value.file.type.startsWith("image/") ? URL.createObjectURL(result.value.file) : undefined,
+    }] : [])
     const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected")
     if (uploaded.length) {
       setUploadedDocuments((current) => {
@@ -246,6 +267,14 @@ export function HomeDexterLauncher({
       setComposerError(failed.reason instanceof Error ? failed.reason.message : t("Dexter could not upload that document."))
     }
     setIsUploadingDocument(false)
+  }
+
+  function removeUploadedDocument(id: string) {
+    setUploadedDocuments((current) => current.filter((document) => {
+      if (document.id !== id) return true
+      if (document.previewUrl) URL.revokeObjectURL(document.previewUrl)
+      return false
+    }))
   }
 
   /**
@@ -355,7 +384,7 @@ export function HomeDexterLauncher({
           onCommand={(command) => {
             if (command.id === "mode:watch") openWatchMode()
           }}
-          onRemoveAttachment={(id) => setUploadedDocuments((current) => current.filter((document) => document.id !== id))}
+          onRemoveAttachment={removeUploadedDocument}
           onSend={(prompt) => handOver(prompt ?? value)}
           isSending={isHandingOver || isUploadingDocument}
         />

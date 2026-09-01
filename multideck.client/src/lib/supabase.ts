@@ -1,4 +1,9 @@
 import { createClient, type Session } from "@supabase/supabase-js"
+import {
+  capturePasswordRecoveryLink,
+  rememberVerifiedPasswordRecovery,
+  type PasswordRecoveryLink,
+} from "@/lib/password-recovery"
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim() ?? ""
 const supabasePublishableKey =
@@ -7,6 +12,7 @@ const configuredTenantHost = import.meta.env.VITE_MULTIDECK_TENANT_HOST?.trim().
 const rootHost = import.meta.env.VITE_MULTIDECK_ROOT_HOST?.trim().toLowerCase() || "multideck.app"
 const runningHost = typeof window === "undefined" ? "" : window.location.hostname.toLowerCase()
 const hasSupabaseCredentials = Boolean(supabaseUrl && supabasePublishableKey)
+export const initialPasswordRecoveryLink = capturePasswordRecoveryLink()
 
 export const isTenantHostTrusted = import.meta.env.DEV || Boolean(configuredTenantHost && runningHost === configuredTenantHost)
 export const isWorkspaceRouterHost = runningHost === rootHost || runningHost === `www.${rootHost}`
@@ -28,7 +34,7 @@ export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabasePublishableKey, {
       auth: {
         autoRefreshToken: true,
-        detectSessionInUrl: true,
+        detectSessionInUrl: initialPasswordRecoveryLink.kind === "missing",
         experimental: { passkey: true },
         flowType: "pkce",
         persistSession: true,
@@ -45,30 +51,28 @@ export async function getSupabaseSession(): Promise<Session | null> {
   return data.session
 }
 
-/**
- * Supabase invitations use an implicit token hash even when the client uses
- * PKCE for ordinary sign-in. Hydrate that trusted invite session explicitly
- * before changing the new user's password, then remove the tokens from the URL.
- */
-export async function ensurePasswordUpdateSession(): Promise<Session | null> {
-  if (!supabase) return null
+export async function verifyPasswordRecoveryLink(context: PasswordRecoveryLink): Promise<Session> {
+  if (!supabase) throw new Error(supabaseConfigurationError ?? "Supabase is not configured for this workspace.")
+  let session: Session | null = null
 
-  if (typeof window !== "undefined" && window.location.hash) {
-    const hash = new URLSearchParams(window.location.hash.slice(1))
-    const accessToken = hash.get("access_token")
-    const refreshToken = hash.get("refresh_token")
-
-    if (accessToken && refreshToken) {
-      const { data, error } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-      })
-      if (error) throw error
-
-      window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`)
-      return data.session
-    }
+  if (context.kind === "token-hash") {
+    const { data, error } = await supabase.auth.verifyOtp({ token_hash: context.tokenHash, type: "recovery" })
+    if (error) throw error
+    session = data.session
+  } else if (context.kind === "legacy-code") {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(context.code)
+    if (error) throw error
+    session = data.session
+  } else if (context.kind === "legacy-session") {
+    const { data, error } = await supabase.auth.setSession({
+      access_token: context.accessToken,
+      refresh_token: context.refreshToken,
+    })
+    if (error) throw error
+    session = data.session
   }
 
-  return getSupabaseSession()
+  if (!session) throw new Error("This recovery link is invalid or has expired.")
+  rememberVerifiedPasswordRecovery(session)
+  return session
 }

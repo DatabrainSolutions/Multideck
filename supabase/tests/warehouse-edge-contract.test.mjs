@@ -260,7 +260,7 @@ test("warehouse portal access loads only its bounded facility catalogue", () => 
 
 test("warehouse customer access links are tenant-scoped, invite-only, and audited", () => {
   assert.match(edgeSource, /path\[5\] === "access-link"/)
-  assert.match(edgeSource, /actor\.organisationIds\.has\(targetCustomerOrgId\)/)
+  assert.match(edgeSource, /actor\.manageableOrganisationIds\.has\(targetCustomerOrgId\)/)
   assert.match(edgeSource, /PortalAudit_EventTypeCode: "access_link_delivery"/)
   assert.match(edgeSource, /signInWithOtp/)
   assert.match(edgeSource, /shouldCreateUser: false/)

@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { PanelMessage, StatusBand, automationHealth } from "@/components/multideck/contact-card-components"
@@ -57,7 +58,7 @@ function defaultActionConfig(kind: AutomationActionKind, card: ContactCard): Rec
       return {
         destination: "crm",
         recordType: "lead",
-        duplicateHandling: "update",
+        duplicateHandling: "create",
         owner: card.person.fullName,
         ownerId: card.ownerUserId,
         pipeline: pipeline?.pipeline ?? "",
@@ -65,13 +66,7 @@ function defaultActionConfig(kind: AutomationActionKind, card: ContactCard): Rec
         stage: pipeline?.stage ?? "",
         stageId: pipeline?.stageId ?? "",
         dealName: `${card.person.company || "New"} enquiry`,
-        fieldMappings: JSON.stringify([
-          { source: "firstName", target: "firstName" },
-          { source: "lastName", target: "lastName" },
-          { source: "email", target: "email" },
-          { source: "company", target: "company" },
-          { source: "phone", target: "phone" },
-        ]),
+        customNotes: "",
       }
     }
     case "assign-owner":
@@ -321,13 +316,11 @@ function ActionDrawer({
               </Field>
             </div>
 
-            <Field label={t("Duplicate handling")} hint={t("Choose what happens when the email already exists in the CRM.")}>
-              <Select value={draft.config.duplicateHandling ?? "update"} onValueChange={(duplicateHandling) => setConfig("duplicateHandling", duplicateHandling)}>
+            <Field label={t("Duplicate handling")} hint={t("Each valid submission creates a separate lead so an anonymous visitor cannot overwrite an existing CRM record.")}>
+              <Select value="create" disabled>
                 <SelectTrigger className="h-9 w-full text-[13px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="update">{t("Update the existing record")}</SelectItem>
-                  <SelectItem value="skip">{t("Keep it and skip this step")}</SelectItem>
-                  <SelectItem value="fail">{t("Fail the run for review")}</SelectItem>
+                  <SelectItem value="create">{t("Create a separate lead for review")}</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
@@ -841,81 +834,32 @@ export function AutomationRunHistory({ runs, onRerun }: { runs: AutomationRun[];
   )
 }
 
-type CrmFieldMapping = { source: string; target: string; value?: string }
-
-const crmFieldOptions = [
-  ["firstName", "First name"],
-  ["lastName", "Last name"],
-  ["email", "Email"],
-  ["company", "Company"],
-  ["phone", "Phone"],
-  ["jobTitle", "Job title"],
-  ["notes", "Notes"],
-  ["campaign", "Campaign"],
-] as const
-
-const formSourceOptions = [
-  ["firstName", "First name"],
-  ["lastName", "Last name"],
-  ["email", "Email"],
-  ["company", "Company"],
-  ["phone", "Phone"],
-  ["cardName", "Card name"],
-  ["fixed", "Fixed value"],
-] as const
-
-// Existing cards may still contain this mapping from the previous UI. Keep it
-// readable without offering it as a new field choice: consent is controlled by
-// the card's dedicated checkbox and is captured automatically on submission.
-const legacyMarketingConsentOption = ["marketingConsent", "Marketing consent (managed by checkbox)"] as const
-
-function readCrmFieldMappings(card: ContactCard): CrmFieldMapping[] {
-  const raw = card.automation.actions.find((action) => action.kind === "add-to-crm")?.config.fieldMappings
-  if (!raw) return []
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-    return parsed.flatMap((item) => {
-      if (!item || typeof item !== "object") return []
-      const mapping = item as Record<string, unknown>
-      return typeof mapping.source === "string" && typeof mapping.target === "string"
-        ? [{ source: mapping.source, target: mapping.target, value: typeof mapping.value === "string" ? mapping.value : "" }]
-        : []
-    })
-  } catch {
-    return []
-  }
-}
-
 function CrmFieldMappingPanel({ card }: { card: ContactCard }) {
   const { t } = useLanguage()
   const automationMutation = useConfirmedAutomationMutation()
-  const mappings = readCrmFieldMappings(card)
+  const crmAction = card.automation.actions.find((action) => action.kind === "add-to-crm")
+  const customNotes = crmAction?.config.customNotes ?? ""
 
-  function saveMappings(next: CrmFieldMapping[]) {
+  function updateCustomNotes(value: string) {
     updateAutomation(card.id, (automation) => ({
       ...automation,
       actions: automation.actions.map((action) => action.kind === "add-to-crm"
-        ? { ...action, enabled: true, config: { ...action.config, duplicateHandling: "update", recordType: "lead", fieldMappings: JSON.stringify(next) } }
+        ? { ...action, enabled: true, config: { ...action.config, duplicateHandling: "create", recordType: "lead", customNotes: value } }
         : { ...action, enabled: false }),
     }))
-  }
-
-  function updateMapping(index: number, patch: Partial<CrmFieldMapping>) {
-    saveMappings(mappings.map((mapping, mappingIndex) => mappingIndex === index ? { ...mapping, ...patch } : mapping))
   }
 
   return (
     <div className="grid gap-[var(--md-page-stack-gap)]">
       <Surface padding="md" className="p-5">
         <SectionHeader
-          title={t("CRM field mapping")}
-          meta={t("Every submission creates a CRM contact or updates the existing contact with the same email address.")}
+          title={t("Lead creation")}
+          meta={t("Names, email, company and phone are mapped automatically. These details are added to every new lead created by this card.")}
           action={card.automation.hasUnpublishedChanges ? (
             <Button
               className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] text-[13px] text-[var(--md-accent-ink)]"
               disabled={automationMutation.saving !== null}
-              onClick={() => { void automationMutation.run("publish", () => publishAutomation(card.id), "CRM mapping saved") }}
+              onClick={() => { void automationMutation.run("publish", () => publishAutomation(card.id), "Lead settings saved") }}
             >
               {t(automationMutation.saving === "publish" ? "Saving…" : "Save changes")}
             </Button>
@@ -930,39 +874,15 @@ function CrmFieldMappingPanel({ card }: { card: ContactCard }) {
 
           <div className="h-px bg-[var(--md-line)]" />
 
-          <div>
-            <div className="flex items-end justify-between gap-4">
-              <div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Form to CRM fields")}</p><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Choose where each answer is stored on the contact or lead.")}</p><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Marketing consent is controlled by the card checkbox and captured automatically.")}</p></div>
-              <Button variant="outline" className="h-8 rounded-[var(--md-radius-md)] text-[12px]" onClick={() => saveMappings([...mappings, { source: "fixed", target: "notes", value: "" }])}>
-                <Plus data-icon="inline-start" strokeWidth={1.4} />{t("Add field")}
-              </Button>
-            </div>
-
-            <div className="mt-3 grid gap-2">
-              {mappings.map((mapping, index) => (
-                <div key={`${mapping.target}-${index}`} className="grid gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-2 sm:grid-cols-[minmax(140px,0.8fr)_minmax(0,1fr)_20px_minmax(140px,0.8fr)_32px] sm:items-center">
-                  <Select value={mapping.source} onValueChange={(source) => updateMapping(index, { source, value: source === "fixed" ? mapping.value : "" })}>
-                    <SelectTrigger aria-label={t("Form answer")} className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-[13px]"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {mapping.source === "marketingConsent" ? <SelectItem value={legacyMarketingConsentOption[0]} disabled>{t(legacyMarketingConsentOption[1])}</SelectItem> : null}
-                      {formSourceOptions.map(([value, label]) => <SelectItem key={value} value={value}>{t(label)}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  {mapping.source === "fixed" ? (
-                    <Input value={mapping.value ?? ""} onChange={(event) => updateMapping(index, { value: event.target.value })} aria-label={t("Fixed value")} placeholder={t("Enter a fixed value")} className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-base sm:text-[13px]" />
-                  ) : <span className="hidden sm:block" />}
-                  <span className="hidden text-center text-[var(--md-subtle)] sm:block" aria-hidden="true">→</span>
-                  <Select value={mapping.target} onValueChange={(target) => updateMapping(index, { target })}>
-                    <SelectTrigger aria-label={t("CRM field")} className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-[13px]"><SelectValue /></SelectTrigger>
-                    <SelectContent>{crmFieldOptions.map(([value, label]) => <SelectItem key={value} value={value}>{t(label)}</SelectItem>)}</SelectContent>
-                  </Select>
-                  <Button variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-red)]" aria-label={t("Remove field mapping")} onClick={() => saveMappings(mappings.filter((_, mappingIndex) => mappingIndex !== index))}>
-                    <Trash2 className="size-3.5" strokeWidth={1.4} />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </div>
+          <label className="grid gap-1.5 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-start">
+            <span><span className="block text-[13px] font-medium text-[var(--md-ink)]">{t("Custom notes")}</span><span className="mt-0.5 block text-[11.5px] leading-4 text-[var(--md-subtle)]">{t("Added to the lead’s Notes section after a submission")}</span></span>
+            <Textarea
+              value={customNotes}
+              onChange={(event) => updateCustomNotes(event.target.value)}
+              placeholder={t("Add context for the lead record")}
+              className="min-h-24 resize-y rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-base sm:text-[13px]"
+            />
+          </label>
         </div>
       </Surface>
     </div>

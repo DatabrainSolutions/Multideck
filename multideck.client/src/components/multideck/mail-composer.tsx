@@ -20,6 +20,7 @@ import {
 } from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
+import { ImageLightbox, type ImageLightboxControls } from "@/components/multideck/image-lightbox"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -352,6 +353,62 @@ function AttachmentCard({
   )
 }
 
+function ImageAttachmentCard({
+  attachment,
+  lightbox,
+  onRemove,
+  disabled,
+}: {
+  attachment: OutboundAttachment
+  lightbox: ImageLightboxControls
+  onRemove: () => void
+  disabled: boolean
+}) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <motion.div
+      layout
+      initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.94 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.94 }}
+      transition={reduceMotion(Boolean(shouldReduceMotion), { type: "spring", duration: 0.28, bounce: 0 })}
+      className="grid w-16 gap-1.5"
+    >
+      <motion.button
+        ref={(node) => lightbox.registerTrigger(attachment.id, node)}
+        type="button"
+        layoutId={lightbox.layoutIdFor(attachment.id)}
+        aria-label={`${t("Open image preview")}: ${attachment.fileName}`}
+        title={t("Open image preview")}
+        whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+        transition={shouldReduceMotion ? { duration: 0 } : { layout: { type: "spring", duration: 0.28, bounce: 0 }, scale: { duration: 0.12 } }}
+        onClick={() => lightbox.open(attachment.id)}
+        className="size-16 overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)] outline-none ring-offset-2 ring-offset-[var(--md-surface)] hover:ring-1 hover:ring-[var(--md-accent-a20)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]"
+      >
+        <img
+          src={`data:${attachment.mimeType};base64,${attachment.contentBase64}`}
+          alt=""
+          className="size-full rounded-[var(--md-radius-lg)] object-cover"
+        />
+      </motion.button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-lg"
+        disabled={disabled}
+        aria-label={`${t("Remove")} ${attachment.fileName}`}
+        title={t("Remove attachment")}
+        onClick={onRemove}
+        className="mx-auto rounded-[var(--md-radius-md)] text-[var(--md-red)] hover:bg-[var(--md-status-red-bg)] hover:text-[var(--md-status-red-ink)]"
+      >
+        <Trash2 className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+      </Button>
+    </motion.div>
+  )
+}
+
 function ModeIcon({ mode }: { mode: SendMode }) {
   if (mode === "new") return <PenLine className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
   if (mode === "forward") return <CornerUpRight className="size-3.5 rtl:-scale-x-100" strokeWidth={1.5} aria-hidden="true" />
@@ -437,6 +494,12 @@ export function MailComposer({
   const open = state.presentation !== "docked"
   const needsRecipient = composerNeedsRecipient(state.mode)
   const attachedBytes = attachmentTotalBytes(state.attachments)
+  const imageAttachments = useMemo(() => state.attachments.filter((attachment) => attachment.mimeType.startsWith("image/")), [state.attachments])
+  const imageLightboxItems = useMemo(() => imageAttachments.map((attachment) => ({
+    id: attachment.id,
+    src: `data:${attachment.mimeType};base64,${attachment.contentBase64}`,
+    alt: attachment.fileName,
+  })), [imageAttachments])
 
   const update = useCallback(
     (patch: Partial<ComposerState>) => onStateChange((current) => ({ ...current, ...patch })),
@@ -783,24 +846,34 @@ export function MailComposer({
 
       {state.attachments.length > 0 || attaching > 0 ? (
         <div className="max-h-[132px] shrink-0 overflow-y-auto md-scrollbar border-t border-[var(--md-line)] px-3 py-2">
-          <div className="flex flex-wrap gap-2">
-            <AnimatePresence initial={false}>
-              {state.attachments.map((attachment) => (
-                <AttachmentCard
-                  key={attachment.id}
-                  attachment={attachment}
-                  disabled={busy}
-                  onRemove={() => update({ attachments: state.attachments.filter((item) => item.id !== attachment.id) })}
-                />
-              ))}
-            </AnimatePresence>
-            {attaching > 0 ? (
-              <span className="inline-flex min-h-[44px] items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
-                <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.6} aria-hidden="true" />
-                {t("Attaching")}
-              </span>
-            ) : null}
-          </div>
+          <ImageLightbox items={imageLightboxItems}>
+            {(imageLightbox) => <div className="flex flex-wrap items-start gap-2">
+              <AnimatePresence initial={false}>
+                {state.attachments.map((attachment) => attachment.mimeType.startsWith("image/") ? (
+                  <ImageAttachmentCard
+                    key={attachment.id}
+                    attachment={attachment}
+                    lightbox={imageLightbox}
+                    disabled={busy}
+                    onRemove={() => update({ attachments: state.attachments.filter((item) => item.id !== attachment.id) })}
+                  />
+                ) : (
+                  <AttachmentCard
+                    key={attachment.id}
+                    attachment={attachment}
+                    disabled={busy}
+                    onRemove={() => update({ attachments: state.attachments.filter((item) => item.id !== attachment.id) })}
+                  />
+                ))}
+              </AnimatePresence>
+              {attaching > 0 ? (
+                <span className="inline-flex min-h-[44px] items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
+                  <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.6} aria-hidden="true" />
+                  {t("Attaching")}
+                </span>
+              ) : null}
+            </div>}
+          </ImageLightbox>
         </div>
       ) : null}
 

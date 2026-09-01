@@ -1,3 +1,7 @@
 export function requiresExplicitActionApproval(actionCode, accessMode) {
-  return actionCode === "send_email" || accessMode === "approve"
+  return accessMode === "approve" || [
+    "send_email",
+    "create_support_ticket",
+    "create_purchase_order",
+  ].includes(actionCode)
 }

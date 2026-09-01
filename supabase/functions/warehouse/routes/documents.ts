@@ -17,7 +17,8 @@ import {
   oneOrNull,
   requireCapability,
   requireCustomerScope,
-  requireInternal,
+  requireInternalWarehouseRead,
+  requireInternalWarehouseWrite,
   required,
   uuid,
 } from "../shared/mod.ts";
@@ -44,10 +45,16 @@ function mapDocument(row, upload) {
   };
 }
 export async function handleDocuments(request, path, url, admin, actor) {
-  const orderId = uuid(path[1], "order"), order = await scopedOrder(admin, actor, orderId), documentId = path[3] && path[3] !== "documents" ? uuid(path[3], "document") : null;
-  if (!actor.companyId) {
-    requireCapability(actor, path[4] === "review" ? "__internal__" : path.length === 3 && request.method === "POST" ? "warehouse_documents:upload" : "warehouse_orders:read");
+  const isReview = request.method === "POST" && path[4] === "review";
+  const isUpload = request.method === "POST" && path.length === 3;
+  if (actor.companyId) {
+    if (isReview || isUpload) requireInternalWarehouseWrite(actor);
+    else requireInternalWarehouseRead(actor);
+  } else {
+    if (isReview) throw new HttpError(403, "This operation is reserved for the warehouse team.");
+    requireCapability(actor, isUpload ? "warehouse_documents:upload" : "warehouse_orders:read");
   }
+  const orderId = uuid(path[1], "order"), order = await scopedOrder(admin, actor, orderId), documentId = path[3] && path[3] !== "documents" ? uuid(path[3], "document") : null;
   if (request.method === "GET" && path.length === 3) {
     const { limit, offset } = boundedPage(url, 20, 50);
     const { data, error } = await admin.from("WMS_Documents")
@@ -114,7 +121,6 @@ export async function handleDocuments(request, path, url, admin, actor) {
     });
   }
   if (request.method === "POST" && path[4] === "review") {
-    requireInternal(actor);
     if (!document) {
       throw new HttpError(404, "This warehouse document does not exist.");
     }

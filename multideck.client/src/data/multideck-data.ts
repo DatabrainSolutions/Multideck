@@ -2158,18 +2158,59 @@ export const galleryComponents = [
     usageCode: `const [screenshot, setScreenshot] = useState(capturedFile)\n\n<ScreenshotCaptureEditor\n  file={screenshot}\n  onChange={(editedPng) => {\n    setScreenshot(editedPng)\n    closeEditor()\n  }}\n  onCancel={closeEditor}\n/>`,
   },
   {
+    id: "image-lightbox",
+    name: "Image Lightbox",
+    category: "Controls",
+    description: "The shared Multideck image viewer: a square thumbnail expands as the same object into a dimmed, keyboard-navigable overlay and returns to the image currently in view.",
+    details: "Use for image attachments in Dexter, Inbox, email composition, support and other working surfaces. Give every image a stable domain id, register its thumbnail trigger, and keep one gallery around related images so Left and Right Arrow navigation preserves context. Open completes in 280 ms, close in 200 ms, focus returns to the active thumbnail, rapid reversal is safe, and reduced motion keeps the same meaning without spatial travel.",
+    foundOn: [
+      { label: "Dexter", route: "/agent-dexter" },
+      { label: "Inbox", route: "/inbox" },
+      { label: "App sidebar ticket action", route: "/" },
+      { label: "Components", route: "/components?component=image-lightbox" },
+    ],
+    componentCode: `export function ImageLightbox({ items, children }) {
+  const viewer = useSharedImageTransition(items)
+
+  return (
+    <LayoutGroup id={viewer.groupId}>
+      {children(viewer.controls)}
+      <Dialog open={viewer.open} onOpenChange={viewer.close}>
+        <motion.div className="fixed inset-0 bg-black/76" />
+        <motion.figure layoutId={viewer.activeLayoutId}>
+          <img src={viewer.activeItem.src} alt={viewer.activeItem.alt} />
+        </motion.figure>
+      </Dialog>
+    </LayoutGroup>
+  )
+}`,
+    usageCode: `<ImageLightbox items={images}>
+  {(lightbox) => images.map((image) => (
+    <motion.button
+      key={image.id}
+      ref={(node) => lightbox.registerTrigger(image.id, node)}
+      layoutId={lightbox.layoutIdFor(image.id)}
+      onClick={() => lightbox.open(image.id)}
+      aria-label={\`Open image preview: \${image.alt}\`}
+    >
+      <img src={image.src} alt="" className="aspect-square object-cover" />
+    </motion.button>
+  ))}
+</ImageLightbox>`,
+  },
+  {
     id: "ticket-attachment-preview",
     name: "Ticket Attachment Preview",
     category: "Controls",
-    description: "A compact, readable image row that confirms exactly which screenshot will be sent with a support ticket and keeps edit and remove actions close to the evidence.",
-    details: "Use in a ticket attachment list after validation has accepted a PNG, JPEG, or WebP file. The filename and file size provide the accessible description, while object URLs are refreshed safely and revoked when the preview changes or unmounts.",
+    description: "A compact square screenshot tile with a direct image-preview target and quiet icon-only edit and remove actions underneath.",
+    details: "Use in a ticket attachment gallery after validation has accepted a PNG, JPEG, or WebP file. Visible filenames and byte counts stay out of the way; the preview button keeps the file identity in its accessible name, object URLs are revoked safely, and the shared Image Lightbox connects the tile to its full-size view.",
     foundOn: [
       { label: "App sidebar ticket action", route: "/" },
       { label: "Settings support action", route: "/settings?tab=support" },
       { label: "Components", route: "/components?component=ticket-attachment-preview" },
     ],
-    componentCode: `export function SupportTicketAttachmentPreview({ file, onEdit, onRemove, previewUrl }) {\n  const [objectUrl, setObjectUrl] = useState(null)\n\n  useEffect(() => {\n    if (previewUrl) {\n      setObjectUrl(null)\n      return\n    }\n    const nextObjectUrl = URL.createObjectURL(file)\n    setObjectUrl(nextObjectUrl)\n    return () => URL.revokeObjectURL(nextObjectUrl)\n  }, [file, previewUrl])\n\n  const url = previewUrl ?? objectUrl ?? ""\n  const previewClassName = "size-12 shrink-0 object-cover"\n\n  return (\n    <div className="flex items-center gap-2 rounded-[var(--md-radius-lg)]">\n      {url\n        ? <img src={url} alt="" className={previewClassName} />\n        : <span aria-hidden="true" className={previewClassName} />}\n      <span className="min-w-0 flex-1" dir="auto">{file.name}</span>\n      <Button onClick={onEdit}>Edit</Button>\n      <Button aria-label="Remove screenshot" onClick={onRemove}>Remove</Button>\n    </div>\n  )\n}`,
-    usageCode: `{attachments.map((file) => (\n  <SupportTicketAttachmentPreview\n    key={file.name}\n    file={file}\n    onEdit={() => setEditingFile(file)}\n    onRemove={() => setAttachments((current) =>\n      current.filter((candidate) => candidate !== file)\n    )}\n  />\n))}`,
+    componentCode: `export function SupportTicketAttachmentPreview({ file, onOpen, onEdit, onRemove, previewUrl, layoutId }) {\n  const url = useSafeObjectUrl(file, previewUrl)\n\n  return (\n    <div role="listitem" className="grid w-20 gap-1.5">\n      <motion.button\n        type="button"\n        layoutId={layoutId}\n        aria-label={\`Open screenshot preview: \${file.name}\`}\n        onClick={onOpen}\n        className="size-20 overflow-hidden rounded-[var(--md-radius-lg)]"\n      >\n        <img src={url} alt="" className="size-full object-cover" />\n      </motion.button>\n      <div className="grid grid-cols-2 gap-1">\n        <Button size="icon-lg" aria-label="Edit screenshot" onClick={onEdit}><Pencil /></Button>\n        <Button size="icon-lg" aria-label="Remove screenshot" onClick={onRemove}><Trash2 /></Button>\n      </div>\n    </div>\n  )\n}`,
+    usageCode: `<ImageLightbox items={attachments.map((file) => ({\n  id: file.name,\n  src: previewUrls[file.name],\n  alt: file.name,\n}))}>\n  {({ open, layoutIdFor, registerTrigger }) => (\n    <div role="list">\n      {attachments.map((file) => (\n        <SupportTicketAttachmentPreview\n          key={file.name}\n          file={file}\n          layoutId={layoutIdFor(file.name)}\n          triggerRef={registerTrigger(file.name)}\n          onOpen={() => open(file.name)}\n          onEdit={() => setEditingFile(file)}\n          onRemove={() => removeAttachment(file)}\n        />\n      ))}\n    </div>\n  )}\n</ImageLightbox>`,
   },
   {
     id: "quote-detail-controls",
@@ -5098,6 +5139,30 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     foundOn: [{ label: "Auth", route: "/auth" }, { label: "Components", route: "/components" }],
     componentCode: `export function SignedOutPanel({ onSignBackIn, onSwitchAccount }) {\n  return (\n    <div className="w-full max-w-[560px]">\n      <BrandLockup />\n      <h2>You're signed out</h2>\n      {signedOutStats.map(([value, label]) => <StatRow key={label} value={value} label={label} />)}\n      <Button onClick={onSignBackIn}>Sign back in</Button>\n      <Button onClick={onSwitchAccount}>Switch account</Button>\n    </div>\n  )\n}`,
     usageCode: `<SignedOutPanel\n  onSignBackIn={() => setStep("signin")}\n  onSwitchAccount={() => {\n    setEmail("")\n    setStep("signin")\n  }}\n/>`,
+  },
+  {
+    id: "iphone-device-frame",
+    name: "iPhone Preview Frame",
+    category: "CRM",
+    description: "A proportionally accurate iPhone frame that can hold a live interactive product surface, a static image, or a video.",
+    details: "Use for customer-facing mobile previews where the real interface must remain visible and scrollable inside a recognisable device. The generated Magic UI frame owns the bezel, screen geometry and exported content-safe line beneath the notch; Multideck supplies the content and keeps the frame responsive.",
+    foundOn: [
+      { label: "Contact Card design", route: "/crm/contact-cards/8a0c2dab-7597-45dc-8f3a-3992f57919a4?tab=design" },
+      { label: "Components", route: "/components?component=iphone-device-frame" },
+    ],
+    componentCode: `import { Iphone, IPHONE_CONTENT_SAFE_TOP } from "@/components/ui/iphone"
+
+<Iphone className="w-full max-w-[360px]">
+  <PublicCardShell card={card} deviceSafeAreaTop={IPHONE_CONTENT_SAFE_TOP}>
+    <PublicCardForm card={card} />
+  </PublicCardShell>
+</Iphone>`,
+    usageCode: `<Iphone className="mx-auto w-full max-w-[360px]">
+  {children}
+</Iphone>
+
+<Iphone src={previewImageUrl} />
+<Iphone videoSrc={previewVideoUrl} />`,
   },
   {
     id: "card-miniature",

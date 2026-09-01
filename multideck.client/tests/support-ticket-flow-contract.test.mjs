@@ -16,6 +16,10 @@ const client = readFileSync(
   new URL("../src/lib/support-ticket.ts", import.meta.url),
   "utf8",
 )
+const imageLightbox = readFileSync(
+  new URL("../src/components/multideck/image-lightbox.tsx", import.meta.url),
+  "utf8",
+)
 
 test("support ticket rollout fails closed in production", () => {
   assert.equal(resolveSupportTicketFeatureEnabled(true, undefined), true)
@@ -72,6 +76,21 @@ test("the screenshot surface discloses and enforces the exact attachment constra
   assert.match(dialog, /maximumAttachmentTotalBytes = 25 \* 1024 \* 1024/)
   assert.match(dialog, /Up to five PNG, JPEG, or WebP images; 10 MB each and 25 MB total\./)
   assert.match(dialog, /accept="image\/png,image\/jpeg,image\/webp"/)
+})
+
+test("ticket attachments use square icon-only previews and a keyboard-safe shared-image lightbox", () => {
+  assert.match(dialog, /role="list" aria-label=\{t\("Attached screenshots"\)\}/)
+  assert.match(dialog, /className="size-20 overflow-hidden rounded-\[var\(--md-radius-lg\)\]/)
+  assert.doesNotMatch(dialog, /Math\.max\(1, Math\.round\(file\.size \/ 1024\)\)/)
+  assert.match(dialog, /aria-label=\{t\("Edit screenshot"\)\}[\s\S]*?<Pencil/)
+  assert.match(dialog, /aria-label=\{t\("Remove screenshot"\)\}[\s\S]*?<Trash2/)
+  assert.match(dialog, /<ImageLightbox[\s\S]*?items=\{lightboxItems\}/)
+  assert.match(dialog, /layoutId=\{imageLightbox\.layoutIdFor\(key\)\}/)
+  assert.match(imageLightbox, /type ImageLightboxPhase = "closed" \| "opening" \| "open" \| "closing"/)
+  assert.match(imageLightbox, /event\.key === "ArrowLeft"[\s\S]*?move\(-1\)[\s\S]*?event\.key === "ArrowRight"[\s\S]*?move\(1\)/)
+  assert.match(imageLightbox, /onCloseAutoFocus=\{\(event\) => \{ event\.preventDefault\(\); returnFocus\(\) \}\}/)
+  assert.match(imageLightbox, /setPhase\(reducedMotion \? "open" : "opening"\)/)
+  assert.match(imageLightbox, /phase === "closing" \? 0\.2 : 0\.28/)
 })
 
 test("the ticket form uses the wide desktop dialog and reflows dense choices on narrow screens", () => {

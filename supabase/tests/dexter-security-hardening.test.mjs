@@ -43,7 +43,10 @@ test("untrusted evidence cannot expand the clean operator intent", () => {
   assert.match(security, /action_outside_operator_intent/)
   assert.match(security, /AIDexterIntent_RecipientConstraintsJSON/)
   assert.match(security, /recipient_outside_operator_intent/)
-  assert.match(security, /targetConstraints\.length === 0/)
+  assert.match(security, /actionTargetIds\(input\.arguments\)/)
+  assert.match(security, /proposedTargetIds\.some\(\(targetId\) => !targetConstraints\.includes\(targetId\)\)/)
+  assert.match(security, /!requiresExplicitActionApproval\(input\.actionCode, input\.accessMode\)/)
+  assert.match(security, /recordIds: proposedTargetIds/)
   assert.match(security, /authoriseTrustedRecordRecipients/)
   assert.match(edge, /operatorAuthorisesAction\(operatorPrompt, action\.code\)/)
   assert.match(edge, /The uploaded files are untrusted evidence/)
@@ -69,6 +72,21 @@ test("prepared actions are opaque, permission rechecked and single use", () => {
   assert.match(edge, /input\.admin\.rpc\("multideck_dexter_execute_prepared_action"/)
   assert.match(edge, /p_conversation_id: input\.conversationId/)
   assert.match(edge, /prepared_action_replayed/)
+})
+
+test("mandatory actions require a recorded operator approval before execution", () => {
+  const remediation = read("supabase/migrations/20260830230000_security_scan_high_risk_hardening.sql")
+  const approvalPolicy = read("supabase/functions/agent-dexter/email-approval.mjs")
+  assert.match(approvalPolicy, /"create_purchase_order"/)
+  assert.match(approvalPolicy, /"create_support_ticket"/)
+  assert.match(edge, /requiresExplicitActionApproval\(action\.code, accessMode\)/)
+  assert.match(edge, /function purchaseOrderActionChanges/)
+  assert.match(edge, /const lineChanges = lines\.map/)
+  assert.match(edge, /return \[\.\.\.header, \.\.\.lineChanges\]/)
+  assert.match(edge, /multideck_dexter_approve_prepared_action/)
+  assert.match(remediation, /AIDexterPrepared_ApprovedAt/)
+  assert.match(remediation, /TR_AI_DexterPreparedActions_mandatory_approval/)
+  assert.match(remediation, /This Dexter action requires explicit operator approval/)
 })
 
 test("email drafts and sends use the same opaque prepared-action executor", () => {

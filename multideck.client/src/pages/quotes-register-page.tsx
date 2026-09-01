@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowUpRight, FlaskConical, LoaderCircle, Search, X } from "@/components/icons/hugeicons"
+import { ArrowUpRight, FlaskConical, LoaderCircle, RefreshCw, Search, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
@@ -29,7 +29,18 @@ import { cn } from "@/lib/utils"
 const rowsPerPageOptions = [10, 20, 30, 50]
 const quoteTableStorageKey = "quote-register"
 const quoteScopes = ["All", "Mine"] as const
+const defaultQuoteLoadError = "Quotes could not be loaded."
 type QuoteScope = (typeof quoteScopes)[number]
+
+function normaliseErrorMessage(message: string) {
+  return message.trim().replace(/[.!?]+$/u, "").toLocaleLowerCase()
+}
+
+function isRepeatedQuoteLoadError(error: string, translatedTitle: string) {
+  const normalisedError = normaliseErrorMessage(error)
+  return normalisedError === normaliseErrorMessage(defaultQuoteLoadError)
+    || normalisedError === normaliseErrorMessage(translatedTitle)
+}
 
 function withQuoteOwnerScope(query: QuoteSearchQuery, scope: QuoteScope, ownerName?: string | null): QuoteSearchQuery {
   const owner = ownerName?.trim()
@@ -110,7 +121,7 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
       setAvailableQuoteTotal(result.availableTotal)
     }).catch((error) => {
       if ((error as { name?: string })?.name !== "AbortError") {
-        setQuotesError(error instanceof Error ? error.message : "Quotes could not be loaded.")
+        setQuotesError(error instanceof Error ? error.message : defaultQuoteLoadError)
       }
     }).finally(() => {
       if (!controller.signal.aborted) setQuotesLoading(false)
@@ -156,6 +167,11 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
   useEffect(() => {
     if (page > pageCount) setPage(pageCount)
   }, [page, pageCount])
+
+  const quotesErrorTitle = t(defaultQuoteLoadError)
+  const quotesErrorDetail = quotesError && !isRepeatedQuoteLoadError(quotesError, quotesErrorTitle)
+    ? quotesError
+    : null
 
   const columns = useMemo<DataTableColumn<QuoteRegisterRecord>[]>(() => {
     const textColumn = (
@@ -264,7 +280,26 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
         </div>
       </header>
 
-      {quotesError ? <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 py-3 text-[13px] text-[var(--md-red)]">{t("Quotes could not be loaded.")} <span className="text-[12px]">{quotesError}</span></div> : null}
+      {quotesError ? (
+        <div role="alert" className="flex flex-col gap-3 rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium text-[var(--md-red)]">{quotesErrorTitle}</p>
+            <p className="mt-0.5 text-[12px] leading-5 text-[var(--md-text)]" dir="auto">
+              {quotesErrorDetail ?? t("The connection may have been interrupted. Try loading the register again.")}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0 self-start rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-3 text-[12px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] sm:self-auto"
+            onClick={() => setQuoteRevision((revision) => revision + 1)}
+          >
+            <RefreshCw data-icon="inline-start" className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+            {t("Try again")}
+          </Button>
+        </div>
+      ) : null}
 
       <DataTable
         ariaLabel="Quote register"

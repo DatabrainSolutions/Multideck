@@ -180,6 +180,7 @@ import {
 import { DEXTER_CONVERSATIONS_CHANGED_EVENT } from "@/lib/dexter-navigation"
 import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, useAiAgentName, writeAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
 import type { AuthUserSummary } from "@/lib/auth-user"
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_POLICY_DESCRIPTION, getPasswordPolicyError, passwordMeetsPolicy } from "@/lib/password-policy"
 import { getSupabaseSession, supabase } from "@/lib/supabase"
 import {
   ProfilePhotoValidationError,
@@ -3119,8 +3120,9 @@ export function AdminUsersContent() {
   async function resetUserPassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!passwordCandidate) return
-    if (newUserPassword.length < 8 || newUserPassword.length > 128) {
-      toast.error(t("The password must be between 8 and 128 characters."))
+    const passwordPolicyError = getPasswordPolicyError(newUserPassword)
+    if (passwordPolicyError) {
+      toast.error(t(passwordPolicyError))
       return
     }
     if (newUserPassword !== confirmUserPassword) {
@@ -3369,7 +3371,8 @@ export function AdminUsersContent() {
   const passwordCandidateName = passwordCandidate?.firstName?.trim() || passwordCandidate?.displayName.trim().split(/\s+/)[0] || ""
   const resetPasswordTitle = t("Reset {name}’s password").replace("{name}", passwordCandidateName)
   const resetPasswordDescription = t("Choose a new password for {name}. It will be used at the next sign-in. Existing sessions will stay active.").replace("{name}", passwordCandidateName)
-  const resetPasswordHint = t("Use at least 8 characters. Share the new password with {name} securely.").replace("{name}", passwordCandidateName)
+  const resetPasswordHint = t(`${PASSWORD_POLICY_DESCRIPTION} Share the new password with {name} securely.`).replace("{name}", passwordCandidateName)
+  const newUserPasswordError = newUserPassword ? getPasswordPolicyError(newUserPassword) : null
   const resetPasswordAction = t(resettingPassword ? "Resetting {name}’s password" : "Reset {name}’s password").replace("{name}", passwordCandidateName)
 
   function renderRoleComposer(target: "invite" | "edit" | "standalone") {
@@ -3700,18 +3703,19 @@ export function AdminUsersContent() {
             <div className="grid gap-5">
               <label className="grid gap-2.5 text-[13px] font-medium leading-5 text-[var(--md-ink)]">
                 {t("New password")}
-                <SettingsInput className="h-11 rounded-[var(--md-radius-xl)] px-3.5 text-base sm:text-sm" value={newUserPassword} onChange={(event) => setNewUserPassword(event.target.value)} type="password" autoComplete="new-password" minLength={8} maxLength={128} required aria-describedby="admin-reset-password-hint" autoFocus />
+                <SettingsInput className="h-11 rounded-[var(--md-radius-xl)] px-3.5 text-base sm:text-sm" value={newUserPassword} onChange={(event) => setNewUserPassword(event.target.value)} type="password" autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} required aria-invalid={Boolean(newUserPasswordError)} aria-describedby={newUserPasswordError ? "admin-reset-password-hint admin-reset-password-policy-error" : "admin-reset-password-hint"} autoFocus />
               </label>
               <label className="grid gap-2.5 text-[13px] font-medium leading-5 text-[var(--md-ink)]">
                 {t("Confirm new password")}
-                <SettingsInput className="h-11 rounded-[var(--md-radius-xl)] px-3.5 text-base sm:text-sm" value={confirmUserPassword} onChange={(event) => setConfirmUserPassword(event.target.value)} type="password" autoComplete="new-password" minLength={8} maxLength={128} required aria-invalid={Boolean(confirmUserPassword && newUserPassword !== confirmUserPassword)} aria-describedby={confirmUserPassword && newUserPassword !== confirmUserPassword ? "admin-reset-password-mismatch" : "admin-reset-password-hint"} />
+                <SettingsInput className="h-11 rounded-[var(--md-radius-xl)] px-3.5 text-base sm:text-sm" value={confirmUserPassword} onChange={(event) => setConfirmUserPassword(event.target.value)} type="password" autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} required aria-invalid={Boolean(confirmUserPassword && newUserPassword !== confirmUserPassword)} aria-describedby={confirmUserPassword && newUserPassword !== confirmUserPassword ? "admin-reset-password-mismatch" : "admin-reset-password-hint"} />
               </label>
               <p id="admin-reset-password-hint" className="text-[12px] leading-5 text-[var(--md-text)]">{resetPasswordHint}</p>
+              {newUserPasswordError ? <p id="admin-reset-password-policy-error" className="text-[12px] font-medium leading-5 text-[var(--md-red)]" role="alert">{t(newUserPasswordError)}</p> : null}
               {confirmUserPassword && newUserPassword !== confirmUserPassword ? <p id="admin-reset-password-mismatch" className="text-[12px] font-medium leading-5 text-[var(--md-red)]" role="alert">{t("Passwords do not match.")}</p> : null}
             </div>
             <DialogFooter className="mx-0 mb-0 gap-3 rounded-none bg-transparent p-0 shadow-none">
               <Button type="button" variant="ghost" disabled={resettingPassword} className="h-9 w-full rounded-[var(--md-radius-lg)] px-4 sm:w-auto" onClick={closePasswordReset}>{t("Cancel")}</Button>
-              <Button type="submit" disabled={resettingPassword || newUserPassword.length < 8 || newUserPassword.length > 128 || newUserPassword !== confirmUserPassword} className="h-9 w-full rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)] sm:w-auto">
+              <Button type="submit" disabled={resettingPassword || !passwordMeetsPolicy(newUserPassword) || newUserPassword !== confirmUserPassword} className="h-9 w-full rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)] sm:w-auto">
                 {resettingPassword ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <KeyRound className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
                 {resetPasswordAction}
               </Button>

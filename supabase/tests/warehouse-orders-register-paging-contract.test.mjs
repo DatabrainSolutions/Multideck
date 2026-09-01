@@ -50,7 +50,7 @@ test("Edge routes enforce actor scope and invoke only bounded read models", () =
   assert.match(ordersRoute, /warehouse_edge_orders_page/)
   assert.match(ordersRoute, /p_allowed_facility_ids: facilityIds/)
   assert.match(ordersRoute, /p_allowed_org_ids: actor\.companyId \? null : Array\.from\(actor\.organisationIds\)/)
-  assert.match(purchaseOrdersRoute, /requireInternal\(actor\)/)
+  assert.match(purchaseOrdersRoute, /requireInternalWarehouseRead\(actor\)/)
   assert.match(purchaseOrdersRoute, /warehouse_edge_purchase_orders_page/)
   assert.match(purchaseOrdersRoute, /p_allowed_facility_ids: facilityIds/)
   assert.match(ordersRoute, /\["42883", "PGRST202"\][\s\S]*HttpError\(503, "Warehouse order paging/)
