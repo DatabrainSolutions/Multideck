@@ -109,6 +109,7 @@ const validRoutes = new Set([
   "/admin/ai-usage",
   "/admin/broadcast",
   "/admin/billing",
+  "/admin/branding",
   "/admin/system-preferences",
   "/admin/activity",
   "/admin/detailed-log",

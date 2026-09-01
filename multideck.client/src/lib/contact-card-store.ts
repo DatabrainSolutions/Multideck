@@ -276,9 +276,13 @@ function mapWorkspace(payload: WorkspacePayload): ContactCard[] {
       branding: (() => {
         const saved = (row.ContactCard_Branding ?? {}) as Partial<CardBranding>
         const savedLayout = (row.ContactCard_Branding as Record<string, unknown> | null)?.layout
+        const hasSavedVisualBrand = Object.keys(saved).some((key) => key !== "brandSource")
         return {
           ...defaultBranding(),
           ...saved,
+          brandSource: saved.brandSource === "tenant" || saved.brandSource === "custom"
+            ? saved.brandSource
+            : hasSavedVisualBrand ? "custom" : "tenant",
           layout: savedLayout === "centred" ? "spotlight" : saved.layout ?? "classic",
         } as CardBranding
       })(),
@@ -675,7 +679,7 @@ export async function retryCardSave(cardId: string): Promise<void> {
 }
 
 export function updateBranding(cardId: string, update: Partial<CardBranding>) {
-  updateCard(cardId, (card) => ({ ...card, branding: { ...card.branding, ...update } }))
+  updateCard(cardId, (card) => ({ ...card, branding: { ...card.branding, ...update, brandSource: update.brandSource ?? "custom" } }))
 }
 
 export const MAX_LOGO_BYTES = 512 * 1024
@@ -765,23 +769,59 @@ function mapPublicCard(row: Record<string, unknown>): ContactCard {
   return mapWorkspace({ cards: [row], automations: [], conditions: [], actions: [], scans: [], exchanges: [] })[0]
 }
 
-type PublishedCardOwnerProfile = Pick<ContactCard["person"], "fullName" | "role" | "company" | "email" | "phone" | "website" | "profileImageDataUrl">
+type PublishedCardOwnerProfile = Pick<ContactCard["person"], "fullName" | "role" | "company" | "email" | "phone" | "website" | "profileImageDataUrl"> & {
+  tenantBranding?: {
+    displayName: string
+    primaryColor: string
+    secondaryColor: string
+    backgroundColor: string
+    surfaceColor: string
+    textColor: string
+    appearanceMode: "light" | "dark"
+    cornerStyle: "rounded" | "sharp"
+    logoUrl: string | null
+  }
+}
 
-async function loadPublishedCardOwnerProfile(slug: string): Promise<PublishedCardOwnerProfile | null> {
+async function loadPublishedCardOwnerProfile(slug: string, preview = false): Promise<PublishedCardOwnerProfile | null> {
   if (!supabaseFunctionsUrl || !supabasePublicApiKey) return null
-  const response = await fetch(`${supabaseFunctionsUrl}/contact-card-profile?slug=${encodeURIComponent(slug)}`, {
-    headers: { apikey: supabasePublicApiKey },
+  const session = preview ? await getSupabaseSession() : null
+  const response = await fetch(`${supabaseFunctionsUrl}/contact-card-profile?slug=${encodeURIComponent(slug)}${preview ? "&preview=true" : ""}`, {
+    headers: { apikey: supabasePublicApiKey, ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) },
   })
   if (response.status === 404) return null
   if (!response.ok) throw new Error("The card owner's profile could not be loaded.")
   return response.json() as Promise<PublishedCardOwnerProfile>
 }
 
+function applyOwnerAndTenantBrand(card: ContactCard, profile: PublishedCardOwnerProfile | null) {
+  if (!profile) return card
+  const { tenantBranding, ...person } = profile
+  if (!tenantBranding || card.branding.brandSource !== "tenant") return { ...card, person: { ...card.person, ...person } }
+  return {
+    ...card,
+    person: { ...card.person, ...person, company: tenantBranding.displayName || person.company },
+    tenantName: tenantBranding.displayName || card.tenantName,
+    branding: {
+      ...card.branding,
+      brandSource: "tenant" as const,
+      accent: tenantBranding.primaryColor,
+      secondary: tenantBranding.secondaryColor,
+      background: tenantBranding.backgroundColor,
+      surface: tenantBranding.surfaceColor,
+      textColor: tenantBranding.textColor,
+      theme: tenantBranding.appearanceMode,
+      cornerStyle: tenantBranding.cornerStyle === "sharp" ? "sharp" as const : "soft" as const,
+      logoDataUrl: tenantBranding.logoUrl,
+    },
+  }
+}
+
 export async function loadPublicCard(slug: string, preview = false): Promise<ContactCard | null> {
   const local = findCardBySlug(slug)
   if (local) {
-    const ownerProfile = local.status === "published" ? await loadPublishedCardOwnerProfile(slug).catch(() => null) : null
-    return ownerProfile ? { ...local, person: { ...local.person, ...ownerProfile } } : local
+    const ownerProfile = local.status === "published" || preview ? await loadPublishedCardOwnerProfile(slug, preview).catch(() => null) : null
+    return applyOwnerAndTenantBrand(local, ownerProfile)
   }
   const row = await callRpc<Record<string, unknown> | null>(
     preview ? "multideck_contact_card_preview" : "multideck_public_contact_card",
@@ -789,8 +829,8 @@ export async function loadPublicCard(slug: string, preview = false): Promise<Con
   )
   if (!row) return null
   const card = mapPublicCard(row)
-  const ownerProfile = card.status === "published" ? await loadPublishedCardOwnerProfile(slug).catch(() => null) : null
-  const resolvedCard = ownerProfile ? { ...card, person: { ...card.person, ...ownerProfile } } : card
+  const ownerProfile = card.status === "published" || preview ? await loadPublishedCardOwnerProfile(slug, preview).catch(() => null) : null
+  const resolvedCard = applyOwnerAndTenantBrand(card, ownerProfile)
   if (!preview) publicCardCache.set(slug, resolvedCard)
   return resolvedCard
 }

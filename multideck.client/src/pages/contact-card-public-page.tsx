@@ -248,7 +248,7 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
             <PublicCardExchange card={card} headingRef={headingRef} onAddToContacts={addToContacts} downloaded={downloaded} />
           }
         />
-        <PublicCardFooter />
+        <PublicCardFooter card={card} />
       </PublicCardShell>
     </div>
   )

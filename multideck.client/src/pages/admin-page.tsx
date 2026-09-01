@@ -24,6 +24,7 @@ const AdminUsersContent = lazy(() => import("@/pages/settings-page").then((modul
 const AdminAiUsageContent = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.AdminAiUsageContent })))
 const AdminBillingContent = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.AdminBillingContent })))
 const AdminBroadcastContent = lazy(() => import("@/components/multideck/broadcast-settings").then((module) => ({ default: module.BroadcastSettings })))
+const AdminBrandingContent = lazy(() => import("@/pages/settings-branding-tab").then((module) => ({ default: module.AdminBrandingContent })))
 
 function normaliseReferencePatternInput(value: string) {
   const trimmed = value.trim().toUpperCase()
@@ -123,7 +124,7 @@ function referencePatternError(pattern: string, target: ReferenceRuleTarget, com
   return null
 }
 
-export type AdminRoute = "/admin/users" | "/admin/usage" | "/admin/ai-usage" | "/admin/broadcast" | "/admin/billing" | "/admin/system-preferences" | "/admin/activity" | "/admin/detailed-log"
+export type AdminRoute = "/admin/users" | "/admin/usage" | "/admin/ai-usage" | "/admin/broadcast" | "/admin/billing" | "/admin/branding" | "/admin/system-preferences" | "/admin/activity" | "/admin/detailed-log"
 type AuditCategory = "all" | "authentication" | "application"
 const auditRefreshIntervalMs = 60_000
 
@@ -133,6 +134,7 @@ const adminRouteTitles: Record<AdminRoute, string> = {
   "/admin/ai-usage": "Usage",
   "/admin/broadcast": "Broadcast",
   "/admin/billing": "Billing",
+  "/admin/branding": "Branding",
   "/admin/system-preferences": "System Preferences",
   "/admin/activity": "Active log",
   "/admin/detailed-log": "Detailed log",
@@ -841,6 +843,8 @@ export function AdminPage({ route, currentUser }: { route: AdminRoute; currentUs
         ? <AdminBroadcastContent />
       : route === "/admin/billing"
         ? <AdminBillingContent />
+        : route === "/admin/branding"
+          ? <AdminBrandingContent currentUser={currentUser} />
         : route === "/admin/system-preferences"
           ? <SystemPreferencesContent />
         : null

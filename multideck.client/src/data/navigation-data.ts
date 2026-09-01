@@ -228,6 +228,7 @@ export const sidebarAreas: SidebarArea[] = [
       { id: "admin-usage", label: "Usage", icon: ChartAnalysis, route: "/admin/usage" },
       { id: "admin-broadcast", label: "Broadcast", icon: Megaphone, route: "/admin/broadcast" },
       { id: "admin-billing", label: "Billing", icon: CreditCard, route: "/admin/billing" },
+      { id: "admin-branding", label: "Branding", icon: Palette, route: "/admin/branding" },
       { id: "admin-system-preferences", label: "System Preferences", icon: Settings2, route: "/admin/system-preferences" },
       { id: "admin-activity-log", label: "Active log", icon: Clock3, route: "/admin/activity" },
       { id: "admin-detailed-log", label: "Detailed log", icon: ListOrdered, route: "/admin/detailed-log" },

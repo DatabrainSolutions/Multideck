@@ -112,7 +112,7 @@ export function SettingsPageHeader({
 }: {
   eyebrow?: string
   title: string
-  description: string
+  description?: string
   actions?: ReactNode
   icon?: LucideIcon
   descriptionPlacement?: "aside" | "under-title"
@@ -125,7 +125,7 @@ export function SettingsPageHeader({
             {Icon ? <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><Icon className="size-4" strokeWidth={1.4} aria-hidden="true" /></span> : null}
             <span>{title}</span>
           </h1>
-          <p className="mt-2 max-w-[65ch] text-pretty text-[14px] leading-6 text-[var(--md-text)]">{description}</p>
+          {description ? <p className="mt-2 max-w-[65ch] text-pretty text-[14px] leading-6 text-[var(--md-text)]">{description}</p> : null}
         </div>
         {actions ? <div className="flex flex-wrap items-center gap-2 lg:justify-end">{actions}</div> : null}
       </header>
@@ -139,8 +139,8 @@ export function SettingsPageHeader({
         <span>{title}</span>
       </h1>
       <div className="min-w-0 lg:justify-self-end lg:text-end">
-        <p className="max-w-[65ch] text-pretty text-[14px] leading-6 text-[var(--md-text)] lg:ms-auto">{description}</p>
-        {actions ? <div className="mt-3 flex flex-wrap items-center gap-2 lg:justify-end">{actions}</div> : null}
+        {description ? <p className="max-w-[65ch] text-pretty text-[14px] leading-6 text-[var(--md-text)] lg:ms-auto">{description}</p> : null}
+        {actions ? <div className={cn("flex flex-wrap items-center gap-2 lg:justify-end", description && "mt-3")}>{actions}</div> : null}
       </div>
     </header>
   )

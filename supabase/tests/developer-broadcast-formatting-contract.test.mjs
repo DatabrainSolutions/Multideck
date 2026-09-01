@@ -39,7 +39,7 @@ test("AI drafting requires structured copy and preview delivery share the same r
   assert.match(edge, /MUST group related information beneath consistent Markdown ## section headings/)
   assert.match(edge, /Never use Unicode bullet characters/)
   assert.match(edge, /body: \[message\], bodyFormat: "markdown"/)
-  assert.match(edge, /const rendered = renderedMessage\(locked\.Broadcast_Subject, locked\.Broadcast_Body\)/)
+  assert.match(edge, /const rendered = renderedMessage\(locked\.Broadcast_Subject, locked\.Broadcast_Body, await readConfiguredTenantBrand\(admin, current\.Company_ID\)\)/)
   assert.match(client, /function BroadcastMessageEditor/)
   assert.match(client, /contentEditable/)
   assert.doesNotMatch(client, /Formatting: ## subheading/)

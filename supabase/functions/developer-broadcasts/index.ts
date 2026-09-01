@@ -3,6 +3,7 @@ import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email
 import { renderBrandedEmail } from "../_shared/email-template.ts"
 import { renderEmailMarkdown } from "../_shared/email-markdown.ts"
 import { governedModelFetch } from "../_shared/model-gateway.ts"
+import { readConfiguredTenantBrand, type TenantBrand } from "../_shared/tenant-branding.ts"
 import { audienceSummary, cleanText, normaliseAudience, resolveAudience, type AudienceUser } from "./core.ts"
 
 type JsonObject = Record<string, unknown>
@@ -95,7 +96,8 @@ async function previewAudience(admin: any, current: any, payload: JsonObject) {
   const recipients = resolveAudience(state.users, selection)
   const subject = cleanText(payload.subject, 200)
   const message = cleanText(payload.body, 20_000)
-  const rendered = subject && message ? renderedMessage(subject, message) : null
+  const brand = subject && message ? await readConfiguredTenantBrand(admin, current.Company_ID) : null
+  const rendered = subject && message ? renderedMessage(subject, message, brand) : null
   return {
     audience: audienceSummary(selection, state.departments, recipients),
     recipients: recipients.map((recipient) => ({ id: recipient.id, name: recipient.name, email: recipient.email, departments: recipient.departments, status: recipient.status, exclusionReason: recipient.exclusionReason })),
@@ -155,10 +157,10 @@ async function audit(admin: any, current: any, broadcastId: string | null, event
   if (error) throw new HttpError(500, error.message)
 }
 
-function renderedMessage(subject: string, message: string) {
+function renderedMessage(subject: string, message: string, brand: TenantBrand | null = null) {
   return renderBrandedEmail({
     subject, preview: renderEmailMarkdown(message).text.replace(/\s+/g, " ").slice(0, 140), title: subject,
-    body: [message], bodyFormat: "markdown",
+    body: [message], bodyFormat: "markdown", brand,
   })
 }
 
@@ -313,7 +315,7 @@ async function sendBroadcast(admin: any, current: any, id: string, payload: Json
   }
   const { data: recipients, error: recipientsError } = await admin.from("DEV_BroadcastRecipients").select("*").eq("Broadcast_ID", id)
   if (recipientsError) throw new HttpError(500, recipientsError.message)
-  const rendered = renderedMessage(locked.Broadcast_Subject, locked.Broadcast_Body)
+  const rendered = renderedMessage(locked.Broadcast_Subject, locked.Broadcast_Body, await readConfiguredTenantBrand(admin, current.Company_ID))
   let delivered = (recipients ?? []).filter((recipient: any) => recipient.BroadcastRecipient_StatusCode === "delivered").length
   let failed = (recipients ?? []).filter((recipient: any) => recipient.BroadcastRecipient_StatusCode === "failed").length
   for (const recipient of recipients ?? []) {

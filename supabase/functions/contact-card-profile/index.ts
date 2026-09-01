@@ -1,4 +1,5 @@
-import { adminClient, corsHeaders, failure, HttpError, json } from "../_shared/backend.ts"
+import { adminClient, authenticate, corsHeaders, currentInternalUser, failure, HttpError, json, requirePermission } from "../_shared/backend.ts"
+import { readTenantBrand } from "../_shared/tenant-branding.ts"
 
 function cleanSlug(request: Request) {
   const value = new URL(request.url).searchParams.get("slug")?.trim().toLowerCase() ?? ""
@@ -23,15 +24,22 @@ Deno.serve(async (request) => {
     if (request.method !== "GET") throw new HttpError(405, "Method not allowed.")
     const admin = adminClient()
     const slug = cleanSlug(request)
-    const { data: card, error: cardError } = await admin
+    const preview = new URL(request.url).searchParams.get("preview") === "true"
+    const previewUser = preview ? await authenticate(request, admin) : null
+    const current = previewUser ? await currentInternalUser(admin, previewUser.user) : null
+    if (current) await requirePermission(admin, current.User_ID, "CRM.Read")
+    let cardQuery = admin
       .from("CRM_ContactCards")
       .select("Owner_User_ID,Company_ID,ContactCard_ShowPhone,ContactCard_ShowWebsite")
       .eq("ContactCard_Slug", slug)
-      .eq("ContactCard_Status", "published")
       .is("ContactCard_DeletedAt", null)
-      .maybeSingle()
+    cardQuery = preview
+      ? cardQuery.in("ContactCard_Status", ["draft", "published", "paused"])
+      : cardQuery.eq("ContactCard_Status", "published")
+    const { data: card, error: cardError } = await cardQuery.maybeSingle()
     if (cardError) throw new HttpError(500, cardError.message)
     if (!card) throw new HttpError(404, "This contact card is not active.")
+    if (preview && current?.Company_ID !== card.Company_ID) throw new HttpError(403, "This contact card is outside your workspace.")
 
     const [{ data: owner, error: ownerError }, { data: company, error: companyError }] = await Promise.all([
       admin.from("cmp_Users").select("User_Firstname,User_Lastname,User_Email,User_JobTitle,Auth_User_ID,User_ProfilePhotoBucket,User_ProfilePhotoPath").eq("User_ID", card.Owner_User_ID).eq("Company_ID", card.Company_ID).maybeSingle(),
@@ -56,6 +64,7 @@ Deno.serve(async (request) => {
       profileImageDataUrl = signedPhoto?.signedUrl ?? null
     }
 
+    const tenantBranding = await readTenantBrand(admin, card.Company_ID, company?.Company_Name?.trim() || "")
     return json(request, {
       fullName: metadataText(metadata, ["full_name", "name", "display_name"]) || storedName || owner.User_Email,
       role: owner.User_JobTitle?.trim() || metadataText(metadata, ["role_title", "roleTitle", "title"]),
@@ -64,6 +73,7 @@ Deno.serve(async (request) => {
       phone: card.ContactCard_ShowPhone ? metadataText(metadata, ["phone", "phone_number", "mobile"]) || authUser?.phone?.trim() || "" : "",
       website: card.ContactCard_ShowWebsite ? metadataText(metadata, ["website", "website_url"]) : "",
       profileImageDataUrl,
+      tenantBranding,
     })
   } catch (error) {
     return failure(request, error)

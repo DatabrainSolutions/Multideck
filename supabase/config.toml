@@ -439,6 +439,9 @@ verify_jwt = true
 [functions.contact-card-profile]
 verify_jwt = false
 
+[functions.tenant-branding]
+verify_jwt = true
+
 [functions.team]
 verify_jwt = true
 

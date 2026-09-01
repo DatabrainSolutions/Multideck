@@ -4954,47 +4954,6 @@ export function AdminAiUsageContent() {
       )
 }
 
-function BrandingTab() {
-  return (
-    <>
-      <SettingsPageHeader
-        eyebrow="Organisation / Branding"
-        title="Branding"
-        description="Set the customer-facing identity for shared tracking pages, quote links, and automated updates."
-        actions={primaryAction("Save branding", () => toast.success("Brand settings saved"))}
-      />
-      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
-        <SettingsPanel title="Identity" description="Used on customer-facing surfaces.">
-          <SettingsFieldRow label="Workspace name">
-            <SettingsInput defaultValue="Northwind Forwarding" />
-          </SettingsFieldRow>
-          <SettingsFieldRow label="Public URL">
-            <SettingsInput defaultValue="tracking.multideck.com/northwind" />
-          </SettingsFieldRow>
-          <SettingsFieldRow label="Logo">
-            <div className="flex flex-wrap gap-2">
-              {compactAction("Upload logo", () => toast.success("Logo upload opened"))}
-              {compactAction("Preview tracking page")}
-            </div>
-          </SettingsFieldRow>
-        </SettingsPanel>
-        <SettingsPanel title="Customer page style" description="Keep the customer experience branded without compromising tracking clarity.">
-          <SettingsFieldRow label="Accent colour">
-            <div className="flex items-center gap-3">
-              <span className="size-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] shadow-[var(--md-shadow-line)]" />
-              <SettingsInput defaultValue="#0E7D74" className="max-w-[180px]" />
-            </div>
-          </SettingsFieldRow>
-          <SettingsFieldRow label="Email sign-off">
-            <SettingsTextarea defaultValue="Northwind Forwarding Ops - live cargo visibility, customs support, and exception handling." />
-          </SettingsFieldRow>
-          <ToggleSetting title="Show operator profile on tracking pages" description="Displays the assigned owner and workspace contact details to customers." initialChecked />
-        </SettingsPanel>
-      </div>
-    </>
-  )
-}
-
 function WhatsNewTab() {
   const releases = [
     {
@@ -5571,6 +5530,7 @@ export function SettingsPage({
   useEffect(() => {
     const section = new URLSearchParams(window.location.search).get("tab")
     const adminRoutes: Record<string, string> = {
+      branding: "/admin/branding",
       permissions: "/admin/users",
       users: "/admin/users",
       "ai-usage": "/admin/usage",

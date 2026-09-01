@@ -1221,7 +1221,7 @@ function CardPreview({ card }: { card: ContactCard }) {
             }
             exchange={<PublicCardExchange card={card} onAddToContacts={() => undefined} downloaded={false} interactive={false} />}
           />
-          <PublicCardFooter />
+          <PublicCardFooter card={card} />
         </PublicCardShell>
       </Iphone>
 

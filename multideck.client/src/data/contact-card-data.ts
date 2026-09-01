@@ -57,7 +57,13 @@ export type QrQuietZone = 4 | 6 | 8
  * contrast, not from trust.
  */
 export type CardBranding = {
+  /** Workspace branding is the default; a deliberate card edit becomes a custom override. */
+  brandSource: "tenant" | "custom"
   accent: string
+  secondary: string | null
+  background: string | null
+  surface: string | null
+  textColor: string | null
   theme: CardTheme
   headerStyle: CardHeaderStyle
   layout: CardLayout
@@ -79,7 +85,12 @@ export type CardBranding = {
 
 export function defaultBranding(accent = "#1f6f68"): CardBranding {
   return {
+    brandSource: "tenant",
     accent,
+    secondary: null,
+    background: null,
+    surface: null,
+    textColor: null,
     theme: "light",
     headerStyle: "bar",
     layout: "classic",

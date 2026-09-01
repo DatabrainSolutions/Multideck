@@ -1970,16 +1970,16 @@ export function AppSidebar({
               {arrangingScopeId === activeArea.id ? (
                 <SidebarArrangeHeader label={t(activeArea.label)} onExit={() => setArranging(activeArea.id, false)} />
               ) : (
-                <div className={cn("mt-3 flex items-center gap-2 px-2", collapsed && "justify-center px-0")}>
-                  {ActiveAreaIcon ? <ActiveAreaIcon className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} /> : null}
-                  <p className={cn("truncate text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]", collapsed && "sr-only")}>
+                <div className={cn("mt-4 flex min-h-9 items-center gap-2.5 border-b border-[var(--md-line)] px-2 pb-3", collapsed && "justify-center border-b-0 px-0 pb-0")}>
+                  {ActiveAreaIcon ? <ActiveAreaIcon className="size-[18px] shrink-0 text-[var(--md-accent)]" strokeWidth={1.3} aria-hidden="true" /> : null}
+                  <h2 className={cn("truncate text-[17px] font-medium leading-6 tracking-[-0.015em] text-[var(--md-ink)]", collapsed && "sr-only")}>
                     {t(activeArea.label)}
-                  </p>
+                  </h2>
                 </div>
               )}
 
               <CustomisableSidebarSection
-                className="mt-3"
+                className="mt-2.5"
                 scopeId={activeArea.id}
                 baseIds={destinationBaseIds}
                 promotedIds={promotedDestinationIds}

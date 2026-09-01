@@ -32,5 +32,7 @@ test("profile settings own phone, website and title", () => {
 test("the live profile photo takes precedence over the legacy card snapshot", () => {
   assert.match(contactCardComponents, /const personPhoto = profilePhotoUrl \|\| card\.person\.profileImageDataUrl/)
   assert.match(contactCardStore, /contact-card-profile\?slug=/)
-  assert.match(contactCardStore, /person: \{ \.\.\.card\.person, \.\.\.ownerProfile \}/)
+  assert.match(contactCardStore, /function applyOwnerAndTenantBrand/)
+  assert.match(contactCardStore, /person: \{ \.\.\.card\.person, \.\.\.person \}/)
+  assert.match(contactCardStore, /tenantBranding\.logoUrl/)
 })

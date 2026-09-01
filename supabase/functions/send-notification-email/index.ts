@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 import { normaliseLocale, renderBrandedEmail, safeMultideckUrl } from "../_shared/email-template.ts"
 import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
+import { readConfiguredTenantBrand } from "../_shared/tenant-branding.ts"
 
 type NotificationRow = {
   CommNotif_ID: string
@@ -89,7 +90,7 @@ Deno.serve(async (request) => {
     const { data: currentWorkspaceUser, error: currentWorkspaceError } = authData.user
       ? await adminClient
         .from("cmp_Users")
-        .select("User_ID,User_Email,Auth_User_ID")
+        .select("User_ID,User_Email,Auth_User_ID,Company_ID")
         .eq("Auth_User_ID", authData.user.id)
         .single()
       : { data: null, error: null }
@@ -101,7 +102,8 @@ Deno.serve(async (request) => {
 
     if (requestBody.action === "test") {
       if (!authData.user || !currentWorkspaceUser) return json({ error: "A user session is required for test emails" }, 403)
-      const subject = "Your Multideck emails are ready"
+      const brand = await readConfiguredTenantBrand(adminClient, currentWorkspaceUser.Company_ID)
+      const subject = "Your branded notification emails are ready"
       const rendered = renderBrandedEmail({
         subject,
         preview: "Branded workspace email delivery is connected.",
@@ -115,6 +117,7 @@ Deno.serve(async (request) => {
         eyebrow: "Delivery test",
         footer: "Account security notices are always sent and cannot be disabled.",
         locale,
+        brand,
       })
       const delivery = await sendWithResend(currentWorkspaceUser.User_Email ?? authData.user.email, subject, rendered.html, rendered.text)
       return json({ delivered: true, id: delivery.id ?? null })
@@ -136,7 +139,7 @@ Deno.serve(async (request) => {
 
     const { data: recipient, error: recipientError } = await adminClient
       .from("cmp_Users")
-      .select("User_ID,User_Email,Auth_User_ID")
+      .select("User_ID,User_Email,Auth_User_ID,Company_ID")
       .eq("User_ID", notification.CommNotif_UserID)
       .single()
     if (recipientError || !recipient?.User_Email) return json({ error: "Notification recipient not found" }, 404)
@@ -159,6 +162,7 @@ Deno.serve(async (request) => {
     ) return json({ delivered: false, skipped: "preference_disabled" })
 
     const actionUrl = safeMultideckUrl(metadata.action_url)
+    const brand = await readConfiguredTenantBrand(adminClient, recipient.Company_ID)
     const rendered = renderBrandedEmail({
       subject: notification.CommNotif_Title,
       preview: notification.CommNotif_Body,
@@ -169,6 +173,7 @@ Deno.serve(async (request) => {
       eyebrow: metadata.eyebrow ? String(metadata.eyebrow) : "Workspace update",
       footer: "You can change operational email preferences in Multideck settings.",
       locale,
+      brand,
     })
     const delivery = await sendWithResend(
       recipient.User_Email,

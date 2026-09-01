@@ -20,6 +20,7 @@ import {
 import { readQuoteIntelligence, refreshQuoteIntelligence } from "../quote-intelligence/runtime.ts"
 import { renderBrandedEmail } from "../_shared/email-template.ts"
 import { governedModelFetch } from "../_shared/model-gateway.ts"
+import { readConfiguredTenantBrand, type TenantBrand } from "../_shared/tenant-branding.ts"
 import { generateQuotePdf, removeGeneratedQuotePdf, type GeneratedQuotePdf, type QuotePdfDataset } from "../_shared/quote-pdf.ts"
 import { sendMail as sendConnectedMailbox, type Actor as InboxActor } from "../inbox-api/runtime.ts"
 import { base64Encode, OUTBOUND_ATTACHMENT_LIMITS } from "../inbox-api/core.ts"
@@ -165,7 +166,7 @@ async function sha256Hex(value: string) {
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
-function renderQuoteEmail(subject: string, bodyText: string, reference: string, url: string, expiresAt: string | null) {
+function renderQuoteEmail(subject: string, bodyText: string, reference: string, url: string, expiresAt: string | null, brand: TenantBrand | null = null) {
   const expiry = expiresAt
     ? new Intl.DateTimeFormat("en-GB", { dateStyle: "long", timeZone: "Europe/London" }).format(new Date(expiresAt))
     : null
@@ -182,6 +183,7 @@ function renderQuoteEmail(subject: string, bodyText: string, reference: string, 
       ? `This private link expires on ${expiry}. Please do not forward it.`
       : "This private link remains active until you respond. Please do not forward it.",
     locale: "en",
+    brand,
   })
 }
 
@@ -202,10 +204,10 @@ function renderSimpleQuoteEmail(subject: string, bodyText: string) {
   }
 }
 
-function renderQuoteDeliveryEmail(mode: QuoteDeliveryMode, subject: string, bodyText: string, reference: string, url: string, expiresAt: string | null) {
+function renderQuoteDeliveryEmail(mode: QuoteDeliveryMode, subject: string, bodyText: string, reference: string, url: string, expiresAt: string | null, brand: TenantBrand | null = null) {
   return mode === "simple"
     ? renderSimpleQuoteEmail(subject, bodyText)
-    : renderQuoteEmail(subject, bodyText, reference, url, expiresAt)
+    : renderQuoteEmail(subject, bodyText, reference, url, expiresAt, brand)
 }
 
 async function operatorContext(admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"], authUserId: string) {
@@ -1458,7 +1460,7 @@ Deno.serve(async (request) => {
       const previewOrigin = parseQuoteResponseOrigin(request.headers.get("Origin"))
       const previewUrl = buildQuoteResponseUrl(previewOrigin, "preview")
       const expiresAt = expiryPreset === "never" ? null : new Date(Date.now() + expiryPreset * 86_400_000).toISOString()
-      const preview = renderQuoteDeliveryEmail(deliveryMode, draft.subject, draft.bodyText, context.reference, previewUrl, expiresAt)
+      const preview = renderQuoteDeliveryEmail(deliveryMode, draft.subject, draft.bodyText, context.reference, previewUrl, expiresAt, await readConfiguredTenantBrand(admin, context.operator.companyId))
       return jsonResponse(request, { ...draft, deliveryMode, previewHtml: preview.html })
     }
     if (action === "issue-refine") {
@@ -1475,7 +1477,7 @@ Deno.serve(async (request) => {
       const previewOrigin = parseQuoteResponseOrigin(request.headers.get("Origin"))
       const previewUrl = buildQuoteResponseUrl(previewOrigin, "preview")
       const expiresAt = expiryPreset === "never" ? null : new Date(Date.now() + expiryPreset * 86_400_000).toISOString()
-      const preview = renderQuoteDeliveryEmail(deliveryMode, subject, bodyText, context.reference, previewUrl, expiresAt)
+      const preview = renderQuoteDeliveryEmail(deliveryMode, subject, bodyText, context.reference, previewUrl, expiresAt, await readConfiguredTenantBrand(admin, context.operator.companyId))
       return jsonResponse(request, { deliveryMode, previewHtml: preview.html })
     }
     if (action === "issue") {
@@ -1563,7 +1565,7 @@ Deno.serve(async (request) => {
         }
       }
       try {
-        const rendered = renderQuoteDeliveryEmail(deliveryMode, subject, bodyText, issued.reference, responseUrl, issued.expiresAt)
+        const rendered = renderQuoteDeliveryEmail(deliveryMode, subject, bodyText, issued.reference, responseUrl, issued.expiresAt, await readConfiguredTenantBrand(admin, context.operator.companyId))
         const inboxActor: InboxActor = {
           userId: context.operator.userId,
           authUserId: context.operator.authUserId,

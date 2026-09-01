@@ -63,7 +63,7 @@ test("recipient exclusions and review evidence are visible", () => {
   assert.match(client, /submitLabel="Send broadcast"/)
   assert.match(client, /ServerEmailPreview/)
   assert.match(edge, /emailPreview: rendered \? \{ html: rendered\.html, text: rendered\.text \}/)
-  assert.match(edge, /renderedMessage\(locked\.Broadcast_Subject, locked\.Broadcast_Body\)/)
+  assert.match(edge, /renderedMessage\(locked\.Broadcast_Subject, locked\.Broadcast_Body, await readConfiguredTenantBrand\(admin, current\.Company_ID\)\)/)
   assert.doesNotMatch(edge, /This administrative message was sent to active users/)
 })
 

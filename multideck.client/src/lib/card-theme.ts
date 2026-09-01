@@ -7,7 +7,7 @@
  * and the action falls back to a colour that can.
  */
 
-import { accentCanCarryActions, mix, readableInk, withAlpha } from "@/lib/color"
+import { accentCanCarryActions, mix, parseHex, readableInk, withAlpha } from "@/lib/color"
 import type { CardBranding } from "@/data/contact-card-data"
 
 export type ResolvedCardTheme = {
@@ -65,8 +65,12 @@ export function resolveCardTheme(branding: CardBranding): ResolvedCardTheme {
   const isDark = branding.theme === "dark"
   const base = isDark ? DARK : LIGHT
   const accent = branding.accent
-
-  const pageBg = branding.theme === "tinted" ? mix(accent, "#ffffff", 0.93) : base.pageBg
+  const tenantColours = branding.brandSource === "tenant"
+  const pageBg = tenantColours && branding.background && parseHex(branding.background)
+    ? branding.background
+    : branding.theme === "tinted" ? mix(accent, "#ffffff", 0.93) : base.pageBg
+  const surface = tenantColours && branding.surface && parseHex(branding.surface) ? branding.surface : base.surface
+  const ink = tenantColours && branding.textColor && parseHex(branding.textColor) ? branding.textColor : base.ink
 
   // A brand colour may tint a page without being usable behind button text: it
   // has to be legible *and* separable from the surface it sits on.
@@ -80,13 +84,13 @@ export function resolveCardTheme(branding: CardBranding): ResolvedCardTheme {
 
   return {
     pageBg,
-    surface: base.surface,
-    surfaceMuted: branding.theme === "tinted" ? mix(accent, "#ffffff", 0.965) : base.surfaceMuted,
-    fieldBg: base.surface,
-    ink: base.ink,
-    text: base.text,
-    subtle: isDark ? "#8a9997" : base.subtle,
-    hairline: base.hairline,
+    surface,
+    surfaceMuted: tenantColours ? mix(surface, pageBg, 0.34) : branding.theme === "tinted" ? mix(accent, "#ffffff", 0.965) : base.surfaceMuted,
+    fieldBg: surface,
+    ink,
+    text: tenantColours ? mix(ink, pageBg, 0.28) : base.text,
+    subtle: tenantColours ? mix(ink, pageBg, 0.48) : isDark ? "#8a9997" : base.subtle,
+    hairline: tenantColours ? withAlpha(ink, 0.1) : base.hairline,
     accent,
     accentSoft: withAlpha(accent, isDark ? 0.22 : 0.12),
     actionBg,

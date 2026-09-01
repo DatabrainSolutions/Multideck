@@ -7,11 +7,11 @@ const source = await readFile(
   "utf8",
 )
 
-test("the public contact-card footer uses the canonical Multideck logo", () => {
-  assert.match(source, /import multideckFullLogo from "@\/assets\/brand\/multideck-full-logo\.svg"/)
-  assert.match(source, /aria-label=\{t\("Multideck"\)\}/)
-  assert.match(source, /maskImage: `url\(\$\{multideckFullLogo\}\)`/)
-  assert.doesNotMatch(source, /Powered by Multideck/)
+test("the public contact-card footer inherits the company identity", () => {
+  assert.match(source, /PublicCardFooter\(\{ card \}: \{ card: ContactCard \}\)/)
+  assert.match(source, /card\.branding\.logoDataUrl/)
+  assert.match(source, /card\.tenantName \|\| card\.person\.company/)
+  assert.doesNotMatch(source, /multideckFullLogo|Powered by Multideck/)
 })
 
 test("the footer logo is centred beneath the card content", () => {
