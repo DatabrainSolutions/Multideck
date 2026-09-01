@@ -29,6 +29,7 @@ import {
   downloadDriveFile,
   driveChildFolders,
   driveFolderPath,
+  driveMaxFileLabel,
   driveSignedUrl,
   driveSignedUrls,
   emptyDriveFolderStats,
@@ -660,6 +661,9 @@ export function CrmDrivePage({ currentUser }: { currentUser: AuthUserSummary | n
             <UploadCloud data-icon="inline-start" strokeWidth={1.3} />
             {t("Upload")}
           </Button>
+          <span id="drive-upload-limit" className="basis-full text-right text-[11px] leading-tight text-[var(--md-subtle)]">
+            {t(`Maximum ${driveMaxFileLabel} per file`)}
+          </span>
         </div> : null}
       </div>
 
@@ -667,6 +671,7 @@ export function CrmDrivePage({ currentUser }: { currentUser: AuthUserSummary | n
         ref={fileInputRef}
         type="file"
         multiple
+        aria-describedby="drive-upload-limit"
         className="hidden"
         onChange={(event) => {
           handleFiles(event.target.files)
@@ -723,7 +728,7 @@ export function CrmDrivePage({ currentUser }: { currentUser: AuthUserSummary | n
             ) : isEmpty ? (
               <DriveEmptyState
                 title={folderId ? t("This folder is empty") : t("Nothing in Drive yet")}
-                hint={t(canWriteDrive ? "Drag files in, or create a folder to organise them first." : "No files or folders are available here.")}
+                hint={t(canWriteDrive ? `Drag files in, or create a folder first. Maximum ${driveMaxFileLabel} per file.` : "No files or folders are available here.")}
                 action={canWriteDrive ? (
                   <div className="flex flex-wrap items-center justify-center gap-2">
                     <Button

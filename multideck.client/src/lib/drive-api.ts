@@ -16,6 +16,7 @@ import { getSupabaseSession, supabase, supabaseStorageUrl } from "@/lib/supabase
 
 export const driveBucket = "crm-drive"
 export const driveMaxFileBytes = 50 * 1024 * 1024
+export const driveMaxFileLabel = "50 MB"
 
 /**
  * Mirrors the bucket's own allow list. Checking here means an unsupported file is
@@ -481,7 +482,9 @@ async function currentCompanyId() {
 
 export function assertDriveFileAccepted(file: File) {
   if (file.size < 1) throw new DriveError(`${file.name} is empty.`)
-  if (file.size > driveMaxFileBytes) throw new DriveError(`${file.name} is over 50 MB. Drive files can be up to 50 MB.`)
+  if (file.size > driveMaxFileBytes) {
+    throw new DriveError(`${file.name} is over ${driveMaxFileLabel}. Drive files can be up to ${driveMaxFileLabel}.`)
+  }
   if (!driveAllowedMimeTypes.has(file.type)) {
     throw new DriveError(`${file.name} is not a file type Drive stores. Use images, PDFs, video, documents, fonts, or archives.`)
   }

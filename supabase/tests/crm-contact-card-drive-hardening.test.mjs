@@ -15,6 +15,7 @@ const migration = read("supabase/migrations/20260818101834_crm_contact_card_atom
 const cleanupMigration = read("supabase/migrations/20260818124500_crm_drive_durable_storage_cleanup.sql")
 const driveStatsFixMigration = read("supabase/migrations/20260818134000_crm_drive_folder_stats_bigint_fix.sql")
 const driveMutationClosureMigration = read("supabase/migrations/20260818151000_crm_drive_mutation_closure.sql")
+const driveWorkspaceMigration = read("supabase/migrations/20260807093000_crm_drive_workspace.sql")
 const contactCardPermissionMigration = read("supabase/migrations/20260818152000_crm_contact_card_permission_closure.sql")
 const contactCardBoundedReadsMigration = read("supabase/migrations/20260818157000_crm_contact_card_bounded_reads.sql")
 const driveApi = read("multideck.client/src/lib/drive-api.ts")
@@ -143,6 +144,14 @@ test("Drive metadata and storage paths are constrained to canonical company shap
   assert.match(migration, /_crm_drive_file_path_allowed_v2\("DriveFile_ID", "DriveFile_StoragePath", false\)/)
   assert.match(migration, /_crm_drive_file_path_allowed_v2\("DriveFile_ID", "DriveFile_ThumbnailPath", true\)/)
   assert.match(migration, /storage\.objects[\s\S]*_crm_drive_storage_path_allowed\(public\.app_current_company_id\(\), name\)/)
+})
+
+test("Drive enforces and explains a 50 MB per-file upload limit", () => {
+  assert.match(driveApi, /driveMaxFileBytes = 50 \* 1024 \* 1024/)
+  assert.match(driveApi, /file\.size > driveMaxFileBytes/)
+  assert.match(drivePage, /Maximum \$\{driveMaxFileLabel\} per file/)
+  assert.match(driveWorkspaceMigration, /"CK_CRM_DriveFiles_SizeBytes"[\s\S]*between 1 and 52428800/)
+  assert.match(driveWorkspaceMigration, /'crm-drive',[\s\S]*false,[\s\S]*52428800/)
 })
 
 test("Dexter Drive read and watch capability follow the Drive permission", () => {
