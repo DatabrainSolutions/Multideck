@@ -23,8 +23,11 @@ const imageLightbox = readFileSync(
 
 test("support ticket rollout fails closed in production", () => {
   assert.equal(resolveSupportTicketFeatureEnabled(true, undefined), true)
+  assert.equal(resolveSupportTicketFeatureEnabled(false, undefined, "dev.multideck.app"), true)
+  assert.equal(resolveSupportTicketFeatureEnabled(false, "false", "DEV.MULTIDECK.APP"), true)
   assert.equal(resolveSupportTicketFeatureEnabled(false, "true"), true)
   assert.equal(resolveSupportTicketFeatureEnabled(false, undefined), false)
+  assert.equal(resolveSupportTicketFeatureEnabled(false, undefined, "jenkar.multideck.app"), false)
   assert.equal(resolveSupportTicketFeatureEnabled(false, "false"), false)
   assert.equal(resolveSupportTicketFeatureEnabled(false, "TRUE"), false)
 })
