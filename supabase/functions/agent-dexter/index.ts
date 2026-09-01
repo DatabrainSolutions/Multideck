@@ -81,11 +81,7 @@ const MAX_PROMPT_CHARACTERS = 4_000
 const MAX_HISTORY_MESSAGES = 30
 const MAX_TOOL_ROUNDS = 4
 const MAX_TOOL_CALLS = 6
-<<<<<<< Updated upstream
-const PROMPT_VERSION = "freight-coworker-2026-08-29-support-english"
-=======
-const PROMPT_VERSION = "freight-coworker-2026-08-30-purchase-intake"
->>>>>>> Stashed changes
+const PROMPT_VERSION = "freight-coworker-2026-09-01-finance-support"
 const EMAIL_STYLE_TOOL = "load_operator_email_style"
 const PREPARE_EMAIL_DRAFT_TOOL = "prepare_email_draft"
 const DEXTER_SCOPE_REDIRECT_TOOL = "redirect_off_topic_request"
@@ -392,7 +388,6 @@ const CREATE_TODO_TASK_ACTION = "create_todo_task"
 const UPDATE_TODO_TASK_ACTION = "update_todo_task"
 const COMPLETE_TODO_TASK_ACTION = "complete_todo_task"
 const DELETE_TODO_TASK_ACTION = "delete_todo_task"
-<<<<<<< Updated upstream
 const CREATE_SUPPORT_TICKET_ACTION = "create_support_ticket"
 
 function supportTicketCopy(
@@ -425,11 +420,9 @@ function supportTicketCopy(
   }
   return copy[locale][key]
 }
-=======
 const CREATE_FINANCE_DOCUMENT_DRAFT_ACTION = "create_finance_document_draft"
 const CREATE_FINANCE_CASH_DRAFT_ACTION = "create_finance_cash_draft"
 const ASSIGN_JOB_MANAGEMENT_PERIOD_ACTION = "assign_job_management_period"
->>>>>>> Stashed changes
 
 const CUSTOMS_DRAFT_ACTIONS = new Set([
   CREATE_CUSTOMS_DECLARATION_ACTION,
@@ -461,13 +454,10 @@ function actionDisplayName(locale: DexterLocale, actionCode: string, fallback: s
       [UPDATE_TODO_TASK_ACTION]: "Edit To Do task",
       [COMPLETE_TODO_TASK_ACTION]: "Complete To Do task",
       [DELETE_TODO_TASK_ACTION]: "Remove To Do task",
-<<<<<<< Updated upstream
       [CREATE_SUPPORT_TICKET_ACTION]: "Create support ticket",
-=======
       [CREATE_FINANCE_DOCUMENT_DRAFT_ACTION]: "Create finance document draft",
       [CREATE_FINANCE_CASH_DRAFT_ACTION]: "Create receipt or payment draft",
       [ASSIGN_JOB_MANAGEMENT_PERIOD_ACTION]: "Assign job management period",
->>>>>>> Stashed changes
     },
     "en-US": {
       [CREATE_CUSTOMS_DECLARATION_ACTION]: "Create Customs declaration draft",
@@ -479,13 +469,10 @@ function actionDisplayName(locale: DexterLocale, actionCode: string, fallback: s
       [UPDATE_TODO_TASK_ACTION]: "Edit To Do task",
       [COMPLETE_TODO_TASK_ACTION]: "Complete To Do task",
       [DELETE_TODO_TASK_ACTION]: "Remove To Do task",
-<<<<<<< Updated upstream
       [CREATE_SUPPORT_TICKET_ACTION]: "Create support ticket",
-=======
       [CREATE_FINANCE_DOCUMENT_DRAFT_ACTION]: "Create finance document draft",
       [CREATE_FINANCE_CASH_DRAFT_ACTION]: "Create receipt or payment draft",
       [ASSIGN_JOB_MANAGEMENT_PERIOD_ACTION]: "Assign job management period",
->>>>>>> Stashed changes
     },
   } satisfies Record<DexterLocale, Record<string, string>>)[locale]
   return actionNames[actionCode] ?? fallback
@@ -784,7 +771,6 @@ async function warehouseActionFetch(authorization: string, actionCode: string, a
   }
 }
 
-<<<<<<< Updated upstream
 async function createSupportTicketAction(
   authorization: string,
   args: JsonObject,
@@ -909,7 +895,9 @@ async function createSupportTicketAction(
         message: supportTicketCopy(locale, "unreachable"),
       },
     }
-=======
+  }
+}
+
 async function financeActionFetch(
   authorization: string,
   actionCode: string,
@@ -986,7 +974,6 @@ async function financeActionFetch(
       : { data: null, error: { code: `finance_${response.status}`, message: cleanString(result?.detail, 300) || "The finance draft could not be created." } }
   } catch {
     return { data: null, error: { code: "finance_unavailable", message: "The Finance Edge Function could not be reached. Nothing was changed." } }
->>>>>>> Stashed changes
   }
 }
 
@@ -997,13 +984,11 @@ async function executeWorkspaceAction(
   executionKey: string = crypto.randomUUID(),
   locale: DexterLocale = "en-GB",
 ) {
-<<<<<<< Updated upstream
   if (actionCode === CREATE_SUPPORT_TICKET_ACTION) {
     return await createSupportTicketAction(authorization, args, executionKey, locale)
-=======
+  }
   if (FINANCE_EDGE_ACTIONS.has(actionCode)) {
     return await financeActionFetch(authorization, actionCode, args, executionKey)
->>>>>>> Stashed changes
   }
   if (actionCode === CREATE_PURCHASE_ORDER_ACTION) {
     const facilityId = cleanString(args.facility_id, 80)

@@ -153,7 +153,7 @@ test("Dexter action tools stay OpenAI strict-schema compatible", () => {
 })
 
 test("Dexter redirects off-topic requests without narrowing useful freight work", () => {
-  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-08-29-support-english"/)
+  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-09-01-finance-support"/)
   assert.match(edgeFunction, /# Scope boundary/)
   assert.match(edgeFunction, /Dexter is for freight forwarding and the work required to operate a freight-forwarding business/)
   assert.match(edgeFunction, /Examples include sports fixtures, recipes and cooking, entertainment, celebrity news, general trivia/)

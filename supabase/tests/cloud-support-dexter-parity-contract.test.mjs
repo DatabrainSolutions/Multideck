@@ -18,6 +18,10 @@ const dexter = readFileSync(
   new URL("../functions/agent-dexter/index.ts", import.meta.url),
   "utf8",
 )
+const approvalBoundary = readFileSync(
+  new URL("../functions/agent-dexter/email-approval.mjs", import.meta.url),
+  "utf8",
+)
 const tenantBaseline = readFileSync(
   new URL("../baseline/public-schema.sql", import.meta.url),
   "utf8",
@@ -53,7 +57,8 @@ test("refuses restricted and security ticket callbacks at both App boundaries", 
 })
 
 test("keeps support creation approval-only and tenant-derived", () => {
-  assert.match(dexter, /accessMode === "approve" \|\| action\.code === CREATE_SUPPORT_TICKET_ACTION/g)
+  assert.match(dexter, /requiresExplicitActionApproval\(action\.code, accessMode\)/)
+  assert.match(approvalBoundary, /"create_support_ticket"/)
   assert.match(dexter, /Cloud will assign the customer from this tenant credential/)
   assert.match(dexter, /Never request or include a tenant or customer identifier/)
   assert.match(dexter, /allowedTypes = new Set\(\["bug", "feature_request", "question", "account_billing"\]\)/)

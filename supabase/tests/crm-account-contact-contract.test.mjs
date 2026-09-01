@@ -20,13 +20,10 @@ const organisationFoundation = readFileSync(new URL("../../multideck.client/src/
 const organisationFoundationMigration = readFileSync(new URL("../migrations/20260820110000_crm_organisation_contact_address_foundation.sql", import.meta.url), "utf8")
 const accountOperations = readFileSync(new URL("../../multideck.client/src/components/multideck/account-operations-workspace.tsx", import.meta.url), "utf8")
 const accountOperationsMigration = readFileSync(new URL("../migrations/20260820162000_crm_account_operational_detail.sql", import.meta.url), "utf8")
-<<<<<<< Updated upstream
 const scoreExplanations = readFileSync(new URL("../functions/customers/score-explanations.ts", import.meta.url), "utf8")
 const scoreExplanationPopover = readFileSync(new URL("../../multideck.client/src/components/multideck/score-explanation-popover.tsx", import.meta.url), "utf8")
-=======
 const bankMaskMigration = readFileSync(new URL("../migrations/20260829120816_mask_crm_account_bank_references.sql", import.meta.url), "utf8")
 const multiBankMigration = readFileSync(new URL("../migrations/20260829155243_crm_account_multi_bank_currency.sql", import.meta.url), "utf8")
->>>>>>> Stashed changes
 
 test("account and contact product routes use the authenticated customer API rather than fixture arrays", () => {
   assert.match(customerApi, /edgeFetch\("customers"/)

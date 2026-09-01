@@ -107,11 +107,8 @@ const validRoutes = new Set([
   "/",
   "/agent-dexter",
   "/admin/users",
-<<<<<<< Updated upstream
   "/admin/usage",
-=======
   "/admin/finance",
->>>>>>> Stashed changes
   "/admin/ai-usage",
   "/admin/broadcast",
   "/admin/billing",
