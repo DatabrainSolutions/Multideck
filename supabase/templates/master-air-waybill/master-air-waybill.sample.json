@@ -18,7 +18,7 @@
     "period": "2026",
     "direction": "export",
     "transportMode": "air",
-    "legalEntityName": "Jenkar Shipping Ltd",
+    "legalEntityName": "Demo Freight Company Ltd",
     "origin": { "unlocode": "GBLHR", "name": "London Heathrow" },
     "destination": { "unlocode": "TRIST", "name": "Istanbul Airport" }
   },

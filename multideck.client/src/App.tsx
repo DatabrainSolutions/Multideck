@@ -3,6 +3,7 @@ import type { Session } from "@supabase/supabase-js"
 import { MotionConfig } from "motion/react"
 import { ThemeProvider } from "@/lib/theme-provider"
 import type { AdminRoute } from "@/pages/admin-page"
+import type { FinanceRoute } from "@/pages/finance-page"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppShell } from "@/components/multideck/app-shell"
@@ -76,6 +77,7 @@ const ContactCardsPage = lazy(() => import("@/pages/contact-cards-page").then((m
 const ContactCardDetailPage = lazy(() => import("@/pages/contact-cards-page").then((module) => ({ default: module.ContactCardDetailPage })))
 const ContactCardPublicPage = lazy(() => import("@/pages/contact-card-public-page").then((module) => ({ default: module.ContactCardPublicPage })))
 const QuoteResponsePage = lazy(() => import("@/pages/quote-response-page").then((module) => ({ default: module.QuoteResponsePage })))
+const FinancePage = lazy(() => import("@/pages/finance-page").then((module) => ({ default: module.FinancePage })))
 
 type AuthStatus = "checking" | "authenticated" | "unauthenticated"
 type ProfileMediaUrls = {
@@ -105,7 +107,11 @@ const validRoutes = new Set([
   "/",
   "/agent-dexter",
   "/admin/users",
+<<<<<<< Updated upstream
   "/admin/usage",
+=======
+  "/admin/finance",
+>>>>>>> Stashed changes
   "/admin/ai-usage",
   "/admin/broadcast",
   "/admin/billing",
@@ -147,6 +153,28 @@ const validRoutes = new Set([
   "/reports",
   "/reports/scheduled",
   "/reports/templates/monthly-client-review",
+  "/finance/receivables",
+  "/finance/receivables/approvals",
+  "/finance/receivables/cash",
+  "/finance/receivables/credit-control",
+  "/finance/payables",
+  "/finance/payables/approvals",
+  "/finance/payables/cash",
+  "/finance/payables/intake",
+  "/finance/cash",
+  "/finance/cash/reconciliation",
+  "/finance/administration",
+  "/finance/systems",
+  "/finance/currencies",
+  "/finance/banks",
+  "/finance/ledger",
+  "/finance/tax",
+  "/finance/documents",
+  "/finance/mappings",
+  "/finance/compliance",
+  "/finance/controls",
+  "/finance/reports",
+  "/finance/management/accruals-wip",
   "/settings",
   "/warehouse",
   "/warehouse/calendar",
@@ -172,6 +200,10 @@ function isBookingDetailRoute(path: string) {
 
 function isQuoteDetailRoute(path: string) {
   return /^\/quotes\/[^/]+$/.test(path)
+}
+
+function isFinanceDocumentDetailRoute(path: string) {
+  return /^\/finance\/(receivables|payables)\/documents\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(path)
 }
 
 /** A warehouse order has its own address, so the router has to recognise it. */
@@ -273,6 +305,7 @@ function getRoute() {
   // Home lives at the workspace root. `/home` is the address people type, so it
   // resolves to the same screen rather than a second identity for it.
   if (window.location.pathname === "/home" || window.location.pathname === "/home/") return "/"
+  if (window.location.pathname === "/finance/setup") return "/admin/finance"
   const legacyBookingRoute = getLegacyBookingRoute(window.location.pathname)
   if (legacyBookingRoute) return legacyBookingRoute
   const legacyCrmRoute = getLegacyCrmRoute(window.location.pathname)
@@ -284,6 +317,7 @@ function getRoute() {
   if (isRoadJobDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCustomsDeclarationEditRoute(window.location.pathname)) return window.location.pathname
   if (isQuoteDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isFinanceDocumentDetailRoute(window.location.pathname)) return window.location.pathname
   if (isWarehouseOrderDetailRoute(window.location.pathname)) return window.location.pathname
   if (isWarehousePurchaseOrderDetailRoute(window.location.pathname)) return window.location.pathname
   if (isWarehouseItemDetailRoute(window.location.pathname)) return window.location.pathname
@@ -614,7 +648,7 @@ export default function App() {
   // Old and prototype-only CRM bookmarks are rewritten in place, so the address
   // bar only shows routes that operators can genuinely use.
   useEffect(() => {
-    if (getLegacyCrmRoute(window.location.pathname) || getUnavailableCrmRoute(window.location.pathname)) {
+    if (window.location.pathname === "/finance/setup" || getLegacyCrmRoute(window.location.pathname) || getUnavailableCrmRoute(window.location.pathname)) {
       window.history.replaceState(window.history.state, "", route)
     }
   }, [route])
@@ -706,6 +740,7 @@ export default function App() {
                   {route === "/quotes/new" ? <QuoteDetailPage key={route} variant="cargowise" quoteId="NEW" navigate={navigate} currentUser={currentUser} /> : null}
                   {route !== "/quotes/new" && isQuoteDetailRoute(route) ? <QuoteDetailPage key={route} variant="cargowise" quoteId={route.split("/").at(-1)} navigate={navigate} currentUser={currentUser} /> : null}
                   {route.startsWith("/rates") ? <RatesPage route={route as "/rates" | "/rates/contracts" | "/rates/tariffs" | "/rates/imports" | "/rates/results"} navigate={navigate} /> : null}
+                  {route.startsWith("/finance/") ? <FinancePage route={route as FinanceRoute} navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/reports" || route === "/reports/scheduled"
                     ? <ReportsPage route={route} />
                     : null}
@@ -718,7 +753,8 @@ export default function App() {
                       onCoverPhotoChange={handleCoverPhotoChange}
                     />
                   ) : null}
-                  {route.startsWith("/admin") ? <AdminPage route={route as AdminRoute} currentUser={currentUser} /> : null}
+                  {route === "/admin/finance" ? <FinancePage route="/finance/setup" navigate={navigate} currentUser={currentUser} /> : null}
+                  {route.startsWith("/admin") && route !== "/admin/finance" ? <AdminPage route={route as AdminRoute} currentUser={currentUser} /> : null}
                   {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} navigate={navigate} /> : null}
                   {route === "/bookings" ? <BookingsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isBookingDetailRoute(route) ? <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-1) ?? "md-22455"} /> : null}

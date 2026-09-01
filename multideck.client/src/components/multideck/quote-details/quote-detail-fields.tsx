@@ -389,7 +389,7 @@ export function CompactCombobox({
                 setOpen(true)
               }}
               onKeyDown={handleKeyDown}
-              className="h-8 flex-1 rounded-[var(--md-radius-lg)] bg-transparent px-2.5 text-[12px] shadow-none ring-0 hover:bg-transparent focus-visible:bg-transparent focus-visible:ring-0"
+              className="h-8 flex-1 truncate rounded-[var(--md-radius-lg)] bg-transparent px-1.5 text-[12px] shadow-none ring-0 hover:bg-transparent focus-visible:bg-transparent focus-visible:ring-0"
             />
             <AutoPopulationIndicator active={autoPopulated} description={autoPopulationDescription} inline />
             {allowCustom && inputValue ? (
@@ -585,7 +585,7 @@ export function IncotermField({
     <div className={cn("grid min-w-0 gap-2 sm:grid-cols-[minmax(220px,0.72fr)_minmax(220px,1fr)]", className)}>
       <CompactFieldShell label="Incoterm" hint="Rules 2020" htmlFor={selectId} required={required} invalid={invalid} width="full">
         <Select value={value || undefined} onValueChange={(next) => onValueChange(next as IncotermCode)} disabled={disabled} required={required}>
-          <SelectTrigger id={selectId} aria-invalid={invalid || undefined} className="h-8 w-full rounded-[var(--md-radius-lg)] px-2.5 text-[12px]">
+          <SelectTrigger id={selectId} aria-invalid={invalid || undefined} className="h-8 w-full rounded-[var(--md-radius-lg)] px-1.5 text-[12px]">
             <SelectValue placeholder={t("Select Incoterm")} />
           </SelectTrigger>
           <SelectContent className="min-w-[280px]">
@@ -615,7 +615,7 @@ export function IncotermField({
             disabled={disabled}
             onChange={(event) => onNamedLocationChange(event.target.value)}
             placeholder={t(term.namedLocationLabel)}
-            className="h-8 rounded-[var(--md-radius-lg)] text-[12px]"
+            className="h-8 rounded-[var(--md-radius-lg)] px-1.5 text-[12px]"
           />
         </CompactFieldShell>
       ) : null}
@@ -658,10 +658,10 @@ export function AmountCurrencyField({
           aria-invalid={invalid || undefined}
           placeholder="0.00"
           onChange={(event) => onChange({ ...value, amount: event.target.value })}
-          className="h-8 rounded-[var(--md-radius-lg)] text-end text-[12px] tabular-nums"
+          className="h-8 rounded-[var(--md-radius-lg)] px-1.5 text-end text-[12px] tabular-nums"
         />
         <Select value={value.currency} onValueChange={(currency) => onChange({ ...value, currency })} disabled={disabled}>
-          <SelectTrigger aria-label={t(`${label} currency`)} className="h-8 w-full rounded-[var(--md-radius-lg)] px-2 text-[11px]">
+          <SelectTrigger aria-label={t(`${label} currency`)} className="h-8 w-full rounded-[var(--md-radius-lg)] px-1.5 text-[11px]">
             <SelectValue placeholder={t("Currency")} />
           </SelectTrigger>
           <SelectContent>
@@ -714,10 +714,10 @@ export function NumberUnitField<Unit extends string>({
           disabled={disabled}
           aria-invalid={invalid || undefined}
           onChange={(event) => onChange({ ...value, value: event.target.value })}
-          className="h-8 rounded-[var(--md-radius-lg)] text-end text-[12px] tabular-nums"
+          className="h-8 rounded-[var(--md-radius-lg)] px-1.5 text-end text-[12px] tabular-nums"
         />
         <Select value={value.unit} onValueChange={(unit) => onChange({ ...value, unit: unit as Unit })} disabled={disabled}>
-          <SelectTrigger aria-label={t(`${label} unit`)} className="h-8 w-full rounded-[var(--md-radius-lg)] px-2 text-[11px]">
+          <SelectTrigger aria-label={t(`${label} unit`)} className="h-8 w-full rounded-[var(--md-radius-lg)] px-1.5 text-[11px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -742,7 +742,7 @@ export function RecurrenceBuilder({
 }) {
   const { t } = useLanguage()
   const notesId = useId()
-  const numberClass = "h-8 w-[4.5rem] rounded-[var(--md-radius-lg)] text-end text-[12px] tabular-nums"
+  const numberClass = "h-8 w-[4.5rem] rounded-[var(--md-radius-lg)] px-1.5 text-end text-[12px] tabular-nums"
   const hasNotes = Boolean(value.notes.trim())
   const notesPopover = value.mode !== "once" ? (
     <Popover>
@@ -792,7 +792,7 @@ export function RecurrenceBuilder({
             <span className="min-w-0 truncate text-[10.5px] font-medium leading-4 text-[var(--md-text)]">{t("Frequency")}</span>
           </div>
           <Select value={value.mode} onValueChange={(mode) => onChange({ ...value, mode: mode as RecurrenceValue["mode"] })} disabled={disabled}>
-            <SelectTrigger className="h-8 w-full rounded-[var(--md-radius-lg)] px-2.5 text-[12px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-8 w-full rounded-[var(--md-radius-lg)] px-1.5 text-[12px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="once">{t("Ad hoc / once")}</SelectItem>
               <SelectItem value="interval">{t("Repeat every")}</SelectItem>
@@ -807,7 +807,7 @@ export function RecurrenceBuilder({
             <span className="pb-2 text-[11px] text-[var(--md-text)]">{t("Every")}</span>
             <Input data-i18n-skip dir="ltr" type="number" min={1} inputMode="numeric" value={value.interval} disabled={disabled} aria-label={t("Repeat interval")} onChange={(event) => onChange({ ...value, interval: event.target.value })} className={numberClass} />
             <Select value={value.unit} onValueChange={(unit) => onChange({ ...value, unit: unit as RecurrenceUnit })} disabled={disabled}>
-              <SelectTrigger aria-label={t("Repeat unit")} className="h-8 w-[7rem] rounded-[var(--md-radius-lg)] px-2 text-[11px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label={t("Repeat unit")} className="h-8 w-[7rem] rounded-[var(--md-radius-lg)] px-1.5 text-[11px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="day">{t(value.interval === "1" ? "day" : "days")}</SelectItem>
                 <SelectItem value="week">{t(value.interval === "1" ? "week" : "weeks")}</SelectItem>
@@ -1040,7 +1040,7 @@ export function HazardousDetailsDialog({
     const id = `${fieldId}-${key}`
     return (
       <CompactFieldShell label={label} htmlFor={id} width={width}>
-        <Input id={id} data-i18n-skip dir={inputProps?.dir ?? "auto"} inputMode={inputProps?.inputMode} value={draft[key]} placeholder={inputProps?.placeholder} onChange={(event) => patch(key, event.target.value)} className="h-8 rounded-[var(--md-radius-lg)] text-[12px]" />
+        <Input id={id} data-i18n-skip dir={inputProps?.dir ?? "auto"} inputMode={inputProps?.inputMode} value={draft[key]} placeholder={inputProps?.placeholder} onChange={(event) => patch(key, event.target.value)} className="h-8 rounded-[var(--md-radius-lg)] px-1.5 text-[12px]" />
       </CompactFieldShell>
     )
   }
@@ -1057,13 +1057,13 @@ export function HazardousDetailsDialog({
           {field("properShippingName", "Proper shipping name", "grow")}
           <CompactFieldShell label="Hazard class" width="code">
             <Select value={draft.hazardClass || undefined} onValueChange={(hazardClass) => patch("hazardClass", hazardClass)}>
-              <SelectTrigger aria-label={t("Hazard class")} className="h-8 w-full rounded-[var(--md-radius-lg)] text-[12px]"><SelectValue placeholder={t("Select class")} /></SelectTrigger>
+              <SelectTrigger aria-label={t("Hazard class")} className="h-8 w-full rounded-[var(--md-radius-lg)] px-1.5 text-[12px]"><SelectValue placeholder={t("Select class")} /></SelectTrigger>
               <SelectContent>{["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((hazardClass) => <SelectItem key={hazardClass} value={hazardClass} data-i18n-skip dir="ltr">{hazardClass}</SelectItem>)}</SelectContent>
             </Select>
           </CompactFieldShell>
           <CompactFieldShell label="Packing group" width="short">
             <Select value={draft.packingGroup || undefined} onValueChange={(packingGroup) => patch("packingGroup", packingGroup as HazardousDetails["packingGroup"])}>
-              <SelectTrigger aria-label={t("Packing group")} className="h-8 w-full rounded-[var(--md-radius-lg)] text-[12px]"><SelectValue placeholder={t("Select group")} /></SelectTrigger>
+              <SelectTrigger aria-label={t("Packing group")} className="h-8 w-full rounded-[var(--md-radius-lg)] px-1.5 text-[12px]"><SelectValue placeholder={t("Select group")} /></SelectTrigger>
               <SelectContent>{["I", "II", "III", "N/A"].map((group) => <SelectItem key={group} value={group} data-i18n-skip dir="ltr">{group}</SelectItem>)}</SelectContent>
             </Select>
           </CompactFieldShell>

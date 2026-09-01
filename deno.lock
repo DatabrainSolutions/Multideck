@@ -8,6 +8,7 @@
     "npm:pdf-lib@1.17.1": "1.17.1",
     "npm:pdf-lib@^1.17.1": "1.17.1",
     "npm:pgsql-ast-parser@12.0.2": "12.0.2",
+    "npm:pgsql-parser@18.2.6": "18.2.6",
     "npm:word-extractor@1.0.4": "1.0.4",
     "npm:word-extractor@^1.0.4": "1.0.4",
     "npm:xlsx@0.18.5": "0.18.5",
@@ -36,6 +37,12 @@
       "dependencies": [
         "pako"
       ]
+    },
+    "@pgsql/quotes@18.2.4": {
+      "integrity": "sha512-muCDdPu/bM/f9d7IquBNfkMgiRPehv6vvjdhSMxXeVKwJKPX9xIscDu11ju15s7UeEXoWntE8zrSaR9wQ9wgCg=="
+    },
+    "@pgsql/types@18.0.0": {
+      "integrity": "sha512-jtAY4JU7jdVYZ/Vv3zlZqVP+FRWZokyCLKPPCnAApiaJAElpyyiMC3HRiquBu29kSrVs+rkqZD50SUIb/zyEGw=="
     },
     "@supabase/auth-js@2.108.2": {
       "integrity": "sha512-tNaQmBgodDZwgB40mRwVbxFy8IDYwjdpcZ0BYrWiwlULCSQoJj4QoG4zgJT7QRPXcqipefNOzvO/qAu4dF98ag==",
@@ -120,6 +127,12 @@
     "iceberg-js@0.8.1": {
       "integrity": "sha512-1dhVQZXhcHje7798IVM+xoo/1ZdVfzOMIc8/rgVSijRK38EDqOJoGula9N/8ZI5RD8QTxNQtK/Gozpr+qUqRRA=="
     },
+    "libpg-query@18.1.4": {
+      "integrity": "sha512-6jF9qn9ln4yLnmSF+bS/DBvAfNcPhGI05+pkQy+n3cRd3p9aO8LWjquEin8SLO0k7zYk745ZGBXYUiL9AUI7gA==",
+      "dependencies": [
+        "@pgsql/types"
+      ]
+    },
     "moo@0.5.3": {
       "integrity": "sha512-m2fmM2dDm7GZQsY7KK2cme8agi+AAljILjQnof7p1ZMDe6dQ4bdnSMx0cPppudoeNv5hEFQirN6u+O4fDE0IWA=="
     },
@@ -153,6 +166,21 @@
       "dependencies": [
         "moo",
         "nearley"
+      ]
+    },
+    "pgsql-deparser@18.3.6": {
+      "integrity": "sha512-JJOkNr3JqKNEqmf0mBb7/2HAU9kh75AX81oB6ppstFuLVeVBYoWfSgnZVSmMWRgwtjEnYL2+IUpk/Ir7fvceTg==",
+      "dependencies": [
+        "@pgsql/quotes",
+        "@pgsql/types"
+      ]
+    },
+    "pgsql-parser@18.2.6": {
+      "integrity": "sha512-PC/d/Ht0cpBSnA4aYd/UOf9YV1pgKFnX70xfIRC6r30SvzTLgnLs0iR5BlMZrQrBeiKnL3pc7yDvIJjTi0isfw==",
+      "dependencies": [
+        "@pgsql/types",
+        "libpg-query",
+        "pgsql-deparser"
       ]
     },
     "railroad-diagrams@1.0.0": {

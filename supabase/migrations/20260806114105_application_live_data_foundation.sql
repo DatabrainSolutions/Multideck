@@ -271,9 +271,9 @@ with check ("Company_ID" in (select "Company_ID" from public."cmp_Users" where "
 do $$
 declare demo_company uuid;
 begin
-  select "Company_ID" into demo_company from public."cmp_Company" where "Company_Name" = 'Jenkar Shipping Ltd' limit 1;
+  select "Company_ID" into demo_company from public."cmp_Company" where "Company_Name" = 'Demo Freight Company Ltd' limit 1;
   if demo_company is null then
-    raise notice 'Jenkar demo company not found; application demo seed skipped.';
+    raise notice 'Demo freight company not found; application demo seed skipped.';
     return;
   end if;
 
@@ -286,11 +286,11 @@ begin
   on conflict ("Company_ID","Booking_Reference") do update set "Status"=excluded."Status","Progress"=excluded."Progress","Updated_At"=now();
 
   insert into public."Operations_Road_Jobs" ("Company_ID","Road_Job_Reference","Booking_Reference","Owner_Code","Office_Name","Stage","Customer_Name","Customer_Reference","Collection","Delivery","Timing","Service","Carrier","Status","Tone","Margin_Display","Blocker","Is_Favourite") values
-    (demo_company,'RD-10682','MD-22682','JL','UK Distribution','intake','Jenkar','JK-PO-48216','Leicester, GB','Bristol, GB','Collection date missing','Pallet network','Not assigned','Needs planning date','amber','—','Waiting for customer confirmation',false),
-    (demo_company,'RD-10676','MD-22676','EM','UK Distribution','ready','Jenkar','JK-PO-48191','Birmingham, GB','Glasgow, GB','Today · collection by 14:00','Dedicated 7.5t','Carrier shortlist ready','Plan now','teal','18.4% est.',null,true),
-    (demo_company,'RD-10671','MD-22671','WC','UK Distribution','carrier','Jenkar','JK-PO-48172','Rugby, GB','Exeter, GB','Today · collection 15:00–17:00','Dedicated van','Redline Transport','Confirmation due 11:30','blue','20.7% est.',null,false),
-    (demo_company,'RD-10664','MD-22664','EM','UK Distribution','live','Jenkar','JK-PO-48126','Milton Keynes, GB','Newcastle, GB','Out for delivery · ETA 15:20','Dedicated 18t','Grove Haulage','On track','green','19.6% est.',null,true),
-    (demo_company,'RD-10658','MD-22658','EM','UK Distribution','close','Jenkar','JK-PO-48094','Derby, GB','Cardiff, GB','Delivered yesterday · POD received','Pallet network','PalletLine','Cost check due','neutral','16.8% est.',null,false)
+    (demo_company,'RD-10682','MD-22682','JL','UK Distribution','intake','Demo Freight Company','DFC-PO-48216','Leicester, GB','Bristol, GB','Collection date missing','Pallet network','Not assigned','Needs planning date','amber','—','Waiting for customer confirmation',false),
+    (demo_company,'RD-10676','MD-22676','EM','UK Distribution','ready','Demo Freight Company','DFC-PO-48191','Birmingham, GB','Glasgow, GB','Today · collection by 14:00','Dedicated 7.5t','Carrier shortlist ready','Plan now','teal','18.4% est.',null,true),
+    (demo_company,'RD-10671','MD-22671','WC','UK Distribution','carrier','Demo Freight Company','DFC-PO-48172','Rugby, GB','Exeter, GB','Today · collection 15:00–17:00','Dedicated van','Redline Transport','Confirmation due 11:30','blue','20.7% est.',null,false),
+    (demo_company,'RD-10664','MD-22664','EM','UK Distribution','live','Demo Freight Company','DFC-PO-48126','Milton Keynes, GB','Newcastle, GB','Out for delivery · ETA 15:20','Dedicated 18t','Grove Haulage','On track','green','19.6% est.',null,true),
+    (demo_company,'RD-10658','MD-22658','EM','UK Distribution','close','Demo Freight Company','DFC-PO-48094','Derby, GB','Cardiff, GB','Delivered yesterday · POD received','Pallet network','PalletLine','Cost check due','neutral','16.8% est.',null,false)
   on conflict ("Company_ID","Road_Job_Reference") do update set "Stage"=excluded."Stage","Status"=excluded."Status","Updated_At"=now();
 
   insert into public."Reporting_Reports" ("Company_ID","Report_Reference","Title","Customer_Name","Report_Type","Status","Tone","Period_Label","Generated_At","Summary") values

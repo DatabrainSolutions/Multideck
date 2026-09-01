@@ -79,6 +79,14 @@
       "destination": "/index.html"
     },
     {
+      "source": "/finance/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin/:path*",
+      "destination": "/index.html"
+    },
+    {
       "source": "/settings",
       "destination": "/index.html"
     },

@@ -802,7 +802,17 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
               <CustomerWarehouseAccess customerId={currentAccount.id} />
             </>
           ) : (
-            <AccountOperationsPanel account={currentAccount} activeTab={activeTab} onChange={(updated) => { accountRef.current = updated; setAccount(updated) }} />
+            <AccountOperationsPanel
+              account={currentAccount}
+              activeTab={activeTab}
+              currencyOptions={reference?.currencies ?? []}
+              financeReference={{
+                legalEntities: reference?.legalEntities ?? [],
+                paymentTerms: reference?.paymentTerms ?? [],
+                taxTreatments: reference?.taxTreatments ?? [],
+              }}
+              onChange={(updated) => { accountRef.current = updated; setAccount(updated) }}
+            />
           )}
         </div>
       </div>

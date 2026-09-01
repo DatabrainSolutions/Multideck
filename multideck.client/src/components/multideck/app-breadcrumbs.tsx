@@ -27,6 +27,7 @@ const staticLeafLabels: Record<string, string> = {
   "/admin/system-preferences": "System Preferences",
   "/admin/activity": "Active log",
   "/admin/detailed-log": "Detailed log",
+  "/admin/finance": "Finance setup",
   "/bookings": "Bookings",
   "/bookings/new": "New booking",
   "/bookings/provisional": "Provisional booking",
@@ -40,6 +41,28 @@ const staticLeafLabels: Record<string, string> = {
   "/crm/drive": "Drive",
   "/crm/settings": "CRM settings",
   "/customers": "Customers",
+  "/finance/receivables": "Sales ledger",
+  "/finance/receivables/approvals": "Receivables approvals",
+  "/finance/receivables/cash": "Customer receipts & allocation",
+  "/finance/receivables/credit-control": "Credit control & collections",
+  "/finance/payables": "Purchase ledger",
+  "/finance/payables/approvals": "Payables approvals",
+  "/finance/payables/cash": "Supplier payments & allocation",
+  "/finance/payables/intake": "Supplier document intake",
+  "/finance/cash": "Cash & allocations",
+  "/finance/cash/reconciliation": "Allocation & reconciliation",
+  "/finance/administration": "Finance administration",
+  "/finance/systems": "Accounting systems",
+  "/finance/currencies": "Currencies & FX",
+  "/finance/banks": "Bank accounts",
+  "/finance/ledger": "Nominal accounts",
+  "/finance/tax": "Tax & VAT",
+  "/finance/documents": "Document numbering & terms",
+  "/finance/mappings": "Charge & provider mappings",
+  "/finance/compliance": "Compliance obligations",
+  "/finance/controls": "Posting controls & audit",
+  "/finance/reports": "Financial reports",
+  "/finance/management/accruals-wip": "Accruals & WIP",
   "/playground/navigation": "Navigation lab",
   "/to-do": "To Do list",
   "/quotes": "Quotes",
@@ -57,7 +80,7 @@ const staticLeafLabels: Record<string, string> = {
   "/warehouse/items": "Items",
   "/warehouse/locations": "Locations",
   "/warehouse/orders": "Orders",
-  "/warehouse/purchase-orders": "Purchase orders",
+  "/warehouse/purchase-orders": "Customer purchase orders",
   "/warehouse/users": "Users",
 }
 
@@ -79,7 +102,7 @@ const warehouseChildLabels: Record<string, string> = {
   items: "Items",
   locations: "Locations",
   orders: "Orders",
-  "purchase-orders": "Purchase orders",
+  "purchase-orders": "Customer purchase orders",
   users: "Users",
 }
 
@@ -258,8 +281,8 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
     return [
       { label: "Home", route: "/" },
       { label: "Warehouse", route: "/warehouse" },
-      { label: "Purchase orders", route: "/warehouse/purchase-orders" },
-      { label: purchaseOrderMatch[1] === "new" ? "New purchase order" : friendlyIdentifierLabel(purchaseOrderMatch[1], "Purchase order"), preserveDirection: purchaseOrderMatch[1] !== "new" },
+      { label: "Customer purchase orders", route: "/warehouse/purchase-orders" },
+      { label: purchaseOrderMatch[1] === "new" ? "New customer purchase order" : friendlyIdentifierLabel(purchaseOrderMatch[1], "Customer purchase order"), preserveDirection: purchaseOrderMatch[1] !== "new" },
     ]
   }
 
@@ -278,6 +301,24 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
       { label: "Home", route: "/" },
       { label: "Warehouse", route: "/warehouse" },
       { label: warehouseChildLabels[child] ?? referenceLabel(child) },
+    ]
+  }
+
+  if (route.startsWith("/finance/")) {
+    const documentMatch = route.match(/^\/finance\/(receivables|payables)\/documents\/[^/]+$/)
+    if (documentMatch) {
+      const registerRoute = documentMatch[1] === "receivables" ? "/finance/receivables" : "/finance/payables"
+      return [
+        { label: "Home", route: "/" },
+        { label: "Finance", route: "/finance/receivables" },
+        { label: documentMatch[1] === "receivables" ? "Sales ledger" : "Purchase ledger", route: registerRoute },
+        { label: leafLabel?.trim() || "Finance document", localize: !leafLabel?.trim() },
+      ]
+    }
+    return [
+      { label: "Home", route: "/" },
+      { label: "Finance", route: "/finance/receivables" },
+      { label: staticLeafLabels[route] ?? referenceLabel(route.split("/")[2]) },
     ]
   }
 

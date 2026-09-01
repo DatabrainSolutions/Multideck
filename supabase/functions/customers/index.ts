@@ -772,6 +772,20 @@ async function upsertRelatedPartyDefault(admin: any, current: Row, permissions: 
 }
 
 async function replaceAccountOperations(admin: any, current: Row, permissions: string[], accountId: string, payload: Row) {
+  const { data: existingProfile, error: existingError } = await admin
+    .from("CRM_AccountOperationalProfiles")
+    .select("CRMAccountOps_InvoicePreferencesJSON")
+    .eq("CRMAccountOps_OrgID", accountId)
+    .maybeSingle()
+  if (existingError && existingError.code !== "PGRST116") throw new HttpError(500, existingError.message)
+  const currentFinance = objectValue(existingProfile?.CRMAccountOps_InvoicePreferencesJSON)
+  const nextFinance = objectValue(payload.invoicePreferences)
+  if (JSON.stringify(currentFinance) !== JSON.stringify(nextFinance) && !permissions.includes("Finance.Configuration.Manage")) {
+    throw new HttpError(403, "Finance configuration permission is required to change organisation accounting settings.")
+  }
+  if (JSON.stringify(currentFinance.bankAccounts ?? []) !== JSON.stringify(nextFinance.bankAccounts ?? []) && !permissions.includes("Finance.Banks.Manage")) {
+    throw new HttpError(403, "Bank-management permission is required to change organisation bank details.")
+  }
   const { error } = await admin.rpc("multideck_crm_replace_account_operations", {
     p_actor_user_id: current.User_ID,
     p_org_id: accountId,
@@ -810,12 +824,25 @@ Deno.serve(async (request) => {
     if (request.method === "GET") {
       const permissions = await requirePermission(admin, current.User_ID, "Customers.Read")
       if (parts[0] === "reference") {
-        const [{ data: organisationTypes, error }, { data: relationshipStatuses, error: relationshipError }, { data: offices, error: officeError }] = await Promise.all([
+        const [{ data: organisationTypes, error }, { data: relationshipStatuses, error: relationshipError }, { data: offices, error: officeError }, { data: legalEntities, error: legalEntityError }, { data: currencies, error: currencyError }, { data: bootstrapCurrencies, error: bootstrapCurrencyError }, { data: paymentTerms, error: paymentTermError }, { data: taxTreatments, error: taxTreatmentError }, { data: financeRevisions, error: financeRevisionError }] = await Promise.all([
           admin.from("Org_Types").select("OrgType_ID,OrgType_Name").order("OrgType_Order").order("OrgType_Name"),
           admin.from("sys_CRMRelationshipStatuses").select("CRMRelStatus_Code,CRMRelStatus_Name").eq("CRMRelStatus_IsActive", true).order("CRMRelStatus_SortOrder"),
           admin.from("cmp_Offices").select("Office_ID,Office_Name,Office_Code,Office_CountryCode,Office_TimeZone").eq("Company_ID", current.Company_ID).eq("Office_IsActive", true).order("Office_Name"),
+          admin.from("cmp_LegalEntities").select("LegalEntity_ID,LegalEntity_Name,LegalEntity_CountryCode,LegalEntity_BaseCurrencyCodeSnapshot").eq("Company_ID", current.Company_ID).order("LegalEntity_Name"),
+          admin.from("FIN_CurrencySettings").select("FINCurSet_LegalEntityID,FINCurSet_CurrencyCode,FINCurSet_Name").eq("FINCurSet_IsActive", true).order("FINCurSet_CurrencyCode"),
+          admin.from("sys_Currency").select("Currency_Code,Currency_Name").in("Currency_Code", ["GBP", "EUR", "USD"]).order("Currency_Code"),
+          admin.from("FIN_PaymentTerms").select("FINTerm_ID,FINTerm_LegalEntityID,FINTerm_Code,FINTerm_Name,FINTerm_Days,FINTerm_EndOfMonth").eq("FINTerm_IsActive", true).order("FINTerm_Code"),
+          admin.from("FIN_TaxCodes").select("FINTax_ID,FINTax_LegalEntityID,FINTax_Code,FINTax_Name,FINTax_CountryCode,FINTax_RatePercent,FINTax_TransactionTypeCode").eq("FINTax_IsActive", true).order("FINTax_Code"),
+          admin.from("FIN_AdministrationRevisions").select("FINAdminRevision_LegalEntityID,FINAdminRevision_ConfigJSON").eq("FINAdminRevision_StatusCode", "approved"),
         ])
-        if (error || relationshipError || officeError) throw new HttpError(500, (error ?? relationshipError ?? officeError)?.message ?? "The CRM reference data could not be loaded.")
+        if (error || relationshipError || officeError || legalEntityError || currencyError || bootstrapCurrencyError || paymentTermError || taxTreatmentError || financeRevisionError) throw new HttpError(500, (error ?? relationshipError ?? officeError ?? legalEntityError ?? currencyError ?? bootstrapCurrencyError ?? paymentTermError ?? taxTreatmentError ?? financeRevisionError)?.message ?? "The CRM reference data could not be loaded.")
+        const legalEntityIds = new Set((legalEntities ?? []).map((item: Row) => item.LegalEntity_ID))
+        const approvedFinanceEntityIds = new Set((financeRevisions ?? []).filter((item: Row) => legalEntityIds.has(item.FINAdminRevision_LegalEntityID)).map((item: Row) => item.FINAdminRevision_LegalEntityID))
+        const taxReadyEntityIds = new Set((financeRevisions ?? []).filter((item: Row) => legalEntityIds.has(item.FINAdminRevision_LegalEntityID) && objectValue(item.FINAdminRevision_ConfigJSON).taxSettings && objectValue(objectValue(item.FINAdminRevision_ConfigJSON).taxSettings).localAdviceConfirmed === true).map((item: Row) => item.FINAdminRevision_LegalEntityID))
+        const scopedCurrencies = (currencies ?? []).filter((item: Row) => item.FINCurSet_LegalEntityID == null || legalEntityIds.has(item.FINCurSet_LegalEntityID))
+        const availableCurrencies = scopedCurrencies.length
+          ? Array.from(new Map(scopedCurrencies.map((item: Row) => [item.FINCurSet_CurrencyCode, { code: item.FINCurSet_CurrencyCode, name: item.FINCurSet_Name ?? item.FINCurSet_CurrencyCode }])).values())
+          : (bootstrapCurrencies ?? []).map((item: Row) => ({ code: item.Currency_Code, name: item.Currency_Name ?? item.Currency_Code }))
         return json(request, {
           organisationTypes: (organisationTypes ?? []).map((item: Row) => ({ id: item.OrgType_ID, name: item.OrgType_Name })),
           // Kept for rollout compatibility with older clients. Account owner
@@ -825,6 +852,24 @@ Deno.serve(async (request) => {
           offices: (offices ?? []).map((item: Row) => ({
             id: item.Office_ID, name: item.Office_Name, code: item.Office_Code ?? null,
             countryCode: item.Office_CountryCode ?? null, timeZone: item.Office_TimeZone ?? "UTC",
+          })),
+          currencies: availableCurrencies,
+          legalEntities: (legalEntities ?? []).map((item: Row) => ({
+            id: item.LegalEntity_ID, name: item.LegalEntity_Name,
+            countryCode: item.LegalEntity_CountryCode ?? null,
+            baseCurrencyCode: item.LegalEntity_BaseCurrencyCodeSnapshot ?? null,
+          })),
+          paymentTerms: (paymentTerms ?? []).filter((item: Row) => item.FINTerm_LegalEntityID != null && approvedFinanceEntityIds.has(item.FINTerm_LegalEntityID)).map((item: Row) => ({
+            id: item.FINTerm_ID, legalEntityId: item.FINTerm_LegalEntityID ?? null,
+            code: item.FINTerm_Code, name: item.FINTerm_Name,
+            days: Number(item.FINTerm_Days ?? 0), endOfMonth: Boolean(item.FINTerm_EndOfMonth),
+          })),
+          taxTreatments: (taxTreatments ?? []).filter((item: Row) => item.FINTax_LegalEntityID != null && taxReadyEntityIds.has(item.FINTax_LegalEntityID)).map((item: Row) => ({
+            id: item.FINTax_ID, legalEntityId: item.FINTax_LegalEntityID ?? null,
+            code: item.FINTax_Code, name: item.FINTax_Name,
+            countryCode: item.FINTax_CountryCode ?? null,
+            ratePercent: Number(item.FINTax_RatePercent ?? 0),
+            transactionTypeCode: item.FINTax_TransactionTypeCode ?? "both",
           })),
         })
       }

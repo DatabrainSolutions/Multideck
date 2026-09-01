@@ -4,6 +4,7 @@ import {
   MAX_INVOICE_EVIDENCE_BLOCKS,
   MAX_INVOICE_EVIDENCE_BUDGET_CHARS,
   normalizeCommercialInvoiceAnnotation,
+  normalizeFinancePurchaseAnnotation,
   normalizeInvoiceEvidencePages,
 } from "../functions/_shared/customs-invoice-ocr.ts"
 
@@ -73,6 +74,32 @@ test("normalizes Mistral document annotations without inventing customs data", (
   assert.equal(result.lines[1].commodityCode, "")
   assert.equal(result.lines[1].quantity, 1)
   assert.equal(result.lines[1].page, 1)
+})
+
+test("normalizes supplier invoices and credit notes as positive posting magnitudes", () => {
+  const result = normalizeFinancePurchaseAnnotation({
+    document_type: "credit note",
+    document_number: " SCN-88 ",
+    supplier_name: " Example Haulage Ltd ",
+    supplier_tax_number: " GB123456789 ",
+    document_date: "2026-08-29",
+    due_date: "2026-09-28",
+    currency: "gbp",
+    net_total: -100,
+    tax_total: -20,
+    gross_total: -120,
+    lines: [{ line_number: 1, page_number: 2, description: " Return carriage ", quantity: -2, unit_price: -50, line_total: -100, tax_rate: 20, tax_amount: -20 }],
+  })
+
+  assert.equal(result.documentType, "debit_note")
+  assert.equal(result.documentNumber, "SCN-88")
+  assert.equal(result.supplierName, "Example Haulage Ltd")
+  assert.equal(result.currencyCode, "GBP")
+  assert.deepEqual([result.netTotal, result.taxTotal, result.grossTotal], [100, 20, 120])
+  assert.deepEqual(result.lines[0], {
+    id: "finance-ocr-line-1", lineNumber: 1, page: 2, description: "Return carriage",
+    quantity: 2, unitPrice: 50, lineTotal: 100, taxRate: 20, taxAmount: 20,
+  })
 })
 
 test("filters non-item annotations", () => {

@@ -36,6 +36,11 @@ function cleanString(value: unknown, maximum: number) {
   return typeof value === "string" ? value.trim().slice(0, maximum) : ""
 }
 
+function isOperationalContactRole(value: unknown) {
+  const role = cleanString(value, 160).replace(/[_-]+/g, " ")
+  return /\b(ops|operations?|logistics?|supply chain|shipping|freight|transport|imports?|exports?|dispatch|warehouse|distribution)\b/i.test(role)
+}
+
 function extractFunctionArguments(payload: Row, functionName: string) {
   if (!Array.isArray(payload.output)) return null
   for (const item of payload.output) {
@@ -968,6 +973,7 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
     organisationResult,
     addressResult,
     contactResult,
+    contactAssignmentResult,
     organisationTypeResult,
     typeResult,
     departmentResult,
@@ -993,6 +999,9 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
       : noRows(),
     accessibleOrganisationIds.length
       ? admin.from("Org_Contacts").select("OrgContact_ID,Org_ID,OrgContact_FirstName,OrgContact_LastName").in("Org_ID", accessibleOrganisationIds).limit(2000)
+      : noRows(),
+    accessibleOrganisationIds.length
+      ? admin.from("CRM_ContactOrganisationAssignments").select("CRMContactOrg_ContactID,CRMContactOrg_RoleCode").in("CRMContactOrg_OrgID", accessibleOrganisationIds).eq("CRMContactOrg_IsCurrent", true).limit(2000)
       : noRows(),
     accessibleOrganisationIds.length
       ? admin.from("Org_Master_Type").select("Org_ID,OrgType_ID").in("Org_ID", accessibleOrganisationIds).limit(2500)
@@ -1026,7 +1035,7 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
       : noRows(),
   ])
   const firstError = leadResult.error || accountResult.error || organisationResult.error
-    || addressResult.error || contactResult.error
+    || addressResult.error || contactResult.error || contactAssignmentResult.error
     || organisationTypeResult.error || typeResult.error || departmentResult.error
     || modeResult.error || shipmentTypeResult.error || currencyResult.error || commodityResult.error
     || countryResult.error || relatedDefaultResult.error || quoteHistoryResult.error
@@ -1079,6 +1088,12 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
   for (const row of contactResult.data ?? []) {
     const organisationId = String(row.Org_ID)
     contactsByOrganisation.set(organisationId, [...(contactsByOrganisation.get(organisationId) ?? []), row])
+  }
+  const roleByContact = new Map<string, string>()
+  for (const row of contactAssignmentResult.data ?? []) {
+    const contactId = String(row.CRMContactOrg_ContactID || "")
+    const role = cleanString(row.CRMContactOrg_RoleCode, 160)
+    if (contactId && role) roleByContact.set(contactId, role)
   }
   const typeNames = new Map((typeResult.data ?? []).map((row) => [String(row.OrgType_ID), String(row.OrgType_Name)]))
   const typesByOrganisation = new Map<string, string[]>()
@@ -1197,6 +1212,8 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
         name: [contact.OrgContact_FirstName, contact.OrgContact_LastName].filter(Boolean).join(" "),
         email: emailsByContact.get(String(contact.OrgContact_ID))?.[0] ?? null,
         emails: emailsByContact.get(String(contact.OrgContact_ID)) ?? [],
+        role: roleByContact.get(String(contact.OrgContact_ID)) ?? null,
+        isOperational: isOperationalContactRole(roleByContact.get(String(contact.OrgContact_ID))),
       })),
       quoteTerms: quoteTermsByOrganisation.get(id) ?? null,
       relatedPartyRecommendations: (recommendationsByOrganisation.get(id) ?? [])

@@ -114,6 +114,52 @@ export const purchaseOrderAnnotationFormat = {
   },
 } as const
 
+export const financePurchaseAnnotationFormat = {
+  type: "json_schema",
+  json_schema: {
+    name: "finance_purchase_document",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "document_type", "document_number", "supplier_name", "supplier_tax_number",
+        "document_date", "due_date", "currency", "net_total", "tax_total", "gross_total", "lines",
+      ],
+      properties: {
+        document_type: nullableString(),
+        document_number: nullableString(),
+        supplier_name: nullableString(),
+        supplier_tax_number: nullableString(),
+        document_date: nullableString(),
+        due_date: nullableString(),
+        currency: nullableString(),
+        net_total: nullableNumber(),
+        tax_total: nullableNumber(),
+        gross_total: nullableNumber(),
+        lines: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["line_number", "page_number", "description", "quantity", "unit_price", "line_total", "tax_rate", "tax_amount"],
+            properties: {
+              line_number: nullableNumber(),
+              page_number: nullableNumber(),
+              description: { type: "string" },
+              quantity: nullableNumber(),
+              unit_price: nullableNumber(),
+              line_total: nullableNumber(),
+              tax_rate: nullableNumber(),
+              tax_amount: nullableNumber(),
+            },
+          },
+        },
+      },
+    },
+  },
+} as const
+
 export type ExtractedCommercialInvoiceLine = {
   id: string
   invoiceLine: number
@@ -162,6 +208,30 @@ export type PurchaseOrderExtraction = {
     taxRate: number
     currencyCode: string
     requestedDeliveryDate: string
+  }>
+}
+
+export type FinancePurchaseExtraction = {
+  documentType: "pl_invoice" | "debit_note" | "unknown"
+  documentNumber: string
+  supplierName: string
+  supplierTaxNumber: string
+  documentDate: string
+  dueDate: string
+  currencyCode: string
+  netTotal: number
+  taxTotal: number
+  grossTotal: number
+  lines: Array<{
+    id: string
+    lineNumber: number
+    page: number
+    description: string
+    quantity: number
+    unitPrice: number
+    lineTotal: number
+    taxRate: number
+    taxAmount: number
   }>
 }
 
@@ -350,6 +420,51 @@ export function normalizePurchaseOrderAnnotation(annotation: unknown): PurchaseO
     paymentTerms: cleanText(record.payment_terms, 180),
     deliveryAddress: cleanText(record.delivery_address, 1_000),
     notes: cleanText(record.notes, 1_000),
+    lines,
+  }
+}
+
+export function normalizeFinancePurchaseAnnotation(annotation: unknown): FinancePurchaseExtraction {
+  const parsed = typeof annotation === "string" ? parseAnnotation(annotation) : annotation
+  const record = asRecord(parsed)
+  const rawType = cleanText(record.document_type, 40).toLowerCase().replace(/[\s-]+/g, "_")
+  const documentType = ["credit", "credit_note", "supplier_credit", "debit_note"].includes(rawType)
+    ? "debit_note" as const
+    : ["invoice", "purchase_invoice", "supplier_invoice", "pl_invoice"].includes(rawType)
+      ? "pl_invoice" as const
+      : "unknown" as const
+  const sourceLines = Array.isArray(record.lines) ? record.lines : []
+  const lines = sourceLines.flatMap((source, index) => {
+    const line = asRecord(source)
+    const description = cleanText(line.description, 800)
+    if (!description) return []
+    const quantity = Math.abs(positiveNumber(line.quantity) ?? finiteNumber(line.quantity) ?? 1) || 1
+    const explicitUnitPrice = nonNegativeNumber(Math.abs(finiteNumber(line.unit_price) ?? 0))
+    const lineTotal = Math.abs(finiteNumber(line.line_total) ?? 0)
+    const unitPrice = explicitUnitPrice && explicitUnitPrice > 0 ? explicitUnitPrice : lineTotal / quantity
+    return [{
+      id: `finance-ocr-line-${index + 1}`,
+      lineNumber: Math.max(1, Math.round(positiveNumber(line.line_number) || index + 1)),
+      page: Math.max(1, Math.round(positiveNumber(line.page_number) || 1)),
+      description,
+      quantity: round(quantity, 6),
+      unitPrice: round(unitPrice, 6),
+      lineTotal: round(lineTotal, 2),
+      taxRate: round(Math.abs(finiteNumber(line.tax_rate) ?? 0), 4),
+      taxAmount: round(Math.abs(finiteNumber(line.tax_amount) ?? 0), 2),
+    }]
+  })
+  return {
+    documentType,
+    documentNumber: cleanText(record.document_number, 120),
+    supplierName: cleanText(record.supplier_name, 240),
+    supplierTaxNumber: cleanText(record.supplier_tax_number, 120),
+    documentDate: isoDate(record.document_date),
+    dueDate: isoDate(record.due_date),
+    currencyCode: currencyCode(record.currency),
+    netTotal: round(Math.abs(finiteNumber(record.net_total) ?? 0), 2),
+    taxTotal: round(Math.abs(finiteNumber(record.tax_total) ?? 0), 2),
+    grossTotal: round(Math.abs(finiteNumber(record.gross_total) ?? 0), 2),
     lines,
   }
 }

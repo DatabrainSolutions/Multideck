@@ -134,6 +134,7 @@ import { WarehouseKanbanBoardPreview, WarehouseOrdersTable, WarehouseProductsTab
 import { WarehouseFormField } from "@/components/multideck/warehouse-management-components"
 import { WarehouseExceptionSummary, WarehouseObjectSummary, WarehouseQuantityUomField } from "@/components/multideck/warehouse-inventory-workspace"
 import { PurchaseOrderLineEditor } from "@/components/multideck/warehouse-purchase-orders-workspace"
+import { createFinanceDocumentLine, FinanceDocumentLineEditor, type FinanceDocumentLine } from "@/components/multideck/finance-document-line-editor"
 import type { WarehousePurchaseOrderLine, WarehousePurchaseOrderReference } from "@/lib/warehouse"
 import type { WarehouseHandlingUnit, WarehouseInventoryException } from "@/lib/warehouse"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -307,7 +308,11 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
+<<<<<<< Updated upstream
     ids: ["pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+=======
+    ids: ["pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+>>>>>>> Stashed changes
   },
   {
     label: "CRM",
@@ -1140,7 +1145,7 @@ function createGalleryDeclarationPdf() {
     "0.82 G 56 730 m 539 730 l S",
     "BT /F1 10 Tf 56 690 Td (Declaration details) Tj ET",
     "0.9 G 56 668 m 539 668 l S 56 632 m 539 632 l S 56 596 m 539 596 l S",
-    "BT /F1 9 Tf 68 646 Td (Exporter) Tj ET BT /F1 9 Tf 240 646 Td (Jenkar Shipping Ltd) Tj ET",
+    "BT /F1 9 Tf 68 646 Td (Exporter) Tj ET BT /F1 9 Tf 240 646 Td (Demo Freight Company Ltd) Tj ET",
     "BT /F1 9 Tf 68 610 Td (Destination) Tj ET BT /F1 9 Tf 240 610 Td (United Kingdom) Tj ET",
     "BT /F1 9 Tf 68 574 Td (Items) Tj ET BT /F1 9 Tf 240 574 Td (2) Tj ET",
   ].join("\n")
@@ -1394,6 +1399,20 @@ const previewOrganisationReference: CustomerReference = {
     { id: "gallery-office-fxt", name: "Felixstowe", code: "FXT", countryCode: "GB", timeZone: "Europe/London" },
     { id: "gallery-office-lhr", name: "London Heathrow", code: "LHR", countryCode: "GB", timeZone: "Europe/London" },
   ],
+  currencies: [
+    { code: "GBP", name: "Pound sterling" },
+    { code: "EUR", name: "Euro" },
+    { code: "USD", name: "US dollar" },
+  ],
+  legalEntities: [
+    { id: "gallery-legal-entity", name: "Multideck Freight Ltd", countryCode: "GB", baseCurrencyCode: "GBP" },
+  ],
+  paymentTerms: [
+    { id: "gallery-term-net30", legalEntityId: "gallery-legal-entity", code: "NET30", name: "30 days", days: 30, endOfMonth: false },
+  ],
+  taxTreatments: [
+    { id: "gallery-tax-standard", legalEntityId: "gallery-legal-entity", code: "domestic-standard", name: "Domestic standard", countryCode: "GB", ratePercent: 20, transactionTypeCode: "both" },
+  ],
 }
 
 const previewOrganisationSeed: ApiCustomerDetail = {
@@ -1554,7 +1573,7 @@ const previewPhoneCallProviders = [
 ]
 
 function QuoteDetailControlsPreview() {
-  const [company, setCompany] = useState("Brook Taverner Ltd")
+  const [company, setCompany] = useState("Demo Apparel Company")
   const [incoterm, setIncoterm] = useState<IncotermCode | "">("FCA")
   const [namedPlace, setNamedPlace] = useState("Antwerp")
   const [location, setLocation] = useState<LocationValue>({ ...EMPTY_LOCATION, countryCode: "BE", countryName: "Belgium", place: "Antwerp", unlocode: "BEANR" })
@@ -1564,7 +1583,7 @@ function QuoteDetailControlsPreview() {
   const [characteristics, setCharacteristics] = useState<CargoCharacteristics>(EMPTY_CARGO_CHARACTERISTICS)
   const [hazardous, setHazardous] = useState<HazardousDetails>(EMPTY_HAZARDOUS_DETAILS)
   const organisationOptions = [
-    { id: "brook", value: "Brook Taverner Ltd", label: "Brook Taverner Ltd", description: "BROOKTAV · Customer" },
+    { id: "demo-apparel", value: "Demo Apparel Company", label: "Demo Apparel Company", description: "DEMOAPP · Customer" },
     { id: "med", value: "Mediterranean Spice Trading", label: "Mediterranean Spice Trading", description: "MEDIT0001 · Supplier" },
     { id: "pacific", value: "Pacific Goods Co", label: "Pacific Goods Co", description: "PACIF001 · Customer" },
   ]
@@ -1635,6 +1654,10 @@ function ComponentPreview({ id }: { id: string }) {
   const [galleryRegisterPending, setGalleryRegisterPending] = useState(false)
   const [previewPurchaseOrderLines, setPreviewPurchaseOrderLines] = useState<WarehousePurchaseOrderLine[]>([
     { itemId: "gallery-item-rsj", sku: "MAR-RSJ-118", supplierItemCode: "YH-1440", description: "Rain shell jacket · navy · mixed sizes", quantity: 780, uomCode: "EA", unitPrice: 18.4, taxRate: 0, requestedDeliveryDate: "2026-08-18" },
+  ])
+  const [previewFinanceDocumentLines, setPreviewFinanceDocumentLines] = useState<FinanceDocumentLine[]>(() => [
+    { ...createFinanceDocumentLine({ code: "GB20", ratePercent: 20 }), chargeCode: "FRT", description: "Ocean freight · Felixstowe to Rotterdam", quantity: "1", unitAmount: "850.00" },
+    { ...createFinanceDocumentLine({ code: "GB20", ratePercent: 20 }), chargeCode: "DOC", description: "Documentation and handling", lineType: "ancillary", quantity: "2", unitAmount: "42.50" },
   ])
   const [previewContactLayout, setPreviewContactLayout] = useState<CardLayout>("editorial")
   const [previewCardBranding, setPreviewCardBranding] = useState<CardBranding>(() => ({ ...defaultBranding("#3f5f8a"), layout: "spotlight", headerStyle: "cover" }))
@@ -2957,6 +2980,31 @@ function ComponentPreview({ id }: { id: string }) {
             onItemSearch={() => undefined}
             onItemSelected={() => undefined}
             onChange={setPreviewPurchaseOrderLines}
+          />
+        </div>
+      ) : null}
+
+      {id === "finance-document-line-editor" ? (
+        <div className="w-full max-w-[1180px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
+          <FinanceDocumentLineEditor
+            lines={previewFinanceDocumentLines}
+            onLinesChange={setPreviewFinanceDocumentLines}
+            taxOptions={[
+              { id: "gallery-tax-standard", code: "GB20", name: "UK standard VAT", ratePercent: 20, approved: true },
+              { id: "gallery-tax-zero", code: "GB0", name: "Zero rated", ratePercent: 0, approved: true },
+            ]}
+            sourceKind="manual"
+            currencyCode="GBP"
+            onImport={(file) => {
+              toast.success(`${t("Ready to import")} ${file.name}`);
+            }}
+            onExport={() => {
+              toast.success(t("Finance lines exported to Excel"));
+            }}
+            onPrint={() => {
+              toast.success(t("Proforma print view opened"));
+            }}
+            onClear={() => setPreviewFinanceDocumentLines([{ ...createFinanceDocumentLine({ code: "GB20", ratePercent: 20 }) }])}
           />
         </div>
       ) : null}

@@ -11555,41 +11555,41 @@ CREATE OR REPLACE FUNCTION "public"."sync_cmp_user_from_auth_user"() RETURNS "tr
     SET "search_path" TO 'public', 'auth'
     AS $$
 DECLARE
-    jenkar_company_id uuid;
-    jenkar_office_id uuid;
+    demo_company_id uuid;
+    demo_office_id uuid;
     cmp_user_id uuid;
 BEGIN
     SELECT "Company_ID"
-    INTO jenkar_company_id
+    INTO demo_company_id
     FROM public."cmp_Company"
-    WHERE "Company_Name" = 'Jenkar Shipping Ltd'
+    WHERE "Company_Name" = 'Demo Freight Company Ltd'
     ORDER BY "Company_ID"
     LIMIT 1;
 
-    IF jenkar_company_id IS NULL THEN
+    IF demo_company_id IS NULL THEN
         INSERT INTO public."cmp_Company" ("Company_Name")
-        VALUES ('Jenkar Shipping Ltd')
-        RETURNING "Company_ID" INTO jenkar_company_id;
+        VALUES ('Demo Freight Company Ltd')
+        RETURNING "Company_ID" INTO demo_company_id;
     END IF;
 
     SELECT "Office_ID"
-    INTO jenkar_office_id
+    INTO demo_office_id
     FROM public."cmp_Offices"
-    WHERE "Company_ID" = jenkar_company_id
+    WHERE "Company_ID" = demo_company_id
       AND "Office_Address" = 'Unit C2, Telford Way'
     ORDER BY "Office_ID"
     LIMIT 1;
 
-    IF jenkar_office_id IS NULL THEN
+    IF demo_office_id IS NULL THEN
         INSERT INTO public."cmp_Offices" ("Office_Name", "Office_Address", "Company_ID")
-        VALUES ('Telford Way', 'Unit C2, Telford Way', jenkar_company_id)
-        RETURNING "Office_ID" INTO jenkar_office_id;
+        VALUES ('Telford Way', 'Unit C2, Telford Way', demo_company_id)
+        RETURNING "Office_ID" INTO demo_office_id;
     END IF;
 
     INSERT INTO public."cmp_Users" ("Auth_User_ID", "Company_ID", "User_Firstname", "User_Lastname", "User_Email")
     VALUES (
         NEW.id,
-        jenkar_company_id,
+        demo_company_id,
         NULLIF(NEW.raw_user_meta_data ->> 'first_name', ''),
         NULLIF(NEW.raw_user_meta_data ->> 'last_name', ''),
         COALESCE(NULLIF(NEW.email, ''), NEW.id::text)
@@ -11602,7 +11602,7 @@ BEGIN
     RETURNING "User_ID" INTO cmp_user_id;
 
     INSERT INTO public."cmp_Users_Offices" ("User_ID", "Office_ID")
-    VALUES (cmp_user_id, jenkar_office_id)
+    VALUES (cmp_user_id, demo_office_id)
     ON CONFLICT DO NOTHING;
 
     RETURN NEW;
@@ -85941,3 +85941,5879 @@ revoke all on function public._multideck_customs_declaration_document_immutable(
 create trigger "TR_Customs_DeclarationDocuments_immutable"
 before update or delete on public."Customs_DeclarationDocuments"
 for each row execute function public._multideck_customs_declaration_document_immutable();
+
+-- Finance provider-adapter foundation. This supplement mirrors the reviewed
+-- incremental finance migration so a newly provisioned tenant begins with the
+-- same controlled chart, tax-treatment, approval and Dexter contract.
+begin;
+create table if not exists public."FIN_ChartTemplates" (
+  "FINChartTemplate_ID" uuid primary key default gen_random_uuid(), "FINChartTemplate_Code" varchar(80) not null unique, "FINChartTemplate_Name" varchar(180) not null, "FINChartTemplate_IndustryCode" varchar(60) not null, "FINChartTemplate_Version" integer not null default 1, "FINChartTemplate_Description" text, "FINChartTemplate_IsActive" boolean not null default true, "FINChartTemplate_CreatedAt" timestamptz not null default now(),
+  constraint "CK_FIN_ChartTemplates_industry" check ("FINChartTemplate_IndustryCode" in ('generic','freight_forwarding')), constraint "CK_FIN_ChartTemplates_version" check ("FINChartTemplate_Version" > 0)
+);
+create table if not exists public."FIN_ChartTemplateAccounts" (
+  "FINChartTemplateAccount_ID" uuid primary key default gen_random_uuid(), "FINChartTemplateAccount_TemplateID" uuid not null references public."FIN_ChartTemplates"("FINChartTemplate_ID") on delete cascade, "FINChartTemplateAccount_Code" varchar(80) not null, "FINChartTemplateAccount_Name" varchar(180) not null, "FINChartTemplateAccount_TypeCode" varchar(60) not null, "FINChartTemplateAccount_CategoryCode" varchar(40) not null, "FINChartTemplateAccount_IsControlAccount" boolean not null default false, "FINChartTemplateAccount_Required" boolean not null default true, "FINChartTemplateAccount_SortOrder" integer not null default 100,
+  constraint "UX_FIN_ChartTemplateAccounts_code" unique ("FINChartTemplateAccount_TemplateID", "FINChartTemplateAccount_Code"), constraint "CK_FIN_ChartTemplateAccounts_category" check ("FINChartTemplateAccount_CategoryCode" in ('asset','liability','equity','income','direct_cost','expense','finance')), constraint "CK_FIN_ChartTemplateAccounts_range" check ("FINChartTemplateAccount_Code" ~ '^[1-7][0-9]{3}$')
+);
+create table if not exists public."FIN_LocalisationTaxTreatments" (
+  "FINLocTaxTreatment_ID" uuid primary key default gen_random_uuid(), "FINLocTaxTreatment_PackID" uuid references public."FIN_LocalisationPacks"("FINLocPack_ID") on delete cascade, "FINLocTaxTreatment_Code" varchar(80) not null, "FINLocTaxTreatment_Name" varchar(160) not null, "FINLocTaxTreatment_TransactionType" varchar(20) not null, "FINLocTaxTreatment_CategoryCode" varchar(80) not null, "FINLocTaxTreatment_RatePercent" numeric(9,6) not null default 0, "FINLocTaxTreatment_IsRecoverable" boolean not null default true, "FINLocTaxTreatment_EffectiveFrom" date not null default current_date, "FINLocTaxTreatment_EffectiveTo" date, "FINLocTaxTreatment_IsActive" boolean not null default true,
+  constraint "CK_FIN_LocTaxTreatments_transaction" check ("FINLocTaxTreatment_TransactionType" in ('sales','purchase','both')), constraint "CK_FIN_LocTaxTreatments_rate" check ("FINLocTaxTreatment_RatePercent" between 0 and 100), constraint "CK_FIN_LocTaxTreatments_dates" check ("FINLocTaxTreatment_EffectiveTo" is null or "FINLocTaxTreatment_EffectiveTo" >= "FINLocTaxTreatment_EffectiveFrom"), constraint "UX_FIN_LocTaxTreatments_code" unique ("FINLocTaxTreatment_PackID", "FINLocTaxTreatment_Code", "FINLocTaxTreatment_TransactionType", "FINLocTaxTreatment_EffectiveFrom")
+);
+create table if not exists public."FIN_ConfigurationRuns" (
+  "FINConfigRun_ID" uuid primary key default gen_random_uuid(), "FINConfigRun_LegalEntityID" uuid not null references public."cmp_LegalEntities"("LegalEntity_ID") on delete cascade, "FINConfigRun_ChartTemplateID" uuid not null references public."FIN_ChartTemplates"("FINChartTemplate_ID"), "FINConfigRun_LocalisationPackID" uuid references public."FIN_LocalisationPacks"("FINLocPack_ID"), "FINConfigRun_ProviderCode" varchar(40) not null default 'erpnext', "FINConfigRun_ExternalCompany" varchar(180) not null, "FINConfigRun_StatusCode" varchar(40) not null default 'draft', "FINConfigRun_CountryCode" varchar(2) not null, "FINConfigRun_TaxRegistrationNo" varchar(120), "FINConfigRun_ReportingBasisCode" varchar(80), "FINConfigRun_EffectiveFrom" date not null default current_date, "FINConfigRun_PreviewJSON" jsonb not null default '{}'::jsonb, "FINConfigRun_ProvisioningJSON" jsonb not null default '{}'::jsonb, "FINConfigRun_IdempotencyKey" uuid not null default gen_random_uuid(), "FINConfigRun_RequestedAt" timestamptz not null default now(), "FINConfigRun_RequestedBy" uuid references public."cmp_Users"("User_ID"), "FINConfigRun_ApprovedAt" timestamptz, "FINConfigRun_ApprovedBy" uuid references public."cmp_Users"("User_ID"), "FINConfigRun_CompletedAt" timestamptz, "FINConfigRun_ErrorMessage" text,
+  constraint "CK_FIN_ConfigurationRuns_status" check ("FINConfigRun_StatusCode" in ('draft','awaiting_approval','approved','provisioning','completed','failed','rejected')), constraint "CK_FIN_ConfigurationRuns_provider" check ("FINConfigRun_ProviderCode" in ('erpnext','xero','quickbooks_online','sage_accounting','sage_intacct','sage_50','sage_200','business_central','netsuite','zoho_books')), constraint "CK_FIN_ConfigurationRuns_country" check ("FINConfigRun_CountryCode" ~ '^[A-Z]{2}$'), constraint "CK_FIN_ConfigurationRuns_preview" check (jsonb_typeof("FINConfigRun_PreviewJSON") = 'object'), constraint "CK_FIN_ConfigurationRuns_provisioning" check (jsonb_typeof("FINConfigRun_ProvisioningJSON") = 'object')
+);
+create unique index if not exists "UX_FIN_ConfigurationRuns_idempotency" on public."FIN_ConfigurationRuns"("FINConfigRun_IdempotencyKey");
+create index if not exists "IX_FIN_ConfigurationRuns_legal_entity_status" on public."FIN_ConfigurationRuns"("FINConfigRun_LegalEntityID", "FINConfigRun_StatusCode", "FINConfigRun_RequestedAt" desc);
+create table if not exists public."FIN_ConfigurationRunEvents" ("FINConfigRunEvent_ID" uuid primary key default gen_random_uuid(), "FINConfigRunEvent_RunID" uuid not null references public."FIN_ConfigurationRuns"("FINConfigRun_ID") on delete cascade, "FINConfigRunEvent_TypeCode" varchar(60) not null, "FINConfigRunEvent_At" timestamptz not null default now(), "FINConfigRunEvent_By" uuid references public."cmp_Users"("User_ID"), "FINConfigRunEvent_DetailJSON" jsonb not null default '{}'::jsonb, constraint "CK_FIN_ConfigurationRunEvents_detail" check (jsonb_typeof("FINConfigRunEvent_DetailJSON") = 'object'));
+alter table public."FIN_ChartTemplates" enable row level security; alter table public."FIN_ChartTemplateAccounts" enable row level security; alter table public."FIN_LocalisationTaxTreatments" enable row level security; alter table public."FIN_ConfigurationRuns" enable row level security; alter table public."FIN_ConfigurationRunEvents" enable row level security;
+revoke all on public."FIN_ChartTemplates", public."FIN_ChartTemplateAccounts", public."FIN_LocalisationTaxTreatments", public."FIN_ConfigurationRuns", public."FIN_ConfigurationRunEvents" from public, anon, authenticated;
+grant select, insert, update, delete on public."FIN_ChartTemplates", public."FIN_ChartTemplateAccounts", public."FIN_LocalisationTaxTreatments", public."FIN_ConfigurationRuns", public."FIN_ConfigurationRunEvents" to service_role;
+insert into public."FIN_ChartTemplates" ("FINChartTemplate_Code","FINChartTemplate_Name","FINChartTemplate_IndustryCode","FINChartTemplate_Version","FINChartTemplate_Description") values ('generic-v1','Generic business chart of accounts','generic',1,'A compact double-entry starter chart with AR/AP, tax, bank, foreign exchange and retained earnings controls.'),('freight-forwarder-v1','Freight forwarder chart of accounts','freight_forwarding',1,'Generic chart plus transport-mode income and direct-cost accounts for freight forwarding.') on conflict ("FINChartTemplate_Code") do update set "FINChartTemplate_Name"=excluded."FINChartTemplate_Name","FINChartTemplate_Description"=excluded."FINChartTemplate_Description","FINChartTemplate_IsActive"=true;
+with a(template_code,code,name,type_code,category,is_control,required,sort_order) as (values
+('generic-v1','1000','Bank and cash','Bank','asset',true,true,10),('generic-v1','1100','Trade receivables','Receivable','asset',true,true,20),('generic-v1','1200','Recoverable input tax','Tax','asset',true,true,30),('generic-v1','1300','Prepayments and deposits','Current Asset','asset',false,false,40),('generic-v1','1500','Fixed assets','Fixed Asset','asset',false,false,50),('generic-v1','2000','Trade payables','Payable','liability',true,true,60),('generic-v1','2100','Output tax payable','Tax','liability',true,true,70),('generic-v1','2200','Non-recoverable tax payable','Tax','liability',true,false,80),('generic-v1','2300','Accruals and deferred income','Current Liability','liability',false,false,90),('generic-v1','3000','Share capital','Equity','equity',false,false,100),('generic-v1','3100','Retained earnings','Equity','equity',true,true,110),('generic-v1','4000','Sales income','Income Account','income',false,true,120),('generic-v1','4100','Service and handling income','Income Account','income',false,false,130),('generic-v1','5000','Direct cost of sales','Cost of Goods Sold','direct_cost',false,true,140),('generic-v1','6000','People and operating expenses','Expense Account','expense',false,true,150),('generic-v1','6100','Occupancy and technology expenses','Expense Account','expense',false,false,160),('generic-v1','7000','Foreign exchange gain or loss','Income Account','finance',true,true,170),('generic-v1','7100','Finance and exceptional items','Expense Account','finance',false,false,180),
+('freight-forwarder-v1','1000','Bank and cash','Bank','asset',true,true,10),('freight-forwarder-v1','1100','Trade receivables','Receivable','asset',true,true,20),('freight-forwarder-v1','1200','Recoverable input tax','Tax','asset',true,true,30),('freight-forwarder-v1','1300','Prepayments and carrier deposits','Current Asset','asset',false,false,40),('freight-forwarder-v1','1500','Fixed assets','Fixed Asset','asset',false,false,50),('freight-forwarder-v1','2000','Trade payables','Payable','liability',true,true,60),('freight-forwarder-v1','2100','Output tax payable','Tax','liability',true,true,70),('freight-forwarder-v1','2200','Non-recoverable tax payable','Tax','liability',true,false,80),('freight-forwarder-v1','2300','Accruals and deferred income','Current Liability','liability',false,false,90),('freight-forwarder-v1','3000','Share capital','Equity','equity',false,false,100),('freight-forwarder-v1','3100','Retained earnings','Equity','equity',true,true,110),('freight-forwarder-v1','4000','Air freight income','Income Account','income',false,true,120),('freight-forwarder-v1','4010','Sea freight income','Income Account','income',false,true,121),('freight-forwarder-v1','4020','Road freight income','Income Account','income',false,true,122),('freight-forwarder-v1','4030','Rail freight income','Income Account','income',false,false,123),('freight-forwarder-v1','4040','Customs brokerage income','Income Account','income',false,false,124),('freight-forwarder-v1','4050','Warehousing and handling income','Income Account','income',false,false,125),('freight-forwarder-v1','4060','Documentation, insurance and other income','Income Account','income',false,false,126),('freight-forwarder-v1','5000','Air freight direct costs','Cost of Goods Sold','direct_cost',false,true,140),('freight-forwarder-v1','5010','Sea freight direct costs','Cost of Goods Sold','direct_cost',false,true,141),('freight-forwarder-v1','5020','Road freight direct costs','Cost of Goods Sold','direct_cost',false,true,142),('freight-forwarder-v1','5030','Rail freight direct costs','Cost of Goods Sold','direct_cost',false,false,143),('freight-forwarder-v1','5040','Customs duties and brokerage costs','Cost of Goods Sold','direct_cost',false,false,144),('freight-forwarder-v1','5050','Warehousing and handling costs','Cost of Goods Sold','direct_cost',false,false,145),('freight-forwarder-v1','5060','Agency commissions, detention and claims','Cost of Goods Sold','direct_cost',false,false,146),('freight-forwarder-v1','6000','People and operating expenses','Expense Account','expense',false,true,150),('freight-forwarder-v1','6100','Occupancy and technology expenses','Expense Account','expense',false,false,160),('freight-forwarder-v1','7000','Foreign exchange gain or loss','Income Account','finance',true,true,170),('freight-forwarder-v1','7100','Finance and exceptional items','Expense Account','finance',false,false,180))
+insert into public."FIN_ChartTemplateAccounts" ("FINChartTemplateAccount_TemplateID","FINChartTemplateAccount_Code","FINChartTemplateAccount_Name","FINChartTemplateAccount_TypeCode","FINChartTemplateAccount_CategoryCode","FINChartTemplateAccount_IsControlAccount","FINChartTemplateAccount_Required","FINChartTemplateAccount_SortOrder") select t."FINChartTemplate_ID",a.code,a.name,a.type_code,a.category,a.is_control,a.required,a.sort_order from a join public."FIN_ChartTemplates" t on t."FINChartTemplate_Code"=a.template_code on conflict ("FINChartTemplateAccount_TemplateID","FINChartTemplateAccount_Code") do update set "FINChartTemplateAccount_Name"=excluded."FINChartTemplateAccount_Name","FINChartTemplateAccount_TypeCode"=excluded."FINChartTemplateAccount_TypeCode","FINChartTemplateAccount_CategoryCode"=excluded."FINChartTemplateAccount_CategoryCode","FINChartTemplateAccount_IsControlAccount"=excluded."FINChartTemplateAccount_IsControlAccount","FINChartTemplateAccount_Required"=excluded."FINChartTemplateAccount_Required","FINChartTemplateAccount_SortOrder"=excluded."FINChartTemplateAccount_SortOrder";
+insert into public."FIN_LocalisationPacks" ("FINLocPack_Code","FINLocPack_Name","FINLocPack_CountryCode","FINLocPack_AccountingStandardCode","FINLocPack_IsActive") values ('global-v1','Global tax treatment framework',null,'IFRS-ready',true) on conflict ("FINLocPack_Code") do update set "FINLocPack_Name"=excluded."FINLocPack_Name","FINLocPack_IsActive"=true;
+with x(code,name,transaction_type,category,rate,recoverable) as (values ('domestic-standard','Domestic standard','both','domestic_standard',0::numeric,true),('reduced-rate','Reduced rate','both','reduced_rate',0::numeric,true),('zero-rated','Zero rated','both','zero_rated',0::numeric,true),('exempt','Exempt','both','exempt',0::numeric,false),('export','Export','sales','export',0::numeric,true),('reverse-charge','Reverse charge','both','reverse_charge',0::numeric,true),('out-of-scope','Out of scope','both','out_of_scope',0::numeric,false)) insert into public."FIN_LocalisationTaxTreatments" ("FINLocTaxTreatment_PackID","FINLocTaxTreatment_Code","FINLocTaxTreatment_Name","FINLocTaxTreatment_TransactionType","FINLocTaxTreatment_CategoryCode","FINLocTaxTreatment_RatePercent","FINLocTaxTreatment_IsRecoverable","FINLocTaxTreatment_EffectiveFrom") select p."FINLocPack_ID",x.code,x.name,x.transaction_type,x.category,x.rate,x.recoverable,date '2000-01-01' from x join public."FIN_LocalisationPacks" p on p."FINLocPack_Code"='global-v1' on conflict ("FINLocTaxTreatment_PackID","FINLocTaxTreatment_Code","FINLocTaxTreatment_TransactionType","FINLocTaxTreatment_EffectiveFrom") do update set "FINLocTaxTreatment_Name"=excluded."FINLocTaxTreatment_Name","FINLocTaxTreatment_CategoryCode"=excluded."FINLocTaxTreatment_CategoryCode","FINLocTaxTreatment_IsRecoverable"=excluded."FINLocTaxTreatment_IsRecoverable","FINLocTaxTreatment_IsActive"=true;
+insert into public."sys_AccountingProviders" ("ACCP_Code","ACCP_Name","ACCP_Description","ACCP_IsCloud","ACCP_RequiresLocalAgent","ACCP_DefaultAuthType","ACCP_SortOrder","ACCP_IsActive") values ('erpnext','ERPNext','ERPNext REST API integration. The default enabled Multideck accounting connector.',true,false,'api_token',10,true),('xero','Xero','Xero Accounting API connector.',true,false,'oauth2',20,true),('quickbooks_online','QuickBooks Online','QuickBooks Online accounting API connector.',true,false,'oauth2',30,true),('sage_accounting','Sage Accounting','Sage cloud accounting API connector.',true,false,'oauth2',40,true),('sage_intacct','Sage Intacct','Sage Intacct REST and webhook connector.',true,false,'oauth2',50,true),('sage_50','Sage 50 Desktop','Sage 50 connector via an installed, tenant-local Windows agent.',false,true,'local_agent',60,true),('sage_200','Sage 200','Sage 200 connector via an installed, tenant-local Windows agent.',false,true,'local_agent',70,true),('business_central','Dynamics 365 Business Central','Microsoft Dynamics 365 Business Central OData connector.',true,false,'oauth2',80,true),('netsuite','Oracle NetSuite','Oracle NetSuite SuiteTalk REST connector.',true,false,'oauth2',90,true),('zoho_books','Zoho Books','Zoho Books accounting connector.',true,false,'oauth2',100,true) on conflict ("ACCP_Code") do update set "ACCP_Name"=excluded."ACCP_Name","ACCP_Description"=excluded."ACCP_Description","ACCP_IsCloud"=excluded."ACCP_IsCloud","ACCP_RequiresLocalAgent"=excluded."ACCP_RequiresLocalAgent","ACCP_DefaultAuthType"=excluded."ACCP_DefaultAuthType","ACCP_SortOrder"=excluded."ACCP_SortOrder","ACCP_IsActive"=true;
+insert into public."sys_FinanceDocumentTypes" ("FINDT_Code","FINDT_Name","FINDT_Description","FINDT_LedgerTypeCode","FINDT_IsCredit","FINDT_SortOrder","FINDT_IsActive") values ('sl_invoice','Sales invoice','Customer receivable invoice.','receivables',false,10,true),('credit_note','Customer credit note','Customer receivable credit note.','receivables',true,20,true),('pl_invoice','Purchase invoice','Supplier payable invoice.','payables',false,30,true),('debit_note','Supplier credit note','Supplier payable credit note.','payables',true,40,true) on conflict ("FINDT_Code") do update set "FINDT_Name"=excluded."FINDT_Name","FINDT_Description"=excluded."FINDT_Description","FINDT_LedgerTypeCode"=excluded."FINDT_LedgerTypeCode","FINDT_IsCredit"=excluded."FINDT_IsCredit","FINDT_SortOrder"=excluded."FINDT_SortOrder","FINDT_IsActive"=true;
+insert into public."sys_FinanceDocumentStatuses" ("FINDST_Code","FINDST_Name","FINDST_Description","FINDST_IsFinal","FINDST_SortOrder","FINDST_IsActive") values ('draft','Draft','Prepared in Multideck and not yet sent for finance review.',false,10,true),('awaiting_approval','Awaiting approval','Waiting for an authorised finance reviewer.',false,20,true),('approved','Approved','Approved for controlled provider submission.',false,30,true),('submitted','Submitted','Submitted to the accounting provider.',true,40,true),('rejected','Rejected','Rejected by the finance review workflow.',true,50,true),('failed','Submission failed','Provider submission failed and requires finance attention.',false,60,true) on conflict ("FINDST_Code") do update set "FINDST_Name"=excluded."FINDST_Name","FINDST_Description"=excluded."FINDST_Description","FINDST_IsFinal"=excluded."FINDST_IsFinal","FINDST_SortOrder"=excluded."FINDST_SortOrder","FINDST_IsActive"=true;
+insert into public."sys_FinanceAuthorityActionTypes" ("FINAUTHA_Code","FINAUTHA_Name","FINAUTHA_Description","FINAUTHA_SortOrder","FINAUTHA_IsActive") values ('finance_post','Finance posting','Approve a reviewed finance document for controlled accounting-provider submission.',30,true) on conflict ("FINAUTHA_Code") do update set "FINAUTHA_Name"=excluded."FINAUTHA_Name","FINAUTHA_Description"=excluded."FINAUTHA_Description","FINAUTHA_SortOrder"=excluded."FINAUTHA_SortOrder","FINAUTHA_IsActive"=true;
+
+insert into public."sys_Permissions" ("sys_Permission_Value","sys_Permission_Group","sys_Permission_Name","sys_Permission_Description","sys_Permission_IsDangerous") values
+('Finance.Receivables.View','Finance','View receivables','View customer invoices, credits, balances and receipts.',false),('Finance.Receivables.Draft','Finance','Prepare receivables','Prepare customer invoice and credit-note drafts for finance review.',false),('Finance.Payables.View','Finance','View payables','View supplier invoices, credit notes, balances and payments.',false),('Finance.Payables.Draft','Finance','Prepare payables','Prepare supplier invoice and credit-note drafts for finance review.',false),('Finance.ReviewAndPost','Finance','Review and post finance','Approve and submit reviewed accounting documents to the configured provider.',true),('Finance.Banks.Manage','Finance','Manage bank accounts','Prepare and approve company bank-account setup.',true),('Finance.Configuration.Manage','Finance','Manage finance configuration','Prepare and approve chart, localisation and tax configuration.',true)
+on conflict ("sys_Permission_Value") do update set "sys_Permission_Group"=excluded."sys_Permission_Group","sys_Permission_Name"=excluded."sys_Permission_Name","sys_Permission_Description"=excluded."sys_Permission_Description","sys_Permission_IsDangerous"=excluded."sys_Permission_IsDangerous";
+with rp(role_name,permission_value) as (values
+('Administrator','Finance.Receivables.View'),('Administrator','Finance.Receivables.Draft'),('Administrator','Finance.Payables.View'),('Administrator','Finance.Payables.Draft'),('Administrator','Finance.ReviewAndPost'),('Administrator','Finance.Banks.Manage'),('Administrator','Finance.Configuration.Manage'),
+('Finance manager','Finance.Receivables.View'),('Finance manager','Finance.Receivables.Draft'),('Finance manager','Finance.Payables.View'),('Finance manager','Finance.Payables.Draft'),('Finance manager','Finance.ReviewAndPost'),('Finance manager','Finance.Banks.Manage'),('Finance manager','Finance.Configuration.Manage'),
+('Operations manager','Finance.Receivables.View'),('Operations manager','Finance.Receivables.Draft'),('Operations manager','Finance.Payables.View'),('Operations manager','Finance.Payables.Draft'),('Operator','Finance.Receivables.View'),('Operator','Finance.Receivables.Draft'),('Operator','Finance.Payables.View'),('Operator','Finance.Payables.Draft'))
+insert into public."sys_UserRole_Permissions" ("sys_UserRole_ID","sys_Permission_ID") select r."sys_UserRole_ID",p."sys_Permission_ID" from rp join public."sys_UserRoles" r on lower(r."sys_UserRole_Name")=lower(rp.role_name) join public."sys_Permissions" p on p."sys_Permission_Value"=rp.permission_value on conflict do nothing;
+create or replace function public.multideck_dexter_domain_finance(p_company_id uuid,p_search text,p_take integer) returns jsonb language sql stable security definer set search_path=pg_catalog,public as $$ select coalesce(jsonb_agg(result.value order by result.updated_at desc),'[]'::jsonb) from (select jsonb_build_object('recordId',d."FINDoc_ID",'number',d."FINDoc_Number",'type',d."FINDoc_TypeCode",'status',d."FINDoc_StatusCode",'party',o."Org_Name",'currency',d."FINDoc_CurrencyCodeSnapshot",'grossAmount',d."FINDoc_GrossAmount",'outstandingAmount',d."FINDoc_OutstandingAmount",'dueDate',d."FINDoc_DueDate",'evidence',jsonb_build_object('sourceTable','FIN_Documents','sourceId',d."FINDoc_ID")) value,d."FINDoc_UpdatedAt" updated_at from public."FIN_Documents" d left join public."Org_Master" o on o."Org_id"=d."FINDoc_PartyOrgID" join public."cmp_LegalEntities" e on e."LegalEntity_ID"=d."FINDoc_LegalEntityID" where e."Company_ID"=p_company_id and (nullif(btrim(p_search),'') is null or concat_ws(' ',d."FINDoc_Number",d."FINDoc_TypeCode",d."FINDoc_StatusCode",o."Org_Name") ilike '%'||btrim(p_search)||'%') order by d."FINDoc_UpdatedAt" desc limit greatest(1,least(coalesce(p_take,10),25))) result; $$;
+revoke all on function public.multideck_dexter_domain_finance(uuid,text,integer) from public,anon,authenticated;
+insert into public."sys_AIDexterDataDomains" ("AIDexterDomain_Code","AIDexterDomain_Name","AIDexterDomain_Description","AIDexterDomain_QueryFunction","AIDexterDomain_SortOrder","AIDexterDomain_IsActive","AIDexterDomain_UpdatedAt") values ('finance','Finance','Tenant-safe AR/AP documents, outstanding balances, due dates and accounting evidence.','multideck_dexter_domain_finance',26,true,now()) on conflict ("AIDexterDomain_Code") do update set "AIDexterDomain_Name"=excluded."AIDexterDomain_Name","AIDexterDomain_Description"=excluded."AIDexterDomain_Description","AIDexterDomain_QueryFunction"=excluded."AIDexterDomain_QueryFunction","AIDexterDomain_IsActive"=true,"AIDexterDomain_UpdatedAt"=now();
+insert into public."sys_AIDexterWatchCapabilities" ("AIDexterWatchCapability_Code","AIDexterWatchCapability_Name","AIDexterWatchCapability_Description","AIDexterWatchCapability_FieldsJSON","AIDexterWatchCapability_SortOrder") values ('finance','Finance','Finance document status, due date, outstanding balance and provider-sync changes.','["status","dueDate","outstandingAmount","postingStatus","exportStatus"]'::jsonb,26) on conflict ("AIDexterWatchCapability_Code") do update set "AIDexterWatchCapability_Name"=excluded."AIDexterWatchCapability_Name","AIDexterWatchCapability_Description"=excluded."AIDexterWatchCapability_Description","AIDexterWatchCapability_FieldsJSON"=excluded."AIDexterWatchCapability_FieldsJSON","AIDexterWatchCapability_IsActive"=true,"AIDexterWatchCapability_UpdatedAt"=now();
+commit;
+
+-- Finance ledger lifecycle parity: keep tenant provisioning equivalent to
+-- migrations 20260826213508 and 20260829143000.
+-- Complete the tenant-local sales ledger, purchase ledger, cash allocation and
+-- provider-neutral export lifecycle. All mutating functions are service-role
+-- only; the authenticated Edge Function remains the permission boundary.
+
+begin;
+
+alter table public."FIN_Documents"
+  add column if not exists "FINDoc_SourceKindCode" varchar(20) not null default 'manual',
+  add column if not exists "FINDoc_IdempotencyKey" uuid not null default gen_random_uuid();
+
+alter table public."FIN_CashTransactions"
+  add column if not exists "FINCash_LegalEntityID" uuid references public."cmp_LegalEntities"("LegalEntity_ID") on delete set null,
+  add column if not exists "FINCash_IdempotencyKey" uuid not null default gen_random_uuid(),
+  add column if not exists "FINCash_MetadataJSON" jsonb not null default '{}'::jsonb,
+  add column if not exists "FINCash_UpdatedAt" timestamptz not null default now(),
+  add column if not exists "FINCash_UpdatedBy" uuid references public."cmp_Users"("User_ID") on delete set null;
+
+update public."FIN_Documents"
+set "FINDoc_SourceKindCode"='job'
+where "FINDoc_SourceJobID" is not null and "FINDoc_SourceKindCode"='manual';
+
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'CK_FIN_Documents_source_kind') then
+    alter table public."FIN_Documents" add constraint "CK_FIN_Documents_source_kind"
+      check ("FINDoc_SourceKindCode" in ('manual','job'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'CK_FIN_CashTransactions_metadata') then
+    alter table public."FIN_CashTransactions" add constraint "CK_FIN_CashTransactions_metadata"
+      check (jsonb_typeof("FINCash_MetadataJSON") = 'object');
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'CK_FIN_CashTransactions_amount') then
+    alter table public."FIN_CashTransactions" add constraint "CK_FIN_CashTransactions_amount"
+      check ("FINCash_Amount" > 0 and "FINCash_UnallocatedAmount" >= 0 and "FINCash_UnallocatedAmount" <= "FINCash_Amount") not valid;
+  end if;
+end $$;
+
+create unique index if not exists "UX_FIN_Documents_idempotency"
+  on public."FIN_Documents"("FINDoc_IdempotencyKey");
+create unique index if not exists "UX_FIN_CashTransactions_idempotency"
+  on public."FIN_CashTransactions"("FINCash_IdempotencyKey");
+create index if not exists "IX_FIN_Documents_ledger_register"
+  on public."FIN_Documents"("FINDoc_LegalEntityID", "FINDoc_TypeCode", "FINDoc_StatusCode", "FINDoc_UpdatedAt" desc);
+create index if not exists "IX_FIN_CashTransactions_register"
+  on public."FIN_CashTransactions"("FINCash_LegalEntityID", "FINCash_TypeCode", "FINCash_StatusCode", "FINCash_UpdatedAt" desc);
+create index if not exists "IX_FIN_CashAllocations_document"
+  on public."FIN_CashAllocations"("FINCashAlloc_DocumentID", "FINCashAlloc_AllocationStatusCode");
+create unique index if not exists "UX_FIN_IntegrationQueue_active_local_record"
+  on public."FIN_IntegrationQueue"("FINIntQ_LocalTable", "FINIntQ_LocalID")
+  where "FINIntQ_StatusCode" in ('queued','processing','blocked');
+
+insert into public."sys_AccountingConnectionStatuses" ("ACCCS_Code","ACCCS_Name","ACCCS_IsFinal","ACCCS_SortOrder","ACCCS_IsActive") values
+  ('draft','Draft',false,10,true),('active','Active',false,20,true),('error','Needs attention',false,30,true),('disabled','Disabled',true,40,true)
+on conflict ("ACCCS_Code") do update set "ACCCS_Name"=excluded."ACCCS_Name","ACCCS_IsFinal"=excluded."ACCCS_IsFinal","ACCCS_IsActive"=true;
+
+insert into public."sys_AccountingDirections" ("ACCDIR_Code","ACCDIR_Name","ACCDIR_SortOrder","ACCDIR_IsActive") values
+  ('sales','Sales',10,true),('purchase','Purchase',20,true)
+on conflict ("ACCDIR_Code") do update set "ACCDIR_Name"=excluded."ACCDIR_Name","ACCDIR_IsActive"=true;
+
+insert into public."sys_AccountingDocumentTypes" ("ACCDT_Code","ACCDT_Name","ACCDT_DirectionCode","ACCDT_Description","ACCDT_SortOrder","ACCDT_IsActive") values
+  ('sl_invoice','Sales invoice','sales','Customer invoice export.',10,true),
+  ('credit_note','Customer credit note','sales','Customer credit export.',20,true),
+  ('customer_receipt','Customer receipt','sales','Customer receipt and allocation export.',30,true),
+  ('pl_invoice','Purchase invoice','purchase','Supplier invoice export.',40,true),
+  ('debit_note','Supplier credit note','purchase','Supplier credit export.',50,true),
+  ('supplier_payment','Supplier payment','purchase','Supplier payment and allocation export.',60,true)
+on conflict ("ACCDT_Code") do update set "ACCDT_Name"=excluded."ACCDT_Name","ACCDT_DirectionCode"=excluded."ACCDT_DirectionCode","ACCDT_Description"=excluded."ACCDT_Description","ACCDT_IsActive"=true;
+
+insert into public."sys_AccountingSyncStatuses" ("ACCSS_Code","ACCSS_Name","ACCSS_IsFinal","ACCSS_SortOrder","ACCSS_IsActive") values
+  ('draft','Draft',false,10,true),('queued','Queued',false,20,true),('processing','Processing',false,30,true),('blocked','Blocked',false,40,true),('failed','Failed',false,50,true),('synced','Synced',true,60,true)
+on conflict ("ACCSS_Code") do update set "ACCSS_Name"=excluded."ACCSS_Name","ACCSS_IsFinal"=excluded."ACCSS_IsFinal","ACCSS_IsActive"=true;
+
+insert into public."sys_FinanceLineTypes" ("FINLINE_Code","FINLINE_Name","FINLINE_Description","FINLINE_SortOrder","FINLINE_IsActive") values
+  ('freight','Freight','Job-related freight and forwarding service.',10,true),
+  ('service','Service','Manually entered professional or operational service.',20,true),
+  ('ancillary','Ancillary','Ad hoc handling, documentation and ancillary service.',30,true)
+on conflict ("FINLINE_Code") do update set
+  "FINLINE_Name"=excluded."FINLINE_Name", "FINLINE_Description"=excluded."FINLINE_Description", "FINLINE_IsActive"=true;
+
+insert into public."sys_FinancePostingStatuses" ("FINPOSTST_Code","FINPOSTST_Name","FINPOSTST_Description","FINPOSTST_IsFinal","FINPOSTST_SortOrder","FINPOSTST_IsActive") values
+  ('draft','Draft','Not yet approved for provider export.',false,10,true),
+  ('queued','Queued','Approved and queued for the configured accounting provider.',false,20,true),
+  ('processing','Processing','Currently being sent to the accounting provider.',false,30,true),
+  ('posted','Posted','Accepted and submitted by the accounting provider.',true,40,true),
+  ('blocked','Blocked','Missing a reviewed provider mapping or connection.',false,50,true),
+  ('failed','Failed','Provider export failed and needs attention.',false,60,true)
+on conflict ("FINPOSTST_Code") do update set
+  "FINPOSTST_Name"=excluded."FINPOSTST_Name", "FINPOSTST_Description"=excluded."FINPOSTST_Description", "FINPOSTST_IsFinal"=excluded."FINPOSTST_IsFinal", "FINPOSTST_IsActive"=true;
+
+insert into public."sys_FinanceCashTypes" ("FINCASHT_Code","FINCASHT_Name","FINCASHT_Description","FINCASHT_SortOrder","FINCASHT_IsActive") values
+  ('customer_receipt','Customer receipt','Money received from a customer, with controlled receivable allocations.',10,true),
+  ('supplier_payment','Supplier payment','Money paid to a supplier, with controlled payable allocations.',20,true)
+on conflict ("FINCASHT_Code") do update set
+  "FINCASHT_Name"=excluded."FINCASHT_Name", "FINCASHT_Description"=excluded."FINCASHT_Description", "FINCASHT_IsActive"=true;
+
+insert into public."sys_FinanceCashStatuses" ("FINCASHST_Code","FINCASHST_Name","FINCASHST_Description","FINCASHST_IsFinal","FINCASHST_SortOrder","FINCASHST_IsActive") values
+  ('draft','Draft','Prepared but not yet sent for finance review.',false,10,true),
+  ('awaiting_approval','Awaiting approval','Waiting for an authorised finance reviewer.',false,20,true),
+  ('approved','Approved','Approved, allocated and queued for provider export.',false,30,true),
+  ('submitted','Submitted','Submitted to the configured accounting provider.',true,40,true),
+  ('rejected','Rejected','Rejected by finance review.',true,50,true),
+  ('failed','Submission failed','Provider submission failed and requires attention.',false,60,true)
+on conflict ("FINCASHST_Code") do update set
+  "FINCASHST_Name"=excluded."FINCASHST_Name", "FINCASHST_Description"=excluded."FINCASHST_Description", "FINCASHST_IsFinal"=excluded."FINCASHST_IsFinal", "FINCASHST_IsActive"=true;
+
+insert into public."sys_FinanceAllocationStatuses" ("FINALLOCST_Code","FINALLOCST_Name","FINALLOCST_Description","FINALLOCST_IsFinal","FINALLOCST_SortOrder","FINALLOCST_IsActive") values
+  ('pending','Pending','Proposed allocation awaiting finance approval.',false,10,true),
+  ('allocated','Allocated','Approved allocation applied to the finance document.',true,20,true),
+  ('reversed','Reversed','Allocation reversed through a controlled correction.',true,30,true)
+on conflict ("FINALLOCST_Code") do update set
+  "FINALLOCST_Name"=excluded."FINALLOCST_Name", "FINALLOCST_Description"=excluded."FINALLOCST_Description", "FINALLOCST_IsFinal"=excluded."FINALLOCST_IsFinal", "FINALLOCST_IsActive"=true;
+
+insert into public."sys_FinanceAuthorityActionTypes" ("FINAUTHA_Code","FINAUTHA_Name","FINAUTHA_Description","FINAUTHA_SortOrder","FINAUTHA_IsActive") values
+  ('finance_cash_post','Finance cash posting','Approve a reviewed receipt or payment, apply its allocations and queue provider submission.',40,true)
+on conflict ("FINAUTHA_Code") do update set
+  "FINAUTHA_Name"=excluded."FINAUTHA_Name", "FINAUTHA_Description"=excluded."FINAUTHA_Description", "FINAUTHA_IsActive"=true;
+
+insert into public."sys_AuditEventTypes" ("AuditEventType_Code","AuditEventType_Name","AuditEventType_Description","AuditEventType_IsActive","AuditEventType_SortOrder") values
+  ('finance_lifecycle','Finance lifecycle','Audited sales-ledger, purchase-ledger, cash-allocation and provider-export changes.',true,260)
+on conflict ("AuditEventType_Code") do update set
+  "AuditEventType_Name"=excluded."AuditEventType_Name", "AuditEventType_Description"=excluded."AuditEventType_Description", "AuditEventType_IsActive"=true;
+
+insert into public."sys_Permissions" ("sys_Permission_Value","sys_Permission_Group","sys_Permission_Name","sys_Permission_Description","sys_Permission_IsDangerous") values
+  ('Finance.Receivables.Cash','Finance','Prepare customer receipts','Prepare customer receipt and receivable allocation drafts.',false),
+  ('Finance.Payables.Cash','Finance','Prepare supplier payments','Prepare supplier payment and payable allocation drafts.',false),
+  ('Finance.Integration.Manage','Finance','Manage accounting integration','Test connections, review mappings and retry controlled provider exports.',true)
+on conflict ("sys_Permission_Value") do update set
+  "sys_Permission_Group"=excluded."sys_Permission_Group", "sys_Permission_Name"=excluded."sys_Permission_Name", "sys_Permission_Description"=excluded."sys_Permission_Description", "sys_Permission_IsDangerous"=excluded."sys_Permission_IsDangerous";
+
+with role_permissions(role_name, permission_value) as (values
+  ('Administrator','Finance.Receivables.Cash'),('Administrator','Finance.Payables.Cash'),('Administrator','Finance.Integration.Manage'),
+  ('Finance manager','Finance.Receivables.Cash'),('Finance manager','Finance.Payables.Cash'),('Finance manager','Finance.Integration.Manage'),
+  ('Operations manager','Finance.Receivables.Cash'),('Operations manager','Finance.Payables.Cash'),
+  ('Operator','Finance.Receivables.Cash'),('Operator','Finance.Payables.Cash')
+)
+insert into public."sys_UserRole_Permissions" ("sys_UserRole_ID","sys_Permission_ID")
+select role."sys_UserRole_ID", permission."sys_Permission_ID"
+from role_permissions mapping
+join public."sys_UserRoles" role on lower(role."sys_UserRole_Name")=lower(mapping.role_name)
+join public."sys_Permissions" permission on permission."sys_Permission_Value"=mapping.permission_value
+on conflict do nothing;
+
+create or replace function public._multideck_finance_next_number(
+  p_legal_entity_id uuid, p_record_type text
+) returns text
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_sequence bigint; v_prefix text; v_code text;
+begin
+  if p_record_type not in ('sl_invoice','credit_note','pl_invoice','debit_note','customer_receipt','supplier_payment') then
+    raise exception 'Unknown finance record type.' using errcode='22023';
+  end if;
+  v_prefix := case p_record_type
+    when 'sl_invoice' then 'SI-' when 'credit_note' then 'CN-'
+    when 'pl_invoice' then 'PI-' when 'debit_note' then 'DN-'
+    when 'customer_receipt' then 'RCPT-' when 'supplier_payment' then 'PAY-'
+  end;
+  v_code := 'finance:' || p_legal_entity_id::text || ':' || p_record_type;
+  insert into public."FIN_NumberSequences"(
+    "FINSeq_Code","FINSeq_Name","FINSeq_LegalEntityID","FINSeq_DocumentTypeCode","FINSeq_Prefix","FINSeq_NextNumber","FINSeq_PaddingLength"
+  ) values (
+    v_code, v_prefix || 'sequence', p_legal_entity_id,
+    case when p_record_type in ('sl_invoice','credit_note','pl_invoice','debit_note') then p_record_type else null end,
+    v_prefix, 2, 6
+  ) on conflict ("FINSeq_Code") do update set
+    "FINSeq_NextNumber"=public."FIN_NumberSequences"."FINSeq_NextNumber"+1,
+    "FINSeq_IsActive"=true
+  returning "FINSeq_NextNumber"-1 into v_sequence;
+  return v_prefix || lpad(v_sequence::text,6,'0');
+end;
+$$;
+
+create or replace function public.multideck_finance_create_document_draft(
+  p_company_id uuid, p_user_id uuid, p_input jsonb
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare
+  v_type text:=p_input->>'type'; v_entity uuid; v_entity_currency text; v_party uuid; v_job uuid; v_job_company uuid; v_job_entity uuid; v_job_party uuid;
+  v_date date; v_due date; v_currency text; v_exchange numeric; v_source_kind text; v_sign numeric; v_number text; v_document uuid;
+  v_line jsonb; v_index integer:=0; v_quantity numeric; v_unit numeric; v_rate numeric; v_net numeric; v_tax numeric; v_gross numeric;
+  v_total_net numeric:=0; v_total_tax numeric:=0; v_total_gross numeric:=0; v_line_id uuid; v_idempotency uuid; v_idempotent_company uuid;
+begin
+  if jsonb_typeof(p_input)<>'object' then raise exception 'Finance input must be an object.' using errcode='22023'; end if;
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then
+    raise exception 'The finance operator is outside this workspace.' using errcode='42501';
+  end if;
+  if v_type not in ('sl_invoice','credit_note','pl_invoice','debit_note') then raise exception 'Choose a supported finance document type.' using errcode='22023'; end if;
+  begin v_entity:=(p_input->>'legalEntityId')::uuid; v_party:=(p_input->>'partyOrgId')::uuid; exception when invalid_text_representation then raise exception 'Choose a valid legal entity and party.' using errcode='22023'; end;
+  select upper("LegalEntity_BaseCurrencyCodeSnapshot") into v_entity_currency from public."cmp_LegalEntities" where "LegalEntity_ID"=v_entity and "Company_ID"=p_company_id and "LegalEntity_IsActive";
+  if not found then
+    raise exception 'That legal entity is not active in this workspace.' using errcode='42501';
+  end if;
+  if v_entity_currency is null or v_entity_currency!~'^[A-Z]{3}$' then raise exception 'Configure a valid base currency for this legal entity.' using errcode='22023'; end if;
+  if not exists(select 1 from public."Org_Master" where "Org_id"=v_party) then raise exception 'Choose a valid customer or supplier.' using errcode='22023'; end if;
+  begin v_date:=coalesce(nullif(p_input->>'documentDate','')::date,current_date); v_due:=nullif(p_input->>'dueDate','')::date; exception when invalid_datetime_format then raise exception 'Check the document and due dates.' using errcode='22023'; end;
+  if v_due is not null and v_due<v_date then raise exception 'The due date cannot be before the document date.' using errcode='22023'; end if;
+  v_currency:=upper(coalesce(nullif(btrim(p_input->>'currencyCode'),''),v_entity_currency));
+  if v_currency !~ '^[A-Z]{3}$' then raise exception 'Enter a three-letter currency code.' using errcode='22023'; end if;
+  begin v_exchange:=coalesce(nullif(p_input->>'exchangeRate','')::numeric,1); exception when invalid_text_representation then raise exception 'Enter a valid exchange rate.' using errcode='22023'; end;
+  if v_exchange::text in ('NaN','Infinity','-Infinity') or v_exchange<=0 or (v_currency<>v_entity_currency and nullif(p_input->>'exchangeRate','') is null) then raise exception 'Enter the reviewed exchange rate from document currency to base currency.' using errcode='22023'; end if;
+  if v_currency=v_entity_currency then v_exchange:=1; end if;
+  if nullif(p_input->>'sourceJobId','') is not null then
+    begin v_job:=(p_input->>'sourceJobId')::uuid; exception when invalid_text_representation then raise exception 'Choose a valid job.' using errcode='22023'; end;
+    select office."Company_ID", job."Job_LegalEntityID", case when v_type in ('sl_invoice','credit_note') then job."Job_Customer" else job."Job_Supplier" end into v_job_company,v_job_entity,v_job_party
+    from public."Job_Header" job join public."cmp_Offices" office on office."Office_ID"=coalesce(job."Job_OrgOfficeID",job."Job_OfficeID")
+    where job."Job_ID"=v_job and not job."Job_IsDeleted";
+    if v_job_company is distinct from p_company_id or (v_job_entity is not null and v_job_entity is distinct from v_entity) then
+      raise exception 'That job is outside the selected company or legal entity.' using errcode='42501';
+    end if;
+    if v_job_party is null or v_job_party is distinct from v_party then raise exception 'The selected party must match the customer or supplier on the job.' using errcode='22023'; end if;
+  end if;
+  if jsonb_typeof(p_input->'lines')<>'array' or jsonb_array_length(p_input->'lines') not between 1 and 100 then
+    raise exception 'Add between one and 100 document lines.' using errcode='22023';
+  end if;
+  begin v_idempotency:=coalesce(nullif(p_input->>'idempotencyKey','')::uuid,gen_random_uuid()); exception when invalid_text_representation then raise exception 'The finance request key is invalid.' using errcode='22023'; end;
+  select document."FINDoc_ID",entity."Company_ID" into v_document,v_idempotent_company from public."FIN_Documents" document join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=document."FINDoc_LegalEntityID" where document."FINDoc_IdempotencyKey"=v_idempotency;
+  if v_document is not null and v_idempotent_company is distinct from p_company_id then raise exception 'The finance request key belongs to another workspace.' using errcode='42501'; end if;
+  if v_document is not null then return (select to_jsonb(d) from public."FIN_Documents" d where d."FINDoc_ID"=v_document); end if;
+  v_source_kind:=case when v_job is null then 'manual' else 'job' end; v_sign:=case when v_type in ('credit_note','debit_note') then -1 else 1 end;
+  v_number:=public._multideck_finance_next_number(v_entity,v_type);
+  insert into public."FIN_Documents"(
+    "FINDoc_TypeCode","FINDoc_StatusCode","FINDoc_Number","FINDoc_LegalEntityID","FINDoc_PartyOrgID","FINDoc_PartyRole",
+    "FINDoc_DocumentDate","FINDoc_AccountingDate","FINDoc_DueDate","FINDoc_CurrencyCodeSnapshot","FINDoc_SourceJobID","FINDoc_SourceTable","FINDoc_SourceID",
+    "FINDoc_SourceKindCode","FINDoc_IdempotencyKey","FINDoc_ExchangeRate","FINDoc_MetadataJSON","FINDoc_CreatedBy","FINDoc_UpdatedBy"
+  ) values (
+    v_type,'draft',v_number,v_entity,v_party,case when v_type in ('sl_invoice','credit_note') then 'customer' else 'supplier' end,
+    v_date,v_date,v_due,v_currency,v_job,case when v_job is null then null else 'Job_Header' end,v_job,
+    v_source_kind,v_idempotency,v_exchange,jsonb_build_object('source','multideck_finance','sourceKind',v_source_kind,'baseCurrency',v_entity_currency),p_user_id,p_user_id
+  ) returning "FINDoc_ID" into v_document;
+  for v_line in select value from jsonb_array_elements(p_input->'lines') loop
+    v_index:=v_index+1; v_quantity:=coalesce(nullif(v_line->>'quantity','')::numeric,1); v_unit:=coalesce(nullif(v_line->>'unitAmount','')::numeric,0); v_rate:=coalesce(nullif(v_line->>'taxRatePercent','')::numeric,0);
+    if v_quantity::text in ('NaN','Infinity','-Infinity') or v_unit::text in ('NaN','Infinity','-Infinity') or v_rate::text in ('NaN','Infinity','-Infinity') or nullif(btrim(v_line->>'description'),'') is null or length(v_line->>'description')>1000 or nullif(btrim(v_line->>'chargeCode'),'') is null or length(v_line->>'chargeCode')>80 or v_quantity<=0 or v_unit<0 or v_rate<0 or v_rate>100 then
+      raise exception 'Check finance line %.',v_index using errcode='22023';
+    end if;
+    if v_rate>0 and nullif(btrim(v_line->>'taxCode'),'') is null then raise exception 'Choose a tax treatment for finance line %.',v_index using errcode='22023'; end if;
+    v_net:=round(v_quantity*v_unit,4)*v_sign; v_tax:=round(abs(v_net)*v_rate/100,4)*v_sign; v_gross:=v_net+v_tax;
+    insert into public."FIN_DocumentLines"(
+      "FINDocLine_DocumentID","FINDocLine_LineNo","FINDocLine_LineTypeCode","FINDocLine_ChargeCodeSnapshot","FINDocLine_Description","FINDocLine_Quantity","FINDocLine_UnitAmount",
+      "FINDocLine_NetAmount","FINDocLine_TaxCodeSnapshot","FINDocLine_TaxRatePercent","FINDocLine_TaxAmount","FINDocLine_GrossAmount",
+      "FINDocLine_LocalNetAmount","FINDocLine_LocalTaxAmount","FINDocLine_LocalGrossAmount"
+    ) values (
+      v_document,v_index,case when v_job is not null then 'freight' when coalesce(v_line->>'lineType','')='ancillary' then 'ancillary' else 'service' end,
+      nullif(left(btrim(v_line->>'chargeCode'),80),''),btrim(v_line->>'description'),v_quantity,v_unit,v_net,nullif(left(btrim(v_line->>'taxCode'),80),''),v_rate,v_tax,v_gross,round(v_net*v_exchange,4),round(v_tax*v_exchange,4),round(v_gross*v_exchange,4)
+    ) returning "FINDocLine_ID" into v_line_id;
+    if v_job is not null then
+      insert into public."FIN_DocumentLineJobLinks"("FINDocLineJob_DocumentID","FINDocLineJob_DocumentLineID","FINDocLineJob_JobID","FINDocLineJob_LinkTypeCode","FINDocLineJob_NetAmount","FINDocLineJob_LocalNetAmount","FINDocLineJob_PercentOfLine")
+      values(v_document,v_line_id,v_job,'source_job',v_net,round(v_net*v_exchange,4),100);
+    end if;
+    v_total_net:=v_total_net+v_net; v_total_tax:=v_total_tax+v_tax; v_total_gross:=v_total_gross+v_gross;
+  end loop;
+  if abs(v_total_gross)<=0 then raise exception 'The finance document gross amount must be greater than zero.' using errcode='22023'; end if;
+  update public."FIN_Documents" set
+    "FINDoc_NetAmount"=v_total_net,"FINDoc_TaxAmount"=v_total_tax,"FINDoc_GrossAmount"=v_total_gross,
+    "FINDoc_LocalNetAmount"=round(v_total_net*v_exchange,4),"FINDoc_LocalTaxAmount"=round(v_total_tax*v_exchange,4),"FINDoc_LocalGrossAmount"=round(v_total_gross*v_exchange,4),
+    "FINDoc_OutstandingAmount"=v_total_gross,"FINDoc_LocalOutstandingAmount"=round(v_total_gross*v_exchange,4),"FINDoc_UpdatedAt"=now()
+  where "FINDoc_ID"=v_document;
+  insert into public."FIN_DocumentStatusHistory"("FINDocStatus_DocumentID","FINDocStatus_ToStatusCode","FINDocStatus_ChangedBy","FINDocStatus_Reason","FINDocStatus_MetadataJSON")
+  values(v_document,'draft',p_user_id,'Created in Multideck finance',jsonb_build_object('sourceKind',v_source_kind,'jobId',v_job));
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_MetadataJSON")
+  values('finance_lifecycle',p_user_id,v_entity,'multideck-app','finance','public','FIN_Documents',v_type,v_document,'create_draft','Finance document draft created',jsonb_build_object('number',v_number,'sourceKind',v_source_kind,'grossAmount',v_total_gross,'currency',v_currency,'exchangeRate',v_exchange));
+  return (select to_jsonb(d) from public."FIN_Documents" d where d."FINDoc_ID"=v_document);
+end;
+$$;
+
+create or replace function public.multideck_finance_transition_document(
+  p_company_id uuid, p_user_id uuid, p_document_id uuid, p_transition text, p_reason text default null
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_document public."FIN_Documents"; v_entity_currency text; v_next text; v_queue uuid; v_line_count integer; v_line_net numeric; v_line_tax numeric; v_line_gross numeric;
+begin
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then raise exception 'The finance operator is outside this workspace.' using errcode='42501'; end if;
+  select document.* into v_document from public."FIN_Documents" document join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=document."FINDoc_LegalEntityID" where document."FINDoc_ID"=p_document_id and entity."Company_ID"=p_company_id for update of document;
+  if not found then raise exception 'Finance document not found in this workspace.' using errcode='P0002'; end if;
+  if p_transition='request_review' and v_document."FINDoc_StatusCode"='draft' then v_next:='awaiting_approval';
+  elsif p_transition='approve' and v_document."FINDoc_StatusCode"='awaiting_approval' then v_next:='approved';
+  elsif p_transition='reject' and v_document."FINDoc_StatusCode"='awaiting_approval' then v_next:='rejected';
+  else raise exception 'That finance document transition is not available from its current status.' using errcode='22023'; end if;
+  if v_next in ('awaiting_approval','approved') then
+    select upper("LegalEntity_BaseCurrencyCodeSnapshot") into v_entity_currency from public."cmp_LegalEntities" where "LegalEntity_ID"=v_document."FINDoc_LegalEntityID" and "Company_ID"=p_company_id and "LegalEntity_IsActive";
+    if not found or v_entity_currency is null or v_entity_currency!~'^[A-Z]{3}$' then raise exception 'Configure a valid base currency for this legal entity.' using errcode='22023'; end if;
+    if upper(coalesce(v_document."FINDoc_CurrencyCodeSnapshot",''))!~'^[A-Z]{3}$' then raise exception 'The finance document has no valid transaction currency.' using errcode='22023'; end if;
+    if v_document."FINDoc_ExchangeRate"::text in ('NaN','Infinity','-Infinity') or v_document."FINDoc_ExchangeRate"<=0 or (upper(v_document."FINDoc_CurrencyCodeSnapshot")=v_entity_currency and v_document."FINDoc_ExchangeRate"<>1) then raise exception 'The finance document has no valid reviewed exchange rate.' using errcode='22023'; end if;
+    if v_document."FINDoc_DueDate" is not null and v_document."FINDoc_DueDate"<v_document."FINDoc_DocumentDate" then raise exception 'The due date cannot be before the document date.' using errcode='22023'; end if;
+    if v_document."FINDoc_GrossAmount"=0 or (v_document."FINDoc_TypeCode" in ('credit_note','debit_note') and v_document."FINDoc_GrossAmount">=0) or (v_document."FINDoc_TypeCode" in ('sl_invoice','pl_invoice') and v_document."FINDoc_GrossAmount"<=0) then raise exception 'The finance document amount has the wrong invoice or credit polarity.' using errcode='22023'; end if;
+    if not exists(select 1 from public."Org_Master" where "Org_id"=v_document."FINDoc_PartyOrgID") then raise exception 'The finance document customer or supplier is no longer available.' using errcode='22023'; end if;
+    if v_document."FINDoc_SourceKindCode"='job' and not exists(
+      select 1 from public."Job_Header" job join public."cmp_Offices" office on office."Office_ID"=coalesce(job."Job_OrgOfficeID",job."Job_OfficeID")
+      where job."Job_ID"=v_document."FINDoc_SourceJobID" and not job."Job_IsDeleted" and office."Company_ID"=p_company_id
+        and (job."Job_LegalEntityID" is null or job."Job_LegalEntityID"=v_document."FINDoc_LegalEntityID")
+        and case when v_document."FINDoc_TypeCode" in ('sl_invoice','credit_note') then job."Job_Customer" else job."Job_Supplier" end=v_document."FINDoc_PartyOrgID"
+    ) then raise exception 'The job, legal entity and customer or supplier no longer match.' using errcode='22023'; end if;
+    select count(*),coalesce(sum("FINDocLine_NetAmount"),0),coalesce(sum("FINDocLine_TaxAmount"),0),coalesce(sum("FINDocLine_GrossAmount"),0) into v_line_count,v_line_net,v_line_tax,v_line_gross from public."FIN_DocumentLines" where "FINDocLine_DocumentID"=p_document_id;
+    if v_line_count not between 1 and 100 or v_line_net is distinct from v_document."FINDoc_NetAmount" or v_line_tax is distinct from v_document."FINDoc_TaxAmount" or v_line_gross is distinct from v_document."FINDoc_GrossAmount" then raise exception 'The finance document header no longer agrees with its lines.' using errcode='22023'; end if;
+    if exists(select 1 from public."FIN_DocumentLines" where "FINDocLine_DocumentID"=p_document_id and (nullif(btrim("FINDocLine_Description"),'') is null or nullif(btrim("FINDocLine_ChargeCodeSnapshot"),'') is null or "FINDocLine_Quantity"<=0 or "FINDocLine_UnitAmount"<0 or "FINDocLine_TaxRatePercent" not between 0 and 100 or ("FINDocLine_TaxRatePercent">0 and nullif(btrim("FINDocLine_TaxCodeSnapshot"),'') is null))) then raise exception 'One or more finance document lines are incomplete.' using errcode='22023'; end if;
+  end if;
+  update public."FIN_Documents" set "FINDoc_StatusCode"=v_next,
+    "FINDoc_PostingStatusCode"=case when v_next='approved' then 'queued' else "FINDoc_PostingStatusCode" end,
+    "FINDoc_ExportStatusCode"=case when v_next='approved' then 'queued' else "FINDoc_ExportStatusCode" end,
+    "FINDoc_UpdatedAt"=now(),"FINDoc_UpdatedBy"=p_user_id where "FINDoc_ID"=p_document_id;
+  if v_next='awaiting_approval' then
+    insert into public."FIN_AuthorisationRequests"("FINAUTHREQ_ActionTypeCode","FINAUTHREQ_SourceTable","FINAUTHREQ_SourceID","FINAUTHREQ_DocumentID","FINAUTHREQ_RequestedBy","FINAUTHREQ_Amount","FINAUTHREQ_CurrencyCodeSnapshot","FINAUTHREQ_Reason")
+    values('finance_post','FIN_Documents',p_document_id,p_document_id,p_user_id,v_document."FINDoc_GrossAmount",v_document."FINDoc_CurrencyCodeSnapshot",coalesce(nullif(btrim(p_reason),''),'Finance review requested'));
+  elsif v_next='approved' then
+    insert into public."FIN_IntegrationQueue"("FINIntQ_LocalTable","FINIntQ_LocalID","FINIntQ_DocumentID","FINIntQ_StatusCode","FINIntQ_CreatedBy")
+    values('FIN_Documents',p_document_id,p_document_id,'queued',p_user_id)
+    on conflict ("FINIntQ_LocalTable","FINIntQ_LocalID") where "FINIntQ_StatusCode" in ('queued','processing','blocked') do update set "FINIntQ_StatusCode"='queued',"FINIntQ_LastError"=null
+    returning "FINIntQ_ID" into v_queue;
+  end if;
+  if v_next in ('approved','rejected') then
+    with resolved as (
+      update public."FIN_AuthorisationRequests" set "FINAUTHREQ_StatusCode"=v_next where "FINAUTHREQ_SourceTable"='FIN_Documents' and "FINAUTHREQ_SourceID"=p_document_id and "FINAUTHREQ_StatusCode"='awaiting_approval' returning "FINAUTHREQ_ID"
+    ) insert into public."FIN_AuthorisationDecisions"("FINAUTHDEC_RequestID","FINAUTHDEC_DecisionCode","FINAUTHDEC_DecidedBy","FINAUTHDEC_Comments","FINAUTHDEC_MetadataJSON")
+      select "FINAUTHREQ_ID",v_next,p_user_id,nullif(btrim(p_reason),''),jsonb_build_object('transition',p_transition) from resolved;
+  end if;
+  insert into public."FIN_DocumentStatusHistory"("FINDocStatus_DocumentID","FINDocStatus_FromStatusCode","FINDocStatus_ToStatusCode","FINDocStatus_ChangedBy","FINDocStatus_Reason","FINDocStatus_MetadataJSON")
+  values(p_document_id,v_document."FINDoc_StatusCode",v_next,p_user_id,nullif(btrim(p_reason),''),jsonb_build_object('integrationQueueId',v_queue));
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_MetadataJSON")
+  values('finance_lifecycle',p_user_id,v_document."FINDoc_LegalEntityID",'multideck-app','finance','public','FIN_Documents',v_document."FINDoc_TypeCode",p_document_id,p_transition,'Finance document status changed',jsonb_build_object('from',v_document."FINDoc_StatusCode",'to',v_next,'integrationQueueId',v_queue));
+  return (select to_jsonb(d) from public."FIN_Documents" d where d."FINDoc_ID"=p_document_id);
+end;
+$$;
+
+create or replace function public.multideck_finance_create_cash_draft(
+  p_company_id uuid, p_user_id uuid, p_input jsonb
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare
+  v_type text:=p_input->>'type'; v_entity uuid; v_entity_currency text; v_party uuid; v_bank uuid; v_date date; v_currency text; v_exchange numeric; v_amount numeric; v_number text; v_cash uuid; v_idempotency uuid;
+  v_allocation jsonb; v_document public."FIN_Documents"; v_allocated numeric; v_total_allocated numeric:=0; v_idempotent_company uuid;
+begin
+  if jsonb_typeof(p_input)<>'object' then raise exception 'Finance input must be an object.' using errcode='22023'; end if;
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then raise exception 'The finance operator is outside this workspace.' using errcode='42501'; end if;
+  if v_type not in ('customer_receipt','supplier_payment') then raise exception 'Choose a customer receipt or supplier payment.' using errcode='22023'; end if;
+  begin v_entity:=(p_input->>'legalEntityId')::uuid; v_party:=(p_input->>'partyOrgId')::uuid; v_bank:=nullif(p_input->>'bankAccountId','')::uuid; exception when invalid_text_representation then raise exception 'Choose a valid legal entity, party and bank account.' using errcode='22023'; end;
+  if v_bank is null then raise exception 'Choose an active bank account before recording a receipt or payment.' using errcode='22023'; end if;
+  select upper("LegalEntity_BaseCurrencyCodeSnapshot") into v_entity_currency from public."cmp_LegalEntities" where "LegalEntity_ID"=v_entity and "Company_ID"=p_company_id and "LegalEntity_IsActive";
+  if not found then raise exception 'That legal entity is not active in this workspace.' using errcode='42501'; end if;
+  if v_entity_currency is null or v_entity_currency!~'^[A-Z]{3}$' then raise exception 'Configure a valid base currency for this legal entity.' using errcode='22023'; end if;
+  if not exists(select 1 from public."Org_Master" where "Org_id"=v_party) then raise exception 'Choose a valid customer or supplier.' using errcode='22023'; end if;
+  if not exists(select 1 from public."FIN_BankAccounts" where "FINBank_ID"=v_bank and "FINBank_LegalEntityID"=v_entity and "FINBank_IsActive") then raise exception 'Choose an active bank account for this legal entity.' using errcode='22023'; end if;
+  begin v_date:=coalesce(nullif(p_input->>'transactionDate','')::date,current_date); v_amount:=(p_input->>'amount')::numeric; exception when invalid_datetime_format or invalid_text_representation then raise exception 'Check the cash date and amount.' using errcode='22023'; end;
+  if v_amount::text in ('NaN','Infinity','-Infinity') or v_amount<=0 then raise exception 'The receipt or payment amount must be greater than zero.' using errcode='22023'; end if;
+  v_currency:=upper(coalesce(nullif(btrim(p_input->>'currencyCode'),''),v_entity_currency)); if v_currency!~'^[A-Z]{3}$' then raise exception 'Enter a three-letter currency code.' using errcode='22023'; end if;
+  begin v_exchange:=coalesce(nullif(p_input->>'exchangeRate','')::numeric,1); exception when invalid_text_representation then raise exception 'Enter a valid exchange rate.' using errcode='22023'; end;
+  if v_exchange::text in ('NaN','Infinity','-Infinity') or v_exchange<=0 or (v_currency<>v_entity_currency and nullif(p_input->>'exchangeRate','') is null) then raise exception 'Enter the reviewed exchange rate from transaction currency to base currency.' using errcode='22023'; end if;
+  if v_currency=v_entity_currency then v_exchange:=1; end if;
+  if not exists(select 1 from public."FIN_BankAccounts" where "FINBank_ID"=v_bank and "FINBank_LegalEntityID"=v_entity and upper("FINBank_CurrencyCode")=v_currency and "FINBank_IsActive") then raise exception 'The bank account currency must match the receipt or payment currency.' using errcode='22023'; end if;
+  if jsonb_typeof(coalesce(p_input->'allocations','[]'::jsonb)) is distinct from 'array' then raise exception 'Cash allocations must be an array.' using errcode='22023'; end if;
+  if coalesce(jsonb_array_length(coalesce(p_input->'allocations','[]'::jsonb)),0)>100 then raise exception 'Add no more than 100 allocations.' using errcode='22023'; end if;
+  begin v_idempotency:=coalesce(nullif(p_input->>'idempotencyKey','')::uuid,gen_random_uuid()); exception when invalid_text_representation then raise exception 'The finance request key is invalid.' using errcode='22023'; end;
+  select cash."FINCash_ID",entity."Company_ID" into v_cash,v_idempotent_company from public."FIN_CashTransactions" cash join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=cash."FINCash_LegalEntityID" where cash."FINCash_IdempotencyKey"=v_idempotency;
+  if v_cash is not null and v_idempotent_company is distinct from p_company_id then raise exception 'The finance request key belongs to another workspace.' using errcode='42501'; end if;
+  if v_cash is not null then return (select to_jsonb(c) from public."FIN_CashTransactions" c where c."FINCash_ID"=v_cash); end if;
+  v_number:=public._multideck_finance_next_number(v_entity,v_type);
+  insert into public."FIN_CashTransactions"("FINCash_TypeCode","FINCash_StatusCode","FINCash_Number","FINCash_LegalEntityID","FINCash_BankAccountID","FINCash_PartyOrgID","FINCash_TransactionDate","FINCash_AccountingDate","FINCash_CurrencyCodeSnapshot","FINCash_ExchangeRate","FINCash_Amount","FINCash_LocalAmount","FINCash_UnallocatedAmount","FINCash_LocalUnallocatedAmount","FINCash_Reference","FINCash_IdempotencyKey","FINCash_MetadataJSON","FINCash_CreatedBy","FINCash_UpdatedBy")
+  values(v_type,'draft',v_number,v_entity,v_bank,v_party,v_date,v_date,v_currency,v_exchange,v_amount,round(v_amount*v_exchange,4),v_amount,round(v_amount*v_exchange,4),nullif(left(btrim(p_input->>'reference'),180),''),v_idempotency,jsonb_build_object('source','multideck_finance','baseCurrency',v_entity_currency),p_user_id,p_user_id)
+  returning "FINCash_ID" into v_cash;
+  for v_allocation in select value from jsonb_array_elements(coalesce(p_input->'allocations','[]'::jsonb)) loop
+    begin v_allocated:=(v_allocation->>'amount')::numeric; select document.* into v_document from public."FIN_Documents" document join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=document."FINDoc_LegalEntityID" where document."FINDoc_ID"=(v_allocation->>'documentId')::uuid and entity."Company_ID"=p_company_id;
+    exception when invalid_text_representation then raise exception 'Choose a valid document for every allocation.' using errcode='22023'; end;
+    if not found or v_allocated::text in ('NaN','Infinity','-Infinity') or v_document."FINDoc_LegalEntityID" is distinct from v_entity or v_document."FINDoc_PartyOrgID" is distinct from v_party or v_document."FINDoc_CurrencyCodeSnapshot"<>v_currency or v_document."FINDoc_StatusCode" not in ('approved','submitted') or v_document."FINDoc_TypeCode"<>(case when v_type='customer_receipt' then 'sl_invoice' else 'pl_invoice' end) or v_allocated<=0 or v_allocated>v_document."FINDoc_OutstandingAmount" then
+      raise exception 'An allocation does not match this party, currency, ledger or open balance.' using errcode='22023';
+    end if;
+    if exists(select 1 from public."FIN_CashAllocations" where "FINCashAlloc_CashID"=v_cash and "FINCashAlloc_DocumentID"=v_document."FINDoc_ID") then raise exception 'Allocate to each document once.' using errcode='22023'; end if;
+    insert into public."FIN_CashAllocations"("FINCashAlloc_CashID","FINCashAlloc_DocumentID","FINCashAlloc_AllocationStatusCode","FINCashAlloc_AllocatedAmount","FINCashAlloc_LocalAllocatedAmount","FINCashAlloc_AllocatedBy") values(v_cash,v_document."FINDoc_ID",'pending',v_allocated,round(v_allocated*v_document."FINDoc_ExchangeRate",4),p_user_id);
+    v_total_allocated:=v_total_allocated+v_allocated;
+  end loop;
+  if v_total_allocated>v_amount then raise exception 'Allocations cannot exceed the receipt or payment amount.' using errcode='22023'; end if;
+  update public."FIN_CashTransactions" set "FINCash_UnallocatedAmount"=v_amount-v_total_allocated,"FINCash_LocalUnallocatedAmount"=round((v_amount-v_total_allocated)*v_exchange,4),"FINCash_UpdatedAt"=now() where "FINCash_ID"=v_cash;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_MetadataJSON")
+  values('finance_lifecycle',p_user_id,v_entity,'multideck-app','finance','public','FIN_CashTransactions',v_type,v_cash,'create_draft','Finance cash draft created',jsonb_build_object('number',v_number,'amount',v_amount,'allocatedAmount',v_total_allocated,'currency',v_currency,'exchangeRate',v_exchange));
+  return (select to_jsonb(c) from public."FIN_CashTransactions" c where c."FINCash_ID"=v_cash);
+end;
+$$;
+
+create or replace function public.multideck_finance_transition_cash(
+  p_company_id uuid, p_user_id uuid, p_cash_id uuid, p_transition text, p_reason text default null
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_cash public."FIN_CashTransactions"; v_entity_currency text; v_bank_currency text; v_next text; v_allocation public."FIN_CashAllocations"; v_document public."FIN_Documents"; v_queue uuid; v_allocation_count integer; v_total_allocated numeric;
+begin
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then raise exception 'The finance operator is outside this workspace.' using errcode='42501'; end if;
+  select cash.* into v_cash from public."FIN_CashTransactions" cash join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=cash."FINCash_LegalEntityID" where cash."FINCash_ID"=p_cash_id and entity."Company_ID"=p_company_id for update of cash;
+  if not found then raise exception 'Cash transaction not found in this workspace.' using errcode='P0002'; end if;
+  if p_transition='request_review' and v_cash."FINCash_StatusCode"='draft' then v_next:='awaiting_approval';
+  elsif p_transition='approve' and v_cash."FINCash_StatusCode"='awaiting_approval' then v_next:='approved';
+  elsif p_transition='reject' and v_cash."FINCash_StatusCode"='awaiting_approval' then v_next:='rejected';
+  else raise exception 'That cash transition is not available from its current status.' using errcode='22023'; end if;
+  if v_next in ('awaiting_approval','approved') then
+    select upper("LegalEntity_BaseCurrencyCodeSnapshot") into v_entity_currency from public."cmp_LegalEntities" where "LegalEntity_ID"=v_cash."FINCash_LegalEntityID" and "Company_ID"=p_company_id and "LegalEntity_IsActive";
+    if not found or v_entity_currency is null or v_entity_currency!~'^[A-Z]{3}$' then raise exception 'Configure a valid base currency for this legal entity.' using errcode='22023'; end if;
+    if upper(coalesce(v_cash."FINCash_CurrencyCodeSnapshot",''))!~'^[A-Z]{3}$' then raise exception 'The receipt or payment has no valid transaction currency.' using errcode='22023'; end if;
+    if v_cash."FINCash_ExchangeRate"::text in ('NaN','Infinity','-Infinity') or v_cash."FINCash_ExchangeRate"<=0 or (upper(v_cash."FINCash_CurrencyCodeSnapshot")=v_entity_currency and v_cash."FINCash_ExchangeRate"<>1) then raise exception 'The receipt or payment has no valid reviewed exchange rate.' using errcode='22023'; end if;
+    if v_cash."FINCash_Amount"::text in ('NaN','Infinity','-Infinity') or v_cash."FINCash_Amount"<=0 or v_cash."FINCash_LocalAmount" is distinct from round(v_cash."FINCash_Amount"*v_cash."FINCash_ExchangeRate",4) then raise exception 'The receipt or payment amount no longer agrees with its exchange rate.' using errcode='22023'; end if;
+    if v_cash."FINCash_BankAccountID" is null then raise exception 'Choose an active bank account before approving this receipt or payment.' using errcode='22023'; end if;
+    select upper("FINBank_CurrencyCode") into v_bank_currency from public."FIN_BankAccounts" where "FINBank_ID"=v_cash."FINCash_BankAccountID" and "FINBank_LegalEntityID"=v_cash."FINCash_LegalEntityID" and "FINBank_IsActive";
+    if not found then raise exception 'The selected bank account is no longer active for this legal entity.' using errcode='22023'; end if;
+    if v_bank_currency is null or v_bank_currency!~'^[A-Z]{3}$' then raise exception 'Configure a valid currency for the selected bank account.' using errcode='22023'; end if;
+    if v_bank_currency<>upper(v_cash."FINCash_CurrencyCodeSnapshot") then raise exception 'The bank account currency must match the receipt or payment currency.' using errcode='22023'; end if;
+    if not exists(select 1 from public."Org_Master" where "Org_id"=v_cash."FINCash_PartyOrgID") then raise exception 'The receipt or payment customer or supplier is no longer available.' using errcode='22023'; end if;
+    select count(*),coalesce(sum("FINCashAlloc_AllocatedAmount"),0) into v_allocation_count,v_total_allocated from public."FIN_CashAllocations" where "FINCashAlloc_CashID"=p_cash_id and "FINCashAlloc_AllocationStatusCode"='pending';
+    if v_allocation_count>100 or v_total_allocated>v_cash."FINCash_Amount" or v_cash."FINCash_UnallocatedAmount" is distinct from v_cash."FINCash_Amount"-v_total_allocated then raise exception 'The receipt or payment allocations no longer agree with its amount.' using errcode='22023'; end if;
+  end if;
+  if v_next='approved' then
+    for v_allocation in select * from public."FIN_CashAllocations" where "FINCashAlloc_CashID"=p_cash_id and "FINCashAlloc_AllocationStatusCode"='pending' order by "FINCashAlloc_DocumentID" for update loop
+      select * into v_document from public."FIN_Documents" where "FINDoc_ID"=v_allocation."FINCashAlloc_DocumentID" for update;
+      if not found or v_document."FINDoc_LegalEntityID" is distinct from v_cash."FINCash_LegalEntityID" or v_document."FINDoc_PartyOrgID" is distinct from v_cash."FINCash_PartyOrgID" or v_document."FINDoc_CurrencyCodeSnapshot"<>v_cash."FINCash_CurrencyCodeSnapshot" or v_document."FINDoc_StatusCode" not in ('approved','submitted') or v_document."FINDoc_TypeCode"<>(case when v_cash."FINCash_TypeCode"='customer_receipt' then 'sl_invoice' else 'pl_invoice' end) or v_document."FINDoc_OutstandingAmount"<v_allocation."FINCashAlloc_AllocatedAmount" then raise exception 'An allocation is no longer valid against the open balance.' using errcode='22023'; end if;
+      update public."FIN_Documents" set "FINDoc_OutstandingAmount"="FINDoc_OutstandingAmount"-v_allocation."FINCashAlloc_AllocatedAmount","FINDoc_LocalOutstandingAmount"="FINDoc_LocalOutstandingAmount"-v_allocation."FINCashAlloc_LocalAllocatedAmount","FINDoc_UpdatedAt"=now(),"FINDoc_UpdatedBy"=p_user_id where "FINDoc_ID"=v_document."FINDoc_ID";
+      update public."FIN_CashAllocations" set "FINCashAlloc_AllocationStatusCode"='allocated',"FINCashAlloc_AllocatedAt"=now(),"FINCashAlloc_AllocatedBy"=p_user_id where "FINCashAlloc_ID"=v_allocation."FINCashAlloc_ID";
+    end loop;
+    insert into public."FIN_IntegrationQueue"("FINIntQ_LocalTable","FINIntQ_LocalID","FINIntQ_StatusCode","FINIntQ_CreatedBy") values('FIN_CashTransactions',p_cash_id,'queued',p_user_id)
+    on conflict ("FINIntQ_LocalTable","FINIntQ_LocalID") where "FINIntQ_StatusCode" in ('queued','processing','blocked') do update set "FINIntQ_StatusCode"='queued',"FINIntQ_LastError"=null returning "FINIntQ_ID" into v_queue;
+  elsif v_next='awaiting_approval' then
+    insert into public."FIN_AuthorisationRequests"("FINAUTHREQ_ActionTypeCode","FINAUTHREQ_SourceTable","FINAUTHREQ_SourceID","FINAUTHREQ_RequestedBy","FINAUTHREQ_Amount","FINAUTHREQ_CurrencyCodeSnapshot","FINAUTHREQ_Reason")
+    values('finance_cash_post','FIN_CashTransactions',p_cash_id,p_user_id,v_cash."FINCash_Amount",v_cash."FINCash_CurrencyCodeSnapshot",coalesce(nullif(btrim(p_reason),''),'Finance cash review requested'));
+  end if;
+  if v_next in ('approved','rejected') then
+    with resolved as (
+      update public."FIN_AuthorisationRequests" set "FINAUTHREQ_StatusCode"=v_next where "FINAUTHREQ_SourceTable"='FIN_CashTransactions' and "FINAUTHREQ_SourceID"=p_cash_id and "FINAUTHREQ_StatusCode"='awaiting_approval' returning "FINAUTHREQ_ID"
+    ) insert into public."FIN_AuthorisationDecisions"("FINAUTHDEC_RequestID","FINAUTHDEC_DecisionCode","FINAUTHDEC_DecidedBy","FINAUTHDEC_Comments","FINAUTHDEC_MetadataJSON")
+      select "FINAUTHREQ_ID",v_next,p_user_id,nullif(btrim(p_reason),''),jsonb_build_object('transition',p_transition) from resolved;
+  end if;
+  update public."FIN_CashTransactions" set "FINCash_StatusCode"=v_next,"FINCash_PostingStatusCode"=case when v_next='approved' then 'queued' else "FINCash_PostingStatusCode" end,"FINCash_UpdatedAt"=now(),"FINCash_UpdatedBy"=p_user_id where "FINCash_ID"=p_cash_id;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_MetadataJSON")
+  values('finance_lifecycle',p_user_id,v_cash."FINCash_LegalEntityID",'multideck-app','finance','public','FIN_CashTransactions',v_cash."FINCash_TypeCode",p_cash_id,p_transition,'Finance cash status changed',jsonb_build_object('from',v_cash."FINCash_StatusCode",'to',v_next,'integrationQueueId',v_queue));
+  return (select to_jsonb(c) from public."FIN_CashTransactions" c where c."FINCash_ID"=p_cash_id);
+end;
+$$;
+
+create or replace function public.multideck_finance_approve_configuration(
+  p_company_id uuid, p_user_id uuid, p_run_id uuid
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_run public."FIN_ConfigurationRuns"; v_entity public."cmp_LegalEntities"; v_connection uuid; v_provider_currency text; v_currency_initialised boolean:=false;
+begin
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then raise exception 'The finance operator is outside this workspace.' using errcode='42501'; end if;
+  select * into v_run from public."FIN_ConfigurationRuns" where "FINConfigRun_ID"=p_run_id for update; if not found or v_run."FINConfigRun_StatusCode"<>'awaiting_approval' then raise exception 'That finance configuration is not awaiting approval.' using errcode='22023'; end if;
+  select * into v_entity from public."cmp_LegalEntities" where "LegalEntity_ID"=v_run."FINConfigRun_LegalEntityID" and "Company_ID"=p_company_id and "LegalEntity_IsActive" for update; if not found then raise exception 'Finance configuration is outside this workspace.' using errcode='42501'; end if;
+  if v_run."FINConfigRun_ProviderCode"<>'erpnext' then raise exception 'This provider adapter is recognised but not enabled yet.' using errcode='22023'; end if;
+  if nullif(btrim(v_run."FINConfigRun_ExternalCompany"),'') is null then raise exception 'Choose the accounting Company.' using errcode='22023'; end if;
+  if not exists(select 1 from public."RefCountry" where upper("RN_Code")=upper(v_run."FINConfigRun_CountryCode") and coalesce("RN_IsActive",true)) then raise exception 'Enter a valid two-letter ISO country code.' using errcode='22023'; end if;
+  v_provider_currency:=upper(coalesce(v_run."FINConfigRun_PreviewJSON"#>>'{providerPreflight,baseCurrencyCode}',''));
+  if v_provider_currency!~'^[A-Z]{3}$' then raise exception 'Repeat the accounting Company currency preflight before approval.' using errcode='22023'; end if;
+  if upper(coalesce(v_entity."LegalEntity_BaseCurrencyCodeSnapshot",''))!~'^[A-Z]{3}$' then
+    update public."cmp_LegalEntities" set "LegalEntity_BaseCurrencyCodeSnapshot"=v_provider_currency,"LegalEntity_UpdatedAt"=now(),"LegalEntity_UpdatedBy"=p_user_id where "LegalEntity_ID"=v_entity."LegalEntity_ID";
+    v_entity."LegalEntity_BaseCurrencyCodeSnapshot":=v_provider_currency; v_currency_initialised:=true;
+  elsif upper(v_entity."LegalEntity_BaseCurrencyCodeSnapshot")<>v_provider_currency then raise exception 'The provider and legal-entity base currencies no longer match.' using errcode='22023'; end if;
+  select "ACCIC_ID" into v_connection from public."ACCI_Connections" where "ACCIC_LegalEntityID"=v_entity."LegalEntity_ID" and "ACCIC_ProviderCode"=v_run."FINConfigRun_ProviderCode" and "ACCIC_StatusCode"<>'disabled' order by "ACCIC_UpdatedAt" desc limit 1 for update;
+  if v_connection is null then
+    insert into public."ACCI_Connections"("ACCIC_ProviderCode","ACCIC_Name","ACCIC_StatusCode","ACCIC_LegalEntityID","ACCIC_Environment","ACCIC_AuthType","ACCIC_SecretRef","ACCIC_ExternalTenantName","ACCIC_ExternalBaseCurrencyCode","ACCIC_ExternalCountryCode","ACCIC_SettingsJSON","ACCIC_CreatedBy","ACCIC_UpdatedBy")
+    values(v_run."FINConfigRun_ProviderCode",v_entity."LegalEntity_Name"||' · '||v_run."FINConfigRun_ExternalCompany",'active',v_entity."LegalEntity_ID",'production','api_token','tenant-edge-secret:erpnext',v_run."FINConfigRun_ExternalCompany",upper(v_entity."LegalEntity_BaseCurrencyCodeSnapshot"),v_run."FINConfigRun_CountryCode",jsonb_build_object('configurationRunId',p_run_id,'externalCompany',v_run."FINConfigRun_ExternalCompany"),p_user_id,p_user_id)
+    returning "ACCIC_ID" into v_connection;
+  else
+    update public."ACCI_Connections" set "ACCIC_Name"=v_entity."LegalEntity_Name"||' · '||v_run."FINConfigRun_ExternalCompany","ACCIC_StatusCode"='active',"ACCIC_ExternalTenantName"=v_run."FINConfigRun_ExternalCompany","ACCIC_ExternalBaseCurrencyCode"=upper(v_entity."LegalEntity_BaseCurrencyCodeSnapshot"),"ACCIC_ExternalCountryCode"=v_run."FINConfigRun_CountryCode","ACCIC_SettingsJSON"="ACCIC_SettingsJSON"||jsonb_build_object('configurationRunId',p_run_id,'externalCompany',v_run."FINConfigRun_ExternalCompany"),"ACCIC_UpdatedAt"=now(),"ACCIC_UpdatedBy"=p_user_id where "ACCIC_ID"=v_connection;
+  end if;
+  update public."ACCI_Connections" set "ACCIC_StatusCode"='disabled',"ACCIC_UpdatedAt"=now(),"ACCIC_UpdatedBy"=p_user_id where "ACCIC_LegalEntityID"=v_entity."LegalEntity_ID" and "ACCIC_ID"<>v_connection and "ACCIC_StatusCode"='active';
+  update public."cmp_LegalEntities" set "LegalEntity_SettingsJSON"="LegalEntity_SettingsJSON"||jsonb_build_object('financeProvider',jsonb_build_object('providerCode',v_run."FINConfigRun_ProviderCode",'externalCompany',v_run."FINConfigRun_ExternalCompany",'connectionId',v_connection)),"LegalEntity_UpdatedAt"=now(),"LegalEntity_UpdatedBy"=p_user_id where "LegalEntity_ID"=v_entity."LegalEntity_ID";
+  update public."FIN_ConfigurationRuns" set "FINConfigRun_StatusCode"='completed',"FINConfigRun_ApprovedAt"=now(),"FINConfigRun_ApprovedBy"=p_user_id,"FINConfigRun_CompletedAt"=now(),"FINConfigRun_ProvisioningJSON"=jsonb_build_object('connectionId',v_connection,'providerRecordsChanged',false,'mappingReviewRequired',true,'baseCurrencyCode',v_provider_currency,'baseCurrencyInitialised',v_currency_initialised) where "FINConfigRun_ID"=p_run_id;
+  insert into public."FIN_ConfigurationRunEvents"("FINConfigRunEvent_RunID","FINConfigRunEvent_TypeCode","FINConfigRunEvent_By","FINConfigRunEvent_DetailJSON") values(p_run_id,'approved',p_user_id,jsonb_build_object('connectionId',v_connection,'providerRecordsChanged',false,'baseCurrencyCode',v_provider_currency,'baseCurrencyInitialised',v_currency_initialised));
+  if v_currency_initialised then
+    insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_MetadataJSON")
+    values('finance_lifecycle',p_user_id,v_entity."LegalEntity_ID",'multideck-app','finance','public','cmp_LegalEntities','finance_configuration',v_entity."LegalEntity_ID",'initialise_base_currency','Legal entity base currency initialised from reviewed provider setup',jsonb_build_object('configurationRunId',p_run_id,'providerCode',v_run."FINConfigRun_ProviderCode",'externalCompany',v_run."FINConfigRun_ExternalCompany",'baseCurrencyCode',v_provider_currency));
+  end if;
+  return jsonb_build_object('runId',p_run_id,'status','completed','connectionId',v_connection);
+end;
+$$;
+
+revoke all on function public._multideck_finance_next_number(uuid,text) from public,anon,authenticated;
+revoke all on function public.multideck_finance_create_document_draft(uuid,uuid,jsonb) from public,anon,authenticated;
+revoke all on function public.multideck_finance_transition_document(uuid,uuid,uuid,text,text) from public,anon,authenticated;
+revoke all on function public.multideck_finance_create_cash_draft(uuid,uuid,jsonb) from public,anon,authenticated;
+revoke all on function public.multideck_finance_transition_cash(uuid,uuid,uuid,text,text) from public,anon,authenticated;
+revoke all on function public.multideck_finance_approve_configuration(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.multideck_finance_create_document_draft(uuid,uuid,jsonb), public.multideck_finance_transition_document(uuid,uuid,uuid,text,text), public.multideck_finance_create_cash_draft(uuid,uuid,jsonb), public.multideck_finance_transition_cash(uuid,uuid,uuid,text,text), public.multideck_finance_approve_configuration(uuid,uuid,uuid) to service_role;
+
+-- Credits belong to the same party balance as their invoice ledger. Drafts and
+-- rejected records must never appear in statutory ageing totals.
+create or replace view public."FIN_ARAgeingSummary" with (security_invoker=true) as
+select d."FINDoc_PartyOrgID" "FINAge_CustomerOrgID",org."Org_Name" "FINAge_CustomerName",d."FINDoc_LegalEntityID",d."FINDoc_OrgOfficeID",d."FINDoc_CurrencyCodeSnapshot",
+  count(*)::integer "FINAge_DocumentCount",sum(d."FINDoc_OutstandingAmount") "FINAge_TotalOutstanding",
+  sum(case when d."FINDoc_DueDate" is null or d."FINDoc_DueDate">=current_date then d."FINDoc_OutstandingAmount" else 0 end) "FINAge_Current",
+  sum(case when current_date-d."FINDoc_DueDate" between 1 and 30 then d."FINDoc_OutstandingAmount" else 0 end) "FINAge_1To30",
+  sum(case when current_date-d."FINDoc_DueDate" between 31 and 60 then d."FINDoc_OutstandingAmount" else 0 end) "FINAge_31To60",
+  sum(case when current_date-d."FINDoc_DueDate" between 61 and 90 then d."FINDoc_OutstandingAmount" else 0 end) "FINAge_61To90",
+  sum(case when current_date-d."FINDoc_DueDate">90 then d."FINDoc_OutstandingAmount" else 0 end) "FINAge_Over90"
+from public."FIN_Documents" d left join public."Org_Master" org on org."Org_id"=d."FINDoc_PartyOrgID"
+where d."FINDoc_TypeCode" in ('sl_invoice','credit_note') and d."FINDoc_StatusCode" in ('approved','submitted') and d."FINDoc_OutstandingAmount"<>0
+group by d."FINDoc_PartyOrgID",org."Org_Name",d."FINDoc_LegalEntityID",d."FINDoc_OrgOfficeID",d."FINDoc_CurrencyCodeSnapshot";
+
+create or replace view public."FIN_APAgeingSummary" with (security_invoker=true) as
+select d."FINDoc_PartyOrgID" "FINAge_SupplierOrgID",org."Org_Name" "FINAge_SupplierName",d."FINDoc_LegalEntityID",d."FINDoc_OrgOfficeID",d."FINDoc_CurrencyCodeSnapshot",
+  count(*)::integer "FINAge_DocumentCount",sum(d."FINDoc_OutstandingAmount") "FINAge_TotalOutstanding",
+  sum(case when d."FINDoc_DueDate" is null or d."FINDoc_DueDate">=current_date then d."FINDoc_OutstandingAmount" else 0 end) "FINAge_Current",
+  sum(case when current_date-d."FINDoc_DueDate" between 1 and 30 then d."FINDoc_OutstandingAmount" else 0 end) "FINAge_1To30",
+  sum(case when current_date-d."FINDoc_DueDate" between 31 and 60 then d."FINDoc_OutstandingAmount" else 0 end) "FINAge_31To60",
+  sum(case when current_date-d."FINDoc_DueDate" between 61 and 90 then d."FINDoc_OutstandingAmount" else 0 end) "FINAge_61To90",
+  sum(case when current_date-d."FINDoc_DueDate">90 then d."FINDoc_OutstandingAmount" else 0 end) "FINAge_Over90"
+from public."FIN_Documents" d left join public."Org_Master" org on org."Org_id"=d."FINDoc_PartyOrgID"
+where d."FINDoc_TypeCode" in ('pl_invoice','debit_note') and d."FINDoc_StatusCode" in ('approved','submitted') and d."FINDoc_OutstandingAmount"<>0
+group by d."FINDoc_PartyOrgID",org."Org_Name",d."FINDoc_LegalEntityID",d."FINDoc_OrgOfficeID",d."FINDoc_CurrencyCodeSnapshot";
+
+revoke all on public."FIN_ARAgeingSummary",public."FIN_APAgeingSummary" from public,anon,authenticated;
+grant select on public."FIN_ARAgeingSummary",public."FIN_APAgeingSummary" to service_role;
+
+-- Dexter read parity includes both document and cash evidence, while retaining
+-- exact company scoping through the selected legal entity.
+create or replace function public.multideck_dexter_domain_finance(p_company_id uuid,p_search text,p_take integer)
+returns jsonb language sql stable security definer set search_path=pg_catalog,public as $$
+  with records as (
+    select d."FINDoc_ID" record_id,d."FINDoc_UpdatedAt" updated_at,concat_ws(' ',d."FINDoc_Number",d."FINDoc_TypeCode",d."FINDoc_StatusCode",o."Org_Name",j."Job_Number") search_text,
+      jsonb_strip_nulls(jsonb_build_object('recordId',d."FINDoc_ID",'recordKind','document','number',d."FINDoc_Number",'type',d."FINDoc_TypeCode",'ledger',case when d."FINDoc_TypeCode" in ('sl_invoice','credit_note') then 'receivables' else 'payables' end,'status',d."FINDoc_StatusCode",'party',o."Org_Name",'currency',d."FINDoc_CurrencyCodeSnapshot",'netAmount',d."FINDoc_NetAmount",'taxAmount',d."FINDoc_TaxAmount",'grossAmount',d."FINDoc_GrossAmount",'outstandingAmount',d."FINDoc_OutstandingAmount",'documentDate',d."FINDoc_DocumentDate",'dueDate',d."FINDoc_DueDate",'sourceKind',d."FINDoc_SourceKindCode",'jobReference',case when j."Job_ID" is null then null else j."Job_Period"||'-'||j."Job_Number" end,'postingStatus',d."FINDoc_PostingStatusCode",'exportStatus',d."FINDoc_ExportStatusCode",'evidence',jsonb_build_object('sourceTable','FIN_Documents','sourceId',d."FINDoc_ID",'legalEntityId',d."FINDoc_LegalEntityID"))) value
+    from public."FIN_Documents" d join public."cmp_LegalEntities" e on e."LegalEntity_ID"=d."FINDoc_LegalEntityID" left join public."Org_Master" o on o."Org_id"=d."FINDoc_PartyOrgID" left join public."Job_Header" j on j."Job_ID"=d."FINDoc_SourceJobID" where e."Company_ID"=p_company_id
+    union all
+    select c."FINCash_ID",c."FINCash_UpdatedAt",concat_ws(' ',c."FINCash_Number",c."FINCash_TypeCode",c."FINCash_StatusCode",o."Org_Name",c."FINCash_Reference"),
+      jsonb_strip_nulls(jsonb_build_object('recordId',c."FINCash_ID",'recordKind','cash','number',c."FINCash_Number",'type',c."FINCash_TypeCode",'ledger',case when c."FINCash_TypeCode"='customer_receipt' then 'receivables' else 'payables' end,'status',c."FINCash_StatusCode",'party',o."Org_Name",'currency',c."FINCash_CurrencyCodeSnapshot",'amount',c."FINCash_Amount",'unallocatedAmount',c."FINCash_UnallocatedAmount",'transactionDate',c."FINCash_TransactionDate",'reference',c."FINCash_Reference",'postingStatus',c."FINCash_PostingStatusCode",'evidence',jsonb_build_object('sourceTable','FIN_CashTransactions','sourceId',c."FINCash_ID",'legalEntityId',c."FINCash_LegalEntityID")))
+    from public."FIN_CashTransactions" c join public."cmp_LegalEntities" e on e."LegalEntity_ID"=c."FINCash_LegalEntityID" left join public."Org_Master" o on o."Org_id"=c."FINCash_PartyOrgID" where e."Company_ID"=p_company_id
+  ) select coalesce(jsonb_agg(value order by updated_at desc),'[]'::jsonb) from (select value,updated_at from records where nullif(btrim(p_search),'') is null or search_text ilike '%'||btrim(p_search)||'%' order by updated_at desc limit greatest(1,least(coalesce(p_take,10),25))) bounded;
+$$;
+revoke all on function public.multideck_dexter_domain_finance(uuid,text,integer) from public,anon,authenticated;
+
+update public."sys_AIDexterDataDomains" set
+  "AIDexterDomain_Description"='Tenant-safe sales-ledger, purchase-ledger, receipt, payment, allocation, job-link and provider-status evidence.',
+  "AIDexterDomain_RequiredPermissionsJSON"='["Finance.Receivables.View","Finance.Payables.View"]'::jsonb,
+  "AIDexterDomain_DataCategoriesJSON"='["financial","customer","supplier"]'::jsonb,
+  "AIDexterDomain_ScopeStrategy"='company',"AIDexterDomain_UpdatedAt"=now()
+where "AIDexterDomain_Code"='finance';
+
+create or replace function public.multideck_dexter_action_create_finance_document_draft(uuid,uuid,jsonb) returns jsonb language plpgsql security definer set search_path=pg_catalog,public as $$ begin raise exception 'This action must be completed through the Finance Edge Function.' using errcode='42501'; end; $$;
+create or replace function public.multideck_dexter_action_create_finance_cash_draft(uuid,uuid,jsonb) returns jsonb language plpgsql security definer set search_path=pg_catalog,public as $$ begin raise exception 'This action must be completed through the Finance Edge Function.' using errcode='42501'; end; $$;
+revoke all on function public.multideck_dexter_action_create_finance_document_draft(uuid,uuid,jsonb), public.multideck_dexter_action_create_finance_cash_draft(uuid,uuid,jsonb) from public,anon,authenticated;
+
+insert into public."sys_AIDexterActions"(
+  "AIDexterAction_Code","AIDexterAction_DomainCode","AIDexterAction_Name","AIDexterAction_Description","AIDexterAction_Function","AIDexterAction_ParametersJSON","AIDexterAction_SortOrder","AIDexterAction_IsActive","AIDexterAction_UpdatedAt","AIDexterAction_RequiredPermissionsJSON","AIDexterAction_IntentFamily","AIDexterAction_ScopeStrategy","AIDexterAction_HasExternalEffect"
+) values
+('create_finance_document_draft','finance','Create finance document draft','Create one reviewed sales invoice, customer credit, purchase invoice or supplier credit draft through the Finance validation boundary.','multideck_dexter_action_create_finance_document_draft',
+ '{"type":"object","properties":{"type":{"type":"string","enum":["sl_invoice","credit_note","pl_invoice","debit_note"]},"legalEntityId":{"type":"string"},"partyOrgId":{"type":"string"},"documentDate":{"type":"string"},"dueDate":{"type":["string","null"]},"currencyCode":{"type":"string"},"exchangeRate":{"type":"number","exclusiveMinimum":0},"sourceJobId":{"type":["string","null"]},"lines":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"object","properties":{"description":{"type":"string"},"quantity":{"type":"number","exclusiveMinimum":0},"unitAmount":{"type":"number","minimum":0},"taxRatePercent":{"type":"number","minimum":0,"maximum":100},"taxCode":{"type":["string","null"]},"chargeCode":{"type":["string","null"]},"lineType":{"type":"string","enum":["service","ancillary"]}},"required":["description","quantity","unitAmount","taxRatePercent","taxCode","chargeCode","lineType"],"additionalProperties":false}},"reason":{"type":"string"}},"required":["type","legalEntityId","partyOrgId","documentDate","dueDate","currencyCode","exchangeRate","sourceJobId","lines","reason"],"additionalProperties":false}'::jsonb,260,true,now(),'[]'::jsonb,'finance_document_draft','canonical',true),
+('create_finance_cash_draft','finance','Create finance cash draft','Create one reviewed customer receipt or supplier payment draft, including exact open-document allocations, through the Finance validation boundary.','multideck_dexter_action_create_finance_cash_draft',
+ '{"type":"object","properties":{"type":{"type":"string","enum":["customer_receipt","supplier_payment"]},"legalEntityId":{"type":"string"},"partyOrgId":{"type":"string"},"bankAccountId":{"type":"string"},"transactionDate":{"type":"string"},"currencyCode":{"type":"string"},"exchangeRate":{"type":"number","exclusiveMinimum":0},"amount":{"type":"number","exclusiveMinimum":0},"reference":{"type":["string","null"]},"allocations":{"type":"array","maxItems":100,"items":{"type":"object","properties":{"documentId":{"type":"string"},"amount":{"type":"number","exclusiveMinimum":0}},"required":["documentId","amount"],"additionalProperties":false}},"reason":{"type":"string"}},"required":["type","legalEntityId","partyOrgId","bankAccountId","transactionDate","currencyCode","exchangeRate","amount","reference","allocations","reason"],"additionalProperties":false}'::jsonb,261,true,now(),'[]'::jsonb,'finance_cash_draft','canonical',true)
+on conflict ("AIDexterAction_Code") do update set
+  "AIDexterAction_DomainCode"=excluded."AIDexterAction_DomainCode","AIDexterAction_Name"=excluded."AIDexterAction_Name","AIDexterAction_Description"=excluded."AIDexterAction_Description","AIDexterAction_Function"=excluded."AIDexterAction_Function","AIDexterAction_ParametersJSON"=excluded."AIDexterAction_ParametersJSON","AIDexterAction_SortOrder"=excluded."AIDexterAction_SortOrder","AIDexterAction_IsActive"=true,"AIDexterAction_UpdatedAt"=now(),"AIDexterAction_RequiredPermissionsJSON"=excluded."AIDexterAction_RequiredPermissionsJSON","AIDexterAction_IntentFamily"=excluded."AIDexterAction_IntentFamily","AIDexterAction_ScopeStrategy"=excluded."AIDexterAction_ScopeStrategy","AIDexterAction_HasExternalEffect"=excluded."AIDexterAction_HasExternalEffect";
+
+update public."sys_AIDexterWatchCapabilities" set
+  "AIDexterWatchCapability_Description"='Event-driven finance document, receipt, payment, allocation and provider-sync changes.',
+  "AIDexterWatchCapability_FieldsJSON"='["status","dueDate","outstandingAmount","postingStatus","exportStatus","cashStatus","unallocatedAmount"]'::jsonb,
+  "AIDexterWatchCapability_RequiredPermissionsJSON"='["Finance.Receivables.View","Finance.Payables.View"]'::jsonb,
+  "AIDexterWatchCapability_ScopeStrategy"='company',"AIDexterWatchCapability_IsActive"=true,"AIDexterWatchCapability_UpdatedAt"=now()
+where "AIDexterWatchCapability_Code"='finance';
+
+create or replace function public._multideck_dexter_finance_watch_change()
+returns trigger language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_company uuid; v_source uuid; v_old jsonb:='{}'::jsonb; v_new jsonb;
+begin
+  if tg_table_name='FIN_Documents' then
+    v_source:=new."FINDoc_ID"; select "Company_ID" into v_company from public."cmp_LegalEntities" where "LegalEntity_ID"=new."FINDoc_LegalEntityID";
+    if tg_op<>'INSERT' then v_old:=jsonb_build_object('status',old."FINDoc_StatusCode",'dueDate',old."FINDoc_DueDate",'outstandingAmount',old."FINDoc_OutstandingAmount",'postingStatus',old."FINDoc_PostingStatusCode",'exportStatus',old."FINDoc_ExportStatusCode"); end if;
+    v_new:=jsonb_build_object('number',new."FINDoc_Number",'status',new."FINDoc_StatusCode",'dueDate',new."FINDoc_DueDate",'outstandingAmount',new."FINDoc_OutstandingAmount",'postingStatus',new."FINDoc_PostingStatusCode",'exportStatus',new."FINDoc_ExportStatusCode");
+  else
+    v_source:=new."FINCash_ID"; select "Company_ID" into v_company from public."cmp_LegalEntities" where "LegalEntity_ID"=new."FINCash_LegalEntityID";
+    if tg_op<>'INSERT' then v_old:=jsonb_build_object('cashStatus',old."FINCash_StatusCode",'unallocatedAmount',old."FINCash_UnallocatedAmount",'postingStatus',old."FINCash_PostingStatusCode"); end if;
+    v_new:=jsonb_build_object('number',new."FINCash_Number",'cashStatus',new."FINCash_StatusCode",'unallocatedAmount',new."FINCash_UnallocatedAmount",'postingStatus',new."FINCash_PostingStatusCode");
+  end if;
+  if v_old is distinct from v_new and v_company is not null and exists(select 1 from public."AI_DexterWatches" w where w."AIDexterWatch_CompanyID"=v_company and w."AIDexterWatch_CapabilityCode"='finance' and w."AIDexterWatch_StatusCode"='active' and (w."AIDexterWatch_TargetID" is null or w."AIDexterWatch_TargetID"=v_source)) then
+    insert into public."AI_DexterWatchSignals"("AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable","AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON") values(v_company,'finance',tg_table_name,v_source,v_old,v_new);
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public._multideck_dexter_finance_watch_change() from public,anon,authenticated;
+drop trigger if exists "TR_FIN_Documents_dexter_watch" on public."FIN_Documents";
+create trigger "TR_FIN_Documents_dexter_watch" after insert or update of "FINDoc_StatusCode","FINDoc_DueDate","FINDoc_OutstandingAmount","FINDoc_PostingStatusCode","FINDoc_ExportStatusCode" on public."FIN_Documents" for each row execute function public._multideck_dexter_finance_watch_change();
+drop trigger if exists "TR_FIN_CashTransactions_dexter_watch" on public."FIN_CashTransactions";
+create trigger "TR_FIN_CashTransactions_dexter_watch" after insert or update of "FINCash_StatusCode","FINCash_UnallocatedAmount","FINCash_PostingStatusCode" on public."FIN_CashTransactions" for each row execute function public._multideck_dexter_finance_watch_change();
+
+commit;
+
+-- Comprehensive finance administration parity
+-- Comprehensive, legal-entity-scoped finance administration.
+--
+-- Multideck is authoritative for approved operational finance settings. The
+-- accounting provider remains the ledger of record for submitted vouchers.
+-- This migration deliberately stores only masked bank identifiers and keeps
+-- all configuration writes behind the protected finance Edge Function.
+
+begin;
+
+alter table public."FIN_CurrencySettings"
+  add column if not exists "FINCurSet_LegalEntityID" uuid references public."cmp_LegalEntities"("LegalEntity_ID") on delete cascade,
+  add column if not exists "FINCurSet_IsBaseCurrency" boolean not null default false,
+  add column if not exists "FINCurSet_CreatedAt" timestamptz not null default now(),
+  add column if not exists "FINCurSet_CreatedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINCurSet_UpdatedAt" timestamptz not null default now(),
+  add column if not exists "FINCurSet_UpdatedBy" uuid references public."cmp_Users"("User_ID") on delete set null;
+
+alter table public."FIN_BankAccounts"
+  add column if not exists "FINBank_InstitutionName" varchar(180),
+  add column if not exists "FINBank_AccountHolderName" varchar(180),
+  add column if not exists "FINBank_BICMasked" varchar(40),
+  add column if not exists "FINBank_CountryCode" varchar(2),
+  add column if not exists "FINBank_IsDefault" boolean not null default false,
+  add column if not exists "FINBank_AllowReceipts" boolean not null default true,
+  add column if not exists "FINBank_AllowPayments" boolean not null default true,
+  add column if not exists "FINBank_CreatedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINBank_UpdatedAt" timestamptz not null default now(),
+  add column if not exists "FINBank_UpdatedBy" uuid references public."cmp_Users"("User_ID") on delete set null;
+
+alter table public."FIN_NominalAccounts"
+  add column if not exists "FINNom_ControlTypeCode" varchar(60),
+  add column if not exists "FINNom_AllowManualPosting" boolean not null default true,
+  add column if not exists "FINNom_CreatedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINNom_UpdatedAt" timestamptz not null default now(),
+  add column if not exists "FINNom_UpdatedBy" uuid references public."cmp_Users"("User_ID") on delete set null;
+
+alter table public."FIN_TaxJurisdictions"
+  add column if not exists "FINTaxJur_LegalEntityID" uuid references public."cmp_LegalEntities"("LegalEntity_ID") on delete cascade,
+  add column if not exists "FINTaxJur_RegistrationNo" varchar(120),
+  add column if not exists "FINTaxJur_EffectiveFrom" date not null default current_date,
+  add column if not exists "FINTaxJur_EffectiveTo" date,
+  add column if not exists "FINTaxJur_SettingsJSON" jsonb not null default '{}'::jsonb,
+  add column if not exists "FINTaxJur_CreatedAt" timestamptz not null default now(),
+  add column if not exists "FINTaxJur_CreatedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINTaxJur_UpdatedAt" timestamptz not null default now(),
+  add column if not exists "FINTaxJur_UpdatedBy" uuid references public."cmp_Users"("User_ID") on delete set null;
+
+alter table public."FIN_TaxCodes"
+  add column if not exists "FINTax_LegalEntityID" uuid references public."cmp_LegalEntities"("LegalEntity_ID") on delete cascade,
+  add column if not exists "FINTax_JurisdictionID" uuid references public."FIN_TaxJurisdictions"("FINTaxJur_ID") on delete set null,
+  add column if not exists "FINTax_TreatmentCategoryCode" varchar(80) not null default 'out_of_scope',
+  add column if not exists "FINTax_TransactionTypeCode" varchar(20) not null default 'both',
+  add column if not exists "FINTax_OutputNominalID" uuid references public."FIN_NominalAccounts"("FINNom_ID") on delete set null,
+  add column if not exists "FINTax_InputNominalID" uuid references public."FIN_NominalAccounts"("FINNom_ID") on delete set null,
+  add column if not exists "FINTax_SettingsJSON" jsonb not null default '{}'::jsonb,
+  add column if not exists "FINTax_ApprovedAt" timestamptz,
+  add column if not exists "FINTax_ApprovedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINTax_CreatedAt" timestamptz not null default now(),
+  add column if not exists "FINTax_CreatedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINTax_UpdatedAt" timestamptz not null default now(),
+  add column if not exists "FINTax_UpdatedBy" uuid references public."cmp_Users"("User_ID") on delete set null;
+
+alter table public."FIN_NumberSequences"
+  add column if not exists "FINSeq_CreatedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINSeq_UpdatedAt" timestamptz not null default now(),
+  add column if not exists "FINSeq_UpdatedBy" uuid references public."cmp_Users"("User_ID") on delete set null;
+
+alter table public."FIN_PaymentTerms"
+  add column if not exists "FINTerm_LegalEntityID" uuid references public."cmp_LegalEntities"("LegalEntity_ID") on delete cascade,
+  add column if not exists "FINTerm_CreatedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINTerm_UpdatedAt" timestamptz not null default now(),
+  add column if not exists "FINTerm_UpdatedBy" uuid references public."cmp_Users"("User_ID") on delete set null;
+
+alter table public."FIN_LocalisationSettings"
+  add column if not exists "FINLocSet_EffectiveFrom" date not null default current_date,
+  add column if not exists "FINLocSet_UpdatedAt" timestamptz not null default now(),
+  add column if not exists "FINLocSet_UpdatedBy" uuid references public."cmp_Users"("User_ID") on delete set null;
+
+alter table public."FIN_BankAccounts" drop constraint if exists "FIN_BankAccounts_unique_code";
+alter table public."FIN_CurrencySettings" drop constraint if exists "FIN_CurrencySettings_unique_currency";
+alter table public."FIN_NumberSequences" drop constraint if exists "FIN_NumberSequences_unique_code";
+alter table public."FIN_PaymentTerms" drop constraint if exists "FIN_PaymentTerms_unique_code";
+alter table public."FIN_TaxCodes" drop constraint if exists "FIN_TaxCodes_unique_code";
+alter table public."FIN_TaxJurisdictions" drop constraint if exists "FIN_TaxJurisdictions_unique_code";
+
+create unique index if not exists "UX_FIN_BankAccounts_entity_code" on public."FIN_BankAccounts"("FINBank_LegalEntityID", "FINBank_Code") where "FINBank_LegalEntityID" is not null;
+create unique index if not exists "UX_FIN_BankAccounts_entity_default_currency" on public."FIN_BankAccounts"("FINBank_LegalEntityID", "FINBank_CurrencyCode") where "FINBank_LegalEntityID" is not null and "FINBank_IsDefault" and "FINBank_IsActive";
+create unique index if not exists "UX_FIN_CurrencySettings_entity_currency" on public."FIN_CurrencySettings"("FINCurSet_LegalEntityID", "FINCurSet_CurrencyCode") where "FINCurSet_LegalEntityID" is not null;
+create unique index if not exists "UX_FIN_CurrencySettings_global_currency" on public."FIN_CurrencySettings"("FINCurSet_CurrencyCode") where "FINCurSet_LegalEntityID" is null;
+create unique index if not exists "UX_FIN_CurrencySettings_entity_base" on public."FIN_CurrencySettings"("FINCurSet_LegalEntityID") where "FINCurSet_LegalEntityID" is not null and "FINCurSet_IsBaseCurrency" and "FINCurSet_IsActive";
+create unique index if not exists "UX_FIN_NumberSequences_entity_code" on public."FIN_NumberSequences"("FINSeq_LegalEntityID", "FINSeq_Code") where "FINSeq_LegalEntityID" is not null;
+create unique index if not exists "UX_FIN_PaymentTerms_entity_code" on public."FIN_PaymentTerms"("FINTerm_LegalEntityID", "FINTerm_Code") where "FINTerm_LegalEntityID" is not null;
+create unique index if not exists "UX_FIN_PaymentTerms_global_code" on public."FIN_PaymentTerms"("FINTerm_Code") where "FINTerm_LegalEntityID" is null;
+create unique index if not exists "UX_FIN_TaxCodes_entity_code_date" on public."FIN_TaxCodes"("FINTax_LegalEntityID", "FINTax_Code", "FINTax_EffectiveFrom") where "FINTax_LegalEntityID" is not null;
+create unique index if not exists "UX_FIN_TaxCodes_global_code_date" on public."FIN_TaxCodes"("FINTax_Code", "FINTax_EffectiveFrom") where "FINTax_LegalEntityID" is null;
+create unique index if not exists "UX_FIN_TaxJurisdictions_entity_code" on public."FIN_TaxJurisdictions"("FINTaxJur_LegalEntityID", "FINTaxJur_Code") where "FINTaxJur_LegalEntityID" is not null;
+create unique index if not exists "UX_FIN_TaxJurisdictions_global_code" on public."FIN_TaxJurisdictions"("FINTaxJur_Code") where "FINTaxJur_LegalEntityID" is null;
+create unique index if not exists "UX_FIN_Settings_entity_default" on public."FIN_Settings"("FINSET_LegalEntityID") where "FINSET_LegalEntityID" is not null and "FINSET_OrgOfficeID" is null and "FINSET_BrandID" is null;
+create unique index if not exists "UX_FIN_LocalisationSettings_entity_active" on public."FIN_LocalisationSettings"("FINLocSet_LegalEntityID") where "FINLocSet_LegalEntityID" is not null and "FINLocSet_IsActive";
+
+alter table public."FIN_BankAccounts" drop constraint if exists "CK_FIN_BankAccounts_country";
+alter table public."FIN_BankAccounts" add constraint "CK_FIN_BankAccounts_country" check ("FINBank_CountryCode" is null or "FINBank_CountryCode" ~ '^[A-Z]{2}$') not valid;
+alter table public."FIN_TaxJurisdictions" drop constraint if exists "CK_FIN_TaxJurisdictions_dates";
+alter table public."FIN_TaxJurisdictions" add constraint "CK_FIN_TaxJurisdictions_dates" check ("FINTaxJur_EffectiveTo" is null or "FINTaxJur_EffectiveTo" >= "FINTaxJur_EffectiveFrom") not valid;
+alter table public."FIN_TaxCodes" drop constraint if exists "CK_FIN_TaxCodes_transaction_type";
+alter table public."FIN_TaxCodes" add constraint "CK_FIN_TaxCodes_transaction_type" check ("FINTax_TransactionTypeCode" in ('sales','purchase','both')) not valid;
+alter table public."FIN_TaxCodes" drop constraint if exists "CK_FIN_TaxCodes_rate";
+alter table public."FIN_TaxCodes" add constraint "CK_FIN_TaxCodes_rate" check ("FINTax_RatePercent" >= 0 and "FINTax_RatePercent" <= 100) not valid;
+
+create table if not exists public."FIN_AdministrationRevisions" (
+  "FINAdminRevision_ID" uuid primary key default gen_random_uuid(),
+  "FINAdminRevision_LegalEntityID" uuid not null references public."cmp_LegalEntities"("LegalEntity_ID") on delete cascade,
+  "FINAdminRevision_Number" integer not null,
+  "FINAdminRevision_StatusCode" varchar(40) not null default 'approved',
+  "FINAdminRevision_ConfigJSON" jsonb not null default '{}'::jsonb,
+  "FINAdminRevision_ReadinessJSON" jsonb not null default '{}'::jsonb,
+  "FINAdminRevision_Reason" text,
+  "FINAdminRevision_ApprovedAt" timestamptz not null default now(),
+  "FINAdminRevision_ApprovedBy" uuid not null references public."cmp_Users"("User_ID"),
+  constraint "UX_FIN_AdministrationRevisions_number" unique ("FINAdminRevision_LegalEntityID", "FINAdminRevision_Number"),
+  constraint "CK_FIN_AdministrationRevisions_status" check ("FINAdminRevision_StatusCode" in ('approved','superseded')),
+  constraint "CK_FIN_AdministrationRevisions_config" check (jsonb_typeof("FINAdminRevision_ConfigJSON") = 'object'),
+  constraint "CK_FIN_AdministrationRevisions_readiness" check (jsonb_typeof("FINAdminRevision_ReadinessJSON") = 'object')
+);
+create index if not exists "IX_FIN_AdministrationRevisions_entity_approved" on public."FIN_AdministrationRevisions"("FINAdminRevision_LegalEntityID", "FINAdminRevision_ApprovedAt" desc);
+
+alter table public."FIN_AdministrationRevisions" enable row level security;
+revoke all on public."FIN_AdministrationRevisions" from public, anon, authenticated;
+grant select, insert, update on public."FIN_AdministrationRevisions" to service_role;
+
+-- Existing finance configuration tables were part of the original broad
+-- baseline grants. Configuration is now exposed only by a permission-checked
+-- Edge Function using the tenant-local service role.
+revoke all on public."FIN_Settings", public."FIN_LocalisationSettings", public."FIN_CurrencySettings", public."FIN_BankAccounts", public."FIN_NominalAccounts", public."FIN_TaxCodes", public."FIN_TaxJurisdictions", public."FIN_NumberSequences", public."FIN_PaymentTerms", public."ACCI_AccountMappings", public."ACCI_ChargeCodeMappings", public."ACCI_TaxCodeMappings" from public, anon, authenticated;
+grant select, insert, update, delete on public."FIN_Settings", public."FIN_LocalisationSettings", public."FIN_CurrencySettings", public."FIN_BankAccounts", public."FIN_NominalAccounts", public."FIN_TaxCodes", public."FIN_TaxJurisdictions", public."FIN_NumberSequences", public."FIN_PaymentTerms", public."ACCI_AccountMappings", public."ACCI_ChargeCodeMappings", public."ACCI_TaxCodeMappings" to service_role;
+
+create or replace function public.multideck_finance_save_administration(
+  p_company_id uuid,
+  p_user_id uuid,
+  p_legal_entity_id uuid,
+  p_settings jsonb,
+  p_reason text default null
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare
+  v_entity public."cmp_LegalEntities";
+  v_item jsonb;
+  v_id uuid;
+  v_pack_id uuid;
+  v_settings_id uuid;
+  v_localisation_id uuid;
+  v_connection_id uuid;
+  v_base_currency text;
+  v_country text;
+  v_code text;
+  v_revision integer;
+  v_missing text[] := array[]::text[];
+  v_row_count integer;
+  v_control_count integer;
+  v_active_banks integer;
+  v_active_currencies integer;
+  v_active_taxes integer;
+  v_active_sequences integer;
+begin
+  if jsonb_typeof(coalesce(p_settings,'{}'::jsonb)) <> 'object' then
+    raise exception 'Finance settings must be an object.' using errcode='22023';
+  end if;
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then
+    raise exception 'The finance operator is outside this workspace.' using errcode='42501';
+  end if;
+  select * into v_entity from public."cmp_LegalEntities" where "LegalEntity_ID"=p_legal_entity_id and "Company_ID"=p_company_id and "LegalEntity_IsActive" for update;
+  if not found then raise exception 'That legal entity is outside this workspace.' using errcode='42501'; end if;
+
+  v_base_currency := upper(nullif(btrim(p_settings#>>'{organisation,baseCurrencyCode}'),''));
+  v_country := upper(nullif(btrim(p_settings#>>'{organisation,countryCode}'),''));
+  if v_base_currency is null or v_base_currency !~ '^[A-Z]{3}$' then raise exception 'Enter a valid three-letter base currency.' using errcode='22023'; end if;
+  if v_country is null or v_country !~ '^[A-Z]{2}$' or not exists(select 1 from public."RefCountry" where upper("RN_Code")=v_country and coalesce("RN_IsActive",true)) then raise exception 'Choose a valid legal-entity country.' using errcode='22023'; end if;
+
+  foreach v_code in array array['currencies','banks','nominalAccounts','taxJurisdictions','taxCodes','numberSequences','paymentTerms','accountMappings','chargeMappings','taxMappings'] loop
+    if p_settings ? v_code and jsonb_typeof(p_settings->v_code) <> 'array' then raise exception 'Finance setting % must be a list.',v_code using errcode='22023'; end if;
+    if jsonb_array_length(coalesce(p_settings->v_code,'[]'::jsonb)) > 500 then raise exception 'Finance setting % has too many rows.',v_code using errcode='22023'; end if;
+  end loop;
+
+  update public."cmp_LegalEntities" set
+    "LegalEntity_CountryCode"=v_country,
+    "LegalEntity_BaseCurrencyCodeSnapshot"=v_base_currency,
+    "LegalEntity_VATNumber"=nullif(btrim(p_settings#>>'{organisation,taxRegistrationNo}'),''),
+    "LegalEntity_SettingsJSON"="LegalEntity_SettingsJSON" || jsonb_build_object('financeAdministration',jsonb_build_object(
+      'accountingStandardCode',coalesce(nullif(btrim(p_settings#>>'{organisation,accountingStandardCode}'),''),'IFRS'),
+      'fiscalYearStartMonth',greatest(1,least(12,coalesce((p_settings#>>'{organisation,fiscalYearStartMonth}')::integer,1))),
+      'timeZone',coalesce(nullif(btrim(p_settings#>>'{organisation,timeZone}'),''),'Europe/London'),
+      'updatedAt',now()
+    )),
+    "LegalEntity_UpdatedAt"=now(),"LegalEntity_UpdatedBy"=p_user_id
+  where "LegalEntity_ID"=p_legal_entity_id;
+
+  select "FINSET_ID" into v_settings_id from public."FIN_Settings" where "FINSET_LegalEntityID"=p_legal_entity_id and "FINSET_OrgOfficeID" is null and "FINSET_BrandID" is null for update;
+  if v_settings_id is null then
+    insert into public."FIN_Settings"(
+      "FINSET_LegalEntityID","FINSET_BaseCurrencyCode","FINSET_DefaultOperatingModelCode","FINSET_AutoCreateSalesInvoices","FINSET_AutoCreatePurchaseAccruals","FINSET_AutoPostLowRiskItems","FINSET_UseAccountingDateRules","FINSET_BlockLockedPeriodDirectPosting","FINSET_DefaultROEProviderCode","FINSET_IncludeFXInOperationalProfit","FINSET_SettingsJSON","FINSET_CreatedBy","FINSET_UpdatedBy"
+    ) values (
+      p_legal_entity_id,v_base_currency,coalesce(nullif(p_settings#>>'{controls,defaultOperatingModelCode}',''),'hybrid'),
+      coalesce((p_settings#>>'{controls,autoCreateSalesInvoices}')::boolean,false),coalesce((p_settings#>>'{controls,autoCreatePurchaseAccruals}')::boolean,true),coalesce((p_settings#>>'{controls,autoPostLowRiskItems}')::boolean,false),coalesce((p_settings#>>'{controls,useAccountingDateRules}')::boolean,true),coalesce((p_settings#>>'{controls,blockLockedPeriodDirectPosting}')::boolean,true),nullif(btrim(p_settings#>>'{controls,defaultRoeProviderCode}'),''),coalesce((p_settings#>>'{controls,includeFxInOperationalProfit}')::boolean,false),
+      jsonb_build_object('administration',coalesce(p_settings->'controls','{}'::jsonb),'defaults',coalesce(p_settings->'defaults','{}'::jsonb),'updatedAt',now()),p_user_id,p_user_id
+    ) returning "FINSET_ID" into v_settings_id;
+  else
+    update public."FIN_Settings" set
+      "FINSET_BaseCurrencyCode"=v_base_currency,
+      "FINSET_DefaultOperatingModelCode"=coalesce(nullif(p_settings#>>'{controls,defaultOperatingModelCode}',''),'hybrid'),
+      "FINSET_AutoCreateSalesInvoices"=coalesce((p_settings#>>'{controls,autoCreateSalesInvoices}')::boolean,false),
+      "FINSET_AutoCreatePurchaseAccruals"=coalesce((p_settings#>>'{controls,autoCreatePurchaseAccruals}')::boolean,true),
+      "FINSET_AutoPostLowRiskItems"=coalesce((p_settings#>>'{controls,autoPostLowRiskItems}')::boolean,false),
+      "FINSET_UseAccountingDateRules"=coalesce((p_settings#>>'{controls,useAccountingDateRules}')::boolean,true),
+      "FINSET_BlockLockedPeriodDirectPosting"=coalesce((p_settings#>>'{controls,blockLockedPeriodDirectPosting}')::boolean,true),
+      "FINSET_DefaultROEProviderCode"=nullif(btrim(p_settings#>>'{controls,defaultRoeProviderCode}'),''),
+      "FINSET_IncludeFXInOperationalProfit"=coalesce((p_settings#>>'{controls,includeFxInOperationalProfit}')::boolean,false),
+      "FINSET_SettingsJSON"="FINSET_SettingsJSON" || jsonb_build_object('administration',coalesce(p_settings->'controls','{}'::jsonb),'defaults',coalesce(p_settings->'defaults','{}'::jsonb),'updatedAt',now()),
+      "FINSET_UpdatedAt"=now(),"FINSET_UpdatedBy"=p_user_id
+    where "FINSET_ID"=v_settings_id;
+  end if;
+
+  select "FINLocPack_ID" into v_pack_id from public."FIN_LocalisationPacks" where "FINLocPack_Code"=coalesce(nullif(p_settings#>>'{organisation,localisationPackCode}',''),'global-v1') and "FINLocPack_IsActive" limit 1;
+  if v_pack_id is null then raise exception 'Choose an active finance localisation pack.' using errcode='22023'; end if;
+  select "FINLocSet_ID" into v_localisation_id from public."FIN_LocalisationSettings" where "FINLocSet_LegalEntityID"=p_legal_entity_id and "FINLocSet_IsActive" for update;
+  if v_localisation_id is null then
+    insert into public."FIN_LocalisationSettings"("FINLocSet_LegalEntityID","FINLocSet_PackID","FINLocSet_TaxRegistrationNo","FINLocSet_ReportingBasisCode","FINLocSet_SettingsJSON","FINLocSet_EffectiveFrom","FINLocSet_UpdatedBy")
+    values(p_legal_entity_id,v_pack_id,nullif(btrim(p_settings#>>'{organisation,taxRegistrationNo}'),''),coalesce(nullif(btrim(p_settings#>>'{organisation,reportingBasisCode}'),''),'accrual'),coalesce(p_settings->'taxSettings','{}'::jsonb),coalesce((p_settings#>>'{organisation,effectiveFrom}')::date,current_date),p_user_id)
+    returning "FINLocSet_ID" into v_localisation_id;
+  else
+    update public."FIN_LocalisationSettings" set "FINLocSet_PackID"=v_pack_id,"FINLocSet_TaxRegistrationNo"=nullif(btrim(p_settings#>>'{organisation,taxRegistrationNo}'),''),"FINLocSet_ReportingBasisCode"=coalesce(nullif(btrim(p_settings#>>'{organisation,reportingBasisCode}'),''),'accrual'),"FINLocSet_SettingsJSON"=coalesce(p_settings->'taxSettings','{}'::jsonb),"FINLocSet_EffectiveFrom"=coalesce((p_settings#>>'{organisation,effectiveFrom}')::date,current_date),"FINLocSet_UpdatedAt"=now(),"FINLocSet_UpdatedBy"=p_user_id where "FINLocSet_ID"=v_localisation_id;
+  end if;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_settings->'currencies','[]'::jsonb)) loop
+    v_code:=upper(nullif(btrim(v_item->>'code'),''));
+    if v_code is null or v_code !~ '^[A-Z]{3}$' then raise exception 'Every operating currency needs a valid ISO code.' using errcode='22023'; end if;
+    v_id:=nullif(v_item->>'id','')::uuid;
+    if v_id is null then
+      insert into public."FIN_CurrencySettings"("FINCurSet_LegalEntityID","FINCurSet_CurrencyCode","FINCurSet_Name","FINCurSet_DecimalPlaces","FINCurSet_RoundingMethodCode","FINCurSet_ToleranceAmount","FINCurSet_IsPermittedForQuote","FINCurSet_IsPermittedForInvoice","FINCurSet_IsBaseCurrency","FINCurSet_IsActive","FINCurSet_CreatedBy","FINCurSet_UpdatedBy")
+      values(p_legal_entity_id,v_code,coalesce(nullif(btrim(v_item->>'name'),''),v_code),greatest(0,least(6,coalesce((v_item->>'decimalPlaces')::integer,2))),coalesce(nullif(v_item->>'roundingMethodCode',''),'round_half_up'),greatest(0,coalesce((v_item->>'toleranceAmount')::numeric,0)),coalesce((v_item->>'permittedForQuote')::boolean,true),coalesce((v_item->>'permittedForInvoice')::boolean,true),v_code=v_base_currency,coalesce((v_item->>'isActive')::boolean,true),p_user_id,p_user_id)
+      on conflict ("FINCurSet_LegalEntityID","FINCurSet_CurrencyCode") where "FINCurSet_LegalEntityID" is not null do update set "FINCurSet_Name"=excluded."FINCurSet_Name","FINCurSet_DecimalPlaces"=excluded."FINCurSet_DecimalPlaces","FINCurSet_RoundingMethodCode"=excluded."FINCurSet_RoundingMethodCode","FINCurSet_ToleranceAmount"=excluded."FINCurSet_ToleranceAmount","FINCurSet_IsPermittedForQuote"=excluded."FINCurSet_IsPermittedForQuote","FINCurSet_IsPermittedForInvoice"=excluded."FINCurSet_IsPermittedForInvoice","FINCurSet_IsBaseCurrency"=excluded."FINCurSet_IsBaseCurrency","FINCurSet_IsActive"=excluded."FINCurSet_IsActive","FINCurSet_UpdatedAt"=now(),"FINCurSet_UpdatedBy"=p_user_id;
+    else
+      update public."FIN_CurrencySettings" set "FINCurSet_CurrencyCode"=v_code,"FINCurSet_Name"=coalesce(nullif(btrim(v_item->>'name'),''),v_code),"FINCurSet_DecimalPlaces"=greatest(0,least(6,coalesce((v_item->>'decimalPlaces')::integer,2))),"FINCurSet_RoundingMethodCode"=coalesce(nullif(v_item->>'roundingMethodCode',''),'round_half_up'),"FINCurSet_ToleranceAmount"=greatest(0,coalesce((v_item->>'toleranceAmount')::numeric,0)),"FINCurSet_IsPermittedForQuote"=coalesce((v_item->>'permittedForQuote')::boolean,true),"FINCurSet_IsPermittedForInvoice"=coalesce((v_item->>'permittedForInvoice')::boolean,true),"FINCurSet_IsBaseCurrency"=v_code=v_base_currency,"FINCurSet_IsActive"=coalesce((v_item->>'isActive')::boolean,true),"FINCurSet_UpdatedAt"=now(),"FINCurSet_UpdatedBy"=p_user_id where "FINCurSet_ID"=v_id and "FINCurSet_LegalEntityID"=p_legal_entity_id;
+      get diagnostics v_row_count=row_count; if v_row_count=0 then raise exception 'An operating currency is outside this legal entity.' using errcode='42501'; end if;
+    end if;
+  end loop;
+  if not exists(select 1 from public."FIN_CurrencySettings" where "FINCurSet_LegalEntityID"=p_legal_entity_id and "FINCurSet_CurrencyCode"=v_base_currency and "FINCurSet_IsActive") then
+    insert into public."FIN_CurrencySettings"("FINCurSet_LegalEntityID","FINCurSet_CurrencyCode","FINCurSet_Name","FINCurSet_IsBaseCurrency","FINCurSet_IsActive","FINCurSet_CreatedBy","FINCurSet_UpdatedBy") values(p_legal_entity_id,v_base_currency,v_base_currency,true,true,p_user_id,p_user_id)
+    on conflict ("FINCurSet_LegalEntityID","FINCurSet_CurrencyCode") where "FINCurSet_LegalEntityID" is not null do update set "FINCurSet_IsBaseCurrency"=true,"FINCurSet_IsActive"=true,"FINCurSet_UpdatedAt"=now(),"FINCurSet_UpdatedBy"=p_user_id;
+  end if;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_settings->'nominalAccounts','[]'::jsonb)) loop
+    v_code:=nullif(btrim(v_item->>'code'),'');
+    if v_code is null then raise exception 'Every nominal account needs a code.' using errcode='22023'; end if;
+    v_id:=nullif(v_item->>'id','')::uuid;
+    if v_id is null then
+      insert into public."FIN_NominalAccounts"("FINNom_Code","FINNom_Name","FINNom_AccountTypeCode","FINNom_LegalEntityID","FINNom_ExternalMappingHint","FINNom_IsControlAccount","FINNom_ControlTypeCode","FINNom_AllowManualPosting","FINNom_IsActive","FINNom_CreatedBy","FINNom_UpdatedBy")
+      values(v_code,coalesce(nullif(btrim(v_item->>'name'),''),v_code),coalesce(nullif(btrim(v_item->>'accountTypeCode'),''),'Expense Account'),p_legal_entity_id,nullif(btrim(v_item->>'externalMappingHint'),''),coalesce((v_item->>'isControlAccount')::boolean,false),nullif(btrim(v_item->>'controlTypeCode'),''),coalesce((v_item->>'allowManualPosting')::boolean,true),coalesce((v_item->>'isActive')::boolean,true),p_user_id,p_user_id)
+      on conflict ("FINNom_LegalEntityID","FINNom_Code") do update set "FINNom_Name"=excluded."FINNom_Name","FINNom_AccountTypeCode"=excluded."FINNom_AccountTypeCode","FINNom_ExternalMappingHint"=excluded."FINNom_ExternalMappingHint","FINNom_IsControlAccount"=excluded."FINNom_IsControlAccount","FINNom_ControlTypeCode"=excluded."FINNom_ControlTypeCode","FINNom_AllowManualPosting"=excluded."FINNom_AllowManualPosting","FINNom_IsActive"=excluded."FINNom_IsActive","FINNom_UpdatedAt"=now(),"FINNom_UpdatedBy"=p_user_id;
+    else
+      update public."FIN_NominalAccounts" set "FINNom_Code"=v_code,"FINNom_Name"=coalesce(nullif(btrim(v_item->>'name'),''),v_code),"FINNom_AccountTypeCode"=coalesce(nullif(btrim(v_item->>'accountTypeCode'),''),'Expense Account'),"FINNom_ExternalMappingHint"=nullif(btrim(v_item->>'externalMappingHint'),''),"FINNom_IsControlAccount"=coalesce((v_item->>'isControlAccount')::boolean,false),"FINNom_ControlTypeCode"=nullif(btrim(v_item->>'controlTypeCode'),''),"FINNom_AllowManualPosting"=coalesce((v_item->>'allowManualPosting')::boolean,true),"FINNom_IsActive"=coalesce((v_item->>'isActive')::boolean,true),"FINNom_UpdatedAt"=now(),"FINNom_UpdatedBy"=p_user_id where "FINNom_ID"=v_id and "FINNom_LegalEntityID"=p_legal_entity_id;
+      get diagnostics v_row_count=row_count; if v_row_count=0 then raise exception 'A nominal account is outside this legal entity.' using errcode='42501'; end if;
+    end if;
+  end loop;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_settings->'banks','[]'::jsonb)) loop
+    v_code:=nullif(btrim(v_item->>'code'),'');
+    if v_code is null then raise exception 'Every bank account needs a code.' using errcode='22023'; end if;
+    if upper(coalesce(v_item->>'currencyCode','')) !~ '^[A-Z]{3}$' then raise exception 'Every bank account needs a valid currency.' using errcode='22023'; end if;
+    v_id:=nullif(v_item->>'id','')::uuid;
+    if v_id is null then
+      insert into public."FIN_BankAccounts"("FINBank_Code","FINBank_Name","FINBank_LegalEntityID","FINBank_CurrencyCode","FINBank_InstitutionName","FINBank_AccountHolderName","FINBank_AccountNumberMasked","FINBank_IBANMasked","FINBank_SortCodeMasked","FINBank_BICMasked","FINBank_CountryCode","FINBank_NominalAccountID","FINBank_IsDefault","FINBank_AllowReceipts","FINBank_AllowPayments","FINBank_IsActive","FINBank_CreatedBy","FINBank_UpdatedBy")
+      values(v_code,coalesce(nullif(btrim(v_item->>'name'),''),v_code),p_legal_entity_id,upper(v_item->>'currencyCode'),nullif(btrim(v_item->>'institutionName'),''),nullif(btrim(v_item->>'accountHolderName'),''),case when nullif(regexp_replace(coalesce(v_item->>'accountNumberLast4',''),'[^A-Za-z0-9]','','g'),'') is null then null else '•••• '||right(regexp_replace(v_item->>'accountNumberLast4','[^A-Za-z0-9]','','g'),4) end,case when nullif(regexp_replace(coalesce(v_item->>'ibanLast4',''),'[^A-Za-z0-9]','','g'),'') is null then null else '•••• '||upper(right(regexp_replace(v_item->>'ibanLast4','[^A-Za-z0-9]','','g'),4)) end,case when nullif(regexp_replace(coalesce(v_item->>'sortCodeLast4',''),'[^0-9]','','g'),'') is null then null else '•••• '||right(regexp_replace(v_item->>'sortCodeLast4','[^0-9]','','g'),4) end,case when nullif(regexp_replace(coalesce(v_item->>'bicLast4',''),'[^A-Za-z0-9]','','g'),'') is null then null else '•••• '||upper(right(regexp_replace(v_item->>'bicLast4','[^A-Za-z0-9]','','g'),4)) end,upper(nullif(btrim(v_item->>'countryCode'),'')),nullif(v_item->>'nominalAccountId','')::uuid,coalesce((v_item->>'isDefault')::boolean,false),coalesce((v_item->>'allowReceipts')::boolean,true),coalesce((v_item->>'allowPayments')::boolean,true),coalesce((v_item->>'isActive')::boolean,true),p_user_id,p_user_id)
+      on conflict ("FINBank_LegalEntityID","FINBank_Code") where "FINBank_LegalEntityID" is not null do update set "FINBank_Name"=excluded."FINBank_Name","FINBank_CurrencyCode"=excluded."FINBank_CurrencyCode","FINBank_InstitutionName"=excluded."FINBank_InstitutionName","FINBank_AccountHolderName"=excluded."FINBank_AccountHolderName","FINBank_AccountNumberMasked"=coalesce(excluded."FINBank_AccountNumberMasked",public."FIN_BankAccounts"."FINBank_AccountNumberMasked"),"FINBank_IBANMasked"=coalesce(excluded."FINBank_IBANMasked",public."FIN_BankAccounts"."FINBank_IBANMasked"),"FINBank_SortCodeMasked"=coalesce(excluded."FINBank_SortCodeMasked",public."FIN_BankAccounts"."FINBank_SortCodeMasked"),"FINBank_BICMasked"=coalesce(excluded."FINBank_BICMasked",public."FIN_BankAccounts"."FINBank_BICMasked"),"FINBank_CountryCode"=excluded."FINBank_CountryCode","FINBank_NominalAccountID"=excluded."FINBank_NominalAccountID","FINBank_IsDefault"=excluded."FINBank_IsDefault","FINBank_AllowReceipts"=excluded."FINBank_AllowReceipts","FINBank_AllowPayments"=excluded."FINBank_AllowPayments","FINBank_IsActive"=excluded."FINBank_IsActive","FINBank_UpdatedAt"=now(),"FINBank_UpdatedBy"=p_user_id;
+    else
+      update public."FIN_BankAccounts" set "FINBank_Code"=v_code,"FINBank_Name"=coalesce(nullif(btrim(v_item->>'name'),''),v_code),"FINBank_CurrencyCode"=upper(v_item->>'currencyCode'),"FINBank_InstitutionName"=nullif(btrim(v_item->>'institutionName'),''),"FINBank_AccountHolderName"=nullif(btrim(v_item->>'accountHolderName'),''),"FINBank_AccountNumberMasked"=coalesce(case when nullif(regexp_replace(coalesce(v_item->>'accountNumberLast4',''),'[^A-Za-z0-9]','','g'),'') is null then null else '•••• '||right(regexp_replace(v_item->>'accountNumberLast4','[^A-Za-z0-9]','','g'),4) end,"FINBank_AccountNumberMasked"),"FINBank_IBANMasked"=coalesce(case when nullif(regexp_replace(coalesce(v_item->>'ibanLast4',''),'[^A-Za-z0-9]','','g'),'') is null then null else '•••• '||upper(right(regexp_replace(v_item->>'ibanLast4','[^A-Za-z0-9]','','g'),4)) end,"FINBank_IBANMasked"),"FINBank_SortCodeMasked"=coalesce(case when nullif(regexp_replace(coalesce(v_item->>'sortCodeLast4',''),'[^0-9]','','g'),'') is null then null else '•••• '||right(regexp_replace(v_item->>'sortCodeLast4','[^0-9]','','g'),4) end,"FINBank_SortCodeMasked"),"FINBank_BICMasked"=coalesce(case when nullif(regexp_replace(coalesce(v_item->>'bicLast4',''),'[^A-Za-z0-9]','','g'),'') is null then null else '•••• '||upper(right(regexp_replace(v_item->>'bicLast4','[^A-Za-z0-9]','','g'),4)) end,"FINBank_BICMasked"),"FINBank_CountryCode"=upper(nullif(btrim(v_item->>'countryCode'),'')),"FINBank_NominalAccountID"=nullif(v_item->>'nominalAccountId','')::uuid,"FINBank_IsDefault"=coalesce((v_item->>'isDefault')::boolean,false),"FINBank_AllowReceipts"=coalesce((v_item->>'allowReceipts')::boolean,true),"FINBank_AllowPayments"=coalesce((v_item->>'allowPayments')::boolean,true),"FINBank_IsActive"=coalesce((v_item->>'isActive')::boolean,true),"FINBank_UpdatedAt"=now(),"FINBank_UpdatedBy"=p_user_id where "FINBank_ID"=v_id and "FINBank_LegalEntityID"=p_legal_entity_id;
+      get diagnostics v_row_count=row_count; if v_row_count=0 then raise exception 'A bank account is outside this legal entity.' using errcode='42501'; end if;
+    end if;
+  end loop;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_settings->'taxJurisdictions','[]'::jsonb)) loop
+    v_code:=nullif(btrim(v_item->>'code'),''); if v_code is null then raise exception 'Every tax jurisdiction needs a code.' using errcode='22023'; end if;
+    v_id:=nullif(v_item->>'id','')::uuid;
+    if v_id is null then
+      insert into public."FIN_TaxJurisdictions"("FINTaxJur_Code","FINTaxJur_Name","FINTaxJur_CountryCode","FINTaxJur_AuthorityName","FINTaxJur_LegalEntityID","FINTaxJur_RegistrationNo","FINTaxJur_EffectiveFrom","FINTaxJur_EffectiveTo","FINTaxJur_SettingsJSON","FINTaxJur_IsActive","FINTaxJur_CreatedBy","FINTaxJur_UpdatedBy")
+      values(v_code,coalesce(nullif(btrim(v_item->>'name'),''),v_code),upper(coalesce(nullif(btrim(v_item->>'countryCode'),''),v_country)),nullif(btrim(v_item->>'authorityName'),''),p_legal_entity_id,nullif(btrim(v_item->>'registrationNo'),''),coalesce((v_item->>'effectiveFrom')::date,current_date),nullif(v_item->>'effectiveTo','')::date,coalesce(v_item->'settings','{}'::jsonb),coalesce((v_item->>'isActive')::boolean,true),p_user_id,p_user_id)
+      on conflict ("FINTaxJur_LegalEntityID","FINTaxJur_Code") where "FINTaxJur_LegalEntityID" is not null do update set "FINTaxJur_Name"=excluded."FINTaxJur_Name","FINTaxJur_CountryCode"=excluded."FINTaxJur_CountryCode","FINTaxJur_AuthorityName"=excluded."FINTaxJur_AuthorityName","FINTaxJur_RegistrationNo"=excluded."FINTaxJur_RegistrationNo","FINTaxJur_EffectiveFrom"=excluded."FINTaxJur_EffectiveFrom","FINTaxJur_EffectiveTo"=excluded."FINTaxJur_EffectiveTo","FINTaxJur_SettingsJSON"=excluded."FINTaxJur_SettingsJSON","FINTaxJur_IsActive"=excluded."FINTaxJur_IsActive","FINTaxJur_UpdatedAt"=now(),"FINTaxJur_UpdatedBy"=p_user_id;
+    else
+      update public."FIN_TaxJurisdictions" set "FINTaxJur_Code"=v_code,"FINTaxJur_Name"=coalesce(nullif(btrim(v_item->>'name'),''),v_code),"FINTaxJur_CountryCode"=upper(coalesce(nullif(btrim(v_item->>'countryCode'),''),v_country)),"FINTaxJur_AuthorityName"=nullif(btrim(v_item->>'authorityName'),''),"FINTaxJur_RegistrationNo"=nullif(btrim(v_item->>'registrationNo'),''),"FINTaxJur_EffectiveFrom"=coalesce((v_item->>'effectiveFrom')::date,current_date),"FINTaxJur_EffectiveTo"=nullif(v_item->>'effectiveTo','')::date,"FINTaxJur_SettingsJSON"=coalesce(v_item->'settings','{}'::jsonb),"FINTaxJur_IsActive"=coalesce((v_item->>'isActive')::boolean,true),"FINTaxJur_UpdatedAt"=now(),"FINTaxJur_UpdatedBy"=p_user_id where "FINTaxJur_ID"=v_id and "FINTaxJur_LegalEntityID"=p_legal_entity_id;
+      get diagnostics v_row_count=row_count; if v_row_count=0 then raise exception 'A tax jurisdiction is outside this legal entity.' using errcode='42501'; end if;
+    end if;
+  end loop;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_settings->'taxCodes','[]'::jsonb)) loop
+    v_code:=nullif(btrim(v_item->>'code'),''); if v_code is null then raise exception 'Every tax treatment needs a code.' using errcode='22023'; end if;
+    if coalesce((v_item->>'ratePercent')::numeric,0) < 0 or coalesce((v_item->>'ratePercent')::numeric,0) > 100 then raise exception 'Tax rates must be between 0 and 100.' using errcode='22023'; end if;
+    v_id:=nullif(v_item->>'id','')::uuid;
+    if v_id is null then
+      insert into public."FIN_TaxCodes"("FINTax_Code","FINTax_Name","FINTax_CountryCode","FINTax_RatePercent","FINTax_TaxTypeCode","FINTax_ProviderMappingHint","FINTax_IsRecoverable","FINTax_IsActive","FINTax_EffectiveFrom","FINTax_EffectiveTo","FINTax_LegalEntityID","FINTax_JurisdictionID","FINTax_TreatmentCategoryCode","FINTax_TransactionTypeCode","FINTax_OutputNominalID","FINTax_InputNominalID","FINTax_SettingsJSON","FINTax_ApprovedAt","FINTax_ApprovedBy","FINTax_CreatedBy","FINTax_UpdatedBy")
+      values(v_code,coalesce(nullif(btrim(v_item->>'name'),''),v_code),upper(coalesce(nullif(btrim(v_item->>'countryCode'),''),v_country)),coalesce((v_item->>'ratePercent')::numeric,0),coalesce(nullif(btrim(v_item->>'taxTypeCode'),''),'vat'),nullif(btrim(v_item->>'providerMappingHint'),''),coalesce((v_item->>'isRecoverable')::boolean,true),coalesce((v_item->>'isActive')::boolean,true),coalesce((v_item->>'effectiveFrom')::date,current_date),nullif(v_item->>'effectiveTo','')::date,p_legal_entity_id,nullif(v_item->>'jurisdictionId','')::uuid,coalesce(nullif(btrim(v_item->>'treatmentCategoryCode'),''),'out_of_scope'),coalesce(nullif(btrim(v_item->>'transactionTypeCode'),''),'both'),nullif(v_item->>'outputNominalId','')::uuid,nullif(v_item->>'inputNominalId','')::uuid,coalesce(v_item->'settings','{}'::jsonb),now(),p_user_id,p_user_id,p_user_id)
+      on conflict ("FINTax_LegalEntityID","FINTax_Code","FINTax_EffectiveFrom") where "FINTax_LegalEntityID" is not null do update set "FINTax_Name"=excluded."FINTax_Name","FINTax_CountryCode"=excluded."FINTax_CountryCode","FINTax_RatePercent"=excluded."FINTax_RatePercent","FINTax_TaxTypeCode"=excluded."FINTax_TaxTypeCode","FINTax_ProviderMappingHint"=excluded."FINTax_ProviderMappingHint","FINTax_IsRecoverable"=excluded."FINTax_IsRecoverable","FINTax_IsActive"=excluded."FINTax_IsActive","FINTax_EffectiveTo"=excluded."FINTax_EffectiveTo","FINTax_JurisdictionID"=excluded."FINTax_JurisdictionID","FINTax_TreatmentCategoryCode"=excluded."FINTax_TreatmentCategoryCode","FINTax_TransactionTypeCode"=excluded."FINTax_TransactionTypeCode","FINTax_OutputNominalID"=excluded."FINTax_OutputNominalID","FINTax_InputNominalID"=excluded."FINTax_InputNominalID","FINTax_SettingsJSON"=excluded."FINTax_SettingsJSON","FINTax_ApprovedAt"=now(),"FINTax_ApprovedBy"=p_user_id,"FINTax_UpdatedAt"=now(),"FINTax_UpdatedBy"=p_user_id;
+    else
+      update public."FIN_TaxCodes" set "FINTax_Code"=v_code,"FINTax_Name"=coalesce(nullif(btrim(v_item->>'name'),''),v_code),"FINTax_CountryCode"=upper(coalesce(nullif(btrim(v_item->>'countryCode'),''),v_country)),"FINTax_RatePercent"=coalesce((v_item->>'ratePercent')::numeric,0),"FINTax_TaxTypeCode"=coalesce(nullif(btrim(v_item->>'taxTypeCode'),''),'vat'),"FINTax_ProviderMappingHint"=nullif(btrim(v_item->>'providerMappingHint'),''),"FINTax_IsRecoverable"=coalesce((v_item->>'isRecoverable')::boolean,true),"FINTax_IsActive"=coalesce((v_item->>'isActive')::boolean,true),"FINTax_EffectiveFrom"=coalesce((v_item->>'effectiveFrom')::date,current_date),"FINTax_EffectiveTo"=nullif(v_item->>'effectiveTo','')::date,"FINTax_JurisdictionID"=nullif(v_item->>'jurisdictionId','')::uuid,"FINTax_TreatmentCategoryCode"=coalesce(nullif(btrim(v_item->>'treatmentCategoryCode'),''),'out_of_scope'),"FINTax_TransactionTypeCode"=coalesce(nullif(btrim(v_item->>'transactionTypeCode'),''),'both'),"FINTax_OutputNominalID"=nullif(v_item->>'outputNominalId','')::uuid,"FINTax_InputNominalID"=nullif(v_item->>'inputNominalId','')::uuid,"FINTax_SettingsJSON"=coalesce(v_item->'settings','{}'::jsonb),"FINTax_ApprovedAt"=now(),"FINTax_ApprovedBy"=p_user_id,"FINTax_UpdatedAt"=now(),"FINTax_UpdatedBy"=p_user_id where "FINTax_ID"=v_id and "FINTax_LegalEntityID"=p_legal_entity_id;
+      get diagnostics v_row_count=row_count; if v_row_count=0 then raise exception 'A tax treatment is outside this legal entity.' using errcode='42501'; end if;
+    end if;
+  end loop;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_settings->'numberSequences','[]'::jsonb)) loop
+    v_code:=nullif(btrim(v_item->>'code'),''); if v_code is null then raise exception 'Every document sequence needs a code.' using errcode='22023'; end if;
+    v_id:=nullif(v_item->>'id','')::uuid;
+    if v_id is null then
+      insert into public."FIN_NumberSequences"("FINSeq_Code","FINSeq_Name","FINSeq_LegalEntityID","FINSeq_DocumentTypeCode","FINSeq_Prefix","FINSeq_Suffix","FINSeq_NextNumber","FINSeq_PaddingLength","FINSeq_ResetPeriodCode","FINSeq_IsActive","FINSeq_CreatedBy","FINSeq_UpdatedBy")
+      values(v_code,coalesce(nullif(btrim(v_item->>'name'),''),v_code),p_legal_entity_id,nullif(btrim(v_item->>'documentTypeCode'),''),coalesce(v_item->>'prefix',''),coalesce(v_item->>'suffix',''),greatest(1,coalesce((v_item->>'nextNumber')::bigint,1)),greatest(1,least(12,coalesce((v_item->>'paddingLength')::integer,6))),coalesce(nullif(v_item->>'resetPeriodCode',''),'never'),coalesce((v_item->>'isActive')::boolean,true),p_user_id,p_user_id)
+      on conflict ("FINSeq_LegalEntityID","FINSeq_Code") where "FINSeq_LegalEntityID" is not null do update set "FINSeq_Name"=excluded."FINSeq_Name","FINSeq_DocumentTypeCode"=excluded."FINSeq_DocumentTypeCode","FINSeq_Prefix"=excluded."FINSeq_Prefix","FINSeq_Suffix"=excluded."FINSeq_Suffix","FINSeq_NextNumber"=greatest(public."FIN_NumberSequences"."FINSeq_NextNumber",excluded."FINSeq_NextNumber"),"FINSeq_PaddingLength"=excluded."FINSeq_PaddingLength","FINSeq_ResetPeriodCode"=excluded."FINSeq_ResetPeriodCode","FINSeq_IsActive"=excluded."FINSeq_IsActive","FINSeq_UpdatedAt"=now(),"FINSeq_UpdatedBy"=p_user_id;
+    else
+      update public."FIN_NumberSequences" set "FINSeq_Code"=v_code,"FINSeq_Name"=coalesce(nullif(btrim(v_item->>'name'),''),v_code),"FINSeq_DocumentTypeCode"=nullif(btrim(v_item->>'documentTypeCode'),''),"FINSeq_Prefix"=coalesce(v_item->>'prefix',''),"FINSeq_Suffix"=coalesce(v_item->>'suffix',''),"FINSeq_NextNumber"=greatest("FINSeq_NextNumber",greatest(1,coalesce((v_item->>'nextNumber')::bigint,1))),"FINSeq_PaddingLength"=greatest(1,least(12,coalesce((v_item->>'paddingLength')::integer,6))),"FINSeq_ResetPeriodCode"=coalesce(nullif(v_item->>'resetPeriodCode',''),'never'),"FINSeq_IsActive"=coalesce((v_item->>'isActive')::boolean,true),"FINSeq_UpdatedAt"=now(),"FINSeq_UpdatedBy"=p_user_id where "FINSeq_ID"=v_id and "FINSeq_LegalEntityID"=p_legal_entity_id;
+      get diagnostics v_row_count=row_count; if v_row_count=0 then raise exception 'A document sequence is outside this legal entity.' using errcode='42501'; end if;
+    end if;
+  end loop;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_settings->'paymentTerms','[]'::jsonb)) loop
+    v_code:=nullif(btrim(v_item->>'code'),''); if v_code is null then raise exception 'Every payment term needs a code.' using errcode='22023'; end if;
+    v_id:=nullif(v_item->>'id','')::uuid;
+    if v_id is null then
+      insert into public."FIN_PaymentTerms"("FINTerm_Code","FINTerm_Name","FINTerm_Days","FINTerm_DueDayOfMonth","FINTerm_EndOfMonth","FINTerm_IsCashAccount","FINTerm_IsActive","FINTerm_LegalEntityID","FINTerm_CreatedBy","FINTerm_UpdatedBy")
+      values(v_code,coalesce(nullif(btrim(v_item->>'name'),''),v_code),greatest(0,coalesce((v_item->>'days')::integer,30)),nullif(v_item->>'dueDayOfMonth','')::integer,coalesce((v_item->>'endOfMonth')::boolean,false),coalesce((v_item->>'isCashAccount')::boolean,false),coalesce((v_item->>'isActive')::boolean,true),p_legal_entity_id,p_user_id,p_user_id)
+      on conflict ("FINTerm_LegalEntityID","FINTerm_Code") where "FINTerm_LegalEntityID" is not null do update set "FINTerm_Name"=excluded."FINTerm_Name","FINTerm_Days"=excluded."FINTerm_Days","FINTerm_DueDayOfMonth"=excluded."FINTerm_DueDayOfMonth","FINTerm_EndOfMonth"=excluded."FINTerm_EndOfMonth","FINTerm_IsCashAccount"=excluded."FINTerm_IsCashAccount","FINTerm_IsActive"=excluded."FINTerm_IsActive","FINTerm_UpdatedAt"=now(),"FINTerm_UpdatedBy"=p_user_id;
+    else
+      update public."FIN_PaymentTerms" set "FINTerm_Code"=v_code,"FINTerm_Name"=coalesce(nullif(btrim(v_item->>'name'),''),v_code),"FINTerm_Days"=greatest(0,coalesce((v_item->>'days')::integer,30)),"FINTerm_DueDayOfMonth"=nullif(v_item->>'dueDayOfMonth','')::integer,"FINTerm_EndOfMonth"=coalesce((v_item->>'endOfMonth')::boolean,false),"FINTerm_IsCashAccount"=coalesce((v_item->>'isCashAccount')::boolean,false),"FINTerm_IsActive"=coalesce((v_item->>'isActive')::boolean,true),"FINTerm_UpdatedAt"=now(),"FINTerm_UpdatedBy"=p_user_id where "FINTerm_ID"=v_id and "FINTerm_LegalEntityID"=p_legal_entity_id;
+      get diagnostics v_row_count=row_count; if v_row_count=0 then raise exception 'A payment term is outside this legal entity.' using errcode='42501'; end if;
+    end if;
+  end loop;
+
+  -- Provider mappings are connection-scoped. A connection must belong to the
+  -- same legal entity before any mapping can be inserted or changed.
+  for v_item in select value from jsonb_array_elements(coalesce(p_settings->'accountMappings','[]'::jsonb)) loop
+    v_connection_id:=nullif(v_item->>'connectionId','')::uuid;
+    if not exists(select 1 from public."ACCI_Connections" where "ACCIC_ID"=v_connection_id and "ACCIC_LegalEntityID"=p_legal_entity_id) then raise exception 'An account mapping connection is outside this legal entity.' using errcode='42501'; end if;
+    v_id:=nullif(v_item->>'id','')::uuid;
+    if v_id is null then
+      insert into public."ACCI_AccountMappings"("ACCIAM_ConnectionID","ACCIAM_DirectionCode","ACCIAM_LocalContextCode","ACCIAM_ProviderAccountID","ACCIAM_ProviderAccountCode","ACCIAM_ProviderAccountName","ACCIAM_IsDefault","ACCIAM_IsActive") values(v_connection_id,coalesce(nullif(v_item->>'directionCode',''),'sales'),nullif(btrim(v_item->>'localContextCode'),''),coalesce(nullif(btrim(v_item->>'providerAccountId'),''),nullif(btrim(v_item->>'providerAccountCode'),'')),nullif(btrim(v_item->>'providerAccountCode'),''),nullif(btrim(v_item->>'providerAccountName'),''),coalesce((v_item->>'isDefault')::boolean,false),coalesce((v_item->>'isActive')::boolean,true));
+    else
+      update public."ACCI_AccountMappings" set "ACCIAM_DirectionCode"=coalesce(nullif(v_item->>'directionCode',''),'sales'),"ACCIAM_LocalContextCode"=nullif(btrim(v_item->>'localContextCode'),''),"ACCIAM_ProviderAccountID"=coalesce(nullif(btrim(v_item->>'providerAccountId'),''),nullif(btrim(v_item->>'providerAccountCode'),'')),"ACCIAM_ProviderAccountCode"=nullif(btrim(v_item->>'providerAccountCode'),''),"ACCIAM_ProviderAccountName"=nullif(btrim(v_item->>'providerAccountName'),''),"ACCIAM_IsDefault"=coalesce((v_item->>'isDefault')::boolean,false),"ACCIAM_IsActive"=coalesce((v_item->>'isActive')::boolean,true) where "ACCIAM_ID"=v_id and "ACCIAM_ConnectionID"=v_connection_id;
+      get diagnostics v_row_count=row_count; if v_row_count=0 then raise exception 'An account mapping is outside this connection.' using errcode='42501'; end if;
+    end if;
+  end loop;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_settings->'chargeMappings','[]'::jsonb)) loop
+    v_connection_id:=nullif(v_item->>'connectionId','')::uuid;
+    if not exists(select 1 from public."ACCI_Connections" where "ACCIC_ID"=v_connection_id and "ACCIC_LegalEntityID"=p_legal_entity_id) then raise exception 'A charge mapping connection is outside this legal entity.' using errcode='42501'; end if;
+    v_id:=nullif(v_item->>'id','')::uuid;
+    if v_id is null then
+      insert into public."ACCI_ChargeCodeMappings"("ACCICM_ConnectionID","ACCICM_LocalChargeCodeSnapshot","ACCICM_DirectionCode","ACCICM_ProviderItemID","ACCICM_ProviderItemCode","ACCICM_ProviderItemName","ACCICM_ProviderAccountID","ACCICM_IsActive") values(v_connection_id,coalesce(nullif(btrim(v_item->>'localChargeCode'),''),'ADHOC'),coalesce(nullif(v_item->>'directionCode',''),'sales'),nullif(btrim(v_item->>'providerItemId'),''),nullif(btrim(v_item->>'providerItemCode'),''),nullif(btrim(v_item->>'providerItemName'),''),nullif(btrim(v_item->>'providerAccountId'),''),coalesce((v_item->>'isActive')::boolean,true));
+    else
+      update public."ACCI_ChargeCodeMappings" set "ACCICM_LocalChargeCodeSnapshot"=coalesce(nullif(btrim(v_item->>'localChargeCode'),''),'ADHOC'),"ACCICM_DirectionCode"=coalesce(nullif(v_item->>'directionCode',''),'sales'),"ACCICM_ProviderItemID"=nullif(btrim(v_item->>'providerItemId'),''),"ACCICM_ProviderItemCode"=nullif(btrim(v_item->>'providerItemCode'),''),"ACCICM_ProviderItemName"=nullif(btrim(v_item->>'providerItemName'),''),"ACCICM_ProviderAccountID"=nullif(btrim(v_item->>'providerAccountId'),''),"ACCICM_IsActive"=coalesce((v_item->>'isActive')::boolean,true) where "ACCICM_ID"=v_id and "ACCICM_ConnectionID"=v_connection_id;
+      get diagnostics v_row_count=row_count; if v_row_count=0 then raise exception 'A charge mapping is outside this connection.' using errcode='42501'; end if;
+    end if;
+  end loop;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_settings->'taxMappings','[]'::jsonb)) loop
+    v_connection_id:=nullif(v_item->>'connectionId','')::uuid;
+    if not exists(select 1 from public."ACCI_Connections" where "ACCIC_ID"=v_connection_id and "ACCIC_LegalEntityID"=p_legal_entity_id) then raise exception 'A tax mapping connection is outside this legal entity.' using errcode='42501'; end if;
+    v_id:=nullif(v_item->>'id','')::uuid;
+    if v_id is null then
+      insert into public."ACCI_TaxCodeMappings"("ACCITM_ConnectionID","ACCITM_LocalTaxCode","ACCITM_LocalTaxDescription","ACCITM_LocalCountryCode","ACCITM_DirectionCode","ACCITM_ProviderTaxID","ACCITM_ProviderTaxCode","ACCITM_ProviderTaxName","ACCITM_TaxRatePercent","ACCITM_IsActive") values(v_connection_id,coalesce(nullif(btrim(v_item->>'localTaxCode'),''),'out-of-scope'),nullif(btrim(v_item->>'localTaxDescription'),''),upper(coalesce(nullif(btrim(v_item->>'countryCode'),''),v_country)),coalesce(nullif(v_item->>'directionCode',''),'sales'),nullif(btrim(v_item->>'providerTaxId'),''),coalesce(nullif(btrim(v_item->>'providerTaxCode'),''),nullif(btrim(v_item->>'localTaxCode'),'')),nullif(btrim(v_item->>'providerTaxName'),''),nullif(v_item->>'taxRatePercent','')::numeric,coalesce((v_item->>'isActive')::boolean,true));
+    else
+      update public."ACCI_TaxCodeMappings" set "ACCITM_LocalTaxCode"=coalesce(nullif(btrim(v_item->>'localTaxCode'),''),'out-of-scope'),"ACCITM_LocalTaxDescription"=nullif(btrim(v_item->>'localTaxDescription'),''),"ACCITM_LocalCountryCode"=upper(coalesce(nullif(btrim(v_item->>'countryCode'),''),v_country)),"ACCITM_DirectionCode"=coalesce(nullif(v_item->>'directionCode',''),'sales'),"ACCITM_ProviderTaxID"=nullif(btrim(v_item->>'providerTaxId'),''),"ACCITM_ProviderTaxCode"=coalesce(nullif(btrim(v_item->>'providerTaxCode'),''),nullif(btrim(v_item->>'localTaxCode'),'')),"ACCITM_ProviderTaxName"=nullif(btrim(v_item->>'providerTaxName'),''),"ACCITM_TaxRatePercent"=nullif(v_item->>'taxRatePercent','')::numeric,"ACCITM_IsActive"=coalesce((v_item->>'isActive')::boolean,true) where "ACCITM_ID"=v_id and "ACCITM_ConnectionID"=v_connection_id;
+      get diagnostics v_row_count=row_count; if v_row_count=0 then raise exception 'A tax mapping is outside this connection.' using errcode='42501'; end if;
+    end if;
+  end loop;
+
+  select count(*) into v_control_count from public."FIN_NominalAccounts" where "FINNom_LegalEntityID"=p_legal_entity_id and "FINNom_IsControlAccount" and "FINNom_IsActive";
+  select count(*) into v_active_banks from public."FIN_BankAccounts" where "FINBank_LegalEntityID"=p_legal_entity_id and "FINBank_IsActive";
+  select count(*) into v_active_currencies from public."FIN_CurrencySettings" where "FINCurSet_LegalEntityID"=p_legal_entity_id and "FINCurSet_IsActive";
+  select count(*) into v_active_taxes from public."FIN_TaxCodes" where "FINTax_LegalEntityID"=p_legal_entity_id and "FINTax_IsActive";
+  select count(*) into v_active_sequences from public."FIN_NumberSequences" where "FINSeq_LegalEntityID"=p_legal_entity_id and "FINSeq_IsActive";
+  if v_control_count < 6 then v_missing:=array_append(v_missing,'control_accounts'); end if;
+  if v_active_banks = 0 then v_missing:=array_append(v_missing,'bank_account'); end if;
+  if v_active_currencies = 0 then v_missing:=array_append(v_missing,'operating_currency'); end if;
+  if v_active_taxes = 0 then v_missing:=array_append(v_missing,'tax_treatment'); end if;
+  if v_active_sequences < 4 then v_missing:=array_append(v_missing,'document_sequences'); end if;
+  if not exists(select 1 from public."ACCI_Connections" where "ACCIC_LegalEntityID"=p_legal_entity_id and "ACCIC_StatusCode"='active') then v_missing:=array_append(v_missing,'accounting_connection'); end if;
+
+  update public."FIN_AdministrationRevisions" set "FINAdminRevision_StatusCode"='superseded' where "FINAdminRevision_LegalEntityID"=p_legal_entity_id and "FINAdminRevision_StatusCode"='approved';
+  select coalesce(max("FINAdminRevision_Number"),0)+1 into v_revision from public."FIN_AdministrationRevisions" where "FINAdminRevision_LegalEntityID"=p_legal_entity_id;
+  insert into public."FIN_AdministrationRevisions"("FINAdminRevision_LegalEntityID","FINAdminRevision_Number","FINAdminRevision_ConfigJSON","FINAdminRevision_ReadinessJSON","FINAdminRevision_Reason","FINAdminRevision_ApprovedBy")
+  values(p_legal_entity_id,v_revision,p_settings,jsonb_build_object('ready',coalesce(array_length(v_missing,1),0)=0,'missing',to_jsonb(v_missing),'controlAccounts',v_control_count,'banks',v_active_banks,'currencies',v_active_currencies,'taxCodes',v_active_taxes,'sequences',v_active_sequences),nullif(btrim(p_reason),''),p_user_id);
+
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_Reason","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON")
+  values('finance_lifecycle',p_user_id,p_legal_entity_id,'multideck-app','finance','public','FIN_AdministrationRevisions','finance_configuration',p_legal_entity_id,'approve_finance_administration','Finance administration settings approved',nullif(btrim(p_reason),''),true,1,jsonb_build_object('revision',v_revision,'ready',coalesce(array_length(v_missing,1),0)=0,'missing',to_jsonb(v_missing)));
+
+  return jsonb_build_object('legalEntityId',p_legal_entity_id,'revision',v_revision,'ready',coalesce(array_length(v_missing,1),0)=0,'missing',to_jsonb(v_missing));
+exception when unique_violation then
+  raise exception 'A finance code or default is duplicated for this legal entity.' using errcode='22023';
+end;
+$$;
+
+revoke all on function public.multideck_finance_save_administration(uuid,uuid,uuid,jsonb,text) from public,anon,authenticated;
+grant execute on function public.multideck_finance_save_administration(uuid,uuid,uuid,jsonb,text) to service_role;
+
+-- Dexter can inspect the approved configuration and its exact source evidence.
+-- Settings changes intentionally remain unsupported in chat because they can
+-- change statutory posting behaviour; finance administrators use Admin > Finance.
+create or replace function public.multideck_dexter_domain_finance(p_company_id uuid,p_search text,p_take integer)
+returns jsonb language sql stable security definer set search_path=pg_catalog,public as $$
+  with records as (
+    select d."FINDoc_ID" record_id,d."FINDoc_UpdatedAt" updated_at,concat_ws(' ',d."FINDoc_Number",d."FINDoc_TypeCode",d."FINDoc_StatusCode",o."Org_Name",j."Job_Number") search_text,
+      jsonb_strip_nulls(jsonb_build_object('recordId',d."FINDoc_ID",'recordKind','document','number',d."FINDoc_Number",'type',d."FINDoc_TypeCode",'ledger',case when d."FINDoc_TypeCode" in ('sl_invoice','credit_note') then 'receivables' else 'payables' end,'status',d."FINDoc_StatusCode",'party',o."Org_Name",'currency',d."FINDoc_CurrencyCodeSnapshot",'netAmount',d."FINDoc_NetAmount",'taxAmount',d."FINDoc_TaxAmount",'grossAmount',d."FINDoc_GrossAmount",'outstandingAmount',d."FINDoc_OutstandingAmount",'documentDate',d."FINDoc_DocumentDate",'dueDate',d."FINDoc_DueDate",'sourceKind',d."FINDoc_SourceKindCode",'jobReference',case when j."Job_ID" is null then null else j."Job_Period"||'-'||j."Job_Number" end,'postingStatus',d."FINDoc_PostingStatusCode",'exportStatus',d."FINDoc_ExportStatusCode",'evidence',jsonb_build_object('sourceTable','FIN_Documents','sourceId',d."FINDoc_ID",'legalEntityId',d."FINDoc_LegalEntityID"))) value
+    from public."FIN_Documents" d join public."cmp_LegalEntities" e on e."LegalEntity_ID"=d."FINDoc_LegalEntityID" left join public."Org_Master" o on o."Org_id"=d."FINDoc_PartyOrgID" left join public."Job_Header" j on j."Job_ID"=d."FINDoc_SourceJobID" where e."Company_ID"=p_company_id
+    union all
+    select c."FINCash_ID",c."FINCash_UpdatedAt",concat_ws(' ',c."FINCash_Number",c."FINCash_TypeCode",c."FINCash_StatusCode",o."Org_Name",c."FINCash_Reference"),
+      jsonb_strip_nulls(jsonb_build_object('recordId',c."FINCash_ID",'recordKind','cash','number',c."FINCash_Number",'type',c."FINCash_TypeCode",'ledger',case when c."FINCash_TypeCode"='customer_receipt' then 'receivables' else 'payables' end,'status',c."FINCash_StatusCode",'party',o."Org_Name",'currency',c."FINCash_CurrencyCodeSnapshot",'amount',c."FINCash_Amount",'unallocatedAmount',c."FINCash_UnallocatedAmount",'transactionDate',c."FINCash_TransactionDate",'reference',c."FINCash_Reference",'postingStatus',c."FINCash_PostingStatusCode",'evidence',jsonb_build_object('sourceTable','FIN_CashTransactions','sourceId',c."FINCash_ID",'legalEntityId',c."FINCash_LegalEntityID")))
+    from public."FIN_CashTransactions" c join public."cmp_LegalEntities" e on e."LegalEntity_ID"=c."FINCash_LegalEntityID" left join public."Org_Master" o on o."Org_id"=c."FINCash_PartyOrgID" where e."Company_ID"=p_company_id
+    union all
+    select r."FINAdminRevision_ID",r."FINAdminRevision_ApprovedAt",concat_ws(' ','finance settings administration',e."LegalEntity_Name",e."LegalEntity_BaseCurrencyCodeSnapshot",e."LegalEntity_CountryCode",e."LegalEntity_SettingsJSON"#>>'{financeProvider,providerCode}'),
+      jsonb_strip_nulls(jsonb_build_object('recordId',r."FINAdminRevision_ID",'recordKind','configuration','legalEntityId',e."LegalEntity_ID",'legalEntity',e."LegalEntity_Name",'baseCurrency',e."LegalEntity_BaseCurrencyCodeSnapshot",'country',e."LegalEntity_CountryCode",'provider',e."LegalEntity_SettingsJSON"#>>'{financeProvider,providerCode}','revision',r."FINAdminRevision_Number",'readiness',r."FINAdminRevision_ReadinessJSON",'approvedAt',r."FINAdminRevision_ApprovedAt",'evidence',jsonb_build_object('sourceTable','FIN_AdministrationRevisions','sourceId',r."FINAdminRevision_ID",'legalEntityId',e."LegalEntity_ID")))
+    from public."FIN_AdministrationRevisions" r join public."cmp_LegalEntities" e on e."LegalEntity_ID"=r."FINAdminRevision_LegalEntityID" where e."Company_ID"=p_company_id and r."FINAdminRevision_StatusCode"='approved'
+  ) select coalesce(jsonb_agg(value order by updated_at desc),'[]'::jsonb) from (select value,updated_at from records where nullif(btrim(p_search),'') is null or search_text ilike '%'||btrim(p_search)||'%' order by updated_at desc limit greatest(1,least(coalesce(p_take,10),25))) bounded;
+$$;
+revoke all on function public.multideck_dexter_domain_finance(uuid,text,integer) from public,anon,authenticated;
+
+update public."sys_AIDexterDataDomains" set
+  "AIDexterDomain_Description"='Tenant-safe AR/AP, cash, allocation, provider-status and approved finance-configuration evidence. Statutory settings remain read-only in Dexter.',
+  "AIDexterDomain_RequiredPermissionsJSON"='["Finance.Receivables.View","Finance.Payables.View"]'::jsonb,
+  "AIDexterDomain_DataCategoriesJSON"='["financial","customer","supplier","configuration"]'::jsonb,
+  "AIDexterDomain_ScopeStrategy"='company',"AIDexterDomain_UpdatedAt"=now()
+where "AIDexterDomain_Code"='finance';
+
+update public."sys_AIDexterWatchCapabilities" set
+  "AIDexterWatchCapability_Description"='Event-driven finance document, receipt, payment, allocation, provider-sync and approved configuration changes.',
+  "AIDexterWatchCapability_FieldsJSON"='["status","dueDate","outstandingAmount","postingStatus","exportStatus","cashStatus","unallocatedAmount","configurationRevision","readiness","baseCurrency","provider"]'::jsonb,
+  "AIDexterWatchCapability_UpdatedAt"=now()
+where "AIDexterWatchCapability_Code"='finance';
+
+create or replace function public._multideck_dexter_finance_administration_watch_change()
+returns trigger language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_company uuid; v_entity public."cmp_LegalEntities";
+begin
+  select * into v_entity from public."cmp_LegalEntities" where "LegalEntity_ID"=new."FINAdminRevision_LegalEntityID";
+  v_company:=v_entity."Company_ID";
+  if v_company is not null and exists(select 1 from public."AI_DexterWatches" w where w."AIDexterWatch_CompanyID"=v_company and w."AIDexterWatch_CapabilityCode"='finance' and w."AIDexterWatch_StatusCode"='active' and (w."AIDexterWatch_TargetID" is null or w."AIDexterWatch_TargetID"=new."FINAdminRevision_LegalEntityID")) then
+    insert into public."AI_DexterWatchSignals"("AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable","AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON")
+    values(v_company,'finance','FIN_AdministrationRevisions',new."FINAdminRevision_LegalEntityID",'{}'::jsonb,jsonb_build_object('configurationRevision',new."FINAdminRevision_Number",'readiness',new."FINAdminRevision_ReadinessJSON",'baseCurrency',v_entity."LegalEntity_BaseCurrencyCodeSnapshot",'provider',v_entity."LegalEntity_SettingsJSON"#>>'{financeProvider,providerCode}'));
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public._multideck_dexter_finance_administration_watch_change() from public,anon,authenticated;
+drop trigger if exists "TR_FIN_AdministrationRevisions_dexter_watch" on public."FIN_AdministrationRevisions";
+create trigger "TR_FIN_AdministrationRevisions_dexter_watch" after insert on public."FIN_AdministrationRevisions" for each row execute function public._multideck_dexter_finance_administration_watch_change();
+
+commit;
+
+-- Comprehensive CRM financial profiles parity
+-- Party-level accounting configuration remains with the CRM organisation,
+-- while legal-entity controls remain in Admin > Finance. Validate the JSON
+-- contract before it can be used for invoices, credits, cash or provider data.
+
+begin;
+
+create or replace function public._multideck_crm_validate_account_finance_preferences()
+returns trigger
+language plpgsql
+security invoker
+set search_path = pg_catalog, public
+as $$
+declare
+  v_preferences jsonb := coalesce(new."CRMAccountOps_InvoicePreferencesJSON", '{}'::jsonb);
+  v_bank jsonb;
+  v_key text;
+  v_value text;
+  v_entity_id uuid;
+  v_effective_from date;
+  v_effective_to date;
+begin
+  if jsonb_typeof(v_preferences) <> 'object' then
+    raise exception 'Organisation finance preferences must be an object.' using errcode = '22023';
+  end if;
+
+  if coalesce(nullif(v_preferences ->> 'customerAccountingStatusCode', ''), 'active') not in ('active','on_hold','blocked') then
+    raise exception 'Choose a valid customer accounting status.' using errcode = '22023';
+  end if;
+  if coalesce(nullif(v_preferences ->> 'supplierAccountingStatusCode', ''), 'active') not in ('active','on_hold','blocked') then
+    raise exception 'Choose a valid supplier accounting status.' using errcode = '22023';
+  end if;
+  if coalesce(nullif(v_preferences ->> 'preferredReceiptMethodCode', ''), 'bank_transfer') not in ('bank_transfer','direct_debit','card','cheque','cash','offset')
+    or coalesce(nullif(v_preferences ->> 'preferredPaymentMethodCode', ''), 'bank_transfer') not in ('bank_transfer','direct_debit','card','cheque','cash','offset') then
+    raise exception 'Choose a valid receipt and payment method.' using errcode = '22023';
+  end if;
+  if coalesce(nullif(v_preferences ->> 'salesInvoiceGroupingCode', ''), 'per_job') not in ('per_job','daily','weekly','monthly') then
+    raise exception 'Choose a valid invoice grouping rule.' using errcode = '22023';
+  end if;
+  if coalesce(nullif(v_preferences ->> 'statementFrequencyCode', ''), 'monthly') not in ('never','weekly','monthly') then
+    raise exception 'Choose a valid statement frequency.' using errcode = '22023';
+  end if;
+  if coalesce(nullif(v_preferences ->> 'paymentRunGroupCode', ''), 'weekly') not in ('manual','daily','weekly','monthly') then
+    raise exception 'Choose a valid payment run group.' using errcode = '22023';
+  end if;
+  if coalesce(nullif(v_preferences ->> 'purchaseInvoiceMatchingCode', ''), 'two_way') not in ('none','two_way','three_way') then
+    raise exception 'Choose a valid purchase invoice matching rule.' using errcode = '22023';
+  end if;
+
+  foreach v_key in array array['defaultSalesLegalEntityId','defaultPurchaseLegalEntityId'] loop
+    v_value := nullif(btrim(v_preferences ->> v_key), '');
+    if v_value is not null then
+      begin v_entity_id := v_value::uuid;
+      exception when invalid_text_representation then
+        raise exception 'Choose a valid legal entity for organisation finance.' using errcode = '22023';
+      end;
+      if not exists (
+        select 1 from public."cmp_LegalEntities" e
+        where e."LegalEntity_ID" = v_entity_id
+          and e."Company_ID" = new."CRMAccountOps_CompanyID"
+      ) then
+        raise exception 'The selected finance legal entity is outside this workspace.' using errcode = '42501';
+      end if;
+    end if;
+  end loop;
+
+  foreach v_key in array array[
+    'creditHold','requiresCustomerPurchaseOrder','requiresJobReferenceOnInvoice','sendStatements',
+    'receivableEndOfMonth','supplierPaymentHold','purchaseOrderRequired','selfBillingAllowed',
+    'separateRemittanceAdvice','payableEndOfMonth'
+  ] loop
+    if v_preferences ? v_key and jsonb_typeof(v_preferences -> v_key) <> 'boolean' then
+      raise exception 'Organisation finance switch % must be true or false.', v_key using errcode = '22023';
+    end if;
+  end loop;
+
+  foreach v_key in array array[
+    'creditLimit','receivableTermDays','receivableDueDay','payableTermDays','payableDueDay','purchaseMatchTolerancePercent'
+  ] loop
+    v_value := nullif(btrim(v_preferences ->> v_key), '');
+    if v_value is not null and v_value !~ '^[0-9]+([.][0-9]{1,4})?$' then
+      raise exception 'Organisation finance amount % must be a non-negative number.', v_key using errcode = '22023';
+    end if;
+  end loop;
+
+  v_value := lower(nullif(btrim(v_preferences ->> 'invoiceLanguageCode'), ''));
+  if v_value is not null and v_value !~ '^[a-z]{2}(-[a-z]{2})?$' then
+    raise exception 'Invoice language must use a two-letter language code.' using errcode = '22023';
+  end if;
+  if v_value is not null then v_preferences := jsonb_set(v_preferences, '{invoiceLanguageCode}', to_jsonb(v_value), true); end if;
+
+  foreach v_key in array array[
+    'customerTaxRegistrationNo','supplierTaxRegistrationNo','salesPaymentTermCode','purchasePaymentTermCode',
+    'salesTaxTreatmentCode','purchaseTaxTreatmentCode','receivableAccountCode','payableAccountCode',
+    'invoiceEmail','statementEmail','purchaseInvoiceEmail','remittanceAdviceEmail','invoiceDeliveryMethod',
+    'purchaseInvoiceDeliveryMethod'
+  ] loop
+    if v_preferences ? v_key then
+      v_preferences := jsonb_set(v_preferences, array[v_key], to_jsonb(left(coalesce(v_preferences ->> v_key, ''), case when v_key like '%Email' then 320 else 180 end)), true);
+    end if;
+  end loop;
+
+  if jsonb_typeof(coalesce(v_preferences -> 'bankAccounts', '[]'::jsonb)) <> 'array' then
+    raise exception 'Bank accounts must be a list.' using errcode = '22023';
+  end if;
+  for v_bank in select value from jsonb_array_elements(coalesce(v_preferences -> 'bankAccounts', '[]'::jsonb)) loop
+    if coalesce(nullif(v_bank ->> 'verificationStatusCode', ''), 'pending') not in ('pending','verified','rejected') then
+      raise exception 'Choose a valid bank verification status.' using errcode = '22023';
+    end if;
+    foreach v_key in array array['useForPayments','useForRefunds','useForDirectDebit','isDefault'] loop
+      if v_bank ? v_key and jsonb_typeof(v_bank -> v_key) <> 'boolean' then
+        raise exception 'Bank usage switch % must be true or false.', v_key using errcode = '22023';
+      end if;
+    end loop;
+    begin
+      v_effective_from := nullif(v_bank ->> 'effectiveFrom', '')::date;
+      v_effective_to := nullif(v_bank ->> 'effectiveTo', '')::date;
+      perform nullif(v_bank ->> 'verifiedAt', '')::date;
+    exception when invalid_datetime_format or datetime_field_overflow then
+      raise exception 'Bank verification and effective dates must be valid dates.' using errcode = '22023';
+    end;
+    if v_effective_from is not null and v_effective_to is not null and v_effective_to < v_effective_from then
+      raise exception 'A bank account effective-to date cannot be before its effective-from date.' using errcode = '22023';
+    end if;
+    if coalesce(v_bank ->> 'verificationStatusCode', 'pending') = 'verified'
+      and (nullif(btrim(v_bank ->> 'verificationReference'), '') is null or nullif(v_bank ->> 'verifiedAt', '') is null) then
+      raise exception 'A verified bank account needs a verification reference and date.' using errcode = '22023';
+    end if;
+  end loop;
+
+  new."CRMAccountOps_InvoicePreferencesJSON" := v_preferences;
+  return new;
+end;
+$$;
+
+revoke all on function public._multideck_crm_validate_account_finance_preferences() from public, anon, authenticated;
+grant execute on function public._multideck_crm_validate_account_finance_preferences() to service_role;
+
+drop trigger if exists "TR_CRM_AccountOperationalProfiles_validate_finance" on public."CRM_AccountOperationalProfiles";
+create trigger "TR_CRM_AccountOperationalProfiles_validate_finance"
+before insert or update of "CRMAccountOps_InvoicePreferencesJSON"
+on public."CRM_AccountOperationalProfiles"
+for each row execute function public._multideck_crm_validate_account_finance_preferences();
+
+-- Dexter reads these party defaults as customer-domain evidence and receives
+-- the existing event-driven invoicePreferences signal. There is deliberately
+-- no Dexter write action for statutory or counterparty-bank configuration.
+update public."sys_AIDexterDataDomains" set
+  "AIDexterDomain_Description" = 'Companies, roles, legal-entity defaults, AR/AP status, controlled payment and tax terms, multi-currency preferences, masked verified bank-account registers, customs profiles, instructions, documents and contact relationships.',
+  "AIDexterDomain_UpdatedAt" = now()
+where "AIDexterDomain_Code" = 'customers';
+
+update public."sys_AIDexterWatchCapabilities" set
+  "AIDexterWatchCapability_Description" = 'Event-driven company, AR/AP status, credit/payment hold, payment terms, tax treatment, operating currency, masked bank verification, instruction, document and address-rule changes.',
+  "AIDexterWatchCapability_FieldsJSON" = (
+    select jsonb_agg(value order by value)
+    from (
+      select distinct value
+      from jsonb_array_elements_text(
+        coalesce("AIDexterWatchCapability_FieldsJSON", '[]'::jsonb)
+        || '["customerAccountingStatusCode","supplierAccountingStatusCode","creditHold","supplierPaymentHold","salesPaymentTermCode","purchasePaymentTermCode","salesTaxTreatmentCode","purchaseTaxTreatmentCode","defaultSalesLegalEntityId","defaultPurchaseLegalEntityId","bankAccounts"]'::jsonb
+      ) fields(value)
+    ) distinct_fields
+  ),
+  "AIDexterWatchCapability_UpdatedAt" = now()
+where "AIDexterWatchCapability_Code" = 'customers';
+
+comment on function public._multideck_crm_validate_account_finance_preferences() is
+  'Validates party-level AR, AP, tax, legal-entity, payment and verified masked-bank settings before accounting transactions use them.';
+
+commit;
+
+-- Approved finance tax controls parity
+-- Approved, effective-dated tax treatments are the only treatments that may
+-- reach an accounting transaction. Universal catalogue rows remain setup
+-- suggestions until a finance administrator confirms local tax advice.
+
+begin;
+
+create or replace function public._multideck_finance_normalise_revision_readiness()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_missing jsonb;
+begin
+  if coalesce(new."FINAdminRevision_ConfigJSON" #>> '{taxSettings,localAdviceConfirmed}', 'false') = 'true' then
+    return new;
+  end if;
+
+  v_missing := case
+    when jsonb_typeof(new."FINAdminRevision_ReadinessJSON" -> 'missing') = 'array'
+      then new."FINAdminRevision_ReadinessJSON" -> 'missing'
+    else '[]'::jsonb
+  end;
+  if not (v_missing ? 'tax_advice') then
+    v_missing := v_missing || jsonb_build_array('tax_advice');
+  end if;
+
+  new."FINAdminRevision_ReadinessJSON" := jsonb_set(
+    jsonb_set(coalesce(new."FINAdminRevision_ReadinessJSON", '{}'::jsonb), '{missing}', v_missing, true),
+    '{ready}',
+    'false'::jsonb,
+    true
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists "TR_FIN_AdministrationRevisions_tax_readiness" on public."FIN_AdministrationRevisions";
+create trigger "TR_FIN_AdministrationRevisions_tax_readiness"
+before insert or update of "FINAdminRevision_ConfigJSON", "FINAdminRevision_ReadinessJSON"
+on public."FIN_AdministrationRevisions"
+for each row execute function public._multideck_finance_normalise_revision_readiness();
+
+-- Correct earlier readiness evidence, if any, without changing the approved
+-- configuration or creating a new approval.
+update public."FIN_AdministrationRevisions"
+set "FINAdminRevision_ReadinessJSON" = "FINAdminRevision_ReadinessJSON"
+where coalesce("FINAdminRevision_ConfigJSON" #>> '{taxSettings,localAdviceConfirmed}', 'false') <> 'true';
+
+create or replace function public._multideck_finance_apply_approved_line_tax()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_legal_entity_id uuid;
+  v_document_type text;
+  v_document_date date;
+  v_exchange_rate numeric;
+  v_direction text;
+  v_match_count integer;
+  v_tax_id uuid;
+  v_tax_code text;
+  v_tax_rate numeric;
+  v_sign numeric;
+  v_net numeric;
+  v_tax numeric;
+begin
+  select
+    document."FINDoc_LegalEntityID",
+    document."FINDoc_TypeCode",
+    document."FINDoc_DocumentDate",
+    document."FINDoc_ExchangeRate"
+  into v_legal_entity_id, v_document_type, v_document_date, v_exchange_rate
+  from public."FIN_Documents" document
+  where document."FINDoc_ID" = new."FINDocLine_DocumentID";
+
+  if v_legal_entity_id is null then
+    raise exception 'The finance document for this line does not exist.' using errcode = 'P0002';
+  end if;
+  if not exists (
+    select 1
+    from public."FIN_AdministrationRevisions" revision
+    where revision."FINAdminRevision_LegalEntityID" = v_legal_entity_id
+      and revision."FINAdminRevision_StatusCode" = 'approved'
+      and coalesce(revision."FINAdminRevision_ConfigJSON" #>> '{taxSettings,localAdviceConfirmed}', 'false') = 'true'
+  ) then
+    raise exception 'Finance must approve local tax advice before a document line can be created.' using errcode = '22023';
+  end if;
+  if nullif(btrim(new."FINDocLine_TaxCodeSnapshot"), '') is null then
+    raise exception 'Choose an approved tax treatment for every finance line.' using errcode = '22023';
+  end if;
+
+  v_direction := case when v_document_type in ('sl_invoice', 'credit_note') then 'sales' else 'purchase' end;
+  select
+    count(*),
+    (array_agg(tax."FINTax_ID" order by tax."FINTax_EffectiveFrom" desc))[1],
+    (array_agg(tax."FINTax_Code" order by tax."FINTax_EffectiveFrom" desc))[1],
+    (array_agg(tax."FINTax_RatePercent" order by tax."FINTax_EffectiveFrom" desc))[1]
+  into v_match_count, v_tax_id, v_tax_code, v_tax_rate
+  from public."FIN_TaxCodes" tax
+  where tax."FINTax_LegalEntityID" = v_legal_entity_id
+    and tax."FINTax_Code" = btrim(new."FINDocLine_TaxCodeSnapshot")
+    and tax."FINTax_IsActive"
+    and tax."FINTax_ApprovedAt" is not null
+    and tax."FINTax_TransactionTypeCode" in ('both', v_direction)
+    and tax."FINTax_EffectiveFrom" <= v_document_date
+    and (tax."FINTax_EffectiveTo" is null or tax."FINTax_EffectiveTo" >= v_document_date);
+
+  if v_match_count = 0 then
+    raise exception 'The selected tax treatment is not approved for this legal entity, date and ledger.' using errcode = '22023';
+  end if;
+  if v_match_count > 1 then
+    raise exception 'The selected tax treatment has overlapping effective rules. Finance must correct the setup.' using errcode = '22023';
+  end if;
+  if new."FINDocLine_Quantity" <= 0 or new."FINDocLine_UnitAmount" < 0 then
+    raise exception 'Check the finance line quantity and unit amount.' using errcode = '22023';
+  end if;
+
+  v_sign := case when v_document_type in ('credit_note', 'debit_note') then -1 else 1 end;
+  v_net := round(new."FINDocLine_Quantity" * new."FINDocLine_UnitAmount", 4) * v_sign;
+  v_tax := round(abs(v_net) * v_tax_rate / 100, 4) * v_sign;
+
+  new."FINDocLine_TaxCodeID" := v_tax_id;
+  new."FINDocLine_TaxCodeSnapshot" := v_tax_code;
+  new."FINDocLine_TaxRatePercent" := v_tax_rate;
+  new."FINDocLine_NetAmount" := v_net;
+  new."FINDocLine_TaxAmount" := v_tax;
+  new."FINDocLine_GrossAmount" := v_net + v_tax;
+  new."FINDocLine_LocalNetAmount" := round(v_net * v_exchange_rate, 4);
+  new."FINDocLine_LocalTaxAmount" := round(v_tax * v_exchange_rate, 4);
+  new."FINDocLine_LocalGrossAmount" := round((v_net + v_tax) * v_exchange_rate, 4);
+  return new;
+end;
+$$;
+
+drop trigger if exists "TR_FIN_DocumentLines_approved_tax" on public."FIN_DocumentLines";
+create trigger "TR_FIN_DocumentLines_approved_tax"
+before insert or update of
+  "FINDocLine_DocumentID", "FINDocLine_Quantity", "FINDocLine_UnitAmount",
+  "FINDocLine_TaxCodeSnapshot", "FINDocLine_TaxRatePercent",
+  "FINDocLine_NetAmount", "FINDocLine_TaxAmount", "FINDocLine_GrossAmount",
+  "FINDocLine_LocalNetAmount", "FINDocLine_LocalTaxAmount", "FINDocLine_LocalGrossAmount"
+on public."FIN_DocumentLines"
+for each row execute function public._multideck_finance_apply_approved_line_tax();
+
+create or replace function public._multideck_finance_validate_document_tax_review()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  if new."FINDoc_StatusCode" not in ('awaiting_approval', 'approved')
+    or new."FINDoc_StatusCode" is not distinct from old."FINDoc_StatusCode" then
+    return new;
+  end if;
+
+  if not exists (
+    select 1
+    from public."FIN_AdministrationRevisions" revision
+    where revision."FINAdminRevision_LegalEntityID" = new."FINDoc_LegalEntityID"
+      and revision."FINAdminRevision_StatusCode" = 'approved'
+      and coalesce(revision."FINAdminRevision_ConfigJSON" #>> '{taxSettings,localAdviceConfirmed}', 'false') = 'true'
+  ) then
+    raise exception 'Finance must approve local tax advice before this document can enter review.' using errcode = '22023';
+  end if;
+
+  if exists (
+    select 1
+    from public."FIN_DocumentLines" line
+    left join public."FIN_TaxCodes" tax
+      on tax."FINTax_ID" = line."FINDocLine_TaxCodeID"
+      and tax."FINTax_LegalEntityID" = new."FINDoc_LegalEntityID"
+      and tax."FINTax_IsActive"
+      and tax."FINTax_ApprovedAt" is not null
+      and tax."FINTax_Code" = line."FINDocLine_TaxCodeSnapshot"
+      and tax."FINTax_RatePercent" = line."FINDocLine_TaxRatePercent"
+      and tax."FINTax_TransactionTypeCode" in ('both', case when new."FINDoc_TypeCode" in ('sl_invoice', 'credit_note') then 'sales' else 'purchase' end)
+      and tax."FINTax_EffectiveFrom" <= new."FINDoc_DocumentDate"
+      and (tax."FINTax_EffectiveTo" is null or tax."FINTax_EffectiveTo" >= new."FINDoc_DocumentDate")
+    where line."FINDocLine_DocumentID" = new."FINDoc_ID"
+      and tax."FINTax_ID" is null
+  ) then
+    raise exception 'One or more finance lines no longer uses an approved effective tax treatment.' using errcode = '22023';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists "TR_FIN_Documents_approved_tax_review" on public."FIN_Documents";
+create trigger "TR_FIN_Documents_approved_tax_review"
+before update of "FINDoc_StatusCode"
+on public."FIN_Documents"
+for each row execute function public._multideck_finance_validate_document_tax_review();
+
+revoke all on function public._multideck_finance_normalise_revision_readiness() from public, anon, authenticated;
+revoke all on function public._multideck_finance_apply_approved_line_tax() from public, anon, authenticated;
+revoke all on function public._multideck_finance_validate_document_tax_review() from public, anon, authenticated;
+
+-- Dexter selects the approved treatment code. The Finance boundary resolves
+-- the statutory rate, so chat cannot propose or override a rate.
+update public."sys_AIDexterActions" set
+  "AIDexterAction_Description" = 'Create one reviewed sales invoice, customer credit, purchase invoice or supplier credit draft using approved legal-entity tax treatments through the Finance validation boundary.',
+  "AIDexterAction_ParametersJSON" = '{"type":"object","properties":{"type":{"type":"string","enum":["sl_invoice","credit_note","pl_invoice","debit_note"]},"legalEntityId":{"type":"string"},"partyOrgId":{"type":"string"},"documentDate":{"type":"string"},"dueDate":{"type":["string","null"]},"currencyCode":{"type":"string"},"exchangeRate":{"type":"number","exclusiveMinimum":0},"sourceJobId":{"type":["string","null"]},"lines":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"object","properties":{"description":{"type":"string"},"quantity":{"type":"number","exclusiveMinimum":0},"unitAmount":{"type":"number","minimum":0},"taxCode":{"type":"string"},"chargeCode":{"type":["string","null"]},"lineType":{"type":"string","enum":["service","ancillary"]}},"required":["description","quantity","unitAmount","taxCode","chargeCode","lineType"],"additionalProperties":false}},"reason":{"type":"string"}},"required":["type","legalEntityId","partyOrgId","documentDate","dueDate","currencyCode","exchangeRate","sourceJobId","lines","reason"],"additionalProperties":false}'::jsonb,
+  "AIDexterAction_UpdatedAt" = now()
+where "AIDexterAction_Code" = 'create_finance_document_draft';
+
+comment on function public._multideck_finance_apply_approved_line_tax() is
+  'Resolves every document line to one approved, legal-entity-scoped, effective-dated tax treatment and derives its tax totals deterministically.';
+
+commit;
+
+-- Final guarded finance draft, numbering and audit overrides.
+-- Draft capture is deliberately more permissive than finance review. Operators
+-- may record work before statutory tax setup is approved, but no client-supplied
+-- rate is trusted and the document cannot enter review until every line resolves
+-- to one approved, effective treatment and the legal-entity currency is active.
+
+begin;
+
+create or replace function public._multideck_finance_apply_approved_line_tax()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_legal_entity_id uuid;
+  v_document_type text;
+  v_document_status text;
+  v_document_date date;
+  v_exchange_rate numeric;
+  v_direction text;
+  v_match_count integer := 0;
+  v_tax_id uuid;
+  v_tax_code text;
+  v_tax_rate numeric := 0;
+  v_sign numeric;
+  v_net numeric;
+  v_tax numeric;
+  v_has_approved_tax_advice boolean := false;
+begin
+  select
+    document."FINDoc_LegalEntityID",
+    document."FINDoc_TypeCode",
+    document."FINDoc_StatusCode",
+    document."FINDoc_DocumentDate",
+    document."FINDoc_ExchangeRate"
+  into
+    v_legal_entity_id,
+    v_document_type,
+    v_document_status,
+    v_document_date,
+    v_exchange_rate
+  from public."FIN_Documents" document
+  where document."FINDoc_ID" = new."FINDocLine_DocumentID";
+
+  if v_legal_entity_id is null then
+    raise exception 'The finance document for this line does not exist.' using errcode = 'P0002';
+  end if;
+  if new."FINDocLine_Quantity" <= 0 or new."FINDocLine_UnitAmount" < 0 then
+    raise exception 'Check the finance line quantity and unit amount.' using errcode = '22023';
+  end if;
+
+  select exists (
+    select 1
+    from public."FIN_AdministrationRevisions" revision
+    where revision."FINAdminRevision_LegalEntityID" = v_legal_entity_id
+      and revision."FINAdminRevision_StatusCode" = 'approved'
+      and coalesce(revision."FINAdminRevision_ConfigJSON" #>> '{taxSettings,localAdviceConfirmed}', 'false') = 'true'
+  ) into v_has_approved_tax_advice;
+
+  new."FINDocLine_TaxCodeSnapshot" := nullif(left(btrim(new."FINDocLine_TaxCodeSnapshot"), 80), '');
+  v_direction := case when v_document_type in ('sl_invoice', 'credit_note') then 'sales' else 'purchase' end;
+
+  if v_has_approved_tax_advice and new."FINDocLine_TaxCodeSnapshot" is not null then
+    select
+      count(*),
+      (array_agg(tax."FINTax_ID" order by tax."FINTax_EffectiveFrom" desc))[1],
+      (array_agg(tax."FINTax_Code" order by tax."FINTax_EffectiveFrom" desc))[1],
+      (array_agg(tax."FINTax_RatePercent" order by tax."FINTax_EffectiveFrom" desc))[1]
+    into v_match_count, v_tax_id, v_tax_code, v_tax_rate
+    from public."FIN_TaxCodes" tax
+    where tax."FINTax_LegalEntityID" = v_legal_entity_id
+      and tax."FINTax_Code" = new."FINDocLine_TaxCodeSnapshot"
+      and tax."FINTax_IsActive"
+      and tax."FINTax_ApprovedAt" is not null
+      and tax."FINTax_TransactionTypeCode" in ('both', v_direction)
+      and tax."FINTax_EffectiveFrom" <= v_document_date
+      and (tax."FINTax_EffectiveTo" is null or tax."FINTax_EffectiveTo" >= v_document_date);
+
+    if v_match_count > 1 then
+      raise exception 'The selected tax treatment has overlapping effective rules. Finance must correct the setup.' using errcode = '22023';
+    end if;
+  end if;
+
+  if v_match_count = 1 then
+    new."FINDocLine_TaxCodeID" := v_tax_id;
+    new."FINDocLine_TaxCodeSnapshot" := v_tax_code;
+    new."FINDocLine_TaxRatePercent" := v_tax_rate;
+  else
+    if v_document_status <> 'draft' then
+      if not v_has_approved_tax_advice then
+        raise exception 'Finance must approve local tax advice before this document can enter review.' using errcode = '22023';
+      end if;
+      raise exception 'Every finance line must use one approved effective tax treatment before review.' using errcode = '22023';
+    end if;
+
+    -- A pending line is unmistakable: it has no approved treatment id and no
+    -- tax amount. A provisional classification may be retained for later
+    -- resolution, but it is not treated as an approved zero-rate decision.
+    new."FINDocLine_TaxCodeID" := null;
+    new."FINDocLine_TaxRatePercent" := 0;
+    v_tax_rate := 0;
+  end if;
+
+  v_sign := case when v_document_type in ('credit_note', 'debit_note') then -1 else 1 end;
+  v_net := round(new."FINDocLine_Quantity" * new."FINDocLine_UnitAmount", 4) * v_sign;
+  v_tax := round(abs(v_net) * v_tax_rate / 100, 4) * v_sign;
+
+  new."FINDocLine_NetAmount" := v_net;
+  new."FINDocLine_TaxAmount" := v_tax;
+  new."FINDocLine_GrossAmount" := v_net + v_tax;
+  new."FINDocLine_LocalNetAmount" := round(v_net * v_exchange_rate, 4);
+  new."FINDocLine_LocalTaxAmount" := round(v_tax * v_exchange_rate, 4);
+  new."FINDocLine_LocalGrossAmount" := round((v_net + v_tax) * v_exchange_rate, 4);
+  return new;
+end;
+$$;
+
+create or replace function public.multideck_finance_create_document_draft(
+  p_company_id uuid,
+  p_user_id uuid,
+  p_input jsonb
+) returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_type text := p_input ->> 'type';
+  v_entity uuid;
+  v_entity_currency text;
+  v_entity_currency_status text;
+  v_party uuid;
+  v_job uuid;
+  v_job_company uuid;
+  v_job_entity uuid;
+  v_job_party uuid;
+  v_date date;
+  v_due date;
+  v_currency text;
+  v_exchange numeric;
+  v_source_kind text;
+  v_number text;
+  v_document uuid;
+  v_line jsonb;
+  v_index integer := 0;
+  v_quantity numeric;
+  v_unit numeric;
+  v_net numeric;
+  v_tax numeric;
+  v_gross numeric;
+  v_total_net numeric := 0;
+  v_total_tax numeric := 0;
+  v_total_gross numeric := 0;
+  v_line_id uuid;
+  v_idempotency uuid;
+  v_idempotent_company uuid;
+  v_tax_status text;
+begin
+  if jsonb_typeof(p_input) <> 'object' then
+    raise exception 'Finance input must be an object.' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public."cmp_Users"
+    where "User_ID" = p_user_id
+      and "Company_ID" = p_company_id
+      and coalesce("User_AccessStatus", 'active') = 'active'
+  ) then
+    raise exception 'The finance operator is outside this workspace.' using errcode = '42501';
+  end if;
+  if v_type not in ('sl_invoice', 'credit_note', 'pl_invoice', 'debit_note') then
+    raise exception 'Choose a supported finance document type.' using errcode = '22023';
+  end if;
+
+  begin
+    v_entity := (p_input ->> 'legalEntityId')::uuid;
+    v_party := (p_input ->> 'partyOrgId')::uuid;
+  exception when invalid_text_representation then
+    raise exception 'Choose a valid legal entity and party.' using errcode = '22023';
+  end;
+
+  select upper(entity."LegalEntity_BaseCurrencyCodeSnapshot")
+  into v_entity_currency
+  from public."cmp_LegalEntities" entity
+  where entity."LegalEntity_ID" = v_entity
+    and entity."Company_ID" = p_company_id
+    and entity."LegalEntity_IsActive";
+  if not found then
+    raise exception 'That legal entity is not active in this workspace.' using errcode = '42501';
+  end if;
+
+  if v_entity_currency ~ '^[A-Z]{3}$' then
+    v_entity_currency_status := 'approved';
+  else
+    select upper(run."FINConfigRun_PreviewJSON" #>> '{providerPreflight,baseCurrencyCode}')
+    into v_entity_currency
+    from public."FIN_ConfigurationRuns" run
+    where run."FINConfigRun_LegalEntityID" = v_entity
+      and run."FINConfigRun_StatusCode" = 'awaiting_approval'
+      and run."FINConfigRun_ProviderCode" = run."FINConfigRun_PreviewJSON" #>> '{providerPreflight,providerCode}'
+      and run."FINConfigRun_ExternalCompany" = run."FINConfigRun_PreviewJSON" #>> '{providerPreflight,externalCompany}'
+      and coalesce((run."FINConfigRun_PreviewJSON" #>> '{providerPreflight,providerRecordsChanged}')::boolean, false) = false
+      and upper(coalesce(run."FINConfigRun_PreviewJSON" #>> '{providerPreflight,baseCurrencyCode}', '')) ~ '^[A-Z]{3}$'
+      and run."FINConfigRun_RequestedAt" >= now() - interval '24 hours'
+    order by run."FINConfigRun_RequestedAt" desc
+    limit 1;
+    if v_entity_currency is null then
+      raise exception 'Approve or prepare a current accounting Company currency review before creating this draft.' using errcode = '22023';
+    end if;
+    v_entity_currency_status := 'pending_configuration';
+  end if;
+
+  if not exists (select 1 from public."Org_Master" where "Org_id" = v_party) then
+    raise exception 'Choose a valid customer or supplier.' using errcode = '22023';
+  end if;
+  begin
+    v_date := coalesce(nullif(p_input ->> 'documentDate', '')::date, current_date);
+    v_due := nullif(p_input ->> 'dueDate', '')::date;
+  exception when invalid_datetime_format then
+    raise exception 'Check the document and due dates.' using errcode = '22023';
+  end;
+  if v_due is not null and v_due < v_date then
+    raise exception 'The due date cannot be before the document date.' using errcode = '22023';
+  end if;
+
+  v_currency := upper(coalesce(nullif(btrim(p_input ->> 'currencyCode'), ''), v_entity_currency));
+  if v_currency !~ '^[A-Z]{3}$' then
+    raise exception 'Enter a three-letter currency code.' using errcode = '22023';
+  end if;
+  begin
+    v_exchange := coalesce(nullif(p_input ->> 'exchangeRate', '')::numeric, 1);
+  exception when invalid_text_representation then
+    raise exception 'Enter a valid exchange rate.' using errcode = '22023';
+  end;
+  if v_exchange::text in ('NaN', 'Infinity', '-Infinity')
+    or v_exchange <= 0
+    or (v_currency <> v_entity_currency and nullif(p_input ->> 'exchangeRate', '') is null) then
+    raise exception 'Enter the reviewed exchange rate from document currency to base currency.' using errcode = '22023';
+  end if;
+  if v_currency = v_entity_currency then v_exchange := 1; end if;
+
+  if nullif(p_input ->> 'sourceJobId', '') is not null then
+    begin
+      v_job := (p_input ->> 'sourceJobId')::uuid;
+    exception when invalid_text_representation then
+      raise exception 'Choose a valid job.' using errcode = '22023';
+    end;
+    select
+      office."Company_ID",
+      job."Job_LegalEntityID",
+      case when v_type in ('sl_invoice', 'credit_note') then job."Job_Customer" else job."Job_Supplier" end
+    into v_job_company, v_job_entity, v_job_party
+    from public."Job_Header" job
+    join public."cmp_Offices" office on office."Office_ID" = coalesce(job."Job_OrgOfficeID", job."Job_OfficeID")
+    where job."Job_ID" = v_job and not job."Job_IsDeleted";
+    if v_job_company is distinct from p_company_id
+      or (v_job_entity is not null and v_job_entity is distinct from v_entity) then
+      raise exception 'That job is outside the selected company or legal entity.' using errcode = '42501';
+    end if;
+    if v_job_party is null or v_job_party is distinct from v_party then
+      raise exception 'The selected party must match the customer or supplier on the job.' using errcode = '22023';
+    end if;
+  end if;
+
+  if jsonb_typeof(p_input -> 'lines') <> 'array'
+    or jsonb_array_length(p_input -> 'lines') not between 1 and 100 then
+    raise exception 'Add between one and 100 document lines.' using errcode = '22023';
+  end if;
+  begin
+    v_idempotency := coalesce(nullif(p_input ->> 'idempotencyKey', '')::uuid, gen_random_uuid());
+  exception when invalid_text_representation then
+    raise exception 'The finance request key is invalid.' using errcode = '22023';
+  end;
+
+  select document."FINDoc_ID", entity."Company_ID"
+  into v_document, v_idempotent_company
+  from public."FIN_Documents" document
+  join public."cmp_LegalEntities" entity on entity."LegalEntity_ID" = document."FINDoc_LegalEntityID"
+  where document."FINDoc_IdempotencyKey" = v_idempotency;
+  if v_document is not null and v_idempotent_company is distinct from p_company_id then
+    raise exception 'The finance request key belongs to another workspace.' using errcode = '42501';
+  end if;
+  if v_document is not null then
+    return (select to_jsonb(document) from public."FIN_Documents" document where document."FINDoc_ID" = v_document);
+  end if;
+
+  v_source_kind := case when v_job is null then 'manual' else 'job' end;
+  v_number := public._multideck_finance_next_number(v_entity, v_type);
+  insert into public."FIN_Documents"(
+    "FINDoc_TypeCode", "FINDoc_StatusCode", "FINDoc_Number", "FINDoc_LegalEntityID", "FINDoc_PartyOrgID", "FINDoc_PartyRole",
+    "FINDoc_DocumentDate", "FINDoc_AccountingDate", "FINDoc_DueDate", "FINDoc_CurrencyCodeSnapshot", "FINDoc_SourceJobID", "FINDoc_SourceTable", "FINDoc_SourceID",
+    "FINDoc_SourceKindCode", "FINDoc_IdempotencyKey", "FINDoc_ExchangeRate", "FINDoc_MetadataJSON", "FINDoc_CreatedBy", "FINDoc_UpdatedBy"
+  ) values (
+    v_type, 'draft', v_number, v_entity, v_party, case when v_type in ('sl_invoice', 'credit_note') then 'customer' else 'supplier' end,
+    v_date, v_date, v_due, v_currency, v_job, case when v_job is null then null else 'Job_Header' end, v_job,
+    v_source_kind, v_idempotency, v_exchange,
+    jsonb_build_object('source', 'multideck_finance', 'sourceKind', v_source_kind, 'baseCurrency', v_entity_currency, 'baseCurrencyStatus', v_entity_currency_status, 'taxStatus', 'pending'),
+    p_user_id, p_user_id
+  ) returning "FINDoc_ID" into v_document;
+
+  for v_line in select value from jsonb_array_elements(p_input -> 'lines') loop
+    v_index := v_index + 1;
+    begin
+      v_quantity := coalesce(nullif(v_line ->> 'quantity', '')::numeric, 1);
+      v_unit := coalesce(nullif(v_line ->> 'unitAmount', '')::numeric, 0);
+    exception when invalid_text_representation then
+      raise exception 'Check finance line %.', v_index using errcode = '22023';
+    end;
+    if v_quantity::text in ('NaN', 'Infinity', '-Infinity')
+      or v_unit::text in ('NaN', 'Infinity', '-Infinity')
+      or nullif(btrim(v_line ->> 'description'), '') is null
+      or length(v_line ->> 'description') > 1000
+      or nullif(btrim(v_line ->> 'chargeCode'), '') is null
+      or length(v_line ->> 'chargeCode') > 80
+      or length(coalesce(v_line ->> 'taxCode', '')) > 80
+      or v_quantity <= 0
+      or v_unit < 0 then
+      raise exception 'Check finance line %.', v_index using errcode = '22023';
+    end if;
+
+    -- The rate is always zero at the RPC boundary. The line trigger resolves
+    -- the approved statutory rate when one exists and otherwise keeps it pending.
+    v_net := round(v_quantity * v_unit, 4) * case when v_type in ('credit_note', 'debit_note') then -1 else 1 end;
+    insert into public."FIN_DocumentLines"(
+      "FINDocLine_DocumentID", "FINDocLine_LineNo", "FINDocLine_LineTypeCode", "FINDocLine_ChargeCodeSnapshot", "FINDocLine_Description", "FINDocLine_Quantity", "FINDocLine_UnitAmount",
+      "FINDocLine_NetAmount", "FINDocLine_TaxCodeSnapshot", "FINDocLine_TaxRatePercent", "FINDocLine_TaxAmount", "FINDocLine_GrossAmount",
+      "FINDocLine_LocalNetAmount", "FINDocLine_LocalTaxAmount", "FINDocLine_LocalGrossAmount"
+    ) values (
+      v_document, v_index,
+      case when v_job is not null then 'freight' when coalesce(v_line ->> 'lineType', '') = 'ancillary' then 'ancillary' else 'service' end,
+      left(btrim(v_line ->> 'chargeCode'), 80), btrim(v_line ->> 'description'), v_quantity, v_unit,
+      v_net, nullif(left(btrim(v_line ->> 'taxCode'), 80), ''), 0, 0, v_net,
+      round(v_net * v_exchange, 4), 0, round(v_net * v_exchange, 4)
+    ) returning
+      "FINDocLine_ID", "FINDocLine_NetAmount", "FINDocLine_TaxAmount", "FINDocLine_GrossAmount"
+    into v_line_id, v_net, v_tax, v_gross;
+
+    if v_job is not null then
+      insert into public."FIN_DocumentLineJobLinks"(
+        "FINDocLineJob_DocumentID", "FINDocLineJob_DocumentLineID", "FINDocLineJob_JobID", "FINDocLineJob_LinkTypeCode", "FINDocLineJob_NetAmount", "FINDocLineJob_LocalNetAmount", "FINDocLineJob_PercentOfLine"
+      ) values (v_document, v_line_id, v_job, 'source_job', v_net, round(v_net * v_exchange, 4), 100);
+    end if;
+    v_total_net := v_total_net + v_net;
+    v_total_tax := v_total_tax + v_tax;
+    v_total_gross := v_total_gross + v_gross;
+  end loop;
+
+  if abs(v_total_gross) <= 0 then
+    raise exception 'The finance document gross amount must be greater than zero.' using errcode = '22023';
+  end if;
+  select case when bool_and(line."FINDocLine_TaxCodeID" is not null) then 'approved' else 'pending' end
+  into v_tax_status
+  from public."FIN_DocumentLines" line
+  where line."FINDocLine_DocumentID" = v_document;
+
+  update public."FIN_Documents"
+  set "FINDoc_NetAmount" = v_total_net,
+      "FINDoc_TaxAmount" = v_total_tax,
+      "FINDoc_GrossAmount" = v_total_gross,
+      "FINDoc_LocalNetAmount" = round(v_total_net * v_exchange, 4),
+      "FINDoc_LocalTaxAmount" = round(v_total_tax * v_exchange, 4),
+      "FINDoc_LocalGrossAmount" = round(v_total_gross * v_exchange, 4),
+      "FINDoc_OutstandingAmount" = v_total_gross,
+      "FINDoc_LocalOutstandingAmount" = round(v_total_gross * v_exchange, 4),
+      "FINDoc_MetadataJSON" = jsonb_set("FINDoc_MetadataJSON", '{taxStatus}', to_jsonb(v_tax_status), true),
+      "FINDoc_UpdatedAt" = now()
+  where "FINDoc_ID" = v_document;
+
+  insert into public."FIN_DocumentStatusHistory"(
+    "FINDocStatus_DocumentID", "FINDocStatus_ToStatusCode", "FINDocStatus_ChangedBy", "FINDocStatus_Reason", "FINDocStatus_MetadataJSON"
+  ) values (
+    v_document, 'draft', p_user_id, 'Created in Multideck finance',
+    jsonb_build_object('sourceKind', v_source_kind, 'jobId', v_job, 'taxStatus', v_tax_status, 'baseCurrencyStatus', v_entity_currency_status)
+  );
+  insert into public."Audit_Events"(
+    "AuditEvent_EventTypeCode", "AuditEvent_UserID", "AuditEvent_LegalEntityID", "AuditEvent_SourceApp", "AuditEvent_SourceModule", "AuditEvent_SourceTableSchema", "AuditEvent_SourceTableName", "AuditEvent_RecordTypeCode", "AuditEvent_RecordID", "AuditEvent_Action", "AuditEvent_Title", "AuditEvent_MetadataJSON"
+  ) values (
+    'finance_lifecycle', p_user_id, v_entity, 'multideck-app', 'finance', 'public', 'FIN_Documents', v_type, v_document,
+    'create_draft', 'Finance document draft created',
+    jsonb_build_object('number', v_number, 'sourceKind', v_source_kind, 'grossAmount', v_total_gross, 'currency', v_currency, 'exchangeRate', v_exchange, 'taxStatus', v_tax_status, 'baseCurrencyStatus', v_entity_currency_status)
+  );
+  return (select to_jsonb(document) from public."FIN_Documents" document where document."FINDoc_ID" = v_document);
+end;
+$$;
+
+create or replace function public.multideck_finance_transition_document(
+  p_company_id uuid,
+  p_user_id uuid,
+  p_document_id uuid,
+  p_transition text,
+  p_reason text default null
+) returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_document public."FIN_Documents";
+  v_entity_currency text;
+  v_next text;
+  v_queue uuid;
+  v_line_count integer;
+  v_line_net numeric;
+  v_line_tax numeric;
+  v_line_gross numeric;
+  v_local_line_net numeric;
+  v_local_line_tax numeric;
+  v_local_line_gross numeric;
+  v_tax_status text;
+begin
+  if not exists (
+    select 1 from public."cmp_Users"
+    where "User_ID" = p_user_id
+      and "Company_ID" = p_company_id
+      and coalesce("User_AccessStatus", 'active') = 'active'
+  ) then
+    raise exception 'The finance operator is outside this workspace.' using errcode = '42501';
+  end if;
+  select document.*
+  into v_document
+  from public."FIN_Documents" document
+  join public."cmp_LegalEntities" entity on entity."LegalEntity_ID" = document."FINDoc_LegalEntityID"
+  where document."FINDoc_ID" = p_document_id and entity."Company_ID" = p_company_id
+  for update of document;
+  if not found then
+    raise exception 'Finance document not found in this workspace.' using errcode = 'P0002';
+  end if;
+
+  if p_transition = 'request_review' and v_document."FINDoc_StatusCode" = 'draft' then v_next := 'awaiting_approval';
+  elsif p_transition = 'approve' and v_document."FINDoc_StatusCode" = 'awaiting_approval' then v_next := 'approved';
+  elsif p_transition = 'reject' and v_document."FINDoc_StatusCode" = 'awaiting_approval' then v_next := 'rejected';
+  else
+    raise exception 'That finance document transition is not available from its current status.' using errcode = '22023';
+  end if;
+
+  if v_next = 'awaiting_approval' then
+    -- Re-resolve provisional classifications against the now-approved setup.
+    -- The line trigger owns the rate and all derived amounts.
+    update public."FIN_DocumentLines"
+    set "FINDocLine_TaxCodeSnapshot" = "FINDocLine_TaxCodeSnapshot"
+    where "FINDocLine_DocumentID" = p_document_id
+      and "FINDocLine_TaxCodeID" is null
+      and nullif(btrim("FINDocLine_TaxCodeSnapshot"), '') is not null;
+
+    select
+      count(*),
+      coalesce(sum("FINDocLine_NetAmount"), 0),
+      coalesce(sum("FINDocLine_TaxAmount"), 0),
+      coalesce(sum("FINDocLine_GrossAmount"), 0),
+      coalesce(sum("FINDocLine_LocalNetAmount"), 0),
+      coalesce(sum("FINDocLine_LocalTaxAmount"), 0),
+      coalesce(sum("FINDocLine_LocalGrossAmount"), 0),
+      case when bool_and("FINDocLine_TaxCodeID" is not null) then 'approved' else 'pending' end
+    into
+      v_line_count, v_line_net, v_line_tax, v_line_gross,
+      v_local_line_net, v_local_line_tax, v_local_line_gross, v_tax_status
+    from public."FIN_DocumentLines"
+    where "FINDocLine_DocumentID" = p_document_id;
+
+    update public."FIN_Documents"
+    set "FINDoc_NetAmount" = v_line_net,
+        "FINDoc_TaxAmount" = v_line_tax,
+        "FINDoc_GrossAmount" = v_line_gross,
+        "FINDoc_LocalNetAmount" = v_local_line_net,
+        "FINDoc_LocalTaxAmount" = v_local_line_tax,
+        "FINDoc_LocalGrossAmount" = v_local_line_gross,
+        "FINDoc_OutstandingAmount" = v_line_gross,
+        "FINDoc_LocalOutstandingAmount" = v_local_line_gross,
+        "FINDoc_MetadataJSON" = jsonb_set("FINDoc_MetadataJSON", '{taxStatus}', to_jsonb(v_tax_status), true),
+        "FINDoc_UpdatedAt" = now(),
+        "FINDoc_UpdatedBy" = p_user_id
+    where "FINDoc_ID" = p_document_id;
+
+    select document.* into v_document
+    from public."FIN_Documents" document
+    where document."FINDoc_ID" = p_document_id;
+
+    if v_tax_status <> 'approved' then
+      raise exception 'Finance must approve local tax advice and every line must use an approved effective treatment before review.' using errcode = '22023';
+    end if;
+  end if;
+
+  if v_next in ('awaiting_approval', 'approved') then
+    select upper("LegalEntity_BaseCurrencyCodeSnapshot")
+    into v_entity_currency
+    from public."cmp_LegalEntities"
+    where "LegalEntity_ID" = v_document."FINDoc_LegalEntityID"
+      and "Company_ID" = p_company_id
+      and "LegalEntity_IsActive";
+    if not found or v_entity_currency is null or v_entity_currency !~ '^[A-Z]{3}$' then
+      raise exception 'Configure a valid base currency for this legal entity.' using errcode = '22023';
+    end if;
+    if upper(coalesce(v_document."FINDoc_CurrencyCodeSnapshot", '')) !~ '^[A-Z]{3}$' then
+      raise exception 'The finance document has no valid transaction currency.' using errcode = '22023';
+    end if;
+    if v_document."FINDoc_ExchangeRate"::text in ('NaN', 'Infinity', '-Infinity')
+      or v_document."FINDoc_ExchangeRate" <= 0
+      or (upper(v_document."FINDoc_CurrencyCodeSnapshot") = v_entity_currency and v_document."FINDoc_ExchangeRate" <> 1) then
+      raise exception 'The finance document has no valid reviewed exchange rate.' using errcode = '22023';
+    end if;
+    if v_document."FINDoc_DueDate" is not null and v_document."FINDoc_DueDate" < v_document."FINDoc_DocumentDate" then
+      raise exception 'The due date cannot be before the document date.' using errcode = '22023';
+    end if;
+    if v_document."FINDoc_GrossAmount" = 0
+      or (v_document."FINDoc_TypeCode" in ('credit_note', 'debit_note') and v_document."FINDoc_GrossAmount" >= 0)
+      or (v_document."FINDoc_TypeCode" in ('sl_invoice', 'pl_invoice') and v_document."FINDoc_GrossAmount" <= 0) then
+      raise exception 'The finance document amount has the wrong invoice or credit polarity.' using errcode = '22023';
+    end if;
+    if not exists (select 1 from public."Org_Master" where "Org_id" = v_document."FINDoc_PartyOrgID") then
+      raise exception 'The finance document customer or supplier is no longer available.' using errcode = '22023';
+    end if;
+    if v_document."FINDoc_SourceKindCode" = 'job' and not exists (
+      select 1
+      from public."Job_Header" job
+      join public."cmp_Offices" office on office."Office_ID" = coalesce(job."Job_OrgOfficeID", job."Job_OfficeID")
+      where job."Job_ID" = v_document."FINDoc_SourceJobID"
+        and not job."Job_IsDeleted"
+        and office."Company_ID" = p_company_id
+        and (job."Job_LegalEntityID" is null or job."Job_LegalEntityID" = v_document."FINDoc_LegalEntityID")
+        and case when v_document."FINDoc_TypeCode" in ('sl_invoice', 'credit_note') then job."Job_Customer" else job."Job_Supplier" end = v_document."FINDoc_PartyOrgID"
+    ) then
+      raise exception 'The job, legal entity and customer or supplier no longer match.' using errcode = '22023';
+    end if;
+
+    select
+      count(*),
+      coalesce(sum("FINDocLine_NetAmount"), 0),
+      coalesce(sum("FINDocLine_TaxAmount"), 0),
+      coalesce(sum("FINDocLine_GrossAmount"), 0)
+    into v_line_count, v_line_net, v_line_tax, v_line_gross
+    from public."FIN_DocumentLines"
+    where "FINDocLine_DocumentID" = p_document_id;
+    if v_line_count not between 1 and 100
+      or v_line_net is distinct from v_document."FINDoc_NetAmount"
+      or v_line_tax is distinct from v_document."FINDoc_TaxAmount"
+      or v_line_gross is distinct from v_document."FINDoc_GrossAmount" then
+      raise exception 'The finance document header no longer agrees with its lines.' using errcode = '22023';
+    end if;
+    if exists (
+      select 1 from public."FIN_DocumentLines"
+      where "FINDocLine_DocumentID" = p_document_id
+        and (
+          nullif(btrim("FINDocLine_Description"), '') is null
+          or nullif(btrim("FINDocLine_ChargeCodeSnapshot"), '') is null
+          or "FINDocLine_Quantity" <= 0
+          or "FINDocLine_UnitAmount" < 0
+          or "FINDocLine_TaxCodeID" is null
+          or "FINDocLine_TaxRatePercent" not between 0 and 100
+        )
+    ) then
+      raise exception 'One or more finance document lines are incomplete.' using errcode = '22023';
+    end if;
+  end if;
+
+  update public."FIN_Documents"
+  set "FINDoc_StatusCode" = v_next,
+      "FINDoc_PostingStatusCode" = case when v_next = 'approved' then 'queued' else "FINDoc_PostingStatusCode" end,
+      "FINDoc_ExportStatusCode" = case when v_next = 'approved' then 'queued' else "FINDoc_ExportStatusCode" end,
+      "FINDoc_UpdatedAt" = now(),
+      "FINDoc_UpdatedBy" = p_user_id
+  where "FINDoc_ID" = p_document_id;
+
+  if v_next = 'awaiting_approval' then
+    insert into public."FIN_AuthorisationRequests"(
+      "FINAUTHREQ_ActionTypeCode", "FINAUTHREQ_SourceTable", "FINAUTHREQ_SourceID", "FINAUTHREQ_DocumentID", "FINAUTHREQ_RequestedBy", "FINAUTHREQ_Amount", "FINAUTHREQ_CurrencyCodeSnapshot", "FINAUTHREQ_Reason"
+    ) values (
+      'finance_post', 'FIN_Documents', p_document_id, p_document_id, p_user_id,
+      v_document."FINDoc_GrossAmount", v_document."FINDoc_CurrencyCodeSnapshot", coalesce(nullif(btrim(p_reason), ''), 'Finance review requested')
+    );
+  elsif v_next = 'approved' then
+    insert into public."FIN_IntegrationQueue"(
+      "FINIntQ_LocalTable", "FINIntQ_LocalID", "FINIntQ_DocumentID", "FINIntQ_StatusCode", "FINIntQ_CreatedBy"
+    ) values ('FIN_Documents', p_document_id, p_document_id, 'queued', p_user_id)
+    on conflict ("FINIntQ_LocalTable", "FINIntQ_LocalID")
+      where "FINIntQ_StatusCode" in ('queued', 'processing', 'blocked')
+    do update set "FINIntQ_StatusCode" = 'queued', "FINIntQ_LastError" = null
+    returning "FINIntQ_ID" into v_queue;
+  end if;
+
+  if v_next in ('approved', 'rejected') then
+    with resolved as (
+      update public."FIN_AuthorisationRequests"
+      set "FINAUTHREQ_StatusCode" = v_next
+      where "FINAUTHREQ_SourceTable" = 'FIN_Documents'
+        and "FINAUTHREQ_SourceID" = p_document_id
+        and "FINAUTHREQ_StatusCode" = 'awaiting_approval'
+      returning "FINAUTHREQ_ID"
+    )
+    insert into public."FIN_AuthorisationDecisions"(
+      "FINAUTHDEC_RequestID", "FINAUTHDEC_DecisionCode", "FINAUTHDEC_DecidedBy", "FINAUTHDEC_Comments", "FINAUTHDEC_MetadataJSON"
+    )
+    select "FINAUTHREQ_ID", v_next, p_user_id, nullif(btrim(p_reason), ''), jsonb_build_object('transition', p_transition)
+    from resolved;
+  end if;
+
+  insert into public."FIN_DocumentStatusHistory"(
+    "FINDocStatus_DocumentID", "FINDocStatus_FromStatusCode", "FINDocStatus_ToStatusCode", "FINDocStatus_ChangedBy", "FINDocStatus_Reason", "FINDocStatus_MetadataJSON"
+  ) values (
+    p_document_id, v_document."FINDoc_StatusCode", v_next, p_user_id, nullif(btrim(p_reason), ''), jsonb_build_object('integrationQueueId', v_queue)
+  );
+  insert into public."Audit_Events"(
+    "AuditEvent_EventTypeCode", "AuditEvent_UserID", "AuditEvent_LegalEntityID", "AuditEvent_SourceApp", "AuditEvent_SourceModule", "AuditEvent_SourceTableSchema", "AuditEvent_SourceTableName", "AuditEvent_RecordTypeCode", "AuditEvent_RecordID", "AuditEvent_Action", "AuditEvent_Title", "AuditEvent_MetadataJSON"
+  ) values (
+    'finance_lifecycle', p_user_id, v_document."FINDoc_LegalEntityID", 'multideck-app', 'finance', 'public', 'FIN_Documents', v_document."FINDoc_TypeCode", p_document_id,
+    p_transition, 'Finance document status changed', jsonb_build_object('from', v_document."FINDoc_StatusCode", 'to', v_next, 'integrationQueueId', v_queue)
+  );
+  return (select to_jsonb(document) from public."FIN_Documents" document where document."FINDoc_ID" = p_document_id);
+end;
+$$;
+
+revoke all on function public._multideck_finance_apply_approved_line_tax() from public, anon, authenticated;
+revoke all on function public.multideck_finance_create_document_draft(uuid, uuid, jsonb) from public, anon, authenticated;
+revoke all on function public.multideck_finance_transition_document(uuid, uuid, uuid, text, text) from public, anon, authenticated;
+grant execute on function public.multideck_finance_create_document_draft(uuid, uuid, jsonb) to service_role;
+grant execute on function public.multideck_finance_transition_document(uuid, uuid, uuid, text, text) to service_role;
+
+-- Dexter reads the incompleteness as evidence, never as an approved tax result.
+create or replace function public.multideck_dexter_domain_finance(p_company_id uuid, p_search text, p_take integer)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  with records as (
+    select
+      document."FINDoc_ID" record_id,
+      document."FINDoc_UpdatedAt" updated_at,
+      concat_ws(' ', document."FINDoc_Number", document."FINDoc_TypeCode", document."FINDoc_StatusCode", organisation."Org_Name", job."Job_Number") search_text,
+      jsonb_strip_nulls(jsonb_build_object(
+        'recordId', document."FINDoc_ID", 'recordKind', 'document', 'number', document."FINDoc_Number", 'type', document."FINDoc_TypeCode",
+        'ledger', case when document."FINDoc_TypeCode" in ('sl_invoice', 'credit_note') then 'receivables' else 'payables' end,
+        'status', document."FINDoc_StatusCode", 'party', organisation."Org_Name", 'currency', document."FINDoc_CurrencyCodeSnapshot",
+        'netAmount', document."FINDoc_NetAmount", 'taxAmount', document."FINDoc_TaxAmount", 'grossAmount', document."FINDoc_GrossAmount",
+        'outstandingAmount', document."FINDoc_OutstandingAmount", 'documentDate', document."FINDoc_DocumentDate", 'dueDate', document."FINDoc_DueDate",
+        'sourceKind', document."FINDoc_SourceKindCode", 'jobReference', case when job."Job_ID" is null then null else job."Job_Period" || '-' || job."Job_Number" end,
+        'taxStatus', coalesce(document."FINDoc_MetadataJSON" ->> 'taxStatus', 'pending'),
+        'postingStatus', document."FINDoc_PostingStatusCode", 'exportStatus', document."FINDoc_ExportStatusCode",
+        'evidence', jsonb_build_object('sourceTable', 'FIN_Documents', 'sourceId', document."FINDoc_ID", 'legalEntityId', document."FINDoc_LegalEntityID")
+      )) value
+    from public."FIN_Documents" document
+    join public."cmp_LegalEntities" entity on entity."LegalEntity_ID" = document."FINDoc_LegalEntityID"
+    left join public."Org_Master" organisation on organisation."Org_id" = document."FINDoc_PartyOrgID"
+    left join public."Job_Header" job on job."Job_ID" = document."FINDoc_SourceJobID"
+    where entity."Company_ID" = p_company_id
+
+    union all
+
+    select
+      cash."FINCash_ID", cash."FINCash_UpdatedAt",
+      concat_ws(' ', cash."FINCash_Number", cash."FINCash_TypeCode", cash."FINCash_StatusCode", organisation."Org_Name", cash."FINCash_Reference"),
+      jsonb_strip_nulls(jsonb_build_object(
+        'recordId', cash."FINCash_ID", 'recordKind', 'cash', 'number', cash."FINCash_Number", 'type', cash."FINCash_TypeCode",
+        'ledger', case when cash."FINCash_TypeCode" = 'customer_receipt' then 'receivables' else 'payables' end,
+        'status', cash."FINCash_StatusCode", 'party', organisation."Org_Name", 'currency', cash."FINCash_CurrencyCodeSnapshot",
+        'amount', cash."FINCash_Amount", 'unallocatedAmount', cash."FINCash_UnallocatedAmount", 'transactionDate', cash."FINCash_TransactionDate",
+        'reference', cash."FINCash_Reference", 'postingStatus', cash."FINCash_PostingStatusCode",
+        'evidence', jsonb_build_object('sourceTable', 'FIN_CashTransactions', 'sourceId', cash."FINCash_ID", 'legalEntityId', cash."FINCash_LegalEntityID")
+      ))
+    from public."FIN_CashTransactions" cash
+    join public."cmp_LegalEntities" entity on entity."LegalEntity_ID" = cash."FINCash_LegalEntityID"
+    left join public."Org_Master" organisation on organisation."Org_id" = cash."FINCash_PartyOrgID"
+    where entity."Company_ID" = p_company_id
+
+    union all
+
+    select
+      revision."FINAdminRevision_ID", revision."FINAdminRevision_ApprovedAt",
+      concat_ws(' ', 'finance settings administration', entity."LegalEntity_Name", entity."LegalEntity_BaseCurrencyCodeSnapshot", entity."LegalEntity_CountryCode", entity."LegalEntity_SettingsJSON" #>> '{financeProvider,providerCode}'),
+      jsonb_strip_nulls(jsonb_build_object(
+        'recordId', revision."FINAdminRevision_ID", 'recordKind', 'configuration', 'legalEntityId', entity."LegalEntity_ID",
+        'legalEntity', entity."LegalEntity_Name", 'baseCurrency', entity."LegalEntity_BaseCurrencyCodeSnapshot", 'country', entity."LegalEntity_CountryCode",
+        'provider', entity."LegalEntity_SettingsJSON" #>> '{financeProvider,providerCode}', 'revision', revision."FINAdminRevision_Number",
+        'readiness', revision."FINAdminRevision_ReadinessJSON", 'approvedAt', revision."FINAdminRevision_ApprovedAt",
+        'evidence', jsonb_build_object('sourceTable', 'FIN_AdministrationRevisions', 'sourceId', revision."FINAdminRevision_ID", 'legalEntityId', entity."LegalEntity_ID")
+      ))
+    from public."FIN_AdministrationRevisions" revision
+    join public."cmp_LegalEntities" entity on entity."LegalEntity_ID" = revision."FINAdminRevision_LegalEntityID"
+    where entity."Company_ID" = p_company_id and revision."FINAdminRevision_StatusCode" = 'approved'
+  )
+  select coalesce(jsonb_agg(value order by updated_at desc), '[]'::jsonb)
+  from (
+    select value, updated_at
+    from records
+    where nullif(btrim(p_search), '') is null or search_text ilike '%' || btrim(p_search) || '%'
+    order by updated_at desc
+    limit greatest(1, least(coalesce(p_take, 10), 25))
+  ) bounded;
+$$;
+revoke all on function public.multideck_dexter_domain_finance(uuid, text, integer) from public, anon, authenticated;
+
+create or replace function public._multideck_dexter_finance_watch_change()
+returns trigger
+language plpgsql
+volatile
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_company uuid;
+  v_source uuid;
+  v_old jsonb := '{}'::jsonb;
+  v_new jsonb;
+begin
+  if tg_table_name = 'FIN_Documents' then
+    v_source := new."FINDoc_ID";
+    select "Company_ID" into v_company from public."cmp_LegalEntities" where "LegalEntity_ID" = new."FINDoc_LegalEntityID";
+    if tg_op <> 'INSERT' then
+      v_old := jsonb_build_object(
+        'status', old."FINDoc_StatusCode", 'dueDate', old."FINDoc_DueDate", 'outstandingAmount', old."FINDoc_OutstandingAmount",
+        'taxStatus', coalesce(old."FINDoc_MetadataJSON" ->> 'taxStatus', 'pending'),
+        'postingStatus', old."FINDoc_PostingStatusCode", 'exportStatus', old."FINDoc_ExportStatusCode"
+      );
+    end if;
+    v_new := jsonb_build_object(
+      'number', new."FINDoc_Number", 'status', new."FINDoc_StatusCode", 'dueDate', new."FINDoc_DueDate", 'outstandingAmount', new."FINDoc_OutstandingAmount",
+      'taxStatus', coalesce(new."FINDoc_MetadataJSON" ->> 'taxStatus', 'pending'),
+      'postingStatus', new."FINDoc_PostingStatusCode", 'exportStatus', new."FINDoc_ExportStatusCode"
+    );
+  else
+    v_source := new."FINCash_ID";
+    select "Company_ID" into v_company from public."cmp_LegalEntities" where "LegalEntity_ID" = new."FINCash_LegalEntityID";
+    if tg_op <> 'INSERT' then
+      v_old := jsonb_build_object('cashStatus', old."FINCash_StatusCode", 'unallocatedAmount', old."FINCash_UnallocatedAmount", 'postingStatus', old."FINCash_PostingStatusCode");
+    end if;
+    v_new := jsonb_build_object('number', new."FINCash_Number", 'cashStatus', new."FINCash_StatusCode", 'unallocatedAmount', new."FINCash_UnallocatedAmount", 'postingStatus', new."FINCash_PostingStatusCode");
+  end if;
+  if v_old is distinct from v_new
+    and v_company is not null
+    and exists (
+      select 1 from public."AI_DexterWatches" watch
+      where watch."AIDexterWatch_CompanyID" = v_company
+        and watch."AIDexterWatch_CapabilityCode" = 'finance'
+        and watch."AIDexterWatch_StatusCode" = 'active'
+        and (watch."AIDexterWatch_TargetID" is null or watch."AIDexterWatch_TargetID" = v_source)
+    ) then
+    insert into public."AI_DexterWatchSignals"(
+      "AIDexterWatchSignal_CompanyID", "AIDexterWatchSignal_CapabilityCode", "AIDexterWatchSignal_SourceTable", "AIDexterWatchSignal_SourceID", "AIDexterWatchSignal_OldJSON", "AIDexterWatchSignal_NewJSON"
+    ) values (v_company, 'finance', tg_table_name, v_source, v_old, v_new);
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public._multideck_dexter_finance_watch_change() from public, anon, authenticated;
+
+update public."sys_AIDexterActions"
+set "AIDexterAction_Description" = 'Create one sales invoice, customer credit, purchase invoice or supplier credit draft through the Finance validation boundary. A missing treatment remains explicitly tax-pending and cannot enter review or posting.',
+    "AIDexterAction_ParametersJSON" = '{"type":"object","properties":{"type":{"type":"string","enum":["sl_invoice","credit_note","pl_invoice","debit_note"]},"legalEntityId":{"type":"string"},"partyOrgId":{"type":"string"},"documentDate":{"type":"string"},"dueDate":{"type":["string","null"]},"currencyCode":{"type":"string"},"exchangeRate":{"type":"number","exclusiveMinimum":0},"sourceJobId":{"type":["string","null"]},"lines":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"object","properties":{"description":{"type":"string"},"quantity":{"type":"number","exclusiveMinimum":0},"unitAmount":{"type":"number","minimum":0},"taxCode":{"type":["string","null"]},"chargeCode":{"type":["string","null"]},"lineType":{"type":"string","enum":["service","ancillary"]}},"required":["description","quantity","unitAmount","taxCode","chargeCode","lineType"],"additionalProperties":false}},"reason":{"type":"string"}},"required":["type","legalEntityId","partyOrgId","documentDate","dueDate","currencyCode","exchangeRate","sourceJobId","lines","reason"],"additionalProperties":false}'::jsonb,
+    "AIDexterAction_UpdatedAt" = now()
+where "AIDexterAction_Code" = 'create_finance_document_draft';
+
+update public."sys_AIDexterWatchCapabilities"
+set "AIDexterWatchCapability_Description" = 'Event-driven finance document, tax-readiness, receipt, payment, allocation, provider-sync and approved configuration changes.',
+    "AIDexterWatchCapability_FieldsJSON" = '["status","dueDate","outstandingAmount","taxStatus","postingStatus","exportStatus","cashStatus","unallocatedAmount","configurationRevision","readiness","baseCurrency","provider"]'::jsonb,
+    "AIDexterWatchCapability_UpdatedAt" = now()
+where "AIDexterWatchCapability_Code" = 'finance';
+
+comment on function public._multideck_finance_apply_approved_line_tax() is
+  'Derives tax from an approved effective legal-entity treatment, while allowing an unmistakable tax-pending line only on an unposted draft.';
+
+commit;
+
+-- Finance sequence codes are unique within a legal entity. Match the existing
+-- partial unique index exactly so the atomic upsert can allocate the first and
+-- every subsequent number without a 42P10 conflict-target error.
+
+begin;
+
+create or replace function public._multideck_finance_next_number(
+  p_legal_entity_id uuid,
+  p_record_type text
+) returns text
+language plpgsql
+volatile
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_sequence bigint;
+  v_prefix text;
+  v_code text;
+begin
+  if p_legal_entity_id is null then
+    raise exception 'Choose a legal entity before allocating a finance number.' using errcode = '22023';
+  end if;
+  if p_record_type not in ('sl_invoice', 'credit_note', 'pl_invoice', 'debit_note', 'customer_receipt', 'supplier_payment') then
+    raise exception 'Unknown finance record type.' using errcode = '22023';
+  end if;
+
+  v_prefix := case p_record_type
+    when 'sl_invoice' then 'SI-'
+    when 'credit_note' then 'CN-'
+    when 'pl_invoice' then 'PI-'
+    when 'debit_note' then 'DN-'
+    when 'customer_receipt' then 'RCPT-'
+    when 'supplier_payment' then 'PAY-'
+  end;
+  v_code := 'finance:' || p_legal_entity_id::text || ':' || p_record_type;
+
+  insert into public."FIN_NumberSequences"(
+    "FINSeq_Code", "FINSeq_Name", "FINSeq_LegalEntityID", "FINSeq_DocumentTypeCode", "FINSeq_Prefix", "FINSeq_NextNumber", "FINSeq_PaddingLength"
+  ) values (
+    v_code, v_prefix || 'sequence', p_legal_entity_id,
+    case when p_record_type in ('sl_invoice', 'credit_note', 'pl_invoice', 'debit_note') then p_record_type else null end,
+    v_prefix, 2, 6
+  )
+  on conflict ("FINSeq_LegalEntityID", "FINSeq_Code")
+    where "FINSeq_LegalEntityID" is not null
+  do update set
+    "FINSeq_NextNumber" = public."FIN_NumberSequences"."FINSeq_NextNumber" + 1,
+    "FINSeq_IsActive" = true
+  returning "FINSeq_NextNumber" - 1 into v_sequence;
+
+  return v_prefix || lpad(v_sequence::text, 6, '0');
+end;
+$$;
+
+revoke all on function public._multideck_finance_next_number(uuid, text) from public, anon, authenticated;
+
+comment on function public._multideck_finance_next_number(uuid, text) is
+  'Atomically allocates a legal-entity-scoped finance number through the existing partial unique sequence key.';
+
+commit;
+
+-- Finance lifecycle functions write immutable audit events. Register every
+-- record type they emit so the audit foreign key protects, rather than blocks,
+-- invoice, credit, receipt, payment and configuration workflows.
+
+begin;
+
+insert into public."sys_WorkflowRecordTypes"(
+  "WorkflowRecordType_Code",
+  "WorkflowRecordType_Name",
+  "WorkflowRecordType_SourceTable",
+  "WorkflowRecordType_Description",
+  "WorkflowRecordType_IsActive",
+  "WorkflowRecordType_SortOrder"
+)
+values
+  ('sl_invoice', 'Sales invoice', 'FIN_Documents', 'Sales-ledger invoice from draft through provider submission.', true, 121),
+  ('credit_note', 'Customer credit note', 'FIN_Documents', 'Sales-ledger customer credit from draft through provider submission.', true, 122),
+  ('pl_invoice', 'Purchase invoice', 'FIN_Documents', 'Purchase-ledger supplier invoice from draft through provider submission.', true, 123),
+  ('debit_note', 'Supplier credit note', 'FIN_Documents', 'Purchase-ledger supplier credit from draft through provider submission.', true, 124),
+  ('customer_receipt', 'Customer receipt', 'FIN_CashTransactions', 'Customer receipt and allocation lifecycle record.', true, 125),
+  ('supplier_payment', 'Supplier payment', 'FIN_CashTransactions', 'Supplier payment and allocation lifecycle record.', true, 126),
+  ('finance_configuration', 'Finance configuration', 'FIN_AdministrationRevisions', 'Reviewed legal-entity finance, currency and provider configuration.', true, 127)
+on conflict ("WorkflowRecordType_Code") do update
+set "WorkflowRecordType_Name" = excluded."WorkflowRecordType_Name",
+    "WorkflowRecordType_SourceTable" = excluded."WorkflowRecordType_SourceTable",
+    "WorkflowRecordType_Description" = excluded."WorkflowRecordType_Description",
+    "WorkflowRecordType_IsActive" = true,
+    "WorkflowRecordType_SortOrder" = excluded."WorkflowRecordType_SortOrder";
+
+commit;
+
+-- Finance reporting boundary hardening parity.
+-- Legacy finance reporting views were broadly executable with owner privileges.
+-- Keep them available to the tenant's protected service boundary, but make
+-- underlying RLS apply to every caller and remove browser-role access.
+
+begin;
+
+alter view public."FIN_AccountingDateWorklist" set (security_invoker = true);
+alter view public."FIN_CutoffRunSummary" set (security_invoker = true);
+alter view public."FIN_WIPAccrualSummary" set (security_invoker = true);
+alter view public."FIN_DocumentBalanceSummary" set (security_invoker = true);
+alter view public."FIN_JobFinanceSummary" set (security_invoker = true);
+alter view public."FIN_JobChargeFinanceSummary" set (security_invoker = true);
+alter view public."FIN_ROEWorklist" set (security_invoker = true);
+alter view public."FIN_JobROESummary" set (security_invoker = true);
+alter view public."FIN_FXGainLossSummary" set (security_invoker = true);
+alter view public."FIN_CashAllocationSummary" set (security_invoker = true);
+alter view public."FIN_DebtChasingQueue" set (security_invoker = true);
+alter view public."FIN_CommissionAccrualSummary" set (security_invoker = true);
+alter view public."FIN_ProfitShareSummary" set (security_invoker = true);
+alter view public."FIN_ExportReadinessQueue" set (security_invoker = true);
+alter view public."FIN_AIInsightQueue" set (security_invoker = true);
+alter view public."FIN_CustomerPaymentRiskSummary" set (security_invoker = true);
+alter view public."FIN_CreditStopRecommendationSummary" set (security_invoker = true);
+alter view public."FIN_DisruptionCostRiskSummary" set (security_invoker = true);
+
+revoke all on table
+  public."FIN_AccountingDateWorklist",
+  public."FIN_CutoffRunSummary",
+  public."FIN_WIPAccrualSummary",
+  public."FIN_DocumentBalanceSummary",
+  public."FIN_JobFinanceSummary",
+  public."FIN_JobChargeFinanceSummary",
+  public."FIN_ROEWorklist",
+  public."FIN_JobROESummary",
+  public."FIN_FXGainLossSummary",
+  public."FIN_CashAllocationSummary",
+  public."FIN_DebtChasingQueue",
+  public."FIN_CommissionAccrualSummary",
+  public."FIN_ProfitShareSummary",
+  public."FIN_ExportReadinessQueue",
+  public."FIN_AIInsightQueue",
+  public."FIN_CustomerPaymentRiskSummary",
+  public."FIN_CreditStopRecommendationSummary",
+  public."FIN_DisruptionCostRiskSummary"
+from public, anon, authenticated;
+
+grant select on table
+  public."FIN_AccountingDateWorklist",
+  public."FIN_CutoffRunSummary",
+  public."FIN_WIPAccrualSummary",
+  public."FIN_DocumentBalanceSummary",
+  public."FIN_JobFinanceSummary",
+  public."FIN_JobChargeFinanceSummary",
+  public."FIN_ROEWorklist",
+  public."FIN_JobROESummary",
+  public."FIN_FXGainLossSummary",
+  public."FIN_CashAllocationSummary",
+  public."FIN_DebtChasingQueue",
+  public."FIN_CommissionAccrualSummary",
+  public."FIN_ProfitShareSummary",
+  public."FIN_ExportReadinessQueue",
+  public."FIN_AIInsightQueue",
+  public."FIN_CustomerPaymentRiskSummary",
+  public."FIN_CreditStopRecommendationSummary",
+  public."FIN_DisruptionCostRiskSummary"
+to service_role;
+
+alter function public."FIN_CalculatePulledRate"(numeric, text, numeric, numeric, integer)
+  set search_path = pg_catalog, public;
+alter function public."FIN_GetNextOpenPeriod"(uuid, uuid, text, date)
+  set search_path = pg_catalog, public;
+alter function public."FIN_RecordAIInsight"(varchar, varchar, text, varchar, uuid, uuid, uuid, numeric, uuid)
+  set search_path = pg_catalog, public;
+
+revoke all on function public."FIN_CalculatePulledRate"(numeric, text, numeric, numeric, integer) from public, anon, authenticated;
+revoke all on function public."FIN_GetNextOpenPeriod"(uuid, uuid, text, date) from public, anon, authenticated;
+revoke all on function public."FIN_RecordAIInsight"(varchar, varchar, text, varchar, uuid, uuid, uuid, numeric, uuid) from public, anon, authenticated;
+
+grant execute on function public."FIN_CalculatePulledRate"(numeric, text, numeric, numeric, integer) to service_role;
+grant execute on function public."FIN_GetNextOpenPeriod"(uuid, uuid, text, date) to service_role;
+grant execute on function public."FIN_RecordAIInsight"(varchar, varchar, text, varchar, uuid, uuid, uuid, numeric, uuid) to service_role;
+
+comment on view public."FIN_DocumentBalanceSummary" is
+  'Service-bound finance balance summary. Invoker rights prevent owner-privilege RLS bypass.';
+comment on view public."FIN_JobFinanceSummary" is
+  'Service-bound job finance summary. Invoker rights prevent owner-privilege RLS bypass.';
+
+commit;
+
+-- Guarded sandbox demo finance posting parity.
+begin;
+
+create or replace function public._multideck_finance_demo_tax_allowed(p_legal_entity_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select exists (
+    select 1
+    from public."ACCI_Connections" connection
+    join public."FIN_AdministrationRevisions" revision
+      on revision."FINAdminRevision_LegalEntityID" = connection."ACCIC_LegalEntityID"
+     and revision."FINAdminRevision_StatusCode" = 'approved'
+    where connection."ACCIC_LegalEntityID" = p_legal_entity_id
+      and connection."ACCIC_ProviderCode" = 'erpnext'
+      and connection."ACCIC_StatusCode" = 'active'
+      and connection."ACCIC_Environment" = 'sandbox'
+      and coalesce(revision."FINAdminRevision_ConfigJSON" #>> '{taxSettings,demoOnlyConfirmed}', 'false') = 'true'
+      and coalesce(revision."FINAdminRevision_ConfigJSON" #>> '{taxSettings,localAdviceConfirmed}', 'false') <> 'true'
+  );
+$$;
+
+create or replace function public._multideck_finance_validate_demo_revision()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_demo_only boolean := coalesce(new."FINAdminRevision_ConfigJSON" #>> '{taxSettings,demoOnlyConfirmed}', 'false') = 'true';
+begin
+  if not v_demo_only then return new; end if;
+
+  if coalesce(new."FINAdminRevision_ConfigJSON" #>> '{taxSettings,localAdviceConfirmed}', 'false') = 'true' then
+    raise exception 'Demo-only tax review cannot claim statutory local advice.' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1
+    from public."ACCI_Connections" connection
+    where connection."ACCIC_LegalEntityID" = new."FINAdminRevision_LegalEntityID"
+      and connection."ACCIC_ProviderCode" = 'erpnext'
+      and connection."ACCIC_StatusCode" = 'active'
+      and connection."ACCIC_Environment" = 'sandbox'
+  ) then
+    raise exception 'Demo-only tax review requires an active ERPNext sandbox connection.' using errcode = '22023';
+  end if;
+  if jsonb_typeof(new."FINAdminRevision_ConfigJSON" -> 'taxCodes') <> 'array'
+    or not exists (
+      select 1
+      from jsonb_array_elements(new."FINAdminRevision_ConfigJSON" -> 'taxCodes') item
+      where coalesce((item ->> 'isActive')::boolean, true)
+        and item ->> 'code' = 'DEMO-NONTAX'
+        and coalesce((item ->> 'ratePercent')::numeric, 0) = 0
+        and coalesce((item #>> '{settings,demoOnly}')::boolean, false)
+    )
+  then
+    raise exception 'Demo-only tax review requires the zero-rate DEMO-NONTAX treatment.' using errcode = '22023';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(new."FINAdminRevision_ConfigJSON" -> 'taxCodes') item
+    where coalesce((item ->> 'isActive')::boolean, true)
+      and (
+        item ->> 'code' <> 'DEMO-NONTAX'
+        or coalesce((item ->> 'ratePercent')::numeric, 0) <> 0
+        or not coalesce((item #>> '{settings,demoOnly}')::boolean, false)
+      )
+  ) then
+    raise exception 'A demo-only revision may approve only the zero-rate DEMO-NONTAX treatment.' using errcode = '22023';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists "TR_FIN_AdministrationRevisions_demo_guard" on public."FIN_AdministrationRevisions";
+create trigger "TR_FIN_AdministrationRevisions_demo_guard"
+before insert or update of "FINAdminRevision_ConfigJSON"
+on public."FIN_AdministrationRevisions"
+for each row execute function public._multideck_finance_validate_demo_revision();
+
+create or replace function public._multideck_finance_apply_approved_line_tax()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_legal_entity_id uuid;
+  v_document_type text;
+  v_document_status text;
+  v_document_date date;
+  v_exchange_rate numeric;
+  v_direction text;
+  v_match_count integer := 0;
+  v_tax_id uuid;
+  v_tax_code text;
+  v_tax_rate numeric := 0;
+  v_sign numeric;
+  v_net numeric;
+  v_tax numeric;
+  v_has_approved_tax_advice boolean := false;
+  v_demo_tax_allowed boolean := false;
+begin
+  select
+    document."FINDoc_LegalEntityID",
+    document."FINDoc_TypeCode",
+    document."FINDoc_StatusCode",
+    document."FINDoc_DocumentDate",
+    document."FINDoc_ExchangeRate"
+  into v_legal_entity_id, v_document_type, v_document_status, v_document_date, v_exchange_rate
+  from public."FIN_Documents" document
+  where document."FINDoc_ID" = new."FINDocLine_DocumentID";
+
+  if v_legal_entity_id is null then
+    raise exception 'The finance document for this line does not exist.' using errcode = 'P0002';
+  end if;
+  if new."FINDocLine_Quantity" <= 0 or new."FINDocLine_UnitAmount" < 0 then
+    raise exception 'Check the finance line quantity and unit amount.' using errcode = '22023';
+  end if;
+
+  select exists (
+    select 1
+    from public."FIN_AdministrationRevisions" revision
+    where revision."FINAdminRevision_LegalEntityID" = v_legal_entity_id
+      and revision."FINAdminRevision_StatusCode" = 'approved'
+      and coalesce(revision."FINAdminRevision_ConfigJSON" #>> '{taxSettings,localAdviceConfirmed}', 'false') = 'true'
+  ) into v_has_approved_tax_advice;
+  v_demo_tax_allowed := public._multideck_finance_demo_tax_allowed(v_legal_entity_id);
+
+  new."FINDocLine_TaxCodeSnapshot" := nullif(left(btrim(new."FINDocLine_TaxCodeSnapshot"), 80), '');
+  v_direction := case when v_document_type in ('sl_invoice', 'credit_note') then 'sales' else 'purchase' end;
+
+  if (v_has_approved_tax_advice or v_demo_tax_allowed) and new."FINDocLine_TaxCodeSnapshot" is not null then
+    select
+      count(*),
+      (array_agg(tax."FINTax_ID" order by tax."FINTax_EffectiveFrom" desc))[1],
+      (array_agg(tax."FINTax_Code" order by tax."FINTax_EffectiveFrom" desc))[1],
+      (array_agg(tax."FINTax_RatePercent" order by tax."FINTax_EffectiveFrom" desc))[1]
+    into v_match_count, v_tax_id, v_tax_code, v_tax_rate
+    from public."FIN_TaxCodes" tax
+    where tax."FINTax_LegalEntityID" = v_legal_entity_id
+      and tax."FINTax_Code" = new."FINDocLine_TaxCodeSnapshot"
+      and tax."FINTax_IsActive"
+      and tax."FINTax_ApprovedAt" is not null
+      and tax."FINTax_TransactionTypeCode" in ('both', v_direction)
+      and tax."FINTax_EffectiveFrom" <= v_document_date
+      and (tax."FINTax_EffectiveTo" is null or tax."FINTax_EffectiveTo" >= v_document_date)
+      and (
+        (v_has_approved_tax_advice and not coalesce((tax."FINTax_SettingsJSON" ->> 'demoOnly')::boolean, false))
+        or (v_demo_tax_allowed and tax."FINTax_Code" = 'DEMO-NONTAX' and tax."FINTax_RatePercent" = 0 and coalesce((tax."FINTax_SettingsJSON" ->> 'demoOnly')::boolean, false))
+      );
+
+    if v_match_count > 1 then
+      raise exception 'The selected tax treatment has overlapping effective rules. Finance must correct the setup.' using errcode = '22023';
+    end if;
+  end if;
+
+  if v_match_count = 1 then
+    new."FINDocLine_TaxCodeID" := v_tax_id;
+    new."FINDocLine_TaxCodeSnapshot" := v_tax_code;
+    new."FINDocLine_TaxRatePercent" := v_tax_rate;
+  else
+    if v_document_status <> 'draft' then
+      if not v_has_approved_tax_advice and not v_demo_tax_allowed then
+        raise exception 'Finance must approve local tax advice before this document can enter review.' using errcode = '22023';
+      end if;
+      raise exception 'Every finance line must use one approved effective tax treatment before review.' using errcode = '22023';
+    end if;
+    new."FINDocLine_TaxCodeID" := null;
+    new."FINDocLine_TaxRatePercent" := 0;
+    v_tax_rate := 0;
+  end if;
+
+  v_sign := case when v_document_type in ('credit_note', 'debit_note') then -1 else 1 end;
+  v_net := round(new."FINDocLine_Quantity" * new."FINDocLine_UnitAmount", 4) * v_sign;
+  v_tax := round(abs(v_net) * v_tax_rate / 100, 4) * v_sign;
+  new."FINDocLine_NetAmount" := v_net;
+  new."FINDocLine_TaxAmount" := v_tax;
+  new."FINDocLine_GrossAmount" := v_net + v_tax;
+  new."FINDocLine_LocalNetAmount" := round(v_net * v_exchange_rate, 4);
+  new."FINDocLine_LocalTaxAmount" := round(v_tax * v_exchange_rate, 4);
+  new."FINDocLine_LocalGrossAmount" := round((v_net + v_tax) * v_exchange_rate, 4);
+  return new;
+end;
+$$;
+
+create or replace function public._multideck_finance_validate_document_tax_review()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_has_approved_tax_advice boolean := false;
+  v_demo_tax_allowed boolean := false;
+begin
+  if new."FINDoc_StatusCode" not in ('awaiting_approval', 'approved')
+    or new."FINDoc_StatusCode" is not distinct from old."FINDoc_StatusCode" then
+    return new;
+  end if;
+
+  select exists (
+    select 1
+    from public."FIN_AdministrationRevisions" revision
+    where revision."FINAdminRevision_LegalEntityID" = new."FINDoc_LegalEntityID"
+      and revision."FINAdminRevision_StatusCode" = 'approved'
+      and coalesce(revision."FINAdminRevision_ConfigJSON" #>> '{taxSettings,localAdviceConfirmed}', 'false') = 'true'
+  ) into v_has_approved_tax_advice;
+  v_demo_tax_allowed := public._multideck_finance_demo_tax_allowed(new."FINDoc_LegalEntityID");
+
+  if not v_has_approved_tax_advice and not v_demo_tax_allowed then
+    raise exception 'Finance must approve local tax advice before this document can enter review.' using errcode = '22023';
+  end if;
+
+  if exists (
+    select 1
+    from public."FIN_DocumentLines" line
+    left join public."FIN_TaxCodes" tax
+      on tax."FINTax_ID" = line."FINDocLine_TaxCodeID"
+      and tax."FINTax_LegalEntityID" = new."FINDoc_LegalEntityID"
+      and tax."FINTax_IsActive"
+      and tax."FINTax_ApprovedAt" is not null
+      and tax."FINTax_Code" = line."FINDocLine_TaxCodeSnapshot"
+      and tax."FINTax_RatePercent" = line."FINDocLine_TaxRatePercent"
+      and tax."FINTax_TransactionTypeCode" in ('both', case when new."FINDoc_TypeCode" in ('sl_invoice', 'credit_note') then 'sales' else 'purchase' end)
+      and tax."FINTax_EffectiveFrom" <= new."FINDoc_DocumentDate"
+      and (tax."FINTax_EffectiveTo" is null or tax."FINTax_EffectiveTo" >= new."FINDoc_DocumentDate")
+      and (
+        (v_has_approved_tax_advice and not coalesce((tax."FINTax_SettingsJSON" ->> 'demoOnly')::boolean, false))
+        or (v_demo_tax_allowed and tax."FINTax_Code" = 'DEMO-NONTAX' and tax."FINTax_RatePercent" = 0 and coalesce((tax."FINTax_SettingsJSON" ->> 'demoOnly')::boolean, false))
+      )
+    where line."FINDocLine_DocumentID" = new."FINDoc_ID"
+      and tax."FINTax_ID" is null
+  ) then
+    raise exception 'One or more finance lines no longer uses an approved effective tax treatment.' using errcode = '22023';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public._multideck_finance_demo_tax_allowed(uuid) from public, anon, authenticated;
+revoke all on function public._multideck_finance_validate_demo_revision() from public, anon, authenticated;
+revoke all on function public._multideck_finance_apply_approved_line_tax() from public, anon, authenticated;
+revoke all on function public._multideck_finance_validate_document_tax_review() from public, anon, authenticated;
+
+update public."sys_AIDexterActions"
+set "AIDexterAction_Description" = 'Create one reviewed invoice or credit draft through the Finance boundary. Statutory treatments require local advice; the zero-rate DEMO-NONTAX treatment is accepted only for a verified ERPNext sandbox and remains subject to normal human posting approval.',
+    "AIDexterAction_UpdatedAt" = now()
+where "AIDexterAction_Code" = 'create_finance_document_draft';
+
+comment on function public._multideck_finance_demo_tax_allowed(uuid) is
+  'Allows only an explicit zero-rate demo treatment when the legal entity has an approved demo-only revision and an active ERPNext sandbox connection.';
+
+commit;
+
+-- Sandbox demo finance readiness parity.
+begin;
+
+create or replace function public._multideck_finance_normalise_revision_readiness()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_missing jsonb;
+  v_tax_ready boolean := false;
+  v_demo_ready boolean := false;
+begin
+  v_demo_ready :=
+    coalesce(new."FINAdminRevision_ConfigJSON" #>> '{taxSettings,demoOnlyConfirmed}', 'false') = 'true'
+    and coalesce(new."FINAdminRevision_ConfigJSON" #>> '{taxSettings,localAdviceConfirmed}', 'false') <> 'true'
+    and exists (
+      select 1
+      from public."ACCI_Connections" connection
+      where connection."ACCIC_LegalEntityID" = new."FINAdminRevision_LegalEntityID"
+        and connection."ACCIC_ProviderCode" = 'erpnext'
+        and connection."ACCIC_StatusCode" = 'active'
+        and connection."ACCIC_Environment" = 'sandbox'
+    );
+  v_tax_ready :=
+    coalesce(new."FINAdminRevision_ConfigJSON" #>> '{taxSettings,localAdviceConfirmed}', 'false') = 'true'
+    or v_demo_ready;
+
+  v_missing := case
+    when jsonb_typeof(new."FINAdminRevision_ReadinessJSON" -> 'missing') = 'array'
+      then new."FINAdminRevision_ReadinessJSON" -> 'missing'
+    else '[]'::jsonb
+  end;
+
+  if v_tax_ready then
+    select coalesce(jsonb_agg(item.value order by item.ordinality), '[]'::jsonb)
+    into v_missing
+    from jsonb_array_elements_text(v_missing) with ordinality item(value, ordinality)
+    where item.value <> 'tax_advice';
+  elsif not (v_missing ? 'tax_advice') then
+    v_missing := v_missing || jsonb_build_array('tax_advice');
+  end if;
+
+  new."FINAdminRevision_ReadinessJSON" := jsonb_set(
+    jsonb_set(coalesce(new."FINAdminRevision_ReadinessJSON", '{}'::jsonb), '{missing}', v_missing, true),
+    '{ready}',
+    to_jsonb(jsonb_array_length(v_missing) = 0),
+    true
+  );
+  return new;
+end;
+$$;
+
+revoke all on function public._multideck_finance_normalise_revision_readiness() from public, anon, authenticated;
+
+-- Re-evaluate existing approved evidence without changing its approved
+-- configuration, approver or revision number.
+update public."FIN_AdministrationRevisions"
+set "FINAdminRevision_ReadinessJSON" = "FINAdminRevision_ReadinessJSON"
+where "FINAdminRevision_StatusCode" = 'approved';
+
+comment on function public._multideck_finance_normalise_revision_readiness() is
+  'Marks tax ready for confirmed statutory advice or the exact verified ERPNext sandbox demo exception, while keeping those two evidence states distinct.';
+
+commit;
+
+-- Finance document recovery parity.
++-- A finance document can be edited only while it is an unlocked draft. Provider
+-- failures are recovered separately so retrying never weakens the approval lock.
+begin;
+
+create or replace function public.multideck_finance_update_document_draft(
+  p_company_id uuid,
+  p_user_id uuid,
+  p_document_id uuid,
+  p_input jsonb
+) returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_document public."FIN_Documents";
+  v_type text;
+  v_entity uuid;
+  v_entity_currency text;
+  v_party uuid;
+  v_job uuid;
+  v_job_company uuid;
+  v_job_entity uuid;
+  v_job_party uuid;
+  v_date date;
+  v_due date;
+  v_currency text;
+  v_exchange numeric;
+  v_source_kind text;
+  v_line jsonb;
+  v_index integer := 0;
+  v_quantity numeric;
+  v_unit numeric;
+  v_net numeric;
+  v_tax numeric;
+  v_gross numeric;
+  v_total_net numeric := 0;
+  v_total_tax numeric := 0;
+  v_total_gross numeric := 0;
+  v_line_id uuid;
+  v_tax_status text;
+begin
+  if jsonb_typeof(p_input) <> 'object' then
+    raise exception 'Finance input must be an object.' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public."cmp_Users"
+    where "User_ID" = p_user_id
+      and "Company_ID" = p_company_id
+      and coalesce("User_AccessStatus", 'active') = 'active'
+  ) then
+    raise exception 'The finance operator is outside this workspace.' using errcode = '42501';
+  end if;
+
+  select document.*
+  into v_document
+  from public."FIN_Documents" document
+  join public."cmp_LegalEntities" entity on entity."LegalEntity_ID" = document."FINDoc_LegalEntityID"
+  where document."FINDoc_ID" = p_document_id
+    and entity."Company_ID" = p_company_id
+  for update of document;
+  if not found then
+    raise exception 'Finance document not found in this workspace.' using errcode = 'P0002';
+  end if;
+  if v_document."FINDoc_StatusCode" <> 'draft'
+    or v_document."FINDoc_IsLocked"
+    or v_document."FINDoc_PostedAt" is not null then
+    raise exception 'Only an unlocked draft can be edited.' using errcode = '22023';
+  end if;
+
+  v_type := v_document."FINDoc_TypeCode";
+  v_entity := v_document."FINDoc_LegalEntityID";
+  begin
+    v_party := (p_input ->> 'partyOrgId')::uuid;
+  exception when invalid_text_representation then
+    raise exception 'Choose a valid customer or supplier.' using errcode = '22023';
+  end;
+  if not exists (select 1 from public."Org_Master" where "Org_id" = v_party) then
+    raise exception 'Choose a valid customer or supplier.' using errcode = '22023';
+  end if;
+
+  select upper(entity."LegalEntity_BaseCurrencyCodeSnapshot")
+  into v_entity_currency
+  from public."cmp_LegalEntities" entity
+  where entity."LegalEntity_ID" = v_entity
+    and entity."Company_ID" = p_company_id
+    and entity."LegalEntity_IsActive";
+  if not found or v_entity_currency !~ '^[A-Z]{3}$' then
+    raise exception 'Configure a valid base currency for this legal entity.' using errcode = '22023';
+  end if;
+
+  begin
+    v_date := coalesce(nullif(p_input ->> 'documentDate', '')::date, current_date);
+    v_due := nullif(p_input ->> 'dueDate', '')::date;
+  exception when invalid_datetime_format then
+    raise exception 'Check the document and due dates.' using errcode = '22023';
+  end;
+  if v_due is not null and v_due < v_date then
+    raise exception 'The due date cannot be before the document date.' using errcode = '22023';
+  end if;
+
+  v_currency := upper(coalesce(nullif(btrim(p_input ->> 'currencyCode'), ''), v_entity_currency));
+  if v_currency !~ '^[A-Z]{3}$' then
+    raise exception 'Enter a three-letter currency code.' using errcode = '22023';
+  end if;
+  begin
+    v_exchange := coalesce(nullif(p_input ->> 'exchangeRate', '')::numeric, 1);
+  exception when invalid_text_representation then
+    raise exception 'Enter a valid exchange rate.' using errcode = '22023';
+  end;
+  if v_exchange::text in ('NaN', 'Infinity', '-Infinity')
+    or v_exchange <= 0
+    or (v_currency <> v_entity_currency and nullif(p_input ->> 'exchangeRate', '') is null) then
+    raise exception 'Enter the reviewed exchange rate from document currency to base currency.' using errcode = '22023';
+  end if;
+  if v_currency = v_entity_currency then v_exchange := 1; end if;
+
+  if nullif(p_input ->> 'sourceJobId', '') is not null then
+    begin
+      v_job := (p_input ->> 'sourceJobId')::uuid;
+    exception when invalid_text_representation then
+      raise exception 'Choose a valid job.' using errcode = '22023';
+    end;
+    select office."Company_ID", job."Job_LegalEntityID",
+      case when v_type in ('sl_invoice', 'credit_note') then job."Job_Customer" else job."Job_Supplier" end
+    into v_job_company, v_job_entity, v_job_party
+    from public."Job_Header" job
+    join public."cmp_Offices" office on office."Office_ID" = coalesce(job."Job_OrgOfficeID", job."Job_OfficeID")
+    where job."Job_ID" = v_job and not job."Job_IsDeleted";
+    if v_job_company is distinct from p_company_id
+      or (v_job_entity is not null and v_job_entity is distinct from v_entity) then
+      raise exception 'That job is outside the selected company or legal entity.' using errcode = '42501';
+    end if;
+    if v_job_party is null or v_job_party is distinct from v_party then
+      raise exception 'The selected party must match the customer or supplier on the job.' using errcode = '22023';
+    end if;
+  end if;
+
+  if jsonb_typeof(p_input -> 'lines') <> 'array'
+    or jsonb_array_length(p_input -> 'lines') not between 1 and 100 then
+    raise exception 'Add between one and 100 document lines.' using errcode = '22023';
+  end if;
+
+  delete from public."FIN_DocumentLines"
+  where "FINDocLine_DocumentID" = p_document_id;
+
+  v_source_kind := case when v_job is null then 'manual' else 'job' end;
+  for v_line in select value from jsonb_array_elements(p_input -> 'lines') loop
+    v_index := v_index + 1;
+    begin
+      v_quantity := coalesce(nullif(v_line ->> 'quantity', '')::numeric, 1);
+      v_unit := coalesce(nullif(v_line ->> 'unitAmount', '')::numeric, 0);
+    exception when invalid_text_representation then
+      raise exception 'Check finance line %.', v_index using errcode = '22023';
+    end;
+    if v_quantity::text in ('NaN', 'Infinity', '-Infinity')
+      or v_unit::text in ('NaN', 'Infinity', '-Infinity')
+      or nullif(btrim(v_line ->> 'description'), '') is null
+      or length(v_line ->> 'description') > 1000
+      or nullif(btrim(v_line ->> 'chargeCode'), '') is null
+      or length(v_line ->> 'chargeCode') > 80
+      or length(coalesce(v_line ->> 'taxCode', '')) > 80
+      or v_quantity <= 0
+      or v_unit < 0 then
+      raise exception 'Check finance line %.', v_index using errcode = '22023';
+    end if;
+
+    v_net := round(v_quantity * v_unit, 4) * case when v_type in ('credit_note', 'debit_note') then -1 else 1 end;
+    insert into public."FIN_DocumentLines"(
+      "FINDocLine_DocumentID", "FINDocLine_LineNo", "FINDocLine_LineTypeCode", "FINDocLine_ChargeCodeSnapshot", "FINDocLine_Description", "FINDocLine_Quantity", "FINDocLine_UnitAmount",
+      "FINDocLine_NetAmount", "FINDocLine_TaxCodeSnapshot", "FINDocLine_TaxRatePercent", "FINDocLine_TaxAmount", "FINDocLine_GrossAmount",
+      "FINDocLine_LocalNetAmount", "FINDocLine_LocalTaxAmount", "FINDocLine_LocalGrossAmount"
+    ) values (
+      p_document_id, v_index,
+      case when v_job is not null then 'freight' when coalesce(v_line ->> 'lineType', '') = 'ancillary' then 'ancillary' else 'service' end,
+      left(btrim(v_line ->> 'chargeCode'), 80), btrim(v_line ->> 'description'), v_quantity, v_unit,
+      v_net, nullif(left(btrim(v_line ->> 'taxCode'), 80), ''), 0, 0, v_net,
+      round(v_net * v_exchange, 4), 0, round(v_net * v_exchange, 4)
+    ) returning "FINDocLine_ID", "FINDocLine_NetAmount", "FINDocLine_TaxAmount", "FINDocLine_GrossAmount"
+    into v_line_id, v_net, v_tax, v_gross;
+
+    if v_job is not null then
+      insert into public."FIN_DocumentLineJobLinks"(
+        "FINDocLineJob_DocumentID", "FINDocLineJob_DocumentLineID", "FINDocLineJob_JobID", "FINDocLineJob_LinkTypeCode", "FINDocLineJob_NetAmount", "FINDocLineJob_LocalNetAmount", "FINDocLineJob_PercentOfLine"
+      ) values (p_document_id, v_line_id, v_job, 'source_job', v_net, round(v_net * v_exchange, 4), 100);
+    end if;
+    v_total_net := v_total_net + v_net;
+    v_total_tax := v_total_tax + v_tax;
+    v_total_gross := v_total_gross + v_gross;
+  end loop;
+
+  if abs(v_total_gross) <= 0 then
+    raise exception 'The finance document gross amount must be greater than zero.' using errcode = '22023';
+  end if;
+  select case when bool_and(line."FINDocLine_TaxCodeID" is not null) then 'approved' else 'pending' end
+  into v_tax_status
+  from public."FIN_DocumentLines" line
+  where line."FINDocLine_DocumentID" = p_document_id;
+
+  update public."FIN_Documents"
+  set "FINDoc_PartyOrgID" = v_party,
+      "FINDoc_PartyRole" = case when v_type in ('sl_invoice', 'credit_note') then 'customer' else 'supplier' end,
+      "FINDoc_DocumentDate" = v_date,
+      "FINDoc_AccountingDate" = v_date,
+      "FINDoc_DueDate" = v_due,
+      "FINDoc_CurrencyCodeSnapshot" = v_currency,
+      "FINDoc_ExchangeRate" = v_exchange,
+      "FINDoc_SourceJobID" = v_job,
+      "FINDoc_SourceTable" = case when v_job is null then null else 'Job_Header' end,
+      "FINDoc_SourceID" = v_job,
+      "FINDoc_SourceKindCode" = v_source_kind,
+      "FINDoc_NetAmount" = v_total_net,
+      "FINDoc_TaxAmount" = v_total_tax,
+      "FINDoc_GrossAmount" = v_total_gross,
+      "FINDoc_LocalNetAmount" = round(v_total_net * v_exchange, 4),
+      "FINDoc_LocalTaxAmount" = round(v_total_tax * v_exchange, 4),
+      "FINDoc_LocalGrossAmount" = round(v_total_gross * v_exchange, 4),
+      "FINDoc_OutstandingAmount" = v_total_gross,
+      "FINDoc_LocalOutstandingAmount" = round(v_total_gross * v_exchange, 4),
+      "FINDoc_MetadataJSON" = jsonb_set(
+        jsonb_set("FINDoc_MetadataJSON", '{sourceKind}', to_jsonb(v_source_kind), true),
+        '{taxStatus}', to_jsonb(v_tax_status), true
+      ),
+      "FINDoc_UpdatedAt" = now(),
+      "FINDoc_UpdatedBy" = p_user_id
+  where "FINDoc_ID" = p_document_id;
+
+  insert into public."FIN_DocumentStatusHistory"(
+    "FINDocStatus_DocumentID", "FINDocStatus_FromStatusCode", "FINDocStatus_ToStatusCode", "FINDocStatus_ChangedBy", "FINDocStatus_Reason", "FINDocStatus_MetadataJSON"
+  ) values (
+    p_document_id, 'draft', 'draft', p_user_id, 'Draft edited in Multideck finance',
+    jsonb_build_object('sourceKind', v_source_kind, 'jobId', v_job, 'taxStatus', v_tax_status)
+  );
+  insert into public."Audit_Events"(
+    "AuditEvent_EventTypeCode", "AuditEvent_UserID", "AuditEvent_LegalEntityID", "AuditEvent_SourceApp", "AuditEvent_SourceModule", "AuditEvent_SourceTableSchema", "AuditEvent_SourceTableName", "AuditEvent_RecordTypeCode", "AuditEvent_RecordID", "AuditEvent_Action", "AuditEvent_Title", "AuditEvent_MetadataJSON"
+  ) values (
+    'finance_lifecycle', p_user_id, v_entity, 'multideck-app', 'finance', 'public', 'FIN_Documents', v_type, p_document_id,
+    'update_draft', 'Finance document draft updated',
+    jsonb_build_object('grossAmount', v_total_gross, 'currency', v_currency, 'exchangeRate', v_exchange, 'taxStatus', v_tax_status)
+  );
+  return (select to_jsonb(document) from public."FIN_Documents" document where document."FINDoc_ID" = p_document_id);
+end;
+$$;
+
+-- Reopening is the controlled escape hatch for rejected documents and approved
+-- documents whose provider delivery is blocked or failed. It revokes the
+-- approval and cancels the old queue item before any fields become editable.
+create or replace function public.multideck_finance_reopen_document_draft(
+  p_company_id uuid,
+  p_user_id uuid,
+  p_document_id uuid,
+  p_reason text default null
+) returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_document public."FIN_Documents";
+  v_reason text;
+  v_cancelled integer := 0;
+begin
+  if not exists (
+    select 1 from public."cmp_Users"
+    where "User_ID" = p_user_id
+      and "Company_ID" = p_company_id
+      and coalesce("User_AccessStatus", 'active') = 'active'
+  ) then
+    raise exception 'The finance operator is outside this workspace.' using errcode = '42501';
+  end if;
+  select document.*
+  into v_document
+  from public."FIN_Documents" document
+  join public."cmp_LegalEntities" entity on entity."LegalEntity_ID" = document."FINDoc_LegalEntityID"
+  where document."FINDoc_ID" = p_document_id
+    and entity."Company_ID" = p_company_id
+  for update of document;
+  if not found then
+    raise exception 'Finance document not found in this workspace.' using errcode = 'P0002';
+  end if;
+  if v_document."FINDoc_PostedAt" is not null
+    or v_document."FINDoc_PostingStatusCode" = 'posted'
+    or v_document."FINDoc_StatusCode" = 'submitted' then
+    raise exception 'A posted document is immutable and cannot be returned to draft.' using errcode = '22023';
+  end if;
+  if not (
+    v_document."FINDoc_StatusCode" = 'rejected'
+    or (
+      v_document."FINDoc_StatusCode" = 'approved'
+      and v_document."FINDoc_PostingStatusCode" in ('blocked', 'failed')
+    )
+  ) then
+    raise exception 'Only a rejected or provider-blocked approved document can be returned to draft.' using errcode = '22023';
+  end if;
+
+  v_reason := coalesce(nullif(btrim(p_reason), ''), 'Returned to draft for correction');
+  update public."FIN_IntegrationQueue"
+  set "FINIntQ_StatusCode" = 'cancelled',
+      "FINIntQ_LastError" = 'Approval revoked: ' || left(v_reason, 460)
+  where "FINIntQ_LocalTable" = 'FIN_Documents'
+    and "FINIntQ_LocalID" = p_document_id
+    and "FINIntQ_StatusCode" in ('queued', 'processing', 'blocked', 'failed');
+  get diagnostics v_cancelled = row_count;
+
+  update public."ACCI_ReconciliationIssues"
+  set "ACCIRI_StatusCode" = 'synced',
+      "ACCIRI_ResolutionText" = 'Document returned to draft: ' || left(v_reason, 460),
+      "ACCIRI_ResolvedAt" = now(),
+      "ACCIRI_ResolvedBy" = p_user_id
+  where "ACCIRI_LocalTable" = 'FIN_Documents'
+    and "ACCIRI_LocalID" = p_document_id
+    and "ACCIRI_StatusCode" <> 'synced';
+
+  update public."FIN_Documents"
+  set "FINDoc_StatusCode" = 'draft',
+      "FINDoc_PostingStatusCode" = 'draft',
+      "FINDoc_ExportStatusCode" = 'not_queued',
+      "FINDoc_ExportBatchID" = null,
+      "FINDoc_IsLocked" = false,
+      "FINDoc_PostedAt" = null,
+      "FINDoc_PostedBy" = null,
+      "FINDoc_UpdatedAt" = now(),
+      "FINDoc_UpdatedBy" = p_user_id
+  where "FINDoc_ID" = p_document_id;
+
+  insert into public."FIN_DocumentStatusHistory"(
+    "FINDocStatus_DocumentID", "FINDocStatus_FromStatusCode", "FINDocStatus_ToStatusCode", "FINDocStatus_ChangedBy", "FINDocStatus_Reason", "FINDocStatus_MetadataJSON"
+  ) values (
+    p_document_id, v_document."FINDoc_StatusCode", 'draft', p_user_id, v_reason,
+    jsonb_build_object('priorPostingStatus', v_document."FINDoc_PostingStatusCode", 'cancelledQueueItems', v_cancelled, 'approvalRevoked', true)
+  );
+  insert into public."Audit_Events"(
+    "AuditEvent_EventTypeCode", "AuditEvent_UserID", "AuditEvent_LegalEntityID", "AuditEvent_SourceApp", "AuditEvent_SourceModule", "AuditEvent_SourceTableSchema", "AuditEvent_SourceTableName", "AuditEvent_RecordTypeCode", "AuditEvent_RecordID", "AuditEvent_Action", "AuditEvent_Title", "AuditEvent_MetadataJSON"
+  ) values (
+    'finance_lifecycle', p_user_id, v_document."FINDoc_LegalEntityID", 'multideck-app', 'finance', 'public', 'FIN_Documents', v_document."FINDoc_TypeCode", p_document_id,
+    'reopen_draft', 'Finance document approval revoked and returned to draft',
+    jsonb_build_object('from', v_document."FINDoc_StatusCode", 'priorPostingStatus', v_document."FINDoc_PostingStatusCode", 'cancelledQueueItems', v_cancelled, 'reason', v_reason)
+  );
+  return (select to_jsonb(document) from public."FIN_Documents" document where document."FINDoc_ID" = p_document_id);
+end;
+$$;
+
+revoke all on function public.multideck_finance_update_document_draft(uuid, uuid, uuid, jsonb) from public, anon, authenticated;
+revoke all on function public.multideck_finance_reopen_document_draft(uuid, uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.multideck_finance_update_document_draft(uuid, uuid, uuid, jsonb) to service_role;
+grant execute on function public.multideck_finance_reopen_document_draft(uuid, uuid, uuid, text) to service_role;
+
+-- Dexter can explain the provider evidence and give the exact recovery route.
+-- The sensitive retry and approval-revocation controls remain manual-only.
+create or replace function public.multideck_dexter_domain_finance(p_company_id uuid, p_search text, p_take integer)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  with records as (
+    select
+      document."FINDoc_ID" record_id,
+      document."FINDoc_UpdatedAt" updated_at,
+      concat_ws(' ', document."FINDoc_Number", document."FINDoc_TypeCode", document."FINDoc_StatusCode", document."FINDoc_PostingStatusCode", organisation."Org_Name", job."Job_Number", queue."FINIntQ_LastError") search_text,
+      jsonb_strip_nulls(jsonb_build_object(
+        'recordId', document."FINDoc_ID", 'recordKind', 'document', 'number', document."FINDoc_Number", 'type', document."FINDoc_TypeCode",
+        'ledger', case when document."FINDoc_TypeCode" in ('sl_invoice', 'credit_note') then 'receivables' else 'payables' end,
+        'status', document."FINDoc_StatusCode", 'party', organisation."Org_Name", 'currency', document."FINDoc_CurrencyCodeSnapshot",
+        'netAmount', document."FINDoc_NetAmount", 'taxAmount', document."FINDoc_TaxAmount", 'grossAmount', document."FINDoc_GrossAmount",
+        'outstandingAmount', document."FINDoc_OutstandingAmount", 'documentDate', document."FINDoc_DocumentDate", 'dueDate', document."FINDoc_DueDate",
+        'sourceKind', document."FINDoc_SourceKindCode", 'jobReference', case when job."Job_ID" is null then null else job."Job_Period" || '-' || job."Job_Number" end,
+        'taxStatus', coalesce(document."FINDoc_MetadataJSON" ->> 'taxStatus', 'pending'),
+        'postingStatus', document."FINDoc_PostingStatusCode", 'exportStatus', document."FINDoc_ExportStatusCode",
+        'postingError', queue."FINIntQ_LastError", 'postingAttemptCount', queue."FINIntQ_AttemptCount", 'postingLastAttemptAt', queue."FINIntQ_LastAttemptAt",
+        'recoveryRoute', '/finance/' || case when document."FINDoc_TypeCode" in ('sl_invoice', 'credit_note') then 'receivables' else 'payables' end || '/documents/' || document."FINDoc_ID",
+        'recoveryActions', case
+          when document."FINDoc_StatusCode" = 'approved' and document."FINDoc_PostingStatusCode" in ('blocked', 'failed')
+            then jsonb_build_array('fix_provider_setup', 'retry_posting', 'return_to_draft')
+          when document."FINDoc_StatusCode" = 'rejected' then jsonb_build_array('return_to_draft')
+          else '[]'::jsonb
+        end,
+        'evidence', jsonb_build_object('sourceTable', 'FIN_Documents', 'sourceId', document."FINDoc_ID", 'legalEntityId', document."FINDoc_LegalEntityID", 'integrationQueueId', queue."FINIntQ_ID")
+      )) value
+    from public."FIN_Documents" document
+    join public."cmp_LegalEntities" entity on entity."LegalEntity_ID" = document."FINDoc_LegalEntityID"
+    left join public."Org_Master" organisation on organisation."Org_id" = document."FINDoc_PartyOrgID"
+    left join public."Job_Header" job on job."Job_ID" = document."FINDoc_SourceJobID"
+    left join lateral (
+      select integration_queue."FINIntQ_ID", integration_queue."FINIntQ_AttemptCount", integration_queue."FINIntQ_LastAttemptAt", integration_queue."FINIntQ_LastError"
+      from public."FIN_IntegrationQueue" integration_queue
+      where integration_queue."FINIntQ_LocalTable" = 'FIN_Documents'
+        and integration_queue."FINIntQ_LocalID" = document."FINDoc_ID"
+      order by integration_queue."FINIntQ_CreatedAt" desc
+      limit 1
+    ) queue on true
+    where entity."Company_ID" = p_company_id
+
+    union all
+
+    select
+      cash."FINCash_ID", cash."FINCash_UpdatedAt",
+      concat_ws(' ', cash."FINCash_Number", cash."FINCash_TypeCode", cash."FINCash_StatusCode", organisation."Org_Name", cash."FINCash_Reference"),
+      jsonb_strip_nulls(jsonb_build_object(
+        'recordId', cash."FINCash_ID", 'recordKind', 'cash', 'number', cash."FINCash_Number", 'type', cash."FINCash_TypeCode",
+        'ledger', case when cash."FINCash_TypeCode" = 'customer_receipt' then 'receivables' else 'payables' end,
+        'status', cash."FINCash_StatusCode", 'party', organisation."Org_Name", 'currency', cash."FINCash_CurrencyCodeSnapshot",
+        'amount', cash."FINCash_Amount", 'unallocatedAmount', cash."FINCash_UnallocatedAmount", 'transactionDate', cash."FINCash_TransactionDate",
+        'reference', cash."FINCash_Reference", 'postingStatus', cash."FINCash_PostingStatusCode",
+        'evidence', jsonb_build_object('sourceTable', 'FIN_CashTransactions', 'sourceId', cash."FINCash_ID", 'legalEntityId', cash."FINCash_LegalEntityID")
+      ))
+    from public."FIN_CashTransactions" cash
+    join public."cmp_LegalEntities" entity on entity."LegalEntity_ID" = cash."FINCash_LegalEntityID"
+    left join public."Org_Master" organisation on organisation."Org_id" = cash."FINCash_PartyOrgID"
+    where entity."Company_ID" = p_company_id
+
+    union all
+
+    select
+      revision."FINAdminRevision_ID", revision."FINAdminRevision_ApprovedAt",
+      concat_ws(' ', 'finance settings administration', entity."LegalEntity_Name", entity."LegalEntity_BaseCurrencyCodeSnapshot", entity."LegalEntity_CountryCode", entity."LegalEntity_SettingsJSON" #>> '{financeProvider,providerCode}'),
+      jsonb_strip_nulls(jsonb_build_object(
+        'recordId', revision."FINAdminRevision_ID", 'recordKind', 'configuration', 'legalEntityId', entity."LegalEntity_ID",
+        'legalEntity', entity."LegalEntity_Name", 'baseCurrency', entity."LegalEntity_BaseCurrencyCodeSnapshot", 'country', entity."LegalEntity_CountryCode",
+        'provider', entity."LegalEntity_SettingsJSON" #>> '{financeProvider,providerCode}', 'revision', revision."FINAdminRevision_Number",
+        'readiness', revision."FINAdminRevision_ReadinessJSON", 'approvedAt', revision."FINAdminRevision_ApprovedAt",
+        'evidence', jsonb_build_object('sourceTable', 'FIN_AdministrationRevisions', 'sourceId', revision."FINAdminRevision_ID", 'legalEntityId', entity."LegalEntity_ID")
+      ))
+    from public."FIN_AdministrationRevisions" revision
+    join public."cmp_LegalEntities" entity on entity."LegalEntity_ID" = revision."FINAdminRevision_LegalEntityID"
+    where entity."Company_ID" = p_company_id and revision."FINAdminRevision_StatusCode" = 'approved'
+  )
+  select coalesce(jsonb_agg(value order by updated_at desc), '[]'::jsonb)
+  from (
+    select value, updated_at
+    from records
+    where nullif(btrim(p_search), '') is null or search_text ilike '%' || btrim(p_search) || '%'
+    order by updated_at desc
+    limit greatest(1, least(coalesce(p_take, 10), 25))
+  ) bounded;
+$$;
+revoke all on function public.multideck_dexter_domain_finance(uuid, text, integer) from public, anon, authenticated;
+
+update public."sys_AIDexterWatchCapabilities"
+set "AIDexterWatchCapability_Description" = 'Event-driven finance document, tax-readiness, receipt, payment, allocation, provider-sync, recovery and approved configuration changes.',
+    "AIDexterWatchCapability_UpdatedAt" = now()
+where "AIDexterWatchCapability_Code" = 'finance';
+
+commit;
+-- BEGIN MIGRATION 20260830202817_finance_purchase_intake_evidence.sql
+begin;
+
+alter function public.multideck_dexter_domain_finance(uuid, text, integer)
+  rename to _multideck_dexter_domain_finance_base;
+
+revoke all on function public._multideck_dexter_domain_finance_base(uuid, text, integer)
+  from public, anon, authenticated;
+grant execute on function public._multideck_dexter_domain_finance_base(uuid, text, integer)
+  to service_role;
+
+create function public.multideck_dexter_domain_finance(p_company_id uuid, p_search text, p_take integer)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select coalesce(jsonb_agg(
+    case
+      when entry.value ->> 'recordKind' = 'document'
+        and document."FINDoc_MetadataJSON" ->> 'source' = 'supplier_document_intake'
+      then entry.value || jsonb_build_object('sourceEvidence', jsonb_strip_nulls(jsonb_build_object(
+        'kind', 'supplier_document_intake',
+        'fileName', document."FINDoc_MetadataJSON" ->> 'sourceFileName',
+        'sha256', document."FINDoc_MetadataJSON" ->> 'sourceSHA256',
+        'storedObjectId', document."FINDoc_MetadataJSON" ->> 'sourceStoredObjectId',
+        'extractionId', document."FINDoc_MetadataJSON" ->> 'sourceExtractionId'
+      )))
+      else entry.value
+    end
+    order by entry.ordinality
+  ), '[]'::jsonb)
+  from jsonb_array_elements(public._multideck_dexter_domain_finance_base(p_company_id, p_search, p_take))
+    with ordinality as entry(value, ordinality)
+  left join public."FIN_Documents" document
+    on document."FINDoc_ID" = nullif(entry.value ->> 'recordId', '')::uuid
+    and entry.value ->> 'recordKind' = 'document';
+$$;
+
+revoke all on function public.multideck_dexter_domain_finance(uuid, text, integer)
+  from public, anon, authenticated;
+grant execute on function public.multideck_dexter_domain_finance(uuid, text, integer)
+  to service_role;
+
+update public."sys_AIDexterWatchCapabilities"
+set "AIDexterWatchCapability_Description" = 'Event-driven finance document, retained supplier evidence, tax-readiness, receipt, payment, allocation, provider-sync, recovery and approved configuration changes.',
+    "AIDexterWatchCapability_UpdatedAt" = now()
+where "AIDexterWatchCapability_Code" = 'finance';
+
+commit;
+-- END MIGRATION 20260830202817_finance_purchase_intake_evidence.sql
+-- BEGIN MIGRATION 20260830204914_accrual_wip_management.sql
+begin;
+
+-- Activate the existing finance-period, accrual, WIP and posting foundations
+-- as a controlled management-accounting lifecycle.
+insert into public."sys_Permissions"(
+  "sys_Permission_Value", "sys_Permission_Group", "sys_Permission_Name",
+  "sys_Permission_Description", "sys_Permission_IsDangerous"
+) values
+  ('Finance.Management.View','Finance','View management accounting','View job periods, accruals, WIP and management-period reporting.',false),
+  ('Finance.Management.Prepare','Finance','Prepare management adjustments','Prepare job-period accrual and WIP reviews.',false),
+  ('Finance.Management.Approve','Finance','Approve management adjustments','Approve reviewed accrual and WIP adjustments.',true),
+  ('Finance.Management.Post','Finance','Post management adjustments','Post and reverse balanced accrual and WIP journals.',true)
+on conflict ("sys_Permission_Value") do update set
+  "sys_Permission_Group"=excluded."sys_Permission_Group",
+  "sys_Permission_Name"=excluded."sys_Permission_Name",
+  "sys_Permission_Description"=excluded."sys_Permission_Description",
+  "sys_Permission_IsDangerous"=excluded."sys_Permission_IsDangerous";
+
+with role_permissions(role_name, permission_value) as (
+  values
+    ('Administrator','Finance.Management.View'),('Administrator','Finance.Management.Prepare'),('Administrator','Finance.Management.Approve'),('Administrator','Finance.Management.Post'),
+    ('Finance manager','Finance.Management.View'),('Finance manager','Finance.Management.Prepare'),('Finance manager','Finance.Management.Approve'),('Finance manager','Finance.Management.Post'),
+    ('Operations manager','Finance.Management.View'),('Operations manager','Finance.Management.Prepare'),
+    ('Operator','Finance.Management.View')
+)
+insert into public."sys_UserRole_Permissions"("sys_UserRole_ID","sys_Permission_ID")
+select role."sys_UserRole_ID",permission."sys_Permission_ID"
+from role_permissions mapping
+join public."sys_UserRoles" role on lower(role."sys_UserRole_Name")=lower(mapping.role_name)
+join public."sys_Permissions" permission on permission."sys_Permission_Value"=mapping.permission_value
+on conflict do nothing;
+
+insert into public."sys_WorkflowRecordTypes"(
+  "WorkflowRecordType_Code","WorkflowRecordType_Name","WorkflowRecordType_SourceTable",
+  "WorkflowRecordType_Description","WorkflowRecordType_IsActive","WorkflowRecordType_SortOrder"
+) values
+  ('accrual_wip_review','Accrual and WIP review','FIN_PeriodCloseRuns','Management-period accrual, WIP, posting and reversal review.',true,128),
+  ('job_management_period','Job management period','Job_Header','Audited assignment of a job to its management-reporting period.',true,129)
+on conflict ("WorkflowRecordType_Code") do update set
+  "WorkflowRecordType_Name"=excluded."WorkflowRecordType_Name",
+  "WorkflowRecordType_SourceTable"=excluded."WorkflowRecordType_SourceTable",
+  "WorkflowRecordType_Description"=excluded."WorkflowRecordType_Description",
+  "WorkflowRecordType_IsActive"=true,
+  "WorkflowRecordType_SortOrder"=excluded."WorkflowRecordType_SortOrder";
+
+create unique index if not exists "UX_FIN_Periods_entity_code"
+  on public."FIN_Periods"("FINPeriod_LegalEntityID","FINPeriod_Code")
+  where "FINPeriod_LegalEntityID" is not null;
+
+alter table public."Job_Header"
+  drop constraint if exists "CK_Job_Header_management_period";
+alter table public."Job_Header"
+  add constraint "CK_Job_Header_management_period"
+  check ("Job_Period" ~ '^[0-9]{6}$') not valid;
+alter table public."Job_Header" validate constraint "CK_Job_Header_management_period";
+
+create table if not exists public."FIN_JobPeriodHistory" (
+  "FINJobPeriodHistory_ID" uuid primary key default gen_random_uuid(),
+  "FINJobPeriodHistory_JobID" uuid not null references public."Job_Header"("Job_ID") on delete cascade,
+  "FINJobPeriodHistory_LegalEntityID" uuid not null references public."cmp_LegalEntities"("LegalEntity_ID") on delete cascade,
+  "FINJobPeriodHistory_FromPeriodCode" varchar(6),
+  "FINJobPeriodHistory_ToPeriodCode" varchar(6) not null,
+  "FINJobPeriodHistory_Reason" text not null,
+  "FINJobPeriodHistory_AssignedAt" timestamptz not null default now(),
+  "FINJobPeriodHistory_AssignedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  constraint "CK_FIN_JobPeriodHistory_from_period" check ("FINJobPeriodHistory_FromPeriodCode" is null or "FINJobPeriodHistory_FromPeriodCode" ~ '^[0-9]{6}$'),
+  constraint "CK_FIN_JobPeriodHistory_to_period" check ("FINJobPeriodHistory_ToPeriodCode" ~ '^[0-9]{6}$')
+);
+create index if not exists "IX_FIN_JobPeriodHistory_job_at" on public."FIN_JobPeriodHistory"("FINJobPeriodHistory_JobID","FINJobPeriodHistory_AssignedAt" desc);
+
+alter table public."FIN_PeriodCloseRuns"
+  add column if not exists "FINCloseRun_LegalEntityID" uuid references public."cmp_LegalEntities"("LegalEntity_ID") on delete cascade,
+  add column if not exists "FINCloseRun_Reason" text,
+  add column if not exists "FINCloseRun_PostedAt" timestamptz,
+  add column if not exists "FINCloseRun_PostedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINCloseRun_ReversedAt" timestamptz,
+  add column if not exists "FINCloseRun_ReversedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINCloseRun_PostingBatchID" uuid references public."FIN_PostingBatches"("FINPostBatch_ID") on delete set null,
+  add column if not exists "FINCloseRun_ReversalBatchID" uuid references public."FIN_PostingBatches"("FINPostBatch_ID") on delete set null,
+  add column if not exists "FINCloseRun_UpdatedAt" timestamptz not null default now(),
+  add column if not exists "FINCloseRun_UpdatedBy" uuid references public."cmp_Users"("User_ID") on delete set null;
+
+create index if not exists "IX_FIN_PeriodCloseRuns_entity_period_status"
+  on public."FIN_PeriodCloseRuns"("FINCloseRun_LegalEntityID","FINCloseRun_PeriodID","FINCloseRun_StatusCode","FINCloseRun_StartedAt" desc);
+
+alter table public."FIN_PeriodCloseRunItems"
+  add column if not exists "FINCloseItem_ExpectedRevenue" numeric(18,4) not null default 0,
+  add column if not exists "FINCloseItem_ExpectedCost" numeric(18,4) not null default 0,
+  add column if not exists "FINCloseItem_ActualRevenue" numeric(18,4) not null default 0,
+  add column if not exists "FINCloseItem_ActualCost" numeric(18,4) not null default 0,
+  add column if not exists "FINCloseItem_OutOfPeriodRevenue" numeric(18,4) not null default 0,
+  add column if not exists "FINCloseItem_OutOfPeriodCost" numeric(18,4) not null default 0,
+  add column if not exists "FINCloseItem_ProposedWIP" numeric(18,4) not null default 0,
+  add column if not exists "FINCloseItem_ProposedAccrual" numeric(18,4) not null default 0,
+  add column if not exists "FINCloseItem_ApprovedWIP" numeric(18,4) not null default 0,
+  add column if not exists "FINCloseItem_ApprovedAccrual" numeric(18,4) not null default 0,
+  add column if not exists "FINCloseItem_ReviewerNote" text,
+  add column if not exists "FINCloseItem_UpdatedAt" timestamptz not null default now(),
+  add column if not exists "FINCloseItem_UpdatedBy" uuid references public."cmp_Users"("User_ID") on delete set null;
+
+alter table public."FIN_Accruals"
+  add column if not exists "FINAccrual_CloseRunItemID" uuid references public."FIN_PeriodCloseRunItems"("FINCloseItem_ID") on delete set null,
+  add column if not exists "FINAccrual_Description" text,
+  add column if not exists "FINAccrual_ApprovedAt" timestamptz,
+  add column if not exists "FINAccrual_ApprovedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINAccrual_PostedAt" timestamptz,
+  add column if not exists "FINAccrual_PostedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINAccrual_ReversedAt" timestamptz,
+  add column if not exists "FINAccrual_ReversedBy" uuid references public."cmp_Users"("User_ID") on delete set null;
+
+alter table public."FIN_WIPItems"
+  add column if not exists "FINWIP_CloseRunItemID" uuid references public."FIN_PeriodCloseRunItems"("FINCloseItem_ID") on delete set null,
+  add column if not exists "FINWIP_Description" text,
+  add column if not exists "FINWIP_ApprovedAt" timestamptz,
+  add column if not exists "FINWIP_ApprovedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINWIP_PostedAt" timestamptz,
+  add column if not exists "FINWIP_PostedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINWIP_ReversedAt" timestamptz,
+  add column if not exists "FINWIP_ReversedBy" uuid references public."cmp_Users"("User_ID") on delete set null;
+
+alter table public."FIN_JobPeriodHistory" enable row level security;
+revoke all on public."FIN_JobPeriodHistory",public."FIN_Periods",public."FIN_PeriodCloseRuns",public."FIN_PeriodCloseRunItems",public."FIN_Accruals",public."FIN_WIPItems",public."FIN_PostingBatches",public."FIN_PostingLines" from public,anon,authenticated;
+grant select,insert,update,delete on public."FIN_JobPeriodHistory",public."FIN_Periods",public."FIN_PeriodCloseRuns",public."FIN_PeriodCloseRunItems",public."FIN_Accruals",public."FIN_WIPItems",public."FIN_PostingBatches",public."FIN_PostingLines" to service_role;
+
+-- Management reporting needs an asset control for earned unbilled revenue.
+insert into public."FIN_NominalAccounts"(
+  "FINNom_Code","FINNom_Name","FINNom_AccountTypeCode","FINNom_LegalEntityID",
+  "FINNom_ExternalMappingHint","FINNom_IsControlAccount","FINNom_ControlTypeCode",
+  "FINNom_AllowManualPosting","FINNom_IsActive"
+)
+select '1400','Accrued income and work in progress','Current Asset',entity."LegalEntity_ID",'1400',true,'work_in_progress',false,true
+from public."cmp_LegalEntities" entity
+on conflict ("FINNom_LegalEntityID","FINNom_Code") do update set
+  "FINNom_Name"=excluded."FINNom_Name","FINNom_IsControlAccount"=true,
+  "FINNom_ControlTypeCode"='work_in_progress',"FINNom_IsActive"=true;
+
+update public."FIN_NominalAccounts"
+set "FINNom_IsControlAccount"=true,
+    "FINNom_ControlTypeCode"='accruals',
+    "FINNom_AllowManualPosting"=false,
+    "FINNom_IsActive"=true
+where "FINNom_Code"='2300' and "FINNom_LegalEntityID" is not null;
+
+create or replace function public._multideck_finance_ensure_period(
+  p_legal_entity_id uuid,p_period_code text,p_user_id uuid
+) returns uuid
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_period_id uuid; v_start date; v_year integer; v_month integer; v_currency text;
+begin
+  if p_period_code !~ '^[0-9]{6}$' then raise exception 'Enter a valid YYYYMM management period.' using errcode='22023'; end if;
+  v_year:=left(p_period_code,4)::integer; v_month:=right(p_period_code,2)::integer;
+  if v_year not between 2000 and 2200 or v_month not between 1 and 12 then raise exception 'Enter a valid YYYYMM management period.' using errcode='22023'; end if;
+  select upper(coalesce("LegalEntity_BaseCurrencyCodeSnapshot",'GBP')) into v_currency from public."cmp_LegalEntities" where "LegalEntity_ID"=p_legal_entity_id;
+  if not found then raise exception 'Legal entity not found.' using errcode='P0002'; end if;
+  v_start:=make_date(v_year,v_month,1);
+  insert into public."FIN_Periods"("FINPeriod_LegalEntityID","FINPeriod_Code","FINPeriod_Name","FINPeriod_StartDate","FINPeriod_EndDate","FINPeriod_StatusCode","FINPeriod_BaseCurrencyCode","FINPeriod_CreatedBy")
+  values(p_legal_entity_id,p_period_code,to_char(v_start,'Mon YYYY'),v_start,(v_start+interval '1 month-1 day')::date,'open',v_currency,p_user_id)
+  on conflict ("FINPeriod_LegalEntityID","FINPeriod_Code") where "FINPeriod_LegalEntityID" is not null do update set "FINPeriod_Name"=excluded."FINPeriod_Name"
+  returning "FINPeriod_ID" into v_period_id;
+  return v_period_id;
+end; $$;
+revoke all on function public._multideck_finance_ensure_period(uuid,text,uuid) from public,anon,authenticated;
+grant execute on function public._multideck_finance_ensure_period(uuid,text,uuid) to service_role;
+
+create or replace function public.multideck_finance_assign_job_period(
+  p_company_id uuid,p_user_id uuid,p_legal_entity_id uuid,p_job_id uuid,p_period_code text,p_reason text
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_job public."Job_Header"%rowtype; v_from text; v_period_id uuid;
+begin
+  if nullif(btrim(p_reason),'') is null then raise exception 'Explain why the job period is changing.' using errcode='22023'; end if;
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then raise exception 'The finance operator is outside this workspace.' using errcode='42501'; end if;
+  if not exists(select 1 from public."cmp_LegalEntities" where "LegalEntity_ID"=p_legal_entity_id and "Company_ID"=p_company_id) then raise exception 'That legal entity is outside this workspace.' using errcode='42501'; end if;
+  select job.* into v_job from public."Job_Header" job join public."cmp_Offices" office on office."Office_ID"=coalesce(job."Job_OrgOfficeID",job."Job_OfficeID") where job."Job_ID"=p_job_id and office."Company_ID"=p_company_id and not job."Job_IsDeleted" for update;
+  if not found then raise exception 'Job not found.' using errcode='P0002'; end if;
+  if v_job."Job_LegalEntityID" is not null and v_job."Job_LegalEntityID"<>p_legal_entity_id then raise exception 'That job belongs to another legal entity.' using errcode='42501'; end if;
+  v_period_id:=public._multideck_finance_ensure_period(p_legal_entity_id,p_period_code,p_user_id);
+  v_from:=v_job."Job_Period";
+  if v_from=p_period_code and v_job."Job_LegalEntityID"=p_legal_entity_id then return jsonb_build_object('jobId',p_job_id,'periodCode',p_period_code,'changed',false); end if;
+  insert into public."FIN_JobPeriodHistory"("FINJobPeriodHistory_JobID","FINJobPeriodHistory_LegalEntityID","FINJobPeriodHistory_FromPeriodCode","FINJobPeriodHistory_ToPeriodCode","FINJobPeriodHistory_Reason","FINJobPeriodHistory_AssignedBy") values(p_job_id,p_legal_entity_id,v_from,p_period_code,btrim(p_reason),p_user_id);
+  update public."Job_Header" set "Job_Period"=p_period_code,"Job_LegalEntityID"=p_legal_entity_id,"Job_UpdatedAt"=now(),"Job_UpdatedBy"=p_user_id where "Job_ID"=p_job_id;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_Reason","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON") values('finance_lifecycle',p_user_id,p_legal_entity_id,'multideck-app','finance','public','Job_Header','job_management_period',p_job_id,'assign_job_management_period','Job management period assigned',btrim(p_reason),true,1,jsonb_build_object('fromPeriod',v_from,'toPeriod',p_period_code,'periodId',v_period_id));
+  return jsonb_build_object('jobId',p_job_id,'periodCode',p_period_code,'changed',true);
+end; $$;
+revoke all on function public.multideck_finance_assign_job_period(uuid,uuid,uuid,uuid,text,text) from public,anon,authenticated;
+grant execute on function public.multideck_finance_assign_job_period(uuid,uuid,uuid,uuid,text,text) to service_role;
+
+create or replace function public.multideck_finance_transition_accrual_wip(
+  p_company_id uuid,p_user_id uuid,p_run_id uuid,p_action text,p_reason text default null
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_run public."FIN_PeriodCloseRuns"%rowtype; v_next text;
+begin
+  select run.* into v_run from public."FIN_PeriodCloseRuns" run join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=run."FINCloseRun_LegalEntityID" where run."FINCloseRun_ID"=p_run_id and entity."Company_ID"=p_company_id for update;
+  if not found then raise exception 'Accrual and WIP review not found.' using errcode='P0002'; end if;
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then raise exception 'The finance operator is outside this workspace.' using errcode='42501'; end if;
+  if p_action='request_review' and v_run."FINCloseRun_StatusCode"='draft' then v_next:='awaiting_approval';
+  elsif p_action='approve' and v_run."FINCloseRun_StatusCode"='awaiting_approval' then v_next:='approved';
+  elsif p_action='reject' and v_run."FINCloseRun_StatusCode" in ('awaiting_approval','approved') then v_next:='rejected';
+  else raise exception 'That review cannot make this transition from %.',v_run."FINCloseRun_StatusCode" using errcode='22023'; end if;
+  update public."FIN_PeriodCloseRuns" set "FINCloseRun_StatusCode"=v_next,"FINCloseRun_ApprovedAt"=case when v_next='approved' then now() else "FINCloseRun_ApprovedAt" end,"FINCloseRun_ApprovedBy"=case when v_next='approved' then p_user_id else "FINCloseRun_ApprovedBy" end,"FINCloseRun_UpdatedAt"=now(),"FINCloseRun_UpdatedBy"=p_user_id where "FINCloseRun_ID"=p_run_id;
+  update public."FIN_PeriodCloseRunItems" set "FINCloseItem_StatusCode"=v_next,"FINCloseItem_ApprovedWIP"=case when v_next='approved' then "FINCloseItem_ProposedWIP" else "FINCloseItem_ApprovedWIP" end,"FINCloseItem_ApprovedAccrual"=case when v_next='approved' then "FINCloseItem_ProposedAccrual" else "FINCloseItem_ApprovedAccrual" end,"FINCloseItem_UpdatedAt"=now(),"FINCloseItem_UpdatedBy"=p_user_id where "FINCloseItem_CloseRunID"=p_run_id;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_Reason","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON") values('finance_lifecycle',p_user_id,v_run."FINCloseRun_LegalEntityID",'multideck-app','finance','public','FIN_PeriodCloseRuns','accrual_wip_review',p_run_id,p_action,'Accrual and WIP review '||replace(v_next,'_',' '),nullif(btrim(p_reason),''),true,1,jsonb_build_object('fromStatus',v_run."FINCloseRun_StatusCode",'toStatus',v_next));
+  return jsonb_build_object('runId',p_run_id,'status',v_next);
+end; $$;
+revoke all on function public.multideck_finance_transition_accrual_wip(uuid,uuid,uuid,text,text) from public,anon,authenticated;
+grant execute on function public.multideck_finance_transition_accrual_wip(uuid,uuid,uuid,text,text) to service_role;
+
+create or replace function public.multideck_finance_post_accrual_wip(
+  p_company_id uuid,p_user_id uuid,p_run_id uuid
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_run public."FIN_PeriodCloseRuns"%rowtype; v_period public."FIN_Periods"%rowtype; v_item public."FIN_PeriodCloseRunItems"%rowtype; v_batch uuid; v_accrual uuid; v_wip uuid; v_line integer:=0; v_total numeric:=0; v_currency text; v_cost uuid; v_income uuid; v_accrual_control uuid; v_wip_control uuid;
+begin
+  select run.* into v_run from public."FIN_PeriodCloseRuns" run join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=run."FINCloseRun_LegalEntityID" where run."FINCloseRun_ID"=p_run_id and entity."Company_ID"=p_company_id for update;
+  if not found then raise exception 'Accrual and WIP review not found.' using errcode='P0002'; end if;
+  if v_run."FINCloseRun_StatusCode"<>'approved' then raise exception 'Approve this review before posting it.' using errcode='22023'; end if;
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then raise exception 'The finance operator is outside this workspace.' using errcode='42501'; end if;
+  select * into v_period from public."FIN_Periods" where "FINPeriod_ID"=v_run."FINCloseRun_PeriodID" for update;
+  if v_period."FINPeriod_StatusCode" not in ('open','soft_closed') then raise exception 'This management period is locked.' using errcode='22023'; end if;
+  v_currency:=v_period."FINPeriod_BaseCurrencyCode";
+  select "FINNom_ID" into v_cost from public."FIN_NominalAccounts" where "FINNom_LegalEntityID"=v_run."FINCloseRun_LegalEntityID" and "FINNom_Code"='5000' and "FINNom_IsActive" limit 1;
+  select "FINNom_ID" into v_income from public."FIN_NominalAccounts" where "FINNom_LegalEntityID"=v_run."FINCloseRun_LegalEntityID" and "FINNom_Code"='4000' and "FINNom_IsActive" limit 1;
+  select "FINNom_ID" into v_accrual_control from public."FIN_NominalAccounts" where "FINNom_LegalEntityID"=v_run."FINCloseRun_LegalEntityID" and "FINNom_Code"='2300' and "FINNom_IsActive" limit 1;
+  select "FINNom_ID" into v_wip_control from public."FIN_NominalAccounts" where "FINNom_LegalEntityID"=v_run."FINCloseRun_LegalEntityID" and "FINNom_Code"='1400' and "FINNom_IsActive" limit 1;
+  if v_cost is null or v_income is null or v_accrual_control is null or v_wip_control is null then raise exception 'Configure active 5000 cost, 4000 income, 2300 accrual and 1400 WIP accounts before posting.' using errcode='22023'; end if;
+  insert into public."FIN_PostingBatches"("FINPostBatch_Number","FINPostBatch_StatusCode","FINPostBatch_SourceTable","FINPostBatch_SourceID","FINPostBatch_PeriodID","FINPostBatch_LegalEntityID","FINPostBatch_DebitTotal","FINPostBatch_CreditTotal","FINPostBatch_CurrencyCodeSnapshot","FINPostBatch_PostedAt","FINPostBatch_PostedBy","FINPostBatch_CreatedBy") values('MA-'||v_period."FINPeriod_Code"||'-'||left(p_run_id::text,8),'posted','FIN_PeriodCloseRuns',p_run_id,v_period."FINPeriod_ID",v_run."FINCloseRun_LegalEntityID",0,0,v_currency,now(),p_user_id,p_user_id) returning "FINPostBatch_ID" into v_batch;
+  for v_item in select * from public."FIN_PeriodCloseRunItems" where "FINCloseItem_CloseRunID"=p_run_id and ("FINCloseItem_ApprovedAccrual">0 or "FINCloseItem_ApprovedWIP">0) order by "FINCloseItem_JobID" loop
+    if v_item."FINCloseItem_ApprovedAccrual">0 then
+      insert into public."FIN_Accruals"("FINAccrual_JobID","FINAccrual_PeriodID","FINAccrual_StatusCode","FINAccrual_AccountingDate","FINAccrual_ExpectedAmount","FINAccrual_AccruedAmount","FINAccrual_LocalAccruedAmount","FINAccrual_CurrencyCodeSnapshot","FINAccrual_CreatedBy","FINAccrual_CloseRunItemID","FINAccrual_Description","FINAccrual_ApprovedAt","FINAccrual_ApprovedBy","FINAccrual_PostedAt","FINAccrual_PostedBy") values(v_item."FINCloseItem_JobID",v_period."FINPeriod_ID",'posted',v_period."FINPeriod_EndDate",v_item."FINCloseItem_ExpectedCost",v_item."FINCloseItem_ApprovedAccrual",v_item."FINCloseItem_ApprovedAccrual",v_currency,p_user_id,v_item."FINCloseItem_ID",'Cost accrual for management period '||v_period."FINPeriod_Code",v_run."FINCloseRun_ApprovedAt",v_run."FINCloseRun_ApprovedBy",now(),p_user_id) returning "FINAccrual_ID" into v_accrual;
+      v_line:=v_line+1; insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_AccrualID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID") values(v_batch,v_line,v_cost,v_accrual,'Accrued job cost',v_item."FINCloseItem_ApprovedAccrual",0,v_currency,v_item."FINCloseItem_JobID");
+      v_line:=v_line+1; insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_AccrualID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID") values(v_batch,v_line,v_accrual_control,v_accrual,'Accrued cost liability',0,v_item."FINCloseItem_ApprovedAccrual",v_currency,v_item."FINCloseItem_JobID");
+      v_total:=v_total+v_item."FINCloseItem_ApprovedAccrual";
+    end if;
+    if v_item."FINCloseItem_ApprovedWIP">0 then
+      insert into public."FIN_WIPItems"("FINWIP_JobID","FINWIP_PeriodID","FINWIP_StatusCode","FINWIP_AccountingDate","FINWIP_ExpectedAmount","FINWIP_WIPAmount","FINWIP_LocalWIPAmount","FINWIP_CurrencyCodeSnapshot","FINWIP_CreatedBy","FINWIP_CloseRunItemID","FINWIP_Description","FINWIP_ApprovedAt","FINWIP_ApprovedBy","FINWIP_PostedAt","FINWIP_PostedBy") values(v_item."FINCloseItem_JobID",v_period."FINPeriod_ID",'posted',v_period."FINPeriod_EndDate",v_item."FINCloseItem_ExpectedRevenue",v_item."FINCloseItem_ApprovedWIP",v_item."FINCloseItem_ApprovedWIP",v_currency,p_user_id,v_item."FINCloseItem_ID",'Revenue WIP for management period '||v_period."FINPeriod_Code",v_run."FINCloseRun_ApprovedAt",v_run."FINCloseRun_ApprovedBy",now(),p_user_id) returning "FINWIP_ID" into v_wip;
+      v_line:=v_line+1; insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_WIPID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID") values(v_batch,v_line,v_wip_control,v_wip,'Accrued income and WIP',v_item."FINCloseItem_ApprovedWIP",0,v_currency,v_item."FINCloseItem_JobID");
+      v_line:=v_line+1; insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_WIPID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID") values(v_batch,v_line,v_income,v_wip,'Recognised unbilled revenue',0,v_item."FINCloseItem_ApprovedWIP",v_currency,v_item."FINCloseItem_JobID");
+      v_total:=v_total+v_item."FINCloseItem_ApprovedWIP";
+    end if;
+  end loop;
+  if v_total<=0 then raise exception 'This review has no approved accrual or WIP amounts to post.' using errcode='22023'; end if;
+  update public."FIN_PostingBatches" set "FINPostBatch_DebitTotal"=v_total,"FINPostBatch_CreditTotal"=v_total where "FINPostBatch_ID"=v_batch;
+  update public."FIN_PeriodCloseRunItems" set "FINCloseItem_StatusCode"='posted',"FINCloseItem_UpdatedAt"=now(),"FINCloseItem_UpdatedBy"=p_user_id where "FINCloseItem_CloseRunID"=p_run_id;
+  update public."FIN_PeriodCloseRuns" set "FINCloseRun_StatusCode"='posted',"FINCloseRun_PostedAt"=now(),"FINCloseRun_PostedBy"=p_user_id,"FINCloseRun_PostingBatchID"=v_batch,"FINCloseRun_UpdatedAt"=now(),"FINCloseRun_UpdatedBy"=p_user_id,"FINCloseRun_ControlTotalsJSON"="FINCloseRun_ControlTotalsJSON"||jsonb_build_object('postedTotal',v_total,'postingBatchId',v_batch) where "FINCloseRun_ID"=p_run_id;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON") values('finance_lifecycle',p_user_id,v_run."FINCloseRun_LegalEntityID",'multideck-app','finance','public','FIN_PeriodCloseRuns','accrual_wip_review',p_run_id,'post_accrual_wip','Accrual and WIP journal posted',true,1,jsonb_build_object('postingBatchId',v_batch,'total',v_total,'currency',v_currency));
+  return jsonb_build_object('runId',p_run_id,'status','posted','postingBatchId',v_batch,'total',v_total,'currency',v_currency);
+end; $$;
+revoke all on function public.multideck_finance_post_accrual_wip(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.multideck_finance_post_accrual_wip(uuid,uuid,uuid) to service_role;
+
+create or replace function public.multideck_finance_reverse_accrual_wip(
+  p_company_id uuid,p_user_id uuid,p_run_id uuid,p_reversal_period_code text,p_reason text
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_run public."FIN_PeriodCloseRuns"%rowtype; v_period_id uuid; v_period public."FIN_Periods"%rowtype; v_batch uuid; v_line integer:=0; v_total numeric:=0; v_row record;
+begin
+  if nullif(btrim(p_reason),'') is null then raise exception 'Explain why this accrual and WIP journal is being reversed.' using errcode='22023'; end if;
+  select run.* into v_run from public."FIN_PeriodCloseRuns" run join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=run."FINCloseRun_LegalEntityID" where run."FINCloseRun_ID"=p_run_id and entity."Company_ID"=p_company_id for update;
+  if not found then raise exception 'Accrual and WIP review not found.' using errcode='P0002'; end if;
+  if v_run."FINCloseRun_StatusCode"<>'posted' or v_run."FINCloseRun_PostingBatchID" is null then raise exception 'Only a posted review can be reversed.' using errcode='22023'; end if;
+  v_period_id:=public._multideck_finance_ensure_period(v_run."FINCloseRun_LegalEntityID",p_reversal_period_code,p_user_id);
+  select * into v_period from public."FIN_Periods" where "FINPeriod_ID"=v_period_id for update;
+  if v_period."FINPeriod_StatusCode"<>'open' then raise exception 'Choose an open reversal period.' using errcode='22023'; end if;
+  insert into public."FIN_PostingBatches"("FINPostBatch_Number","FINPostBatch_StatusCode","FINPostBatch_SourceTable","FINPostBatch_SourceID","FINPostBatch_PeriodID","FINPostBatch_LegalEntityID","FINPostBatch_DebitTotal","FINPostBatch_CreditTotal","FINPostBatch_CurrencyCodeSnapshot","FINPostBatch_PostedAt","FINPostBatch_PostedBy","FINPostBatch_CreatedBy") values('REV-'||v_period."FINPeriod_Code"||'-'||left(p_run_id::text,8),'posted','FIN_PeriodCloseRuns',p_run_id,v_period_id,v_run."FINCloseRun_LegalEntityID",0,0,v_period."FINPeriod_BaseCurrencyCode",now(),p_user_id,p_user_id) returning "FINPostBatch_ID" into v_batch;
+  for v_row in select line.* from public."FIN_PostingLines" line where line."FINPostLine_BatchID"=v_run."FINCloseRun_PostingBatchID" order by line."FINPostLine_LineNo" loop
+    v_line:=v_line+1;
+    insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_AccrualID","FINPostLine_WIPID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID") values(v_batch,v_line,v_row."FINPostLine_NominalAccountID",v_row."FINPostLine_AccrualID",v_row."FINPostLine_WIPID",'Reversal: '||coalesce(v_row."FINPostLine_Description",''),v_row."FINPostLine_CreditAmount",v_row."FINPostLine_DebitAmount",v_row."FINPostLine_CurrencyCodeSnapshot",v_row."FINPostLine_Dimension1ID");
+    v_total:=v_total+v_row."FINPostLine_DebitAmount";
+  end loop;
+  update public."FIN_PostingBatches" set "FINPostBatch_DebitTotal"=v_total,"FINPostBatch_CreditTotal"=v_total where "FINPostBatch_ID"=v_batch;
+  update public."FIN_Accruals" set "FINAccrual_StatusCode"='reversed',"FINAccrual_RelievedAmount"="FINAccrual_AccruedAmount","FINAccrual_ReversalPeriodID"=v_period_id,"FINAccrual_ReversedAt"=now(),"FINAccrual_ReversedBy"=p_user_id where "FINAccrual_CloseRunItemID" in (select "FINCloseItem_ID" from public."FIN_PeriodCloseRunItems" where "FINCloseItem_CloseRunID"=p_run_id);
+  update public."FIN_WIPItems" set "FINWIP_StatusCode"='reversed',"FINWIP_RelievedAmount"="FINWIP_WIPAmount","FINWIP_ReversalPeriodID"=v_period_id,"FINWIP_ReversedAt"=now(),"FINWIP_ReversedBy"=p_user_id where "FINWIP_CloseRunItemID" in (select "FINCloseItem_ID" from public."FIN_PeriodCloseRunItems" where "FINCloseItem_CloseRunID"=p_run_id);
+  update public."FIN_PeriodCloseRunItems" set "FINCloseItem_StatusCode"='reversed',"FINCloseItem_UpdatedAt"=now(),"FINCloseItem_UpdatedBy"=p_user_id where "FINCloseItem_CloseRunID"=p_run_id;
+  update public."FIN_PeriodCloseRuns" set "FINCloseRun_StatusCode"='reversed',"FINCloseRun_ReversedAt"=now(),"FINCloseRun_ReversedBy"=p_user_id,"FINCloseRun_ReversalBatchID"=v_batch,"FINCloseRun_UpdatedAt"=now(),"FINCloseRun_UpdatedBy"=p_user_id where "FINCloseRun_ID"=p_run_id;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_Reason","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON") values('finance_lifecycle',p_user_id,v_run."FINCloseRun_LegalEntityID",'multideck-app','finance','public','FIN_PeriodCloseRuns','accrual_wip_review',p_run_id,'reverse_accrual_wip','Accrual and WIP journal reversed',btrim(p_reason),true,1,jsonb_build_object('reversalBatchId',v_batch,'periodCode',p_reversal_period_code,'total',v_total));
+  return jsonb_build_object('runId',p_run_id,'status','reversed','reversalBatchId',v_batch,'total',v_total);
+end; $$;
+revoke all on function public.multideck_finance_reverse_accrual_wip(uuid,uuid,uuid,text,text) from public,anon,authenticated;
+grant execute on function public.multideck_finance_reverse_accrual_wip(uuid,uuid,uuid,text,text) to service_role;
+
+-- Extend Dexter's tenant-safe finance evidence with management-period reviews.
+alter function public.multideck_dexter_domain_finance(uuid,text,integer)
+  rename to _multideck_dexter_domain_finance_before_accrual_wip;
+revoke all on function public._multideck_dexter_domain_finance_before_accrual_wip(uuid,text,integer) from public,anon,authenticated;
+grant execute on function public._multideck_dexter_domain_finance_before_accrual_wip(uuid,text,integer) to service_role;
+
+create function public.multideck_dexter_domain_finance(p_company_id uuid,p_search text,p_take integer)
+returns jsonb language sql stable security definer set search_path=pg_catalog,public as $$
+  with records as (
+    select value,coalesce((value->'evidence'->>'updatedAt')::timestamptz,'2000-01-01'::timestamptz) updated_at
+    from jsonb_array_elements(public._multideck_dexter_domain_finance_before_accrual_wip(p_company_id,p_search,p_take)) value
+    union all
+    select jsonb_strip_nulls(jsonb_build_object(
+      'recordId',run."FINCloseRun_ID",'recordKind','accrual_wip_review','status',run."FINCloseRun_StatusCode",
+      'periodCode',period."FINPeriod_Code",'periodName',period."FINPeriod_Name",
+      'jobCount',coalesce((run."FINCloseRun_ControlTotalsJSON"->>'jobCount')::integer,0),
+      'proposedAccrual',coalesce((run."FINCloseRun_ControlTotalsJSON"->>'proposedAccrual')::numeric,0),
+      'proposedWIP',coalesce((run."FINCloseRun_ControlTotalsJSON"->>'proposedWIP')::numeric,0),
+      'postedTotal',coalesce((run."FINCloseRun_ControlTotalsJSON"->>'postedTotal')::numeric,0),
+      'evidence',jsonb_build_object('sourceTable','FIN_PeriodCloseRuns','sourceId',run."FINCloseRun_ID",'legalEntityId',run."FINCloseRun_LegalEntityID",'updatedAt',run."FINCloseRun_UpdatedAt")
+    )),run."FINCloseRun_UpdatedAt"
+    from public."FIN_PeriodCloseRuns" run
+    join public."FIN_Periods" period on period."FINPeriod_ID"=run."FINCloseRun_PeriodID"
+    join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=run."FINCloseRun_LegalEntityID"
+    where entity."Company_ID"=p_company_id and (nullif(btrim(p_search),'') is null or concat_ws(' ',period."FINPeriod_Code",period."FINPeriod_Name",run."FINCloseRun_StatusCode",run."FINCloseRun_Reason") ilike '%'||btrim(p_search)||'%')
+  )
+  select coalesce(jsonb_agg(value order by updated_at desc),'[]'::jsonb) from (select * from records order by updated_at desc limit greatest(1,least(coalesce(p_take,10),25))) limited;
+$$;
+revoke all on function public.multideck_dexter_domain_finance(uuid,text,integer) from public,anon,authenticated;
+grant execute on function public.multideck_dexter_domain_finance(uuid,text,integer) to service_role;
+
+update public."sys_AIDexterDataDomains" set
+  "AIDexterDomain_Description"='Tenant-safe finance documents, retained evidence, cash, job management periods, accrual/WIP reviews, postings and reversals.',
+  "AIDexterDomain_UpdatedAt"=now()
+where "AIDexterDomain_Code"='finance';
+
+update public."sys_AIDexterWatchCapabilities" set
+  "AIDexterWatchCapability_Description"='Event-driven finance document, supplier evidence, tax-readiness, cash, provider-sync, job-period, accrual/WIP review, posting, reversal and approved configuration changes.',
+  "AIDexterWatchCapability_FieldsJSON"=(coalesce("AIDexterWatchCapability_FieldsJSON",'[]'::jsonb)||'["managementPeriod","accrualWipStatus","proposedAccrual","proposedWIP","postedTotal"]'::jsonb),
+  "AIDexterWatchCapability_UpdatedAt"=now()
+where "AIDexterWatchCapability_Code"='finance';
+
+create or replace function public._multideck_dexter_accrual_wip_watch_change()
+returns trigger language plpgsql security definer set search_path=pg_catalog,public as $$
+declare v_company uuid; v_old jsonb; v_new jsonb;
+begin
+  select "Company_ID" into v_company from public."cmp_LegalEntities" where "LegalEntity_ID"=new."FINCloseRun_LegalEntityID";
+  v_old:=case when tg_op='INSERT' then null else jsonb_build_object('status',old."FINCloseRun_StatusCode",'totals',old."FINCloseRun_ControlTotalsJSON") end;
+  v_new:=jsonb_build_object('status',new."FINCloseRun_StatusCode",'totals',new."FINCloseRun_ControlTotalsJSON");
+  if v_old is distinct from v_new and v_company is not null and exists(select 1 from public."AI_DexterWatches" watch where watch."AIDexterWatch_CompanyID"=v_company and watch."AIDexterWatch_CapabilityCode"='finance' and watch."AIDexterWatch_StatusCode"='active' and (watch."AIDexterWatch_TargetID" is null or watch."AIDexterWatch_TargetID"=new."FINCloseRun_ID")) then
+    insert into public."AI_DexterWatchSignals"("AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable","AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON") values(v_company,'finance','FIN_PeriodCloseRuns',new."FINCloseRun_ID",v_old,v_new);
+  end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_dexter_accrual_wip_watch_change() from public,anon,authenticated;
+drop trigger if exists "TR_FIN_PeriodCloseRuns_dexter_watch" on public."FIN_PeriodCloseRuns";
+create trigger "TR_FIN_PeriodCloseRuns_dexter_watch" after insert or update of "FINCloseRun_StatusCode","FINCloseRun_ControlTotalsJSON" on public."FIN_PeriodCloseRuns" for each row execute function public._multideck_dexter_accrual_wip_watch_change();
+
+-- Allow Dexter to propose one exact, audited job-period assignment. Approval
+-- remains mandatory and review/post/reversal stay in the finance workspace.
+create or replace function public.multideck_dexter_action_assign_job_management_period(uuid,uuid,jsonb)
+returns jsonb language plpgsql security definer set search_path=pg_catalog,public as $$
+begin
+  raise exception 'This action must be completed through the Finance Accruals Edge Function.' using errcode='42501';
+end; $$;
+revoke all on function public.multideck_dexter_action_assign_job_management_period(uuid,uuid,jsonb) from public,anon,authenticated;
+
+insert into public."sys_AIDexterActions"(
+  "AIDexterAction_Code","AIDexterAction_DomainCode","AIDexterAction_Name","AIDexterAction_Description","AIDexterAction_Function","AIDexterAction_ParametersJSON","AIDexterAction_SortOrder","AIDexterAction_IsActive","AIDexterAction_UpdatedAt","AIDexterAction_RequiredPermissionsJSON","AIDexterAction_IntentFamily","AIDexterAction_ScopeStrategy","AIDexterAction_HasExternalEffect"
+) values (
+  'assign_job_management_period','finance','Assign job management period','Assign one exact job to a legal entity and YYYYMM management period through the audited Finance boundary.','multideck_dexter_action_assign_job_management_period',
+  '{"type":"object","properties":{"jobId":{"type":"string"},"legalEntityId":{"type":"string"},"periodCode":{"type":"string","pattern":"^[0-9]{4}(0[1-9]|1[0-2])$"},"reason":{"type":"string","minLength":1}},"required":["jobId","legalEntityId","periodCode","reason"],"additionalProperties":false}'::jsonb,
+  262,true,now(),'["Finance.Management.Prepare"]'::jsonb,'finance_job_period','canonical',true
+)
+on conflict ("AIDexterAction_Code") do update set
+  "AIDexterAction_DomainCode"=excluded."AIDexterAction_DomainCode","AIDexterAction_Name"=excluded."AIDexterAction_Name","AIDexterAction_Description"=excluded."AIDexterAction_Description","AIDexterAction_Function"=excluded."AIDexterAction_Function","AIDexterAction_ParametersJSON"=excluded."AIDexterAction_ParametersJSON","AIDexterAction_SortOrder"=excluded."AIDexterAction_SortOrder","AIDexterAction_IsActive"=true,"AIDexterAction_UpdatedAt"=now(),"AIDexterAction_RequiredPermissionsJSON"=excluded."AIDexterAction_RequiredPermissionsJSON","AIDexterAction_IntentFamily"=excluded."AIDexterAction_IntentFamily","AIDexterAction_ScopeStrategy"=excluded."AIDexterAction_ScopeStrategy","AIDexterAction_HasExternalEffect"=true;
+
+commit;
+-- END MIGRATION 20260830204914_accrual_wip_management.sql
+
+-- BEGIN MIGRATION 20260830213234_automatic_accrual_wip_document_release.sql
+begin;
+
+-- A posted job-linked invoice releases only the matching management adjustment.
+-- Sales invoices reverse revenue WIP; purchase invoices reverse cost accruals.
+-- Releases are progressive, idempotent and use local net values (VAT excluded).
+create table public."FIN_AccrualWIPReleases" (
+  "FINRelease_ID" uuid primary key default gen_random_uuid(),
+  "FINRelease_LegalEntityID" uuid not null references public."cmp_LegalEntities"("LegalEntity_ID") on delete restrict,
+  "FINRelease_DocumentID" uuid not null references public."FIN_Documents"("FINDoc_ID") on delete restrict,
+  "FINRelease_DocumentTypeCode" varchar(60) not null,
+  "FINRelease_JobID" uuid not null references public."Job_Header"("Job_ID") on delete restrict,
+  "FINRelease_CloseRunItemID" uuid references public."FIN_PeriodCloseRunItems"("FINCloseItem_ID") on delete set null,
+  "FINRelease_AccrualID" uuid references public."FIN_Accruals"("FINAccrual_ID") on delete restrict,
+  "FINRelease_WIPID" uuid references public."FIN_WIPItems"("FINWIP_ID") on delete restrict,
+  "FINRelease_ReleaseKindCode" varchar(40) not null,
+  "FINRelease_PeriodID" uuid not null references public."FIN_Periods"("FINPeriod_ID") on delete restrict,
+  "FINRelease_PostingBatchID" uuid not null references public."FIN_PostingBatches"("FINPostBatch_ID") on delete restrict,
+  "FINRelease_SourceAmount" numeric(18,4) not null,
+  "FINRelease_LocalAmount" numeric(18,4) not null,
+  "FINRelease_DocumentCurrencyCode" varchar(3) not null,
+  "FINRelease_LocalCurrencyCode" varchar(3) not null,
+  "FINRelease_TriggerCode" varchar(40) not null default 'document_posted',
+  "FINRelease_ReleasedAt" timestamptz not null default now(),
+  "FINRelease_ReleasedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  constraint "CK_FIN_AccrualWIPReleases_kind" check (
+    ("FINRelease_ReleaseKindCode"='revenue_wip' and "FINRelease_WIPID" is not null and "FINRelease_AccrualID" is null and "FINRelease_DocumentTypeCode"='sl_invoice')
+    or
+    ("FINRelease_ReleaseKindCode"='cost_accrual' and "FINRelease_AccrualID" is not null and "FINRelease_WIPID" is null and "FINRelease_DocumentTypeCode"='pl_invoice')
+  ),
+  constraint "CK_FIN_AccrualWIPReleases_amounts" check ("FINRelease_SourceAmount">0 and "FINRelease_LocalAmount">0),
+  constraint "CK_FIN_AccrualWIPReleases_currency" check ("FINRelease_DocumentCurrencyCode" ~ '^[A-Z]{3}$' and "FINRelease_LocalCurrencyCode" ~ '^[A-Z]{3}$'),
+  unique ("FINRelease_DocumentID","FINRelease_AccrualID"),
+  unique ("FINRelease_DocumentID","FINRelease_WIPID")
+);
+
+create index "IX_FIN_AccrualWIPReleases_document" on public."FIN_AccrualWIPReleases"("FINRelease_DocumentID","FINRelease_ReleasedAt");
+create index "IX_FIN_AccrualWIPReleases_job" on public."FIN_AccrualWIPReleases"("FINRelease_JobID","FINRelease_ReleaseKindCode","FINRelease_ReleasedAt");
+create index "IX_FIN_AccrualWIPReleases_run_item" on public."FIN_AccrualWIPReleases"("FINRelease_CloseRunItemID");
+
+alter table public."FIN_AccrualWIPReleases" enable row level security;
+revoke all on public."FIN_AccrualWIPReleases" from public,anon,authenticated;
+grant select,insert,update,delete on public."FIN_AccrualWIPReleases" to service_role;
+
+create or replace function public._multideck_finance_release_document_accrual_wip(
+  p_document_id uuid
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare
+  v_document public."FIN_Documents"%rowtype;
+  v_user uuid;
+  v_period_id uuid;
+  v_period public."FIN_Periods"%rowtype;
+  v_batch uuid;
+  v_job record;
+  v_adjustment record;
+  v_source_line record;
+  v_available numeric;
+  v_release numeric;
+  v_source_amount numeric;
+  v_line integer:=0;
+  v_total numeric:=0;
+  v_wip_total numeric:=0;
+  v_accrual_total numeric:=0;
+  v_kind text;
+begin
+  select * into v_document from public."FIN_Documents" where "FINDoc_ID"=p_document_id for update;
+  if not found or v_document."FINDoc_PostingStatusCode"<>'posted' or v_document."FINDoc_TypeCode" not in ('sl_invoice','pl_invoice') then
+    return jsonb_build_object('documentId',p_document_id,'released',false,'reason','not_applicable');
+  end if;
+  if v_document."FINDoc_LegalEntityID" is null or v_document."FINDoc_LocalNetAmount"<=0 then
+    return jsonb_build_object('documentId',p_document_id,'released',false,'reason','no_positive_local_net_value');
+  end if;
+  if exists(select 1 from public."FIN_AccrualWIPReleases" where "FINRelease_DocumentID"=p_document_id) then
+    select coalesce(sum(case when "FINRelease_ReleaseKindCode"='revenue_wip' then "FINRelease_LocalAmount" else 0 end),0),
+           coalesce(sum(case when "FINRelease_ReleaseKindCode"='cost_accrual' then "FINRelease_LocalAmount" else 0 end),0)
+    into v_wip_total,v_accrual_total from public."FIN_AccrualWIPReleases" where "FINRelease_DocumentID"=p_document_id;
+    return jsonb_build_object('documentId',p_document_id,'released',true,'idempotent',true,'wipReleased',v_wip_total,'accrualReleased',v_accrual_total);
+  end if;
+
+  v_user:=coalesce(v_document."FINDoc_PostedBy",v_document."FINDoc_UpdatedBy",v_document."FINDoc_CreatedBy");
+  v_kind:=case when v_document."FINDoc_TypeCode"='sl_invoice' then 'revenue_wip' else 'cost_accrual' end;
+
+  for v_job in
+    with linked as (
+      select link."FINDocLineJob_JobID" job_id,round(abs(sum(link."FINDocLineJob_LocalNetAmount")),4) local_net
+      from public."FIN_DocumentLineJobLinks" link
+      where link."FINDocLineJob_DocumentID"=p_document_id and link."FINDocLineJob_JobID" is not null
+      group by link."FINDocLineJob_JobID"
+    )
+    select job_id,local_net from linked where local_net>0
+    union all
+    select v_document."FINDoc_SourceJobID",round(abs(v_document."FINDoc_LocalNetAmount"),4)
+    where v_document."FINDoc_SourceJobID" is not null and not exists(select 1 from linked)
+  loop
+    v_available:=v_job.local_net;
+    if v_kind='revenue_wip' then
+      for v_adjustment in
+        select wip.*,item."FINCloseItem_CloseRunID",run."FINCloseRun_PostingBatchID"
+        from public."FIN_WIPItems" wip
+        join public."FIN_Periods" source_period on source_period."FINPeriod_ID"=wip."FINWIP_PeriodID" and source_period."FINPeriod_LegalEntityID"=v_document."FINDoc_LegalEntityID"
+        join public."FIN_PeriodCloseRunItems" item on item."FINCloseItem_ID"=wip."FINWIP_CloseRunItemID"
+        join public."FIN_PeriodCloseRuns" run on run."FINCloseRun_ID"=item."FINCloseItem_CloseRunID"
+        where wip."FINWIP_JobID"=v_job.job_id
+          and wip."FINWIP_WIPAmount">wip."FINWIP_RelievedAmount"
+          and wip."FINWIP_StatusCode" in ('posted','partially_reversed')
+        order by wip."FINWIP_AccountingDate",wip."FINWIP_CreatedAt",wip."FINWIP_ID"
+        for update of wip
+      loop
+        exit when v_available<=0;
+        v_release:=least(v_available,v_adjustment."FINWIP_WIPAmount"-v_adjustment."FINWIP_RelievedAmount");
+        if v_batch is null then
+          v_period_id:=v_document."FINDoc_PeriodID";
+          if v_period_id is not null then
+            select * into v_period from public."FIN_Periods" where "FINPeriod_ID"=v_period_id and "FINPeriod_LegalEntityID"=v_document."FINDoc_LegalEntityID";
+            if not found then v_period_id:=null; end if;
+          end if;
+          if v_period_id is null then
+            v_period_id:=public._multideck_finance_ensure_period(v_document."FINDoc_LegalEntityID",to_char(v_document."FINDoc_AccountingDate",'YYYYMM'),v_user);
+            select * into v_period from public."FIN_Periods" where "FINPeriod_ID"=v_period_id;
+          end if;
+          insert into public."FIN_PostingBatches"("FINPostBatch_Number","FINPostBatch_StatusCode","FINPostBatch_SourceTable","FINPostBatch_SourceID","FINPostBatch_PeriodID","FINPostBatch_LegalEntityID","FINPostBatch_DebitTotal","FINPostBatch_CreditTotal","FINPostBatch_CurrencyCodeSnapshot","FINPostBatch_PostedAt","FINPostBatch_PostedBy","FINPostBatch_CreatedBy")
+          values('AUTO-REL-'||left(coalesce(v_document."FINDoc_Number",p_document_id::text),56),'posted','FIN_Documents',p_document_id,v_period_id,v_document."FINDoc_LegalEntityID",0,0,v_period."FINPeriod_BaseCurrencyCode",now(),v_user,v_user)
+          returning "FINPostBatch_ID" into v_batch;
+        end if;
+        v_source_amount:=round(v_release/v_document."FINDoc_ExchangeRate",4);
+        insert into public."FIN_AccrualWIPReleases"("FINRelease_LegalEntityID","FINRelease_DocumentID","FINRelease_DocumentTypeCode","FINRelease_JobID","FINRelease_CloseRunItemID","FINRelease_WIPID","FINRelease_ReleaseKindCode","FINRelease_PeriodID","FINRelease_PostingBatchID","FINRelease_SourceAmount","FINRelease_LocalAmount","FINRelease_DocumentCurrencyCode","FINRelease_LocalCurrencyCode","FINRelease_ReleasedBy")
+        values(v_document."FINDoc_LegalEntityID",p_document_id,v_document."FINDoc_TypeCode",v_job.job_id,v_adjustment."FINWIP_CloseRunItemID",v_adjustment."FINWIP_ID",v_kind,v_period_id,v_batch,v_source_amount,v_release,v_document."FINDoc_CurrencyCodeSnapshot",v_period."FINPeriod_BaseCurrencyCode",v_user);
+        for v_source_line in select line.* from public."FIN_PostingLines" line where line."FINPostLine_BatchID"=v_adjustment."FINCloseRun_PostingBatchID" and line."FINPostLine_WIPID"=v_adjustment."FINWIP_ID" order by line."FINPostLine_LineNo" loop
+          v_line:=v_line+1;
+          insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_DocumentID","FINPostLine_WIPID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID")
+          values(v_batch,v_line,v_source_line."FINPostLine_NominalAccountID",p_document_id,v_adjustment."FINWIP_ID",'Automatic WIP reversal for '||coalesce(v_document."FINDoc_Number",p_document_id::text),round(v_source_line."FINPostLine_CreditAmount"*v_release/v_adjustment."FINWIP_WIPAmount",4),round(v_source_line."FINPostLine_DebitAmount"*v_release/v_adjustment."FINWIP_WIPAmount",4),v_period."FINPeriod_BaseCurrencyCode",v_job.job_id);
+        end loop;
+        update public."FIN_WIPItems" set
+          "FINWIP_RelievedAmount"="FINWIP_RelievedAmount"+v_release,
+          "FINWIP_StatusCode"=case when "FINWIP_RelievedAmount"+v_release>="FINWIP_WIPAmount" then 'reversed' else 'partially_reversed' end,
+          "FINWIP_ReversalPeriodID"=v_period_id,
+          "FINWIP_ReversedAt"=case when "FINWIP_RelievedAmount"+v_release>="FINWIP_WIPAmount" then now() else "FINWIP_ReversedAt" end,
+          "FINWIP_ReversedBy"=case when "FINWIP_RelievedAmount"+v_release>="FINWIP_WIPAmount" then v_user else "FINWIP_ReversedBy" end
+        where "FINWIP_ID"=v_adjustment."FINWIP_ID";
+        v_available:=v_available-v_release; v_total:=v_total+v_release; v_wip_total:=v_wip_total+v_release;
+      end loop;
+    else
+      for v_adjustment in
+        select accrual.*,item."FINCloseItem_CloseRunID",run."FINCloseRun_PostingBatchID"
+        from public."FIN_Accruals" accrual
+        join public."FIN_Periods" source_period on source_period."FINPeriod_ID"=accrual."FINAccrual_PeriodID" and source_period."FINPeriod_LegalEntityID"=v_document."FINDoc_LegalEntityID"
+        join public."FIN_PeriodCloseRunItems" item on item."FINCloseItem_ID"=accrual."FINAccrual_CloseRunItemID"
+        join public."FIN_PeriodCloseRuns" run on run."FINCloseRun_ID"=item."FINCloseItem_CloseRunID"
+        where accrual."FINAccrual_JobID"=v_job.job_id
+          and accrual."FINAccrual_AccruedAmount">accrual."FINAccrual_RelievedAmount"
+          and accrual."FINAccrual_StatusCode" in ('posted','partially_reversed')
+        order by accrual."FINAccrual_AccountingDate",accrual."FINAccrual_CreatedAt",accrual."FINAccrual_ID"
+        for update of accrual
+      loop
+        exit when v_available<=0;
+        v_release:=least(v_available,v_adjustment."FINAccrual_AccruedAmount"-v_adjustment."FINAccrual_RelievedAmount");
+        if v_batch is null then
+          v_period_id:=v_document."FINDoc_PeriodID";
+          if v_period_id is not null then
+            select * into v_period from public."FIN_Periods" where "FINPeriod_ID"=v_period_id and "FINPeriod_LegalEntityID"=v_document."FINDoc_LegalEntityID";
+            if not found then v_period_id:=null; end if;
+          end if;
+          if v_period_id is null then
+            v_period_id:=public._multideck_finance_ensure_period(v_document."FINDoc_LegalEntityID",to_char(v_document."FINDoc_AccountingDate",'YYYYMM'),v_user);
+            select * into v_period from public."FIN_Periods" where "FINPeriod_ID"=v_period_id;
+          end if;
+          insert into public."FIN_PostingBatches"("FINPostBatch_Number","FINPostBatch_StatusCode","FINPostBatch_SourceTable","FINPostBatch_SourceID","FINPostBatch_PeriodID","FINPostBatch_LegalEntityID","FINPostBatch_DebitTotal","FINPostBatch_CreditTotal","FINPostBatch_CurrencyCodeSnapshot","FINPostBatch_PostedAt","FINPostBatch_PostedBy","FINPostBatch_CreatedBy")
+          values('AUTO-REL-'||left(coalesce(v_document."FINDoc_Number",p_document_id::text),56),'posted','FIN_Documents',p_document_id,v_period_id,v_document."FINDoc_LegalEntityID",0,0,v_period."FINPeriod_BaseCurrencyCode",now(),v_user,v_user)
+          returning "FINPostBatch_ID" into v_batch;
+        end if;
+        v_source_amount:=round(v_release/v_document."FINDoc_ExchangeRate",4);
+        insert into public."FIN_AccrualWIPReleases"("FINRelease_LegalEntityID","FINRelease_DocumentID","FINRelease_DocumentTypeCode","FINRelease_JobID","FINRelease_CloseRunItemID","FINRelease_AccrualID","FINRelease_ReleaseKindCode","FINRelease_PeriodID","FINRelease_PostingBatchID","FINRelease_SourceAmount","FINRelease_LocalAmount","FINRelease_DocumentCurrencyCode","FINRelease_LocalCurrencyCode","FINRelease_ReleasedBy")
+        values(v_document."FINDoc_LegalEntityID",p_document_id,v_document."FINDoc_TypeCode",v_job.job_id,v_adjustment."FINAccrual_CloseRunItemID",v_adjustment."FINAccrual_ID",v_kind,v_period_id,v_batch,v_source_amount,v_release,v_document."FINDoc_CurrencyCodeSnapshot",v_period."FINPeriod_BaseCurrencyCode",v_user);
+        for v_source_line in select line.* from public."FIN_PostingLines" line where line."FINPostLine_BatchID"=v_adjustment."FINCloseRun_PostingBatchID" and line."FINPostLine_AccrualID"=v_adjustment."FINAccrual_ID" order by line."FINPostLine_LineNo" loop
+          v_line:=v_line+1;
+          insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_DocumentID","FINPostLine_AccrualID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID")
+          values(v_batch,v_line,v_source_line."FINPostLine_NominalAccountID",p_document_id,v_adjustment."FINAccrual_ID",'Automatic accrual reversal for '||coalesce(v_document."FINDoc_Number",p_document_id::text),round(v_source_line."FINPostLine_CreditAmount"*v_release/v_adjustment."FINAccrual_AccruedAmount",4),round(v_source_line."FINPostLine_DebitAmount"*v_release/v_adjustment."FINAccrual_AccruedAmount",4),v_period."FINPeriod_BaseCurrencyCode",v_job.job_id);
+        end loop;
+        update public."FIN_Accruals" set
+          "FINAccrual_RelievedAmount"="FINAccrual_RelievedAmount"+v_release,
+          "FINAccrual_StatusCode"=case when "FINAccrual_RelievedAmount"+v_release>="FINAccrual_AccruedAmount" then 'reversed' else 'partially_reversed' end,
+          "FINAccrual_ReversalPeriodID"=v_period_id,
+          "FINAccrual_ReversedAt"=case when "FINAccrual_RelievedAmount"+v_release>="FINAccrual_AccruedAmount" then now() else "FINAccrual_ReversedAt" end,
+          "FINAccrual_ReversedBy"=case when "FINAccrual_RelievedAmount"+v_release>="FINAccrual_AccruedAmount" then v_user else "FINAccrual_ReversedBy" end
+        where "FINAccrual_ID"=v_adjustment."FINAccrual_ID";
+        v_available:=v_available-v_release; v_total:=v_total+v_release; v_accrual_total:=v_accrual_total+v_release;
+      end loop;
+    end if;
+  end loop;
+
+  if v_batch is null then
+    return jsonb_build_object('documentId',p_document_id,'released',false,'reason','no_outstanding_adjustment');
+  end if;
+
+  update public."FIN_PostingBatches" set "FINPostBatch_DebitTotal"=v_total,"FINPostBatch_CreditTotal"=v_total where "FINPostBatch_ID"=v_batch;
+
+  update public."FIN_PeriodCloseRunItems" item set
+    "FINCloseItem_StatusCode"=case when
+      not exists(select 1 from public."FIN_WIPItems" w where w."FINWIP_CloseRunItemID"=item."FINCloseItem_ID" and w."FINWIP_WIPAmount">w."FINWIP_RelievedAmount")
+      and not exists(select 1 from public."FIN_Accruals" a where a."FINAccrual_CloseRunItemID"=item."FINCloseItem_ID" and a."FINAccrual_AccruedAmount">a."FINAccrual_RelievedAmount")
+      then 'reversed' else 'partially_reversed' end,
+    "FINCloseItem_UpdatedAt"=now(),"FINCloseItem_UpdatedBy"=v_user
+  where item."FINCloseItem_ID" in (select "FINRelease_CloseRunItemID" from public."FIN_AccrualWIPReleases" where "FINRelease_DocumentID"=p_document_id);
+
+  update public."FIN_PeriodCloseRuns" run set
+    "FINCloseRun_ControlTotalsJSON"=run."FINCloseRun_ControlTotalsJSON"||jsonb_build_object('releasedWIP',totals.released_wip,'releasedAccrual',totals.released_accrual,'lastAutomaticReleaseDocumentId',p_document_id,'lastAutomaticReleaseBatchId',v_batch),
+    "FINCloseRun_StatusCode"=case when totals.has_remaining then run."FINCloseRun_StatusCode" else 'reversed' end,
+    "FINCloseRun_ReversedAt"=case when totals.has_remaining then run."FINCloseRun_ReversedAt" else now() end,
+    "FINCloseRun_ReversedBy"=case when totals.has_remaining then run."FINCloseRun_ReversedBy" else v_user end,
+    "FINCloseRun_ReversalBatchID"=case when totals.has_remaining then run."FINCloseRun_ReversalBatchID" else v_batch end,
+    "FINCloseRun_UpdatedAt"=now(),"FINCloseRun_UpdatedBy"=v_user
+  from (
+    select item."FINCloseItem_CloseRunID" run_id,
+      coalesce(sum(release."FINRelease_LocalAmount") filter(where release."FINRelease_ReleaseKindCode"='revenue_wip'),0) released_wip,
+      coalesce(sum(release."FINRelease_LocalAmount") filter(where release."FINRelease_ReleaseKindCode"='cost_accrual'),0) released_accrual,
+      exists(select 1 from public."FIN_PeriodCloseRunItems" remaining_item left join public."FIN_WIPItems" remaining_wip on remaining_wip."FINWIP_CloseRunItemID"=remaining_item."FINCloseItem_ID" left join public."FIN_Accruals" remaining_accrual on remaining_accrual."FINAccrual_CloseRunItemID"=remaining_item."FINCloseItem_ID" where remaining_item."FINCloseItem_CloseRunID"=item."FINCloseItem_CloseRunID" and (coalesce(remaining_wip."FINWIP_WIPAmount"-remaining_wip."FINWIP_RelievedAmount",0)>0 or coalesce(remaining_accrual."FINAccrual_AccruedAmount"-remaining_accrual."FINAccrual_RelievedAmount",0)>0)) has_remaining
+    from public."FIN_PeriodCloseRunItems" item
+    join public."FIN_AccrualWIPReleases" release on release."FINRelease_CloseRunItemID"=item."FINCloseItem_ID"
+    where item."FINCloseItem_CloseRunID" in (select affected."FINCloseItem_CloseRunID" from public."FIN_PeriodCloseRunItems" affected join public."FIN_AccrualWIPReleases" current_release on current_release."FINRelease_CloseRunItemID"=affected."FINCloseItem_ID" where current_release."FINRelease_DocumentID"=p_document_id)
+    group by item."FINCloseItem_CloseRunID"
+  ) totals where run."FINCloseRun_ID"=totals.run_id;
+
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON")
+  values('finance_lifecycle',v_user,v_document."FINDoc_LegalEntityID",'multideck-app','finance','public','FIN_Documents',v_document."FINDoc_TypeCode",p_document_id,case when v_kind='revenue_wip' then 'automatic_wip_reversal' else 'automatic_accrual_reversal' end,case when v_kind='revenue_wip' then 'Revenue WIP automatically reversed by AR invoice' else 'Cost accrual automatically reversed by AP invoice' end,true,1,jsonb_build_object('postingBatchId',v_batch,'wipReleased',v_wip_total,'accrualReleased',v_accrual_total,'localCurrency',v_period."FINPeriod_BaseCurrencyCode",'basis','local_net_excluding_tax'));
+
+  return jsonb_build_object('documentId',p_document_id,'released',true,'postingBatchId',v_batch,'wipReleased',v_wip_total,'accrualReleased',v_accrual_total);
+end; $$;
+revoke all on function public._multideck_finance_release_document_accrual_wip(uuid) from public,anon,authenticated;
+grant execute on function public._multideck_finance_release_document_accrual_wip(uuid) to service_role;
+
+create or replace function public._multideck_finance_document_posted_release_trigger()
+returns trigger language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+begin
+  if new."FINDoc_PostingStatusCode"='posted'
+     and new."FINDoc_TypeCode" in ('sl_invoice','pl_invoice')
+     and (tg_op='INSERT' or old."FINDoc_PostingStatusCode" is distinct from new."FINDoc_PostingStatusCode") then
+    perform public._multideck_finance_release_document_accrual_wip(new."FINDoc_ID");
+  end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_document_posted_release_trigger() from public,anon,authenticated;
+drop trigger if exists "TR_FIN_Documents_automatic_accrual_wip_release" on public."FIN_Documents";
+create trigger "TR_FIN_Documents_automatic_accrual_wip_release"
+after insert or update of "FINDoc_PostingStatusCode" on public."FIN_Documents"
+for each row execute function public._multideck_finance_document_posted_release_trigger();
+
+-- Manual review reversal must now reverse only the balance that has not already
+-- been released by invoices. This prevents an invoice release being reversed twice.
+create or replace function public.multideck_finance_reverse_accrual_wip(
+  p_company_id uuid,p_user_id uuid,p_run_id uuid,p_reversal_period_code text,p_reason text
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_run public."FIN_PeriodCloseRuns"%rowtype; v_period_id uuid; v_period public."FIN_Periods"%rowtype; v_batch uuid; v_line integer:=0; v_total numeric:=0; v_record record; v_source_line record; v_remaining numeric;
+begin
+  if nullif(btrim(p_reason),'') is null then raise exception 'Explain why this accrual and WIP journal is being reversed.' using errcode='22023'; end if;
+  select run.* into v_run from public."FIN_PeriodCloseRuns" run join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=run."FINCloseRun_LegalEntityID" where run."FINCloseRun_ID"=p_run_id and entity."Company_ID"=p_company_id for update;
+  if not found then raise exception 'Accrual and WIP review not found.' using errcode='P0002'; end if;
+  if v_run."FINCloseRun_StatusCode"<>'posted' or v_run."FINCloseRun_PostingBatchID" is null then raise exception 'Only a posted review can be reversed.' using errcode='22023'; end if;
+  v_period_id:=public._multideck_finance_ensure_period(v_run."FINCloseRun_LegalEntityID",p_reversal_period_code,p_user_id);
+  select * into v_period from public."FIN_Periods" where "FINPeriod_ID"=v_period_id for update;
+  if v_period."FINPeriod_StatusCode"<>'open' then raise exception 'Choose an open reversal period.' using errcode='22023'; end if;
+  insert into public."FIN_PostingBatches"("FINPostBatch_Number","FINPostBatch_StatusCode","FINPostBatch_SourceTable","FINPostBatch_SourceID","FINPostBatch_PeriodID","FINPostBatch_LegalEntityID","FINPostBatch_DebitTotal","FINPostBatch_CreditTotal","FINPostBatch_CurrencyCodeSnapshot","FINPostBatch_PostedAt","FINPostBatch_PostedBy","FINPostBatch_CreatedBy") values('REV-'||v_period."FINPeriod_Code"||'-'||left(p_run_id::text,8),'posted','FIN_PeriodCloseRuns',p_run_id,v_period_id,v_run."FINCloseRun_LegalEntityID",0,0,v_period."FINPeriod_BaseCurrencyCode",now(),p_user_id,p_user_id) returning "FINPostBatch_ID" into v_batch;
+  for v_record in
+    select 'accrual' kind,a."FINAccrual_ID" adjustment_id,a."FINAccrual_JobID" job_id,a."FINAccrual_AccruedAmount" original_amount,a."FINAccrual_RelievedAmount" relieved_amount
+    from public."FIN_Accruals" a join public."FIN_PeriodCloseRunItems" item on item."FINCloseItem_ID"=a."FINAccrual_CloseRunItemID" where item."FINCloseItem_CloseRunID"=p_run_id and a."FINAccrual_AccruedAmount">a."FINAccrual_RelievedAmount"
+    union all
+    select 'wip',w."FINWIP_ID",w."FINWIP_JobID",w."FINWIP_WIPAmount",w."FINWIP_RelievedAmount"
+    from public."FIN_WIPItems" w join public."FIN_PeriodCloseRunItems" item on item."FINCloseItem_ID"=w."FINWIP_CloseRunItemID" where item."FINCloseItem_CloseRunID"=p_run_id and w."FINWIP_WIPAmount">w."FINWIP_RelievedAmount"
+    order by kind,adjustment_id
+  loop
+    v_remaining:=v_record.original_amount-v_record.relieved_amount;
+    for v_source_line in select line.* from public."FIN_PostingLines" line where line."FINPostLine_BatchID"=v_run."FINCloseRun_PostingBatchID" and ((v_record.kind='accrual' and line."FINPostLine_AccrualID"=v_record.adjustment_id) or (v_record.kind='wip' and line."FINPostLine_WIPID"=v_record.adjustment_id)) order by line."FINPostLine_LineNo" loop
+      v_line:=v_line+1;
+      insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_AccrualID","FINPostLine_WIPID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID") values(v_batch,v_line,v_source_line."FINPostLine_NominalAccountID",case when v_record.kind='accrual' then v_record.adjustment_id end,case when v_record.kind='wip' then v_record.adjustment_id end,'Reversal of remaining balance: '||coalesce(v_source_line."FINPostLine_Description",''),round(v_source_line."FINPostLine_CreditAmount"*v_remaining/v_record.original_amount,4),round(v_source_line."FINPostLine_DebitAmount"*v_remaining/v_record.original_amount,4),v_source_line."FINPostLine_CurrencyCodeSnapshot",v_record.job_id);
+    end loop;
+    if v_record.kind='accrual' then update public."FIN_Accruals" set "FINAccrual_StatusCode"='reversed',"FINAccrual_RelievedAmount"="FINAccrual_AccruedAmount","FINAccrual_ReversalPeriodID"=v_period_id,"FINAccrual_ReversedAt"=now(),"FINAccrual_ReversedBy"=p_user_id where "FINAccrual_ID"=v_record.adjustment_id;
+    else update public."FIN_WIPItems" set "FINWIP_StatusCode"='reversed',"FINWIP_RelievedAmount"="FINWIP_WIPAmount","FINWIP_ReversalPeriodID"=v_period_id,"FINWIP_ReversedAt"=now(),"FINWIP_ReversedBy"=p_user_id where "FINWIP_ID"=v_record.adjustment_id; end if;
+    v_total:=v_total+v_remaining;
+  end loop;
+  if v_total<=0 then raise exception 'This review has no remaining accrual or WIP balance to reverse.' using errcode='22023'; end if;
+  update public."FIN_PostingBatches" set "FINPostBatch_DebitTotal"=v_total,"FINPostBatch_CreditTotal"=v_total where "FINPostBatch_ID"=v_batch;
+  update public."FIN_PeriodCloseRunItems" set "FINCloseItem_StatusCode"='reversed',"FINCloseItem_UpdatedAt"=now(),"FINCloseItem_UpdatedBy"=p_user_id where "FINCloseItem_CloseRunID"=p_run_id;
+  update public."FIN_PeriodCloseRuns" set "FINCloseRun_StatusCode"='reversed',"FINCloseRun_ReversedAt"=now(),"FINCloseRun_ReversedBy"=p_user_id,"FINCloseRun_ReversalBatchID"=v_batch,"FINCloseRun_UpdatedAt"=now(),"FINCloseRun_UpdatedBy"=p_user_id where "FINCloseRun_ID"=p_run_id;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_Reason","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON") values('finance_lifecycle',p_user_id,v_run."FINCloseRun_LegalEntityID",'multideck-app','finance','public','FIN_PeriodCloseRuns','accrual_wip_review',p_run_id,'reverse_accrual_wip','Remaining accrual and WIP journal reversed',btrim(p_reason),true,1,jsonb_build_object('reversalBatchId',v_batch,'periodCode',p_reversal_period_code,'remainingTotal',v_total));
+  return jsonb_build_object('runId',p_run_id,'status','reversed','reversalBatchId',v_batch,'total',v_total);
+end; $$;
+revoke all on function public.multideck_finance_reverse_accrual_wip(uuid,uuid,uuid,text,text) from public,anon,authenticated;
+grant execute on function public.multideck_finance_reverse_accrual_wip(uuid,uuid,uuid,text,text) to service_role;
+
+-- Dexter can inspect release evidence, while the release itself remains a
+-- deterministic posting side effect and is never exposed as a chat write.
+alter function public.multideck_dexter_domain_finance(uuid,text,integer)
+  rename to _multideck_dexter_domain_finance_before_document_release;
+revoke all on function public._multideck_dexter_domain_finance_before_document_release(uuid,text,integer) from public,anon,authenticated;
+grant execute on function public._multideck_dexter_domain_finance_before_document_release(uuid,text,integer) to service_role;
+
+create function public.multideck_dexter_domain_finance(p_company_id uuid,p_search text,p_take integer)
+returns jsonb language sql stable security definer set search_path=pg_catalog,public as $$
+  with records as (
+    select value,coalesce((value->'evidence'->>'updatedAt')::timestamptz,'2000-01-01'::timestamptz) updated_at
+    from jsonb_array_elements(public._multideck_dexter_domain_finance_before_document_release(p_company_id,p_search,p_take)) value
+    union all
+    select jsonb_strip_nulls(jsonb_build_object(
+      'recordId',release."FINRelease_ID",'recordKind','automatic_accrual_wip_release','releaseKind',release."FINRelease_ReleaseKindCode",
+      'documentId',document."FINDoc_ID",'documentNumber',document."FINDoc_Number",'documentType',document."FINDoc_TypeCode",
+      'jobReference',job."Job_Period"||'-'||job."Job_Number",'localAmount',release."FINRelease_LocalAmount",
+      'localCurrency',release."FINRelease_LocalCurrencyCode",'postingBatchId',release."FINRelease_PostingBatchID",
+      'evidence',jsonb_build_object('sourceTable','FIN_AccrualWIPReleases','sourceId',release."FINRelease_ID",'legalEntityId',release."FINRelease_LegalEntityID",'updatedAt',release."FINRelease_ReleasedAt")
+    )),release."FINRelease_ReleasedAt"
+    from public."FIN_AccrualWIPReleases" release
+    join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=release."FINRelease_LegalEntityID"
+    join public."FIN_Documents" document on document."FINDoc_ID"=release."FINRelease_DocumentID"
+    join public."Job_Header" job on job."Job_ID"=release."FINRelease_JobID"
+    where entity."Company_ID"=p_company_id and (nullif(btrim(p_search),'') is null or concat_ws(' ',document."FINDoc_Number",document."FINDoc_TypeCode",job."Job_Period",job."Job_Number",release."FINRelease_ReleaseKindCode") ilike '%'||btrim(p_search)||'%')
+  )
+  select coalesce(jsonb_agg(value order by updated_at desc),'[]'::jsonb) from (select * from records order by updated_at desc limit greatest(1,least(coalesce(p_take,10),25))) limited;
+$$;
+revoke all on function public.multideck_dexter_domain_finance(uuid,text,integer) from public,anon,authenticated;
+grant execute on function public.multideck_dexter_domain_finance(uuid,text,integer) to service_role;
+
+update public."sys_AIDexterDataDomains" set
+  "AIDexterDomain_Description"='Tenant-safe finance documents, cash, job management periods, accrual/WIP reviews, postings, automatic invoice-driven releases and reversal evidence.',
+  "AIDexterDomain_UpdatedAt"=now()
+where "AIDexterDomain_Code"='finance';
+
+update public."sys_AIDexterWatchCapabilities" set
+  "AIDexterWatchCapability_Description"='Event-driven finance document, provider-sync, job-period, accrual/WIP review, automatic invoice-driven release, posting and reversal changes.',
+  "AIDexterWatchCapability_FieldsJSON"=(coalesce("AIDexterWatchCapability_FieldsJSON",'[]'::jsonb)||'["automaticWIPRelease","automaticAccrualRelease","releaseDocument","releasePostingBatch"]'::jsonb),
+  "AIDexterWatchCapability_UpdatedAt"=now()
+where "AIDexterWatchCapability_Code"='finance';
+
+commit;
+-- END MIGRATION 20260830213234_automatic_accrual_wip_document_release.sql
+
+-- BEGIN MIGRATION 20260830214204_fix_finance_period_end_interval.sql
+begin;
+
+create or replace function public._multideck_finance_ensure_period(
+  p_legal_entity_id uuid,p_period_code text,p_user_id uuid
+) returns uuid
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_period_id uuid; v_start date; v_year integer; v_month integer; v_currency text;
+begin
+  if p_period_code !~ '^[0-9]{6}$' then raise exception 'Enter a valid YYYYMM management period.' using errcode='22023'; end if;
+  v_year:=left(p_period_code,4)::integer; v_month:=right(p_period_code,2)::integer;
+  if v_year not between 2000 and 2200 or v_month not between 1 and 12 then raise exception 'Enter a valid YYYYMM management period.' using errcode='22023'; end if;
+  select upper(coalesce("LegalEntity_BaseCurrencyCodeSnapshot",'GBP')) into v_currency from public."cmp_LegalEntities" where "LegalEntity_ID"=p_legal_entity_id;
+  if not found then raise exception 'Legal entity not found.' using errcode='P0002'; end if;
+  v_start:=make_date(v_year,v_month,1);
+  insert into public."FIN_Periods"("FINPeriod_LegalEntityID","FINPeriod_Code","FINPeriod_Name","FINPeriod_StartDate","FINPeriod_EndDate","FINPeriod_StatusCode","FINPeriod_BaseCurrencyCode","FINPeriod_CreatedBy")
+  values(p_legal_entity_id,p_period_code,to_char(v_start,'Mon YYYY'),v_start,(v_start+interval '1 month'-interval '1 day')::date,'open',v_currency,p_user_id)
+  on conflict ("FINPeriod_LegalEntityID","FINPeriod_Code") where "FINPeriod_LegalEntityID" is not null do update set "FINPeriod_Name"=excluded."FINPeriod_Name"
+  returning "FINPeriod_ID" into v_period_id;
+  return v_period_id;
+end; $$;
+revoke all on function public._multideck_finance_ensure_period(uuid,text,uuid) from public,anon,authenticated;
+grant execute on function public._multideck_finance_ensure_period(uuid,text,uuid) to service_role;
+
+commit;
+-- END MIGRATION 20260830214204_fix_finance_period_end_interval.sql
+
+-- BEGIN MIGRATION 20260830214351_finance_posting_line_job_dimension_fix.sql
+begin;
+
+alter table public."FIN_PostingLines"
+  add column if not exists "FINPostLine_JobID" uuid references public."Job_Header"("Job_ID") on delete set null;
+
+create index if not exists "IX_FIN_PostingLines_job" on public."FIN_PostingLines"("FINPostLine_JobID","FINPostLine_BatchID");
+
+-- Earlier management-journal functions supplied their job reference through
+-- Dimension1. Preserve a real finance dimension when one exists; otherwise
+-- move an exact Job_Header identifier into the dedicated job field before FK
+-- checks run. This keeps old function versions safe during rolling upgrades.
+create or replace function public._multideck_finance_posting_line_job_dimension_guard()
+returns trigger language plpgsql set search_path=pg_catalog,public as $$
+begin
+  if new."FINPostLine_Dimension1ID" is not null
+     and exists(select 1 from public."Job_Header" job where job."Job_ID"=new."FINPostLine_Dimension1ID")
+     and not exists(select 1 from public."FIN_DimensionValues" dimension where dimension."FINDimValue_ID"=new."FINPostLine_Dimension1ID") then
+    new."FINPostLine_JobID":=coalesce(new."FINPostLine_JobID",new."FINPostLine_Dimension1ID");
+    new."FINPostLine_Dimension1ID":=null;
+  end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_posting_line_job_dimension_guard() from public,anon,authenticated;
+drop trigger if exists "TR_FIN_PostingLines_job_dimension_guard" on public."FIN_PostingLines";
+create trigger "TR_FIN_PostingLines_job_dimension_guard"
+before insert or update of "FINPostLine_Dimension1ID","FINPostLine_JobID" on public."FIN_PostingLines"
+for each row execute function public._multideck_finance_posting_line_job_dimension_guard();
+
+commit;
+-- END MIGRATION 20260830214351_finance_posting_line_job_dimension_fix.sql
+
+-- BEGIN MIGRATION 20260830214525_fix_posting_dimension_value_key.sql
+begin;
+
+create or replace function public._multideck_finance_posting_line_job_dimension_guard()
+returns trigger language plpgsql set search_path=pg_catalog,public as $$
+begin
+  if new."FINPostLine_Dimension1ID" is not null
+     and exists(select 1 from public."Job_Header" job where job."Job_ID"=new."FINPostLine_Dimension1ID")
+     and not exists(select 1 from public."FIN_DimensionValues" dimension where dimension."FINDim_ID"=new."FINPostLine_Dimension1ID") then
+    new."FINPostLine_JobID":=coalesce(new."FINPostLine_JobID",new."FINPostLine_Dimension1ID");
+    new."FINPostLine_Dimension1ID":=null;
+  end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_posting_line_job_dimension_guard() from public,anon,authenticated;
+
+commit;
+-- END MIGRATION 20260830214525_fix_posting_dimension_value_key.sql
+
+-- BEGIN MIGRATION 20260830215402_charge_line_accrual_wip_profitability.sql
+begin;
+
+-- Job costing is the operational source for charge-level management accounting.
+-- Actuals remain derived from posted finance documents; they are never copied
+-- into a second mutable ledger.
+alter table public."Job_Costing_Lines"
+  add column if not exists "JobCostingLine_CostNominalAccountID" uuid references public."FIN_NominalAccounts"("FINNom_ID") on delete set null,
+  add column if not exists "JobCostingLine_RevenueNominalAccountID" uuid references public."FIN_NominalAccounts"("FINNom_ID") on delete set null;
+
+alter table public."FIN_DocumentLineJobLinks"
+  add column if not exists "FINDocLineJob_JobCostingLineID" uuid references public."Job_Costing_Lines"("JobCostingLine_ID") on delete set null;
+
+alter table public."FIN_Accruals"
+  add column if not exists "FINAccrual_JobCostingLineID" uuid references public."Job_Costing_Lines"("JobCostingLine_ID") on delete restrict;
+
+alter table public."FIN_WIPItems"
+  add column if not exists "FINWIP_JobCostingLineID" uuid references public."Job_Costing_Lines"("JobCostingLine_ID") on delete restrict;
+
+alter table public."FIN_AccrualWIPReleases"
+  add column if not exists "FINRelease_JobCostingLineID" uuid references public."Job_Costing_Lines"("JobCostingLine_ID") on delete restrict;
+
+create index if not exists "IX_FIN_DocumentLineJobLinks_costing_line" on public."FIN_DocumentLineJobLinks"("FINDocLineJob_JobCostingLineID","FINDocLineJob_DocumentID");
+create index if not exists "IX_FIN_Accruals_costing_line" on public."FIN_Accruals"("FINAccrual_JobCostingLineID","FINAccrual_StatusCode");
+create index if not exists "IX_FIN_WIPItems_costing_line" on public."FIN_WIPItems"("FINWIP_JobCostingLineID","FINWIP_StatusCode");
+create index if not exists "IX_FIN_AccrualWIPReleases_costing_line" on public."FIN_AccrualWIPReleases"("FINRelease_JobCostingLineID","FINRelease_ReleasedAt");
+
+-- Existing lines use the legal entity's standard income and cost accounts until
+-- an operator assigns a more specific nominal to the charge line.
+update public."Job_Costing_Lines" line set
+  "JobCostingLine_CostNominalAccountID"=coalesce(line."JobCostingLine_CostNominalAccountID",cost."FINNom_ID"),
+  "JobCostingLine_RevenueNominalAccountID"=coalesce(line."JobCostingLine_RevenueNominalAccountID",income."FINNom_ID")
+from public."Job_Header" job
+left join lateral (
+  select account."FINNom_ID" from public."FIN_NominalAccounts" account
+  where account."FINNom_LegalEntityID"=job."Job_LegalEntityID" and account."FINNom_Code"='5000' and account."FINNom_IsActive" limit 1
+) cost on true
+left join lateral (
+  select account."FINNom_ID" from public."FIN_NominalAccounts" account
+  where account."FINNom_LegalEntityID"=job."Job_LegalEntityID" and account."FINNom_Code"='4000' and account."FINNom_IsActive" limit 1
+) income on true
+where job."Job_ID"=line."Job_ID";
+
+create table public."FIN_JobChargePeriodAllocations" (
+  "FINChargePeriod_ID" uuid primary key default gen_random_uuid(),
+  "FINChargePeriod_CloseRunItemID" uuid not null references public."FIN_PeriodCloseRunItems"("FINCloseItem_ID") on delete cascade,
+  "FINChargePeriod_JobID" uuid not null references public."Job_Header"("Job_ID") on delete restrict,
+  "FINChargePeriod_JobCostingLineID" uuid not null references public."Job_Costing_Lines"("JobCostingLine_ID") on delete restrict,
+  "FINChargePeriod_LineNoSnapshot" integer not null,
+  "FINChargePeriod_ChargeCodeSnapshot" varchar(80),
+  "FINChargePeriod_DescriptionSnapshot" varchar(240) not null,
+  "FINChargePeriod_CostNominalAccountID" uuid references public."FIN_NominalAccounts"("FINNom_ID") on delete restrict,
+  "FINChargePeriod_RevenueNominalAccountID" uuid references public."FIN_NominalAccounts"("FINNom_ID") on delete restrict,
+  "FINChargePeriod_ExpectedRevenue" numeric(18,4) not null default 0,
+  "FINChargePeriod_ExpectedCost" numeric(18,4) not null default 0,
+  "FINChargePeriod_ActualRevenue" numeric(18,4) not null default 0,
+  "FINChargePeriod_ActualCost" numeric(18,4) not null default 0,
+  "FINChargePeriod_OutOfPeriodRevenue" numeric(18,4) not null default 0,
+  "FINChargePeriod_OutOfPeriodCost" numeric(18,4) not null default 0,
+  "FINChargePeriod_ProposedWIP" numeric(18,4) not null default 0,
+  "FINChargePeriod_ProposedAccrual" numeric(18,4) not null default 0,
+  "FINChargePeriod_ApprovedWIP" numeric(18,4) not null default 0,
+  "FINChargePeriod_ApprovedAccrual" numeric(18,4) not null default 0,
+  "FINChargePeriod_CreatedAt" timestamptz not null default now(),
+  "FINChargePeriod_UpdatedAt" timestamptz not null default now(),
+  "FINChargePeriod_UpdatedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  constraint "UQ_FIN_JobChargePeriodAllocations_item_line" unique ("FINChargePeriod_CloseRunItemID","FINChargePeriod_JobCostingLineID"),
+  constraint "CK_FIN_JobChargePeriodAllocations_nonnegative" check (
+    "FINChargePeriod_ExpectedRevenue">=0 and "FINChargePeriod_ExpectedCost">=0 and
+    "FINChargePeriod_ProposedWIP">=0 and "FINChargePeriod_ProposedAccrual">=0 and
+    "FINChargePeriod_ApprovedWIP">=0 and "FINChargePeriod_ApprovedAccrual">=0
+  )
+);
+
+create index "IX_FIN_JobChargePeriodAllocations_job" on public."FIN_JobChargePeriodAllocations"("FINChargePeriod_JobID","FINChargePeriod_JobCostingLineID");
+alter table public."FIN_JobChargePeriodAllocations" enable row level security;
+revoke all on public."FIN_JobChargePeriodAllocations" from public,anon,authenticated;
+grant select,insert,update,delete on public."FIN_JobChargePeriodAllocations" to service_role;
+
+-- Resolve a draft's lines to exact job charge lines. A missing mapping is kept
+-- deliberately unmatched so it can surface as a genuine GP movement.
+create or replace function public.multideck_finance_link_document_charge_lines(
+  p_company_id uuid,p_user_id uuid,p_document_id uuid,p_lines jsonb
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_document public."FIN_Documents"%rowtype; v_entry jsonb; v_line_id uuid; v_costing_line uuid; v_nominal uuid; v_count integer:=0;
+begin
+  select document.* into v_document
+  from public."FIN_Documents" document
+  join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=document."FINDoc_LegalEntityID"
+  where document."FINDoc_ID"=p_document_id and entity."Company_ID"=p_company_id for update;
+  if not found then raise exception 'Finance document not found.' using errcode='P0002'; end if;
+  if v_document."FINDoc_StatusCode"<>'draft' or v_document."FINDoc_SourceJobID" is null then
+    if v_document."FINDoc_SourceJobID" is null then return jsonb_build_object('documentId',p_document_id,'linkedCount',0); end if;
+    raise exception 'Only a job-linked draft can change charge allocations.' using errcode='22023';
+  end if;
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then raise exception 'The finance operator is outside this workspace.' using errcode='42501'; end if;
+  if jsonb_typeof(p_lines)<>'array' then raise exception 'Charge allocations must be an array.' using errcode='22023'; end if;
+  for v_entry in select value from jsonb_array_elements(p_lines) loop
+    select line."FINDocLine_ID" into v_line_id from public."FIN_DocumentLines" line
+    where line."FINDocLine_DocumentID"=p_document_id and line."FINDocLine_LineNo"=(v_entry->>'lineNo')::integer;
+    if v_line_id is null then raise exception 'Finance line % was not found.',v_entry->>'lineNo' using errcode='P0002'; end if;
+    v_costing_line:=nullif(v_entry->>'jobCostingLineId','')::uuid;
+    if v_costing_line is not null then
+      select case when v_document."FINDoc_TypeCode" in ('sl_invoice','credit_note') then line."JobCostingLine_RevenueNominalAccountID" else line."JobCostingLine_CostNominalAccountID" end
+      into v_nominal from public."Job_Costing_Lines" line
+      where line."JobCostingLine_ID"=v_costing_line and line."Job_ID"=v_document."FINDoc_SourceJobID";
+      if not found then raise exception 'A selected charge line does not belong to this job.' using errcode='42501'; end if;
+      if v_nominal is null then raise exception 'Assign a nominal code to the selected job charge before review.' using errcode='22023'; end if;
+    else v_nominal:=null;
+    end if;
+    update public."FIN_DocumentLineJobLinks" set "FINDocLineJob_JobCostingLineID"=v_costing_line,"FINDocLineJob_LinkTypeCode"=case when v_costing_line is null then 'source_job' else 'source_charge_line' end
+    where "FINDocLineJob_DocumentID"=p_document_id and "FINDocLineJob_DocumentLineID"=v_line_id and "FINDocLineJob_JobID"=v_document."FINDoc_SourceJobID";
+    update public."FIN_DocumentLines" set "FINDocLine_NominalAccountID"=v_nominal where "FINDocLine_ID"=v_line_id;
+    if v_costing_line is not null then v_count:=v_count+1; end if;
+  end loop;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON")
+  values('finance_lifecycle',p_user_id,v_document."FINDoc_LegalEntityID",'multideck-app','finance','public','FIN_Documents',v_document."FINDoc_TypeCode",p_document_id,'link_job_charge_lines','Document lines linked to job charges',true,v_count,jsonb_build_object('linkedCount',v_count));
+  return jsonb_build_object('documentId',p_document_id,'linkedCount',v_count);
+end; $$;
+revoke all on function public.multideck_finance_link_document_charge_lines(uuid,uuid,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.multideck_finance_link_document_charge_lines(uuid,uuid,uuid,jsonb) to service_role;
+
+create or replace view public."FIN_JobChargeProfitability" with (security_invoker=true) as
+with actual as (
+  select link."FINDocLineJob_JobCostingLineID" line_id,
+    coalesce(sum(link."FINDocLineJob_LocalNetAmount") filter(where document."FINDoc_TypeCode" in ('sl_invoice','credit_note')),0) actual_revenue,
+    coalesce(sum(link."FINDocLineJob_LocalNetAmount") filter(where document."FINDoc_TypeCode" in ('pl_invoice','debit_note')),0) actual_cost
+  from public."FIN_DocumentLineJobLinks" link
+  join public."FIN_Documents" document on document."FINDoc_ID"=link."FINDocLineJob_DocumentID" and document."FINDoc_PostingStatusCode"='posted'
+  where link."FINDocLineJob_JobCostingLineID" is not null
+  group by link."FINDocLineJob_JobCostingLineID"
+), balances as (
+  select line."JobCostingLine_ID" line_id,
+    coalesce((select sum(wip."FINWIP_LocalWIPAmount"-wip."FINWIP_RelievedAmount") from public."FIN_WIPItems" wip where wip."FINWIP_JobCostingLineID"=line."JobCostingLine_ID" and wip."FINWIP_StatusCode" in ('posted','partially_reversed')),0) open_wip,
+    coalesce((select sum(accrual."FINAccrual_LocalAccruedAmount"-accrual."FINAccrual_RelievedAmount") from public."FIN_Accruals" accrual where accrual."FINAccrual_JobCostingLineID"=line."JobCostingLine_ID" and accrual."FINAccrual_StatusCode" in ('posted','partially_reversed')),0) open_accrual
+  from public."Job_Costing_Lines" line
+)
+select line."JobCostingLine_ID" as "FINChargeProfit_JobCostingLineID",line."Job_ID" as "FINChargeProfit_JobID",line."JobCostingLine_Number" as "FINChargeProfit_LineNo",
+  charge."RATECharge_Code" as "FINChargeProfit_ChargeCode",line."JobCostingLine_Description" as "FINChargeProfit_Description",
+  line."JobCostingLine_CostNominalAccountID" as "FINChargeProfit_CostNominalAccountID",cost_nominal."FINNom_Code" as "FINChargeProfit_CostNominalCode",
+  line."JobCostingLine_RevenueNominalAccountID" as "FINChargeProfit_RevenueNominalAccountID",revenue_nominal."FINNom_Code" as "FINChargeProfit_RevenueNominalCode",
+  coalesce(line."JobCostingLine_RevenueAmountLocal",0) as "FINChargeProfit_ExpectedRevenue",
+  coalesce(line."JobCostingLine_CostAmountLocal",0) as "FINChargeProfit_ExpectedCost",
+  coalesce(actual.actual_revenue,0) as "FINChargeProfit_ActualRevenue",coalesce(actual.actual_cost,0) as "FINChargeProfit_ActualCost",
+  coalesce(balances.open_wip,0) as "FINChargeProfit_OpenWIP",coalesce(balances.open_accrual,0) as "FINChargeProfit_OpenAccrual",
+  coalesce(actual.actual_revenue,0)+coalesce(balances.open_wip,0) as "FINChargeProfit_RecognisedRevenue",
+  coalesce(actual.actual_cost,0)+coalesce(balances.open_accrual,0) as "FINChargeProfit_RecognisedCost",
+  coalesce(actual.actual_revenue,0)+coalesce(balances.open_wip,0)-coalesce(actual.actual_cost,0)-coalesce(balances.open_accrual,0) as "FINChargeProfit_GrossProfit",
+  coalesce(actual.actual_revenue,0)+coalesce(balances.open_wip,0)-coalesce(line."JobCostingLine_RevenueAmountLocal",0) as "FINChargeProfit_RevenueMovement",
+  coalesce(actual.actual_cost,0)+coalesce(balances.open_accrual,0)-coalesce(line."JobCostingLine_CostAmountLocal",0) as "FINChargeProfit_CostMovement"
+from public."Job_Costing_Lines" line
+left join public."RATE_ChargeCodes" charge on charge."RATECharge_ID"=line."JobCostingLine_ChargeCodeID"
+left join public."FIN_NominalAccounts" cost_nominal on cost_nominal."FINNom_ID"=line."JobCostingLine_CostNominalAccountID"
+left join public."FIN_NominalAccounts" revenue_nominal on revenue_nominal."FINNom_ID"=line."JobCostingLine_RevenueNominalAccountID"
+left join actual on actual.line_id=line."JobCostingLine_ID"
+left join balances on balances.line_id=line."JobCostingLine_ID";
+
+revoke all on public."FIN_JobChargeProfitability" from public,anon,authenticated;
+grant select on public."FIN_JobChargeProfitability" to service_role;
+
+create or replace function public.multideck_finance_transition_accrual_wip(
+  p_company_id uuid,p_user_id uuid,p_run_id uuid,p_action text,p_reason text default null
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_run public."FIN_PeriodCloseRuns"%rowtype; v_next text;
+begin
+  select run.* into v_run from public."FIN_PeriodCloseRuns" run join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=run."FINCloseRun_LegalEntityID" where run."FINCloseRun_ID"=p_run_id and entity."Company_ID"=p_company_id for update;
+  if not found then raise exception 'Accrual and WIP review not found.' using errcode='P0002'; end if;
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then raise exception 'The finance operator is outside this workspace.' using errcode='42501'; end if;
+  if p_action='request_review' and v_run."FINCloseRun_StatusCode"='draft' then v_next:='awaiting_approval';
+  elsif p_action='approve' and v_run."FINCloseRun_StatusCode"='awaiting_approval' then v_next:='approved';
+  elsif p_action='reject' and v_run."FINCloseRun_StatusCode" in ('awaiting_approval','approved') then v_next:='rejected';
+  else raise exception 'That review cannot make this transition from %.',v_run."FINCloseRun_StatusCode" using errcode='22023'; end if;
+  update public."FIN_PeriodCloseRuns" set "FINCloseRun_StatusCode"=v_next,"FINCloseRun_ApprovedAt"=case when v_next='approved' then now() else "FINCloseRun_ApprovedAt" end,"FINCloseRun_ApprovedBy"=case when v_next='approved' then p_user_id else "FINCloseRun_ApprovedBy" end,"FINCloseRun_UpdatedAt"=now(),"FINCloseRun_UpdatedBy"=p_user_id where "FINCloseRun_ID"=p_run_id;
+  update public."FIN_PeriodCloseRunItems" set "FINCloseItem_StatusCode"=v_next,"FINCloseItem_ApprovedWIP"=case when v_next='approved' then "FINCloseItem_ProposedWIP" else "FINCloseItem_ApprovedWIP" end,"FINCloseItem_ApprovedAccrual"=case when v_next='approved' then "FINCloseItem_ProposedAccrual" else "FINCloseItem_ApprovedAccrual" end,"FINCloseItem_UpdatedAt"=now(),"FINCloseItem_UpdatedBy"=p_user_id where "FINCloseItem_CloseRunID"=p_run_id;
+  if v_next='approved' then
+    update public."FIN_JobChargePeriodAllocations" allocation set
+      "FINChargePeriod_ApprovedWIP"=allocation."FINChargePeriod_ProposedWIP",
+      "FINChargePeriod_ApprovedAccrual"=allocation."FINChargePeriod_ProposedAccrual",
+      "FINChargePeriod_UpdatedAt"=now(),"FINChargePeriod_UpdatedBy"=p_user_id
+    from public."FIN_PeriodCloseRunItems" item
+    where item."FINCloseItem_ID"=allocation."FINChargePeriod_CloseRunItemID" and item."FINCloseItem_CloseRunID"=p_run_id;
+  end if;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_Reason","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON") values('finance_lifecycle',p_user_id,v_run."FINCloseRun_LegalEntityID",'multideck-app','finance','public','FIN_PeriodCloseRuns','accrual_wip_review',p_run_id,p_action,'Accrual and WIP review '||replace(v_next,'_',' '),nullif(btrim(p_reason),''),true,1,jsonb_build_object('fromStatus',v_run."FINCloseRun_StatusCode",'toStatus',v_next,'basis','job_charge_lines'));
+  return jsonb_build_object('runId',p_run_id,'status',v_next);
+end; $$;
+revoke all on function public.multideck_finance_transition_accrual_wip(uuid,uuid,uuid,text,text) from public,anon,authenticated;
+grant execute on function public.multideck_finance_transition_accrual_wip(uuid,uuid,uuid,text,text) to service_role;
+
+create or replace function public.multideck_finance_post_accrual_wip(
+  p_company_id uuid,p_user_id uuid,p_run_id uuid
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare
+  v_run public."FIN_PeriodCloseRuns"%rowtype; v_period public."FIN_Periods"%rowtype; v_item public."FIN_PeriodCloseRunItems"%rowtype;
+  v_charge public."FIN_JobChargePeriodAllocations"%rowtype; v_batch uuid; v_accrual uuid; v_wip uuid; v_line integer:=0; v_total numeric:=0;
+  v_currency text; v_cost uuid; v_income uuid; v_accrual_control uuid; v_wip_control uuid; v_has_charge_rows boolean;
+begin
+  select run.* into v_run from public."FIN_PeriodCloseRuns" run join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=run."FINCloseRun_LegalEntityID" where run."FINCloseRun_ID"=p_run_id and entity."Company_ID"=p_company_id for update;
+  if not found then raise exception 'Accrual and WIP review not found.' using errcode='P0002'; end if;
+  if v_run."FINCloseRun_StatusCode"<>'approved' then raise exception 'Approve this review before posting it.' using errcode='22023'; end if;
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then raise exception 'The finance operator is outside this workspace.' using errcode='42501'; end if;
+  select * into v_period from public."FIN_Periods" where "FINPeriod_ID"=v_run."FINCloseRun_PeriodID" for update;
+  if v_period."FINPeriod_StatusCode" not in ('open','soft_closed') then raise exception 'This management period is locked.' using errcode='22023'; end if;
+  v_currency:=v_period."FINPeriod_BaseCurrencyCode";
+  select "FINNom_ID" into v_cost from public."FIN_NominalAccounts" where "FINNom_LegalEntityID"=v_run."FINCloseRun_LegalEntityID" and "FINNom_Code"='5000' and "FINNom_IsActive" limit 1;
+  select "FINNom_ID" into v_income from public."FIN_NominalAccounts" where "FINNom_LegalEntityID"=v_run."FINCloseRun_LegalEntityID" and "FINNom_Code"='4000' and "FINNom_IsActive" limit 1;
+  select "FINNom_ID" into v_accrual_control from public."FIN_NominalAccounts" where "FINNom_LegalEntityID"=v_run."FINCloseRun_LegalEntityID" and "FINNom_Code"='2300' and "FINNom_IsActive" limit 1;
+  select "FINNom_ID" into v_wip_control from public."FIN_NominalAccounts" where "FINNom_LegalEntityID"=v_run."FINCloseRun_LegalEntityID" and "FINNom_Code"='1400' and "FINNom_IsActive" limit 1;
+  if v_cost is null or v_income is null or v_accrual_control is null or v_wip_control is null then raise exception 'Configure active 5000 cost, 4000 income, 2300 accrual and 1400 WIP accounts before posting.' using errcode='22023'; end if;
+  insert into public."FIN_PostingBatches"("FINPostBatch_Number","FINPostBatch_StatusCode","FINPostBatch_SourceTable","FINPostBatch_SourceID","FINPostBatch_PeriodID","FINPostBatch_LegalEntityID","FINPostBatch_DebitTotal","FINPostBatch_CreditTotal","FINPostBatch_CurrencyCodeSnapshot","FINPostBatch_PostedAt","FINPostBatch_PostedBy","FINPostBatch_CreatedBy") values('MA-'||v_period."FINPeriod_Code"||'-'||left(p_run_id::text,8),'posted','FIN_PeriodCloseRuns',p_run_id,v_period."FINPeriod_ID",v_run."FINCloseRun_LegalEntityID",0,0,v_currency,now(),p_user_id,p_user_id) returning "FINPostBatch_ID" into v_batch;
+  select exists(select 1 from public."FIN_JobChargePeriodAllocations" allocation join public."FIN_PeriodCloseRunItems" item on item."FINCloseItem_ID"=allocation."FINChargePeriod_CloseRunItemID" where item."FINCloseItem_CloseRunID"=p_run_id) into v_has_charge_rows;
+  if v_has_charge_rows then
+    for v_charge in
+      select allocation.* from public."FIN_JobChargePeriodAllocations" allocation join public."FIN_PeriodCloseRunItems" item on item."FINCloseItem_ID"=allocation."FINChargePeriod_CloseRunItemID"
+      where item."FINCloseItem_CloseRunID"=p_run_id and (allocation."FINChargePeriod_ApprovedAccrual">0 or allocation."FINChargePeriod_ApprovedWIP">0)
+      order by allocation."FINChargePeriod_JobID",allocation."FINChargePeriod_LineNoSnapshot"
+    loop
+      if v_charge."FINChargePeriod_ApprovedAccrual">0 then
+        insert into public."FIN_Accruals"("FINAccrual_JobID","FINAccrual_JobCostingLineID","FINAccrual_PeriodID","FINAccrual_StatusCode","FINAccrual_AccountingDate","FINAccrual_ExpectedAmount","FINAccrual_AccruedAmount","FINAccrual_LocalAccruedAmount","FINAccrual_CurrencyCodeSnapshot","FINAccrual_CreatedBy","FINAccrual_CloseRunItemID","FINAccrual_Description","FINAccrual_ApprovedAt","FINAccrual_ApprovedBy","FINAccrual_PostedAt","FINAccrual_PostedBy") values(v_charge."FINChargePeriod_JobID",v_charge."FINChargePeriod_JobCostingLineID",v_period."FINPeriod_ID",'posted',v_period."FINPeriod_EndDate",v_charge."FINChargePeriod_ExpectedCost",v_charge."FINChargePeriod_ApprovedAccrual",v_charge."FINChargePeriod_ApprovedAccrual",v_currency,p_user_id,v_charge."FINChargePeriod_CloseRunItemID",'Cost accrual · '||v_charge."FINChargePeriod_DescriptionSnapshot",v_run."FINCloseRun_ApprovedAt",v_run."FINCloseRun_ApprovedBy",now(),p_user_id) returning "FINAccrual_ID" into v_accrual;
+        v_line:=v_line+1; insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_AccrualID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID","FINPostLine_JobID") values(v_batch,v_line,coalesce(v_charge."FINChargePeriod_CostNominalAccountID",v_cost),v_accrual,'Accrued job cost · '||v_charge."FINChargePeriod_DescriptionSnapshot",v_charge."FINChargePeriod_ApprovedAccrual",0,v_currency,v_charge."FINChargePeriod_JobID",v_charge."FINChargePeriod_JobID");
+        v_line:=v_line+1; insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_AccrualID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID","FINPostLine_JobID") values(v_batch,v_line,v_accrual_control,v_accrual,'Accrued cost liability · '||v_charge."FINChargePeriod_DescriptionSnapshot",0,v_charge."FINChargePeriod_ApprovedAccrual",v_currency,v_charge."FINChargePeriod_JobID",v_charge."FINChargePeriod_JobID");
+        v_total:=v_total+v_charge."FINChargePeriod_ApprovedAccrual";
+      end if;
+      if v_charge."FINChargePeriod_ApprovedWIP">0 then
+        insert into public."FIN_WIPItems"("FINWIP_JobID","FINWIP_JobCostingLineID","FINWIP_PeriodID","FINWIP_StatusCode","FINWIP_AccountingDate","FINWIP_ExpectedAmount","FINWIP_WIPAmount","FINWIP_LocalWIPAmount","FINWIP_CurrencyCodeSnapshot","FINWIP_CreatedBy","FINWIP_CloseRunItemID","FINWIP_Description","FINWIP_ApprovedAt","FINWIP_ApprovedBy","FINWIP_PostedAt","FINWIP_PostedBy") values(v_charge."FINChargePeriod_JobID",v_charge."FINChargePeriod_JobCostingLineID",v_period."FINPeriod_ID",'posted',v_period."FINPeriod_EndDate",v_charge."FINChargePeriod_ExpectedRevenue",v_charge."FINChargePeriod_ApprovedWIP",v_charge."FINChargePeriod_ApprovedWIP",v_currency,p_user_id,v_charge."FINChargePeriod_CloseRunItemID",'Revenue WIP · '||v_charge."FINChargePeriod_DescriptionSnapshot",v_run."FINCloseRun_ApprovedAt",v_run."FINCloseRun_ApprovedBy",now(),p_user_id) returning "FINWIP_ID" into v_wip;
+        v_line:=v_line+1; insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_WIPID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID","FINPostLine_JobID") values(v_batch,v_line,v_wip_control,v_wip,'Accrued income and WIP · '||v_charge."FINChargePeriod_DescriptionSnapshot",v_charge."FINChargePeriod_ApprovedWIP",0,v_currency,v_charge."FINChargePeriod_JobID",v_charge."FINChargePeriod_JobID");
+        v_line:=v_line+1; insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_WIPID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID","FINPostLine_JobID") values(v_batch,v_line,coalesce(v_charge."FINChargePeriod_RevenueNominalAccountID",v_income),v_wip,'Recognised unbilled revenue · '||v_charge."FINChargePeriod_DescriptionSnapshot",0,v_charge."FINChargePeriod_ApprovedWIP",v_currency,v_charge."FINChargePeriod_JobID",v_charge."FINChargePeriod_JobID");
+        v_total:=v_total+v_charge."FINChargePeriod_ApprovedWIP";
+      end if;
+    end loop;
+  else
+    -- Compatibility for reviews created before charge-level allocation existed.
+    for v_item in select * from public."FIN_PeriodCloseRunItems" where "FINCloseItem_CloseRunID"=p_run_id and ("FINCloseItem_ApprovedAccrual">0 or "FINCloseItem_ApprovedWIP">0) order by "FINCloseItem_JobID" loop
+      if v_item."FINCloseItem_ApprovedAccrual">0 then
+        insert into public."FIN_Accruals"("FINAccrual_JobID","FINAccrual_PeriodID","FINAccrual_StatusCode","FINAccrual_AccountingDate","FINAccrual_ExpectedAmount","FINAccrual_AccruedAmount","FINAccrual_LocalAccruedAmount","FINAccrual_CurrencyCodeSnapshot","FINAccrual_CreatedBy","FINAccrual_CloseRunItemID") values(v_item."FINCloseItem_JobID",v_period."FINPeriod_ID",'posted',v_period."FINPeriod_EndDate",v_item."FINCloseItem_ExpectedCost",v_item."FINCloseItem_ApprovedAccrual",v_item."FINCloseItem_ApprovedAccrual",v_currency,p_user_id,v_item."FINCloseItem_ID") returning "FINAccrual_ID" into v_accrual;
+        v_line:=v_line+1; insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_AccrualID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_JobID") values(v_batch,v_line,v_cost,v_accrual,'Legacy accrued job cost',v_item."FINCloseItem_ApprovedAccrual",0,v_currency,v_item."FINCloseItem_JobID");
+        v_line:=v_line+1; insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_AccrualID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_JobID") values(v_batch,v_line,v_accrual_control,v_accrual,'Legacy accrued cost liability',0,v_item."FINCloseItem_ApprovedAccrual",v_currency,v_item."FINCloseItem_JobID"); v_total:=v_total+v_item."FINCloseItem_ApprovedAccrual";
+      end if;
+      if v_item."FINCloseItem_ApprovedWIP">0 then
+        insert into public."FIN_WIPItems"("FINWIP_JobID","FINWIP_PeriodID","FINWIP_StatusCode","FINWIP_AccountingDate","FINWIP_ExpectedAmount","FINWIP_WIPAmount","FINWIP_LocalWIPAmount","FINWIP_CurrencyCodeSnapshot","FINWIP_CreatedBy","FINWIP_CloseRunItemID") values(v_item."FINCloseItem_JobID",v_period."FINPeriod_ID",'posted',v_period."FINPeriod_EndDate",v_item."FINCloseItem_ExpectedRevenue",v_item."FINCloseItem_ApprovedWIP",v_item."FINCloseItem_ApprovedWIP",v_currency,p_user_id,v_item."FINCloseItem_ID") returning "FINWIP_ID" into v_wip;
+        v_line:=v_line+1; insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_WIPID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_JobID") values(v_batch,v_line,v_wip_control,v_wip,'Legacy accrued income and WIP',v_item."FINCloseItem_ApprovedWIP",0,v_currency,v_item."FINCloseItem_JobID");
+        v_line:=v_line+1; insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_WIPID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_JobID") values(v_batch,v_line,v_income,v_wip,'Legacy recognised unbilled revenue',0,v_item."FINCloseItem_ApprovedWIP",v_currency,v_item."FINCloseItem_JobID"); v_total:=v_total+v_item."FINCloseItem_ApprovedWIP";
+      end if;
+    end loop;
+  end if;
+  if v_total<=0 then raise exception 'This review has no approved accrual or WIP amounts to post.' using errcode='22023'; end if;
+  update public."FIN_PostingBatches" set "FINPostBatch_DebitTotal"=v_total,"FINPostBatch_CreditTotal"=v_total where "FINPostBatch_ID"=v_batch;
+  update public."FIN_PeriodCloseRunItems" set "FINCloseItem_StatusCode"='posted',"FINCloseItem_UpdatedAt"=now(),"FINCloseItem_UpdatedBy"=p_user_id where "FINCloseItem_CloseRunID"=p_run_id;
+  update public."FIN_PeriodCloseRuns" set "FINCloseRun_StatusCode"='posted',"FINCloseRun_PostedAt"=now(),"FINCloseRun_PostedBy"=p_user_id,"FINCloseRun_PostingBatchID"=v_batch,"FINCloseRun_UpdatedAt"=now(),"FINCloseRun_UpdatedBy"=p_user_id,"FINCloseRun_ControlTotalsJSON"="FINCloseRun_ControlTotalsJSON"||jsonb_build_object('postedTotal',v_total,'postingBatchId',v_batch,'basis','job_charge_lines') where "FINCloseRun_ID"=p_run_id;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON") values('finance_lifecycle',p_user_id,v_run."FINCloseRun_LegalEntityID",'multideck-app','finance','public','FIN_PeriodCloseRuns','accrual_wip_review',p_run_id,'post_accrual_wip','Charge-level accrual and WIP journal posted',true,1,jsonb_build_object('postingBatchId',v_batch,'total',v_total,'currency',v_currency,'basis','job_charge_lines'));
+  return jsonb_build_object('runId',p_run_id,'status','posted','postingBatchId',v_batch,'total',v_total,'currency',v_currency,'basis','job_charge_lines');
+end; $$;
+revoke all on function public.multideck_finance_post_accrual_wip(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.multideck_finance_post_accrual_wip(uuid,uuid,uuid) to service_role;
+
+create or replace function public._multideck_finance_release_document_accrual_wip(p_document_id uuid)
+returns jsonb language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare
+  v_document public."FIN_Documents"%rowtype; v_period public."FIN_Periods"%rowtype; v_user uuid; v_period_id uuid; v_batch uuid;
+  v_charge record; v_adjustment record; v_source_line record; v_available numeric; v_release numeric; v_source_amount numeric;
+  v_line integer:=0; v_total numeric:=0; v_wip_total numeric:=0; v_accrual_total numeric:=0; v_kind text; v_company uuid;
+begin
+  select * into v_document from public."FIN_Documents" where "FINDoc_ID"=p_document_id for update;
+  if not found or v_document."FINDoc_PostingStatusCode"<>'posted' or v_document."FINDoc_TypeCode" not in ('sl_invoice','pl_invoice') then return jsonb_build_object('documentId',p_document_id,'released',false,'reason','not_applicable'); end if;
+  if v_document."FINDoc_LegalEntityID" is null or v_document."FINDoc_LocalNetAmount"<=0 then return jsonb_build_object('documentId',p_document_id,'released',false,'reason','no_positive_local_net_value'); end if;
+  if exists(select 1 from public."FIN_AccrualWIPReleases" where "FINRelease_DocumentID"=p_document_id) then
+    select coalesce(sum("FINRelease_LocalAmount") filter(where "FINRelease_ReleaseKindCode"='revenue_wip'),0),coalesce(sum("FINRelease_LocalAmount") filter(where "FINRelease_ReleaseKindCode"='cost_accrual'),0)
+    into v_wip_total,v_accrual_total from public."FIN_AccrualWIPReleases" where "FINRelease_DocumentID"=p_document_id;
+    return jsonb_build_object('documentId',p_document_id,'released',true,'idempotent',true,'wipReleased',v_wip_total,'accrualReleased',v_accrual_total);
+  end if;
+  v_user:=coalesce(v_document."FINDoc_PostedBy",v_document."FINDoc_UpdatedBy",v_document."FINDoc_CreatedBy");
+  v_kind:=case when v_document."FINDoc_TypeCode"='sl_invoice' then 'revenue_wip' else 'cost_accrual' end;
+  if not exists(
+    select 1 from public."FIN_DocumentLineJobLinks" link
+    where link."FINDocLineJob_DocumentID"=p_document_id and link."FINDocLineJob_JobCostingLineID" is not null and
+      ((v_kind='revenue_wip' and exists(select 1 from public."FIN_WIPItems" w where w."FINWIP_JobCostingLineID"=link."FINDocLineJob_JobCostingLineID" and w."FINWIP_StatusCode" in ('posted','partially_reversed') and w."FINWIP_WIPAmount">w."FINWIP_RelievedAmount"))
+       or (v_kind='cost_accrual' and exists(select 1 from public."FIN_Accruals" a where a."FINAccrual_JobCostingLineID"=link."FINDocLineJob_JobCostingLineID" and a."FINAccrual_StatusCode" in ('posted','partially_reversed') and a."FINAccrual_AccruedAmount">a."FINAccrual_RelievedAmount")))
+  ) then return jsonb_build_object('documentId',p_document_id,'released',false,'reason','unallocated_or_no_matching_charge_balance','grossProfitChanged',true); end if;
+  v_period_id:=v_document."FINDoc_PeriodID";
+  if v_period_id is not null then select * into v_period from public."FIN_Periods" where "FINPeriod_ID"=v_period_id and "FINPeriod_LegalEntityID"=v_document."FINDoc_LegalEntityID"; if not found then v_period_id:=null; end if; end if;
+  if v_period_id is null then v_period_id:=public._multideck_finance_ensure_period(v_document."FINDoc_LegalEntityID",to_char(v_document."FINDoc_AccountingDate",'YYYYMM'),v_user); select * into v_period from public."FIN_Periods" where "FINPeriod_ID"=v_period_id; end if;
+  insert into public."FIN_PostingBatches"("FINPostBatch_Number","FINPostBatch_StatusCode","FINPostBatch_SourceTable","FINPostBatch_SourceID","FINPostBatch_PeriodID","FINPostBatch_LegalEntityID","FINPostBatch_DebitTotal","FINPostBatch_CreditTotal","FINPostBatch_CurrencyCodeSnapshot","FINPostBatch_PostedAt","FINPostBatch_PostedBy","FINPostBatch_CreatedBy") values('AUTO-REL-'||left(coalesce(v_document."FINDoc_Number",p_document_id::text),56),'posted','FIN_Documents',p_document_id,v_period_id,v_document."FINDoc_LegalEntityID",0,0,v_period."FINPeriod_BaseCurrencyCode",now(),v_user,v_user) returning "FINPostBatch_ID" into v_batch;
+  for v_charge in
+    select link."FINDocLineJob_JobID" job_id,link."FINDocLineJob_JobCostingLineID" costing_line_id,round(abs(sum(link."FINDocLineJob_LocalNetAmount")),4) local_net
+    from public."FIN_DocumentLineJobLinks" link
+    where link."FINDocLineJob_DocumentID"=p_document_id and link."FINDocLineJob_JobID" is not null and link."FINDocLineJob_JobCostingLineID" is not null
+    group by link."FINDocLineJob_JobID",link."FINDocLineJob_JobCostingLineID" order by link."FINDocLineJob_JobID",link."FINDocLineJob_JobCostingLineID"
+  loop
+    v_available:=v_charge.local_net;
+    if v_kind='revenue_wip' then
+      for v_adjustment in
+        select wip.*,run."FINCloseRun_PostingBatchID" from public."FIN_WIPItems" wip
+        join public."FIN_Periods" source_period on source_period."FINPeriod_ID"=wip."FINWIP_PeriodID" and source_period."FINPeriod_LegalEntityID"=v_document."FINDoc_LegalEntityID"
+        join public."FIN_PeriodCloseRunItems" item on item."FINCloseItem_ID"=wip."FINWIP_CloseRunItemID"
+        join public."FIN_PeriodCloseRuns" run on run."FINCloseRun_ID"=item."FINCloseItem_CloseRunID"
+        where wip."FINWIP_JobID"=v_charge.job_id and wip."FINWIP_JobCostingLineID"=v_charge.costing_line_id and wip."FINWIP_WIPAmount">wip."FINWIP_RelievedAmount" and wip."FINWIP_StatusCode" in ('posted','partially_reversed')
+        order by wip."FINWIP_AccountingDate",wip."FINWIP_CreatedAt",wip."FINWIP_ID" for update of wip
+      loop
+        exit when v_available<=0; v_release:=least(v_available,v_adjustment."FINWIP_WIPAmount"-v_adjustment."FINWIP_RelievedAmount"); v_source_amount:=round(v_release/nullif(v_document."FINDoc_ExchangeRate",0),4);
+        insert into public."FIN_AccrualWIPReleases"("FINRelease_LegalEntityID","FINRelease_DocumentID","FINRelease_DocumentTypeCode","FINRelease_JobID","FINRelease_JobCostingLineID","FINRelease_CloseRunItemID","FINRelease_WIPID","FINRelease_ReleaseKindCode","FINRelease_PeriodID","FINRelease_PostingBatchID","FINRelease_SourceAmount","FINRelease_LocalAmount","FINRelease_DocumentCurrencyCode","FINRelease_LocalCurrencyCode","FINRelease_ReleasedBy") values(v_document."FINDoc_LegalEntityID",p_document_id,v_document."FINDoc_TypeCode",v_charge.job_id,v_charge.costing_line_id,v_adjustment."FINWIP_CloseRunItemID",v_adjustment."FINWIP_ID",v_kind,v_period_id,v_batch,v_source_amount,v_release,v_document."FINDoc_CurrencyCodeSnapshot",v_period."FINPeriod_BaseCurrencyCode",v_user);
+        for v_source_line in select line.* from public."FIN_PostingLines" line where line."FINPostLine_BatchID"=v_adjustment."FINCloseRun_PostingBatchID" and line."FINPostLine_WIPID"=v_adjustment."FINWIP_ID" order by line."FINPostLine_LineNo" loop
+          v_line:=v_line+1; insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_DocumentID","FINPostLine_WIPID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID","FINPostLine_JobID") values(v_batch,v_line,v_source_line."FINPostLine_NominalAccountID",p_document_id,v_adjustment."FINWIP_ID",'Automatic WIP reclassification · '||coalesce(v_document."FINDoc_Number",p_document_id::text),round(v_source_line."FINPostLine_CreditAmount"*v_release/v_adjustment."FINWIP_WIPAmount",4),round(v_source_line."FINPostLine_DebitAmount"*v_release/v_adjustment."FINWIP_WIPAmount",4),v_period."FINPeriod_BaseCurrencyCode",v_charge.job_id,v_charge.job_id);
+        end loop;
+        update public."FIN_WIPItems" set "FINWIP_RelievedAmount"="FINWIP_RelievedAmount"+v_release,"FINWIP_StatusCode"=case when "FINWIP_RelievedAmount"+v_release>="FINWIP_WIPAmount" then 'reversed' else 'partially_reversed' end,"FINWIP_ReversalPeriodID"=v_period_id,"FINWIP_ReversedAt"=case when "FINWIP_RelievedAmount"+v_release>="FINWIP_WIPAmount" then now() else "FINWIP_ReversedAt" end,"FINWIP_ReversedBy"=case when "FINWIP_RelievedAmount"+v_release>="FINWIP_WIPAmount" then v_user else "FINWIP_ReversedBy" end where "FINWIP_ID"=v_adjustment."FINWIP_ID";
+        v_available:=v_available-v_release; v_total:=v_total+v_release; v_wip_total:=v_wip_total+v_release;
+      end loop;
+    else
+      for v_adjustment in
+        select accrual.*,run."FINCloseRun_PostingBatchID" from public."FIN_Accruals" accrual
+        join public."FIN_Periods" source_period on source_period."FINPeriod_ID"=accrual."FINAccrual_PeriodID" and source_period."FINPeriod_LegalEntityID"=v_document."FINDoc_LegalEntityID"
+        join public."FIN_PeriodCloseRunItems" item on item."FINCloseItem_ID"=accrual."FINAccrual_CloseRunItemID"
+        join public."FIN_PeriodCloseRuns" run on run."FINCloseRun_ID"=item."FINCloseItem_CloseRunID"
+        where accrual."FINAccrual_JobID"=v_charge.job_id and accrual."FINAccrual_JobCostingLineID"=v_charge.costing_line_id and accrual."FINAccrual_AccruedAmount">accrual."FINAccrual_RelievedAmount" and accrual."FINAccrual_StatusCode" in ('posted','partially_reversed')
+        order by accrual."FINAccrual_AccountingDate",accrual."FINAccrual_CreatedAt",accrual."FINAccrual_ID" for update of accrual
+      loop
+        exit when v_available<=0; v_release:=least(v_available,v_adjustment."FINAccrual_AccruedAmount"-v_adjustment."FINAccrual_RelievedAmount"); v_source_amount:=round(v_release/nullif(v_document."FINDoc_ExchangeRate",0),4);
+        insert into public."FIN_AccrualWIPReleases"("FINRelease_LegalEntityID","FINRelease_DocumentID","FINRelease_DocumentTypeCode","FINRelease_JobID","FINRelease_JobCostingLineID","FINRelease_CloseRunItemID","FINRelease_AccrualID","FINRelease_ReleaseKindCode","FINRelease_PeriodID","FINRelease_PostingBatchID","FINRelease_SourceAmount","FINRelease_LocalAmount","FINRelease_DocumentCurrencyCode","FINRelease_LocalCurrencyCode","FINRelease_ReleasedBy") values(v_document."FINDoc_LegalEntityID",p_document_id,v_document."FINDoc_TypeCode",v_charge.job_id,v_charge.costing_line_id,v_adjustment."FINAccrual_CloseRunItemID",v_adjustment."FINAccrual_ID",v_kind,v_period_id,v_batch,v_source_amount,v_release,v_document."FINDoc_CurrencyCodeSnapshot",v_period."FINPeriod_BaseCurrencyCode",v_user);
+        for v_source_line in select line.* from public."FIN_PostingLines" line where line."FINPostLine_BatchID"=v_adjustment."FINCloseRun_PostingBatchID" and line."FINPostLine_AccrualID"=v_adjustment."FINAccrual_ID" order by line."FINPostLine_LineNo" loop
+          v_line:=v_line+1; insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_DocumentID","FINPostLine_AccrualID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID","FINPostLine_JobID") values(v_batch,v_line,v_source_line."FINPostLine_NominalAccountID",p_document_id,v_adjustment."FINAccrual_ID",'Automatic accrual reclassification · '||coalesce(v_document."FINDoc_Number",p_document_id::text),round(v_source_line."FINPostLine_CreditAmount"*v_release/v_adjustment."FINAccrual_AccruedAmount",4),round(v_source_line."FINPostLine_DebitAmount"*v_release/v_adjustment."FINAccrual_AccruedAmount",4),v_period."FINPeriod_BaseCurrencyCode",v_charge.job_id,v_charge.job_id);
+        end loop;
+        update public."FIN_Accruals" set "FINAccrual_RelievedAmount"="FINAccrual_RelievedAmount"+v_release,"FINAccrual_StatusCode"=case when "FINAccrual_RelievedAmount"+v_release>="FINAccrual_AccruedAmount" then 'reversed' else 'partially_reversed' end,"FINAccrual_ReversalPeriodID"=v_period_id,"FINAccrual_ReversedAt"=case when "FINAccrual_RelievedAmount"+v_release>="FINAccrual_AccruedAmount" then now() else "FINAccrual_ReversedAt" end,"FINAccrual_ReversedBy"=case when "FINAccrual_RelievedAmount"+v_release>="FINAccrual_AccruedAmount" then v_user else "FINAccrual_ReversedBy" end where "FINAccrual_ID"=v_adjustment."FINAccrual_ID";
+        v_available:=v_available-v_release; v_total:=v_total+v_release; v_accrual_total:=v_accrual_total+v_release;
+      end loop;
+    end if;
+  end loop;
+  if v_total<=0 then delete from public."FIN_PostingBatches" where "FINPostBatch_ID"=v_batch; return jsonb_build_object('documentId',p_document_id,'released',false,'reason','no_matching_charge_balance','grossProfitChanged',true); end if;
+  update public."FIN_PostingBatches" set "FINPostBatch_DebitTotal"=v_total,"FINPostBatch_CreditTotal"=v_total where "FINPostBatch_ID"=v_batch;
+  update public."FIN_PeriodCloseRunItems" item set "FINCloseItem_StatusCode"=case when not exists(select 1 from public."FIN_WIPItems" w where w."FINWIP_CloseRunItemID"=item."FINCloseItem_ID" and w."FINWIP_WIPAmount">w."FINWIP_RelievedAmount") and not exists(select 1 from public."FIN_Accruals" a where a."FINAccrual_CloseRunItemID"=item."FINCloseItem_ID" and a."FINAccrual_AccruedAmount">a."FINAccrual_RelievedAmount") then 'reversed' else 'partially_reversed' end,"FINCloseItem_UpdatedAt"=now(),"FINCloseItem_UpdatedBy"=v_user where item."FINCloseItem_ID" in (select "FINRelease_CloseRunItemID" from public."FIN_AccrualWIPReleases" where "FINRelease_DocumentID"=p_document_id);
+  select "Company_ID" into v_company from public."cmp_LegalEntities" where "LegalEntity_ID"=v_document."FINDoc_LegalEntityID";
+  if exists(select 1 from public."AI_DexterWatches" watch where watch."AIDexterWatch_CompanyID"=v_company and watch."AIDexterWatch_CapabilityCode"='finance' and watch."AIDexterWatch_StatusCode"='active') then
+    insert into public."AI_DexterWatchSignals"("AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable","AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON") values(v_company,'finance','FIN_Documents',p_document_id,jsonb_build_object('chargeReclassification',0),jsonb_build_object('chargeReclassification',v_total,'wipReleased',v_wip_total,'accrualReleased',v_accrual_total,'postingBatchId',v_batch));
+  end if;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON") values('finance_lifecycle',v_user,v_document."FINDoc_LegalEntityID",'multideck-app','finance','public','FIN_Documents',v_document."FINDoc_TypeCode",p_document_id,'automatic_charge_reclassification','Posted invoice reclassified the matching job charge balance',true,1,jsonb_build_object('wipReleased',v_wip_total,'accrualReleased',v_accrual_total,'postingBatchId',v_batch,'basis','exact_job_charge_line'));
+  return jsonb_build_object('documentId',p_document_id,'released',true,'wipReleased',v_wip_total,'accrualReleased',v_accrual_total,'postingBatchId',v_batch,'grossProfitChanged',false,'basis','exact_job_charge_line');
+end; $$;
+revoke all on function public._multideck_finance_release_document_accrual_wip(uuid) from public,anon,authenticated;
+grant execute on function public._multideck_finance_release_document_accrual_wip(uuid) to service_role;
+
+alter function public.multideck_dexter_domain_finance(uuid,text,integer) rename to _multideck_dexter_domain_finance_before_charge_profitability;
+revoke all on function public._multideck_dexter_domain_finance_before_charge_profitability(uuid,text,integer) from public,anon,authenticated;
+grant execute on function public._multideck_dexter_domain_finance_before_charge_profitability(uuid,text,integer) to service_role;
+
+create function public.multideck_dexter_domain_finance(p_company_id uuid,p_search text,p_take integer)
+returns jsonb language sql stable security definer set search_path=pg_catalog,public as $$
+  with records as (
+    select value,coalesce((value->'evidence'->>'updatedAt')::timestamptz,'2000-01-01'::timestamptz) updated_at
+    from jsonb_array_elements(public._multideck_dexter_domain_finance_before_charge_profitability(p_company_id,p_search,p_take)) value
+    union all
+    select jsonb_strip_nulls(jsonb_build_object(
+      'recordId',profit."FINChargeProfit_JobCostingLineID",'recordKind','job_charge_profitability','jobId',profit."FINChargeProfit_JobID",
+      'jobReference',job."Job_Period"||'-'||job."Job_Number",'lineNo',profit."FINChargeProfit_LineNo",'chargeCode',profit."FINChargeProfit_ChargeCode",'description',profit."FINChargeProfit_Description",
+      'revenueNominalCode',profit."FINChargeProfit_RevenueNominalCode",'costNominalCode',profit."FINChargeProfit_CostNominalCode",
+      'expectedRevenue',profit."FINChargeProfit_ExpectedRevenue",'expectedCost',profit."FINChargeProfit_ExpectedCost",
+      'actualRevenue',profit."FINChargeProfit_ActualRevenue",'actualCost',profit."FINChargeProfit_ActualCost",'openWIP',profit."FINChargeProfit_OpenWIP",'openAccrual',profit."FINChargeProfit_OpenAccrual",
+      'recognisedRevenue',profit."FINChargeProfit_RecognisedRevenue",'recognisedCost',profit."FINChargeProfit_RecognisedCost",'grossProfit',profit."FINChargeProfit_GrossProfit",
+      'grossProfitMovement',profit."FINChargeProfit_RevenueMovement"-profit."FINChargeProfit_CostMovement",
+      'evidence',jsonb_build_object('sourceTable','FIN_JobChargeProfitability','sourceId',profit."FINChargeProfit_JobCostingLineID",'legalEntityId',job."Job_LegalEntityID",'updatedAt',line."JobCostingLine_UpdatedAt")
+    )),line."JobCostingLine_UpdatedAt"::timestamptz
+    from public."FIN_JobChargeProfitability" profit
+    join public."Job_Costing_Lines" line on line."JobCostingLine_ID"=profit."FINChargeProfit_JobCostingLineID"
+    join public."Job_Header" job on job."Job_ID"=profit."FINChargeProfit_JobID"
+    join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=job."Job_LegalEntityID"
+    where entity."Company_ID"=p_company_id and (nullif(btrim(p_search),'') is null or concat_ws(' ',job."Job_Period",job."Job_Number",profit."FINChargeProfit_ChargeCode",profit."FINChargeProfit_Description",profit."FINChargeProfit_RevenueNominalCode",profit."FINChargeProfit_CostNominalCode") ilike '%'||btrim(p_search)||'%')
+  )
+  select coalesce(jsonb_agg(value order by updated_at desc),'[]'::jsonb) from (select * from records order by updated_at desc limit greatest(1,least(coalesce(p_take,10),25))) limited;
+$$;
+revoke all on function public.multideck_dexter_domain_finance(uuid,text,integer) from public,anon,authenticated;
+grant execute on function public.multideck_dexter_domain_finance(uuid,text,integer) to service_role;
+
+update public."sys_AIDexterDataDomains" set
+  "AIDexterDomain_Description"='Tenant-safe finance documents, cash, job periods, charge-line expected values, WIP, accruals, actuals, nominal codes, gross profit and exact invoice reclassification evidence.',
+  "AIDexterDomain_UpdatedAt"=now()
+where "AIDexterDomain_Code"='finance';
+
+update public."sys_AIDexterWatchCapabilities" set
+  "AIDexterWatchCapability_Description"='Event-driven finance documents, charge-line WIP/accrual reclassifications, unmatched actual GP movements, provider sync, postings and reversals.',
+  "AIDexterWatchCapability_FieldsJSON"=(select coalesce(jsonb_agg(distinct value),'[]'::jsonb) from jsonb_array_elements(coalesce("AIDexterWatchCapability_FieldsJSON",'[]'::jsonb)||'["jobChargeLine","revenueNominalCode","costNominalCode","openWIP","openAccrual","actualRevenue","actualCost","grossProfit","grossProfitMovement","chargeReclassification"]'::jsonb)),
+  "AIDexterWatchCapability_UpdatedAt"=now()
+where "AIDexterWatchCapability_Code"='finance';
+
+commit;
+-- END MIGRATION 20260830215402_charge_line_accrual_wip_profitability.sql
+
+-- BEGIN MIGRATION 20260830221800_charge_line_accounting_indexes.sql
+begin;
+
+create index if not exists "IX_Job_Costing_Lines_cost_nominal"
+  on public."Job_Costing_Lines"("JobCostingLine_CostNominalAccountID");
+
+create index if not exists "IX_Job_Costing_Lines_revenue_nominal"
+  on public."Job_Costing_Lines"("JobCostingLine_RevenueNominalAccountID");
+
+create index if not exists "IX_FIN_JobChargePeriodAllocations_cost_nominal"
+  on public."FIN_JobChargePeriodAllocations"("FINChargePeriod_CostNominalAccountID");
+
+create index if not exists "IX_FIN_JobChargePeriodAllocations_revenue_nominal"
+  on public."FIN_JobChargePeriodAllocations"("FINChargePeriod_RevenueNominalAccountID");
+
+create index if not exists "IX_FIN_JobChargePeriodAllocations_costing_line"
+  on public."FIN_JobChargePeriodAllocations"("FINChargePeriod_JobCostingLineID");
+
+create index if not exists "IX_FIN_JobChargePeriodAllocations_updated_by"
+  on public."FIN_JobChargePeriodAllocations"("FINChargePeriod_UpdatedBy");
+
+commit;
+-- END MIGRATION 20260830221800_charge_line_accounting_indexes.sql
+
+-- BEGIN MIGRATION 20260830223200_job_charge_nominal_resolution.sql
+begin;
+
+create or replace function public._multideck_finance_resolve_job_legal_entity(p_job_id uuid)
+returns uuid
+language sql stable security definer set search_path=pg_catalog,public as $$
+  select coalesce(job."Job_LegalEntityID", default_entity."LegalEntity_ID")
+  from public."Job_Header" job
+  left join public."cmp_Offices" office on office."Office_ID"=coalesce(job."Job_OrgOfficeID",job."Job_OfficeID")
+  left join public."cmp_Users" creator on creator."User_ID"=job."Job_CreatedBy"
+  left join lateral (
+    select entity."LegalEntity_ID"
+    from public."cmp_LegalEntities" entity
+    where entity."Company_ID"=coalesce(office."Company_ID",creator."Company_ID")
+      and entity."LegalEntity_IsActive"
+    order by entity."LegalEntity_IsDefault" desc,entity."LegalEntity_CreatedAt",entity."LegalEntity_ID"
+    limit 1
+  ) default_entity on true
+  where job."Job_ID"=p_job_id
+$$;
+
+create or replace function public._multideck_finance_resolve_nominal(
+  p_legal_entity_id uuid,p_preferred_nominal_id uuid,p_default_code text
+) returns uuid
+language sql stable security definer set search_path=pg_catalog,public as $$
+  select target."FINNom_ID"
+  from public."FIN_NominalAccounts" target
+  where target."FINNom_LegalEntityID"=p_legal_entity_id
+    and target."FINNom_IsActive"
+    and target."FINNom_Code"=coalesce(
+      (select preferred."FINNom_Code" from public."FIN_NominalAccounts" preferred where preferred."FINNom_ID"=p_preferred_nominal_id),
+      p_default_code
+    )
+  order by (target."FINNom_ID"=p_preferred_nominal_id) desc,target."FINNom_CreatedAt",target."FINNom_ID"
+  limit 1
+$$;
+
+revoke all on function public._multideck_finance_resolve_job_legal_entity(uuid) from public,anon,authenticated;
+revoke all on function public._multideck_finance_resolve_nominal(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public._multideck_finance_resolve_job_legal_entity(uuid) to service_role;
+grant execute on function public._multideck_finance_resolve_nominal(uuid,uuid,text) to service_role;
+
+create or replace function public._multideck_finance_default_job_charge_nominals()
+returns trigger
+language plpgsql security definer set search_path=pg_catalog,public as $$
+declare v_entity uuid;
+begin
+  v_entity:=public._multideck_finance_resolve_job_legal_entity(new."Job_ID");
+  if v_entity is not null then
+    new."JobCostingLine_CostNominalAccountID":=public._multideck_finance_resolve_nominal(v_entity,new."JobCostingLine_CostNominalAccountID",'5000');
+    new."JobCostingLine_RevenueNominalAccountID":=public._multideck_finance_resolve_nominal(v_entity,new."JobCostingLine_RevenueNominalAccountID",'4000');
+  end if;
+  return new;
+end; $$;
+
+drop trigger if exists "TR_FIN_default_job_charge_nominals" on public."Job_Costing_Lines";
+create trigger "TR_FIN_default_job_charge_nominals"
+before insert or update of "Job_ID","JobCostingLine_CostNominalAccountID","JobCostingLine_RevenueNominalAccountID"
+on public."Job_Costing_Lines"
+for each row execute function public._multideck_finance_default_job_charge_nominals();
+
+create or replace function public._multideck_finance_remap_job_charge_nominals()
+returns trigger
+language plpgsql security definer set search_path=pg_catalog,public as $$
+begin
+  if new."Job_LegalEntityID" is distinct from old."Job_LegalEntityID" and new."Job_LegalEntityID" is not null then
+    update public."Job_Costing_Lines" line set
+      "JobCostingLine_CostNominalAccountID"=public._multideck_finance_resolve_nominal(new."Job_LegalEntityID",line."JobCostingLine_CostNominalAccountID",'5000'),
+      "JobCostingLine_RevenueNominalAccountID"=public._multideck_finance_resolve_nominal(new."Job_LegalEntityID",line."JobCostingLine_RevenueNominalAccountID",'4000')
+    where line."Job_ID"=new."Job_ID";
+  end if;
+  return new;
+end; $$;
+
+drop trigger if exists "TR_FIN_remap_job_charge_nominals" on public."Job_Header";
+create trigger "TR_FIN_remap_job_charge_nominals"
+after update of "Job_LegalEntityID" on public."Job_Header"
+for each row execute function public._multideck_finance_remap_job_charge_nominals();
+
+update public."Job_Costing_Lines" line set
+  "JobCostingLine_CostNominalAccountID"=public._multideck_finance_resolve_nominal(public._multideck_finance_resolve_job_legal_entity(line."Job_ID"),line."JobCostingLine_CostNominalAccountID",'5000'),
+  "JobCostingLine_RevenueNominalAccountID"=public._multideck_finance_resolve_nominal(public._multideck_finance_resolve_job_legal_entity(line."Job_ID"),line."JobCostingLine_RevenueNominalAccountID",'4000')
+where public._multideck_finance_resolve_job_legal_entity(line."Job_ID") is not null;
+
+create or replace function public.multideck_finance_link_document_charge_lines(
+  p_company_id uuid,p_user_id uuid,p_document_id uuid,p_lines jsonb
+) returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_document public."FIN_Documents"%rowtype; v_entry jsonb; v_line_id uuid; v_costing_line uuid; v_nominal uuid; v_count integer:=0;
+begin
+  select document.* into v_document
+  from public."FIN_Documents" document
+  join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=document."FINDoc_LegalEntityID"
+  where document."FINDoc_ID"=p_document_id and entity."Company_ID"=p_company_id for update;
+  if not found then raise exception 'Finance document not found.' using errcode='P0002'; end if;
+  if v_document."FINDoc_StatusCode"<>'draft' or v_document."FINDoc_SourceJobID" is null then
+    if v_document."FINDoc_SourceJobID" is null then return jsonb_build_object('documentId',p_document_id,'linkedCount',0); end if;
+    raise exception 'Only a job-linked draft can change charge allocations.' using errcode='22023';
+  end if;
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then raise exception 'The finance operator is outside this workspace.' using errcode='42501'; end if;
+  if jsonb_typeof(p_lines)<>'array' then raise exception 'Charge allocations must be an array.' using errcode='22023'; end if;
+  for v_entry in select value from jsonb_array_elements(p_lines) loop
+    select line."FINDocLine_ID" into v_line_id from public."FIN_DocumentLines" line
+    where line."FINDocLine_DocumentID"=p_document_id and line."FINDocLine_LineNo"=(v_entry->>'lineNo')::integer;
+    if v_line_id is null then raise exception 'Finance line % was not found.',v_entry->>'lineNo' using errcode='P0002'; end if;
+    v_costing_line:=nullif(v_entry->>'jobCostingLineId','')::uuid;
+    if v_costing_line is not null then
+      select case when v_document."FINDoc_TypeCode" in ('sl_invoice','credit_note') then line."JobCostingLine_RevenueNominalAccountID" else line."JobCostingLine_CostNominalAccountID" end
+      into v_nominal from public."Job_Costing_Lines" line
+      where line."JobCostingLine_ID"=v_costing_line and line."Job_ID"=v_document."FINDoc_SourceJobID";
+      if not found then raise exception 'A selected charge line does not belong to this job.' using errcode='42501'; end if;
+      v_nominal:=public._multideck_finance_resolve_nominal(
+        v_document."FINDoc_LegalEntityID",v_nominal,
+        case when v_document."FINDoc_TypeCode" in ('sl_invoice','credit_note') then '4000' else '5000' end
+      );
+      if v_nominal is null then raise exception 'Assign a nominal code to the selected job charge before review.' using errcode='22023'; end if;
+      if v_document."FINDoc_TypeCode" in ('sl_invoice','credit_note') then
+        update public."Job_Costing_Lines" set "JobCostingLine_RevenueNominalAccountID"=v_nominal where "JobCostingLine_ID"=v_costing_line;
+      else
+        update public."Job_Costing_Lines" set "JobCostingLine_CostNominalAccountID"=v_nominal where "JobCostingLine_ID"=v_costing_line;
+      end if;
+    else v_nominal:=null;
+    end if;
+    update public."FIN_DocumentLineJobLinks" set "FINDocLineJob_JobCostingLineID"=v_costing_line,"FINDocLineJob_LinkTypeCode"=case when v_costing_line is null then 'source_job' else 'source_charge_line' end
+    where "FINDocLineJob_DocumentID"=p_document_id and "FINDocLineJob_DocumentLineID"=v_line_id and "FINDocLineJob_JobID"=v_document."FINDoc_SourceJobID";
+    update public."FIN_DocumentLines" set "FINDocLine_NominalAccountID"=v_nominal where "FINDocLine_ID"=v_line_id;
+    if v_costing_line is not null then v_count:=v_count+1; end if;
+  end loop;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON")
+  values('finance_lifecycle',p_user_id,v_document."FINDoc_LegalEntityID",'multideck-app','finance','public','FIN_Documents',v_document."FINDoc_TypeCode",p_document_id,'link_job_charge_lines','Document lines linked to job charges',true,v_count,jsonb_build_object('linkedCount',v_count));
+  return jsonb_build_object('documentId',p_document_id,'linkedCount',v_count);
+end; $$;
+
+revoke all on function public.multideck_finance_link_document_charge_lines(uuid,uuid,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.multideck_finance_link_document_charge_lines(uuid,uuid,uuid,jsonb) to service_role;
+
+commit;
+-- END MIGRATION 20260830223200_job_charge_nominal_resolution.sql
+
+-- BEGIN MIGRATION 20260830224000_lock_job_charge_nominal_helpers.sql
+begin;
+
+revoke all on function public._multideck_finance_default_job_charge_nominals() from public,anon,authenticated;
+revoke all on function public._multideck_finance_remap_job_charge_nominals() from public,anon,authenticated;
+
+commit;
+-- END MIGRATION 20260830224000_lock_job_charge_nominal_helpers.sql
+
+-- BEGIN MIGRATION 20260831061903_universal_job_charge_accounting.sql
+begin;
+
+-- Every operational area uses the same job and charge ledger. Domain values
+-- describe provenance; they do not create separate warehouse/customs ledgers.
+alter table public."Job_Header"
+  add column if not exists "Job_DomainCode" varchar(24);
+
+update public."Job_Header" set "Job_DomainCode"='freight'
+where "Job_DomainCode" is null;
+
+alter table public."Job_Header"
+  alter column "Job_DomainCode" set default 'freight',
+  alter column "Job_DomainCode" set not null,
+  drop constraint if exists "CK_Job_Header_domain";
+alter table public."Job_Header"
+  add constraint "CK_Job_Header_domain" check ("Job_DomainCode" in ('freight','warehouse','customs','shared'));
+
+alter table public."Job_Costing_Lines"
+  add column if not exists "JobCostingLine_DomainCode" varchar(24),
+  add column if not exists "JobCostingLine_SourceTable" varchar(80),
+  add column if not exists "JobCostingLine_SourceID" uuid,
+  add column if not exists "JobCostingLine_SourceLineID" uuid,
+  add column if not exists "JobCostingLine_SourceMetadataJSON" jsonb not null default '{}'::jsonb;
+
+update public."Job_Costing_Lines" line set
+  "JobCostingLine_DomainCode"=coalesce(job."Job_DomainCode",'freight')
+from public."Job_Header" job
+where job."Job_ID"=line."Job_ID" and line."JobCostingLine_DomainCode" is null;
+
+alter table public."Job_Costing_Lines"
+  alter column "JobCostingLine_DomainCode" set not null,
+  drop constraint if exists "CK_Job_Costing_Lines_domain";
+alter table public."Job_Costing_Lines"
+  add constraint "CK_Job_Costing_Lines_domain" check ("JobCostingLine_DomainCode" in ('freight','warehouse','customs','shared')),
+  add constraint "CK_Job_Costing_Lines_source_pair" check (
+    ("JobCostingLine_SourceTable" is null and "JobCostingLine_SourceID" is null) or
+    (nullif(btrim("JobCostingLine_SourceTable"),'') is not null and "JobCostingLine_SourceID" is not null)
+  ),
+  add constraint "CK_Job_Costing_Lines_source_metadata_object" check (jsonb_typeof("JobCostingLine_SourceMetadataJSON")='object');
+
+create unique index if not exists "UX_Job_Costing_Lines_source"
+  on public."Job_Costing_Lines"(
+    "JobCostingLine_DomainCode","JobCostingLine_SourceTable","JobCostingLine_SourceID",
+    coalesce("JobCostingLine_SourceLineID",'00000000-0000-0000-0000-000000000000'::uuid)
+  ) where "JobCostingLine_SourceTable" is not null and "JobCostingLine_SourceID" is not null;
+create index if not exists "IX_Job_Costing_Lines_domain_job"
+  on public."Job_Costing_Lines"("JobCostingLine_DomainCode","Job_ID","JobCostingLine_Number");
+
+create or replace function public._multideck_finance_default_job_charge_domain()
+returns trigger language plpgsql security definer set search_path=pg_catalog,public as $$
+declare v_domain text;
+begin
+  if new."JobCostingLine_DomainCode" is null then
+    select job."Job_DomainCode" into v_domain
+    from public."Job_Header" job where job."Job_ID"=new."Job_ID";
+    new."JobCostingLine_DomainCode":=coalesce(v_domain,'freight');
+  end if;
+  new."JobCostingLine_SourceTable":=nullif(btrim(new."JobCostingLine_SourceTable"),'');
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_default_job_charge_domain() from public,anon,authenticated;
+
+drop trigger if exists "TR_FIN_default_job_charge_domain" on public."Job_Costing_Lines";
+create trigger "TR_FIN_default_job_charge_domain"
+before insert or update of "Job_ID","JobCostingLine_DomainCode","JobCostingLine_SourceTable"
+on public."Job_Costing_Lines" for each row
+execute function public._multideck_finance_default_job_charge_domain();
+
+-- Internal, idempotent adapter used by every operational domain. Expected
+-- values are accepted here; actuals continue to come only from posted finance
+-- document lines linked to the exact returned costing line.
+create or replace function public._multideck_finance_upsert_job_charge(
+  p_job_id uuid,
+  p_domain_code text,
+  p_source_table text,
+  p_source_id uuid,
+  p_source_line_id uuid,
+  p_description text,
+  p_supplier_id uuid,
+  p_charge_code_id uuid,
+  p_expected_cost_local numeric,
+  p_expected_revenue_local numeric,
+  p_expected_cost_currency numeric,
+  p_expected_revenue_currency numeric,
+  p_cost_currency_id integer,
+  p_revenue_currency_id integer,
+  p_cost_roe numeric,
+  p_revenue_roe numeric,
+  p_actor_user_id uuid,
+  p_source_metadata jsonb default '{}'::jsonb
+) returns uuid
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare
+  v_line_id uuid;
+  v_line_no integer;
+  v_domain text:=lower(nullif(btrim(p_domain_code),''));
+  v_source_table text:=nullif(btrim(p_source_table),'');
+begin
+  if p_job_id is null or not exists(select 1 from public."Job_Header" where "Job_ID"=p_job_id and not "Job_IsDeleted") then
+    raise exception 'A valid operational job is required for every revenue or cost charge.' using errcode='22023';
+  end if;
+  if v_domain not in ('freight','warehouse','customs','shared') then
+    raise exception 'Charge domain must be freight, warehouse, customs or shared.' using errcode='22023';
+  end if;
+  if v_source_table is null or p_source_id is null then
+    raise exception 'A source record is required for every domain charge.' using errcode='22023';
+  end if;
+  if nullif(btrim(p_description),'') is null then
+    raise exception 'A charge description is required.' using errcode='22023';
+  end if;
+  if coalesce(p_expected_cost_local,0)<0 or coalesce(p_expected_revenue_local,0)<0 or
+     coalesce(p_expected_cost_currency,0)<0 or coalesce(p_expected_revenue_currency,0)<0 then
+    raise exception 'Expected revenue and cost cannot be negative.' using errcode='22023';
+  end if;
+  if coalesce(p_source_metadata,'{}'::jsonb) is null or jsonb_typeof(coalesce(p_source_metadata,'{}'::jsonb))<>'object' then
+    raise exception 'Charge source metadata must be an object.' using errcode='22023';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(v_domain||':'||v_source_table||':'||p_source_id::text||':'||coalesce(p_source_line_id::text,''),0));
+  select line."JobCostingLine_ID" into v_line_id
+  from public."Job_Costing_Lines" line
+  where line."JobCostingLine_DomainCode"=v_domain
+    and line."JobCostingLine_SourceTable"=v_source_table
+    and line."JobCostingLine_SourceID"=p_source_id
+    and line."JobCostingLine_SourceLineID" is not distinct from p_source_line_id
+  for update;
+
+  if v_line_id is null then
+    perform pg_advisory_xact_lock(hashtextextended('job-charge-line:'||p_job_id::text,0));
+    select coalesce(max(line."JobCostingLine_Number"),0)+1 into v_line_no
+    from public."Job_Costing_Lines" line where line."Job_ID"=p_job_id;
+    insert into public."Job_Costing_Lines"(
+      "Job_ID","JobCostingLine_Number","JobCostingLine_SupplierID","JobCostingLine_ChargeCodeID",
+      "JobCostingLine_Description","JobCostingLine_CostCurrencyID","JobCostingLine_CostROE",
+      "JobCostingLine_CostAmountCurrency","JobCostingLine_CostAmountLocal","JobCostingLine_RevenueCurrencyID",
+      "JobCostingLine_RevenueROE","JobCostingLine_RevenueAmountCurrency","JobCostingLine_RevenueAmountLocal",
+      "JobCostingLine_DomainCode","JobCostingLine_SourceTable","JobCostingLine_SourceID",
+      "JobCostingLine_SourceLineID","JobCostingLine_SourceMetadataJSON","JobCostingLine_CreatedBy","JobCostingLine_UpdatedBy"
+    ) values (
+      p_job_id,v_line_no,p_supplier_id,p_charge_code_id,left(btrim(p_description),240),p_cost_currency_id,p_cost_roe,
+      p_expected_cost_currency,p_expected_cost_local,p_revenue_currency_id,p_revenue_roe,
+      p_expected_revenue_currency,p_expected_revenue_local,v_domain,v_source_table,p_source_id,p_source_line_id,
+      coalesce(p_source_metadata,'{}'::jsonb),p_actor_user_id,p_actor_user_id
+    ) returning "JobCostingLine_ID" into v_line_id;
+  else
+    update public."Job_Costing_Lines" set
+      "Job_ID"=p_job_id,
+      "JobCostingLine_SupplierID"=p_supplier_id,
+      "JobCostingLine_ChargeCodeID"=p_charge_code_id,
+      "JobCostingLine_Description"=left(btrim(p_description),240),
+      "JobCostingLine_CostCurrencyID"=p_cost_currency_id,
+      "JobCostingLine_CostROE"=p_cost_roe,
+      "JobCostingLine_CostAmountCurrency"=p_expected_cost_currency,
+      "JobCostingLine_CostAmountLocal"=p_expected_cost_local,
+      "JobCostingLine_RevenueCurrencyID"=p_revenue_currency_id,
+      "JobCostingLine_RevenueROE"=p_revenue_roe,
+      "JobCostingLine_RevenueAmountCurrency"=p_expected_revenue_currency,
+      "JobCostingLine_RevenueAmountLocal"=p_expected_revenue_local,
+      "JobCostingLine_SourceMetadataJSON"=coalesce(p_source_metadata,'{}'::jsonb),
+      "JobCostingLine_UpdatedAt"=now(),"JobCostingLine_UpdatedBy"=p_actor_user_id
+    where "JobCostingLine_ID"=v_line_id;
+  end if;
+  return v_line_id;
+end; $$;
+revoke all on function public._multideck_finance_upsert_job_charge(uuid,text,text,uuid,uuid,text,uuid,uuid,numeric,numeric,numeric,numeric,integer,integer,numeric,numeric,uuid,jsonb) from public,anon,authenticated;
+
+create or replace function public.multideck_finance_upsert_job_charge(
+  p_company_id uuid,p_user_id uuid,p_job_id uuid,p_domain_code text,p_source_table text,p_source_id uuid,
+  p_source_line_id uuid,p_description text,p_supplier_id uuid,p_charge_code_id uuid,
+  p_expected_cost_local numeric,p_expected_revenue_local numeric,p_expected_cost_currency numeric,
+  p_expected_revenue_currency numeric,p_cost_currency_id integer,p_revenue_currency_id integer,
+  p_cost_roe numeric,p_revenue_roe numeric,p_source_metadata jsonb default '{}'::jsonb
+) returns uuid
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_entity uuid; v_line uuid;
+begin
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then
+    raise exception 'The operator is outside this workspace.' using errcode='42501';
+  end if;
+  v_entity:=public._multideck_finance_resolve_job_legal_entity(p_job_id);
+  if v_entity is null or not exists(select 1 from public."cmp_LegalEntities" where "LegalEntity_ID"=v_entity and "Company_ID"=p_company_id and "LegalEntity_IsActive") then
+    raise exception 'The job is outside this workspace or has no active legal entity.' using errcode='42501';
+  end if;
+  v_line:=public._multideck_finance_upsert_job_charge(p_job_id,p_domain_code,p_source_table,p_source_id,p_source_line_id,p_description,p_supplier_id,p_charge_code_id,p_expected_cost_local,p_expected_revenue_local,p_expected_cost_currency,p_expected_revenue_currency,p_cost_currency_id,p_revenue_currency_id,p_cost_roe,p_revenue_roe,p_user_id,p_source_metadata);
+  return v_line;
+end; $$;
+revoke all on function public.multideck_finance_upsert_job_charge(uuid,uuid,uuid,text,text,uuid,uuid,text,uuid,uuid,numeric,numeric,numeric,numeric,integer,integer,numeric,numeric,jsonb) from public,anon,authenticated;
+grant execute on function public.multideck_finance_upsert_job_charge(uuid,uuid,uuid,text,text,uuid,uuid,text,uuid,uuid,numeric,numeric,numeric,numeric,integer,integer,numeric,numeric,jsonb) to service_role;
+
+-- Older freight/customs paths still writing ChargesIn/ChargesOut are folded
+-- into the canonical charge ledger. Their mutable actual fields are ignored.
+create or replace function public._multideck_finance_adapt_legacy_job_charge()
+returns trigger language plpgsql security definer set search_path=pg_catalog,public as $$
+declare v_domain text; v_actor uuid;
+begin
+  select coalesce(job."Job_DomainCode",'freight'),job."Job_CreatedBy" into v_domain,v_actor
+  from public."Job_Header" job where job."Job_ID"=new."Job_ID";
+  if tg_table_name='Job_Costing_ChargesIn' then
+    perform public._multideck_finance_upsert_job_charge(
+      new."Job_ID",v_domain,'Job_Costing_ChargesIn',new."JCIn_ID",null,
+      coalesce(nullif(btrim(new."JCIn_Description"),''),'Expected supplier cost'),new."JCIn_From",new."JCIn_ChargeCode",
+      coalesce(new."JCIn_Expected_NetCost_Local",0),0,new."JCIn_Expected_NetCost_Curr",null,
+      new."JCIn_FromCurr",null,new."JCIn_FromROE",null,v_actor,
+      jsonb_build_object('sourceKind','legacy_cost','actualsIgnored',true)
+    );
+  else
+    perform public._multideck_finance_upsert_job_charge(
+      new."Job_ID",v_domain,'Job_Costing_ChargesOut',new."JCOut_ID",null,
+      coalesce(nullif(btrim(new."JCOut_Description"),''),'Expected customer revenue'),null,new."JCOut_ChargeCode",
+      0,coalesce(new."JCOut_Expected_NetCost_Local",0),null,new."JCOut_Expected_NetCost_Curr",
+      null,new."JCOut_ToCurr",null,new."JCOut_ToROE",v_actor,
+      jsonb_build_object('sourceKind','legacy_revenue','actualsIgnored',true,'customerOrgId',new."JCOut_To")
+    );
+  end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_adapt_legacy_job_charge() from public,anon,authenticated;
+
+drop trigger if exists "TR_FIN_adapt_legacy_charge_in" on public."Job_Costing_ChargesIn";
+create trigger "TR_FIN_adapt_legacy_charge_in" after insert or update of
+  "Job_ID","JCIn_From","JCIn_ChargeCode","JCIn_Description","JCIn_FromCurr","JCIn_FromROE","JCIn_Expected_NetCost_Curr","JCIn_Expected_NetCost_Local"
+on public."Job_Costing_ChargesIn" for each row execute function public._multideck_finance_adapt_legacy_job_charge();
+drop trigger if exists "TR_FIN_adapt_legacy_charge_out" on public."Job_Costing_ChargesOut";
+create trigger "TR_FIN_adapt_legacy_charge_out" after insert or update of
+  "Job_ID","JCOut_To","JCOut_ChargeCode","JCOut_Description","JCOut_ToCurr","JCOut_ToROE","JCOut_Expected_NetCost_Curr","JCOut_Expected_NetCost_Local"
+on public."Job_Costing_ChargesOut" for each row execute function public._multideck_finance_adapt_legacy_job_charge();
+
+-- Warehouse orders receive a canonical job before they can generate billing.
+create or replace function public._multideck_finance_ensure_warehouse_job()
+returns trigger language plpgsql security definer set search_path=pg_catalog,public as $$
+declare v_office uuid; v_company uuid; v_actor uuid; v_job uuid; v_created timestamptz;
+begin
+  if new."WMSOrder_JobID" is not null then return new; end if;
+  select coalesce(new."WMSOrder_OrgOfficeID",facility."WMSFacility_OrgOfficeID"),office."Company_ID",
+    coalesce(new."WMSOrder_CreatedBy",facility."WMSFacility_CreatedBy")
+  into v_office,v_company,v_actor
+  from public."WMS_Facilities" facility
+  left join public."cmp_Offices" office on office."Office_ID"=coalesce(new."WMSOrder_OrgOfficeID",facility."WMSFacility_OrgOfficeID")
+  where facility."WMSFacility_ID"=new."WMSOrder_FacilityID";
+  if v_actor is null then
+    select user_row."User_ID" into v_actor from public."cmp_Users" user_row
+    where user_row."Company_ID"=v_company and coalesce(user_row."User_AccessStatus",'active')='active'
+    order by user_row."User_ID" limit 1;
+  end if;
+  if v_office is null or v_actor is null then
+    raise exception 'Warehouse billing needs an office and an active internal owner before a job can be created.' using errcode='22023';
+  end if;
+  v_created:=coalesce(new."WMSOrder_CreatedAt",now());
+  insert into public."Job_Header"(
+    "Job_Period","Job_CreatedDate","Job_CreatedBy","Job_Customer","Job_OfficeID","Job_OrgOfficeID",
+    "Job_Status","Job_TransportModeSummary","Job_BookingReference","Job_CustomerReference",
+    "Job_DomainCode","Job_SourceSnapshotJSON","Job_UpdatedAt","Job_UpdatedBy"
+  ) values (
+    to_char(v_created at time zone 'UTC','YYYYMM'),v_created at time zone 'UTC',v_actor,new."WMSOrder_CustomerOrgID",v_office,v_office,
+    case when new."WMSOrder_StatusCode" in ('complete','cancelled') then new."WMSOrder_StatusCode" else 'open' end,
+    'warehouse',new."WMSOrder_OrderNumber",new."WMSOrder_CustomerReference",'warehouse',
+    jsonb_build_object('sourceDomain','warehouse','sourceTable','WMS_Orders','sourceId',new."WMSOrder_ID",'sourceReference',new."WMSOrder_OrderNumber"),
+    v_created,v_actor
+  ) returning "Job_ID" into v_job;
+  new."WMSOrder_JobID":=v_job;
+  new."WMSOrder_OrgOfficeID":=v_office;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_ensure_warehouse_job() from public,anon,authenticated;
+
+drop trigger if exists "TR_FIN_ensure_warehouse_job" on public."WMS_Orders";
+create trigger "TR_FIN_ensure_warehouse_job"
+before insert or update of "WMSOrder_JobID" on public."WMS_Orders"
+for each row when (new."WMSOrder_JobID" is null)
+execute function public._multideck_finance_ensure_warehouse_job();
+
+-- Existing demo orders are linked too, making the rule true for the current
+-- workspace as well as for future orders.
+update public."WMS_Orders" set "WMSOrder_JobID"=null
+where "WMSOrder_JobID" is null and not "WMSOrder_IsDeleted";
+
+-- A warehouse billing event is customer revenue, never stock/goods value.
+create or replace function public._multideck_finance_adapt_warehouse_billing_event()
+returns trigger language plpgsql security definer set search_path=pg_catalog,public as $$
+declare v_job uuid; v_actor uuid; v_entity uuid; v_base text; v_currency text; v_roe numeric; v_local numeric;
+begin
+  v_job:=new."WMSBillEvent_JobID";
+  if v_job is null and new."WMSBillEvent_OrderID" is not null then
+    select "WMSOrder_JobID" into v_job from public."WMS_Orders" where "WMSOrder_ID"=new."WMSBillEvent_OrderID";
+    new."WMSBillEvent_JobID":=v_job;
+  end if;
+  if v_job is null then raise exception 'A warehouse billing event must be linked to an operational job.' using errcode='22023'; end if;
+  select coalesce(new."WMSBillEvent_CreatedBy",job."Job_CreatedBy") into v_actor from public."Job_Header" job where job."Job_ID"=v_job;
+  v_entity:=public._multideck_finance_resolve_job_legal_entity(v_job);
+  select upper(coalesce("LegalEntity_BaseCurrencyCodeSnapshot",'GBP')) into v_base from public."cmp_LegalEntities" where "LegalEntity_ID"=v_entity;
+  v_currency:=upper(coalesce(new."WMSBillEvent_CurrencyCode",v_base));
+  if coalesce(new."WMSBillEvent_MetadataJSON"->>'exchangeRate','') ~ '^\d+(\.\d+)?$' then v_roe:=(new."WMSBillEvent_MetadataJSON"->>'exchangeRate')::numeric; end if;
+  if coalesce(new."WMSBillEvent_MetadataJSON"->>'localNetAmount','') ~ '^\d+(\.\d+)?$' then
+    v_local:=(new."WMSBillEvent_MetadataJSON"->>'localNetAmount')::numeric;
+  elsif v_currency=v_base then v_local:=new."WMSBillEvent_NetAmount";
+  elsif v_roe is not null and v_roe>0 then v_local:=round(new."WMSBillEvent_NetAmount"*v_roe,4);
+  else raise exception 'A foreign-currency warehouse billing event needs exchangeRate or localNetAmount evidence.' using errcode='22023';
+  end if;
+  perform public._multideck_finance_upsert_job_charge(
+    v_job,'warehouse','WMS_BillingEvents',new."WMSBillEvent_ID",null,new."WMSBillEvent_Description",null,null,
+    0,case when new."WMSBillEvent_StatusCode"='cancelled' then 0 else v_local end,null,new."WMSBillEvent_NetAmount",
+    null,null,null,v_roe,v_actor,
+    coalesce(new."WMSBillEvent_MetadataJSON",'{}'::jsonb)||jsonb_build_object('eventType',new."WMSBillEvent_EventTypeCode",'billingBasis',new."WMSBillEvent_BillingBasisCode",'currencyCode',v_currency,'localCurrencyCode',v_base,'orderId',new."WMSBillEvent_OrderID")
+  );
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_adapt_warehouse_billing_event() from public,anon,authenticated;
+
+drop trigger if exists "TR_FIN_adapt_warehouse_billing_event" on public."WMS_BillingEvents";
+create trigger "TR_FIN_adapt_warehouse_billing_event"
+before insert or update of "WMSBillEvent_JobID","WMSBillEvent_OrderID","WMSBillEvent_StatusCode","WMSBillEvent_Description","WMSBillEvent_NetAmount","WMSBillEvent_CurrencyCode","WMSBillEvent_MetadataJSON"
+on public."WMS_BillingEvents" for each row execute function public._multideck_finance_adapt_warehouse_billing_event();
+
+-- Charge changes are visible to Dexter and Watching for you through the same
+-- deterministic finance signal path as documents and reversals.
+create or replace function public._multideck_dexter_job_charge_watch_change()
+returns trigger language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_company uuid; v_source uuid; v_old jsonb:='{}'::jsonb; v_new jsonb;
+begin
+  v_source:=new."JobCostingLine_ID";
+  select entity."Company_ID" into v_company from public."cmp_LegalEntities" entity
+  where entity."LegalEntity_ID"=public._multideck_finance_resolve_job_legal_entity(new."Job_ID");
+  if tg_op<>'INSERT' then v_old:=jsonb_build_object(
+    'jobChargeLine',old."JobCostingLine_ID",'domain',old."JobCostingLine_DomainCode",
+    'expectedRevenue',old."JobCostingLine_RevenueAmountLocal",'expectedCost',old."JobCostingLine_CostAmountLocal",
+    'revenueNominalAccountId',old."JobCostingLine_RevenueNominalAccountID",'costNominalAccountId',old."JobCostingLine_CostNominalAccountID"
+  ); end if;
+  v_new:=jsonb_build_object(
+    'jobChargeLine',new."JobCostingLine_ID",'domain',new."JobCostingLine_DomainCode",
+    'sourceTable',new."JobCostingLine_SourceTable",'sourceId',new."JobCostingLine_SourceID",
+    'expectedRevenue',new."JobCostingLine_RevenueAmountLocal",'expectedCost',new."JobCostingLine_CostAmountLocal",
+    'revenueNominalAccountId',new."JobCostingLine_RevenueNominalAccountID",'costNominalAccountId',new."JobCostingLine_CostNominalAccountID"
+  );
+  if v_old is distinct from v_new and v_company is not null and exists(
+    select 1 from public."AI_DexterWatches" watch where watch."AIDexterWatch_CompanyID"=v_company
+      and watch."AIDexterWatch_CapabilityCode"='finance' and watch."AIDexterWatch_StatusCode"='active'
+      and (watch."AIDexterWatch_TargetID" is null or watch."AIDexterWatch_TargetID"=v_source)
+  ) then
+    insert into public."AI_DexterWatchSignals"(
+      "AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable",
+      "AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON"
+    ) values(v_company,'finance','Job_Costing_Lines',v_source,v_old,v_new);
+  end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_dexter_job_charge_watch_change() from public,anon,authenticated;
+
+drop trigger if exists "TR_FIN_job_charge_dexter_watch" on public."Job_Costing_Lines";
+create trigger "TR_FIN_job_charge_dexter_watch" after insert or update of
+  "JobCostingLine_DomainCode","JobCostingLine_CostAmountLocal","JobCostingLine_RevenueAmountLocal",
+  "JobCostingLine_CostNominalAccountID","JobCostingLine_RevenueNominalAccountID"
+on public."Job_Costing_Lines" for each row execute function public._multideck_dexter_job_charge_watch_change();
+
+-- Append domain and source evidence without changing any accounting formula.
+create or replace view public."FIN_JobChargeProfitability" with (security_invoker=true) as
+with actual as (
+  select link."FINDocLineJob_JobCostingLineID" line_id,
+    coalesce(sum(link."FINDocLineJob_LocalNetAmount") filter(where document."FINDoc_TypeCode" in ('sl_invoice','credit_note')),0) actual_revenue,
+    coalesce(sum(link."FINDocLineJob_LocalNetAmount") filter(where document."FINDoc_TypeCode" in ('pl_invoice','debit_note')),0) actual_cost
+  from public."FIN_DocumentLineJobLinks" link
+  join public."FIN_Documents" document on document."FINDoc_ID"=link."FINDocLineJob_DocumentID" and document."FINDoc_PostingStatusCode"='posted'
+  where link."FINDocLineJob_JobCostingLineID" is not null group by link."FINDocLineJob_JobCostingLineID"
+), balances as (
+  select line."JobCostingLine_ID" line_id,
+    coalesce((select sum(wip."FINWIP_LocalWIPAmount"-wip."FINWIP_RelievedAmount") from public."FIN_WIPItems" wip where wip."FINWIP_JobCostingLineID"=line."JobCostingLine_ID" and wip."FINWIP_StatusCode" in ('posted','partially_reversed')),0) open_wip,
+    coalesce((select sum(accrual."FINAccrual_LocalAccruedAmount"-accrual."FINAccrual_RelievedAmount") from public."FIN_Accruals" accrual where accrual."FINAccrual_JobCostingLineID"=line."JobCostingLine_ID" and accrual."FINAccrual_StatusCode" in ('posted','partially_reversed')),0) open_accrual
+  from public."Job_Costing_Lines" line
+)
+select line."JobCostingLine_ID" as "FINChargeProfit_JobCostingLineID",line."Job_ID" as "FINChargeProfit_JobID",line."JobCostingLine_Number" as "FINChargeProfit_LineNo",
+  charge."RATECharge_Code" as "FINChargeProfit_ChargeCode",line."JobCostingLine_Description" as "FINChargeProfit_Description",
+  line."JobCostingLine_CostNominalAccountID" as "FINChargeProfit_CostNominalAccountID",cost_nominal."FINNom_Code" as "FINChargeProfit_CostNominalCode",
+  line."JobCostingLine_RevenueNominalAccountID" as "FINChargeProfit_RevenueNominalAccountID",revenue_nominal."FINNom_Code" as "FINChargeProfit_RevenueNominalCode",
+  coalesce(line."JobCostingLine_RevenueAmountLocal",0) as "FINChargeProfit_ExpectedRevenue",coalesce(line."JobCostingLine_CostAmountLocal",0) as "FINChargeProfit_ExpectedCost",
+  coalesce(actual.actual_revenue,0) as "FINChargeProfit_ActualRevenue",coalesce(actual.actual_cost,0) as "FINChargeProfit_ActualCost",
+  coalesce(balances.open_wip,0) as "FINChargeProfit_OpenWIP",coalesce(balances.open_accrual,0) as "FINChargeProfit_OpenAccrual",
+  coalesce(actual.actual_revenue,0)+coalesce(balances.open_wip,0) as "FINChargeProfit_RecognisedRevenue",
+  coalesce(actual.actual_cost,0)+coalesce(balances.open_accrual,0) as "FINChargeProfit_RecognisedCost",
+  coalesce(actual.actual_revenue,0)+coalesce(balances.open_wip,0)-coalesce(actual.actual_cost,0)-coalesce(balances.open_accrual,0) as "FINChargeProfit_GrossProfit",
+  coalesce(actual.actual_revenue,0)+coalesce(balances.open_wip,0)-coalesce(line."JobCostingLine_RevenueAmountLocal",0) as "FINChargeProfit_RevenueMovement",
+  coalesce(actual.actual_cost,0)+coalesce(balances.open_accrual,0)-coalesce(line."JobCostingLine_CostAmountLocal",0) as "FINChargeProfit_CostMovement",
+  line."JobCostingLine_DomainCode" as "FINChargeProfit_DomainCode",line."JobCostingLine_SourceTable" as "FINChargeProfit_SourceTable",
+  line."JobCostingLine_SourceID" as "FINChargeProfit_SourceID",line."JobCostingLine_SourceLineID" as "FINChargeProfit_SourceLineID"
+from public."Job_Costing_Lines" line
+left join public."RATE_ChargeCodes" charge on charge."RATECharge_ID"=line."JobCostingLine_ChargeCodeID"
+left join public."FIN_NominalAccounts" cost_nominal on cost_nominal."FINNom_ID"=line."JobCostingLine_CostNominalAccountID"
+left join public."FIN_NominalAccounts" revenue_nominal on revenue_nominal."FINNom_ID"=line."JobCostingLine_RevenueNominalAccountID"
+left join actual on actual.line_id=line."JobCostingLine_ID" left join balances on balances.line_id=line."JobCostingLine_ID";
+
+revoke all on public."FIN_JobChargeProfitability" from public,anon,authenticated;
+grant select on public."FIN_JobChargeProfitability" to service_role;
+
+create or replace function public.multideck_dexter_domain_finance(p_company_id uuid,p_search text,p_take integer)
+returns jsonb language sql stable security definer set search_path=pg_catalog,public as $$
+  with records as (
+    select value,coalesce((value->'evidence'->>'updatedAt')::timestamptz,'2000-01-01'::timestamptz) updated_at
+    from jsonb_array_elements(public._multideck_dexter_domain_finance_before_charge_profitability(p_company_id,p_search,p_take)) value
+    union all
+    select jsonb_strip_nulls(jsonb_build_object(
+      'recordId',profit."FINChargeProfit_JobCostingLineID",'recordKind','job_charge_profitability','jobId',profit."FINChargeProfit_JobID",
+      'jobReference',job."Job_Period"||'-'||job."Job_Number",'jobDomain',profit."FINChargeProfit_DomainCode",
+      'lineNo',profit."FINChargeProfit_LineNo",'chargeCode',profit."FINChargeProfit_ChargeCode",'description',profit."FINChargeProfit_Description",
+      'chargeSourceTable',profit."FINChargeProfit_SourceTable",'chargeSourceId',profit."FINChargeProfit_SourceID",'chargeSourceLineId',profit."FINChargeProfit_SourceLineID",
+      'revenueNominalCode',profit."FINChargeProfit_RevenueNominalCode",'costNominalCode',profit."FINChargeProfit_CostNominalCode",
+      'expectedRevenue',profit."FINChargeProfit_ExpectedRevenue",'expectedCost',profit."FINChargeProfit_ExpectedCost",
+      'actualRevenue',profit."FINChargeProfit_ActualRevenue",'actualCost',profit."FINChargeProfit_ActualCost",
+      'openWIP',profit."FINChargeProfit_OpenWIP",'openAccrual',profit."FINChargeProfit_OpenAccrual",
+      'recognisedRevenue',profit."FINChargeProfit_RecognisedRevenue",'recognisedCost',profit."FINChargeProfit_RecognisedCost",
+      'grossProfit',profit."FINChargeProfit_GrossProfit",'grossProfitMovement',profit."FINChargeProfit_RevenueMovement"-profit."FINChargeProfit_CostMovement",
+      'evidence',jsonb_build_object('sourceTable','FIN_JobChargeProfitability','sourceId',profit."FINChargeProfit_JobCostingLineID",'operationalSourceTable',profit."FINChargeProfit_SourceTable",'operationalSourceId',profit."FINChargeProfit_SourceID",'legalEntityId',entity."LegalEntity_ID",'updatedAt',line."JobCostingLine_UpdatedAt")
+    )),line."JobCostingLine_UpdatedAt"::timestamptz
+    from public."FIN_JobChargeProfitability" profit
+    join public."Job_Costing_Lines" line on line."JobCostingLine_ID"=profit."FINChargeProfit_JobCostingLineID"
+    join public."Job_Header" job on job."Job_ID"=profit."FINChargeProfit_JobID"
+    join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=public._multideck_finance_resolve_job_legal_entity(job."Job_ID")
+    where entity."Company_ID"=p_company_id and (
+      nullif(btrim(p_search),'') is null or concat_ws(' ',job."Job_Period",job."Job_Number",profit."FINChargeProfit_DomainCode",profit."FINChargeProfit_SourceTable",profit."FINChargeProfit_ChargeCode",profit."FINChargeProfit_Description",profit."FINChargeProfit_RevenueNominalCode",profit."FINChargeProfit_CostNominalCode") ilike '%'||btrim(p_search)||'%'
+    )
+  )
+  select coalesce(jsonb_agg(value order by updated_at desc),'[]'::jsonb)
+  from (select * from records order by updated_at desc limit greatest(1,least(coalesce(p_take,10),25))) limited;
+$$;
+revoke all on function public.multideck_dexter_domain_finance(uuid,text,integer) from public,anon,authenticated;
+grant execute on function public.multideck_dexter_domain_finance(uuid,text,integer) to service_role;
+
+update public."sys_AIDexterDataDomains" set
+  "AIDexterDomain_Description"='Tenant-safe finance documents, cash and universal freight, warehouse and customs job charge lines, including source provenance, periods, expected values, WIP, accruals, actuals, nominal codes, gross profit and exact invoice reclassification evidence.',
+  "AIDexterDomain_UpdatedAt"=now()
+where "AIDexterDomain_Code"='finance';
+
+update public."sys_AIDexterWatchCapabilities" set
+  "AIDexterWatchCapability_Description"='Event-driven finance documents and freight, warehouse or customs charge-line changes, WIP/accrual reclassifications, unmatched actual GP movements, provider sync, postings and reversals.',
+  "AIDexterWatchCapability_FieldsJSON"=(select coalesce(jsonb_agg(distinct value),'[]'::jsonb) from jsonb_array_elements(coalesce("AIDexterWatchCapability_FieldsJSON",'[]'::jsonb)||'["jobDomain","chargeSourceTable","chargeSourceId"]'::jsonb)),
+  "AIDexterWatchCapability_UpdatedAt"=now()
+where "AIDexterWatchCapability_Code"='finance';
+
+commit;
+-- END MIGRATION 20260831061903_universal_job_charge_accounting.sql
+
+-- BEGIN MIGRATION 20260831072515_provider_optional_global_finance.sql
+begin;
+
+-- Multideck is the accounting source of truth. External accounting packages
+-- are optional mirrors and never determine whether the native ledger exists.
+alter table public."FIN_Settings"
+  add column if not exists "FINSET_NativeLedgerEnabled" boolean not null default true,
+  add column if not exists "FINSET_ExternalMirrorModeCode" varchar(20) not null default 'optional';
+
+alter table public."FIN_Settings" drop constraint if exists "CK_FIN_Settings_external_mirror_mode";
+alter table public."FIN_Settings" add constraint "CK_FIN_Settings_external_mirror_mode"
+  check ("FINSET_ExternalMirrorModeCode" in ('disabled','optional','required'));
+
+alter table public."FIN_Documents"
+  add column if not exists "FINDoc_NativePostingStatusCode" varchar(30) not null default 'draft',
+  add column if not exists "FINDoc_NativePostingBatchID" uuid references public."FIN_PostingBatches"("FINPostBatch_ID") on delete restrict,
+  add column if not exists "FINDoc_NativePostedAt" timestamptz,
+  add column if not exists "FINDoc_NativePostedBy" uuid references public."cmp_Users"("User_ID") on delete set null;
+
+alter table public."FIN_CashTransactions"
+  add column if not exists "FINCash_NativePostingStatusCode" varchar(30) not null default 'draft',
+  add column if not exists "FINCash_NativePostingBatchID" uuid references public."FIN_PostingBatches"("FINPostBatch_ID") on delete restrict,
+  add column if not exists "FINCash_NativePostedAt" timestamptz,
+  add column if not exists "FINCash_NativePostedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  add column if not exists "FINCash_ExportStatusCode" varchar(60) not null default 'not_queued';
+
+alter table public."FIN_Documents" drop constraint if exists "CK_FIN_Documents_native_posting_status";
+alter table public."FIN_Documents" add constraint "CK_FIN_Documents_native_posting_status"
+  check ("FINDoc_NativePostingStatusCode" in ('draft','pending_migration','posted','reversed'));
+alter table public."FIN_CashTransactions" drop constraint if exists "CK_FIN_CashTransactions_native_posting_status";
+alter table public."FIN_CashTransactions" add constraint "CK_FIN_CashTransactions_native_posting_status"
+  check ("FINCash_NativePostingStatusCode" in ('draft','pending_migration','posted','reversed'));
+
+create index if not exists "IX_FIN_Documents_native_posting"
+  on public."FIN_Documents"("FINDoc_LegalEntityID","FINDoc_NativePostingStatusCode","FINDoc_AccountingDate");
+create index if not exists "IX_FIN_CashTransactions_native_posting"
+  on public."FIN_CashTransactions"("FINCash_LegalEntityID","FINCash_NativePostingStatusCode","FINCash_AccountingDate");
+create index if not exists "IX_FIN_Documents_native_batch"
+  on public."FIN_Documents"("FINDoc_NativePostingBatchID") where "FINDoc_NativePostingBatchID" is not null;
+create index if not exists "IX_FIN_CashTransactions_native_batch"
+  on public."FIN_CashTransactions"("FINCash_NativePostingBatchID") where "FINCash_NativePostingBatchID" is not null;
+
+-- Existing approved records require a controlled migration review. The change
+-- deliberately does not invent journals for historical provider-only records.
+update public."FIN_Documents"
+set "FINDoc_NativePostingStatusCode"='pending_migration'
+where "FINDoc_StatusCode" in ('approved','submitted')
+  and "FINDoc_NativePostingBatchID" is null
+  and "FINDoc_NativePostingStatusCode"='draft';
+update public."FIN_CashTransactions"
+set "FINCash_NativePostingStatusCode"='pending_migration'
+where "FINCash_StatusCode" in ('approved','submitted')
+  and "FINCash_NativePostingBatchID" is null
+  and "FINCash_NativePostingStatusCode"='draft';
+
+insert into public."sys_FinancePostingStatuses"(
+  "FINPOSTST_Code","FINPOSTST_Name","FINPOSTST_Description","FINPOSTST_IsFinal","FINPOSTST_SortOrder","FINPOSTST_IsActive"
+) values
+  ('draft','Draft','Not yet posted to the Multideck ledger.',false,10,true),
+  ('queued','Queued','Approved and waiting for native ledger posting.',false,20,true),
+  ('processing','Processing','Native ledger posting is in progress.',false,30,true),
+  ('posted','Posted','Balanced and posted to the Multideck ledger.',true,40,true),
+  ('blocked','Blocked','Native posting is blocked by incomplete accounting configuration.',false,50,true),
+  ('failed','Failed','Native posting failed and needs finance attention.',false,60,true)
+on conflict ("FINPOSTST_Code") do update set
+  "FINPOSTST_Name"=excluded."FINPOSTST_Name",
+  "FINPOSTST_Description"=excluded."FINPOSTST_Description",
+  "FINPOSTST_IsFinal"=excluded."FINPOSTST_IsFinal",
+  "FINPOSTST_IsActive"=true;
+
+-- The record lifecycle and native posting lifecycle are deliberately separate
+-- from external mirror delivery. Keep the shared lookup copy explicit so old
+-- provider-owned wording cannot leak back into the operator interface.
+update public."sys_FinanceDocumentStatuses" set
+  "FINDST_Description"=case "FINDST_Code"
+    when 'approved' then 'Approved and posted to the Multideck ledger; external mirror delivery follows only when configured.'
+    when 'submitted' then 'Posted to Multideck and delivered to the configured external accounting mirror.'
+    when 'failed' then 'An external mirror delivery failed; the Multideck ledger posting remains authoritative.'
+    else "FINDST_Description"
+  end
+where "FINDST_Code" in ('approved','submitted','failed');
+
+update public."sys_FinanceCashStatuses" set
+  "FINCASHST_Description"=case "FINCASHST_Code"
+    when 'approved' then 'Approved, allocated and posted to the Multideck ledger; external mirror delivery follows only when configured.'
+    when 'submitted' then 'Posted to Multideck and delivered to the configured external accounting mirror.'
+    when 'failed' then 'An external mirror delivery failed; the Multideck ledger posting remains authoritative.'
+    else "FINCASHST_Description"
+  end
+where "FINCASHST_Code" in ('approved','submitted','failed');
+
+update public."sys_FinanceAuthorityActionTypes" set
+  "FINAUTHA_Description"=case "FINAUTHA_Code"
+    when 'finance_post' then 'Approve a reviewed finance document for balanced posting to the Multideck ledger and optional external mirroring.'
+    when 'finance_cash_post' then 'Approve reviewed cash, apply allocations, post the balanced Multideck journal and optionally mirror it externally.'
+    else "FINAUTHA_Description"
+  end
+where "FINAUTHA_Code" in ('finance_post','finance_cash_post');
+
+-- Country packs describe verified obligations and their implementation gate.
+-- A foundation row means requirements are catalogued, not that Multideck is
+-- approved to submit to that authority in production.
+alter table public."FIN_LocalisationPacks"
+  add column if not exists "FINLocPack_Version" integer not null default 1,
+  add column if not exists "FINLocPack_AuthorityName" varchar(180),
+  add column if not exists "FINLocPack_ReportingCurrencyCode" varchar(3),
+  add column if not exists "FINLocPack_ComplianceStatusCode" varchar(30) not null default 'foundation',
+  add column if not exists "FINLocPack_SourceURL" text,
+  add column if not exists "FINLocPack_ReviewedAt" timestamptz;
+
+alter table public."FIN_LocalisationPacks" drop constraint if exists "CK_FIN_LocalisationPacks_compliance_status";
+alter table public."FIN_LocalisationPacks" add constraint "CK_FIN_LocalisationPacks_compliance_status"
+  check ("FINLocPack_ComplianceStatusCode" in ('foundation','calculation_ready','sandbox_ready','production_ready'));
+
+create table if not exists public."FIN_ComplianceObligations" (
+  "FINCompliance_ID" uuid primary key default gen_random_uuid(),
+  "FINCompliance_PackID" uuid not null references public."FIN_LocalisationPacks"("FINLocPack_ID") on delete cascade,
+  "FINCompliance_Code" varchar(100) not null,
+  "FINCompliance_Name" varchar(220) not null,
+  "FINCompliance_ObligationTypeCode" varchar(40) not null,
+  "FINCompliance_AuthorityName" varchar(180) not null,
+  "FINCompliance_FilingChannelCode" varchar(50) not null,
+  "FINCompliance_FrequencyCode" varchar(40) not null,
+  "FINCompliance_ReadinessStatusCode" varchar(30) not null default 'foundation',
+  "FINCompliance_SourceURL" text not null,
+  "FINCompliance_EffectiveFrom" date not null default current_date,
+  "FINCompliance_EffectiveTo" date,
+  "FINCompliance_RequirementsJSON" jsonb not null default '{}'::jsonb,
+  "FINCompliance_IsActive" boolean not null default true,
+  "FINCompliance_ReviewedAt" timestamptz,
+  "FINCompliance_UpdatedAt" timestamptz not null default now(),
+  constraint "UQ_FIN_ComplianceObligations_pack_code" unique ("FINCompliance_PackID","FINCompliance_Code"),
+  constraint "CK_FIN_ComplianceObligations_type" check ("FINCompliance_ObligationTypeCode" in ('indirect_tax','corporate_income_tax','statutory_accounts','sales_and_use_tax','financial_reporting')),
+  constraint "CK_FIN_ComplianceObligations_status" check ("FINCompliance_ReadinessStatusCode" in ('foundation','calculation_ready','sandbox_ready','production_ready')),
+  constraint "CK_FIN_ComplianceObligations_dates" check ("FINCompliance_EffectiveTo" is null or "FINCompliance_EffectiveTo">="FINCompliance_EffectiveFrom"),
+  constraint "CK_FIN_ComplianceObligations_requirements" check (jsonb_typeof("FINCompliance_RequirementsJSON")='object')
+);
+
+create index if not exists "IX_FIN_ComplianceObligations_pack_active"
+  on public."FIN_ComplianceObligations"("FINCompliance_PackID","FINCompliance_IsActive","FINCompliance_ObligationTypeCode");
+
+create table if not exists public."FIN_LegalEntityComplianceRegistrations" (
+  "FINComplianceReg_ID" uuid primary key default gen_random_uuid(),
+  "FINComplianceReg_LegalEntityID" uuid not null references public."cmp_LegalEntities"("LegalEntity_ID") on delete cascade,
+  "FINComplianceReg_ObligationID" uuid not null references public."FIN_ComplianceObligations"("FINCompliance_ID") on delete restrict,
+  "FINComplianceReg_StatusCode" varchar(30) not null default 'not_configured',
+  "FINComplianceReg_RegistrationReference" varchar(180),
+  "FINComplianceReg_FilingMethodCode" varchar(50),
+  "FINComplianceReg_EffectiveFrom" date not null default current_date,
+  "FINComplianceReg_EffectiveTo" date,
+  "FINComplianceReg_SettingsJSON" jsonb not null default '{}'::jsonb,
+  "FINComplianceReg_UpdatedAt" timestamptz not null default now(),
+  "FINComplianceReg_UpdatedBy" uuid references public."cmp_Users"("User_ID") on delete set null,
+  constraint "UQ_FIN_LegalEntityCompliance_registration" unique ("FINComplianceReg_LegalEntityID","FINComplianceReg_ObligationID"),
+  constraint "CK_FIN_LegalEntityCompliance_status" check ("FINComplianceReg_StatusCode" in ('not_applicable','not_configured','configured','sandbox_verified','production_verified')),
+  constraint "CK_FIN_LegalEntityCompliance_dates" check ("FINComplianceReg_EffectiveTo" is null or "FINComplianceReg_EffectiveTo">="FINComplianceReg_EffectiveFrom"),
+  constraint "CK_FIN_LegalEntityCompliance_settings" check (jsonb_typeof("FINComplianceReg_SettingsJSON")='object')
+);
+
+create index if not exists "IX_FIN_LegalEntityCompliance_entity_status"
+  on public."FIN_LegalEntityComplianceRegistrations"("FINComplianceReg_LegalEntityID","FINComplianceReg_StatusCode","FINComplianceReg_UpdatedAt" desc);
+create index if not exists "IX_FIN_LegalEntityCompliance_obligation"
+  on public."FIN_LegalEntityComplianceRegistrations"("FINComplianceReg_ObligationID");
+
+alter table public."FIN_ComplianceObligations" enable row level security;
+alter table public."FIN_LegalEntityComplianceRegistrations" enable row level security;
+revoke all on public."FIN_ComplianceObligations",public."FIN_LegalEntityComplianceRegistrations" from public,anon,authenticated;
+grant select,insert,update,delete on public."FIN_ComplianceObligations",public."FIN_LegalEntityComplianceRegistrations" to service_role;
+
+insert into public."FIN_LocalisationPacks"(
+  "FINLocPack_Code","FINLocPack_Name","FINLocPack_CountryCode","FINLocPack_AccountingStandardCode",
+  "FINLocPack_Version","FINLocPack_AuthorityName","FINLocPack_ReportingCurrencyCode","FINLocPack_ComplianceStatusCode","FINLocPack_SourceURL","FINLocPack_ReviewedAt","FINLocPack_IsActive"
+) values
+  ('gb-v1','United Kingdom accounting and tax foundation','GB','UK_GAAP',1,'HMRC and Companies House','GBP','foundation','https://developer.service.hmrc.gov.uk/api-documentation/docs/api/service/vat-api/2.0',now(),true),
+  ('us-v1','United States accounting and tax foundation','US','US_GAAP',1,'Internal Revenue Service and state tax authorities','USD','foundation','https://www.irs.gov/e-file-providers/form-1120-1120-s-1120-f-1120-h-e-file',now(),true),
+  ('ca-v1','Canada accounting and tax foundation','CA','ASPE_OR_IFRS',1,'Canada Revenue Agency','CAD','foundation','https://www.canada.ca/en/revenue-agency/services/e-services/digital-services-businesses.html',now(),true),
+  ('au-v1','Australia accounting and tax foundation','AU','AUSTRALIAN_ACCOUNTING_STANDARDS',1,'Australian Taxation Office and ASIC','AUD','foundation','https://softwaredevelopers.ato.gov.au/getting_started',now(),true)
+on conflict ("FINLocPack_Code") do update set
+  "FINLocPack_Name"=excluded."FINLocPack_Name","FINLocPack_CountryCode"=excluded."FINLocPack_CountryCode",
+  "FINLocPack_AccountingStandardCode"=excluded."FINLocPack_AccountingStandardCode","FINLocPack_Version"=excluded."FINLocPack_Version",
+  "FINLocPack_AuthorityName"=excluded."FINLocPack_AuthorityName","FINLocPack_ReportingCurrencyCode"=excluded."FINLocPack_ReportingCurrencyCode",
+  "FINLocPack_ComplianceStatusCode"=excluded."FINLocPack_ComplianceStatusCode","FINLocPack_SourceURL"=excluded."FINLocPack_SourceURL",
+  "FINLocPack_ReviewedAt"=excluded."FINLocPack_ReviewedAt","FINLocPack_IsActive"=true;
+
+with obligations(pack_code,code,name,kind,authority,channel,frequency,source_url,requirements) as (values
+  ('gb-v1','gb-vat-mtd','VAT Making Tax Digital','indirect_tax','HM Revenue & Customs','direct_api','periodic','https://developer.service.hmrc.gov.uk/api-documentation/docs/api/service/vat-api/2.0',jsonb_build_object('productionGate','HMRC software production approval and fraud prevention headers','payrollExcluded',true)),
+  ('gb-v1','gb-corporation-tax','Corporation Tax return and computations','corporate_income_tax','HM Revenue & Customs','approved_software','annual','https://www.gov.uk/company-tax-returns',jsonb_build_object('forms',jsonb_build_array('CT600','iXBRL accounts','iXBRL computations'),'payrollExcluded',true)),
+  ('gb-v1','gb-statutory-accounts','Companies House annual accounts','statutory_accounts','Companies House','software_filing','annual','https://www.gov.uk/government/news/changes-to-filing-annual-accounts-at-companies-house',jsonb_build_object('format','iXBRL','productionGate','Companies House software filing and presenter approval','payrollExcluded',true)),
+  ('us-v1','us-federal-corporate-income-tax','Federal corporation income tax','corporate_income_tax','Internal Revenue Service','modernized_e_file','annual','https://www.irs.gov/e-file-providers/form-1120-1120-s-1120-f-1120-h-e-file',jsonb_build_object('forms',jsonb_build_array('1120','1120-S'),'productionGate','IRS approved software or authorised e-file provider','payrollExcluded',true)),
+  ('us-v1','us-state-sales-use-tax','State and local sales and use tax','sales_and_use_tax','State and local tax authorities','jurisdiction_specific','periodic','https://www.irs.gov/businesses/small-businesses-self-employed/state-government-websites',jsonb_build_object('requiresNexusConfiguration',true,'requiresStateSpecificRatesAndReturns',true,'payrollExcluded',true)),
+  ('us-v1','us-financial-reporting','US GAAP financial statements','financial_reporting','Applicable company and regulatory authorities','statement_generation','annual','https://asc.fasb.org/',jsonb_build_object('standard','US GAAP','payrollExcluded',true)),
+  ('ca-v1','ca-gst-hst','GST/HST return','indirect_tax','Canada Revenue Agency','netfile_or_file_transfer','periodic','https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/gst-hst-businesses/file-gst-hst-return/how-file.html',jsonb_build_object('accessCodeMayBeRequired',true,'payrollExcluded',true)),
+  ('ca-v1','ca-t2','T2 Corporation Income Tax Return','corporate_income_tax','Canada Revenue Agency','corporation_internet_filing','annual','https://www.canada.ca/en/revenue-agency/services/e-services/digital-services-businesses/corporation-internet-filing.html',jsonb_build_object('productionGate','CRA-certified software and applicable Web Access Code or EFILE credentials','payrollExcluded',true)),
+  ('ca-v1','ca-provincial-sales-tax','Provincial sales taxes','sales_and_use_tax','Applicable provincial tax authority','jurisdiction_specific','periodic','https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/gst-hst-businesses/provincial-territorial-taxes.html',jsonb_build_object('requiresProvinceConfiguration',true,'payrollExcluded',true)),
+  ('au-v1','au-gst-bas','GST and Business Activity Statement','indirect_tax','Australian Taxation Office','sbr','periodic','https://www.ato.gov.au/online-services/businesses-and-organisations-online-services',jsonb_build_object('productionGate','Registered DSP, EVTE testing, Operational Security Framework and production whitelisting','payrollExcluded',true)),
+  ('au-v1','au-company-tax','Company tax return','corporate_income_tax','Australian Taxation Office','sbr','annual','https://www.ato.gov.au/online-services/businesses-and-organisations-online-services',jsonb_build_object('productionGate','SBR-enabled product and ATO production whitelisting','payrollExcluded',true)),
+  ('au-v1','au-financial-reporting','Australian financial reporting','financial_reporting','Australian Securities and Investments Commission','software_or_portal','annual','https://asic.gov.au/regulatory-resources/financial-reporting-and-audit/preparers-of-financial-reports/lodging-financial-reports/',jsonb_build_object('standard','Australian Accounting Standards','entitySpecificRequirements',true,'payrollExcluded',true))
+)
+insert into public."FIN_ComplianceObligations"(
+  "FINCompliance_PackID","FINCompliance_Code","FINCompliance_Name","FINCompliance_ObligationTypeCode","FINCompliance_AuthorityName",
+  "FINCompliance_FilingChannelCode","FINCompliance_FrequencyCode","FINCompliance_ReadinessStatusCode","FINCompliance_SourceURL","FINCompliance_EffectiveFrom","FINCompliance_RequirementsJSON","FINCompliance_ReviewedAt"
+)
+select pack."FINLocPack_ID",item.code,item.name,item.kind,item.authority,item.channel,item.frequency,'foundation',item.source_url,date '2026-08-31',item.requirements,now()
+from obligations item join public."FIN_LocalisationPacks" pack on pack."FINLocPack_Code"=item.pack_code
+on conflict ("FINCompliance_PackID","FINCompliance_Code") do update set
+  "FINCompliance_Name"=excluded."FINCompliance_Name","FINCompliance_ObligationTypeCode"=excluded."FINCompliance_ObligationTypeCode",
+  "FINCompliance_AuthorityName"=excluded."FINCompliance_AuthorityName","FINCompliance_FilingChannelCode"=excluded."FINCompliance_FilingChannelCode",
+  "FINCompliance_FrequencyCode"=excluded."FINCompliance_FrequencyCode","FINCompliance_ReadinessStatusCode"=excluded."FINCompliance_ReadinessStatusCode",
+  "FINCompliance_SourceURL"=excluded."FINCompliance_SourceURL","FINCompliance_RequirementsJSON"=excluded."FINCompliance_RequirementsJSON",
+  "FINCompliance_ReviewedAt"=excluded."FINCompliance_ReviewedAt","FINCompliance_UpdatedAt"=now(),"FINCompliance_IsActive"=true;
+
+insert into public."sys_Permissions"(
+  "sys_Permission_Value","sys_Permission_Group","sys_Permission_Name","sys_Permission_Description","sys_Permission_IsDangerous"
+) values
+  ('Finance.Reporting.View','Finance','View financial reports','View the native trial balance, profit and loss, balance sheet and source evidence.',false),
+  ('Finance.Compliance.View','Finance','View finance compliance','View jurisdiction obligations, readiness gates and legal-entity registrations.',false),
+  ('Finance.Compliance.Manage','Finance','Manage finance compliance','Configure and approve legal-entity tax and statutory filing registrations.',true)
+on conflict ("sys_Permission_Value") do update set
+  "sys_Permission_Group"=excluded."sys_Permission_Group","sys_Permission_Name"=excluded."sys_Permission_Name",
+  "sys_Permission_Description"=excluded."sys_Permission_Description","sys_Permission_IsDangerous"=excluded."sys_Permission_IsDangerous";
+
+with role_permissions(role_name,permission_value) as (values
+  ('Administrator','Finance.Reporting.View'),('Administrator','Finance.Compliance.View'),('Administrator','Finance.Compliance.Manage'),
+  ('Finance manager','Finance.Reporting.View'),('Finance manager','Finance.Compliance.View'),('Finance manager','Finance.Compliance.Manage'),
+  ('Operations manager','Finance.Reporting.View'),('Operations manager','Finance.Compliance.View')
+)
+insert into public."sys_UserRole_Permissions"("sys_UserRole_ID","sys_Permission_ID")
+select role."sys_UserRole_ID",permission."sys_Permission_ID"
+from role_permissions mapping
+join public."sys_UserRoles" role on lower(role."sys_UserRole_Name")=lower(mapping.role_name)
+join public."sys_Permissions" permission on permission."sys_Permission_Value"=mapping.permission_value
+on conflict do nothing;
+
+commit;
+
+begin;
+
+-- Reporting is installed before the posting triggers below, so expose the
+-- small ownership-state helper here and replace it with the same guarded
+-- definition in the lifecycle block for migration readability.
+create or replace function public._multideck_finance_mirror_state(p_legal_entity_id uuid)
+returns table(mirror_mode text,active_connection boolean,native_ledger_enabled boolean)
+language sql stable security definer set search_path=pg_catalog,public as $$
+  select
+    coalesce((select settings."FINSET_ExternalMirrorModeCode" from public."FIN_Settings" settings
+      where settings."FINSET_LegalEntityID"=p_legal_entity_id and settings."FINSET_OrgOfficeID" is null and settings."FINSET_BrandID" is null limit 1),'optional'),
+    exists(select 1 from public."ACCI_Connections" connection
+      where connection."ACCIC_LegalEntityID"=p_legal_entity_id and connection."ACCIC_StatusCode"='active'),
+    coalesce((select settings."FINSET_NativeLedgerEnabled" from public."FIN_Settings" settings
+      where settings."FINSET_LegalEntityID"=p_legal_entity_id and settings."FINSET_OrgOfficeID" is null and settings."FINSET_BrandID" is null limit 1),true)
+$$;
+revoke all on function public._multideck_finance_mirror_state(uuid) from public,anon,authenticated;
+grant execute on function public._multideck_finance_mirror_state(uuid) to service_role;
+
+alter table public."FIN_NominalAccounts"
+  add column if not exists "FINNom_ReportCategoryCode" varchar(30);
+
+update public."FIN_NominalAccounts" set "FINNom_ReportCategoryCode"=case
+  when "FINNom_Code" like '7%' then 'finance'
+  when lower("FINNom_AccountTypeCode") like '%income%' or lower("FINNom_AccountTypeCode") like '%revenue%' or "FINNom_Code" like '4%' then 'income'
+  when lower("FINNom_AccountTypeCode") like '%cost of goods%' or "FINNom_Code" like '5%' then 'direct_cost'
+  when lower("FINNom_AccountTypeCode") like '%expense%' or "FINNom_Code" like '6%' then 'expense'
+  when lower("FINNom_AccountTypeCode") like '%equity%' or "FINNom_Code" like '3%' then 'equity'
+  when lower("FINNom_AccountTypeCode") like '%liability%' or lower("FINNom_AccountTypeCode") like '%payable%' or "FINNom_Code" like '2%' then 'liability'
+  else 'asset'
+end
+where "FINNom_ReportCategoryCode" is null;
+
+alter table public."FIN_NominalAccounts" drop constraint if exists "CK_FIN_NominalAccounts_report_category";
+alter table public."FIN_NominalAccounts" add constraint "CK_FIN_NominalAccounts_report_category"
+  check ("FINNom_ReportCategoryCode" is null or "FINNom_ReportCategoryCode" in ('asset','liability','equity','income','direct_cost','expense','finance'));
+
+create or replace function public._multideck_finance_derive_report_category()
+returns trigger language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+begin
+  if tg_op='INSERT' then
+    new."FINNom_ReportCategoryCode":=case
+      when new."FINNom_Code" like '7%' then 'finance'
+      when lower(new."FINNom_AccountTypeCode") like '%income%' or lower(new."FINNom_AccountTypeCode") like '%revenue%' or new."FINNom_Code" like '4%' then 'income'
+      when lower(new."FINNom_AccountTypeCode") like '%cost of goods%' or new."FINNom_Code" like '5%' then 'direct_cost'
+      when lower(new."FINNom_AccountTypeCode") like '%expense%' or new."FINNom_Code" like '6%' then 'expense'
+      when lower(new."FINNom_AccountTypeCode") like '%equity%' or new."FINNom_Code" like '3%' then 'equity'
+      when lower(new."FINNom_AccountTypeCode") like '%liability%' or lower(new."FINNom_AccountTypeCode") like '%payable%' or new."FINNom_Code" like '2%' then 'liability'
+      else 'asset'
+    end;
+  elsif new."FINNom_ReportCategoryCode" is null
+    or ((new."FINNom_Code" is distinct from old."FINNom_Code" or new."FINNom_AccountTypeCode" is distinct from old."FINNom_AccountTypeCode")
+      and new."FINNom_ReportCategoryCode" is not distinct from old."FINNom_ReportCategoryCode") then
+    new."FINNom_ReportCategoryCode":=case
+      when new."FINNom_Code" like '7%' then 'finance'
+      when lower(new."FINNom_AccountTypeCode") like '%income%' or lower(new."FINNom_AccountTypeCode") like '%revenue%' or new."FINNom_Code" like '4%' then 'income'
+      when lower(new."FINNom_AccountTypeCode") like '%cost of goods%' or new."FINNom_Code" like '5%' then 'direct_cost'
+      when lower(new."FINNom_AccountTypeCode") like '%expense%' or new."FINNom_Code" like '6%' then 'expense'
+      when lower(new."FINNom_AccountTypeCode") like '%equity%' or new."FINNom_Code" like '3%' then 'equity'
+      when lower(new."FINNom_AccountTypeCode") like '%liability%' or lower(new."FINNom_AccountTypeCode") like '%payable%' or new."FINNom_Code" like '2%' then 'liability'
+      else 'asset'
+    end;
+  end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_derive_report_category() from public,anon,authenticated;
+
+drop trigger if exists "TR_FIN_NominalAccounts_report_category" on public."FIN_NominalAccounts";
+create trigger "TR_FIN_NominalAccounts_report_category"
+before insert or update of "FINNom_Code","FINNom_AccountTypeCode","FINNom_ReportCategoryCode" on public."FIN_NominalAccounts"
+for each row execute function public._multideck_finance_derive_report_category();
+
+create index if not exists "IX_FIN_NominalAccounts_reporting"
+  on public."FIN_NominalAccounts"("FINNom_LegalEntityID","FINNom_ReportCategoryCode","FINNom_Code")
+  where "FINNom_IsActive";
+
+create or replace function public.multideck_finance_reporting_snapshot(
+  p_company_id uuid,p_user_id uuid,p_legal_entity_id uuid,p_from_date date,p_to_date date
+) returns jsonb
+language plpgsql stable security definer set search_path=pg_catalog,public as $$
+declare
+  v_from date; v_to date; v_currency text; v_entity_name text; v_native boolean; v_mode text; v_connection boolean;
+begin
+  if not exists(select 1 from public."cmp_Users" where "User_ID"=p_user_id and "Company_ID"=p_company_id and coalesce("User_AccessStatus",'active')='active') then
+    raise exception 'The finance operator is outside this workspace.' using errcode='42501';
+  end if;
+  select "LegalEntity_Name",upper("LegalEntity_BaseCurrencyCodeSnapshot") into v_entity_name,v_currency
+  from public."cmp_LegalEntities" where "LegalEntity_ID"=p_legal_entity_id and "Company_ID"=p_company_id and "LegalEntity_IsActive";
+  if not found then raise exception 'That legal entity is outside this workspace.' using errcode='42501'; end if;
+  if p_from_date is null or p_to_date is null or p_to_date<p_from_date or p_to_date>p_from_date+interval '10 years' then
+    raise exception 'Choose a valid reporting range of no more than ten years.' using errcode='22023';
+  end if;
+  v_from:=date_trunc('month',p_from_date)::date;
+  v_to:=(date_trunc('month',p_to_date)+interval '1 month'-interval '1 day')::date;
+  select mirror_mode,active_connection,native_ledger_enabled into v_mode,v_connection,v_native from public._multideck_finance_mirror_state(p_legal_entity_id);
+
+  return (
+    with posted as (
+      select nominal."FINNom_ID" account_id,nominal."FINNom_Code" account_code,nominal."FINNom_Name" account_name,
+        nominal."FINNom_AccountTypeCode" account_type,coalesce(nominal."FINNom_ReportCategoryCode",'asset') category,
+        period."FINPeriod_StartDate" period_start,period."FINPeriod_EndDate" period_end,
+        line."FINPostLine_DebitAmount" debit,line."FINPostLine_CreditAmount" credit
+      from public."FIN_PostingLines" line
+      join public."FIN_PostingBatches" batch on batch."FINPostBatch_ID"=line."FINPostLine_BatchID" and batch."FINPostBatch_StatusCode"='posted'
+      join public."FIN_Periods" period on period."FINPeriod_ID"=batch."FINPostBatch_PeriodID"
+      join public."FIN_NominalAccounts" nominal on nominal."FINNom_ID"=line."FINPostLine_NominalAccountID"
+      where batch."FINPostBatch_LegalEntityID"=p_legal_entity_id and period."FINPeriod_EndDate"<=v_to
+    ), accounts as (
+      select nominal."FINNom_ID" account_id,nominal."FINNom_Code" account_code,nominal."FINNom_Name" account_name,
+        nominal."FINNom_AccountTypeCode" account_type,coalesce(nominal."FINNom_ReportCategoryCode",'asset') category
+      from public."FIN_NominalAccounts" nominal
+      where nominal."FINNom_LegalEntityID"=p_legal_entity_id and nominal."FINNom_IsActive"
+    ), balances as (
+      select account.account_id,account.account_code,account.account_name,account.account_type,account.category,
+        round(coalesce(sum(posted.debit-posted.credit) filter(where posted.period_end<v_from),0),4) opening_balance,
+        round(coalesce(sum(posted.debit) filter(where posted.period_start<=v_to and posted.period_end>=v_from),0),4) period_debit,
+        round(coalesce(sum(posted.credit) filter(where posted.period_start<=v_to and posted.period_end>=v_from),0),4) period_credit,
+        round(coalesce(sum(posted.debit-posted.credit),0),4) closing_debit_balance
+      from accounts account left join posted on posted.account_id=account.account_id
+      group by account.account_id,account.account_code,account.account_name,account.account_type,account.category
+    ), pnl as (
+      -- A positive amount is profit contribution; costs and expenses therefore
+      -- appear negative and cannot be accidentally added to income.
+      select *,round(period_credit-period_debit,4) display_amount
+      from balances where category in ('income','direct_cost','expense','finance')
+    ), statement as (
+      select *,round(case when category='asset' then closing_debit_balance else -closing_debit_balance end,4) display_amount
+      from balances where category in ('asset','liability','equity')
+    ), totals as (
+      select
+        coalesce((select round(sum(display_amount),4) from pnl),0) pnl_total,
+        coalesce((select round(sum(-closing_debit_balance),4) from balances where category in ('income','direct_cost','expense','finance')),0) current_earnings,
+        coalesce((select round(sum(display_amount),4) from statement where category='asset'),0) assets,
+        coalesce((select round(sum(display_amount),4) from statement where category='liability'),0) liabilities,
+        coalesce((select round(sum(display_amount),4) from statement where category='equity'),0) equity
+    )
+    select jsonb_build_object(
+      'legalEntityId',p_legal_entity_id,'legalEntity',v_entity_name,'currency',v_currency,'fromDate',v_from,'toDate',v_to,
+      'nativeLedgerEnabled',v_native,'externalMirrorModeCode',v_mode,'externalMirrorConnected',v_connection,
+      'trialBalance',coalesce((select jsonb_agg(jsonb_build_object(
+        'accountId',account_id,'accountCode',account_code,'accountName',account_name,'accountType',account_type,'category',category,
+        'openingBalance',opening_balance,'debit',period_debit,'credit',period_credit,'closingBalance',closing_debit_balance
+      ) order by account_code) from balances where opening_balance<>0 or period_debit<>0 or period_credit<>0 or closing_debit_balance<>0),'[]'::jsonb),
+      'profitAndLoss',coalesce((select jsonb_agg(jsonb_build_object(
+        'accountId',account_id,'accountCode',account_code,'accountName',account_name,'category',category,'amount',display_amount
+      ) order by account_code) from pnl where display_amount<>0),'[]'::jsonb),
+      'balanceSheet',coalesce((select jsonb_agg(jsonb_build_object(
+        'accountId',account_id,'accountCode',account_code,'accountName',account_name,'category',category,'amount',display_amount
+      ) order by account_code) from statement where display_amount<>0),'[]'::jsonb),
+      'totals',(select jsonb_build_object(
+        'profitOrLoss',pnl_total,'assets',assets,'liabilities',liabilities,'equity',equity,
+        'currentEarnings',current_earnings,'balanceDifference',round(assets-liabilities-equity-current_earnings,4)
+      ) from totals),
+      'coverage',jsonb_build_object(
+        'pendingDocumentMigrations',(select count(*) from public."FIN_Documents" where "FINDoc_LegalEntityID"=p_legal_entity_id and "FINDoc_NativePostingStatusCode"='pending_migration'),
+        'pendingCashMigrations',(select count(*) from public."FIN_CashTransactions" where "FINCash_LegalEntityID"=p_legal_entity_id and "FINCash_NativePostingStatusCode"='pending_migration'),
+        'postedBatches',(select count(*) from public."FIN_PostingBatches" where "FINPostBatch_LegalEntityID"=p_legal_entity_id and "FINPostBatch_StatusCode"='posted')
+      ),
+      'evidence',jsonb_build_object('sourceTable','FIN_PostingLines','legalEntityId',p_legal_entity_id,'generatedAt',now())
+    )
+  );
+end; $$;
+revoke all on function public.multideck_finance_reporting_snapshot(uuid,uuid,uuid,date,date) from public,anon,authenticated;
+grant execute on function public.multideck_finance_reporting_snapshot(uuid,uuid,uuid,date,date) to service_role;
+
+-- Preserve every existing finance record in Dexter, then add native reporting
+-- and jurisdiction obligation evidence without broad table or SQL access.
+alter function public.multideck_dexter_domain_finance(uuid,text,integer)
+  rename to _multideck_dexter_domain_finance_before_native_global;
+revoke all on function public._multideck_dexter_domain_finance_before_native_global(uuid,text,integer) from public,anon,authenticated;
+grant execute on function public._multideck_dexter_domain_finance_before_native_global(uuid,text,integer) to service_role;
+
+create or replace function public.multideck_dexter_domain_finance(p_company_id uuid,p_search text,p_take integer)
+returns jsonb language sql stable security definer set search_path=pg_catalog,public as $$
+  with entity_totals as (
+    select entity."LegalEntity_ID" entity_id,entity."LegalEntity_Name" entity_name,entity."LegalEntity_CountryCode" country_code,
+      upper(entity."LegalEntity_BaseCurrencyCodeSnapshot") currency,
+      coalesce(sum(case when nominal."FINNom_ReportCategoryCode" in ('income','direct_cost','expense','finance')
+        then line."FINPostLine_CreditAmount"-line."FINPostLine_DebitAmount" else 0 end),0) profit_loss,
+      coalesce(sum(case when nominal."FINNom_ReportCategoryCode"='asset' then line."FINPostLine_DebitAmount"-line."FINPostLine_CreditAmount" else 0 end),0) assets,
+      coalesce(sum(case when nominal."FINNom_ReportCategoryCode"='liability' then line."FINPostLine_CreditAmount"-line."FINPostLine_DebitAmount" else 0 end),0) liabilities,
+      coalesce(sum(case when nominal."FINNom_ReportCategoryCode"='equity' then line."FINPostLine_CreditAmount"-line."FINPostLine_DebitAmount" else 0 end),0) equity,
+      max(batch."FINPostBatch_PostedAt") updated_at
+    from public."cmp_LegalEntities" entity
+    left join public."FIN_PostingBatches" batch on batch."FINPostBatch_LegalEntityID"=entity."LegalEntity_ID" and batch."FINPostBatch_StatusCode"='posted'
+    left join public."FIN_PostingLines" line on line."FINPostLine_BatchID"=batch."FINPostBatch_ID"
+    left join public."FIN_NominalAccounts" nominal on nominal."FINNom_ID"=line."FINPostLine_NominalAccountID"
+    where entity."Company_ID"=p_company_id and entity."LegalEntity_IsActive"
+    group by entity."LegalEntity_ID",entity."LegalEntity_Name",entity."LegalEntity_CountryCode",entity."LegalEntity_BaseCurrencyCodeSnapshot"
+  ), records as (
+    select value,coalesce((value->'evidence'->>'updatedAt')::timestamptz,'2000-01-01'::timestamptz) updated_at
+    from jsonb_array_elements(public._multideck_dexter_domain_finance_before_native_global(p_company_id,p_search,p_take)) value
+    union all
+    select jsonb_build_object(
+      'recordId',totals.entity_id,'recordKind','native_financial_summary','legalEntityId',totals.entity_id,'legalEntity',totals.entity_name,
+      'currency',totals.currency,'profitOrLoss',round(totals.profit_loss,4),'assets',round(totals.assets,4),'liabilities',round(totals.liabilities,4),
+      'equity',round(totals.equity,4),'currentEarnings',round(totals.profit_loss,4),'balanceDifference',round(totals.assets-totals.liabilities-totals.equity-totals.profit_loss,4),
+      'reportRoute','/finance/reports','evidence',jsonb_build_object('sourceTable','FIN_PostingLines','legalEntityId',totals.entity_id,'updatedAt',coalesce(totals.updated_at,now()))
+    ),coalesce(totals.updated_at,'2000-01-01'::timestamptz)
+    from entity_totals totals
+    where nullif(btrim(p_search),'') is null or concat_ws(' ',totals.entity_name,'profit loss balance sheet trial balance native ledger financial report') ilike '%'||btrim(p_search)||'%'
+    union all
+    select jsonb_build_object(
+      'recordId',obligation."FINCompliance_ID",'recordKind','compliance_obligation','legalEntityId',entity."LegalEntity_ID",'legalEntity',entity."LegalEntity_Name",
+      'country',pack."FINLocPack_CountryCode",'code',obligation."FINCompliance_Code",'name',obligation."FINCompliance_Name",'obligationType',obligation."FINCompliance_ObligationTypeCode",
+      'authority',obligation."FINCompliance_AuthorityName",'filingChannel',obligation."FINCompliance_FilingChannelCode",'frequency',obligation."FINCompliance_FrequencyCode",
+      'readinessStatus',obligation."FINCompliance_ReadinessStatusCode",'sourceUrl',obligation."FINCompliance_SourceURL",'payrollIncluded',false,
+      'evidence',jsonb_build_object('sourceTable','FIN_ComplianceObligations','sourceId',obligation."FINCompliance_ID",'legalEntityId',entity."LegalEntity_ID",'updatedAt',obligation."FINCompliance_UpdatedAt")
+    ),obligation."FINCompliance_UpdatedAt"
+    from public."FIN_ComplianceObligations" obligation
+    join public."FIN_LocalisationPacks" pack on pack."FINLocPack_ID"=obligation."FINCompliance_PackID"
+    join public."cmp_LegalEntities" entity on entity."Company_ID"=p_company_id and entity."LegalEntity_CountryCode"=pack."FINLocPack_CountryCode" and entity."LegalEntity_IsActive"
+    where obligation."FINCompliance_IsActive" and (
+      nullif(btrim(p_search),'') is null or concat_ws(' ',obligation."FINCompliance_Code",obligation."FINCompliance_Name",obligation."FINCompliance_ObligationTypeCode",obligation."FINCompliance_AuthorityName",pack."FINLocPack_CountryCode") ilike '%'||btrim(p_search)||'%'
+    )
+  )
+  select coalesce(jsonb_agg(value order by updated_at desc),'[]'::jsonb)
+  from (select * from records order by updated_at desc limit greatest(1,least(coalesce(p_take,10),25))) limited
+$$;
+revoke all on function public.multideck_dexter_domain_finance(uuid,text,integer) from public,anon,authenticated;
+grant execute on function public.multideck_dexter_domain_finance(uuid,text,integer) to service_role;
+
+create or replace function public._multideck_dexter_finance_compliance_watch_change()
+returns trigger language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_company uuid; v_entity uuid:=coalesce(new."FINComplianceReg_LegalEntityID",old."FINComplianceReg_LegalEntityID"); v_row uuid:=coalesce(new."FINComplianceReg_ID",old."FINComplianceReg_ID");
+begin
+  select "Company_ID" into v_company from public."cmp_LegalEntities" where "LegalEntity_ID"=v_entity;
+  if v_company is not null and exists(
+    select 1 from public."AI_DexterWatches" watch
+    where watch."AIDexterWatch_CompanyID"=v_company and watch."AIDexterWatch_CapabilityCode"='finance' and watch."AIDexterWatch_StatusCode"='active'
+      and (watch."AIDexterWatch_TargetID" is null or watch."AIDexterWatch_TargetID"=v_entity)
+  ) then
+    insert into public."AI_DexterWatchSignals"(
+      "AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable","AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON"
+    ) values (
+      v_company,'finance','FIN_LegalEntityComplianceRegistrations',v_row,
+      case when tg_op='INSERT' then '{}'::jsonb else jsonb_build_object('complianceStatus',old."FINComplianceReg_StatusCode",'obligationId',old."FINComplianceReg_ObligationID",'legalEntityId',v_entity) end,
+      jsonb_build_object('complianceStatus',new."FINComplianceReg_StatusCode",'obligationId',new."FINComplianceReg_ObligationID",'legalEntityId',v_entity)
+    );
+  end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_dexter_finance_compliance_watch_change() from public,anon,authenticated;
+
+drop trigger if exists "TR_FIN_LegalEntityCompliance_dexter_watch" on public."FIN_LegalEntityComplianceRegistrations";
+create trigger "TR_FIN_LegalEntityCompliance_dexter_watch"
+after insert or update of "FINComplianceReg_StatusCode","FINComplianceReg_RegistrationReference","FINComplianceReg_FilingMethodCode","FINComplianceReg_EffectiveFrom","FINComplianceReg_EffectiveTo"
+on public."FIN_LegalEntityComplianceRegistrations" for each row execute function public._multideck_dexter_finance_compliance_watch_change();
+
+update public."sys_AIDexterDataDomains" set
+  "AIDexterDomain_Description"='Tenant-safe native financial summaries, trial-balance evidence, AR/AP, cash, freight charge profitability, external mirror state and jurisdiction compliance obligations. Payroll is excluded.',
+  "AIDexterDomain_UpdatedAt"=now()
+where "AIDexterDomain_Code"='finance';
+
+update public."sys_AIDexterWatchCapabilities" set
+  "AIDexterWatchCapability_Description"='Event-driven native ledger postings, financial balance movements, external accounting mirror delivery, finance documents, cash, freight charge profitability and compliance-registration changes.',
+  "AIDexterWatchCapability_FieldsJSON"=(select coalesce(jsonb_agg(distinct value),'[]'::jsonb) from jsonb_array_elements(coalesce("AIDexterWatchCapability_FieldsJSON",'[]'::jsonb)||'["nativePostingStatus","nativePostingBatchId","externalMirrorStatus","complianceStatus","obligationId","balanceDifference"]'::jsonb)),
+  "AIDexterWatchCapability_UpdatedAt"=now()
+where "AIDexterWatchCapability_Code"='finance';
+
+commit;
+
+begin;
+
+create or replace function public._multideck_finance_sync_ledger_ownership()
+returns trigger
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_mode text;
+begin
+  new."FINSET_NativeLedgerEnabled":=coalesce(
+    case new."FINSET_SettingsJSON"#>>'{administration,nativeLedgerEnabled}'
+      when 'true' then true when 'false' then false else null end,
+    new."FINSET_NativeLedgerEnabled",true
+  );
+  v_mode:=coalesce(nullif(new."FINSET_SettingsJSON"#>>'{administration,externalMirrorModeCode}',''),new."FINSET_ExternalMirrorModeCode",'optional');
+  if v_mode not in ('disabled','optional','required') then
+    raise exception 'Choose disabled, optional or required for the external accounting mirror.' using errcode='22023';
+  end if;
+  new."FINSET_ExternalMirrorModeCode":=v_mode;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_sync_ledger_ownership() from public,anon,authenticated;
+grant execute on function public._multideck_finance_sync_ledger_ownership() to service_role;
+
+drop trigger if exists "TR_FIN_Settings_sync_ledger_ownership" on public."FIN_Settings";
+create trigger "TR_FIN_Settings_sync_ledger_ownership"
+before insert or update of "FINSET_SettingsJSON","FINSET_NativeLedgerEnabled","FINSET_ExternalMirrorModeCode"
+on public."FIN_Settings" for each row execute function public._multideck_finance_sync_ledger_ownership();
+
+create or replace function public._multideck_finance_normalise_native_readiness()
+returns trigger
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_native boolean:=true; v_mode text:='optional'; v_missing text[]:=array[]::text[];
+begin
+  select settings."FINSET_NativeLedgerEnabled",settings."FINSET_ExternalMirrorModeCode"
+  into v_native,v_mode
+  from public."FIN_Settings" settings
+  where settings."FINSET_LegalEntityID"=new."FINAdminRevision_LegalEntityID"
+    and settings."FINSET_OrgOfficeID" is null and settings."FINSET_BrandID" is null
+  limit 1;
+  v_native:=coalesce(v_native,true); v_mode:=coalesce(v_mode,'optional');
+  select coalesce(array_agg(value order by ordinal),array[]::text[]) into v_missing
+  from jsonb_array_elements_text(coalesce(new."FINAdminRevision_ReadinessJSON"->'missing','[]'::jsonb)) with ordinality item(value,ordinal)
+  where value<>'accounting_connection' or v_mode='required';
+  if not v_native and not ('native_ledger'=any(v_missing)) then v_missing:=array_append(v_missing,'native_ledger'); end if;
+  new."FINAdminRevision_ReadinessJSON":=coalesce(new."FINAdminRevision_ReadinessJSON",'{}'::jsonb)
+    || jsonb_build_object(
+      'ready',coalesce(array_length(v_missing,1),0)=0,
+      'missing',to_jsonb(v_missing),
+      'nativeLedgerEnabled',v_native,
+      'externalMirrorModeCode',v_mode,
+      'externalMirrorRequired',v_mode='required'
+    );
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_normalise_native_readiness() from public,anon,authenticated;
+grant execute on function public._multideck_finance_normalise_native_readiness() to service_role;
+
+drop trigger if exists "TR_FIN_AdministrationRevisions_native_readiness" on public."FIN_AdministrationRevisions";
+create trigger "TR_FIN_AdministrationRevisions_native_readiness"
+before insert on public."FIN_AdministrationRevisions"
+for each row execute function public._multideck_finance_normalise_native_readiness();
+
+create or replace function public._multideck_finance_mirror_state(p_legal_entity_id uuid)
+returns table(mirror_mode text,active_connection boolean,native_ledger_enabled boolean)
+language sql stable security definer set search_path=pg_catalog,public as $$
+  select
+    coalesce((select settings."FINSET_ExternalMirrorModeCode" from public."FIN_Settings" settings
+      where settings."FINSET_LegalEntityID"=p_legal_entity_id and settings."FINSET_OrgOfficeID" is null and settings."FINSET_BrandID" is null limit 1),'optional'),
+    exists(select 1 from public."ACCI_Connections" connection
+      where connection."ACCIC_LegalEntityID"=p_legal_entity_id and connection."ACCIC_StatusCode"='active'),
+    coalesce((select settings."FINSET_NativeLedgerEnabled" from public."FIN_Settings" settings
+      where settings."FINSET_LegalEntityID"=p_legal_entity_id and settings."FINSET_OrgOfficeID" is null and settings."FINSET_BrandID" is null limit 1),true)
+$$;
+revoke all on function public._multideck_finance_mirror_state(uuid) from public,anon,authenticated;
+grant execute on function public._multideck_finance_mirror_state(uuid) to service_role;
+
+create or replace function public._multideck_finance_guard_optional_mirror_queue()
+returns trigger
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_entity uuid; v_mode text; v_active boolean; v_native boolean;
+begin
+  if new."FINIntQ_LocalTable"='FIN_Documents' then
+    select "FINDoc_LegalEntityID" into v_entity from public."FIN_Documents" where "FINDoc_ID"=new."FINIntQ_LocalID";
+  elsif new."FINIntQ_LocalTable"='FIN_CashTransactions' then
+    select "FINCash_LegalEntityID" into v_entity from public."FIN_CashTransactions" where "FINCash_ID"=new."FINIntQ_LocalID";
+  else
+    return new;
+  end if;
+  if v_entity is null then raise exception 'The finance mirror record has no legal entity.' using errcode='22023'; end if;
+  select mirror_mode,active_connection,native_ledger_enabled into v_mode,v_active,v_native
+  from public._multideck_finance_mirror_state(v_entity);
+  if not v_native then raise exception 'Enable the Multideck native ledger before approving finance transactions.' using errcode='22023'; end if;
+  if v_mode='required' and not v_active then
+    raise exception 'This legal entity requires an active external accounting mirror before approval.' using errcode='22023';
+  end if;
+  if v_mode='disabled' or (v_mode='optional' and not v_active) then return null; end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_guard_optional_mirror_queue() from public,anon,authenticated;
+grant execute on function public._multideck_finance_guard_optional_mirror_queue() to service_role;
+
+drop trigger if exists "TR_FIN_IntegrationQueue_optional_mirror" on public."FIN_IntegrationQueue";
+create trigger "TR_FIN_IntegrationQueue_optional_mirror"
+before insert on public."FIN_IntegrationQueue"
+for each row execute function public._multideck_finance_guard_optional_mirror_queue();
+
+create or replace function public._multideck_finance_post_document_native(p_document_id uuid,p_user_id uuid)
+returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare
+  v_document public."FIN_Documents"%rowtype; v_line record; v_batch uuid; v_period uuid; v_currency text;
+  v_control uuid; v_nominal uuid; v_tax_nominal uuid; v_tax_preferred uuid; v_line_no integer:=0;
+  v_debits numeric:=0; v_credits numeric:=0; v_amount numeric; v_mode text; v_connection boolean; v_native boolean;
+  v_sales boolean; v_credit boolean;
+begin
+  select * into v_document from public."FIN_Documents" where "FINDoc_ID"=p_document_id for update;
+  if not found then raise exception 'Finance document not found.' using errcode='P0002'; end if;
+  if v_document."FINDoc_NativePostingStatusCode"='posted' and v_document."FINDoc_NativePostingBatchID" is not null then
+    return jsonb_build_object('documentId',p_document_id,'status','posted','postingBatchId',v_document."FINDoc_NativePostingBatchID",'idempotent',true);
+  end if;
+  if v_document."FINDoc_StatusCode" not in ('approved','submitted') then
+    raise exception 'Only an approved finance document can be posted to the native ledger.' using errcode='22023';
+  end if;
+  select mirror_mode,active_connection,native_ledger_enabled into v_mode,v_connection,v_native
+  from public._multideck_finance_mirror_state(v_document."FINDoc_LegalEntityID");
+  if not v_native then raise exception 'Enable the Multideck native ledger before approval.' using errcode='22023'; end if;
+  if v_mode='required' and not v_connection then raise exception 'This legal entity requires an active external accounting mirror before approval.' using errcode='22023'; end if;
+
+  v_sales:=v_document."FINDoc_TypeCode" in ('sl_invoice','credit_note');
+  v_credit:=v_document."FINDoc_TypeCode" in ('credit_note','debit_note');
+  v_currency:=upper((select "LegalEntity_BaseCurrencyCodeSnapshot" from public."cmp_LegalEntities" where "LegalEntity_ID"=v_document."FINDoc_LegalEntityID"));
+  if v_currency is null or v_currency!~'^[A-Z]{3}$' then raise exception 'Configure a valid legal-entity base currency before native posting.' using errcode='22023'; end if;
+  v_period:=public._multideck_finance_ensure_period(v_document."FINDoc_LegalEntityID",to_char(v_document."FINDoc_AccountingDate",'YYYYMM'),p_user_id);
+  v_control:=public._multideck_finance_resolve_nominal(v_document."FINDoc_LegalEntityID",null,case when v_sales then '1100' else '2000' end);
+  if v_control is null then raise exception 'Configure the % control nominal before native posting.',case when v_sales then 'trade receivables' else 'trade payables' end using errcode='22023'; end if;
+
+  insert into public."FIN_PostingBatches"(
+    "FINPostBatch_Number","FINPostBatch_StatusCode","FINPostBatch_SourceTable","FINPostBatch_SourceID","FINPostBatch_PeriodID","FINPostBatch_LegalEntityID",
+    "FINPostBatch_DebitTotal","FINPostBatch_CreditTotal","FINPostBatch_CurrencyCodeSnapshot","FINPostBatch_CreatedBy"
+  ) values (
+    'NATIVE-'||left(coalesce(v_document."FINDoc_Number",p_document_id::text),60),'draft','FIN_Documents',p_document_id,v_period,v_document."FINDoc_LegalEntityID",0,0,v_currency,p_user_id
+  ) returning "FINPostBatch_ID" into v_batch;
+
+  for v_line in
+    select line.*,tax."FINTax_OutputNominalID",tax."FINTax_InputNominalID"
+    from public."FIN_DocumentLines" line
+    left join public."FIN_TaxCodes" tax on tax."FINTax_ID"=line."FINDocLine_TaxCodeID" and tax."FINTax_LegalEntityID"=v_document."FINDoc_LegalEntityID"
+    where line."FINDocLine_DocumentID"=p_document_id order by line."FINDocLine_LineNo" for update of line
+  loop
+    v_nominal:=public._multideck_finance_resolve_nominal(v_document."FINDoc_LegalEntityID",v_line."FINDocLine_NominalAccountID",case when v_sales then '4000' else '5000' end);
+    if v_nominal is null then raise exception 'Finance line % has no active native nominal account.',v_line."FINDocLine_LineNo" using errcode='22023'; end if;
+    v_amount:=round(abs(v_line."FINDocLine_LocalNetAmount"),4);
+    if v_amount>0 then
+      v_line_no:=v_line_no+1;
+      insert into public."FIN_PostingLines"(
+        "FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_DocumentID","FINPostLine_DocumentLineID","FINPostLine_Description",
+        "FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID","FINPostLine_Dimension2ID","FINPostLine_JobID"
+      ) values (
+        v_batch,v_line_no,v_nominal,p_document_id,v_line."FINDocLine_ID",v_line."FINDocLine_Description",
+        case when (v_sales and v_credit) or (not v_sales and not v_credit) then v_amount else 0 end,
+        case when (v_sales and not v_credit) or (not v_sales and v_credit) then v_amount else 0 end,
+        v_currency,v_line."FINDocLine_Dimension1ID",v_line."FINDocLine_Dimension2ID",v_document."FINDoc_SourceJobID"
+      );
+    end if;
+    v_amount:=round(abs(v_line."FINDocLine_LocalTaxAmount"),4);
+    if v_amount>0 then
+      v_tax_preferred:=case when v_sales then v_line."FINTax_OutputNominalID" else v_line."FINTax_InputNominalID" end;
+      v_tax_nominal:=public._multideck_finance_resolve_nominal(v_document."FINDoc_LegalEntityID",v_tax_preferred,case when v_sales then '2100' else '1200' end);
+      if v_tax_nominal is null then raise exception 'Finance line % has no active native tax nominal account.',v_line."FINDocLine_LineNo" using errcode='22023'; end if;
+      v_line_no:=v_line_no+1;
+      insert into public."FIN_PostingLines"(
+        "FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_DocumentID","FINPostLine_DocumentLineID","FINPostLine_Description",
+        "FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Dimension1ID","FINPostLine_Dimension2ID","FINPostLine_JobID"
+      ) values (
+        v_batch,v_line_no,v_tax_nominal,p_document_id,v_line."FINDocLine_ID",'Tax: '||v_line."FINDocLine_Description",
+        case when (v_sales and v_credit) or (not v_sales and not v_credit) then v_amount else 0 end,
+        case when (v_sales and not v_credit) or (not v_sales and v_credit) then v_amount else 0 end,
+        v_currency,v_line."FINDocLine_Dimension1ID",v_line."FINDocLine_Dimension2ID",v_document."FINDoc_SourceJobID"
+      );
+    end if;
+  end loop;
+
+  v_amount:=round(abs(v_document."FINDoc_LocalGrossAmount"),4);
+  if v_amount<=0 then raise exception 'The approved document has no native gross value.' using errcode='22023'; end if;
+  v_line_no:=v_line_no+1;
+  insert into public."FIN_PostingLines"(
+    "FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_DocumentID","FINPostLine_Description",
+    "FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_JobID"
+  ) values (
+    v_batch,v_line_no,v_control,p_document_id,case when v_sales then 'Trade receivable control' else 'Trade payable control' end,
+    case when (v_sales and not v_credit) or (not v_sales and v_credit) then v_amount else 0 end,
+    case when (v_sales and v_credit) or (not v_sales and not v_credit) then v_amount else 0 end,
+    v_currency,v_document."FINDoc_SourceJobID"
+  );
+
+  select round(coalesce(sum("FINPostLine_DebitAmount"),0),4),round(coalesce(sum("FINPostLine_CreditAmount"),0),4)
+  into v_debits,v_credits from public."FIN_PostingLines" where "FINPostLine_BatchID"=v_batch;
+  if v_debits<=0 or v_debits is distinct from v_credits then
+    raise exception 'Native document journal is not balanced (% debit, % credit).',v_debits,v_credits using errcode='22023';
+  end if;
+  update public."FIN_PostingBatches" set
+    "FINPostBatch_StatusCode"='posted',"FINPostBatch_DebitTotal"=v_debits,"FINPostBatch_CreditTotal"=v_credits,
+    "FINPostBatch_PostedAt"=now(),"FINPostBatch_PostedBy"=p_user_id
+  where "FINPostBatch_ID"=v_batch;
+  update public."FIN_Documents" set
+    "FINDoc_PeriodID"=v_period,"FINDoc_NativePostingStatusCode"='posted',"FINDoc_NativePostingBatchID"=v_batch,
+    "FINDoc_NativePostedAt"=now(),"FINDoc_NativePostedBy"=p_user_id,"FINDoc_PostingStatusCode"='posted',
+    "FINDoc_PostedAt"=coalesce("FINDoc_PostedAt",now()),"FINDoc_PostedBy"=coalesce("FINDoc_PostedBy",p_user_id),"FINDoc_IsLocked"=true,
+    "FINDoc_ExportStatusCode"=case when v_mode='disabled' or (v_mode='optional' and not v_connection) then 'not_required' else 'queued' end,
+    "FINDoc_UpdatedAt"=now(),"FINDoc_UpdatedBy"=p_user_id
+  where "FINDoc_ID"=p_document_id;
+  insert into public."Audit_Events"(
+    "AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName",
+    "AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON"
+  ) values (
+    'finance_lifecycle',p_user_id,v_document."FINDoc_LegalEntityID",'multideck-app','finance','public','FIN_Documents',v_document."FINDoc_TypeCode",p_document_id,
+    'post_native_ledger','Finance document posted to Multideck ledger',true,1,jsonb_build_object('postingBatchId',v_batch,'debitTotal',v_debits,'creditTotal',v_credits,'currency',v_currency,'externalMirrorMode',v_mode,'externalMirrorQueued',v_connection and v_mode<>'disabled')
+  );
+  return jsonb_build_object('documentId',p_document_id,'status','posted','postingBatchId',v_batch,'debitTotal',v_debits,'creditTotal',v_credits,'currency',v_currency);
+end; $$;
+revoke all on function public._multideck_finance_post_document_native(uuid,uuid) from public,anon,authenticated;
+grant execute on function public._multideck_finance_post_document_native(uuid,uuid) to service_role;
+
+create or replace function public._multideck_finance_post_cash_native(p_cash_id uuid,p_user_id uuid)
+returns jsonb
+language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare
+  v_cash public."FIN_CashTransactions"%rowtype; v_batch uuid; v_period uuid; v_currency text; v_bank uuid; v_control uuid;
+  v_amount numeric; v_mode text; v_connection boolean; v_native boolean;
+begin
+  select * into v_cash from public."FIN_CashTransactions" where "FINCash_ID"=p_cash_id for update;
+  if not found then raise exception 'Finance cash transaction not found.' using errcode='P0002'; end if;
+  if v_cash."FINCash_NativePostingStatusCode"='posted' and v_cash."FINCash_NativePostingBatchID" is not null then
+    return jsonb_build_object('cashId',p_cash_id,'status','posted','postingBatchId',v_cash."FINCash_NativePostingBatchID",'idempotent',true);
+  end if;
+  if v_cash."FINCash_StatusCode" not in ('approved','submitted') then raise exception 'Only approved cash can be posted to the native ledger.' using errcode='22023'; end if;
+  select mirror_mode,active_connection,native_ledger_enabled into v_mode,v_connection,v_native from public._multideck_finance_mirror_state(v_cash."FINCash_LegalEntityID");
+  if not v_native then raise exception 'Enable the Multideck native ledger before approval.' using errcode='22023'; end if;
+  if v_mode='required' and not v_connection then raise exception 'This legal entity requires an active external accounting mirror before approval.' using errcode='22023'; end if;
+  v_currency:=upper((select "LegalEntity_BaseCurrencyCodeSnapshot" from public."cmp_LegalEntities" where "LegalEntity_ID"=v_cash."FINCash_LegalEntityID"));
+  if v_currency is null or v_currency!~'^[A-Z]{3}$' then raise exception 'Configure a valid legal-entity base currency before native posting.' using errcode='22023'; end if;
+  select public._multideck_finance_resolve_nominal(v_cash."FINCash_LegalEntityID","FINBank_NominalAccountID",'1000') into v_bank
+  from public."FIN_BankAccounts" where "FINBank_ID"=v_cash."FINCash_BankAccountID" and "FINBank_LegalEntityID"=v_cash."FINCash_LegalEntityID" and "FINBank_IsActive";
+  if v_bank is null then raise exception 'Configure an active native nominal for the selected bank account.' using errcode='22023'; end if;
+  v_control:=public._multideck_finance_resolve_nominal(v_cash."FINCash_LegalEntityID",null,case when v_cash."FINCash_TypeCode"='customer_receipt' then '1100' else '2000' end);
+  if v_control is null then raise exception 'Configure the matching receivables or payables control nominal before native cash posting.' using errcode='22023'; end if;
+  v_amount:=round(abs(v_cash."FINCash_LocalAmount"),4);
+  if v_amount<=0 then raise exception 'The approved cash transaction has no native value.' using errcode='22023'; end if;
+  v_period:=public._multideck_finance_ensure_period(v_cash."FINCash_LegalEntityID",to_char(v_cash."FINCash_AccountingDate",'YYYYMM'),p_user_id);
+  insert into public."FIN_PostingBatches"(
+    "FINPostBatch_Number","FINPostBatch_StatusCode","FINPostBatch_SourceTable","FINPostBatch_SourceID","FINPostBatch_PeriodID","FINPostBatch_LegalEntityID",
+    "FINPostBatch_DebitTotal","FINPostBatch_CreditTotal","FINPostBatch_CurrencyCodeSnapshot","FINPostBatch_PostedAt","FINPostBatch_PostedBy","FINPostBatch_CreatedBy"
+  ) values (
+    'NATIVE-'||left(coalesce(v_cash."FINCash_Number",p_cash_id::text),60),'posted','FIN_CashTransactions',p_cash_id,v_period,v_cash."FINCash_LegalEntityID",
+    v_amount,v_amount,v_currency,now(),p_user_id,p_user_id
+  ) returning "FINPostBatch_ID" into v_batch;
+  insert into public."FIN_PostingLines"(
+    "FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_CashID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot"
+  ) values
+    (v_batch,1,v_bank,p_cash_id,case when v_cash."FINCash_TypeCode"='customer_receipt' then 'Customer receipt to bank' else 'Supplier payment from bank' end,case when v_cash."FINCash_TypeCode"='customer_receipt' then v_amount else 0 end,case when v_cash."FINCash_TypeCode"='supplier_payment' then v_amount else 0 end,v_currency),
+    (v_batch,2,v_control,p_cash_id,case when v_cash."FINCash_TypeCode"='customer_receipt' then 'Trade receivable settlement' else 'Trade payable settlement' end,case when v_cash."FINCash_TypeCode"='supplier_payment' then v_amount else 0 end,case when v_cash."FINCash_TypeCode"='customer_receipt' then v_amount else 0 end,v_currency);
+  update public."FIN_CashTransactions" set
+    "FINCash_PeriodID"=v_period,"FINCash_NativePostingStatusCode"='posted',"FINCash_NativePostingBatchID"=v_batch,
+    "FINCash_NativePostedAt"=now(),"FINCash_NativePostedBy"=p_user_id,"FINCash_PostingStatusCode"='posted',
+    "FINCash_ExportStatusCode"=case when v_mode='disabled' or (v_mode='optional' and not v_connection) then 'not_required' else 'queued' end,
+    "FINCash_UpdatedAt"=now(),"FINCash_UpdatedBy"=p_user_id
+  where "FINCash_ID"=p_cash_id;
+  insert into public."Audit_Events"(
+    "AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName",
+    "AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON"
+  ) values (
+    'finance_lifecycle',p_user_id,v_cash."FINCash_LegalEntityID",'multideck-app','finance','public','FIN_CashTransactions',v_cash."FINCash_TypeCode",p_cash_id,
+    'post_native_ledger','Cash transaction posted to Multideck ledger',true,1,jsonb_build_object('postingBatchId',v_batch,'debitTotal',v_amount,'creditTotal',v_amount,'currency',v_currency,'externalMirrorMode',v_mode,'externalMirrorQueued',v_connection and v_mode<>'disabled')
+  );
+  return jsonb_build_object('cashId',p_cash_id,'status','posted','postingBatchId',v_batch,'debitTotal',v_amount,'creditTotal',v_amount,'currency',v_currency);
+end; $$;
+revoke all on function public._multideck_finance_post_cash_native(uuid,uuid) from public,anon,authenticated;
+grant execute on function public._multideck_finance_post_cash_native(uuid,uuid) to service_role;
+
+create or replace function public._multideck_finance_post_approved_document_native()
+returns trigger language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+begin
+  if new."FINDoc_StatusCode"='approved' and old."FINDoc_StatusCode" is distinct from new."FINDoc_StatusCode" then
+    perform public._multideck_finance_post_document_native(new."FINDoc_ID",coalesce(new."FINDoc_UpdatedBy",new."FINDoc_CreatedBy"));
+  end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_post_approved_document_native() from public,anon,authenticated;
+
+drop trigger if exists "TR_FIN_Documents_native_posting" on public."FIN_Documents";
+create trigger "TR_FIN_Documents_native_posting"
+after update of "FINDoc_StatusCode" on public."FIN_Documents"
+for each row execute function public._multideck_finance_post_approved_document_native();
+
+create or replace function public._multideck_finance_post_approved_cash_native()
+returns trigger language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+begin
+  if new."FINCash_StatusCode"='approved' and old."FINCash_StatusCode" is distinct from new."FINCash_StatusCode" then
+    perform public._multideck_finance_post_cash_native(new."FINCash_ID",coalesce(new."FINCash_UpdatedBy",new."FINCash_CreatedBy"));
+  end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_post_approved_cash_native() from public,anon,authenticated;
+
+drop trigger if exists "TR_FIN_CashTransactions_native_posting" on public."FIN_CashTransactions";
+create trigger "TR_FIN_CashTransactions_native_posting"
+after update of "FINCash_StatusCode" on public."FIN_CashTransactions"
+for each row execute function public._multideck_finance_post_approved_cash_native();
+
+create or replace function public._multideck_finance_guard_native_document()
+returns trigger language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+begin
+  if tg_op='DELETE' and old."FINDoc_NativePostingStatusCode"='posted' then raise exception 'Posted finance documents cannot be deleted; use a controlled credit or reversal.' using errcode='22023'; end if;
+  if tg_op='UPDATE' and old."FINDoc_NativePostingStatusCode"='posted' and (
+    new."FINDoc_TypeCode" is distinct from old."FINDoc_TypeCode" or new."FINDoc_LegalEntityID" is distinct from old."FINDoc_LegalEntityID" or
+    new."FINDoc_PartyOrgID" is distinct from old."FINDoc_PartyOrgID" or new."FINDoc_AccountingDate" is distinct from old."FINDoc_AccountingDate" or
+    new."FINDoc_CurrencyCodeSnapshot" is distinct from old."FINDoc_CurrencyCodeSnapshot" or new."FINDoc_ExchangeRate" is distinct from old."FINDoc_ExchangeRate" or
+    new."FINDoc_LocalNetAmount" is distinct from old."FINDoc_LocalNetAmount" or new."FINDoc_LocalTaxAmount" is distinct from old."FINDoc_LocalTaxAmount" or
+    new."FINDoc_LocalGrossAmount" is distinct from old."FINDoc_LocalGrossAmount" or new."FINDoc_StatusCode" in ('draft','awaiting_approval','rejected')
+  ) then raise exception 'Posted finance documents are immutable; use a controlled credit or reversal.' using errcode='22023'; end if;
+  if tg_op='DELETE' then return old; end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_guard_native_document() from public,anon,authenticated;
+
+drop trigger if exists "TR_FIN_Documents_native_immutable" on public."FIN_Documents";
+create trigger "TR_FIN_Documents_native_immutable" before update or delete on public."FIN_Documents"
+for each row execute function public._multideck_finance_guard_native_document();
+
+create or replace function public._multideck_finance_guard_native_document_line()
+returns trigger language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_document uuid;
+begin
+  if tg_op='DELETE' then v_document:=old."FINDocLine_DocumentID"; else v_document:=new."FINDocLine_DocumentID"; end if;
+  if exists(select 1 from public."FIN_Documents" where "FINDoc_ID"=v_document and "FINDoc_NativePostingStatusCode"='posted') then
+    raise exception 'Lines on a posted finance document are immutable; use a controlled credit or reversal.' using errcode='22023';
+  end if;
+  if tg_op='DELETE' then return old; end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_guard_native_document_line() from public,anon,authenticated;
+
+drop trigger if exists "TR_FIN_DocumentLines_native_immutable" on public."FIN_DocumentLines";
+create trigger "TR_FIN_DocumentLines_native_immutable" before insert or update or delete on public."FIN_DocumentLines"
+for each row execute function public._multideck_finance_guard_native_document_line();
+
+create or replace function public._multideck_finance_guard_native_cash()
+returns trigger language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+begin
+  if tg_op='DELETE' and old."FINCash_NativePostingStatusCode"='posted' then raise exception 'Posted cash transactions cannot be deleted; use a controlled reversal.' using errcode='22023'; end if;
+  if tg_op='UPDATE' and old."FINCash_NativePostingStatusCode"='posted' and (
+    new."FINCash_TypeCode" is distinct from old."FINCash_TypeCode" or new."FINCash_LegalEntityID" is distinct from old."FINCash_LegalEntityID" or
+    new."FINCash_BankAccountID" is distinct from old."FINCash_BankAccountID" or new."FINCash_PartyOrgID" is distinct from old."FINCash_PartyOrgID" or
+    new."FINCash_AccountingDate" is distinct from old."FINCash_AccountingDate" or new."FINCash_CurrencyCodeSnapshot" is distinct from old."FINCash_CurrencyCodeSnapshot" or
+    new."FINCash_ExchangeRate" is distinct from old."FINCash_ExchangeRate" or new."FINCash_LocalAmount" is distinct from old."FINCash_LocalAmount" or
+    new."FINCash_StatusCode" in ('draft','awaiting_approval','rejected')
+  ) then raise exception 'Posted cash transactions are immutable; use a controlled reversal.' using errcode='22023'; end if;
+  if tg_op='DELETE' then return old; end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_guard_native_cash() from public,anon,authenticated;
+
+drop trigger if exists "TR_FIN_CashTransactions_native_immutable" on public."FIN_CashTransactions";
+create trigger "TR_FIN_CashTransactions_native_immutable" before update or delete on public."FIN_CashTransactions"
+for each row execute function public._multideck_finance_guard_native_cash();
+
+commit;
+-- END MIGRATION 20260831072515_provider_optional_global_finance.sql

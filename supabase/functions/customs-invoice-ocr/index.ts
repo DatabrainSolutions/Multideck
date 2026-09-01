@@ -4,9 +4,11 @@ import { governedModelFetch, type ModelGatewayContext } from "../_shared/model-g
 import {
   COMMERCIAL_INVOICE_SCHEMA_VERSION,
   commercialInvoiceAnnotationFormat,
+  financePurchaseAnnotationFormat,
   MAX_COMMERCIAL_INVOICE_BYTES,
   MISTRAL_OCR_MODEL,
   normalizeCommercialInvoiceAnnotation,
+  normalizeFinancePurchaseAnnotation,
   normalizeInvoiceEvidencePages,
   normalizePurchaseOrderAnnotation,
   purchaseOrderAnnotationFormat,
@@ -29,9 +31,10 @@ const readyCacheLifetimeDays = 30
 const failedRecordLifetimeHours = 24
 const pagesPerMistralRequest = 8
 const purchaseOrderSchemaVersion = 1
+const financePurchaseSchemaVersion = 1
 
 type Actor = { userId: string; authUserId: string; companyId: string }
-type DocumentType = "commercial_invoice" | "purchase_order"
+type DocumentType = "commercial_invoice" | "purchase_order" | "finance_purchase"
 type InvoiceInput = Awaited<ReturnType<typeof readInvoiceInput>>
 type PreparedObject = { storedObjectId: string; objectPath: string; previewExpiresAt: string }
 type PageRange = { start: number; end: number }
@@ -66,6 +69,7 @@ async function extractInvoice(request: Request, admin: SupabaseClient, actor: Ac
   if (!apiKey) throw new HttpError(503, "Invoice import is unavailable for this workspace.")
 
   const input = await timings.measure("input", () => readInvoiceInput(request))
+  if (input.documentType === "finance_purchase") await requirePermission(admin, actor.userId, "Finance.Payables.Draft")
   await validateDeclaration(admin, actor, input.declarationId)
   await expireOldExtractions(admin)
   const sourceHash = await timings.measure("source_hash", () => sha256Hex(input.bytes))
@@ -139,7 +143,7 @@ async function extractInvoice(request: Request, admin: SupabaseClient, actor: Ac
     const result = {
       extractionId: input.extractionId,
       ...merged.extraction,
-      documentType: input.documentType,
+      sourceDocumentType: input.documentType,
       model: merged.providerModel,
       requestedModel: MISTRAL_OCR_MODEL,
       pageCount: prepared.pageCount,
@@ -488,6 +492,7 @@ async function requestMistralChunk(
   includeRange: boolean,
 ) {
   const purchaseOrder = documentType === "purchase_order"
+  const financePurchase = documentType === "finance_purchase"
   const requestBody = {
       model: MISTRAL_OCR_MODEL,
       document: { type: "document_url", document_url: signedUrl },
@@ -495,15 +500,15 @@ async function requestMistralChunk(
       include_blocks: true,
       include_image_base64: false,
       image_limit: 0,
-      document_annotation_format: purchaseOrder ? purchaseOrderAnnotationFormat : commercialInvoiceAnnotationFormat,
+      document_annotation_format: purchaseOrder ? purchaseOrderAnnotationFormat : financePurchase ? financePurchaseAnnotationFormat : commercialInvoiceAnnotationFormat,
       document_annotation_prompt: [
-        purchaseOrder ? "Extract the purchase order header and only item rows explicitly present in the document." : "Extract only commercial invoice item rows explicitly present in the document.",
-        purchaseOrder ? "Do not invent purchase order numbers, suppliers, dates, references, quantities, prices, tax rates or terms." : "Do not invent commodity codes, origin, weights, quantities, prices or package details.",
+        purchaseOrder ? "Extract the purchase order header and only item rows explicitly present in the document." : financePurchase ? "Extract the supplier invoice or supplier credit note header, totals and only charge rows explicitly present in the document." : "Extract only commercial invoice item rows explicitly present in the document.",
+        purchaseOrder ? "Do not invent purchase order numbers, suppliers, dates, references, quantities, prices, tax rates or terms." : financePurchase ? "Do not invent the supplier, document type, document number, dates, currency, tax, totals or line values." : "Do not invent commodity codes, origin, weights, quantities, prices or package details.",
         "Use a one-based page number and preserve the source item description.",
-        purchaseOrder ? "Return dates as YYYY-MM-DD and three-letter ISO currency only when explicitly stated." : "Return three-letter ISO currency and two-letter ISO origin only when explicitly stated.",
-        purchaseOrder ? "Keep header fields separate from item rows and exclude summary or subtotal rows." : "Keep item quantity separate from package count; return package count only when explicitly stated.",
+        purchaseOrder || financePurchase ? "Return dates as YYYY-MM-DD and three-letter ISO currency only when explicitly stated." : "Return three-letter ISO currency and two-letter ISO origin only when explicitly stated.",
+        purchaseOrder ? "Keep header fields separate from item rows and exclude summary or subtotal rows." : financePurchase ? "Classify only explicit credit notes as credit_note; use invoice for supplier invoices. Keep summary, subtotal, freight and tax totals out of item rows unless they are explicit charge lines." : "Keep item quantity separate from package count; return package count only when explicitly stated.",
         "Ignore logos, product photography, signatures, stamps and other decorative images.",
-        purchaseOrder ? "Do not return totals, tax, freight or discounts as item rows." : "Do not return totals, tax, freight, discounts, addresses or payment terms as item rows.",
+        purchaseOrder ? "Do not return totals, tax, freight or discounts as item rows." : financePurchase ? "Return positive magnitudes for invoices and credit notes; the document_type carries the accounting sign." : "Do not return totals, tax, freight, discounts, addresses or payment terms as item rows.",
       ].join(" "),
     }
   const response = await governedModelFetch(gateway, {
@@ -549,6 +554,26 @@ function mergeProviderPayloads(payloads: Record<string, unknown>[], pageCount: n
         deliveryAddress: chunks.map((chunk) => chunk.deliveryAddress).find(Boolean) || "",
         notes: chunks.map((chunk) => chunk.notes).find(Boolean) || "",
         lines: deduplicateLines(chunks.flatMap((chunk) => chunk.lines)),
+      }, evidencePages, providerModel, pagesProcessed,
+    }
+  }
+  if (documentType === "finance_purchase") {
+    const chunks = payloads.map((payload, index) => adjustExtractionPages(normalizeFinancePurchaseAnnotation(payload.document_annotation), ranges[index]))
+    const first = chunks[0] ?? normalizeFinancePurchaseAnnotation({})
+    return {
+      extraction: {
+        ...first,
+        documentType: chunks.map((chunk) => chunk.documentType).find((value) => value !== "unknown") || "unknown",
+        documentNumber: chunks.map((chunk) => chunk.documentNumber).find(Boolean) || "",
+        supplierName: chunks.map((chunk) => chunk.supplierName).find(Boolean) || "",
+        supplierTaxNumber: chunks.map((chunk) => chunk.supplierTaxNumber).find(Boolean) || "",
+        documentDate: chunks.map((chunk) => chunk.documentDate).find(Boolean) || "",
+        dueDate: chunks.map((chunk) => chunk.dueDate).find(Boolean) || "",
+        currencyCode: chunks.map((chunk) => chunk.currencyCode).find(Boolean) || "",
+        netTotal: chunks.map((chunk) => chunk.netTotal).find((value) => value > 0) || 0,
+        taxTotal: chunks.map((chunk) => chunk.taxTotal).find((value) => value > 0) || 0,
+        grossTotal: chunks.map((chunk) => chunk.grossTotal).find((value) => value > 0) || 0,
+        lines: deduplicateLines(chunks.flatMap((chunk) => chunk.lines)).map((line, index) => ({ ...line, id: `finance-ocr-line-${index + 1}` })),
       }, evidencePages, providerModel, pagesProcessed,
     }
   }
@@ -652,11 +677,11 @@ function actorFromProfile(profile: Record<string, unknown>, authUserId: string):
 }
 
 function documentType(value: FormDataEntryValue | null): DocumentType {
-  return value === "purchase_order" ? "purchase_order" : "commercial_invoice"
+  return value === "purchase_order" ? "purchase_order" : value === "finance_purchase" ? "finance_purchase" : "commercial_invoice"
 }
 
 function documentSchemaVersion(value: DocumentType) {
-  return value === "purchase_order" ? purchaseOrderSchemaVersion : COMMERCIAL_INVOICE_SCHEMA_VERSION
+  return value === "purchase_order" ? purchaseOrderSchemaVersion : value === "finance_purchase" ? financePurchaseSchemaVersion : COMMERCIAL_INVOICE_SCHEMA_VERSION
 }
 
 function validateUuid(value: string, label: string) {

@@ -55,6 +55,12 @@ function statusTone(status: string): "green" | "amber" | "red" | "blue" | "neutr
   return "neutral"
 }
 
+function purchaseOrderStatusLabel(status: string) {
+  if (status === "issued") return "Confirmed"
+  if (status === "part_received") return "Part received"
+  return status.charAt(0).toUpperCase() + status.slice(1)
+}
+
 function normaliseInput(order: WarehousePurchaseOrder): WarehousePurchaseOrderInput {
   return {
     facilityId: order.facilityId,
@@ -228,19 +234,19 @@ function SearchablePurchaseOrderSelect({ value, options, placeholder, searchPlac
 function PurchaseOrderDetailsFields({ form, reference, organisations, organisationLoading, organisationsHaveMore, onOrganisationSearch, onOrganisationSelected, editable, generatingNumber, onGenerateNumber, patch }: { form: WarehousePurchaseOrderInput; reference: WarehousePurchaseOrderReference | null; organisations: PurchaseOrderOrganisationOption[]; organisationLoading: boolean; organisationsHaveMore: boolean; onOrganisationSearch: (value: string) => void; onOrganisationSelected: (value: PurchaseOrderOrganisationOption | null) => void; editable: boolean; generatingNumber: boolean; onGenerateNumber: () => void; patch: <K extends keyof WarehousePurchaseOrderInput>(key: K, value: WarehousePurchaseOrderInput[K]) => void }) {
   const { t } = useLanguage()
   return <div className="grid gap-x-2.5 gap-y-2 md:grid-cols-16">
-    <WarehouseFormField label={t("Purchase order number")} required className="md:col-span-4"><div className="flex gap-1.5"><Input disabled={!editable} value={form.number} onChange={(event)=>patch("number",event.target.value)} className={controlClass} dir="ltr" /><Button type="button" variant="outline" disabled={!editable || !form.facilityId || generatingNumber} onClick={onGenerateNumber} className="h-9 shrink-0 rounded-[var(--md-radius-md)] px-2.5 text-[11.5px]">{generatingNumber ? <Loader2 className="size-3.5 animate-spin" /> : null}{t("Auto-generate")}</Button></div></WarehouseFormField>
+    <WarehouseFormField label={t("Customer PO number")} required className="md:col-span-4"><div className="flex gap-1.5"><Input disabled={!editable} value={form.number} onChange={(event)=>patch("number",event.target.value)} className={controlClass} dir="ltr" /><Button type="button" variant="outline" disabled={!editable || !form.facilityId || generatingNumber} onClick={onGenerateNumber} className="h-9 shrink-0 rounded-[var(--md-radius-md)] px-2.5 text-[11.5px]">{generatingNumber ? <Loader2 className="size-3.5 animate-spin" /> : null}{t("Auto-generate")}</Button></div></WarehouseFormField>
     <WarehouseFormField label={t("Warehouse")} required className="md:col-span-4"><SearchablePurchaseOrderSelect disabled={!editable} value={form.facilityId} options={(reference?.facilities ?? []).map((facility)=>({ id:facility.id,name:facility.name,code:facility.code }))} placeholder="Choose warehouse" searchPlaceholder="Search warehouses…" emptyLabel="No matching warehouses" onChange={(value)=>{ patch("facilityId",value); patch("lines",form.lines.map((line)=>({ ...line,itemId:null }))) }} /></WarehouseFormField>
     <WarehouseFormField label={t("Stock owner")} required className="md:col-span-4"><SearchablePurchaseOrderSelect disabled={!editable} value={form.customerOrgId} options={organisations} placeholder="Choose organisation" searchPlaceholder="Search stock owners…" emptyLabel="No matching stock owners" remoteSearch loading={organisationLoading} hasMore={organisationsHaveMore} onSearchChange={onOrganisationSearch} onChange={(value)=>{ onOrganisationSelected(organisations.find((organisation)=>organisation.id===value) ?? null); patch("customerOrgId",value); patch("lines",form.lines.map((line)=>({ ...line,itemId:null }))) }} /></WarehouseFormField>
-    <WarehouseFormField label={t("Supplier")} className="md:col-span-4"><Input disabled={!editable} value={form.supplierName} onChange={(event)=>patch("supplierName",event.target.value)} className={controlClass} dir="auto" /></WarehouseFormField>
+    <WarehouseFormField label={t("Goods from / supplier")} className="md:col-span-4"><Input disabled={!editable} value={form.supplierName} onChange={(event)=>patch("supplierName",event.target.value)} className={controlClass} dir="auto" /></WarehouseFormField>
 
-    <WarehouseFormField label={t("Buyer reference")} className="md:col-span-4"><Input disabled={!editable} value={form.buyerReference ?? ""} onChange={(event)=>patch("buyerReference",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
-    <WarehouseFormField label={t("Supplier reference")} className="md:col-span-4"><Input disabled={!editable} value={form.supplierReference ?? ""} onChange={(event)=>patch("supplierReference",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
+    <WarehouseFormField label={t("Customer buyer reference")} className="md:col-span-4"><Input disabled={!editable} value={form.buyerReference ?? ""} onChange={(event)=>patch("buyerReference",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
+    <WarehouseFormField label={t("Source supplier reference")} className="md:col-span-4"><Input disabled={!editable} value={form.supplierReference ?? ""} onChange={(event)=>patch("supplierReference",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
     <WarehouseFormField label={t("Currency")} required className="md:col-span-2"><Select disabled={!editable} value={form.currencyCode} onValueChange={(value)=>patch("currencyCode",value)}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.currencies.map((currency)=><SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
     <WarehouseFormField label={t("Issue date")} className="md:col-span-2"><Input disabled={!editable} type="date" value={form.issueDate ?? ""} onChange={(event)=>patch("issueDate",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
     <WarehouseFormField label={t("Expected delivery")} className="md:col-span-4"><Input disabled={!editable} type="date" value={form.expectedDeliveryDate ?? ""} onChange={(event)=>patch("expectedDeliveryDate",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
 
     <WarehouseFormField label={t("Delivery terms")} className="md:col-span-4"><Input disabled={!editable} value={form.deliveryTerms ?? ""} onChange={(event)=>patch("deliveryTerms",event.target.value||null)} className={controlClass} /></WarehouseFormField>
-    <WarehouseFormField label={t("Payment terms")} className="md:col-span-4"><Input disabled={!editable} value={form.paymentTerms ?? ""} onChange={(event)=>patch("paymentTerms",event.target.value||null)} className={controlClass} /></WarehouseFormField>
+    <WarehouseFormField label={t("Payment terms (reference only)")} className="md:col-span-4"><Input disabled={!editable} value={form.paymentTerms ?? ""} onChange={(event)=>patch("paymentTerms",event.target.value||null)} className={controlClass} /></WarehouseFormField>
     <WarehouseFormField label={t("Notes")} className="md:col-span-8"><Input disabled={!editable} value={form.notes ?? ""} onChange={(event)=>patch("notes",event.target.value||null)} className={controlClass} dir="auto" /></WarehouseFormField>
   </div>
 }
@@ -279,14 +285,14 @@ export function PurchaseOrderLineEditor({
     { id:"description",label:"Description",width:240,minWidth:160,canHide:false,resizable:true,cell:({line,index})=><Input disabled={disabled} value={line.description} onChange={(event)=>patch(index,{description:event.target.value})} className={lineControlClass} dir="auto" /> },
     { id:"quantity",label:"Qty",kind:"number",width:76,minWidth:64,resizable:true,cell:({line,index})=>{ const item=items.find((candidate)=>candidate.id===line.itemId); return <Input disabled={disabled} type="number" min="0.000001" step={item?.allowsFractionalQuantity?"0.001":"1"} value={line.quantity} onChange={(event)=>patch(index,{quantity:Number(event.target.value)})} className={lineControlClass} dir="ltr" /> } },
     { id:"uom",label:"UOM",width:68,minWidth:58,resizable:true,cell:({line,index})=><Input disabled={disabled} value={line.uomCode} onChange={(event)=>patch(index,{uomCode:event.target.value.toUpperCase()})} className={lineControlClass} dir="ltr" /> },
-    { id:"unitPrice",label:"Unit price",kind:"number",width:92,minWidth:72,resizable:true,cell:({line,index})=><Input disabled={disabled} type="number" min="0" step="0.01" value={line.unitPrice} onChange={(event)=>patch(index,{unitPrice:Number(event.target.value)})} className={lineControlClass} dir="ltr" /> },
-    { id:"tax",label:"Tax %",kind:"number",width:72,minWidth:62,resizable:true,cell:({line,index})=><Input disabled={disabled} type="number" min="0" step="0.01" value={line.taxRate} onChange={(event)=>patch(index,{taxRate:Number(event.target.value)})} className={lineControlClass} dir="ltr" /> },
-    { id:"supplierCode",label:"Supplier code",width:120,minWidth:92,resizable:true,defaultHidden:true,cell:({line,index})=><Input disabled={disabled} value={line.supplierItemCode ?? ""} onChange={(event)=>patch(index,{supplierItemCode:event.target.value||null})} className={lineControlClass} dir="ltr" /> },
+    { id:"unitPrice",label:"Goods unit value",kind:"number",width:110,minWidth:84,resizable:true,cell:({line,index})=><Input disabled={disabled} type="number" min="0" step="0.01" value={line.unitPrice} onChange={(event)=>patch(index,{unitPrice:Number(event.target.value)})} className={lineControlClass} dir="ltr" /> },
+    { id:"tax",label:"Source tax %",kind:"number",width:86,minWidth:68,resizable:true,cell:({line,index})=><Input disabled={disabled} type="number" min="0" step="0.01" value={line.taxRate} onChange={(event)=>patch(index,{taxRate:Number(event.target.value)})} className={lineControlClass} dir="ltr" /> },
+    { id:"supplierCode",label:"Source item code",width:120,minWidth:92,resizable:true,defaultHidden:true,cell:({line,index})=><Input disabled={disabled} value={line.supplierItemCode ?? ""} onChange={(event)=>patch(index,{supplierItemCode:event.target.value||null})} className={lineControlClass} dir="ltr" /> },
     { id:"delivery",label:"Delivery",kind:"date",width:126,minWidth:110,resizable:true,defaultHidden:true,cell:({line,index})=><Input disabled={disabled} type="date" value={line.requestedDeliveryDate ?? ""} onChange={(event)=>patch(index,{requestedDeliveryDate:event.target.value||null})} className={lineControlClass} dir="ltr" /> },
     { id:"net",label:"Net",kind:"number",width:86,minWidth:72,resizable:true,cell:({line})=><span dir="ltr" className="tabular-nums text-[12px] font-medium">{(Math.max(0,Number(line.quantity)||0)*Math.max(0,Number(line.unitPrice)||0)).toFixed(2)}</span> },
     { id:"actions",label:"",kind:"actions",width:44,minWidth:44,canHide:false,canPin:false,cell:({index})=><Button disabled={disabled || lines.length===1} type="button" variant="ghost" size="icon" aria-label={t("Remove line")} onClick={()=>onChange(lines.filter((_,lineIndex)=>lineIndex!==index))} className="size-8 rounded-[var(--md-radius-sm)] text-[var(--md-red)]"><Trash2 className="size-3.5" /></Button> },
   ], [customerOrgId, disabled, facilityId, itemLoading, items, itemsHaveMore, lines, onChange, onItemSearch, onItemSelected, t])
-  return <DataTable ariaLabel="Purchase order lines" columnsButtonLabel="Manage purchase order line columns" storageKey="purchase-order-line-editor" columns={columns} rows={rows} getRowKey={({line,index})=>line.id ?? `line-${index}`} minimumWidth={1120} compactToolbar emptyState={null} toolbarOptions={!disabled?<Button type="button" variant="ghost" onClick={()=>onChange([...lines,emptyLine()])} className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px]"><Plus className="size-3.5" />{t("Add line")}</Button>:null} rowClassName="h-[48px]" tableClassName="text-[12px]" />
+  return <DataTable ariaLabel="Customer purchase order lines" columnsButtonLabel="Manage customer purchase order line columns" storageKey="purchase-order-line-editor" columns={columns} rows={rows} getRowKey={({line,index})=>line.id ?? `line-${index}`} minimumWidth={1120} compactToolbar emptyState={null} toolbarOptions={!disabled?<Button type="button" variant="ghost" onClick={()=>onChange([...lines,emptyLine()])} className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px]"><Plus className="size-3.5" />{t("Add line")}</Button>:null} rowClassName="h-[48px]" tableClassName="text-[12px]" />
 }
 
 export function WarehousePurchaseOrderCreateView({ navigate }: { navigate?: (path: string) => void }) {
@@ -302,7 +308,7 @@ export function WarehousePurchaseOrderCreateView({ navigate }: { navigate?: (pat
   const editable = true
   const extractionStages = useMemo(() => [
     { id: "reading", label: t("Reading the document"), detail: t("Checking the PDF and its embedded text."), ceiling: 28, expectedMs: 2_000 },
-    { id: "extracting", label: t("Finding header and lines"), detail: t("Identifying supplier, dates, references and ordered goods."), ceiling: 88, expectedMs: 10_000 },
+    { id: "extracting", label: t("Finding header and lines"), detail: t("Identifying the stock owner, source supplier, dates, references and expected goods."), ceiling: 88, expectedMs: 10_000 },
     { id: "organising", label: t("Preparing the review"), detail: t("Matching extracted SKUs to warehouse items."), ceiling: 98, expectedMs: 2_000 },
   ], [t])
   const patch = <K extends keyof WarehousePurchaseOrderInput>(key: K, value: WarehousePurchaseOrderInput[K]) => setForm((current)=>({ ...current, [key]: value }))
@@ -347,7 +353,7 @@ export function WarehousePurchaseOrderCreateView({ navigate }: { navigate?: (pat
           return { itemId:item?.id ?? null,sku:line.sku,supplierItemCode:line.supplierItemCode || null,description:line.description,quantity:line.quantity,uomCode:item?.uomCode ?? line.uomCode,unitPrice:line.unitPrice,taxRate:line.taxRate,requestedDeliveryDate:line.requestedDeliveryDate || null,metadata:{ sourcePage:line.page,extractedCurrency:line.currencyCode } }
         }),
       }))
-      toast.success(t("Purchase order document extracted. Review every field before saving."))
+      toast.success(t("Customer purchase order extracted. Review every field before saving."))
     } catch (cause) {
       if (!abortRef.current?.signal.aborted) setError(errorMessage(cause))
     } finally { setExtracting(false); setStage(null) }
@@ -355,25 +361,25 @@ export function WarehousePurchaseOrderCreateView({ navigate }: { navigate?: (pat
 
   async function save() {
     setError(null)
-    if (!form.facilityId || !form.customerOrgId || !form.number.trim() || form.lines.some((line)=>!line.description.trim() || line.quantity<=0 || !line.uomCode.trim())) { setError(t("Complete the purchase order header and every required line field.")); return }
+    if (!form.facilityId || !form.customerOrgId || !form.number.trim() || form.lines.some((line)=>!line.description.trim() || line.quantity<=0 || !line.uomCode.trim())) { setError(t("Complete the customer purchase order header and every required line field.")); return }
     setSaving(true)
     try {
       const payload = { ...form, extractionMetadata:{ ...(form.extractionMetadata ?? {}),reviewedAt:new Date().toISOString() } }
       const created = await createWarehousePurchaseOrder(payload)
-      toast.success(t("Purchase order created.")); navigate?.(purchaseOrderDetailPath(created))
+      toast.success(t("Customer purchase order created.")); navigate?.(purchaseOrderDetailPath(created))
     } catch (cause) { setError(errorMessage(cause)) } finally { setSaving(false) }
   }
 
   return <div className="grid gap-[var(--md-gap-md)]">
     <motion.header initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={mdMotion.enter} className="grid gap-3">
-      <button type="button" onClick={() => navigate?.("/warehouse/purchase-orders")} className="group inline-flex h-8 w-fit items-center gap-1.5 rounded-[var(--md-radius-md)] px-2 -ms-2 text-[12.5px] font-medium text-[var(--md-text)] outline-none transition-[background,color] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"><ArrowLeft className="size-3.5 rtl:rotate-180" strokeWidth={1.5} />{t("Back to purchase orders")}</button>
-      <div className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-[24px] font-medium leading-none tracking-[-0.015em] text-[var(--md-ink)]">{t("New purchase order")}</h1><p className="mt-1.5 text-[13px] text-[var(--md-text)]">{t("Enter the header and lines, or import a supplier PDF and review the extracted values before saving.")}</p></div><Button disabled={saving || extracting} onClick={() => void save()} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <Loader2 className="size-4 animate-spin" /> : null}{t("Create purchase order")}</Button></div>
+      <button type="button" onClick={() => navigate?.("/warehouse/purchase-orders")} className="group inline-flex h-8 w-fit items-center gap-1.5 rounded-[var(--md-radius-md)] px-2 -ms-2 text-[12.5px] font-medium text-[var(--md-text)] outline-none transition-[background,color] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"><ArrowLeft className="size-3.5 rtl:rotate-180" strokeWidth={1.5} />{t("Back to customer purchase orders")}</button>
+      <div className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-[24px] font-medium leading-none tracking-[-0.015em] text-[var(--md-ink)]">{t("New customer purchase order")}</h1><p className="mt-1.5 text-[13px] text-[var(--md-text)]">{t("Capture the customer's order as an operational inbound instruction, or import its PDF. Values are reference-only and never enter the purchase subledger.")}</p></div><Button disabled={saving || extracting} onClick={() => void save()} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <Loader2 className="size-4 animate-spin" /> : null}{t("Create customer purchase order")}</Button></div>
     </motion.header>
-    <PurchaseOrderSection index={0} title="Purchase order details" meta="Supplier, dates, ownership and commercial references." action={<label className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-[var(--md-radius-md)] bg-white/58 px-2.5 text-[12px] font-medium shadow-[var(--md-shadow-line)]"><Upload className="size-3.5" />{t("Extract from PDF")}<input className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event)=>{ const file=event.target.files?.[0]; if(file){ patch("sourceFileName",file.name); void importDocument(file) } event.currentTarget.value="" }} /></label>}>
-      {extracting ? <DocumentExtractionProgress title={t("Reading purchase order")} detail={t("Extracted values are never saved until you review and confirm them.")} fileName={form.sourceFileName ?? undefined} stages={extractionStages} activeStageId={stage} onCancel={()=>abortRef.current?.abort()} /> : <PurchaseOrderDetailsFields form={form} reference={selectors.reference} organisations={selectors.organisations} organisationLoading={selectors.organisationLoading} organisationsHaveMore={selectors.organisationsHaveMore} onOrganisationSearch={selectors.setOrganisationSearch} onOrganisationSelected={selectors.rememberOrganisation} editable onGenerateNumber={() => void generateNumber()} generatingNumber={generatingNumber} patch={patch} />}
+    <PurchaseOrderSection index={0} title="Customer purchase order details" meta="Stock owner, expected delivery and source-document references for warehouse operations." action={<label className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-[var(--md-radius-md)] bg-white/58 px-2.5 text-[12px] font-medium shadow-[var(--md-shadow-line)]"><Upload className="size-3.5" />{t("Extract from PDF")}<input className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event)=>{ const file=event.target.files?.[0]; if(file){ patch("sourceFileName",file.name); void importDocument(file) } event.currentTarget.value="" }} /></label>}>
+      {extracting ? <DocumentExtractionProgress title={t("Reading customer purchase order")} detail={t("Extracted values are never saved until you review and confirm them.")} fileName={form.sourceFileName ?? undefined} stages={extractionStages} activeStageId={stage} onCancel={()=>abortRef.current?.abort()} /> : <PurchaseOrderDetailsFields form={form} reference={selectors.reference} organisations={selectors.organisations} organisationLoading={selectors.organisationLoading} organisationsHaveMore={selectors.organisationsHaveMore} onOrganisationSearch={selectors.setOrganisationSearch} onOrganisationSelected={selectors.rememberOrganisation} editable onGenerateNumber={() => void generateNumber()} generatingNumber={generatingNumber} patch={patch} />}
       {error || selectors.selectorError ? <div className="mt-4 flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-red-a08)] px-3 py-2.5 text-[12px] text-[var(--md-red)]" role="alert"><AlertCircle className="mt-0.5 size-4 shrink-0" />{t(error ?? selectors.selectorError ?? "")}</div>:null}
     </PurchaseOrderSection>
-    {!extracting ? <PurchaseOrderSection index={1} title="Order lines" meta="Match each extracted line to the correct warehouse item before issuing." action={<span className="text-[12px] text-[var(--md-subtle)]">{t("Total")} <strong dir="ltr" className="ms-1 font-medium tabular-nums text-[var(--md-ink)]">{form.currencyCode} {total.toFixed(2)}</strong></span>}><PurchaseOrderLineEditor lines={form.lines} items={selectors.items} facilityId={form.facilityId} customerOrgId={form.customerOrgId} itemLoading={selectors.itemLoading} itemsHaveMore={selectors.itemsHaveMore} onItemSearch={selectors.setItemSearch} onItemSelected={(item)=>selectors.rememberItems(item ? [item] : [])} onChange={(lines)=>patch("lines",lines)} /></PurchaseOrderSection> : null}
+    {!extracting ? <PurchaseOrderSection index={1} title="Expected goods" meta="Match every line to a warehouse item before confirming it for goods in. Document values remain operational reference data." action={<span className="text-[12px] text-[var(--md-subtle)]">{t("Reference total")} <strong dir="ltr" className="ms-1 font-medium tabular-nums text-[var(--md-ink)]">{form.currencyCode} {total.toFixed(2)}</strong></span>}><PurchaseOrderLineEditor lines={form.lines} items={selectors.items} facilityId={form.facilityId} customerOrgId={form.customerOrgId} itemLoading={selectors.itemLoading} itemsHaveMore={selectors.itemsHaveMore} onItemSearch={selectors.setItemSearch} onItemSelected={(item)=>selectors.rememberItems(item ? [item] : [])} onChange={(lines)=>patch("lines",lines)} /></PurchaseOrderSection> : null}
   </div>
 }
 
@@ -463,20 +469,20 @@ export function WarehousePurchaseOrdersWorkspace({ navigate }: { navigate?: (pat
   const columns = useMemo<DataTableColumn<WarehousePurchaseOrder>[]>(() => [
     {
       id: "number",
-      label: "Purchase order",
+      label: "Customer PO",
       width: 192,
       minWidth: 160,
       resizable: true,
       canHide: false,
       sortValue: (order) => order.number,
-      cell: (order) => <div className="min-w-0"><span data-i18n-skip dir="ltr" className="text-[12px] font-medium tabular-nums text-[var(--md-ink)]">{order.number}</span><p className="truncate text-[11px] text-[var(--md-subtle)]">{order.buyerReference ?? t("No buyer reference")}</p></div>,
+      cell: (order) => <div className="min-w-0"><span data-i18n-skip dir="ltr" className="text-[12px] font-medium tabular-nums text-[var(--md-ink)]">{order.number}</span><p className="truncate text-[11px] text-[var(--md-subtle)]">{order.buyerReference ?? t("No customer reference")}</p></div>,
     },
-    { id: "supplier", label: "Supplier", width: 210, resizable: true, sortValue: (order) => order.supplierName, cell: (order) => <div className="min-w-0"><p className="truncate text-[12.5px] font-medium text-[var(--md-ink)]">{order.supplierName}</p><p className="truncate text-[11px] text-[var(--md-subtle)]">{order.customerName}</p></div> },
+    { id: "supplier", label: "Stock owner / source", width: 210, resizable: true, sortValue: (order) => order.customerName, cell: (order) => <div className="min-w-0"><p className="truncate text-[12.5px] font-medium text-[var(--md-ink)]">{order.customerName}</p><p className="truncate text-[11px] text-[var(--md-subtle)]">{order.supplierName || t("Source not recorded")}</p></div> },
     { id: "warehouse", label: "Warehouse", width: 176, resizable: true, sortValue: (order) => order.facilityName, cell: (order) => <span className="truncate text-[12.5px] text-[var(--md-text)]">{order.facilityName}</span> },
     { id: "delivery", label: "Expected", width: 152, resizable: true, sortValue: (order) => order.expectedDeliveryDate, cell: (order) => <span className="whitespace-nowrap text-[12px] text-[var(--md-text)]">{order.expectedDeliveryDate ? dateOnly.format(new Date(`${order.expectedDeliveryDate}T00:00:00`)) : "—"}</span> },
     { id: "lines", label: "Lines", width: 88, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.lineCount ?? order.lines.length, cell: (order) => <span dir="ltr" className="tabular-nums">{order.lineCount ?? order.lines.length}</span> },
-    { id: "total", label: "Total", width: 140, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.totalAmount, cell: (order) => <span dir="ltr" className="whitespace-nowrap font-medium tabular-nums text-[var(--md-ink)]">{order.currencyCode} {order.totalAmount.toFixed(2)}</span> },
-    { id: "status", label: "Status", kind: "status", width: 144, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.statusCode, cell: (order) => <StatusPill tone={statusTone(order.statusCode)}>{t(order.statusCode.replace("_", " "))}</StatusPill> },
+    { id: "total", label: "Reference value", width: 140, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.totalAmount, cell: (order) => <span dir="ltr" className="whitespace-nowrap font-medium tabular-nums text-[var(--md-ink)]">{order.currencyCode} {order.totalAmount.toFixed(2)}</span> },
+    { id: "status", label: "Status", kind: "status", width: 144, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.statusCode, cell: (order) => <StatusPill tone={statusTone(order.statusCode)}>{t(purchaseOrderStatusLabel(order.statusCode))}</StatusPill> },
   ], [dateOnly, t])
 
   const loaded = orders !== null
@@ -484,30 +490,30 @@ export function WarehousePurchaseOrdersWorkspace({ navigate }: { navigate?: (pat
   const clearFilters = () => { setSearch(""); setCommittedSearch(""); setFacilityId(""); setStatusCode(""); setOffset(0) }
   const emptyState = error ? (
     <div className="mx-auto max-w-[380px]" role="alert">
-      <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Purchase orders could not be loaded")}</p>
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Customer purchase orders could not be loaded")}</p>
       <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{error}</p>
       <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] text-[12px]" onClick={() => void refresh()}><RefreshCw data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />{t("Try again")}</Button>
     </div>
   ) : !loaded ? (
-    <DotGridLoaderPanel label="Loading purchase orders" minHeight={0} />
+    <DotGridLoaderPanel label="Loading customer purchase orders" minHeight={0} />
   ) : hasFilters ? (
     <div className="mx-auto max-w-[380px]">
-      <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No purchase orders match these filters")}</p>
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No customer purchase orders match these filters")}</p>
       <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Widen the search or switch warehouse to see more.")}</p>
       <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] text-[12px]" onClick={clearFilters}>{t("Clear filters")}</Button>
     </div>
   ) : (
     <div className="mx-auto max-w-[380px]">
       <FileSearch className="mx-auto size-5 text-[var(--md-accent)]" strokeWidth={1.35} />
-      <p className="mt-2 text-[13px] font-medium text-[var(--md-ink)]">{t(scope === "Open" ? "No open purchase orders" : "No purchase orders yet")}</p>
-      <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Purchase orders appear here once supplier work is recorded.")}</p>
+      <p className="mt-2 text-[13px] font-medium text-[var(--md-ink)]">{t(scope === "Open" ? "No open customer purchase orders" : "No customer purchase orders yet")}</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Customer purchase orders appear here when expected inbound goods are recorded.")}</p>
     </div>
   )
 
   return <div className="grid gap-[var(--md-page-stack-gap)]">
     <DataTable
-      ariaLabel="Purchase orders"
-      columnsButtonLabel="Manage purchase order columns"
+      ariaLabel="Customer purchase orders"
+      columnsButtonLabel="Manage customer purchase order columns"
       storageKey="warehouse-purchase-orders"
       columns={columns}
       rows={visible}
@@ -516,10 +522,10 @@ export function WarehousePurchaseOrdersWorkspace({ navigate }: { navigate?: (pat
       rowClassName="hover:bg-[var(--md-hover)]"
       compactToolbar
       emptyState={emptyState}
-      toolbarTabs={<RegisterViewSwitch options={purchaseOrderScopes} value={scope} onChange={(value) => { setScope(value); setOffset(0) }} counts={{ [scope]: total } as Partial<Record<PurchaseOrderScope, number>>} ariaLabel="Purchase order scope" compact />}
-      toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => { setSearch(""); setCommittedSearch(""); setOffset(0) }} label="Search purchase orders" placeholder="PO, supplier, reference" className="sm:min-w-[156px] sm:w-[156px]" />}
+      toolbarTabs={<RegisterViewSwitch options={purchaseOrderScopes} value={scope} onChange={(value) => { setScope(value); setOffset(0) }} counts={{ [scope]: total } as Partial<Record<PurchaseOrderScope, number>>} ariaLabel="Customer purchase order scope" compact />}
+      toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => { setSearch(""); setCommittedSearch(""); setOffset(0) }} label="Search customer purchase orders" placeholder="PO, stock owner, source" className="sm:min-w-[156px] sm:w-[156px]" />}
       toolbarFilters={<>
-        <RegisterFacetSelect label="Status" allLabel="All statuses" value={statusCode} options={purchaseOrderStatuses.map((status) => ({ value: status, label: status.replace("_", " ") }))} onChange={(value) => { setStatusCode(value); setOffset(0) }} className="w-[120px] sm:w-[120px]" />
+        <RegisterFacetSelect label="Status" allLabel="All statuses" value={statusCode} options={purchaseOrderStatuses.map((status) => ({ value: status, label: purchaseOrderStatusLabel(status) }))} onChange={(value) => { setStatusCode(value); setOffset(0) }} className="w-[120px] sm:w-[120px]" />
         <RegisterFacetSelect label="Warehouse" allLabel="All warehouses" value={facilityId} options={facilities.map((facility) => ({ value: facility.id, label: facility.name }))} onChange={(value) => { setFacilityId(value); setOffset(0) }} className="w-[132px] sm:w-[132px]" />
       </>}
       toolbarOptions={<RegisterRevalidatingMark active={pending && loaded} />}
@@ -579,7 +585,7 @@ export function WarehousePurchaseOrderDetailView({ purchaseOrderId, navigate }: 
       if (kind === "issue") await issueWarehousePurchaseOrder(order.id)
       else if (kind === "cancel") await cancelWarehousePurchaseOrder(order.id)
       else await createInboundOrderFromPurchaseOrder(order.id)
-      toast.success(t(kind === "issue" ? "Purchase order issued." : kind === "cancel" ? "Purchase order cancelled." : "Goods-in order created."))
+      toast.success(t(kind === "issue" ? "Customer purchase order confirmed for goods in." : kind === "cancel" ? "Customer purchase order cancelled." : "Goods-in order created."))
       await load()
     } catch (cause) { setError(errorMessage(cause)) } finally { setSaving(false) }
   }
@@ -600,20 +606,20 @@ export function WarehousePurchaseOrderDetailView({ purchaseOrderId, navigate }: 
     if (!order || !form) return
     setError(null)
     if (!form.facilityId || !form.customerOrgId || !form.number.trim() || form.lines.some((line) => !line.description.trim() || line.quantity <= 0 || !line.uomCode.trim())) {
-      setError(t("Complete the purchase order header and every required line field.")); return
+      setError(t("Complete the customer purchase order header and every required line field.")); return
     }
     setSaving(true)
     try {
       await updateWarehousePurchaseOrder(order.id, { ...form, extractionMetadata: { ...(form.extractionMetadata ?? {}), reviewedAt: new Date().toISOString() } })
-      toast.success(t("Purchase order updated."))
+      toast.success(t("Customer purchase order updated."))
       await load()
     } catch (cause) { setError(errorMessage(cause)) } finally { setSaving(false) }
   }
 
-  const backButton = <button type="button" onClick={() => navigate?.("/warehouse/purchase-orders")} className="group inline-flex h-8 items-center gap-1.5 rounded-[var(--md-radius-md)] px-2 -ms-2 text-[12.5px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-200 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]"><ArrowLeft className="size-3.5 transition-transform duration-200 group-hover:-translate-x-0.5 rtl:rotate-180 rtl:group-hover:translate-x-0.5" strokeWidth={1.5} />{t("Back to purchase orders")}</button>
+  const backButton = <button type="button" onClick={() => navigate?.("/warehouse/purchase-orders")} className="group inline-flex h-8 items-center gap-1.5 rounded-[var(--md-radius-md)] px-2 -ms-2 text-[12.5px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-200 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]"><ArrowLeft className="size-3.5 transition-transform duration-200 group-hover:-translate-x-0.5 rtl:rotate-180 rtl:group-hover:translate-x-0.5" strokeWidth={1.5} />{t("Back to customer purchase orders")}</button>
 
-  if (loadError) return <div className="grid gap-4">{backButton}<Surface padding="lg" className="grid min-h-[240px] place-items-center rounded-[var(--md-radius-xl)] text-center" role="alert"><div><p className="text-[15px] font-medium text-[var(--md-ink)]">{t("Purchase order not found")}</p><p className="mt-2 text-[13px] text-[var(--md-text)]">{loadError}</p></div></Surface></div>
-  if (!order || !form) return <div className="grid gap-4">{backButton}<Surface padding="lg" className="grid min-h-[240px] place-items-center rounded-[var(--md-radius-xl)]"><DotGridLoaderPanel label="Loading purchase order" minHeight={0} /></Surface></div>
+  if (loadError) return <div className="grid gap-4">{backButton}<Surface padding="lg" className="grid min-h-[240px] place-items-center rounded-[var(--md-radius-xl)] text-center" role="alert"><div><p className="text-[15px] font-medium text-[var(--md-ink)]">{t("Customer purchase order not found")}</p><p className="mt-2 text-[13px] text-[var(--md-text)]">{loadError}</p></div></Surface></div>
+  if (!order || !form) return <div className="grid gap-4">{backButton}<Surface padding="lg" className="grid min-h-[240px] place-items-center rounded-[var(--md-radius-xl)]"><DotGridLoaderPanel label="Loading customer purchase order" minHeight={0} /></Surface></div>
 
   const editable = ["draft", "issued"].includes(order.statusCode) && !order.warehouseOrderId
   const dirty = JSON.stringify(form) !== savedForm
@@ -628,8 +634,8 @@ export function WarehousePurchaseOrderDetailView({ purchaseOrderId, navigate }: 
   return <div className="grid gap-[var(--md-gap-md)]">
     <motion.header initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={shouldReduceMotion ? { duration: 0 } : mdMotion.enter} className="grid gap-3">
       {backButton}
-      <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2.5"><h1 data-i18n-skip dir="ltr" className="text-[24px] font-medium leading-none tracking-[-0.015em] tabular-nums text-[var(--md-ink)]">{form.number}</h1><StatusPill tone={statusTone(order.statusCode)}>{t(order.statusCode.replace("_", " "))}</StatusPill></div><p className="mt-1.5 text-[13px] leading-5 text-[var(--md-text)]">{form.supplierName ? <><span dir="auto">{form.supplierName}</span><span className="text-[var(--md-subtle)]"> · </span></> : null}<span dir="auto">{order.customerName}</span><span className="text-[var(--md-subtle)]"> · </span><span dir="auto">{order.facilityName}</span></p></div>
-        <div className="flex flex-wrap items-center gap-2">{canCancel ? <Button variant="ghost" disabled={saving || dirty} onClick={() => void runAction("cancel")} className="h-9 rounded-[var(--md-radius-lg)] text-[13px] text-[var(--md-red)]"><XCircle className="size-4" />{t("Cancel PO")}</Button> : null}{canIssue ? <Button variant="outline" disabled={saving || dirty} onClick={() => void runAction("issue")} className="h-9 rounded-[var(--md-radius-lg)]"><Send className="size-4" />{t("Issue PO")}</Button> : null}{canCreateInbound ? <Button variant="outline" disabled={saving || dirty} onClick={() => void runAction("inbound")} className="h-9 rounded-[var(--md-radius-lg)]"><ArrowDownToLine className="size-4" />{t("Create goods-in order")}</Button> : null}{editable ? <Button disabled={saving || !dirty} onClick={() => void save()} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <Loader2 className="size-4 animate-spin" /> : null}{t("Save changes")}</Button> : null}</div>
+      <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2.5"><h1 data-i18n-skip dir="ltr" className="text-[24px] font-medium leading-none tracking-[-0.015em] tabular-nums text-[var(--md-ink)]">{form.number}</h1><StatusPill tone={statusTone(order.statusCode)}>{t(purchaseOrderStatusLabel(order.statusCode))}</StatusPill></div><p className="mt-1.5 text-[13px] leading-5 text-[var(--md-text)]"><span dir="auto">{order.customerName}</span>{form.supplierName ? <><span className="text-[var(--md-subtle)]"> · </span><span dir="auto">{form.supplierName}</span></> : null}<span className="text-[var(--md-subtle)]"> · </span><span dir="auto">{order.facilityName}</span></p></div>
+        <div className="flex flex-wrap items-center gap-2">{canCancel ? <Button variant="ghost" disabled={saving || dirty} onClick={() => void runAction("cancel")} className="h-9 rounded-[var(--md-radius-lg)] text-[13px] text-[var(--md-red)]"><XCircle className="size-4" />{t("Cancel inbound instruction")}</Button> : null}{canIssue ? <Button variant="outline" disabled={saving || dirty} onClick={() => void runAction("issue")} className="h-9 rounded-[var(--md-radius-lg)]"><Send className="size-4" />{t("Confirm for goods in")}</Button> : null}{canCreateInbound ? <Button variant="outline" disabled={saving || dirty} onClick={() => void runAction("inbound")} className="h-9 rounded-[var(--md-radius-lg)]"><ArrowDownToLine className="size-4" />{t("Create goods-in order")}</Button> : null}{editable ? <Button disabled={saving || !dirty} onClick={() => void save()} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <Loader2 className="size-4 animate-spin" /> : null}{t("Save changes")}</Button> : null}</div>
       </div>
     </motion.header>
 
@@ -642,16 +648,16 @@ export function WarehousePurchaseOrderDetailView({ purchaseOrderId, navigate }: 
         {order.warehouseOrderId ? <TabsTrigger value="goods-in" className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px]"><Link2 className="size-3.5" />{t("Linked goods-in")}</TabsTrigger> : null}
       </TabsList>
       <TabsContent value="details" className="mt-0 grid content-start gap-[var(--md-gap-md)]">
-        <PurchaseOrderSection index={0} title="Purchase order details" meta="Supplier, dates, ownership and commercial references.">
+        <PurchaseOrderSection index={0} title="Customer purchase order details" meta="Operational inbound details from the stock owner. Values are reference-only and are not posted to accounts.">
           <PurchaseOrderDetailsFields form={form} reference={selectors.reference} organisations={selectors.organisations} organisationLoading={selectors.organisationLoading} organisationsHaveMore={selectors.organisationsHaveMore} onOrganisationSearch={selectors.setOrganisationSearch} onOrganisationSelected={selectors.rememberOrganisation} editable={editable} onGenerateNumber={() => void generateNumber()} generatingNumber={generatingNumber} patch={patch} />
         </PurchaseOrderSection>
-        <PurchaseOrderSection index={1} title="Order lines" meta="The goods, quantities and commercial values agreed with the supplier.">
+        <PurchaseOrderSection index={1} title="Expected goods" meta="The warehouse items and quantities expected for goods in, with source-document values kept only as operational reference.">
           <PurchaseOrderLineEditor lines={form.lines} items={selectors.items} facilityId={form.facilityId} customerOrgId={form.customerOrgId} itemLoading={selectors.itemLoading} itemsHaveMore={selectors.itemsHaveMore} onItemSearch={selectors.setItemSearch} onItemSelected={(item)=>selectors.rememberItems(item ? [item] : [])} disabled={!editable} onChange={(lines) => patch("lines", lines)} />
         </PurchaseOrderSection>
         {order.sourceFileName ? <PurchaseOrderSection index={2} title="Source document"><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><ReceiptText className="size-4" /></span><div className="min-w-0"><p dir="auto" className="truncate text-[12.5px] font-medium text-[var(--md-ink)]">{order.sourceFileName}</p><p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Reviewed extraction source")}</p></div></div></PurchaseOrderSection> : null}
       </TabsContent>
       <TabsContent value="activity" className="mt-0">
-        <PurchaseOrderSection index={0} title="Activity" meta="Every recorded change to this purchase order."><ol>{order.events.length ? order.events.map((event) => <li key={event.id} className="flex gap-3 py-2.5 first:pt-0 last:pb-0"><span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><History className="size-3.5" /></span><div className="min-w-0"><p className="text-[12.5px] font-medium text-[var(--md-ink)]">{t(event.typeCode.replaceAll("_", " "))}</p><p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{dateTime.format(new Date(event.at))}{event.notes ? ` · ${event.notes}` : ""}</p></div></li>) : <p className="py-3 text-center text-[12px] text-[var(--md-text)]">{t("No activity recorded yet.")}</p>}</ol></PurchaseOrderSection>
+        <PurchaseOrderSection index={0} title="Activity" meta="Every recorded change to this customer inbound instruction."><ol>{order.events.length ? order.events.map((event) => <li key={event.id} className="flex gap-3 py-2.5 first:pt-0 last:pb-0"><span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><History className="size-3.5" /></span><div className="min-w-0"><p className="text-[12.5px] font-medium text-[var(--md-ink)]">{t(event.typeCode === "issued" ? "confirmed for goods in" : event.typeCode.replaceAll("_", " "))}</p><p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{dateTime.format(new Date(event.at))}{event.notes ? ` · ${event.notes}` : ""}</p></div></li>) : <p className="py-3 text-center text-[12px] text-[var(--md-text)]">{t("No activity recorded yet.")}</p>}</ol></PurchaseOrderSection>
       </TabsContent>
       {order.warehouseOrderId ? <TabsContent value="goods-in" className="mt-0">
         <PurchaseOrderSection index={0} title="Linked goods-in"><button type="button" disabled={!linkedWarehouseOrderNumber} onClick={() => linkedWarehouseOrderNumber && navigate?.(`/warehouse/orders/${encodeURIComponent(linkedWarehouseOrderNumber.toLowerCase())}?from=${encodeURIComponent(purchaseOrderDetailPath(order))}`)} className="flex w-full items-center gap-3 rounded-[var(--md-radius-md)] p-2 text-start transition-colors hover:bg-[var(--md-hover)] disabled:cursor-default disabled:opacity-60"><Link2 className="size-4 text-[var(--md-accent)]" /><span className="text-[12.5px] font-medium text-[var(--md-ink)]">{linkedWarehouseOrderNumber ?? t("Linked warehouse order")}</span></button></PurchaseOrderSection>

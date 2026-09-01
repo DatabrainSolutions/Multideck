@@ -81,7 +81,11 @@ const MAX_PROMPT_CHARACTERS = 4_000
 const MAX_HISTORY_MESSAGES = 30
 const MAX_TOOL_ROUNDS = 4
 const MAX_TOOL_CALLS = 6
+<<<<<<< Updated upstream
 const PROMPT_VERSION = "freight-coworker-2026-08-29-support-english"
+=======
+const PROMPT_VERSION = "freight-coworker-2026-08-30-purchase-intake"
+>>>>>>> Stashed changes
 const EMAIL_STYLE_TOOL = "load_operator_email_style"
 const PREPARE_EMAIL_DRAFT_TOOL = "prepare_email_draft"
 const DEXTER_SCOPE_REDIRECT_TOOL = "redirect_off_topic_request"
@@ -339,7 +343,7 @@ function buildPromptWithAttachedContext(prompt: string, attachments: DexterAttac
 
   const context = attachments
     .map((attachment) => {
-      const exactRecordId = ["booking", "customer", "lead", "deal", "declaration", "quote"].includes(attachment.type)
+      const exactRecordId = ["booking", "customer", "lead", "deal", "declaration", "quote", "finance"].includes(attachment.type)
         && isUuid(attachment.id)
         ? ` [selected record ID: ${attachment.id}]`
         : ""
@@ -388,6 +392,7 @@ const CREATE_TODO_TASK_ACTION = "create_todo_task"
 const UPDATE_TODO_TASK_ACTION = "update_todo_task"
 const COMPLETE_TODO_TASK_ACTION = "complete_todo_task"
 const DELETE_TODO_TASK_ACTION = "delete_todo_task"
+<<<<<<< Updated upstream
 const CREATE_SUPPORT_TICKET_ACTION = "create_support_ticket"
 
 function supportTicketCopy(
@@ -420,6 +425,11 @@ function supportTicketCopy(
   }
   return copy[locale][key]
 }
+=======
+const CREATE_FINANCE_DOCUMENT_DRAFT_ACTION = "create_finance_document_draft"
+const CREATE_FINANCE_CASH_DRAFT_ACTION = "create_finance_cash_draft"
+const ASSIGN_JOB_MANAGEMENT_PERIOD_ACTION = "assign_job_management_period"
+>>>>>>> Stashed changes
 
 const CUSTOMS_DRAFT_ACTIONS = new Set([
   CREATE_CUSTOMS_DECLARATION_ACTION,
@@ -431,6 +441,12 @@ const TODO_ACTIONS = new Set([
   UPDATE_TODO_TASK_ACTION,
   COMPLETE_TODO_TASK_ACTION,
   DELETE_TODO_TASK_ACTION,
+])
+
+const FINANCE_EDGE_ACTIONS = new Set([
+  CREATE_FINANCE_DOCUMENT_DRAFT_ACTION,
+  CREATE_FINANCE_CASH_DRAFT_ACTION,
+  ASSIGN_JOB_MANAGEMENT_PERIOD_ACTION,
 ])
 
 function actionDisplayName(locale: DexterLocale, actionCode: string, fallback: string) {
@@ -445,7 +461,13 @@ function actionDisplayName(locale: DexterLocale, actionCode: string, fallback: s
       [UPDATE_TODO_TASK_ACTION]: "Edit To Do task",
       [COMPLETE_TODO_TASK_ACTION]: "Complete To Do task",
       [DELETE_TODO_TASK_ACTION]: "Remove To Do task",
+<<<<<<< Updated upstream
       [CREATE_SUPPORT_TICKET_ACTION]: "Create support ticket",
+=======
+      [CREATE_FINANCE_DOCUMENT_DRAFT_ACTION]: "Create finance document draft",
+      [CREATE_FINANCE_CASH_DRAFT_ACTION]: "Create receipt or payment draft",
+      [ASSIGN_JOB_MANAGEMENT_PERIOD_ACTION]: "Assign job management period",
+>>>>>>> Stashed changes
     },
     "en-US": {
       [CREATE_CUSTOMS_DECLARATION_ACTION]: "Create Customs declaration draft",
@@ -457,7 +479,13 @@ function actionDisplayName(locale: DexterLocale, actionCode: string, fallback: s
       [UPDATE_TODO_TASK_ACTION]: "Edit To Do task",
       [COMPLETE_TODO_TASK_ACTION]: "Complete To Do task",
       [DELETE_TODO_TASK_ACTION]: "Remove To Do task",
+<<<<<<< Updated upstream
       [CREATE_SUPPORT_TICKET_ACTION]: "Create support ticket",
+=======
+      [CREATE_FINANCE_DOCUMENT_DRAFT_ACTION]: "Create finance document draft",
+      [CREATE_FINANCE_CASH_DRAFT_ACTION]: "Create receipt or payment draft",
+      [ASSIGN_JOB_MANAGEMENT_PERIOD_ACTION]: "Assign job management period",
+>>>>>>> Stashed changes
     },
   } satisfies Record<DexterLocale, Record<string, string>>)[locale]
   return actionNames[actionCode] ?? fallback
@@ -756,6 +784,7 @@ async function warehouseActionFetch(authorization: string, actionCode: string, a
   }
 }
 
+<<<<<<< Updated upstream
 async function createSupportTicketAction(
   authorization: string,
   args: JsonObject,
@@ -880,6 +909,84 @@ async function createSupportTicketAction(
         message: supportTicketCopy(locale, "unreachable"),
       },
     }
+=======
+async function financeActionFetch(
+  authorization: string,
+  actionCode: string,
+  args: JsonObject,
+  executionKey: string,
+) {
+  const legalEntityId = cleanString(args.legalEntityId, 80)
+  if (actionCode === ASSIGN_JOB_MANAGEMENT_PERIOD_ACTION) {
+    const jobId = cleanString(args.jobId, 80)
+    const periodCode = cleanString(args.periodCode, 6)
+    const reason = cleanString(args.reason, 500)
+    if (!isUuid(legalEntityId) || !isUuid(jobId) || !/^\d{4}(0[1-9]|1[0-2])$/.test(periodCode) || !reason) {
+      return { data: null, error: { code: "invalid_action", message: "Choose the exact job, legal entity, YYYYMM management period and reason before proposing the assignment." } }
+    }
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() ?? ""
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")?.trim() ?? ""
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/finance-accruals/jobs/${jobId}/period`, {
+        method: "PUT",
+        headers: { Authorization: authorization, apikey: anonKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ legalEntityId, periodCode, reason, idempotencyKey: executionKey }),
+      })
+      const result = await response.json().catch(() => ({}))
+      return response.ok ? { data: result, error: null } : { data: null, error: { code: `finance_${response.status}`, message: cleanString(result?.detail, 300) || "The job management period could not be assigned." } }
+    } catch {
+      return { data: null, error: { code: "finance_unavailable", message: "The Finance Accruals Edge Function could not be reached. Nothing was changed." } }
+    }
+  }
+  const partyOrgId = cleanString(args.partyOrgId, 80)
+  if (!isUuid(legalEntityId) || !isUuid(partyOrgId)) {
+    return { data: null, error: { code: "invalid_action", message: "Choose the exact finance legal entity and customer or supplier before preparing the draft." } }
+  }
+  const sourceLines = Array.isArray(args.lines) ? args.lines : []
+  const sourceAllocations = Array.isArray(args.allocations) ? args.allocations : []
+  const exchangeRate = Number(args.exchangeRate)
+  if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+    return { data: null, error: { code: "invalid_action", message: "Provide the exact reviewed exchange rate from transaction currency to legal-entity base currency." } }
+  }
+  if (actionCode === CREATE_FINANCE_DOCUMENT_DRAFT_ACTION && sourceLines.length === 0) {
+    return { data: null, error: { code: "invalid_action", message: "The approved finance document needs at least one reviewed line." } }
+  }
+  const bankAccountId = cleanString(args.bankAccountId, 80)
+  if (actionCode === CREATE_FINANCE_CASH_DRAFT_ACTION && !isUuid(bankAccountId)) {
+    return { data: null, error: { code: "invalid_action", message: "Choose the exact active bank account before preparing a receipt or payment draft." } }
+  }
+  const path = actionCode === CREATE_FINANCE_DOCUMENT_DRAFT_ACTION ? "/documents/draft" : "/cash/draft"
+  const payload = actionCode === CREATE_FINANCE_DOCUMENT_DRAFT_ACTION
+    ? {
+      type: cleanString(args.type, 40), legalEntityId, partyOrgId,
+      documentDate: cleanString(args.documentDate, 10), dueDate: cleanString(args.dueDate, 10) || null,
+      currencyCode: cleanString(args.currencyCode, 3).toUpperCase(),
+      exchangeRate,
+      sourceJobId: isUuid(cleanString(args.sourceJobId, 80)) ? cleanString(args.sourceJobId, 80) : null,
+      lines: sourceLines, idempotencyKey: executionKey,
+    }
+    : {
+      type: cleanString(args.type, 40), legalEntityId, partyOrgId,
+      bankAccountId,
+      transactionDate: cleanString(args.transactionDate, 10), currencyCode: cleanString(args.currencyCode, 3).toUpperCase(),
+      exchangeRate, amount: Number(args.amount), reference: cleanString(args.reference, 180) || null,
+      allocations: sourceAllocations, idempotencyKey: executionKey,
+    }
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() ?? ""
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")?.trim() ?? ""
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/finance-subledger${path}`, {
+      method: "POST",
+      headers: { Authorization: authorization, apikey: anonKey, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    const result = await response.json().catch(() => ({}))
+    return response.ok
+      ? { data: result, error: null }
+      : { data: null, error: { code: `finance_${response.status}`, message: cleanString(result?.detail, 300) || "The finance draft could not be created." } }
+  } catch {
+    return { data: null, error: { code: "finance_unavailable", message: "The Finance Edge Function could not be reached. Nothing was changed." } }
+>>>>>>> Stashed changes
   }
 }
 
@@ -890,8 +997,13 @@ async function executeWorkspaceAction(
   executionKey: string = crypto.randomUUID(),
   locale: DexterLocale = "en-GB",
 ) {
+<<<<<<< Updated upstream
   if (actionCode === CREATE_SUPPORT_TICKET_ACTION) {
     return await createSupportTicketAction(authorization, args, executionKey, locale)
+=======
+  if (FINANCE_EDGE_ACTIONS.has(actionCode)) {
+    return await financeActionFetch(authorization, actionCode, args, executionKey)
+>>>>>>> Stashed changes
   }
   if (actionCode === CREATE_PURCHASE_ORDER_ACTION) {
     const facilityId = cleanString(args.facility_id, 80)
@@ -1031,6 +1143,7 @@ function isEdgeExecutedAction(actionCode: string) {
     actionCode === SUBMIT_CUSTOMS_DECLARATION_ACTION ||
     actionCode === QUARANTINE_INVENTORY_ACTION ||
     actionCode === ATTACH_EMAIL_DOCUMENT_ACTION ||
+    FINANCE_EDGE_ACTIONS.has(actionCode) ||
     WAREHOUSE_EDGE_ACTIONS.has(actionCode)
 }
 
@@ -1786,8 +1899,12 @@ App-wide dictation and transcription preferences are input assistance, not a Dex
 Gmail labels and Outlook folders are read-only provider organisation. When read_email_thread returns folders, use those visible names as context and never invent a missing label or folder. Label changes and folder moves do not emit a dedicated tenant-safe watch event in this release, so never claim that Watching for you can monitor those organisational changes; direct the operator to Inbox to browse them.
 Email search covers Multideck's rolling retained window: 12 calendar months for useful mail and 30 days for Spam and Trash. If search_email returns outsideRetentionWindow=true, explain that the requested period is outside Multideck's retained window; never claim that Gmail or Microsoft has no older email.
 Dexter has connected read and approval-safe write support for warehouse goods in, goods out, inventory, locations, facilities, items and orders. Use only the listed actions: create or edit setup records and orders; receive an exact inbound order; dispatch an exact outbound order; cancel or reschedule a non-final order; create, move or consolidate handling units; move stock; change stock status; record a sample; report a location empty; or resolve an exact location exception. These actions always run through the authenticated Warehouse Edge Function and its existing validation, permission and audit boundaries. Never invent scan evidence, quantities, locations, lots, damage, custody details or physical confirmation. Ask for the missing evidence before preparing a physical warehouse action.
+Finance recovery capability identifier: finance-recovery.
+Multideck is the authoritative accounting ledger and reporting source. Use native financial-summary evidence for profit and loss, balance sheet and trial-balance questions, and keep nativePostingStatus separate from externalMirrorStatus. External accounting packages are optional mirrors, never the owner of the books. Compliance-obligation evidence is a jurisdiction foundation, not proof that direct filing is certified or enabled; state the readiness gate and source authority, and never claim payroll support.
+Charge-line finance rule — universal across operations (supersedes any later job-level release wording): apply the same accounting lifecycle to freight and shipment, warehouse and customs jobs, and to shared charges. Explain each job charge line's operational domain and source provenance, expected revenue and cost, revenue and cost nominal codes, posted actuals, remaining WIP or accrual and recognised gross profit. Treat customs invoice values, cargo declared values and warehouse goods values as operational valuation evidence, never as Multideck revenue or cost. A posted AR invoice line reclassifies only outstanding revenue WIP on the exact linked job charge line; a posted AP invoice line reclassifies only outstanding cost accrual on the exact linked job charge line. The reclassification is limited to local net excluding VAT and does not change recognised gross profit. If the invoice line is unmatched, or no adjustment existed on that charge, report the actual as a genuine gross-profit movement and never imply another charge was released.
+Finance is available through the finance domain for sales invoices, customer credits, purchase invoices, supplier credits, customer receipts, supplier payments, allocations, job links, native-ledger status, external-mirror status, job management periods, accrual/WIP reviews, postings and reversals. Finance evidence keeps native posting separate from optional external-mirror delivery. A retained mirror error, attempt count and recovery route never mean that the authoritative Multideck posting failed. For management reporting, explain the assigned YYYYMM period, expected versus recognised revenue and cost, outside-period activity, proposed revenue WIP, proposed cost accrual, adjusted margin, review status, posting batch and reversal evidence. When an exact job-linked AR invoice posts, Multideck automatically reverses that job's oldest outstanding revenue WIP up to the invoice local net amount excluding VAT. When an exact job-linked AP invoice posts, it automatically reverses that job's oldest outstanding cost accrual on the same progressive basis. Report the source document, released local amount and release posting batch from finance evidence; never claim a credit note causes an automatic release or that more than the remaining adjustment was reversed. Dexter may propose the allowlisted assignment of one exact job to one exact legal entity and management period, with a clear reason and normal approval. Preparing a period review, overriding a calculated amount, approving, posting or manually reversing any remaining balance remain manual controls in Accruals & WIP; never claim to have performed them. Dexter may explain blocked posting evidence and direct the operator to the exact transaction workspace, but retrying an external-mirror delivery, revoking approval and returning a document to draft also remain manual finance controls. Never claim to have retried, reopened or repaired an external-mirror delivery. Dexter may otherwise prepare only an exact finance document draft or cash draft through the listed finance actions. Supplier invoice and credit-note files can be processed singly or in a batch from Supplier document intake; that workspace requires an operator to review supplier, type, totals, tax and duplicate warnings before draft, review or bulk posting. The temporary extraction queue is deliberately not a Dexter write action or Watching for you event, while every created finance document uses the existing finance evidence and deterministic watch lifecycle. Show the legal entity, party, dates, currency, exchange rate, bank account, every line or allocation, source job, and either the source-backed tax classification or an explicit Tax pending state before approval. The Finance boundary resolves the statutory rate from the legal entity's approved, effective-dated treatment; Dexter must never propose or override a tax rate. If the source evidence does not identify a tax treatment, pass null and explain that the incomplete draft cannot enter finance review. Never choose a plausible treatment merely to complete the action. The resulting record remains a Multideck draft and must follow the product's separate finance review and posting approval. Finance approval posts the balanced native journal to Multideck; it mirrors externally only when configured. Never claim that chat approval posted the draft or that an external package became the source of truth. Never invent an amount, tax treatment, charge code, customer, supplier, job, bank account, allocation, currency, exchange rate or provider mapping. Dexter has no generic table, SQL, Finance Setup, organisation financial-setting, counterparty-bank or accounting-provider write access. ERPNext and Sage 50 customer creation or linking is available only from the selected customer's reviewed manual-invoice wizard; it is deliberately not a Dexter action or Watching for you source because it changes provider master data and needs provider-specific fields and Finance Integration permission. If asked, direct the operator to open the sales invoice or customer credit draft, select the customer and use Set up customer; never claim to create or watch the provider customer. A current provider preflight may supply the exact provisional base currency for draft capture, but only an administrator can activate it by approving Finance Setup; review, posting and Dexter must never repair or guess accounting master data. If a provider adapter or mapping is unavailable, say so and direct the operator to Finance setup rather than guessing.
 The warehouse_calendar domain is read-only. Its blocks are derived from warehouse order requested dates and appointment windows. Query it when the operator asks what is scheduled, but never claim to create, edit or delete a calendar block directly. To change a schedule, use the appropriate underlying order action; the calendar will reflect the confirmed order change.
-Purchase orders are available through the purchase_orders data domain. Dexter may inspect their header, supplier, dates, totals, matched lines and linked goods-in order. A draft purchase order may be proposed only through create_purchase_order, must show the complete header and every line, always waits for explicit approval, and is completed by the Warehouse Edge Function. Document extraction itself stays in the Purchase Orders screen so the operator can review the source PDF; Dexter must not claim that it extracted a purchase order document.
+Warehouse customer purchase orders are available through the purchase_orders data domain. They are customer-provided operational inbound instructions describing the stock owner, source supplier, expected goods, reference values and linked goods-in order. They are never finance supplier purchase orders, never enter the purchase subledger and must not be used for AP invoice matching, accruals or posting. A draft customer purchase order may be proposed only through create_purchase_order, must show the complete header and every line, always waits for explicit approval, and is completed by the Warehouse Edge Function. Document extraction itself stays in the Customer purchase orders screen so the operator can review the source PDF; Dexter must not claim that it extracted a purchase order document.
 Time passing alone is not a live stale-lead watch signal in this release. Calculate stale assigned leads when asked; do not claim Dexter will wake up solely because a threshold elapsed.
 The Home and CRM "Who needs following up" list is a deterministic app ranking over email, leads, deals and quotes, not a separate Dexter data domain. Query those underlying live domains when the operator asks who to follow up. If they ask for the dashboard's exact hidden ordering or ranking reasons, state that the exact app ranking is unavailable in chat. Never claim to have read or reveal hidden ranking reasons. Email, lead, deal and quote changes keep their existing event-driven Watching for you adapters; time passing by itself does not run a model or emit a new event.
 
@@ -1796,6 +1913,7 @@ ${emailSummary}
 
 # Tool and safety rules
 Use query_data_domain whenever the operator asks about company records or metrics. Use only the listed domain codes.
+Use finance for sales-ledger, purchase-ledger, receipt, payment, allocation, due-date, balance, job-link, native financial-reporting, compliance-obligation and external-mirror evidence. Before preparing a finance write, query finance to resolve exact records and use the returned source identifiers; a corrected or ambiguous party, job or document is not enough for a write.
 Use the bookings domain for freight bookings and jobs. Dexter may create and edit a booking only through the listed canonical booking actions. Use warehouse for warehouse summaries, inventory balances, handling units and warehouse exceptions; warehouse_orders for exact inbound and outbound order lines, receipt history and dispatch history before any goods-in or goods-out action; warehouse_reference to resolve facilities, offices, locations and items before a warehouse create or edit; and warehouse_calendar only to read the derived warehouse schedule. Never substitute one for the other when a domain returns no records.
 Use the todo domain for the operator's own tasks. Use create_todo_task, update_todo_task, complete_todo_task and delete_todo_task only after an explicit request to change the list. Preserve requested Markdown links, Multideck record routes, tags, scheduled dates and priority. Before editing, completing, deleting or watching a task, query todo and use the exact returned recordId. To Do watches are event-driven from real task changes; never claim that time passing by itself will trigger one.
 Use customs_declarations for declaration drafts, filing references and recorded iCustoms submission states. Do not use warehouse customs fields as a substitute for a declaration record.

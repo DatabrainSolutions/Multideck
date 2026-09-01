@@ -20,14 +20,19 @@ const organisationFoundation = readFileSync(new URL("../../multideck.client/src/
 const organisationFoundationMigration = readFileSync(new URL("../migrations/20260820110000_crm_organisation_contact_address_foundation.sql", import.meta.url), "utf8")
 const accountOperations = readFileSync(new URL("../../multideck.client/src/components/multideck/account-operations-workspace.tsx", import.meta.url), "utf8")
 const accountOperationsMigration = readFileSync(new URL("../migrations/20260820162000_crm_account_operational_detail.sql", import.meta.url), "utf8")
+<<<<<<< Updated upstream
 const scoreExplanations = readFileSync(new URL("../functions/customers/score-explanations.ts", import.meta.url), "utf8")
 const scoreExplanationPopover = readFileSync(new URL("../../multideck.client/src/components/multideck/score-explanation-popover.tsx", import.meta.url), "utf8")
+=======
+const bankMaskMigration = readFileSync(new URL("../migrations/20260829120816_mask_crm_account_bank_references.sql", import.meta.url), "utf8")
+const multiBankMigration = readFileSync(new URL("../migrations/20260829155243_crm_account_multi_bank_currency.sql", import.meta.url), "utf8")
+>>>>>>> Stashed changes
 
 test("account and contact product routes use the authenticated customer API rather than fixture arrays", () => {
   assert.match(customerApi, /edgeFetch\("customers"/)
   assert.match(customerApi, /`account-detail:\$\{customerId\}`/)
   assert.match(customerApi, /`contact-detail:\$\{contactId\}`/)
-  assert.match(customerApi, /"account-reference"/)
+  assert.match(customerApi, /"account-reference:v3"/)
   assert.match(accountsPage, /listAccountsPage\(\{/)
   assert.match(contactsPage, /listContactsPage\(\{/)
   assert.match(accountDetail, /getCustomer\(accountId\)/)
@@ -167,7 +172,7 @@ test("account editing uses existing CRM reference data and preserves the current
   assert.match(accountDetail, /<header[\s\S]*<HeadingField value=\{currentAccount\.name\}/)
   assert.doesNotMatch(accountDetail, /<aside[\s\S]*Company details/)
   assert.match(accountDetail, /<AccountDetailTabs account=\{currentAccount\}/)
-  assert.match(accountDetail, /<AccountOperationsPanel account=\{currentAccount\}/)
+  assert.match(accountDetail, /<AccountOperationsPanel[\s\S]*?account=\{currentAccount\}/)
   assert.match(accountDetail, /MarketingOptInControl/)
   assert.match(accountDetail, /<AddCustomField onAdd=\{\(label, value\) => patch\(\{ customFields:/)
   assert.match(customers, /CRM_AccountProfiles/)
@@ -209,6 +214,35 @@ test("account operations are contextual, persisted and available to booking work
   assert.match(accountOperationsMigration, /multideck_crm_resolve_account_instructions/)
   assert.match(accountOperationsMigration, /app_user_can_access_organisation/)
   assert.match(accountOperationsMigration, /left\(regexp_replace[\s\S]*, 8\)/)
+})
+
+test("account finance uses separate AR, AP and multi-currency bank-detail tabs", () => {
+  for (const label of ["Accounts Receivable", "Accounts Payable", "Bank Details"]) {
+    assert.match(accountOperations, new RegExp(label))
+  }
+  assert.match(accountOperations, /activeFinancialTab === "receivables"/)
+  assert.match(accountOperations, /activeFinancialTab === "payables"/)
+  assert.match(accountOperations, /operatingCurrencies/)
+  assert.match(accountOperations, /bankAccounts/)
+  assert.match(accountOperations, /accountNumberMasked/)
+  assert.match(accountOperations, /ibanMasked/)
+  assert.match(accountOperations, /routingCodeMasked/)
+  assert.match(accountOperations, /Add bank account/)
+  assert.match(accountOperations, /Default for currency/)
+  assert.match(accountDetail, /currencyOptions=\{reference\?\.currencies \?\? \[\]\}/)
+  assert.match(customers, /FIN_CurrencySettings/)
+  assert.match(customers, /sys_Currency/)
+  assert.match(customers, /\["GBP", "EUR", "USD"\]/)
+  assert.match(bankMaskMigration, /before insert or update of "CRMAccountOps_InvoicePreferencesJSON"/)
+  assert.match(bankMaskMigration, /right\(regexp_replace\(upper\(p_value\)/)
+  assert.match(multiBankMigration, /jsonb_array_length\(v_source_banks\) > 25/)
+  assert.match(multiBankMigration, /Choose only one default bank account for each currency/)
+  assert.match(multiBankMigration, /operatingCurrencies/)
+  assert.match(multiBankMigration, /bankAccounts/)
+  assert.match(multiBankMigration, /accountNumberMasked', 'ibanMasked', 'routingCodeMasked/)
+  assert.match(multiBankMigration, /update public\."CRM_AccountOperationalProfiles"/)
+  assert.match(multiBankMigration, /\["operatingCurrencies","bankAccounts"\]/)
+  assert.match(multiBankMigration, /revoke all on function public\._multideck_crm_mask_account_bank_details/)
 })
 
 test("account country codes are validated before any customer write", () => {
