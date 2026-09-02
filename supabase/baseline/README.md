@@ -16,6 +16,8 @@ Company-appearance removal also requires
 `20260902093000_company_brand_removal_fallback.sql` after this snapshot. It resets
 only company-theme profiles when branding is removed and publishes existing
 RLS-protected profile updates for open sessions. Do not omit it for new tenants.
+Follow it with `20260902103000_legacy_brand_reset_state.sql` to recognise older
+reset-to-default records without removing retained company identity or history.
 
 ## Calendar provisioning cut-over
 

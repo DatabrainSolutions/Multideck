@@ -347,7 +347,9 @@ export function AccentPicker({ className }: { className?: string }) {
         role="radiogroup"
         aria-label={t("Accent colour")}
         aria-orientation="horizontal"
-        className="flex min-w-0 snap-x snap-proximity gap-2 overflow-x-auto overflow-y-hidden px-0.5 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        // Keep outward selection/focus rings inside the scrollport, including
+        // after scroll snapping or keyboard-driven scrollIntoView.
+        className="-m-0.5 flex min-w-0 snap-x snap-proximity scroll-p-1 gap-2 overflow-x-auto overflow-y-hidden p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onKeyDown={handleKeyDown}
         onScroll={updateScrollCue}
       >

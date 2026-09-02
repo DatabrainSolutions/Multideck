@@ -3,6 +3,7 @@ import { governedModelFetch } from "../_shared/model-gateway.ts"
 import { removeNonVisualSvgLinks } from "../_shared/tenant-brand-logo.ts"
 import {
   DEFAULT_TENANT_BRAND,
+  isTenantBrandConfigured,
   normaliseHex,
   TENANT_BRAND_ASSETS_BUCKET,
   TENANT_BRAND_MAX_LOGO_BYTES,
@@ -215,7 +216,7 @@ function validateBrandInput(value: unknown) {
   const appearanceMode = input.appearanceMode === "dark" ? "dark" : input.appearanceMode === "light" ? "light" : null
   if (!appearanceMode) throw new HttpError(400, "Choose a light or dark appearance.")
   const validated = {
-    configured: input.configured !== false,
+    configured: typeof input.configured === "boolean" ? input.configured : undefined,
     displayName,
     websiteUrl,
     primaryColor: normaliseHex(input.primaryColor, ""),
@@ -310,11 +311,13 @@ async function saveBrand(admin: any, current: any, form: FormData) {
     appearanceMode: input.appearanceMode,
     cornerStyle: input.cornerStyle,
     emailSignOff: input.emailSignOff,
-    ...(!input.configured ? DEFAULT_TENANT_BRAND : {}),
+    ...(input.configured === false ? DEFAULT_TENANT_BRAND : {}),
     logoPath: input.removeLogo ? null : (uploaded?.path ?? (previousPath || null)),
     logoMimeType: input.removeLogo ? null : (uploaded?.mimeType ?? (cleanText(existingTenant.logoMimeType, 40) || null)),
-    importedFrom: !input.configured ? null : importedUrl && importedAt && importedModel ? { url: importedUrl, importedAt, model: importedModel } : existingTenant.importedFrom ?? null,
+    importedFrom: input.configured === false ? null : importedUrl && importedAt && importedModel ? { url: importedUrl, importedAt, model: importedModel } : existingTenant.importedFrom ?? null,
   }
+  nextTenant.configured = isTenantBrandConfigured(nextTenant)
+  if (!nextTenant.configured) nextTenant.importedFrom = null
   const { data, error } = await admin.from("cmp_Brands").update({
     Brand_DisplayName: input.displayName,
     Brand_WebsiteURL: input.websiteUrl || null,

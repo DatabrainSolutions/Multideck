@@ -24,7 +24,7 @@ test("company is a bounded authenticated profile accent preference", () => {
 })
 
 test("the company choice uses a complete saved Admin brand with an initials fallback when its logo is absent", () => {
-  assert.match(sharedBrand, /configured: settings\.version === 1/)
+  assert.match(sharedBrand, /configured: isTenantBrandConfigured\(settings\)/)
   assert.match(companyAppearance, /brand\.configured === true/)
   assert.match(companyAppearance, /typeof brand\.configured === "undefined"/)
   assert.match(companyAppearance, /typeof brand\.brandId === "string"/)
@@ -80,8 +80,9 @@ test("Customisation and the component gallery explain the optional company treat
 test("Reset to default removes company eligibility rather than only repainting its colours", () => {
   assert.match(brandingPage, /DEFAULT_TENANT_BRAND, configured: false/)
   assert.match(brandingPage, /configured: snapshot.websiteImport \? true : snapshot.draft.configured/)
-  assert.match(brandingFunction, /configured: input.configured !== false/)
+  assert.match(brandingFunction, /configured: typeof input.configured === "boolean" \? input.configured : undefined/)
   assert.match(brandingFunction, /configured: input.configured,/)
-  assert.match(sharedBrand, /configured: settings.version === 1 && settings.configured !== false/)
+  assert.match(sharedBrand, /configured: isTenantBrandConfigured\(settings\)/)
+  assert.match(brandingFunction, /nextTenant.configured = isTenantBrandConfigured\(nextTenant\)/)
   assert.match(brandingPage, /Other themes stay unchanged/)
 })

@@ -52,12 +52,13 @@ test("an open company-theme session follows the authenticated profile reset", as
   f.stop()
 })
 
-test("other personal presets remain untouched and make no refresh requests", async () => {
+test("other presets stay untouched while company-option eligibility is refreshed", async () => {
   const f = fixture({ selected: "violet" })
   f.change(); f.reconnect()
   await tick()
   assert.equal(f.result().selected, "violet")
   assert.equal(f.result().profileReads, 0)
+  assert.equal(f.result().brandReads, 1)
   f.stop()
 })
 

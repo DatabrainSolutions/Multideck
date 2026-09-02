@@ -79,7 +79,7 @@ test("logo uploads prefer SVG and safely support PNG and JPEG", () => {
 test("operational emails use tenant branding while auth emails keep Multideck defaults", () => {
   assert.match(emailTemplate, /brand\?: TenantBrand \| null/)
   assert.match(shared, /Existing tenants keep the Multideck email template until Branding is saved once/)
-  assert.match(shared, /settings\.version === 1 && settings\.configured !== false \? tenantBrandFromRow\(admin, row\) : null/)
+  assert.match(shared, /isTenantBrandConfigured\(settings\) \? tenantBrandFromRow\(admin, row\) : null/)
   assert.match(notificationEmail, /readConfiguredTenantBrand/)
   assert.match(notificationEmail, /brand,/)
   assert.match(shared, /appearanceMode: settings\.appearanceMode === "dark" \? "dark" : "light"/)

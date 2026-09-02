@@ -112,8 +112,8 @@ export async function loadCompanyAppearance({ force = false } = {}) {
     return state
   }
 
+  if (loadedUserId === userId && request) return request
   if (!force && loadedUserId === userId && (state.status === "ready" || state.status === "unavailable")) return state
-  if (!force && loadedUserId === userId && request) return request
 
   loadedUserId = userId
   const version = ++requestVersion
@@ -148,6 +148,6 @@ export function notifyCompanyAppearanceChanged(branding: TenantBranding) {
 
 export function useCompanyAppearance(userId?: string | null) {
   const snapshot = useSyncExternalStore(subscribeCompanyAppearance, getCompanyAppearanceSnapshot, getCompanyAppearanceSnapshot)
-  useEffect(() => { void loadCompanyAppearance() }, [userId])
+  useEffect(() => { void loadCompanyAppearance({ force: true }) }, [userId])
   return snapshot
 }

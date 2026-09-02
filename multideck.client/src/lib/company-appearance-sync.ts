@@ -11,15 +11,18 @@ export function watchCompanyAppearanceReset(client: SupabaseClient, userId: stri
   let refreshing: Promise<void> | null = null
 
   function refresh() {
-    if (stopped || !options.isCompanySelected()) return
+    if (stopped) return
     refreshing ??= (async () => {
       // A delayed event must not override a more recent deliberate selection.
       await options.afterPendingSaves()
-      if (stopped || !options.isCompanySelected()) return
-      const { data, error } = await client.rpc("get_current_user_accent_preference")
-      if (stopped || error || !options.isCompanySelected()) return
-      const saved = Array.isArray(data) ? data[0]?.accent_preset : data?.accent_preset
-      if (saved === "teal") options.onReset()
+      if (stopped) return
+      if (options.isCompanySelected()) {
+        const { data, error } = await client.rpc("get_current_user_accent_preference")
+        if (stopped || error) return
+        const saved = Array.isArray(data) ? data[0]?.accent_preset : data?.accent_preset
+        if (saved === "teal" && options.isCompanySelected()) options.onReset()
+      }
+      // Standard-theme users still need removed company options to disappear.
       await options.refreshBrand()
     })().catch(() => {
       // A connection failure is not evidence of brand removal. Retry on the
