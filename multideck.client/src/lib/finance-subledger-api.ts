@@ -269,7 +269,6 @@ export type FinanceReportingSnapshot = {
 
 export type FinanceDraftInput = {
   type: FinanceDocumentType
-  legalEntityId: string
   partyOrgId: string
   documentDate: string
   dueDate?: string | null
@@ -283,7 +282,6 @@ export type FinanceDraftInput = {
 
 export type FinanceCashInput = {
   type: FinanceCashType
-  legalEntityId: string
   partyOrgId: string
   bankAccountId: string
   transactionDate: string
@@ -361,6 +359,44 @@ export type ProviderCustomerInput = {
   vatNumber?: string | null
   creditLimit?: number | null
   paymentDueDays?: number | null
+}
+
+export type ProviderPartyType = "customer" | "supplier"
+export type ProviderPartySyncResult = {
+  organisationId: string
+  organisationName: string
+  accountCode: string
+  status: "synced" | "failed"
+  action: "created" | "linked" | "verified" | "failed"
+  providerPartyId: string | null
+  message: string
+}
+export type ProviderPartySyncRun = {
+  id: string
+  connectionId: string
+  status: string
+  startedAt: string | null
+  completedAt: string | null
+  total: number
+  synced: number
+  failed: number
+  results: ProviderPartySyncResult[]
+}
+export type ProviderPartySyncOverview = {
+  connections: Array<{ id: string; providerCode: "erpnext" | "sage_50"; providerName: string; name: string; externalCompany: string | null }>
+  runs: ProviderPartySyncRun[]
+}
+export type ProviderPartySyncResponse = {
+  runId: string
+  connectionId: string
+  providerCode: "erpnext" | "sage_50"
+  partyType: ProviderPartyType
+  startedAt: string
+  completedAt: string
+  total: number
+  synced: number
+  failed: number
+  results: ProviderPartySyncResult[]
 }
 
 export class FinanceSubledgerApiError extends Error {}
@@ -484,6 +520,8 @@ export function getFinanceDraftOptions(ledger: FinanceLedger) { return call<Fina
 export function getProviderCustomerContext(connectionId: string, orgId: string) { return call<ProviderCustomerContext>(`/provider-customers/context?connectionId=${encodeURIComponent(connectionId)}&orgId=${encodeURIComponent(orgId)}`) }
 export function createProviderCustomer(input: ProviderCustomerInput) { return post<{ created: boolean; mapping: FinanceDraftOptions["partyMappings"][number]; warning: string | null }>("/provider-customers", input) }
 export function linkErpNextCustomer(connectionId: string, orgId: string, providerPartyId: string) { return put<{ changed: boolean; mapping: FinanceDraftOptions["partyMappings"][number] }>("/erpnext/party-mappings", { connectionId, orgId, partyType: "customer", providerPartyId }) }
+export function getProviderPartySyncOverview(partyType: ProviderPartyType) { return call<ProviderPartySyncOverview>(`/provider-parties/sync?partyType=${encodeURIComponent(partyType)}`) }
+export function syncProviderParties(connectionId: string, partyType: ProviderPartyType) { return post<ProviderPartySyncResponse>("/provider-parties/sync", { connectionId, partyType }) }
 export function createFinanceDraft(input: FinanceDraftInput) { return post<FinanceDocument>("/documents/draft", input) }
 export function updateFinanceDraft(id: string, input: FinanceDraftInput) { return put<FinanceDocument>(`/documents/${encodeURIComponent(id)}/draft`, input) }
 export function reopenFinanceDocumentDraft(id: string, reason: string) { return post<FinanceDocument>(`/documents/${encodeURIComponent(id)}/reopen-draft`, { reason }) }

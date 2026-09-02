@@ -12,8 +12,10 @@ import { erpNextCreate, erpNextList, erpNextOrigin, erpNextRequest } from "../_s
 import { hyperExtConfigured, hyperExtRequest, hyperExtStatus } from "../_shared/hyperext.ts"
 
 type LineInput = { description: string; quantity?: number; unitAmount?: number; taxRatePercent?: number; taxCode?: string | null; chargeCode?: string | null; jobCostingLineId?: string | null; lineType?: "service" | "ancillary" }
-type DraftInput = { type: "sl_invoice" | "credit_note" | "pl_invoice" | "debit_note"; legalEntityId: string; partyOrgId: string; documentDate?: string; dueDate?: string | null; currencyCode?: string; exchangeRate?: number; lines: LineInput[]; sourceJobId?: string | null; idempotencyKey?: string; sourceExtractionId?: string }
-type CashInput = { type: "customer_receipt" | "supplier_payment"; legalEntityId: string; partyOrgId: string; bankAccountId: string; transactionDate?: string; currencyCode?: string; exchangeRate?: number; amount: number; reference?: string | null; allocations?: Array<{ documentId: string; amount: number }>; idempotencyKey?: string }
+type DraftInput = { type: "sl_invoice" | "credit_note" | "pl_invoice" | "debit_note"; partyOrgId: string; documentDate?: string; dueDate?: string | null; currencyCode?: string; exchangeRate?: number; lines: LineInput[]; sourceJobId?: string | null; idempotencyKey?: string; sourceExtractionId?: string }
+type ControlledDraftInput = DraftInput & { legalEntityId: string }
+type CashInput = { type: "customer_receipt" | "supplier_payment"; partyOrgId: string; bankAccountId: string; transactionDate?: string; currencyCode?: string; exchangeRate?: number; amount: number; reference?: string | null; allocations?: Array<{ documentId: string; amount: number }>; idempotencyKey?: string }
+type ControlledCashInput = CashInput & { legalEntityId: string }
 type ConfigInput = { legalEntityId: string; chartTemplateCode: string; providerCode?: AccountingProviderCode; externalCompany: string; countryCode: string; taxRegistrationNo?: string | null; reportingBasisCode?: string | null; effectiveFrom?: string }
 type AdministrationInput = { settings: Record<string, unknown>; reason?: string | null }
 type PartyMappingInput = { connectionId: string; orgId: string; partyType: "customer" | "supplier"; providerPartyId: string }
@@ -29,6 +31,17 @@ type ProviderCustomerInput = {
   vatNumber?: string | null
   creditLimit?: number | null
   paymentDueDays?: number | null
+}
+type ProviderPartyType = "customer" | "supplier"
+type ProviderPartySyncInput = { connectionId: string; partyType: ProviderPartyType }
+type ProviderPartySyncResult = {
+  organisationId: string
+  organisationName: string
+  accountCode: string
+  status: "synced" | "failed"
+  action: "created" | "linked" | "verified" | "failed"
+  providerPartyId: string | null
+  message: string
 }
 type Ledger = "receivables" | "payables"
 
@@ -79,6 +92,19 @@ async function legalEntity(admin: any, current: any, id: string) {
   if (error) throw new HttpError(500, error.message)
   if (!data) throw new HttpError(404, "That legal entity is not in this workspace.")
   return data
+}
+
+async function tenantLegalEntity(admin: any, current: any) {
+  const { data, error } = await admin.from("cmp_LegalEntities")
+    .select("LegalEntity_ID,LegalEntity_Name,LegalEntity_BaseCurrencyCodeSnapshot,Company_ID")
+    .eq("Company_ID", current.Company_ID)
+    .eq("LegalEntity_IsActive", true)
+    .order("LegalEntity_Name")
+    .limit(2)
+  if (error) throw new HttpError(500, error.message)
+  if (!data?.length) throw new HttpError(409, "Set up the tenant company before creating finance records.")
+  if (data.length !== 1) throw new HttpError(409, "This tenant must have exactly one active company before creating finance records.")
+  return data[0]
 }
 
 async function assertErpNextCompanySetup(entity: any, externalCompany: string) {
@@ -243,12 +269,12 @@ async function providerCustomerConnection(admin: any, current: any, connectionId
     : { data: null, error: null }
   if (error) throw new HttpError(500, error.message)
   if (!data) throw new HttpError(404, "Accounting connection not found.")
-  if (data.ACCIC_StatusCode !== "active") throw new HttpError(409, "Activate this accounting connection before setting up customers.")
-  if (data.ACCIC_ProviderCode !== "erpnext" && data.ACCIC_ProviderCode !== "sage_50") throw new HttpError(409, "This accounting system does not have a customer setup wizard yet.")
+  if (data.ACCIC_StatusCode !== "active") throw new HttpError(409, "Activate this accounting connection before setting up accounts.")
+  if (data.ACCIC_ProviderCode !== "erpnext" && data.ACCIC_ProviderCode !== "sage_50") throw new HttpError(409, "This accounting system does not have an account setup workflow yet.")
   return data
 }
 
-async function providerCustomerOrganisation(admin: any, orgId: string) {
+async function providerPartyOrganisation(admin: any, orgId: string, partyType: ProviderPartyType = "customer") {
   if (!isUuid(orgId)) throw new HttpError(404, "Organisation not found.")
   const [organisationResult, profileResult, addressResult] = await Promise.all([
     admin.from("Org_Master").select("Org_id,Org_Name,Org_AccCode,Org_BaseCurrency,Org_CRMRelationshipStatusCode").eq("Org_id", orgId).maybeSingle(),
@@ -260,7 +286,8 @@ async function providerCustomerOrganisation(admin: any, orgId: string) {
   if (!organisation) throw new HttpError(404, "Organisation not found.")
   if (clean(organisation.Org_CRMRelationshipStatusCode, 60).toLowerCase() === "blocked") throw new HttpError(409, "This organisation is blocked. Restore its relationship status before adding it to an accounting system.")
   const preferences = profileResult.data?.CRMAccountOps_InvoicePreferencesJSON && typeof profileResult.data.CRMAccountOps_InvoicePreferencesJSON === "object" ? profileResult.data.CRMAccountOps_InvoicePreferencesJSON : {}
-  if (clean(preferences.customerAccountingStatusCode, 20) === "blocked") throw new HttpError(409, "This organisation's customer accounting status is blocked.")
+  const accountingStatusCode = clean(preferences[partyType === "customer" ? "customerAccountingStatusCode" : "supplierAccountingStatusCode"], 20)
+  if (accountingStatusCode === "blocked") throw new HttpError(409, `This organisation's ${partyType} accounting status is blocked.`)
 
   const addresses = addressResult.data ?? []
   const addressIds = addresses.map((address: any) => address.OrgAdd_ID)
@@ -306,7 +333,7 @@ async function providerCustomerOrganisation(admin: any, orgId: string) {
 
 async function providerCustomerContext(admin: any, current: any, connectionId: string, orgId: string) {
   const connection = await providerCustomerConnection(admin, current, connectionId)
-  const source = await providerCustomerOrganisation(admin, orgId)
+  const source = await providerPartyOrganisation(admin, orgId)
   const { data: mapping, error: mappingError } = await admin.from("ACCI_PartyMappings")
     .select("ACCIPM_ID,ACCIPM_ConnectionID,ACCIPM_OrgID,ACCIPM_PartyType,ACCIPM_ProviderPartyID,ACCIPM_ProviderPartyCode,ACCIPM_ProviderPartyName,ACCIPM_LastSyncedAt,ACCIPM_IsActive")
     .eq("ACCIPM_ConnectionID", connection.ACCIC_ID)
@@ -358,32 +385,41 @@ async function providerCustomerContext(admin: any, current: any, connectionId: s
   }
 }
 
-async function saveSageCustomerMapping(admin: any, connection: any, organisation: any, accountReference: string) {
+async function saveSagePartyMapping(admin: any, connection: any, organisation: any, accountReference: string, partyType: ProviderPartyType = "customer") {
   const [localResult, externalResult] = await Promise.all([
-    admin.from("ACCI_PartyMappings").select("ACCIPM_ID,ACCIPM_PartyType").eq("ACCIPM_ConnectionID", connection.ACCIC_ID).eq("ACCIPM_OrgID", organisation.id).in("ACCIPM_PartyType", ["customer", "both"]).eq("ACCIPM_IsActive", true),
-    admin.from("ACCI_PartyMappings").select("ACCIPM_ID,ACCIPM_OrgID").eq("ACCIPM_ConnectionID", connection.ACCIC_ID).eq("ACCIPM_ProviderPartyID", accountReference).in("ACCIPM_PartyType", ["customer", "both"]).eq("ACCIPM_IsActive", true),
+    admin.from("ACCI_PartyMappings").select("ACCIPM_ID,ACCIPM_PartyType").eq("ACCIPM_ConnectionID", connection.ACCIC_ID).eq("ACCIPM_OrgID", organisation.id).in("ACCIPM_PartyType", [partyType, "both"]).eq("ACCIPM_IsActive", true),
+    admin.from("ACCI_PartyMappings").select("ACCIPM_ID,ACCIPM_OrgID").eq("ACCIPM_ConnectionID", connection.ACCIC_ID).eq("ACCIPM_ProviderPartyID", accountReference).in("ACCIPM_PartyType", [partyType, "both"]).eq("ACCIPM_IsActive", true),
   ])
   if (localResult.error || externalResult.error) throw new HttpError(500, localResult.error?.message ?? externalResult.error?.message)
   if ((externalResult.data ?? []).some((item: any) => item.ACCIPM_OrgID !== organisation.id)) throw new HttpError(409, `Sage 50 account ${accountReference} is already mapped to another Multideck organisation.`)
-  if ((localResult.data ?? []).some((item: any) => item.ACCIPM_PartyType === "both")) throw new HttpError(409, "This organisation already has a combined customer/supplier mapping. Review it before adding a customer mapping.")
+  const combined = (localResult.data ?? []).find((item: any) => item.ACCIPM_PartyType === "both")
   const verifiedAt = new Date().toISOString()
+  if (combined) {
+    const { data: mapping, error } = await admin.from("ACCI_PartyMappings")
+      .update({ ACCIPM_LastSyncedAt: verifiedAt })
+      .eq("ACCIPM_ID", combined.ACCIPM_ID)
+      .select("ACCIPM_ID,ACCIPM_ConnectionID,ACCIPM_OrgID,ACCIPM_PartyType,ACCIPM_ProviderPartyID,ACCIPM_ProviderPartyCode,ACCIPM_ProviderPartyName,ACCIPM_LastSyncedAt,ACCIPM_IsActive")
+      .single()
+    if (error || !mapping) throw new HttpError(500, error?.message ?? "The combined Sage 50 party mapping could not be verified.")
+    return mapping
+  }
   const { data: mapping, error } = await admin.from("ACCI_PartyMappings").upsert({
     ACCIPM_ConnectionID: connection.ACCIC_ID,
     ACCIPM_OrgID: organisation.id,
-    ACCIPM_PartyType: "customer",
+    ACCIPM_PartyType: partyType,
     ACCIPM_ProviderPartyID: accountReference,
     ACCIPM_ProviderPartyCode: accountReference,
     ACCIPM_ProviderPartyName: organisation.name,
     ACCIPM_LastSyncedAt: verifiedAt,
     ACCIPM_IsActive: true,
   }, { onConflict: "ACCIPM_ConnectionID,ACCIPM_OrgID,ACCIPM_PartyType" }).select("ACCIPM_ID,ACCIPM_ConnectionID,ACCIPM_OrgID,ACCIPM_PartyType,ACCIPM_ProviderPartyID,ACCIPM_ProviderPartyCode,ACCIPM_ProviderPartyName,ACCIPM_LastSyncedAt,ACCIPM_IsActive").single()
-  if (error || !mapping) throw new HttpError(500, error?.message ?? "The Sage 50 customer mapping could not be saved.")
+  if (error || !mapping) throw new HttpError(500, error?.message ?? `The Sage 50 ${partyType} mapping could not be saved.`)
   return mapping
 }
 
 async function createProviderCustomer(admin: any, current: any, input: ProviderCustomerInput) {
   const connection = await providerCustomerConnection(admin, current, input.connectionId)
-  const source = await providerCustomerOrganisation(admin, input.orgId)
+  const source = await providerPartyOrganisation(admin, input.orgId)
   const { data: existingMapping, error: mappingError } = await admin.from("ACCI_PartyMappings").select("*").eq("ACCIPM_ConnectionID", connection.ACCIC_ID).eq("ACCIPM_OrgID", source.organisation.id).in("ACCIPM_PartyType", ["customer", "both"]).eq("ACCIPM_IsActive", true).limit(1).maybeSingle()
   if (mappingError) throw new HttpError(500, mappingError.message)
   if (existingMapping) return { created: false, mapping: existingMapping, warning: null }
@@ -467,10 +503,303 @@ async function createProviderCustomer(admin: any, current: any, input: ProviderC
     paymentDueDays: finiteNumber(input.paymentDueDays) ?? undefined,
   }
   const response = await hyperExtRequest("/api/customer/", { method: "POST", body: JSON.stringify(requestPayload) })
-  const mapping = await saveSageCustomerMapping(admin, connection, source.organisation, accountReference)
+  const mapping = await saveSagePartyMapping(admin, connection, source.organisation, accountReference)
   const { error: eventError } = await admin.from("ACCI_SyncEvents").insert({ ACCISE_ConnectionID: connection.ACCIC_ID, ACCISE_Severity: "info", ACCISE_EventCode: "provider_customer_created", ACCISE_Message: "Created and mapped one Sage 50 customer through HyperExt.", ACCISE_LocalTable: "Org_Master", ACCISE_LocalID: source.organisation.id, ACCISE_ExternalObjectType: "Customer", ACCISE_ExternalID: accountReference, ACCISE_RequestPayloadJSON: { accountReference, countryCode: address?.countryCode ?? null, currencyCode: requestPayload.currency ?? null }, ACCISE_ResponsePayloadJSON: { success: true, providerCode: connection.ACCIC_ProviderCode, responseCode: response?.code ?? null } })
   if (eventError) throw new HttpError(500, "The Sage 50 customer was created, but its audit event could not be retained. Review the provider mapping before retrying.")
   return { created: true, mapping, warning: null }
+}
+
+async function providerPartyAccounts(admin: any, current: any, partyType: ProviderPartyType) {
+  const [{ data: accessible, error: accessibleError }, { data: types, error: typeError }] = await Promise.all([
+    admin.rpc("multideck_crm_accessible_account_ids", { p_company_id: current.Company_ID }),
+    admin.from("Org_Types").select("OrgType_ID").ilike("OrgType_Name", partyType),
+  ])
+  if (accessibleError || typeError) throw new HttpError(500, accessibleError?.message ?? typeError?.message)
+  const accessibleIds = (accessible ?? []).map((item: any) => item.account_id).filter(Boolean)
+  const typeIds = (types ?? []).map((item: any) => item.OrgType_ID).filter(Boolean)
+  if (!accessibleIds.length || !typeIds.length) return []
+  const { data: links, error: linkError } = await admin.from("Org_Master_Type")
+    .select("Org_ID")
+    .in("Org_ID", accessibleIds)
+    .in("OrgType_ID", typeIds)
+  if (linkError) throw new HttpError(500, linkError.message)
+  const ids = [...new Set((links ?? []).map((item: any) => item.Org_ID).filter(Boolean))]
+  if (!ids.length) return []
+  const { data, error } = await admin.from("Org_Master")
+    .select("Org_id,Org_Name,Org_AccCode")
+    .in("Org_id", ids)
+    .order("Org_Name")
+  if (error) throw new HttpError(500, error.message)
+  return data ?? []
+}
+
+async function touchPartyMapping(admin: any, mapping: any) {
+  const syncedAt = new Date().toISOString()
+  const { error } = await admin.from("ACCI_PartyMappings")
+    .update({ ACCIPM_LastSyncedAt: syncedAt })
+    .eq("ACCIPM_ID", mapping.ACCIPM_ID)
+  if (error) throw new HttpError(500, "The provider mapping could not be marked as verified.")
+  return syncedAt
+}
+
+async function createErpNextPartyAddress(source: any, partyType: ProviderPartyType, providerPartyId: string) {
+  const address = source.billingAddress
+  if (!address?.line1 || !address.countryName) return null
+  try {
+    await erpNextCreate("Address", {
+      address_title: address.name || source.organisation.name,
+      address_type: "Billing",
+      address_line1: address.line1,
+      address_line2: address.line2 || undefined,
+      city: address.townCity || address.countyState || "Not specified",
+      state: address.countyState || undefined,
+      pincode: address.postZipCode || undefined,
+      country: address.countryName,
+      email_id: address.email || undefined,
+      phone: address.phone || undefined,
+      is_primary_address: 1,
+      links: [{ link_doctype: partyType === "customer" ? "Customer" : "Supplier", link_name: providerPartyId }],
+    })
+    return null
+  } catch {
+    return `The ${partyType} was synced, but its billing address needs review in ERPNext.`
+  }
+}
+
+async function syncErpNextPartyAccount(admin: any, current: any, connection: any, partyType: ProviderPartyType, organisation: any, existingMapping: any, defaults: { group: string; territory: string | null }) {
+  const source = await providerPartyOrganisation(admin, organisation.Org_id, partyType)
+  const doctype = partyType === "customer" ? "Customer" : "Supplier"
+  const nameField = partyType === "customer" ? "customer_name" : "supplier_name"
+  if (existingMapping) {
+    const records = await erpNextList(doctype, ["name", nameField, "disabled"], [["name", "=", existingMapping.ACCIPM_ProviderPartyID]])
+    const record = records.find((item: any) => item.name === existingMapping.ACCIPM_ProviderPartyID)
+    if (!record || record.disabled === true || record.disabled === 1 || record.disabled === "1") {
+      throw new HttpError(409, `The mapped ERPNext ${partyType} is missing or disabled.`)
+    }
+    if (existingMapping.ACCIPM_PartyType === "both") await touchPartyMapping(admin, existingMapping)
+    else await upsertErpNextPartyMapping(admin, current, { connectionId: connection.ACCIC_ID, orgId: organisation.Org_id, partyType, providerPartyId: existingMapping.ACCIPM_ProviderPartyID })
+    return { action: "verified" as const, providerPartyId: existingMapping.ACCIPM_ProviderPartyID, message: `Verified the existing ERPNext ${partyType}.` }
+  }
+
+  const duplicates = await erpNextList(doctype, ["name", nameField, "disabled"], [[nameField, "=", source.organisation.name]])
+  const duplicate = duplicates.find((item: any) => item.disabled !== true && item.disabled !== 1 && item.disabled !== "1")
+  if (duplicate?.name) {
+    await upsertErpNextPartyMapping(admin, current, { connectionId: connection.ACCIC_ID, orgId: organisation.Org_id, partyType, providerPartyId: duplicate.name })
+    return { action: "linked" as const, providerPartyId: duplicate.name, message: `Linked the existing ERPNext ${partyType}.` }
+  }
+
+  if (!defaults.group || (partyType === "customer" && !defaults.territory)) {
+    throw new HttpError(409, `ERPNext has no assignable ${partyType} defaults. Add a ${partyType} group${partyType === "customer" ? " and territory" : ""}, then retry.`)
+  }
+  const created = await erpNextCreate(doctype, partyType === "customer" ? {
+    customer_name: source.organisation.name,
+    customer_type: "Company",
+    customer_group: defaults.group,
+    territory: defaults.territory,
+    default_currency: source.organisation.currencyCode ?? undefined,
+  } : {
+    supplier_name: source.organisation.name,
+    supplier_type: "Company",
+    supplier_group: defaults.group,
+    default_currency: source.organisation.currencyCode ?? undefined,
+  })
+  const providerPartyId = clean(created?.name, 240)
+  if (!providerPartyId) throw new HttpError(502, `ERPNext created the ${partyType} without returning its identifier.`)
+  await upsertErpNextPartyMapping(admin, current, { connectionId: connection.ACCIC_ID, orgId: organisation.Org_id, partyType, providerPartyId })
+  const warning = await createErpNextPartyAddress(source, partyType, providerPartyId)
+  return { action: "created" as const, providerPartyId, message: warning ?? `Created and mapped the ERPNext ${partyType}.` }
+}
+
+async function syncSagePartyAccount(admin: any, connection: any, partyType: ProviderPartyType, organisation: any, existingMapping: any) {
+  const source = await providerPartyOrganisation(admin, organisation.Org_id, partyType)
+  if (existingMapping) {
+    await hyperExtRequest(`/api/${partyType}/${encodeURIComponent(existingMapping.ACCIPM_ProviderPartyID)}`)
+    await touchPartyMapping(admin, existingMapping)
+    return { action: "verified" as const, providerPartyId: existingMapping.ACCIPM_ProviderPartyID, message: `Verified the existing Sage 50 ${partyType}.` }
+  }
+  const accountReference = clean(source.organisation.accountCode, 8).toUpperCase()
+  if (!/^[A-Z0-9]{1,8}$/.test(accountReference)) throw new HttpError(409, "Add a unique account code of up to eight letters or numbers before syncing to Sage 50.")
+  const address = source.billingAddress
+  const requestPayload: Record<string, unknown> = {
+    accountRef: accountReference,
+    name: source.organisation.name,
+    address1: address?.line1 ?? "",
+    address2: address?.line2 ?? "",
+    address3: address?.townCity ?? "",
+    address4: address?.countyState ?? "",
+    address5: address?.postZipCode ?? "",
+    countryCode: address?.countryCode ?? undefined,
+    telephone: address?.phone ?? undefined,
+    email: address?.email ?? undefined,
+    currency: source.organisation.currencyCode ?? undefined,
+  }
+  await hyperExtRequest(`/api/${partyType}/`, { method: "POST", body: JSON.stringify(requestPayload) })
+  await saveSagePartyMapping(admin, connection, source.organisation, accountReference, partyType)
+  return { action: "created" as const, providerPartyId: accountReference, message: `Created and mapped the Sage 50 ${partyType}.` }
+}
+
+async function providerPartySyncOverview(admin: any, current: any, partyType: ProviderPartyType) {
+  const ids = await entityIds(admin, current)
+  const { data: connections, error: connectionError } = ids.length
+    ? await admin.from("ACCI_Connections")
+      .select("ACCIC_ID,ACCIC_ProviderCode,ACCIC_Name,ACCIC_ExternalTenantName,ACCIC_StatusCode")
+      .in("ACCIC_LegalEntityID", ids)
+      .eq("ACCIC_StatusCode", "active")
+      .in("ACCIC_ProviderCode", ["erpnext", "sage_50"])
+      .order("ACCIC_Name")
+    : { data: [], error: null }
+  if (connectionError) throw new HttpError(500, connectionError.message)
+  const connectionIds = (connections ?? []).map((item: any) => item.ACCIC_ID)
+  const { data: recentRuns, error: runError } = connectionIds.length
+    ? await admin.from("ACCI_SyncRuns")
+      .select("ACCISR_ID,ACCISR_ConnectionID,ACCISR_StatusCode,ACCISR_StartedAt,ACCISR_CompletedAt,ACCISR_RecordsRead,ACCISR_RecordsCreated,ACCISR_RecordsUpdated,ACCISR_RecordsFailed,ACCISR_SettingsJSON,ACCISR_CreatedAt")
+      .in("ACCISR_ConnectionID", connectionIds)
+      .contains("ACCISR_SettingsJSON", { kind: "party_master", partyType })
+      .order("ACCISR_CreatedAt", { ascending: false })
+      .limit(10)
+    : { data: [], error: null }
+  if (runError) throw new HttpError(500, runError.message)
+  const runs = recentRuns ?? []
+  const runIds = runs.map((run: any) => run.ACCISR_ID)
+  const { data: events, error: eventError } = runIds.length
+    ? await admin.from("ACCI_SyncEvents")
+      .select("ACCISE_ID,ACCISE_SyncRunID,ACCISE_Severity,ACCISE_Message,ACCISE_LocalID,ACCISE_ExternalID,ACCISE_ResponsePayloadJSON,ACCISE_CreatedAt")
+      .in("ACCISE_SyncRunID", runIds)
+      .in("ACCISE_EventCode", ["party_account_synced", "party_account_sync_failed"])
+      .order("ACCISE_CreatedAt")
+    : { data: [], error: null }
+  if (eventError) throw new HttpError(500, eventError.message)
+  return {
+    connections: (connections ?? []).map((connection: any) => ({
+      id: connection.ACCIC_ID,
+      providerCode: connection.ACCIC_ProviderCode,
+      name: connection.ACCIC_Name,
+      externalCompany: connection.ACCIC_ExternalTenantName,
+      providerName: accountingProvider(connection.ACCIC_ProviderCode)?.name ?? connection.ACCIC_ProviderCode,
+    })),
+    runs: runs.map((run: any) => ({
+      id: run.ACCISR_ID,
+      connectionId: run.ACCISR_ConnectionID,
+      status: run.ACCISR_StatusCode,
+      startedAt: run.ACCISR_StartedAt,
+      completedAt: run.ACCISR_CompletedAt,
+      total: run.ACCISR_RecordsRead,
+      synced: run.ACCISR_RecordsCreated + run.ACCISR_RecordsUpdated,
+      failed: run.ACCISR_RecordsFailed,
+      results: (events ?? []).filter((event: any) => event.ACCISE_SyncRunID === run.ACCISR_ID).map((event: any) => ({
+        organisationId: event.ACCISE_LocalID,
+        organisationName: event.ACCISE_ResponsePayloadJSON?.organisationName ?? "Account",
+        accountCode: event.ACCISE_ResponsePayloadJSON?.accountCode ?? "",
+        status: event.ACCISE_Severity === "error" ? "failed" : "synced",
+        action: event.ACCISE_ResponsePayloadJSON?.action ?? (event.ACCISE_Severity === "error" ? "failed" : "verified"),
+        providerPartyId: event.ACCISE_ExternalID,
+        message: event.ACCISE_Message,
+      })),
+    })),
+  }
+}
+
+async function syncProviderParties(admin: any, current: any, input: ProviderPartySyncInput) {
+  const partyType = clean(input.partyType, 20) as ProviderPartyType
+  if (partyType !== "customer" && partyType !== "supplier") throw new HttpError(400, "Choose customers or suppliers to sync.")
+  const connection = await providerCustomerConnection(admin, current, input.connectionId)
+  const organisations = await providerPartyAccounts(admin, current, partyType)
+  const organisationIds = organisations.map((item: any) => item.Org_id)
+  const { data: mappings, error: mappingError } = organisationIds.length
+    ? await admin.from("ACCI_PartyMappings")
+      .select("ACCIPM_ID,ACCIPM_ConnectionID,ACCIPM_OrgID,ACCIPM_PartyType,ACCIPM_ProviderPartyID,ACCIPM_ProviderPartyCode,ACCIPM_ProviderPartyName,ACCIPM_LastSyncedAt,ACCIPM_IsActive")
+      .eq("ACCIPM_ConnectionID", connection.ACCIC_ID)
+      .in("ACCIPM_OrgID", organisationIds)
+      .in("ACCIPM_PartyType", [partyType, "both"])
+      .eq("ACCIPM_IsActive", true)
+    : { data: [], error: null }
+  if (mappingError) throw new HttpError(500, mappingError.message)
+  const mappingsByOrganisation = new Map((mappings ?? []).map((mapping: any) => [mapping.ACCIPM_OrgID, mapping]))
+  const startedAt = new Date().toISOString()
+  let defaults = { group: "", territory: null as string | null }
+  if (connection.ACCIC_ProviderCode === "erpnext") {
+    const groupDoctype = partyType === "customer" ? "Customer Group" : "Supplier Group"
+    const [groups, territories] = await Promise.all([
+      erpNextList(groupDoctype, ["name", "is_group"]),
+      partyType === "customer" ? erpNextList("Territory", ["name", "is_group"]) : Promise.resolve([]),
+    ])
+    const leafNames = (rows: any[]) => rows.filter((item: any) => item.is_group !== true && item.is_group !== 1 && item.is_group !== "1").map((item: any) => clean(item.name, 140)).filter(Boolean).sort()
+    defaults = { group: leafNames(groups)[0] ?? "", territory: partyType === "customer" ? leafNames(territories)[0] ?? null : null }
+  } else {
+    if (!hyperExtConfigured()) throw new HttpError(409, "Configure the tenant HyperExt Sage 50 connector before syncing accounts.")
+    const status = await hyperExtStatus()
+    if (!status.sdoStatusOk || !status.odbcStatusOk) throw new HttpError(409, "HyperExt is reachable, but Sage Data Objects or ODBC is not ready.")
+    if (connection.ACCIC_ExternalTenantName && status.companyName && connection.ACCIC_ExternalTenantName !== status.companyName) throw new HttpError(409, `HyperExt is connected to ${status.companyName}, not ${connection.ACCIC_ExternalTenantName}.`)
+  }
+
+  const { data: run, error: runError } = await admin.from("ACCI_SyncRuns").insert({
+    ACCISR_ConnectionID: connection.ACCIC_ID,
+    ACCISR_DirectionCode: partyType === "customer" ? "sales" : "purchase",
+    ACCISR_DocumentTypeCode: null,
+    ACCISR_StatusCode: "processing",
+    ACCISR_StartedAt: startedAt,
+    ACCISR_RecordsRead: organisations.length,
+    ACCISR_SettingsJSON: { kind: "party_master", partyType, providerCode: connection.ACCIC_ProviderCode },
+    ACCISR_CreatedBy: current.User_ID,
+  }).select("ACCISR_ID").single()
+  if (runError || !run) throw new HttpError(500, runError?.message ?? "The account sync run could not be started.")
+
+  const results: ProviderPartySyncResult[] = []
+  for (let index = 0; index < organisations.length; index += 4) {
+    const batch = organisations.slice(index, index + 4)
+    const batchResults = await Promise.all(batch.map(async (organisation: any): Promise<ProviderPartySyncResult> => {
+      try {
+        const outcome = connection.ACCIC_ProviderCode === "erpnext"
+          ? await syncErpNextPartyAccount(admin, current, connection, partyType, organisation, mappingsByOrganisation.get(organisation.Org_id), defaults)
+          : await syncSagePartyAccount(admin, connection, partyType, organisation, mappingsByOrganisation.get(organisation.Org_id))
+        const result: ProviderPartySyncResult = { organisationId: organisation.Org_id, organisationName: organisation.Org_Name, accountCode: organisation.Org_AccCode, status: "synced", ...outcome }
+        const { error } = await admin.from("ACCI_SyncEvents").insert({
+          ACCISE_SyncRunID: run.ACCISR_ID,
+          ACCISE_ConnectionID: connection.ACCIC_ID,
+          ACCISE_Severity: outcome.message.includes("needs review") ? "warning" : "info",
+          ACCISE_EventCode: "party_account_synced",
+          ACCISE_Message: outcome.message,
+          ACCISE_LocalTable: "Org_Master",
+          ACCISE_LocalID: organisation.Org_id,
+          ACCISE_ExternalObjectType: partyType === "customer" ? "Customer" : "Supplier",
+          ACCISE_ExternalID: outcome.providerPartyId,
+          ACCISE_ResponsePayloadJSON: { organisationName: organisation.Org_Name, accountCode: organisation.Org_AccCode, action: outcome.action, partyType },
+        })
+        if (error) throw new HttpError(500, "The account synced, but its audit result could not be retained.")
+        return result
+      } catch (error) {
+        const message = error instanceof Error ? clean(error.message, 500) : "The accounting system rejected this account."
+        await admin.from("ACCI_SyncEvents").insert({
+          ACCISE_SyncRunID: run.ACCISR_ID,
+          ACCISE_ConnectionID: connection.ACCIC_ID,
+          ACCISE_Severity: "error",
+          ACCISE_EventCode: "party_account_sync_failed",
+          ACCISE_Message: message,
+          ACCISE_LocalTable: "Org_Master",
+          ACCISE_LocalID: organisation.Org_id,
+          ACCISE_ExternalObjectType: partyType === "customer" ? "Customer" : "Supplier",
+          ACCISE_ResponsePayloadJSON: { organisationName: organisation.Org_Name, accountCode: organisation.Org_AccCode, action: "failed", partyType },
+        })
+        return { organisationId: organisation.Org_id, organisationName: organisation.Org_Name, accountCode: organisation.Org_AccCode, status: "failed", action: "failed", providerPartyId: null, message }
+      }
+    }))
+    results.push(...batchResults)
+  }
+
+  const created = results.filter((item) => item.action === "created").length
+  const failed = results.filter((item) => item.status === "failed").length
+  const updated = results.length - created - failed
+  const completedAt = new Date().toISOString()
+  const { error: completeError } = await admin.from("ACCI_SyncRuns").update({
+    ACCISR_StatusCode: failed ? "failed" : "synced",
+    ACCISR_CompletedAt: completedAt,
+    ACCISR_RecordsCreated: created,
+    ACCISR_RecordsUpdated: updated,
+    ACCISR_RecordsFailed: failed,
+    ACCISR_SettingsJSON: { kind: "party_master", partyType, providerCode: connection.ACCIC_ProviderCode, completedWithFailures: failed > 0 },
+  }).eq("ACCISR_ID", run.ACCISR_ID)
+  if (completeError) throw new HttpError(500, "The accounts were processed, but the sync run could not be finalised.")
+  return { runId: run.ACCISR_ID, connectionId: connection.ACCIC_ID, providerCode: connection.ACCIC_ProviderCode, partyType, startedAt, completedAt, total: results.length, synced: results.length - failed, failed, results }
 }
 
 async function verifyErpNextExternalReference(admin: any, current: any, externalRefId: string) {
@@ -859,6 +1188,8 @@ async function documentWorkspace(admin: any, current: any, selectedLedger: Ledge
     ids.length ? admin.from("FIN_Documents").select("FINDoc_ID,FINDoc_Number,FINDoc_TypeCode,FINDoc_StatusCode,FINDoc_LegalEntityID,FINDoc_PartyOrgID,FINDoc_DocumentDate,FINDoc_DueDate,FINDoc_CurrencyCodeSnapshot,FINDoc_ExchangeRate,FINDoc_NetAmount,FINDoc_TaxAmount,FINDoc_GrossAmount,FINDoc_OutstandingAmount,FINDoc_SourceJobID,FINDoc_SourceKindCode,FINDoc_PostingStatusCode,FINDoc_ExportStatusCode,FINDoc_UpdatedAt").in("FINDoc_LegalEntityID", ids).eq("FINDoc_TypeCode", selectedLedger === "receivables" ? "sl_invoice" : "pl_invoice").in("FINDoc_StatusCode", ["approved", "submitted"]).gt("FINDoc_OutstandingAmount", 0).order("FINDoc_DueDate", { ascending: true, nullsFirst: false }).limit(1000) : { data: [], error: null },
   ])
   for (const query of [entities, parties, jobs, banks, treatments, revisions, pendingRuns, demoConnections, activeConnections, suggestions, openDocuments]) if (query.error) throw new HttpError(500, query.error.message)
+  if (!(entities.data ?? []).length) throw new HttpError(409, "Set up the tenant company before creating finance records.")
+  if ((entities.data ?? []).length !== 1) throw new HttpError(409, "This tenant must have exactly one active company before creating finance records.")
   const connectionIds = (activeConnections.data ?? []).map((connection: any) => connection.ACCIC_ID)
   const { data: partyMappings, error: partyMappingError } = connectionIds.length
     ? await admin.from("ACCI_PartyMappings").select("ACCIPM_ID,ACCIPM_ConnectionID,ACCIPM_OrgID,ACCIPM_PartyType,ACCIPM_ProviderPartyID,ACCIPM_ProviderPartyCode,ACCIPM_ProviderPartyName,ACCIPM_LastSyncedAt,ACCIPM_IsActive").in("ACCIPM_ConnectionID", connectionIds).eq("ACCIPM_IsActive", true)
@@ -998,7 +1329,7 @@ async function cashWorkspace(admin: any, current: any, selectedLedger?: Ledger) 
   return { cashTransactions: rows.map((row: any) => ({ ...row, partyName: names.get(row.FINCash_PartyOrgID) ?? "Unknown organisation" })) }
 }
 
-async function controlledDocumentDraftInput(admin: any, input: DraftInput) {
+async function controlledDocumentDraftInput(admin: any, input: ControlledDraftInput) {
   if (!Array.isArray(input.lines) || input.lines.length < 1 || input.lines.length > 100) throw new HttpError(400, "Add between one and 100 document lines.")
   const documentDate = clean(input.documentDate, 10) || new Date().toISOString().slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(documentDate)) throw new HttpError(400, "Enter a valid document date.")
@@ -1032,7 +1363,7 @@ async function controlledDocumentDraftInput(admin: any, input: DraftInput) {
   return { ...input, documentDate, lines: controlledLines }
 }
 
-async function linkDocumentChargeLines(admin: any, current: any, documentId: string, input: DraftInput) {
+async function linkDocumentChargeLines(admin: any, current: any, documentId: string, input: ControlledDraftInput) {
   if (!input.sourceJobId) return
   const links = input.lines.map((line, index) => ({ lineNo: index + 1, jobCostingLineId: line.jobCostingLineId || null }))
   const { error } = await admin.rpc("multideck_finance_link_document_charge_lines", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_document_id: documentId, p_lines: links })
@@ -1041,9 +1372,10 @@ async function linkDocumentChargeLines(admin: any, current: any, documentId: str
 
 async function createDocumentDraft(admin: any, current: any, input: DraftInput) {
   await requirePermission(admin, current.User_ID, documentPermission(input.type))
-  await legalEntity(admin, current, input.legalEntityId)
-  const evidence = await financePurchaseEvidence(admin, current, input)
-  const controlledInput = await controlledDocumentDraftInput(admin, input)
+  const tenantEntity = await tenantLegalEntity(admin, current)
+  const tenantInput: ControlledDraftInput = { ...input, legalEntityId: tenantEntity.LegalEntity_ID }
+  const evidence = await financePurchaseEvidence(admin, current, tenantInput)
+  const controlledInput = await controlledDocumentDraftInput(admin, tenantInput)
   const { data, error } = await admin.rpc("multideck_finance_create_document_draft", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_input: { ...controlledInput, idempotencyKey: input.idempotencyKey || crypto.randomUUID() } })
   rpcFailure(error, "Could not create the finance draft.")
   await linkDocumentChargeLines(admin, current, data?.FINDoc_ID, controlledInput)
@@ -1051,7 +1383,7 @@ async function createDocumentDraft(admin: any, current: any, input: DraftInput) 
   return data
 }
 
-async function financePurchaseEvidence(admin: any, current: any, input: DraftInput) {
+async function financePurchaseEvidence(admin: any, current: any, input: ControlledDraftInput) {
   const extractionId = clean(input.sourceExtractionId, 36)
   if (!extractionId) return null
   if (!isUuid(extractionId) || (input.type !== "pl_invoice" && input.type !== "debit_note")) throw new HttpError(400, "Choose a valid supplier document extraction.")
@@ -1147,7 +1479,9 @@ async function retryDocumentPosting(admin: any, current: any, id: string) {
 
 async function createCashDraft(admin: any, current: any, input: CashInput) {
   await requirePermission(admin, current.User_ID, cashPermission(input.type))
-  const { data, error } = await admin.rpc("multideck_finance_create_cash_draft", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_input: { ...input, idempotencyKey: input.idempotencyKey || crypto.randomUUID() } })
+  const tenantEntity = await tenantLegalEntity(admin, current)
+  const controlledInput: ControlledCashInput = { ...input, legalEntityId: tenantEntity.LegalEntity_ID }
+  const { data, error } = await admin.rpc("multideck_finance_create_cash_draft", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_input: { ...controlledInput, idempotencyKey: input.idempotencyKey || crypto.randomUUID() } })
   rpcFailure(error, "Could not create the cash draft.")
   return data
 }
@@ -1554,6 +1888,16 @@ Deno.serve(async (request) => {
     if (request.method === "POST" && parts[0] === "cash" && parts[2] === "approve") return json(request, await transitionCash(admin, current, parts[1], "approve", await optionalReason(request)))
     if (request.method === "POST" && parts[0] === "cash" && parts[2] === "reject") return json(request, await transitionCash(admin, current, parts[1], "reject", await optionalReason(request)))
     if (request.method === "POST" && parts[0] === "integration-queue" && parts[2] === "process") return json(request, await processQueue(admin, current, parts[1]))
+    if (request.method === "GET" && parts[0] === "provider-parties" && parts[1] === "sync") {
+      await requirePermission(admin, current.User_ID, "Finance.Integration.Manage")
+      const partyType = clean(new URL(request.url).searchParams.get("partyType"), 20) as ProviderPartyType
+      if (partyType !== "customer" && partyType !== "supplier") throw new HttpError(400, "Choose customers or suppliers to sync.")
+      return json(request, await providerPartySyncOverview(admin, current, partyType))
+    }
+    if (request.method === "POST" && parts[0] === "provider-parties" && parts[1] === "sync") {
+      await requirePermission(admin, current.User_ID, "Finance.Integration.Manage")
+      return json(request, await syncProviderParties(admin, current, await body<ProviderPartySyncInput>(request)))
+    }
     if (request.method === "GET" && parts[0] === "provider-customers" && parts[1] === "context") {
       await requirePermission(admin, current.User_ID, "Finance.Integration.Manage")
       const search = new URL(request.url).searchParams

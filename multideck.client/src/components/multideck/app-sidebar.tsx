@@ -681,7 +681,7 @@ function CustomisableSidebarSection({
   return <SidebarSection className={className}>{rows}</SidebarSection>
 }
 
-function routeMatches(item: NavItem, route: string) {
+function routePatternMatches(item: NavItem, route: string) {
   if (!item.route) return false
   if (item.route === "/") return route === "/"
   if (item.route === "/customs/standalone/export") return /^\/customs\/standalone\/(export|import)(\/|$)/.test(route)
@@ -692,6 +692,22 @@ function routeMatches(item: NavItem, route: string) {
   if (item.route === "/crm") return route === "/crm"
   if (item.route === "/warehouse") return route === "/warehouse"
   return route === item.route || route.startsWith(`${item.route}/`)
+}
+
+const sidebarRouteItems = sidebarAreas.flatMap((area) =>
+  area.destinations.flatMap((destination) => [destination, ...(destination.children ?? [])]),
+)
+
+function routeMatches(item: NavItem, route: string) {
+  if (!routePatternMatches(item, route) || !item.route) return false
+  const itemRoute = item.route
+
+  return !sidebarRouteItems.some((candidate) =>
+    candidate.route !== itemRoute
+    && candidate.route
+    && candidate.route.length > itemRoute.length
+    && routePatternMatches(candidate, route),
+  )
 }
 
 function destinationMatches(destination: SidebarDestination, route: string) {
