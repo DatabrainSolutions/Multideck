@@ -5668,6 +5668,79 @@ export function MeetingAttendeeList({ participants }) {
   onChange={(workingHours) => setAvailability({ ...availability, workingHours })}
 />`,
   },
+  {
+    id: "booking-link-kind-picker",
+    name: "Booking Link Kind Picker",
+    category: "Controls",
+    description: "Three quiet radio cards for how a booking link is shared: one-to-one, round robin or collective, each with a one-line explanation.",
+    details: "Use when an operator creates or edits a booking link. The copy carries the explanation so the builder never needs a help panel: one-to-one offers only your time, round robin pools a team and gives each meeting to the least-booked free host, collective only offers times when every host is free.",
+    foundOn: [{ label: "Booking links · New link", route: "/calendar/booking-links" }, { label: "Booking links · Edit link", route: "/calendar/booking-links" }, { label: "Components", route: "/components?component=booking-link-kind-picker" }],
+    componentCode: `export function BookingLinkKindPicker({ value, onChange }) {
+  return (
+    <div role="radiogroup" className="grid gap-1.5 sm:grid-cols-3">
+      {["one_on_one", "round_robin", "collective"].map((kind) => (
+        <button role="radio" aria-checked={value === kind} onClick={() => onChange(kind)}>
+          <span>{bookingLinkKindLabels[kind].label}</span>
+          <span>{bookingLinkKindLabels[kind].description}</span>
+        </button>
+      ))}
+    </div>
+  )
+}`,
+    usageCode: `<BookingLinkKindPicker value={kind} onChange={setKind} />`,
+  },
+  {
+    id: "booking-host-picker",
+    name: "Booking Host Picker",
+    category: "Controls",
+    description: "Chips for the chosen hosts, a searchable list of active colleagues, and a quiet warning when someone has not connected the link's meeting provider.",
+    details: "Use for round robin and collective booking links. You are always a host, so you appear pinned. Colleagues who have not connected the chosen provider stay selectable but are marked, because round robin skips them and a collective link cannot book until everyone is ready.",
+    foundOn: [{ label: "Booking links · New link", route: "/calendar/booking-links" }, { label: "Booking links · Edit link", route: "/calendar/booking-links" }, { label: "Components", route: "/components?component=booking-host-picker" }],
+    componentCode: `export function BookingHostPicker({ value, onChange, kind, provider }) {
+  const { hosts } = useHostCandidates()
+  const needed = providerConnectionCode(provider)
+  return (
+    <>
+      <div className="flex flex-wrap gap-1.5">
+        <HostChip host={self} pinned />
+        {selected.map((host) => <HostChip host={host} onRemove={() => toggle(host.userId)} />)}
+      </div>
+      {unready.length ? <p role="status">{names} have not connected {meetingProviderLabels[provider]}.</p> : null}
+      <ul role="listbox" aria-multiselectable="true">
+        {others.map((host) => <li role="option" aria-selected={value.includes(host.userId)} onClick={() => toggle(host.userId)}>…</li>)}
+      </ul>
+    </>
+  )
+}`,
+    usageCode: `<BookingHostPicker value={hostUserIds} onChange={setHostUserIds} kind="round_robin" provider="google_meet" />`,
+  },
+  {
+    id: "booking-question-builder",
+    name: "Booking Question Builder",
+    category: "Controls",
+    description: "Builds the public booking form: name and email fixed, three common questions toggled on or off, custom questions with an answer type and a Required switch.",
+    details: "Use in the booking link builder. Custom questions choose short or long answer, email, phone, number, choice list or tick box; choice lists edit their options inline as tags so nothing opens a second panel. Required answers block the public booking until filled in.",
+    foundOn: [{ label: "Booking links · Edit link · Form", route: "/calendar/booking-links" }, { label: "Components", route: "/components?component=booking-question-builder" }],
+    componentCode: `export function BookingQuestionBuilder({ value, onChange }) {
+  return (
+    <>
+      {builtInQuestions.map((question) => (
+        <li><span>{question.label}</span><Switch size="sm" checked={selected?.required} />Required<Switch size="sm" checked={Boolean(selected)} /></li>
+      ))}
+      {value.filter((question) => !question.builtIn).map((question) => (
+        <li>
+          <Input value={question.label} placeholder="Ask a question" />
+          <Select value={question.type}>{questionTypes.map((type) => <SelectItem value={type}>{bookingQuestionTypeLabels[type]}</SelectItem>)}</Select>
+          <Switch size="sm" checked={question.required} />Required
+          {question.type === "select" ? <TagEntryField terms={question.options} onTermsChange={(options) => patch(question.id, { options })} /> : null}
+        </li>
+      ))}
+      <Button variant="ghost" size="sm" onClick={add}><Plus />Add question</Button>
+    </>
+  )
+}`,
+    usageCode: `<BookingQuestionBuilder value={questions} onChange={setQuestions} />`,
+  },
 ]
 
 export const galleryCategories = ["All", "Design System", "Foundation", "Controls", "Navigation", "Data", "Visualizations", "Feedback", "Operations", "CRM", "Agent Dexter"]
@@ -5712,6 +5785,9 @@ export const galleryIcons = {
   "availability-picker": CalendarDays,
   "verification-code-input": ShieldCheck,
   "working-hours-editor": Clock3,
+  "booking-link-kind-picker": Users,
+  "booking-host-picker": Users,
+  "booking-question-builder": ClipboardCheck,
   command: ScanText,
   "app-breadcrumbs": ListOrdered,
   sidebar: LayoutDashboard,

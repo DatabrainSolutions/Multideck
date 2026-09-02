@@ -1,6 +1,7 @@
 import { edgeFetch } from "@/lib/api"
 import { getSupabaseSession, supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
 import type { PublicBranding } from "@/lib/public-brand-theme"
+import { normaliseBookingLink } from "@/lib/booking-link-response"
 
 export type CalendarProvider = "multideck" | "google_meet" | "microsoft_teams" | "zoom" | "phone" | "in_person"
 export type MeetingStatus = "provisioning" | "confirmed" | "sync_pending" | "sync_failed" | "cancelled" | "completed"
@@ -99,7 +100,42 @@ export type CalendarConnection = {
   colour: MeetingColour
 }
 
-export type BookingQuestion = { id: string; label: string; required?: boolean; type?: "short_text" | "long_text"; builtIn?: boolean }
+export type BookingQuestionType = "short_text" | "long_text" | "email" | "phone" | "number" | "select" | "checkbox"
+
+export type BookingQuestion = {
+  id: string
+  label: string
+  required?: boolean
+  type?: BookingQuestionType
+  /** Choices for `select` questions, in display order. */
+  options?: string[]
+  builtIn?: boolean
+}
+
+export const bookingQuestionTypeLabels: Record<BookingQuestionType, string> = {
+  short_text: "Short answer",
+  long_text: "Long answer",
+  email: "Email address",
+  phone: "Phone number",
+  number: "Number",
+  select: "Choice list",
+  checkbox: "Yes / no",
+}
+
+/**
+ * Who takes the meeting. One-to-one is the owner alone; round robin shares
+ * bookings across a host pool and picks whoever is free; collective needs
+ * every host free at once and invites all of them.
+ */
+export type BookingLinkKind = "one_on_one" | "round_robin" | "collective"
+
+export const bookingLinkKindLabels: Record<BookingLinkKind, { label: string; description: string }> = {
+  one_on_one: { label: "One-to-one", description: "You take every booking." },
+  round_robin: { label: "Round robin", description: "Shared across a team; whoever is free takes it." },
+  collective: { label: "Collective", description: "Everyone chosen must be free and attends." },
+}
+
+export type BookingLinkHost = { userId: string; name: string; email: string }
 
 export type MeetingEmailTemplateKind = "booking_verification" | "management" | "standalone_confirmation" | "reminder" | "rescheduled" | "cancelled" | "group_reschedule_request" | "group_reschedule_outcome"
 
@@ -126,6 +162,9 @@ export type BookingLink = {
   provider: CalendarProvider
   location: string | null
   status: "active" | "paused" | "archived"
+  kind: BookingLinkKind
+  /** Team members sharing the link. Empty for one-to-one. */
+  hosts: BookingLinkHost[]
   availability: CalendarAvailabilityPreferences["workingHours"] | null
   minimumNoticeMinutes: number | null
   bookingHorizonDays: number | null
@@ -175,6 +214,9 @@ export type PublicBooking = {
   provider: CalendarProvider
   location: string | null
   organiser: { name: string }
+  kind?: BookingLinkKind
+  /** Display names of the hosts a collective booking will invite. */
+  hostNames?: string[]
   questions: BookingQuestion[]
   status: string
   branding: PublicBranding | null
@@ -265,10 +307,12 @@ async function localPreview() {
 export async function getCalendarWorkspace(start: string, end: string, signal?: AbortSignal) {
   if (localCalendarPreviewEnabled) {
     if (signal?.aborted) throw new DOMException("The request was aborted.", "AbortError")
-    return (await localPreview()).getPreviewCalendarWorkspace(start, end)
+    const workspace = (await localPreview()).getPreviewCalendarWorkspace(start, end)
+    return { ...workspace, bookingLinks: workspace.bookingLinks.map(normaliseBookingLink) }
   }
   const query = new URLSearchParams({ start, end })
-  return apiJson<CalendarWorkspace>(calendarFetch(`/workspace?${query}`, { signal }), "Calendar could not be loaded.")
+  const workspace = await apiJson<CalendarWorkspace>(calendarFetch(`/workspace?${query}`, { signal }), "Calendar could not be loaded.")
+  return { ...workspace, bookingLinks: workspace.bookingLinks.map(normaliseBookingLink) }
 }
 
 export async function createMeeting(draft: MeetingDraft, source: "calendar" | "crm" = "calendar") {
@@ -278,6 +322,23 @@ export async function createMeeting(draft: MeetingDraft, source: "calendar" | "c
     headers: { "Content-Type": "application/json", "x-multideck-meeting-source": source },
     body: JSON.stringify(draft),
   }), "The meeting could not be scheduled.")
+}
+
+export type ExternalEventPatch = { title?: string; startAt?: string; endAt?: string; timeZone?: string; action?: "update" | "cancel" }
+
+/**
+ * Change a Google or Microsoft calendar event that Multideck only mirrors. The
+ * provider is updated first; the mirror is refreshed only when it accepts.
+ */
+export async function updateExternalEvent(id: string, input: ExternalEventPatch) {
+  if (localCalendarPreviewEnabled) return (await localPreview()).updatePreviewExternalEvent(id, input)
+  return apiJson<CalendarEvent>(calendarFetch(`/external-events/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }), "The calendar event could not be changed.")
+}
+
+/** Route a change to the right endpoint for a Multideck meeting or a mirrored provider event. */
+export async function updateCalendarEvent(event: Pick<CalendarEvent, "id" | "provider">, input: ExternalEventPatch & Partial<MeetingDraft>) {
+  if (event.provider === "calendar") return updateExternalEvent(event.id, { title: input.title, startAt: input.startAt, endAt: input.endAt, timeZone: input.timeZone, action: input.action })
+  return updateMeeting(event.id, input)
 }
 
 export async function updateMeeting(id: string, input: Partial<MeetingDraft> & { action?: "update" | "cancel" }) {
@@ -328,14 +389,32 @@ export async function saveCalendarAvailability(availability: CalendarAvailabilit
   return apiJson<{ saved: boolean; availability: CalendarAvailabilityPreferences }>(calendarFetch("/availability", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(availability) }), "Availability could not be saved.")
 }
 
-export async function createBookingLink(input: Pick<BookingLink, "title" | "description" | "durationMinutes" | "provider" | "location" | "questions"> & Partial<Pick<BookingLink, "availability" | "minimumNoticeMinutes" | "bookingHorizonDays" | "bufferBeforeMinutes" | "bufferAfterMinutes" | "rescheduleCutoffMinutes" | "cancellationCutoffMinutes">> & { slug?: string }) {
-  if (localCalendarPreviewEnabled) return (await localPreview()).createPreviewBookingLink(input)
-  return apiJson<BookingLink>(calendarFetch("/booking-links", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }), "The booking link could not be created.")
+export type BookingLinkInput = Pick<BookingLink, "title" | "description" | "durationMinutes" | "provider" | "location" | "questions"> & Partial<Pick<BookingLink, "kind" | "availability" | "minimumNoticeMinutes" | "bookingHorizonDays" | "bufferBeforeMinutes" | "bufferAfterMinutes" | "rescheduleCutoffMinutes" | "cancellationCutoffMinutes">> & { slug?: string; hostUserIds?: string[] }
+
+export type BookingHostCandidate = {
+  userId: string
+  name: string
+  email: string
+  detail: string | null
+  self: boolean
+  /** Provider codes this colleague has connected, e.g. "google". */
+  connectedProviders: Array<"google" | "microsoft" | "zoom">
 }
 
-export async function updateBookingLink(id: string, input: Partial<BookingLink>) {
-  if (localCalendarPreviewEnabled) return (await localPreview()).updatePreviewBookingLink(id, input)
-  return apiJson<BookingLink>(calendarFetch(`/booking-links/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }), "The booking link could not be changed.")
+/** Colleagues who may host a round robin or collective booking link. */
+export async function listBookingHostCandidates(signal?: AbortSignal) {
+  if (localCalendarPreviewEnabled) return (await localPreview()).listPreviewBookingHostCandidates()
+  return apiJson<{ hosts: BookingHostCandidate[] }>(calendarFetch("/booking-links/hosts", { signal }), "Hosts could not be loaded.")
+}
+
+export async function createBookingLink(input: BookingLinkInput) {
+  if (localCalendarPreviewEnabled) return normaliseBookingLink((await localPreview()).createPreviewBookingLink(input))
+  return normaliseBookingLink(await apiJson<BookingLink>(calendarFetch("/booking-links", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }), "The booking link could not be created."))
+}
+
+export async function updateBookingLink(id: string, input: Partial<BookingLink> & { hostUserIds?: string[] }) {
+  if (localCalendarPreviewEnabled) return normaliseBookingLink((await localPreview()).updatePreviewBookingLink(id, input))
+  return normaliseBookingLink(await apiJson<BookingLink>(calendarFetch(`/booking-links/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }), "The booking link could not be changed."))
 }
 
 export async function getMeetingEmailTemplates() {

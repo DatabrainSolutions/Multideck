@@ -94,16 +94,40 @@ export function MeetingResponseSummary({ participants, compact = false, classNam
  * `maxVisible` rows with a "Show all" toggle so a 40-person briefing does not
  * push the meeting's actions off screen.
  */
-export function MeetingAttendeeList({ participants, maxVisible, className }: { participants: MeetingParticipant[]; maxVisible?: number; className?: string }) {
+export function MeetingAttendeeList({ participants, maxVisible, filterable = false, className }: {
+  participants: MeetingParticipant[]
+  maxVisible?: number
+  /** Show reply filter chips, for large meetings where "who declined?" matters more than the full roster. */
+  filterable?: boolean
+  className?: string
+}) {
   const [expanded, setExpanded] = useState(false)
-  const ordered = [...participants].sort((left, right) => {
-    if ((left.role === "organiser") !== (right.role === "organiser")) return left.role === "organiser" ? -1 : 1
-    return responseOrder.indexOf(left.response ?? "needs_action") - responseOrder.indexOf(right.response ?? "needs_action")
-  })
+  const [filter, setFilter] = useState<AttendeeResponse | "all">("all")
+  const counts = summariseResponses(participants)
+  const ordered = [...participants]
+    .filter((participant) => filter === "all" || (participant.response ?? "needs_action") === filter)
+    .sort((left, right) => {
+      if ((left.role === "organiser") !== (right.role === "organiser")) return left.role === "organiser" ? -1 : 1
+      return responseOrder.indexOf(left.response ?? "needs_action") - responseOrder.indexOf(right.response ?? "needs_action")
+    })
   const collapsed = maxVisible !== undefined && !expanded && ordered.length > maxVisible + 1
   const visible = collapsed ? ordered.slice(0, maxVisible) : ordered
+  const chips: Array<{ value: AttendeeResponse | "all"; label: string; count: number }> = [
+    { value: "all", label: "All", count: participants.length },
+    ...responseOrder.filter((response) => counts[response] > 0).map((response) => ({ value: response, label: attendeeResponseMeta[response].label, count: counts[response] })),
+  ]
   return (
     <ul className={cn("grid gap-1", className)}>
+      {filterable ? (
+        <li role="group" aria-label="Filter attendees by reply" className="flex flex-wrap gap-1 px-2 pb-1">
+          {chips.map((chip) => (
+            <button key={chip.value} type="button" aria-pressed={filter === chip.value} onClick={() => { setFilter(chip.value); setExpanded(false) }} className={cn("inline-flex h-6 items-center gap-1 rounded-full px-2 text-[10.5px] font-medium tabular-nums transition-colors", filter === chip.value ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "bg-[var(--md-surface-tint)] text-[var(--md-subtle)] hover:text-[var(--md-ink)]")}>
+              {chip.label}<span className={cn("opacity-70", filter === chip.value && "opacity-100")}>{chip.count}</span>
+            </button>
+          ))}
+        </li>
+      ) : null}
+      {filterable && !ordered.length ? <li className="px-2 py-1.5 text-[11.5px] text-[var(--md-subtle)]">No one with that reply yet.</li> : null}
       {visible.map((participant) => {
         const response = participant.response ?? "needs_action"
         return (

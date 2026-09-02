@@ -3,6 +3,7 @@ import { zoomNumericReference, zoomStartTime } from "../_shared/calendar-zoom.ts
 import { adminClient, HttpError } from "../_shared/backend.ts"
 import { cleanText, meetingIcs, randomToken, sha256 } from "../_shared/calendar.ts"
 import { calendarProviderAccessToken } from "../_shared/calendar-provider-auth.ts"
+import { normaliseExternalEventChange, pushExternalEventChange } from "../_shared/calendar-provider-events.ts"
 import { linkBookingMeetingToCrm } from "../_shared/calendar-booking-crm.ts"
 import { readCalendarEmailTemplate, renderCalendarEmailTemplate, type CalendarEmailTemplateKind } from "../_shared/calendar-email-templates.ts"
 import { renderBrandedEmail } from "../_shared/email-template.ts"
@@ -777,8 +778,38 @@ async function enqueueParticipantEmails(admin: SupabaseClient, state: Awaited<Re
 
 type DeliveryResult = { providerId: string | null; cancelled?: boolean }
 
+/**
+ * Dexter approves an external-event change inside SQL, which cannot reach
+ * Google or Microsoft. The action queues this delivery; the worker writes the
+ * change to the provider and refreshes the mirror.
+ */
+async function processExternalEventDelivery(admin: SupabaseClient, delivery: Record<string, unknown>, cancel: boolean): Promise<DeliveryResult> {
+  const rendered = object(delivery.CALDelivery_RenderedJSON)
+  const providerEventId = cleanText(rendered.providerEventId, 60)
+  if (!providerEventId) throw new HttpError(409, "The delivery has no provider event.")
+  const { data: event, error } = await admin.from("CAL_ProviderEvents").select("*")
+    .eq("CALProviderEvent_ID", providerEventId).eq("CALProviderEvent_CompanyID", delivery.CALDelivery_CompanyID).maybeSingle()
+  if (error) throw error
+  if (!event) throw new HttpError(404, "The provider event no longer exists.")
+  if (event.CALProviderEvent_IsCancelled && !cancel) {
+    const { error: cancelError } = await admin.from("CAL_Deliveries").update({ CALDelivery_StatusCode: "cancelled", CALDelivery_LeaseUntil: null, CALDelivery_CompletedAt: new Date().toISOString(), CALDelivery_LastError: null }).eq("CALDelivery_ID", delivery.CALDelivery_ID)
+    if (cancelError) throw cancelError
+    return { providerId: null, cancelled: true }
+  }
+  const change = normaliseExternalEventChange(event, {
+    action: cancel ? "cancel" : "update",
+    title: rendered.title === undefined || rendered.title === null ? undefined : rendered.title,
+    startAt: rendered.startAt ?? undefined,
+    endAt: rendered.endAt ?? undefined,
+    timeZone: rendered.timeZone ?? undefined,
+  })
+  const { row } = await pushExternalEventChange(admin, event, change)
+  return { providerId: String(row.CALProviderEvent_ProviderID) }
+}
+
 async function processDelivery(admin: SupabaseClient, delivery: Record<string, unknown>): Promise<DeliveryResult> {
   const kind = String(delivery.CALDelivery_KindCode)
+  if (kind === "external_event_update" || kind === "external_event_cancel") return await processExternalEventDelivery(admin, delivery, kind === "external_event_cancel")
   if (!delivery.CALDelivery_MeetingID) throw new HttpError(409, "The delivery has no meeting.")
   let state = await loadMeetingState(admin, String(delivery.CALDelivery_MeetingID))
   if (kind === "reminder") {

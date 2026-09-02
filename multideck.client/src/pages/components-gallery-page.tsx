@@ -255,11 +255,12 @@ import { VerificationCodeInput } from "@/components/multideck/verification-code-
 import { CalendarDayRibbon, CalendarView } from "@/components/multideck/calendar-view"
 import { MeetingColourPicker } from "@/components/multideck/meeting-colour-picker"
 import { MeetingAttendeePicker } from "@/components/multideck/meeting-attendee-picker"
+import { BookingHostPicker, BookingLinkKindPicker, BookingQuestionBuilder, defaultBookingQuestions } from "@/components/multideck/booking-link-builder"
 import { MeetingAttendeeList, MeetingResponseSummary } from "@/components/multideck/meeting-attendee-status"
 import { MeetingProviderSelect } from "@/components/multideck/meeting-provider-select"
 import { MeetingTimePicker } from "@/components/multideck/meeting-time-picker"
 import { WorkingHoursEditor, defaultWorkingHours, type WorkingHours } from "@/components/multideck/working-hours-editor"
-import type { CalendarEvent, CalendarProvider, CalendarRibbon, MeetingColour, MeetingParticipant, MeetingPersonSuggestion } from "@/lib/calendar-api"
+import type { BookingHostCandidate, BookingLinkKind, BookingQuestion, CalendarEvent, CalendarProvider, CalendarRibbon, MeetingColour, MeetingParticipant, MeetingPersonSuggestion } from "@/lib/calendar-api"
 import { CustomsReadinessReview } from "@/components/multideck/customs-readiness-review"
 import { UnifiedQuoteChargesWorkspace, type UnifiedQuoteChargeRow } from "@/components/multideck/unified-quote-charges-workspace"
 import { quoteMatchesSearch, quoteSearchFieldOptions, type QuoteSearchQuery } from "@/lib/quote-filters"
@@ -304,7 +305,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "booking-link-kind-picker", "booking-host-picker", "booking-question-builder", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
   },
   {
     label: "Auth components",
@@ -1623,9 +1624,24 @@ const previewMeetingRoster: MeetingParticipant[] = [
   { id: "r5", name: "Jordan Reyes", email: "jordan@atlasfreight.example", response: "declined", external: true },
 ]
 
+const previewBookingHosts: BookingHostCandidate[] = [
+  { userId: "h-self", name: "Harry Phillips", email: "harry@databrain.co.uk", detail: "Founder", self: true, connectedProviders: ["google"] },
+  { userId: "h-priya", name: "Priya Shah", email: "priya@multideck.app", detail: "Operations lead", self: false, connectedProviders: ["google", "microsoft"] },
+  { userId: "h-tom", name: "Tom Ellis", email: "tom@multideck.app", detail: "Customs", self: false, connectedProviders: [] },
+  { userId: "h-mei", name: "Mei Lin", email: "mei@multideck.app", detail: "Sales", self: false, connectedProviders: ["zoom"] },
+]
+const loadPreviewBookingHosts = () => Promise.resolve({ hosts: previewBookingHosts })
+const previewBookingQuestions: BookingQuestion[] = [
+  ...defaultBookingQuestions.filter((question) => question.id !== "phone").map((question) => ({ ...question, required: question.id === "company" })),
+  { id: "q-lane", label: "Which lane are you shipping?", type: "select", required: true, options: ["Sea freight", "Air freight", "Road"] },
+]
+
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
+  const [previewBookingKind, setPreviewBookingKind] = useState<BookingLinkKind>("round_robin")
+  const [previewBookingHostIds, setPreviewBookingHostIds] = useState<string[]>(["h-priya", "h-tom"])
+  const [previewBookingForm, setPreviewBookingForm] = useState<BookingQuestion[]>(previewBookingQuestions)
   const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
   const [previewSidebarFavouriteIds, setPreviewSidebarFavouriteIds] = useState<string[]>([])
   const [previewTodoChecked, setPreviewTodoChecked] = useState(false)
@@ -1951,6 +1967,9 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "meeting-attendee-picker" ? <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><MeetingAttendeePicker value={previewMeetingAttendees} onChange={setPreviewMeetingAttendees} search={async (query) => ({ people: previewMeetingPeople.filter((person) => !query.trim() ? person.kind === "team" : [person.name, person.email, person.detail ?? ""].some((value) => value.toLowerCase().includes(query.trim().toLowerCase()))) })} /></div> : null}
 
       {id === "working-hours-editor" ? <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3 shadow-[var(--md-shadow-line)]"><WorkingHoursEditor value={previewWorkingHours} onChange={setPreviewWorkingHours} /></div> : null}
+      {id === "booking-link-kind-picker" ? <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]"><BookingLinkKindPicker value={previewBookingKind} onChange={setPreviewBookingKind} /></div> : null}
+      {id === "booking-host-picker" ? <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]"><BookingHostPicker value={previewBookingHostIds} onChange={setPreviewBookingHostIds} kind="round_robin" provider="google_meet" load={loadPreviewBookingHosts} /></div> : null}
+      {id === "booking-question-builder" ? <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]"><BookingQuestionBuilder value={previewBookingForm} onChange={setPreviewBookingForm} /></div> : null}
       {id === "meeting-attendee-status" ? <div className="w-full max-w-[460px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]"><div className="flex items-baseline justify-between gap-3 px-2"><p className="text-[12px] font-medium text-[var(--md-ink)]">5 attendees</p><MeetingResponseSummary participants={previewMeetingRoster} /></div><MeetingAttendeeList participants={previewMeetingRoster} maxVisible={3} className="mt-2" /><div className="mt-3 flex items-center justify-between gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2 text-[10.5px] tabular-nums text-[var(--md-subtle)]"><span>10:00–10:45 · compact mark for calendar blocks</span><MeetingResponseSummary participants={previewMeetingRoster} compact /></div></div> : null}
 
       {id === "wizard-dialog" ? (

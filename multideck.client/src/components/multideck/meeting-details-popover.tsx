@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type RefObject } from "react"
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react"
-import { Briefcase, Building2, Check, Clock3, Copy, ExternalLink, MapPin, Palette, Pencil, Phone, TextQuote, Trash2, TriangleAlert, Users, Video, X } from "@/components/icons/hugeicons"
+import { Briefcase, Building2, CalendarDays, Check, Clock3, Copy, ExternalLink, MapPin, Palette, Pencil, Phone, TextQuote, Trash2, TriangleAlert, Users, Video, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,7 +11,7 @@ import { MeetingAttendeeList, MeetingResponseSummary } from "@/components/multid
 import { MeetingColourPicker } from "@/components/multideck/meeting-colour-picker"
 import { MeetingProviderMark, meetingProviderLabels } from "@/components/multideck/meeting-provider-mark"
 import { MeetingTimePicker } from "@/components/multideck/meeting-time-picker"
-import { decideMeetingChangeRequest, updateMeeting, type CalendarEvent, type MeetingChangeRequest, type MeetingColour, type MeetingDraft } from "@/lib/calendar-api"
+import { decideMeetingChangeRequest, updateExternalEvent, updateMeeting, type CalendarEvent, type MeetingChangeRequest, type MeetingColour, type MeetingDraft } from "@/lib/calendar-api"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdEaseIn, mdEaseOut, reduceMotion } from "@/lib/motion"
 import { cn } from "@/lib/utils"
@@ -109,6 +109,10 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
   useEffect(() => { setTimes({ startAt: event.startAt, endAt: event.endAt }); setColour(event.colour ?? "teal"); setMode("view"); setError(null) }, [event])
 
   const pending = event.status === "sync_pending" || event.status === "provisioning"
+  // Mirrored Google/Microsoft events: the provider owns them, so edits are
+  // written there first and only the title and time can change from here.
+  const external = event.provider === "calendar"
+  const externalSource = event.calendarSource === "microsoft" ? "Microsoft Calendar" : "Google Calendar"
   const provider = event.provider === "calendar" ? "multideck" : event.provider
   const durationMinutes = Math.round((Date.parse(event.endAt) - Date.parse(event.startAt)) / 60_000)
   const dateLine = useMemo(() => {
@@ -128,8 +132,21 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
 
   async function reschedule() {
     if (saving) return
-    if (!details.title.trim()) { setError("Give the meeting a title."); return }
+    if (!external && !details.title.trim()) { setError("Give the meeting a title."); return }
     if (Date.parse(times.endAt) <= Date.parse(times.startAt)) { setError("The meeting must finish after it starts."); return }
+    if (external) {
+      const patch: Parameters<typeof updateExternalEvent>[1] = {}
+      if (!event.private && details.title.trim() && details.title.trim() !== event.title) patch.title = details.title.trim()
+      if (times.startAt !== event.startAt || times.endAt !== event.endAt) Object.assign(patch, times, { timeZone: zone })
+      if (!Object.keys(patch).length) { setMode("view"); return }
+      setSaving(true); setError(null)
+      try {
+        await updateExternalEvent(event.id, patch)
+        toast.success("Event updated", { description: `${externalSource} has the change and its guests are told.` })
+        onChanged(); onClose()
+      } catch (reason) { setError(reason instanceof Error ? reason.message : "The event could not be changed.") } finally { setSaving(false) }
+      return
+    }
     // Send only changed fields: a colour-only edit must not notify attendees.
     const patch: Partial<MeetingDraft> = {}
     if (details.title.trim() !== event.title) patch.title = details.title.trim()
@@ -148,6 +165,14 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
 
   async function cancel() {
     setSaving(true); setError(null)
+    if (external) {
+      try {
+        await updateExternalEvent(event.id, { action: "cancel" })
+        toast.success("Event deleted", { description: `It was removed from ${externalSource}.` })
+        onChanged(); onClose()
+      } catch (reason) { setError(reason instanceof Error ? reason.message : "The event could not be deleted.") } finally { setSaving(false) }
+      return
+    }
     try {
       const result = await updateMeeting(event.id, { action: "cancel" })
       toast.success(result.status === "sync_pending" ? "Cancellation sent to the provider" : "Meeting cancelled", { description: result.status === "sync_pending" ? "The meeting remains confirmed until the provider accepts the cancellation." : "Attendees will receive the cancellation." })
@@ -161,7 +186,7 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
         {event.canEdit && !pending && mode === "view" ? (
           <>
             <IconAction label="Edit event" icon={Pencil} onClick={() => { setDetails({ title: event.title, agenda: event.agenda ?? "", location: event.location ?? "" }); setColour(event.colour ?? "teal"); setTimes({ startAt: event.startAt, endAt: event.endAt }); setError(null); setMode("reschedule") }} />
-            <IconAction label="Cancel meeting" icon={Trash2} tone="danger" onClick={() => setMode("cancel")} />
+            <IconAction label={external ? "Delete event" : "Cancel meeting"} icon={Trash2} tone="danger" onClick={() => setMode("cancel")} />
           </>
         ) : null}
         <IconAction label="Close" icon={X} disabled={saving} onClick={onClose} />
@@ -170,7 +195,7 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
       <motion.div variants={row} className="flex shrink-0 items-start gap-3 px-5 pb-4 pt-1">
         <MeetingProviderMark provider={provider} className="mt-0.5 size-6 shrink-0" />
         <div className="min-w-0">
-          {mode === "reschedule" ? <Input aria-label="Meeting title" value={details.title} disabled={saving} onChange={(e) => setDetails((value) => ({ ...value, title: e.target.value }))} /> : <h2 className="text-[17px] font-medium leading-6 tracking-[-.01em] text-[var(--md-ink)]">{event.private ? "Busy" : event.title}</h2>}
+          {mode === "reschedule" && !event.private ? <Input aria-label="Meeting title" value={details.title} disabled={saving} onChange={(e) => setDetails((value) => ({ ...value, title: e.target.value }))} /> : <h2 className="text-[17px] font-medium leading-6 tracking-[-.01em] text-[var(--md-ink)]">{event.private ? "Busy" : event.title}</h2>}
           {mode === "reschedule" ? (
             <div className="mt-3">
               <MeetingTimePicker startAt={times.startAt} endAt={times.endAt} timeZone={zone} onChange={(next) => { setTimes(next); setError(null) }} />
@@ -184,7 +209,7 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
       </motion.div>
 
       <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto pb-4">
-        {event.canEdit && mode === "reschedule" ? (
+        {event.canEdit && mode === "reschedule" && !external ? (
           <>
           <DetailRow icon={Palette}>
             <MeetingColourPicker value={colour} onChange={setColour} disabled={saving} compact />
@@ -192,6 +217,13 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
           <DetailRow icon={TextQuote}><Textarea aria-label="Agenda" placeholder="Add an agenda" value={details.agenda} disabled={saving} onChange={(e) => setDetails((value) => ({ ...value, agenda: e.target.value }))} /></DetailRow>
           <DetailRow icon={MapPin}><Input aria-label="Location" placeholder="Add a location" value={details.location} disabled={saving} onChange={(e) => setDetails((value) => ({ ...value, location: e.target.value }))} /></DetailRow>
           </>
+        ) : null}
+
+        {external ? (
+          <DetailRow icon={CalendarDays}>
+            <p className="text-[12.5px] text-[var(--md-text)]">Synced from {externalSource}</p>
+            <p className="mt-0.5 text-[11.5px] text-[var(--md-subtle)]">{event.private ? "Details are private. You can still move or delete it." : "Changes made here are written back to the provider."}</p>
+          </DetailRow>
         ) : null}
 
         {event.joinUrl ? (
@@ -226,7 +258,7 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
               <p className="text-[13px] text-[var(--md-ink)]">{participants.length} {participants.length === 1 ? "attendee" : "attendees"}</p>
               <MeetingResponseSummary participants={participants} />
             </div>
-            <MeetingAttendeeList participants={participants} maxVisible={4} className="-mx-2 mt-1.5" />
+            <MeetingAttendeeList participants={participants} maxVisible={4} filterable={participants.length > 6} className="-mx-2 mt-1.5" />
           </DetailRow>
         ) : null}
 
@@ -262,10 +294,10 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
               {error ? <p role="alert" className="flex w-full items-center gap-2 text-[11.5px] text-[var(--md-red)]"><TriangleAlert className="size-3.5 shrink-0" />{error}</p> : null}
               {mode === "cancel" ? (
                 <>
-                  <p className="text-[12px] text-[var(--md-text)]">Cancel this meeting? Attendees will be told.</p>
+                  <p className="text-[12px] text-[var(--md-text)]">{external ? `Delete this event from ${externalSource}? Its guests will be told.` : "Cancel this meeting? Attendees will be told."}</p>
                   <div className="flex gap-1.5">
                     <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={() => setMode("view")} className="h-8 rounded-[var(--md-radius-md)]">Keep</Button>
-                    <Button type="button" size="sm" disabled={saving} onClick={() => void cancel()} className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-red)] text-white hover:bg-[color-mix(in_srgb,var(--md-red),black_10%)]">{saving ? "Cancelling…" : "Cancel meeting"}</Button>
+                    <Button type="button" size="sm" disabled={saving} onClick={() => void cancel()} className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-red)] text-white hover:bg-[color-mix(in_srgb,var(--md-red),black_10%)]">{saving ? (external ? "Deleting…" : "Cancelling…") : external ? "Delete event" : "Cancel meeting"}</Button>
                   </div>
                 </>
               ) : mode === "reschedule" ? (
@@ -287,7 +319,8 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
  * Google Calendar's event card: a soft surface that blooms out of the event,
  * one calm row per fact, and reschedule or cancel handled in place without a
  * second screen. The anchor is the clicked event element so the card follows
- * it while the week scrolls and flips sides when it runs out of room.
+ * it while the week scrolls and flips sides when it runs out of room. A hairline
+ * stroke and a soft shadow lift it off busy grids without it feeling heavy.
  */
 export function MeetingDetailsPopover({ selection, onClose, onChanged, navigate }: {
   selection: MeetingDetailsAnchor | null
@@ -311,7 +344,7 @@ export function MeetingDetailsPopover({ selection, onClose, onChanged, navigate 
             collisionPadding={16}
             onOpenAutoFocus={(event) => { event.preventDefault(); cardRef.current?.focus({ preventScroll: true }) }}
             onCloseAutoFocus={(event) => { event.preventDefault(); if (selection.anchor.isConnected) selection.anchor.focus({ preventScroll: true }) }}
-            className="z-[120] w-[min(94vw,400px)] gap-0 rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-soft)] ring-1 ring-black/[0.05] data-open:animate-none data-closed:animate-none dark:ring-white/[0.05]"
+            className="z-[120] w-[min(94vw,400px)] gap-0 rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-popover)] data-open:animate-none data-closed:animate-none"
           >
             <motion.div
               ref={cardRef}

@@ -33,35 +33,97 @@ import { renderBrandedEmail } from "../_shared/email-template.ts"
 import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
 import { readConfiguredTenantBrand } from "../_shared/tenant-branding.ts"
 import { providerBusyRanges } from "../_shared/calendar-provider-availability.ts"
+import { normaliseExternalEventChange, pushExternalEventChange } from "../_shared/calendar-provider-events.ts"
 
 type Actor = Record<string, unknown> & { User_ID: string; Company_ID: string; User_Email: string }
 type JsonObject = Record<string, unknown>
 
 const DEFAULT_BOOKING_QUESTIONS = [
   { id: "company", label: "Company", type: "short_text", required: false, builtIn: true },
-  { id: "phone", label: "Phone", type: "short_text", required: false, builtIn: true },
+  { id: "phone", label: "Phone", type: "phone", required: false, builtIn: true },
   { id: "notes", label: "What would you like to discuss?", type: "long_text", required: false, builtIn: true },
 ]
+const BOOKING_QUESTION_TYPES = new Set(["short_text", "long_text", "email", "phone", "number", "select", "checkbox"])
+const BOOKING_LINK_KINDS = new Set(["one_on_one", "round_robin", "collective"])
 const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/
 const MEETING_COLOURS = new Set(["teal", "amber", "blue", "violet", "rose", "red", "cyan", "neutral"])
 
+/**
+ * Public-form questions the booker answers. Name and email are always asked
+ * and never appear here; everything else is optional and operator-defined.
+ */
 function bookingQuestions(value: unknown) {
   if (!Array.isArray(value)) return DEFAULT_BOOKING_QUESTIONS
-  return value.slice(0, 10).flatMap((candidate, index) => {
+  if (value.length > 12) throw new HttpError(400, "Keep the booking form to twelve questions or fewer.")
+  const seen = new Set<string>()
+  return value.flatMap((candidate, index) => {
     const question = candidate && typeof candidate === "object" ? candidate as JsonObject : {}
     const label = cleanText(question.label, 180)
     if (!label) return []
     const requestedId = cleanText(question.id, 80)
     const builtIn = ["company", "phone", "notes"].includes(requestedId)
-    return [{
-      id: builtIn ? requestedId : slugify(requestedId, `question-${index + 1}`),
-      label,
-      type: question.type === "long_text" ? "long_text" : "short_text",
-      required: question.required === true,
-      builtIn,
-    }]
+    const id = builtIn ? requestedId : slugify(requestedId || label, `question-${index + 1}`)
+    if (seen.has(id)) throw new HttpError(400, `Two booking questions share the name "${label}". Give each question a different label.`)
+    seen.add(id)
+    const requestedType = cleanText(question.type, 20)
+    const type = builtIn
+      ? (requestedId === "notes" ? "long_text" : requestedId === "phone" ? "phone" : "short_text")
+      : BOOKING_QUESTION_TYPES.has(requestedType) ? requestedType : "short_text"
+    const options = type === "select"
+      ? [...new Set((Array.isArray(question.options) ? question.options : []).map((option) => cleanText(option, 120)).filter(Boolean))].slice(0, 20)
+      : undefined
+    if (type === "select" && !options?.length) throw new HttpError(400, `"${label}" needs at least one choice.`)
+    return [{ id, label, type, required: question.required === true, builtIn, ...(options ? { options } : {}) }]
   })
+}
+
+function bookingLinkKind(value: unknown, fallback = "one_on_one") {
+  const kind = cleanText(value, 20) || fallback
+  if (!BOOKING_LINK_KINDS.has(kind)) throw new HttpError(400, "Choose a one-to-one, round robin or collective booking link.")
+  return kind
+}
+
+/** Validate that every requested host is an active colleague in this workspace. The owner is always a host. */
+async function bookingLinkHosts(admin: SupabaseClient, actor: Actor, kind: string, value: unknown) {
+  if (kind === "one_on_one") return [] as string[]
+  const requested = [...new Set((Array.isArray(value) ? value : []).map((id) => cleanText(id, 60)).filter((id) => uuidOrNull(id)))]
+  const ids = [...new Set([actor.User_ID, ...requested])]
+  if (ids.length > 25) throw new HttpError(400, "Choose up to twenty-five hosts.")
+  const { data, error } = await admin.from("cmp_Users").select("User_ID").eq("Company_ID", actor.Company_ID).eq("User_AccessStatus", "active").in("User_ID", ids)
+  if (error) throw new HttpError(500, "Hosts could not be checked.")
+  const active = new Set((data ?? []).map((row) => String(row.User_ID)))
+  if (ids.some((id) => !active.has(id))) throw new HttpError(400, "Every host must be an active member of this workspace.")
+  if (ids.length < 2) throw new HttpError(400, "Round robin and collective booking links need at least two hosts.")
+  return ids
+}
+
+async function saveBookingLinkHosts(admin: SupabaseClient, linkId: string, hostIds: string[]) {
+  const { error: clearError } = await admin.from("CAL_BookingLinkHosts").delete().eq("CALBookingLinkHost_BookingLinkID", linkId)
+  if (clearError) throw new HttpError(500, "Booking link hosts could not be saved.")
+  if (!hostIds.length) return
+  const { error } = await admin.from("CAL_BookingLinkHosts").insert(hostIds.map((userId, index) => ({
+    CALBookingLinkHost_BookingLinkID: linkId, CALBookingLinkHost_UserID: userId, CALBookingLinkHost_SortOrder: index,
+  })))
+  if (error) throw new HttpError(500, "Booking link hosts could not be saved.")
+}
+
+type BookingLinkHostRow = { CALBookingLinkHost_BookingLinkID: string; CALBookingLinkHost_UserID: string; CALBookingLinkHost_SortOrder: number; cmp_Users: Record<string, unknown> | Record<string, unknown>[] | null }
+
+async function loadBookingLinkHosts(admin: SupabaseClient, linkIds: string[]) {
+  const hosts = new Map<string, Array<{ userId: string; name: string; email: string }>>()
+  if (!linkIds.length) return hosts
+  const { data, error } = await admin.from("CAL_BookingLinkHosts")
+    .select("CALBookingLinkHost_BookingLinkID,CALBookingLinkHost_UserID,CALBookingLinkHost_SortOrder,cmp_Users(User_Firstname,User_Lastname,User_Email)")
+    .in("CALBookingLinkHost_BookingLinkID", linkIds).order("CALBookingLinkHost_SortOrder")
+  if (error) throw new HttpError(500, error.message)
+  for (const row of (data ?? []) as unknown as BookingLinkHostRow[]) {
+    const profile = (Array.isArray(row.cmp_Users) ? row.cmp_Users[0] : row.cmp_Users) ?? {}
+    const email = cleanText(profile.User_Email, 320)
+    const name = `${cleanText(profile.User_Firstname, 80)} ${cleanText(profile.User_Lastname, 80)}`.trim() || email.split("@")[0] || "Host"
+    hosts.set(row.CALBookingLinkHost_BookingLinkID, [...(hosts.get(row.CALBookingLinkHost_BookingLinkID) ?? []), { userId: row.CALBookingLinkHost_UserID, name, email }])
+  }
+  return hosts
 }
 
 function boundedInteger(value: unknown, minimum: number, maximum: number, fallback: number | null) {
@@ -188,13 +250,15 @@ function meetingContract(row: Record<string, unknown>, participants: Record<stri
   }
 }
 
-function bookingLinkContract(row: Record<string, unknown>) {
+function bookingLinkContract(row: Record<string, unknown>, hosts: Array<{ userId: string; name: string; email: string }> = []) {
   return {
     id: row.CALBookingLink_ID,
     organiserSlug: row.CALBookingLink_OrganiserSlug,
     slug: row.CALBookingLink_Slug,
     title: row.CALBookingLink_Title,
     description: row.CALBookingLink_Description,
+    kind: row.CALBookingLink_KindCode ?? "one_on_one",
+    hosts,
     durationMinutes: row.CALBookingLink_DurationMinutes,
     provider: row.CALBookingLink_ProviderCode,
     location: row.CALBookingLink_Location,
@@ -210,6 +274,50 @@ function bookingLinkContract(row: Record<string, unknown>) {
     path: `/book/${row.CALBookingLink_OrganiserSlug}/${row.CALBookingLink_Slug}`,
     updatedAt: row.CALBookingLink_UpdatedAt,
   }
+}
+
+type ConnectionPresentation = { provider: unknown; colour: unknown; status?: unknown }
+
+function connectionColourFallback(provider: unknown) {
+  return provider === "google" ? "blue" : provider === "microsoft" ? "violet" : "neutral"
+}
+
+/**
+ * A Google or Microsoft event Multideck only mirrors. Editable while the
+ * connection is live: Multideck writes the change to the provider, never the
+ * other way round.
+ */
+function externalEventContract(row: Record<string, unknown>, connection: ConnectionPresentation | undefined) {
+  const source = connection?.provider ?? null
+  return {
+    id: row.CALProviderEvent_ID,
+    title: row.CALProviderEvent_IsPrivate ? "Busy" : row.CALProviderEvent_Title || "Busy",
+    startAt: row.CALProviderEvent_StartAt,
+    endAt: row.CALProviderEvent_EndAt,
+    provider: "calendar",
+    calendarSource: source,
+    colour: connection?.colour ?? "neutral",
+    status: row.CALProviderEvent_IsCancelled ? "cancelled" : "confirmed",
+    private: row.CALProviderEvent_IsPrivate,
+    canEdit: (source === "google" || source === "microsoft") && (connection?.status ?? "connected") === "connected" && !row.CALProviderEvent_IsCancelled,
+  }
+}
+
+async function updateExternalEvent(request: Request, admin: SupabaseClient, actor: Actor, id: string) {
+  const payload = await body<JsonObject>(request)
+  const { data: event, error } = await admin.from("CAL_ProviderEvents").select("*")
+    .eq("CALProviderEvent_ID", id).eq("CALProviderEvent_CompanyID", actor.Company_ID).eq("CALProviderEvent_OwnerUserID", actor.User_ID).maybeSingle()
+  if (error) throw new HttpError(500, error.message)
+  if (!event) throw new HttpError(404, "That calendar event was not found.")
+  const change = normaliseExternalEventChange(event, payload)
+  const { row, provider } = await pushExternalEventChange(admin, event, change)
+  const { data: connection } = await admin.from("CAL_ProviderConnections").select("CALConnection_ProviderCode,CALConnection_ColourCode,CALConnection_StatusCode").eq("CALConnection_ID", row.CALProviderEvent_ConnectionID).maybeSingle()
+  console.info(JSON.stringify({ event: change.cancel ? "calendar.external_event.deleted" : "calendar.external_event.updated", companyId: actor.Company_ID, userId: actor.User_ID, providerEventId: row.CALProviderEvent_ID, provider, startAt: change.startAt, endAt: change.endAt }))
+  return externalEventContract(row, {
+    provider,
+    colour: connection?.CALConnection_ColourCode || connectionColourFallback(provider),
+    status: connection?.CALConnection_StatusCode,
+  })
 }
 
 function connectionContract(row: Record<string, unknown>) {
@@ -544,7 +652,10 @@ async function listWorkspace(admin: SupabaseClient, actor: Actor, permissions: s
     if (result.error) throw new HttpError(500, result.error.message)
   }
   const meetingRows = (meetingsResult.data ?? []) as unknown as Record<string, unknown>[]
-  const participants = await loadParticipants(admin, meetingRows.map((row) => String(row.CALMeeting_ID)))
+  const [participants, linkHosts] = await Promise.all([
+    loadParticipants(admin, meetingRows.map((row) => String(row.CALMeeting_ID))),
+    loadBookingLinkHosts(admin, (linksResult.data ?? []).map((row) => String(row.CALBookingLink_ID))),
+  ])
   const { data: changeRows, error: changeError } = meetingRows.length
     ? await admin.from("CAL_ChangeRequests").select("*").in("CALChangeRequest_MeetingID", meetingRows.map((row) => row.CALMeeting_ID)).eq("CALChangeRequest_StatusCode", "pending").order("CALChangeRequest_CreatedAt")
     : { data: [], error: null }
@@ -564,7 +675,7 @@ async function listWorkspace(admin: SupabaseClient, actor: Actor, permissions: s
     ...(taskResult.data ?? []).map((row) => ({ id: `task:${row.WorkflowTask_ID}`, kind: "task", title: row.WorkflowTask_Title, at: row.WorkflowTask_DueAt, route: "/to-do", tone: "neutral" })),
     ...(leadResult.data ?? []).map((row) => ({ id: `lead:${row.CRMLead_ID}`, kind: "crm_follow_up", title: `Follow up ${row.CRMLead_PersonName || row.CRMLead_CompanyName || "lead"}`, at: row.CRMLead_NextActionDueAt, route: `/crm/leads/${row.CRMLead_ID}`, tone: "amber" })),
     ...(quoteResult.data ?? []).map((row) => ({ id: `quote:${row.CRMQF_ID}`, kind: "quote_follow_up", title: "Quote follow-up", at: row.CRMQF_NextActionDueAt, route: "/quotes", tone: "violet" })),
-    ...(jobResult.data ?? []).map((row) => {
+    ...(jobResult.data ?? []).map((row: Record<string, unknown>) => {
       const kind = String(row.milestone_kind)
       const presentation = jobMilestonePresentation[kind] ?? { label: "milestone", tone: "neutral" }
       return { id: `job-${kind}:${row.job_id}`, kind, title: `Job ${row.job_number} ${presentation.label}`, at: row.milestone_at, route: `/bookings/${row.job_id}`, tone: presentation.tone }
@@ -578,28 +689,15 @@ async function listWorkspace(admin: SupabaseClient, actor: Actor, permissions: s
     String(connection.CALConnection_ID),
     {
       provider: connection.CALConnection_ProviderCode,
-      colour: connection.CALConnection_ColourCode || (connection.CALConnection_ProviderCode === "google" ? "blue" : connection.CALConnection_ProviderCode === "microsoft" ? "violet" : "neutral"),
-    },
+      colour: connection.CALConnection_ColourCode || connectionColourFallback(connection.CALConnection_ProviderCode),
+      status: connection.CALConnection_StatusCode,
+    } satisfies ConnectionPresentation,
   ]))
   return {
     range: { start: start.toISOString(), end: end.toISOString() },
     timeZone: availabilityResult.data?.CALAvailability_TimeZone ?? "Europe/London",
     meetings: meetingRows.map((row) => meetingContract(row, participants.get(String(row.CALMeeting_ID)) ?? [], changesByMeeting.get(String(row.CALMeeting_ID)) ?? [])),
-    externalEvents: (providerResult.data ?? []).map((row) => {
-      const connection = connectionPresentation.get(String(row.CALProviderEvent_ConnectionID))
-      return {
-        id: row.CALProviderEvent_ID,
-        title: row.CALProviderEvent_IsPrivate ? "Busy" : row.CALProviderEvent_Title || "Busy",
-        startAt: row.CALProviderEvent_StartAt,
-        endAt: row.CALProviderEvent_EndAt,
-        provider: "calendar",
-        calendarSource: connection?.provider ?? null,
-        colour: connection?.colour ?? "neutral",
-        status: "confirmed",
-        private: row.CALProviderEvent_IsPrivate,
-        canEdit: false,
-      }
-    }),
+    externalEvents: (providerResult.data ?? []).map((row) => externalEventContract(row, connectionPresentation.get(String(row.CALProviderEvent_ConnectionID)))),
     ribbons,
     availability: availabilityResult.data ? {
       timeZone: availabilityResult.data.CALAvailability_TimeZone,
@@ -615,7 +713,7 @@ async function listWorkspace(admin: SupabaseClient, actor: Actor, permissions: s
       bookingHorizonDays: 60, bufferBeforeMinutes: 15, bufferAfterMinutes: 15, slotIncrementMinutes: 15,
     },
     connections: (connectionsResult.data ?? []).map(connectionContract),
-    bookingLinks: (linksResult.data ?? []).map(bookingLinkContract),
+    bookingLinks: (linksResult.data ?? []).map((row) => bookingLinkContract(row, linkHosts.get(String(row.CALBookingLink_ID)) ?? [])),
     permissions,
   }
 }
@@ -662,6 +760,8 @@ async function createBookingLink(request: Request, admin: SupabaseClient, actor:
   await providerConnection(admin, actor, provider)
   const duration = Number(payload.durationMinutes)
   if (!Number.isInteger(duration) || duration < 15 || duration > 240 || duration % 5) throw new HttpError(400, "Choose a duration between 15 minutes and 4 hours.")
+  const kind = bookingLinkKind(payload.kind)
+  const hostIds = await bookingLinkHosts(admin, actor, kind, payload.hostUserIds)
   const organiserName = `${actor.User_Firstname ?? ""} ${actor.User_Lastname ?? ""}`.trim() || actor.User_Email.split("@")[0]
   const organiserSlug = slugify(payload.organiserSlug, slugify(organiserName, "meet"))
   const baseSlug = slugify(payload.slug, slugify(title, "meeting"))
@@ -674,6 +774,7 @@ async function createBookingLink(request: Request, admin: SupabaseClient, actor:
       CALBookingLink_Slug: slug,
       CALBookingLink_Title: title,
       CALBookingLink_Description: cleanText(payload.description, 5_000) || null,
+      CALBookingLink_KindCode: kind,
       CALBookingLink_DurationMinutes: duration,
       CALBookingLink_ProviderCode: provider,
       CALBookingLink_Location: cleanText(payload.location, 500) || null,
@@ -687,7 +788,10 @@ async function createBookingLink(request: Request, admin: SupabaseClient, actor:
       CALBookingLink_RescheduleCutoffMinutes: boundedInteger(payload.rescheduleCutoffMinutes, 0, 43_200, 120) ?? 120,
       CALBookingLink_CancellationCutoffMinutes: boundedInteger(payload.cancellationCutoffMinutes, 0, 43_200, 120) ?? 120,
     }).select("*").single()
-    if (!error && data) return bookingLinkContract(data)
+    if (!error && data) {
+      await saveBookingLinkHosts(admin, String(data.CALBookingLink_ID), hostIds)
+      return bookingLinkContract(data, (await loadBookingLinkHosts(admin, [String(data.CALBookingLink_ID)])).get(String(data.CALBookingLink_ID)) ?? [])
+    }
     if (error?.code !== "23505") throw new HttpError(400, error?.message ?? "The booking link could not be created.")
     slug = `${baseSlug}-${attempt + 2}`
   }
@@ -726,12 +830,53 @@ async function updateBookingLink(request: Request, admin: SupabaseClient, actor:
   if (payload.rescheduleCutoffMinutes !== undefined) updates.CALBookingLink_RescheduleCutoffMinutes = boundedInteger(payload.rescheduleCutoffMinutes, 0, 43_200, 120) ?? 120
   if (payload.cancellationCutoffMinutes !== undefined) updates.CALBookingLink_CancellationCutoffMinutes = boundedInteger(payload.cancellationCutoffMinutes, 0, 43_200, 120) ?? 120
   if (payload.questions !== undefined) updates.CALBookingLink_QuestionsJSON = bookingQuestions(payload.questions)
+  let hostIds: string[] | null = null
+  if (payload.kind !== undefined || payload.hostUserIds !== undefined) {
+    const { data: current, error: currentError } = await admin.from("CAL_BookingLinks").select("CALBookingLink_KindCode")
+      .eq("CALBookingLink_ID", id).eq("CALBookingLink_CompanyID", actor.Company_ID).eq("CALBookingLink_OwnerUserID", actor.User_ID).maybeSingle()
+    if (currentError) throw new HttpError(500, currentError.message)
+    if (!current) throw new HttpError(404, "That booking link was not found.")
+    const kind = bookingLinkKind(payload.kind, String(current.CALBookingLink_KindCode ?? "one_on_one"))
+    const existingHosts = payload.hostUserIds === undefined
+      ? ((await loadBookingLinkHosts(admin, [id])).get(id) ?? []).map((host) => host.userId)
+      : payload.hostUserIds
+    hostIds = await bookingLinkHosts(admin, actor, kind, existingHosts)
+    updates.CALBookingLink_KindCode = kind
+  }
   const { data, error } = await admin.from("CAL_BookingLinks").update(updates)
     .eq("CALBookingLink_ID", id).eq("CALBookingLink_CompanyID", actor.Company_ID).eq("CALBookingLink_OwnerUserID", actor.User_ID)
     .select("*").maybeSingle()
   if (error) throw new HttpError(400, error.message)
   if (!data) throw new HttpError(404, "That booking link was not found.")
-  return bookingLinkContract(data)
+  if (hostIds !== null) await saveBookingLinkHosts(admin, id, hostIds)
+  return bookingLinkContract(data, (await loadBookingLinkHosts(admin, [id])).get(id) ?? [])
+}
+
+/**
+ * Colleagues who can be hosts on a round robin or collective link, with the
+ * meeting providers they have connected so the builder can warn before a link
+ * quietly has no bookable hosts.
+ */
+async function listBookingHostCandidates(admin: SupabaseClient, actor: Actor) {
+  const [{ data: users, error: usersError }, { data: connections, error: connectionsError }] = await Promise.all([
+    admin.from("cmp_Users").select("User_ID,User_Firstname,User_Lastname,User_Email,User_JobTitle")
+      .eq("Company_ID", actor.Company_ID).eq("User_AccessStatus", "active").order("User_Firstname").order("User_Lastname").limit(200),
+    admin.from("CAL_ProviderConnections").select("CALConnection_UserID,CALConnection_ProviderCode")
+      .eq("CALConnection_CompanyID", actor.Company_ID).eq("CALConnection_StatusCode", "connected"),
+  ])
+  if (usersError || connectionsError) throw new HttpError(500, "Hosts could not be loaded.")
+  const providers = new Map<string, string[]>()
+  for (const row of connections ?? []) providers.set(String(row.CALConnection_UserID), [...(providers.get(String(row.CALConnection_UserID)) ?? []), String(row.CALConnection_ProviderCode)])
+  return {
+    hosts: (users ?? []).map((user) => ({
+      userId: user.User_ID,
+      name: [user.User_Firstname, user.User_Lastname].filter(Boolean).join(" ").trim() || String(user.User_Email).split("@")[0],
+      email: user.User_Email,
+      detail: user.User_JobTitle || null,
+      self: user.User_ID === actor.User_ID,
+      connectedProviders: providers.get(String(user.User_ID)) ?? [],
+    })),
+  }
 }
 
 async function saveEmailTemplate(request: Request, admin: SupabaseClient, actor: Actor, kind: string) {
@@ -1118,6 +1263,10 @@ Deno.serve(async (request) => {
       if (!can(permissions, "Calendar.ManageOwn")) throw new HttpError(403, "You do not have permission to change meetings.")
       return json(request, await updateMeeting(request, admin, actor, permissions, path[1]))
     }
+    if (path[0] === "external-events" && path[1] && path.length === 2 && request.method === "PATCH") {
+      if (!can(permissions, "Calendar.ManageOwn")) throw new HttpError(403, "You do not have permission to change calendar events.")
+      return json(request, await updateExternalEvent(request, admin, actor, path[1]))
+    }
     if (path[0] === "meetings" && path[1] && path[2] === "change-requests" && path[3] && request.method === "PATCH") {
       if (!can(permissions, "Calendar.ManageOwn")) throw new HttpError(403, "You do not have permission to decide meeting changes.")
       return json(request, await decideChangeRequest(request, admin, actor, permissions, path[1], path[3]))
@@ -1133,6 +1282,10 @@ Deno.serve(async (request) => {
     if (path[0] === "booking-links" && path.length === 1 && request.method === "POST") {
       if (!can(permissions, "Calendar.BookingLinks.Manage")) throw new HttpError(403, "You do not have permission to manage booking links.")
       return json(request, await createBookingLink(request, admin, actor), 201)
+    }
+    if (path[0] === "booking-links" && path[1] === "hosts" && path.length === 2 && request.method === "GET") {
+      if (!can(permissions, "Calendar.BookingLinks.Manage")) throw new HttpError(403, "You do not have permission to manage booking links.")
+      return json(request, await listBookingHostCandidates(admin, actor))
     }
     if (path[0] === "booking-links" && path[1] && request.method === "PATCH") {
       if (!can(permissions, "Calendar.BookingLinks.Manage")) throw new HttpError(403, "You do not have permission to manage booking links.")

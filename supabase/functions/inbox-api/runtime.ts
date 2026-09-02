@@ -1050,8 +1050,8 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
           .in("CommThread_ID", knownThreadIds)) ?? []
         : [],
     ])
-    const mappedMessageIds = new Set(memberships.map((row) => cleanString(row.CommMessageFolder_MessageID, 80)))
-    const summarisedThreadIds = new Set(threadSummaries
+    const mappedMessageIds = new Set((memberships ?? []).map((row) => cleanString(row.CommMessageFolder_MessageID, 80)))
+    const summarisedThreadIds = new Set((threadSummaries ?? [])
       .filter((row) => cleanString(row.CommThread_LastMessageID, 80))
       .map((row) => cleanString(row.CommThread_ID, 80)))
     const incompleteProviderIds = new Set(known.flatMap((row) => {

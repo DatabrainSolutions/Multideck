@@ -33,6 +33,12 @@ function countdown(msRemaining: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`
 }
 
+/** "Ana, Ben and Cy" for short lists; "Ana, Ben and 3 others" once it gets long. */
+function listNames(names: string[]) {
+  if (names.length <= 3) return names.length <= 1 ? names[0] ?? "" : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
+  return `${names.slice(0, 2).join(", ")} and ${names.length - 2} others`
+}
+
 function Fact({ icon: Icon, children }: { icon: typeof Clock3; children: React.ReactNode }) {
   return <li className="flex items-start gap-2 text-[12px] leading-5 text-[var(--brand-text,var(--md-text))]"><Icon className="mt-0.5 size-3.5 shrink-0 text-[var(--brand-subtle,var(--md-subtle))]" strokeWidth={1.5} />{children}</li>
 }
@@ -179,7 +185,12 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
     if (!details.name.trim()) problems.name = "Enter your name."
     if (!/^\S+@\S+\.\S+$/.test(details.email.trim())) problems.email = "Enter an email address we can send the invite to."
     for (const question of booking.questions) {
-      if (question.required && !answers[question.id]?.trim()) problems[question.id] = `${question.label} is required.`
+      const answer = answers[question.id]?.trim() ?? ""
+      if (question.required && !answer) { problems[question.id] = question.type === "checkbox" ? `${question.label} must be ticked to continue.` : `${question.label} is required.`; continue }
+      if (!answer) continue
+      if (question.type === "email" && !/^\S+@\S+\.\S+$/.test(answer)) problems[question.id] = `${question.label} needs a valid email address.`
+      if (question.type === "phone" && !/^[+\d][\d\s().-]{5,}$/.test(answer)) problems[question.id] = `${question.label} needs a valid phone number.`
+      if (question.type === "number" && !Number.isFinite(Number(answer.replace(/,/g, "")))) problems[question.id] = `${question.label} needs a number.`
     }
     setFieldErrors(problems)
     if (Object.keys(problems).length) {
@@ -286,7 +297,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
         <aside className="border-b border-[var(--brand-line,var(--md-line))] bg-[var(--brand-secondary-tint)] p-5 sm:p-6 lg:border-b-0 lg:border-e">
           <div className="flex items-center gap-2">
             <MeetingProviderMark provider={booking.provider} className="size-6" />
-            <p className="truncate text-[11.5px] font-medium text-[var(--brand-subtle,var(--md-subtle))]">{booking.organiser.name}</p>
+            <p className="truncate text-[11.5px] font-medium text-[var(--brand-subtle,var(--md-subtle))]">{booking.kind === "collective" && booking.hostNames?.length ? listNames(booking.hostNames) : booking.kind === "round_robin" ? `${booking.organiser.name} and team` : booking.organiser.name}</p>
           </div>
           <h1 className="mt-2.5 text-[19px] font-medium leading-6 tracking-[-.015em]">{booking.title}</h1>
           <ul className="mt-3.5 grid gap-2">
@@ -453,12 +464,38 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
 
 function QuestionField({ question, value, error, onChange }: { question: BookingQuestion; value: string; error?: string; onChange: (value: string) => void }) {
   const errorId = `booking-${question.id}-error`
-  const long = question.type === "long_text"
+  const type = question.type ?? "short_text"
+  const invalid = Boolean(error) || undefined
+  const describedBy = error ? errorId : undefined
+  const optional = !question.required ? <span className="ms-1.5 font-normal text-[var(--brand-subtle,var(--md-subtle))]">Optional</span> : null
+  if (type === "checkbox") {
+    const checked = value === "yes"
+    return <div className="grid gap-1.5 text-[11.5px] font-medium sm:col-span-2">
+      <label className="flex items-start gap-2.5">
+        <input type="checkbox" checked={checked} aria-invalid={invalid} aria-describedby={describedBy} onChange={(event) => onChange(event.target.checked ? "yes" : "")} className="mt-0.5 size-4 shrink-0 accent-[var(--brand-primary,var(--md-accent))]" />
+        <span className="font-normal leading-5">{question.label}{optional}</span>
+      </label>
+      <FieldError id={errorId}>{error}</FieldError>
+    </div>
+  }
+  if (type === "select") {
+    return <label className="grid gap-1.5 text-[11.5px] font-medium">
+      <span>{question.label}{optional}</span>
+      <select value={value} aria-invalid={invalid} aria-describedby={describedBy} onChange={(event) => onChange(event.target.value)} className={cn(fieldClass, "appearance-auto pe-2")}>
+        <option value="">Choose…</option>
+        {(question.options ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+      <FieldError id={errorId}>{error}</FieldError>
+    </label>
+  }
+  const long = type === "long_text"
+  const inputType = type === "email" ? "email" : type === "phone" ? "tel" : type === "number" ? "number" : "text"
+  const autoComplete = question.id === "company" ? "organization" : type === "phone" ? "tel" : type === "email" ? "email" : "off"
   return <label className={cn("grid gap-1.5 text-[11.5px] font-medium", long && "sm:col-span-2")}>
-    <span>{question.label}{!question.required ? <span className="ms-1.5 font-normal text-[var(--brand-subtle,var(--md-subtle))]">Optional</span> : null}</span>
+    <span>{question.label}{optional}</span>
     {long
-      ? <Textarea value={value} aria-invalid={Boolean(error) || undefined} aria-describedby={error ? errorId : undefined} onChange={(event) => onChange(event.target.value)} className={cn(fieldClass, "h-auto min-h-20 py-2")} />
-      : <Input autoComplete={question.id === "company" ? "organization" : question.id === "phone" ? "tel" : "off"} inputMode={question.id === "phone" ? "tel" : undefined} value={value} aria-invalid={Boolean(error) || undefined} aria-describedby={error ? errorId : undefined} onChange={(event) => onChange(event.target.value)} className={fieldClass} />}
+      ? <Textarea value={value} aria-invalid={invalid} aria-describedby={describedBy} onChange={(event) => onChange(event.target.value)} className={cn(fieldClass, "h-auto min-h-20 py-2")} />
+      : <Input type={inputType} autoComplete={autoComplete} inputMode={type === "phone" ? "tel" : type === "number" ? "decimal" : undefined} value={value} aria-invalid={invalid} aria-describedby={describedBy} onChange={(event) => onChange(event.target.value)} className={fieldClass} />}
     <FieldError id={errorId}>{error}</FieldError>
   </label>
 }
