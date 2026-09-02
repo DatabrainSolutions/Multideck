@@ -2303,17 +2303,18 @@ export function AppSidebar({
 
             <Separator className="mx-3 bg-[var(--md-line-strong)]" />
             <div className="p-2">
-            {!isCustomer ? <button
+            {/* Keep sign out away from the profile trigger beneath this popover. */}
+            <button
               type="button"
-              className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
+              className="flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-red)] transition-[background-color,color,transform] duration-150 hover:bg-[rgba(209,78,78,0.08)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(209,78,78,0.14)] motion-reduce:transition-none motion-reduce:active:scale-100"
               onClick={() => {
                 setAccountMenuOpen(false)
-                openSettingsSection("profile")
+                void supabase?.auth.signOut()
               }}
             >
-              <Settings data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-              <span className="min-w-0 flex-1 truncate">{t("Account settings")}</span>
-            </button> : null}
+              <LogOut data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+              <span className="min-w-0 flex-1 truncate">{t("Sign out")}</span>
+            </button>
             {canOpenAdmin ? (
               <>
                 <button
@@ -2362,18 +2363,20 @@ export function AppSidebar({
             </button> : null}
             <Separator className="my-1 bg-[var(--md-line-strong)]" />
             <ThemeToggle showAppearanceLabel={false} className="h-11 rounded-[var(--md-radius-lg)] px-2.5 shadow-none" />
+            {!isCustomer ? <>
             <Separator className="my-1 bg-[var(--md-line-strong)]" />
             <button
               type="button"
-              className="flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-red)] transition-[background-color,color,transform] duration-150 hover:bg-[rgba(209,78,78,0.08)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(209,78,78,0.14)] motion-reduce:transition-none motion-reduce:active:scale-100"
+              className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
               onClick={() => {
                 setAccountMenuOpen(false)
-                void supabase?.auth.signOut()
+                openSettingsSection("profile")
               }}
             >
-              <LogOut data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-              <span className="min-w-0 flex-1 truncate">{t("Sign out")}</span>
+              <Settings data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+              <span className="min-w-0 flex-1 truncate">{t("Account settings")}</span>
             </button>
+            </> : null}
             </div>
           </PopoverContent>
         </Popover>

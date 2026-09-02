@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { AiEditing, Check, FileCheck2, LoaderCircle, RefreshCw, Settings, Sparkles, TriangleAlert } from "@/components/icons/hugeicons"
+import { AiEditing, Check, FileCheck2, LoaderCircle, RefreshCw, Settings, Sparkles, Trash2, TriangleAlert } from "@/components/icons/hugeicons"
 import { SuggestedUpdateReview } from "@/components/multideck/suggested-update-review"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
@@ -62,8 +62,12 @@ export function InboxSuggestedUpdatesWorkspace({ mailboxes }: { mailboxes: Mailb
   const [busySuggestionId, setBusySuggestionId] = useState<string | null>(null)
   const [busyMailboxId, setBusyMailboxId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const loadVersion = useRef(0)
+  const dismissInFlight = useRef(false)
+  const reviewTabRef = useRef<HTMLButtonElement>(null)
 
   const load = useCallback(async (quiet = false) => {
+    const version = ++loadVersion.current
     if (!quiet) setState("loading")
     setError(null)
     try {
@@ -71,6 +75,7 @@ export function InboxSuggestedUpdatesWorkspace({ mailboxes }: { mailboxes: Mailb
         listInboxSuggestedUpdates(),
         loadInboxSuggestionSettings(),
       ])
+      if (version !== loadVersion.current) return
       setSuggestions(nextSuggestions)
       setSettings(nextSettings)
       setSelectedId((current) => current && nextSuggestions.some((item) => item.id === current)
@@ -78,6 +83,7 @@ export function InboxSuggestedUpdatesWorkspace({ mailboxes }: { mailboxes: Mailb
         : nextSuggestions.find((item) => item.status === "ready" || item.status === "needs_match")?.id ?? nextSuggestions[0]?.id ?? null)
       setState("ready")
     } catch (failure) {
+      if (version !== loadVersion.current) return
       setError(errorText(failure, t("Suggested updates could not be loaded.")))
       setState("error")
     }
@@ -144,16 +150,23 @@ export function InboxSuggestedUpdatesWorkspace({ mailboxes }: { mailboxes: Mailb
     }
   }
 
-  async function dismissSelected() {
-    if (!selected) return
-    setBusySuggestionId(selected.id)
+  async function dismissSuggestion(suggestion: InboxSuggestedUpdate) {
+    if (busySuggestionId || dismissInFlight.current || !["ready", "needs_match", "no_changes"].includes(suggestion.status)) return
+    dismissInFlight.current = true
+    setBusySuggestionId(suggestion.id)
     try {
-      await dismissInboxSuggestedUpdate(selected.id)
-      toast.success(t("Suggested update dismissed"))
+      await dismissInboxSuggestedUpdate(suggestion.id)
+      // Confirm on the server first. Invalidate earlier list requests so a
+      // slow refresh cannot put a removed suggestion back into Needs review.
+      loadVersion.current++
+      setSuggestions((current) => current.map((item) => item.id === suggestion.id ? { ...item, status: "dismissed" } : item))
+      toast.success(t("Suggestion removed"), { description: t("Kept in History. The source email and attachment are unchanged.") })
+      reviewTabRef.current?.focus()
       await load(true)
     } catch (failure) {
-      toast.error(errorText(failure, t("This suggestion could not be dismissed.")))
+      toast.error(errorText(failure, t("This suggestion could not be removed. Nothing has been deleted.")))
     } finally {
+      dismissInFlight.current = false
       setBusySuggestionId(null)
     }
   }
@@ -236,7 +249,7 @@ export function InboxSuggestedUpdatesWorkspace({ mailboxes }: { mailboxes: Mailb
         <aside className="flex min-h-0 flex-col border-b border-[var(--md-line)] lg:border-b-0 lg:border-e">
           <div className="flex shrink-0 items-center gap-1.5 px-3 py-3">
             {(["review", "history"] as ReviewFilter[]).map((item) => (
-              <button key={item} type="button" aria-pressed={filter === item} className={cn("relative h-9 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium outline-none transition-[color,background-color,scale] duration-150 active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100", filter === item ? "text-[var(--md-ink)]" : "text-[var(--md-subtle)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]")} onClick={() => setFilter(item)}>
+              <button key={item} ref={item === "review" ? reviewTabRef : undefined} type="button" aria-pressed={filter === item} className={cn("relative h-9 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium outline-none transition-[color,background-color,scale] duration-150 active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100", filter === item ? "text-[var(--md-ink)]" : "text-[var(--md-subtle)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]")} onClick={() => setFilter(item)}>
                 {filter === item ? <motion.span layoutId="suggested-update-filter" className="absolute inset-0 -z-10 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]" transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.18, ease: [0.22, 1, 0.36, 1] }} /> : null}
                 {t(item === "review" ? "Needs review" : "History")}
               </button>
@@ -252,16 +265,23 @@ export function InboxSuggestedUpdatesWorkspace({ mailboxes }: { mailboxes: Mailb
             ) : (
               <AnimatePresence initial={false}>
                 {visibleSuggestions.map((suggestion) => (
-                  <motion.button key={suggestion.id} layout={!shouldReduceMotion} initial={false} exit={shouldReduceMotion ? undefined : { opacity: 0, height: 0 }} type="button" className={cn("mb-1 w-full rounded-[var(--md-radius-lg)] px-3 py-3 text-start outline-none transition-[background-color,box-shadow,scale] duration-150 active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100", selectedId === suggestion.id ? "bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]" : "hover:bg-[var(--md-hover)]")} onClick={() => setSelectedId(suggestion.id)}>
-                    <div className="flex items-start gap-2.5">
-                      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a09)] text-[var(--md-accent)]"><FileCheck2 className="size-3.5" strokeWidth={1.4} /></span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2"><p className="truncate text-[12px] font-medium text-[var(--md-ink)]">{suggestion.targetLabel || t("Unmatched document")}</p><StatusPill tone={statusTone(suggestion)}>{t(statusLabel(suggestion))}</StatusPill></div>
-                        <p data-i18n-skip dir="auto" className="mt-1 truncate text-[11px] text-[var(--md-text)]">{suggestion.sourceFileName}</p>
-                        <p className="mt-1 text-[10.5px] text-[var(--md-subtle)]">{new Intl.DateTimeFormat(language, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(suggestion.createdAt))}</p>
+                  <motion.div key={suggestion.id} layout={!shouldReduceMotion} initial={false} exit={shouldReduceMotion ? undefined : { opacity: 0, height: 0 }} className={cn("mb-1 flex w-full items-center rounded-[var(--md-radius-lg)] transition-colors", selectedId === suggestion.id ? "bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]" : "hover:bg-[var(--md-hover)]")}>
+                    <button type="button" aria-pressed={selectedId === suggestion.id} className="min-w-0 flex-1 rounded-[var(--md-radius-lg)] px-3 py-3 text-start outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" onClick={() => setSelectedId(suggestion.id)}>
+                      <div className="flex items-start gap-2.5">
+                        <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a09)] text-[var(--md-accent)]"><FileCheck2 className="size-3.5" strokeWidth={1.4} /></span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2"><p className="truncate text-[12px] font-medium text-[var(--md-ink)]">{suggestion.targetLabel || t("Unmatched document")}</p><StatusPill tone={statusTone(suggestion)}>{t(statusLabel(suggestion))}</StatusPill></div>
+                          <p data-i18n-skip dir="auto" className="mt-1 truncate text-[11px] text-[var(--md-text)]">{suggestion.sourceFileName}</p>
+                          <p className="mt-1 text-[10.5px] text-[var(--md-subtle)]">{new Intl.DateTimeFormat(language, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(suggestion.createdAt))}</p>
+                        </div>
                       </div>
-                    </div>
-                  </motion.button>
+                    </button>
+                    {suggestion.status === "ready" || suggestion.status === "needs_match" ? (
+                      <Button type="button" variant="ghost" size="icon" className="me-1 size-10 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-destructive/10 hover:text-[var(--md-red)]" aria-label={`${t("Delete suggestion for")} ${suggestion.sourceFileName}`} title={t("Remove suggestion · keep the source email")} disabled={busySuggestionId !== null} aria-busy={busySuggestionId === suggestion.id} onClick={() => void dismissSuggestion(suggestion)}>
+                        {busySuggestionId === suggestion.id ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Trash2 className="size-4" strokeWidth={1.4} aria-hidden="true" />}
+                      </Button>
+                    ) : null}
+                  </motion.div>
                 ))}
               </AnimatePresence>
             )}
@@ -270,7 +290,7 @@ export function InboxSuggestedUpdatesWorkspace({ mailboxes }: { mailboxes: Mailb
 
         <main className="min-h-0">
           {selected ? (
-            <SuggestedUpdateReview suggestion={selected} selectedFieldIds={selectedFieldIds} busy={busySuggestionId === selected.id} actionError={actionError} onToggleField={(fieldId, checked) => setSelectedFieldIds((current) => { const next = new Set(current); if (checked) next.add(fieldId); else next.delete(fieldId); return next })} onApply={() => void applySelected()} onAttachToBooking={(bookingId) => void attachSelected(bookingId)} onDismiss={() => void dismissSelected()} onOpenSource={openSource} />
+            <SuggestedUpdateReview suggestion={selected} selectedFieldIds={selectedFieldIds} busy={busySuggestionId !== null} actionError={actionError} onToggleField={(fieldId, checked) => setSelectedFieldIds((current) => { const next = new Set(current); if (checked) next.add(fieldId); else next.delete(fieldId); return next })} onApply={() => void applySelected()} onAttachToBooking={(bookingId) => void attachSelected(bookingId)} onDismiss={() => void dismissSuggestion(selected)} onOpenSource={openSource} />
           ) : (
             <div className="grid h-full min-h-[280px] place-items-center px-6 text-center"><div><Sparkles className="mx-auto size-6 text-[var(--md-accent)]" strokeWidth={1.35} /><h2 className="mt-3 text-[14px] font-medium text-[var(--md-ink)]">{t("Inbox work, without the re-keying")}</h2><p className="mx-auto mt-1 max-w-[420px] text-[12px] leading-[1.55] text-[var(--md-text)]">{t("When a useful document arrives, Multideck compares it with the live record and brings only the differences here.")}</p></div></div>
           )}

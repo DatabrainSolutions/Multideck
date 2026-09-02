@@ -89,7 +89,11 @@ export async function reserveModelEgress(context: ModelGatewayContext, input: {
     p_estimated_output_units: Math.max(0, Math.floor(input.estimatedOutputUnits ?? 0)),
   })
   if (error || typeof data !== "string") {
-    const code = error?.code === "P0001" ? "usage_allowance_reached" : "model_allowance_unavailable"
+    // A temporary OCR concurrency denial uses P0001 too. Keep it distinct
+    // from a spending cap so background document jobs can retry safely.
+    const code = error?.code === "P0001" && error.message === "ocr_concurrency_limit"
+      ? "ocr_concurrency_limit"
+      : error?.code === "P0001" ? "usage_allowance_reached" : "model_allowance_unavailable"
     await modelSecurityEvent(context, code, code === "usage_allowance_reached" ? "warning" : "high", {
       provider: input.provider,
       purpose: input.purpose,
