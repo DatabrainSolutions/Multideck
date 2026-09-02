@@ -666,7 +666,7 @@ export async function processInboxSuggestionJobs(admin: Db, limit = 2) {
       if (completionError) throw new Error(completionError.code || "inbox_suggestion_completion_failed")
       outcomes.push({ jobId: job.job_id, suggestionId, status, fieldCount: fields.length })
     } catch (error) {
-      if (storedObjectId) await admin.from("DOC_StoredObjects").delete().eq("DOCStoredObject_ID", storedObjectId).catch(() => undefined)
+      if (storedObjectId) await Promise.resolve(admin.from("DOC_StoredObjects").delete().eq("DOCStoredObject_ID", storedObjectId)).catch(() => undefined)
       if (storedPath) await admin.storage.from(DOCUMENT_BUCKET).remove([storedPath]).catch(() => undefined)
       outcomes.push({ jobId: job.job_id, status: "failed", code: await failJob(admin, job.job_id, error) })
     }

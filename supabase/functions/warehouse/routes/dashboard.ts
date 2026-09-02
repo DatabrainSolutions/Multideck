@@ -1,8 +1,9 @@
-import { HttpError, companyFacilityIds, requireCapability } from "../shared/mod.ts";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2";
+import { HttpError, companyFacilityIds, requireCapability, type resolveActor } from "../shared/mod.ts";
 
-const missingReadModel = (error) => ["42883", "PGRST202"].includes(error?.code ?? "");
+const missingReadModel = (error: { code?: string } | null) => ["42883", "PGRST202"].includes(error?.code ?? "");
 
-export async function handleDashboard(admin, actor, pathSegment = null, url = null) {
+export async function handleDashboard(admin: SupabaseClient, actor: Awaited<ReturnType<typeof resolveActor>>, pathSegment: string | null = null, url: URL | null = null) {
   requireCapability(actor, "warehouse_orders:read");
   requireCapability(actor, "warehouse_inventory:read");
 
