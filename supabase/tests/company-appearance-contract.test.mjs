@@ -12,6 +12,8 @@ const accentPicker = await read("../../multideck.client/src/components/multideck
 const sidebar = await read("../../multideck.client/src/components/multideck/app-sidebar.tsx")
 const settings = await read("../../multideck.client/src/pages/settings-page.tsx")
 const gallery = await read("../../multideck.client/src/data/multideck-data.ts")
+const brandingPage = await read("../../multideck.client/src/pages/settings-branding-tab.tsx")
+const brandingFunction = await read("../functions/tenant-branding/index.ts")
 
 test("company is a bounded authenticated profile accent preference", () => {
   assert.match(migration, /'fuchsia',\s*'company'/)
@@ -73,4 +75,13 @@ test("Customisation and the component gallery explain the optional company treat
   assert.match(gallery, /compact initials mark as the safe fallback/)
   assert.ok(gallery.includes('label: \\`\\${company.brand.displayName} theme\\`'), "gallery source must preserve the company theme label in its escaped code sample")
   assert.match(gallery, /route: "\/settings\?tab=customisation"/)
+})
+
+test("Reset to default removes company eligibility rather than only repainting its colours", () => {
+  assert.match(brandingPage, /DEFAULT_TENANT_BRAND, configured: false/)
+  assert.match(brandingPage, /configured: snapshot.websiteImport \? true : snapshot.draft.configured/)
+  assert.match(brandingFunction, /configured: input.configured !== false/)
+  assert.match(brandingFunction, /configured: input.configured,/)
+  assert.match(sharedBrand, /configured: settings.version === 1 && settings.configured !== false/)
+  assert.match(brandingPage, /Other themes stay unchanged/)
 })

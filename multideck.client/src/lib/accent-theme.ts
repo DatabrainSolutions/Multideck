@@ -11,6 +11,7 @@ import {
 import { readableInk } from "@/lib/color"
 import { supabase } from "@/lib/supabase"
 import { updateWorkspaceBootstrapPreferences } from "@/lib/workspace-bootstrap"
+import { watchCompanyAppearanceReset } from "@/lib/company-appearance-sync"
 
 /**
  * The product reads its accent from one place. Every accent surface in the app —
@@ -632,6 +633,7 @@ let hasLocalEdit = false
 let watchingAuth = false
 let watchingCompanyAppearance = false
 let canPersistProfileAccent = true
+let stopCompanyResetWatch: (() => void) | null = null
 
 async function currentSession(client: SupabaseClient) {
   const { data, error } = await client.auth.getSession()
@@ -661,9 +663,16 @@ function saveRemoteAccent(id: AccentPreferenceId) {
       // profile save is still waiting behind an earlier request.
       if (loadedUserId !== userId) return
 
-      const { error } = await client.rpc("set_current_user_accent_preference", { p_accent_preset: id })
+      const { data, error } = await client.rpc("set_current_user_accent_preference", { p_accent_preset: id })
       if (error) throw error
-      updateWorkspaceBootstrapPreferences({ accentPreset: id })
+      if (loadedUserId !== userId) return
+      const saved = Array.isArray(data) ? data[0]?.accent_preset : data?.accent_preset
+      const confirmedId = isAccentPreferenceId(saved) ? saved : id
+      updateWorkspaceBootstrapPreferences({ accentPreset: confirmedId })
+      if (confirmedId !== id && readAccentPresetId() === id) {
+        applySavedAccent(confirmedId)
+        void loadCompanyAppearance({ force: true })
+      }
     })
     .catch((error: unknown) => {
       console.warn("Your accent colour could not be saved to your profile.", error)
@@ -681,6 +690,8 @@ async function loadAccentPreference(client: SupabaseClient) {
   const session = await currentSession(client)
   const userId = session?.user.id ?? null
   loadedUserId = userId
+  stopCompanyResetWatch?.()
+  stopCompanyResetWatch = null
   if (!userId) return
 
   const workspacePreferences = session?.access_token
@@ -757,7 +768,18 @@ export function ensureAccentPreferenceLoaded() {
   const client = supabase
   if (!client) return Promise.resolve()
 
-  loadPromise ??= loadAccentPreference(client).catch((error: unknown) => {
+  loadPromise ??= loadAccentPreference(client).then(() => {
+    if (!loadedUserId) return
+    stopCompanyResetWatch = watchCompanyAppearanceReset(client, loadedUserId, {
+      isCompanySelected: () => readAccentPresetId() === companyAccentPreferenceId,
+      afterPendingSaves: () => pendingSave,
+      onReset: () => {
+        applySavedAccent(defaultAccentPresetId)
+        updateWorkspaceBootstrapPreferences({ accentPreset: defaultAccentPresetId })
+      },
+      refreshBrand: () => loadCompanyAppearance({ force: true }),
+    })
+  }).catch((error: unknown) => {
     console.warn("Your saved accent colour could not be loaded from your profile.", error)
   })
   watchAccentAuth(client)

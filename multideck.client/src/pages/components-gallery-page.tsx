@@ -1401,6 +1401,10 @@ const previewOrganisationReference: CustomerReference = {
   ],
   owners: [],
   relationshipStatuses: [],
+  currencies: [{ code: "GBP", name: "Pound sterling" }],
+  legalEntities: [],
+  paymentTerms: [],
+  taxTreatments: [],
   offices: [
     { id: "gallery-office-fxt", name: "Felixstowe", code: "FXT", countryCode: "GB", timeZone: "Europe/London" },
     { id: "gallery-office-lhr", name: "London Heathrow", code: "LHR", countryCode: "GB", timeZone: "Europe/London" },

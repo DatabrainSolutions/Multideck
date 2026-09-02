@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import { adminClient } from "../_shared/backend.ts"
 import { cleanText, sha256 } from "../_shared/calendar.ts"
+import { calendarProviderAccessToken } from "../_shared/calendar-provider-auth.ts"
+import { sameZoomInstant, zoomNumericReference } from "../_shared/calendar-zoom.ts"
 
 type JsonObject = Record<string, unknown>
 
@@ -136,23 +138,38 @@ async function zoomWebhook(request: Request, admin: SupabaseClient, raw: string)
   }
   const payloadObject = object(payload.payload)
   const meetingObject = object(payloadObject.object)
-  const providerEventId = cleanText(meetingObject.id, 500)
+  const providerEventId = zoomNumericReference(meetingObject.id)
   const accountId = cleanText(payloadObject.account_id, 500)
   const hostId = cleanText(meetingObject.host_id, 500)
   const { data: candidates, error: candidatesError } = await admin.from("CAL_ProviderConnections").select("*")
     .eq("CALConnection_ProviderCode", "zoom").neq("CALConnection_StatusCode", "disconnected")
   if (candidatesError) throw candidatesError
-  const connection = (candidates ?? []).find((candidate) => candidate.CALConnection_ProviderAccountID === hostId || candidate.CALConnection_ProviderTenantID === accountId) ?? null
+  const matchingConnections = (candidates ?? []).filter((candidate) => hostId
+    ? candidate.CALConnection_ProviderAccountID === hostId && (!accountId || candidate.CALConnection_ProviderTenantID === accountId)
+    : Boolean(accountId) && candidate.CALConnection_ProviderTenantID === accountId)
+  // Never pick the first operator merely because they share a Zoom account.
+  let connection = matchingConnections.length === 1 ? matchingConnections[0] : null
+  if (!connection && providerEventId && matchingConnections.length > 1) {
+    const { data: owner, error } = await admin.from("CAL_Meetings").select("CALMeeting_OrganiserUserID")
+      .eq("CALMeeting_ProviderCode", "zoom").eq("CALMeeting_ProviderEventID", providerEventId)
+      .in("CALMeeting_OrganiserUserID", matchingConnections.map((candidate) => candidate.CALConnection_UserID)).maybeSingle()
+    if (error) throw error
+    connection = matchingConnections.find((candidate) => candidate.CALConnection_UserID === owner?.CALMeeting_OrganiserUserID) ?? null
+  }
   if (!connection) return empty(202)
-  const deliveryKey = `${cleanText(payload.event_ts, 80) || timestamp}:${event}:${providerEventId || await sha256(raw)}`
-  await recordReceipt(admin, "zoom", deliveryKey, connection.CALConnection_ID, event)
+  const deliveryKey = `${zoomNumericReference(payload.event_ts) || await sha256(raw)}:${event}:${providerEventId || await sha256(raw)}`
+  const firstDelivery = await recordReceipt(admin, "zoom", deliveryKey, connection.CALConnection_ID, event)
   if (providerEventId) {
     const { data: meeting, error: meetingError } = await admin.from("CAL_Meetings").select("*")
       .eq("CALMeeting_CompanyID", connection.CALConnection_CompanyID)
       .eq("CALMeeting_OrganiserUserID", connection.CALConnection_UserID)
       .eq("CALMeeting_ProviderCode", "zoom").eq("CALMeeting_ProviderEventID", providerEventId).maybeSingle()
     if (meetingError) throw meetingError
+    // The delivery worker owns an in-flight local change and its notifications.
+    // Ignore its webhook echo; emitting a second change would duplicate emails.
+    if (meeting?.CALMeeting_PendingChangeJSON) return empty(202)
     if (meeting && (event === "meeting.deleted" || event === "meeting.cancelled")) {
+      if (meeting.CALMeeting_StatusCode === "cancelled" && firstDelivery) return empty(202)
       if (meeting.CALMeeting_StatusCode !== "cancelled") {
         const { error: cancelError } = await admin.from("CAL_Meetings").update({
           CALMeeting_StatusCode: "cancelled", CALMeeting_PendingChangeJSON: null,
@@ -170,16 +187,24 @@ async function zoomWebhook(request: Request, admin: SupabaseClient, raw: string)
       const { error: cacheError } = await admin.from("CAL_ProviderEvents").update({ CALProviderEvent_IsCancelled: true, CALProviderEvent_UpdatedAt: new Date().toISOString() }).eq("CALProviderEvent_MeetingID", meeting.CALMeeting_ID)
       if (cacheError) throw cacheError
       await enqueueZoomMeetingUpdate(admin, meeting, deliveryKey, "cancelled")
-    } else if (meeting && event === "meeting.updated") {
-      const startAt = cleanText(meetingObject.start_time, 120)
-      const duration = Number(meetingObject.duration)
+    } else if (meeting && event === "meeting.updated" && meeting.CALMeeting_StatusCode !== "cancelled") {
+      // Updates can contain only changed fields and can arrive out of order.
+      // Read the current provider event instead of applying an old partial payload.
+      const token = await calendarProviderAccessToken(admin, connection)
+      const providerResponse = await fetch(`https://api.zoom.us/v2/meetings/${encodeURIComponent(providerEventId)}`, { headers: { Authorization: `Bearer ${token}` } })
+      if (providerResponse.status === 404) return empty(202)
+      if (!providerResponse.ok) throw new Error("Zoom meeting change could not be verified.")
+      const current = object(await providerResponse.json())
+      if (cleanText(current.host_id, 500) !== connection.CALConnection_ProviderAccountID) return empty(202)
+      const startAt = cleanText(current.start_time, 120)
+      const duration = Number(current.duration)
       if (startAt && Number.isFinite(duration) && duration > 0) {
         const start = new Date(startAt)
         const end = new Date(start.getTime() + duration * 60_000)
         if (!Number.isNaN(start.getTime()) && meeting.CALMeeting_ReservationID) {
-          const title = cleanText(meetingObject.topic, 240) || meeting.CALMeeting_Title
-          const joinUrl = cleanText(meetingObject.join_url, 2_000) || meeting.CALMeeting_JoinURL
-          const changed = start.toISOString() !== meeting.CALMeeting_StartAt || end.toISOString() !== meeting.CALMeeting_EndAt || title !== meeting.CALMeeting_Title || joinUrl !== meeting.CALMeeting_JoinURL
+          const title = cleanText(current.topic, 240) || meeting.CALMeeting_Title
+          const joinUrl = cleanText(current.join_url, 2_000) || meeting.CALMeeting_JoinURL
+          const changed = !sameZoomInstant(start.toISOString(), meeting.CALMeeting_StartAt) || !sameZoomInstant(end.toISOString(), meeting.CALMeeting_EndAt) || title !== meeting.CALMeeting_Title || joinUrl !== meeting.CALMeeting_JoinURL
           if (changed) {
             const { error: reservationError } = await admin.from("CAL_Reservations").update({ CALReservation_StartAt: start.toISOString(), CALReservation_EndAt: end.toISOString(), CALReservation_StatusCode: "active" }).eq("CALReservation_ID", meeting.CALMeeting_ReservationID)
             if (reservationError) {

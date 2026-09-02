@@ -215,6 +215,7 @@ function validateBrandInput(value: unknown) {
   const appearanceMode = input.appearanceMode === "dark" ? "dark" : input.appearanceMode === "light" ? "light" : null
   if (!appearanceMode) throw new HttpError(400, "Choose a light or dark appearance.")
   const validated = {
+    configured: input.configured !== false,
     displayName,
     websiteUrl,
     primaryColor: normaliseHex(input.primaryColor, ""),
@@ -225,7 +226,7 @@ function validateBrandInput(value: unknown) {
     appearanceMode,
     cornerStyle,
     emailSignOff: cleanText(input.emailSignOff, 500),
-    removeLogo: input.removeLogo === true,
+    removeLogo: input.configured === false || input.removeLogo === true,
     importedLogoUrl: cleanText(input.importedLogoUrl, 2_000),
     importedFrom: object(input.importedFrom),
   }
@@ -300,6 +301,7 @@ async function saveBrand(admin: any, current: any, form: FormData) {
   const nextTenant = {
     ...existingTenant,
     version: 1,
+    configured: input.configured,
     primaryColor: input.primaryColor,
     secondaryColor: input.secondaryColor,
     backgroundColor: input.backgroundColor,
@@ -308,9 +310,10 @@ async function saveBrand(admin: any, current: any, form: FormData) {
     appearanceMode: input.appearanceMode,
     cornerStyle: input.cornerStyle,
     emailSignOff: input.emailSignOff,
+    ...(!input.configured ? DEFAULT_TENANT_BRAND : {}),
     logoPath: input.removeLogo ? null : (uploaded?.path ?? (previousPath || null)),
     logoMimeType: input.removeLogo ? null : (uploaded?.mimeType ?? (cleanText(existingTenant.logoMimeType, 40) || null)),
-    importedFrom: importedUrl && importedAt && importedModel ? { url: importedUrl, importedAt, model: importedModel } : existingTenant.importedFrom ?? null,
+    importedFrom: !input.configured ? null : importedUrl && importedAt && importedModel ? { url: importedUrl, importedAt, model: importedModel } : existingTenant.importedFrom ?? null,
   }
   const { data, error } = await admin.from("cmp_Brands").update({
     Brand_DisplayName: input.displayName,

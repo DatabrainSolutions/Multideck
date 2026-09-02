@@ -68,6 +68,7 @@ const initialBrand = readCachedBrand()
 let state: CompanyAppearanceState = { status: initialBrand ? "ready" : "idle", brand: initialBrand }
 let loadedUserId: string | null = null
 let request: Promise<CompanyAppearanceState> | null = null
+let requestVersion = 0
 
 function publish(next: CompanyAppearanceState) {
   state = next
@@ -96,6 +97,8 @@ export async function loadCompanyAppearance({ force = false } = {}) {
   const session = await getSupabaseSession()
   const userId = session?.user.id ?? null
   if (!session || !userId) {
+    requestVersion += 1
+    request = null
     loadedUserId = null
     // `/settings` is intentionally available as a local navigation lab without
     // an auth session. Keep a previously verified, complete Admin brand there
@@ -113,26 +116,31 @@ export async function loadCompanyAppearance({ force = false } = {}) {
   if (!force && loadedUserId === userId && request) return request
 
   loadedUserId = userId
+  const version = ++requestVersion
   publish({ status: "loading", brand: state.brand })
   request = getTenantBranding(session.access_token)
     .then((branding) => {
+      if (version !== requestVersion || loadedUserId !== userId) return state
       const brand = isCompanyAppearanceBrand(branding) ? branding : null
       cacheBrand(brand)
       publish({ status: brand ? "ready" : "unavailable", brand })
       return state
     })
     .catch(() => {
+      if (version !== requestVersion || loadedUserId !== userId) return state
       // A transient read failure must not erase a previously valid user choice.
       publish({ status: "error", brand: state.brand })
       return state
     })
-    .finally(() => { request = null })
+    .finally(() => { if (version === requestVersion) request = null })
 
   return request
 }
 
 /** Keeps Profile Settings and the sidebar current after Admin Branding saves. */
 export function notifyCompanyAppearanceChanged(branding: TenantBranding) {
+  requestVersion += 1
+  request = null
   const brand = isCompanyAppearanceBrand(branding) ? branding : null
   cacheBrand(brand)
   publish({ status: brand ? "ready" : "unavailable", brand })

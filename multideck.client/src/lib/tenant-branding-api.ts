@@ -94,6 +94,7 @@ export function saveTenantBrandImportDraft(accessToken: string, pendingImport: T
 export function saveTenantBranding(
   accessToken: string,
   branding: Pick<TenantBranding, "displayName" | "websiteUrl" | "primaryColor" | "secondaryColor" | "backgroundColor" | "surfaceColor" | "textColor" | "appearanceMode" | "cornerStyle" | "emailSignOff"> & {
+    configured?: boolean
     removeLogo: boolean
     importedLogoUrl?: string | null
     importedFrom?: TenantBranding["importedFrom"]

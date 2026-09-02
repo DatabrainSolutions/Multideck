@@ -34,6 +34,13 @@ export function CalendarPage({ navigate }: { navigate: (path: string) => void })
     return () => controller.abort()
   }, [range.end, range.start, reload])
   const events = useMemo(() => [...(workspace?.meetings ?? []), ...(workspace?.externalEvents ?? [])], [workspace])
+  const hasPendingMeetings = workspace?.meetings.some((meeting) => meeting.status === "provisioning" || meeting.status === "sync_pending") ?? false
+  useEffect(() => {
+    if (!hasPendingMeetings) return
+    // Refresh only while an operator-visible provider action is in flight.
+    const timer = window.setInterval(load, 5_000)
+    return () => window.clearInterval(timer)
+  }, [hasPendingMeetings, load])
   // Keep the open card in step with the freshest copy of its meeting after a reload.
   useEffect(() => {
     if (!selected) return

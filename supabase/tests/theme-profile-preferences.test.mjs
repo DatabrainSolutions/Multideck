@@ -55,7 +55,7 @@ test("accent colours use the same Supabase-only profile boundary", () => {
   assert.match(accentTheme, /set_current_user_accent_preference/)
   assert.match(accentTheme, /getApiWorkspacePreferences/)
   assert.match(accentTheme, /if \(workspacePreferences === undefined\)[\s\S]*?get_current_user_accent_preference/)
-  assert.match(accentTheme, /updateWorkspaceBootstrapPreferences\(\{ accentPreset: id \}\)/)
+  assert.match(accentTheme, /updateWorkspaceBootstrapPreferences\(\{ accentPreset: confirmedId \}\)/)
   assert.match(accentTheme, /await saveRemoteAccent\(readAccentPresetId\(\)\)/)
   assert.match(accentTheme, /if \(loadedUserId !== userId\) return/)
   assert.match(accentMigration, /"User_AccentPreset" in \(/)

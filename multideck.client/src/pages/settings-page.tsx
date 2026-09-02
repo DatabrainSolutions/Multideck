@@ -5294,18 +5294,12 @@ function LegacySupportTab() {
       setSubject("")
       setMessage("")
       idempotencyKeyRef.current = null
-<<<<<<< Updated upstream
-      toast.success(result.duplicate ? t("Ticket already received") : t("Support ticket created"), {
-        description: `${result.ticket.ticketNumber} · ${t("Databrain OS confirmed the ticket.")}`,
-      })
-=======
       toast.success(
         result.duplicate
           ? t("Ticket already received")
           : t("Support ticket created"),
         { description: `${result.ticket.ticketNumber} · ${t("Multideck support confirmed the ticket.")}` },
       )
->>>>>>> Stashed changes
     } catch (error) {
       if (error instanceof SupportTicketError) {
         setFormError(t(error.message))

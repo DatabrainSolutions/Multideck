@@ -10,6 +10,13 @@ after the latest baseline update. Do not replay the historical migrations over t
 their schema and required Dexter foundation rows are already included in it. Validate the baseline
 and all later migrations in a data-free Supabase branch before provisioning a customer project.
 
+## Company appearance provisioning
+
+Company-appearance removal also requires
+`20260902093000_company_brand_removal_fallback.sql` after this snapshot. It resets
+only company-theme profiles when branding is removed and publishes existing
+RLS-protected profile updates for open sessions. Do not omit it for new tenants.
+
 ## Calendar provisioning cut-over
 
 The current snapshot predates `20260901164232_seamless_calendar_meetings_booking_links.sql`,

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
+import { zoomNumericReference, zoomStartTime } from "../_shared/calendar-zoom.ts"
 import { adminClient, HttpError } from "../_shared/backend.ts"
 import { cleanText, meetingIcs, randomToken, sha256 } from "../_shared/calendar.ts"
 import { calendarProviderAccessToken } from "../_shared/calendar-provider-auth.ts"
@@ -508,11 +509,11 @@ async function createProviderMeeting(admin: SupabaseClient, state: Awaited<Retur
       const providerResponse = await fetch("https://api.zoom.us/v2/users/me/meetings", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: state.meeting.CALMeeting_Title, agenda: state.meeting.CALMeeting_Agenda, type: 2, start_time: state.meeting.CALMeeting_StartAt, duration, timezone: state.meeting.CALMeeting_TimeZone, settings: { join_before_host: false, waiting_room: true } }),
+        body: JSON.stringify({ topic: state.meeting.CALMeeting_Title, agenda: state.meeting.CALMeeting_Agenda, type: 2, start_time: zoomStartTime(String(state.meeting.CALMeeting_StartAt)), duration, timezone: state.meeting.CALMeeting_TimeZone, settings: { join_before_host: false, waiting_room: true } }),
       })
       if (!providerResponse.ok) throw new HttpError(providerResponse.status === 401 ? 409 : 502, "Zoom could not create the meeting.")
       payload = await providerResponse.json() as JsonObject
-      providerEventId = cleanText(payload.id, 500)
+      providerEventId = zoomNumericReference(payload.id)
       if (providerEventId) {
         await persistProviderReference(admin, state, connection, token, providerEventId, cleanText(payload.uuid, 500) || null, "Zoom")
       }
@@ -613,7 +614,7 @@ async function updateProviderMeeting(admin: SupabaseClient, state: Awaited<Retur
       providerResponse = await fetch(`https://api.zoom.us/v2/meetings/${providerId}`, {
         method: cancel ? "DELETE" : "PATCH",
         headers: { Authorization: `Bearer ${token}`, ...(cancel ? {} : { "Content-Type": "application/json" }) },
-        body: cancel ? undefined : JSON.stringify({ topic: nextTitle, agenda: nextAgenda, start_time: nextStart, duration: Math.round((Date.parse(nextEnd) - Date.parse(nextStart)) / 60_000), timezone: nextTimeZone }),
+        body: cancel ? undefined : JSON.stringify({ topic: nextTitle, agenda: nextAgenda, start_time: zoomStartTime(nextStart), duration: Math.round((Date.parse(nextEnd) - Date.parse(nextStart)) / 60_000), timezone: nextTimeZone }),
       })
     }
     if (!providerResponse.ok && !(cancel && [404, 410].includes(providerResponse.status))) throw new HttpError(providerResponse.status === 401 ? 409 : 502, "The provider could not update the meeting.")

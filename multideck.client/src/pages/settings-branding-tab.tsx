@@ -57,6 +57,7 @@ function importedFromEvidence(evidence: TenantBrandImport["evidence"] | null) {
 function brandSaveKey(snapshot: BrandSaveSnapshot) {
   const { draft, logoFile } = snapshot
   return JSON.stringify({
+    configured: draft.configured,
     displayName: draft.displayName,
     websiteUrl: draft.websiteUrl,
     primaryColor: draft.primaryColor,
@@ -273,7 +274,7 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
   }, [importExpanded])
 
   const logoPreview = useLogoPreview(logoFile, importedLogoUrl, removeLogo ? null : saved?.logoUrl ?? null)
-  const atDefault = Boolean(draft && isDefaultVisualBrand(draft, Boolean(logoFile || importedLogoUrl || (!removeLogo && saved?.logoUrl))))
+  const atDefault = Boolean(draft && !draft.configured && isDefaultVisualBrand(draft, Boolean(logoFile || importedLogoUrl || (!removeLogo && saved?.logoUrl))))
   const validationError = useMemo(() => {
     if (!draft) return t("Brand settings are still loading.")
     if (!draft.displayName.trim()) return t("Add the company name customers should see.")
@@ -294,7 +295,7 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
   }, [draft, t])
 
   function update(patch: Partial<TenantBranding>) {
-    setDraft((current) => current ? { ...current, ...patch } : current)
+    setDraft((current) => current ? { ...current, ...patch, configured: true } : current)
     setAutosaveStatus(websiteImport ? "review" : "pending")
     setError(null)
   }
@@ -309,14 +310,14 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
 
   function resetToDefault() {
     if (!canManage || !draft) return
-    setDraft((current) => current ? { ...current, ...DEFAULT_TENANT_BRAND } : current)
+    setDraft((current) => current ? { ...current, ...DEFAULT_TENANT_BRAND, configured: false } : current)
     setLogoFile(null)
     setImportedLogoUrl(null)
     setRemoveLogo(true)
     setWebsiteImport(null)
     setAutosaveStatus("pending")
     setError(null)
-    toast.success(t("Restoring the Multideck default"), { description: t("The company-wide brand will update automatically.") })
+    toast.info(t("Restoring the Multideck default"), { description: t("Once saved, colleagues using the company theme will return to Multideck teal. Other themes stay unchanged.") })
   }
 
   function chooseLogo(file: File | null) {
@@ -330,6 +331,7 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
       return
     }
     setLogoFile(file)
+    setDraft((current) => current ? { ...current, configured: true } : current)
     setImportedLogoUrl(null)
     setRemoveLogo(false)
     setAutosaveStatus("pending")
@@ -345,7 +347,7 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
       if (!session) throw new Error(t("Sign in again before importing a website."))
       const result = await importTenantBranding(session.access_token, importUrl.trim())
       lastSavedImportDraftRef.current = JSON.stringify(result)
-      setDraft((current) => current ? { ...current, ...result.draft } : current)
+      setDraft((current) => current ? { ...current, ...result.draft, configured: true } : current)
       setImportedLogoUrl(result.draft.importedLogoUrl)
       setLogoFile(null)
       setRemoveLogo(false)
@@ -399,6 +401,7 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
           ? snapshot.logoFile
           : null
         const next = await saveTenantBranding(session.access_token, {
+          configured: snapshot.websiteImport ? true : snapshot.draft.configured,
           displayName: snapshot.draft.displayName,
           websiteUrl: snapshot.draft.websiteUrl,
           primaryColor: snapshot.draft.primaryColor,
@@ -432,7 +435,6 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
             ? next
             : current ? {
                 ...current,
-                configured: next.configured,
                 brandId: next.brandId,
                 logoUrl: next.logoUrl,
                 logoMimeType: next.logoMimeType,

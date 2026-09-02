@@ -92,7 +92,7 @@ export function tenantBrandFromRow(admin: SupabaseClient, row: TenantBrandRow | 
   const importedModel = text(imported.model, 120)
 
   return {
-    configured: settings.version === 1,
+    configured: settings.version === 1 && settings.configured !== false,
     brandId: row?.Brand_ID ?? null,
     displayName: text(row?.Brand_DisplayName, 240, text(row?.Brand_Name, 180, companyName || "Workspace")),
     websiteUrl: text(row?.Brand_WebsiteURL, 2_000),
@@ -119,5 +119,5 @@ export async function readTenantBrand(admin: SupabaseClient, companyId: string, 
 export async function readConfiguredTenantBrand(admin: SupabaseClient, companyId: string) {
   const row = await tenantBrandRow(admin, companyId)
   const settings = tenantBrandSettings(row)
-  return row && settings.version === 1 ? tenantBrandFromRow(admin, row) : null
+  return row && settings.version === 1 && settings.configured !== false ? tenantBrandFromRow(admin, row) : null
 }
