@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type ComponentType, type DragEvent as ReactDragEvent } from "react"
-import { BriefcaseBusiness, CalendarClock, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, Link2, UserRound } from "@/components/icons/hugeicons"
+import { CalendarClock, CalendarDays, ChevronLeft, ChevronRight, Clock3, Link2 } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
+import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { meetingColourStyle } from "@/components/multideck/meeting-colour-picker"
 import { MeetingProviderMark } from "@/components/multideck/meeting-provider-mark"
 import { MeetingResponseSummary } from "@/components/multideck/meeting-attendee-status"
@@ -13,45 +14,6 @@ import { cn } from "@/lib/utils"
 
 type CalendarViewMode = CalendarPeriodView
 const viewModes: CalendarViewMode[] = ["Week", "Month"]
-
-type CalendarFilterTone = "operational" | "personal"
-
-function CalendarFilterToggle({
-  label,
-  pressed,
-  tone,
-  icon: Icon,
-  onPressedChange,
-}: {
-  label: string
-  pressed: boolean
-  tone: CalendarFilterTone
-  icon: ComponentType<{ className?: string; strokeWidth?: number; "aria-hidden"?: boolean | "true" | "false" }>
-  onPressedChange: () => void
-}) {
-  return <button
-    type="button"
-    aria-pressed={pressed}
-    onClick={onPressedChange}
-    className={cn(
-      "group/filter inline-flex h-8 shrink-0 items-center gap-2 rounded-[var(--md-radius-lg)] px-2.5 text-[12px] font-medium outline-none transition-[background-color,box-shadow,color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.97] motion-reduce:transform-none",
-      pressed && tone === "operational" && "bg-[var(--md-accent-a10)] text-[var(--md-accent)] shadow-[inset_0_0_0_1px_var(--md-accent-a14)] hover:bg-[var(--md-accent-a13)] hover:text-[var(--md-accent)]",
-      pressed && tone === "personal" && "bg-[color-mix(in_srgb,var(--md-blue)_11%,var(--md-surface))] text-[var(--md-blue)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--md-blue)_18%,transparent)] hover:bg-[color-mix(in_srgb,var(--md-blue)_14%,var(--md-surface))] hover:text-[var(--md-blue)]",
-      !pressed && "text-[var(--md-subtle)]",
-    )}
-  >
-    <span className={cn(
-      "grid size-5 shrink-0 place-items-center rounded-[var(--md-radius-sm)] transition-[background-color,color] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-      pressed && tone === "operational" && "bg-[var(--md-accent-a11)] text-[var(--md-accent)]",
-      pressed && tone === "personal" && "bg-[color-mix(in_srgb,var(--md-blue)_12%,transparent)] text-[var(--md-blue)]",
-      !pressed && "bg-[var(--md-surface-tint)] text-[var(--md-subtle)] group-hover/filter:text-[var(--md-text)]",
-    )}>
-      <Icon className="size-3.5" strokeWidth={1.45} aria-hidden="true" />
-    </span>
-    <span>{label}</span>
-    <Check aria-hidden="true" className={cn("size-3 transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none", pressed ? "scale-100 opacity-80" : "scale-75 opacity-0")} strokeWidth={1.7} />
-  </button>
-}
 
 function CalendarUtilityAction({ label, icon: Icon, onClick }: { label: string; icon: ComponentType<{ className?: string; strokeWidth?: number; "aria-hidden"?: boolean | "true" | "false" }>; onClick: () => void }) {
   return <Tooltip>
@@ -223,10 +185,20 @@ export function CalendarView({
         <div className="flex h-8 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-2.5 text-[12px] font-medium text-[var(--md-ink)]"><CalendarDays className="size-3.5 text-[var(--md-accent)]" />{periodLabel}</div>
       </div>
       <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <CalendarFilterToggle label="Operational dates" pressed={showOperational} tone="operational" icon={BriefcaseBusiness} onPressedChange={() => setShowOperational((current) => !current)} />
-          <CalendarFilterToggle label="Personal events" pressed={showPersonal} tone="personal" icon={UserRound} onPressedChange={() => setShowPersonal((current) => !current)} />
-        </div>
+        <MultiSelectMenu
+          label="Show on calendar"
+          options={["Operational dates", "Personal events"]}
+          value={[
+            ...(showOperational ? ["Operational dates"] : []),
+            ...(showPersonal ? ["Personal events"] : []),
+          ]}
+          onValueChange={(selected) => {
+            setShowOperational(selected.includes("Operational dates"))
+            setShowPersonal(selected.includes("Personal events"))
+          }}
+          placeholder="Show on calendar"
+          className="w-auto max-w-full text-[12px]"
+        />
         <SegmentedControl options={viewModes} value={view} onChange={setView} ariaLabel="Calendar view" className="h-8 p-0.5 [&>button]:h-7 [&>button]:rounded-[calc(var(--md-radius-lg)-2px)] [&>button]:px-2.5 [&>button]:text-[12px]" />
         <div className="flex items-center gap-1">
           <CalendarUtilityAction label="Availability settings" icon={CalendarClock} onClick={() => navigate("/settings?tab=availability")} />
