@@ -2,6 +2,13 @@ import { useEffect, useState, useSyncExternalStore } from "react"
 import { animate } from "motion/react"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { getApiWorkspacePreferences } from "@/lib/api"
+import {
+  getCompanyAppearanceSnapshot,
+  loadCompanyAppearance,
+  subscribeCompanyAppearance,
+  type CompanyAppearanceBrand,
+} from "@/lib/company-appearance"
+import { readableInk } from "@/lib/color"
 import { supabase } from "@/lib/supabase"
 import { updateWorkspaceBootstrapPreferences } from "@/lib/workspace-bootstrap"
 
@@ -146,6 +153,9 @@ export type AccentPreset = {
   dark: string
 }
 
+export const companyAccentPreferenceId = "company" as const
+export type AccentPreferenceId = AccentPresetId | typeof companyAccentPreferenceId
+
 /**
  * Each preset is a hand-checked pair rather than one colour dimmed for dark mode:
  * a light accent readable on `#f3f4f4` would disappear on `#1b1e20`, and the dark
@@ -177,6 +187,10 @@ const presetsById = new Map(accentPresets.map((preset) => [preset.id, preset]))
 
 export function isAccentPresetId(value: unknown): value is AccentPresetId {
   return typeof value === "string" && presetsById.has(value as AccentPresetId)
+}
+
+export function isAccentPreferenceId(value: unknown): value is AccentPreferenceId {
+  return value === companyAccentPreferenceId || isAccentPresetId(value)
 }
 
 export function getAccentPreset(id: AccentPresetId): AccentPreset {
@@ -289,8 +303,64 @@ export type AccentRamp = {
 }
 
 const rampCache = new Map<AccentPresetId, AccentRamp>()
+const companyRampCache = new Map<string, AccentRamp>()
 
-export function buildAccentRamp(id: AccentPresetId): AccentRamp {
+function buildCompanyAccentRamp(brand: CompanyAppearanceBrand): AccentRamp {
+  const key = `${brand.primaryColor}:${brand.secondaryColor}`
+  const cached = companyRampCache.get(key)
+  if (cached) return cached
+
+  const primaryHex = brand.primaryColor.toLowerCase()
+  const secondaryHex = brand.secondaryColor.toLowerCase()
+  const primary = hexToOklch(primaryHex)
+  const secondary = hexToOklch(secondaryHex)
+  // Admin stores one customer-facing palette. The signed-in product derives a
+  // brighter member for dark mode while preserving the company's hue, so this
+  // personal choice remains readable in both Multideck appearance modes.
+  const darkAccent = derive(primary, { l: 0.82, c: 0.72 })
+  const dark = hexToOklch(darkAccent)
+
+  const ramp: AccentRamp = {
+    light: {
+      accent: primaryHex,
+      accentHover: derive(primary, lightRecipes.hover),
+      accentInk: readableInk(primaryHex),
+      accentTint: derive(primary, lightRecipes.tint),
+      selectedBg: derive(primary, lightRecipes.selectedBg),
+      selectedText: derive(primary, lightRecipes.selectedText),
+    },
+    dark: {
+      accent: darkAccent,
+      accentHover: derive(dark, darkRecipes.hover),
+      accentInk: readableInk(darkAccent),
+      accentTint: derive(dark, darkRecipes.tint),
+      selectedBg: derive(dark, darkRecipes.selectedBg),
+      selectedText: derive(dark, darkRecipes.selectedText),
+    },
+    brand: {
+      deep: secondaryHex,
+      abyss: derive(secondary, brandRecipes.abyss),
+      glowCore: derive(primary, brandRecipes.glowCore),
+      glowBright: derive(primary, brandRecipes.glowBright),
+      glowWarm: derive(secondary, brandRecipes.glowWarm),
+      lift: derive(primary, brandRecipes.lift),
+      liftStrong: derive(primary, brandRecipes.liftStrong),
+      liftWarm: derive(secondary, brandRecipes.liftWarm),
+      shader: [secondaryHex, primaryHex, derive(secondary, brandRecipes.shaderC)],
+      watchLight: [derive(primary, brandRecipes.watchLightA), derive(primary, brandRecipes.watchLightB), derive(secondary, brandRecipes.watchLightC)],
+      brand: [primaryHex, derive(primary, brandRecipes.brandB), secondaryHex],
+    },
+  }
+
+  companyRampCache.set(key, ramp)
+  return ramp
+}
+
+export function buildAccentRamp(id: AccentPreferenceId): AccentRamp {
+  if (id === companyAccentPreferenceId) {
+    const brand = getCompanyAppearanceSnapshot().brand
+    return brand ? buildCompanyAccentRamp(brand) : buildAccentRamp(defaultAccentPresetId)
+  }
   const cached = rampCache.get(id)
   if (cached) return cached
 
@@ -356,12 +426,12 @@ const storageKey = "multideck.accentPreset"
 const changeEventName = "multideck:accent-preset"
 const styleElementId = "md-accent-theme"
 
-export function readAccentPresetId(): AccentPresetId {
+export function readAccentPresetId(): AccentPreferenceId {
   if (typeof window === "undefined") return defaultAccentPresetId
 
   try {
     const stored = window.localStorage.getItem(storageKey)
-    return isAccentPresetId(stored) ? stored : defaultAccentPresetId
+    return isAccentPreferenceId(stored) ? stored : defaultAccentPresetId
   } catch {
     // Private-mode Safari throws on localStorage access; the default is fine.
     return defaultAccentPresetId
@@ -389,7 +459,7 @@ function modeBlock(selector: string, ramp: AccentModeRamp, brand: AccentBrandRam
   ].join("")
 }
 
-export function accentCssText(id: AccentPresetId) {
+export function accentCssText(id: AccentPreferenceId) {
   const ramp = buildAccentRamp(id)
   return modeBlock(":root", ramp.light, ramp.brand) + modeBlock(":root.dark", ramp.dark, ramp.brand)
 }
@@ -413,7 +483,7 @@ function prefersReducedMotion() {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
 }
 
-function writeAccentCss(id: AccentPresetId) {
+function writeAccentCss(id: AccentPreferenceId) {
   const element = accentStyleElement()
   const next = accentCssText(id)
   if (element.textContent !== next) element.textContent = next
@@ -485,7 +555,7 @@ function moveBrandRamp(target: AccentBrandRamp, shouldAnimate: boolean) {
  * and any restore-from-storage must land instantly — animating those would show
  * the default teal for half a second before the real accent arrived.
  */
-export function applyAccentPreset(id: AccentPresetId, { animate: shouldAnimate = false } = {}) {
+export function applyAccentPreset(id: AccentPreferenceId, { animate: shouldAnimate = false } = {}) {
   if (typeof document === "undefined") return
 
   const root = document.documentElement
@@ -529,7 +599,7 @@ export function applyAccentPreset(id: AccentPresetId, { animate: shouldAnimate =
   })
 }
 
-export function writeAccentPresetId(id: AccentPresetId) {
+export function writeAccentPreferenceId(id: AccentPreferenceId) {
   if (typeof window === "undefined") return
 
   try {
@@ -544,6 +614,10 @@ export function writeAccentPresetId(id: AccentPresetId) {
   void pushAccentPreference(id)
 }
 
+export function writeAccentPresetId(id: AccentPresetId) {
+  writeAccentPreferenceId(id)
+}
+
 /** Called once before React mounts so the first paint already carries the accent. */
 export function ensureAccentApplied() {
   applyAccentPreset(readAccentPresetId())
@@ -556,6 +630,7 @@ let loadPromise: Promise<void> | null = null
 let pendingSave: Promise<void> = Promise.resolve()
 let hasLocalEdit = false
 let watchingAuth = false
+let watchingCompanyAppearance = false
 let canPersistProfileAccent = true
 
 async function currentSession(client: SupabaseClient) {
@@ -564,7 +639,7 @@ async function currentSession(client: SupabaseClient) {
   return data.session
 }
 
-function applySavedAccent(id: AccentPresetId) {
+function applySavedAccent(id: AccentPreferenceId) {
   try {
     window.localStorage.setItem(storageKey, id)
   } catch {
@@ -574,7 +649,7 @@ function applySavedAccent(id: AccentPresetId) {
   window.dispatchEvent(new CustomEvent(changeEventName, { detail: id }))
 }
 
-function saveRemoteAccent(id: AccentPresetId) {
+function saveRemoteAccent(id: AccentPreferenceId) {
   const client = supabase
   const userId = loadedUserId
   if (!client || !userId || !canPersistProfileAccent) return pendingSave
@@ -597,7 +672,7 @@ function saveRemoteAccent(id: AccentPresetId) {
   return pendingSave
 }
 
-async function pushAccentPreference(id: AccentPresetId) {
+async function pushAccentPreference(id: AccentPreferenceId) {
   await ensureAccentPreferenceLoaded()
   await saveRemoteAccent(id)
 }
@@ -625,8 +700,15 @@ async function loadAccentPreference(client: SupabaseClient) {
   }
   if (hasLocalEdit) return
 
-  if (isAccentPresetId(value)) {
+  if (isAccentPreferenceId(value)) {
     applySavedAccent(value)
+    if (value === companyAccentPreferenceId) {
+      const company = await loadCompanyAppearance()
+      if (company.status === "unavailable") {
+        applySavedAccent(defaultAccentPresetId)
+        await saveRemoteAccent(defaultAccentPresetId)
+      }
+    }
     return
   }
 
@@ -654,6 +736,22 @@ function watchAccentAuth(client: SupabaseClient) {
   })
 }
 
+function watchCompanyAppearance() {
+  if (watchingCompanyAppearance) return
+  watchingCompanyAppearance = true
+  subscribeCompanyAppearance(() => {
+    if (readAccentPresetId() !== companyAccentPreferenceId) return
+    const company = getCompanyAppearanceSnapshot()
+    if (company.brand) {
+      applyAccentPreset(companyAccentPreferenceId, { animate: true })
+      window.dispatchEvent(new CustomEvent(changeEventName, { detail: companyAccentPreferenceId }))
+    } else if (company.status === "unavailable") {
+      applySavedAccent(defaultAccentPresetId)
+      void saveRemoteAccent(defaultAccentPresetId)
+    }
+  })
+}
+
 /** Restores the signed-in operator's accent after the fast local first paint. */
 export function ensureAccentPreferenceLoaded() {
   const client = supabase
@@ -663,6 +761,7 @@ export function ensureAccentPreferenceLoaded() {
     console.warn("Your saved accent colour could not be loaded from your profile.", error)
   })
   watchAccentAuth(client)
+  watchCompanyAppearance()
   return loadPromise
 }
 
@@ -673,8 +772,8 @@ export function useAccentPresetId() {
 
   useEffect(() => {
     function handleChange(event: Event) {
-      const next = (event as CustomEvent<AccentPresetId>).detail
-      if (isAccentPresetId(next)) setId(next)
+      const next = (event as CustomEvent<AccentPreferenceId>).detail
+      if (isAccentPreferenceId(next)) setId(next)
     }
 
     function handleStorage(event: StorageEvent) {

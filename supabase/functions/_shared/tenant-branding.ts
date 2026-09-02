@@ -9,6 +9,7 @@ export type TenantBrandCornerStyle = "rounded" | "sharp"
 export type TenantBrandAppearance = "light" | "dark"
 
 export type TenantBrand = {
+  configured: boolean
   brandId: string | null
   displayName: string
   websiteUrl: string
@@ -26,7 +27,7 @@ export type TenantBrand = {
   importedFrom: { url: string; importedAt: string; model: string } | null
 }
 
-export const DEFAULT_TENANT_BRAND: Omit<TenantBrand, "brandId" | "displayName" | "websiteUrl" | "logoUrl" | "logoMimeType" | "updatedAt" | "importedFrom"> = {
+export const DEFAULT_TENANT_BRAND: Omit<TenantBrand, "configured" | "brandId" | "displayName" | "websiteUrl" | "logoUrl" | "logoMimeType" | "updatedAt" | "importedFrom"> = {
   primaryColor: "#0E7D74",
   secondaryColor: "#164E49",
   backgroundColor: "#F3F4F4",
@@ -91,6 +92,7 @@ export function tenantBrandFromRow(admin: SupabaseClient, row: TenantBrandRow | 
   const importedModel = text(imported.model, 120)
 
   return {
+    configured: settings.version === 1,
     brandId: row?.Brand_ID ?? null,
     displayName: text(row?.Brand_DisplayName, 240, text(row?.Brand_Name, 180, companyName || "Workspace")),
     websiteUrl: text(row?.Brand_WebsiteURL, 2_000),

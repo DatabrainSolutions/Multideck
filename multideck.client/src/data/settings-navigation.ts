@@ -3,6 +3,7 @@ import {
   Bell,
   BookOpen,
   Cloud,
+  Clock3,
   Command,
   LifeBuoy,
   Megaphone,
@@ -14,6 +15,7 @@ import {
 
 export type SettingsSectionId =
   | "profile"
+  | "availability"
   | "security"
   | "notifications"
   | "customisation"
@@ -42,6 +44,7 @@ export const settingsNavigationGroups: SettingsNavigationGroup[] = [
     label: "Personal",
     items: [
       { id: "profile", label: "Profile", description: "Identity and contact details", icon: UserRound },
+      { id: "availability", label: "Availability", description: "Working hours and booking rules", icon: Clock3 },
       { id: "security", label: "Security", description: "Password, 2FA and sessions", icon: ShieldCheck },
       { id: "notifications", label: "Notifications", description: "Alerts, digests and delivery", icon: Bell },
       { id: "customisation", label: "Customisation", description: "Language, theme and density", icon: Palette },
@@ -74,7 +77,9 @@ export function isSettingsSectionId(value: string | null): value is SettingsSect
 export function readSettingsSectionFromUrl(): SettingsSectionId {
   if (typeof window === "undefined") return "profile"
   const section = new URLSearchParams(window.location.search).get("tab")
-  return isSettingsSectionId(section) ? section : "profile"
+  if (isSettingsSectionId(section)) return section
+  const legacyHashSection = window.location.hash.replace(/^#/, "")
+  return isSettingsSectionId(legacyHashSection) ? legacyHashSection : "profile"
 }
 
 export function getSettingsSection(sectionId: SettingsSectionId) {

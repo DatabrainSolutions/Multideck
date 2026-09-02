@@ -9,6 +9,7 @@ import { useLanguage } from "@/i18n/language-provider"
 import { dispatchTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 import { cn } from "@/lib/utils"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
+import { openMeetingComposer } from "@/lib/meeting-composer-events"
 import { AppBreadcrumbs } from "./app-breadcrumbs"
 import { CommandInput } from "./command-input"
 import { AppSidebar } from "./app-sidebar"
@@ -117,6 +118,7 @@ export function TopBar({
   const isCustomerDetail = route.startsWith("/customers/")
   const isCrmRoute = route.startsWith("/crm")
   const isCrmLeadDetail = /^\/crm\/leads\/[^/]+$/.test(route)
+  const isCrmAccountDetail = /^\/crm\/accounts\/[^/]+$/.test(route)
   const isCrmLeadConversion = /^\/crm\/leads\/[^/]+\/convert$/.test(route)
   const isBookingList = route === "/bookings"
   const isRoadControl = route === "/road-control"
@@ -125,6 +127,8 @@ export function TopBar({
   const isRoadRoute = isRoadControl || isRoadBooking || isRoadJob
   const isQuotes = route === "/quotes"
   const isTodo = route === "/to-do"
+  const isCalendar = route === "/calendar"
+  const isBookingLinks = route === "/calendar/booking-links"
   const isWarehouse = route.startsWith("/warehouse")
   const isStandaloneExportRegister = route === "/customs/standalone/export"
   const isStandaloneImportRegister = route === "/customs/standalone/import"
@@ -248,10 +252,29 @@ export function TopBar({
           <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
           {currentRecordName ? <div className="ml-auto flex items-center gap-2">
             <Button
+              variant="ghost"
+              className={topBarGhostActionClass}
+              onClick={() => openMeetingComposer({ source: "crm", linkedRecord: { type: "lead", id: route.split("/").at(-1)!, name: currentRecordName } })}
+            >
+              {t("Book meeting")}
+            </Button>
+            <Button
               className={topBarPrimaryActionClass}
               onClick={() => navigate(`${route}/convert`)}
             >
               {t("Convert to deal")}
+            </Button>
+          </div> : null}
+        </>
+      ) : isCrmAccountDetail ? (
+        <>
+          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
+          {currentRecordName ? <div className="ml-auto flex items-center gap-2">
+            <Button
+              className={topBarPrimaryActionClass}
+              onClick={() => openMeetingComposer({ source: "crm", linkedRecord: { type: "account", id: route.split("/").at(-1)!, name: currentRecordName } })}
+            >
+              {t("Book meeting")}
             </Button>
           </div> : null}
         </>
@@ -265,6 +288,16 @@ export function TopBar({
             <Button aria-label={t("New task")} title={t("New task")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createTodoTask)}>
               <Plus data-icon="inline-start" strokeWidth={1.2} />
               <span className="hidden sm:inline">{t("New task")}</span>
+            </Button>
+          ) : isCalendar ? (
+            <Button aria-label={t("New meeting")} title={t("New meeting")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createCalendarMeeting)}>
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("New meeting")}</span>
+            </Button>
+          ) : isBookingLinks ? (
+            <Button aria-label={t("New booking link")} title={t("New booking link")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createBookingLink)}>
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("New booking link")}</span>
             </Button>
           ) : ratesTopBarAction ? (
             <>

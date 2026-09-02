@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from 
 import { AppSidebar } from "./app-sidebar"
 import { SupportTicketDialog } from "./support-ticket-dialog"
 import { TopBar } from "./top-bar"
+import { MeetingDialogHost } from "./meeting-dialog"
 import { cn } from "@/lib/utils"
 import { InboxWorkspaceProvider } from "@/lib/inbox-workspace"
 import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
@@ -149,6 +150,7 @@ export function AppShell({
           {children}
         </main>
       </div>
+      {currentUser?.actorType === "internal" ? <MeetingDialogHost navigate={navigate} /> : null}
       {supportTicketFeatureEnabled ? <SupportTicketDialog currentUser={currentUser} /> : null}
     </div>
   )

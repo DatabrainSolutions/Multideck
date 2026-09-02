@@ -11,7 +11,9 @@ export function isTrustedMultideckOrigin(value: string) {
     const url = new URL(value)
     if (url.protocol !== "https:" && url.protocol !== "http:") return false
     if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return true
-    return url.protocol === "https:" && (url.hostname === "multideck.app" || url.hostname.endsWith(".multideck.app"))
+    if (url.protocol !== "https:") return false
+    if (url.hostname === "multideck.app" || url.hostname.endsWith(".multideck.app")) return true
+    return /^multideck-app-[a-z0-9-]+-databrain-solutions\.vercel\.app$/.test(url.hostname)
   } catch {
     return false
   }
@@ -20,6 +22,7 @@ export function isTrustedMultideckOrigin(value: string) {
 export function readAllowedAppOrigins() {
   const values = [
     Deno.env.get("APP_URL")?.trim() || "https://dev.multideck.app",
+    Deno.env.get("APP_PREVIEW_ORIGIN")?.trim() || "",
     ...(Deno.env.get("APP_ALLOWED_ORIGINS") ?? "").split(","),
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -41,7 +44,7 @@ export function corsHeaders(request: Request) {
   const allowed = readAllowedAppOrigins().has(origin)
   return {
     "Access-Control-Allow-Origin": allowed ? origin : appUrl,
-    "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
+    "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info, x-multideck-meeting-source",
     "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
     Vary: "Origin",
   }

@@ -1,9 +1,9 @@
 import { authenticate, corsHeaders, currentInternalUser, failure, HttpError, json, requirePermission, routeParts } from "../_shared/backend.ts"
 import { governedModelFetch } from "../_shared/model-gateway.ts"
+import { removeNonVisualSvgLinks } from "../_shared/tenant-brand-logo.ts"
 import {
   DEFAULT_TENANT_BRAND,
   normaliseHex,
-  readTenantBrand,
   TENANT_BRAND_ASSETS_BUCKET,
   TENANT_BRAND_MAX_LOGO_BYTES,
   tenantBrandFromRow,
@@ -178,14 +178,15 @@ function sniffLogo(bytes: Uint8Array, advertisedType = "") {
   const decoded = new TextDecoder("utf-8", { fatal: false }).decode(bytes).replace(/^\uFEFF/, "").trim()
   if (advertisedType.toLowerCase().includes("svg") || /^<\?xml[\s\S]*?<svg\b/i.test(decoded) || /^<svg\b/i.test(decoded)) {
     if (!/<svg\b[\s\S]*<\/svg>\s*$/i.test(decoded)) throw new HttpError(400, "That SVG logo is incomplete.")
-    if (/<(?:script|foreignObject|iframe|object|embed|image|audio|video|link|meta)\b/i.test(decoded)
-      || /\bon[a-z]+\s*=/i.test(decoded)
-      || /(?:javascript:|data:text\/html|@import|expression\s*\()/i.test(decoded)
-      || /url\((?!\s*['\"]?#)/i.test(decoded)
-      || /\b(?:href|xlink:href)\s*=\s*['\"](?!#)/i.test(decoded)) {
+    const staticSvg = removeNonVisualSvgLinks(decoded)
+    if (/<(?:script|foreignObject|iframe|object|embed|image|audio|video|link|meta)\b/i.test(staticSvg)
+      || /\bon[a-z]+\s*=/i.test(staticSvg)
+      || /(?:javascript:|data:text\/html|@import|expression\s*\()/i.test(staticSvg)
+      || /url\((?!\s*['\"]?#)/i.test(staticSvg)
+      || /\b(?:href|xlink:href)\s*=\s*['\"](?!#)/i.test(staticSvg)) {
       throw new HttpError(400, "That SVG contains linked or executable content. Export a self-contained logo and try again.")
     }
-    const cleaned = decoded
+    const cleaned = staticSvg
       .replace(/<\?xml[\s\S]*?\?>/gi, "")
       .replace(/<!DOCTYPE[\s\S]*?>/gi, "")
       .trim()
@@ -267,6 +268,7 @@ async function saveBrand(admin: any, current: any, form: FormData) {
   const name = await companyName(admin, current.Company_ID)
   const brand = await ensureBrand(admin, current, name)
   const existingTemplate = object(brand.Brand_TemplateSettingsJSON)
+  const { tenantBrandingDraft: _discardedDraft, ...templateWithoutDraft } = existingTemplate
   const existingTenant = tenantBrandSettings(brand)
   const previousPath = cleanText(existingTenant.logoPath, 500)
   let uploaded: { path: string; mimeType: string } | null = null
@@ -314,7 +316,7 @@ async function saveBrand(admin: any, current: any, form: FormData) {
     Brand_DisplayName: input.displayName,
     Brand_WebsiteURL: input.websiteUrl || null,
     Brand_PrimaryColor: input.primaryColor,
-    Brand_TemplateSettingsJSON: { ...existingTemplate, tenantBranding: nextTenant },
+    Brand_TemplateSettingsJSON: { ...templateWithoutDraft, tenantBranding: nextTenant },
     Brand_UpdatedAt: new Date().toISOString(),
     Brand_UpdatedBy: current.User_ID,
   }).eq("Brand_ID", brand.Brand_ID).eq("Company_ID", current.Company_ID)
@@ -351,7 +353,7 @@ async function importBrand(admin: any, current: any, payload: JsonObject) {
       "Choose light or dark appearance from the website's dominant customer-facing brand treatment. Use dark only when the evidence supports a deliberately dark background and surface.",
       "Choose rounded when the evidence consistently uses visibly rounded controls; otherwise choose sharp.",
       "The email sign-off is one short factual company line, not advertising copy.",
-      "Return only the required JSON. The administrator reviews it before anything is saved.",
+      "Return only the required JSON. The administrator reviews the stored draft before it becomes the active company brand.",
     ].join(" "),
     input: JSON.stringify({ sourceUrl: page.url.toString(), evidence }),
     text: { format: { type: "json_schema", name: "tenant_brand_import", strict: true, schema: {
@@ -393,7 +395,7 @@ async function importBrand(admin: any, current: any, payload: JsonObject) {
     const logoUrl = Number.isInteger(logoIndex) && logoIndex >= 0 && logoIndex < evidence.logoCandidates.length
       ? evidence.logoCandidates[logoIndex]
       : null
-    return {
+    const importedDraft = {
       draft: {
         displayName: cleanText(parsed.displayName, 240) || evidence.meta["og:site_name"] || evidence.title,
         websiteUrl: page.url.toString(),
@@ -416,10 +418,83 @@ async function importBrand(admin: any, current: any, payload: JsonObject) {
         logoCandidateCount: evidence.logoCandidates.length,
       },
     }
+    const name = await companyName(admin, current.Company_ID)
+    const brand = await ensureBrand(admin, current, name)
+    const existingTemplate = object(brand.Brand_TemplateSettingsJSON)
+    const { error: draftError } = await admin.from("cmp_Brands").update({
+      Brand_TemplateSettingsJSON: { ...existingTemplate, tenantBrandingDraft: importedDraft },
+      Brand_UpdatedAt: new Date().toISOString(),
+      Brand_UpdatedBy: current.User_ID,
+    }).eq("Brand_ID", brand.Brand_ID).eq("Company_ID", current.Company_ID)
+    if (draftError) throw new HttpError(500, "The imported brand draft could not be stored for review.")
+    return importedDraft
   } catch (error) {
     if (error instanceof Error && error.message === "usage_allowance_reached") throw new HttpError(429, "This workspace has reached its included AI usage.")
     throw error
   } finally { clearTimeout(timeout) }
+}
+
+function pendingImportFromRow(row: TenantBrandRow | null) {
+  const value = object(object(row?.Brand_TemplateSettingsJSON).tenantBrandingDraft)
+  return Object.keys(value).length ? value : null
+}
+
+async function saveBrandImportDraft(admin: any, current: any, payload: JsonObject) {
+  await requirePermission(admin, current.User_ID, "Settings.Manage")
+  const input = validateBrandInput(payload.draft)
+  const evidence = object(payload.evidence)
+  const sourceUrl = cleanText(evidence.sourceUrl, 2_000)
+  let parsedSource: URL
+  try { parsedSource = new URL(sourceUrl) } catch { throw new HttpError(400, "The imported brand source is invalid.") }
+  if (parsedSource.protocol !== "https:") throw new HttpError(400, "The imported brand source must use HTTPS.")
+  const pendingImport = {
+    draft: {
+      displayName: input.displayName,
+      websiteUrl: input.websiteUrl,
+      primaryColor: input.primaryColor,
+      secondaryColor: input.secondaryColor,
+      backgroundColor: input.backgroundColor,
+      surfaceColor: input.surfaceColor,
+      textColor: input.textColor,
+      appearanceMode: input.appearanceMode,
+      cornerStyle: input.cornerStyle,
+      emailSignOff: input.emailSignOff,
+      importedLogoUrl: input.importedLogoUrl || null,
+    },
+    evidence: {
+      sourceUrl: parsedSource.toString(),
+      model: cleanText(evidence.model, 120),
+      importedAt: cleanText(evidence.importedAt, 80),
+      confidence: ["high", "medium", "low"].includes(String(evidence.confidence)) ? evidence.confidence : "low",
+      note: cleanText(evidence.note, 500),
+      logoCandidateCount: Math.max(0, Math.min(100, Number(evidence.logoCandidateCount) || 0)),
+    },
+  }
+  const name = await companyName(admin, current.Company_ID)
+  const brand = await ensureBrand(admin, current, name)
+  const existingTemplate = object(brand.Brand_TemplateSettingsJSON)
+  const { error } = await admin.from("cmp_Brands").update({
+    Brand_TemplateSettingsJSON: { ...existingTemplate, tenantBrandingDraft: pendingImport },
+    Brand_UpdatedAt: new Date().toISOString(),
+    Brand_UpdatedBy: current.User_ID,
+  }).eq("Brand_ID", brand.Brand_ID).eq("Company_ID", current.Company_ID)
+  if (error) throw new HttpError(500, "The imported brand draft could not be saved.")
+  return pendingImport
+}
+
+async function discardBrandImport(admin: any, current: any) {
+  await requirePermission(admin, current.User_ID, "Settings.Manage")
+  const brand = await tenantBrandRow(admin, current.Company_ID)
+  if (!brand) return { discarded: true }
+  const existingTemplate = object(brand.Brand_TemplateSettingsJSON)
+  const { tenantBrandingDraft: _discardedDraft, ...templateWithoutDraft } = existingTemplate
+  const { error } = await admin.from("cmp_Brands").update({
+    Brand_TemplateSettingsJSON: templateWithoutDraft,
+    Brand_UpdatedAt: new Date().toISOString(),
+    Brand_UpdatedBy: current.User_ID,
+  }).eq("Brand_ID", brand.Brand_ID).eq("Company_ID", current.Company_ID)
+  if (error) throw new HttpError(500, "The imported brand draft could not be discarded.")
+  return { discarded: true }
 }
 
 Deno.serve(async (request) => {
@@ -429,7 +504,9 @@ Deno.serve(async (request) => {
     const current = await currentInternalUser(admin, user)
     const parts = routeParts(request, "tenant-branding")
     if (request.method === "GET" && parts.length === 0) {
-      return json(request, await readTenantBrand(admin, current.Company_ID, await companyName(admin, current.Company_ID)))
+      const name = await companyName(admin, current.Company_ID)
+      const row = await tenantBrandRow(admin, current.Company_ID)
+      return json(request, { ...tenantBrandFromRow(admin, row, name), pendingImport: pendingImportFromRow(row) })
     }
     if (request.method === "POST" && parts[0] === "import") {
       return json(request, await importBrand(admin, current, object(await request.json())))
@@ -437,6 +514,12 @@ Deno.serve(async (request) => {
     if (request.method === "POST" && parts[0] === "save") {
       if (!request.headers.get("content-type")?.includes("multipart/form-data")) throw new HttpError(415, "Send brand settings as form data.")
       return json(request, await saveBrand(admin, current, await request.formData()))
+    }
+    if (request.method === "POST" && parts[0] === "discard-import") {
+      return json(request, await discardBrandImport(admin, current))
+    }
+    if (request.method === "POST" && parts[0] === "save-import-draft") {
+      return json(request, await saveBrandImportDraft(admin, current, object(await request.json())))
     }
     throw new HttpError(404, "Branding endpoint not found.")
   } catch (error) { return failure(request, error) }

@@ -49,6 +49,7 @@ import { cn } from "@/lib/utils"
 import type { ApiLead, ApiLeadDetail } from "@/lib/lead-api"
 import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmLeadFieldSettings, crmPipelineSettings, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteBookingIds, liveBookings, marlowContacts, marlowMetrics, metricCards, quoteAuditEvents, reportTemplates, bookingFilters, bookingMetrics, bookings, warehouseOrders, warehouseProducts, warehouseStockRows } from "@/data/multideck-data"
 import { AnimatedList } from "@/components/multideck/animated-list"
+import { AccentPicker } from "@/components/multideck/accent-picker"
 import { AppBreadcrumbs } from "@/components/multideck/app-breadcrumbs"
 import { CommandInput } from "@/components/multideck/command-input"
 import { SidebarNavItem } from "@/components/multideck/app-sidebar"
@@ -248,6 +249,16 @@ import {
   PhoneCallVolumeChart,
 } from "@/components/multideck/phone-call-components"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { AvailabilityPicker } from "@/components/multideck/availability-picker"
+import { VerificationCodeInput } from "@/components/multideck/verification-code-input"
+import { CalendarDayRibbon, CalendarView } from "@/components/multideck/calendar-view"
+import { MeetingColourPicker } from "@/components/multideck/meeting-colour-picker"
+import { MeetingAttendeePicker } from "@/components/multideck/meeting-attendee-picker"
+import { MeetingAttendeeList, MeetingResponseSummary } from "@/components/multideck/meeting-attendee-status"
+import { MeetingProviderSelect } from "@/components/multideck/meeting-provider-select"
+import { MeetingTimePicker } from "@/components/multideck/meeting-time-picker"
+import { WorkingHoursEditor, defaultWorkingHours, type WorkingHours } from "@/components/multideck/working-hours-editor"
+import type { CalendarEvent, CalendarProvider, CalendarRibbon, MeetingColour, MeetingParticipant, MeetingPersonSuggestion } from "@/lib/calendar-api"
 import { CustomsReadinessReview } from "@/components/multideck/customs-readiness-review"
 import { UnifiedQuoteChargesWorkspace, type UnifiedQuoteChargeRow } from "@/components/multideck/unified-quote-charges-workspace"
 import { quoteMatchesSearch, quoteSearchFieldOptions, type QuoteSearchQuery } from "@/lib/quote-filters"
@@ -292,7 +303,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
   },
   {
     label: "Auth components",
@@ -307,7 +318,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
@@ -1592,12 +1603,35 @@ function QuoteDetailControlsPreview() {
   )
 }
 
+const previewMeetingPeople: MeetingPersonSuggestion[] = [
+  { id: "team:priya", kind: "team", name: "Priya Shah", email: "priya@multideck.app", detail: "Operations lead", recordId: "priya", external: false },
+  { id: "team:tom", kind: "team", name: "Tom Ellis", email: "tom@multideck.app", detail: "Customs", recordId: "tom", external: false },
+  { id: "contact:sam", kind: "contact", name: "Sam Okafor", email: "sam@harbourline.example", detail: "Harbourline Imports", recordId: "sam", external: true },
+  { id: "lead:jordan", kind: "lead", name: "Jordan Reyes", email: "jordan@atlasfreight.example", detail: "Lead · Atlas Freight", recordId: "jordan", external: true },
+]
+
+const previewMeetingRoster: MeetingParticipant[] = [
+  { id: "r1", name: "Harry Phillips", email: "harry@databrain.co.uk", role: "organiser", response: "accepted", external: false },
+  { id: "r2", name: "Alex Morgan", email: "alex@northstar.example", response: "accepted", external: true },
+  { id: "r3", name: "Priya Shah", email: "priya@multideck.app", response: "tentative", external: false },
+  { id: "r4", name: "Sam Okafor", email: "sam@harbourline.example", response: "needs_action", external: true },
+  { id: "r5", name: "Jordan Reyes", email: "jordan@atlasfreight.example", response: "declined", external: true },
+]
+
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
   const [previewSidebarFavouriteIds, setPreviewSidebarFavouriteIds] = useState<string[]>([])
   const [previewTodoChecked, setPreviewTodoChecked] = useState(false)
+  const [previewAvailabilitySlot, setPreviewAvailabilitySlot] = useState<string | null>(null)
+  const [previewVerificationCode, setPreviewVerificationCode] = useState("48")
+  const [previewMeetingAttendees, setPreviewMeetingAttendees] = useState<MeetingParticipant[]>([{ name: "Alex Morgan", email: "alex@northstar.example", external: true }])
+  const [previewMeetingProvider, setPreviewMeetingProvider] = useState<CalendarProvider>("microsoft_teams")
+  const [previewMeetingColour, setPreviewMeetingColour] = useState<MeetingColour>("teal")
+  const [previewWorkingHours, setPreviewWorkingHours] = useState<WorkingHours>(defaultWorkingHours)
+  const [previewMeetingTime, setPreviewMeetingTime] = useState(() => { const start = new Date(); start.setDate(start.getDate() + 1); start.setHours(10, 0, 0, 0); return { startAt: start.toISOString(), endAt: new Date(start.getTime() + 30 * 60_000).toISOString() } })
+  const [previewMeetingZone, setPreviewMeetingZone] = useState("Europe/London")
   const [previewDictationPhase, setPreviewDictationPhase] = useState<DictationStatusPhase>("transcribing")
   const [previewArrangeOrder, setPreviewArrangeOrder] = useState<string[]>(previewSidebarOrder)
   const [previewArrangePinned, setPreviewArrangePinned] = useState<string[]>([])
@@ -1772,6 +1806,19 @@ function ComponentPreview({ id }: { id: string }) {
 
   const previewDexterAttachments = defaultDexterAttachments.filter((attachment) => previewDexterAttachmentIds.has(attachment.id))
   const previewCrmLead = previewCrmLeadDetails.find((lead) => lead.id === previewCrmLeadId) ?? previewCrmLeadDetails[0]
+  const previewCalendarSeed = useMemo(() => {
+    const at = (days: number, hour: number, minute = 0) => { const date = new Date(); date.setHours(hour, minute, 0, 0); date.setDate(date.getDate() + days); return date.toISOString() }
+    const events: CalendarEvent[] = [
+      { id: "preview-contained-base", title: "Weekly setup", startAt: at(1, 10), endAt: at(1, 11), status: "confirmed", provider: "google_meet", colour: "teal", canEdit: true },
+      { id: "preview-contained", title: "Scorecard", startAt: at(1, 10, 15), endAt: at(1, 10, 45), status: "confirmed", provider: "calendar", colour: "neutral", canEdit: false },
+      { id: "preview-continuing-base", title: "Security sweep", startAt: at(2, 14), endAt: at(2, 15), status: "confirmed", provider: "multideck", colour: "teal", canEdit: true },
+      { id: "preview-continuing", title: "Training session", startAt: at(2, 14, 30), endAt: at(2, 15, 15), status: "confirmed", provider: "microsoft_teams", colour: "amber", canEdit: true },
+      { id: "preview-busy", title: "Busy", startAt: at(3, 16), endAt: at(3, 16, 30), status: "confirmed", provider: "calendar", colour: "blue", canEdit: false, private: true },
+    ]
+    const ribbons: CalendarRibbon[] = [{ id: "preview-delivery", kind: "delivery", title: "MD-22479 delivers", at: at(1, 8), route: "/bookings/MD-22479", tone: "green" }]
+    const slots = [at(1, 9), at(1, 11), at(2, 10, 30), at(2, 15, 30)]
+    return { events, ribbons, slots }
+  }, [])
 
   return (
     <div className="grid min-h-[430px] min-w-0 place-items-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-[var(--md-gap-xl)]">
@@ -1878,6 +1925,27 @@ function ComponentPreview({ id }: { id: string }) {
           )}
         </div>
       ) : null}
+
+      {id === "calendar-view" ? <div className="w-full min-w-[720px] scale-[.88]"><CalendarView events={previewCalendarSeed.events} ribbons={previewCalendarSeed.ribbons} timeZone="Europe/London" onRangeChange={() => undefined} onOpenEvent={() => toast.success("Meeting details opened")} onCreateAt={() => toast.success("Meeting drawer opened")} navigate={() => toast.success("Source record opened")} /></div> : null}
+
+      {id === "meeting-colour-picker" ? <div className="w-full max-w-[420px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><MeetingColourPicker value={previewMeetingColour} onChange={setPreviewMeetingColour} /></div> : null}
+
+      {id === "calendar-day-ribbon" ? <div className="w-full max-w-[420px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><p className="mb-3 text-[11px] font-medium text-[var(--md-subtle)]">Tuesday · Operational dates</p><div className="grid gap-2"><CalendarDayRibbon ribbon={previewCalendarSeed.ribbons[0]} navigate={() => toast.success("Booking opened")} /><CalendarDayRibbon ribbon={{ id: "preview-follow-up", kind: "crm_follow_up", title: "Follow up Northstar", at: previewCalendarSeed.slots[0], route: "/crm/leads", tone: "violet" }} navigate={() => toast.success("Lead opened")} /></div></div> : null}
+
+      {id === "availability-picker" ? <div className="w-full max-w-[560px]"><AvailabilityPicker slots={previewCalendarSeed.slots} selected={previewAvailabilitySlot} onSelect={setPreviewAvailabilitySlot} timeZone="Europe/London" /></div> : null}
+      {id === "verification-code-input" ? <div className="grid gap-6">
+        <div className="grid gap-2"><p className="text-[11px] font-medium uppercase tracking-[.07em] text-[var(--md-subtle)]">Default</p><VerificationCodeInput value={previewVerificationCode} onChange={setPreviewVerificationCode} /></div>
+        <div className="grid gap-2"><p className="text-[11px] font-medium uppercase tracking-[.07em] text-[var(--md-subtle)]">Large, as sign-in uses it</p><VerificationCodeInput size="lg" value={previewVerificationCode} onChange={setPreviewVerificationCode} className="gap-[var(--md-gap-lg)]" boxClassName="bg-white hover:bg-white focus:bg-white focus-visible:bg-white disabled:bg-white/72" /></div>
+      </div> : null}
+
+      {id === "meeting-time-picker" ? <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><MeetingTimePicker startAt={previewMeetingTime.startAt} endAt={previewMeetingTime.endAt} timeZone={previewMeetingZone} onChange={setPreviewMeetingTime} onTimeZoneChange={setPreviewMeetingZone} /></div> : null}
+
+      {id === "meeting-provider-select" ? <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><MeetingProviderSelect value={previewMeetingProvider} onChange={setPreviewMeetingProvider} connections={[{ id: "preview-google", provider: "google", primaryCalendar: true, status: "connected", displayName: "harry@databrain.co.uk", email: "harry@databrain.co.uk", lastSyncedAt: null, subscriptionExpiresAt: null, error: null, colour: "blue" }]} onConnect={() => toast.success("Settings → Integrations opened")} /></div> : null}
+
+      {id === "meeting-attendee-picker" ? <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><MeetingAttendeePicker value={previewMeetingAttendees} onChange={setPreviewMeetingAttendees} search={async (query) => ({ people: previewMeetingPeople.filter((person) => !query.trim() ? person.kind === "team" : [person.name, person.email, person.detail ?? ""].some((value) => value.toLowerCase().includes(query.trim().toLowerCase()))) })} /></div> : null}
+
+      {id === "working-hours-editor" ? <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3 shadow-[var(--md-shadow-line)]"><WorkingHoursEditor value={previewWorkingHours} onChange={setPreviewWorkingHours} /></div> : null}
+      {id === "meeting-attendee-status" ? <div className="w-full max-w-[460px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]"><div className="flex items-baseline justify-between gap-3 px-2"><p className="text-[12px] font-medium text-[var(--md-ink)]">5 attendees</p><MeetingResponseSummary participants={previewMeetingRoster} /></div><MeetingAttendeeList participants={previewMeetingRoster} maxVisible={3} className="mt-2" /><div className="mt-3 flex items-center justify-between gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2 text-[10.5px] tabular-nums text-[var(--md-subtle)]"><span>10:00–10:45 · compact mark for calendar blocks</span><MeetingResponseSummary participants={previewMeetingRoster} compact /></div></div> : null}
 
       {id === "wizard-dialog" ? (
         <div className="grid w-full max-w-[620px] place-items-center rounded-[var(--md-radius-xl)] bg-white/54 p-8 shadow-[var(--md-shadow-line)]">
@@ -2447,6 +2515,12 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "theme-toggle" ? (
         <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
           <ThemeToggle className="bg-[var(--md-glass)]" />
+        </div>
+      ) : null}
+
+      {id === "accent-picker" ? (
+        <div className="w-full max-w-[980px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
+          <AccentPicker />
         </div>
       ) : null}
 

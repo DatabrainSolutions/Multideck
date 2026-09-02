@@ -1,5 +1,7 @@
 export const topBarActionEvents = {
   createTodoTask: "multideck:todo:create-task",
+  createCalendarMeeting: "multideck:calendar:create-meeting",
+  createBookingLink: "multideck:calendar:create-booking-link",
   createWarehouseObject: "multideck:warehouse:create-object",
   reportWarehouseLocationEmpty: "multideck:warehouse:report-location-empty",
   createWarehouseOrder: "multideck:warehouse:create-order",

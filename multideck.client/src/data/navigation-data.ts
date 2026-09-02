@@ -103,6 +103,7 @@ export const homeNavItem: NavItem = { label: "Home", icon: Home03, route: "/" }
  */
 export const inboxNavItem: NavItem = { label: "Inbox", icon: Inbox, route: "/inbox" }
 export const todoNavItem: NavItem = { label: "To Do list", icon: ClipboardCheck, route: "/to-do" }
+export const calendarNavItem: NavItem = { label: "Calendar", icon: CalendarDays, route: "/calendar" }
 
 export const sidebarAreas: SidebarArea[] = [
   {

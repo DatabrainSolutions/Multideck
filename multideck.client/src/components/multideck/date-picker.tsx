@@ -209,6 +209,8 @@ export function MultideckDateRangePicker({
   minDate,
   maxDate,
   singleDate = false,
+  compact = false,
+  closeOnSelect = false,
   onOpenChange,
 }: {
   value: MultideckDateRange
@@ -232,6 +234,10 @@ export function MultideckDateRangePicker({
   minDate?: string
   maxDate?: string
   singleDate?: boolean
+  /** Hides the description and the Reset/Apply footer for inline, single-choice use. */
+  compact?: boolean
+  /** Closes the popover as soon as a single date is chosen. */
+  closeOnSelect?: boolean
   onOpenChange?: (open: boolean) => void
 }) {
   const { language, t } = useLanguage()
@@ -297,6 +303,7 @@ export function MultideckDateRangePicker({
     if (singleDate) {
       onChange({ start: dateKey, end: dateKey })
       setHoveredDate(null)
+      if (closeOnSelect) updateOpen(false)
       return
     }
 
@@ -401,7 +408,7 @@ export function MultideckDateRangePicker({
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[14px] font-medium text-[var(--md-ink)]">{t(title)}</p>
-            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(description)}</p>
+            {!compact ? <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(description)}</p> : null}
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
             {comparison ? (
@@ -542,7 +549,7 @@ export function MultideckDateRangePicker({
           </div>
         )}
 
-        <div className="mt-4 flex flex-col gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)] sm:flex-row sm:items-center sm:justify-between">
+        {compact ? null : <div className="mt-4 flex flex-col gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)] sm:flex-row sm:items-center sm:justify-between">
           <div className={cn("min-w-0 flex-1 text-[12px] leading-5 text-[var(--md-text)]", comparison?.enabled && "grid gap-x-5 gap-y-2 md:grid-cols-2")}>
             <div>
               <span className="font-medium text-[var(--md-ink)]">{t(comparison?.enabled ? "Current period" : footerLabel)}</span>
@@ -578,7 +585,7 @@ export function MultideckDateRangePicker({
               {t(singleDate ? "Apply date" : hasCompleteRange && (!comparison?.enabled || comparisonHasCompleteRange) ? "Apply dates" : "Apply start")}
             </Button>
           </div>
-        </div>
+        </div>}
       </PopoverContent>
     </Popover>
   )
@@ -598,6 +605,8 @@ export function MultideckDatePicker({
   popoverClassName,
   minDate,
   maxDate,
+  compact,
+  closeOnSelect,
 }: {
   value: string | null
   onChange: (date: string | null) => void
@@ -612,6 +621,8 @@ export function MultideckDatePicker({
   popoverClassName?: string
   minDate?: string
   maxDate?: string
+  compact?: boolean
+  closeOnSelect?: boolean
 }) {
   return (
     <MultideckDateRangePicker
@@ -631,6 +642,8 @@ export function MultideckDatePicker({
       popoverClassName={popoverClassName}
       minDate={minDate}
       maxDate={maxDate}
+      compact={compact}
+      closeOnSelect={closeOnSelect}
       singleDate
     />
   )

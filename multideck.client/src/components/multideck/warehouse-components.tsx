@@ -19,6 +19,7 @@ import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
+import { addCalendarDays, calendarDateKey, calendarPeriodDates, formatCalendarPeriodLabel, moveCalendarPeriod as moveCalendarPeriodAnchor, parseCalendarDateKey, startOfCalendarMonth } from "@/components/multideck/calendar-period-core"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { FilterChips, SegmentedControl } from "@/components/multideck/workflow-components"
@@ -178,47 +179,6 @@ const warehouseCalendarHourMarks = Array.from(
 
 const warehouseCalendarCustomerFallback = warehouseCalendarCustomers.find((customer) => customer.id === "internal") ?? warehouseCalendarCustomers[0]
 
-function parseDateKey(dateKey: string) {
-  const [year, month, day] = dateKey.split("-").map(Number)
-  return new Date(year, month - 1, day)
-}
-
-function formatDateKey(date: Date) {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, "0")
-  const day = `${date.getDate()}`.padStart(2, "0")
-  return `${year}-${month}-${day}`
-}
-
-function addCalendarDays(date: Date, days: number) {
-  const next = new Date(date)
-  next.setDate(next.getDate() + days)
-  return next
-}
-
-function startOfCalendarWeek(date: Date) {
-  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-  start.setDate(start.getDate() - ((start.getDay() + 6) % 7))
-  return start
-}
-
-function startOfCalendarMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1)
-}
-
-function getWeekDateKeys(start: Date) {
-  return Array.from({ length: 7 }, (_, index) => formatDateKey(addCalendarDays(start, index)))
-}
-
-function getMonthDateKeys(monthStart: Date) {
-  const firstWeekday = (monthStart.getDay() + 6) % 7
-  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate()
-  const visibleDayCount = firstWeekday + daysInMonth > 35 ? 42 : 35
-  const gridStart = addCalendarDays(monthStart, -firstWeekday)
-
-  return Array.from({ length: visibleDayCount }, (_, index) => formatDateKey(addCalendarDays(gridStart, index)))
-}
-
 function getWarehouseCalendarCustomer(customerId: string, customers: readonly WarehouseCalendarCustomer[] = warehouseCalendarCustomers) {
   return customers.find((customer) => customer.id === customerId) ?? customers.find((customer) => customer.id === "internal") ?? warehouseCalendarCustomerFallback
 }
@@ -254,10 +214,10 @@ function buildCalendarDays(view: WarehouseCalendarViewMode, language: string, an
   const dateFormatter = new Intl.DateTimeFormat(language, { day: "numeric", month: "short" })
   const dayNumberFormatter = new Intl.DateTimeFormat(language, { day: "numeric" })
   const visibleMonth = startOfCalendarMonth(anchorDate)
-  const dateKeys = view === "Week" ? getWeekDateKeys(startOfCalendarWeek(anchorDate)) : getMonthDateKeys(visibleMonth)
+  const dates = calendarPeriodDates(view, anchorDate)
 
-  return dateKeys.map((dateKey) => {
-    const date = parseDateKey(dateKey)
+  return dates.map((date) => {
+    const dateKey = calendarDateKey(date)
 
     return {
       dateKey,
@@ -269,19 +229,6 @@ function buildCalendarDays(view: WarehouseCalendarViewMode, language: string, an
       events: [...(eventsByDate[dateKey] ?? [])].sort((firstEvent, secondEvent) => getTimeInMinutes(firstEvent.time) - getTimeInMinutes(secondEvent.time)),
     }
   })
-}
-
-function formatCalendarPeriodLabel(view: WarehouseCalendarViewMode, language: string, anchorDate: Date) {
-  if (view === "Month") {
-    return new Intl.DateTimeFormat(language, { month: "long", year: "numeric" }).format(startOfCalendarMonth(anchorDate))
-  }
-
-  const start = startOfCalendarWeek(anchorDate)
-  const end = addCalendarDays(start, 6)
-  const startFormatter = new Intl.DateTimeFormat(language, { day: "numeric", month: "short" })
-  const endFormatter = new Intl.DateTimeFormat(language, { day: "numeric", month: "short", year: "numeric" })
-
-  return `${startFormatter.format(start)} - ${endFormatter.format(end)}`
 }
 
 type PositionedWarehouseCalendarEvent = {
@@ -1767,7 +1714,7 @@ function WarehouseCalendarEventDetails({
   const { language, t } = useLanguage()
   const openOrder = useContext(WarehouseCalendarOpenOrderContext)
   const onOpenOrder = openOrder ? () => openOrder(event) : undefined
-  const eventDate = parseDateKey(event.date)
+  const eventDate = parseCalendarDateKey(event.date)
   const dateLabel = new Intl.DateTimeFormat(language, { weekday: "long", day: "numeric", month: "long" }).format(eventDate)
   const startMinutes = getTimeInMinutes(event.time)
   const durationMinutes = Math.max(0, getCalendarEventEndMinutes(event) - startMinutes)
@@ -1992,7 +1939,7 @@ function WarehouseCalendarTimedEvent({
 
 function WarehouseCalendarTimedDayColumn({ day, customers }: { day: WarehouseCalendarDay; customers: readonly WarehouseCalendarCustomer[] }) {
   const positionedEvents = useMemo(() => getCalendarEventLayout(day.events), [day.events])
-  const isToday = day.dateKey === formatDateKey(new Date())
+  const isToday = day.dateKey === calendarDateKey(new Date())
 
   return (
     <div
@@ -2072,7 +2019,7 @@ function WarehouseCalendarWeekGrid({
               <span data-i18n-skip dir="auto">{timeZoneLabel}</span>
             </div>
             {days.map((day) => {
-              const isToday = day.dateKey === formatDateKey(new Date())
+              const isToday = day.dateKey === calendarDateKey(new Date())
 
               return (
                 <div
@@ -2136,7 +2083,7 @@ function WarehouseCalendarDayCell({
 }) {
   const { t } = useLanguage()
   const isMonthView = view === "Month"
-  const isToday = day.dateKey === formatDateKey(new Date())
+  const isToday = day.dateKey === calendarDateKey(new Date())
 
   return (
     <Surface
@@ -2205,13 +2152,13 @@ export function WarehouseCalendarView({
       : allCalendarDays
   ), [allCalendarDays, selectedCustomerIds])
   const rangeStart = allCalendarDays[0]?.dateKey
-  const rangeEnd = allCalendarDays.length ? formatDateKey(addCalendarDays(allCalendarDays[allCalendarDays.length - 1].date, 1)) : undefined
+  const rangeEnd = allCalendarDays.length ? calendarDateKey(addCalendarDays(allCalendarDays[allCalendarDays.length - 1].date, 1)) : undefined
   useEffect(() => {
     if (rangeStart && rangeEnd) onRangeChange?.({ start: rangeStart, end: rangeEnd })
   }, [onRangeChange, rangeEnd, rangeStart])
   const visibleCustomerIds = useMemo(() => new Set(allCalendarDays.flatMap((day) => day.events.map((event) => event.customerId))), [allCalendarDays])
   const visibleCustomers = customers.filter((customer) => visibleCustomerIds.has(customer.id))
-  const periodLabel = formatCalendarPeriodLabel(calendarView, language, anchorDate)
+  const periodLabel = formatCalendarPeriodLabel(calendarView, language, anchorDate, "-")
 
   function handleSelectCustomer(customerId: string) {
     setSelectedCustomerIds((currentCustomerIds) => (
@@ -2227,11 +2174,7 @@ export function WarehouseCalendarView({
   }
 
   function moveCalendarPeriod(direction: -1 | 1) {
-    setAnchorDate((currentDate) => (
-      calendarView === "Week"
-        ? addCalendarDays(currentDate, direction * 7)
-        : new Date(currentDate.getFullYear(), currentDate.getMonth() + direction, 1)
-    ))
+    setAnchorDate((currentDate) => moveCalendarPeriodAnchor(currentDate, calendarView, direction))
     setSelectedCustomerIds([])
   }
 

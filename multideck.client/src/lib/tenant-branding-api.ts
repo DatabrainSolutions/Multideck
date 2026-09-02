@@ -4,6 +4,7 @@ export type TenantBrandCornerStyle = "rounded" | "sharp"
 export type TenantBrandAppearance = "light" | "dark"
 
 export type TenantBranding = {
+  configured: boolean
   brandId: string | null
   displayName: string
   websiteUrl: string
@@ -19,6 +20,7 @@ export type TenantBranding = {
   logoMimeType: "image/svg+xml" | "image/png" | "image/jpeg" | null
   updatedAt: string | null
   importedFrom: { url: string; importedAt: string; model: string } | null
+  pendingImport?: TenantBrandImport | null
 }
 
 export const DEFAULT_TENANT_BRAND = {
@@ -33,7 +35,7 @@ export const DEFAULT_TENANT_BRAND = {
 }
 
 export type TenantBrandImport = {
-  draft: Omit<TenantBranding, "brandId" | "logoUrl" | "logoMimeType" | "updatedAt" | "importedFrom"> & {
+  draft: Omit<TenantBranding, "configured" | "brandId" | "logoUrl" | "logoMimeType" | "updatedAt" | "importedFrom" | "pendingImport"> & {
     importedLogoUrl: string | null
   }
   evidence: {
@@ -68,6 +70,24 @@ export function importTenantBranding(accessToken: string, websiteUrl: string) {
       body: JSON.stringify({ websiteUrl }),
     }),
     "Luna could not import that website.",
+  )
+}
+
+export function discardTenantBrandImport(accessToken: string) {
+  return responseJson<{ discarded: true }>(
+    edgeFetch("tenant-branding", "/discard-import", accessToken, { method: "POST" }),
+    "The imported brand draft could not be discarded.",
+  )
+}
+
+export function saveTenantBrandImportDraft(accessToken: string, pendingImport: TenantBrandImport) {
+  return responseJson<TenantBrandImport>(
+    edgeFetch("tenant-branding", "/save-import-draft", accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pendingImport),
+    }),
+    "The imported brand draft could not be saved.",
   )
 }
 

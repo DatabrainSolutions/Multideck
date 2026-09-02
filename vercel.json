@@ -83,11 +83,31 @@
       "destination": "/index.html"
     },
     {
+      "source": "/admin/:path*",
+      "destination": "/index.html"
+    },
+    {
       "source": "/warehouse/:path*",
       "destination": "/index.html"
     },
     {
       "source": "/bookings/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/calendar",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/calendar/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/book/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/meetings/manage/:path*",
       "destination": "/index.html"
     },
     {

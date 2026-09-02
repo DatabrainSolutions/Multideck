@@ -1,4 +1,4 @@
-import { Component, lazy, startTransition, Suspense, useCallback, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react"
+import { Component, lazy, startTransition, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties, type ErrorInfo, type ReactNode } from "react"
 import type { Session } from "@supabase/supabase-js"
 import { MotionConfig } from "motion/react"
 import { ThemeProvider } from "@/lib/theme-provider"
@@ -40,6 +40,10 @@ const CustomerDetailPage = lazy(() => import("@/pages/customer-detail-page").the
 const CustomersPage = lazy(() => import("@/pages/customers-page").then((module) => ({ default: module.CustomersPage })))
 const InboxPage = lazy(() => import("@/pages/inbox-page").then((module) => ({ default: module.InboxPage })))
 const ToDoPage = lazy(() => import("@/pages/to-do-page").then((module) => ({ default: module.ToDoPage })))
+const CalendarPage = lazy(() => import("@/pages/calendar-page").then((module) => ({ default: module.CalendarPage })))
+const BookingLinksPage = lazy(() => import("@/pages/booking-links-page").then((module) => ({ default: module.BookingLinksPage })))
+const PublicBookingPage = lazy(() => import("@/pages/public-booking-page").then((module) => ({ default: module.PublicBookingPage })))
+const MeetingManagePage = lazy(() => import("@/pages/meeting-manage-page").then((module) => ({ default: module.MeetingManagePage })))
 const DocumentsPage = lazy(() => import("@/pages/documents-page").then((module) => ({ default: module.DocumentsPage })))
 const CustomsDeclarationsPage = lazy(() => import("@/pages/customs-declarations-page").then((module) => ({ default: module.CustomsDeclarationsPage })))
 const ScreeningPage = lazy(() => import("@/pages/screening-page").then((module) => ({ default: module.ScreeningPage })))
@@ -127,6 +131,8 @@ const validRoutes = new Set([
   "/customers",
   "/inbox",
   "/to-do",
+  "/calendar",
+  "/calendar/booking-links",
   "/documents",
   "/documents/templates",
   "/customs/standalone/export",
@@ -260,6 +266,22 @@ function isQuoteResponseRoute(path: string) {
   return /^\/quotes\/respond\/[^/]+$/.test(path)
 }
 
+function isPublicBookingRoute(path: string) {
+  return /^\/book\/[^/]+\/[^/]+$/.test(path)
+}
+
+function isMeetingManageRoute(path: string) {
+  return /^\/meetings\/manage\/[^/]+$/.test(path)
+}
+
+/** Public customer links use the tenant brand or the fixed light Multideck fallback, never an individual's theme. */
+function isExternalSurfaceRoute(path: string) {
+  return isQuoteResponseRoute(path)
+    || isPublicBookingRoute(path)
+    || isMeetingManageRoute(path)
+    || isContactCardPublicRoute(path)
+}
+
 function isCrmLeadConversionRoute(path: string) {
   return /^\/crm\/leads\/[^/]+\/convert$/.test(path)
 }
@@ -297,6 +319,8 @@ function getRoute() {
   if (isContactCardDetailRoute(window.location.pathname)) return window.location.pathname
   if (isContactCardPublicRoute(window.location.pathname)) return window.location.pathname
   if (isQuoteResponseRoute(window.location.pathname)) return window.location.pathname
+  if (isPublicBookingRoute(window.location.pathname)) return window.location.pathname
+  if (isMeetingManageRoute(window.location.pathname)) return window.location.pathname
   return validRoutes.has(window.location.pathname) ? window.location.pathname : "/"
 }
 
@@ -313,6 +337,17 @@ function RouteFallback({ fullScreen = false }: { fullScreen?: boolean }) {
       className={fullScreen
         ? "grid min-h-screen place-items-center bg-[var(--md-bg)] text-[var(--md-ink)]"
         : "grid min-h-[calc(100dvh-104px)] place-items-center bg-[var(--md-bg)] text-[var(--md-ink)]"}
+    >
+      <DotGridLoader label="Loading…" />
+    </div>
+  )
+}
+
+function ExternalRouteFallback() {
+  return (
+    <div
+      className="grid min-h-screen place-items-center bg-white text-[#0b1413]"
+      style={{ "--md-accent": "#0E7D74" } as CSSProperties}
     >
       <DotGridLoader label="Loading…" />
     </div>
@@ -395,6 +430,8 @@ export default function App() {
   // sign-in screen and the public contact card must stay inert.
   const isWorkspaceRoute = !isContactCardPublicRoute(route)
     && !isQuoteResponseRoute(route)
+    && !isPublicBookingRoute(route)
+    && !isMeetingManageRoute(route)
     && route !== "/auth"
     && (authStatus === "authenticated" || isLocalNavigationLab)
 
@@ -570,7 +607,7 @@ export default function App() {
   useEffect(() => {
     if (authStatus === "checking") return
 
-    if (isContactCardPublicRoute(route) || isQuoteResponseRoute(route)) return
+    if (isContactCardPublicRoute(route) || isQuoteResponseRoute(route) || isPublicBookingRoute(route) || isMeetingManageRoute(route)) return
 
     if (authStatus === "unauthenticated" && route !== "/auth" && !isLocalNavigationLab) {
       rememberAuthReturnPath()
@@ -586,7 +623,7 @@ export default function App() {
 
   useEffect(() => {
     if (authStatus !== "authenticated" || currentUser?.actorType !== "customer") return
-    if (isContactCardPublicRoute(route) || isQuoteResponseRoute(route) || canCustomerOpenRoute(currentUser, route)) return
+    if (isContactCardPublicRoute(route) || isQuoteResponseRoute(route) || isPublicBookingRoute(route) || isMeetingManageRoute(route) || canCustomerOpenRoute(currentUser, route)) return
     window.history.replaceState({}, "", currentUser.landingPath)
     startTransition(() => setRoute(getRoute()))
   }, [authStatus, currentUser, route])
@@ -637,20 +674,29 @@ export default function App() {
       defaultTheme="light"
       disableTransitionOnChange
       enableSystem={false}
+      forcedTheme={isExternalSurfaceRoute(route) ? "light" : undefined}
       storageKey={themeStorageKey}
     >
-      <ThemeProfileSync />
+      {isExternalSurfaceRoute(route) ? null : <ThemeProfileSync />}
       <LanguageProvider>
         <WorkspaceErrorBoundary resetKey={`${route}:${authStatus}`}>
           <LanguageProfileSync />
           <TooltipProvider>
             <MotionConfig reducedMotion="user" transition={mdMotion.fast}>
             {isQuoteResponseRoute(route) ? (
-              <Suspense fallback={<RouteFallback fullScreen />}>
+              <Suspense fallback={<ExternalRouteFallback />}>
                 <QuoteResponsePage token={route.split("/").at(-1) ?? ""} />
               </Suspense>
+            ) : isPublicBookingRoute(route) ? (
+              <Suspense fallback={<ExternalRouteFallback />}>
+                <PublicBookingPage organiserSlug={route.split("/")[2] ?? ""} bookingSlug={route.split("/")[3] ?? ""} />
+              </Suspense>
+            ) : isMeetingManageRoute(route) ? (
+              <Suspense fallback={<ExternalRouteFallback />}>
+                <MeetingManagePage token={route.split("/").at(-1) ?? ""} />
+              </Suspense>
             ) : isContactCardPublicRoute(route) ? (
-              <Suspense fallback={<RouteFallback fullScreen />}>
+              <Suspense fallback={<ExternalRouteFallback />}>
                 <ContactCardPublicPage slug={route.split("/").at(-1) ?? ""} />
               </Suspense>
             ) : (!isLocalNavigationLab && ((authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth" && !isPasswordSetupRoute))) ? (
@@ -698,6 +744,8 @@ export default function App() {
                   {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/inbox" ? <InboxPage navigate={navigate} /> : null}
                   {route === "/to-do" ? <ToDoPage operatorName={currentUser?.name} /> : null}
+                  {route === "/calendar" ? <CalendarPage navigate={navigate} /> : null}
+                  {route === "/calendar/booking-links" ? <BookingLinksPage navigate={navigate} /> : null}
                   {route === "/documents" || route === "/documents/templates" ? <DocumentsPage navigate={navigate} /> : null}
                   {route.startsWith("/customs/") ? <CustomsDeclarationsPage route={route} navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/compliance/screening" ? <ScreeningPage /> : null}
