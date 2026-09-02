@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
-import { adminClient, body, failure, HttpError, isTrustedMultideckOrigin, json, routeParts } from "../_shared/backend.ts"
+import { adminClient, body, failure, HttpError, isTrustedMultideckOrigin, json as backendJson, routeParts } from "../_shared/backend.ts"
 import {
   availableSlots,
   cleanText,
@@ -21,6 +21,14 @@ import { providerBusyRanges } from "../_shared/calendar-provider-availability.ts
 
 type JsonObject = Record<string, unknown>
 const MAX_PUBLIC_AVAILABILITY_RANGE_MS = 90 * 86_400_000
+
+// Public identity is resolved from the current saved brand on every read.
+// This is cache hygiene, not a new data capability or Dexter/watch action.
+function json(request: Request, value: unknown, status = 200) {
+  const response = backendJson(request, value, status)
+  response.headers.set("Cache-Control", "private, no-store, max-age=0")
+  return response
+}
 type BookingLinkRow = Record<string, unknown> & {
   CALBookingLink_ID: string
   CALBookingLink_CompanyID: string

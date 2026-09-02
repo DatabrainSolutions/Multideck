@@ -1,3 +1,4 @@
+import publicBrandIdentitySource from "@/components/multideck/public-brand-identity.tsx?raw"
 import {
   AiBrain,
   AiEditing,
@@ -2079,6 +2080,16 @@ export const galleryComponents = [
     foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `:root {\n  --md-ink: #0b1413;\n  --md-text: #4f5b58;\n  --md-subtle: #687570;\n  --md-hairline: #ccd4d1;\n  --md-bg: #ffffff;\n  --md-bg-strong: #eef1f0;\n  --md-sidebar-bg: #f7f8f8;\n  --md-surface: #ffffff;\n  --md-surface-soft: #f7f9f8;\n  --md-surface-tint: #eef1f0;\n  --md-field-bg: #e5e9e7;\n  --md-accent: #0a7068;\n  --md-green: #0a7068;\n  --md-amber: #dd8a2b;\n  --md-red: #d14e4e;\n  --md-blue: #4a7d9c;\n}`,
     usageCode: `<Surface className="bg-[var(--md-surface)] text-[var(--md-ink)]">\n  <StatusPill tone="teal">AI prepared</StatusPill>\n  <p className="text-[var(--md-text)]">Use token colours for calm operational hierarchy.</p>\n</Surface>`,
+  },
+  {
+    id: "public-brand-identity",
+    name: "Public Brand Identity",
+    category: "Operations",
+    description: "A bounded company logo for external booking and attendee links, with a readable company-name fallback.",
+    details: "Use only on customer-facing surfaces. Logos keep their aspect ratio; missing or failed images show the company name. Removing branding restores the Multideck wordmark.",
+    foundOn: [{ label: "Booking and attendee links", route: "/calendar/booking-links" }, { label: "Components", route: "/components?component=public-brand-identity" }],
+    componentCode: publicBrandIdentitySource,
+    usageCode: `<PublicBrandIdentity key={brand?.logoUrl ?? "no-logo"} brand={brand} />`,
   },
   {
     id: "hugeicons-system",

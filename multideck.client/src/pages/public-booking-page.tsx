@@ -9,12 +9,13 @@ import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { MeetingProviderMark, meetingProviderLabels } from "@/components/multideck/meeting-provider-mark"
 import { safeTimeZone } from "@/components/multideck/meeting-time-picker"
 import { VerificationCodeInput } from "@/components/multideck/verification-code-input"
+import { PublicBrandIdentity } from "@/components/multideck/public-brand-identity"
 import { useLanguage } from "@/i18n/language-provider"
 import { createPublicBookingHold, downloadMeetingCalendarFile, getManagedMeeting, getPublicBooking, getPublicBookingSlots, resendPublicBookingCode, verifyPublicBooking, type BookingHold, type BookingQuestion, type CalendarEvent, type PublicBooking } from "@/lib/calendar-api"
 import { mdMotion } from "@/lib/motion"
 import { publicBrandTheme } from "@/lib/public-brand-theme"
+import { startPublicBrandRefresh } from "@/lib/public-brand-refresh"
 import { cn } from "@/lib/utils"
-import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 
 type Step = "time" | "details" | "verify" | "confirmed"
 
@@ -23,9 +24,9 @@ const resendCooldownSeconds = 30
 const videoProviders = new Set(["google_meet", "microsoft_teams", "zoom"])
 
 /** Shared primitives, tinted through the brand contract rather than by rewriting tokens. */
-const fieldClass = "h-10 rounded-[calc(var(--brand-radius,var(--md-radius-2xl))-8px)] bg-[var(--brand-field,var(--md-field-bg))] text-[var(--brand-ink,var(--md-ink))] hover:bg-[var(--brand-field-hover,var(--md-field-bg-hover))] focus-visible:bg-[var(--brand-field-hover,var(--md-field-bg-hover))] focus-visible:border-[var(--brand-a48,var(--md-accent-a48))] focus-visible:ring-[var(--brand-a28,var(--md-accent-a28))] aria-invalid:border-[var(--brand-danger,var(--md-red))] aria-invalid:ring-[color-mix(in_srgb,var(--brand-danger,var(--md-red))_22%,transparent)]"
-const primaryButtonClass = "bg-[var(--brand-accent,var(--md-accent))] text-[var(--brand-accent-ink,var(--md-accent-ink))] hover:bg-[var(--brand-accent,var(--md-accent))] hover:opacity-90 focus-visible:ring-[var(--brand-a28,var(--md-accent-a28))]"
-const quietButtonClass = "text-[var(--brand-text,var(--md-text))] hover:bg-[var(--brand-hover,var(--md-hover))] hover:text-[var(--brand-ink,var(--md-ink))]"
+const fieldClass = "h-10 rounded-[var(--brand-control-radius,var(--md-radius-lg))] bg-[var(--brand-field,var(--md-field-bg))] text-[var(--brand-ink,var(--md-ink))] hover:bg-[var(--brand-field-hover,var(--md-field-bg-hover))] focus-visible:bg-[var(--brand-field-hover,var(--md-field-bg-hover))] focus-visible:border-[var(--brand-a48,var(--md-accent-a48))] focus-visible:ring-[var(--brand-a28,var(--md-accent-a28))] aria-invalid:border-[var(--brand-danger,var(--md-red))] aria-invalid:ring-[color-mix(in_srgb,var(--brand-danger,var(--md-red))_22%,transparent)]"
+const primaryButtonClass = "rounded-[var(--brand-control-radius)] bg-[var(--brand-accent,var(--md-accent))] text-[var(--brand-accent-ink,var(--md-accent-ink))] hover:bg-[var(--brand-accent,var(--md-accent))] hover:opacity-90 focus-visible:ring-[var(--brand-a28,var(--md-accent-a28))]"
+const quietButtonClass = "rounded-[var(--brand-control-radius)] text-[var(--brand-text,var(--md-text))] hover:bg-[var(--brand-hover,var(--md-hover))] hover:text-[var(--brand-ink,var(--md-ink))]"
 
 function countdown(msRemaining: number) {
   const seconds = Math.max(0, Math.ceil(msRemaining / 1000))
@@ -86,8 +87,17 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
     return () => { cancelled = true }
   }, [bookingSlug, organiserSlug])
 
+  const bookingLoaded = Boolean(booking)
   useEffect(() => {
-    if (!booking || step !== "time") return
+    if (!bookingLoaded) return
+    return startPublicBrandRefresh(
+      () => getPublicBooking(organiserSlug, bookingSlug),
+      ({ branding }) => setBooking((current) => current && JSON.stringify(current.branding) !== JSON.stringify(branding) ? { ...current, branding } : current),
+    )
+  }, [bookingLoaded, bookingSlug, organiserSlug])
+
+  useEffect(() => {
+    if (!bookingLoaded || step !== "time") return
     let cancelled = false
     setSlotsBusy(true)
     void getPublicBookingSlots(organiserSlug, bookingSlug, new Date().toISOString(), loadedUntil.toISOString())
@@ -95,7 +105,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
       .catch((reason) => { if (!cancelled) setSlotsError(reason instanceof Error ? reason.message : "Available times could not be loaded.") })
       .finally(() => { if (!cancelled) { setSlotsLoading(false); setSlotsBusy(false) } })
     return () => { cancelled = true }
-  }, [booking, bookingSlug, loadedUntil, organiserSlug, step])
+  }, [bookingLoaded, bookingSlug, loadedUntil, organiserSlug, step])
 
   useEffect(() => {
     if (!finalising || !managePath) return
@@ -248,11 +258,8 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
   if (loading) return <main className="grid min-h-screen place-items-center" style={{ ...publicBrandTheme(null), background: "var(--brand-bg)", color: "var(--brand-ink)" }}><DotGridLoader label="Loading booking page…" /></main>
 
   const header = <header className="mb-5 flex items-center justify-between gap-4">
-    {brand?.logoUrl
-      ? <img src={brand.logoUrl} alt={brand.displayName} className="max-h-11 max-w-[200px] object-contain" />
-      /* The Multideck wordmark is drawn in near-black, so a dark tenant brand gets it on a light chip rather than an invisible header. */
-      : <span className={cn("inline-flex items-center", brand?.appearanceMode === "dark" && "rounded-full bg-white/92 px-3 py-2")}><img src={multideckFullLogo} alt="Multideck" className="h-6 w-auto" /></span>}
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--brand-surface,var(--md-surface))] px-3 py-1.5 text-[10.5px] font-medium text-[var(--brand-text,var(--md-text))] shadow-[inset_0_0_0_1px_var(--brand-line,var(--md-line))]"><ShieldCheck className="size-3" strokeWidth={1.5} />{booking?.localPreview ? "Test booking" : "Secure booking"}</span>
+    <PublicBrandIdentity key={brand?.logoUrl ?? "no-logo"} brand={brand} />
+    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--brand-surface,var(--md-surface))] px-3 py-1.5 text-[10.5px] font-medium text-[var(--brand-text,var(--md-text))] shadow-[inset_0_0_0_1px_var(--brand-line,var(--md-line))]"><ShieldCheck className="size-3" strokeWidth={1.5} />{booking?.localPreview ? "Test booking" : "Secure booking"}</span>
   </header>
 
   if (loadError && !booking) return <main className="min-h-screen px-4 py-8 sm:px-6 sm:py-14" style={{ ...scope, background: "var(--brand-bg,var(--md-bg))", color: "var(--brand-ink,var(--md-ink))" }}>
@@ -276,7 +283,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
     <div className="mx-auto w-full max-w-[920px]">
       {header}
       <section className="overflow-hidden bg-[var(--brand-surface,var(--md-surface))] shadow-[inset_0_0_0_1px_var(--brand-line,var(--md-line)),0_18px_60px_rgba(11,20,19,.07)] lg:grid lg:grid-cols-[248px_minmax(0,1fr)]" style={{ borderRadius: "var(--brand-radius,var(--md-radius-2xl))" }}>
-        <aside className="border-b border-[var(--brand-line,var(--md-line))] p-5 sm:p-6 lg:border-b-0 lg:border-e">
+        <aside className="border-b border-[var(--brand-line,var(--md-line))] bg-[var(--brand-secondary-tint)] p-5 sm:p-6 lg:border-b-0 lg:border-e">
           <div className="flex items-center gap-2">
             <MeetingProviderMark provider={booking.provider} className="size-6" />
             <p className="truncate text-[11.5px] font-medium text-[var(--brand-subtle,var(--md-subtle))]">{booking.organiser.name}</p>
@@ -294,7 +301,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
-              className="mt-4 rounded-[calc(var(--brand-radius,var(--md-radius-2xl))-8px)] bg-[var(--brand-a08,var(--md-accent-a08))] p-3"
+              className="mt-4 rounded-[var(--brand-control-radius,var(--md-radius-lg))] bg-[var(--brand-a08,var(--md-accent-a08))] p-3"
             >
               <p className="text-[10px] font-medium uppercase tracking-[.07em] text-[var(--brand-subtle,var(--md-subtle))]">Your time</p>
               <p className="mt-1 text-[12.5px] font-medium leading-5 text-[var(--brand-ink,var(--md-ink))]">{selectedLabel}</p>
@@ -321,6 +328,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
             >
               {step === "time" ? <>
                 <AvailabilityPicker
+                  brandTheme={scope}
                   slots={slots}
                   selected={selected}
                   onSelect={chooseTime}
@@ -347,11 +355,11 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
                 <button type="button" onClick={backToTimes} className="-mt-1 mb-4 inline-flex w-fit items-center gap-1 text-[11.5px] font-medium text-[var(--brand-text,var(--md-text))] hover:text-[var(--brand-ink,var(--md-ink))] lg:hidden"><ChevronLeft className="size-3.5" strokeWidth={1.6} />Change time</button>
                 <div className="grid gap-3.5 sm:grid-cols-2">
                   <label className="grid gap-1.5 text-[11.5px] font-medium">Name
-                    <Input autoComplete="name" autoFocus value={details.name} aria-invalid={Boolean(fieldErrors.name) || undefined} aria-describedby={fieldErrors.name ? "booking-name-error" : undefined} onChange={(event) => { setDetails((current) => ({ ...current, name: event.target.value })); setFieldErrors((current) => ({ ...current, name: "" })) }} className={fieldClass} />
+                    <Input autoComplete="name" autoFocus value={details.name} aria-invalid={Boolean(fieldErrors.name) || undefined} aria-describedby={fieldErrors.name ? "booking-name-error" : undefined} onChange={(event) => { const name = event.currentTarget.value; setDetails((current) => ({ ...current, name })); setFieldErrors((current) => ({ ...current, name: "" })) }} className={fieldClass} />
                     <FieldError id="booking-name-error">{fieldErrors.name}</FieldError>
                   </label>
                   <label className="grid gap-1.5 text-[11.5px] font-medium">Email
-                    <Input type="email" inputMode="email" autoComplete="email" value={details.email} aria-invalid={Boolean(fieldErrors.email) || undefined} aria-describedby={fieldErrors.email ? "booking-email-error" : undefined} onChange={(event) => { setDetails((current) => ({ ...current, email: event.target.value })); setFieldErrors((current) => ({ ...current, email: "" })) }} className={fieldClass} />
+                    <Input type="email" inputMode="email" autoComplete="email" value={details.email} aria-invalid={Boolean(fieldErrors.email) || undefined} aria-describedby={fieldErrors.email ? "booking-email-error" : undefined} onChange={(event) => { const email = event.currentTarget.value; setDetails((current) => ({ ...current, email })); setFieldErrors((current) => ({ ...current, email: "" })) }} className={fieldClass} />
                     <FieldError id="booking-email-error">{fieldErrors.email}</FieldError>
                   </label>
                   {requiredQuestions.map((question) => <QuestionField key={question.id} question={question} value={answers[question.id] ?? ""} error={fieldErrors[question.id]} onChange={(value) => answer(question, value)} />)}
@@ -426,7 +434,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
                     </p>
                   </div>
                 </div>
-                {!finalising && !confirmationFailed && !confirmationWaiting ? <p className="mt-4 rounded-[calc(var(--brand-radius,var(--md-radius-2xl))-8px)] bg-[var(--brand-tint,var(--md-surface-tint))] p-3.5 text-[11.5px] leading-5 text-[var(--brand-text,var(--md-text))]">A confirmation is on its way to <span className="font-medium text-[var(--brand-ink,var(--md-ink))]">{details.email}</span>, with a private link to reschedule or cancel.</p> : null}
+                {!finalising && !confirmationFailed && !confirmationWaiting ? <p className="mt-4 rounded-[var(--brand-control-radius,var(--md-radius-lg))] bg-[var(--brand-tint,var(--md-surface-tint))] p-3.5 text-[11.5px] leading-5 text-[var(--brand-text,var(--md-text))]">A confirmation is on its way to <span className="font-medium text-[var(--brand-ink,var(--md-ink))]">{details.email}</span>, with a private link to reschedule or cancel.</p> : null}
                 {error ? <p role="alert" className="mt-4 text-[11.5px] leading-5 text-[var(--brand-danger,var(--md-red))]">{error}</p> : null}
                 {!finalising ? <div className="mt-auto flex flex-wrap items-center gap-2 pt-5">
                   {!confirmationFailed && !confirmationWaiting ? <Button variant="ghost" size="lg" className={quietButtonClass} onClick={() => downloadMeetingCalendarFile(meeting)}><CalendarDays className="size-4" strokeWidth={1.5} />Add to calendar</Button> : null}

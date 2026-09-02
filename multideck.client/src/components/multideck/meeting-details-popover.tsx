@@ -3,13 +3,15 @@ import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion
 import { Briefcase, Building2, Check, Clock3, Copy, ExternalLink, MapPin, Palette, Pencil, Phone, TextQuote, Trash2, TriangleAlert, Users, Video, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { MeetingAttendeeList, MeetingResponseSummary } from "@/components/multideck/meeting-attendee-status"
 import { MeetingColourPicker } from "@/components/multideck/meeting-colour-picker"
 import { MeetingProviderMark, meetingProviderLabels } from "@/components/multideck/meeting-provider-mark"
 import { MeetingTimePicker } from "@/components/multideck/meeting-time-picker"
-import { decideMeetingChangeRequest, updateMeeting, type CalendarEvent, type MeetingChangeRequest, type MeetingColour } from "@/lib/calendar-api"
+import { decideMeetingChangeRequest, updateMeeting, type CalendarEvent, type MeetingChangeRequest, type MeetingColour, type MeetingDraft } from "@/lib/calendar-api"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdEaseIn, mdEaseOut, reduceMotion } from "@/lib/motion"
 import { cn } from "@/lib/utils"
@@ -99,8 +101,8 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
   const [mode, setMode] = useState<"view" | "reschedule" | "cancel">("view")
   const [times, setTimes] = useState({ startAt: event.startAt, endAt: event.endAt })
   const [saving, setSaving] = useState(false)
-  const [colourSaving, setColourSaving] = useState(false)
   const [colour, setColour] = useState<MeetingColour>(event.colour ?? "teal")
+  const [details, setDetails] = useState({ title: event.title, agenda: event.agenda ?? "", location: event.location ?? "" })
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -114,7 +116,6 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
     const time = new Intl.DateTimeFormat(language, { hour: "2-digit", minute: "2-digit", timeZone: zone })
     return { day, range: `${time.format(new Date(event.startAt))} – ${time.format(new Date(event.endAt))}` }
   }, [event.endAt, event.startAt, language, zone])
-  const timesChanged = times.startAt !== event.startAt || times.endAt !== event.endAt
   const participants = event.participants ?? []
   const linked = event.linkedRecord
   const linkedRoute = linked ? (linked.type === "lead" ? `/crm/leads/${linked.id}` : linked.type === "account" ? `/crm/accounts/${linked.id}` : `/bookings/${linked.id}`) : null
@@ -125,26 +126,22 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
     try { await navigator.clipboard.writeText(event.joinUrl); setCopied(true); window.setTimeout(() => setCopied(false), 1600) } catch { toast.error("The link could not be copied.") }
   }
 
-  async function changeColour(next: MeetingColour) {
-    if (next === colour || colourSaving) return
-    const previous = colour
-    setColour(next); setColourSaving(true); setError(null)
-    try {
-      await updateMeeting(event.id, { colour: next })
-      toast.success(language === "en-US" ? "Event color updated" : "Event colour updated")
-      onChanged()
-    } catch (reason) {
-      setColour(previous)
-      setError(reason instanceof Error ? reason.message : language === "en-US" ? "The event color could not be changed." : "The event colour could not be changed.")
-    } finally { setColourSaving(false) }
-  }
-
   async function reschedule() {
-    if (!timesChanged) { setMode("view"); return }
+    if (saving) return
+    if (!details.title.trim()) { setError("Give the meeting a title."); return }
+    if (Date.parse(times.endAt) <= Date.parse(times.startAt)) { setError("The meeting must finish after it starts."); return }
+    // Send only changed fields: a colour-only edit must not notify attendees.
+    const patch: Partial<MeetingDraft> = {}
+    if (details.title.trim() !== event.title) patch.title = details.title.trim()
+    if (details.agenda !== (event.agenda ?? "")) patch.agenda = details.agenda
+    if (details.location !== (event.location ?? "")) patch.location = details.location
+    if (colour !== (event.colour ?? "teal")) patch.colour = colour
+    if (times.startAt !== event.startAt || times.endAt !== event.endAt) Object.assign(patch, times, { timeZone: zone })
+    if (!Object.keys(patch).length) { setMode("view"); return }
     setSaving(true); setError(null)
     try {
-      const result = await updateMeeting(event.id, { startAt: times.startAt, endAt: times.endAt, timeZone: zone })
-      toast.success(result.status === "sync_pending" ? "Provider update requested" : "Meeting rescheduled", { description: result.status === "sync_pending" ? "The previous confirmed time stays in place until the provider accepts the change." : "Attendees will receive the updated details." })
+      const result = await updateMeeting(event.id, patch)
+      toast.success(result.status === "sync_pending" ? "Provider update requested" : "Meeting updated", { description: Object.keys(patch).every((key) => key === "colour") ? "Calendar appearance saved. Attendees were not notified." : result.status === "sync_pending" ? "The previous confirmed details stay in place until the provider accepts the change." : "Attendees will receive the updated details." })
       onChanged(); onClose()
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The meeting could not be rescheduled.") } finally { setSaving(false) }
   }
@@ -163,17 +160,17 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
       <motion.div variants={row} className="flex shrink-0 items-center justify-end gap-0.5 px-3 pt-3">
         {event.canEdit && !pending && mode === "view" ? (
           <>
-            <IconAction label="Reschedule" icon={Pencil} onClick={() => setMode("reschedule")} />
+            <IconAction label="Edit event" icon={Pencil} onClick={() => { setDetails({ title: event.title, agenda: event.agenda ?? "", location: event.location ?? "" }); setColour(event.colour ?? "teal"); setTimes({ startAt: event.startAt, endAt: event.endAt }); setError(null); setMode("reschedule") }} />
             <IconAction label="Cancel meeting" icon={Trash2} tone="danger" onClick={() => setMode("cancel")} />
           </>
         ) : null}
-        <IconAction label="Close" icon={X} onClick={onClose} />
+        <IconAction label="Close" icon={X} disabled={saving} onClick={onClose} />
       </motion.div>
 
       <motion.div variants={row} className="flex shrink-0 items-start gap-3 px-5 pb-4 pt-1">
         <MeetingProviderMark provider={provider} className="mt-0.5 size-6 shrink-0" />
         <div className="min-w-0">
-          <h2 className="text-[17px] font-medium leading-6 tracking-[-.01em] text-[var(--md-ink)]">{event.private ? "Busy" : event.title}</h2>
+          {mode === "reschedule" ? <Input aria-label="Meeting title" value={details.title} disabled={saving} onChange={(e) => setDetails((value) => ({ ...value, title: e.target.value }))} /> : <h2 className="text-[17px] font-medium leading-6 tracking-[-.01em] text-[var(--md-ink)]">{event.private ? "Busy" : event.title}</h2>}
           {mode === "reschedule" ? (
             <div className="mt-3">
               <MeetingTimePicker startAt={times.startAt} endAt={times.endAt} timeZone={zone} onChange={(next) => { setTimes(next); setError(null) }} />
@@ -187,10 +184,14 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
       </motion.div>
 
       <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto pb-4">
-        {event.canEdit ? (
+        {event.canEdit && mode === "reschedule" ? (
+          <>
           <DetailRow icon={Palette}>
-            <MeetingColourPicker value={colour} onChange={(next) => void changeColour(next)} disabled={colourSaving} compact />
+            <MeetingColourPicker value={colour} onChange={setColour} disabled={saving} compact />
           </DetailRow>
+          <DetailRow icon={TextQuote}><Textarea aria-label="Agenda" placeholder="Add an agenda" value={details.agenda} disabled={saving} onChange={(e) => setDetails((value) => ({ ...value, agenda: e.target.value }))} /></DetailRow>
+          <DetailRow icon={MapPin}><Input aria-label="Location" placeholder="Add a location" value={details.location} disabled={saving} onChange={(e) => setDetails((value) => ({ ...value, location: e.target.value }))} /></DetailRow>
+          </>
         ) : null}
 
         {event.joinUrl ? (
@@ -229,7 +230,7 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
           </DetailRow>
         ) : null}
 
-        {event.agenda ? (
+        {event.agenda && mode !== "reschedule" ? (
           <DetailRow icon={TextQuote}>
             <p className="line-clamp-4 whitespace-pre-line text-[12.5px] leading-5 text-[var(--md-text)]">{event.agenda}</p>
           </DetailRow>
@@ -269,8 +270,8 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
                 </>
               ) : mode === "reschedule" ? (
                 <div className="flex w-full justify-end gap-1.5">
-                  <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={() => { setMode("view"); setTimes({ startAt: event.startAt, endAt: event.endAt }) }} className="h-8 rounded-[var(--md-radius-md)]">Keep current time</Button>
-                  <Button type="button" size="sm" disabled={saving || !timesChanged} onClick={() => void reschedule()} className="h-8 rounded-[var(--md-radius-md)]">{saving ? "Updating…" : "Confirm new time"}</Button>
+                  <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={() => { setMode("view"); setError(null) }} className="h-8 rounded-[var(--md-radius-md)]">Discard changes</Button>
+                  <Button type="button" size="sm" disabled={saving} onClick={() => void reschedule()} className="h-8 rounded-[var(--md-radius-md)]">{saving ? "Updating…" : "Save changes"}</Button>
                 </div>
               ) : null}
             </div>

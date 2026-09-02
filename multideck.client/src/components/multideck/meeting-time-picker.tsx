@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react"
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react"
 import { Globe } from "@/components/icons/hugeicons"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -204,11 +204,12 @@ export function MeetingTimeField({ label, value, onChange, notBefore, className 
 }
 
 /** The IANA zone picker shared by the meeting composer and availability settings. */
-export function TimeZoneSelect({ value, onChange, variant = "chip", className }: {
+export function TimeZoneSelect({ value, onChange, variant = "chip", className, brandTheme }: {
   value: string
   onChange: (timeZone: string) => void
   variant?: "chip" | "field"
   className?: string
+  brandTheme?: CSSProperties
 }) {
   const zone = safeTimeZone(value)
   const zoneOptions = useMemo(() => {
@@ -224,14 +225,17 @@ export function TimeZoneSelect({ value, onChange, variant = "chip", className }:
           variant === "chip"
             ? "h-6 gap-1 rounded-full border-0 bg-transparent px-2 text-[11px] text-[var(--md-subtle)] shadow-none hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)] data-[state=open]:shadow-none [&_svg]:size-3"
             : "h-10 w-full gap-2 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-field-bg)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] sm:max-w-[320px]",
+          brandTheme && "rounded-[var(--brand-control-radius)] text-[var(--brand-text)] hover:bg-[var(--brand-hover)] hover:text-[var(--brand-ink)] [&_[data-slot=select-trigger-icon]]:text-[var(--brand-accent)]!",
           className,
         )}
       >
         <Globe className={cn("shrink-0", variant === "chip" ? "size-3" : "size-3.5 text-[var(--md-subtle)]")} strokeWidth={1.5} aria-hidden="true" />
         <SelectValue />
       </SelectTrigger>
-      <SelectContent className="z-[500] max-h-72 w-[280px]">
-        {zoneOptions.map((option) => <SelectItem key={option} value={option}>{option.replace(/_/g, " ")}</SelectItem>)}
+      <SelectContent style={brandTheme} className={cn("z-[500] max-h-72 w-[280px]", brandTheme && "rounded-[var(--brand-control-radius)] bg-[var(--brand-surface)] text-[var(--brand-ink)]")}>
+        {/* The dropdown's shared state styles are unlayered; explicit public
+            overrides keep selection and focus inside this brand contract. */}
+        {zoneOptions.map((option) => <SelectItem key={option} value={option} className={brandTheme ? "rounded-[max(0px,calc(var(--brand-control-radius)-4px))] text-[var(--brand-ink)]! data-[state=checked]:bg-[var(--brand-a14)]! data-highlighted:bg-[var(--brand-a20)]! data-[state=checked]:shadow-[inset_0_0_0_1px_var(--brand-line)]! data-highlighted:shadow-[inset_0_0_0_1px_var(--brand-line)]! [&_[data-slot=select-item-indicator]]:bg-[var(--brand-a14)]! [&_[data-slot=select-item-indicator]]:text-[var(--brand-ink)]!" : undefined}>{option.replace(/_/g, " ")}</SelectItem>)}
       </SelectContent>
     </Select>
   )

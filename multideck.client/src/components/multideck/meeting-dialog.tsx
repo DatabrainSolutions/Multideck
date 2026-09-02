@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
-import { SideDrawer } from "@/components/multideck/side-drawer"
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { MeetingAttendeePicker } from "@/components/multideck/meeting-attendee-picker"
 import { MeetingColourPicker } from "@/components/multideck/meeting-colour-picker"
 import { meetingProviderLabels } from "@/components/multideck/meeting-provider-mark"
@@ -197,17 +197,12 @@ export function MeetingDialogHost({ navigate }: { navigate: (path: string) => vo
   const needsLocation = draft.provider === "phone" || draft.provider === "in_person"
 
   return (
-    <SideDrawer
-      open={Boolean(context)}
-      onClose={close}
-      eyebrow={context?.source === "crm" ? "CRM meeting" : "Calendar"}
-      title={context?.linkedRecord?.name ? `Book meeting with ${context.linkedRecord.name}` : "New meeting"}
-      icon={CalendarDays}
-      width={620}
-      bodyClassName="px-0"
-    >
-        <form className="flex min-h-full flex-col" aria-label="Schedule meeting" onSubmit={(event) => { event.preventDefault(); void submit() }}>
-          <div className="flex flex-1 flex-col rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
+    <Dialog open={Boolean(context)} onOpenChange={(open) => { if (!open) close() }}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-0 sm:max-w-[620px]" onEscapeKeyDown={(event) => { if (saving) event.preventDefault() }}>
+        <DialogTitle className="sr-only">New meeting</DialogTitle>
+        <DialogDescription className="sr-only">Choose the meeting details, attendees and how to join.</DialogDescription>
+        <form className="flex min-h-0 flex-col" aria-label="Schedule meeting" onSubmit={(event) => { event.preventDefault(); void submit() }}>
+          <div className="flex flex-1 flex-col">
           <div className="px-5 pt-5 pb-1">
             <div className="flex items-center gap-2 pe-10 text-[11px] font-medium uppercase tracking-[.08em] text-[var(--md-subtle)]">
               <CalendarDays className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.5} aria-hidden="true" />
@@ -283,7 +278,7 @@ export function MeetingDialogHost({ navigate }: { navigate: (path: string) => vo
           </div>
           </div>
 
-          <div className="sticky bottom-0 mt-3 flex flex-col gap-3 rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_94%,transparent)] px-4 py-3 shadow-[var(--md-shadow-line)] backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
+          <div className="sticky bottom-0 flex flex-col gap-3 bg-[var(--md-surface)] px-5 py-4 shadow-[var(--md-stroke-top)] sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0 flex-1 text-[11.5px] leading-5 text-[var(--md-subtle)]">
               {error ? <p role="alert" className="flex items-start gap-1.5 text-[var(--md-red)]"><TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />{error}</p>
                 : draft.attendees.length ? `Each attendee receives an invitation with their own management link.` : "Only you will see this meeting until attendees are added."}
@@ -296,6 +291,7 @@ export function MeetingDialogHost({ navigate }: { navigate: (path: string) => vo
             </div>
           </div>
         </form>
-    </SideDrawer>
+      </DialogContent>
+    </Dialog>
   )
 }

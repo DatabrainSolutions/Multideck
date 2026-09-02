@@ -40,6 +40,10 @@ const multideckLight = {
   appearance: "light" as const,
 }
 
+function colour(value: string | undefined, fallback: string) {
+  return value && /^#(?:[\da-f]{3}|[\da-f]{6})$/i.test(value.trim()) ? value.trim() : fallback
+}
+
 /** White or near-black, whichever the brand's own colour can actually carry. */
 export function readableInk(color: string) {
   const hex = color.trim().replace("#", "")
@@ -49,19 +53,22 @@ export function readableInk(color: string) {
     const value = Number.parseInt(full.slice(index, index + 2), 16) / 255
     return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
   }
-  return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4) > 0.42 ? "#0b1413" : "#ffffff"
+  const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4)
+  // Compare actual contrast ratios, including mid-tone company palettes.
+  return (luminance + 0.05) / (0.0063 + 0.05) >= 1.05 / (luminance + 0.05) ? "#0b1413" : "#ffffff"
 }
 
 export function publicBrandTheme(brand: PublicBranding | null | undefined): PublicBrandTheme {
-  const ink = brand?.textColor || multideckLight.ink
-  const surface = brand?.surfaceColor || multideckLight.surface
-  const accent = brand?.primaryColor || multideckLight.accent
+  const surface = colour(brand?.surfaceColor, multideckLight.surface)
+  const ink = colour(brand?.textColor, readableInk(surface))
+  const accent = colour(brand?.primaryColor, multideckLight.accent)
+  const secondary = colour(brand?.secondaryColor, accent)
   const appearance = brand?.appearanceMode || multideckLight.appearance
   const accentInk = readableInk(accent)
   const wash = (percentage: number) => `color-mix(in srgb, ${accent} ${percentage}%, transparent)`
   const inked = (percentage: number) => `color-mix(in srgb, ${ink} ${percentage}%, ${surface})`
   return {
-    "--brand-bg": brand?.backgroundColor || multideckLight.background,
+    "--brand-bg": colour(brand?.backgroundColor, multideckLight.background),
     "--brand-surface": surface,
     "--brand-tint": inked(4),
     "--brand-hover": inked(7),
@@ -72,6 +79,8 @@ export function publicBrandTheme(brand: PublicBranding | null | undefined): Publ
     "--brand-field": inked(5),
     "--brand-field-hover": inked(8),
     "--brand-accent": accent,
+    "--brand-secondary": secondary,
+    "--brand-secondary-tint": brand ? `color-mix(in srgb, ${secondary} 6%, ${surface})` : surface,
     "--brand-accent-ink": accentInk,
     "--brand-a08": wash(8),
     "--brand-a14": wash(14),
@@ -84,6 +93,7 @@ export function publicBrandTheme(brand: PublicBranding | null | undefined): Publ
     // page reads the same for every visitor.
     "--brand-danger": appearance === "dark" ? "#f08a8a" : "#c93f3f",
     "--brand-radius": (brand?.cornerStyle || multideckLight.corners) === "sharp" ? "6px" : "18px",
+    "--brand-control-radius": brand?.cornerStyle === "sharp" ? "0px" : "10px",
     colorScheme: appearance,
   } as CSSProperties
 }

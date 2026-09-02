@@ -3,8 +3,8 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
 const boxSizes = {
-  md: "size-11 rounded-[10px] text-[19px]",
-  lg: "size-[74px] rounded-[14px] text-[34px]",
+  md: "size-11 rounded-[var(--brand-control-radius,10px)] text-[19px]",
+  lg: "size-[74px] rounded-[var(--brand-control-radius,14px)] text-[34px]",
 } as const
 
 /**

@@ -249,7 +249,7 @@ async function publicFetch(path: string, init?: RequestInit) {
   if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new Error("Booking services are not configured for this workspace.")
   const headers = new Headers(init?.headers)
   headers.set("apikey", supabasePublicApiKey)
-  return fetch(`${supabaseFunctionsUrl}/calendar-public${path}`, { ...init, headers })
+  return fetch(`${supabaseFunctionsUrl}/calendar-public${path}`, { ...init, headers, cache: "no-store", signal: init?.signal ?? AbortSignal.timeout(20_000) })
 }
 
 const localCalendarPreviewEnabled = import.meta.env.DEV && import.meta.env.VITE_CALENDAR_PREVIEW === "true"

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { CalendarDays, ChevronLeft, ChevronRight } from "@/components/icons/hugeicons"
 import { addMonths, getDateKey, startOfMonth } from "@/components/multideck/date-picker"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
@@ -46,6 +46,7 @@ export function AvailabilityPicker({
   emptyTitle = "No available times",
   emptyHint = "Existing meetings, active holds and connected-calendar busy time are already accounted for. Try again later or contact the organiser.",
   className,
+  brandTheme,
 }: {
   /** Server-checked free starts, as ISO instants. */
   slots: string[]
@@ -63,6 +64,8 @@ export function AvailabilityPicker({
   emptyTitle?: string
   emptyHint?: string
   className?: string
+  /** Carry the bounded public theme into portalled controls. */
+  brandTheme?: CSSProperties
 }) {
   const { language } = useLanguage()
   const zone = safeTimeZone(timeZone)
@@ -178,8 +181,8 @@ export function AvailabilityPicker({
       <div className="flex items-center justify-between gap-2">
         <p className="text-[13px] font-medium text-[var(--brand-ink,var(--md-ink))]">{monthLabel}</p>
         <div className="flex items-center gap-0.5">
-          <button type="button" aria-label="Previous month" disabled={month <= firstMonth} onClick={() => goToMonth(addMonths(month, -1))} className="grid size-7 place-items-center rounded-[8px] text-[var(--brand-text,var(--md-text))] transition-[background-color,color,opacity] hover:bg-[var(--brand-hover,var(--md-hover))] hover:text-[var(--brand-ink,var(--md-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-a28,var(--md-accent-a28))] disabled:pointer-events-none disabled:opacity-30"><ChevronLeft className="size-4" strokeWidth={1.5} /></button>
-          <button type="button" aria-label="Next month" disabled={month >= lastMonth} onClick={() => goToMonth(addMonths(month, 1))} className="grid size-7 place-items-center rounded-[8px] text-[var(--brand-text,var(--md-text))] transition-[background-color,color,opacity] hover:bg-[var(--brand-hover,var(--md-hover))] hover:text-[var(--brand-ink,var(--md-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-a28,var(--md-accent-a28))] disabled:pointer-events-none disabled:opacity-30"><ChevronRight className="size-4" strokeWidth={1.5} /></button>
+          <button type="button" aria-label="Previous month" disabled={month <= firstMonth} onClick={() => goToMonth(addMonths(month, -1))} className="grid size-7 place-items-center rounded-[var(--brand-control-radius,8px)] text-[var(--brand-text,var(--md-text))] transition-[background-color,color,opacity] hover:bg-[var(--brand-hover,var(--md-hover))] hover:text-[var(--brand-ink,var(--md-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-a28,var(--md-accent-a28))] disabled:pointer-events-none disabled:opacity-30"><ChevronLeft className="size-4" strokeWidth={1.5} /></button>
+          <button type="button" aria-label="Next month" disabled={month >= lastMonth} onClick={() => goToMonth(addMonths(month, 1))} className="grid size-7 place-items-center rounded-[var(--brand-control-radius,8px)] text-[var(--brand-text,var(--md-text))] transition-[background-color,color,opacity] hover:bg-[var(--brand-hover,var(--md-hover))] hover:text-[var(--brand-ink,var(--md-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-a28,var(--md-accent-a28))] disabled:pointer-events-none disabled:opacity-30"><ChevronRight className="size-4" strokeWidth={1.5} /></button>
         </div>
       </div>
       <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10.5px] font-medium text-[var(--brand-subtle,var(--md-subtle))]">
@@ -208,7 +211,7 @@ export function AvailabilityPicker({
               moveDayFocus(dateKey, step)
             }}
             className={cn(
-              "relative grid size-9 place-items-center rounded-[10px] text-[12.5px] font-medium transition-[background-color,box-shadow,color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-a28,var(--md-accent-a28))]",
+              "relative grid size-9 place-items-center rounded-[var(--brand-control-radius,10px)] text-[12.5px] font-medium transition-[background-color,box-shadow,color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-a28,var(--md-accent-a28))]",
               free
                 ? "bg-[var(--brand-a08,var(--md-accent-a08))] text-[var(--brand-ink,var(--md-ink))] hover:bg-[var(--brand-a16,var(--md-accent-a16))] active:scale-[0.96] motion-reduce:active:scale-100"
                 : "cursor-default text-[var(--brand-subtle,var(--md-subtle))] opacity-45",
@@ -249,7 +252,7 @@ export function AvailabilityPicker({
                   moveSlotFocus(index, step)
                 }}
                 className={cn(
-                  "inline-flex h-9 items-center justify-center rounded-[10px] bg-[var(--brand-surface,var(--md-surface))] text-[12.5px] font-medium tabular-nums text-[var(--brand-ink,var(--md-ink))] shadow-[inset_0_0_0_1px_var(--brand-line,var(--md-line))] transition-[background-color,box-shadow,color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--brand-a08,var(--md-accent-a08))] hover:shadow-[inset_0_0_0_1px_var(--brand-a38,var(--md-accent-a38))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-a28,var(--md-accent-a28))] active:scale-[0.97] motion-reduce:active:scale-100",
+                  "inline-flex h-9 items-center justify-center rounded-[var(--brand-control-radius,10px)] bg-[var(--brand-surface,var(--md-surface))] text-[12.5px] font-medium tabular-nums text-[var(--brand-ink,var(--md-ink))] shadow-[inset_0_0_0_1px_var(--brand-line,var(--md-line))] transition-[background-color,box-shadow,color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--brand-a08,var(--md-accent-a08))] hover:shadow-[inset_0_0_0_1px_var(--brand-a38,var(--md-accent-a38))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-a28,var(--md-accent-a28))] active:scale-[0.97] motion-reduce:active:scale-100",
                   isSelected && "bg-[var(--brand-accent,var(--md-accent))] text-[var(--brand-accent-ink,var(--md-accent-ink))] shadow-[0_0_0_3px_var(--brand-a14,var(--md-accent-a14))] hover:bg-[var(--brand-accent,var(--md-accent))]",
                 )}
               >{timeFormatter.format(new Date(slot))}</button>
@@ -266,7 +269,7 @@ export function AvailabilityPicker({
       </div>}
       <div className="mt-3 flex items-center gap-1 border-t border-[var(--brand-line,var(--md-line))] pt-2.5 text-[11px] text-[var(--brand-subtle,var(--md-subtle))]">
         {onTimeZoneChange
-          ? <TimeZoneSelect value={zone} onChange={onTimeZoneChange} />
+          ? <TimeZoneSelect value={zone} onChange={onTimeZoneChange} brandTheme={brandTheme} />
           : <span className="px-1">{zone.replace(/_/g, " ")}</span>}
       </div>
     </div>
