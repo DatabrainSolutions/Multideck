@@ -252,7 +252,7 @@ begin
   select "User_ID" into v_owner
   from public."cmp_Users"
   where "Company_ID" = v_company and "User_AccessStatus" = 'active'
-  order by (lower("User_Email") = 'harry@databrain.solutions') desc, "User_ID"
+  order by "User_ID"
   limit 1;
 
   select "Currency_ID" into v_currency
@@ -409,12 +409,12 @@ begin
     on o."Office_ID" = uo."Office_ID"
    and o."Company_ID" = u."Company_ID"
    and o."Office_IsActive" = true
-  where lower(u."User_Email") = 'harry@databrain.solutions'
+  where u."User_AccessStatus" = 'active'
   order by o."Office_Name", o."Office_ID"
   limit 1;
 
   if v_owner is null or v_office is null then
-    raise exception 'Harry and an active authorised office must exist before document demo jobs are seeded.';
+    raise exception 'An active authorised user and office must exist before document demo jobs are seeded.';
   end if;
 
   if (

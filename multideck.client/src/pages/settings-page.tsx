@@ -5294,9 +5294,18 @@ function LegacySupportTab() {
       setSubject("")
       setMessage("")
       idempotencyKeyRef.current = null
+<<<<<<< Updated upstream
       toast.success(result.duplicate ? t("Ticket already received") : t("Support ticket created"), {
         description: `${result.ticket.ticketNumber} · ${t("Databrain OS confirmed the ticket.")}`,
       })
+=======
+      toast.success(
+        result.duplicate
+          ? t("Ticket already received")
+          : t("Support ticket created"),
+        { description: `${result.ticket.ticketNumber} · ${t("Multideck support confirmed the ticket.")}` },
+      )
+>>>>>>> Stashed changes
     } catch (error) {
       if (error instanceof SupportTicketError) {
         setFormError(t(error.message))
@@ -5382,7 +5391,7 @@ function LegacySupportTab() {
                     <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
                       {ticketResult.duplicate
                         ? t("No duplicate was created. Your original ticket is still active.")
-                        : t("Databrain OS confirmed the ticket and the support team can now act on it.")}
+                        : t("Multideck support confirmed the ticket and the support team can now act on it.")}
                     </p>
                     {ticketResult.ticket.statusUrl ? (
                       <a
@@ -5402,7 +5411,7 @@ function LegacySupportTab() {
             <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p id="support-form-error" role={formError ? "alert" : "status"} className={cn("text-[12px] leading-5", formError ? "text-[var(--md-red)]" : "text-[var(--md-text)]")}>
-                  {formError ?? t("Your ticket is sent securely to Databrain support. Nothing is marked successful until a ticket number is confirmed.")}
+                  {formError ?? t("Your ticket is sent securely to Multideck support. Nothing is marked successful until a ticket number is confirmed.")}
                 </p>
                 {canStartNewTicket ? (
                   <button

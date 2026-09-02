@@ -31,6 +31,7 @@ async function mapPurchaseOrders(admin, rows, context) {
       facilityName: facility?.WMSFacility_Name ?? "",
       customerOrgId: row.WMSPO_CustomerOrgID,
       customerName: organisations.get(row.WMSPO_CustomerOrgID) ?? "",
+      recordRoleCode: row.WMSPO_RecordRoleCode ?? "customer_inbound_instruction",
       supplierOrgId: row.WMSPO_SupplierOrgID,
       supplierName: row.WMSPO_SupplierName,
       warehouseOrderId: row.WMSPO_WarehouseOrderID,

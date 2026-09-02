@@ -54,6 +54,30 @@ export type CustomerReference = {
     countryCode: string | null
     timeZone: string
   }[]
+  currencies: { code: string; name: string }[]
+  legalEntities: {
+    id: string
+    name: string
+    countryCode: string | null
+    baseCurrencyCode: string | null
+  }[]
+  paymentTerms: {
+    id: string
+    legalEntityId: string | null
+    code: string
+    name: string
+    days: number
+    endOfMonth: boolean
+  }[]
+  taxTreatments: {
+    id: string
+    legalEntityId: string | null
+    code: string
+    name: string
+    countryCode: string | null
+    ratePercent: number
+    transactionTypeCode: string
+  }[]
 }
 
 export type OrganisationOfficeAssignment = {
@@ -840,7 +864,7 @@ export async function listCustomerDocuments(customerId: string, options: { limit
 
 export async function getCustomerReference() {
   const session = await requireCustomerSession("Sign in again to manage accounts.")
-  return readCachedCrmResource(session.user.id, "account-reference", () => customerRequest<CustomerReference>("/reference", session.access_token))
+  return readCachedCrmResource(session.user.id, "account-reference:v3", () => customerRequest<CustomerReference>("/reference", session.access_token))
 }
 
 async function requireCustomerSession(message: string) {

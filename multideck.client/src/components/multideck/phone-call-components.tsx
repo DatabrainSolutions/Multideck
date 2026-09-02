@@ -485,7 +485,7 @@ export function UnifiedPhoneCallTranscript({ call, showProvenance = false }: { c
     return offsetDifference || leftItem.index - rightItem.index
   }).map(({ segment }) => segment), [call.transcriptSegments])
   const transferAt = call.transfer.acceptedAt || call.transfer.offeredAt
-  const transferLabel = call.transfer.acceptedAt ? "Transfer accepted by Jenkar team" : "Transfer offered to Jenkar team"
+  const transferLabel = call.transfer.acceptedAt ? "Transfer accepted by customer team" : "Transfer offered to customer team"
   const transferInsertionIndex = useMemo(() => {
     if (!transferAt) return -1
     const transferTime = new Date(transferAt).getTime()
@@ -925,11 +925,11 @@ const phoneCallTranscriptPreview: PhoneCallDetail = {
     answerSeconds: 8, handlingSeconds: 237, transcriptStatus: "partial", followUpStatus: "suggested", summary: null, summarySource: "none", meetingNotes: null,
     capturedCallerName: "Alex Thompson", capturedCompanyName: "Global Retail", callReason: "A revised quote for a Hamburg shipment",
     participants: [], matchCandidates: [], suggestedActions: [], transfer: { offeredAt: "2026-08-22T09:22:17Z", acceptedAt: "2026-08-22T09:24:06Z", completedAt: null, status: "accepted" },
-    providerReferences: [], aiDisclosureStatus: "disclosed", recordingConsentStatus: "received", transcriptionConsentStatus: "received", consentDisclosureVersion: "jenkar-receptionist-v1", consentDisclosedAt: "2026-08-22T09:21:04Z", consentEvidence: { provider: "elevenlabs", sourceEventId: "preview-consent-event", updatedAt: "2026-08-22T09:21:05Z", sourceFields: ["ai_disclosure_status", "recording_consent_status", "transcription_consent_status"] }, recordingConsent: "received", recordingState: "recorded", retentionUntil: null, timezone: "Europe/London",
+    providerReferences: [], aiDisclosureStatus: "disclosed", recordingConsentStatus: "received", transcriptionConsentStatus: "received", consentDisclosureVersion: "demo-freight-receptionist-v1", consentDisclosedAt: "2026-08-22T09:21:04Z", consentEvidence: { provider: "elevenlabs", sourceEventId: "preview-consent-event", updatedAt: "2026-08-22T09:21:05Z", sourceFields: ["ai_disclosure_status", "recording_consent_status", "transcription_consent_status"] }, recordingConsent: "received", recordingState: "recorded", retentionUntil: null, timezone: "Europe/London",
     transcriptSegments: [
-      { id: "a", source: "elevenlabs", sourceLabel: "ElevenLabs", speakerLabel: "Receptionist", speakerRole: "receptionist", startedAt: "2026-08-22T09:21:03Z", offsetMs: 0, text: "Hi, thanks for calling Jenkar. How can I help today?", state: "complete" },
+      { id: "a", source: "elevenlabs", sourceLabel: "ElevenLabs", speakerLabel: "Receptionist", speakerRole: "receptionist", startedAt: "2026-08-22T09:21:03Z", offsetMs: 0, text: "Hi, thanks for calling Demo Freight Company. How can I help today?", state: "complete" },
       { id: "b", source: "elevenlabs", sourceLabel: "ElevenLabs", speakerLabel: "Caller", speakerRole: "caller", startedAt: "2026-08-22T09:21:10Z", offsetMs: 7000, text: "I need a revised quote for a shipment to Hamburg.", state: "complete" },
-      { id: "c", source: "3cx", sourceLabel: "3CX", speakerLabel: "Handler transcript", speakerRole: "employee", startedAt: null, sourceSequence: 1, globalSequence: 3, timingProvenance: "source_boundary_only", speakerProvenance: "unknown", offsetMs: null, text: "Hi Alex, it’s Chris with Jenkar. I have your request here.", state: "processing" },
+      { id: "c", source: "3cx", sourceLabel: "3CX", speakerLabel: "Handler transcript", speakerRole: "employee", startedAt: null, sourceSequence: 1, globalSequence: 3, timingProvenance: "source_boundary_only", speakerProvenance: "unknown", offsetMs: null, text: "Hi Alex, it’s Chris with Demo Freight Company. I have your request here.", state: "processing" },
     ],
 }
 

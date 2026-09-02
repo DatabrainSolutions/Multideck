@@ -18,6 +18,14 @@ export const topBarActionEvents = {
   importRates: "multideck:rates:import",
   startReportDraft: "multideck:reporting:start-draft",
   startReportSchedule: "multideck:reporting:start-schedule",
+  createSalesInvoice: "multideck:finance:create-sales-invoice",
+  createCustomerCredit: "multideck:finance:create-customer-credit",
+  createPurchaseInvoice: "multideck:finance:create-purchase-invoice",
+  createSupplierDebit: "multideck:finance:create-supplier-debit",
+  importSupplierDocuments: "multideck:finance:import-supplier-documents",
+  recordCustomerReceipt: "multideck:finance:record-customer-receipt",
+  recordSupplierPayment: "multideck:finance:record-supplier-payment",
+  prepareAccrualWipReview: "multideck:finance:prepare-accrual-wip-review",
 } as const
 
 export type TopBarActionEvent = (typeof topBarActionEvents)[keyof typeof topBarActionEvents]

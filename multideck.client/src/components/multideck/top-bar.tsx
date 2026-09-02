@@ -56,7 +56,7 @@ function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (
   const { t } = useLanguage()
 
   if (route === "/warehouse/purchase-orders") {
-    return <Button aria-label={t("New purchase order")} title={t("New purchase order")} className={topBarPrimaryActionClass} onClick={() => navigate("/warehouse/purchase-orders/new")}><Plus data-icon="inline-start" strokeWidth={1.2} /><span className="hidden sm:inline">{t("New purchase order")}</span></Button>
+    return <Button aria-label={t("New customer purchase order")} title={t("New customer purchase order")} className={topBarPrimaryActionClass} onClick={() => navigate("/warehouse/purchase-orders/new")}><Plus data-icon="inline-start" strokeWidth={1.2} /><span className="hidden sm:inline">{t("New customer purchase order")}</span></Button>
   }
 
   if (route === "/warehouse/inventory") {
@@ -105,6 +105,55 @@ function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (
   return null
 }
 
+function FinanceTopBarAction({ route, currentUser }: { route: string; currentUser?: AuthUserSummary | null }) {
+  const { t } = useLanguage()
+  if (/^\/finance\/(receivables|payables)\/documents\/[^/]+$/.test(route)) return null
+  if (route === "/finance/payables/intake") {
+    if (!hasPermission(currentUser, "Finance.Payables.Draft")) return null
+    return <Button aria-label={t("Add supplier documents")} title={t("Add supplier documents")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.importSupplierDocuments)}><Plus data-icon="inline-start" strokeWidth={1.2} /><span className="hidden sm:inline">{t("Add documents")}</span></Button>
+  }
+  if (route === "/finance/management/accruals-wip") {
+    if (!hasPermission(currentUser, "Finance.Management.Prepare")) return null
+    return <Button aria-label={t("Prepare period review")} title={t("Prepare period review")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.prepareAccrualWipReview)}><Plus data-icon="inline-start" strokeWidth={1.2} /><span className="hidden sm:inline">{t("Prepare period review")}</span></Button>
+  }
+  const actions = route.startsWith("/finance/receivables")
+    ? [
+      { label: "New sales invoice", permission: "Finance.Receivables.Draft", event: topBarActionEvents.createSalesInvoice },
+      { label: "New customer credit", permission: "Finance.Receivables.Draft", event: topBarActionEvents.createCustomerCredit },
+      { label: "Record customer receipt", permission: "Finance.Receivables.Cash", event: topBarActionEvents.recordCustomerReceipt },
+    ]
+    : route.startsWith("/finance/payables")
+      ? [
+        { label: "New purchase invoice", permission: "Finance.Payables.Draft", event: topBarActionEvents.createPurchaseInvoice },
+        { label: "New supplier credit", permission: "Finance.Payables.Draft", event: topBarActionEvents.createSupplierDebit },
+        { label: "Import supplier documents", permission: "Finance.Payables.Draft", event: topBarActionEvents.importSupplierDocuments },
+        { label: "Record supplier payment", permission: "Finance.Payables.Cash", event: topBarActionEvents.recordSupplierPayment },
+      ]
+      : route.startsWith("/finance/cash")
+        ? [
+          { label: "Record customer receipt", permission: "Finance.Receivables.Cash", event: topBarActionEvents.recordCustomerReceipt },
+          { label: "Record supplier payment", permission: "Finance.Payables.Cash", event: topBarActionEvents.recordSupplierPayment },
+        ]
+        : []
+  const available = actions.filter((action) => hasPermission(currentUser, action.permission))
+  if (!available.length) return null
+  const triggerLabel = route.startsWith("/finance/receivables") ? "New sales entry" : route.startsWith("/finance/payables") ? "New purchase entry" : "Record cash"
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button aria-label={t(triggerLabel)} title={t(triggerLabel)} className={topBarPrimaryActionClass}>
+          <Plus data-icon="inline-start" strokeWidth={1.2} />
+          <span className="hidden sm:inline">{t(triggerLabel)}</span>
+          <ChevronDown className="size-3 opacity-70" strokeWidth={1.4} aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[240px]">
+        {available.map((action) => <DropdownMenuItem key={action.event} onSelect={() => dispatchTopBarAction(action.event)}>{t(action.label)}</DropdownMenuItem>)}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 export function TopBar({
   route,
   navigate,
@@ -130,6 +179,7 @@ export function TopBar({
   const isCalendar = route === "/calendar"
   const isBookingLinks = route === "/calendar/booking-links"
   const isWarehouse = route.startsWith("/warehouse")
+  const isFinance = route.startsWith("/finance/")
   const isStandaloneExportRegister = route === "/customs/standalone/export"
   const isStandaloneImportRegister = route === "/customs/standalone/import"
   const isReports = route === "/reports"
@@ -282,7 +332,7 @@ export function TopBar({
         <>
           <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="hidden min-w-[210px] md:block" />
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
-            <CommandInput placeholder={isTodo ? t("Task, tag, job, quote or customer…") : isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search calls, leads, companies, contacts, or deals..." : isReportingRoute ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
+            <CommandInput placeholder={isTodo ? t("Task, tag, job, quote or customer…") : isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isFinance ? t("Invoice, credit, payment, party or job...") : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search calls, leads, companies, contacts, or deals..." : isReportingRoute ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
           </div>
           {isTodo ? (
             <Button aria-label={t("New task")} title={t("New task")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createTodoTask)}>
@@ -374,6 +424,8 @@ export function TopBar({
             </Button>
           ) : isWarehouse ? (
             <WarehouseTopBarAction route={route} navigate={navigate} />
+          ) : isFinance ? (
+            <FinanceTopBarAction route={route} currentUser={currentUser} />
           ) : isStandaloneExportRegister ? (
             <Button aria-label={t("New export declaration")} title={t("New export declaration")} className={topBarPrimaryActionClass} onClick={() => navigate("/customs/standalone/export/new")}>
               <Plus data-icon="inline-start" strokeWidth={1.2} />

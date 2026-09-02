@@ -1365,6 +1365,7 @@ export type WarehousePurchaseOrderInput = {
 
 export type WarehousePurchaseOrder = WarehousePurchaseOrderInput & {
   id: string
+  recordRoleCode: "customer_inbound_instruction"
   facilityCode: string
   facilityName: string
   customerName: string

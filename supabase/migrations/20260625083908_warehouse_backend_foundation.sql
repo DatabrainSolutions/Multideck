@@ -280,7 +280,7 @@ begin
   on conflict ("Company_ID", "Module_Code") do update set "Is_Enabled" = excluded."Is_Enabled", "Updated_At" = now();
 
   insert into public."Warehouse" ("Company_ID", "WH_Name", "WH_Organisation", "WH_Address1", "WH_TownCity", "WH_Country", "WH_UNLOCODE", "WH_MainEmail", "WH_MainPhone")
-  values (demo_company, 'Felixstowe DC', 'Jenkar Shipping Ltd', 'Dock Gate 2', 'Felixstowe', 'GB', 'GBFXT', 'warehouse@jenkar.co.uk', '+44 1394 000000')
+  values (demo_company, 'Felixstowe DC', 'Demo Freight Company Ltd', 'Dock Gate 2', 'Felixstowe', 'GB', 'GBFXT', 'warehouse@demo-freight.example', '+44 1394 000000')
   on conflict do nothing;
 
   select "WH_ID" into demo_warehouse

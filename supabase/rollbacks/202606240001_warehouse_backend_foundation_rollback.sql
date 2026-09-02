@@ -61,12 +61,12 @@ and "WHA_Warehouse" in (
   select "WH_ID"
   from public."Warehouse"
   where "WH_Name" = 'Felixstowe DC'
-    and "WH_Organisation" = 'Jenkar Shipping Ltd'
+    and "WH_Organisation" = 'Demo Freight Company Ltd'
 );
 
 delete from public."Warehouse"
 where "WH_Name" = 'Felixstowe DC'
-  and "WH_Organisation" = 'Jenkar Shipping Ltd'
+  and "WH_Organisation" = 'Demo Freight Company Ltd'
   and "WH_UNLOCODE" = 'GBFXT';
 
 -- Remove indexes, constraints, and columns added to existing warehouse setup tables.

@@ -55,7 +55,7 @@ type RoadCustomerAccount = {
 }
 
 const initialLegs: RoadLeg[] = [
-  { id: "collection", role: "Collection", from: "Jenkar · Leicester, GB", to: "Palletline local depot", date: "2026-07-23", carrier: "To be assigned" },
+  { id: "collection", role: "Collection", from: "Demo Freight Company · Leicester, GB", to: "Palletline local depot", date: "2026-07-23", carrier: "To be assigned" },
   { id: "linehaul", role: "Network linehaul", from: "Palletline local depot", to: "Palletline Scotland hub", date: "2026-07-23", carrier: "Palletline" },
   { id: "delivery", role: "Final delivery", from: "Palletline Scotland hub", to: "Bristol Retail DC · Bristol, GB", date: "2026-07-24", carrier: "To be assigned" },
 ]
@@ -71,16 +71,16 @@ const initialPalletDetails: PalletDetail[] = Array.from({ length: 4 }, (_, index
 
 const roadCustomerAccounts: RoadCustomerAccount[] = [
   {
-    id: "jenkar",
+    id: "demo-freight",
     code: "JEN-UK-001",
-    name: "Jenkar",
+    name: "Demo Freight Company",
     contacts: [
-      { id: "jenkar-maya", name: "Maya Turner", email: "maya.turner@jenkar.co.uk" },
-      { id: "jenkar-david", name: "David Reynolds", email: "david.reynolds@jenkar.co.uk" },
+      { id: "demo-freight-maya", name: "Maya Turner", email: "maya.turner@demo-freight.example" },
+      { id: "demo-freight-david", name: "David Reynolds", email: "david.reynolds@demo-freight.example" },
     ],
     addresses: [
-      { id: "jenkar-leicester", shortName: "Leicester distribution centre", contact: "Maya Turner · 0116 496 8210", address: "Jenkar\nLeicester, GB\nLE3 2FG" },
-      { id: "jenkar-bristol", shortName: "Bristol Retail DC", contact: "Bristol receiving · 0117 301 5240", address: "Jenkar\nBristol Retail DC\nBristol, GB\nBS11 0YB" },
+      { id: "demo-freight-leicester", shortName: "Leicester distribution centre", contact: "Maya Turner · 0116 496 8210", address: "Demo Freight Company\nLeicester, GB\nLE3 2FG" },
+      { id: "demo-freight-bristol", shortName: "Bristol Retail DC", contact: "Bristol receiving · 0117 301 5240", address: "Demo Freight Company\nBristol Retail DC\nBristol, GB\nBS11 0YB" },
     ],
   },
   {
@@ -364,10 +364,10 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
   const [palletDetailsOpen, setPalletDetailsOpen] = useState(false)
   const [palletDetails, setPalletDetails] = useState<PalletDetail[]>(initialPalletDetails)
   const [customerReference, setCustomerReference] = useState(viewedJob?.reference ?? "JK-PO-48230")
-  const [accountId, setAccountId] = useState("jenkar")
-  const [contactId, setContactId] = useState("jenkar-maya")
-  const [collectionAddressId, setCollectionAddressId] = useState("jenkar-leicester")
-  const [deliveryAddressId, setDeliveryAddressId] = useState("jenkar-bristol")
+  const [accountId, setAccountId] = useState("demo-freight")
+  const [contactId, setContactId] = useState("demo-freight-maya")
+  const [collectionAddressId, setCollectionAddressId] = useState("demo-freight-leicester")
+  const [deliveryAddressId, setDeliveryAddressId] = useState("demo-freight-bristol")
   const [collectionOverride, setCollectionOverride] = useState(false)
   const [deliveryOverride, setDeliveryOverride] = useState(false)
   const [tailLiftRequired, setTailLiftRequired] = useState(false)

@@ -415,7 +415,7 @@ function CrmPhoneCallsRegisterPage({ navigate }: { navigate: (path: string) => v
     <div className="md-page md-page-stack-compact min-w-0 max-w-full">
       {pageHeader({
         title: t("Phone calls"),
-        summary: t("Call outcomes, matched CRM context and reviewable follow-up from the Jenkar phone journey."),
+        summary: t("Call outcomes, matched CRM context and reviewable follow-up from the tenant phone journey."),
         action: <><div className="w-[min(100%,280px)]"><MultideckDateRangePicker value={dateRange} onChange={(range) => { setDateRange(range); setOffset(0) }} title="Call period" description="Choose the calls included in analytics and the register." triggerClassName="h-10 bg-[var(--md-surface)]" /></div><SegmentedControl options={["Overview", "Calls"] as const} value={view} onChange={changeView} ariaLabel={t("Phone calls view")} /></>,
       })}
 

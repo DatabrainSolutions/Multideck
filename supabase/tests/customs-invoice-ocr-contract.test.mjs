@@ -108,6 +108,47 @@ test("purchase order PDFs reuse the authenticated cached extraction boundary and
   assert.match(warehouseClient, /requestWarehouse<WarehousePurchaseOrder>/)
 })
 
+test("purchase ledger intake supports reviewed single and batch posting", async () => {
+  const [transport, workspace, edge, shared, finance, financeEdge, navigation, dexter, evidenceMigration] = await Promise.all([
+    read("multideck.client/src/lib/customs-invoice-import-api.ts"),
+    read("multideck.client/src/pages/finance-purchase-intake-page.tsx"),
+    read("supabase/functions/customs-invoice-ocr/index.ts"),
+    read("supabase/functions/_shared/customs-invoice-ocr.ts"),
+    read("multideck.client/src/lib/finance-subledger-api.ts"),
+    read("supabase/functions/finance-subledger/index.ts"),
+    read("multideck.client/src/data/navigation-data.ts"),
+    read("supabase/functions/agent-dexter/index.ts"),
+    read("supabase/migrations/20260830202817_finance_purchase_intake_evidence.sql"),
+  ])
+  assert.match(transport, /form\.set\("documentType", documentType\)/)
+  assert.match(transport, /extractFinancePurchaseDocument/)
+  assert.match(edge, /documentType === "finance_purchase"/)
+  assert.match(edge, /requirePermission\(admin, actor\.userId, "Finance\.Payables\.Draft"\)/)
+  assert.match(edge, /financePurchaseAnnotationFormat/)
+  assert.match(shared, /strict: true/)
+  assert.match(shared, /normalizeFinancePurchaseAnnotation/)
+  assert.match(workspace, /maxFiles = 25/)
+  assert.match(workspace, /Promise\.all\(\[worker\(\), worker\(\)\]\)/)
+  assert.match(workspace, /Possible duplicate in this batch/)
+  assert.match(workspace, /Review every tax treatment/)
+  assert.match(workspace, /createFinanceDraft/)
+  assert.match(workspace, /requestFinanceDocumentReview/)
+  assert.match(workspace, /approveFinanceDocument/)
+  assert.match(workspace, /hasPermission\(currentUser, "Finance\.ReviewAndPost"\)/)
+  assert.match(finance, /idempotencyKey\?: string/)
+  assert.match(finance, /sourceExtractionId\?: string/)
+  assert.match(financeEdge, /financePurchaseEvidence/)
+  assert.match(financeEdge, /retainFinancePurchaseEvidence/)
+  assert.match(financeEdge, /DOCStoredObject_AggregateType: "finance_document"/)
+  assert.match(financeEdge, /sourceStoredObjectId/)
+  assert.match(navigation, /Supplier document intake/)
+  assert.match(dexter, /Supplier invoice and credit-note files can be processed singly or in a batch/)
+  assert.match(dexter, /temporary extraction queue is deliberately not a Dexter write action or Watching for you event/)
+  assert.match(evidenceMigration, /sourceEvidence/)
+  assert.match(evidenceMigration, /retained supplier evidence/)
+  assert.match(evidenceMigration, /revoke all on function public\.multideck_dexter_domain_finance/)
+})
+
 test("the client uploads immediately, restores server results and applies reviewed lines", async () => {
   const [transport, preview, recovery, workspace, declarations, folderAnimation, importLogic, dexter] = await Promise.all([
     read("multideck.client/src/lib/customs-invoice-import-api.ts"),

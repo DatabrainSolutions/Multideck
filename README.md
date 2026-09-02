@@ -142,6 +142,13 @@ Edge Functions use the automatically provided `SUPABASE_URL`, `SUPABASE_ANON_KEY
 `SUPABASE_SERVICE_ROLE_KEY`. Set `APP_URL` as a function secret to the exact tenant application
 origin. Public signup stays disabled; teammates are invited through the trusted `team` function.
 
+The shared ERPNext finance demonstration is hosted at
+`https://demo-finance.multideck.app`. Configure that exact origin as the tenant
+Edge secret `ERPNEXT_BASE_URL`, alongside separately managed
+`ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, and `ERPNEXT_WEBHOOK_SECRET` secrets.
+This is the accounting-provider origin only: never use it for `APP_URL`,
+`VITE_MULTIDECK_TENANT_HOST`, the Supabase Auth Site URL, or a passkey RP ID.
+
 The current remote public-schema snapshot is stored at `supabase/baseline/public-schema.sql` for
 new-tenant provisioning. Incremental reviewed changes belong in `supabase/migrations`.
 

@@ -6,10 +6,18 @@ import {
   Plus,
   Trash2,
 } from "@/components/icons/hugeicons";
+import { MultiSelectMenu } from "@/components/multideck/multi-select-menu";
 import { Surface } from "@/components/multideck/surface";
 import { TabsRail } from "@/components/multideck/workflow-components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useLanguage } from "@/i18n/language-provider";
@@ -20,6 +28,7 @@ import {
   type AccountOperations,
   type ApiCustomerDetail,
   type ApiCustomerDocument,
+  type CustomerReference,
 } from "@/lib/customer-api";
 
 export type AccountDetailTab =
@@ -107,15 +116,29 @@ const roleFields: Record<string, Array<[string, string]>> = {
 function roleKey(value: string) {
   return value.trim().toLowerCase().replace(/[_-]+/g, " ");
 }
+
+const accountRoleTabOrder: Record<string, number> = {
+  customer: 0,
+  supplier: 1,
+  agent: 2,
+  "overseas agent": 2,
+  consignor: 3,
+  "consignor/shipper": 3,
+  shipper: 3,
+  consignee: 4,
+};
 function value(source: Record<string, unknown>, key: string) {
   return typeof source[key] === "string" ? String(source[key]) : "";
 }
-function listValue(source: Record<string, unknown>, key: string) {
+function stringList(source: Record<string, unknown>, key: string) {
   return Array.isArray(source[key])
-    ? (source[key] as unknown[])
-        .filter((item): item is string => typeof item === "string")
-        .join(", ")
-    : value(source, key);
+    ? (source[key] as unknown[]).filter(
+        (item): item is string => typeof item === "string",
+      )
+    : value(source, key)
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
 }
 function newId() {
   return (
@@ -142,12 +165,16 @@ export function AccountDetailTabs({
           (role, index, roles) =>
             role && role !== "company" && roles.indexOf(role) === index,
         )
-        .map((role) => ({
+        .map((role, index) => ({
           id: `role:${role}`,
           label: t(
             account.types.find((type) => roleKey(type) === role) ?? role,
           ),
-        })),
+          order: accountRoleTabOrder[role] ?? Number.MAX_SAFE_INTEGER,
+          index,
+        }))
+        .sort((left, right) => left.order - right.order || left.index - right.index)
+        .map(({ id, label }) => ({ id, label })),
     [account.types, t],
   );
   const financial = account.types.some((type) =>
@@ -162,14 +189,14 @@ export function AccountDetailTabs({
   const tabs = [
     { id: "overview", label: t("Overview") },
     {
-      id: "contacts",
-      label: t("Contacts"),
-      value: String(account.contacts.length),
-    },
-    {
       id: "addresses",
       label: t("Addresses"),
       value: String(account.addresses.length),
+    },
+    {
+      id: "contacts",
+      label: t("Contacts"),
+      value: String(account.contacts.length),
     },
     ...roleTabs,
     ...(financial ? [{ id: "financial", label: t("Financial") }] : []),
@@ -207,10 +234,14 @@ export function AccountDetailTabs({
 export function AccountOperationsPanel({
   account,
   activeTab,
+  currencyOptions,
+  financeReference,
   onChange,
 }: {
   account: ApiCustomerDetail;
   activeTab: Exclude<AccountDetailTab, "overview">;
+  currencyOptions: Array<{ code: string; name: string }>;
+  financeReference: Pick<CustomerReference, "legalEntities" | "paymentTerms" | "taxTreatments">;
   onChange: (account: ApiCustomerDetail) => void;
 }) {
   const { t } = useLanguage();
@@ -255,7 +286,12 @@ export function AccountOperationsPanel({
     ) : activeTab === "addresses" ? (
       <Addresses account={account} draft={draft} setDraft={setDraft} />
     ) : activeTab === "financial" ? (
-      <Financial draft={draft} setDraft={setDraft} />
+      <Financial
+        draft={draft}
+        setDraft={setDraft}
+        currencyOptions={currencyOptions}
+        financeReference={financeReference}
+      />
     ) : activeTab === "customs" ? (
       <Customs draft={draft} setDraft={setDraft} />
     ) : activeTab === "documents" ? (
@@ -338,6 +374,22 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span>{t(label)}</span>
       {children}
     </label>
+  );
+}
+
+function ControlField({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  const { t } = useLanguage();
+  return (
+    <div className="grid min-w-0 gap-1.5 text-[11.5px] font-medium text-[var(--md-text)]">
+      <span>{t(label)}</span>
+      {children}
+    </div>
   );
 }
 
@@ -551,158 +603,954 @@ type Props = {
   setDraft: (value: AccountOperations) => void;
   account: ApiCustomerDetail;
 };
-function Financial({ draft, setDraft }: Omit<Props, "account">) {
+
+type FinancialTab = "receivables" | "payables" | "bank-details";
+type FinanceReference = Pick<CustomerReference, "legalEntities" | "paymentTerms" | "taxTreatments">;
+
+type AccountBankDetails = {
+  id: string;
+  accountName: string;
+  accountHolder: string;
+  bankName: string;
+  countryCode: string;
+  currencyCode: string;
+  accountNumberMasked: string;
+  ibanMasked: string;
+  routingCodeMasked: string;
+  bic: string;
+  remittanceEmail: string;
+  notes: string;
+  isDefault: boolean;
+  useForPayments: boolean;
+  useForRefunds: boolean;
+  useForDirectDebit: boolean;
+  verificationStatusCode: string;
+  verificationReference: string;
+  verifiedAt: string;
+  effectiveFrom: string;
+  effectiveTo: string;
+};
+
+const currencyCodePattern = /^[A-Z]{3}$/;
+
+function normaliseCurrencies(currencies: string[]) {
+  return Array.from(
+    new Set(
+      currencies
+        .map((currency) => currency.trim().toUpperCase())
+        .filter((currency) => currencyCodePattern.test(currency)),
+    ),
+  );
+}
+
+function objectValue(input: unknown): Record<string, unknown> {
+  return input && typeof input === "object" && !Array.isArray(input)
+    ? (input as Record<string, unknown>)
+    : {};
+}
+
+function accountBankDetails(data: Record<string, unknown>) {
+  const records = Array.isArray(data.bankAccounts)
+    ? data.bankAccounts
+    : [];
+  if (records.length) {
+    return records.map((record, index): AccountBankDetails => {
+      const source = objectValue(record);
+      const currencyCode = value(source, "currencyCode").toUpperCase();
+      return {
+        id: value(source, "id") || `bank-account-${index + 1}`,
+        accountName: value(source, "accountName"),
+        accountHolder: value(source, "accountHolder"),
+        bankName: value(source, "bankName"),
+        countryCode: value(source, "countryCode").toUpperCase(),
+        currencyCode,
+        accountNumberMasked: value(source, "accountNumberMasked"),
+        ibanMasked: value(source, "ibanMasked"),
+        routingCodeMasked: value(source, "routingCodeMasked"),
+        bic: value(source, "bic").toUpperCase(),
+        remittanceEmail: value(source, "remittanceEmail"),
+        notes: value(source, "notes"),
+        isDefault: source.isDefault === true && Boolean(currencyCode),
+        useForPayments: source.useForPayments !== false,
+        useForRefunds: source.useForRefunds === true,
+        useForDirectDebit: source.useForDirectDebit === true,
+        verificationStatusCode: value(source, "verificationStatusCode") || "pending",
+        verificationReference: value(source, "verificationReference"),
+        verifiedAt: value(source, "verifiedAt"),
+        effectiveFrom: value(source, "effectiveFrom"),
+        effectiveTo: value(source, "effectiveTo"),
+      };
+    });
+  }
+
+  const legacyKeys = [
+    "bankAccountHolder",
+    "bankName",
+    "bankCountryCode",
+    "bankCurrency",
+    "bankAccountNumberMasked",
+    "bankIbanMasked",
+    "bankRoutingCodeMasked",
+    "bankBic",
+    "remittanceEmail",
+    "bankDetailsNotes",
+  ];
+  if (!legacyKeys.some((key) => value(data, key).trim())) return [];
+  const currencyCode = (
+    value(data, "bankCurrency") || value(data, "primaryCurrency")
+  ).toUpperCase();
+  return [
+    {
+      id: "legacy-bank-account",
+      accountName: value(data, "bankName") || "Bank account",
+      accountHolder: value(data, "bankAccountHolder"),
+      bankName: value(data, "bankName"),
+      countryCode: value(data, "bankCountryCode").toUpperCase(),
+      currencyCode,
+      accountNumberMasked: value(data, "bankAccountNumberMasked"),
+      ibanMasked: value(data, "bankIbanMasked"),
+      routingCodeMasked: value(data, "bankRoutingCodeMasked"),
+      bic: value(data, "bankBic").toUpperCase(),
+      remittanceEmail: value(data, "remittanceEmail"),
+      notes: value(data, "bankDetailsNotes"),
+      isDefault: Boolean(currencyCode),
+      useForPayments: true,
+      useForRefunds: false,
+      useForDirectDebit: false,
+      verificationStatusCode: "pending",
+      verificationReference: "",
+      verifiedAt: "",
+      effectiveFrom: "",
+      effectiveTo: "",
+    },
+  ];
+}
+
+function Financial({
+  draft,
+  setDraft,
+  currencyOptions,
+  financeReference,
+}: Omit<Props, "account"> & {
+  currencyOptions: Array<{ code: string; name: string }>;
+  financeReference: FinanceReference;
+}) {
   const { t } = useLanguage();
+  const [activeFinancialTab, setActiveFinancialTab] =
+    useState<FinancialTab>("receivables");
   const data = draft.invoicePreferences;
+  const banks = accountBankDetails(data);
+  const operatingCurrencies = normaliseCurrencies([
+    ...stringList(data, "operatingCurrencies"),
+    value(data, "primaryCurrency"),
+    ...stringList(data, "supportedCurrencies"),
+    ...stringList(data, "supportedPurchaseCurrencies"),
+    ...banks.map((bank) => bank.currencyCode),
+  ]);
+  const currencyMap = new Map(
+    currencyOptions.map((currency) => [currency.code.toUpperCase(), currency.name]),
+  );
+  for (const currency of operatingCurrencies) {
+    if (!currencyMap.has(currency)) currencyMap.set(currency, currency);
+  }
+  const availableCurrencies = Array.from(currencyMap, ([code, name]) => ({
+    code,
+    name,
+  })).sort((left, right) => left.code.localeCompare(right.code));
+  const operatingCurrencyOptions = availableCurrencies.map((currency) => ({
+    value: currency.code,
+    label:
+      currency.name === currency.code
+        ? currency.code
+        : `${currency.code} · ${currency.name}`,
+  }));
+  const selectedCurrencyOptions = operatingCurrencies.map((currency) => ({
+    value: currency,
+    label:
+      currencyMap.get(currency) && currencyMap.get(currency) !== currency
+        ? `${currency} · ${currencyMap.get(currency)}`
+        : currency,
+  }));
+  const defaultLegalEntityId = financeReference.legalEntities[0]?.id ?? "";
+  const salesLegalEntityId = value(data, "defaultSalesLegalEntityId") || defaultLegalEntityId;
+  const purchaseLegalEntityId = value(data, "defaultPurchaseLegalEntityId") || defaultLegalEntityId;
+  const salesPaymentTerms = financeReference.paymentTerms.filter(
+    (term) => term.legalEntityId == null || term.legalEntityId === salesLegalEntityId,
+  );
+  const purchasePaymentTerms = financeReference.paymentTerms.filter(
+    (term) => term.legalEntityId == null || term.legalEntityId === purchaseLegalEntityId,
+  );
+  const salesTaxTreatments = financeReference.taxTreatments.filter(
+    (tax) =>
+      (tax.legalEntityId == null || tax.legalEntityId === salesLegalEntityId) &&
+      ["sales", "both"].includes(tax.transactionTypeCode),
+  );
+  const purchaseTaxTreatments = financeReference.taxTreatments.filter(
+    (tax) =>
+      (tax.legalEntityId == null || tax.legalEntityId === purchaseLegalEntityId) &&
+      ["purchase", "both"].includes(tax.transactionTypeCode),
+  );
+
+  const updateMany = (changes: Record<string, unknown>) =>
+    setDraft({
+      ...draft,
+      invoicePreferences: { ...data, ...changes },
+    });
   const update = (key: string, next: unknown) =>
-    setDraft({ ...draft, invoicePreferences: { ...data, [key]: next } });
+    updateMany({ [key]: next });
+
+  const changeOperatingCurrencies = (next: string[]) => {
+    const requiredByBank = banks.map((bank) => bank.currencyCode);
+    const currencies = normaliseCurrencies([...next, ...requiredByBank]);
+    const currentPrimary = value(data, "primaryCurrency").toUpperCase();
+    updateMany({
+      operatingCurrencies: currencies,
+      primaryCurrency: currencies.includes(currentPrimary)
+        ? currentPrimary
+        : currencies[0] ?? "",
+      supportedCurrencies: stringList(data, "supportedCurrencies").filter(
+        (currency) => currencies.includes(currency.toUpperCase()),
+      ),
+      supportedPurchaseCurrencies: stringList(
+        data,
+        "supportedPurchaseCurrencies",
+      ).filter((currency) => currencies.includes(currency.toUpperCase())),
+    });
+  };
+
+  const updateBank = (
+    bankId: string,
+    changes: Partial<AccountBankDetails>,
+  ) => {
+    const current = banks.find((bank) => bank.id === bankId);
+    if (!current) return;
+    const changed = {
+      ...current,
+      ...changes,
+      countryCode: (changes.countryCode ?? current.countryCode).toUpperCase(),
+      currencyCode: (changes.currencyCode ?? current.currencyCode).toUpperCase(),
+      bic: (changes.bic ?? current.bic).toUpperCase(),
+    };
+    if (!changed.currencyCode) changed.isDefault = false;
+    const nextBanks = banks.map((bank) => {
+      if (bank.id === bankId) return changed;
+      if (changed.isDefault && bank.currencyCode === changed.currencyCode) {
+        return { ...bank, isDefault: false };
+      }
+      return bank;
+    });
+    updateMany({
+      bankAccounts: nextBanks,
+      operatingCurrencies: normaliseCurrencies([
+        ...operatingCurrencies,
+        changed.currencyCode,
+      ]),
+    });
+  };
+
+  const addBank = () => {
+    const currencyCode =
+      value(data, "primaryCurrency").toUpperCase() ||
+      operatingCurrencies[0] ||
+      "";
+    update("bankAccounts", [
+      ...banks,
+      {
+        id: newId(),
+        accountName: "",
+        accountHolder: "",
+        bankName: "",
+        countryCode: "",
+        currencyCode,
+        accountNumberMasked: "",
+        ibanMasked: "",
+        routingCodeMasked: "",
+        bic: "",
+        remittanceEmail: "",
+        notes: "",
+        isDefault:
+          Boolean(currencyCode) &&
+          !banks.some(
+            (bank) => bank.currencyCode === currencyCode && bank.isDefault,
+          ),
+        useForPayments: true,
+        useForRefunds: false,
+        useForDirectDebit: false,
+        verificationStatusCode: "pending",
+        verificationReference: "",
+        verifiedAt: "",
+        effectiveFrom: "",
+        effectiveTo: "",
+      } satisfies AccountBankDetails,
+    ]);
+  };
+
+  const tabs = [
+    { id: "receivables", label: t("Accounts Receivable") },
+    { id: "payables", label: t("Accounts Payable") },
+    { id: "bank-details", label: t("Bank Details") },
+  ];
+
   return (
     <>
       <SectionTitle
-        title="Financial and invoicing"
-        detail="Receivable and payable terms are separate; structured term rules support due-date calculation and currencies remain independent of nominal-ledger mappings."
+        title="Financial details"
+        detail="Maintain company currencies, customer terms, supplier terms and approved payment details separately for this account."
       />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Credit limit">
-          <Input
-            type="number"
-            min={0}
-            value={value(data, "creditLimit")}
-            onChange={(e) => update("creditLimit", e.target.value)}
-            className={fieldClass}
-            dir="ltr"
-          />
-        </Field>
-        <Field label="Primary currency">
-          <Input
-            maxLength={3}
-            value={value(data, "primaryCurrency")}
-            onChange={(e) =>
-              update("primaryCurrency", e.target.value.toUpperCase())
-            }
-            className={fieldClass}
-            dir="ltr"
-            placeholder="GBP"
-          />
-        </Field>
-        <Field label="Receivable term days">
-          <Input
-            type="number"
-            min={0}
-            max={730}
-            value={value(data, "receivableTermDays")}
-            onChange={(e) => update("receivableTermDays", e.target.value)}
-            className={fieldClass}
-            dir="ltr"
-          />
-        </Field>
-        <Field label="Receivable due day">
-          <Input
-            type="number"
-            min={1}
-            max={31}
-            value={value(data, "receivableDueDay")}
-            onChange={(e) => update("receivableDueDay", e.target.value)}
-            className={fieldClass}
-            dir="ltr"
-            placeholder="Optional"
-          />
-        </Field>
-        <label className="flex min-h-9 items-center gap-2 text-[11.5px] font-medium text-[var(--md-text)]">
-          <Switch
-            checked={data.receivableEndOfMonth === true}
-            onCheckedChange={(next) => update("receivableEndOfMonth", next)}
-          />
-          {t("Receivable end of month")}
-        </label>
-        <Field label="Payable term days">
-          <Input
-            type="number"
-            min={0}
-            max={730}
-            value={value(data, "payableTermDays")}
-            onChange={(e) => update("payableTermDays", e.target.value)}
-            className={fieldClass}
-            dir="ltr"
-          />
-        </Field>
-        <Field label="Payable due day">
-          <Input
-            type="number"
-            min={1}
-            max={31}
-            value={value(data, "payableDueDay")}
-            onChange={(e) => update("payableDueDay", e.target.value)}
-            className={fieldClass}
-            dir="ltr"
-            placeholder="Optional"
-          />
-        </Field>
-        <label className="flex min-h-9 items-center gap-2 text-[11.5px] font-medium text-[var(--md-text)]">
-          <Switch
-            checked={data.payableEndOfMonth === true}
-            onCheckedChange={(next) => update("payableEndOfMonth", next)}
-          />
-          {t("Payable end of month")}
-        </label>
-        <Field label="Invoice email">
-          <Input
-            type="email"
-            value={value(data, "invoiceEmail")}
-            onChange={(e) => update("invoiceEmail", e.target.value)}
-            className={fieldClass}
-            dir="ltr"
-          />
-        </Field>
-        <Field label="Invoice delivery">
-          <Input
-            value={value(data, "invoiceDeliveryMethod")}
-            onChange={(e) => update("invoiceDeliveryMethod", e.target.value)}
-            className={fieldClass}
-            placeholder="Email, EDI or portal"
-          />
-        </Field>
-        <Field label="Supported invoice currencies">
-          <Input
-            value={listValue(data, "supportedCurrencies")}
-            onChange={(e) =>
-              update(
-                "supportedCurrencies",
-                e.target.value
-                  .split(",")
-                  .map((item) => item.trim().toUpperCase())
-                  .filter(Boolean),
-              )
-            }
-            className={fieldClass}
-            dir="ltr"
-            placeholder="GBP, EUR, USD"
-          />
-        </Field>
-        <Field label="Accounts receivable code">
-          <Input
-            value={value(data, "receivableAccountCode")}
-            onChange={(e) => update("receivableAccountCode", e.target.value)}
-            className={fieldClass}
-            dir="ltr"
-          />
-        </Field>
-        <Field label="Accounts payable code">
-          <Input
-            value={value(data, "payableAccountCode")}
-            onChange={(e) => update("payableAccountCode", e.target.value)}
-            className={fieldClass}
-            dir="ltr"
-          />
-        </Field>
-      </div>
-      <Field label="Invoice instructions">
-        <Textarea
-          value={value(data, "invoiceInstructions")}
-          onChange={(e) => update("invoiceInstructions", e.target.value)}
-          className="mt-3 min-h-24 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[13px] shadow-[var(--md-shadow-line)]"
+      <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(260px,420px)] sm:items-end">
+        <div>
+          <p className="text-[12px] font-medium text-[var(--md-ink)]">
+            {t("Operating currencies")}
+          </p>
+          <p className="mt-1 text-[11.5px] leading-5 text-[var(--md-subtle)]">
+            {t(
+              "Choose every currency this company can invoice, purchase or receive through a bank account.",
+            )}
+          </p>
+        </div>
+        <MultiSelectMenu
+          value={operatingCurrencies}
+          options={operatingCurrencyOptions}
+          onValueChange={changeOperatingCurrencies}
+          placeholder="Choose operating currencies"
+          label="Operating currencies"
+          disabled={!operatingCurrencyOptions.length}
+          className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-3 text-[13px]"
         />
-      </Field>
+      </div>
+      <TabsRail
+        tabs={tabs}
+        activeTab={activeFinancialTab}
+        onChange={(tab) => setActiveFinancialTab(tab as FinancialTab)}
+        className="mb-4"
+      />
+      <div
+        role="tabpanel"
+        aria-label={tabs.find((tab) => tab.id === activeFinancialTab)?.label}
+      >
+        {activeFinancialTab === "receivables" ? (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <ControlField label="Customer accounting status">
+                <Select
+                  value={value(data, "customerAccountingStatusCode") || "active"}
+                  onValueChange={(customerAccountingStatusCode) => update("customerAccountingStatusCode", customerAccountingStatusCode)}
+                >
+                  <SelectTrigger aria-label={t("Customer accounting status")} className={fieldClass}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">{t("Active")}</SelectItem>
+                    <SelectItem value="on_hold">{t("On credit hold")}</SelectItem>
+                    <SelectItem value="blocked">{t("Blocked")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </ControlField>
+              <ControlField label="Sales legal entity">
+                <Select
+                  value={salesLegalEntityId || "__none__"}
+                  onValueChange={(defaultSalesLegalEntityId) => update("defaultSalesLegalEntityId", defaultSalesLegalEntityId === "__none__" ? "" : defaultSalesLegalEntityId)}
+                  disabled={!financeReference.legalEntities.length}
+                >
+                  <SelectTrigger aria-label={t("Sales legal entity")} className={fieldClass}><SelectValue placeholder={t("Choose legal entity")} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{t("Choose legal entity")}</SelectItem>
+                    {financeReference.legalEntities.map((entity) => <SelectItem key={entity.id} value={entity.id}>{entity.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </ControlField>
+              <ControlField label="Sales payment terms">
+                <Select
+                  value={value(data, "salesPaymentTermCode") || "__none__"}
+                  onValueChange={(salesPaymentTermCode) => {
+                    const term = salesPaymentTerms.find((item) => item.code === salesPaymentTermCode);
+                    updateMany({ salesPaymentTermCode: salesPaymentTermCode === "__none__" ? "" : salesPaymentTermCode, receivableTermDays: term ? String(term.days) : value(data, "receivableTermDays"), receivableEndOfMonth: term?.endOfMonth ?? data.receivableEndOfMonth });
+                  }}
+                  disabled={!salesPaymentTerms.length}
+                >
+                  <SelectTrigger aria-label={t("Sales payment terms")} className={fieldClass}><SelectValue placeholder={t("Choose payment terms")} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{t("Choose payment terms")}</SelectItem>
+                    {salesPaymentTerms.map((term) => <SelectItem key={term.id} value={term.code}>{term.code} · {term.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </ControlField>
+              <ControlField label="Default sales tax treatment">
+                <Select
+                  value={value(data, "salesTaxTreatmentCode") || "__none__"}
+                  onValueChange={(salesTaxTreatmentCode) => update("salesTaxTreatmentCode", salesTaxTreatmentCode === "__none__" ? "" : salesTaxTreatmentCode)}
+                  disabled={!salesTaxTreatments.length}
+                >
+                  <SelectTrigger aria-label={t("Default sales tax treatment")} className={fieldClass}><SelectValue placeholder={t("Choose tax treatment")} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{t("Choose tax treatment")}</SelectItem>
+                    {salesTaxTreatments.map((tax) => <SelectItem key={tax.id} value={tax.code}>{tax.code} · {tax.name} · {tax.ratePercent}%</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </ControlField>
+              <Field label="Customer tax registration">
+                <Input value={value(data, "customerTaxRegistrationNo")} onChange={(e) => update("customerTaxRegistrationNo", e.target.value)} className={fieldClass} dir="ltr" />
+              </Field>
+              <ControlField label="Preferred receipt method">
+                <Select value={value(data, "preferredReceiptMethodCode") || "bank_transfer"} onValueChange={(preferredReceiptMethodCode) => update("preferredReceiptMethodCode", preferredReceiptMethodCode)}>
+                  <SelectTrigger aria-label={t("Preferred receipt method")} className={fieldClass}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bank_transfer">{t("Bank transfer")}</SelectItem><SelectItem value="direct_debit">{t("Direct debit")}</SelectItem><SelectItem value="card">{t("Card")}</SelectItem><SelectItem value="cheque">{t("Cheque")}</SelectItem><SelectItem value="cash">{t("Cash")}</SelectItem><SelectItem value="offset">{t("Account offset")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </ControlField>
+              <ControlField label="Invoice grouping">
+                <Select value={value(data, "salesInvoiceGroupingCode") || "per_job"} onValueChange={(salesInvoiceGroupingCode) => update("salesInvoiceGroupingCode", salesInvoiceGroupingCode)}>
+                  <SelectTrigger aria-label={t("Invoice grouping")} className={fieldClass}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="per_job">{t("One invoice per job")}</SelectItem><SelectItem value="daily">{t("Daily consolidation")}</SelectItem><SelectItem value="weekly">{t("Weekly consolidation")}</SelectItem><SelectItem value="monthly">{t("Monthly consolidation")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </ControlField>
+              <ControlField label="Statement frequency">
+                <Select value={value(data, "statementFrequencyCode") || "monthly"} onValueChange={(statementFrequencyCode) => update("statementFrequencyCode", statementFrequencyCode)}>
+                  <SelectTrigger aria-label={t("Statement frequency")} className={fieldClass}><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="never">{t("Never")}</SelectItem><SelectItem value="weekly">{t("Weekly")}</SelectItem><SelectItem value="monthly">{t("Monthly")}</SelectItem></SelectContent>
+                </Select>
+              </ControlField>
+              <Field label="Credit limit">
+                <Input
+                  type="number"
+                  min={0}
+                  value={value(data, "creditLimit")}
+                  onChange={(e) => update("creditLimit", e.target.value)}
+                  className={fieldClass}
+                  dir="ltr"
+                />
+              </Field>
+              <ControlField label="Primary currency">
+                <Select
+                  value={value(data, "primaryCurrency")}
+                  onValueChange={(primaryCurrency) =>
+                    update("primaryCurrency", primaryCurrency)
+                  }
+                  disabled={!operatingCurrencies.length}
+                >
+                  <SelectTrigger
+                    aria-label={t("Primary currency")}
+                    className={fieldClass}
+                  >
+                    <SelectValue
+                      placeholder={t("Choose operating currencies first")}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {operatingCurrencies.map((currency) => (
+                      <SelectItem key={currency} value={currency}>
+                        <span data-i18n-skip dir="ltr">
+                          {currency}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </ControlField>
+              <Field label="Receivable term days">
+                <Input
+                  type="number"
+                  min={0}
+                  max={730}
+                  value={value(data, "receivableTermDays")}
+                  onChange={(e) =>
+                    update("receivableTermDays", e.target.value)
+                  }
+                  className={fieldClass}
+                  dir="ltr"
+                />
+              </Field>
+              <Field label="Receivable due day">
+                <Input
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={value(data, "receivableDueDay")}
+                  onChange={(e) => update("receivableDueDay", e.target.value)}
+                  className={fieldClass}
+                  dir="ltr"
+                  placeholder="Optional"
+                />
+              </Field>
+              <label className="flex min-h-9 items-center gap-2 text-[11.5px] font-medium text-[var(--md-text)]">
+                <Switch
+                  checked={data.receivableEndOfMonth === true}
+                  onCheckedChange={(next) =>
+                    update("receivableEndOfMonth", next)
+                  }
+                />
+                {t("Receivable end of month")}
+              </label>
+              <Field label="Invoice email">
+                <Input
+                  type="email"
+                  value={value(data, "invoiceEmail")}
+                  onChange={(e) => update("invoiceEmail", e.target.value)}
+                  className={fieldClass}
+                  dir="ltr"
+                />
+              </Field>
+              <Field label="Statement email">
+                <Input type="email" value={value(data, "statementEmail")} onChange={(e) => update("statementEmail", e.target.value)} className={fieldClass} dir="ltr" />
+              </Field>
+              <Field label="Invoice language">
+                <Input value={value(data, "invoiceLanguageCode") || "en"} onChange={(e) => update("invoiceLanguageCode", e.target.value.toLowerCase())} className={fieldClass} dir="ltr" placeholder="en" />
+              </Field>
+              <Field label="Invoice delivery">
+                <Input
+                  value={value(data, "invoiceDeliveryMethod")}
+                  onChange={(e) =>
+                    update("invoiceDeliveryMethod", e.target.value)
+                  }
+                  className={fieldClass}
+                  placeholder={t("Email, EDI or portal")}
+                />
+              </Field>
+              <ControlField label="Supported invoice currencies">
+                <MultiSelectMenu
+                  value={normaliseCurrencies(
+                    stringList(data, "supportedCurrencies"),
+                  )}
+                  options={selectedCurrencyOptions}
+                  onValueChange={(supportedCurrencies) =>
+                    update("supportedCurrencies", supportedCurrencies)
+                  }
+                  placeholder="Choose invoice currencies"
+                  label="Supported invoice currencies"
+                  disabled={!operatingCurrencies.length}
+                  className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-3 text-[13px]"
+                />
+              </ControlField>
+              <Field label="Accounts receivable code">
+                <Input
+                  value={value(data, "receivableAccountCode")}
+                  onChange={(e) =>
+                    update("receivableAccountCode", e.target.value)
+                  }
+                  className={fieldClass}
+                  dir="ltr"
+                />
+              </Field>
+            </div>
+            <div className="mt-4 grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)] sm:grid-cols-2 xl:grid-cols-4">
+              <label className="flex items-center gap-2 text-[11.5px] font-medium text-[var(--md-text)]"><Switch checked={data.creditHold === true} onCheckedChange={(creditHold) => update("creditHold", creditHold)} />{t("Credit hold")}</label>
+              <label className="flex items-center gap-2 text-[11.5px] font-medium text-[var(--md-text)]"><Switch checked={data.requiresCustomerPurchaseOrder === true} onCheckedChange={(requiresCustomerPurchaseOrder) => update("requiresCustomerPurchaseOrder", requiresCustomerPurchaseOrder)} />{t("Customer PO required")}</label>
+              <label className="flex items-center gap-2 text-[11.5px] font-medium text-[var(--md-text)]"><Switch checked={data.requiresJobReferenceOnInvoice !== false} onCheckedChange={(requiresJobReferenceOnInvoice) => update("requiresJobReferenceOnInvoice", requiresJobReferenceOnInvoice)} />{t("Job reference required")}</label>
+              <label className="flex items-center gap-2 text-[11.5px] font-medium text-[var(--md-text)]"><Switch checked={data.sendStatements !== false} onCheckedChange={(sendStatements) => update("sendStatements", sendStatements)} />{t("Send statements")}</label>
+            </div>
+            <Field label="Invoice instructions">
+              <Textarea
+                value={value(data, "invoiceInstructions")}
+                onChange={(e) =>
+                  update("invoiceInstructions", e.target.value)
+                }
+                className="mt-3 min-h-24 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[13px] shadow-[var(--md-shadow-line)]"
+              />
+            </Field>
+          </>
+        ) : activeFinancialTab === "payables" ? (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <ControlField label="Supplier accounting status">
+                <Select value={value(data, "supplierAccountingStatusCode") || "active"} onValueChange={(supplierAccountingStatusCode) => update("supplierAccountingStatusCode", supplierAccountingStatusCode)}>
+                  <SelectTrigger aria-label={t("Supplier accounting status")} className={fieldClass}><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="active">{t("Active")}</SelectItem><SelectItem value="on_hold">{t("Payment hold")}</SelectItem><SelectItem value="blocked">{t("Blocked")}</SelectItem></SelectContent>
+                </Select>
+              </ControlField>
+              <ControlField label="Purchase legal entity">
+                <Select value={purchaseLegalEntityId || "__none__"} onValueChange={(defaultPurchaseLegalEntityId) => update("defaultPurchaseLegalEntityId", defaultPurchaseLegalEntityId === "__none__" ? "" : defaultPurchaseLegalEntityId)} disabled={!financeReference.legalEntities.length}>
+                  <SelectTrigger aria-label={t("Purchase legal entity")} className={fieldClass}><SelectValue placeholder={t("Choose legal entity")} /></SelectTrigger>
+                  <SelectContent><SelectItem value="__none__">{t("Choose legal entity")}</SelectItem>{financeReference.legalEntities.map((entity) => <SelectItem key={entity.id} value={entity.id}>{entity.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </ControlField>
+              <ControlField label="Purchase payment terms">
+                <Select
+                  value={value(data, "purchasePaymentTermCode") || "__none__"}
+                  onValueChange={(purchasePaymentTermCode) => {
+                    const term = purchasePaymentTerms.find((item) => item.code === purchasePaymentTermCode);
+                    updateMany({ purchasePaymentTermCode: purchasePaymentTermCode === "__none__" ? "" : purchasePaymentTermCode, payableTermDays: term ? String(term.days) : value(data, "payableTermDays"), payableEndOfMonth: term?.endOfMonth ?? data.payableEndOfMonth });
+                  }}
+                  disabled={!purchasePaymentTerms.length}
+                >
+                  <SelectTrigger aria-label={t("Purchase payment terms")} className={fieldClass}><SelectValue placeholder={t("Choose payment terms")} /></SelectTrigger>
+                  <SelectContent><SelectItem value="__none__">{t("Choose payment terms")}</SelectItem>{purchasePaymentTerms.map((term) => <SelectItem key={term.id} value={term.code}>{term.code} · {term.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </ControlField>
+              <ControlField label="Default purchase tax treatment">
+                <Select value={value(data, "purchaseTaxTreatmentCode") || "__none__"} onValueChange={(purchaseTaxTreatmentCode) => update("purchaseTaxTreatmentCode", purchaseTaxTreatmentCode === "__none__" ? "" : purchaseTaxTreatmentCode)} disabled={!purchaseTaxTreatments.length}>
+                  <SelectTrigger aria-label={t("Default purchase tax treatment")} className={fieldClass}><SelectValue placeholder={t("Choose tax treatment")} /></SelectTrigger>
+                  <SelectContent><SelectItem value="__none__">{t("Choose tax treatment")}</SelectItem>{purchaseTaxTreatments.map((tax) => <SelectItem key={tax.id} value={tax.code}>{tax.code} · {tax.name} · {tax.ratePercent}%</SelectItem>)}</SelectContent>
+                </Select>
+              </ControlField>
+              <Field label="Supplier tax registration"><Input value={value(data, "supplierTaxRegistrationNo")} onChange={(e) => update("supplierTaxRegistrationNo", e.target.value)} className={fieldClass} dir="ltr" /></Field>
+              <ControlField label="Preferred payment method">
+                <Select value={value(data, "preferredPaymentMethodCode") || "bank_transfer"} onValueChange={(preferredPaymentMethodCode) => update("preferredPaymentMethodCode", preferredPaymentMethodCode)}>
+                  <SelectTrigger aria-label={t("Preferred payment method")} className={fieldClass}><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="bank_transfer">{t("Bank transfer")}</SelectItem><SelectItem value="direct_debit">{t("Direct debit")}</SelectItem><SelectItem value="card">{t("Card")}</SelectItem><SelectItem value="cheque">{t("Cheque")}</SelectItem><SelectItem value="cash">{t("Cash")}</SelectItem><SelectItem value="offset">{t("Account offset")}</SelectItem></SelectContent>
+                </Select>
+              </ControlField>
+              <ControlField label="Payment run group">
+                <Select value={value(data, "paymentRunGroupCode") || "weekly"} onValueChange={(paymentRunGroupCode) => update("paymentRunGroupCode", paymentRunGroupCode)}>
+                  <SelectTrigger aria-label={t("Payment run group")} className={fieldClass}><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="manual">{t("Manual")}</SelectItem><SelectItem value="daily">{t("Daily")}</SelectItem><SelectItem value="weekly">{t("Weekly")}</SelectItem><SelectItem value="monthly">{t("Monthly")}</SelectItem></SelectContent>
+                </Select>
+              </ControlField>
+              <ControlField label="Invoice matching">
+                <Select value={value(data, "purchaseInvoiceMatchingCode") || "two_way"} onValueChange={(purchaseInvoiceMatchingCode) => update("purchaseInvoiceMatchingCode", purchaseInvoiceMatchingCode)}>
+                  <SelectTrigger aria-label={t("Invoice matching")} className={fieldClass}><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="none">{t("No matching")}</SelectItem><SelectItem value="two_way">{t("Invoice to purchase order")}</SelectItem><SelectItem value="three_way">{t("Invoice, purchase order and receipt")}</SelectItem></SelectContent>
+                </Select>
+              </ControlField>
+              <Field label="Payable term days">
+                <Input
+                  type="number"
+                  min={0}
+                  max={730}
+                  value={value(data, "payableTermDays")}
+                  onChange={(e) => update("payableTermDays", e.target.value)}
+                  className={fieldClass}
+                  dir="ltr"
+                />
+              </Field>
+              <Field label="Payable due day">
+                <Input
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={value(data, "payableDueDay")}
+                  onChange={(e) => update("payableDueDay", e.target.value)}
+                  className={fieldClass}
+                  dir="ltr"
+                  placeholder="Optional"
+                />
+              </Field>
+              <label className="flex min-h-9 items-center gap-2 text-[11.5px] font-medium text-[var(--md-text)]">
+                <Switch
+                  checked={data.payableEndOfMonth === true}
+                  onCheckedChange={(next) =>
+                    update("payableEndOfMonth", next)
+                  }
+                />
+                {t("Payable end of month")}
+              </label>
+              <Field label="Accounts payable code">
+                <Input
+                  value={value(data, "payableAccountCode")}
+                  onChange={(e) =>
+                    update("payableAccountCode", e.target.value)
+                  }
+                  className={fieldClass}
+                  dir="ltr"
+                />
+              </Field>
+              <Field label="Purchase invoice email">
+                <Input
+                  type="email"
+                  value={value(data, "purchaseInvoiceEmail")}
+                  onChange={(e) =>
+                    update("purchaseInvoiceEmail", e.target.value)
+                  }
+                  className={fieldClass}
+                  dir="ltr"
+                />
+              </Field>
+              <Field label="Purchase invoice delivery">
+                <Input
+                  value={value(data, "purchaseInvoiceDeliveryMethod")}
+                  onChange={(e) =>
+                    update("purchaseInvoiceDeliveryMethod", e.target.value)
+                  }
+                  className={fieldClass}
+                  placeholder={t("Email, EDI or portal")}
+                />
+              </Field>
+              <Field label="Remittance advice email"><Input type="email" value={value(data, "remittanceAdviceEmail")} onChange={(e) => update("remittanceAdviceEmail", e.target.value)} className={fieldClass} dir="ltr" /></Field>
+              <Field label="Matching tolerance %"><Input type="number" min={0} max={100} step="0.01" value={value(data, "purchaseMatchTolerancePercent")} onChange={(e) => update("purchaseMatchTolerancePercent", e.target.value)} className={fieldClass} dir="ltr" /></Field>
+              <ControlField label="Supported purchase currencies">
+                <MultiSelectMenu
+                  value={normaliseCurrencies(
+                    stringList(data, "supportedPurchaseCurrencies"),
+                  )}
+                  options={selectedCurrencyOptions}
+                  onValueChange={(supportedPurchaseCurrencies) =>
+                    update(
+                      "supportedPurchaseCurrencies",
+                      supportedPurchaseCurrencies,
+                    )
+                  }
+                  placeholder="Choose purchase currencies"
+                  label="Supported purchase currencies"
+                  disabled={!operatingCurrencies.length}
+                  className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-3 text-[13px]"
+                />
+              </ControlField>
+            </div>
+            <div className="mt-4 grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)] sm:grid-cols-2 xl:grid-cols-4">
+              <label className="flex items-center gap-2 text-[11.5px] font-medium text-[var(--md-text)]"><Switch checked={data.supplierPaymentHold === true} onCheckedChange={(supplierPaymentHold) => update("supplierPaymentHold", supplierPaymentHold)} />{t("Supplier payment hold")}</label>
+              <label className="flex items-center gap-2 text-[11.5px] font-medium text-[var(--md-text)]"><Switch checked={data.purchaseOrderRequired === true} onCheckedChange={(purchaseOrderRequired) => update("purchaseOrderRequired", purchaseOrderRequired)} />{t("Purchase order required")}</label>
+              <label className="flex items-center gap-2 text-[11.5px] font-medium text-[var(--md-text)]"><Switch checked={data.selfBillingAllowed === true} onCheckedChange={(selfBillingAllowed) => update("selfBillingAllowed", selfBillingAllowed)} />{t("Self-billing approved")}</label>
+              <label className="flex items-center gap-2 text-[11.5px] font-medium text-[var(--md-text)]"><Switch checked={data.separateRemittanceAdvice !== false} onCheckedChange={(separateRemittanceAdvice) => update("separateRemittanceAdvice", separateRemittanceAdvice)} />{t("Send remittance advice")}</label>
+            </div>
+            <Field label="Purchase invoice instructions">
+              <Textarea
+                value={value(data, "purchaseInvoiceInstructions")}
+                onChange={(e) =>
+                  update("purchaseInvoiceInstructions", e.target.value)
+                }
+                className="mt-3 min-h-24 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[13px] shadow-[var(--md-shadow-line)]"
+              />
+            </Field>
+          </>
+        ) : (
+          <>
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <p className="max-w-3xl text-[11.5px] leading-5 text-[var(--md-subtle)]">
+                {t(
+                  "Add every bank account used by this company and assign its currency. Complete account, IBAN and routing references are masked automatically when saved.",
+                )}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!operatingCurrencies.length || banks.length >= 25}
+                onClick={addBank}
+              >
+                <Plus data-icon="inline-start" className="size-3.5" />
+                {t("Add bank account")}
+              </Button>
+            </div>
+            {!banks.length ? (
+              <div className="grid min-h-32 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-6 py-8 text-center shadow-[var(--md-shadow-line)]">
+                <div>
+                  <p className="text-[13px] font-medium text-[var(--md-ink)]">
+                    {t("No bank accounts added")}
+                  </p>
+                  <p className="mt-1 text-[11.5px] leading-5 text-[var(--md-subtle)]">
+                    {operatingCurrencies.length
+                      ? t("Add the first bank account for this company.")
+                      : t("Choose an operating currency before adding a bank account.")}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="divide-y divide-[var(--md-line)]">
+                {banks.map((bank, index) => (
+                  <section
+                    key={bank.id}
+                    className="py-5 first:pt-0 last:pb-0"
+                    aria-label={`${t("Bank account")} ${index + 1}`}
+                  >
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-medium text-[var(--md-ink)]">
+                          {bank.accountName ||
+                            bank.bankName ||
+                            `${t("Bank account")} ${index + 1}`}
+                        </p>
+                        <p className="mt-0.5 text-[10.5px] text-[var(--md-subtle)]">
+                          <span data-i18n-skip dir="ltr">
+                            {bank.currencyCode || "—"}
+                          </span>
+                          {bank.isDefault ? ` · ${t("Default")}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-2 text-[11px] font-medium text-[var(--md-text)]">
+                          <Switch
+                            checked={bank.isDefault}
+                            disabled={!bank.currencyCode}
+                            onCheckedChange={(isDefault) =>
+                              updateBank(bank.id, { isDefault })
+                            }
+                          />
+                          {t("Default for currency")}
+                        </label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-red)]"
+                          aria-label={`${t("Remove bank account")}: ${bank.accountName || bank.bankName || index + 1}`}
+                          onClick={() =>
+                            update(
+                              "bankAccounts",
+                              banks.filter((item) => item.id !== bank.id),
+                            )
+                          }
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <Field label="Account name">
+                        <Input
+                          value={bank.accountName}
+                          onChange={(event) =>
+                            updateBank(bank.id, {
+                              accountName: event.target.value,
+                            })
+                          }
+                          className={fieldClass}
+                          placeholder={t("GBP current account")}
+                        />
+                      </Field>
+                      <Field label="Account holder">
+                        <Input
+                          value={bank.accountHolder}
+                          onChange={(event) =>
+                            updateBank(bank.id, {
+                              accountHolder: event.target.value,
+                            })
+                          }
+                          className={fieldClass}
+                        />
+                      </Field>
+                      <Field label="Bank name">
+                        <Input
+                          value={bank.bankName}
+                          onChange={(event) =>
+                            updateBank(bank.id, {
+                              bankName: event.target.value,
+                            })
+                          }
+                          className={fieldClass}
+                        />
+                      </Field>
+                      <ControlField label="Bank currency">
+                        <Select
+                          value={bank.currencyCode}
+                          onValueChange={(currencyCode) =>
+                            updateBank(bank.id, { currencyCode })
+                          }
+                        >
+                          <SelectTrigger
+                            aria-label={`${t("Bank currency")} ${index + 1}`}
+                            className={fieldClass}
+                          >
+                            <SelectValue placeholder={t("Choose currency")} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {operatingCurrencies.map((currency) => (
+                              <SelectItem key={currency} value={currency}>
+                                <span data-i18n-skip dir="ltr">
+                                  {currency}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </ControlField>
+                      <Field label="Bank country code">
+                        <Input
+                          maxLength={2}
+                          value={bank.countryCode}
+                          onChange={(event) =>
+                            updateBank(bank.id, {
+                              countryCode: event.target.value,
+                            })
+                          }
+                          className={fieldClass}
+                          dir="ltr"
+                          placeholder="GB"
+                        />
+                      </Field>
+                      <Field label="Account number">
+                        <Input
+                          value={bank.accountNumberMasked}
+                          onChange={(event) =>
+                            updateBank(bank.id, {
+                              accountNumberMasked: event.target.value,
+                            })
+                          }
+                          className={fieldClass}
+                          dir="ltr"
+                          placeholder="•••• 1234"
+                        />
+                      </Field>
+                      <Field label="IBAN">
+                        <Input
+                          value={bank.ibanMasked}
+                          onChange={(event) =>
+                            updateBank(bank.id, {
+                              ibanMasked: event.target.value,
+                            })
+                          }
+                          className={fieldClass}
+                          dir="ltr"
+                          placeholder="•••• 1234"
+                        />
+                      </Field>
+                      <Field label="Sort or routing code">
+                        <Input
+                          value={bank.routingCodeMasked}
+                          onChange={(event) =>
+                            updateBank(bank.id, {
+                              routingCodeMasked: event.target.value,
+                            })
+                          }
+                          className={fieldClass}
+                          dir="ltr"
+                          placeholder="•••• 1234"
+                        />
+                      </Field>
+                      <Field label="BIC or SWIFT">
+                        <Input
+                          value={bank.bic}
+                          onChange={(event) =>
+                            updateBank(bank.id, { bic: event.target.value })
+                          }
+                          className={fieldClass}
+                          dir="ltr"
+                        />
+                      </Field>
+                      <Field label="Remittance email">
+                        <Input
+                          type="email"
+                          value={bank.remittanceEmail}
+                          onChange={(event) =>
+                            updateBank(bank.id, {
+                              remittanceEmail: event.target.value,
+                            })
+                          }
+                          className={fieldClass}
+                          dir="ltr"
+                        />
+                      </Field>
+                      <ControlField label="Verification status">
+                        <Select value={bank.verificationStatusCode || "pending"} onValueChange={(verificationStatusCode) => updateBank(bank.id, { verificationStatusCode })}>
+                          <SelectTrigger aria-label={`${t("Verification status")} ${index + 1}`} className={fieldClass}><SelectValue /></SelectTrigger>
+                          <SelectContent><SelectItem value="pending">{t("Pending verification")}</SelectItem><SelectItem value="verified">{t("Verified")}</SelectItem><SelectItem value="rejected">{t("Rejected")}</SelectItem></SelectContent>
+                        </Select>
+                      </ControlField>
+                      <Field label="Verification reference"><Input value={bank.verificationReference} onChange={(event) => updateBank(bank.id, { verificationReference: event.target.value })} className={fieldClass} dir="ltr" /></Field>
+                      <Field label="Verified date"><Input type="date" value={bank.verifiedAt} onChange={(event) => updateBank(bank.id, { verifiedAt: event.target.value })} className={fieldClass} dir="ltr" /></Field>
+                      <Field label="Effective from"><Input type="date" value={bank.effectiveFrom} onChange={(event) => updateBank(bank.id, { effectiveFrom: event.target.value })} className={fieldClass} dir="ltr" /></Field>
+                      <Field label="Effective to"><Input type="date" value={bank.effectiveTo} onChange={(event) => updateBank(bank.id, { effectiveTo: event.target.value })} className={fieldClass} dir="ltr" /></Field>
+                    </div>
+                    <div className="mt-3 grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)] sm:grid-cols-3">
+                      <label className="flex items-center gap-2 text-[11px] font-medium text-[var(--md-text)]"><Switch checked={bank.useForPayments} onCheckedChange={(useForPayments) => updateBank(bank.id, { useForPayments })} />{t("Supplier payments")}</label>
+                      <label className="flex items-center gap-2 text-[11px] font-medium text-[var(--md-text)]"><Switch checked={bank.useForRefunds} onCheckedChange={(useForRefunds) => updateBank(bank.id, { useForRefunds })} />{t("Customer refunds")}</label>
+                      <label className="flex items-center gap-2 text-[11px] font-medium text-[var(--md-text)]"><Switch checked={bank.useForDirectDebit} onCheckedChange={(useForDirectDebit) => updateBank(bank.id, { useForDirectDebit })} />{t("Direct debit")}</label>
+                    </div>
+                    <Field label="Bank details notes">
+                      <Textarea
+                        value={bank.notes}
+                        onChange={(event) =>
+                          updateBank(bank.id, { notes: event.target.value })
+                        }
+                        className="mt-3 min-h-20 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[13px] shadow-[var(--md-shadow-line)]"
+                      />
+                    </Field>
+                  </section>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </>
   );
 }

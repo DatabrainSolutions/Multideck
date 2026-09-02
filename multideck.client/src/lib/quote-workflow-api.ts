@@ -31,6 +31,8 @@ export type QuoteOrganisationContact = {
   name: string
   email?: string | null
   emails: string[]
+  role?: string | null
+  isOperational: boolean
 }
 export type QuoteRelatedPartyRecommendation = {
   id: string

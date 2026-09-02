@@ -54,6 +54,37 @@ export type ExtractCommercialInvoiceOptions = {
   signal?: AbortSignal
 }
 
+export type FinancePurchaseExtractionLine = {
+  id: string
+  lineNumber: number
+  page: number
+  description: string
+  quantity: number
+  unitPrice: number
+  lineTotal: number
+  taxRate: number
+  taxAmount: number
+}
+
+export type FinancePurchaseExtractionResult = {
+  extractionId: string
+  documentType: "pl_invoice" | "debit_note" | "unknown"
+  documentNumber: string
+  supplierName: string
+  supplierTaxNumber: string
+  documentDate: string
+  dueDate: string
+  currencyCode: string
+  netTotal: number
+  taxTotal: number
+  grossTotal: number
+  lines: FinancePurchaseExtractionLine[]
+  model: string
+  cacheHit: boolean
+  evidencePages: EvidencePage[]
+  document: InvoiceDocumentMetadata
+}
+
 export class CommercialInvoiceExtractionError extends Error {
   constructor(message: string, public status = 0) {
     super(message)
@@ -85,11 +116,11 @@ export async function extractCommercialInvoice(
   }
   try {
     let token = await accessToken(false)
-    let response = await uploadInvoice(file, extractionId, declarationId, token, signal, onUploaded)
+    let response = await uploadInvoice(file, extractionId, declarationId, "commercial_invoice", token, signal, onUploaded)
     if (response.status === 401) {
       if (conversionTimer) globalThis.clearTimeout(conversionTimer)
       token = await accessToken(true)
-      response = await uploadInvoice(file, extractionId, declarationId, token, signal, onUploaded)
+      response = await uploadInvoice(file, extractionId, declarationId, "commercial_invoice", token, signal, onUploaded)
     }
     const payload = await successfulPayload(response)
     onStage?.("organising")
@@ -97,6 +128,26 @@ export async function extractCommercialInvoice(
   } finally {
     if (conversionTimer) globalThis.clearTimeout(conversionTimer)
   }
+}
+
+export async function extractFinancePurchaseDocument(
+  file: File,
+  { extractionId = crypto.randomUUID(), onStage, signal }: Omit<ExtractCommercialInvoiceOptions, "declarationId"> = {},
+): Promise<FinancePurchaseExtractionResult> {
+  validateInvoice(file)
+  validateConfiguration()
+  if (!uuidPattern.test(extractionId)) throw new CommercialInvoiceExtractionError("Unable to start this supplier document import.", 400)
+  onStage?.("uploading")
+  const onUploaded = () => onStage?.(file.name.toLowerCase().endsWith(".pdf") ? "extracting" : "converting")
+  let token = await accessToken(false)
+  let response = await uploadInvoice(file, extractionId, undefined, "finance_purchase", token, signal, onUploaded)
+  if (response.status === 401) {
+    token = await accessToken(true)
+    response = await uploadInvoice(file, extractionId, undefined, "finance_purchase", token, signal, onUploaded)
+  }
+  const payload = await successfulPayload(response)
+  onStage?.("organising")
+  return normalizeFinancePurchaseResult(payload)
 }
 
 export async function readCommercialInvoiceExtraction(
@@ -146,6 +197,7 @@ function uploadInvoice(
   file: File,
   extractionId: string,
   declarationId: string | undefined,
+  documentType: "commercial_invoice" | "finance_purchase",
   token: string,
   signal: AbortSignal | undefined,
   onUploaded: () => void,
@@ -153,6 +205,7 @@ function uploadInvoice(
   const form = new FormData()
   form.set("file", file, file.name)
   form.set("extractionId", extractionId)
+  form.set("documentType", documentType)
   if (declarationId && uuidPattern.test(declarationId)) form.set("declarationId", declarationId)
 
   return new Promise<Response>((resolve, reject) => {
@@ -185,6 +238,55 @@ function uploadInvoice(
     if (signal?.aborted) abort()
     else request.send(form)
   })
+}
+
+function normalizeFinancePurchaseResult(payload: unknown): FinancePurchaseExtractionResult {
+  const result = asRecord(payload)
+  const extractionId = text(result.extractionId)
+  const sourceLines = Array.isArray(result.lines) ? result.lines : []
+  const lines = sourceLines.flatMap((value, index) => {
+    const line = asRecord(value)
+    const description = text(line.description)
+    if (!description) return []
+    return [{
+      id: text(line.id) || `finance-line-${index + 1}`,
+      lineNumber: number(line.lineNumber) || index + 1,
+      page: number(line.page) || 1,
+      description,
+      quantity: Math.abs(number(line.quantity)) || 1,
+      unitPrice: Math.abs(number(line.unitPrice)),
+      lineTotal: Math.abs(number(line.lineTotal)),
+      taxRate: Math.abs(number(line.taxRate)),
+      taxAmount: Math.abs(number(line.taxAmount)),
+    }]
+  })
+  if (!uuidPattern.test(extractionId) || !lines.length) {
+    throw new CommercialInvoiceExtractionError("No purchase lines were found. Check the document or choose another invoice.", 422)
+  }
+  const documentType = result.documentType === "pl_invoice" || result.documentType === "debit_note" ? result.documentType : "unknown"
+  return {
+    extractionId,
+    documentType,
+    documentNumber: text(result.documentNumber),
+    supplierName: text(result.supplierName),
+    supplierTaxNumber: text(result.supplierTaxNumber),
+    documentDate: isoDate(result.documentDate),
+    dueDate: isoDate(result.dueDate),
+    currencyCode: /^[A-Z]{3}$/.test(text(result.currencyCode).toUpperCase()) ? text(result.currencyCode).toUpperCase() : "",
+    netTotal: Math.abs(number(result.netTotal)),
+    taxTotal: Math.abs(number(result.taxTotal)),
+    grossTotal: Math.abs(number(result.grossTotal)),
+    lines,
+    model: text(result.model),
+    cacheHit: result.cacheHit === true,
+    evidencePages: normalizeEvidencePages(result.pages),
+    document: normalizeDocumentMetadata(result.document),
+  }
+}
+
+function isoDate(value: unknown) {
+  const candidate = text(value)
+  return /^\d{4}-\d{2}-\d{2}$/.test(candidate) && !Number.isNaN(Date.parse(`${candidate}T00:00:00Z`)) ? candidate : ""
 }
 
 async function authenticatedRequest(url: string, init: RequestInit) {
