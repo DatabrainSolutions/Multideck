@@ -9,6 +9,7 @@ import {
   FileSpreadsheet,
   FileText,
   Loader2,
+  Link2 as Link,
   Maximize2,
   Minimize2,
   Paperclip,
@@ -24,8 +25,10 @@ import { ImageLightbox, type ImageLightboxControls } from "@/components/multidec
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion } from "@/lib/motion"
+import { getCalendarWorkspace, type BookingLink } from "@/lib/calendar-api"
 import {
   attachmentLimits,
   attachmentRejection,
@@ -487,6 +490,9 @@ export function MailComposer({
   const [dragging, setDragging] = useState(false)
   const [attaching, setAttaching] = useState(0)
   const [attachError, setAttachError] = useState<string | null>(null)
+  const [bookingMenuOpen, setBookingMenuOpen] = useState(false)
+  const [bookingLinks, setBookingLinks] = useState<BookingLink[] | null>(null)
+  const [bookingLinksError, setBookingLinksError] = useState<string | null>(null)
 
   const busy = status === "sending" || status === "saving" || status === "discarding" || dexterStatus === "drafting"
   const readOnly = mailbox ? !mailbox.outboundEnabled : true
@@ -505,6 +511,32 @@ export function MailComposer({
     (patch: Partial<ComposerState>) => onStateChange((current) => ({ ...current, ...patch })),
     [onStateChange],
   )
+
+  useEffect(() => {
+    if (!bookingMenuOpen || bookingLinks) return
+    const controller = new AbortController()
+    const now = new Date()
+    setBookingLinksError(null)
+    void getCalendarWorkspace(now.toISOString(), new Date(now.getTime() + 86_400_000).toISOString(), controller.signal)
+      .then((workspace) => setBookingLinks(workspace.bookingLinks.filter((link) => link.status === "active")))
+      .catch((reason) => { if (!controller.signal.aborted) setBookingLinksError(reason instanceof Error ? reason.message : "Booking links could not be loaded.") })
+    return () => controller.abort()
+  }, [bookingLinks, bookingMenuOpen])
+
+  function insertBookingLink(link: BookingLink) {
+    const field = bodyRef.current
+    const start = field?.selectionStart ?? state.bodyText.length
+    const end = field?.selectionEnd ?? start
+    const before = state.bodyText.slice(0, start)
+    const after = state.bodyText.slice(end)
+    const value = `${link.title}: ${window.location.origin}${link.path}`
+    const prefix = before && !before.endsWith("\n") ? "\n\n" : ""
+    const suffix = after && !after.startsWith("\n") ? "\n\n" : ""
+    const next = `${before}${prefix}${value}${suffix}${after}`
+    const caret = before.length + prefix.length + value.length
+    update({ bodyText: next })
+    window.requestAnimationFrame(() => { bodyRef.current?.focus(); bodyRef.current?.setSelectionRange(caret, caret) })
+  }
 
   // Focus the first field that still needs an answer, once per opened composer,
   // never on every rerender, so typing is not interrupted by a parent update.
@@ -937,6 +969,11 @@ export function MailComposer({
         >
           <Paperclip className="size-4" strokeWidth={1.5} />
         </Button>
+
+        <DropdownMenu open={bookingMenuOpen} onOpenChange={setBookingMenuOpen}>
+          <DropdownMenuTrigger asChild><Button type="button" variant="ghost" disabled={busy || readOnly} className="h-10 shrink-0 rounded-[var(--md-radius-md)] px-2.5 text-[12.5px] font-medium text-[var(--md-text)]" title={t("Insert booking link")}><Link className="size-3.5" /> <span className="hidden lg:inline">{t("Insert booking link")}</span></Button></DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="w-[300px]"><DropdownMenuLabel>{t("Booking links")}</DropdownMenuLabel>{bookingLinks?.map((link) => <DropdownMenuItem key={link.id} onSelect={() => insertBookingLink(link)}><Link className="size-3.5 text-[var(--md-accent)]" /><span className="min-w-0 flex-1 truncate">{link.title}</span><span className="text-[10px] text-[var(--md-subtle)]">{link.durationMinutes} min</span></DropdownMenuItem>)}{!bookingLinks && !bookingLinksError ? <DropdownMenuItem disabled><Loader2 className="size-3.5 animate-spin" />{t("Loading booking links…")}</DropdownMenuItem> : null}{bookingLinks?.length === 0 ? <DropdownMenuItem disabled>{t("No active booking links")}</DropdownMenuItem> : null}{bookingLinksError ? <DropdownMenuItem disabled className="text-[var(--md-red)]">{bookingLinksError}</DropdownMenuItem> : null}</DropdownMenuContent>
+        </DropdownMenu>
 
         <Button
           type="button"

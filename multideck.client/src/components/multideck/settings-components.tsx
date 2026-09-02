@@ -147,12 +147,14 @@ export function SettingsPageHeader({
 }
 
 export function SettingsPanel({
+  id,
   title,
   description,
   action,
   children,
   className,
 }: {
+  id?: string
   title: ReactNode
   description?: string
   action?: ReactNode
@@ -161,6 +163,7 @@ export function SettingsPanel({
 }) {
   return (
     <section
+      id={id}
       className={cn(
         "md-settings-panel overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]",
         className,

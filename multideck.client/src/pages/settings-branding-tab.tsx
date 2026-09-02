@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CheckCircle2, CircleAlert, IdCard, ImageUp, LoaderCircle, Mail, RefreshCw, Sparkles, Trash2 } from "@/components/icons/hugeicons"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
+import { MeetingEmailTemplateSettings } from "@/components/multideck/meeting-email-template-settings"
 import {
   SettingsChoiceGroup,
   SettingsFieldRow,
@@ -14,12 +15,15 @@ import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { contrastRatio, parseHex, readableInk } from "@/lib/color"
+import { notifyCompanyAppearanceChanged } from "@/lib/company-appearance"
 import { getSupabaseSession } from "@/lib/supabase"
 import {
   DEFAULT_TENANT_BRAND,
+  discardTenantBrandImport,
   getTenantBranding,
   importTenantBranding,
   saveTenantBranding,
+  saveTenantBrandImportDraft,
   type TenantBrandImport,
   type TenantBranding,
 } from "@/lib/tenant-branding-api"
@@ -32,6 +36,49 @@ const APPEARANCE_PALETTES = {
   light: { backgroundColor: "#F3F4F4", surfaceColor: "#FFFFFF", textColor: "#292929" },
   dark: { backgroundColor: "#0C1413", surfaceColor: "#161F1E", textColor: "#F1F5F4" },
 } as const
+
+type BrandAutosaveStatus = "idle" | "pending" | "saving" | "saved" | "error" | "review"
+
+type BrandSaveSnapshot = {
+  draft: TenantBranding
+  logoFile: File | null
+  importedLogoUrl: string | null
+  removeLogo: boolean
+  websiteImport: TenantBrandImport["evidence"] | null
+  importedFrom: TenantBranding["importedFrom"]
+}
+
+function importedFromEvidence(evidence: TenantBrandImport["evidence"] | null) {
+  return evidence
+    ? { url: evidence.sourceUrl, importedAt: evidence.importedAt, model: evidence.model }
+    : null
+}
+
+function brandSaveKey(snapshot: BrandSaveSnapshot) {
+  const { draft, logoFile } = snapshot
+  return JSON.stringify({
+    configured: draft.configured,
+    displayName: draft.displayName,
+    websiteUrl: draft.websiteUrl,
+    primaryColor: draft.primaryColor,
+    secondaryColor: draft.secondaryColor,
+    backgroundColor: draft.backgroundColor,
+    surfaceColor: draft.surfaceColor,
+    textColor: draft.textColor,
+    appearanceMode: draft.appearanceMode,
+    cornerStyle: draft.cornerStyle,
+    emailSignOff: draft.emailSignOff,
+    removeLogo: snapshot.removeLogo,
+    importedLogoUrl: snapshot.importedLogoUrl,
+    importedFrom: snapshot.importedFrom,
+    logoFile: logoFile ? {
+      name: logoFile.name,
+      size: logoFile.size,
+      type: logoFile.type,
+      lastModified: logoFile.lastModified,
+    } : null,
+  })
+}
 
 function isHex(value: string) {
   return /^#[0-9A-F]{6}$/i.test(value.trim())
@@ -168,8 +215,22 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
   const [importExpanded, setImportExpanded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [autosaveStatus, setAutosaveStatus] = useState<BrandAutosaveStatus>("idle")
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const lastSavedSnapshotRef = useRef<string | null>(null)
+  const lastSavedImportDraftRef = useRef<string | null>(null)
+  const autosaveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const autosaveSequenceRef = useRef(0)
+  const autosaveMountedRef = useRef(true)
+  const latestAutosaveRef = useRef<{ snapshot: BrandSaveSnapshot; valid: boolean } | null>(null)
+  const savedLogoFilesRef = useRef(new WeakSet<File>())
+  const savedImportedLogoUrlsRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    autosaveMountedRef.current = true
+    return () => { autosaveMountedRef.current = false }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -178,9 +239,28 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
       return getTenantBranding(session.access_token)
     }).then((branding) => {
       if (!active) return
+      lastSavedSnapshotRef.current = brandSaveKey({
+        draft: branding,
+        logoFile: null,
+        importedLogoUrl: null,
+        removeLogo: false,
+        websiteImport: null,
+        importedFrom: branding.importedFrom,
+      })
       setSaved(branding)
-      setDraft(branding)
-      setImportUrl(branding.websiteUrl)
+      if (branding.pendingImport) {
+        lastSavedImportDraftRef.current = JSON.stringify(branding.pendingImport)
+        setDraft({ ...branding, ...branding.pendingImport.draft })
+        setImportedLogoUrl(branding.pendingImport.draft.importedLogoUrl)
+        setWebsiteImport(branding.pendingImport.evidence)
+        setImportUrl(branding.pendingImport.evidence.sourceUrl)
+        setImportExpanded(true)
+        setAutosaveStatus("review")
+      } else {
+        setDraft(branding)
+        setImportUrl(branding.websiteUrl)
+        setAutosaveStatus("saved")
+      }
     }).catch((loadError) => {
       if (active) setError(loadError instanceof Error ? loadError.message : t("Brand settings could not be loaded."))
     }).finally(() => { if (active) setLoading(false) })
@@ -194,7 +274,7 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
   }, [importExpanded])
 
   const logoPreview = useLogoPreview(logoFile, importedLogoUrl, removeLogo ? null : saved?.logoUrl ?? null)
-  const atDefault = Boolean(draft && isDefaultVisualBrand(draft, Boolean(logoFile || importedLogoUrl || (!removeLogo && saved?.logoUrl))))
+  const atDefault = Boolean(draft && !draft.configured && isDefaultVisualBrand(draft, Boolean(logoFile || importedLogoUrl || (!removeLogo && saved?.logoUrl))))
   const validationError = useMemo(() => {
     if (!draft) return t("Brand settings are still loading.")
     if (!draft.displayName.trim()) return t("Add the company name customers should see.")
@@ -215,7 +295,8 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
   }, [draft, t])
 
   function update(patch: Partial<TenantBranding>) {
-    setDraft((current) => current ? { ...current, ...patch } : current)
+    setDraft((current) => current ? { ...current, ...patch, configured: true } : current)
+    setAutosaveStatus(websiteImport ? "review" : "pending")
     setError(null)
   }
 
@@ -229,13 +310,14 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
 
   function resetToDefault() {
     if (!canManage || !draft) return
-    setDraft((current) => current ? { ...current, ...DEFAULT_TENANT_BRAND } : current)
+    setDraft((current) => current ? { ...current, ...DEFAULT_TENANT_BRAND, configured: false } : current)
     setLogoFile(null)
     setImportedLogoUrl(null)
     setRemoveLogo(true)
     setWebsiteImport(null)
+    setAutosaveStatus("pending")
     setError(null)
-    toast.success(t("Brand draft reset"), { description: t("Review the Multideck default look before saving it.") })
+    toast.info(t("Restoring the Multideck default"), { description: t("Once saved, colleagues using the company theme will return to Multideck teal. Other themes stay unchanged.") })
   }
 
   function chooseLogo(file: File | null) {
@@ -249,8 +331,10 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
       return
     }
     setLogoFile(file)
+    setDraft((current) => current ? { ...current, configured: true } : current)
     setImportedLogoUrl(null)
     setRemoveLogo(false)
+    setAutosaveStatus("pending")
     setError(null)
   }
 
@@ -262,61 +346,294 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
       const session = await getSupabaseSession()
       if (!session) throw new Error(t("Sign in again before importing a website."))
       const result = await importTenantBranding(session.access_token, importUrl.trim())
-      setDraft((current) => current ? { ...current, ...result.draft } : current)
+      lastSavedImportDraftRef.current = JSON.stringify(result)
+      setDraft((current) => current ? { ...current, ...result.draft, configured: true } : current)
       setImportedLogoUrl(result.draft.importedLogoUrl)
       setLogoFile(null)
       setRemoveLogo(false)
       setWebsiteImport(result.evidence)
       setImportUrl(result.evidence.sourceUrl)
-      toast.success(t("Brand draft imported"), { description: t("Review every suggestion before saving it.") })
+      setAutosaveStatus("review")
+      toast.success(t("Brand draft imported"), { description: t("Review every suggestion before applying it company-wide.") })
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : t("Luna could not import that website."))
     } finally { setImporting(false) }
   }
 
-  async function save() {
-    if (!draft || !canManage || saving || validationError) return
+  function currentBrandSaveSnapshot(): BrandSaveSnapshot | null {
+    if (!draft) return null
+    return {
+      draft,
+      logoFile,
+      importedLogoUrl,
+      removeLogo,
+      websiteImport,
+      importedFrom: importedFromEvidence(websiteImport) ?? saved?.importedFrom ?? draft.importedFrom,
+    }
+  }
+
+  const queueBrandSave = useCallback((snapshot: BrandSaveSnapshot, allowImportedDraft = false) => {
+    if (!canManage || (snapshot.websiteImport && !allowImportedDraft)) return Promise.resolve<TenantBranding | null>(null)
+    const snapshotKey = brandSaveKey(snapshot)
+    if (snapshotKey === lastSavedSnapshotRef.current) return Promise.resolve<TenantBranding | null>(null)
+    const sequence = ++autosaveSequenceRef.current
+    if (autosaveMountedRef.current) {
+      setSaving(true)
+      setAutosaveStatus("saving")
+      setError(null)
+    }
+
+    const operation = autosaveQueueRef.current.then(async () => {
+      if (snapshotKey === lastSavedSnapshotRef.current) {
+        if (autosaveMountedRef.current && sequence === autosaveSequenceRef.current) {
+          setSaving(false)
+          setAutosaveStatus("saved")
+        }
+        return null
+      }
+      try {
+        const session = await getSupabaseSession()
+        if (!session) throw new Error(t("Sign in again before saving workspace branding."))
+        const importedLogoForRequest = snapshot.importedLogoUrl && !savedImportedLogoUrlsRef.current.has(snapshot.importedLogoUrl)
+          ? snapshot.importedLogoUrl
+          : null
+        const logoFileForRequest = snapshot.logoFile && !savedLogoFilesRef.current.has(snapshot.logoFile)
+          ? snapshot.logoFile
+          : null
+        const next = await saveTenantBranding(session.access_token, {
+          configured: snapshot.websiteImport ? true : snapshot.draft.configured,
+          displayName: snapshot.draft.displayName,
+          websiteUrl: snapshot.draft.websiteUrl,
+          primaryColor: snapshot.draft.primaryColor,
+          secondaryColor: snapshot.draft.secondaryColor,
+          backgroundColor: snapshot.draft.backgroundColor,
+          surfaceColor: snapshot.draft.surfaceColor,
+          textColor: snapshot.draft.textColor,
+          appearanceMode: snapshot.draft.appearanceMode,
+          cornerStyle: snapshot.draft.cornerStyle,
+          emailSignOff: snapshot.draft.emailSignOff,
+          removeLogo: snapshot.removeLogo,
+          importedLogoUrl: importedLogoForRequest,
+          importedFrom: snapshot.importedFrom,
+        }, logoFileForRequest)
+
+        if (logoFileForRequest) savedLogoFilesRef.current.add(logoFileForRequest)
+        if (importedLogoForRequest) savedImportedLogoUrlsRef.current.add(importedLogoForRequest)
+        lastSavedSnapshotRef.current = brandSaveKey({
+          draft: next,
+          logoFile: null,
+          importedLogoUrl: null,
+          removeLogo: false,
+          websiteImport: null,
+          importedFrom: next.importedFrom,
+        })
+        lastSavedImportDraftRef.current = null
+
+        if (autosaveMountedRef.current) {
+          setSaved(next)
+          setDraft((current) => current === snapshot.draft
+            ? next
+            : current ? {
+                ...current,
+                brandId: next.brandId,
+                logoUrl: next.logoUrl,
+                logoMimeType: next.logoMimeType,
+                updatedAt: next.updatedAt,
+                importedFrom: next.importedFrom,
+              } : current)
+          setLogoFile((current) => current === snapshot.logoFile ? null : current)
+          setImportedLogoUrl((current) => current === snapshot.importedLogoUrl ? null : current)
+          setRemoveLogo((current) => current === snapshot.removeLogo ? false : current)
+          setWebsiteImport((current) => current === snapshot.websiteImport ? null : current)
+          notifyCompanyAppearanceChanged(next)
+          if (sequence === autosaveSequenceRef.current) setAutosaveStatus("saved")
+        }
+        return next
+      } catch (saveError) {
+        console.error("Workspace branding could not be saved automatically.", saveError)
+        if (autosaveMountedRef.current && sequence === autosaveSequenceRef.current) {
+          setError(saveError instanceof Error ? saveError.message : t("Brand settings could not be saved."))
+          setAutosaveStatus("error")
+        }
+        return null
+      } finally {
+        if (autosaveMountedRef.current && sequence === autosaveSequenceRef.current) setSaving(false)
+      }
+    })
+
+    autosaveQueueRef.current = operation.then(() => undefined, () => undefined)
+    return operation
+  }, [canManage, t])
+
+  const queueImportDraftSave = useCallback((snapshot: BrandSaveSnapshot) => {
+    if (!canManage || !snapshot.websiteImport) return Promise.resolve<TenantBrandImport | null>(null)
+    const pendingImport: TenantBrandImport = {
+      draft: {
+        displayName: snapshot.draft.displayName,
+        websiteUrl: snapshot.draft.websiteUrl,
+        primaryColor: snapshot.draft.primaryColor,
+        secondaryColor: snapshot.draft.secondaryColor,
+        backgroundColor: snapshot.draft.backgroundColor,
+        surfaceColor: snapshot.draft.surfaceColor,
+        textColor: snapshot.draft.textColor,
+        appearanceMode: snapshot.draft.appearanceMode,
+        cornerStyle: snapshot.draft.cornerStyle,
+        emailSignOff: snapshot.draft.emailSignOff,
+        importedLogoUrl: snapshot.importedLogoUrl,
+      },
+      evidence: snapshot.websiteImport,
+    }
+    const draftKey = JSON.stringify(pendingImport)
+    if (draftKey === lastSavedImportDraftRef.current) return Promise.resolve<TenantBrandImport | null>(null)
+    const sequence = ++autosaveSequenceRef.current
+    if (autosaveMountedRef.current) {
+      setSaving(true)
+      setAutosaveStatus("saving")
+      setError(null)
+    }
+    const operation = autosaveQueueRef.current.then(async () => {
+      if (draftKey === lastSavedImportDraftRef.current) return null
+      try {
+        const session = await getSupabaseSession()
+        if (!session) throw new Error(t("Sign in again before saving the imported brand draft."))
+        const next = await saveTenantBrandImportDraft(session.access_token, pendingImport)
+        lastSavedImportDraftRef.current = JSON.stringify(next)
+        if (autosaveMountedRef.current && sequence === autosaveSequenceRef.current) setAutosaveStatus("review")
+        return next
+      } catch (saveError) {
+        console.error("Imported brand draft could not be saved automatically.", saveError)
+        if (autosaveMountedRef.current && sequence === autosaveSequenceRef.current) {
+          setError(saveError instanceof Error ? saveError.message : t("The imported brand draft could not be saved."))
+          setAutosaveStatus("error")
+        }
+        return null
+      } finally {
+        if (autosaveMountedRef.current && sequence === autosaveSequenceRef.current) setSaving(false)
+      }
+    })
+    autosaveQueueRef.current = operation.then(() => undefined, () => undefined)
+    return operation
+  }, [canManage, t])
+
+  useEffect(() => {
+    if (!draft) return
+    const snapshot: BrandSaveSnapshot = {
+      draft,
+      logoFile,
+      importedLogoUrl,
+      removeLogo,
+      websiteImport,
+      importedFrom: importedFromEvidence(websiteImport) ?? saved?.importedFrom ?? draft.importedFrom,
+    }
+    latestAutosaveRef.current = { snapshot, valid: !validationError }
+    if (!canManage || loading) return
+    if (websiteImport) {
+      setAutosaveStatus("review")
+      if (validationError) return
+      const timer = window.setTimeout(() => { void queueImportDraftSave(snapshot) }, 700)
+      return () => window.clearTimeout(timer)
+    }
+    if (validationError) return
+    if (brandSaveKey(snapshot) === lastSavedSnapshotRef.current) {
+      setAutosaveStatus("saved")
+      return
+    }
+    setAutosaveStatus("pending")
+    const timer = window.setTimeout(() => { void queueBrandSave(snapshot) }, 700)
+    return () => window.clearTimeout(timer)
+  }, [canManage, draft, importedLogoUrl, loading, logoFile, queueBrandSave, queueImportDraftSave, removeLogo, saved?.importedFrom, validationError, websiteImport])
+
+  useEffect(() => {
+    const saveBeforeBackgrounding = () => {
+      if (document.visibilityState !== "hidden") return
+      const latest = latestAutosaveRef.current
+      if (latest?.valid) {
+        if (latest.snapshot.websiteImport) void queueImportDraftSave(latest.snapshot)
+        else void queueBrandSave(latest.snapshot)
+      }
+    }
+    document.addEventListener("visibilitychange", saveBeforeBackgrounding)
+    return () => {
+      document.removeEventListener("visibilitychange", saveBeforeBackgrounding)
+      const latest = latestAutosaveRef.current
+      if (latest?.valid) {
+        if (latest.snapshot.websiteImport) void queueImportDraftSave(latest.snapshot)
+        else void queueBrandSave(latest.snapshot)
+      }
+    }
+  }, [queueBrandSave, queueImportDraftSave])
+
+  async function applyWebsiteImport() {
+    const snapshot = currentBrandSaveSnapshot()
+    if (!snapshot?.websiteImport || validationError || saving) return
+    const next = await queueBrandSave(snapshot, true)
+    if (!next) return
+    setImportExpanded(false)
+    document.getElementById("brand-import-trigger")?.focus()
+    toast.success(t("Imported brand applied"), { description: t("The complete brand is now saved company-wide in Supabase.") })
+  }
+
+  async function discardWebsiteImport() {
+    if (!saved || saving) return
     setSaving(true)
     setError(null)
     try {
       const session = await getSupabaseSession()
-      if (!session) throw new Error(t("Sign in again before saving workspace branding."))
-      const next = await saveTenantBranding(session.access_token, {
-        displayName: draft.displayName,
-        websiteUrl: draft.websiteUrl,
-        primaryColor: draft.primaryColor,
-        secondaryColor: draft.secondaryColor,
-        backgroundColor: draft.backgroundColor,
-        surfaceColor: draft.surfaceColor,
-        textColor: draft.textColor,
-        appearanceMode: draft.appearanceMode,
-        cornerStyle: draft.cornerStyle,
-        emailSignOff: draft.emailSignOff,
-        removeLogo,
-        importedLogoUrl,
-        importedFrom: websiteImport ? { url: websiteImport.sourceUrl, importedAt: websiteImport.importedAt, model: websiteImport.model } : saved?.importedFrom,
-      }, logoFile)
-      setSaved(next)
-      setDraft(next)
+      if (!session) throw new Error(t("Sign in again before discarding the imported brand."))
+      await discardTenantBrandImport(session.access_token)
+      lastSavedImportDraftRef.current = null
+      setDraft(saved)
       setLogoFile(null)
       setImportedLogoUrl(null)
       setRemoveLogo(false)
       setWebsiteImport(null)
-      toast.success(t("Branding saved"), { description: t("New tenant-branded contact cards and operational emails now use this identity.") })
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : t("Brand settings could not be saved."))
-    } finally { setSaving(false) }
+      setImportUrl(saved.websiteUrl)
+      setAutosaveStatus("saved")
+    } catch (discardError) {
+      setError(discardError instanceof Error ? discardError.message : t("The imported brand draft could not be discarded."))
+      setAutosaveStatus("error")
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const saveAction = canManage ? (
-    <div className="flex flex-wrap items-center gap-2">
+  function retryAutosave() {
+    const snapshot = currentBrandSaveSnapshot()
+    if (snapshot && !validationError) void queueBrandSave(snapshot, Boolean(snapshot.websiteImport))
+  }
+
+  const headerActions = canManage ? (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <span
+        role={autosaveStatus === "error" ? "alert" : "status"}
+        aria-live="polite"
+        className={cn(
+          "inline-flex min-h-8 items-center gap-1.5 text-[11px]",
+          autosaveStatus === "error" ? "text-[var(--md-red)]" : "text-[var(--md-subtle)]",
+        )}
+      >
+        {autosaveStatus === "saving" ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
+        {autosaveStatus === "saved" ? <CheckCircle2 className="size-3.5 text-[var(--md-accent)]" aria-hidden="true" /> : null}
+        {autosaveStatus === "error" ? <CircleAlert className="size-3.5" aria-hidden="true" /> : null}
+        {t(autosaveStatus === "saving"
+          ? "Saving company-wide…"
+          : autosaveStatus === "saved"
+            ? "Saved company-wide"
+            : autosaveStatus === "error"
+              ? "Changes could not be saved"
+              : autosaveStatus === "review"
+                ? "Review imported brand"
+                : "Changes save automatically")}
+      </span>
+      {autosaveStatus === "error" ? (
+        <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-[11px]" disabled={saving || Boolean(validationError)} onClick={retryAutosave}>
+          <RefreshCw className="size-3.5" aria-hidden="true" />
+          {t("Retry save")}
+        </Button>
+      ) : null}
       <Button type="button" variant="outline" disabled={saving || loading || atDefault} onClick={resetToDefault}>
         <RefreshCw className="size-4" aria-hidden="true" />
         {t("Reset to default")}
-      </Button>
-      <Button type="button" disabled={saving || loading || Boolean(validationError)} onClick={() => void save()}>
-        {saving ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <CheckCircle2 className="size-4" aria-hidden="true" />}
-        {t(saving ? "Saving branding…" : "Save branding")}
       </Button>
     </div>
   ) : undefined
@@ -324,7 +641,7 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
   if (loading || !draft) {
     return (
       <>
-        <SettingsPageHeader title={t("Branding")} actions={saveAction} />
+        <SettingsPageHeader title={t("Branding")} actions={headerActions} />
         <div className="mt-[var(--md-page-stack-gap)] grid min-h-[320px] place-items-center rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
           {error ? <p className="max-w-md px-6 text-center text-[13px] text-[var(--md-red)]" role="alert">{error}</p> : <DotGridLoader label="Loading brand settings…" />}
         </div>
@@ -342,7 +659,7 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
     <>
       <SettingsPageHeader
         title={t("Branding")}
-        actions={saveAction}
+        actions={headerActions}
       />
       {!canManage ? (
         <div className="mt-4 flex items-start gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-4 py-3 text-[12px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]" role="status">
@@ -431,7 +748,7 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
                 {t(logoPreview ? "Replace logo" : "Choose logo")}
               </Button>
               {logoPreview ? (
-                <Button type="button" variant="ghost" disabled={!canManage} className="text-[var(--md-red)]" onClick={() => { setLogoFile(null); setImportedLogoUrl(null); setRemoveLogo(true) }}>
+                <Button type="button" variant="ghost" disabled={!canManage} className="text-[var(--md-red)]" onClick={() => { setLogoFile(null); setImportedLogoUrl(null); setRemoveLogo(true); setAutosaveStatus("pending"); setError(null) }}>
                   <Trash2 className="size-4" aria-hidden="true" />
                   {t("Remove")}
                 </Button>
@@ -513,7 +830,22 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
                   {t(importing ? "Luna is reading…" : "Import with Luna")}
                 </Button>
               </div>
-              {websiteImport ? <p className="px-3 pb-2 pt-2 text-[11px] leading-4 text-[var(--md-text)]" role="status">{t("Draft only")} · {t(`${websiteImport.confidence} confidence`)}{websiteImport.note ? ` · ${websiteImport.note}` : ""}</p> : null}
+              {websiteImport ? (
+                <div className="flex flex-col gap-3 px-3 pb-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="min-w-0 text-[11px] leading-4 text-[var(--md-text)]" role="status">
+                    {t("Review before applying")} · {t(`${websiteImport.confidence} confidence`)}{websiteImport.note ? ` · ${websiteImport.note}` : ""}
+                  </p>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={discardWebsiteImport}>
+                      {t("Discard")}
+                    </Button>
+                    <Button type="button" size="sm" disabled={saving || Boolean(validationError)} onClick={() => void applyWebsiteImport()}>
+                      {saving ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <CheckCircle2 className="size-3.5" aria-hidden="true" />}
+                      {t(saving ? "Applying…" : "Use imported brand")}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -535,6 +867,8 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
             <SettingsTextarea id="brand-email-signoff" value={draft.emailSignOff} disabled={!canManage} maxLength={500} placeholder={t("Your company · Freight handled with care")} onChange={(event) => update({ emailSignOff: event.target.value })} />
           </SettingsFieldRow>
         </SettingsPanel>
+
+        <MeetingEmailTemplateSettings disabled={!canManage} />
 
         {error || validationError ? (
           <div aria-live="polite" className="min-h-5 text-[12px] leading-5 text-[var(--md-red)]">

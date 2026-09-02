@@ -9,6 +9,7 @@ export type TenantBrandCornerStyle = "rounded" | "sharp"
 export type TenantBrandAppearance = "light" | "dark"
 
 export type TenantBrand = {
+  configured: boolean
   brandId: string | null
   displayName: string
   websiteUrl: string
@@ -26,7 +27,7 @@ export type TenantBrand = {
   importedFrom: { url: string; importedAt: string; model: string } | null
 }
 
-export const DEFAULT_TENANT_BRAND: Omit<TenantBrand, "brandId" | "displayName" | "websiteUrl" | "logoUrl" | "logoMimeType" | "updatedAt" | "importedFrom"> = {
+export const DEFAULT_TENANT_BRAND: Omit<TenantBrand, "configured" | "brandId" | "displayName" | "websiteUrl" | "logoUrl" | "logoMimeType" | "updatedAt" | "importedFrom"> = {
   primaryColor: "#0E7D74",
   secondaryColor: "#164E49",
   backgroundColor: "#F3F4F4",
@@ -65,6 +66,21 @@ export function tenantBrandSettings(row: TenantBrandRow | null | undefined) {
   return object(template.tenantBranding)
 }
 
+/** Older resets kept the company name and import evidence, but no brand. */
+export function isTenantBrandConfigured(settings: JsonObject) {
+  if (settings.version !== 1 || settings.configured === false) return false
+  if (settings.configured === true) return true
+  if (text(settings.logoPath, 500)) return true
+  return (Object.keys(DEFAULT_TENANT_BRAND) as (keyof typeof DEFAULT_TENANT_BRAND)[])
+    .some((key) => {
+      const fallback = DEFAULT_TENANT_BRAND[key]
+      const value = key.endsWith("Color")
+        ? normaliseHex(settings[key], fallback)
+        : text(settings[key], 500, fallback)
+      return value !== fallback
+    })
+}
+
 export async function tenantBrandRow(admin: SupabaseClient, companyId: string) {
   const { data, error } = await admin.from("cmp_Brands")
     .select("Brand_ID,Brand_Name,Brand_DisplayName,Brand_WebsiteURL,Brand_PrimaryColor,Brand_TemplateSettingsJSON,Brand_UpdatedAt")
@@ -91,6 +107,7 @@ export function tenantBrandFromRow(admin: SupabaseClient, row: TenantBrandRow | 
   const importedModel = text(imported.model, 120)
 
   return {
+    configured: isTenantBrandConfigured(settings),
     brandId: row?.Brand_ID ?? null,
     displayName: text(row?.Brand_DisplayName, 240, text(row?.Brand_Name, 180, companyName || "Workspace")),
     websiteUrl: text(row?.Brand_WebsiteURL, 2_000),
@@ -117,5 +134,5 @@ export async function readTenantBrand(admin: SupabaseClient, companyId: string, 
 export async function readConfiguredTenantBrand(admin: SupabaseClient, companyId: string) {
   const row = await tenantBrandRow(admin, companyId)
   const settings = tenantBrandSettings(row)
-  return row && settings.version === 1 ? tenantBrandFromRow(admin, row) : null
+  return row && isTenantBrandConfigured(settings) ? tenantBrandFromRow(admin, row) : null
 }

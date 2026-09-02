@@ -12,6 +12,7 @@ import {
   toClientError,
 } from "./core.ts"
 import { signedUrlLifetimeSeconds } from "../_shared/document-functions.ts"
+import { readConfiguredTenantBrand, type TenantBrand } from "../_shared/tenant-branding.ts"
 
 const documentBucket = "multideck-documents"
 
@@ -73,6 +74,45 @@ async function attachQuoteDocument(admin: Db, value: unknown) {
       mimeType: "application/pdf",
       expiresAt: new Date(Date.now() + signedUrlLifetimeSeconds * 1000).toISOString(),
     },
+  }
+}
+
+function publicBrandContract(brand: TenantBrand) {
+  return {
+    displayName: brand.displayName,
+    logoUrl: brand.logoUrl,
+    primaryColor: brand.primaryColor,
+    secondaryColor: brand.secondaryColor,
+    backgroundColor: brand.backgroundColor,
+    surfaceColor: brand.surfaceColor,
+    textColor: brand.textColor,
+    appearanceMode: brand.appearanceMode,
+    cornerStyle: brand.cornerStyle,
+    emailSignOff: brand.emailSignOff,
+  }
+}
+
+/**
+ * Public quote links receive only the saved tenant brand contract. A missing or
+ * unreadable configuration deliberately degrades to the fixed Multideck public
+ * fallback instead of making the quote itself unavailable.
+ */
+async function attachQuoteBrand(admin: Db, tokenHash: string, value: unknown) {
+  const view = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
+  if (!view) return value
+  try {
+    const { data: link, error } = await admin.schema("quote_api")
+      .from("customer_response_links")
+      .select("company_id")
+      .eq("token_hash", tokenHash)
+      .maybeSingle()
+    if (error) throw error
+    const companyId = link?.company_id ? String(link.company_id) : ""
+    const brand = companyId ? await readConfiguredTenantBrand(admin, companyId) : null
+    return { ...view, branding: brand ? publicBrandContract(brand) : null }
+  } catch (error) {
+    console.error("Public quote branding fallback used", { reason: error instanceof Error ? error.message : "Unknown branding read failure" })
+    return { ...view, branding: null }
   }
 }
 
@@ -228,7 +268,8 @@ Deno.serve(async (request) => {
         requested_response_origin: origin,
       })
       if (error || !data) throw error ?? new Error("Quote response view returned no result")
-      return json(origin, await attachQuoteDocument(admin, data))
+      const view = await attachQuoteDocument(admin, data)
+      return json(origin, await attachQuoteBrand(admin, tokenHash, view))
     }
     if (body.action === "submit") {
       const decision = parseDecision(body.decision)

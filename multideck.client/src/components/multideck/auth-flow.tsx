@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { AuthProviderSelector, type AuthProviderId } from "@/components/multideck/auth-provider-selector"
+import { VerificationCodeInput } from "@/components/multideck/verification-code-input"
 import { takeAuthReturnPath } from "@/lib/auth-routing"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
@@ -954,55 +955,20 @@ function CodeInput({
   disabled?: boolean
   error?: string
 }) {
-  const digits = code.padEnd(6, " ").slice(0, 6).split("")
-
-  function completeIfReady(nextCode: string) {
-    if (nextCode.length === 6) window.setTimeout(() => void onComplete(nextCode), 240)
-  }
-
-  function updateDigit(index: number, value: string) {
-    const nextDigits = digits.map((digit) => (digit === " " ? "" : digit))
-    nextDigits[index] = value.replace(/\D/g, "").slice(-1)
-    const nextCode = nextDigits.join("").slice(0, 6)
-    onCodeChange(nextCode)
-    completeIfReady(nextCode)
-  }
-
-  function pasteCode(value: string) {
-    const nextCode = value.replace(/\D/g, "").slice(0, 6)
-    if (!nextCode) return
-
-    onCodeChange(nextCode)
-    completeIfReady(nextCode)
-  }
-
   return (
-    <div className="mt-[var(--md-page-section-gap)]" dir="ltr">
-      <div className="flex gap-[var(--md-gap-lg)]" role="group" aria-describedby={error ? "auth-code-error" : undefined}>
-        {digits.map((digit, index) => (
-          <Input
-            // eslint-disable-next-line react/no-array-index-key
-            key={index}
-            id={index === 0 ? "auth-code-1" : undefined}
-            aria-label={`Code digit ${index + 1}`}
-            aria-invalid={Boolean(error)}
-            invalidFeedbackMotion={index === 0}
-            value={digit === " " ? "" : digit}
-            disabled={disabled}
-            inputMode="numeric"
-            maxLength={1}
-            onChange={(event) => updateDigit(index, event.target.value)}
-            onPaste={(event) => {
-              event.preventDefault()
-              pasteCode(event.clipboardData.getData("text"))
-            }}
-            className={cn(
-              "size-[74px] rounded-[14px] border-0 bg-white p-0 text-center text-[34px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-0 disabled:bg-white/72",
-              index === Math.min(code.length, 5) && "shadow-[inset_0_0_0_1px_var(--md-accent-a48),0_0_0_4px_var(--md-accent-a14)]",
-            )}
-          />
-        ))}
-      </div>
+    <div className="mt-[var(--md-page-section-gap)]">
+      <VerificationCodeInput
+        value={code}
+        onChange={onCodeChange}
+        onComplete={onComplete}
+        disabled={disabled}
+        invalid={Boolean(error)}
+        size="lg"
+        firstBoxId="auth-code-1"
+        describedBy={error ? "auth-code-error" : undefined}
+        className="gap-[var(--md-gap-lg)]"
+        boxClassName="bg-white hover:bg-white focus:bg-white focus-visible:bg-white disabled:bg-white/72"
+      />
       <AuthFieldError id="auth-code-error">{error}</AuthFieldError>
     </div>
   )

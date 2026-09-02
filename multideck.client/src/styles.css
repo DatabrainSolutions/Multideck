@@ -41,25 +41,25 @@
   }
 }
 
-/* The public quote is intentionally isolated from the signed-in operator's
-   theme. First paint is always the light document experience; customers can
-   opt into this local dark palette without mutating the app theme. */
+/* Public quotes never inherit an individual's appearance preference. The
+   light block is the fixed white-and-teal fallback; the dark block is used
+   only when the saved tenant brand explicitly requests a dark appearance. */
 .quote-response-shell[data-customer-theme="light"] {
   --md-ink: #0b1413;
   --md-text: #4f5b58;
   --md-subtle: #687570;
-  --md-bg: #f3f4f4;
-  --md-sidebar-bg: #f7f8f8;
+  --md-bg: #ffffff;
+  --md-sidebar-bg: #ffffff;
   --md-surface: #ffffff;
   --md-surface-soft: #f7f9f8;
   --md-surface-tint: #eef1f0;
   --md-hover: #e5eae8;
   --md-line: #d7dedb;
   --md-hairline: #e3e8e6;
-  --md-accent: #0a7068;
-  --md-accent-hover: #086f67;
-  --md-accent-a28: color-mix(in srgb, #0a7068 28%, transparent);
-  --md-green: #0a7068;
+  --md-accent: #0e7d74;
+  --md-accent-hover: #0c7068;
+  --md-accent-a28: color-mix(in srgb, #0e7d74 28%, transparent);
+  --md-green: #0e7d74;
   --md-red: #d14e4e;
   --md-status-green-bg: #d1ffc8;
   --md-status-green-ink: #0f5f00;
@@ -454,6 +454,29 @@
   --md-status-orange-ink: #984a00;
   --md-status-purple-bg: #cec8ff;
   --md-status-purple-ink: #29007e;
+  /* Calendar event colours are a bounded product palette, not tenant branding.
+     The first three pairs come directly from the approved Calendar Figma frame;
+     the remaining tones follow the same saturated fill + lighter icon recipe. */
+  --md-calendar-on-colour: #ffffff;
+  --md-calendar-teal: #1d9f74;
+  --md-calendar-teal-icon: #bfffea;
+  --md-calendar-amber: #d38900;
+  --md-calendar-amber-icon: #ffe7b9;
+  --md-calendar-blue: #1d519f;
+  --md-calendar-blue-icon: #c8deff;
+  --md-calendar-violet: #6848b8;
+  --md-calendar-violet-icon: #e6dcff;
+  --md-calendar-rose: #a83f68;
+  --md-calendar-rose-icon: #ffd8e6;
+  --md-calendar-red: #a94444;
+  --md-calendar-red-icon: #ffdada;
+  --md-calendar-cyan: #087f8f;
+  --md-calendar-cyan-icon: #c7f5fa;
+  --md-calendar-neutral: #eef1f0;
+  --md-calendar-neutral-ink: #0b1413;
+  --md-calendar-neutral-icon: #4f5b58;
+  --md-calendar-ribbon-sky-bg: #eaf3ff;
+  --md-calendar-ribbon-sky-ink: #174e8a;
   --md-orange: #984a00;
   --md-purple: #29007e;
   --md-ai-cyan: #219ebc;
@@ -621,6 +644,11 @@
   --md-status-orange-ink: #ffb570;
   --md-status-purple-bg: #0c0025;
   --md-status-purple-ink: #dcccff;
+  --md-calendar-neutral: #292d30;
+  --md-calendar-neutral-ink: #f4f6f5;
+  --md-calendar-neutral-icon: #bac2bf;
+  --md-calendar-ribbon-sky-bg: #1c2d41;
+  --md-calendar-ribbon-sky-ink: #b7d8ff;
   --md-orange: #ffb570;
   --md-purple: #dcccff;
   --md-ai-cyan: #38bdf8;
@@ -6581,5 +6609,33 @@ html.md-summon-picking {
 @media (max-width: 640px) {
   .md-dictation-status-dock {
     bottom: max(14px, calc(env(safe-area-inset-bottom) + 10px));
+  }
+}
+
+/* Operational ribbons are links, with a solid focus perimeter in either theme. */
+.md-calendar-day-ribbon {
+  touch-action: manipulation;
+}
+
+.md-calendar-day-ribbon:focus-visible {
+  outline: 2px solid var(--md-ink);
+  outline-offset: 2px;
+  text-decoration: underline;
+}
+
+@media (pointer: coarse) {
+  .md-calendar-day-ribbon {
+    min-height: 44px;
+  }
+}
+
+@media (forced-colors: active) {
+  .md-calendar-day-ribbon {
+    border: 1px solid LinkText;
+    color: LinkText;
+  }
+
+  .md-calendar-day-ribbon:focus-visible {
+    outline-color: Highlight;
   }
 }

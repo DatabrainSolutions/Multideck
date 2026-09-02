@@ -45,6 +45,7 @@ export function SideDrawer({
   icon: Icon,
   width = 480,
   modal = true,
+  restoreFocusTo,
   headerActions,
   bodyClassName,
   children,
@@ -57,6 +58,8 @@ export function SideDrawer({
   width?: number
   /** Non-modal drawers keep the register behind them interactive for rapid record switching. */
   modal?: boolean
+  /** Explicit opener for drawers launched through app-wide events or an auto-focused form. */
+  restoreFocusTo?: HTMLElement | null
   headerActions?: ReactNode
   bodyClassName?: string
   children: ReactNode
@@ -66,6 +69,32 @@ export function SideDrawer({
   const reduce = Boolean(shouldReduceMotion)
   const panelRef = useRef<HTMLElement>(null)
   const restoreFocusRef = useRef<HTMLElement | null>(null)
+
+  // Remember the trigger before the drawer mounts. Relying on the open effect alone is too late
+  // for forms with an auto-focused field, because the browser may already have moved focus inside.
+  useEffect(() => {
+    if (open) return undefined
+
+    const active = document.activeElement
+    if (active instanceof HTMLElement && active !== document.body) restoreFocusRef.current = active
+
+    function rememberFocus(event: FocusEvent) {
+      if (event.target instanceof HTMLElement && !panelRef.current?.contains(event.target)) restoreFocusRef.current = event.target
+    }
+
+    function rememberPointer(event: PointerEvent) {
+      if (!(event.target instanceof HTMLElement)) return
+      const trigger = event.target.closest<HTMLElement>("button, a[href], input, select, textarea, [tabindex]:not([tabindex='-1'])")
+      if (trigger) restoreFocusRef.current = trigger
+    }
+
+    document.addEventListener("focusin", rememberFocus, true)
+    document.addEventListener("pointerdown", rememberPointer, true)
+    return () => {
+      document.removeEventListener("focusin", rememberFocus, true)
+      document.removeEventListener("pointerdown", rememberPointer, true)
+    }
+  }, [open])
 
   useEffect(() => {
     if (!open) return undefined
@@ -88,14 +117,20 @@ export function SideDrawer({
   useEffect(() => {
     if (!open) return undefined
 
-    restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (!restoreFocusRef.current) {
+      const active = document.activeElement
+      if (active instanceof HTMLElement && !panelRef.current?.contains(active)) restoreFocusRef.current = active
+    }
     panelRef.current?.focus({ preventScroll: true })
 
+    const restoreTarget = restoreFocusTo ?? restoreFocusRef.current
     return () => {
-      restoreFocusRef.current?.focus({ preventScroll: true })
+      requestAnimationFrame(() => {
+        if (restoreTarget?.isConnected) restoreTarget.focus({ preventScroll: true })
+      })
       restoreFocusRef.current = null
     }
-  }, [open])
+  }, [open, restoreFocusTo])
 
   // The panel leans in from whichever edge it is docked to, which flips under right-to-left.
   const offset = direction === "rtl" ? -40 : 40

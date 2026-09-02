@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import type { PublicBranding } from "@/lib/public-brand-theme"
 
 export type QuoteResponseDecision = "accepted" | "declined" | "challenged"
 
@@ -33,7 +34,7 @@ export type CustomerQuotePayload = {
   }>
 }
 
-export type QuoteResponseView =
+export type QuoteResponseView = (
   | { state: "expired" | "revoked" }
   | { state: "responded"; decision: QuoteResponseDecision; respondedAt: string }
   | {
@@ -61,6 +62,7 @@ export type QuoteResponseView =
         }
       }
     }
+  ) & { branding?: PublicBranding | null }
 
 export type QuoteResponseResult = {
   state: "responded"

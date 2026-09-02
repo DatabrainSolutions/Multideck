@@ -1,7 +1,7 @@
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { useEffect, useRef, useState, type ReactNode } from "react"
-import { AlertTriangle, CheckCircle2, Download, FileText, LoaderCircle, MessageSquareText, Moon, Shield, Sun, Trash2, XCircle, type LucideIcon } from "@/components/icons/hugeicons"
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { AlertTriangle, CheckCircle2, Download, FileText, LoaderCircle, MessageSquareText, Shield, Trash2, XCircle, type LucideIcon } from "@/components/icons/hugeicons"
 import { errorStateAnimationData } from "@/assets/error-state-animation"
 import { BrandLockup } from "@/components/multideck/auth-flow"
 import { ImageLightbox } from "@/components/multideck/image-lightbox"
@@ -12,9 +12,9 @@ import { useLanguage } from "@/i18n/language-provider"
 import { releasePdfPageImages, renderPdfPageImages, type RenderedPdfPage } from "@/lib/customs-invoice-pdf-preview"
 import { getCustomerQuote, submitCustomerQuoteResponse, uploadCompetitorQuote, type QuoteResponseDecision, type QuoteResponseResult, type QuoteResponseView } from "@/lib/quote-response-api"
 import { formatQuoteLossReason, quoteLossReasons } from "@/lib/quote-loss-reasons"
+import { publicBrandTheme, type PublicBranding } from "@/lib/public-brand-theme"
 import { cn } from "@/lib/utils"
 
-type CustomerTheme = "light" | "dark"
 type ResponseTone = "green" | "amber" | "red"
 
 const responseChoices: Array<{ id: QuoteResponseDecision; label: string; description: string; tone: ResponseTone; icon: LucideIcon }> = [
@@ -144,18 +144,18 @@ export function QuoteResponsePage({ token }: { token: string }) {
     const answered = result?.decision ?? (view?.state === "responded" ? view.decision : undefined)
     const tone = answered === "accepted" ? "green" : answered === "challenged" ? "amber" : "red"
     const OutcomeIcon = answered === "accepted" ? CheckCircle2 : answered === "challenged" ? MessageSquareText : XCircle
-    return <QuoteResponseFrame><main className="mx-auto grid min-h-[520px] max-w-[620px] place-items-center px-5 py-12 text-center"><div role="status"><span className={cn("mx-auto grid size-12 place-items-center rounded-[var(--md-radius-lg)]", toneClasses[tone])}><OutcomeIcon className="size-6" aria-hidden="true" /></span><h1 className="mt-5 text-balance text-[26px] font-medium tracking-[-0.035em] text-[var(--md-ink)]">{t(answered === "accepted" ? "Quote accepted" : answered === "challenged" ? "Review requested" : "Quote declined")}</h1><p className="mx-auto mt-3 max-w-[54ch] text-pretty text-[15px] leading-6 text-[var(--md-text)]">{t(answered === "accepted" ? "Thank you. The freight team has received your acceptance and the booking has been created." : answered === "challenged" ? "Thank you. The freight team will review your message and come back to you." : "Thank you. The freight team has received your response.")}</p>{result?.booking?.bookingReference ? <p className="mt-4 text-[13px] font-medium text-[var(--md-accent)]">{t("Booking reference")}: <span dir="ltr">{result.booking.bookingReference}</span></p> : null}<p className="mt-8 text-[12px] text-[var(--md-subtle)]">{t("You can close this page safely.")}</p></div></main></QuoteResponseFrame>
+    return <QuoteResponseFrame brand={view?.branding}><main className="mx-auto grid min-h-[520px] max-w-[620px] place-items-center px-5 py-12 text-center"><div role="status"><span className={cn("mx-auto grid size-12 place-items-center rounded-[var(--md-radius-lg)]", toneClasses[tone])}><OutcomeIcon className="size-6" aria-hidden="true" /></span><h1 className="mt-5 text-balance text-[26px] font-medium tracking-[-0.035em] text-[var(--md-ink)]">{t(answered === "accepted" ? "Quote accepted" : answered === "challenged" ? "Review requested" : "Quote declined")}</h1><p className="mx-auto mt-3 max-w-[54ch] text-pretty text-[15px] leading-6 text-[var(--md-text)]">{t(answered === "accepted" ? "Thank you. The freight team has received your acceptance and the booking has been created." : answered === "challenged" ? "Thank you. The freight team will review your message and come back to you." : "Thank you. The freight team has received your response.")}</p>{result?.booking?.bookingReference ? <p className="mt-4 text-[13px] font-medium text-[var(--md-accent)]">{t("Booking reference")}: <span dir="ltr">{result.booking.bookingReference}</span></p> : null}<p className="mt-8 text-[12px] text-[var(--md-subtle)]">{t("You can close this page safely.")}</p></div></main></QuoteResponseFrame>
   }
 
-  if (error && !activeView) return <QuoteResponseUnavailable message={error} />
-  if (view?.state === "expired" || view?.state === "revoked") return <QuoteResponseUnavailable message={view.state === "expired" ? "This secure quote link has expired. Please ask your freight contact for a new link." : "This quote link has been replaced. Please use the latest email from your freight team."} />
-  if (!activeView) return <QuoteResponseUnavailable message="This quote is no longer available." />
+  if (error && !activeView) return <QuoteResponseUnavailable message={error} brand={view?.branding} />
+  if (view?.state === "expired" || view?.state === "revoked") return <QuoteResponseUnavailable brand={view.branding} message={view.state === "expired" ? "This secure quote link has expired. Please ask your freight contact for a new link." : "This quote link has been replaced. Please use the latest email from your freight team."} />
+  if (!activeView) return <QuoteResponseUnavailable message="This quote is no longer available." brand={view?.branding} />
 
   const selectedChoice = responseChoices.find((choice) => choice.id === decision) ?? null
   const summary = quoteResponseSummary(activeView, language)
   const SelectedChoiceIcon = selectedChoice?.icon ?? MessageSquareText
   const transition = reducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.22, 1, 0.36, 1] as const }
-  return <QuoteResponseFrame>
+  return <QuoteResponseFrame brand={activeView.branding}>
     <main dir={direction} className="mx-auto grid w-full max-w-[1380px] gap-4 px-3 py-4 sm:px-5 sm:py-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-5">
       <div className="order-2 min-w-0 lg:order-1"><QuotePdfPreview document={activeView.document} reference={activeView.quote.reference} version={activeView.quote.versionNumber} /></div>
       <aside className="order-1 rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)] sm:p-5 lg:order-2 lg:sticky lg:top-[78px]">
@@ -277,17 +277,46 @@ function QuotePdfPreview({ document, reference, version }: { document: Extract<Q
   </section>
 }
 
-function QuoteResponseFrame({ children }: { children: ReactNode }) {
+function QuoteResponseFrame({ children, brand }: { children: ReactNode; brand?: PublicBranding | null }) {
   const { t, direction } = useLanguage()
-  const reducedMotion = Boolean(useReducedMotion())
-  const [theme, setTheme] = useState<CustomerTheme>(() => { try { return localStorage.getItem("multideck.quote-response.theme") === "dark" ? "dark" : "light" } catch { return "light" } })
-  useEffect(() => { try { localStorage.setItem("multideck.quote-response.theme", theme) } catch { /* Storage is optional. */ } }, [theme])
-  const ThemeIcon = theme === "light" ? Moon : Sun
-  return <div dir={direction} data-customer-theme={theme} className="quote-response-shell min-h-screen bg-[var(--md-bg)] text-[var(--md-ink)]" style={{ colorScheme: theme }}><header className="sticky top-0 z-30 flex min-h-[62px] items-center justify-between bg-[color-mix(in_srgb,var(--md-sidebar-bg)_90%,transparent)] px-4 shadow-[var(--md-stroke-bottom)] backdrop-blur-xl sm:px-6"><BrandLockup /><div className="flex items-center gap-2"><span className="hidden text-[11px] font-medium text-[var(--md-subtle)] sm:inline">{t("Secure quote")}</span><button type="button" aria-label={t(theme === "light" ? "Use dark mode" : "Use light mode")} aria-pressed={theme === "dark"} onClick={() => setTheme(theme === "light" ? "dark" : "light")} className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-[background,transform] duration-160 hover:bg-[var(--md-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a28)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"><AnimatePresence mode="wait" initial={false}><motion.span key={theme} initial={reducedMotion ? false : { opacity: 0, rotate: -14, scale: 0.85 }} animate={{ opacity: 1, rotate: 0, scale: 1 }} exit={reducedMotion ? undefined : { opacity: 0, rotate: 14, scale: 0.85 }} transition={reducedMotion ? { duration: 0 } : { duration: 0.16, ease: [0.22, 1, 0.36, 1] }}><ThemeIcon className="size-4" /></motion.span></AnimatePresence></button></div></header>{children}</div>
+  const appearance = brand?.appearanceMode ?? "light"
+  const style = {
+    ...publicBrandTheme(brand),
+    "--md-ink": "var(--brand-ink)",
+    "--md-text": "var(--brand-text)",
+    "--md-subtle": "var(--brand-subtle)",
+    "--md-bg": "var(--brand-bg)",
+    "--md-sidebar-bg": "var(--brand-surface)",
+    "--md-surface": "var(--brand-surface)",
+    "--md-surface-soft": "var(--brand-tint)",
+    "--md-surface-tint": "var(--brand-tint)",
+    "--md-hover": "var(--brand-hover)",
+    "--md-line": "var(--brand-line)",
+    "--md-hairline": "var(--brand-line)",
+    "--md-accent": "var(--brand-accent)",
+    "--md-accent-hover": "var(--brand-accent)",
+    "--md-accent-a28": "var(--brand-a28)",
+    "--md-green": "var(--brand-accent)",
+    "--md-red": "var(--brand-danger)",
+    "--md-pdf-stage": "color-mix(in srgb,var(--brand-ink) 6%,var(--brand-bg))",
+    "--background": "var(--brand-bg)",
+    "--foreground": "var(--brand-ink)",
+    "--card": "var(--brand-surface)",
+    "--popover": "var(--brand-surface)",
+    "--primary": "var(--brand-accent)",
+    "--primary-foreground": "var(--brand-accent-ink)",
+    "--secondary": "var(--brand-tint)",
+    "--muted": "var(--brand-tint)",
+    "--muted-foreground": "var(--brand-text)",
+    "--border": "var(--brand-line)",
+    "--input": "var(--brand-line)",
+    "--ring": "var(--brand-accent)",
+  } as CSSProperties
+  return <div dir={direction} data-customer-theme={appearance} className="quote-response-shell min-h-screen bg-[var(--md-bg)] text-[var(--md-ink)]" style={style}><header className="sticky top-0 z-30 flex min-h-[62px] items-center justify-between bg-[color-mix(in_srgb,var(--md-sidebar-bg)_90%,transparent)] px-4 shadow-[var(--md-stroke-bottom)] backdrop-blur-xl sm:px-6">{brand?.logoUrl ? <img src={brand.logoUrl} alt={brand.displayName} className="max-h-8 max-w-[220px] object-contain" /> : brand ? <span className="text-[17px] font-medium text-[var(--md-ink)]">{brand.displayName}</span> : <BrandLockup />}<span className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Secure quote")}</span></header>{children}</div>
 }
 
-function QuoteResponseUnavailable({ message }: { message: string }) {
+function QuoteResponseUnavailable({ message, brand }: { message: string; brand?: PublicBranding | null }) {
   const { t } = useLanguage()
   const reducedMotion = useReducedMotion()
-  return <QuoteResponseFrame><main className="mx-auto grid min-h-[520px] max-w-[620px] place-items-center px-5 py-12 text-center"><div><span className="mx-auto block size-[168px] sm:size-[184px]" aria-hidden="true"><DotLottieReact data={errorStateAnimationData} autoplay={!reducedMotion} loop={!reducedMotion} className="size-full" /></span><h1 className="mt-2 text-balance text-[24px] font-medium tracking-[-0.03em] text-[var(--md-ink)]">{t("Quote link unavailable")}</h1><p role="alert" className="mx-auto mt-3 max-w-[54ch] text-pretty text-[15px] leading-6 text-[var(--md-text)]">{t(message)}</p></div></main></QuoteResponseFrame>
+  return <QuoteResponseFrame brand={brand}><main className="mx-auto grid min-h-[520px] max-w-[620px] place-items-center px-5 py-12 text-center"><div><span className="mx-auto block size-[168px] sm:size-[184px]" aria-hidden="true"><DotLottieReact data={errorStateAnimationData} autoplay={!reducedMotion} loop={!reducedMotion} className="size-full" /></span><h1 className="mt-2 text-balance text-[24px] font-medium tracking-[-0.03em] text-[var(--md-ink)]">{t("Quote link unavailable")}</h1><p role="alert" className="mx-auto mt-3 max-w-[54ch] text-pretty text-[15px] leading-6 text-[var(--md-text)]">{t(message)}</p></div></main></QuoteResponseFrame>
 }

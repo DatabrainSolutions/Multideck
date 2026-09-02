@@ -31,6 +31,8 @@ const staticLeafLabels: Record<string, string> = {
   "/bookings": "Bookings",
   "/bookings/new": "New booking",
   "/bookings/provisional": "Provisional booking",
+  "/calendar": "Calendar",
+  "/calendar/booking-links": "Booking links",
   "/components": "Components",
   "/crm": "CRM",
   "/crm/phone-calls": "Phone calls",
@@ -142,6 +144,14 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
       { label: "Home", route: "/" },
       { label: "Bookings", route: "/bookings" },
       { label: staticLeafLabels[route] },
+    ]
+  }
+
+  if (route === "/calendar/booking-links") {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Calendar", route: "/calendar" },
+      { label: "Booking links" },
     ]
   }
 

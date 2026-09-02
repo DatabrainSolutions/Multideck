@@ -7,18 +7,27 @@ import { useLanguage } from "@/i18n/language-provider"
 import {
   accentPresets,
   buildAccentRamp,
+  companyAccentPreferenceId,
   useAccentPresetId,
-  writeAccentPresetId,
+  writeAccentPreferenceId,
+  type AccentPreferenceId,
   type AccentPreset,
 } from "@/lib/accent-theme"
+import { companyAppearanceInitials, useCompanyAppearance } from "@/lib/company-appearance"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { useAiAgentName } from "@/lib/user-preferences"
 import { cn } from "@/lib/utils"
 
 const alpha = (color: string, percent: number) => `color-mix(in srgb, ${color} ${percent}%, transparent)`
 
+type AccentChoice = Pick<AccentPreset, "label" | "hint"> & {
+  id: AccentPreferenceId
+  companyLogoUrl?: string
+  companyInitials?: string
+}
+
 type AccentCardProps = {
-  preset: AccentPreset
+  preset: AccentChoice
   index: number
   selected: boolean
   focusable: boolean
@@ -55,6 +64,8 @@ const AccentCard = memo(function AccentCard({
 }: AccentCardProps) {
   const { t } = useLanguage()
   const agentName = useAiAgentName()
+  const label = preset.id === companyAccentPreferenceId ? preset.label : t(preset.label)
+  const hint = preset.id === companyAccentPreferenceId ? t("Company brand") : t(preset.hint)
 
   // Every colour and every composed shadow for this card, rebuilt only when the
   // preset or the theme changes rather than on each selection.
@@ -83,7 +94,7 @@ const AccentCard = memo(function AccentCard({
       type="button"
       role="radio"
       aria-checked={selected}
-      aria-label={`${t(preset.label)} · ${t(preset.hint)}`}
+      aria-label={`${label} · ${hint}`}
       tabIndex={focusable ? 0 : -1}
       data-selected={selected || undefined}
       className={cn(
@@ -123,6 +134,22 @@ const AccentCard = memo(function AccentCard({
       {/* A cut-down sidebar. Same order and proportions as the real one so the
           preview reads as the shell rather than as decoration. */}
       <span className="relative block overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-sidebar-bg)] p-1 shadow-[var(--md-shadow-line)]">
+        {preset.companyLogoUrl || preset.companyInitials ? (
+          <span className="mb-0.5 flex h-[18px] items-center px-1.5">
+            {preset.companyLogoUrl ? (
+              <span className="flex h-4 w-[76px] items-center rounded-[var(--md-radius-sm)] bg-[var(--color-white)] px-1 py-0.5">
+                <img src={preset.companyLogoUrl} alt="" className="h-3 w-full object-contain object-left" />
+              </span>
+            ) : (
+              <span
+                className="grid size-[14px] place-items-center rounded-[4px] text-[7px] font-semibold leading-none"
+                style={{ background: alpha(paint.accent, 14), color: paint.accent }}
+              >
+                {preset.companyInitials}
+              </span>
+            )}
+          </span>
+        ) : null}
         <span
           className="mb-0.5 flex h-[22px] items-center gap-1.5 rounded-[var(--md-radius-sm)] bg-[var(--md-bg-strong)] px-1.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)]"
           style={{ color: paint.selectedText }}
@@ -160,7 +187,7 @@ const AccentCard = memo(function AccentCard({
       </span>
 
       <span className="mt-2 flex min-w-0 items-center gap-1 px-0.5 pb-0.5">
-        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-[var(--md-ink)]">{t(preset.label)}</span>
+        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-[var(--md-ink)]" dir="auto">{label}</span>
         <AnimatePresence initial={false}>
           {selected ? (
             <motion.span
@@ -184,6 +211,7 @@ const AccentCard = memo(function AccentCard({
 
 export function AccentPicker({ className }: { className?: string }) {
   const activeId = useAccentPresetId()
+  const companyAppearance = useCompanyAppearance()
   const { resolvedTheme } = useTheme()
   const { t, direction } = useLanguage()
   const reduceMotionEnabled = Boolean(useReducedMotion())
@@ -201,7 +229,18 @@ export function AccentPicker({ className }: { className?: string }) {
   // so the accent grid never paints the light ramp before switching to dark.
   const isDark = resolvedTheme === "dark"
 
-  const activeIndex = accentPresets.findIndex((preset) => preset.id === activeId)
+  const choices = useMemo<AccentChoice[]>(() => companyAppearance.brand ? [
+    {
+      id: companyAccentPreferenceId,
+      label: `${companyAppearance.brand.displayName} theme`,
+      hint: "Company brand",
+      companyLogoUrl: companyAppearance.brand.logoUrl ?? undefined,
+      companyInitials: companyAppearanceInitials(companyAppearance.brand.displayName),
+    },
+    ...accentPresets,
+  ] : accentPresets, [companyAppearance.brand])
+
+  const activeIndex = choices.findIndex((preset) => preset.id === activeId)
   const [focusIndex, setFocusIndex] = useState(() => Math.max(0, activeIndex))
 
   useEffect(() => {
@@ -216,7 +255,7 @@ export function AccentPicker({ className }: { className?: string }) {
   const updateScrollCue = useCallback(() => {
     const rail = railRef.current
     const first = buttonRefs.current[0]
-    const last = buttonRefs.current[accentPresets.length - 1]
+    const last = buttonRefs.current[choices.length - 1]
     if (!rail || !first || !last) return
 
     const railRect = rail.getBoundingClientRect()
@@ -230,7 +269,7 @@ export function AccentPicker({ className }: { className?: string }) {
     }
 
     setScrollCue((current) => current.start === next.start && current.end === next.end ? current : next)
-  }, [])
+  }, [choices.length])
 
   useLayoutEffect(() => {
     const rail = railRef.current
@@ -240,14 +279,14 @@ export function AccentPicker({ className }: { className?: string }) {
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateScrollCue)
     observer?.observe(rail)
     if (buttonRefs.current[0]) observer?.observe(buttonRefs.current[0])
-    if (buttonRefs.current[accentPresets.length - 1]) observer?.observe(buttonRefs.current[accentPresets.length - 1]!)
+    if (buttonRefs.current[choices.length - 1]) observer?.observe(buttonRefs.current[choices.length - 1]!)
 
     return () => observer?.disconnect()
-  }, [direction, updateScrollCue])
+  }, [choices.length, direction, updateScrollCue])
 
   const handleSelect = useCallback((index: number) => {
-    writeAccentPresetId(accentPresets[index].id)
-  }, [])
+    writeAccentPreferenceId(choices[index].id)
+  }, [choices])
 
   const handleFocus = useCallback((index: number) => {
     setFocusIndex(index)
@@ -263,11 +302,11 @@ export function AccentPicker({ className }: { className?: string }) {
     buttonRefs.current[index]?.focus()
     // Radio groups commit on arrow, which also lets the accent be scrubbed from
     // the keyboard as one continuous change rather than fifteen separate ones.
-    writeAccentPresetId(accentPresets[index].id)
-  }, [])
+    writeAccentPreferenceId(choices[index].id)
+  }, [choices])
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    const total = accentPresets.length
+    const total = choices.length
     const step = (offset: number) => (focusIndex + offset + total) % total
     const isRtl = railRef.current ? window.getComputedStyle(railRef.current).direction === "rtl" : false
 
@@ -308,11 +347,13 @@ export function AccentPicker({ className }: { className?: string }) {
         role="radiogroup"
         aria-label={t("Accent colour")}
         aria-orientation="horizontal"
-        className="flex min-w-0 snap-x snap-proximity gap-2 overflow-x-auto overflow-y-hidden px-0.5 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        // Keep outward selection/focus rings inside the scrollport, including
+        // after scroll snapping or keyboard-driven scrollIntoView.
+        className="-m-0.5 flex min-w-0 snap-x snap-proximity scroll-p-1 gap-2 overflow-x-auto overflow-y-hidden p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onKeyDown={handleKeyDown}
         onScroll={updateScrollCue}
       >
-        {accentPresets.map((preset, index) => (
+        {choices.map((preset, index) => (
           <AccentCard
             key={preset.id}
             preset={preset}

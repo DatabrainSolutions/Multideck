@@ -1,3 +1,4 @@
+import publicBrandIdentitySource from "@/components/multideck/public-brand-identity.tsx?raw"
 import {
   AiBrain,
   AiEditing,
@@ -2081,6 +2082,16 @@ export const galleryComponents = [
     usageCode: `<Surface className="bg-[var(--md-surface)] text-[var(--md-ink)]">\n  <StatusPill tone="teal">AI prepared</StatusPill>\n  <p className="text-[var(--md-text)]">Use token colours for calm operational hierarchy.</p>\n</Surface>`,
   },
   {
+    id: "public-brand-identity",
+    name: "Public Brand Identity",
+    category: "Operations",
+    description: "A bounded company logo for external booking and attendee links, with a readable company-name fallback.",
+    details: "Use only on customer-facing surfaces. Logos keep their aspect ratio; missing or failed images show the company name. Removing branding restores the Multideck wordmark.",
+    foundOn: [{ label: "Booking and attendee links", route: "/calendar/booking-links" }, { label: "Components", route: "/components?component=public-brand-identity" }],
+    componentCode: publicBrandIdentitySource,
+    usageCode: `<PublicBrandIdentity key={brand?.logoUrl ?? "no-logo"} brand={brand} />`,
+  },
+  {
     id: "hugeicons-system",
     name: "Hugeicons Icon System",
     category: "Design System",
@@ -2264,7 +2275,7 @@ export const galleryComponents = [
     description: "The single compact semantic pill treatment for workflow statuses and descriptive attributes across Multideck.",
     details: "Every status and attribute pill uses the established filled operator-table palette and footprint, whether it appears in a table, list, header, inspector, or history view. Optional icons may reinforce meaning, but the component never adds a competing dot or outlined treatment.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }, { label: "To Do list", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n  const showIndicator = indicator !== false && indicator != null\n\n  return (\n    <Badge\n      variant="secondary"\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill="true"\n      className={cn("md-status-pill h-6 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-normal leading-none tabular-nums shadow-none", tableToneClass[tone], className)}\n    >\n      {showIndicator ? indicator : null}\n      {children}\n    </Badge>\n  )\n}`,
+    componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n\n  return (\n    <Badge\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill="true"\n      className={cn(filledPillClass, toneClass[tone], className)}\n    >\n      {indicator !== false ? indicator : null}\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill kind="status" tone="purple">New</StatusPill>\n<StatusPill kind="status" tone="orange">Contacted</StatusPill>\n<StatusPill kind="status" tone="blue">Qualified</StatusPill>\n<StatusPill kind="status" tone="amber">Nurturing</StatusPill>\n<StatusPill kind="status" tone="green">Converted</StatusPill>\n<StatusPill kind="status" tone="red">Disqualified</StatusPill>\n\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
   },
   {
@@ -2830,6 +2841,40 @@ export const galleryComponents = [
     usageCode: `const { scope, save } = useSidebarLayoutScope("areas")\nconst { orderedIds } = resolveSidebarOrder(baseIds, scope)\n\n{arranging ? (\n  <SidebarArrangeCanvas\n    items={arrangeItems}\n    order={orderedIds}\n    pinned={scope.pinned}\n    defaultOrder={baseIds}\n    onSave={(next) => {\n      save(isDefaultScope(baseIds, next) ? null : next)\n      setArranging(false)\n    }}\n    onCancel={() => setArranging(false)}\n  />\n) : null}`,
   },
   {
+    id: "accent-picker",
+    name: "Accent Picker",
+    category: "Navigation",
+    description: "A horizontally scrollable preview rail for choosing the signed-in operator's app accent or an eligible company identity.",
+    details: "Use in Profile Settings > Customisation. Standard Multideck presets are always available; the company option appears only after Admin Branding has a saved name and valid primary and secondary colours. An uploaded or imported logo is preferred, with a compact initials mark as the safe fallback. Choosing the company applies readable accent ramps and the co-branded sidebar to that operator only.",
+    foundOn: [{ label: "Customisation", route: "/settings?tab=customisation" }, { label: "Components", route: "/components?component=accent-picker" }],
+    componentCode: `export function AccentPicker() {
+  const activeId = useAccentPresetId()
+  const company = useCompanyAppearance()
+  const choices = company.brand
+    ? [{ id: "company", label: \`\${company.brand.displayName} theme\`, companyLogoUrl: company.brand.logoUrl }, ...accentPresets]
+    : accentPresets
+
+  return (
+    <div role="radiogroup" aria-label="Accent colour">
+      {choices.map((choice) => (
+        <AccentCard
+          key={choice.id}
+          preset={choice}
+          selected={choice.id === activeId}
+          onSelect={() => writeAccentPreferenceId(choice.id)}
+        />
+      ))}
+    </div>
+  )
+}`,
+    usageCode: `<SettingsPanel
+  title="Accent colour"
+  description="Choose a Multideck accent or, when Admin Branding is complete, your company identity."
+>
+  <AccentPicker />
+</SettingsPanel>`,
+  },
+  {
     id: "theme-toggle",
     name: "Theme Toggle",
     category: "Navigation",
@@ -2945,7 +2990,7 @@ export const galleryComponents = [
     category: "Controls",
     description: "The shared branded date controls for a single date, date and time, or a range with optional comparison.",
     details: "Use these instead of browser-native date inputs. Every variant shares the glass calendar, English regional date formatting, constrained dates, and the rebranded Calendar Days icon; date-time fields add a compact branded time control.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Quote details", route: "/quotes/jq20013" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=date-range-picker" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Quote details", route: "/quotes/jq20013" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Inbox", route: "/inbox" }, { label: "Calendar · New meeting", route: "/calendar" }, { label: "Settings · Availability", route: "/settings?tab=availability" }, { label: "Components", route: "/components?component=date-range-picker" }],
     componentCode: `export function MultideckDatePicker({ value, onChange, minDate, maxDate }) {\n  return <MultideckDateRangePicker value={{ start: value, end: value }} onChange={(range) => onChange(range.start)} minDate={minDate} maxDate={maxDate} />\n}\n\nexport function MultideckDateTimePicker({ value, onChange }) {\n  const date = value.slice(0, 10)\n  const time = value.slice(11, 16)\n  return (\n    <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-2">\n      <MultideckDatePicker value={date} onChange={(nextDate) => onChange((nextDate ?? "") + "T" + time)} />\n      <BrandedTimeInput value={time} onChange={(nextTime) => onChange(date + "T" + nextTime)} />\n    </div>\n  )\n}`,
     usageCode: `const [expiryDate, setExpiryDate] = useState("2026-06-04")\nconst [appointment, setAppointment] = useState("2026-06-04T09:30")\n\n<MultideckDatePicker\n  value={expiryDate}\n  onChange={(date) => setExpiryDate(date ?? "")}\n  title="Expiry date"\n/>\n\n<MultideckDateTimePicker\n  value={appointment}\n  onChange={setAppointment}\n  title="Appointment"\n/>`,
   },
@@ -3314,7 +3359,7 @@ export const DotGridLoader = memo(function DotGridLoader({ label, size = "md", d
     name: "Multi-select Menu",
     category: "Navigation",
     description: "A compact checkbox menu for fields that can hold several choices without expanding the form.",
-    details: "Use when choices can be combined, such as multimodal freight transport or warehouse access. Options may be plain translated strings or stable values with data-driven labels. It supports required, invalid, disabled, RTL, and translated states.",
+    details: "Use when choices can be combined, such as multimodal freight transport or warehouse access. Options may be plain English strings or stable values with data-driven labels. It supports required, invalid, and disabled states.",
     foundOn: [{ label: "Quote details", route: "/quotes" }, { label: "Company profiles", route: "/crm/accounts" }, { label: "Account financial details", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "Customer accounts", route: "/customers" }, { label: "Supplier accounts", route: "/suppliers" }, { label: "Components", route: "/components?component=multi-select-menu" }],
     componentCode: `export function MultiSelectMenu({ value, options, onValueChange, placeholder }) {\n  const items = options.map((option) => typeof option === "string" ? { value: option, label: option } : option)\n  const selectedLabels = items.filter((option) => value.includes(option.value)).map((option) => option.label)\n  const toggle = (optionValue) => onValueChange(value.includes(optionValue) ? value.filter((item) => item !== optionValue) : [...value, optionValue])\n  return (\n    <DropdownMenu>\n      <DropdownMenuTrigger asChild><Button>{selectedLabels.length ? selectedLabels.join(" + ") : placeholder}</Button></DropdownMenuTrigger>\n      <DropdownMenuContent>{items.map((option) => <DropdownMenuCheckboxItem key={option.value} checked={value.includes(option.value)} onCheckedChange={() => toggle(option.value)}>{option.label}</DropdownMenuCheckboxItem>)}</DropdownMenuContent>\n    </DropdownMenu>\n  )\n}`,
     usageCode: `<MultiSelectMenu\n  value={warehouseIds}\n  options={warehouses.map((warehouse) => ({\n    value: warehouse.id,\n    label: \`\${warehouse.code} · \${warehouse.name}\`,\n  }))}\n  onValueChange={setWarehouseIds}\n  placeholder="Select warehouses"\n  label="Warehouses"\n/>`,
@@ -5336,6 +5381,295 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     componentCode: `export function ScreeningResultSummary({ subjectName, country, outcome }) {\n  return (\n    <section className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 py-3 shadow-[var(--md-shadow-line)]">\n      <p>{subjectName}{country ? \` · \${country}\` : ""}</p>\n      <p>{outcome === "match"\n        ? "Listed name found. Review the programme and listing details before continuing."\n        : "No listed names matched. This is not legal clearance."}</p>\n    </section>\n  )\n}`,
     usageCode: `<ScreeningResultSummary subjectName={check.subjectName} country={check.country} outcome={check.outcome} />`,
   },
+  {
+    id: "calendar-view",
+    name: "Calendar",
+    category: "Operations",
+    description: "The reusable Week and Month calendar foundation for timed work, meetings, operational dates, and readable overlaps.",
+    details: "Use when operators need time-based orientation and action. Product wrappers supply their own events and opening behaviour; Calendar keeps navigation, timezone, responsive day agenda, filters, empty-slot creation, and the two overlap treatments consistent. Contained events inset; events that continue beyond the earlier finish keep the full column with a surface-coloured separation edge.",
+    foundOn: [{ label: "Calendar", route: "/calendar" }, { label: "Warehouse calendar", route: "/warehouse/calendar" }, { label: "Components", route: "/components?component=calendar-view" }],
+    componentCode: `export function CalendarView({ events, ribbons, timeZone, onRangeChange, onOpenEvent, onCreateAt, navigate }) {
+  return (
+    <section>
+      <CalendarControls view={view} period={periodLabel} timeZone={timeZone} />
+      {view === "Week" ? <CalendarWeekGrid events={events} ribbons={ribbons} /> : <CalendarMonthGrid events={events} ribbons={ribbons} />}
+      <CalendarMobileAgenda events={events} ribbons={ribbons} />
+    </section>
+  )
+}`,
+    usageCode: `<CalendarView
+  events={[...workspace.meetings, ...workspace.externalEvents]}
+  ribbons={workspace.ribbons}
+  timeZone={workspace.timeZone}
+  onRangeChange={loadRange}
+  onOpenEvent={openMeeting}
+  onCreateAt={openMeetingComposer}
+  navigate={navigate}
+/>`,
+  },
+  {
+    id: "meeting-colour-picker",
+    name: "Meeting Colour Picker",
+    category: "Controls",
+    description: "A bounded eight-colour palette for making calendar events easier to distinguish without introducing arbitrary colour inputs.",
+    details: "Use in New meeting, editable meeting details and Settings integrations to colour synced Google or Microsoft events. Each saturated event fill has a deliberately lighter icon tone, while Neutral follows the active light or dark product surface. Keep this palette Multideck-owned; it is an operator preference, not tenant branding.",
+    foundOn: [{ label: "Calendar · New meeting", route: "/calendar" }, { label: "Calendar · Meeting details", route: "/calendar" }, { label: "Settings · Integrations", route: "/settings?tab=integrations" }, { label: "Components", route: "/components?component=meeting-colour-picker" }],
+    componentCode: `export function MeetingColourPicker({ value, onChange, disabled = false }) {
+  return (
+    <fieldset disabled={disabled}>
+      <legend>Event colour</legend>
+      <div role="radiogroup" aria-label="Event colour">
+        {meetingColourOptions.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={option.value === value}
+            aria-label={option.label}
+            onClick={() => onChange(option.value)}
+          />
+        ))}
+      </div>
+    </fieldset>
+  )
+}`,
+    usageCode: `<MeetingColourPicker
+  value={draft.colour}
+  onChange={(colour) => setDraft((current) => ({ ...current, colour }))}
+  disabled={saving}
+/>`,
+  },
+  {
+    id: "calendar-day-ribbon",
+    name: "Calendar Day Ribbon",
+    category: "Operations",
+    description: "A thin, rounded operational date marker that keeps deadlines visible without blocking meeting availability.",
+    details: "Use above a calendar day for follow-ups, shipment milestones, and permitted Warehouse appointments. Native record links use theme-aware text and fills, wrapping labels, visible keyboard focus and 44px touch targets. They never behave like busy time.",
+    foundOn: [{ label: "Calendar", route: "/calendar" }, { label: "Warehouse calendar", route: "/warehouse/calendar" }, { label: "Components", route: "/components?component=calendar-day-ribbon" }],
+    componentCode: `export function CalendarDayRibbon({ ribbon, navigate }) {
+  return (
+    <a href={ribbon.route} onClick={(event) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      event.preventDefault()
+      navigate(ribbon.route)
+    }} className={cn("md-calendar-day-ribbon flex min-h-8 w-full items-center rounded-[var(--md-radius-lg)] px-2.5 py-1.5 text-[12px] leading-5 whitespace-normal [overflow-wrap:anywhere]", ribbonTones[ribbon.tone])}>
+      {ribbon.title}
+    </a>
+  )
+}`,
+    usageCode: `<CalendarDayRibbon
+  ribbon={{ id: "delivery-1", kind: "delivery", title: "MD-22479 delivers", at: deliveryAt, route: "/bookings/MD-22479", tone: "green" }}
+  navigate={navigate}
+/>`,
+  },
+  {
+    id: "availability-picker",
+    name: "Availability Picker",
+    category: "Controls",
+    description: "A month of days that genuinely have free time, beside the times inside the chosen day.",
+    details: "Use in public booking and attendee rescheduling. Pass only server-checked free starts; the picker owns the month, the day, morning/afternoon/evening grouping, the timezone the times are read in, and the loading, empty, selected and keyboard states. Days with nothing free stay visible but unselectable, so a visitor can see the shape of the week instead of scrolling a fortnight of buttons.",
+    foundOn: [{ label: "Booking links", route: "/calendar/booking-links" }, { label: "Calendar", route: "/calendar" }, { label: "Components", route: "/components?component=availability-picker" }],
+    componentCode: `export function AvailabilityPicker({ slots, selected, onSelect, timeZone, onTimeZoneChange, loading }) {
+  const byDay = groupSlotsByDay(slots, timeZone)
+  if (loading) return <DotGridLoader label="Finding genuinely free times…" />
+  if (!byDay.size) return <AvailabilityEmptyState />
+  return (
+    <div className="grid sm:grid-cols-[272px_1fr]">
+      <MonthGrid month={month} freeDays={byDay} openDay={openDay} onOpenDay={setActiveDay} />
+      <DayTimes slots={byDay.get(openDay)} selected={selected} onSelect={onSelect}>
+        <TimeZoneSelect value={timeZone} onChange={onTimeZoneChange} />
+      </DayTimes>
+    </div>
+  )
+}`,
+    usageCode: `<AvailabilityPicker
+  slots={availability.slots}
+  selected={selectedStart}
+  onSelect={setSelectedStart}
+  timeZone={visitorTimeZone}
+  onTimeZoneChange={setVisitorTimeZone}
+  loading={availability.loading}
+  onVisibleMonthChange={widenSlotFetch}
+/>`,
+  },
+  {
+    id: "verification-code-input",
+    name: "Verification Code Input",
+    category: "Controls",
+    description: "The six-box one-time code field, with focus that travels on its own.",
+    details: "Use wherever a code proves an address or a person: sign-in, and public booking verification. Typing advances, backspace retreats, arrows move, and a pasted or autofilled code fills every box. Completion fires once per code, so a parent re-rendering mid-submit cannot verify twice.",
+    foundOn: [{ label: "Sign in", route: "/auth" }, { label: "Booking page", route: "/calendar/booking-links" }, { label: "Components", route: "/components?component=verification-code-input" }],
+    componentCode: `export function VerificationCodeInput({ value, onChange, onComplete, length = 6, invalid }) {
+  const digits = Array.from({ length }, (_, index) => value[index] ?? "")
+  return digits.map((digit, index) => (
+    <Input
+      key={index}
+      value={digit}
+      inputMode="numeric"
+      aria-invalid={invalid}
+      onChange={(event) => write(index, event.target.value)}
+      onKeyDown={(event) => keyDown(index, event)}
+      onPaste={(event) => write(0, event.clipboardData.getData("text"))}
+    />
+  ))
+}`,
+    usageCode: `<VerificationCodeInput
+  value={code}
+  onChange={setCode}
+  onComplete={(entered) => void verify(entered)}
+  disabled={submitting}
+  invalid={Boolean(error)}
+  autoFocus
+/>`,
+  },
+  {
+    id: "meeting-time-picker",
+    name: "Meeting Time Picker",
+    category: "Controls",
+    description: "One calm row for when a meeting happens: branded date popover, typed or picked start and finish times, quick duration chips and the timezone.",
+    details: "Use wherever an operator sets a meeting or appointment window. Times are stored as ISO instants; the timezone only changes how they read. Start and finish accept typed values such as 9, 930, 9:30 or 2pm, and the finish list shows the resulting length.",
+    foundOn: [{ label: "Calendar · New meeting", route: "/calendar" }, { label: "Calendar · Reschedule from details", route: "/calendar" }, { label: "CRM leads · Schedule meeting", route: "/crm/leads" }, { label: "Settings · Availability (time fields)", route: "/settings?tab=availability" }, { label: "Components", route: "/components?component=meeting-time-picker" }],
+    componentCode: `export function MeetingTimePicker({ startAt, endAt, timeZone, onChange, onTimeZoneChange }) {
+  const start = zonedParts(startAt, timeZone)
+  const end = zonedParts(endAt, timeZone)
+  return (
+    <div className="grid gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <MultideckDatePicker value={start.dateKey} onChange={(date) => setStart(date, start.time)} compact closeOnSelect />
+        <TimeField label="Starts" value={start.time} options={quarterHours} onChange={(time) => setStart(start.dateKey, time)} />
+        <TimeField label="Finishes" value={end.time} options={finishOptionsWithDuration} onChange={setEnd} />
+        <span>{formatDurationLabel(durationMinutes)}</span>
+      </div>
+      <DurationChips value={durationMinutes} onChange={setDuration} />
+      <TimeZoneSelect value={timeZone} onChange={onTimeZoneChange} />
+    </div>
+  )
+}`,
+    usageCode: `<MeetingTimePicker
+  startAt={draft.startAt}
+  endAt={draft.endAt}
+  timeZone={draft.timeZone}
+  onChange={({ startAt, endAt }) => setDraft({ ...draft, startAt, endAt })}
+  onTimeZoneChange={(timeZone) => setDraft({ ...draft, timeZone })}
+/>`,
+  },
+  {
+    id: "meeting-provider-select",
+    name: "Meeting Provider Select",
+    category: "Controls",
+    description: "A single dropdown for how attendees join, keeping the Google Meet, Microsoft Teams and Zoom marks and an honest connected state.",
+    details: "Use in meeting and booking-link forms. A platform that is not connected can still be chosen so the operator sees what to connect, with a direct route to Settings → Integrations instead of a dead option. Defaults follow the operator's inbox: Gmail → Google Meet, otherwise Microsoft Teams.",
+    foundOn: [{ label: "Calendar · New meeting", route: "/calendar" }, { label: "CRM accounts · Schedule meeting", route: "/crm/accounts" }, { label: "Components", route: "/components?component=meeting-provider-select" }],
+    componentCode: `export function MeetingProviderSelect({ value, onChange, connections, onConnect }) {
+  const ready = isMeetingProviderReady(value, connections)
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {videoProviders.map((provider) => <SelectItem value={provider}><MeetingProviderMark provider={provider} />{meetingProviderLabels[provider]}</SelectItem>)}
+          <SelectSeparator />
+          {otherProviders.map((provider) => <SelectItem value={provider}><MeetingProviderMark provider={provider} />{meetingProviderLabels[provider]}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      {isVideoMeetingProvider(value) ? (ready ? <ConnectedAccountHint /> : <button onClick={onConnect}>Connect in Settings</button>) : null}
+    </div>
+  )
+}`,
+    usageCode: `<MeetingProviderSelect
+  value={draft.provider}
+  connections={workspace.connections}
+  onChange={(provider) => setDraft({ ...draft, provider })}
+  onConnect={() => navigate("/settings?tab=integrations")}
+/>`,
+  },
+  {
+    id: "meeting-attendee-picker",
+    name: "Meeting Attendee Picker",
+    category: "Controls",
+    description: "Type a name or email and choose from colleagues in this workspace, CRM contacts and leads; chosen people become compact chips.",
+    details: "Use for meeting invitations and anywhere people are picked from the tenant. Suggestions come from the Calendar people search with the same permission boundary as the product. Any complete email address can be invited, long lists fold to the first few with a count, and Backspace removes the last chip.",
+    foundOn: [{ label: "Calendar · New meeting", route: "/calendar" }, { label: "CRM leads · Schedule meeting", route: "/crm/leads" }, { label: "Components", route: "/components?component=meeting-attendee-picker" }],
+    componentCode: `export function MeetingAttendeePicker({ value, onChange, search = searchMeetingPeople, maxVisible = 6 }) {
+  const [query, setQuery] = useState("")
+  const suggestions = useDebouncedSearch(search, query)
+  return (
+    <Popover open={open}>
+      <PopoverAnchor>
+        <div className="chip-field">
+          {visibleChips.map((attendee) => <AttendeeChip attendee={attendee} onRemove={remove} />)}
+          {hiddenCount ? <button onClick={expand}>+{hiddenCount} more</button> : null}
+          <input role="combobox" value={query} onChange={setQuery} onKeyDown={moveOrChoose} />
+        </div>
+      </PopoverAnchor>
+      <PopoverContent onOpenAutoFocus={(event) => event.preventDefault()}>
+        <ul role="listbox">{suggestions.map((person) => <SuggestionRow person={person} onChoose={add} />)}</ul>
+      </PopoverContent>
+    </Popover>
+  )
+}`,
+    usageCode: `<MeetingAttendeePicker
+  value={draft.attendees}
+  onChange={(attendees) => setDraft({ ...draft, attendees })}
+/>`,
+  },
+  {
+    id: "meeting-attendee-status",
+    name: "Meeting Attendee Status",
+    category: "Operations",
+    description: "Avatar, response summary and roster for a scheduled meeting so the organiser sees who accepted, declined or has not replied.",
+    details: "Use on calendar blocks (compact summary), meeting details and CRM timelines. Colleagues take the accent tint and external guests stay neutral; the response dot and label use the same accepted, maybe, declined and awaiting states the provider reports.",
+    foundOn: [{ label: "Calendar · Event blocks", route: "/calendar" }, { label: "Calendar · Meeting details", route: "/calendar" }, { label: "Components", route: "/components?component=meeting-attendee-status" }],
+    componentCode: `export function MeetingResponseSummary({ participants, compact }) {
+  const counts = summariseResponses(participants)
+  return compact
+    ? <span>{counts.accepted ? <><Check />{counts.accepted}</> : null}{counts.declined ? <><X />{counts.declined}</> : null}</span>
+    : <p>{counts.accepted} accepted · {counts.declined} declined · {counts.needs_action} awaiting</p>
+}
+
+export function MeetingAttendeeList({ participants }) {
+  return sortByOrganiserThenResponse(participants).map((participant) => (
+    <li>
+      <AttendeeAvatar name={participant.name} email={participant.email} response={participant.response} internal={participant.external === false} />
+      <span>{participant.name}<small>{participant.email}</small></span>
+      <span>{attendeeResponseMeta[participant.response].label}</span>
+    </li>
+  ))
+}`,
+    usageCode: `<MeetingResponseSummary participants={event.participants} compact />
+
+<MeetingAttendeeList participants={event.participants} maxVisible={4} />`,
+  },
+  {
+    id: "working-hours-editor",
+    name: "Working Hours Editor",
+    category: "Controls",
+    description: "The week as seven quiet rows: a switch per day, then start and finish in the same on-brand time fields as the meeting composer.",
+    details: "Use wherever an operator sets recurring hours: personal Availability settings and a booking link's override. Days that are off read Unavailable rather than showing disabled inputs, and once Monday differs from the other weekdays a Use Mon–Fri shortcut copies it across. One range per day.",
+    foundOn: [{ label: "Settings · Availability", route: "/settings?tab=availability" }, { label: "Booking links · Edit link", route: "/calendar/booking-links" }, { label: "Components", route: "/components?component=working-hours-editor" }],
+    componentCode: `export function WorkingHoursEditor({ value, onChange, disabled }) {
+  return weekdayKeys.map((day) => {
+    const range = value[day]?.[0] ?? null
+    return (
+      <div className="grid grid-cols-[108px_auto_1fr] items-center gap-3 rounded-[var(--md-radius-lg)] px-2 py-1 hover:bg-[var(--md-surface-tint)]">
+        <span>{weekdayLabels[day]}</span>
+        <Switch size="sm" checked={range !== null} disabled={disabled} onCheckedChange={(on) => onChange({ ...value, [day]: on ? [["09:00", "17:00"]] : [] })} />
+        {range ? (
+          <>
+            <MeetingTimeField label="Starts" value={range[0]} onChange={(time) => setDay(day, [time, range[1]])} />
+            –
+            <MeetingTimeField label="Finishes" value={range[1]} notBefore={range[0]} onChange={(time) => setDay(day, [range[0], time])} />
+          </>
+        ) : <span>Unavailable</span>}
+      </div>
+    )
+  })
+}`,
+    usageCode: `<WorkingHoursEditor
+  value={availability.workingHours}
+  onChange={(workingHours) => setAvailability({ ...availability, workingHours })}
+/>`,
+  },
 ]
 
 export const galleryCategories = ["All", "Design System", "Foundation", "Controls", "Navigation", "Data", "Visualizations", "Feedback", "Operations", "CRM", "Agent Dexter"]
@@ -5374,12 +5708,19 @@ export const galleryIcons = {
   "lifecycle-notes": MessageCircle,
   "booking-row": Ship,
   "interactive-map": Globe2,
+  "calendar-view": CalendarDays,
+  "meeting-colour-picker": CalendarDays,
+  "calendar-day-ribbon": CalendarDays,
+  "availability-picker": CalendarDays,
+  "verification-code-input": ShieldCheck,
+  "working-hours-editor": Clock3,
   command: ScanText,
   "app-breadcrumbs": ListOrdered,
   sidebar: LayoutDashboard,
   "sidebar-item-menu": MousePointerClick,
   "sidebar-arrange-canvas": ArrowUpDown,
   "theme-toggle": MoonStar,
+  "accent-picker": Palette,
   "page-settings-menu": Settings2,
   "date-range-picker": CalendarDays,
   "animated-list": ListOrdered,

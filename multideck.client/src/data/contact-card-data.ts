@@ -83,14 +83,14 @@ export type CardBranding = {
   qrLight: string
 }
 
-export function defaultBranding(accent = "#1f6f68"): CardBranding {
+export function defaultBranding(accent = "#0E7D74"): CardBranding {
   return {
     brandSource: "tenant",
     accent,
     secondary: null,
-    background: null,
-    surface: null,
-    textColor: null,
+    background: "#FFFFFF",
+    surface: "#FFFFFF",
+    textColor: "#292929",
     theme: "light",
     headerStyle: "bar",
     layout: "classic",

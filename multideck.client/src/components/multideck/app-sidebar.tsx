@@ -19,12 +19,14 @@ import { createProfilePhotoSignedUrl } from "@/lib/profile-photo"
 import { supabase } from "@/lib/supabase"
 import { useAiAgentName } from "@/lib/user-preferences"
 import { mailboxLabelTone } from "@/lib/mailbox-label-colour"
-import { customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, todoNavItem, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
+import { calendarNavItem, customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, todoNavItem, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
 import { readSettingsSectionFromUrl, settingsNavigationGroups, type SettingsSectionId } from "@/data/settings-navigation"
 import { useLanguage } from "@/i18n/language-provider"
 import { deleteDexterConversation, getDexterUsage, listDexterConversationsPage, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
 import { listDealsPage } from "@/lib/deal-api"
 import { listLeadsPage } from "@/lib/lead-api"
+import { companyAccentPreferenceId, useAccentPresetId } from "@/lib/accent-theme"
+import { companyAppearanceInitials, useCompanyAppearance } from "@/lib/company-appearance"
 import {
   announceDexterConversationsChanged,
   DEXTER_CONVERSATIONS_CHANGED_EVENT,
@@ -32,6 +34,7 @@ import {
   DEXTER_SELECT_CONVERSATION_EVENT,
 } from "@/lib/dexter-navigation"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
+import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 import { MailProviderMark, mailProviderLabels } from "@/components/multideck/mailbox-provider-switch"
 import { useOptionalInboxWorkspace, type InboxNavigationView } from "@/lib/inbox-workspace"
 import { defaultCoverPhotoUrl } from "@/lib/default-cover-photo"
@@ -911,9 +914,9 @@ function InboxContextSidebar({
         )}
       </div>
 
-      <div className={cn("mt-4 flex items-center gap-2 px-2", collapsed && "justify-center px-0")}>
-        <Inbox className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} aria-hidden="true" />
-        <p className={cn("truncate text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]", collapsed && "sr-only")}>{t("Inbox")}</p>
+      <div className={cn("mt-4 flex min-h-9 items-center gap-2.5 border-b border-[var(--md-line)] px-2 pb-3", collapsed && "justify-center border-b-0 px-0 pb-0")}>
+        <Inbox className="size-[18px] shrink-0 text-[var(--md-accent)]" strokeWidth={1.3} aria-hidden="true" />
+        <h2 className={cn("truncate text-[17px] font-medium leading-6 tracking-[-0.015em] text-[var(--md-ink)]", collapsed && "sr-only")}>{t("Inbox")}</h2>
       </div>
 
       <SidebarSection className="mt-2">
@@ -1113,6 +1116,11 @@ export function AppSidebar({
   const inboxWorkspace = useOptionalInboxWorkspace()
   const shouldReduceMotion = useReducedMotion()
   const isCustomer = currentUser?.actorType === "customer"
+  const accentPreferenceId = useAccentPresetId()
+  const companyAppearance = useCompanyAppearance(currentUser?.id)
+  const activeCompanyBrand = !isCustomer && accentPreferenceId === companyAccentPreferenceId
+    ? companyAppearance.brand
+    : null
   const isSettingsRoute = route === "/settings"
   const isAgentRoute = route === "/agent-dexter"
   const isInboxRoute = route === "/inbox"
@@ -1555,6 +1563,18 @@ export function AppSidebar({
     </SidebarSectionItem>
   )
 
+  const calendarSidebarItem = (
+    <SidebarSectionItem>
+      <SidebarNavItem
+        item={calendarNavItem}
+        isActive={route === "/calendar" || route.startsWith("/calendar/")}
+        onIntent={() => { if (typeof window !== "undefined") void import("@/pages/calendar-page") }}
+        onClick={() => navigate("/calendar")}
+        collapsed={collapsed}
+      />
+    </SidebarSectionItem>
+  )
+
   const favouriteSidebarItems = favouriteIds.map((id) => {
     const favourite = favouriteCandidates.get(id)
     if (!favourite) return null
@@ -1596,13 +1616,38 @@ export function AppSidebar({
         className,
       )}
     >
-      <div className={cn("relative z-10 flex h-10 items-center gap-2", collapsed ? "justify-center px-0" : "justify-between px-1")}>
+      <div className={cn("relative z-10 flex h-10 items-center gap-1", collapsed ? "justify-center px-0" : "px-1")}>
         {collapsed ? null : (
-          <img
-            src={multideckFullLogo}
-            alt="Multideck"
-            className="h-[34px] min-w-0 max-w-[132px] object-contain transition-[filter,opacity] duration-200 dark:brightness-0 dark:invert"
-          />
+          activeCompanyBrand ? (
+            <span
+              className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
+              aria-label={`${activeCompanyBrand.displayName}, with Multideck`}
+              title={`${activeCompanyBrand.displayName} × Multideck`}
+            >
+              {activeCompanyBrand.logoUrl ? (
+                <img
+                  src={activeCompanyBrand.logoUrl}
+                  alt=""
+                  className={cn(
+                    "h-7 w-auto max-w-[104px] shrink-0 object-contain",
+                    activeCompanyBrand.logoMimeType === "image/svg+xml" && "dark:brightness-0 dark:invert",
+                  )}
+                />
+              ) : (
+                <span className="grid size-7 shrink-0 place-items-center rounded-[8px] bg-[var(--md-accent-a14)] text-[9px] font-semibold leading-none text-[var(--md-accent)]">
+                  {companyAppearanceInitials(activeCompanyBrand.displayName)}
+                </span>
+              )}
+              <span aria-hidden="true" className="shrink-0 text-[10px] font-medium text-[var(--md-subtle)]">×</span>
+              <img src={multideckLogoMark} alt="" className="size-5 shrink-0 object-contain dark:brightness-0 dark:invert" />
+            </span>
+          ) : (
+            <img
+              src={multideckFullLogo}
+              alt="Multideck"
+              className="me-auto h-[34px] min-w-0 max-w-[112px] object-contain transition-[filter,opacity] duration-200 dark:brightness-0 dark:invert"
+            />
+          )
         )}
         {collapsed ? null : onRequestClose ? (
           <Button
@@ -1611,7 +1656,7 @@ export function AppSidebar({
             size="icon"
             aria-label={t("Close navigation")}
             title={t("Close navigation")}
-            className="size-9 rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"
+            className="size-9 shrink-0 rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"
             onClick={onRequestClose}
           >
             <X className="size-4" strokeWidth={1.3} />
@@ -1625,8 +1670,7 @@ export function AppSidebar({
             aria-label={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
             title={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
             className={cn(
-              "size-9 rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
-              !collapsed && "ms-1",
+              "size-9 shrink-0 rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
             )}
             onClick={() => onCollapsedChange(!collapsed)}
           >
@@ -1644,7 +1688,7 @@ export function AppSidebar({
         >
           <div>
         {isSettingsRoute || isCustomer || isAgentRoute || isInboxRoute ? null : (
-          <SidebarSection>{homeSidebarItem}{inboxSidebarItem}{todoSidebarItem}{favouriteSidebarItems}{dexterSidebarItem}</SidebarSection>
+          <SidebarSection>{homeSidebarItem}{inboxSidebarItem}{todoSidebarItem}{calendarSidebarItem}{favouriteSidebarItems}{dexterSidebarItem}</SidebarSection>
         )}
 
         <AnimatePresence mode="popLayout" initial={false}>
@@ -1661,6 +1705,7 @@ export function AppSidebar({
             >
               <SidebarSection>
                 {homeSidebarItem}
+                {calendarSidebarItem}
                 <SidebarSectionItem>
                   <SidebarNavItem
                     item={{ label: "Back", icon: ArrowLeft }}

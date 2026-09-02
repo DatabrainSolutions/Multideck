@@ -11215,7 +11215,8 @@ begin
   if p_accent_preset is null or p_accent_preset not in (
     'teal', 'meadow', 'sky', 'ocean', 'indigo',
     'violet', 'plum', 'rose', 'ember', 'graphite',
-    'lime', 'gold', 'coral', 'cobalt', 'fuchsia'
+    'lime', 'gold', 'coral', 'cobalt', 'fuchsia',
+    'company'
   ) then
     raise exception 'The accent colour is invalid.' using errcode = '22023';
   end if;
@@ -13721,7 +13722,7 @@ CREATE TABLE IF NOT EXISTS "public"."cmp_Users" (
     "User_AccentPreset" "text",
     "User_ThemeMode" "text",
     "User_DefaultInboxProviderCode" "text",
-    CONSTRAINT "CK_cmp_Users_AccentPreset" CHECK ((("User_AccentPreset" IS NULL) OR ("User_AccentPreset" = ANY (ARRAY['teal'::"text", 'meadow'::"text", 'sky'::"text", 'ocean'::"text", 'indigo'::"text", 'violet'::"text", 'plum'::"text", 'rose'::"text", 'ember'::"text", 'graphite'::"text", 'lime'::"text", 'gold'::"text", 'coral'::"text", 'cobalt'::"text", 'fuchsia'::"text"])))),
+    CONSTRAINT "CK_cmp_Users_AccentPreset" CHECK ((("User_AccentPreset" IS NULL) OR ("User_AccentPreset" = ANY (ARRAY['teal'::"text", 'meadow'::"text", 'sky'::"text", 'ocean'::"text", 'indigo'::"text", 'violet'::"text", 'plum'::"text", 'rose'::"text", 'ember'::"text", 'graphite'::"text", 'lime'::"text", 'gold'::"text", 'coral'::"text", 'cobalt'::"text", 'fuchsia'::"text", 'company'::"text"])))),
     CONSTRAINT "CK_cmp_Users_CoverPhoto" CHECK (((("User_CoverPhotoBucket" IS NULL) AND ("User_CoverPhotoPath" IS NULL) AND ("User_CoverPhotoMimeType" IS NULL) AND ("User_CoverPhotoSizeBytes" IS NULL) AND ("User_CoverPhotoUpdatedAt" IS NULL)) OR ((("User_CoverPhotoBucket")::"text" = 'profile-photos'::"text") AND ("User_CoverPhotoPath" IS NOT NULL) AND (("User_CoverPhotoMimeType")::"text" = ANY ((ARRAY['image/jpeg'::character varying, 'image/png'::character varying, 'image/webp'::character varying])::"text"[])) AND (("User_CoverPhotoSizeBytes" >= 1) AND ("User_CoverPhotoSizeBytes" <= 5242880)) AND ("User_CoverPhotoUpdatedAt" IS NOT NULL)))),
     CONSTRAINT "CK_cmp_Users_DefaultInboxProvider" CHECK ((("User_DefaultInboxProviderCode" IS NULL) OR ("User_DefaultInboxProviderCode" = ANY (ARRAY['gmail'::"text", 'outlook'::"text"])))),
     CONSTRAINT "CK_cmp_Users_Locale" CHECK ((("User_Locale" IS NULL) OR ("User_Locale" = ANY (ARRAY['en-GB'::"text", 'en-US'::"text"])))),
@@ -13733,6 +13734,9 @@ CREATE TABLE IF NOT EXISTS "public"."cmp_Users" (
 
 
 ALTER TABLE "public"."cmp_Users" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."cmp_Users"."User_AccentPreset" IS 'Personal accent preset. The company value resolves only when Admin Branding has a complete saved company identity.';
 
 
 COMMENT ON COLUMN "public"."cmp_Users"."User_DefaultInboxProviderCode" IS 'Private operator preference for the initial Inbox and email-composer provider. It does not emit Watching for you events and does not grant provider or mailbox access.';

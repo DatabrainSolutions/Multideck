@@ -28,6 +28,12 @@ type ThemeProviderProps = {
   defaultTheme?: ThemeMode
   disableTransitionOnChange?: boolean
   enableSystem?: boolean
+  /**
+   * Pins the rendered document theme without replacing the signed-in user's
+   * stored preference. Public links use light here, then apply a tenant brand
+   * inside their bounded surface.
+   */
+  forcedTheme?: ThemeMode
   storageKey: string
 }
 
@@ -76,6 +82,7 @@ export function ThemeProvider({
   defaultTheme = "light",
   disableTransitionOnChange = true,
   enableSystem = false,
+  forcedTheme,
   storageKey,
 }: ThemeProviderProps) {
   if (attribute !== "class" || enableSystem) {
@@ -85,6 +92,7 @@ export function ThemeProvider({
   const [theme, setThemeState] = useState<ThemeMode>(() => readStoredTheme(storageKey, defaultTheme))
   const themeRef = useRef(theme)
   const releaseTransitionRef = useRef<(() => void) | null>(null)
+  const renderedTheme = forcedTheme ?? theme
 
   const applyDocumentTheme = useCallback((mode: ThemeMode) => {
     if (documentHasTheme(mode)) return
@@ -121,7 +129,7 @@ export function ThemeProvider({
     // Apply the document synchronously. React state can temporarily survive HMR
     // while the root class does not; even a same-state request must repair that
     // divergence instead of returning early and leaving the page stuck.
-    applyDocumentTheme(mode)
+    applyDocumentTheme(forcedTheme ?? mode)
 
     if (persist) {
       try {
@@ -136,7 +144,7 @@ export function ThemeProvider({
     // the document and ref on the new mode while a stale render still holds the
     // previous one; skipping that publish is what freezes the switch.
     setThemeState((current) => (current === mode ? current : mode))
-  }, [applyDocumentTheme, storageKey])
+  }, [applyDocumentTheme, forcedTheme, storageKey])
 
   const setTheme = useCallback((nextTheme: ThemeSetter) => {
     const resolved = typeof nextTheme === "function" ? nextTheme(themeRef.current) : nextTheme
@@ -164,12 +172,12 @@ export function ThemeProvider({
   useEffect(() => () => releaseTransitionRef.current?.(), [])
 
   const value = useMemo<ThemeContextValue>(() => ({
-    theme,
-    resolvedTheme: theme,
+    theme: renderedTheme,
+    resolvedTheme: renderedTheme,
     setTheme,
     themes,
     systemTheme: undefined,
-  }), [setTheme, theme])
+  }), [renderedTheme, setTheme])
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }

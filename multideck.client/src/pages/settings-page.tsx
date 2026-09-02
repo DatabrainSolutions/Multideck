@@ -40,6 +40,7 @@ import {
   Palette,
   Plus,
   Plug,
+  RefreshCw,
   Search,
   ShieldCheck,
   Smartphone,
@@ -70,6 +71,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { AccentPicker } from "@/components/multideck/accent-picker"
 import { AiUsageOverview } from "@/components/multideck/ai-usage-overview"
+import { AvailabilitySettingsPanel } from "@/components/multideck/availability-settings"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { AuthIdentityManager } from "@/components/multideck/auth-provider-selector"
 import { CopyFeedbackTransition, CopyStatusIcon } from "@/components/multideck/copyable-field"
@@ -81,6 +83,7 @@ import { StatusPill } from "@/components/multideck/status-pill"
 import { normalizeTagTerms, TagEntryField } from "@/components/multideck/tag-entry-field"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import { openSupportTicket } from "@/components/multideck/support-ticket-dialog"
+import { CalendarConnectionSettings } from "@/components/multideck/calendar-connection-settings"
 import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
 import {
   createLegacySupportTicket,
@@ -1151,6 +1154,23 @@ function ProfileTab({
   )
 }
 
+function AvailabilityTab() {
+  return (
+    <>
+      <SettingsPageHeader
+        eyebrow="Personal / Availability"
+        title="Availability"
+        description="Set when people can book time with you, including your normal week, date exceptions, and booking rules."
+      />
+      <AvailabilitySettingsPanel
+        id="availability-settings"
+        title="Working hours and booking rules"
+        className="mt-[var(--md-page-stack-gap)]"
+      />
+    </>
+  )
+}
+
 type TotpEnrollment = {
   id: string
   qrCode: string
@@ -1715,7 +1735,7 @@ function CustomisationTab() {
       <SettingsPanel
         className="mt-[var(--md-page-stack-gap)]"
         title="Accent colour"
-        description="Recolours every highlight, chart and Dexter surface across the app. Each accent carries its own light and dark shade, so both themes stay readable."
+        description="Choose a Multideck accent or, when Admin Branding is complete, your company identity. Company colours and the co-branded sidebar apply only to your profile."
       >
         <div className="px-5 py-4">
           <AccentPicker />
@@ -4131,6 +4151,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
         description="Connect the systems operators already use so Multideck can pull context and push approved updates."
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
+        <CalendarConnectionSettings navigate={navigate} />
         <SettingsPanel
           title={(
             <span className="inline-flex items-center gap-1.5">
@@ -4278,6 +4299,9 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                 const problemDescription = !configured
                   ? providerAvailabilityError ?? t(`${copy.label} has not been configured for this workspace yet. Ask a Multideck administrator to add the provider credentials.`)
                   : connection?.error?.trim() || undefined
+                const needsReconnect = connection?.status === "reauthorization_required" || connection?.status === "error"
+                const actionLabel = isConnected ? `Disconnect ${copy.label}` : `${needsReconnect ? "Reconnect" : "Connect"} ${copy.label}`
+                const busyLabel = isConnected ? "Disconnecting" : needsReconnect ? "Reconnecting" : "Connecting"
 
                 const sharedMailboxes = provider === "outlook"
                   ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "outlook" && mailbox.kind !== "personal")
@@ -4300,40 +4324,39 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                       "ready"
                     }
                     action={(
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            aria-label={t(isConnected ? `Disconnect ${copy.label}` : `Connect ${copy.label}`)}
-                            disabled={busyProvider !== null || (needsConnection && !configured)}
-                            className={cn(
-                              "grid size-9 place-items-center rounded-[var(--md-radius-md)] text-white shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,opacity,scale] duration-200 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a18)] active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100",
-                              isConnected
-                                ? "bg-[var(--md-green)] hover:bg-[color-mix(in_srgb,var(--md-green),black_10%)]"
-                                : "bg-[var(--md-red)] hover:bg-[color-mix(in_srgb,var(--md-red),black_10%)]",
-                            )}
-                            onClick={() => {
-                              if (busyProvider) return
-                              if (isConnected && connection) {
-                                setDisconnectCandidate(connection)
-                                return
-                              }
-                              void connect(provider)
-                            }}
-                          >
-                            {busyProvider === provider ? (
-                              <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                            ) : isConnected ? (
-                              <Check className="size-4" strokeWidth={2} aria-hidden="true" />
-                            ) : (
-                              <X className="size-4" strokeWidth={2} aria-hidden="true" />
-                            )}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="left" sideOffset={6}>
-                          {t(isConnected ? `Disconnect ${copy.label}` : `Connect ${copy.label}`)}
-                        </TooltipContent>
-                      </Tooltip>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        aria-label={t(actionLabel)}
+                        disabled={busyProvider !== null || (needsConnection && !configured)}
+                        className={cn(
+                          "h-8 w-fit rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,opacity,scale] duration-200 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a18)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100",
+                          isConnected
+                            ? "bg-white/48 text-[var(--md-red)] hover:bg-[rgba(194,63,63,0.08)] hover:text-[var(--md-red)]"
+                            : needsReconnect
+                              ? "bg-[rgba(221,138,43,0.1)] text-[var(--md-amber)] hover:bg-[rgba(221,138,43,0.16)] hover:text-[var(--md-amber)]"
+                              : "bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-deep)] hover:text-[var(--md-accent-ink)]",
+                        )}
+                        onClick={() => {
+                          if (busyProvider) return
+                          if (isConnected && connection) {
+                            setDisconnectCandidate(connection)
+                            return
+                          }
+                          void connect(provider)
+                        }}
+                      >
+                        {busyProvider === provider ? (
+                          <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                        ) : isConnected ? (
+                          <X className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                        ) : needsReconnect ? (
+                          <RefreshCw className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+                        ) : (
+                          <Plug className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+                        )}
+                        {t(busyProvider === provider ? busyLabel : actionLabel)}
+                      </Button>
                     )}
                     />
                     {provider === "gmail" && connection && !needsConnection ? (
@@ -5482,6 +5505,8 @@ function TabContent({
           onCoverPhotoChange={onCoverPhotoChange}
         />
       )
+    case "availability":
+      return <AvailabilityTab />
     case "security":
       return <SecurityTab />
     case "customisation":

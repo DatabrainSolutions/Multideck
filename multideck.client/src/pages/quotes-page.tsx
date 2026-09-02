@@ -3689,6 +3689,11 @@ function QuoteDetailsPanelV2({
   const countries = lookups?.countries ?? []
   const customerOrganisation = organisations.find((option) => option.id === quote.customerId)
     ?? organisations.find((option) => option.name.trim().toLocaleLowerCase() === quote.customer.trim().toLocaleLowerCase())
+  const customerSourceContact = customerOrganisation?.contacts?.find((contact) => contact.isOperational)
+  const customerAutoPopulationDescription = customerOrganisation
+    ? `Filled from ${customerOrganisation.name}. Edit this field to override it for this quote.`
+    : undefined
+
   useEffect(() => {
     let cancelled = false
     setUnlocodeDirectoryStatus("loading")
@@ -3707,9 +3712,6 @@ function QuoteDetailsPanelV2({
   }, [])
   const customerAddresses = customerOrganisation?.addresses ?? []
   const customerOperationalContacts = (customerOrganisation?.contacts ?? []).filter((contact) => contact.isOperational)
-  const selectedCustomerAddressId = customerAddresses.find((address) => address.address === quote.customerAddress)?.id ?? ""
-  const selectedCustomerContactId = customerOperationalContacts.find((contact) => contact.id === quote.contactId)
-    ?.id ?? customerOperationalContacts.find((contact) => contact.name === quote.customerContact)?.id ?? ""
   const supplierOptions = useMemo(() => supplierOptionsFromQuote(quote), [quote.supplierOptionsJson, quote.supplierId, quote.supplier, quote.carrierId, quote.carrier])
   const organisationOptions: CompactComboboxOption[] = organisations.map((organisation) => ({
     id: organisation.id,
@@ -4008,16 +4010,18 @@ function QuoteDetailsPanelV2({
     const roleSearchLabel = role === "agent" ? "overseas agents" : `${role}s`
     const name = role === "shipper" ? quote.shipperName ?? "" : role === "consignee" ? quote.consigneeName ?? "" : quote.agentName ?? ""
     const selectedId = role === "shipper" ? quote.shipperOrgId : role === "consignee" ? quote.consigneeOrgId : quote.agentOrgId
+    const selectedOrganisation = organisationForRole(role)
+    const selectedContact = selectedOrganisation?.contacts?.find((item) => item.isOperational)
+    const autoPopulationDescription = selectedOrganisation
+      ? `Filled from ${selectedOrganisation.name}. Edit this field to override it for this quote.`
+      : undefined
     const code = role === "shipper" ? quote.shipperCode ?? "" : role === "consignee" ? quote.consigneeCode ?? "" : quote.agentCode ?? ""
     const address = role === "shipper" ? quote.shipperAddress ?? "" : role === "consignee" ? quote.consigneeAddress ?? "" : quote.agentAddress ?? ""
     const contact = role === "shipper" ? quote.shipperContact ?? "" : role === "consignee" ? quote.consigneeContact ?? "" : quote.agentContact ?? ""
     const email = role === "shipper" ? quote.shipperEmail ?? "" : role === "consignee" ? quote.consigneeEmail ?? "" : quote.agentEmail ?? ""
     const reference = role === "shipper" ? quote.shipperReference ?? "" : role === "consignee" ? quote.consigneeReference ?? "" : quote.agentReference ?? ""
-    const selectedOrganisation = organisationForRole(role)
     const addresses = selectedOrganisation?.addresses ?? []
     const operationalContacts = operationalContactsForOrganisation(selectedOrganisation?.id)
-    const selectedAddressId = addresses.find((item) => item.address === address)?.id ?? ""
-    const selectedContactId = operationalContacts.find((item) => item.name === contact)?.id ?? ""
     const filteredOptions = organisationOptions.filter((option) => organisationHasRole(option.id, role))
     const codeOptions = organisationCodeOptions(filteredOptions)
     const preferredOptions = relatedOptions(role)
@@ -4058,11 +4062,11 @@ function QuoteDetailsPanelV2({
             }}
             onOptionSelect={(option) => option.id && selectOrganisation(role, option.id)}
           />
-          <CompactCombobox label="Account code" value={code} options={codeOptions} placeholder="Search account codes" allLabel={`All ${roleSearchLabel} codes`} emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-5" onValueChange={(value) => { if (selectOrganisationByCode(role, value)) return; onQuoteChange(role === "shipper" ? "shipperCode" : role === "consignee" ? "consigneeCode" : "agentCode", value); const selected = organisations.find((item) => item.id === selectedId); if (selected && selected.code !== value) onQuoteChange(role === "shipper" ? "shipperOrgId" : role === "consignee" ? "consigneeOrgId" : "agentOrgId", "") }} onOptionSelect={(option) => option.id && selectOrganisation(role, option.id)} />
+          <CompactCombobox label="Account code" value={code} options={codeOptions} placeholder="Search account codes" allLabel={`All ${roleSearchLabel} codes`} emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-5 [&_input]:tracking-tight" autoPopulated={matchesAutoPopulation(code, selectedOrganisation?.code)} autoPopulationDescription={autoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode(role, value)) return; onQuoteChange(role === "shipper" ? "shipperCode" : role === "consignee" ? "consigneeCode" : "agentCode", value); const selected = organisations.find((item) => item.id === selectedId); if (selected && selected.code !== value) onQuoteChange(role === "shipper" ? "shipperOrgId" : role === "consignee" ? "consigneeOrgId" : "agentOrgId", "") }} onOptionSelect={(option) => option.id && selectOrganisation(role, option.id)} />
           <QuoteCompactInput label={`${title} ref`} value={reference} width="full" className="col-span-12" disabled={!editable} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperReference" : role === "consignee" ? "consigneeReference" : "agentReference", value)} />
-          <QuoteCompactSelect label="Address" value={selectedAddressId} options={addresses.map((item) => ({ value: item.id, label: item.label || item.address }))} width="full" className="col-span-12" disabled={!editable || !selectedOrganisation || !addresses.length} dataOptions autoPopulated={matchesAutoPopulation(address, selectedOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={selectedOrganisation ? `Filled from ${selectedOrganisation.name}. Edit this field to override it for this quote.` : undefined} onChange={(addressId) => selectAddress(role, addressId)} />
-          <QuoteCompactSelect label="Operational contact" value={selectedContactId} options={operationalContacts.map((item) => ({ value: item.id, label: [item.name, item.role].filter(Boolean).join(" · ") }))} width="full" className="col-span-12" disabled={!editable || !selectedOrganisation || !operationalContacts.length} dataOptions onChange={(contactId) => selectContact(role, contactId)} />
-          <QuoteCompactInput label="Email" value={email} type="email" width="full" className="col-span-12" disabled={!editable} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail", value)} />
+          <CompactCombobox label="Address" value={address} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(address, selectedOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={autoPopulationDescription} options={addresses.map((item) => ({ id: item.id, value: item.address, label: item.label || item.address, description: item.address }))} onOptionSelect={(option) => option.id && selectAddress(role, option.id)} onValueChange={(value) => onQuoteChange(role === "shipper" ? "shipperAddress" : role === "consignee" ? "consigneeAddress" : "agentAddress", value)} />
+          <CompactCombobox label="Operational contact" value={contact} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(contact, selectedContact?.name)} autoPopulationDescription={autoPopulationDescription} options={operationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact(role, option.id)} onValueChange={(value) => onQuoteChange(role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact", value)} />
+          <QuoteCompactInput label="Email" value={email} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(email, selectedContact?.email)} autoPopulationDescription={autoPopulationDescription} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail", value)} />
         </div>
       </CompactSectionShell>
     )
@@ -4092,11 +4096,12 @@ function QuoteDetailsPanelV2({
         <CompactSectionShell title="Customer data" className="[&>header]:h-8 [&>header]:overflow-hidden">
           <div className="grid min-w-0 grid-cols-12 gap-x-2 gap-y-1.5">
             <CompactCombobox label="Customer" value={quote.customer} options={organisationOptions.filter((option) => organisationHasRole(option.id, "customer"))} onValueChange={(value) => { onQuoteChange("customer", value); if (customerOrganisation && customerOrganisation.name !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search customers or type manually" allLabel="All customers" emptyLabel="No matching customer company" disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customer.trim()} width="full" className="col-span-7" />
-            <CompactCombobox label="Account code" value={quote.clientCode ?? ""} options={organisationCodeOptions(organisationOptions.filter((option) => organisationHasRole(option.id, "customer")))} onValueChange={(value) => { if (selectOrganisationByCode("customer", value)) return; onQuoteChange("clientCode", value); if (customerOrganisation && customerOrganisation.code !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search account codes" allLabel="All customer codes" emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-5" />
+            <CompactCombobox label="Account code" value={quote.clientCode ?? ""} options={organisationCodeOptions(organisationOptions.filter((option) => organisationHasRole(option.id, "customer")))} autoPopulated={matchesAutoPopulation(quote.clientCode, customerOrganisation?.code)} autoPopulationDescription={customerAutoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode("customer", value)) return; onQuoteChange("clientCode", value); if (customerOrganisation && customerOrganisation.code !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search account codes" allLabel="All customer codes" emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-5 [&_input]:tracking-tight" />
             <QuoteCompactInput label="Customer ref" value={quote.localRef ?? ""} width="full" className="col-span-7" disabled={!editable} onChange={(value) => onQuoteChange("localRef", value)} />
             <QuoteCompactInput label="Customer PO" value={quote.customerPO ?? ""} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange("customerPO", value)} />
-            <QuoteCompactSelect label="Address" value={selectedCustomerAddressId} options={customerAddresses.map((item) => ({ value: item.id, label: item.label || item.address }))} width="full" className="col-span-12" disabled={!editable || !customerOrganisation || !customerAddresses.length} dataOptions autoPopulated={matchesAutoPopulation(quote.customerAddress, customerOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={customerOrganisation ? `Filled from ${customerOrganisation.name}. Edit this field to override it for this quote.` : undefined} onChange={(addressId) => selectAddress("customer", addressId)} />
-            <QuoteCompactSelect label="Operational contact" value={selectedCustomerContactId} options={customerOperationalContacts.map((item) => ({ value: item.id, label: [item.name, item.role].filter(Boolean).join(" · ") }))} width="full" className="col-span-12" disabled={!editable || !customerOrganisation || !customerOperationalContacts.length} dataOptions onChange={(contactId) => selectContact("customer", contactId)} />
+            <CompactCombobox label="Address" value={quote.customerAddress ?? ""} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerAddress, customerOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={customerAutoPopulationDescription} options={customerAddresses.map((item) => ({ id: item.id, value: item.address, label: item.label || item.address, description: item.address }))} onOptionSelect={(option) => option.id && selectAddress("customer", option.id)} onValueChange={(value) => onQuoteChange("customerAddress", value)} />
+            <CompactCombobox label="Operational contact" value={quote.customerContact ?? ""} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerContact, customerSourceContact?.name)} autoPopulationDescription={customerAutoPopulationDescription} options={customerOperationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact("customer", option.id)} onValueChange={(value) => { onQuoteChange("customerContact", value); if (value !== quote.customerContact) onQuoteChange("contactId", "") }} />
+            <QuoteCompactInput label="Email" value={quote.customerEmail ?? ""} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerEmail, customerSourceContact?.email)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuoteChange("customerEmail", value)} />
           </div>
         </CompactSectionShell>
         {roleCard("agent")}

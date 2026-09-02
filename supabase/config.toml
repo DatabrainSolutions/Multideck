@@ -433,6 +433,25 @@ verify_jwt = false
 [functions.warehouse]
 verify_jwt = true
 
+[functions.calendar-api]
+verify_jwt = true
+
+# Public booking, verification, and participant-bound management tokens are
+# authenticated inside the function rather than by a workspace session.
+[functions.calendar-public]
+verify_jwt = false
+
+# OAuth callbacks and provider webhooks do not carry a Multideck user JWT.
+[functions.calendar-oauth]
+verify_jwt = false
+
+# Invoked with a tenant-local worker credential or the service-role JWT.
+[functions.calendar-worker]
+verify_jwt = false
+
+[functions.calendar-webhook]
+verify_jwt = false
+
 [functions.account]
 verify_jwt = true
 
