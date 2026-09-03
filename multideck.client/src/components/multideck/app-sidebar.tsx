@@ -24,8 +24,6 @@ import { calendarNavItem, customerWarehouseNavigation, homeNavItem, inboxNavItem
 import { readSettingsSectionFromUrl, settingsNavigationGroups, type SettingsSectionId } from "@/data/settings-navigation"
 import { useLanguage } from "@/i18n/language-provider"
 import { deleteDexterConversation, getDexterUsage, listDexterConversationsPage, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
-import { listDealsPage } from "@/lib/deal-api"
-import { listLeadsPage } from "@/lib/lead-api"
 import { companyAccentPreferenceId, useAccentPresetId } from "@/lib/accent-theme"
 import { companyAppearanceInitials, useCompanyAppearance } from "@/lib/company-appearance"
 import {
@@ -923,7 +921,6 @@ function InboxContextSidebar({
           >
             <FolderNounIcon className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} aria-hidden="true" />
             <span className="min-w-0 flex-1 truncate">{t(folderNoun)}</span>
-            <span data-i18n-skip dir="ltr" className="text-[11px] tabular-nums text-[var(--md-subtle)]">{folderRows.length}</span>
             <motion.span
               aria-hidden="true"
               animate={{ rotate: foldersExpanded ? 0 : -90 }}
@@ -1066,23 +1063,6 @@ export function AppSidebar({
   const canReadPhoneCalls = hasPermission(currentUser, "CRM.PhoneCalls.Read")
   const canShowDocumentBuilder = import.meta.env.DEV || canReadDocuments
   const canOpenAdmin = isTenantAdministrator(currentUser)
-  const isCrmRoute = route === "/crm" || route.startsWith("/crm/")
-  const [crmDealCount, setCrmDealCount] = useState<number | null>(null)
-  const [crmLeadCount, setCrmLeadCount] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (isCustomer || !isCrmRoute) return
-    let active = true
-    Promise.allSettled([
-      listLeadsPage({ limit: 1, offset: 0 }),
-      listDealsPage({ limit: 1, offset: 0 }),
-    ]).then(([leads, deals]) => {
-      if (!active) return
-      setCrmLeadCount(leads.status === "fulfilled" ? leads.value.total : null)
-      setCrmDealCount(deals.status === "fulfilled" ? deals.value.total : null)
-    })
-    return () => { active = false }
-  }, [route, isCrmRoute, isCustomer])
 
   const availableAreas = useMemo<SidebarArea[]>(() => {
     if (!isCustomer) {
@@ -1093,16 +1073,7 @@ export function AppSidebar({
         if (area.id !== "sales-crm") return area
         return {
           ...area,
-          destinations: area.destinations.filter((destination) => destination.id !== "crm-phone-calls" || canReadPhoneCalls).map((destination) => destination.id === "crm-leads-opportunities"
-            ? {
-                ...destination,
-                children: destination.children?.map((item) => {
-                  if (item.route === "/crm/leads") return { ...item, value: crmLeadCount === null ? undefined : String(crmLeadCount) }
-                  if (item.route === "/crm/deals") return { ...item, value: crmDealCount === null ? undefined : String(crmDealCount) }
-                  return item
-                }),
-              }
-            : destination),
+          destinations: area.destinations.filter((destination) => destination.id !== "crm-phone-calls" || canReadPhoneCalls),
         }
       })
     }
@@ -1110,7 +1081,7 @@ export function AppSidebar({
     const destinations = customerWarehouseNavigation.filter((item) =>
       item.route !== "/warehouse/users" || canManageWarehouseUsers)
     return [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations }]
-  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, canReadPhoneCalls, crmDealCount, crmLeadCount])
+  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, canReadPhoneCalls])
   const favouriteCandidates = useMemo(() => sidebarFavouriteCandidates(availableAreas), [availableAreas])
   const { scope: favouritesScope, save: saveFavourites } = useSidebarLayoutScope(favouritesScopeId)
   const favouriteIds = useMemo(

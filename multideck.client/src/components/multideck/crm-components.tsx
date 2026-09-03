@@ -847,6 +847,7 @@ export function CrmLeadQualificationTable({
   toolbarOptions,
   emptyState,
   loadExportRecords,
+  registerExport,
   serverSorting,
 }: {
   leads: readonly ApiLead[]
@@ -858,6 +859,10 @@ export function CrmLeadQualificationTable({
   toolbarOptions?: ReactNode
   emptyState?: ReactNode
   loadExportRecords?: (leads: readonly ApiLead[]) => Promise<readonly ApiLeadDetail[]>
+  registerExport?: {
+    loadAllRows: (signal: AbortSignal) => Promise<readonly ApiLead[]>
+    busy?: boolean
+  }
   serverSorting?: {
     value: { id: string; direction: "asc" | "desc" } | null
     onChange: (value: { id: string; direction: "asc" | "desc" } | null) => void
@@ -1050,6 +1055,7 @@ export function CrmLeadQualificationTable({
         fileName: "crm-leads",
         recordCategory: "Lead details",
         loadRecords: loadExportRecords,
+        register: registerExport ? { ...registerExport, dateLabel: "Lead created date", dateValue: (lead) => lead.createdAt } : undefined,
       }}
       serverSorting={serverSorting}
       emptyState={emptyState ?? <p className="text-[13px] text-[var(--md-text)]">{emptyMessage}</p>}

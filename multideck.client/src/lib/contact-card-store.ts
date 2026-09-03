@@ -441,6 +441,12 @@ export function loadContactCardsPage(input: ContactCardRegisterInput) {
   return loadPromise
 }
 
+/** Reuses the authorised register RPC without changing the visible page or shared store. */
+export async function readContactCardsExportPage(input: ContactCardRegisterInput) {
+  const payload = await fetchRegisterPayload(input)
+  return { rows: mapWorkspace(payload), total: pageMeta(payload, input).total }
+}
+
 export function reloadContactCards() {
   loadPromise = loadWorkspace(lastRegisterInput)
   return loadPromise

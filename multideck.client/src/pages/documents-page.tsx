@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
@@ -1869,6 +1870,13 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
         {documentPageError ? <Surface role="alert" tone="soft" className="mb-3 flex items-center justify-between gap-3 border-s-2 border-[var(--md-red)]"><p className="text-[11px] text-[var(--md-text)]">{documentPageError}</p><Button type="button" variant="ghost" onClick={() => { lastDocumentPageKeyRef.current = null; setDocumentSort((current) => current ? { ...current } : { id: "created", direction: "desc" }) }}>{t("Try again")}</Button></Surface> : null}
         <DataTable
           ariaLabel="Recent documents"
+          exportConfig={{ fileName: "generated-documents", register: {
+            busy: preview || documentQuery.trim() !== debouncedDocumentQuery,
+            dateLabel: "Document created date", dateValue: (document) => document.createdAt,
+            loadAllRows: (signal) => collectExportPages((page) => getGeneratedDocumentsPage({
+              search: debouncedDocumentQuery, sort: documentSort ?? { id: "created", direction: "desc" }, ...page,
+            }), (document) => document.id, signal),
+          } }}
           columnsButtonLabel="Manage document columns"
           columns={generatedDocumentColumns}
           rows={generatedDocuments}

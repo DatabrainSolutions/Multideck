@@ -17,6 +17,7 @@ import { discoverCsvRecordFields, type CsvExportField, type CsvExportSource, typ
 import { useTablePinnedColumns } from "@/lib/table-preferences"
 import { cn, isInsideFloatingLayer } from "@/lib/utils"
 import { defaultPaginationPageSize, paginationRange } from "@/lib/pagination"
+import { sortExportRows, type TableExportScope } from "@/lib/table-export"
 import { TablePillKindContext } from "@/components/multideck/status-pill"
 
 export type DataTableColumn<Row> = {
@@ -59,6 +60,14 @@ export type DataTableExportConfig<Row> = DiscoverCsvFieldsOptions & {
   /** Loads full records only after export is requested, preserving lean register queries. */
   loadRecords?: (rows: readonly Row[]) => Promise<readonly unknown[]>
   fields?: readonly CsvExportField<Row>[]
+  /** Opt in only with an explicit complete-data loader for this record type. */
+  register?: {
+    loadAllRows: (signal: AbortSignal) => Promise<readonly Row[]>
+    dateLabel: string
+    dateValue: (row: Row) => string | Date | null | undefined
+    scopeDescription?: string
+    busy?: boolean
+  }
 }
 
 export type DataTableBulkDeleteConfig<Row> = {
@@ -260,6 +269,11 @@ export function DataTable<Row>({
   const [exportSources, setExportSources] = useState<CsvExportSource<Row>[]>([])
   const [exportLoading, setExportLoading] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [exportScope, setExportScope] = useState<TableExportScope | null>(null)
+  const exportPageRows = useRef<readonly Row[]>([])
+  const exportTrigger = useRef<HTMLButtonElement | null>(null)
+  const exportReturnFocus = useRef<HTMLElement | null>(null)
+  const exportAbort = useRef<AbortController | null>(null)
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null)
@@ -434,17 +448,7 @@ export function DataTable<Row>({
     if (!sort) return rows
     const column = columns.find((candidate) => candidate.id === sort.id)
     if (!column?.sortValue) return rows
-    return [...rows].sort((left, right) => {
-      const leftValue = column.sortValue?.(left)
-      const rightValue = column.sortValue?.(right)
-      if (leftValue === rightValue) return 0
-      if (leftValue === null || leftValue === undefined) return 1
-      if (rightValue === null || rightValue === undefined) return -1
-      const comparison = typeof leftValue === "number" && typeof rightValue === "number"
-        ? leftValue - rightValue
-        : String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: "base" })
-      return sort.direction === "asc" ? comparison : -comparison
-    })
+    return sortExportRows(rows, column.sortValue, sort.direction)
   }, [columns, rows, serverSorting, sort])
 
   const localRange = paginationRange(sortedRows.length, localPage, localPageSize)
@@ -528,25 +532,37 @@ export function DataTable<Row>({
     })
   }
 
-  async function loadExportSources(rowsToExport: readonly Row[]) {
+  async function loadExportSources(rowsToExport: readonly Row[], scope?: TableExportScope) {
     const requestId = ++exportRequestId.current
-    setExportSources(rowsToExport.map((row) => ({ row, record: row })))
+    exportAbort.current?.abort()
+    const controller = new AbortController()
+    exportAbort.current = controller
+    setExportSources([])
     setExportError(null)
-    if (!exportConfig?.loadRecords) {
-      setExportLoading(false)
-      return
-    }
-
     setExportLoading(true)
     try {
-      const records = await exportConfig.loadRecords(rowsToExport)
-      if (records.length !== rowsToExport.length) throw new Error("The full record response was incomplete.")
+      const loadedRows = scope === "all" && exportConfig?.register
+        ? await exportConfig.register.loadAllRows(controller.signal)
+        : rowsToExport
+      const exportRows = scope === "all" && !serverSorting && sort
+        ? sortExportRows(loadedRows, columns.find((column) => column.id === sort.id)?.sortValue, sort.direction)
+        : loadedRows
+      controller.signal.throwIfAborted()
+      const records: unknown[] = []
+      // Bound full-detail requests, including large all-record exports.
+      for (let offset = 0; offset < exportRows.length; offset += 25) {
+        controller.signal.throwIfAborted()
+        const batch = exportRows.slice(offset, offset + 25)
+        const details = exportConfig?.loadRecords ? await exportConfig.loadRecords(batch) : batch
+        if (details.length !== batch.length || details.some((record) => record === null || record === undefined)) throw new Error("The full record response was incomplete.")
+        records.push(...details)
+      }
       if (requestId !== exportRequestId.current) return
-      setExportSources(rowsToExport.map((row, index) => ({ row, record: records[index] ?? row })))
+      setExportSources(exportRows.map((row, index) => ({ row, record: records[index] ?? row })))
     } catch (reason) {
       if (requestId !== exportRequestId.current) return
       console.error("Full table export records could not be loaded.", reason)
-      setExportError("Check your connection and try loading the selected records again.")
+      setExportError("No file was downloaded. Check your connection and try again. If records changed during export, reload the table first.")
     } finally {
       if (requestId === exportRequestId.current) setExportLoading(false)
     }
@@ -554,9 +570,22 @@ export function DataTable<Row>({
 
   function openExportDialog() {
     if (!selectedRows.length) return
+    exportReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setExportScope(null)
     setExportOpen(true)
+    exportPageRows.current = selectedRows
     void loadExportSources(selectedRows)
   }
+
+  function openRegisterExport() {
+    exportReturnFocus.current = exportTrigger.current
+    exportPageRows.current = [...pageRows]
+    setExportScope("page")
+    setExportOpen(true)
+    void loadExportSources(exportPageRows.current, "page")
+  }
+
+  useEffect(() => () => { exportRequestId.current += 1; exportAbort.current?.abort() }, [])
 
   async function confirmBulkDelete() {
     if (!bulkDelete || !selectedRowsCanDelete || bulkDeleting) return
@@ -732,7 +761,7 @@ export function DataTable<Row>({
     return column.kind === "number" ? "tabular-nums" : undefined
   }
 
-  const hasTrailingToolbar = Boolean(selectionMode || toolbarSearch || toolbarFilters || toolbarOptions || showColumnManager)
+  const hasTrailingToolbar = Boolean(selectionMode || toolbarSearch || toolbarFilters || toolbarOptions || showColumnManager || exportConfig?.register)
   const hasLeadingToolbar = Boolean(toolbarTabs)
   const contextRowActions = rowContextMenu ? rowContextActions?.(rowContextMenu.row) ?? [] : []
   const contextRowKey = rowContextMenu ? getRowKey(rowContextMenu.row) : null
@@ -828,6 +857,16 @@ export function DataTable<Row>({
               {toolbarOptions ? <div className="order-4 flex min-w-0 flex-wrap items-center justify-end gap-1.5">{toolbarOptions}</div> : null}
             </>
           )}
+          {exportConfig?.register ? <button
+            ref={exportTrigger}
+            type="button"
+            data-table-export-control
+            aria-label={t("Export records")}
+            title={t("Export records")}
+            disabled={exportConfig.register.busy || pagination?.loading || pagination?.error}
+            onClick={openRegisterExport}
+            className="order-5 grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-lg)] text-[var(--md-text)] outline-none transition-[background,color,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transform-none"
+          ><HugeiconsIcon icon={Csv02Icon} size={16} strokeWidth={1.4} aria-hidden="true" /></button> : null}
           {showColumnManager ? <div data-table-columns-control className="order-5 flex shrink-0">
           <Popover>
           <PopoverTrigger asChild>
@@ -1322,6 +1361,7 @@ export function DataTable<Row>({
           setExportOpen(open)
           if (!open) {
             exportRequestId.current += 1
+            exportAbort.current?.abort()
             setExportLoading(false)
           }
         }}
@@ -1330,8 +1370,20 @@ export function DataTable<Row>({
         fileName={resolvedExportFileName}
         loading={exportLoading}
         error={exportError}
-        onRetry={() => void loadExportSources(exportSources.map((source) => source.row))}
+        register={exportScope && exportConfig?.register ? {
+          scope: exportScope,
+          onScopeChange: (scope) => { setExportScope(scope); void loadExportSources(exportPageRows.current, scope) },
+          dateLabel: exportConfig.register.dateLabel,
+          dateValue: exportConfig.register.dateValue,
+          scopeDescription: exportConfig.register.scopeDescription,
+          pageCount: exportPageRows.current.length,
+        } : undefined}
+        onRetry={() => void loadExportSources(exportPageRows.current, exportScope ?? undefined)}
         onDownloaded={exitSelectionMode}
+        restoreFocus={() => {
+          const target = exportReturnFocus.current?.isConnected ? exportReturnFocus.current : exportTrigger.current
+          target?.focus()
+        }}
       />
       <Dialog open={bulkDeleteOpen} onOpenChange={(open) => { if (!bulkDeleting) { setBulkDeleteOpen(open); if (!open) setBulkDeleteError(null) } }}>
         <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[440px]">

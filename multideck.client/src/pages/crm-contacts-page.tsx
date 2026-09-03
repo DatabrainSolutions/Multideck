@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AiBrain, ArrowRight, Mail, RefreshCw, UserRoundCheck, UsersRound } from "@/components/icons/hugeicons"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
@@ -126,6 +127,16 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
         exportConfig={{
           fileName: "crm-contacts",
           recordCategory: "Contact details",
+          register: {
+            dateLabel: "Last contact date",
+            dateValue: (contact) => contact.lastContactAt,
+            busy: query.trim() !== debouncedQuery,
+            loadAllRows: (signal) => collectExportPages((page) => listContactsPage({
+              search: debouncedQuery,
+              consentScope: consentFilter === "Opted in" ? "opted_in" : consentFilter === "Opted out" ? "opted_out" : "all",
+              accountId: accountFilter, channel: channelFilter, sort, ...page,
+            }, { forceRefresh: true }), (contact) => contact.id, signal),
+          },
           loadRecords: (selectedContacts) => Promise.all(selectedContacts.map((contact) => getContact(contact.id))),
         }}
         onRowClick={(contact) => navigate(`/crm/contacts/${contact.id}`)}

@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import {
@@ -1524,45 +1525,6 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
     setPage(1)
   }
 
-  function exportLeads() {
-    if (!leads.length) {
-      toast.error(t("No leads to export"))
-      return
-    }
-
-    const escapeCsv = (value: string | number | null | undefined) => {
-      const text = value === null || value === undefined ? "" : String(value)
-      return `"${text.replaceAll("\"", "\"\"")}"`
-    }
-    const rows = leads.map((lead) => [
-      lead.companyName,
-      lead.primaryContactName,
-      lead.primaryContactEmail,
-      lead.sourceName,
-      lead.ownerName,
-      lead.statusName,
-      lead.ratingName,
-      lead.qualificationScore,
-      lead.lastActivityAt,
-      lead.nextFollowUpAt,
-      lead.createdAt,
-      lead.valueAmount,
-      lead.valueCurrencyCode,
-      lead.valueContext,
-    ])
-    const csv = [
-      [t("Company"), t("Primary contact"), t("Email"), t("Source"), t("Owner"), t("Stage"), t("Rating"), t("Qualification score"), t("Last activity"), t("Next follow-up"), t("Created"), t("Value"), t("Currency"), t("Opportunity context")],
-      ...rows,
-    ].map((row) => row.map(escapeCsv).join(",")).join("\n")
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
-    const anchor = document.createElement("a")
-    anchor.href = url
-    anchor.download = `multideck-leads-${new Date().toISOString().slice(0, 10)}.csv`
-    anchor.click()
-    URL.revokeObjectURL(url)
-    toast.success(t("Lead export downloaded"))
-  }
-
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Leads")} className="md-page md-page-stack-compact">
       <CrmPageHeader
@@ -1576,17 +1538,6 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
           ? `${new Intl.NumberFormat(language).format(summary.leads)} ${t("leads")} · ${new Intl.NumberFormat(language).format(dueFollowUps)} ${t("follow-ups due")} · ${new Intl.NumberFormat(language).format(recentLeads)} ${t("created in the last 30 days")}`
           : t("Live CRM qualification data")}
         onSpeakToDexter={() => setDexterOpen(true)}
-        action={
-          <Button
-            variant="ghost"
-            disabled={loadState !== "ready" || !leads.length}
-            className="h-10 rounded-[var(--md-radius-lg)] bg-white/45 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/70"
-            onClick={exportLeads}
-          >
-            <Download data-icon="inline-start" strokeWidth={1.2} />
-            {t("Export this page")}
-          </Button>
-        }
       />
 
       {loadState === "ready" ? (
@@ -1704,6 +1655,21 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
             leads={leads}
             onOpenLead={openLeadDetail}
             loadExportRecords={(selectedLeads) => Promise.all(selectedLeads.map((lead) => getLead(lead.id)))}
+            registerExport={{
+              busy: revalidating || Boolean(loadError) || searchQuery.trim() !== debouncedSearch,
+              loadAllRows: (signal) => collectExportPages((exportPage) => listLeadsPage({
+                search: debouncedSearch,
+                statusCode: activeFilter === "all" ? undefined : activeFilter,
+                sourceCode: sourceFilter === "all" ? undefined : sourceFilter,
+                ownerId: leadScope === "Mine" ? currentLeadOwnerId ?? "__no_current_user__" : ownerFilter === "all" || ownerFilter === "__unassigned__" ? undefined : ownerFilter,
+                unassigned: leadScope === "All" && ownerFilter === "__unassigned__",
+                ratingCode: ratingFilter === "all" ? undefined : ratingFilter,
+                followUpScope: followUpFilter === "all" ? undefined : followUpFilter as "overdue" | "scheduled" | "unscheduled",
+                valueScope: valueFilter === "all" ? undefined : valueFilter as "valued" | "unvalued",
+                sort: sort ? { id: ({ stage: "status", qualification: "rating", engagement: "last-activity", "follow-up": "next-follow-up" } as Record<string, string>)[sort.id] ?? sort.id, direction: sort.direction } : null,
+                ...exportPage,
+              }, { forceRefresh: true }), (lead) => lead.id, signal),
+            }}
             emptyMessage={summary.leads ? t(leadScope === "Mine" ? "No leads assigned to you." : "No leads match this view.") : t("No leads have been recorded yet.")}
             serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "lead", direction: "asc" }); setPage(1) } }}
             toolbarTabs={<RegisterViewSwitch options={leadScopes} value={leadScope} onChange={changeLeadScope} counts={revalidating ? {} : { All: leadScope === "All" ? total : undefined, Mine: leadScope === "Mine" ? total : undefined }} ariaLabel="Lead ownership filter" compact />}
@@ -3972,7 +3938,15 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
               <Button type="button" variant="outline" className="h-8" onClick={() => setReloadKey((key) => key + 1)}>{t("Try again")}</Button>
             </div>
           ) : undefined}
-          exportConfig={{ fileName: "crm-deals", recordCategory: "Deal details", loadRecords: (selectedDeals) => Promise.all(selectedDeals.map((deal) => getDeal(deal.id))) }}
+          exportConfig={{ fileName: "crm-deals", recordCategory: "Deal details", loadRecords: (selectedDeals) => Promise.all(selectedDeals.map((deal) => getDeal(deal.id))), register: {
+            busy: dealQuery.trim() !== debouncedDealQuery,
+            dateLabel: "Deal created date", dateValue: (deal) => deal.createdAt,
+            loadAllRows: (signal) => collectExportPages((page) => listDealsPage({
+              search: debouncedDealQuery, pipelineId: dealPipelineFilter || undefined, statusCode: dealStatusFilter || undefined,
+              ownerId: dealOwnerFilter && dealOwnerFilter !== "__unassigned__" ? dealOwnerFilter : undefined,
+              unassigned: dealOwnerFilter === "__unassigned__", sort: dealListSort ?? { id: "created", direction: "desc" }, ...page,
+            }, { forceRefresh: true }), (deal) => deal.id, signal),
+          } }}
           emptyState={dealListState === "idle" || dealListState === "loading"
             ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading deals…" /></div>
             : dealListState === "error"

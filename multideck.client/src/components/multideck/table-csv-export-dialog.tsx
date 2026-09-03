@@ -1,7 +1,9 @@
-import { useEffect, useId, useMemo, useState } from "react"
+import { useEffect, useId, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ChevronDown, Download, RefreshCw } from "@/components/icons/hugeicons"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
+import { MultideckDateRangePicker } from "@/components/multideck/date-picker"
+import { exportPresetRange, inExportDateRange, validExportRange, type ExportDatePreset, type ExportDateRange, type TableExportScope } from "@/lib/table-export"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -26,6 +28,8 @@ export function TableCsvExportDialog<Row>({
   error,
   onRetry,
   onDownloaded,
+  restoreFocus,
+  register,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -36,12 +40,28 @@ export function TableCsvExportDialog<Row>({
   error?: string | null
   onRetry?: () => void
   onDownloaded?: () => void
+  restoreFocus?: () => void
+  register?: {
+    scope: TableExportScope
+    onScopeChange: (scope: TableExportScope) => void
+    dateLabel: string
+    dateValue: (row: Row) => string | Date | null | undefined
+    scopeDescription?: string
+    pageCount: number
+  }
 }) {
   const { t } = useLanguage()
   const reduceMotion = useReducedMotion()
   const id = useId()
   const [selectedFieldIds, setSelectedFieldIds] = useState<Set<string>>(new Set())
   const [openCategories, setOpenCategories] = useState<Set<string>>(new Set())
+  const [preset, setPreset] = useState<ExportDatePreset>("All time")
+  const [customRange, setCustomRange] = useState<ExportDateRange>({ start: null, end: null })
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+  const fieldsInitialised = useRef(false)
+  const range = preset === "Custom" ? customRange : exportPresetRange(preset)
+  const rangeValid = !register || preset === "All time" || validExportRange(range)
+  const includedSources = register ? rangeValid ? sources.filter(({ row }) => inExportDateRange(register.dateValue(row), range)) : [] : sources
 
   const categories = useMemo(() => {
     const grouped = new Map<string, CsvExportField<Row>[]>()
@@ -54,12 +74,21 @@ export function TableCsvExportDialog<Row>({
   }, [fields])
 
   useEffect(() => {
-    if (!open || loading) return
-    setSelectedFieldIds(new Set(fields.filter((field) => field.defaultSelected).map((field) => field.id)))
+    if (!open) { fieldsInitialised.current = false; return }
+    if (loading || !fields.length) return
+    if (!fieldsInitialised.current) {
+      fieldsInitialised.current = true
+      setSelectedFieldIds(new Set(fields.filter((field) => field.defaultSelected).map((field) => field.id)))
+    }
   }, [fields, loading, open])
 
   useEffect(() => {
-    if (open) setOpenCategories(new Set())
+    if (open) {
+      setOpenCategories(new Set())
+      setPreset("All time")
+      setCustomRange({ start: null, end: null })
+      setDownloadError(null)
+    }
   }, [open])
 
   const selectedFields = fields.filter((field) => selectedFieldIds.has(field.id))
@@ -96,32 +125,57 @@ export function TableCsvExportDialog<Row>({
   }
 
   function downloadCsv() {
-    if (!sources.length || !selectedFields.length) return
-    const csv = buildCsv(sources, selectedFields)
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
-    const link = document.createElement("a")
-    link.href = url
-    link.download = sanitiseCsvFileName(fileName)
-    link.click()
-    window.setTimeout(() => URL.revokeObjectURL(url), 0)
-    onDownloaded?.()
-    onOpenChange(false)
+    if (!includedSources.length || !selectedFields.length || !rangeValid) return
+    try {
+      const csv = buildCsv(includedSources, selectedFields)
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
+      const link = document.createElement("a")
+      link.href = url
+      link.download = sanitiseCsvFileName(register ? `${fileName}-${register.scope}-${range.start ?? "all-time"}${range.end ? `-to-${range.end}` : ""}` : fileName)
+      document.body.append(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      onDownloaded?.()
+      onOpenChange(false)
+    } catch {
+      setDownloadError("The CSV could not be created. Your export choices have been kept. Try again.")
+    }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid max-h-[calc(100svh-16px)] max-w-[calc(100%-16px)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-0 sm:max-h-[min(760px,calc(100svh-32px))] sm:max-w-[640px]">
+      <DialogContent onCloseAutoFocus={(event) => { if (restoreFocus) { event.preventDefault(); restoreFocus() } }} className="grid max-h-[calc(100svh-16px)] max-w-[calc(100%-16px)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-0 sm:max-h-[min(760px,calc(100svh-32px))] sm:max-w-[640px]">
         <DialogHeader className="border-b border-[var(--md-line)] px-4 py-3 pe-12 text-start sm:px-5 sm:py-4 sm:pe-14">
-          <DialogTitle className="text-[17px] font-medium text-[var(--md-ink)]">{t("Export selected rows")}</DialogTitle>
+          <DialogTitle className="text-[17px] font-medium text-[var(--md-ink)]">{t(register ? "Export records" : "Export selected rows")}</DialogTitle>
           <DialogDescription className="text-[12px] leading-5 text-[var(--md-text)]">
             {t("Choose table columns or expand a record section to include fields that are not currently visible.")}
           </DialogDescription>
         </DialogHeader>
 
         <div data-table-export-scroll-area className="min-h-0 overflow-y-auto overscroll-contain px-2 py-3 md-scrollbar sm:px-3">
+          {register ? <div className="grid gap-4 px-2 pb-4">
+            <fieldset className="grid gap-2">
+              <legend className="mb-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Records to include")}</legend>
+              {([ ["all", "All records"], ["page", "Records on this page"] ] as const).map(([value, label]) => <label key={value} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 text-[13px] text-[var(--md-ink)]">
+                <input type="radio" name={`${id}-scope`} value={value} checked={register.scope === value} onChange={() => register.onScopeChange(value)} className="size-4 accent-[var(--md-accent)]" />
+                {t(label)}{value === "page" ? <span className="ms-auto text-[12px] tabular-nums text-[var(--md-subtle)]">{register.pageCount}</span> : null}
+              </label>)}
+              <p className="text-[12px] leading-5 text-[var(--md-text)]">{t(register.scopeDescription ?? "All records includes every authorised record matching the current search, filters and ownership scope. This page includes only the current paginated page, in its displayed order. The date range narrows either choice.")}</p>
+            </fieldset>
+            <fieldset className="grid gap-2">
+              <legend className="mb-2 text-[12px] font-medium text-[var(--md-ink)]">{t(register.dateLabel)}</legend>
+              <div className="flex flex-wrap gap-1" role="group" aria-label={t("Export date presets")}>
+                {(["7D", "30D", "90D", "All time", "Custom"] as const).map((value) => <Button key={value} type="button" variant={preset === value ? "secondary" : "ghost"} aria-pressed={preset === value} className="h-9 px-3 text-[12px]" onClick={() => setPreset(value)}>{t(value)}</Button>)}
+              </div>
+              {preset === "Custom" ? <MultideckDateRangePicker value={customRange} onChange={setCustomRange} title="Export date range" description="Choose the first and last calendar days to include." triggerLabel="Choose export dates" closeOnSelect /> : null}
+              <p className="text-[11px] leading-5 text-[var(--md-subtle)]">{t("Dates use UTC, including the whole first and last day. Presets include today. Undated records are included only with All time.")}</p>
+              {!rangeValid ? <p role="status" className="text-[12px] text-[var(--md-text)]">{t("Choose both a start date and an end date.")}</p> : null}
+            </fieldset>
+          </div> : null}
           {loading ? (
             <div className="grid min-h-52 place-items-center sm:min-h-[300px]">
-              <DotGridLoader label="Loading full record details…" />
+              <DotGridLoader label={register?.scope === "all" ? "Loading all matching records and their details…" : "Loading full record details…"} />
             </div>
           ) : error ? (
             <div className="grid min-h-52 place-items-center px-4 text-center sm:min-h-[300px] sm:px-6">
@@ -211,12 +265,13 @@ export function TableCsvExportDialog<Row>({
         </div>
 
         <DialogFooter className="m-0 flex flex-col-reverse items-stretch gap-2 rounded-none border-t border-[var(--md-line)] bg-[var(--md-surface-soft)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <p className="text-[11px] text-[var(--md-subtle)]">
-            <span data-i18n-skip dir="ltr">{sources.length}</span> {t(sources.length === 1 ? "row" : "rows")}
-          </p>
+          <div className="text-[11px] text-[var(--md-subtle)]" role="status" aria-live="polite">
+            {loading ? t("Preparing export…") : error ? t("Export not ready") : <><span data-i18n-skip dir="ltr">{includedSources.length}</span> {t(includedSources.length === 1 ? "row" : "rows")}{!includedSources.length && rangeValid ? <p>{t("No records match this scope and date range.")}</p> : null}{!selectedFields.length ? <p>{t("Select at least one field.")}</p> : null}</>}
+            {downloadError ? <p role="alert">{t(downloadError)}</p> : null}
+          </div>
           <div className="grid grid-cols-2 items-center gap-2 sm:flex">
             <Button type="button" variant="ghost" className="h-10" onClick={() => onOpenChange(false)}>{t("Cancel")}</Button>
-            <Button type="button" className="h-10 px-4" disabled={loading || Boolean(error) || !selectedFields.length || !sources.length} onClick={downloadCsv}>
+            <Button type="button" className="h-10 px-4" disabled={loading || Boolean(error) || !selectedFields.length || !includedSources.length || !rangeValid} onClick={downloadCsv}>
               <Download className="size-[18px]" />
               {t("Download CSV")}
             </Button>

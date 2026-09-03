@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, Eye, FileCheck2, FileText, LoaderCircle, Plus, RefreshCw, Save, ScanText, Search, Send, Trash2, UserRound } from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
@@ -432,6 +433,13 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
         }]}
         exportConfig={{
           fileName: `customs-${kind}-declarations`,
+          register: {
+            dateLabel: "Declaration created date", dateValue: (draft) => draft.createdAt,
+            busy: search.trim() !== debouncedSearch,
+            loadAllRows: (signal) => collectExportPages((page) => listCustomsDeclarationDraftsPage(kind, jobRelated ? "job-related" : "standalone", {
+              search: debouncedSearch, status: statusFilter, destination: destinationFilter, sort, ...page,
+            }, signal), (draft) => draft.id, signal),
+          },
           recordCategory: "Declaration",
           categoryForPath: customsExportCategory,
           loadRecords: (selectedDrafts) => Promise.all(selectedDrafts.map(async (draft) => ({

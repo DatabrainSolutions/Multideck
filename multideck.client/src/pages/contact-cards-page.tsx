@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
@@ -53,6 +54,7 @@ import {
   createCard,
   deleteCard,
   loadContactCardsPage,
+  readContactCardsExportPage,
   reloadContactCard,
   reloadContactCards,
   pauseAutomation,
@@ -460,6 +462,14 @@ export function ContactCardsPage({ navigate, currentUser }: { navigate: (path: s
             getRowKey={(card) => card.id}
             storageKey="contact-cards"
             ariaLabel={t("Contact cards")}
+            exportConfig={{ fileName: "contact-cards", register: {
+              dateLabel: "Card created date", dateValue: (card) => card.createdAt,
+              busy: query.trim() !== debouncedQuery,
+              loadAllRows: (signal) => collectExportPages((page) => readContactCardsExportPage({
+                ...page, search: debouncedQuery, status: statusFilter, automationState: automationFilter,
+                sortField: (sort?.id ?? "activity") as "card" | "status" | "source" | "automation" | "activity", sortDirection: sort?.direction ?? "desc",
+              }), (card) => card.id, signal),
+            } }}
             onRowClick={(card) => navigate(`/crm/contact-cards/${card.id}`)}
             serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "activity", direction: "desc" }); setOffset(0) } }}
             pagination={{ offset, limit: pageSize, total: page.total, loading: status === "loading", onOffsetChange: setOffset, onLimitChange: setPageSize, error: status === "error" }}

@@ -509,6 +509,7 @@ function previewBookingFilterValue(booking: (typeof bookings)[number], field: st
 
 type PreviewChargeRow = {
   id: string
+  createdAt?: string
   description: string
   supplier: string
   scope: string
@@ -526,6 +527,7 @@ const previewChargeRows: PreviewChargeRow[] = [
 const previewPaginatedChargeRows: PreviewChargeRow[] = Array.from({ length: 57 }, (_, index) => ({
   ...previewChargeRows[index % previewChargeRows.length],
   id: `CH-${String(index + 1).padStart(3, "0")}`,
+  createdAt: new Date(Date.UTC(2026, 7, 1 + index)).toISOString(),
 }))
 
 const previewUnifiedChargeRowsSeed: UnifiedQuoteChargeRow[] = [
@@ -2168,11 +2170,13 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "screening-list-freshness" ? (
-        <div className="w-full max-w-[640px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+        <div className="grid w-full max-w-[760px] gap-6">
           <ScreeningListFreshness
-            list={{ loaded: true, sourceName: "UK OFSI consolidated list", publisher: "UK Office of Financial Sanctions Implementation", entryCount: 18420, downloadedAt: new Date().toISOString(), stale: false }}
-            action={<Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-md)]">Refresh list</Button>}
+            compact
+            list={{ loaded: true, sourceName: "UK Sanctions List", stale: false }}
           />
+          <ScreeningListFreshness compact list={null} loading />
+          <ScreeningListFreshness compact list={{ loaded: true, sourceName: "UK Sanctions List", stale: true }} />
         </div>
       ) : null}
 
@@ -3018,7 +3022,7 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "data-table" ? (
+      {id === "data-table" || id === "table-export" ? (
         <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
           <DataTable
             columns={previewChargeColumns}
@@ -3026,6 +3030,11 @@ function ComponentPreview({ id }: { id: string }) {
             rows={previewPaginatedChargeRows.filter((row) => (previewTableView === "All" || row.sell > row.cost) && (!previewTableStatus || row.status === previewTableStatus) && (!previewTableSearch.trim() || `${row.id} ${row.description} ${row.supplier}`.toLowerCase().includes(previewTableSearch.trim().toLowerCase())))}
             getRowKey={(row) => row.id}
             storageKey="gallery-charge-table"
+            exportConfig={{ fileName: "example-charges", register: {
+              dateLabel: "Example charge created date", dateValue: (row) => row.createdAt,
+              scopeDescription: "Example data only. All records includes every example matching the current view and filters; this page includes only its paginated rows.",
+              loadAllRows: async () => previewPaginatedChargeRows.filter((row) => (previewTableView === "All" || row.sell > row.cost) && (!previewTableStatus || row.status === previewTableStatus) && (!previewTableSearch.trim() || `${row.id} ${row.description} ${row.supplier}`.toLowerCase().includes(previewTableSearch.trim().toLowerCase()))),
+            } }}
             ariaLabel="Quote charges preview"
             toolbarTabs={<RegisterViewSwitch options={["All", "Profitable"] as const} value={previewTableView} onChange={setPreviewTableView} counts={{ All: previewPaginatedChargeRows.length, Profitable: previewPaginatedChargeRows.filter((row) => row.sell > row.cost).length }} ariaLabel="Charge view" compact />}
             toolbarSearch={<RegisterSearchField value={previewTableSearch} onChange={setPreviewTableSearch} onClear={() => setPreviewTableSearch("")} label="Search charges" placeholder="Search charges…" />}

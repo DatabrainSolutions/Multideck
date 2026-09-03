@@ -1,10 +1,42 @@
 import paginationSource from "@/components/multideck/pagination.tsx?raw"
 import screeningComponentsSource from "@/components/multideck/screening-components.tsx?raw"
 import dataTableSource from "@/components/multideck/data-table.tsx?raw"
+import tableCsvExportDialogSource from "@/components/multideck/table-csv-export-dialog.tsx?raw"
 import publicBrandIdentitySource from "@/components/multideck/public-brand-identity.tsx?raw"
 import multiSelectMenuSource from "@/components/multideck/multi-select-menu.tsx?raw"
 import { AiBrain, AiEditing, ArrowUpDown, BadgeCheck, BarChart3, Bell, BrainCircuit, Building2, Boxes, BriefcaseBusiness, CalendarDays, ChartAnalysis, ChartArea, ChartBar, ChartBarStacked, ChartLine, ChartNoAxesCombined, ChartPie, ChartScatter, ClipboardCheck, Clock3, Cloud, Component, FileText, Funnel, Gauge, Globe2, Grid3X3, Image, KeyRound, LayoutDashboard, ListOrdered, Mail, MessageCircle, MoonStar, MousePointerClick, PackageCheck, Palette, Pencil, Phone, ReceiptText, QrCode, Radar, Search, ScanText, Settings2, ShieldCheck, Ship, SlidersHorizontal, Sparkles, Type, TriangleAlert, Truck, Users, Workflow, type LucideIcon } from "@/components/icons/hugeicons"
 export * from "./operational-data"
+
+const tableExportFoundOn = [
+  { label: "Leads", route: "/crm/leads" },
+  { label: "Companies", route: "/crm/accounts" },
+  { label: "Contacts", route: "/crm/contacts" },
+  { label: "Opportunities", route: "/crm/deals" },
+  { label: "Phone calls", route: "/crm/phone-calls" },
+  { label: "Contact cards", route: "/crm/contact-cards" },
+  { label: "Customers", route: "/customers" },
+  { label: "Quotes", route: "/quotes" },
+  { label: "Bookings", route: "/bookings" },
+  { label: "Documents", route: "/documents" },
+  { label: "Contracts", route: "/rates/contracts" },
+  { label: "Tariffs", route: "/rates/tariffs" },
+  { label: "Inventory", route: "/warehouse/inventory" },
+  { label: "Facilities", route: "/warehouse/facilities" },
+  { label: "Items", route: "/warehouse/items" },
+  { label: "Locations", route: "/warehouse/locations" },
+  { label: "Warehouse orders", route: "/warehouse/orders" },
+  { label: "Goods in", route: "/warehouse/goods-in" },
+  { label: "Goods out", route: "/warehouse/goods-out" },
+  { label: "Customer purchase orders", route: "/warehouse/purchase-orders" },
+  { label: "Sales ledger", route: "/finance/receivables" },
+  { label: "Purchase ledger", route: "/finance/payables" },
+  { label: "Cash and allocations", route: "/finance/cash" },
+  { label: "Customs export declarations", route: "/customs/standalone/export" },
+  { label: "Customs import declarations", route: "/customs/standalone/import" },
+  { label: "Active log", route: "/admin/activity" },
+  { label: "Detailed log", route: "/admin/detailed-log" },
+  { label: "Components", route: "/components?component=table-export" },
+]
 
 const visualizationFoundOn = [
   { label: "Reports", route: "/reports" },
@@ -941,7 +973,7 @@ foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM cont
     category: "Controls",
     description: "The shared branded date controls for a single date, date and time, or a range with optional comparison.",
     details: "Use these instead of browser-native date inputs. Every variant shares the glass calendar, English regional date formatting, constrained dates, and the rebranded Calendar Days icon; date-time fields add a compact branded time control.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Quote details", route: "/quotes/jq20013" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Inbox", route: "/inbox" }, { label: "Calendar · New meeting", route: "/calendar" }, { label: "Settings · Availability", route: "/settings?tab=availability" }, { label: "Components", route: "/components?component=date-range-picker" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Quote details", route: "/quotes/jq20013" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Inbox", route: "/inbox" }, { label: "Calendar · New meeting", route: "/calendar" }, { label: "Settings · Availability", route: "/settings?tab=availability" }, { label: "Components", route: "/components?component=date-range-picker" }, ...tableExportFoundOn],
     componentCode: `export function MultideckDatePicker({ value, onChange, minDate, maxDate }) {\n  return <MultideckDateRangePicker value={{ start: value, end: value }} onChange={(range) => onChange(range.start)} minDate={minDate} maxDate={maxDate} />\n}\n\nexport function MultideckDateTimePicker({ value, onChange }) {\n  const date = value.slice(0, 10)\n  const time = value.slice(11, 16)\n  return (\n    <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-2">\n      <MultideckDatePicker value={date} onChange={(nextDate) => onChange((nextDate ?? "") + "T" + time)} />\n      <BrandedTimeInput value={time} onChange={(nextTime) => onChange(date + "T" + nextTime)} />\n    </div>\n  )\n}`,
     usageCode: `const [expiryDate, setExpiryDate] = useState("2026-06-04")\nconst [appointment, setAppointment] = useState("2026-06-04T09:30")\n\n<MultideckDatePicker\n  value={expiryDate}\n  onChange={(date) => setExpiryDate(date ?? "")}\n  title="Expiry date"\n/>\n\n<MultideckDateTimePicker\n  value={appointment}\n  onChange={setAppointment}\n  title="Appointment"\n/>`,
   },
@@ -1185,7 +1217,7 @@ foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM cont
     category: "Feedback",
     description: "The product's one waiting state: twenty-five cells lit as a travelling square spiral.",
     details: "Use it for every wait long enough to need a mark — a route still downloading, a register still fetching rows, a panel still resolving a document list. One object across the whole product means a wait never looks like a different feature loading. It animates only opacity and transform, so it can sit inside the box the loaded content will occupy without moving anything around it, and it reserves its own size so rows arriving cannot shift the page. `size=\"sm\"` fits a 32px toolbar; `decorative` drops the status role where the surrounding block already announces the wait in words. Reduced-motion mode holds the centre cell lit instead of cycling.",
-    foundOn: [{ label: "Every route", route: "/" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }],
+    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Every route", route: "/" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }],
     componentCode: `const spiralOrder = [
   0, 1, 2, 3, 4,
   15, 16, 17, 18, 5,
@@ -1225,7 +1257,7 @@ export const DotGridLoader = memo(function DotGridLoader({ label, size = "md", d
     category: "Operations",
     description: "View tabs on the left and right-aligned search, filters, options, and Columns above a register table.",
     details: "Every register puts one transparent control row on the page background above the rounded table surface. Only view tabs belong on the left. Search, filters, and secondary options stay on the right, with the icon-only Columns control fixed as the final option at the far logical edge. Facet options are built from the rows actually in hand, so a menu cannot offer a value that returns nothing, and an active trigger takes the accent colour. Search narrows loaded rows immediately and only asks the server once the operator stops typing. Controls share the tabs' corner radius; on narrow screens the right-side controls collapse into Controls while Columns remains the final standalone option.",
-    foundOn: [{ label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Items", route: "/warehouse/items" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Customer purchase orders", route: "/warehouse/purchase-orders" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Components", route: "/components?component=register-toolbar" }],
+    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Items", route: "/warehouse/items" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Customer purchase orders", route: "/warehouse/purchase-orders" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Components", route: "/components?component=register-toolbar" }],
     componentCode: `export function RegisterViewSwitch({ options, value, onChange, counts, ariaLabel }) {
   const { t } = useLanguage()
 
@@ -1585,10 +1617,20 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Data Table",
     category: "Data",
     description: "The canonical Multideck table with persisted layout, right-click row selection, and field-aware CSV export.",
-    details: "Declare each column's data kind so alignment and status treatments stay consistent. Right-click any row and choose Select to reveal the sticky checkbox column; operators can select several rows, then use the CSV action to choose displayed columns or expand hairline record sections for hidden fields. Register endpoints stay lean: pass exportConfig.loadRecords when full detail such as lead contacts, account addresses, or Customs parties should be loaded only after export is requested. Use pagination with onLimitChange for server-paged registers, or clientPagination only when rows contains the complete local dataset. Sorting runs before local slicing; selecting all applies to the visible page. Do not enable local paging for server pages, cursor-based lists or line editors. Existing row actions such as Duplicate or Delete belong in rowContextActions so they share the same animated menu.",
+    details: "Opt in to register-wide export with exportConfig.register and an explicit authorised, fully paginated loader. The icon beside column settings opens the shared Table Export dialog. Declare each column's data kind so alignment and status treatments stay consistent. Right-click any row and choose Select to reveal the sticky checkbox column; operators can select several rows, then use the CSV action to choose displayed columns or expand hairline record sections for hidden fields. Register endpoints stay lean: pass exportConfig.loadRecords when full detail such as lead contacts, account addresses, or Customs parties should be loaded only after export is requested. Use pagination with onLimitChange for server-paged registers, or clientPagination only when rows contains the complete local dataset. Sorting runs before local slicing; selecting all applies to the visible page. Do not enable local paging for server pages, cursor-based lists or line editors. Existing row actions such as Duplicate or Delete belong in rowContextActions so they share the same animated menu.",
     foundOn: [{ label: "Opportunities", route: "/crm/deals" }, { label: "Phone calls", route: "/crm/phone-calls" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Road control", route: "/road-control" }, { label: "Documents", route: "/documents" }, { label: "Contracts", route: "/rates/contracts" }, { label: "Tariffs", route: "/rates/tariffs" }, { label: "Inventory", route: "/warehouse/inventory" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Goods out", route: "/warehouse/goods-out" }, { label: "Marketing emails", route: "/crm/emails" }, { label: "Quotes", route: "/quotes" }, { label: "Quote carrier options", route: "/quotes/jq20013" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact card detail", route: "/crm/contact-cards/8a0c2dab-7597-45dc-8f3a-3992f57919a4" }, { label: "Bookings", route: "/bookings" }, { label: "Customs declarations", route: "/customs/standalone/export" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Rates & contracts", route: "/rates" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Users", route: "/admin/users" }, { label: "Active log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Broadcast history", route: "/admin/broadcast" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Customer purchase orders", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=data-table" }],
     componentCode: dataTableSource,
     usageCode: "// Server register: use the same limit and offset in the data request.\nconst [offset, setOffset] = useState(0)\nconst [limit, setLimit] = useState(30)\n<DataTable columns={columns} rows={result.rows} getRowKey={(row) => row.id}\n  pagination={{ offset, limit, total: result.total, loading, error: Boolean(error), onOffsetChange: setOffset, onLimitChange: setLimit }} />\n\n// Complete in-memory dataset: the table sorts, then slices the rows.\n<DataTable clientPagination columns={columns} rows={records} getRowKey={(row) => row.id} />",
+  },
+  {
+    id: "table-export",
+    name: "Table Export",
+    category: "Data",
+    description: "A centred CSV export dialog for the exact current page or every authorised record in the current register scope.",
+    details: "Use the Export records icon beside column settings. Keep the existing selected-row export for ad-hoc selections. Register exports preserve search, filters, ownership and sorting, and offer 7D, 30D, 90D, All time and custom dates using a clearly named date field and inclusive UTC days. Provide an explicit authorised loadAllRows adapter; never label a loaded page as all records. Loading and retry states prevent incomplete downloads. Only ready, live record registers should opt in; reports, line editors and demo-only lists keep their own workflows.",
+    foundOn: tableExportFoundOn,
+    componentCode: tableCsvExportDialogSource,
+    usageCode: `import { collectExportPages } from "@/lib/table-export"\n\n<DataTable\n  columns={columns}\n  rows={result.rows}\n  getRowKey={(row) => row.id}\n  pagination={{ offset, limit, total: result.total, loading, error: Boolean(error), onOffsetChange: setOffset, onLimitChange: setLimit }}\n  exportConfig={{\n    fileName: "crm-leads",\n    loadRecords: (rows) => Promise.all(rows.map((row) => getLead(row.id))),\n    register: {\n      busy: loading || Boolean(error),\n      dateLabel: "Lead created date",\n      dateValue: (row) => row.createdAt,\n      loadAllRows: (signal) => collectExportPages(\n        (page) => listLeadsPage({ ...currentScopeSearchFiltersAndSort, ...page }, { forceRefresh: true }),\n        (row) => row.id,\n        signal,\n      ),\n    },\n  }}\n/>`,
   },
   {
     id: "unified-quote-charges-workspace",
@@ -3296,11 +3338,17 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "screening-list-freshness",
     name: "Screening List Freshness",
     category: "Operations",
-    description: "Shows whether the workspace copy of the UK sanctions list is current, due a refresh, or unavailable.",
-    details: "Use the compact treatment above a screening form so operators see only the source, freshness and last update. Keep publisher and entry-count evidence for detailed reporting views.",
+    description: "Shows the sanctions source, automatic checking progress and actionable verification failures.",
+    details: "Use directly on the page above screening. Compact mode keeps successful checks quiet; loading and failure feedback stays visible. Detailed mode retains source-check evidence. Pass the real backend status and retry handler; this component never infers freshness from a display timestamp.",
     foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Components", route: "/components?component=screening-list-freshness" }],
-    componentCode: `export function ScreeningListFreshness({ list, action, compact = false }) {\n  return (\n    <div className="flex items-center justify-between gap-3">\n      <div>\n        <p>{list.sourceName}</p>\n        <StatusPill>{list.stale ? "Needs refresh" : "Current"}</StatusPill>\n        <p>{compact ? \`Updated \${list.downloadedAt}\` : \`\${list.entryCount} names · Updated \${list.downloadedAt}\`}</p>\n      </div>\n      {action}\n    </div>\n  )\n}`,
-    usageCode: `<ScreeningListFreshness\n  compact\n  list={workspace.list}\n  action={<Button onClick={refreshList}>Refresh list</Button>}\n/>`,
+    componentCode: screeningComponentsSource,
+    usageCode: `<ScreeningListFreshness
+  compact
+  list={workspace.list}
+  loading={checking}
+  onRetry={reloadWorkspace}
+  action={reportControls}
+/>`,
   },
   {
     id: "screening-match-row",
@@ -3763,6 +3811,7 @@ export const galleryIcons = {
   "multi-select-menu": SlidersHorizontal,
   "filter-chips": Users,
   "data-table": Users,
+  "table-export": FileText,
   "warehouse-table": Boxes,
   "warehouse-quantity-uom-field": Boxes,
   "purchase-order-line-editor": ReceiptText,

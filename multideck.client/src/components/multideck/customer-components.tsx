@@ -179,7 +179,7 @@ export function CustomerListHeader({
   onViewModeChange,
   customerCount = galleryCustomers.length,
 }: {
-  onExport: () => void
+  onExport?: () => void
   onSpeakToDexter: () => void
   scope: (typeof customerScopeTabs)[number]
   onScopeChange: (scope: (typeof customerScopeTabs)[number]) => void
@@ -205,7 +205,7 @@ export function CustomerListHeader({
           viewOptions={customerViewOptions}
           value={viewMode}
           onViewChange={onViewModeChange}
-          actions={[{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: onExport }]}
+          actions={onExport ? [{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: onExport }] : []}
         />
       </div>
     </div>
@@ -248,11 +248,13 @@ export function CustomerFilterBar({
 
 export function CustomerListTable({
   customers,
+  loadAllExportRows,
   selectedIds,
   onToggleCustomer,
   onOpenCustomer,
 }: {
   customers: Customer[]
+  loadAllExportRows?: (signal: AbortSignal) => Promise<readonly Customer[]>
   selectedIds: Set<string>
   onToggleCustomer: (id: string) => void
   onOpenCustomer: (customer: Customer) => void
@@ -317,6 +319,9 @@ export function CustomerListTable({
   return (
     <DataTable
       ariaLabel="Customers"
+      exportConfig={loadAllExportRows ? { fileName: "customers", register: {
+        dateLabel: "Last contact date", dateValue: (customer) => customer.lastContactAt, loadAllRows: loadAllExportRows,
+      } } : undefined}
       columnsButtonLabel="Manage customer columns"
       columns={columns}
       rows={customers}

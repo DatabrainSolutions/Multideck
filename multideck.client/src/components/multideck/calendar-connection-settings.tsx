@@ -145,10 +145,6 @@ export function CalendarConnectionSettings({ navigate }: { navigate: (path: stri
         </Button>
       )}
     >
-      <div className="border-b border-[var(--md-line)] px-5 py-4">
-        <p className="max-w-[72ch] text-[12px] leading-5 text-[var(--md-text)]">Connect Google Calendar and Microsoft Calendar together. Multideck combines busy times from both, while the meeting type you choose controls whether an invitation uses Meet or Teams.</p>
-        <p className="mt-1 text-[11px] leading-5 text-[var(--md-subtle)]">Phone, in-person and no-video meetings continue to work without any provider connection.{!canConnect && !loading ? " Ask an administrator if you need permission to manage personal connections." : ""}</p>
-      </div>
       {error ? (
         <div className="flex items-center justify-between gap-3 px-5 py-4" role="alert">
           <p className="text-[12px] text-[var(--md-red)]">{error}</p>

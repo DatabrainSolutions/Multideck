@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AlertTriangle, Boxes, Combine, FlaskConical, Loader2, MapPinOff, PackagePlus, RefreshCw, Route, ShieldAlert, type LucideIcon } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -467,6 +468,16 @@ export function WarehouseInventoryWorkspace() {
   return <div className="grid gap-[var(--md-page-stack-gap)]">
     <DataTable
       ariaLabel={`Warehouse ${mode.toLowerCase()}`}
+      exportConfig={{ fileName: `warehouse-${mode.toLowerCase()}`, register: {
+        dateLabel: mode === "Movements" ? "Movement posted date" : mode === "Exceptions" ? "Exception raised date" : "Last updated date",
+        dateValue: (row) => mode === "Movements" ? (row as WarehouseInventoryMovement).createdAt : mode === "Exceptions" ? (row as WarehouseInventoryException).raisedAt : (row as WarehouseInventoryBalance | WarehouseHandlingUnit).updatedAt,
+        busy: search.trim() !== committedSearch.trim(),
+        loadAllRows: (signal) => collectExportPages<InventoryRow>(async (page) => {
+          const common = { facilityId: facilityId || undefined, search: committedSearch || undefined, facet: facetValue || undefined, sort, ...page }
+          return mode === "Stock" ? listWarehouseInventoryPage(common) : mode === "Objects" ? listWarehouseHandlingUnitsPage(common)
+            : mode === "Movements" ? listWarehouseInventoryMovementsPage(common) : listWarehouseInventoryExceptionsPage({ ...common, openOnly: true })
+        }, (row) => row.id, signal),
+      } }}
       columnsButtonLabel="Manage warehouse columns"
       storageKey="warehouse-inventory"
       columns={view.columns}

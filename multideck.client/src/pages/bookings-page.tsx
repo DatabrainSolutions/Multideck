@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react"
 import { toast } from "sonner"
 import { ArrowDownAZ, ArrowUpAZ, CalendarClock, Search, Star, TriangleAlert, X } from "@/components/icons/hugeicons"
@@ -501,6 +502,17 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
           rows={bookingsLoading ? [] : tableRows}
           getRowKey={(booking) => booking.id}
           storageKey={bookingTableStorageKey}
+          exportConfig={{ fileName: "multideck-bookings", register: {
+            dateLabel: "Departure date", dateValue: (booking) => booking.departureAt,
+            busy: bookingsLoading || Boolean(bookingsError) || quickSearch !== debouncedQuickSearch,
+            loadAllRows: (signal) => collectExportPages((page) => listLiveBookingsPage({
+              search: debouncedQuickSearch, scope: registerScope, operatorCode: currentOperatorCode,
+              direction: directionFilter === "All directions" ? undefined : directionFilter,
+              mode: modeFilter === "All modes" ? undefined : modeFilter,
+              shipmentType: shipmentTypeFilter === "All types" ? undefined : shipmentTypeFilter,
+              filterQuery: search, sort: serverSort, ...page,
+            }, signal), (booking) => booking.id, signal),
+          } }}
           serverSorting={{ value: serverSort, onChange: setServerSort }}
           rowClassName={() => "hover:bg-[var(--md-hover)]"}
           onRowClick={openBooking}

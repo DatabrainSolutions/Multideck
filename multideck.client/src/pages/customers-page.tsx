@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { RefreshCw } from "@/components/icons/hugeicons"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
@@ -20,12 +21,23 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { customerScopeTabs, type CustomerRecord } from "@/data/operational-data"
 import { useLanguage } from "@/i18n/language-provider"
-import { createCustomer, getCustomerReference, listCustomerDirectoryPage, type CreateCustomerInput, type CustomerDirectoryStatus, type CustomerReference } from "@/lib/customer-api"
+import { createCustomer, getCustomerReference, listCustomerDirectoryPage, type ApiCustomer, type CreateCustomerInput, type CustomerDirectoryStatus, type CustomerReference } from "@/lib/customer-api"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
 const customerStatuses = ["All", "Premium", "Standard", "Trial", "New"] as const satisfies readonly CustomerDirectoryStatus[]
 const emptyStatusCounts: Record<CustomerDirectoryStatus, number> = { All: 0, Premium: 0, Standard: 0, Trial: 0, New: 0 }
 type CustomerScope = (typeof customerScopeTabs)[number]
+
+function customerTableRow(customer: ApiCustomer, index: number): CustomerRecord {
+  return {
+    id: customer.id, lastContactAt: customer.lastContactAt, initials: customer.initials,
+    name: customer.name, location: customer.location ?? "—", industry: customer.industry,
+    contacts: customer.contactCount, active: "—", activeTone: "neutral",
+    bookings30d: Array.from({ length: 12 }, () => 0), sparkTone: "teal", billedYtd: "—",
+    onTime: "—", onTimeTone: "neutral", status: customer.status, owner: customer.ownerName ?? "",
+    avatarTone: (["teal", "blue", "olive", "cream"] as const)[index % 4],
+  }
+}
 
 export function CustomersPage({ navigate }: { navigate: (path: string) => void }) {
   const [scope, setScope] = useState<CustomerScope>("All customers")
@@ -62,24 +74,7 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
     })
       .then((data) => {
         if (!isMounted) return
-        setCustomers(data.rows.map((customer, index) => ({
-          id: customer.id,
-          initials: customer.initials,
-          name: customer.name,
-          location: customer.location ?? "—",
-          industry: customer.industry,
-          contacts: customer.contactCount,
-          active: "—",
-          activeTone: "neutral",
-          bookings30d: Array.from({ length: 12 }, () => 0),
-          sparkTone: "teal",
-          billedYtd: "—",
-          onTime: "—",
-          onTimeTone: "neutral",
-          status: customer.status,
-          owner: customer.ownerName ?? "",
-          avatarTone: (["teal", "blue", "olive", "cream"] as const)[((page - 1) * rowsPerPage + index) % 4],
-        })))
+        setCustomers(data.rows.map((customer, index) => customerTableRow(customer, (page - 1) * rowsPerPage + index)))
         setTotal(data.total)
         setScopeTotal(data.scopeTotal)
         setStatusCounts(data.statusCounts)
@@ -182,7 +177,6 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
           setViewMode(nextViewMode)
           setPage(1)
         }}
-        onExport={() => toast.success("Customer CSV prepared")}
         onSpeakToDexter={() => setDexterOpen(true)}
         customerCount={scopeTotal}
       />
@@ -249,7 +243,9 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
         </Surface>
       ) : null}
 
-      {loadState === "ready" && viewMode === "List" ? <CustomerListTable customers={customers} selectedIds={selectedIds} onToggleCustomer={toggleCustomer} onOpenCustomer={openCustomer} /> : null}
+      {loadState === "ready" && viewMode === "List" ? <CustomerListTable customers={customers} selectedIds={selectedIds} onToggleCustomer={toggleCustomer} onOpenCustomer={openCustomer}
+        loadAllExportRows={async (signal) => (await collectExportPages((exportPage) => listCustomerDirectoryPage({ scope: scope === "My customers" ? "mine" : "all", status: activeStatus, ...exportPage }, { forceRefresh: true }), (customer) => customer.id, signal)).map(customerTableRow)}
+      /> : null}
       {loadState === "ready" && viewMode === "Cards" ? <CustomerCardsGrid customers={customers} onOpenCustomer={openCustomer} /> : null}
       {loadState === "ready" && viewMode === "Map" ? <CustomerFootprintMap customers={customers} onOpenCustomer={openCustomer} /> : null}
 

@@ -15,9 +15,9 @@ const [page, api, edge, migration] = await Promise.all([
 test("screening supports workflow context, optional fuzzy review and manual outcomes", () => {
   assert.match(page, /Workflow context/)
   assert.match(page, /Include similar names/)
-  assert.match(page, /82% fuzzy match rule/)
-  assert.match(page, /Mark clean/)
-  assert.match(page, /Mark sanctioned/)
+  assert.match(page, /82% similarity threshold/)
+  assert.match(page, /Mark as clear/)
+  assert.match(page, /Mark as sanctioned/)
   assert.match(page, /\[recentPageSize, setRecentPageSize\] = useState\(defaultPaginationPageSize\)/)
   assert.match(page, /onLimitChange: setRecentPageSize/)
   assert.match(api, /sourceArea\?: ScreeningSourceArea/)
@@ -25,9 +25,9 @@ test("screening supports workflow context, optional fuzzy review and manual outc
 })
 
 test("screening reports show control evidence and export every check", () => {
-  assert.match(page, /Run screening report/)
-  assert.match(page, /Download detailed report/)
-  assert.match(page, /Current possible matches/)
+  assert.match(page, /Run report/)
+  assert.match(page, /Download report/)
+  assert.match(page, /Review required/)
   assert.match(edge, /listReportChecks/)
   assert.match(edge, /const pageSize = 1000/)
   assert.match(edge, /offset \+ pageSize - 1/)

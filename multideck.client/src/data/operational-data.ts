@@ -1080,6 +1080,7 @@ export type CustomerStatus = "Premium" | "Standard" | "Trial" | "New"
 
 export type CustomerRecord = {
   id: string
+  lastContactAt?: string | null
   initials: string
   name: string
   location: string
@@ -1985,4 +1986,3 @@ export const crmLeadFieldSettings = [
     options: ["Committed stage", "Quote accepted", "First booking created", "Manual approval"],
   },
 ]
-

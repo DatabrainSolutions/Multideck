@@ -7,7 +7,6 @@ import {
   ArrowLeft,
   Ban,
   BadgeCheck,
-  Bell,
   BookOpen,
   Braces,
   BriefcaseBusiness,
@@ -35,7 +34,6 @@ import {
   LoaderCircle,
   LockKeyhole,
   Mail,
-  Megaphone,
   MessageCircle,
   MonitorSmartphone,
   Palette,
@@ -76,7 +74,6 @@ import { AvailabilitySettingsPanel } from "@/components/multideck/availability-s
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { AuthIdentityManager } from "@/components/multideck/auth-provider-selector"
 import { CopyFeedbackTransition, CopyStatusIcon } from "@/components/multideck/copyable-field"
-import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { ShortcutKeys } from "@/components/multideck/keyboard-shortcut-keys"
 import { KeyboardShortcutsPanel } from "@/components/multideck/keyboard-shortcuts-panel"
 import { Pagination } from "@/components/multideck/pagination"
@@ -1861,18 +1858,6 @@ function NotificationsTab() {
     }
   }
 
-  const enabledEmailCount = [
-    preferences.customs_hold,
-    preferences.eta_delay,
-    preferences.customer_message,
-    preferences.document_parse,
-    preferences.daily_digest,
-    preferences.quote_reminder,
-    preferences.product_updates,
-    preferences.dexter_watch,
-    preferences.lifecycle_note_mention,
-  ].filter(Boolean).length
-
   return (
     <>
       <SettingsPageHeader
@@ -1908,7 +1893,7 @@ function NotificationsTab() {
           <span>{loadError}</span>
         </div>
       ) : null}
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
+      <div className="mt-[var(--md-page-stack-gap)]">
         <div className="space-y-[var(--md-page-stack-gap)]">
           <SettingsPanel title="Operational alerts" description="Email the updates that need attention away from the Multideck workspace.">
             <SettingsToggleRow
@@ -1993,120 +1978,8 @@ function NotificationsTab() {
             </SettingsFieldRow>
           </SettingsPanel>
         </div>
-        <aside className="space-y-[var(--md-page-stack-gap)] xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
-          <section className="md-settings-notification-map relative isolate overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[13px] font-medium text-[var(--md-ink)]">Signal routing</p>
-                <p className="mt-1 text-[12px] text-[var(--md-text)]">What reaches you, and when</p>
-              </div>
-              <span className="relative flex size-8 items-center justify-center rounded-full bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
-                <Bell className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
-                <span className="md-settings-signal-ping absolute inset-0 rounded-full" aria-hidden="true" />
-              </span>
-            </div>
-            <div className="relative mt-5 grid gap-2">
-              {[
-                [CircleAlert, "Urgent alerts", "Immediate", "amber"],
-                [Mail, "Operational email", `${enabledEmailCount} of 7 on`, "accent"],
-                [CalendarClock, "Daily digest", preferences.daily_digest ? preferences.digestTime : "Off", "blue"],
-                [ShieldCheck, "Security notices", "Always on", "green"],
-              ].map(([Icon, label, value, tone], index) => (
-                <div key={label as string} className="relative flex items-center gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 py-3 shadow-[var(--md-shadow-line)]">
-                  {index < 3 ? <span className="absolute start-[27px] top-[38px] h-[18px] w-px bg-[var(--md-line-strong)]" aria-hidden="true" /> : null}
-                  <span className={cn(
-                    "relative z-10 grid size-7 place-items-center rounded-[var(--md-radius-md)]",
-                    tone === "amber" && "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]",
-                    tone === "accent" && "bg-[var(--md-accent-a10)] text-[var(--md-accent)]",
-                    tone === "blue" && "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]",
-                    tone === "green" && "bg-[var(--md-accent-a10)] text-[var(--md-green)]",
-                  )}>
-                    <Icon className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0 flex-1 text-[12px] text-[var(--md-text)]">{label as string}</span>
-                  <span className="text-end text-[12px] font-medium tabular-nums text-[var(--md-ink)]">{value as string}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-          <SettingsSummaryCard
-            title="Delivery health"
-            rows={[
-              ["Provider", "Resend"],
-              ["Last test", "Not sent yet"],
-              ["Muted by schedule", "14 today"],
-              ["Failed deliveries", "0"],
-            ]}
-            actionLabel="Send test"
-            onAction={() => void sendTestEmail()}
-          />
-        </aside>
       </div>
     </>
-  )
-}
-
-/**
- * The summon explainer. The gesture is the one shortcut nobody would discover on
- * their own, so it gets a surface of its own above the list rather than a row in
- * it — and a Try it button, because reading about a gesture teaches less than
- * doing it once.
- */
-function SummonSpotlight() {
-  const aiAgentName = useAiAgentName()
-  const pointerBinding = useShortcutBinding("dexter.summon")
-  const keyboardBinding = useShortcutBinding("dexter.summonKeyboard")
-
-  return (
-    <section className="md-settings-panel relative isolate overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-accent-abyss)] text-white shadow-[var(--md-shadow-soft)]">
-      <span aria-hidden="true" className="absolute inset-0 opacity-[0.55]">
-        <SpectralBloomShader shape="composer" />
-      </span>
-      <span
-        aria-hidden="true"
-        className="absolute inset-0 bg-[linear-gradient(105deg,rgba(6,36,32,0.92),rgba(6,36,32,0.62)_54%,rgba(6,36,32,0.34))]"
-      />
-      <div className="relative grid gap-5 px-5 py-5 sm:px-6 sm:py-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-        <div className="max-w-[62ch]">
-          <p className="flex items-center gap-2 text-[12px] font-medium text-white/70">
-            <WandSparkles className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
-            The gesture worth learning first
-          </p>
-          <h2 className="mt-2.5 text-balance text-[19px] font-medium leading-[1.2] tracking-[-0.01em]">
-            Summon {aiAgentName} onto anything on the screen
-          </h2>
-          <p className="mt-2 text-pretty text-[13px] leading-6 text-white/72">
-            Hold the modifier and double-click a field, a chart, a table or a whole panel. {aiAgentName} traces what you
-            pointed at, opens a small prompt against it, and answers with that context already attached. With nothing
-            under the pointer the screen dims and you pick the area yourself.
-          </p>
-          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2.5">
-            <span className="flex items-center gap-2 text-[12px] text-white/70">
-              Pointer
-              <ShortcutKeys
-                binding={pointerBinding}
-                keyClassName="bg-white/15 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]"
-                emptyLabel="Off"
-              />
-            </span>
-            <span className="flex items-center gap-2 text-[12px] text-white/70">
-              Keyboard
-              <ShortcutKeys
-                binding={keyboardBinding}
-                keyClassName="bg-white/15 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]"
-                emptyLabel="Off"
-              />
-            </span>
-          </div>
-        </div>
-        <div className="shrink-0 lg:justify-self-end">
-          <p className="text-[11.5px] leading-5 text-white/55">
-            Answers always run on the Fast engine,
-            <br className="hidden sm:inline" /> so they land while you are still looking.
-          </p>
-        </div>
-      </div>
-    </section>
   )
 }
 
@@ -2118,12 +1991,9 @@ function ShortcutsTab() {
         title="Keyboard shortcuts"
         description="Every shortcut in Multideck, and the keys they are on. Hold two keys together for a chord such as H + J, or press two plain keys in a row for a sequence."
       />
-      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
-        <SummonSpotlight />
-        <section className="md-settings-panel overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
-          <KeyboardShortcutsPanel />
-        </section>
-      </div>
+      <section className="md-settings-panel mt-[var(--md-page-stack-gap)] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
+        <KeyboardShortcutsPanel />
+      </section>
     </>
   )
 }
@@ -4984,124 +4854,6 @@ export function AdminAiUsageContent() {
       )
 }
 
-function WhatsNewTab() {
-  const releases = [
-    {
-      id: "navigation",
-      date: "29 Jul",
-      title: "A sidebar that follows your work",
-      summary: "Drill into an area without losing the wider product map, with smoother active-state motion and personal ordering.",
-      tag: "Navigation",
-      icon: Palette,
-    },
-    {
-      id: "crm",
-      date: "24 Jul",
-      title: "Faster lead-to-customer handover",
-      summary: "Carry qualified CRM context into the customer record with clearer conversion review and ownership.",
-      tag: "CRM",
-      icon: Users,
-    },
-    {
-      id: "identity",
-      date: "18 Jul",
-      title: "Profile photos across the workspace",
-      summary: "Operator identity now stays visible in assignments, account menus, and customer-facing ownership.",
-      tag: "Profile",
-      icon: UserRound,
-    },
-  ]
-  const [selectedReleaseId, setSelectedReleaseId] = useState(releases[0].id)
-  const selectedRelease = releases.find((release) => release.id === selectedReleaseId) ?? releases[0]
-
-  return (
-    <>
-      <SettingsPageHeader
-        eyebrow="Resources / What's new"
-        title="What's new"
-        description="A concise release trail focused on changes operators will notice in everyday work."
-      />
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] lg:grid-cols-[minmax(280px,0.78fr)_minmax(0,1.22fr)]">
-        <section className="rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-3 shadow-[var(--md-shadow-soft)]">
-          <div className="px-2 pb-3 pt-1">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">July 2026</p>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">Three improvements worth knowing</p>
-          </div>
-          <div className="relative">
-            <span className="absolute bottom-6 start-[27px] top-6 w-px bg-[var(--md-line-strong)]" aria-hidden="true" />
-            {releases.map((release) => {
-              const Icon = release.icon
-              const selected = release.id === selectedRelease.id
-              return (
-                <button
-                  key={release.id}
-                  type="button"
-                  aria-pressed={selected}
-                  className={cn(
-                    "group relative grid w-full grid-cols-[38px_minmax(0,1fr)] gap-3 rounded-[var(--md-radius-xl)] px-2 py-3 text-start transition-[background-color,color,scale] hover:bg-[var(--md-hover)] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:active:scale-100",
-                    selected && "bg-[var(--md-bg-strong)] shadow-[var(--md-shadow-line)]",
-                  )}
-                  onClick={() => setSelectedReleaseId(release.id)}
-                >
-                  <span className={cn(
-                    "relative z-10 grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[color,scale] group-hover:scale-[1.04] motion-reduce:group-hover:scale-100",
-                    selected && "text-[var(--md-accent)]",
-                  )}>
-                    <Icon className="size-4" strokeWidth={1.35} aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-[11px] font-medium tabular-nums text-[var(--md-subtle)]">{release.date}</span>
-                    <span className="mt-1 block text-[13px] font-medium text-[var(--md-ink)]">{release.title}</span>
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        </section>
-        <AnimatePresence mode="popLayout" initial={false}>
-          <motion.article
-            key={selectedRelease.id}
-            className="md-settings-release-detail relative isolate min-h-[360px] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)] sm:p-7"
-            initial={{ opacity: 0, y: 8, filter: "blur(4px)" }}
-            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            exit={{ opacity: 0, y: -4, filter: "blur(2px)" }}
-            transition={mdMotion.smooth}
-          >
-            <span className="md-settings-release-detail__number" aria-hidden="true">{selectedRelease.date.split(" ")[0]}</span>
-            <div className="relative">
-              <StatusPill tone="teal">{selectedRelease.tag}</StatusPill>
-              <h2 className="mt-6 max-w-[18ch] text-balance text-[24px] font-medium leading-[1.12] tracking-[-0.025em] text-[var(--md-ink)]">{selectedRelease.title}</h2>
-              <p className="mt-4 max-w-[58ch] text-pretty text-[14px] leading-6 text-[var(--md-text)]">{selectedRelease.summary}</p>
-              <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)]">
-                  <p className="text-[11px] text-[var(--md-subtle)]">Why it matters</p>
-                  <p className="mt-2 text-[13px] leading-5 text-[var(--md-ink)]">Less navigation hunting and clearer continuity between records and workspace areas.</p>
-                </div>
-                <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)]">
-                  <p className="text-[11px] text-[var(--md-subtle)]">Available to</p>
-                  <p className="mt-2 text-[13px] leading-5 text-[var(--md-ink)]">All Operations workspaces on the current release.</p>
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                className="mt-6 h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 text-[13px] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)]"
-                onClick={() => {
-                  window.history.pushState({}, "", "/settings?tab=docs")
-                  window.dispatchEvent(new PopStateEvent("popstate"))
-                }}
-              >
-                Read release notes
-                <ExternalLink className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
-              </Button>
-            </div>
-          </motion.article>
-        </AnimatePresence>
-      </div>
-    </>
-  )
-}
-
 function DocsTab() {
   const [query, setQuery] = useState("")
   const [selectedGuideTitle, setSelectedGuideTitle] = useState("Build a customs hold workflow")
@@ -5526,8 +5278,6 @@ function TabContent({
       return <NotificationsTab />
     case "integrations":
       return <IntegrationsTab navigate={navigate} />
-    case "whats-new":
-      return <WhatsNewTab />
     case "docs":
       return <DocsTab />
     case "support":

@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { workspaceStorageKey } from "@/lib/workspace-environment"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
@@ -705,6 +706,10 @@ export function WarehouseFacilitiesView() {
         >
           <DataTable
             ariaLabel="Warehouse facilities"
+            exportConfig={{ fileName: "warehouse-facilities", register: {
+              dateLabel: "Facility created date", dateValue: (row) => row.createdAt,
+              loadAllRows: (signal) => collectExportPages((page) => listWarehouseFacilitiesPage({ search: search.trim() || undefined, includeInactive: activeFilter === "All", sort, ...page }), (row) => row.id, signal),
+            } }}
             columnsButtonLabel="Manage facility columns"
             storageKey="warehouse-facilities"
             rows={visibleRows}
@@ -1644,6 +1649,10 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
         >
           <DataTable
             ariaLabel="Warehouse items"
+            exportConfig={{ fileName: "warehouse-items", register: {
+              dateLabel: "Item created date", dateValue: (row) => row.createdAt,
+              loadAllRows: (signal) => collectExportPages((page) => listWarehouseItemsPage({ facilityId: facilityId || undefined, search: search.trim() || undefined, includeInactive: activeFilter === "All", sort, ...page }), (row) => row.id, signal),
+            } }}
             columnsButtonLabel="Manage item columns"
             storageKey="warehouse-items"
             columns={columns}
@@ -2237,6 +2246,10 @@ export function WarehouseLocationsView() {
         >
           <DataTable
             ariaLabel="Warehouse locations"
+            exportConfig={{ fileName: "warehouse-locations", register: {
+              dateLabel: "Location created date", dateValue: (row) => row.createdAt,
+              loadAllRows: (signal) => collectExportPages((page) => listWarehouseLocationsPage(selectedFacilityId, { search: search.trim() || undefined, includeInactive: activeFilter === "All", sort, ...page }), (row) => row.id, signal),
+            } }}
             columnsButtonLabel="Manage location columns"
             storageKey="warehouse-locations"
             columns={columns}

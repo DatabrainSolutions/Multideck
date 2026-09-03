@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { AlertCircle, ArrowDownToLine, ArrowLeft, Check, ChevronDown, FileText as FileSearch, History, Link2, Loader2, Plus, ReceiptText, RefreshCw, Search, Send, Trash2, Upload, XCircle } from "@/components/icons/hugeicons"
 import { motion, useReducedMotion } from "motion/react"
@@ -514,6 +515,14 @@ export function WarehousePurchaseOrdersWorkspace({ navigate }: { navigate?: (pat
   return <div className="grid gap-[var(--md-page-stack-gap)]">
     <DataTable
       ariaLabel="Customer purchase orders"
+      exportConfig={{ fileName: "warehouse-purchase-orders", register: {
+        dateLabel: "Purchase order created date", dateValue: (row) => row.createdAt,
+        busy: search.trim() !== committedSearch.trim(),
+        loadAllRows: (signal) => collectExportPages((page) => listWarehousePurchaseOrdersPage({
+          facilityId: facilityId || undefined, status: statusCode || undefined, openOnly: scope === "Open",
+          search: committedSearch.trim() || undefined, sort, ...page,
+        }), (row) => row.id, signal),
+      } }}
       columnsButtonLabel="Manage customer purchase order columns"
       storageKey="warehouse-purchase-orders"
       columns={columns}

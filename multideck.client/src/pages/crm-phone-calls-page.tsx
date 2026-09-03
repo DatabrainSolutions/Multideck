@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import {
@@ -214,6 +215,7 @@ function usePhoneCallColumns(navigate: (path: string) => void) {
 }
 
 function PhoneCallsRegister({
+  exportRows,
   rows,
   total,
   offset,
@@ -236,6 +238,7 @@ function PhoneCallsRegister({
   onClearFilters,
   navigate,
 }: {
+  exportRows?: (signal: AbortSignal) => Promise<readonly PhoneCallListItem[]>
   rows: PhoneCallListItem[]
   total: number
   offset: number
@@ -273,6 +276,9 @@ function PhoneCallsRegister({
   return (
     <DataTable
       ariaLabel={t("Phone calls")}
+      exportConfig={exportRows ? { fileName: "phone-calls", register: {
+        dateLabel: "Call started date", dateValue: (call) => call.startedAt, loadAllRows: exportRows,
+      } } : undefined}
       columnsButtonLabel={t("Manage phone call columns")}
       columns={columns}
       rows={rows}
@@ -407,6 +413,14 @@ function CrmPhoneCallsRegisterPage({ navigate }: { navigate: (path: string) => v
   }, [])
 
   const registerProps = {
+    exportRows: !listPreview && !listError && search === debouncedSearch ? (signal: AbortSignal) => collectExportPages(async (page) => {
+      const result = await listPhoneCalls({ ...page, timezone, search: debouncedSearch, from: dateRange.start, to: dateRange.end,
+        direction: direction as "inbound" | "outbound" | "all", outcome: outcome as PhoneCallOutcome | "all", matchStatus: matchStatus as PhoneCallMatchStatus | "all",
+        transcriptStatus: transcriptStatus as PhoneCallTranscriptStatus | "all", sort: { id: "started", direction: "desc" },
+      }, signal)
+      if (result.preview) throw new Error("Live call records are unavailable. Preview data cannot be exported.")
+      return result
+    }, (call) => call.id, signal) : undefined,
     rows, total, offset, limit, loading: listState === "loading" || listRefreshing, search, direction, outcome, matchStatus, transcriptStatus,
     onSearch: setSearch, onDirection: (value: string) => { setDirection(value); setOffset(0) }, onOutcome: (value: string) => { setOutcome(value); setOffset(0) },
     onMatchStatus: (value: string) => { setMatchStatus(value); setOffset(0) }, onTranscriptStatus: (value: string) => { setTranscriptStatus(value); setOffset(0) },

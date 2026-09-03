@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { ArrowUpRight, FlaskConical, LoaderCircle, RefreshCw, Search, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -303,6 +304,13 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
         rows={quotesLoading ? [] : quotes}
         getRowKey={(quote) => quote.reference}
         storageKey={quoteTableStorageKey}
+        exportConfig={{ fileName: "multideck-quotes", register: {
+          dateLabel: "Quote created date", dateValue: (quote) => quote.createdAt,
+          busy: quotesLoading || Boolean(quotesError) || quickSearch !== debouncedQuickSearch,
+          loadAllRows: (signal) => collectExportPages((page) => listSalesQuotesPage({
+            search: debouncedQuickSearch, filterQuery: withQuoteOwnerScope(search, scope, currentUser?.name), sort: serverSort, ...page,
+          }, signal), (quote) => quote.reference, signal),
+        } }}
         serverSorting={{ value: serverSort, onChange: setServerSort }}
         rowClassName={(quote) => cn(
           "transition-colors",

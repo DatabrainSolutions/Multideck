@@ -1,6 +1,9 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { ChevronDown } from "@/components/icons/hugeicons"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
+import { registerControlClass } from "@/components/multideck/register-toolbar"
+import { Button } from "@/components/ui/button"
 import { Pagination } from "@/components/multideck/pagination"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Input } from "@/components/ui/input"
@@ -48,48 +51,47 @@ export function ScreeningListFreshness({
   list,
   action,
   compact = false,
+  loading = false,
+  onRetry,
   className,
 }: {
   list: ScreeningListStatus | null
   action?: ReactNode
   compact?: boolean
+  loading?: boolean
+  onRetry?: () => void
   className?: string
 }) {
   const { t, language } = useLanguage()
-  const loaded = Boolean(list?.loaded)
-  const downloaded = list?.downloadedAt ? formatScreeningTime(list.downloadedAt, language) : null
-  const meta = !loaded
-    ? t("The UK OFSI list has not been loaded into this workspace yet.")
-    : list?.stale
-      ? t("This list is older than 36 hours. Refresh before relying on a no-match result.")
-      : t("Names are screened against the copy stored in this workspace, not a live government website.")
+  const checking = loading || Boolean(list?.refreshing)
+  const unavailable = !list?.loaded || list?.stale !== false || Boolean(list?.lastError)
+  const checked = list?.checkedAt ? formatScreeningTime(list.checkedAt, language) : null
 
   return (
-    <div className={cn("flex flex-col gap-3 sm:flex-row sm:justify-between", compact ? "sm:items-center" : "sm:items-start", className)}>
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className={cn("font-medium text-[var(--md-ink)]", compact ? "text-[13px]" : "text-[14px]")}>{t(list?.sourceName || "UK OFSI consolidated list")}</p>
-          <StatusPill tone={!loaded ? "neutral" : list?.stale ? "amber" : "green"}>
-            {t(!loaded ? "Not loaded" : list?.stale ? "Needs refresh" : "Current")}
-          </StatusPill>
-        </div>
-        {compact ? (
-          <p className="mt-1 text-[11.5px] leading-4 text-[var(--md-text)]">
-            {downloaded ? <>{t("Updated")} <bdi>{downloaded}</bdi></> : t("No local copy")}
-            {list?.stale ? <> · {t("Refresh before relying on a no-match result.")}</> : null}
+    <div className={cn("flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between", className)}>
+      <div className="min-w-0 flex-1">
+        <p className={cn("font-medium text-[var(--md-ink)]", compact ? "text-[13px]" : "text-[14px]")}>{t(list?.sourceName || "UK Sanctions List")}</p>
+        {checking ? (
+          <div role="status" className="mt-2 flex items-center gap-2 text-[12px] text-[var(--md-text)]">
+            <DotGridLoader size="sm" decorative />
+            <span>{t("Checking the UK Sanctions List…")}</span>
+            {!loading && onRetry ? <Button type="button" variant="outline" className={registerControlClass} onClick={onRetry}>{t("Check again")}</Button> : null}
+          </div>
+        ) : unavailable ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <p role="alert" className="max-w-[65ch] text-[12px] leading-5 text-[var(--md-red)]">{t("The UK Sanctions List could not be verified. Retry before screening.")}</p>
+            {onRetry ? <Button type="button" variant="outline" className={registerControlClass} onClick={onRetry}>{t("Retry")}</Button> : null}
+          </div>
+        ) : null}
+        {!compact && list?.loaded ? (
+          <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
+            {list.publisher ? `${t(list.publisher)} · ` : null}
+            {Number(list.entryCount ?? 0).toLocaleString(language)} {t("names")}
+            {checked ? ` · ${t("Source checked")} ${checked}` : ""}
           </p>
-        ) : (
-          <>
-            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
-              {list?.publisher ? `${t(list.publisher)} · ` : null}
-              {loaded ? `${Number(list?.entryCount ?? 0).toLocaleString()} ${t("names")}` : t("No local copy")}
-              {downloaded ? ` · ${t("Updated")} ${downloaded}` : ""}
-            </p>
-            <p className="mt-2 text-[12px] leading-5 text-[var(--md-text)]">{meta}</p>
-          </>
-        )}
+        ) : null}
       </div>
-      {action ? <div className="shrink-0">{action}</div> : null}
+      {action ? <div className="min-w-0 sm:shrink-0">{action}</div> : null}
     </div>
   )
 }

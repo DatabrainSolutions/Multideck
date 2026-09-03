@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AlertCircle, ArrowDownToLine, ArrowUpFromLine, Boxes, Loader2, Plus, RefreshCw, Trash2, Upload } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -713,6 +714,14 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
   return <div className="grid gap-[var(--md-page-stack-gap)]">
     <DataTable
       ariaLabel={typeFilter === "inbound" ? "Goods in" : typeFilter === "outbound" ? "Goods out" : "Warehouse orders"}
+      exportConfig={{ fileName: `warehouse-${typeFilter ?? "orders"}`, register: {
+        dateLabel: "Order created date", dateValue: (row) => row.createdAt,
+        busy: search.trim() !== committedSearch.trim(),
+        loadAllRows: (signal) => collectExportPages((page) => listOperationalWarehouseOrdersPage({
+          facilityId: facilityId || undefined, typeCode: typeFilter ?? (directionFacet || undefined),
+          status: statusFacet || undefined, openOnly: scope === "Open", search: committedSearch.trim() || undefined, sort, ...page,
+        }), (row) => row.id, signal),
+      } }}
       columnsButtonLabel="Manage order columns"
       storageKey={`warehouse-orders-${typeFilter ?? "all"}`}
       columns={columns}

@@ -51,6 +51,7 @@ import {
 
 export type NavItem = {
   label: string
+  /** Numeric values are reserved for live unread/actionable notification state, never record totals. */
   value?: string
   icon: LucideIcon
   route?: string
@@ -325,10 +326,10 @@ export const sidebarAreas: SidebarArea[] = [
 export const sidebarPrimary: NavItem[] = [
   { label: "Overview", value: "G O", icon: LayoutDashboard, route: "/" },
   { label: "To Do list", icon: ClipboardCheck, route: "/to-do" },
-  { label: "Warehouse", value: "12", icon: Forklift, route: "/warehouse" },
-  { label: "Customers", value: "39", icon: Users, route: "/customers" },
-  { label: "CRM", value: "9", icon: BriefcaseBusiness, route: "/crm" },
-  { label: "Exceptions", value: "2", icon: TriangleAlert },
+  { label: "Warehouse", icon: Forklift, route: "/warehouse" },
+  { label: "Customers", icon: Users, route: "/customers" },
+  { label: "CRM", icon: BriefcaseBusiness, route: "/crm" },
+  { label: "Exceptions", icon: TriangleAlert },
 ]
 
 export const sidebarSecondary: NavItem[] = [

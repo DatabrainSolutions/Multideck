@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -336,6 +337,11 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
         {header}
         <DataTable
           ariaLabel={title}
+          exportConfig={{ fileName: `admin-${view}`, register: {
+            dateLabel: "Event recorded date", dateValue: (row) => row.occurredAt,
+            busy: searchInput.trim() !== search,
+            loadAllRows: (signal) => collectExportPages((page) => getAdminAudit(view, { search, category, dateRange, sort, ...page }, signal), (row) => row.id, signal),
+          } }}
           columnsButtonLabel={t("Manage audit log columns")}
           toolbarSearch={<Input type="search" value={searchInput} onChange={(event) => { setSearchInput(event.target.value); setOffset(0) }} placeholder={t("Search audit log")} aria-label={t("Search audit log")} className="w-full sm:w-[220px]" />}
           toolbarFilters={<><MultideckDateRangePicker value={dateRange} onChange={(range) => { setDateRange(range); setOffset(0) }} placeholder="Date range" title="Audit date range" description="Show events recorded between these dates." footerLabel="Selected audit dates" align="end" allowClear maxDate={getDateKey(new Date())} active={Boolean(dateRange.start || dateRange.end)} triggerClassName="h-9 w-auto min-w-[148px] max-w-[220px]" /><Select value={category} onValueChange={(value) => { setCategory(value as AuditCategory); setOffset(0) }}><SelectTrigger aria-label={t("Filter audit source")} className="min-w-[150px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("All sources")}</SelectItem><SelectItem value="authentication">{t("Authentication")}</SelectItem><SelectItem value="application">{t("Application")}</SelectItem></SelectContent></Select></>}

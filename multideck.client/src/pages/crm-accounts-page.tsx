@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { ArrowRight, Building2, RefreshCw } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -280,6 +281,17 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
         exportConfig={{
           fileName: "crm-companies",
           recordCategory: "Company details",
+          register: {
+            dateLabel: "Last contact date",
+            dateValue: (account) => account.lastContactAt,
+            busy: query.trim() !== debouncedQuery,
+            loadAllRows: (signal) => collectExportPages((page) => listAccountsPage({
+              organisationType: "company", search: debouncedQuery, marketingScope: "all",
+              relationship: relationshipFilter,
+              owner: accountScope === "Mine" ? currentOwnerId ?? "__no_current_user__" : ownerFilter,
+              filterQuery: filterQueryIsEmpty(advancedFilter) ? null : advancedFilter, sort, ...page,
+            }, { forceRefresh: true }), (account) => account.id, signal),
+          },
           loadRecords: (selectedAccounts) => Promise.all(selectedAccounts.map((account) => getCustomer(account.id))),
         }}
         onRowClick={(account) => navigate(`${routeBase}/${account.id}`)}

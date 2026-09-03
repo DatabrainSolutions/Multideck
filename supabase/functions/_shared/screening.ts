@@ -1,5 +1,6 @@
 export const UK_OFSI_SOURCE_CODE = "uk_ofsi_consolidated"
-export const UK_OFSI_CSV_URL = "https://ofsistorage.blob.core.windows.net/publishlive/2022format/ConList.csv"
+// Keep the historical source code so existing checks and watches retain their identity.
+export const UK_OFSI_CSV_URL = "https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.csv"
 export const SCREENING_STALE_AFTER_HOURS = 36
 export const SCREENING_SIMILAR_THRESHOLD = 0.82
 
@@ -106,6 +107,7 @@ export function createCsvParser(onRow: (row: string[]) => void) {
     },
     end() {
       if (quotePending) quoted = false
+      if (quoted) throw new Error("The sanctions CSV ended inside a quoted field.")
       if (quoted || field || row.length) commitRow()
     },
   }
@@ -141,6 +143,7 @@ function listedOn(value: string | null) {
 }
 
 function ukRefFrom(row: Map<string, string>) {
+  if (row.has("ofsi group id")) return cell(row, "unique id")
   const direct = cell(row, "uk sanctions list ref")
   if (direct) return direct
   const other = cell(row, "other information")
@@ -150,12 +153,12 @@ function ukRefFrom(row: Map<string, string>) {
 
 function isHeaderRow(values: string[]) {
   const keys = values.map(headerKey)
-  return keys.includes("group id") && keys.includes("name 1")
+  return (keys.includes("group id") || (keys.includes("ofsi group id") && keys.includes("unique id"))) && keys.includes("name 1")
 }
 
 function ofsiEntryFromValues(keys: string[], values: string[]): ParsedScreeningEntry | null {
   const row = new Map(keys.map((key, index) => [key, values[index] ?? ""]))
-  const groupId = cell(row, "group id", "ofsi group id")
+  const groupId = cell(row, "group id", "unique id", "ofsi group id")
   const name = [
     cell(row, "name 1"),
     cell(row, "name 2"),
@@ -172,13 +175,13 @@ function ofsiEntryFromValues(keys: string[], values: string[]): ParsedScreeningE
     uniqueId: cell(row, "unique id"),
     name: name.slice(0, 500),
     normalizedName: normalizedName.slice(0, 500),
-    aliasType: cell(row, "alias type"),
-    groupType: cell(row, "group type"),
+    aliasType: cell(row, "alias type", "name type"),
+    groupType: cell(row, "group type", "designation type"),
     regime: cell(row, "regime name", "regime"),
-    country: cell(row, "country"),
-    listedOn: listedOn(cell(row, "listed on")),
+    country: cell(row, "country", "address country", "nationality ies"),
+    listedOn: listedOn(cell(row, "listed on", "date designated")),
     ukRef: ukRefFrom(row),
-    otherInformation: extractOfsiListingNotes(cell(row, "other information")),
+    otherInformation: clipListingNotes(cell(row, "uk statement of reasons") || "") || extractOfsiListingNotes(cell(row, "other information")),
   }
 }
 
@@ -257,6 +260,7 @@ export function createOfsiEntryParser(onEntry: (entry: ParsedScreeningEntry) => 
       if (isHeaderRow(values)) keys = values.map(headerKey)
       return
     }
+    if (keys.includes("ofsi group id") && values.length !== keys.length) throw new Error("The sanctions CSV contains an incomplete record.")
     const entry = ofsiEntryFromValues(keys, values)
     if (!entry) return
     entryCount += 1

@@ -1,6 +1,7 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
-import { CheckCircle2, Download, FileText, History, LoaderCircle, RefreshCw, Search, ShieldAlert, ShieldCheck } from "@/components/icons/hugeicons"
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
+import { CheckCircle2, Download, FileText, History, LoaderCircle, Search, ShieldAlert, ShieldCheck } from "@/components/icons/hugeicons"
+import { registerControlClass } from "@/components/multideck/register-toolbar"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
 import { ScreeningListFreshness, ScreeningMatchList, ScreeningOutcomePill, ScreeningResultSummary } from "@/components/multideck/screening-components"
@@ -17,7 +18,6 @@ import {
   getScreeningCheck,
   getScreeningControlReport,
   getScreeningWorkspace,
-  refreshScreeningList,
   runScreeningCheck,
   type ScreeningCheck,
   type ScreeningControlReport,
@@ -27,7 +27,7 @@ import {
 import { cn } from "@/lib/utils"
 
 const fieldClass = "h-9 rounded-[var(--md-radius-md)] px-3 text-base md:text-[12.5px]"
-const secondaryActionClass = "h-8 rounded-[var(--md-radius-md)] px-2.5 text-[11.5px] font-medium transition-[background-color,box-shadow,color,opacity,transform] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"
+const secondaryActionClass = cn(registerControlClass, "transition-[background-color,box-shadow,color,opacity,transform] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100")
 
 const sourceAreas: { value: ScreeningSourceArea; label: string }[] = [
   { value: "manual", label: "Standalone compliance check" },
@@ -79,7 +79,10 @@ export function ScreeningPage() {
   const [subjectRole, setSubjectRole] = useState("Party")
   const [includeSimilar, setIncludeSimilar] = useState(false)
   const [running, setRunning] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
+  const [refreshing, setRefreshing] = useState(true)
+  const workspaceLoading = useRef(false)
+  const linkedCheckLoaded = useRef(false)
+  const checkRevision = useRef(0)
   const [deciding, setDeciding] = useState<"manual_clean" | "sanctioned" | null>(null)
   const [reporting, setReporting] = useState(false)
   const [downloading, setDownloading] = useState(false)
@@ -165,14 +168,19 @@ export function ScreeningPage() {
   ], [language, t])
 
   async function loadWorkspace() {
-    setLoadState("loading")
-    setError(null)
+    if (workspaceLoading.current) return
+    workspaceLoading.current = true
+    const revision = checkRevision.current
+    setRefreshing(true)
     try {
       const workspace = await getScreeningWorkspace()
-      setList(workspace.list)
-      setChecks(workspace.checks)
+      if (revision === checkRevision.current) {
+        setList(workspace.list)
+        setChecks(workspace.checks)
+      }
       const checkId = new URLSearchParams(window.location.search).get("check")
-      if (checkId) {
+      if (checkId && !linkedCheckLoaded.current) {
+        linkedCheckLoaded.current = true
         try {
           const fromList = workspace.checks.find((check) => check.id === checkId)
           setActive(fromList?.matches ? fromList : await getScreeningCheck(checkId))
@@ -183,15 +191,25 @@ export function ScreeningPage() {
       setLoadState("ready")
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("Party screening could not be loaded."))
+      setList((current) => current ? { ...current, stale: true, refreshing: false, refreshMessage: "The UK Sanctions List could not be verified. Retry before screening." } : null)
       setLoadState("error")
+    } finally {
+      workspaceLoading.current = false
+      setRefreshing(false)
     }
   }
 
-  useEffect(() => { void loadWorkspace() }, [])
+  useEffect(() => {
+    void loadWorkspace()
+    const onVisible = () => { if (document.visibilityState === "visible") void loadWorkspace() }
+    document.addEventListener("visibilitychange", onVisible)
+    return () => document.removeEventListener("visibilitychange", onVisible)
+  }, [])
   useEffect(() => { if (recentPage > recentPageCount) setRecentPage(recentPageCount) }, [recentPage, recentPageCount])
   useEffect(() => { setRecentPage(1) }, [recentQuery])
 
   function updateCheck(check: ScreeningCheck) {
+    checkRevision.current += 1
     setActive(check)
     setChecks((current) => [check, ...current.filter((item) => item.id !== check.id)].slice(0, 500))
     setRecentPage(1)
@@ -199,9 +217,10 @@ export function ScreeningPage() {
 
   async function onScreen(event: FormEvent) {
     event.preventDefault()
-    if (!name.trim()) return
+    if (!name.trim() || running || refreshing) return
     setRunning(true)
     setError(null)
+    setActive(null)
     try {
       const result = await runScreeningCheck({
         subjectName: name.trim(),
@@ -212,24 +231,12 @@ export function ScreeningPage() {
         includeSimilar,
       })
       updateCheck(result)
+      if (result.list) setList(result.list)
       setControlReport(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("The name could not be screened."))
     } finally {
       setRunning(false)
-    }
-  }
-
-  async function onRefresh() {
-    setRefreshing(true)
-    setError(null)
-    try {
-      const result = await refreshScreeningList()
-      setList(result.list)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("The government list could not be refreshed."))
-    } finally {
-      setRefreshing(false)
     }
   }
 
@@ -289,27 +296,19 @@ export function ScreeningPage() {
           </span>
           <span>{t("Compliance controls")}</span>
         </h1>
-        <Button
-          type="button"
-          variant="outline"
-          aria-pressed={recentsOpen}
-          onClick={() => setRecentsOpen((current) => !current)}
-          className={cn(secondaryActionClass, "shrink-0", recentsOpen && "bg-[var(--md-selected-bg)] text-[var(--md-accent)] shadow-[var(--md-shadow-green-card-selected)]")}
-        >
-          <History className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
-          {t("Recents")}
-        </Button>
       </header>
 
-      <Surface tone="soft" className="rounded-[var(--md-radius-xl)]" padding="sm">
+      <section aria-label={t("Sanctions list and reports")} className="py-1">
         <ScreeningListFreshness
           list={list}
           compact
+          loading={refreshing}
+          onRetry={() => { setError(null); void loadWorkspace() }}
           action={(
-            <div className="flex flex-wrap gap-2 sm:justify-end">
-              <Button type="button" variant="outline" className={secondaryActionClass} onClick={() => void onRefresh()} disabled={refreshing}>
-                {refreshing ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <RefreshCw className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
-                {t(refreshing ? "Refreshing list…" : "Refresh list")}
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              <Button type="button" variant="outline" aria-pressed={recentsOpen} aria-controls="screening-recents" onClick={() => setRecentsOpen((current) => !current)} className={cn(secondaryActionClass, recentsOpen && "bg-[var(--md-selected-bg)] text-[var(--md-accent)]")}>
+                <History className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+                {t("Recents")}
               </Button>
               <Button type="button" variant="outline" className={secondaryActionClass} onClick={() => void onDownloadReport()} disabled={downloading}>
                 {downloading ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Download className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
@@ -317,7 +316,7 @@ export function ScreeningPage() {
               </Button>
               <Button type="button" className={cn(secondaryActionClass, "bg-[var(--md-sidebar-bg)] text-[var(--md-ink)]")} onClick={() => void onRunReport()} disabled={reporting}>
                 {reporting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <FileText className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
-                {t(reporting ? "Running report…" : "Run control report")}
+                {t(reporting ? "Running report…" : "Run report")}
               </Button>
             </div>
           )}
@@ -332,10 +331,10 @@ export function ScreeningPage() {
             <Metric label="Next rescreen due" value={formatDate(controlReport.report.nextRescreenDueAt, language) || "—"} />
           </div>
         ) : null}
-      </Surface>
+      </section>
 
       {recentsOpen ? (
-        <Surface className="overflow-hidden rounded-[var(--md-radius-2xl)]" padding="none">
+        <Surface id="screening-recents" className="overflow-hidden rounded-[var(--md-radius-2xl)]" padding="none">
           <div className="px-5 py-4">
             <SectionHeader title={t("Recent screens")} meta={t("Last 3 months")} />
           </div>
@@ -426,7 +425,7 @@ export function ScreeningPage() {
                   <span id="screening-include-similar-description" className="text-[11.5px] leading-4 text-[var(--md-subtle)]">{t("82% similarity threshold")}</span>
                 </span>
               </label>
-              <Button type="submit" disabled={running || !name.trim()} className="h-9 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3.5 text-[12.5px] font-medium text-[var(--md-accent-ink)] transition-[background-color,box-shadow,opacity,transform] hover:bg-[var(--md-accent-hover)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100">
+              <Button type="submit" disabled={running || refreshing || !name.trim()} className="h-9 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3.5 text-[12.5px] font-medium text-[var(--md-accent-ink)] transition-[background-color,box-shadow,opacity,transform] hover:bg-[var(--md-accent-hover)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100">
                 {running ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <ShieldCheck className="size-4" strokeWidth={2} aria-hidden="true" />}
                 {t(running ? "Screening party…" : "Run screening")}
               </Button>
