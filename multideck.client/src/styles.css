@@ -2516,7 +2516,11 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 
   .md-auto-populated-control[data-auto-population-revealing="true"] {
     animation: md-auto-populated-surface-pop 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    color: transparent;
+  }
+
+  /* Comboboxes put the surface class on a wrapper; the reveal owns the input.
+     Mask glyphs without transitioning color or hiding a replacement reveal. */
+  [data-auto-population-revealing="true"] {
     -webkit-text-fill-color: transparent;
     caret-color: var(--md-ink);
   }
@@ -2530,7 +2534,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     align-items: center;
     overflow: hidden;
     pointer-events: none;
-    white-space: nowrap;
+    white-space: pre;
   }
 
   .md-auto-populated-reveal[data-multiline="true"] {
@@ -2547,27 +2551,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     animation: md-auto-populated-token-pop 300ms cubic-bezier(0.22, 1, 0.36, 1) var(--md-auto-populated-stagger, 0ms) both;
   }
 
-  @keyframes md-auto-populated-indicator-in {
-    from {
-      opacity: 0;
-      filter: blur(4px);
-      scale: 0.72;
-      rotate: -12deg;
-    }
-    to {
-      opacity: 1;
-      filter: blur(0);
-      scale: 1;
-      rotate: 0deg;
-    }
-  }
-
-  .md-auto-populated-indicator {
-    animation: md-auto-populated-indicator-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .md-auto-populated-indicator,
     .md-auto-populated-control[data-auto-population-revealing="true"],
     .md-auto-populated-reveal__token {
       animation: none;

@@ -449,6 +449,7 @@ class WorkspaceErrorBoundary extends Component<{
 
 export default function App() {
   const [route, setRoute] = useState(getRoute)
+  const isExternalSurface = isExternalSurfaceRoute(route)
   const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
   const [currentUser, setCurrentUser] = useState<AuthUserSummary | null>(null)
   const [profileMediaUrls, setProfileMediaUrls] = useState<ProfileMediaUrls>(emptyProfileMediaUrls)
@@ -479,6 +480,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (isExternalSurface) return
     const profilePhoto = currentUser?.profilePhoto ?? null
     const coverPhoto = currentUser?.coverPhoto ?? null
     const photos = [profilePhoto, coverPhoto].filter((photo): photo is UserProfilePhoto => Boolean(photo))
@@ -524,6 +526,7 @@ export default function App() {
       cancelled = true
     }
   }, [
+    isExternalSurface,
     currentUser?.coverPhoto,
     currentUser?.profilePhoto,
     profileMediaUrls.coverPhotoPath,
@@ -541,6 +544,15 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    // Public links own their identity and data. An operator opening one does
+    // not need a private workspace bootstrap, profile images or preferences.
+    if (isExternalSurface) {
+      hasResolvedAuthenticatedSessionRef.current = false
+      setCurrentUser(null)
+      setProfileMediaUrls(emptyProfileMediaUrls)
+      setAuthStatus("checking")
+      return
+    }
     if (!supabase) {
       setCurrentUser(null)
       setAuthStatus("unauthenticated")
@@ -555,6 +567,7 @@ export default function App() {
       if (cancelled) return
 
       if (!session?.user) {
+        sessionRequest += 1
         activeAccessToken = null
         invalidateWorkspaceBootstrap()
         hasResolvedAuthenticatedSessionRef.current = false
@@ -622,7 +635,7 @@ export default function App() {
       cancelled = true
       data.subscription.unsubscribe()
     }
-  }, [])
+  }, [isExternalSurface])
 
   /** Clear stale Supabase session from storage when tokens can no longer be refreshed. */
   function clearStaleSession() {
@@ -666,7 +679,7 @@ export default function App() {
   }, [authStatus, currentUser, route])
 
   useEffect(() => {
-    if (authStatus !== "authenticated" || currentUser?.actorType !== "internal") return
+    if (!isWorkspaceRoute || authStatus !== "authenticated" || currentUser?.actorType !== "internal") return
     const updatePresence = () => {
       if (document.visibilityState === "visible") void recordWorkspacePresence(route).catch(() => undefined)
     }
@@ -677,7 +690,7 @@ export default function App() {
       window.clearInterval(intervalId)
       document.removeEventListener("visibilitychange", updatePresence)
     }
-  }, [authStatus, currentUser?.actorType, route])
+  }, [authStatus, currentUser?.actorType, isWorkspaceRoute, route])
 
   // Old and prototype-only CRM bookmarks are rewritten in place, so the address
   // bar only shows routes that operators can genuinely use.
@@ -711,7 +724,7 @@ export default function App() {
       {isExternalSurfaceRoute(route) ? null : <ThemeProfileSync />}
       <LanguageProvider>
         <WorkspaceErrorBoundary resetKey={`${route}:${authStatus}`}>
-          <LanguageProfileSync />
+          {isExternalSurface ? null : <LanguageProfileSync />}
           <TooltipProvider>
             <MotionConfig reducedMotion="user" transition={mdMotion.fast}>
             {isQuoteResponseRoute(route) ? (

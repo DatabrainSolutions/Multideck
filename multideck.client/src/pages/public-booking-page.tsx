@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { CalendarDays, Check, ChevronLeft, Clock3, Mail, MapPin, Phone, Plus, RefreshCw, ShieldCheck, TriangleAlert, Video } from "@/components/icons/hugeicons"
+import { CalendarDays, Check, ChevronLeft, Clock3, Mail, MapPin, Phone, Plus, RefreshCw, TriangleAlert, Video } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { AvailabilityPicker } from "@/components/multideck/availability-picker"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
-import { MeetingProviderMark, meetingProviderLabels } from "@/components/multideck/meeting-provider-mark"
+import { meetingProviderLabels } from "@/components/multideck/meeting-provider-mark"
 import { safeTimeZone } from "@/components/multideck/meeting-time-picker"
 import { VerificationCodeInput } from "@/components/multideck/verification-code-input"
 import { PublicBrandIdentity } from "@/components/multideck/public-brand-identity"
@@ -48,9 +48,12 @@ function FieldError({ id, children }: { id: string; children?: string }) {
   return <p id={id} role="alert" className="text-[11px] text-[var(--brand-danger,var(--md-red))]">{children}</p>
 }
 
-export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlug: string; bookingSlug: string }) {
+/** Editor preview uses the real page, with every network and booking action disabled. */
+export function PublicBookingPage({ organiserSlug, bookingSlug, preview }: { organiserSlug: string; bookingSlug: string; preview?: PublicBooking }) {
   const { language } = useLanguage()
-  const [booking, setBooking] = useState<PublicBooking | null>(null)
+  const [loadedBooking, setBooking] = useState<PublicBooking | null>(null)
+  const booking = preview ?? loadedBooking
+  const isPreview = Boolean(preview)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -61,12 +64,12 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
   const [loadedUntil, setLoadedUntil] = useState(() => new Date(Date.now() + 45 * 86_400_000))
   const [timeZone, setTimeZone] = useState(() => safeTimeZone(null))
 
-  const [step, setStep] = useState<Step>("time")
+  const [step, setStep] = useState<Step>(isPreview ? "details" : "time")
   const [selected, setSelected] = useState<string | null>(null)
   const [details, setDetails] = useState({ name: "", email: "", website: "" })
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
-  const [showOptional, setShowOptional] = useState(false)
+  const [showOptional, setShowOptional] = useState(isPreview)
 
   const [hold, setHold] = useState<BookingHold | null>(null)
   const [code, setCode] = useState("")
@@ -84,6 +87,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
   const detailsForm = useRef<HTMLFormElement | null>(null)
 
   useEffect(() => {
+    if (isPreview) return
     let cancelled = false
     setLoading(true); setLoadError(null)
     void getPublicBooking(organiserSlug, bookingSlug)
@@ -91,19 +95,19 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
       .catch((reason) => { if (!cancelled) setLoadError(reason instanceof Error ? reason.message : "This booking page could not be loaded.") })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [bookingSlug, organiserSlug])
+  }, [bookingSlug, organiserSlug, isPreview])
 
   const bookingLoaded = Boolean(booking)
   useEffect(() => {
-    if (!bookingLoaded) return
+    if (isPreview || !bookingLoaded) return
     return startPublicBrandRefresh(
       () => getPublicBooking(organiserSlug, bookingSlug),
       ({ branding }) => setBooking((current) => current && JSON.stringify(current.branding) !== JSON.stringify(branding) ? { ...current, branding } : current),
     )
-  }, [bookingLoaded, bookingSlug, organiserSlug])
+  }, [bookingLoaded, bookingSlug, organiserSlug, isPreview])
 
   useEffect(() => {
-    if (!bookingLoaded || step !== "time") return
+    if (isPreview || !bookingLoaded || step !== "time") return
     let cancelled = false
     setSlotsBusy(true)
     void getPublicBookingSlots(organiserSlug, bookingSlug, new Date().toISOString(), loadedUntil.toISOString())
@@ -111,7 +115,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
       .catch((reason) => { if (!cancelled) setSlotsError(reason instanceof Error ? reason.message : "Available times could not be loaded.") })
       .finally(() => { if (!cancelled) { setSlotsLoading(false); setSlotsBusy(false) } })
     return () => { cancelled = true }
-  }, [bookingLoaded, bookingSlug, loadedUntil, organiserSlug, step])
+  }, [bookingLoaded, bookingSlug, loadedUntil, organiserSlug, step, isPreview])
 
   useEffect(() => {
     if (!finalising || !managePath) return
@@ -172,6 +176,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
   }
 
   function backToTimes() {
+    if (isPreview) return
     setStep("time")
     setHold(null)
     setCode("")
@@ -180,6 +185,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
   }
 
   async function holdTime() {
+    if (isPreview) return
     if (!selected || !booking) return
     const problems: Record<string, string> = {}
     if (!details.name.trim()) problems.name = "Enter your name."
@@ -222,6 +228,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
   }
 
   async function verify(entered = code) {
+    if (isPreview) return
     if (!hold || entered.length !== 6 || submitting) return
     setSubmitting(true); setError(null); setNotice(null)
     try {
@@ -239,6 +246,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
   }
 
   async function resend() {
+    if (isPreview) return
     if (!hold || resendIn > 0) return
     setError(null); setNotice(null)
     setResendAt(Date.now() + resendCooldownSeconds * 1000)
@@ -251,6 +259,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
   }
 
   async function checkFinalisation() {
+    if (isPreview) return
     const token = managePath?.split("/").at(-1)
     if (!token) return
     setSubmitting(true); setError(null)
@@ -266,11 +275,12 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
     } finally { setSubmitting(false) }
   }
 
-  if (loading) return <main className="grid min-h-screen place-items-center" style={{ ...publicBrandTheme(null), background: "var(--brand-bg)", color: "var(--brand-ink)" }}><DotGridLoader label="Loading booking page…" /></main>
+  if (loading && !isPreview) return <main className="grid min-h-screen place-items-center" style={{ ...publicBrandTheme(null), background: "var(--brand-bg)", color: "var(--brand-ink)" }}><DotGridLoader label="Loading booking page…" /></main>
 
-  const header = <header className="mb-5 flex items-center justify-between gap-4">
-    <PublicBrandIdentity key={brand?.logoUrl ?? "no-logo"} brand={brand} />
-    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--brand-surface,var(--md-surface))] px-3 py-1.5 text-[10.5px] font-medium text-[var(--brand-text,var(--md-text))] shadow-[inset_0_0_0_1px_var(--brand-line,var(--md-line))]"><ShieldCheck className="size-3" strokeWidth={1.5} />{booking?.localPreview ? "Test booking" : "Secure booking"}</span>
+  const identity = <PublicBrandIdentity key={brand?.logoUrl ?? "no-logo"} brand={brand} />
+
+  const header = <header className="mb-5">
+    {identity}
   </header>
 
   if (loadError && !booking) return <main className="min-h-screen px-4 py-8 sm:px-6 sm:py-14" style={{ ...scope, background: "var(--brand-bg,var(--md-bg))", color: "var(--brand-ink,var(--md-ink))" }}>
@@ -290,15 +300,14 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
 
   const paneHeading = step === "details" ? "Your details" : step === "verify" ? "Confirm it's you" : "Pick a time"
 
-  return <main className="min-h-screen px-4 py-8 sm:px-6 sm:py-12" style={{ ...scope, background: "var(--brand-bg,var(--md-bg))", color: "var(--brand-ink,var(--md-ink))" }}>
+  const Surface = isPreview ? "div" : "main"
+  return <Surface data-booking-form-preview={isPreview || undefined} className={cn("@container", isPreview ? "p-4" : "min-h-screen px-4 py-8 sm:px-6 sm:py-12")} style={{ ...scope, background: "var(--brand-bg,var(--md-bg))", color: "var(--brand-ink,var(--md-ink))" }}>
     <div className="mx-auto w-full max-w-[920px]">
-      {header}
-      <section className="overflow-hidden bg-[var(--brand-surface,var(--md-surface))] shadow-[inset_0_0_0_1px_var(--brand-line,var(--md-line)),0_18px_60px_rgba(11,20,19,.07)] lg:grid lg:grid-cols-[248px_minmax(0,1fr)]" style={{ borderRadius: "var(--brand-radius,var(--md-radius-2xl))" }}>
-        <aside className="border-b border-[var(--brand-line,var(--md-line))] bg-[var(--brand-secondary-tint)] p-5 sm:p-6 lg:border-b-0 lg:border-e">
-          <div className="flex items-center gap-2">
-            <MeetingProviderMark provider={booking.provider} className="size-6" />
-            <p className="truncate text-[11.5px] font-medium text-[var(--brand-subtle,var(--md-subtle))]">{booking.kind === "collective" && booking.hostNames?.length ? listNames(booking.hostNames) : booking.kind === "round_robin" ? `${booking.organiser.name} and team` : booking.organiser.name}</p>
-          </div>
+      <section className="overflow-hidden bg-[var(--brand-surface,var(--md-surface))] shadow-[inset_0_0_0_1px_var(--brand-line,var(--md-line)),0_18px_60px_rgba(11,20,19,.07)] @min-[760px]:grid @min-[760px]:grid-cols-[248px_minmax(0,1fr)]" style={{ borderRadius: "var(--brand-radius,var(--md-radius-2xl))" }}>
+        <aside className="border-b border-[var(--brand-line,var(--md-line))] bg-[var(--brand-secondary-tint)] p-5 @min-[760px]:p-6 @min-[760px]:border-b-0 @min-[760px]:border-e">
+          <div className="mb-5">{identity}</div>
+          {booking.localPreview ? <p className="mb-2 text-[11px] font-medium text-[var(--brand-subtle)]">Test booking</p> : null}
+          <p className="truncate text-[11.5px] font-medium text-[var(--brand-subtle,var(--md-subtle))]">{booking.kind === "collective" && booking.hostNames?.length ? listNames(booking.hostNames) : booking.kind === "round_robin" ? `${booking.organiser.name} and team` : booking.organiser.name}</p>
           <h1 className="mt-2.5 text-[19px] font-medium leading-6 tracking-[-.015em]">{booking.title}</h1>
           <ul className="mt-3.5 grid gap-2">
             <Fact icon={Clock3}>{booking.durationMinutes} minutes</Fact>
@@ -322,7 +331,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
           </AnimatePresence>
         </aside>
 
-        <div className="flex min-h-[380px] flex-col p-5 sm:p-6">
+        <div className={cn("flex flex-col p-5", !isPreview && "min-h-[380px] sm:p-6")}>
           {step !== "confirmed" ? <div className="mb-4 flex items-baseline justify-between gap-3">
             <h2 className="text-[14px] font-medium">{paneHeading}</h2>
             <span className="text-[11px] font-medium text-[var(--brand-subtle,var(--md-subtle))]">Step {stepIndex + 1} of 3</span>
@@ -363,10 +372,10 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
                 onSubmit={(event) => { event.preventDefault(); void holdTime() }}
                 className="flex flex-1 flex-col"
               >
-                <button type="button" onClick={backToTimes} className="-mt-1 mb-4 inline-flex w-fit items-center gap-1 text-[11.5px] font-medium text-[var(--brand-text,var(--md-text))] hover:text-[var(--brand-ink,var(--md-ink))] lg:hidden"><ChevronLeft className="size-3.5" strokeWidth={1.6} />Change time</button>
+                {!isPreview ? <button type="button" onClick={backToTimes} className="-mt-1 mb-4 inline-flex w-fit items-center gap-1 text-[11.5px] font-medium text-[var(--brand-text,var(--md-text))] hover:text-[var(--brand-ink,var(--md-ink))] lg:hidden"><ChevronLeft className="size-3.5" strokeWidth={1.6} />Change time</button> : null}
                 <div className="grid gap-3.5 sm:grid-cols-2">
                   <label className="grid gap-1.5 text-[11.5px] font-medium">Name
-                    <Input autoComplete="name" autoFocus value={details.name} aria-invalid={Boolean(fieldErrors.name) || undefined} aria-describedby={fieldErrors.name ? "booking-name-error" : undefined} onChange={(event) => { const name = event.currentTarget.value; setDetails((current) => ({ ...current, name })); setFieldErrors((current) => ({ ...current, name: "" })) }} className={fieldClass} />
+                    <Input autoComplete="name" autoFocus={!isPreview} value={details.name} aria-invalid={Boolean(fieldErrors.name) || undefined} aria-describedby={fieldErrors.name ? "booking-name-error" : undefined} onChange={(event) => { const name = event.currentTarget.value; setDetails((current) => ({ ...current, name })); setFieldErrors((current) => ({ ...current, name: "" })) }} className={fieldClass} />
                     <FieldError id="booking-name-error">{fieldErrors.name}</FieldError>
                   </label>
                   <label className="grid gap-1.5 text-[11.5px] font-medium">Email
@@ -385,9 +394,9 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
                 <label className="hidden" aria-hidden="true">Website<Input tabIndex={-1} autoComplete="off" value={details.website} onChange={(event) => setDetails((current) => ({ ...current, website: event.target.value }))} /></label>
 
                 {error ? <p role="alert" className="mt-4 text-[11.5px] text-[var(--brand-danger,var(--md-red))]">{error}</p> : null}
-                <div className="mt-auto flex items-center justify-end gap-3 pt-5">
-                  <p className="me-auto hidden text-[11px] leading-4 text-[var(--brand-subtle,var(--md-subtle))] sm:block">We email a six-digit code to check the address before anything is booked.</p>
-                  <Button type="submit" size="lg" className={primaryButtonClass} disabled={submitting}>{submitting ? "Holding your time…" : "Continue"}</Button>
+                <div className="mt-auto flex flex-wrap items-center justify-end gap-3 pt-5">
+                  <p className={cn("me-auto text-[11px] leading-4 text-[var(--brand-subtle,var(--md-subtle))]", !isPreview && "hidden sm:block")}>{isPreview ? "Preview only. No time is held and no email is sent." : "We email a six-digit code to check the address before anything is booked."}</p>
+                  <Button type="submit" size="lg" className={primaryButtonClass} disabled={submitting || isPreview}>{submitting ? "Holding your time…" : "Continue"}</Button>
                 </div>
               </form> : null}
 
@@ -459,7 +468,7 @@ export function PublicBookingPage({ organiserSlug, bookingSlug }: { organiserSlu
       </section>
       <footer className="mt-4 text-center text-[10.5px] text-[var(--brand-subtle,var(--md-subtle))]">{brand ? `${brand.displayName} · Scheduling powered by Multideck` : "Multideck · Built-in scheduling for freight teams"}</footer>
     </div>
-  </main>
+  </Surface>
 }
 
 function QuestionField({ question, value, error, onChange }: { question: BookingQuestion; value: string; error?: string; onChange: (value: string) => void }) {
@@ -472,7 +481,7 @@ function QuestionField({ question, value, error, onChange }: { question: Booking
     const checked = value === "yes"
     return <div className="grid gap-1.5 text-[11.5px] font-medium sm:col-span-2">
       <label className="flex items-start gap-2.5">
-        <input type="checkbox" checked={checked} aria-invalid={invalid} aria-describedby={describedBy} onChange={(event) => onChange(event.target.checked ? "yes" : "")} className="mt-0.5 size-4 shrink-0 accent-[var(--brand-primary,var(--md-accent))]" />
+        <input type="checkbox" checked={checked} aria-invalid={invalid} aria-describedby={describedBy} onChange={(event) => onChange(event.target.checked ? "yes" : "")} className="mt-0.5 size-4 shrink-0 accent-[var(--brand-accent,var(--md-accent))]" />
         <span className="font-normal leading-5">{question.label}{optional}</span>
       </label>
       <FieldError id={errorId}>{error}</FieldError>

@@ -21,7 +21,7 @@ import {
   type SaveStatus,
 } from "@/lib/contact-card-store"
 import type { CardAutomation, CardBranding, ContactCard, ContactCardStatus } from "@/data/contact-card-data"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import { cn } from "@/lib/utils"
 
 /* -------------------------------------------------------------------------- */

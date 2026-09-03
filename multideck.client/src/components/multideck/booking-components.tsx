@@ -63,7 +63,7 @@ import {
   type BookingMode,
   type BookingStatus,
   type StatusTone,
-} from "@/data/multideck-data"
+} from "@/data/operational-data"
 import { FilterChips, SegmentedControl, TabsRail } from "./workflow-components"
 import { StatusPill, attributeToneFor, toneToVar } from "./status-pill"
 import { Surface } from "./surface"

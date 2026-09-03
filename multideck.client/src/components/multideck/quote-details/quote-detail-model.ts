@@ -248,8 +248,68 @@ function exactPlace(option: LocationOption, value: string) {
   return searchKey(option.place) === query || (option.aliases ?? []).some((alias) => searchKey(alias) === query)
 }
 
-function locationIdentity(option: LocationOption) {
+export function locationIdentity(option: LocationOption) {
   return option.id || option.unlocode || `${option.countryCode}:${option.place}`
+}
+
+export interface LocationDirectoryIndex {
+  options: readonly LocationOption[]
+  byId: ReadonlyMap<string, LocationOption>
+  byCountryCode: ReadonlyMap<string, readonly LocationOption[]>
+  byCountry: ReadonlyMap<string, readonly LocationOption[]>
+  byPlace: ReadonlyMap<string, readonly LocationOption[]>
+  byUnlocode: ReadonlyMap<string, readonly LocationOption[]>
+  recommended: readonly LocationOption[]
+}
+
+const locationIndexes = new WeakMap<readonly LocationOption[], Map<string, LocationDirectoryIndex>>()
+export const EMPTY_LOCATION_OPTIONS: readonly LocationOption[] = []
+
+/** The directory is immutable. Share its indexes between both location controls. */
+export function getLocationDirectoryIndex(options: readonly LocationOption[], mode?: string | null): LocationDirectoryIndex {
+  const normalizedMode = (mode ?? "").trim().toLocaleLowerCase()
+  const family = normalizedMode.includes("multimodal") ? "all"
+    : ["air", "sea", "road", "rail"].find((candidate) => normalizedMode.startsWith(candidate)) ?? "all"
+  let modes = locationIndexes.get(options)
+  if (!modes) {
+    modes = new Map()
+    locationIndexes.set(options, modes)
+  }
+  const cached = modes.get(family)
+  if (cached) return cached
+  const filtered = family === "all" ? options : filterLocationsForMode(options, family)
+  const byId = new Map<string, LocationOption>()
+  const byCountryCode = new Map<string, LocationOption[]>()
+  let byCountry: Map<string, LocationOption[]> | undefined
+  let byPlace: Map<string, LocationOption[]> | undefined
+  let byUnlocode: Map<string, LocationOption[]> | undefined
+  const recommended: LocationOption[] = []
+  const append = (map: Map<string, LocationOption[]>, key: string, option: LocationOption) => {
+    const matches = map.get(key)
+    if (matches) matches.push(option)
+    else map.set(key, [option])
+  }
+  for (const option of filtered) {
+    // Selection previously used find(): the first duplicate identifier wins.
+    if (!byId.has(locationIdentity(option))) byId.set(locationIdentity(option), option)
+    append(byCountryCode, searchKey(option.countryCode), option)
+    if (option.recommended) recommended.push(option)
+  }
+  // Exact typed-input indexes are only needed when the operator types. Avoid
+  // allocating the large place/alias map merely to display the two controls.
+  const build = (keys: (option: LocationOption) => string[]) => {
+    const result = new Map<string, LocationOption[]>()
+    for (const option of filtered) for (const key of new Set(keys(option))) append(result, key, option)
+    return result
+  }
+  const index = {
+    options: filtered, byId, byCountryCode, recommended,
+    get byCountry() { return byCountry ??= build((option) => [searchKey(option.countryCode), searchKey(option.countryName)]) },
+    get byPlace() { return byPlace ??= build((option) => [searchKey(option.place), ...(option.aliases ?? []).map(searchKey)]) },
+    get byUnlocode() { return byUnlocode ??= build((option) => [searchKey(option.unlocode)]) },
+  }
+  modes.set(family, index)
+  return index
 }
 
 function onlyLocation(options: readonly LocationOption[]) {
@@ -271,7 +331,7 @@ export function resolveLinkedLocation(
     const next = { ...current, countryName: input }
     if (!input.trim()) return { ...next, countryCode: "" }
 
-    const countryMatches = options.filter((option) => exactCountry(option, input))
+    const countryMatches = getLocationDirectoryIndex(options).byCountry.get(searchKey(input)) ?? EMPTY_LOCATION_OPTIONS
     const country = countryMatches[0]
     if (!country) return { ...next, countryCode: "", place: "", unlocode: "" }
 
@@ -293,18 +353,18 @@ export function resolveLinkedLocation(
   if (field === "place") {
     const next = { ...current, place: input }
     if (!input.trim()) return next
-    const contextual = options.filter((option) => (
+    const matches = getLocationDirectoryIndex(options).byPlace.get(searchKey(input)) ?? EMPTY_LOCATION_OPTIONS
+    const selected = onlyLocation(matches.filter((option) => (
       (!current.countryName && !current.countryCode)
       || exactCountry(option, current.countryName || current.countryCode)
-    ))
-    const selected = onlyLocation(contextual.filter((option) => exactPlace(option, input)))
+    )))
     return selected ? { ...selected } : next
   }
 
   const normalizedCode = input.toLocaleUpperCase().replace(/\s+/g, "")
   const next = { ...current, unlocode: normalizedCode }
   if (!normalizedCode) return next
-  const selected = onlyLocation(options.filter((option) => searchKey(option.unlocode) === searchKey(normalizedCode)))
+  const selected = onlyLocation(getLocationDirectoryIndex(options).byUnlocode.get(searchKey(normalizedCode)) ?? EMPTY_LOCATION_OPTIONS)
   return selected ? { ...selected } : next
 }
 

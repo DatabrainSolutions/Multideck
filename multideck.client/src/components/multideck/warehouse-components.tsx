@@ -44,7 +44,7 @@ import {
   warehouseStockFilters,
   warehouseStockRows,
   type StatusTone,
-} from "@/data/multideck-data"
+} from "@/data/operational-data"
 
 type WarehouseTableColumn<T> = {
   key: string

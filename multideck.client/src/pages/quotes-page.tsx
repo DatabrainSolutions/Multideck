@@ -114,7 +114,7 @@ import {
   type ApiFinanceExchangeRate,
 } from "@/lib/finance-api"
 import { useLanguage } from "@/i18n/language-provider"
-import { systemPeople, type StatusTone } from "@/data/multideck-data"
+import { systemPeople, type StatusTone } from "@/data/operational-data"
 import { quoteRegisterRecords, type QuoteRegisterRecord } from "@/data/quote-register-data"
 import { getSalesQuote } from "@/lib/quote-api"
 import {
@@ -3660,6 +3660,7 @@ function QuoteDetailsPanelV2({
   requireCoreFields = true,
   validationAttempted,
   onQuoteChange,
+  onQuotePatch,
   lookups,
 }: {
   quote: QuoteRecord
@@ -3667,6 +3668,7 @@ function QuoteDetailsPanelV2({
   requireCoreFields?: boolean
   validationAttempted: boolean
   onQuoteChange: (field: keyof QuoteRecord, value: string) => void
+  onQuotePatch: (patch: Partial<QuoteRecord>) => void
   lookups?: QuoteWorkflowSources | null
 }) {
   const { direction, language, t } = useLanguage()
@@ -3675,12 +3677,13 @@ function QuoteDetailsPanelV2({
   const [unlocodeDirectory, setUnlocodeDirectory] = useState<readonly UnlocodeDirectoryRecord[]>([])
   const [unlocodeDirectoryStatus, setUnlocodeDirectoryStatus] = useState<"loading" | "ready" | "error">("loading")
   const [unlocodeDirectoryCount, setUnlocodeDirectoryCount] = useState(0)
-  const organisations = lookups?.organisations ?? []
-  const currencies = lookups?.currencies.map((option) => option.code) ?? ["GBP", "EUR", "USD"]
-  const modes = lookups?.modes.map((option) => option.name) ?? cargoWiseModeOptions
-  const shipmentTypes = lookups?.shipmentTypes.map((option) => `${option.code} - ${option.name}`) ?? shipmentTypeOptions(quote.mode)
-  const countries = lookups?.countries ?? []
-  const customerOrganisation = organisations.find((option) => option.id === quote.customerId)
+  const organisations = useMemo(() => lookups?.organisations ?? [], [lookups?.organisations])
+  const currencies = useMemo(() => lookups?.currencies.map((option) => option.code) ?? ["GBP", "EUR", "USD"], [lookups?.currencies])
+  const modes = useMemo(() => lookups?.modes.map((option) => option.name) ?? cargoWiseModeOptions, [lookups?.modes])
+  const shipmentTypes = useMemo(() => lookups?.shipmentTypes.map((option) => `${option.code} - ${option.name}`) ?? shipmentTypeOptions(quote.mode), [lookups?.shipmentTypes, quote.mode])
+  const countries = useMemo(() => lookups?.countries ?? [], [lookups?.countries])
+  const organisationsById = useMemo(() => new Map(organisations.map((organisation) => [organisation.id, organisation])), [organisations])
+  const customerOrganisation = organisationsById.get(quote.customerId ?? "")
     ?? organisations.find((option) => option.name.trim().toLocaleLowerCase() === quote.customer.trim().toLocaleLowerCase())
   const customerSourceContact = customerOrganisation?.contacts?.find((contact) => contact.isOperational)
   const customerAutoPopulationDescription = customerOrganisation
@@ -3706,58 +3709,64 @@ function QuoteDetailsPanelV2({
   const customerAddresses = customerOrganisation?.addresses ?? []
   const customerOperationalContacts = (customerOrganisation?.contacts ?? []).filter((contact) => contact.isOperational)
   const supplierOptions = useMemo(() => supplierOptionsFromQuote(quote), [quote.supplierOptionsJson, quote.supplierId, quote.supplier, quote.carrierId, quote.carrier])
-  const organisationOptions: CompactComboboxOption[] = organisations.map((organisation) => ({
-    id: organisation.id,
-    value: organisation.name,
-    label: organisation.name,
-    description: [organisation.code, (organisation.types ?? []).join(" · ")].filter(Boolean).join(" · "),
-    keywords: [organisation.code, ...(organisation.types ?? [])],
-  }))
-  const organisationCodeOptions = (options: readonly CompactComboboxOption[]) => options.flatMap((option) => {
-    const organisation = organisations.find((item) => item.id === option.id)
-    if (!organisation?.code) return []
-    return [{
-      ...option,
-      value: organisation.code,
-      label: organisation.code,
-      description: organisation.name,
-      keywords: [organisation.name, ...(organisation.types ?? [])],
-    }]
-  })
   type OrganisationRole = "customer" | "supplier" | "carrier" | "agent" | "shipper" | "consignee"
   const organisationRecentOptionLimit = 10
-  const organisationHasRole = (organisationId: string | undefined, role: OrganisationRole) => {
-    if (!organisationId) return false
-    const organisation = organisations.find((item) => item.id === organisationId)
-    const types = organisation?.types?.map((type) => type.trim().toLocaleLowerCase()) ?? []
-    if (types.length) {
-      if (role === "customer") return types.includes("customer")
-      if (role === "supplier") return types.includes("supplier")
-      if (role === "carrier") return types.some((type) => /^(carrier|shipping line|haulier|freight forwarder)$/.test(type))
-      if (role === "agent") return types.some((type) => /\bagents?\b/.test(type))
-      if (role === "shipper") return types.some((type) => /\bshipper\b|\bconsignor\b/.test(type))
-      return types.some((type) => /\bconsignee\b/.test(type))
+  const organisationDirectories = useMemo(() => {
+    const roles: OrganisationRole[] = ["customer", "supplier", "carrier", "agent", "shipper", "consignee"]
+    const directories = Object.fromEntries(roles.map((role) => [role, {
+      options: [] as CompactComboboxOption[], codes: [] as CompactComboboxOption[], ids: new Set<string>(),
+    }])) as Record<OrganisationRole, { options: CompactComboboxOption[]; codes: CompactComboboxOption[]; ids: Set<string> }>
+    const fallbackIds = {
+      supplier: new Set(lookups?.suppliers.map((item) => item.id)),
+      carrier: new Set(lookups?.carriers.map((item) => item.id)),
+      agent: new Set(lookups?.agents.map((item) => item.id)),
     }
-    const roleDirectory = role === "supplier" ? lookups?.suppliers : role === "carrier" ? lookups?.carriers : role === "agent" ? lookups?.agents : null
-    return roleDirectory?.some((item) => item.id === organisationId) ?? false
-  }
-
-  const relatedOptions = (role: OrganisationRole) => {
-    const recommendations = customerOrganisation?.relatedPartyRecommendations?.filter((item) => item.role.toLocaleLowerCase().includes(role)) ?? []
-    return recommendations.flatMap((recommendation) => {
-      const organisation = organisations.find((item) => item.id === recommendation.organisationId)
-      if (!organisation || !organisationHasRole(organisation.id, role)) return []
+    for (const organisation of organisations) {
+      const types = (organisation.types ?? []).map((type) => type.trim().toLocaleLowerCase())
+      const matches = (role: OrganisationRole) => {
+        if (!types.length) return role in fallbackIds && fallbackIds[role as keyof typeof fallbackIds].has(organisation.id)
+        if (role === "customer") return types.includes("customer")
+        if (role === "supplier") return types.includes("supplier")
+        if (role === "carrier") return types.some((type) => /^(carrier|shipping line|haulier|freight forwarder)$/.test(type))
+        if (role === "agent") return types.some((type) => /\bagents?\b/.test(type))
+        if (role === "shipper") return types.some((type) => /\bshipper\b|\bconsignor\b/.test(type))
+        return types.some((type) => /\bconsignee\b/.test(type))
+      }
+      const option: CompactComboboxOption = {
+        id: organisation.id, value: organisation.name, label: organisation.name,
+        description: [organisation.code, (organisation.types ?? []).join(" · ")].filter(Boolean).join(" · "),
+        keywords: [organisation.code, ...(organisation.types ?? [])],
+      }
+      for (const role of roles) {
+        if (!matches(role)) continue
+        directories[role].ids.add(organisation.id)
+        directories[role].options.push(option)
+        if (organisation.code) directories[role].codes.push({
+          ...option, value: organisation.code, label: organisation.code, description: organisation.name,
+          keywords: [organisation.name, ...(organisation.types ?? [])],
+        })
+      }
+    }
+    return directories
+  }, [organisations, lookups?.suppliers, lookups?.carriers, lookups?.agents])
+  const organisationHasRole = (id: string | undefined, role: OrganisationRole) => Boolean(id && organisationDirectories[role].ids.has(id))
+  const relatedDirectories = useMemo(() => {
+    const roles: OrganisationRole[] = ["customer", "supplier", "carrier", "agent", "shipper", "consignee"]
+    const result: Record<OrganisationRole, CompactComboboxOption[]> = { customer: [], supplier: [], carrier: [], agent: [], shipper: [], consignee: [] }
+    for (const role of roles) result[role] = (customerOrganisation?.relatedPartyRecommendations ?? []).flatMap((recommendation) => {
+      if (!recommendation.role.toLocaleLowerCase().includes(role)) return []
+      const organisation = organisationsById.get(recommendation.organisationId)
+      if (!organisation || !organisationDirectories[role].ids.has(organisation.id)) return []
       return [{
-        id: organisation.id,
-        value: organisation.name,
-        label: organisation.name,
-        description: recommendation.source === "saved_default"
-          ? t("Related to this customer")
+        id: organisation.id, value: organisation.name, label: organisation.name,
+        description: recommendation.source === "saved_default" ? t("Related to this customer")
           : `${t("Previously used with this customer")} · ${recommendation.usageCount}`,
         keywords: [organisation.code, ...(organisation.types ?? [])],
-      } satisfies CompactComboboxOption]
+      }]
     })
-  }
+    return result
+  }, [customerOrganisation, organisationsById, organisationDirectories, t])
+  const relatedOptions = (role: OrganisationRole) => relatedDirectories[role]
 
   const officialLocationOptions = useMemo<LocationOption[]>(() => {
     const regionNames = typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames([language], { type: "region" }) : null
@@ -3773,28 +3782,31 @@ function QuoteDetailsPanelV2({
     }))
   }, [countries, language, unlocodeDirectory])
 
+  const officialLocationsByUnlocode = useMemo(() => new Map(officialLocationOptions.map((option) => [option.unlocode, option])), [officialLocationOptions])
   const locationOptions = useMemo<LocationOption[]>(() => {
-    const optionsByUnlocode = new Map(officialLocationOptions.map((option) => [option.unlocode, option]))
     const unlinkedOptions: LocationOption[] = []
     const regionNames = typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames([language], { type: "region" }) : null
-
     organisations.forEach((organisation) => (organisation.addresses ?? []).forEach((address) => {
       const place = address.townCity?.trim() ?? ""
       const countryCode = (address.countryCode || address.country || "").trim().toLocaleUpperCase()
       const countryName = countryCode.length === 2 ? regionNames?.of(countryCode) || address.country?.trim() || countryCode : address.country?.trim() || countryCode
       const unlocode = address.unlocode?.trim().toLocaleUpperCase() ?? ""
-      if (!place && !countryName && !unlocode) return
-      const recommended = [quote.customerId, quote.shipperOrgId, quote.consigneeOrgId].includes(organisation.id)
-      const official = unlocode ? optionsByUnlocode.get(unlocode) : null
-      if (official) {
-        if (recommended) optionsByUnlocode.set(unlocode, { ...official, recommended: true })
-        return
-      }
-      unlinkedOptions.push({ id: `organisation-address:${address.id}`, place, countryName, countryCode, unlocode, recommended })
+      if ((!place && !countryName && !unlocode) || (unlocode && officialLocationsByUnlocode.has(unlocode))) return
+      unlinkedOptions.push({ id: `organisation-address:${address.id}`, place, countryName, countryCode, unlocode })
     }))
-
-    return [...optionsByUnlocode.values(), ...unlinkedOptions]
-  }, [officialLocationOptions, organisations, quote.customerId, quote.shipperOrgId, quote.consigneeOrgId, language])
+    return [...officialLocationsByUnlocode.values(), ...unlinkedOptions]
+  }, [officialLocationsByUnlocode, organisations, language])
+  // Changing a party only changes this small overlay, not the 116k-row directory.
+  const recommendedLocationIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const organisationId of [quote.customerId, quote.shipperOrgId, quote.consigneeOrgId]) {
+      for (const address of organisationsById.get(organisationId ?? "")?.addresses ?? []) {
+        const official = officialLocationsByUnlocode.get(address.unlocode?.trim().toLocaleUpperCase() ?? "")
+        ids.add(official?.id ?? `organisation-address:${address.id}`)
+      }
+    }
+    return ids
+  }, [quote.customerId, quote.shipperOrgId, quote.consigneeOrgId, organisationsById, officialLocationsByUnlocode])
 
   const originLocation: LocationValue = {
     countryCode: quote.originCountry?.length === 2 ? quote.originCountry : "",
@@ -3839,44 +3851,50 @@ function QuoteDetailsPanelV2({
     const countryField = prefix === "origin" ? "originCountry" : "destinationCountry"
     const townField = prefix === "origin" ? "originTown" : "destinationTown"
     const codeField = prefix === "origin" ? "originUnlocode" : "destinationUnlocode"
-    onQuoteChange(countryField, value.countryName || value.countryCode)
-    onQuoteChange(townField, value.place)
-    onQuoteChange(codeField, value.unlocode)
-    onQuoteChange(prefix, value.unlocode || value.place)
+    onQuotePatch({
+      [countryField]: value.countryName || value.countryCode,
+      [townField]: value.place,
+      [codeField]: value.unlocode,
+      [prefix]: value.unlocode || value.place,
+    })
   }
 
   function updateRecurrence(value: RecurrenceValue) {
-    onQuoteChange("frequency", value.mode)
-    onQuoteChange("frequencyInterval", value.interval)
-    onQuoteChange("frequencyUnit", value.unit)
-    onQuoteChange("frequencyTimesPerMonth", value.timesPerMonth)
-    onQuoteChange("frequencyCount", value.totalOccurrences)
-    onQuoteChange("frequencyNotes", value.notes)
+    onQuotePatch({
+      frequency: value.mode,
+      frequencyInterval: value.interval,
+      frequencyUnit: value.unit,
+      frequencyTimesPerMonth: value.timesPerMonth,
+      frequencyCount: value.totalOccurrences,
+      frequencyNotes: value.notes,
+    })
   }
 
   function updateHazardousDetails(value: HazardousDetails) {
-    onQuoteChange("hazardousUnNumber", value.unNumber)
-    onQuoteChange("hazardousShippingName", value.properShippingName)
-    onQuoteChange("hazardousClass", value.hazardClass)
-    onQuoteChange("hazardousPackingGroup", value.packingGroup)
-    onQuoteChange("packageQuantity", value.packageCount)
-    onQuoteChange("packageType", value.packageType)
-    onQuoteChange("hazardousNetWeightKg", value.netWeightKg)
-    onQuoteChange("grossWeightKg", value.grossWeightKg)
-    onQuoteChange("hazardousMarinePollutant", value.marinePollutant ? "Yes" : "No")
-    onQuoteChange("hazardousLimitedQuantity", value.limitedQuantity ? "Yes" : "No")
-    onQuoteChange("hazardousNotes", value.notes)
+    onQuotePatch({
+      hazardousUnNumber: value.unNumber,
+      hazardousShippingName: value.properShippingName,
+      hazardousClass: value.hazardClass,
+      hazardousPackingGroup: value.packingGroup,
+      packageQuantity: value.packageCount,
+      packageType: value.packageType,
+      hazardousNetWeightKg: value.netWeightKg,
+      grossWeightKg: value.grossWeightKg,
+      hazardousMarinePollutant: value.marinePollutant ? "Yes" : "No",
+      hazardousLimitedQuantity: value.limitedQuantity ? "Yes" : "No",
+      hazardousNotes: value.notes,
+    })
   }
 
   function organisationForRole(role: "customer" | "shipper" | "consignee" | "agent") {
     const organisationId = role === "customer" ? quote.customerId : role === "shipper" ? quote.shipperOrgId : role === "consignee" ? quote.consigneeOrgId : quote.agentOrgId
     const organisationName = role === "customer" ? quote.customer : role === "shipper" ? quote.shipperName : role === "consignee" ? quote.consigneeName : quote.agentName
-    return organisations.find((organisation) => organisation.id === organisationId)
+    return organisationsById.get(organisationId ?? "")
       ?? organisations.find((organisation) => organisation.name.trim().toLocaleLowerCase() === organisationName?.trim().toLocaleLowerCase())
   }
 
   function operationalContactsForOrganisation(organisationId: string | undefined) {
-    return organisations.find((organisation) => organisation.id === organisationId)?.contacts.filter((contact) => contact.isOperational) ?? []
+    return organisationsById.get(organisationId ?? "")?.contacts.filter((contact) => contact.isOperational) ?? []
   }
 
   function selectAddress(role: "customer" | "shipper" | "consignee" | "agent", addressId: string) {
@@ -3889,13 +3907,17 @@ function QuoteDetailsPanelV2({
     const contact = operationalContactsForOrganisation(organisationForRole(role)?.id).find((item) => item.id === contactId)
     if (!contact) return
     if (role === "customer") {
-      onQuoteChange("contactId", contact.id)
-      onQuoteChange("customerContact", contact.name)
-      onQuoteChange("customerEmail", contact.email ?? "")
+      onQuotePatch({
+        contactId: contact.id,
+        customerContact: contact.name,
+        customerEmail: contact.email ?? "",
+      })
       return
     }
-    onQuoteChange(role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact", contact.name)
-    onQuoteChange(role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail", contact.email ?? "")
+    onQuotePatch({
+      [role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact"]: contact.name,
+      [role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail"]: contact.email ?? "",
+    })
   }
 
   function selectOrganisationByCode(role: "customer" | "shipper" | "consignee" | "agent", code: string) {
@@ -3907,73 +3929,85 @@ function QuoteDetailsPanelV2({
   }
 
   function selectOrganisation(role: "customer" | "shipper" | "consignee" | "agent", organisationId: string) {
-    const organisation = organisations.find((item) => item.id === organisationId)
+    const organisation = organisationsById.get(organisationId ?? "")
     if (!organisation) return
     const address = organisation.addresses?.[0]?.address ?? ""
     const contact = operationalContactsForOrganisation(organisation.id)[0]
     if (role === "customer") {
-      onQuoteChange("customerId", organisation.id)
-      onQuoteChange("clientCode", organisation.code)
-      onQuoteChange("customer", organisation.name)
-      onQuoteChange("customerAddress", address)
-      onQuoteChange("contactId", contact?.id ?? "")
-      onQuoteChange("customerContact", contact?.name ?? "")
-      onQuoteChange("customerEmail", contact?.email ?? "")
-      onQuoteChange("customerTermsSource", organisation.name)
-      if (organisation.quoteTerms) {
-        onQuoteChange("terms", organisation.quoteTerms.terms)
-        onQuoteChange("subjectToTerms", organisation.quoteTerms.subjectTo)
-        onQuoteChange("customerNotes", organisation.quoteTerms.notes)
-        onQuoteChange("deadline", organisation.quoteTerms.deadline)
-      }
+      onQuotePatch({
+        customerId: organisation.id,
+        clientCode: organisation.code,
+        customer: organisation.name,
+        customerAddress: address,
+        contactId: contact?.id ?? "",
+        customerContact: contact?.name ?? "",
+        customerEmail: contact?.email ?? "",
+        customerTermsSource: organisation.name,
+        ...(organisation.quoteTerms ? {
+          terms: organisation.quoteTerms.terms,
+          subjectToTerms: organisation.quoteTerms.subjectTo,
+          customerNotes: organisation.quoteTerms.notes,
+          deadline: organisation.quoteTerms.deadline,
+        } : {}),
+      })
       return
     }
     if (role === "shipper") {
-      onQuoteChange("shipperOrgId", organisation.id)
-      onQuoteChange("shipperCode", organisation.code)
-      onQuoteChange("shipperName", organisation.name)
-      onQuoteChange("shipperAddress", address)
-      onQuoteChange("shipperContact", contact?.name ?? "")
-      onQuoteChange("shipperEmail", contact?.email ?? "")
+      onQuotePatch({
+        shipperOrgId: organisation.id,
+        shipperCode: organisation.code,
+        shipperName: organisation.name,
+        shipperAddress: address,
+        shipperContact: contact?.name ?? "",
+        shipperEmail: contact?.email ?? "",
+      })
       return
     }
     if (role === "consignee") {
-      onQuoteChange("consigneeOrgId", organisation.id)
-      onQuoteChange("consigneeCode", organisation.code)
-      onQuoteChange("consigneeName", organisation.name)
-      onQuoteChange("consigneeAddress", address)
-      onQuoteChange("consigneeContact", contact?.name ?? "")
-      onQuoteChange("consigneeEmail", contact?.email ?? "")
+      onQuotePatch({
+        consigneeOrgId: organisation.id,
+        consigneeCode: organisation.code,
+        consigneeName: organisation.name,
+        consigneeAddress: address,
+        consigneeContact: contact?.name ?? "",
+        consigneeEmail: contact?.email ?? "",
+      })
       return
     }
-    onQuoteChange("agentOrgId", organisation.id)
-    onQuoteChange("agentCode", organisation.code)
-    onQuoteChange("agentName", organisation.name)
-    onQuoteChange("agentAddress", address)
-    onQuoteChange("agentContact", contact?.name ?? "")
-    onQuoteChange("agentEmail", contact?.email ?? "")
+    onQuotePatch({
+      agentOrgId: organisation.id,
+      agentCode: organisation.code,
+      agentName: organisation.name,
+      agentAddress: address,
+      agentContact: contact?.name ?? "",
+      agentEmail: contact?.email ?? "",
+    })
   }
 
   function useCustomerForParty(role: "shipper" | "consignee" | "agent") {
-    onQuoteChange(role === "shipper" ? "shipperOrgId" : role === "consignee" ? "consigneeOrgId" : "agentOrgId", quote.customerId ?? "")
-    onQuoteChange(role === "shipper" ? "shipperCode" : role === "consignee" ? "consigneeCode" : "agentCode", quote.clientCode ?? "")
-    onQuoteChange(role === "shipper" ? "shipperName" : role === "consignee" ? "consigneeName" : "agentName", quote.customer)
-    onQuoteChange(role === "shipper" ? "shipperAddress" : role === "consignee" ? "consigneeAddress" : "agentAddress", quote.customerAddress ?? "")
-    onQuoteChange(role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact", quote.customerContact ?? "")
-    onQuoteChange(role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail", quote.customerEmail ?? "")
+    onQuotePatch({
+      [role === "shipper" ? "shipperOrgId" : role === "consignee" ? "consigneeOrgId" : "agentOrgId"]: quote.customerId ?? "",
+      [role === "shipper" ? "shipperCode" : role === "consignee" ? "consigneeCode" : "agentCode"]: quote.clientCode ?? "",
+      [role === "shipper" ? "shipperName" : role === "consignee" ? "consigneeName" : "agentName"]: quote.customer,
+      [role === "shipper" ? "shipperAddress" : role === "consignee" ? "consigneeAddress" : "agentAddress"]: quote.customerAddress ?? "",
+      [role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact"]: quote.customerContact ?? "",
+      [role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail"]: quote.customerEmail ?? "",
+    })
   }
 
   function persistSupplierOptions(next: QuoteSupplierOptionDraft[]) {
-    onQuoteChange("supplierOptionsJson", JSON.stringify(next))
     const firstSupplier = next[0]
     const firstCarrier = firstSupplier?.carriers[0]
-    onQuoteChange("supplierId", firstSupplier?.supplierId ?? "")
-    onQuoteChange("supplier", firstSupplier?.supplierName ?? "")
-    onQuoteChange("supplierOffice", firstSupplier?.supplierOffice ?? "")
-    onQuoteChange("carrierId", firstCarrier?.carrierId ?? "")
-    onQuoteChange("carrier", firstCarrier?.carrierName ?? "")
-    onQuoteChange("carrierOffice", firstCarrier?.carrierOffice ?? "")
-    onQuoteChange("carrierReference", firstCarrier?.reference ?? "")
+    onQuotePatch({
+      supplierOptionsJson: JSON.stringify(next),
+      supplierId: firstSupplier?.supplierId ?? "",
+      supplier: firstSupplier?.supplierName ?? "",
+      supplierOffice: firstSupplier?.supplierOffice ?? "",
+      carrierId: firstCarrier?.carrierId ?? "",
+      carrier: firstCarrier?.carrierName ?? "",
+      carrierOffice: firstCarrier?.carrierOffice ?? "",
+      carrierReference: firstCarrier?.reference ?? "",
+    })
   }
 
   function patchSupplier(supplierId: string, patch: Partial<QuoteSupplierOptionDraft>) {
@@ -4015,9 +4049,9 @@ function QuoteDetailsPanelV2({
     const reference = role === "shipper" ? quote.shipperReference ?? "" : role === "consignee" ? quote.consigneeReference ?? "" : quote.agentReference ?? ""
     const addresses = selectedOrganisation?.addresses ?? []
     const operationalContacts = operationalContactsForOrganisation(selectedOrganisation?.id)
-    const filteredOptions = organisationOptions.filter((option) => organisationHasRole(option.id, role))
-    const codeOptions = organisationCodeOptions(filteredOptions)
-    const preferredOptions = relatedOptions(role)
+    const filteredOptions = organisationDirectories[role].options
+    const codeOptions = organisationDirectories[role].codes
+    const preferredOptions = [...relatedOptions(role)]
     const normalizedName = name.trim().toLocaleLowerCase()
     const selectedOption = filteredOptions.find((option) => option.id === selectedId)
       ?? filteredOptions.find((option) => normalizedName && option.value.trim().toLocaleLowerCase() === normalizedName)
@@ -4047,7 +4081,7 @@ function QuoteDetailsPanelV2({
             placeholder={`Search ${roleSearchLabel} or type manually`}
             disabled={!editable}
             width="full"
-            className="col-span-7"
+            className="col-span-12"
             onValueChange={(value) => {
               onQuoteChange(role === "shipper" ? "shipperName" : role === "consignee" ? "consigneeName" : "agentName", value)
               const selected = organisations.find((item) => item.id === selectedId)
@@ -4055,8 +4089,8 @@ function QuoteDetailsPanelV2({
             }}
             onOptionSelect={(option) => option.id && selectOrganisation(role, option.id)}
           />
-          <CompactCombobox label="Account code" value={code} options={codeOptions} placeholder="Search account codes" allLabel={`All ${roleSearchLabel} codes`} emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-5 [&_input]:tracking-tight" autoPopulated={matchesAutoPopulation(code, selectedOrganisation?.code)} autoPopulationDescription={autoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode(role, value)) return; onQuoteChange(role === "shipper" ? "shipperCode" : role === "consignee" ? "consigneeCode" : "agentCode", value); const selected = organisations.find((item) => item.id === selectedId); if (selected && selected.code !== value) onQuoteChange(role === "shipper" ? "shipperOrgId" : role === "consignee" ? "consigneeOrgId" : "agentOrgId", "") }} onOptionSelect={(option) => option.id && selectOrganisation(role, option.id)} />
-          <QuoteCompactInput label={`${title} ref`} value={reference} width="full" className="col-span-12" disabled={!editable} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperReference" : role === "consignee" ? "consigneeReference" : "agentReference", value)} />
+          <CompactCombobox label="Account code" value={code} options={codeOptions} placeholder="Search account codes" allLabel={`All ${roleSearchLabel} codes`} emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-7 [&_input]:tracking-tight" autoPopulated={matchesAutoPopulation(code, selectedOrganisation?.code)} autoPopulationDescription={autoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode(role, value)) return; onQuoteChange(role === "shipper" ? "shipperCode" : role === "consignee" ? "consigneeCode" : "agentCode", value); const selected = organisations.find((item) => item.id === selectedId); if (selected && selected.code !== value) onQuoteChange(role === "shipper" ? "shipperOrgId" : role === "consignee" ? "consigneeOrgId" : "agentOrgId", "") }} onOptionSelect={(option) => option.id && selectOrganisation(role, option.id)} />
+          <QuoteCompactInput label={`${title} ref`} value={reference} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperReference" : role === "consignee" ? "consigneeReference" : "agentReference", value)} />
           <CompactCombobox label="Address" value={address} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(address, selectedOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={autoPopulationDescription} options={addresses.map((item) => ({ id: item.id, value: item.address, label: item.label || item.address, description: item.address }))} onOptionSelect={(option) => option.id && selectAddress(role, option.id)} onValueChange={(value) => onQuoteChange(role === "shipper" ? "shipperAddress" : role === "consignee" ? "consigneeAddress" : "agentAddress", value)} />
           <CompactCombobox label="Operational contact" value={contact} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(contact, selectedContact?.name)} autoPopulationDescription={autoPopulationDescription} options={operationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact(role, option.id)} onValueChange={(value) => onQuoteChange(role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact", value)} />
           <QuoteCompactInput label="Email" value={email} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(email, selectedContact?.email)} autoPopulationDescription={autoPopulationDescription} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail", value)} />
@@ -4068,7 +4102,7 @@ function QuoteDetailsPanelV2({
   const originIsUs = [originLocation.countryCode, originLocation.countryName, originLocation.unlocode.slice(0, 2)]
     .some((value) => ["US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"].includes(value.trim().toLocaleUpperCase()))
   return (
-    <div dir={direction} className="grid items-start gap-2">
+    <div dir={direction} className="@container/quote-details grid items-start gap-2">
       <CompactSectionShell title="Job data" meta="Core quote controls">
         <CompactFieldRow>
           <QuoteCompactSelect label="Source" value={quote.source ?? ""} options={["NEW - New Shipper", "REN - Renewal", "REP - Repeat lane", "TND - Tender"]} width="medium" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.source?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("source", value)} />
@@ -4085,15 +4119,15 @@ function QuoteDetailsPanelV2({
         </CompactFieldRow>
       </CompactSectionShell>
 
-      <div className="grid items-stretch gap-2 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid items-stretch gap-2 @min-[40rem]/quote-details:grid-cols-2 @min-[80rem]/quote-details:grid-cols-4">
         <CompactSectionShell title="Customer" className="[&>header]:h-8 [&>header]:overflow-hidden">
           <div className="grid min-w-0 grid-cols-12 gap-x-2 gap-y-1.5">
-            <CompactCombobox label="Customer" value={quote.customer} options={organisationOptions.filter((option) => organisationHasRole(option.id, "customer"))} onValueChange={(value) => { onQuoteChange("customer", value); if (customerOrganisation && customerOrganisation.name !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search customers or type manually" allLabel="All customers" emptyLabel="No matching customer company" disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customer.trim()} width="full" className="col-span-7" />
-            <CompactCombobox label="Account code" value={quote.clientCode ?? ""} options={organisationCodeOptions(organisationOptions.filter((option) => organisationHasRole(option.id, "customer")))} autoPopulated={matchesAutoPopulation(quote.clientCode, customerOrganisation?.code)} autoPopulationDescription={customerAutoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode("customer", value)) return; onQuoteChange("clientCode", value); if (customerOrganisation && customerOrganisation.code !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search account codes" allLabel="All customer codes" emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-5 [&_input]:tracking-tight" />
-            <QuoteCompactInput label="Customer ref" value={quote.localRef ?? ""} width="full" className="col-span-7" disabled={!editable} onChange={(value) => onQuoteChange("localRef", value)} />
+            <CompactCombobox label="Customer" value={quote.customer} options={organisationDirectories.customer.options} onValueChange={(value) => { onQuoteChange("customer", value); if (customerOrganisation && customerOrganisation.name !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search customers or type manually" allLabel="All customers" emptyLabel="No matching customer company" disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customer.trim()} width="full" className="col-span-12" />
+            <CompactCombobox label="Account code" value={quote.clientCode ?? ""} options={organisationDirectories.customer.codes} autoPopulated={matchesAutoPopulation(quote.clientCode, customerOrganisation?.code)} autoPopulationDescription={customerAutoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode("customer", value)) return; onQuoteChange("clientCode", value); if (customerOrganisation && customerOrganisation.code !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search account codes" allLabel="All customer codes" emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-7 [&_input]:tracking-tight" />
             <QuoteCompactInput label="Customer PO" value={quote.customerPO ?? ""} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange("customerPO", value)} />
             <CompactCombobox label="Address" value={quote.customerAddress ?? ""} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerAddress, customerOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={customerAutoPopulationDescription} options={customerAddresses.map((item) => ({ id: item.id, value: item.address, label: item.label || item.address, description: item.address }))} onOptionSelect={(option) => option.id && selectAddress("customer", option.id)} onValueChange={(value) => onQuoteChange("customerAddress", value)} />
-            <CompactCombobox label="Operational contact" value={quote.customerContact ?? ""} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerContact, customerSourceContact?.name)} autoPopulationDescription={customerAutoPopulationDescription} options={customerOperationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact("customer", option.id)} onValueChange={(value) => { onQuoteChange("customerContact", value); if (value !== quote.customerContact) onQuoteChange("contactId", "") }} />
+            <QuoteCompactInput label="Customer ref" value={quote.localRef ?? ""} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange("localRef", value)} />
+            <CompactCombobox label="Operational contact" value={quote.customerContact ?? ""} width="full" className="col-span-7" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerContact, customerSourceContact?.name)} autoPopulationDescription={customerAutoPopulationDescription} options={customerOperationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact("customer", option.id)} onValueChange={(value) => { onQuoteChange("customerContact", value); if (value !== quote.customerContact) onQuoteChange("contactId", "") }} />
             <QuoteCompactInput label="Email" value={quote.customerEmail ?? ""} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerEmail, customerSourceContact?.email)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuoteChange("customerEmail", value)} />
           </div>
         </CompactSectionShell>
@@ -4105,8 +4139,8 @@ function QuoteDetailsPanelV2({
       <CompactSectionShell title="Route & service" meta="Linked country, place and UN/LOCODE fields">
         <div className="grid gap-2">
           <div className="grid gap-2 xl:grid-cols-2">
-            <LocationFields mode={quote.mode} label="Origin from" value={originLocation} options={locationOptions} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} />
-            <LocationFields mode={quote.mode} label="Destination to" value={destinationLocation} options={locationOptions} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} />
+            <LocationFields mode={quote.mode} label="Origin from" value={originLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} />
+            <LocationFields mode={quote.mode} label="Destination to" value={destinationLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} />
           </div>
           <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(11rem,0.8fr)_minmax(10rem,0.6fr)_minmax(27rem,1.8fr)] lg:items-start">
             <QuoteCompactInput label="Via" value={quote.via} width="full" disabled={!editable} onChange={(value) => onQuoteChange("via", value)} />
@@ -4124,8 +4158,8 @@ function QuoteDetailsPanelV2({
         <div className="grid gap-1.5">
           {supplierOptions.map((supplier, supplierIndex) => {
             const selectedSupplier = organisations.find((item) => item.id === supplier.supplierId)
-            const supplierDirectory = organisationOptions.filter((option) => organisationHasRole(option.id, "supplier"))
-            const carrierDirectory = organisationOptions.filter((option) => organisationHasRole(option.id, "carrier"))
+            const supplierDirectory = organisationDirectories.supplier.options
+            const carrierDirectory = organisationDirectories.carrier.options
             const carrierColumns: DataTableColumn<QuoteCarrierOptionDraft>[] = [
               {
                 id: "carrier",
@@ -4139,7 +4173,7 @@ function QuoteDetailsPanelV2({
                 cell: (carrier) => {
                   const selectedCarrier = organisations.find((item) => item.id === carrier.carrierId)
                   const carrierSequence = supplier.carriers.indexOf(carrier) + 1
-                  return <div className="flex min-w-0 items-center gap-1.5"><span data-i18n-skip dir="ltr" aria-label={`${t("Carrier ID")} ${carrierSequence}`} className="inline-grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[11px] font-medium text-[var(--md-ink)]">{carrierSequence}</span><CompactCombobox label="Carrier" value={carrier.carrierName} options={carrierDirectory} recommendedOptions={relatedOptions("carrier")} recommendedOptionLimit={organisationRecentOptionLimit} recommendedLabel="Suggested carriers" allLabel="All organisations" onValueChange={(value) => patchCarrier(supplier.id, carrier.id, { carrierName: value, carrierId: selectedCarrier?.name === value ? carrier.carrierId : "" })} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) patchCarrier(supplier.id, carrier.id, { carrierId: item.id, carrierName: item.name, carrierOffice: item.addresses?.[0]?.label ?? "" }) }} placeholder="TBC or search carriers" disabled={!editable} width="full" className="min-w-0 flex-1 [&>div:first-child]:sr-only" /></div>
+                  return <div className="flex min-w-0 items-center gap-1.5"><span data-i18n-skip dir="ltr" aria-label={`${t("Carrier ID")} ${carrierSequence}`} className="inline-grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[11px] font-medium text-[var(--md-ink)]">{carrierSequence}</span><CompactCombobox label="Carrier" value={carrier.carrierName} options={carrierDirectory} recommendedOptions={relatedOptions("carrier")} recommendedOptionLimit={organisationRecentOptionLimit} recommendedLabel="Suggested carriers" allLabel="All organisations" onValueChange={(value) => patchCarrier(supplier.id, carrier.id, { carrierName: value, carrierId: selectedCarrier?.name === value ? carrier.carrierId : "" })} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) patchCarrier(supplier.id, carrier.id, { carrierId: item.id, carrierName: item.name, carrierOffice: item.addresses?.[0]?.label ?? "" }) }} placeholder="TBC or search carriers" disabled={!editable} width="full" className="min-w-0 flex-1 [&>div:first-child]:sr-only" /></div>
                 },
               },
               {
@@ -4211,7 +4245,7 @@ function QuoteDetailsPanelV2({
             return (
               <section key={supplier.id} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
                 <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_1.75rem] items-start gap-x-2 gap-y-1.5 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_1.75rem] xl:grid-cols-[minmax(16rem,2fr)_minmax(12rem,1fr)_minmax(14rem,1.2fr)_1.75rem]">
-                  <CompactCombobox label={`${t("Supplier")} ${supplierIndex + 1}`} value={supplier.supplierName} options={supplierDirectory} recommendedOptions={relatedOptions("supplier")} recommendedOptionLimit={organisationRecentOptionLimit} recommendedLabel="Suggested suppliers" allLabel="All organisations" onValueChange={(value) => patchSupplier(supplier.id, { supplierName: value, supplierId: selectedSupplier?.name === value ? supplier.supplierId : "" })} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) patchSupplier(supplier.id, { supplierId: item.id, supplierName: item.name, supplierOffice: item.addresses?.[0]?.label ?? "", contact: item.contacts?.[0]?.email ?? item.contacts?.[0]?.name ?? "" }) }} placeholder="Search suppliers or type manually" disabled={!editable} width="full" className="col-start-1" />
+                  <CompactCombobox label={`${t("Supplier")} ${supplierIndex + 1}`} value={supplier.supplierName} options={supplierDirectory} recommendedOptions={relatedOptions("supplier")} recommendedOptionLimit={organisationRecentOptionLimit} recommendedLabel="Suggested suppliers" allLabel="All organisations" onValueChange={(value) => patchSupplier(supplier.id, { supplierName: value, supplierId: selectedSupplier?.name === value ? supplier.supplierId : "" })} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) patchSupplier(supplier.id, { supplierId: item.id, supplierName: item.name, supplierOffice: item.addresses?.[0]?.label ?? "", contact: item.contacts?.[0]?.email ?? item.contacts?.[0]?.name ?? "" }) }} placeholder="Search suppliers or type manually" disabled={!editable} width="full" className="col-start-1" />
                   <CompactCombobox label="Supplier office" value={supplier.supplierOffice} options={(selectedSupplier?.addresses ?? []).map((address) => ({ id: address.id, value: address.label, label: address.label, description: address.address }))} onValueChange={(value) => patchSupplier(supplier.id, { supplierOffice: value })} placeholder="Select or type office" disabled={!editable} width="full" className="col-span-2 md:col-span-1" autoPopulated={matchesAutoPopulation(supplier.supplierOffice, selectedSupplier?.addresses?.[0]?.label)} autoPopulationDescription={selectedSupplier ? `Filled from ${selectedSupplier.name}. Edit this field to override it for this quote.` : undefined} />
                   <CompactCombobox label="Contact" value={supplier.contact} options={(selectedSupplier?.contacts ?? []).map((contact) => ({ id: contact.id, value: contact.email || contact.name, label: contact.name, description: contact.email ?? "" }))} onValueChange={(value) => patchSupplier(supplier.id, { contact: value })} placeholder="Contact or email" disabled={!editable} width="full" className="col-span-2 md:col-span-2 xl:col-span-1" autoPopulated={matchesAutoPopulation(supplier.contact, selectedSupplier?.contacts?.[0]?.email || selectedSupplier?.contacts?.[0]?.name)} autoPopulationDescription={selectedSupplier ? `Filled from ${selectedSupplier.name}. Edit this field to override it for this quote.` : undefined} />
                   <Button type="button" variant="ghost" size="icon-sm" disabled={!editable || supplierOptions.length === 1} title={supplierOptions.length === 1 ? t("At least one supplier is required") : undefined} onClick={() => persistSupplierOptions(supplierOptions.filter((item) => item.id !== supplier.id))} aria-label={t("Remove supplier")} className="col-start-2 row-start-1 mt-5 size-7 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-red)] md:col-start-3 xl:col-start-4"><Trash2 className="size-3.5" /></Button>
@@ -4272,8 +4306,8 @@ function QuoteDetailsPanelV2({
       <div className="grid gap-2 xl:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1.28fr)] xl:items-start">
         <CompactSectionShell title="Customs agents" meta="Choose origin and destination clearance separately">
           <div className="grid gap-1.5">
-            <CompactCombobox label="Origin customs agent" value={quote.originCustomsAgentName ?? ""} options={organisationOptions.filter((option) => organisationHasRole(option.id, "agent"))} recommendedOptions={relatedOptions("agent")} recommendedOptionLimit={organisationRecentOptionLimit} onValueChange={(value) => { onQuoteChange("originCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.originCustomsAgentId); if (selected?.name !== value) onQuoteChange("originCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) { onQuoteChange("originCustomsAgentId", item.id); onQuoteChange("originCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
-            <CompactCombobox label="Destination customs agent" value={quote.destinationCustomsAgentName ?? ""} options={organisationOptions.filter((option) => organisationHasRole(option.id, "agent"))} recommendedOptions={relatedOptions("agent")} recommendedOptionLimit={organisationRecentOptionLimit} onValueChange={(value) => { onQuoteChange("destinationCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.destinationCustomsAgentId); if (selected?.name !== value) onQuoteChange("destinationCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) { onQuoteChange("destinationCustomsAgentId", item.id); onQuoteChange("destinationCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
+            <CompactCombobox label="Origin customs agent" value={quote.originCustomsAgentName ?? ""} options={organisationDirectories.agent.options} recommendedOptions={relatedOptions("agent")} recommendedOptionLimit={organisationRecentOptionLimit} onValueChange={(value) => { onQuoteChange("originCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.originCustomsAgentId); if (selected?.name !== value) onQuoteChange("originCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) { onQuoteChange("originCustomsAgentId", item.id); onQuoteChange("originCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
+            <CompactCombobox label="Destination customs agent" value={quote.destinationCustomsAgentName ?? ""} options={organisationDirectories.agent.options} recommendedOptions={relatedOptions("agent")} recommendedOptionLimit={organisationRecentOptionLimit} onValueChange={(value) => { onQuoteChange("destinationCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.destinationCustomsAgentId); if (selected?.name !== value) onQuoteChange("destinationCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) { onQuoteChange("destinationCustomsAgentId", item.id); onQuoteChange("destinationCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
           </div>
         </CompactSectionShell>
 
@@ -5185,6 +5219,10 @@ export function QuoteDetailPage({
   const saveFeedbackTimerRef = useRef<number | null>(null)
   const autosaveTimerRef = useRef<number | null>(null)
   const failedSaveFingerprintRef = useRef<string | null>(null)
+  const saveInFlightRef = useRef<symbol | null>(null)
+  const quoteRequestGenerationRef = useRef(0)
+  const readinessRequestRef = useRef(0)
+  const intelligenceRequestRef = useRef(0)
   const issuePreviewTimerRef = useRef<number | null>(null)
   const issueBodyEditorRef = useRef<HTMLTextAreaElement | null>(null)
   const selectedIssueRecipient = useMemo(
@@ -5236,6 +5274,11 @@ export function QuoteDetailPage({
   useEffect(() => {
     let cancelled = false
     let workspaceApplied = false
+    quoteRequestGenerationRef.current += 1
+    saveInFlightRef.current = null
+    failedSaveFingerprintRef.current = null
+    setSaving(false)
+    setCurrentQuoteId(null)
     setLoading(!isNewQuote)
     setIntelligence(null)
     setIntelligenceUnavailable(false)
@@ -5317,6 +5360,9 @@ export function QuoteDetailPage({
     })()
     return () => {
       cancelled = true
+      quoteRequestGenerationRef.current += 1
+      intelligenceRequestRef.current += 1
+      readinessRequestRef.current += 1
     }
   }, [isNewQuote, quoteId])
 
@@ -5345,7 +5391,9 @@ export function QuoteDetailPage({
       active = false
       unsubscribe()
     }
-  }, [currentQuoteId, workspace?.quote.reference])
+  // The subscription belongs to the immutable quote ID. A save may return its
+  // internal reference alias; that must not restart the initial refresh.
+  }, [currentQuoteId])
 
   const activeCharges = draftCharges
   const activeTotals = useMemo(() => getChargeTotals(activeCharges), [activeCharges])
@@ -5381,13 +5429,14 @@ export function QuoteDetailPage({
       return
     }
     let active = true
+    const request = ++readinessRequestRef.current
     setIssueReadinessLoading(true)
     void getQuoteIssueReadiness(currentQuoteId)
-      .then((readiness) => { if (active) setIssueReadiness(readiness) })
-      .catch(() => { if (active) setIssueReadiness(null) })
-      .finally(() => { if (active) setIssueReadinessLoading(false) })
+      .then((readiness) => { if (active && request === readinessRequestRef.current) setIssueReadiness(readiness) })
+      .catch(() => { if (active && request === readinessRequestRef.current) setIssueReadiness(null) })
+      .finally(() => { if (active && request === readinessRequestRef.current) setIssueReadinessLoading(false) })
     return () => { active = false }
-  }, [currentQuoteId, quoteCanBeIssued, savedQuote])
+  }, [currentQuoteId, quoteCanBeIssued])
 
   useEffect(() => {
     if (issuePreviewTimerRef.current !== null) window.clearTimeout(issuePreviewTimerRef.current)
@@ -5442,9 +5491,13 @@ export function QuoteDetailPage({
   }
 
   function updateDraftQuote(field: keyof QuoteRecord, value: string) {
+    updateDraftQuotePatch({ [field]: value })
+  }
+
+  function updateDraftQuotePatch(patch: Partial<QuoteRecord>) {
     setDraftQuote((current) => {
-      const next = { ...current, [field]: value }
-      if (field === "origin" || field === "destination") {
+      const next = { ...current, ...patch }
+      if ("origin" in patch || "destination" in patch) {
         next.route = next.origin.trim() && next.destination.trim() ? `${next.origin.trim()} to ${next.destination.trim()}` : ""
       }
       return next
@@ -5452,10 +5505,7 @@ export function QuoteDetailPage({
   }
 
   function createAndAssignCustomer(name: string, code: string) {
-    updateDraftQuote("customerId", "")
-    updateDraftQuote("contactId", "")
-    updateDraftQuote("customer", name)
-    updateDraftQuote("clientCode", code)
+    updateDraftQuotePatch({ customerId: "", contactId: "", customer: name, clientCode: code })
   }
 
   function updateDraftCharge(index: number, field: QuoteChargeEditableField, value: string) {
@@ -5589,22 +5639,28 @@ export function QuoteDetailPage({
   }
 
   async function saveChanges() {
-    if (saving) return
+    if (saveInFlightRef.current) return
     const quoteSnapshot = draftQuote
     const chargeSnapshot = draftCharges
     const snapshotFingerprint = JSON.stringify([quoteSnapshot, chargeSnapshot])
     if (failedSaveFingerprintRef.current === snapshotFingerprint) return
+    const request = Symbol("quote-save")
+    const generation = quoteRequestGenerationRef.current
+    const isCurrent = () => generation === quoteRequestGenerationRef.current && saveInFlightRef.current === request
+    saveInFlightRef.current = request
     setSaving(true)
     setWorkflowError("")
-    let saveTimeoutId: number | null = null
+    const saveTimeoutId = window.setTimeout(() => {
+      if (isCurrent()) setWorkflowError("Saving is taking longer than usual. Your edits are kept here while it finishes.")
+    }, 8000)
     try {
       const payload = quoteSavePayload(quoteSnapshot, chargeSnapshot, lookups)
-      const result = await Promise.race([
-        saveQuoteWorkflow(currentQuoteId, payload),
-        new Promise<never>((_, reject) => {
-          saveTimeoutId = window.setTimeout(() => reject(new Error("The quote could not be saved.")), 8000)
-        }),
-      ])
+      const result = await saveQuoteWorkflow(currentQuoteId, payload)
+      if (!isCurrent()) return
+      setWorkflowError("")
+      readinessRequestRef.current += 1
+      setIssueReadiness(result.readiness)
+      setIssueReadinessLoading(false)
       const savedPresentation = quoteLifecyclePresentation(result.lifecycle)
       const savedSnapshot = { ...quoteSnapshot, status: savedPresentation.status, statusTone: savedPresentation.tone }
       setCurrentQuoteId(result.quoteId)
@@ -5613,27 +5669,22 @@ export function QuoteDetailPage({
       setSavedCharges(chargeSnapshot)
       setDraftCharges((current) => JSON.stringify(current) === JSON.stringify(chargeSnapshot) ? chargeSnapshot : current)
       failedSaveFingerprintRef.current = null
-      setWorkspace((current) => current ? {
+      setWorkspace((current) => current && current.quote.id === result.quoteId ? {
         ...current,
         quote: { ...current.quote, id: result.quoteId, reference: result.reference, lifecycle: result.lifecycle },
+        versions: [result.version, ...current.versions.filter((version) => version.CusQuoteVersion_ID !== result.versionId).map((version) => ({ ...version, CusQuoteVersion_IsCurrent: false }))],
+        events: [...result.events, ...current.events.filter((event) => !result.events.some((saved) => saved.CusQuoteEvent_ID === event.CusQuoteEvent_ID))].slice(0, 100),
       } : current)
-      // The save endpoint creates an immutable version. Refresh only the
-      // existing workflow metadata so Audit/history is current without
-      // replacing the quote draft the operator may already be editing.
-      void getQuoteWorkflow(result.reference, { fresh: true })
-        .then((fresh) => {
-          setWorkspace((current) => current ? {
-            ...current,
-            versions: fresh.versions,
-            events: fresh.events,
-            latestIssue: fresh.latestIssue,
-            linkedBooking: fresh.linkedBooking,
-          } : current)
+      const intelligenceRequest = ++intelligenceRequestRef.current
+      void refreshQuoteIntelligence(result.reference, result.versionId)
+        .then((next) => {
+          if (generation !== quoteRequestGenerationRef.current || intelligenceRequest !== intelligenceRequestRef.current) return
+          setIntelligence(next)
+          setIntelligenceUnavailable(false)
         })
-        .catch(() => undefined)
-      void refreshQuoteIntelligence(result.reference)
-        .then((next) => { setIntelligence(next); setIntelligenceUnavailable(false) })
-        .catch(() => { if (!intelligence) setIntelligenceUnavailable(true) })
+        .catch(() => {
+          if (generation === quoteRequestGenerationRef.current && intelligenceRequest === intelligenceRequestRef.current && !intelligence) setIntelligenceUnavailable(true)
+        })
       setValidationAttempted(false)
       setSaveFeedbackVisible(true)
       if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current)
@@ -5647,11 +5698,15 @@ export function QuoteDetailPage({
       // after every autosave. New quotes already navigate when they are opened;
       // edits must remain on the active route.
     } catch (error) {
+      if (!isCurrent()) return
       failedSaveFingerprintRef.current = snapshotFingerprint
       setWorkflowError(error instanceof Error ? error.message : "The quote could not be saved.")
     } finally {
-      if (saveTimeoutId !== null) window.clearTimeout(saveTimeoutId)
-      setSaving(false)
+      window.clearTimeout(saveTimeoutId)
+      if (isCurrent()) {
+        saveInFlightRef.current = null
+        setSaving(false)
+      }
     }
   }
 
@@ -5948,7 +6003,7 @@ export function QuoteDetailPage({
 
     if (activeTab === "details") {
       if (variant === "cargowise") {
-        return <QuoteDetailsPanelV2 quote={activeQuote} editable requireCoreFields onQuoteChange={updateDraftQuote} validationAttempted={validationAttempted} lookups={lookups} />
+        return <QuoteDetailsPanelV2 quote={activeQuote} editable requireCoreFields onQuotePatch={updateDraftQuotePatch} onQuoteChange={updateDraftQuote} validationAttempted={validationAttempted} lookups={lookups} />
       }
 
       return <QuoteSetupPanel quote={activeQuote} editable onQuoteChange={updateDraftQuote} onJobRoeChange={updateJobRoe} validationAttempted={validationAttempted} />
@@ -5987,6 +6042,11 @@ export function QuoteDetailPage({
           {workflowError ? (
             <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_8%,var(--md-surface))] px-3 py-2 text-[12px] font-medium text-[var(--md-red)] shadow-[var(--md-shadow-line)]">
               {t(workflowError)}
+              {failedSaveFingerprintRef.current && isDirty && !saving ? (
+                <Button type="button" variant="ghost" size="sm" onClick={() => { failedSaveFingerprintRef.current = null; void saveChanges() }}>
+                  {t("Retry save")}
+                </Button>
+              ) : null}
             </div>
           ) : null}
           {issueNotice ? (

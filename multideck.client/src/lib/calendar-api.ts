@@ -304,6 +304,13 @@ async function localPreview() {
   return import("@/lib/local-calendar-preview")
 }
 
+export async function getCalendarConnections(signal?: AbortSignal) {
+  if (signal?.aborted) throw new DOMException("The request was aborted.", "AbortError")
+  if (localCalendarPreviewEnabled) return [] as CalendarConnection[]
+  const result = await apiJson<{ connections: CalendarConnection[] }>(calendarFetch("/connections", { signal }), "Calendar connections could not be loaded.")
+  return result.connections
+}
+
 export async function getCalendarWorkspace(start: string, end: string, signal?: AbortSignal) {
   if (localCalendarPreviewEnabled) {
     if (signal?.aborted) throw new DOMException("The request was aborted.", "AbortError")

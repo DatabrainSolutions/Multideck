@@ -39,7 +39,7 @@ import { MailProviderMark, mailProviderLabels } from "@/components/multideck/mai
 import { useOptionalInboxWorkspace, type InboxNavigationView } from "@/lib/inbox-workspace"
 import { defaultCoverPhotoUrl } from "@/lib/default-cover-photo"
 import type { MailboxFolder } from "@/lib/inbox-api"
-import { dismissAllWorkspaceNotifications, dismissWorkspaceNotification, listWorkspaceNotifications, markAllWorkspaceNotificationsRead, markWorkspaceNotificationRead, markWorkspaceNotificationUnread, type WorkspaceNotification } from "@/lib/notification-api"
+import { useWorkspaceNotifications } from "@/lib/use-workspace-notifications"
 import { openSupportTicket } from "@/components/multideck/support-ticket-dialog"
 import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
 
@@ -103,13 +103,6 @@ const notificationsReveal = {
 
 const notificationItemExit = { opacity: 0, x: -8, transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] } }
 
-let notificationChannelSequence = 0
-
-function nextNotificationChannelName() {
-  notificationChannelSequence += 1
-  return `sidebar-notifications-live-${notificationChannelSequence}`
-}
-
 function notificationTime(value: string) {
   const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 60_000))
   if (minutes < 1) return "now"
@@ -121,49 +114,8 @@ function notificationTime(value: string) {
 function NotificationBell() {
   const { direction, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
-  const [notifications, setNotifications] = useState<WorkspaceNotification[]>([])
+  const { notifications, updateNotificationStatus, dismissNotification, markAllRead, clearNotifications } = useWorkspaceNotifications()
   const unreadCount = notifications.filter((notification) => notification.status === "unread").length
-
-  function updateNotificationStatus(notificationId: string, status: "read" | "unread") {
-    setNotifications((current) => current.map((notification) => notification.id === notificationId ? { ...notification, status } : notification))
-    const request = status === "read" ? markWorkspaceNotificationRead(notificationId) : markWorkspaceNotificationUnread(notificationId)
-    void request.catch(() => refreshNotifications())
-  }
-
-  function dismissNotification(notificationId: string) {
-    setNotifications((current) => current.filter((notification) => notification.id !== notificationId))
-    void dismissWorkspaceNotification(notificationId).catch(() => refreshNotifications())
-  }
-
-  function markAllRead() {
-    setNotifications((current) => current.map((notification) => ({ ...notification, status: "read" })))
-    void markAllWorkspaceNotificationsRead().catch(() => refreshNotifications())
-  }
-
-  function clearNotifications() {
-    setNotifications([])
-    void dismissAllWorkspaceNotifications().catch(() => refreshNotifications())
-  }
-
-  const refreshNotifications = useCallback(() => {
-    void listWorkspaceNotifications()
-      .then(setNotifications)
-      .catch((error) => console.error("Notifications could not be loaded.", error))
-  }, [])
-
-  useEffect(() => {
-    refreshNotifications()
-    const client = supabase
-    if (!client) return
-    const channel = client
-      // Desktop and mobile sidebars can exist at the same time. Supabase does
-      // not allow new callbacks to be added to an already-subscribed channel,
-      // so every mounted bell needs its own channel instance.
-      .channel(nextNotificationChannelName())
-      .on("postgres_changes", { event: "*", schema: "public", table: "Comm_Notifications" }, refreshNotifications)
-      .subscribe()
-    return () => { void client.removeChannel(channel) }
-  }, [refreshNotifications])
 
   function openNotificationSettings() {
     window.history.pushState({}, "", "/settings?tab=notifications")

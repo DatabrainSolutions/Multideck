@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties, type KeyboardEvent, type Point
 import { createPortal } from "react-dom"
 import { ArrowUpRight, MapPin, Star, Truck } from "@/components/icons/hugeicons"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/i18n/language-provider"
 import { useKanbanPointerDrag } from "@/lib/kanban-drag"

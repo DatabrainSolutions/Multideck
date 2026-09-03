@@ -13,6 +13,16 @@ export function addCalendarDays(date: Date, count: number) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + count)
 }
 
+/** A grid endpoint of 1440 minutes belongs to midnight on the following day. */
+export function calendarTimePartsAtMinutes(dateKey: string, minutes: number) {
+  const whole = Math.max(0, Math.round(minutes))
+  const day = addCalendarDays(parseCalendarDateKey(dateKey), Math.floor(whole / 1440))
+  return {
+    dateKey: calendarDateKey(day),
+    time: `${String(Math.floor(whole / 60) % 24).padStart(2, "0")}:${String(whole % 60).padStart(2, "0")}`,
+  }
+}
+
 export function startOfCalendarWeek(date: Date) {
   const start = new Date(date.getFullYear(), date.getMonth(), date.getDate())
   start.setDate(start.getDate() - ((start.getDay() + 6) % 7))

@@ -17,7 +17,7 @@ import {
   type ReportPage,
   type ReportWidget,
 } from "@/components/multideck/report-components"
-import { generatedReports } from "@/data/multideck-data"
+import { generatedReports } from "@/data/operational-data"
 
 export function ReportViewerPage({ navigate, reportId }: { navigate: (path: string) => void; reportId: string }) {
   const [pages, setPages] = useState<ReportPage[]>(monthlyReviewPages)

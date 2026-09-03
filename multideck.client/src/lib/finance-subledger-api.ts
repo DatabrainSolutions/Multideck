@@ -1,5 +1,6 @@
 import { edgeFetch } from "@/lib/api"
 import { getSupabaseSession } from "@/lib/supabase"
+import { invalidateFinanceReferenceReads } from "@/lib/finance-api"
 
 export type AccountingProviderCode = "erpnext" | "xero" | "quickbooks_online" | "sage_accounting" | "sage_intacct" | "sage_50" | "sage_200" | "business_central" | "netsuite" | "zoho_books"
 export type FinanceLedger = "receivables" | "payables"
@@ -451,7 +452,9 @@ async function call<T>(path: string, init?: RequestInit) {
     const error = await response.json().catch(() => null)
     throw new FinanceSubledgerApiError(error?.detail ?? "Finance could not complete that request.")
   }
-  return response.json() as Promise<T>
+  const result = await response.json() as T
+  if (init?.method && init.method !== "GET" && (/^\/administration\//.test(path) || /^\/configuration-runs\/.+\/approve$/.test(path))) invalidateFinanceReferenceReads()
+  return result
 }
 
 const post = <T>(path: string, value: unknown = {}) => call<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) })

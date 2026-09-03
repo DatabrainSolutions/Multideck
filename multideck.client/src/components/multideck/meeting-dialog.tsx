@@ -16,7 +16,7 @@ import { MeetingTimePicker } from "@/components/multideck/meeting-time-picker"
 import {
   createMeeting,
   defaultMeetingProviderForInbox,
-  getCalendarWorkspace,
+  getCalendarConnections,
   getMeetingCrmContext,
   isLocalCalendarPreview,
   type CalendarConnection,
@@ -27,6 +27,8 @@ import { listMailboxes } from "@/lib/inbox-api"
 import { resolveDefaultInboxProvider, type Mailbox } from "@/lib/inbox-contract"
 import { inboxProviderPreferenceChangedEvent, loadDefaultInboxProvider } from "@/lib/inbox-provider-preference"
 import { subscribeMeetingComposer, type MeetingComposerContext } from "@/lib/meeting-composer-events"
+import { getSupabaseSession } from "@/lib/supabase"
+import { invalidateCachedCrmResources, readCachedCrmResource } from "@/lib/crm-read-cache"
 import { cn } from "@/lib/utils"
 
 export const CALENDAR_CHANGED_EVENT = "multideck:calendar:changed"
@@ -64,18 +66,16 @@ function defaultDraft(context: MeetingComposerContext, provider: CalendarProvide
 /**
  * The join-link platform a fresh meeting starts on follows the operator's default
  * inbox: Gmail → Google Meet, Outlook → Microsoft Teams, nothing chosen → Teams.
- * Resolved once per session and refreshed when the inbox preference changes.
+ * Shared briefly for this account and refreshed when the inbox preference changes.
  */
-let defaultProviderPromise: Promise<CalendarProvider> | null = null
-function resolveDefaultProvider(): Promise<CalendarProvider> {
-  // Local preview has no provider connections, so it starts on a meeting without a join link.
-  if (isLocalCalendarPreview()) return Promise.resolve<CalendarProvider>("multideck")
-  if (!defaultProviderPromise) {
-    defaultProviderPromise = Promise.all([loadDefaultInboxProvider().catch(() => null), listMailboxes().catch((): Mailbox[] => [])])
-      .then(([preferred, mailboxes]) => defaultMeetingProviderForInbox(resolveDefaultInboxProvider(mailboxes, preferred)))
-      .catch((): CalendarProvider => FALLBACK_PROVIDER)
-  }
-  return defaultProviderPromise
+async function resolveDefaultProvider(): Promise<CalendarProvider> {
+  if (isLocalCalendarPreview()) return "multideck"
+  const session = await getSupabaseSession()
+  if (!session?.user) return FALLBACK_PROVIDER
+  return readCachedCrmResource(session.user.id, "calendar-default-provider", () =>
+    Promise.all([loadDefaultInboxProvider().catch(() => null), listMailboxes().catch((): Mailbox[] => [])])
+      .then(([preferred, mailboxes]) => defaultMeetingProviderForInbox(resolveDefaultInboxProvider(mailboxes, preferred))),
+  )
 }
 
 function Row({ icon: Icon, label, children, align = "center" }: { icon: ComponentType<{ className?: string; strokeWidth?: number }>; label: string; children: React.ReactNode; align?: "center" | "start" }) {
@@ -101,7 +101,7 @@ export function MeetingDialogHost({ navigate }: { navigate: (path: string) => vo
   const session = useRef(0)
 
   useEffect(() => {
-    const reset = () => { defaultProviderPromise = null }
+    const reset = () => invalidateCachedCrmResources(null, ["calendar-default-provider"])
     window.addEventListener(inboxProviderPreferenceChangedEvent, reset)
     return () => window.removeEventListener(inboxProviderPreferenceChangedEvent, reset)
   }, [])
@@ -121,18 +121,17 @@ export function MeetingDialogHost({ navigate }: { navigate: (path: string) => vo
     if (!context) return
     const controller = new AbortController()
     const current = session.current
-    const now = new Date()
     void Promise.all([
-      getCalendarWorkspace(new Date(now.getTime() - 86_400_000).toISOString(), new Date(now.getTime() + 7 * 86_400_000).toISOString(), controller.signal),
+      getCalendarConnections(controller.signal),
       resolveDefaultProvider(),
     ])
-      .then(([workspace, preferredProvider]) => {
+      .then(([providerConnections, preferredProvider]) => {
         if (controller.signal.aborted || session.current !== current) return
-        setConnections(workspace.connections)
+        setConnections(providerConnections)
         if (providerTouched.current) return
         setDraft((value): MeetingDraft => ({
           ...value,
-          provider: isMeetingProviderReady(preferredProvider, workspace.connections) ? preferredProvider : "multideck",
+          provider: isMeetingProviderReady(preferredProvider, providerConnections) ? preferredProvider : "multideck",
         }))
       })
       .catch(() => {

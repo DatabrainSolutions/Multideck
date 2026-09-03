@@ -1,4 +1,4 @@
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import {
   buildDashboardLiveData,
   dashboardBookings,

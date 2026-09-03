@@ -243,21 +243,13 @@ export async function refreshQuoteIntelligence(admin: Db, companyId: string, quo
   const inputFingerprint = await sha256({ targetFingerprint, evidenceFingerprint })
   const deterministic = buildQuoteIntelligence(evidence, { input: inputFingerprint, evidence: evidenceFingerprint })
   const calculatedAt = new Date().toISOString()
-  const { data: saved, error: saveError } = await admin
-    .from("CusQuote_Intelligence")
-    .upsert({
-      CusQuoteIntelligence_QuoteID: quoteId,
-      Company_ID: companyId,
-      CusQuoteIntelligence_StateCode: deterministic.state,
-      CusQuoteIntelligence_DeterministicJSON: deterministic,
-      CusQuoteIntelligence_InputFingerprint: inputFingerprint,
-      CusQuoteIntelligence_EvidenceFingerprint: evidenceFingerprint,
-      CusQuoteIntelligence_AlgorithmVersion: deterministic.algorithmVersion,
-      CusQuoteIntelligence_CalculatedAt: calculatedAt,
-      CusQuoteIntelligence_UpdatedAt: calculatedAt,
-    }, { onConflict: "CusQuoteIntelligence_QuoteID" })
-    .select("*")
-    .single()
+  const { data: saved, error: saveError } = await admin.rpc("quote_intelligence_publish_snapshot", {
+    p_company_id: companyId,
+    p_quote_id: quoteId,
+    p_quote_updated_at: evidence.target.updatedAt,
+    p_snapshot: deterministic,
+    p_calculated_at: calculatedAt,
+  })
   if (saveError) throw saveError
   return snapshotFromRow(saved)
 }

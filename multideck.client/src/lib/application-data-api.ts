@@ -1,7 +1,7 @@
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import type { DomesticRoadJob, RoadJobStageId } from "@/components/multideck/domestic-road-components"
 import { createEmptyFilterQuery, filterQueryIsEmpty, type FilterQuery } from "@/lib/advanced-filters"
-import { getSupabaseSession, supabase } from "@/lib/supabase"
+import { authenticatedAccessChangedEvent, getSupabaseSession, supabase, supabaseFunctionsUrl } from "@/lib/supabase"
 
 type BookingMode = "OCEAN" | "AIR" | "ROAD" | "MULTIMODAL" | "FAS" | "FSA"
 type BookingStatus = "On track" | "Delayed" | "Exception"
@@ -109,7 +109,7 @@ export function readCachedRegisterPage<T>(
 ): Promise<T> {
   if (signal?.aborted) return Promise.reject(registerAbortError())
 
-  const key = `${scope}\u0000${resource}`
+  const key = `${supabaseFunctionsUrl}:${scope}\u0000${resource}`
   const now = Date.now()
   let entry = registerPageCache.get(key) as RegisterCacheEntry<T> | undefined
   if (entry?.value !== undefined && entry.expiresAt > now) {
@@ -124,15 +124,14 @@ export function readCachedRegisterPage<T>(
     const inFlight = load(controller.signal)
       .then((value) => {
         globalThis.clearTimeout(timeoutId)
-        if (registerPageCache.get(key) === next) {
-          registerPageCache.set(key, {
-            value,
-            expiresAt: Date.now() + REGISTER_CACHE_TTL_MS,
-            consumers: new Set(),
-            lastAccessedAt: Date.now(),
-          })
-          pruneRegisterPageCache()
-        }
+        if (controller.signal.aborted || registerPageCache.get(key) !== next) throw registerAbortError()
+        registerPageCache.set(key, {
+          value,
+          expiresAt: Date.now() + REGISTER_CACHE_TTL_MS,
+          consumers: new Set(),
+          lastAccessedAt: Date.now(),
+        })
+        pruneRegisterPageCache()
         return value
       })
       .catch((error) => {
@@ -189,6 +188,8 @@ export function invalidateRegisterPages(resourcePrefix: string) {
     registerPageCache.delete(key)
   }
 }
+
+if (typeof window !== "undefined") window.addEventListener(authenticatedAccessChangedEvent, () => invalidateRegisterPages(""))
 
 export async function setLiveJobStarred(bookingReference: string, starred: boolean) {
   const session = await getSupabaseSession()

@@ -16,7 +16,7 @@ import { motion, useReducedMotion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 

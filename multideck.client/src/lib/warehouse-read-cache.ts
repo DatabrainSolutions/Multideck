@@ -61,10 +61,11 @@ export function readCachedWarehouseResource<T>(
   const inFlight = load()
     .then((value) => {
       const latest = entries.get(key) as WarehouseCacheEntry<T> | undefined
-      if (scopeGeneration(scope) === generation && latest?.token === token) {
-        entries.set(key, { scope, resource, value, updatedAt: Date.now(), lastAccessedAt: Date.now() })
-        pruneScope(scope)
+      if (scopeGeneration(scope) !== generation || latest?.token !== token) {
+        throw Object.assign(new Error("This warehouse read was invalidated."), { name: "AbortError" })
       }
+      entries.set(key, { scope, resource, value, updatedAt: Date.now(), lastAccessedAt: Date.now() })
+      pruneScope(scope)
       return value
     })
     .catch((error) => {
@@ -104,3 +105,5 @@ export function clearWarehouseReadCache() {
   entries.clear()
   scopeGenerations.clear()
 }
+
+if (typeof window !== "undefined") window.addEventListener("multideck:access-changed", clearWarehouseReadCache)

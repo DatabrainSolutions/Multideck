@@ -340,9 +340,9 @@ export function TopBar({
               <span className="hidden sm:inline">{t("New task")}</span>
             </Button>
           ) : isCalendar ? (
-            <Button aria-label={t("New meeting")} title={t("New meeting")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createCalendarMeeting)}>
+            <Button aria-label={t("New event")} title={t("New event")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createCalendarMeeting)}>
               <Plus data-icon="inline-start" strokeWidth={1.2} />
-              <span className="hidden sm:inline">{t("New meeting")}</span>
+              <span className="hidden sm:inline">{t("New event")}</span>
             </Button>
           ) : isBookingLinks ? (
             <Button aria-label={t("New booking link")} title={t("New booking link")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createBookingLink)}>

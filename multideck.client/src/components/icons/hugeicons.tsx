@@ -197,6 +197,7 @@ import {
   PanelRightCloseIcon as PanelRightCloseIconData,
   ParagraphIcon as ParagraphIconData,
   PauseCircleIcon as PauseCircleIconData,
+  Pen01Icon as Pen01IconData,
   Pen02Icon as Pen02IconData,
   PencilEdit01Icon as PencilEdit01IconData,
   PencilIcon as PencilIconData,
@@ -528,6 +529,7 @@ export const PanelRightClose = createMultideckIcon(PanelRightCloseIconData, "Pan
 export const Paperclip = createMultideckIcon(Attachment01IconData, "Paperclip")
 export const PenLine = createMultideckIcon(Pen02IconData, "PenLine")
 export const Pencil = createMultideckIcon(PencilIconData, "Pencil")
+export const Pen01 = createMultideckIcon(Pen01IconData, "Pen01")
 export const PencilEdit01 = createMultideckIcon(PencilEdit01IconData, "PencilEdit01")
 export const Phone = createMultideckIcon(TelephoneIconData, "Phone")
 export const Pilcrow = createMultideckIcon(ParagraphIconData, "Pilcrow")

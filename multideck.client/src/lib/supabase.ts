@@ -1,4 +1,5 @@
 import { createClient, type Session } from "@supabase/supabase-js"
+import { setCrmReadCacheScope } from "@/lib/crm-read-cache"
 import {
   capturePasswordRecoveryLink,
   rememberVerifiedPasswordRecovery,
@@ -41,6 +42,20 @@ export const supabase = isSupabaseConfigured
       },
     })
   : null
+
+export const authenticatedAccessChangedEvent = "multideck:access-changed"
+
+setCrmReadCacheScope(supabaseUrl, null)
+let previousAuthUserId: string | null = null
+supabase?.auth.onAuthStateChange((event, session) => {
+  // Keep this callback synchronous: awaiting another Auth method here can
+  // deadlock Supabase's session lock. Refreshes also invalidate changed claims.
+  const userId = session?.user.id ?? null
+  const identityChanged = previousAuthUserId !== userId
+  previousAuthUserId = userId
+  const changed = setCrmReadCacheScope(supabaseUrl, userId, event === "TOKEN_REFRESHED" || event === "USER_UPDATED")
+  if (changed && typeof window !== "undefined") window.dispatchEvent(new CustomEvent(authenticatedAccessChangedEvent, { detail: { identityChanged } }))
+})
 
 export async function getSupabaseSession(): Promise<Session | null> {
   if (!supabase) return null

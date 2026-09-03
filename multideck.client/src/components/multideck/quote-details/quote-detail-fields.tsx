@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react"
 import { Check, ChevronDown, Info, Search, StickyNote, TriangleAlert, X } from "@/components/icons/hugeicons"
-import { AutoPopulatedInput, AutoPopulationIndicator, useAutoPopulationMorph } from "@/components/multideck/auto-populated-field"
+import { AutoPopulatedInput, useAutoPopulationMorph } from "@/components/multideck/auto-populated-field"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -37,8 +37,10 @@ import { cn } from "@/lib/utils"
 import {
   EMPTY_HAZARDOUS_DETAILS,
   INCOTERMS_2020,
-  filterLocationsForMode,
+  EMPTY_LOCATION_OPTIONS,
+  getLocationDirectoryIndex,
   getIncotermDefinition,
+  locationIdentity,
   resolveLinkedLocation,
   type AmountCurrencyValue,
   type CargoCharacteristicKey,
@@ -266,10 +268,11 @@ export function CompactCombobox({
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
   const [inputValue, setInputValue] = useState(value)
+  const displayedValue = open ? inputValue : value
   const [activeIndex, setActiveIndex] = useState(0)
   const keyboardNavigationRef = useRef(false)
   const pointerFocusRef = useRef(false)
-  const inputMorphRef = useAutoPopulationMorph<HTMLInputElement>(autoPopulated, value)
+  const inputMorphRef = useAutoPopulationMorph<HTMLInputElement>(autoPopulated, displayedValue)
   const query = open ? search.trim() : ""
   const recommended = useMemo(
     () => deduplicateComboboxOptions(recommendedOptions.filter((option) => matchesComboboxOption(option, query)))
@@ -360,12 +363,13 @@ export function CompactCombobox({
               aria-expanded={open}
               aria-controls={listId}
               aria-autocomplete="list"
+              aria-description={autoPopulated ? t(autoPopulationDescription ?? "Filled from linked information. You can edit this value manually.") : undefined}
               aria-activedescendant={open && visibleOptions[activeIndex] ? `${listId}-option-${activeIndex}` : undefined}
               aria-required={required || undefined}
               aria-invalid={invalid || undefined}
               autoComplete="off"
               disabled={disabled}
-              value={inputValue}
+              value={displayedValue}
               placeholder={t(placeholder)}
               onPointerDown={() => { pointerFocusRef.current = true }}
               onPointerCancel={() => { pointerFocusRef.current = false }}
@@ -391,7 +395,6 @@ export function CompactCombobox({
               onKeyDown={handleKeyDown}
               className="h-8 flex-1 truncate rounded-[var(--md-radius-lg)] bg-transparent px-1.5 text-[12px] shadow-none ring-0 hover:bg-transparent focus-visible:bg-transparent focus-visible:ring-0"
             />
-            <AutoPopulationIndicator active={autoPopulated} description={autoPopulationDescription} inline />
             {allowCustom && inputValue ? (
               <Button
                 type="button"
@@ -851,6 +854,7 @@ export function LocationFields({
   countries,
   directoryStatus,
   directoryCount,
+  recommendedLocationIds,
   onChange,
   disabled,
   required,
@@ -864,6 +868,7 @@ export function LocationFields({
   countries: readonly CountryReferenceOption[]
   directoryStatus?: "loading" | "ready" | "error"
   directoryCount?: number
+  recommendedLocationIds?: ReadonlySet<string>
   onChange: (value: LocationValue) => void
   disabled?: boolean
   required?: boolean
@@ -876,32 +881,42 @@ export function LocationFields({
     normalizeSearch(country.code) === normalizeSearch(selectedCountry)
     || normalizeSearch(country.name) === normalizeSearch(selectedCountry)
   ))
-  const modeOptions = filterLocationsForMode(options, mode)
+  const locationIndex = getLocationDirectoryIndex(options, mode)
+  const modeOptions = locationIndex.options
   // Country and location are the operator inputs. UN/LOCODE is derived from
   // the exact location they select, so an existing code must never trap the
   // place directory on the previous choice.
   const placePool = selectedCountryReference
-    ? modeOptions.filter((option) => normalizeSearch(option.countryCode) === normalizeSearch(selectedCountryReference.code))
-    : []
-  const countryOptions = uniqueBy(countries, (country) => country.code).map((country) => ({
+    ? locationIndex.byCountryCode.get(normalizeSearch(selectedCountryReference.code)) ?? EMPTY_LOCATION_OPTIONS
+    : EMPTY_LOCATION_OPTIONS
+  const countryOptions = useMemo(() => uniqueBy(countries, (country) => country.code).map((country) => ({
     id: `country:${country.code}`,
     value: country.name,
     label: country.name,
     description: country.code,
     keywords: [country.code],
     iconText: countryFlag(country.code),
-  }))
-  const placeOptions = uniqueBy(placePool, (option) => option.id || option.unlocode || `${option.countryCode}:${option.place}`).map((option) => ({
-    id: option.id || option.unlocode || `${option.countryCode}:${option.place}`,
+  })), [countries])
+  const placeOptions = useMemo(() => uniqueBy(placePool, locationIdentity).map((option) => ({
+    id: locationIdentity(option),
     value: option.place,
     label: `${option.place}, ${option.countryName}`,
     description: [option.unlocode, option.kind ? t(option.kind.replaceAll("-", " ")) : ""].filter(Boolean).join(" · "),
     keywords: [option.countryCode, option.countryName, option.unlocode, ...(option.aliases ?? [])],
-  }))
-  const recommendedCountryCodes = new Set(modeOptions.filter((location) => location.recommended).map((location) => location.countryCode))
-  const recommendedPlaceIds = new Set(placePool.filter((location) => location.recommended).map((location) => location.id || location.unlocode || `${location.countryCode}:${location.place}`))
-  const recommendedCountries = countryOptions.filter((option) => recommendedCountryCodes.has(option.id.replace("country:", "")))
-  const recommendedPlaces = placeOptions.filter((option) => recommendedPlaceIds.has(option.id ?? ""))
+  })), [placePool, t])
+  const { recommendedCountries, recommendedPlaces } = useMemo(() => {
+    const recommended = [...locationIndex.recommended]
+    for (const id of recommendedLocationIds ?? []) {
+      const location = locationIndex.byId.get(id)
+      if (location) recommended.push(location)
+    }
+    const countryCodes = new Set(recommended.map((location) => location.countryCode))
+    const placeIds = new Set(recommended.map(locationIdentity))
+    return {
+      recommendedCountries: countryOptions.filter((option) => countryCodes.has(option.id.replace("country:", ""))),
+      recommendedPlaces: placeOptions.filter((option) => placeIds.has(option.id)),
+    }
+  }, [locationIndex, recommendedLocationIds, countryOptions, placeOptions])
   const resolvedLocation = value.place.trim()
     ? placePool.find((option) => normalizeSearch(option.place) === normalizeSearch(value.place))
     : undefined
@@ -912,7 +927,7 @@ export function LocationFields({
   )
 
   function applySelectedOption(option: CompactComboboxOption) {
-    const location = modeOptions.find((candidate) => (candidate.id || candidate.unlocode || `${candidate.countryCode}:${candidate.place}`) === option.id)
+    const location = option.id ? locationIndex.byId.get(option.id) : undefined
     if (location) onChange({ countryCode: location.countryCode, countryName: location.countryName, place: location.place, unlocode: location.unlocode })
   }
 

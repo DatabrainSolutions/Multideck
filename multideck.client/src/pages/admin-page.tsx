@@ -265,11 +265,12 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
     setResult(null)
   }, [view])
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
+  const load = useCallback(async (signal?: AbortSignal, quiet = false) => {
+    if (!quiet) setLoading(true)
     setError(null)
     try {
-      setResult(await getAdminAudit(view, { search, category, dateRange, sort, limit: pageSize, offset }, signal))
+      const next = await getAdminAudit(view, { search, category, dateRange, sort, limit: pageSize, offset }, signal)
+      if (!signal?.aborted) setResult(next)
     } catch (loadError) {
       if (loadError instanceof Error && loadError.name === "AbortError") return
       setError(loadError instanceof Error ? loadError.message : "The audit log could not be loaded.")
@@ -279,16 +280,21 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
   }, [category, dateRange, offset, search, sort, view])
 
   useEffect(() => {
-    let controller = new AbortController()
-    void load(controller.signal)
-    const intervalId = window.setInterval(() => {
-      controller.abort()
-      controller = new AbortController()
-      void load(controller.signal)
-    }, auditRefreshIntervalMs)
+    const controller = new AbortController()
+    let refreshing = false
+    const refresh = async (quiet: boolean) => {
+      if (refreshing || controller.signal.aborted) return
+      refreshing = true
+      try { await load(controller.signal, quiet) } finally { refreshing = false }
+    }
+    void refresh(false)
+    const returned = () => { if (!document.hidden) void refresh(true) }
+    const intervalId = window.setInterval(returned, auditRefreshIntervalMs)
+    document.addEventListener("visibilitychange", returned)
     return () => {
       controller.abort()
       window.clearInterval(intervalId)
+      document.removeEventListener("visibilitychange", returned)
     }
   }, [load])
 

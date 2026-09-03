@@ -87,7 +87,7 @@ import {
   crmSalesFunnel,
   crmSummaryMetrics,
   type StatusTone,
-} from "@/data/multideck-data"
+} from "@/data/operational-data"
 import { CustomerAvatar } from "./customer-components"
 import { AuditTimeline, type AuditTimelineEvent } from "./audit-timeline"
 import { CopyableField } from "./copyable-field"

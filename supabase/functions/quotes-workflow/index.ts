@@ -943,7 +943,7 @@ async function refineQuoteEmailDraft(
   return { subject: nextSubject, bodyText: nextBodyText, model }
 }
 
-async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"], authUserId: string) {
+async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"], authUserId: string, compact = false) {
   const operator = await operatorContext(admin, authUserId)
   const [{ data: offices, error: officeError }, { data: users, error: userError }] = await Promise.all([
     admin.from("cmp_Offices").select("Office_ID,Office_Code,Office_Name").eq("Company_ID", operator.companyId).eq("Office_IsActive", true).order("Office_Name"),
@@ -1239,9 +1239,11 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
       })),
     ],
     organisations,
+    ...(compact ? {} : {
     suppliers: organisations.filter((row) => row.types.some((type) => /supplier|freight forwarder/i.test(type))),
     carriers: organisations.filter((row) => row.types.some((type) => /carrier|shipping line|haulier|freight forwarder/i.test(type))),
     agents: organisations.filter((row) => row.types.some((type) => /\bagents?\b/i.test(type))),
+    }),
     offices: (offices ?? []).map((row) => ({ id: String(row.Office_ID), code: String(row.Office_Code || ""), name: String(row.Office_Name) })),
     departments: (departmentResult.data ?? []).map((row) => ({ id: String(row.Department_ID), name: String(row.Department_Name) })),
     users: (users ?? []).map((row) => ({ id: String(row.User_ID), name: [row.User_Firstname, row.User_Lastname].filter(Boolean).join(" ") || String(row.User_Email), email: String(row.User_Email) })),
@@ -1253,11 +1255,11 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
   }
 }
 
-async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"], authUserId: string, referenceValue: unknown) {
+async function authorisedQuoteHeader(admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"], authUserId: string, referenceValue: unknown, columns = "*") {
   const operator = await operatorContext(admin, authUserId)
   const reference = parseReference(referenceValue)
   const number = Number(reference.match(/([0-9]+)$/)?.[1] ?? "")
-  let { data: quote, error: quoteError } = await admin.from("CusQuote_Header").select("*").eq("CusQuoteHeader_CustomerReference", reference).eq("CusQuoteHeader_IsDeleted", false).maybeSingle()
+  let { data: quote, error: quoteError } = await admin.from("CusQuote_Header").select(columns).eq("CusQuoteHeader_CustomerReference", reference).eq("CusQuoteHeader_IsDeleted", false).returns<Row[]>().maybeSingle()
   if (!quote && !quoteError) {
     const aliasResult = await admin.rpc("resolve_workspace_reference_alias", {
       caller_auth_user_id: authUserId,
@@ -1266,29 +1268,34 @@ async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateReque
     })
     if (aliasResult.error) throw aliasResult.error
     if (aliasResult.data?.sourceId) {
-      const canonicalResult = await admin.from("CusQuote_Header").select("*")
+      const canonicalResult = await admin.from("CusQuote_Header").select(columns)
         .eq("CusQuoteHeader_ID", String(aliasResult.data.sourceId))
         .eq("CusQuoteHeader_IsDeleted", false)
-        .maybeSingle()
+        .returns<Row[]>().maybeSingle()
       quote = canonicalResult.data
       quoteError = canonicalResult.error
     }
   }
   if (!quote && Number.isInteger(number)) {
-    const fallback = await admin.from("CusQuote_Header").select("*").eq("CusQuoteHeader_Number", number).eq("CusQuoteHeader_IsDeleted", false).maybeSingle()
+    const fallback = await admin.from("CusQuote_Header").select(columns).eq("CusQuoteHeader_Number", number).eq("CusQuoteHeader_IsDeleted", false).returns<Row[]>().maybeSingle()
     quote = fallback.data
     quoteError = fallback.error
   }
   if (quoteError || !quote) throw quoteError ?? new QuoteWorkflowError(404, "That quote could not be found.")
   const officeId = String(quote.CusQuoteHeader_OrgOfficeID || quote.OrgOffice_ID || "")
-  const { data: office, error: officeError } = await admin.from("cmp_Offices").select("Company_ID").eq("Office_ID", officeId).maybeSingle()
+  const { data: office, error: officeError } = await admin.from("cmp_Offices").select("Company_ID").eq("Office_ID", officeId).returns<Row[]>().maybeSingle()
   if (officeError || !office || String(office.Company_ID) !== operator.companyId) throw new QuoteWorkflowError(403, "That quote is outside this workspace.")
+  return { quote, operator, reference }
+}
+
+async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"], authUserId: string, referenceValue: unknown) {
+  const { quote, reference } = await authorisedQuoteHeader(admin, authUserId, referenceValue)
   const customerId = quote.CusQuoteHeader_CustomerID ? String(quote.CusQuoteHeader_CustomerID) : ""
   const [customerResult, chargeResult, partyResult, versionResult, eventResult, latestIssueResult, linkedBookingResult, intelligence] = await Promise.all([
     customerId ? admin.from("Org_Master").select("Org_id,Org_Name").eq("Org_id", customerId).maybeSingle() : Promise.resolve({ data: null, error: null }),
     admin.from("CusQuote_Lines").select("*").eq("CusQuoteHeader_ID", quote.CusQuoteHeader_ID).order("CusQuoteLine_Number"),
     admin.from("CusQuote_Parties").select("*").eq("CusQuoteHeader_ID", quote.CusQuoteHeader_ID),
-    admin.from("CusQuote_Versions").select("*").eq("CusQuoteHeader_ID", quote.CusQuoteHeader_ID).order("CusQuoteVersion_Number", { ascending: false }),
+    admin.from("CusQuote_Versions").select("CusQuoteVersion_ID,CusQuoteVersion_Number,CusQuoteVersion_StatusCode,CusQuoteVersion_IsCurrent,CusQuoteVersion_CreatedAt").eq("CusQuoteHeader_ID", quote.CusQuoteHeader_ID).order("CusQuoteVersion_Number", { ascending: false }),
     admin.from("CusQuote_Events").select("*,cmp_Users(User_Firstname,User_Lastname)").eq("CusQuoteHeader_ID", quote.CusQuoteHeader_ID).order("CusQuoteEvent_OccurredAt", { ascending: false }).limit(100),
     admin.rpc("quote_workflow_latest_customer_response_issue", {
       caller_auth_user_id: authUserId,
@@ -1426,7 +1433,7 @@ Deno.serve(async (request) => {
     }
     const body = await request.json() as Record<string, unknown>
     const action = parseAction(body.action)
-    if (action === "sources") return jsonResponse(request, await sourceOptions(admin, userId))
+    if (action === "sources") return jsonResponse(request, await sourceOptions(admin, userId, body.compact === true))
     if (action === "branding") {
       const operator = await requireAdministrator(admin, userId)
       return jsonResponse(request, await brandingResponse(admin, operator.companyId))
@@ -1628,9 +1635,8 @@ Deno.serve(async (request) => {
       }
     }
     if (action === "intelligence") {
-      const workspace = await quoteWorkspace(admin, userId, body.reference)
-      const operator = await operatorContext(admin, userId)
-      const intelligence = await refreshQuoteIntelligence(admin, operator.companyId, workspace.quote.id)
+      const { quote, operator } = await authorisedQuoteHeader(admin, userId, body.reference, "CusQuoteHeader_ID,CusQuoteHeader_OrgOfficeID,OrgOffice_ID")
+      const intelligence = await refreshQuoteIntelligence(admin, operator.companyId, String(quote.CusQuoteHeader_ID))
       return jsonResponse(request, intelligence ?? { state: "unavailable" })
     }
     if (action === "save") {

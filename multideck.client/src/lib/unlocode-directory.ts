@@ -35,6 +35,7 @@ export function loadUnlocodeDirectory() {
       const json = bytes[0] === 0x1f && bytes[1] === 0x8b ? strFromU8(gunzipSync(bytes)) : strFromU8(bytes)
       return JSON.parse(json) as UnlocodeDirectoryRecord[]
     })
+    .catch((error) => { directoryPromise = null; throw error })
   return directoryPromise
 }
 
@@ -42,6 +43,7 @@ export function loadUnlocodeDirectoryMetadata() {
   metadataPromise ??= fetch("/reference/unlocode-directory.meta.json")
     .then(readResponse)
     .then((response) => response.json() as Promise<UnlocodeDirectoryMetadata>)
+    .catch((error) => { metadataPromise = null; throw error })
   return metadataPromise
 }
 

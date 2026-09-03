@@ -1,4 +1,4 @@
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import type { QuoteRegisterRecord } from "@/data/quote-register-data"
 import { filterQueryIsEmpty, type FilterQuery } from "@/lib/advanced-filters"
 import { invalidateRegisterPages, readCachedRegisterPage, type RegisterSort } from "@/lib/application-data-api"

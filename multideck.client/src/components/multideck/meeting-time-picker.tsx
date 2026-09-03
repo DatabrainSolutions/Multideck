@@ -294,9 +294,11 @@ export function MeetingTimePicker({ startAt, endAt, timeZone, onChange, onTimeZo
           triggerClassName="h-9 w-auto min-w-[168px] rounded-[var(--md-radius-lg)] px-2.5 text-[13px]"
           popoverClassName="w-[min(92vw,320px)]"
         />
-        <TimeField label="Starts" value={start.time} options={ALL_DAY_OPTIONS} onChange={(time) => setStart(start.dateKey, time)} formatTime={formatTime} />
-        <span className="text-[12px] text-[var(--md-subtle)]" aria-hidden="true">–</span>
-        <TimeField label="Finishes" value={end.time} options={endOptions} onChange={setEnd} formatTime={formatTime} />
+        <div className="flex shrink-0 items-center gap-2" role="group" aria-label="Meeting time range">
+          <TimeField label="Starts" value={start.time} options={ALL_DAY_OPTIONS} onChange={(time) => setStart(start.dateKey, time)} formatTime={formatTime} />
+          <span className="text-[12px] text-[var(--md-subtle)]" aria-hidden="true">–</span>
+          <TimeField label="Finishes" value={end.time} options={endOptions} onChange={setEnd} formatTime={formatTime} />
+        </div>
         <span className="text-[11.5px] tabular-nums text-[var(--md-subtle)]">{sameDay ? formatDurationLabel(durationMinutes) : `Ends ${new Intl.DateTimeFormat(language, { day: "numeric", month: "short", timeZone: zone }).format(new Date(endAt))}`}</span>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">

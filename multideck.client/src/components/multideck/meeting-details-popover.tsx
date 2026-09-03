@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type RefObject } from "react"
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react"
-import { Briefcase, Building2, CalendarDays, Check, Clock3, Copy, ExternalLink, MapPin, Palette, Pencil, Phone, TextQuote, Trash2, TriangleAlert, Users, Video, X } from "@/components/icons/hugeicons"
+import { Briefcase, Building2, CalendarDays, Check, Clock3, Copy, ExternalLink, MapPin, Palette, Pen01, Phone, TextQuote, Trash2, TriangleAlert, Users, Video, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -45,11 +45,11 @@ function IconAction({ label, icon: Icon, onClick, tone = "default", disabled }: 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button type="button" variant="ghost" size="icon" aria-label={label} disabled={disabled} onClick={onClick} className={cn("size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-ink)]", tone === "danger" && "hover:bg-[color-mix(in_srgb,var(--md-red)_8%,transparent)] hover:text-[var(--md-red)]")}>
+        <Button type="button" variant="ghost" size="icon" aria-label={label} disabled={disabled} onClick={onClick} className={cn("size-10 rounded-[calc(var(--md-radius-2xl)-4px)] text-[var(--md-subtle)] hover:text-[var(--md-ink)]", tone === "danger" && "hover:bg-[color-mix(in_srgb,var(--md-red)_8%,transparent)] hover:text-[var(--md-red)]")}>
           <Icon className="size-4" strokeWidth={1.5} />
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">{label}</TooltipContent>
+      <TooltipContent side="right">{label}</TooltipContent>
     </Tooltip>
   )
 }
@@ -182,31 +182,24 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
 
   return (
     <>
-      <motion.div variants={row} className="flex shrink-0 items-center justify-end gap-0.5 px-3 pt-3">
-        {event.canEdit && !pending && mode === "view" ? (
-          <>
-            <IconAction label="Edit event" icon={Pencil} onClick={() => { setDetails({ title: event.title, agenda: event.agenda ?? "", location: event.location ?? "" }); setColour(event.colour ?? "teal"); setTimes({ startAt: event.startAt, endAt: event.endAt }); setError(null); setMode("reschedule") }} />
-            <IconAction label={external ? "Delete event" : "Cancel meeting"} icon={Trash2} tone="danger" onClick={() => setMode("cancel")} />
-          </>
-        ) : null}
-        <IconAction label="Close" icon={X} disabled={saving} onClick={onClose} />
-      </motion.div>
-
-      <motion.div variants={row} className="flex shrink-0 items-start gap-3 px-5 pb-4 pt-1">
+      <div data-slot="meeting-details-surface" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-popover)] max-h-[min(80dvh,640px,var(--radix-popover-content-available-height))]">
+      <motion.div variants={row} className="flex shrink-0 items-start gap-3 px-5 pb-4 pt-5">
         <MeetingProviderMark provider={provider} className="mt-0.5 size-6 shrink-0" />
         <div className="min-w-0">
           {mode === "reschedule" && !event.private ? <Input aria-label="Meeting title" value={details.title} disabled={saving} onChange={(e) => setDetails((value) => ({ ...value, title: e.target.value }))} /> : <h2 className="text-[17px] font-medium leading-6 tracking-[-.01em] text-[var(--md-ink)]">{event.private ? "Busy" : event.title}</h2>}
-          {mode === "reschedule" ? (
-            <div className="mt-3">
-              <MeetingTimePicker startAt={times.startAt} endAt={times.endAt} timeZone={zone} onChange={(next) => { setTimes(next); setError(null) }} />
-            </div>
-          ) : (
+          {mode !== "reschedule" ? (
             <p className="mt-0.5 text-[12.5px] text-[var(--md-text)]">
               {dateLine.day}<span className="mx-1.5 text-[var(--md-subtle)]">·</span>{dateLine.range}<span className="mx-1.5 text-[var(--md-subtle)]">·</span><span className="text-[var(--md-subtle)]">{formatDuration(durationMinutes)}</span>
             </p>
-          )}
+          ) : null}
         </div>
       </motion.div>
+
+      {mode === "reschedule" ? (
+        <motion.div variants={row} className="shrink-0 px-3 pb-4 sm:px-5">
+          <MeetingTimePicker startAt={times.startAt} endAt={times.endAt} timeZone={zone} onChange={(next) => { setTimes(next); setError(null) }} />
+        </motion.div>
+      ) : null}
 
       <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto pb-4">
         {event.canEdit && mode === "reschedule" && !external ? (
@@ -310,6 +303,17 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
           </motion.div>
         ) : null}
       </AnimatePresence>
+      </div>
+
+      <motion.div variants={row} role="group" aria-label="Event actions" className="flex shrink-0 flex-col gap-0.5 self-start rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-popover)]">
+        {event.canEdit && !pending && mode === "view" ? (
+          <>
+            <IconAction label="Edit event" icon={Pen01} onClick={() => { setDetails({ title: event.title, agenda: event.agenda ?? "", location: event.location ?? "" }); setColour(event.colour ?? "teal"); setTimes({ startAt: event.startAt, endAt: event.endAt }); setError(null); setMode("reschedule") }} />
+            <IconAction label={external ? "Delete event" : "Cancel meeting"} icon={Trash2} tone="danger" onClick={() => setMode("cancel")} />
+          </>
+        ) : null}
+        <IconAction label="Close" icon={X} disabled={saving} onClick={onClose} />
+      </motion.div>
     </>
   )
 }
@@ -344,7 +348,7 @@ export function MeetingDetailsPopover({ selection, onClose, onChanged, navigate 
             collisionPadding={16}
             onOpenAutoFocus={(event) => { event.preventDefault(); cardRef.current?.focus({ preventScroll: true }) }}
             onCloseAutoFocus={(event) => { event.preventDefault(); if (selection.anchor.isConnected) selection.anchor.focus({ preventScroll: true }) }}
-            className="z-[120] w-[min(94vw,400px)] gap-0 rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-popover)] data-open:animate-none data-closed:animate-none"
+            className="z-[120] w-[min(calc(100vw_-_32px),456px)] flex-row items-start gap-2 rounded-none border-0 bg-transparent p-0 text-[var(--md-ink)] shadow-none! data-open:animate-none data-closed:animate-none"
           >
             <motion.div
               ref={cardRef}
@@ -355,7 +359,7 @@ export function MeetingDetailsPopover({ selection, onClose, onChanged, navigate 
               initial="hidden"
               animate="visible"
               exit="exit"
-              className="flex max-h-[min(80dvh,640px)] flex-col outline-none"
+              className="flex outline-none"
             >
               <MeetingDetailsCard event={selection.event} onClose={onClose} onChanged={onChanged} navigate={navigate} />
             </motion.div>

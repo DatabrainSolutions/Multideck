@@ -51,7 +51,12 @@ export function normaliseExternalEventChange(event: JsonObject, change: External
 
 async function loadEventConnection(admin: SupabaseClient, event: JsonObject) {
   const { data, error } = await admin.from("CAL_ProviderConnections").select("*")
-    .eq("CALConnection_ID", event.CALProviderEvent_ConnectionID).eq("CALConnection_StatusCode", "connected").maybeSingle()
+    .eq("CALConnection_ID", event.CALProviderEvent_ConnectionID)
+    .eq("CALConnection_CompanyID", event.CALProviderEvent_CompanyID)
+    .eq("CALConnection_UserID", event.CALProviderEvent_OwnerUserID)
+    // A webhook queues a cache refresh as "syncing"; credentials are still
+    // checked by calendarProviderAccessToken and the provider on every write.
+    .in("CALConnection_StatusCode", ["connected", "syncing"]).maybeSingle()
   if (error) throw new HttpError(500, "The calendar connection could not be checked.")
   if (!data) throw new HttpError(409, "Reconnect the calendar this event came from before changing it.")
   if (data.CALConnection_ProviderCode !== "google" && data.CALConnection_ProviderCode !== "microsoft") throw new HttpError(400, "Only Google and Microsoft calendar events can be edited here.")

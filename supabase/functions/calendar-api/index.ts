@@ -299,7 +299,7 @@ function externalEventContract(row: Record<string, unknown>, connection: Connect
     colour: connection?.colour ?? "neutral",
     status: row.CALProviderEvent_IsCancelled ? "cancelled" : "confirmed",
     private: row.CALProviderEvent_IsPrivate,
-    canEdit: (source === "google" || source === "microsoft") && (connection?.status ?? "connected") === "connected" && !row.CALProviderEvent_IsCancelled,
+    canEdit: (source === "google" || source === "microsoft") && (connection?.status === "connected" || connection?.status === "syncing") && !row.CALProviderEvent_IsCancelled,
   }
 }
 
@@ -333,6 +333,16 @@ function connectionContract(row: Record<string, unknown>) {
     error: row.CALConnection_LastError,
     colour: row.CALConnection_ColourCode,
   }
+}
+
+// Same owner/company boundary and public contract as the Calendar workspace.
+// This is a smaller read of the existing Calendar capability; it adds no write
+// action or watch event and does not expose provider tokens.
+function readProviderConnections(admin: SupabaseClient, actor: Actor) {
+  return admin.from("CAL_ProviderConnections")
+    .select("CALConnection_ID,CALConnection_ProviderCode,CALConnection_IsPrimaryCalendar,CALConnection_StatusCode,CALConnection_DisplayName,CALConnection_Email,CALConnection_LastSyncedAt,CALConnection_SubscriptionExpiresAt,CALConnection_LastError,CALConnection_ColourCode")
+    .eq("CALConnection_CompanyID", actor.Company_ID).eq("CALConnection_UserID", actor.User_ID)
+    .neq("CALConnection_StatusCode", "disconnected")
 }
 
 async function updateConnectionColour(request: Request, admin: SupabaseClient, actor: Actor, provider: string) {
@@ -629,7 +639,7 @@ async function listWorkspace(admin: SupabaseClient, actor: Actor, permissions: s
       .is("CALProviderEvent_MeetingID", null)
       .lt("CALProviderEvent_StartAt", end.toISOString()).gt("CALProviderEvent_EndAt", start.toISOString()).eq("CALProviderEvent_IsCancelled", false),
     admin.from("CAL_UserAvailability").select("*").eq("CALAvailability_UserID", actor.User_ID).maybeSingle(),
-    admin.from("CAL_ProviderConnections").select("*").eq("CALConnection_CompanyID", actor.Company_ID).eq("CALConnection_UserID", actor.User_ID).neq("CALConnection_StatusCode", "disconnected"),
+    readProviderConnections(admin, actor),
     admin.from("CAL_BookingLinks").select("*").eq("CALBookingLink_CompanyID", actor.Company_ID).eq("CALBookingLink_OwnerUserID", actor.User_ID).neq("CALBookingLink_StatusCode", "archived").order("CALBookingLink_UpdatedAt", { ascending: false }),
     admin.from("Workflow_Tasks").select("WorkflowTask_ID,WorkflowTask_Title,WorkflowTask_DueAt,WorkflowTask_RecordTypeCode,WorkflowTask_RecordID,WorkflowTask_StatusCode")
       .eq("WorkflowTask_AssignedUserID", actor.User_ID).eq("WorkflowTask_IsDeleted", false).not("WorkflowTask_DueAt", "is", null)
@@ -1254,6 +1264,11 @@ Deno.serve(async (request) => {
     const path = routeParts(request, "calendar-api")
     const url = new URL(request.url)
 
+    if (path[0] === "connections" && path.length === 1 && request.method === "GET") {
+      const { data, error } = await readProviderConnections(admin, actor)
+      if (error) throw new HttpError(500, "Calendar connections could not be loaded.")
+      return json(request, { connections: (data ?? []).map(connectionContract) })
+    }
     if ((path.length === 0 || path[0] === "workspace") && request.method === "GET") return json(request, await listWorkspace(admin, actor, permissions, url))
     if (path[0] === "meetings" && path.length === 1 && request.method === "POST") {
       if (!can(permissions, "Calendar.ManageOwn")) throw new HttpError(403, "You do not have permission to schedule meetings.")

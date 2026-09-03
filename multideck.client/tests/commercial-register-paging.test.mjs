@@ -29,7 +29,8 @@ test("register requests use user-scoped dedupe, a short cache, cancellation, and
   assert.match(applicationApi, /consumers: Set<symbol>/)
   assert.match(applicationApi, /activeEntry\.controller\?\.abort\(\)/)
   assert.match(applicationApi, /queueMicrotask/)
-  assert.match(applicationApi, /const key = `\$\{scope\}\\u0000\$\{resource\}`/)
+  assert.match(applicationApi, /const key = `\$\{supabaseFunctionsUrl\}:\$\{scope\}\\u0000\$\{resource\}`/)
+  assert.match(applicationApi, /authenticatedAccessChangedEvent/)
   assert.match(applicationApi, /invalidateRegisterPages\("bookings:"\)/)
 })
 

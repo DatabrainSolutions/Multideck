@@ -34,7 +34,7 @@ import { DataTable, type DataTableColumn } from "@/components/multideck/data-tab
 import { AutoPopulatedInput, AutoPopulatedTextarea, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
-import { bookings } from "@/data/multideck-data"
+import { bookings } from "@/data/operational-data"
 import { cn } from "@/lib/utils"
 
 type BookingSource = "quote" | "scratch" | "existing" | null
@@ -1128,7 +1128,6 @@ function ComboField({
           aria-invalid={missing || undefined}
           autoPopulated={autoPopulated}
           autoPopulationDescription={autoPopulationDescription}
-          indicatorClassName={clearable && value ? "end-8" : undefined}
         />
         {clearable && value && !disabled ? (
           <button

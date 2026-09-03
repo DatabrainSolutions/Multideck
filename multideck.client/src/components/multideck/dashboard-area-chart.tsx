@@ -27,7 +27,7 @@ import {
   type ChartBox,
   type ChartScale,
 } from "@/lib/area-chart"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import { toneToVar } from "./status-pill"
 
 const gridCount = 4

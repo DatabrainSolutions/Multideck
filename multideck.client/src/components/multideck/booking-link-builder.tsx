@@ -205,7 +205,7 @@ export function BookingQuestionBuilder({ value, onChange, maxQuestions = 12, dis
   }
   const custom = value.filter((question) => !question.builtIn)
   return (
-    <div className={cn("grid gap-3", className)}>
+    <div className={cn("@container grid gap-3", className)}>
       <ul className="grid gap-1">
         <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 text-[11px] text-[var(--md-subtle)]">
           <span>Name and email</span>
@@ -228,17 +228,17 @@ export function BookingQuestionBuilder({ value, onChange, maxQuestions = 12, dis
         <ul className="grid gap-1.5">
           {custom.map((question) => (
             <li key={question.id} className="grid gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-2">
-              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:grid-cols-[auto_minmax(0,1fr)_128px_auto_auto]">
+              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 @min-[540px]:grid-cols-[auto_minmax(0,1fr)_128px_auto_auto]">
                 <GripVertical className="size-3.5 text-[var(--md-subtle)]" aria-hidden="true" />
                 <Input aria-label="Question" value={question.label} disabled={disabled} onChange={(event) => patch(question.id, { label: event.target.value })} placeholder="Ask a question" className="h-8 rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] text-[12px]" />
                 <Select value={question.type ?? "short_text"} disabled={disabled} onValueChange={(type) => patch(question.id, { type: type as BookingQuestionType, options: type === "select" ? question.options ?? [] : undefined })}>
-                  <SelectTrigger aria-label={`${question.label || "Question"} answer type`} className="col-start-2 h-8 rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] text-[11.5px] sm:col-start-auto"><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label={`${question.label || "Question"} answer type`} className="col-start-2 h-8 rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] text-[11.5px] @min-[540px]:col-start-auto"><SelectValue /></SelectTrigger>
                   <SelectContent className="z-[500]">{questionTypeOrder.map((type) => <SelectItem key={type} value={type}>{bookingQuestionTypeLabels[type]}</SelectItem>)}</SelectContent>
                 </Select>
-                <label className="col-start-2 flex items-center gap-1.5 text-[10.5px] text-[var(--md-subtle)] sm:col-start-auto">
+                <label className="col-start-2 flex items-center gap-1.5 text-[10.5px] text-[var(--md-subtle)] @min-[540px]:col-start-auto">
                   <Switch size="sm" aria-label={`Require ${question.label || "this question"}`} checked={Boolean(question.required)} disabled={disabled} onCheckedChange={(required) => patch(question.id, { required })} />Required
                 </label>
-                <Button type="button" variant="ghost" size="icon" disabled={disabled} aria-label={`Remove ${question.label || "question"}`} className="col-start-3 row-start-1 size-8 rounded-[var(--md-radius-sm)] sm:col-start-auto sm:row-start-auto" onClick={() => onChange(value.filter((item) => item.id !== question.id))}><Trash2 className="size-3.5" /></Button>
+                <Button type="button" variant="ghost" size="icon" disabled={disabled} aria-label={`Remove ${question.label || "question"}`} className="col-start-3 row-start-1 size-8 rounded-[var(--md-radius-sm)] @min-[540px]:col-start-auto @min-[540px]:row-start-auto" onClick={() => onChange(value.filter((item) => item.id !== question.id))}><Trash2 className="size-3.5" /></Button>
               </div>
               {question.type === "select" ? (
                 <TagEntryField

@@ -17,7 +17,7 @@ import {
   type CustomerRecord,
   type CustomerStatus,
   type StatusTone,
-} from "@/data/multideck-data"
+} from "@/data/operational-data"
 import { SectionHeader, Surface } from "./surface"
 import { StatusPill, attributeToneFor, toneToVar } from "./status-pill"
 import { FilterChips, SegmentedControl } from "./workflow-components"

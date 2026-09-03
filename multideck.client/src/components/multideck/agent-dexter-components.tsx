@@ -54,7 +54,7 @@ import { ModelProviderGlyph, ModelStrengthMeter } from "@/components/multideck/m
 import { ProgressiveBlur } from "@/components/multideck/progressive-blur"
 import { cn } from "@/lib/utils"
 import { findDexterMentionMatches } from "@/lib/dexter-mention-matcher"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import { dexterModels, type DexterModel, type DexterModelId } from "@/data/dexter-models"
 import {
   defaultDexterMentionItems,

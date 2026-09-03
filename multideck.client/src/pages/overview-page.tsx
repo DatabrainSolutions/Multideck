@@ -19,7 +19,7 @@ import { LiveBookingsBoard } from "@/components/multideck/dashboard-live-booking
 import { getBookingDetailPath } from "@/components/multideck/booking-components"
 import {
   type DashboardCustomRange,
-} from "@/data/multideck-data"
+} from "@/data/operational-data"
 import { rememberDexterTaskHandoff } from "@/lib/dexter-navigation"
 import {
   loadDashboardDrilldownPage,

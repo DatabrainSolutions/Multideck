@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { useTheme } from "@/lib/theme-provider"
-import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, PackageCheck, Pencil, Pin, Search, Settings2, Ship, Star, Trash2, UserRound, Zap } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, PackageCheck, Pen01, Pencil, Pin, Search, Settings2, Ship, Star, Trash2, UserRound, Zap } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
@@ -75,7 +75,7 @@ import {
 } from "@/components/multideck/customer-components"
 import { CrmActivityTimeline, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
 import { CopyableField } from "@/components/multideck/copyable-field"
-import { AutoPopulatedInput, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
+import { AutoPopulatedInput, AutoPopulatedTextarea, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
 import { TagEntryField } from "@/components/multideck/tag-entry-field"
 import { CardMiniature, CardStylePresetPicker, ContactCardLayoutPicker, ContactCardSocialLinksEditor, QrStylePicker } from "@/components/multideck/contact-card-design"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
@@ -1790,8 +1790,13 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewOrganisation, setPreviewOrganisation] = useState<ApiCustomerDetail>(previewOrganisationSeed)
   const [previewDriveRenamingId, setPreviewDriveRenamingId] = useState<string | null>(null)
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
+  const [previewCalendarLayers, setPreviewCalendarLayers] = useState(["Operational dates", "Personal events"])
   const previewAutoPopulationSource = "1 Harbour Exchange Square, London, E14 9GE, GB"
-  const [previewAutoPopulationValue, setPreviewAutoPopulationValue] = useState(previewAutoPopulationSource)
+  const previewAutoPopulationCodeSource = "GBLON"
+  const previewAutoPopulationNotesSource = "Collect from the loading bay.\nCall the office on arrival."
+  const [previewAutoPopulationValue, setPreviewAutoPopulationValue] = useState("")
+  const [previewAutoPopulationCode, setPreviewAutoPopulationCode] = useState("")
+  const [previewAutoPopulationNotes, setPreviewAutoPopulationNotes] = useState("")
   const [previewDictionaryTerms, setPreviewDictionaryTerms] = useState(["Multideck", "Jenkar", "UN/LOCODE", "Incoterms"])
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
   const previewNow = useLiveNow()
@@ -1871,9 +1876,29 @@ function ComponentPreview({ id }: { id: string }) {
             autoPopulated={matchesAutoPopulation(previewAutoPopulationValue, previewAutoPopulationSource)}
             autoPopulationDescription="Filled from the selected customer. Edit this field to override it for this quote."
           />
+          <label htmlFor="gallery-auto-populated-code" className="text-[12px] font-medium text-[var(--md-ink)]">UN/LOCODE</label>
+          <AutoPopulatedInput
+            id="gallery-auto-populated-code"
+            value={previewAutoPopulationCode}
+            onChange={(event) => setPreviewAutoPopulationCode(event.target.value)}
+            autoPopulated={matchesAutoPopulation(previewAutoPopulationCode, previewAutoPopulationCodeSource)}
+            autoPopulationDescription="Filled from the selected location. Edit this field to override it."
+          />
+          <label htmlFor="gallery-auto-populated-notes" className="text-[12px] font-medium text-[var(--md-ink)]">Collection notes</label>
+          <AutoPopulatedTextarea
+            id="gallery-auto-populated-notes"
+            value={previewAutoPopulationNotes}
+            onChange={(event) => setPreviewAutoPopulationNotes(event.target.value)}
+            autoPopulated={matchesAutoPopulation(previewAutoPopulationNotes, previewAutoPopulationNotesSource)}
+            autoPopulationDescription="Filled from the collection address. Edit this field to override it."
+          />
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[11px] leading-4 text-[var(--md-subtle)]">Edit the address to return it to normal.</p>
-            <Button type="button" variant="ghost" size="sm" className="h-7 rounded-[var(--md-radius-md)] px-2 text-[11px]" onClick={() => setPreviewAutoPopulationValue(previewAutoPopulationSource)}>Refill from customer</Button>
+            <p className="text-[11px] leading-4 text-[var(--md-subtle)]">Fill the fields to preview the letter stagger. Edit any value to override it.</p>
+            <Button type="button" variant="ghost" size="sm" className="h-7 rounded-[var(--md-radius-md)] px-2 text-[11px]" onClick={() => {
+              setPreviewAutoPopulationValue(previewAutoPopulationSource)
+              setPreviewAutoPopulationCode(previewAutoPopulationCodeSource)
+              setPreviewAutoPopulationNotes(previewAutoPopulationNotesSource)
+            }}>Fill from linked records</Button>
           </div>
         </div>
       ) : null}
@@ -2045,6 +2070,7 @@ function ComponentPreview({ id }: { id: string }) {
               ["Warehouse", Forklift],
               ["Appearance", Moon02],
               ["Settings", Settings2],
+              ["Edit event", Pen01],
             ].map(([label, Icon]) => (
               <div key={label as string} className="grid min-h-24 place-items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
                 <Icon className="size-6 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
@@ -2939,6 +2965,18 @@ function ComponentPreview({ id }: { id: string }) {
               onValueChange={setPreviewTransportModes}
               placeholder="Select transport modes"
               label="Transport modes"
+            />
+            <span className="mt-3 text-[12px] font-medium text-[var(--md-text)]">Toolbar filter</span>
+            <MultiSelectMenu
+              variant="toolbar"
+              value={previewCalendarLayers}
+              options={[
+                { value: "Operational dates", label: "Operational dates", leading: <span className="flex h-3 w-8 overflow-hidden rounded-full ring-1 ring-[var(--md-line-strong)]"><span className="flex-1 bg-[var(--md-calendar-ribbon-sky-bg)]" /><span className="flex-1 bg-[var(--md-status-purple-bg)]" /></span> },
+                { value: "Personal events", label: "Personal events", leading: <span className="h-3 w-8 rounded-full bg-[var(--md-calendar-blue)] ring-1 ring-[var(--md-line-strong)]" /> },
+              ]}
+              onValueChange={setPreviewCalendarLayers}
+              label="Show on calendar"
+              className="justify-self-start"
             />
           </div>
         </div>

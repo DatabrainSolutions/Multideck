@@ -17,7 +17,7 @@ import { Surface } from "@/components/multideck/surface"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { customerScopeTabs, type CustomerRecord } from "@/data/multideck-data"
+import { customerScopeTabs, type CustomerRecord } from "@/data/operational-data"
 import { useLanguage } from "@/i18n/language-provider"
 import { createCustomer, getCustomerReference, listCustomerDirectoryPage, type CreateCustomerInput, type CustomerDirectoryStatus, type CustomerReference } from "@/lib/customer-api"
 

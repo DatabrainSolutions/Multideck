@@ -2,7 +2,7 @@ import { memo, useMemo, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { cn } from "@/lib/utils"
 import { reduceMotion, staggerRamp } from "@/lib/motion"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import { toneToVar } from "./status-pill"
 
 /**

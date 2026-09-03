@@ -97,7 +97,7 @@ import {
   crmPipelineBoards,
   crmPipelineStages,
   type StatusTone,
-} from "@/data/multideck-data"
+} from "@/data/operational-data"
 import { useLanguage } from "@/i18n/language-provider"
 import type { DashboardKpi } from "@/lib/dashboard-live-data"
 import { mdMotion } from "@/lib/motion"
