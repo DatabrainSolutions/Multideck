@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { ArrowRight, Building2, RefreshCw } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -27,7 +28,6 @@ const emptyAccount = (): CreateCustomerInput => ({
 
 const accountScopes = ["All", "Mine"] as const
 type AccountScope = typeof accountScopes[number]
-const accountPageSize = 50
 const emptyAccountSummary: AccountRegisterPage["summary"] = { accounts: 0, contacts: 0, needsAttention: 0, marketingOptedIn: 0, unassigned: 0, healthy: 0 }
 const emptyAccountFacets: AccountRegisterPage["facets"] = { relationships: [], owners: [], hasUnassigned: false }
 
@@ -55,6 +55,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
   const [referenceReloadToken, setReferenceReloadToken] = useState(0)
   const [draft, setDraft] = useState<CreateCustomerInput>(emptyAccount())
   const [offset, setOffset] = useState(0)
+  const [accountPageSize, setAccountPageSize] = useState(defaultPaginationPageSize)
   const [total, setTotal] = useState(0)
   const [summary, setSummary] = useState(emptyAccountSummary)
   const [facets, setFacets] = useState(emptyAccountFacets)
@@ -94,7 +95,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
       })
       .catch((error) => { console.error("Accounts could not be loaded.", error); if (active) setState("error") })
     return () => { active = false }
-  }, [accountScope, advancedFilter, currentOwnerId, debouncedQuery, offset, ownerFilter, relationshipFilter, reloadToken, sort])
+  }, [accountPageSize, accountScope, advancedFilter, currentOwnerId, debouncedQuery, offset, ownerFilter, relationshipFilter, reloadToken, sort])
 
   useEffect(() => {
     if (reference) return
@@ -284,7 +285,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
         onRowClick={(account) => navigate(`${routeBase}/${account.id}`)}
         rowClassName="group hover:bg-[var(--md-hover)]"
         serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "account", direction: "asc" }); setOffset(0) } }}
-        pagination={{ offset, limit: accountPageSize, total, loading: state === "loading", onOffsetChange: setOffset }}
+        pagination={{ offset, limit: accountPageSize, total, loading: state === "loading", onOffsetChange: setOffset, onLimitChange: setAccountPageSize, error: state === "error" }}
         compactToolbar
         toolbarTabs={<RegisterViewSwitch options={accountScopes} value={accountScope} onChange={setAccountScope} counts={{ All: accountScope === "All" ? summary.accounts : undefined, Mine: accountScope === "Mine" ? summary.accounts : undefined }} ariaLabel="Company ownership filter" compact />}
         toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search companies" placeholder="Search companies…" className="sm:w-[180px]" />}

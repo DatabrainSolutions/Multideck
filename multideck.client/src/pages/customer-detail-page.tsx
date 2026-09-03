@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useEffect, useState, type ReactNode } from "react"
 import { Download, FileText, Health, LoaderCircle, Mail, Plus, RefreshCw, ShieldCheck, Trash2 } from "@/components/icons/hugeicons"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
@@ -25,10 +26,12 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
   const [documentsError, setDocumentsError] = useState<string | null>(null)
   const [documentsLoading, setDocumentsLoading] = useState(true)
   const [documentPage, setDocumentPage] = useState(1)
+  const [documentPageSize, setDocumentPageSize] = useState(defaultPaginationPageSize)
   const [contactListing, setContactListing] = useState<ContactRegisterPage | null>(null)
   const [contactsLoading, setContactsLoading] = useState(true)
   const [contactsError, setContactsError] = useState<string | null>(null)
   const [contactPage, setContactPage] = useState(1)
+  const [contactPageSize, setContactPageSize] = useState(defaultPaginationPageSize)
   const [reloadToken, setReloadToken] = useState(0)
   const { t } = useLanguage()
 
@@ -48,12 +51,12 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
     let active = true
     setDocumentsError(null)
     setDocumentsLoading(true)
-    listCustomerDocuments(customerId, { limit: 20, offset: (documentPage - 1) * 20 })
+    listCustomerDocuments(customerId, { limit: documentPageSize, offset: (documentPage - 1) * documentPageSize })
       .then((listing) => active && setDocumentListing(listing))
       .catch((loadError) => active && setDocumentsError(loadError instanceof Error ? loadError.message : t("Customer documents are unavailable.")))
       .finally(() => active && setDocumentsLoading(false))
     return () => { active = false }
-  }, [customerId, documentPage, reloadToken, t])
+  }, [customerId, documentPage, documentPageSize, reloadToken, t])
 
   useEffect(() => {
     let active = true
@@ -62,14 +65,14 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
     listContactsPage({
       accountId: customerId,
       sort: { id: "contact", direction: "asc" },
-      limit: 20,
-      offset: (contactPage - 1) * 20,
+      limit: contactPageSize,
+      offset: (contactPage - 1) * contactPageSize,
     })
       .then((listing) => active && setContactListing(listing))
       .catch((loadError) => active && setContactsError(loadError instanceof Error ? loadError.message : t("Customer contacts are unavailable.")))
       .finally(() => active && setContactsLoading(false))
     return () => { active = false }
-  }, [contactPage, customerId, reloadToken, t])
+  }, [contactPage, contactPageSize, customerId, reloadToken, t])
 
   if (error) return <div className="md-page md-page-stack">
     <section>
@@ -77,7 +80,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
       <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{t("The customer profile is temporarily unavailable. Supabase documents remain available below.")}</p>
     </section>
     <CustomerLoadState message={error} onRetry={() => setReloadToken((value) => value + 1)} />
-    <CustomerDocuments customerId={customerId} documents={documentListing?.documents ?? []} total={documentListing?.total ?? 0} limit={documentListing?.limit ?? 20} offset={documentListing?.offset ?? 0} onOffsetChange={(offset) => setDocumentPage(Math.floor(offset / 20) + 1)} loading={documentsLoading} error={documentsError} />
+    <CustomerDocuments customerId={customerId} documents={documentListing?.documents ?? []} total={documentListing?.total ?? 0} limit={documentPageSize} offset={(documentPage - 1) * documentPageSize} onLimitChange={setDocumentPageSize} onOffsetChange={(offset) => setDocumentPage(Math.floor(offset / documentPageSize) + 1)} loading={documentsLoading} error={documentsError} />
   </div>
   if (!customer) return <div className="md-page grid min-h-[360px] place-items-center"><LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" /></div>
 
@@ -159,7 +162,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
             <PanelTitle title={t("Active shipments")} meta={String(customer.activeShipments.length)} />
             {customer.activeShipments.length ? customer.activeShipments.map((shipment) => <div key={shipment.id} className="grid grid-cols-[minmax(110px,150px)_1fr_auto] gap-4 border-t border-[rgba(11,20,19,0.06)] px-5 py-4"><p className="text-[13px] font-medium text-[var(--md-text)]">{shipment.reference}</p><div className="min-w-0"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{shipment.route || t("Route not recorded")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{[shipment.mode, shipment.status, shipment.eta ? `${t("ETA")} ${formatDate(shipment.eta)}` : null].filter(Boolean).join(" · ")}</p></div>{shipment.openExceptionCount ? <StatusPill tone="amber">{shipment.openExceptionCount} {t("exceptions")}</StatusPill> : <StatusPill tone="green">{t("On track")}</StatusPill>}</div>) : <EmptyRow text={t("No active shipments are recorded for this customer.")} />}
           </Surface>
-          <CustomerDocuments customerId={customer.id} documents={documentListing?.documents ?? []} total={documentListing?.total ?? 0} limit={documentListing?.limit ?? 20} offset={documentListing?.offset ?? 0} onOffsetChange={(offset) => setDocumentPage(Math.floor(offset / 20) + 1)} loading={documentsLoading} error={documentsError} />
+          <CustomerDocuments customerId={customer.id} documents={documentListing?.documents ?? []} total={documentListing?.total ?? 0} limit={documentPageSize} offset={(documentPage - 1) * documentPageSize} onLimitChange={setDocumentPageSize} onOffsetChange={(offset) => setDocumentPage(Math.floor(offset / documentPageSize) + 1)} loading={documentsLoading} error={documentsError} />
           <Surface className="overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
             <PanelTitle title={t("Activity")} meta={t("Latest")} />
             {customer.activities.length ? customer.activities.map((activity) => <div key={activity.id} className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4"><div className="flex items-center justify-between gap-4"><p className="text-[14px] font-medium text-[var(--md-ink)]">{activity.subject}</p><p className="shrink-0 text-[12px] text-[var(--md-text)]">{formatDate(activity.occurredAt)}</p></div>{activity.summary ? <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{activity.summary}</p> : null}</div>) : <EmptyRow text={t("No account activity has been recorded yet.")} />}
@@ -168,7 +171,8 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
         <div className="md-panel-column">
           <Surface className="overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
             <PanelTitle title={t("Contacts")} meta={String(contactListing?.total ?? customer.contactCount)} />
-            {contactsLoading ? <div className="grid min-h-24 place-items-center border-t border-[rgba(11,20,19,0.06)]"><LoaderCircle className="size-4 animate-spin text-[var(--md-accent)]" /></div> : contactsError ? <p role="alert" className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-red)]">{contactsError}</p> : contactListing?.rows.length ? <>{contactListing.rows.map((contact) => <div key={contact.id} className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4"><div className="flex gap-3"><CustomerAvatar initials={contact.initials || "?"} tone="blue" /><div className="min-w-0 flex-1"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name || t("Unnamed contact")}</p><p className="truncate text-[12px] text-[var(--md-text)]">{contact.role || t("No role recorded")}</p>{contact.email ? <a className="mt-1 block truncate text-[12px] text-[var(--md-accent)]" href={`mailto:${contact.email}`}>{contact.email}</a> : null}</div></div><MarketingOptInControl compact className="mt-3 pt-3 shadow-[var(--md-stroke-top)]" checked={contact.consentMarketing} source={contact.marketingConsentSource} updatedAt={contact.marketingConsentUpdatedAt} onCheckedChange={(optedIn) => changeMarketingOptIn("contact", contact.id, optedIn)} /></div>)}{contactListing.total > 20 ? <div className="border-t border-[rgba(11,20,19,0.06)] p-3"><Pagination page={contactPage} pageCount={Math.max(1, Math.ceil(contactListing.total / 20))} totalItems={contactListing.total} pageSize={20} onPageChange={setContactPage} itemLabel="contacts" /></div> : null}</> : <EmptyRow text={t("No contacts are recorded for this customer.")} />}
+            {contactsLoading ? <div className="grid min-h-24 place-items-center border-t border-[rgba(11,20,19,0.06)]"><LoaderCircle className="size-4 animate-spin text-[var(--md-accent)]" /></div> : contactsError ? <p role="alert" className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-red)]">{contactsError}</p> : contactListing?.rows.length ? <>{contactListing.rows.map((contact) => <div key={contact.id} className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4"><div className="flex gap-3"><CustomerAvatar initials={contact.initials || "?"} tone="blue" /><div className="min-w-0 flex-1"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name || t("Unnamed contact")}</p><p className="truncate text-[12px] text-[var(--md-text)]">{contact.role || t("No role recorded")}</p>{contact.email ? <a className="mt-1 block truncate text-[12px] text-[var(--md-accent)]" href={`mailto:${contact.email}`}>{contact.email}</a> : null}</div></div><MarketingOptInControl compact className="mt-3 pt-3 shadow-[var(--md-stroke-top)]" checked={contact.consentMarketing} source={contact.marketingConsentSource} updatedAt={contact.marketingConsentUpdatedAt} onCheckedChange={(optedIn) => changeMarketingOptIn("contact", contact.id, optedIn)} /></div>)}</> : <EmptyRow text={t("No contacts are recorded for this customer.")} />}
+            {!contactsError && contactListing ? <div className="border-t border-[var(--md-line)] p-3"><Pagination page={contactPage} pageCount={Math.max(1, Math.ceil(contactListing.total / contactPageSize))} totalItems={contactListing.total} pageSize={contactPageSize} onPageSizeChange={setContactPageSize} onPageChange={setContactPage} loading={contactsLoading} itemCount={contactListing.rows.length} itemLabel="contacts" /></div> : null}
           </Surface>
           <Surface className="rounded-[var(--md-radius-xl)]" padding="none"><PanelTitle title={t("Account")} /><div className="px-5 py-4 shadow-[var(--md-stroke-top)]"><MarketingOptInControl checked={Boolean(customer.marketingOptIn)} source={customer.marketingConsentSource} updatedAt={customer.marketingConsentUpdatedAt} onCheckedChange={(optedIn) => changeMarketingOptIn("customer", customer.id, optedIn)} /></div>{accountFacts.length ? <div className="px-5 pb-5">{accountFacts.map(([label, value]) => <div key={label} className="grid grid-cols-[120px_1fr] gap-4 border-t border-[rgba(11,20,19,0.06)] py-3"><p className="text-[13px] text-[var(--md-text)]">{label}</p><p className="text-right text-[13px] font-medium text-[var(--md-ink)]">{value}</p></div>)}</div> : <EmptyRow text={t("No additional account details are recorded.")} />}</Surface>
         </div>
@@ -177,7 +181,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
   )
 }
 
-function CustomerDocuments({ customerId, documents, total, limit, offset, onOffsetChange, loading = false, error = null }: { customerId: string; documents: ApiCustomerDocument[]; total: number; limit: number; offset: number; onOffsetChange: (offset: number) => void; loading?: boolean; error?: string | null }) {
+function CustomerDocuments({ customerId, documents, total, limit, offset, onOffsetChange, onLimitChange, loading = false, error = null }: { customerId: string; documents: ApiCustomerDocument[]; total: number; limit: number; offset: number; onOffsetChange: (offset: number) => void; onLimitChange: (limit: number) => void; loading?: boolean; error?: string | null }) {
   const { t } = useLanguage()
   const [openingId, setOpeningId] = useState<string | null>(null)
 
@@ -215,7 +219,8 @@ function CustomerDocuments({ customerId, documents, total, limit, offset, onOffs
           {t("Open")}
         </Button>
       </div>
-    })}{total > limit ? <div className="border-t border-[rgba(11,20,19,0.06)] p-3"><Pagination page={Math.floor(offset / limit) + 1} pageCount={Math.max(1, Math.ceil(total / limit))} totalItems={total} pageSize={limit} onPageChange={(page) => onOffsetChange((page - 1) * limit)} itemLabel="documents" /></div> : null}</> : <EmptyRow text={t("No customer documents have been saved yet.")} />}
+    })}</> : <EmptyRow text={t("No customer documents have been saved yet.")} />}
+    {!error ? <div className="border-t border-[var(--md-line)] p-3"><Pagination page={Math.floor(offset / limit) + 1} pageCount={Math.max(1, Math.ceil(total / limit))} totalItems={total} pageSize={limit} onPageSizeChange={onLimitChange} onPageChange={(page) => onOffsetChange((page - 1) * limit)} loading={loading} itemCount={documents.length} itemLabel="documents" /></div> : null}
   </Surface>
 }
 
@@ -233,6 +238,8 @@ export function CustomerWarehouseAccess({
   const [users, setUsers] = useState<WarehousePortalUser[] | null>(null)
   const [userTotal, setUserTotal] = useState(0)
   const [userOffset, setUserOffset] = useState(0)
+  const [userPageSize, setUserPageSize] = useState(defaultPaginationPageSize)
+  const [usersLoading, setUsersLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<WarehousePortalUser | null>(null)
@@ -244,9 +251,10 @@ export function CustomerWarehouseAccess({
   const [sendingAccessLinkUserId, setSendingAccessLinkUserId] = useState<string | null>(null)
 
   async function refresh() {
+    setUsersLoading(true)
     setError(null)
     try {
-      const [nextReference, nextUsers] = await Promise.all([getWarehousePortalReference(), listWarehousePortalUsersPage(customerId, { limit: 20, offset: userOffset })])
+      const [nextReference, nextUsers] = await Promise.all([getWarehousePortalReference(), listWarehousePortalUsersPage(customerId, { limit: userPageSize, offset: userOffset })])
       setReference(nextReference)
       setUsers(nextUsers.rows)
       setUserTotal(nextUsers.total)
@@ -254,11 +262,13 @@ export function CustomerWarehouseAccess({
       setUsers([])
       setUserTotal(0)
       setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setUsersLoading(false)
     }
   }
 
   useEffect(() => { setUserOffset(0) }, [customerId])
-  useEffect(() => { void refresh() }, [customerId, userOffset]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void refresh() }, [customerId, userOffset, userPageSize]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function showInvite() {
     setEditing(null); setDisplayName(""); setEmail(""); setRoleCode("warehouse_operator")
@@ -317,7 +327,8 @@ export function CustomerWarehouseAccess({
         <StatusPill tone={user.status === "active" ? "green" : "amber"}>{t(user.status)}</StatusPill>
         <p className="min-w-[190px] text-[12px] text-[var(--md-text)]">{t(roleName(user.roleCode))}</p>
         {!isCurrentUser(user) ? <div className="flex flex-wrap gap-1">{!user.lastLoginAt ? <Button type="button" variant="ghost" disabled={sendingAccessLinkUserId === user.id} onClick={() => void sendAccessLink(user)} className="h-9 rounded-[var(--md-radius-lg)]">{sendingAccessLinkUserId === user.id ? <LoaderCircle className="size-4 animate-spin" /> : <Mail className="size-4" />}{t("Send access link")}</Button> : null}<Button type="button" variant="ghost" onClick={() => showEdit(user)} className="h-9 rounded-[var(--md-radius-lg)]">{t("Edit access")}</Button><Button type="button" variant="ghost" size="icon" aria-label={t("Revoke access")} onClick={() => void revoke(user)} className="size-9 rounded-[var(--md-radius-lg)] text-[var(--md-red)]"><Trash2 className="size-4" /></Button></div> : null}
-      </div>)}{userTotal > 20 ? <div className="border-t border-[rgba(11,20,19,0.06)] p-3"><Pagination page={Math.floor(userOffset / 20) + 1} pageCount={Math.max(1, Math.ceil(userTotal / 20))} totalItems={userTotal} pageSize={20} onPageChange={(page) => setUserOffset((page - 1) * 20)} itemLabel={t("users")} /></div> : null}</> : <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-6 text-[13px] text-[var(--md-text)]">{t("No customer users have warehouse access yet.")}</p>}
+      </div>)}</> : <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-6 text-[13px] text-[var(--md-text)]">{t("No customer users have warehouse access yet.")}</p>}
+      {!error ? <div className="border-t border-[var(--md-line)] p-3"><Pagination page={Math.floor(userOffset / userPageSize) + 1} pageCount={Math.max(1, Math.ceil(userTotal / userPageSize))} totalItems={userTotal} pageSize={userPageSize} onPageSizeChange={setUserPageSize} onPageChange={(page) => setUserOffset((page - 1) * userPageSize)} loading={usersLoading} itemCount={users?.length ?? 0} itemLabel="users" /></div> : null}
     </Surface>
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className="border-0 bg-[var(--md-surface)] sm:max-w-[560px]">
       <DialogHeader><DialogTitle>{t(editing ? "Edit warehouse access" : "Invite customer user")}</DialogTitle><DialogDescription>{t(editing && selfService ? "Change this user’s role. Warehouse access is inherited from the organisation." : editing ? "Change this user’s role and warehouse access." : "They will receive an email invitation to the customer warehouse portal.")}</DialogDescription></DialogHeader>

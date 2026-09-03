@@ -7,7 +7,7 @@ const view = readFileSync(new URL("../src/components/multideck/calendar-view.tsx
 test("week events reserve a visual gap without moving their scheduled geometry", () => {
   assert.match(view, /key=\{calendarEvent.id\} className="absolute pb-1" style=\{\{ top, height: visualHeight/)
   assert.match(view, /group relative h-full w-full/)
-  assert.match(view, /overlapBoundary=\{overlap === "continuing"\}/)
+  assert.match(view, /overlapBoundary=\{overlap !== "none"\} contained=\{overlap === "contained"\}/)
   assert.match(view, /onGrip=\{weekGrip\(calendarEvent\)\}/)
 })
 

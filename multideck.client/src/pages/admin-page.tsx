@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -253,7 +254,7 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
   const [dateRange, setDateRange] = useState<MultideckDateRange>({ start: null, end: null })
   const [offset, setOffset] = useState(0)
   const [sort, setSort] = useState<{ id: "time"; direction: "asc" | "desc" }>({ id: "time", direction: "desc" })
-  const pageSize = 25
+  const [pageSize, setPageSize] = useState(defaultPaginationPageSize)
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setSearch(searchInput.trim()), 250)
@@ -277,7 +278,7 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
-  }, [category, dateRange, offset, search, sort, view])
+  }, [category, dateRange, offset, pageSize, search, sort, view])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -347,7 +348,7 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
           rowClassName="h-[64px]"
           enableSelectionExport={false}
           serverSorting={{ value: sort, onChange: (next) => { setSort(next?.id === "time" ? { id: "time", direction: next.direction } : { id: "time", direction: "desc" }); setOffset(0) } }}
-          pagination={{ offset, limit: pageSize, total: result?.total ?? 0, loading, onOffsetChange: setOffset }}
+          pagination={{ offset, limit: pageSize, total: result?.total ?? 0, loading, onOffsetChange: setOffset, onLimitChange: setPageSize, error: Boolean(error) }}
           emptyState={<div className="py-5 text-center"><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No matching audit activity")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Change the search, date range or source filter to see more events.")}</p></div>}
         />
       </div>

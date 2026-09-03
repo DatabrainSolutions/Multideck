@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react"
 import type { User } from "@supabase/supabase-js"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
@@ -2828,6 +2829,7 @@ export function AdminUsersContent() {
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const [userOffset, setUserOffset] = useState(0)
+  const [userPageSize, setUserPageSize] = useState(defaultPaginationPageSize)
   const [userSort, setUserSort] = useState<{ id: string; direction: "asc" | "desc" } | null>({ id: "user", direction: "asc" })
   const [teamPhotoUrls, setTeamPhotoUrls] = useState<Map<string, string>>(new Map())
   const [currentAuthUserId, setCurrentAuthUserId] = useState<string | null>(null)
@@ -2876,7 +2878,7 @@ export function AdminUsersContent() {
       const nextTeam = await getApiTeamUsersPage(session.access_token, {
         search: debouncedSearchQuery,
         sort: userSort,
-        limit: 20,
+        limit: userPageSize,
         offset: userOffset,
       }, signal)
       setCurrentAuthUserId(session.user.id)
@@ -2887,7 +2889,7 @@ export function AdminUsersContent() {
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
-  }, [debouncedSearchQuery, t, userOffset, userSort])
+  }, [debouncedSearchQuery, t, userOffset, userPageSize, userSort])
 
   const loadAuthorization = useCallback(async (signal?: AbortSignal) => {
     setAuthorizationError(null)
@@ -3553,7 +3555,7 @@ export function AdminUsersContent() {
                 getRowKey={(user) => user.id}
                 storageKey="settings-users-v4"
                 serverSorting={{ value: userSort, onChange: (next) => { setUserSort(next ?? { id: "user", direction: "asc" }); setUserOffset(0) } }}
-                pagination={{ offset: userOffset, limit: 20, total: totalUsers, loading, onOffsetChange: setUserOffset }}
+                pagination={{ offset: userOffset, limit: userPageSize, total: totalUsers, loading, onOffsetChange: setUserOffset, onLimitChange: setUserPageSize, error: Boolean(loadError) }}
                 minimumWidth={804}
                 tableClassName="table-fixed"
                 toolbarSearch={(
@@ -3610,11 +3612,14 @@ export function AdminUsersContent() {
               {!visibleUsers.length ? <div className="grid min-h-40 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-6 text-center shadow-[var(--md-shadow-soft)]"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{loading ? t("Loading users…") : t("No users found")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{loading ? t("Checking the live workspace roster.") : t("Invite a user or clear the search to continue.")}</p></div></div> : null}
               {totalUsers > 0 ? (
                 <Pagination
-                  page={Math.floor(userOffset / 20) + 1}
-                  pageCount={Math.max(1, Math.ceil(totalUsers / 20))}
+                  page={Math.floor(userOffset / userPageSize) + 1}
+                  pageCount={Math.max(1, Math.ceil(totalUsers / userPageSize))}
                   totalItems={totalUsers}
-                  pageSize={20}
-                  onPageChange={(page) => setUserOffset((page - 1) * 20)}
+                  pageSize={userPageSize}
+                  onPageSizeChange={setUserPageSize}
+                  loading={loading}
+                  itemCount={visibleUsers.length}
+                  onPageChange={(page) => setUserOffset((page - 1) * userPageSize)}
                   itemLabel="users"
                 />
               ) : null}
@@ -4762,7 +4767,7 @@ function AiUsageHistoryScreen({
   const { t, language } = useLanguage()
   const [order, setOrder] = useState<"newest" | "heaviest">("newest")
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const [pageSize, setPageSize] = useState(defaultPaginationPageSize)
   const [history, setHistory] = useState<DexterUsageHistoryPage | null>(null)
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState<string | null>(null)
@@ -4894,6 +4899,8 @@ function AiUsageHistoryScreen({
             totalItems={history?.total ?? 0}
             pageSize={pageSize}
             pageSizeOptions={[10, 20, 50]}
+            loading={historyLoading}
+            itemCount={visibleUsage.length}
             onPageChange={setPage}
             onPageSizeChange={setPageSize}
             itemLabel="requests"

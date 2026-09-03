@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AlertCircle, ArrowDownToLine, ArrowUpFromLine, Boxes, Loader2, Plus, RefreshCw, Trash2, Upload } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -514,7 +515,6 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
 
 const orderScopes = ["Open", "All"] as const
 type OrderScope = (typeof orderScopes)[number]
-const warehouseOrderPageSize = 20
 
 /** How far through its lines an order already is, as a single readable fraction. */
 function orderProgress(order: WarehouseOperationalOrder) {
@@ -535,6 +535,7 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
   const [total, setTotal] = useState(0)
   const [statusFacets, setStatusFacets] = useState<string[]>([])
   const [offset, setOffset] = useState(0)
+  const [warehouseOrderPageSize, setWarehouseOrderPageSize] = useState(defaultPaginationPageSize)
   const [sort, setSort] = useState<WarehouseRegisterSort | null>(null)
   const [facilityId, setFacilityId] = useState("")
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "")
@@ -614,7 +615,7 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
     } finally {
       if (ticket === requestId.current) setPending(false)
     }
-  }, [facilityId, typeFilter, directionFacet, statusFacet, scope, committedSearch, sort, offset])
+  }, [facilityId, typeFilter, directionFacet, statusFacet, scope, committedSearch, sort, offset, warehouseOrderPageSize])
 
   useEffect(() => { void refresh() }, [refresh])
 
@@ -768,7 +769,7 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
       )}
       toolbarOptions={<RegisterRevalidatingMark active={pending && loaded} />}
       serverSorting={{ value: sort, onChange: (value) => { setSort(value); setOffset(0) } }}
-      pagination={{ offset, limit: warehouseOrderPageSize, total, loading: pending, onOffsetChange: setOffset }}
+      pagination={{ offset, limit: warehouseOrderPageSize, total, loading: pending, onOffsetChange: setOffset, onLimitChange: setWarehouseOrderPageSize, error: Boolean(error) }}
     />
     <CreateOrderDialog open={createOpen} onOpenChange={setCreateOpen} reference={reference} fixedType={createType} allowedTypes={allowedTypes} isCustomer={isCustomer} onSaved={() => void refresh()} />
   </div>

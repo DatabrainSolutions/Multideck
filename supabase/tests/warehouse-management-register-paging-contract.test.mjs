@@ -19,7 +19,7 @@ test("Warehouse management pages request bounded cached registers", () => {
   assert.match(client, /export async function listWarehouseItemsPage/)
   assert.match(client, /export async function listWarehouseLocationsPage/)
   assert.ok((client.match(/Math\.max\(1, Math\.min\(options\.limit \?\? 20, 50\)\)/g) ?? []).length >= 3)
-  assert.match(view, /pagination=\{\{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset \}\}/)
+  assert.match(view, /pagination=\{\{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset, onLimitChange: setWarehouseRegisterPageSize/)
   assert.equal((view.match(/serverSorting=\{\{ value: sort, onChange: setSort \}\}/g) ?? []).length, 3)
   assert.doesNotMatch(view, /\blistWarehouse(?:Facilities|Items|Locations)\(/)
 })

@@ -3,9 +3,10 @@ import { createPortal } from "react-dom"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Csv02Icon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns3, Eye, EyeOff, GripVertical, LoaderCircle, MoreHorizontal, MorphingIcon, Pin, PinOff, RotateCcw, SquareCheck, Trash2, X, type LucideIcon } from "@/components/icons/hugeicons"
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronUp, Columns3, Eye, EyeOff, GripVertical, LoaderCircle, MoreHorizontal, MorphingIcon, Pin, PinOff, RotateCcw, SquareCheck, Trash2, X, type LucideIcon } from "@/components/icons/hugeicons"
 
 import { TableCsvExportDialog } from "@/components/multideck/table-csv-export-dialog"
+import { Pagination } from "@/components/multideck/pagination"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -15,6 +16,7 @@ import { useLanguage } from "@/i18n/language-provider"
 import { discoverCsvRecordFields, type CsvExportField, type CsvExportSource, type DiscoverCsvFieldsOptions } from "@/lib/csv-export"
 import { useTablePinnedColumns } from "@/lib/table-preferences"
 import { cn, isInsideFloatingLayer } from "@/lib/utils"
+import { defaultPaginationPageSize, paginationRange } from "@/lib/pagination"
 import { TablePillKindContext } from "@/components/multideck/status-pill"
 
 export type DataTableColumn<Row> = {
@@ -127,13 +129,17 @@ type DataTableProps<Row> = {
   rowContextActions?: (row: Row) => readonly DataTableRowContextAction<Row>[]
   className?: string
   tableClassName?: string
+  /** Opt in only for complete local datasets, never an already paged server response or line editor. */
+  clientPagination?: boolean
   /** Server-owned paging keeps large registers bounded without changing the table interaction model. */
   pagination?: {
     offset: number
     limit: number
     total: number
     loading?: boolean
+    error?: boolean
     onOffsetChange: (offset: number) => void
+    onLimitChange: (limit: number) => void
   }
   /** When supplied, sorting is executed by the server instead of the current page only. */
   serverSorting?: {
@@ -228,10 +234,13 @@ export function DataTable<Row>({
   rowContextActions,
   className,
   tableClassName,
+  clientPagination = false,
   pagination,
   serverSorting,
 }: DataTableProps<Row>) {
   const { direction, t } = useLanguage()
+  const [localPage, setLocalPage] = useState(1)
+  const [localPageSize, setLocalPageSize] = useState(defaultPaginationPageSize)
   const reduceMotion = useReducedMotion()
   const columnIds = useMemo(() => columns.map((column) => column.id), [columns])
   const defaultHidden = useMemo(() => columns.filter((column) => column.defaultHidden).map((column) => column.id), [columns])
@@ -438,12 +447,26 @@ export function DataTable<Row>({
     })
   }, [columns, rows, serverSorting, sort])
 
+  const localRange = paginationRange(sortedRows.length, localPage, localPageSize)
+  const pageRows = clientPagination && !pagination
+    ? sortedRows.slice(localRange.offset, localRange.offset + localPageSize)
+    : sortedRows
+  const paging = pagination ?? (clientPagination ? {
+    offset: (localPage - 1) * localPageSize,
+    limit: localPageSize,
+    total: sortedRows.length,
+    loading: false,
+    error: false,
+    onOffsetChange: (offset: number) => setLocalPage(Math.floor(offset / localPageSize) + 1),
+    onLimitChange: setLocalPageSize,
+  } : undefined)
+
   const selectedRows = useMemo(
     () => sortedRows.filter((row) => selectionKeys.has(getRowKey(row))),
     [getRowKey, selectionKeys, sortedRows],
   )
   const selectedRowsCanDelete = Boolean(selectedRows.length && bulkDelete && selectedRows.every((row) => bulkDelete.canDelete?.(row) ?? true))
-  const allRowsSelected = sortedRows.length > 0 && selectedRows.length === sortedRows.length
+  const allRowsSelected = pageRows.length > 0 && pageRows.every((row) => selectionKeys.has(getRowKey(row)))
   const exportFields = useMemo<CsvExportField<Row>[]>(() => {
     const columnFields = columns
       .filter((column) => column.exportable !== false && column.kind !== "actions" && column.id !== "open")
@@ -498,7 +521,11 @@ export function DataTable<Row>({
   }
 
   function toggleAllRows() {
-    setSelectionKeys(allRowsSelected ? new Set() : new Set(sortedRows.map(getRowKey)))
+    setSelectionKeys((current) => {
+      const next = new Set(current)
+      pageRows.forEach((row) => { if (allRowsSelected) next.delete(getRowKey(row)); else next.add(getRowKey(row)) })
+      return next
+    })
   }
 
   async function loadExportSources(rowsToExport: readonly Row[]) {
@@ -628,6 +655,7 @@ export function DataTable<Row>({
 
   function toggleSort(column: DataTableColumn<Row>) {
     if (!column.sortValue) return
+    setLocalPage(1)
     const next = (() => {
       const current = serverSorting?.value ?? sort
       if (!current || current.id !== column.id) return { id: column.id, direction: "asc" }
@@ -887,7 +915,7 @@ export function DataTable<Row>({
                   className="grid h-full min-h-10 place-items-center"
                 >
                   <Checkbox
-                    checked={allRowsSelected ? true : selectedRows.length ? "indeterminate" : false}
+                    checked={allRowsSelected ? true : pageRows.some((row) => selectionKeys.has(getRowKey(row))) ? "indeterminate" : false}
                     onCheckedChange={toggleAllRows}
                     aria-label={t(allRowsSelected ? "Deselect all rows" : "Select all rows")}
                     className="size-[18px] rounded-[var(--md-radius-xs)]"
@@ -951,7 +979,7 @@ export function DataTable<Row>({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sortedRows.length ? sortedRows.map((row) => {
+          {pageRows.length ? pageRows.map((row) => {
             const rowKey = getRowKey(row)
             const internallySelected = selectionKeys.has(rowKey)
             const isSelected = internallySelected || selectedRowKey === rowKey || selectedRowKeys?.has(rowKey) === true
@@ -1088,34 +1116,20 @@ export function DataTable<Row>({
           )}
         </TableBody>
       </Table>
-      {pagination ? (
-        <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-t border-[var(--md-line)] bg-[var(--md-surface-soft)] px-3 py-1.5">
-          <p className="text-[11.5px] text-[var(--md-text)]" aria-live="polite">
-            {t("Showing")} <span data-i18n-skip dir="ltr" className="font-medium tabular-nums text-[var(--md-ink)]">{pagination.total ? pagination.offset + 1 : 0}–{Math.min(pagination.offset + rows.length, pagination.total)}</span> {t("of")} <span data-i18n-skip dir="ltr" className="font-medium tabular-nums text-[var(--md-ink)]">{pagination.total}</span>
-          </p>
-          <div className="flex items-center gap-1" role="group" aria-label={t("Table pages")}>
-            <button
-              type="button"
-              disabled={pagination.loading || pagination.offset <= 0}
-              onClick={() => pagination.onOffsetChange(Math.max(0, pagination.offset - pagination.limit))}
-              className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] outline-none transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-30 motion-reduce:transform-none"
-              aria-label={t("Previous page")}
-              title={t("Previous page")}
-            >
-              <ChevronLeft className="size-3.5 rtl:rotate-180" strokeWidth={1.5} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              disabled={pagination.loading || pagination.offset + rows.length >= pagination.total}
-              onClick={() => pagination.onOffsetChange(pagination.offset + pagination.limit)}
-              className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] outline-none transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-30 motion-reduce:transform-none"
-              aria-label={t("Next page")}
-              title={t("Next page")}
-            >
-              <ChevronRight className="size-3.5 rtl:rotate-180" strokeWidth={1.5} aria-hidden="true" />
-            </button>
-          </div>
-        </div>
+      {paging ? (
+        <Pagination
+          page={Math.floor(paging.offset / paging.limit) + 1}
+          pageCount={Math.max(1, Math.ceil(paging.total / paging.limit))}
+          pageSize={paging.limit}
+          totalItems={paging.total}
+          itemCount={pageRows.length}
+          itemLabel="rows"
+          loading={paging.loading}
+          error={paging.error}
+          onPageChange={(page) => paging.onOffsetChange((page - 1) * paging.limit)}
+          onPageSizeChange={paging.onLimitChange}
+          className="rounded-none border-t border-[var(--md-line)] shadow-none"
+        />
       ) : null}
       </div>
       {typeof document !== "undefined" ? createPortal(

@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
@@ -1531,13 +1532,14 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   const [loading, setLoading] = useState(!initialWorkspace && !documentWorkspaceCache)
   const [error, setError] = useState<string | null>(null)
   const [documentOffset, setDocumentOffset] = useState(0)
+  const [documentPageSize, setDocumentPageSize] = useState(defaultPaginationPageSize)
   const [documentQuery, setDocumentQuery] = useState("")
   const [debouncedDocumentQuery, setDebouncedDocumentQuery] = useState("")
   const [documentSort, setDocumentSort] = useState<{ id: string; direction: "asc" | "desc" } | null>({ id: "created", direction: "desc" })
   const [documentPageLoading, setDocumentPageLoading] = useState(false)
   const [documentPageError, setDocumentPageError] = useState<string | null>(null)
   const documentRequestIdRef = useRef(0)
-  const lastDocumentPageKeyRef = useRef<string | null>(initialWorkspace ? "0||created:desc" : null)
+  const lastDocumentPageKeyRef = useRef<string | null>(initialWorkspace ? `0|${defaultPaginationPageSize}||created:desc` : null)
   // Entering Documents is always an overview. A retained local draft is only
   // considered after the operator explicitly starts document creation.
   const [createOpen, setCreateOpen] = useState(false)
@@ -1563,11 +1565,11 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
     try {
       const nextWorkspace = await getDocumentBuilderWorkspace({
         offset: documentOffset,
-        limit: 20,
+        limit: documentPageSize,
         search: debouncedDocumentQuery,
         sort: documentSort ?? { id: "created", direction: "desc" },
       })
-      lastDocumentPageKeyRef.current = `${documentOffset}|${debouncedDocumentQuery}|${documentSort?.id ?? "created"}:${documentSort?.direction ?? "desc"}`
+      lastDocumentPageKeyRef.current = `${documentOffset}|${documentPageSize}|${debouncedDocumentQuery}|${documentSort?.id ?? "created"}:${documentSort?.direction ?? "desc"}`
       documentWorkspaceCache = nextWorkspace
       setWorkspace(nextWorkspace)
     } catch (loadError) {
@@ -1590,7 +1592,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
 
   useEffect(() => {
     if (!workspace) return
-    const key = `${documentOffset}|${debouncedDocumentQuery}|${documentSort?.id ?? "created"}:${documentSort?.direction ?? "desc"}`
+    const key = `${documentOffset}|${documentPageSize}|${debouncedDocumentQuery}|${documentSort?.id ?? "created"}:${documentSort?.direction ?? "desc"}`
     if (lastDocumentPageKeyRef.current === key) return
     lastDocumentPageKeyRef.current = key
     const requestId = documentRequestIdRef.current + 1
@@ -1599,7 +1601,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
     setDocumentPageError(null)
     void getGeneratedDocumentsPage({
       offset: documentOffset,
-      limit: 20,
+      limit: documentPageSize,
       search: debouncedDocumentQuery,
       sort: documentSort ?? { id: "created", direction: "desc" },
     }).then((page) => {
@@ -1617,7 +1619,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
     }).finally(() => {
       if (documentRequestIdRef.current === requestId) setDocumentPageLoading(false)
     })
-  }, [debouncedDocumentQuery, documentOffset, documentSort, t, workspace?.permissions.canGenerate])
+  }, [debouncedDocumentQuery, documentOffset, documentPageSize, documentSort, t, workspace?.permissions.canGenerate])
 
   useEffect(() => () => {
     if (previewDocumentUrl) URL.revokeObjectURL(previewDocumentUrl)
@@ -1878,7 +1880,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
           rowAriaLabel={(document) => `Preview document: ${document.fileName}`}
           rowClassName="group/row"
           serverSorting={{ value: documentSort, onChange: (next) => setDocumentSort(next ?? { id: "created", direction: "desc" }) }}
-          pagination={{ offset: documentOffset, limit: 20, total: generatedDocumentTotal, loading: documentPageLoading, onOffsetChange: setDocumentOffset }}
+          pagination={{ offset: documentOffset, limit: documentPageSize, total: generatedDocumentTotal, loading: documentPageLoading, onOffsetChange: setDocumentOffset, onLimitChange: setDocumentPageSize, error: Boolean(documentPageError) }}
           toolbarSearch={<label className="relative min-w-0 sm:w-[240px]"><span className="sr-only">{t("Search documents")}</span><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" aria-hidden="true" /><Input value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} className="h-8 ps-9 text-base sm:text-[12px]" placeholder={t("Document, job or customer…")} /></label>}
           emptyState={<p className="text-[11px] text-[var(--md-subtle)]">{documentPageLoading ? t("Loading documents…") : debouncedDocumentQuery ? t("No documents match this search.") : t("No documents have been generated yet.")}</p>}
         />

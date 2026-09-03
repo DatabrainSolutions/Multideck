@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import {
@@ -230,6 +231,7 @@ function PhoneCallsRegister({
   onMatchStatus,
   onTranscriptStatus,
   onOffset,
+  onLimit,
   onRefresh,
   onClearFilters,
   navigate,
@@ -251,6 +253,7 @@ function PhoneCallsRegister({
   onMatchStatus: (value: string) => void
   onTranscriptStatus: (value: string) => void
   onOffset: (value: number) => void
+  onLimit: (value: number) => void
   onRefresh: () => void
   onClearFilters: () => void
   navigate: (path: string) => void
@@ -282,7 +285,7 @@ function PhoneCallsRegister({
       emptyState={<EmptyCalls filtered={Boolean(search || direction || outcome || matchStatus || transcriptStatus)} onClear={onClearFilters} />}
       onRowClick={(call) => navigate(`/crm/phone-calls/${call.id}`)}
       rowAriaLabel={(call) => `${t("Open call with")} ${call.callerName || call.callerPhone}`}
-      pagination={compact ? undefined : { offset, limit, total, loading, onOffsetChange: onOffset }}
+      pagination={compact ? undefined : { offset, limit, total, loading, onOffsetChange: onOffset, onLimitChange: onLimit }}
       enableSelectionExport={false}
     />
   )
@@ -320,7 +323,7 @@ function CrmPhoneCallsRegisterPage({ navigate }: { navigate: (path: string) => v
   const [matchStatus, setMatchStatus] = useState("")
   const [transcriptStatus, setTranscriptStatus] = useState("")
   const [offset, setOffset] = useState(0)
-  const limit = 20
+  const [limit, setLimit] = useState(defaultPaginationPageSize)
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London"
   const overviewLoadedRef = useRef(false)
   const listLoadedRef = useRef(false)
@@ -393,7 +396,7 @@ function CrmPhoneCallsRegisterPage({ navigate }: { navigate: (path: string) => v
       .then((result) => { if (controller.signal.aborted) return; listLoadedRef.current = true; listQueryRef.current = queryKey; setRows(result.rows); setTotal(result.total); setListPreview(Boolean(result.preview)); setListState("ready"); setListRefreshing(false); setLastUpdatedAt(new Date().toISOString()) })
       .catch((error) => { if (controller.signal.aborted) return; setListError(error instanceof Error ? error.message : t("The call register could not be loaded.")); setListState(backgroundRefresh ? "ready" : "error"); setListRefreshing(false) })
     return () => controller.abort()
-  }, [dateRange.end, dateRange.start, debouncedSearch, direction, matchStatus, offset, outcome, reloadKey, t, timezone, transcriptStatus])
+  }, [dateRange.end, dateRange.start, debouncedSearch, direction, matchStatus, offset, limit, outcome, reloadKey, t, timezone, transcriptStatus])
 
   const changeView = useCallback((next: PhoneCallsView) => {
     setView(next)
@@ -407,7 +410,7 @@ function CrmPhoneCallsRegisterPage({ navigate }: { navigate: (path: string) => v
     rows, total, offset, limit, loading: listState === "loading" || listRefreshing, search, direction, outcome, matchStatus, transcriptStatus,
     onSearch: setSearch, onDirection: (value: string) => { setDirection(value); setOffset(0) }, onOutcome: (value: string) => { setOutcome(value); setOffset(0) },
     onMatchStatus: (value: string) => { setMatchStatus(value); setOffset(0) }, onTranscriptStatus: (value: string) => { setTranscriptStatus(value); setOffset(0) },
-    onOffset: setOffset, onRefresh: requestRefresh, onClearFilters: () => { setSearch(""); setDirection(""); setOutcome(""); setMatchStatus(""); setTranscriptStatus(""); setOffset(0) }, navigate,
+    onOffset: setOffset, onLimit: setLimit, onRefresh: requestRefresh, onClearFilters: () => { setSearch(""); setDirection(""); setOutcome(""); setMatchStatus(""); setTranscriptStatus(""); setOffset(0) }, navigate,
   }
   const backgroundRefreshError = [overviewState === "ready" ? overviewError : "", listState === "ready" ? listError : ""].filter(Boolean).join(" ")
 

@@ -10,6 +10,7 @@ import {
 import { authenticate, body, corsHeaders, currentInternalUser, failure, HttpError, json, requirePermission, routeParts } from "../_shared/backend.ts"
 import { erpNextCreate, erpNextList, erpNextOrigin, erpNextRequest } from "../_shared/erpnext.ts"
 import { hyperExtConfigured, hyperExtRequest, hyperExtStatus } from "../_shared/hyperext.ts"
+import { registerPagination } from "../_shared/register-pagination.ts"
 
 type LineInput = { description: string; quantity?: number; unitAmount?: number; taxRatePercent?: number; taxCode?: string | null; chargeCode?: string | null; jobCostingLineId?: string | null; lineType?: "service" | "ancillary" }
 type DraftInput = { type: "sl_invoice" | "credit_note" | "pl_invoice" | "debit_note"; legalEntityId: string; partyOrgId: string; documentDate?: string; dueDate?: string | null; currencyCode?: string; exchangeRate?: number; lines: LineInput[]; sourceJobId?: string | null; idempotencyKey?: string; sourceExtractionId?: string }
@@ -815,12 +816,15 @@ async function listSetup(admin: any, current: any) {
   }
 }
 
-async function documentWorkspace(admin: any, current: any, selectedLedger: Ledger, draftOptions = false) {
+async function documentWorkspace(admin: any, current: any, selectedLedger: Ledger, draftOptions = false, paging = { offset: 0, limit: 250 }) {
+  // Pagination changes read transport only. Dexter's finance domain and existing
+  // FIN_Documents / FIN_CashTransactions event-driven watches remain authoritative;
+  // browsing a page is not a business event and must not generate watch signals.
   await requirePermission(admin, current.User_ID, draftOptions ? draftPermission(selectedLedger) : viewPermission(selectedLedger))
   const ids = await entityIds(admin, current)
   const types = selectedLedger === "receivables" ? ["sl_invoice", "credit_note"] : ["pl_invoice", "debit_note"]
   const documentsResult = ids.length
-    ? await admin.from("FIN_Documents").select("FINDoc_ID,FINDoc_Number,FINDoc_TypeCode,FINDoc_StatusCode,FINDoc_LegalEntityID,FINDoc_PartyOrgID,FINDoc_DocumentDate,FINDoc_DueDate,FINDoc_CurrencyCodeSnapshot,FINDoc_ExchangeRate,FINDoc_NetAmount,FINDoc_TaxAmount,FINDoc_GrossAmount,FINDoc_OutstandingAmount,FINDoc_SourceJobID,FINDoc_SourceKindCode,FINDoc_PostingStatusCode,FINDoc_ExportStatusCode,FINDoc_NativePostingStatusCode,FINDoc_NativePostingBatchID,FINDoc_NativePostedAt,FINDoc_MetadataJSON,FINDoc_UpdatedAt").in("FINDoc_LegalEntityID", ids).in("FINDoc_TypeCode", types).order("FINDoc_UpdatedAt", { ascending: false }).limit(250)
+    ? await admin.from("FIN_Documents").select("FINDoc_ID,FINDoc_Number,FINDoc_TypeCode,FINDoc_StatusCode,FINDoc_LegalEntityID,FINDoc_PartyOrgID,FINDoc_DocumentDate,FINDoc_DueDate,FINDoc_CurrencyCodeSnapshot,FINDoc_ExchangeRate,FINDoc_NetAmount,FINDoc_TaxAmount,FINDoc_GrossAmount,FINDoc_OutstandingAmount,FINDoc_SourceJobID,FINDoc_SourceKindCode,FINDoc_PostingStatusCode,FINDoc_ExportStatusCode,FINDoc_NativePostingStatusCode,FINDoc_NativePostingBatchID,FINDoc_NativePostedAt,FINDoc_MetadataJSON,FINDoc_UpdatedAt", { count: "exact" }).in("FINDoc_LegalEntityID", ids).in("FINDoc_TypeCode", types).order("FINDoc_UpdatedAt", { ascending: false }).order("FINDoc_ID", { ascending: false }).range(paging.offset, paging.offset + paging.limit - 1)
     : { data: [], error: null }
   if (documentsResult.error) throw new HttpError(500, documentsResult.error.message)
   const documents = documentsResult.data ?? []
@@ -833,7 +837,7 @@ async function documentWorkspace(admin: any, current: any, selectedLedger: Ledge
   if (partiesResult.error || jobsResult.error) throw new HttpError(500, partiesResult.error?.message ?? jobsResult.error?.message)
   const partyNames = new Map((partiesResult.data ?? []).map((party: any) => [party.Org_id, party.Org_Name]))
   const jobReferences = new Map((jobsResult.data ?? []).map((job: any) => [job.Job_ID, `${job.Job_Period}-${job.Job_Number}`]))
-  const result: Record<string, unknown> = { documents: documents.map((document: any) => {
+  const result: Record<string, unknown> = { ...paging, total: documentsResult.count ?? 0, hasMore: paging.offset + documents.length < (documentsResult.count ?? 0), documents: documents.map((document: any) => {
     const recordedTaxStatus = clean(document.FINDoc_MetadataJSON?.taxStatus, 20)
     const taxStatus = recordedTaxStatus === "approved" || recordedTaxStatus === "pending"
       ? recordedTaxStatus
@@ -978,24 +982,24 @@ async function documentDetail(admin: any, current: any, id: string) {
   }
 }
 
-async function cashWorkspace(admin: any, current: any, selectedLedger?: Ledger) {
+async function cashWorkspace(admin: any, current: any, selectedLedger?: Ledger, paging = { offset: 0, limit: 250 }) {
   if (selectedLedger) await requirePermission(admin, current.User_ID, viewPermission(selectedLedger))
   else {
     await requirePermission(admin, current.User_ID, "Finance.Receivables.View")
     await requirePermission(admin, current.User_ID, "Finance.Payables.View")
   }
   const ids = await entityIds(admin, current)
-  if (!ids.length) return { cashTransactions: [] }
-  let query = admin.from("FIN_CashTransactions").select("FINCash_ID,FINCash_TypeCode,FINCash_StatusCode,FINCash_Number,FINCash_LegalEntityID,FINCash_BankAccountID,FINCash_PartyOrgID,FINCash_TransactionDate,FINCash_CurrencyCodeSnapshot,FINCash_ExchangeRate,FINCash_Amount,FINCash_UnallocatedAmount,FINCash_Reference,FINCash_PostingStatusCode,FINCash_ExportStatusCode,FINCash_NativePostingStatusCode,FINCash_NativePostingBatchID,FINCash_NativePostedAt,FINCash_UpdatedAt").in("FINCash_LegalEntityID", ids).order("FINCash_UpdatedAt", { ascending: false }).limit(250)
+  if (!ids.length) return { cashTransactions: [], ...paging, total: 0, hasMore: false }
+  let query = admin.from("FIN_CashTransactions").select("FINCash_ID,FINCash_TypeCode,FINCash_StatusCode,FINCash_Number,FINCash_LegalEntityID,FINCash_BankAccountID,FINCash_PartyOrgID,FINCash_TransactionDate,FINCash_CurrencyCodeSnapshot,FINCash_ExchangeRate,FINCash_Amount,FINCash_UnallocatedAmount,FINCash_Reference,FINCash_PostingStatusCode,FINCash_ExportStatusCode,FINCash_NativePostingStatusCode,FINCash_NativePostingBatchID,FINCash_NativePostedAt,FINCash_UpdatedAt", { count: "exact" }).in("FINCash_LegalEntityID", ids).order("FINCash_UpdatedAt", { ascending: false }).order("FINCash_ID", { ascending: false }).range(paging.offset, paging.offset + paging.limit - 1)
   if (selectedLedger) query = query.eq("FINCash_TypeCode", selectedLedger === "receivables" ? "customer_receipt" : "supplier_payment")
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) throw new HttpError(500, error.message)
   const rows = data ?? []
   const partyIds = [...new Set(rows.map((row: any) => row.FINCash_PartyOrgID).filter(Boolean))]
   const { data: parties, error: partiesError } = partyIds.length ? await admin.from("Org_Master").select("Org_id,Org_Name").in("Org_id", partyIds) : { data: [], error: null }
   if (partiesError) throw new HttpError(500, partiesError.message)
   const names = new Map((parties ?? []).map((party: any) => [party.Org_id, party.Org_Name]))
-  return { cashTransactions: rows.map((row: any) => ({ ...row, partyName: names.get(row.FINCash_PartyOrgID) ?? "Unknown organisation" })) }
+  return { ...paging, total: count ?? 0, hasMore: paging.offset + rows.length < (count ?? 0), cashTransactions: rows.map((row: any) => ({ ...row, partyName: names.get(row.FINCash_PartyOrgID) ?? "Unknown organisation" })) }
 }
 
 async function controlledDocumentDraftInput(admin: any, input: DraftInput) {
@@ -1535,11 +1539,15 @@ Deno.serve(async (request) => {
       return json(request, data)
     }
     if (request.method === "GET" && parts[0] === "documents" && parts.length === 2) return json(request, await documentDetail(admin, current, parts[1]))
-    if (request.method === "GET" && parts[0] === "documents" && parts.length === 1) return json(request, await documentWorkspace(admin, current, ledger(new URL(request.url).searchParams.get("ledger") ?? undefined)))
+    if (request.method === "GET" && parts[0] === "documents" && parts.length === 1) {
+      const params = new URL(request.url).searchParams
+      return json(request, await documentWorkspace(admin, current, ledger(params.get("ledger") ?? undefined), false, registerPagination(params)))
+    }
     if (request.method === "GET" && parts[0] === "draft-options") return json(request, await documentWorkspace(admin, current, ledger(new URL(request.url).searchParams.get("ledger") ?? undefined), true))
     if (request.method === "GET" && parts[0] === "cash") {
-      const value = new URL(request.url).searchParams.get("ledger") ?? undefined
-      return json(request, await cashWorkspace(admin, current, value ? ledger(value) : undefined))
+      const params = new URL(request.url).searchParams
+      const value = params.get("ledger") ?? undefined
+      return json(request, await cashWorkspace(admin, current, value ? ledger(value) : undefined, registerPagination(params)))
     }
     if (request.method === "POST" && parts[0] === "documents" && parts[1] === "draft") return json(request, await createDocumentDraft(admin, current, await body<DraftInput>(request)), 201)
     if (request.method === "PUT" && parts[0] === "documents" && parts[2] === "draft") return json(request, await updateDocumentDraft(admin, current, parts[1], await body<DraftInput>(request)))

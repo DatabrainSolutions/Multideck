@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { RefreshCw } from "@/components/icons/hugeicons"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
@@ -32,7 +33,7 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
   const [viewMode, setViewMode] = useState<CustomerViewMode>(customerViewModes[0])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(20)
+  const [rowsPerPage, setRowsPerPage] = useState(defaultPaginationPageSize)
   const [dexterOpen, setDexterOpen] = useState(false)
   const [customers, setCustomers] = useState<CustomerRecord[]>([])
   const [total, setTotal] = useState(0)

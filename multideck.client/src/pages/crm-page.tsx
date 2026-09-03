@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import {
@@ -142,7 +143,6 @@ type DealViewMode = "Board" | "List"
 const emptyLeadSummary: LeadRegisterPage["summary"] = { leads: 0, open: 0, converted: 0, disqualified: 0, unassigned: 0, dueFollowUps: 0, valued: 0, recent: 0, qualified: 0, estimatedValue: 0 }
 const emptyLeadFacets: LeadRegisterPage["facets"] = { statuses: [], sources: [], ratings: [], owners: [], hasUnassigned: false }
 const emptyDealFacets: DealRegisterPage["facets"] = { pipelines: [], stages: [], statuses: [], owners: [], hasUnassigned: false }
-const dealListPageSize = 50
 const leadScopes = ["All", "Mine"] as const
 type LeadScope = (typeof leadScopes)[number]
 
@@ -1390,7 +1390,7 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [page, setPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(20)
+  const [rowsPerPage, setRowsPerPage] = useState(defaultPaginationPageSize)
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
   const [sourceFilter, setSourceFilter] = useState("all")
   const [ownerFilter, setOwnerFilter] = useState("all")
@@ -1761,6 +1761,8 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
             totalItems={total}
             pageSize={rowsPerPage}
             pageSizeOptions={rowsPerPageOptions}
+            loading={revalidating}
+            itemCount={leads.length}
             itemLabel="leads"
             onPageChange={setPage}
             onPageSizeChange={(nextRowsPerPage) => {
@@ -2399,7 +2401,7 @@ export function CrmListDetailPage({ navigate, listId }: { navigate: (path: strin
           <div className="px-5 py-4">
             <SectionHeader title="Members" meta="people currently included in this audience" metaPlacement="responsive-inline" />
           </div>
-          <div className="px-5 pb-5"><DataTable ariaLabel="List members" columnsButtonLabel="Manage list member columns" columns={memberColumns} rows={list.members} getRowKey={(member) => `${member[0]}-${member[2]}`} storageKey={`crm-list-members-${list.id}`} minimumWidth={860} className="rounded-[var(--md-radius-lg)]" /></div>
+          <div className="px-5 pb-5"><DataTable clientPagination ariaLabel="List members" columnsButtonLabel="Manage list member columns" columns={memberColumns} rows={list.members} getRowKey={(member) => `${member[0]}-${member[2]}`} storageKey={`crm-list-members-${list.id}`} minimumWidth={860} className="rounded-[var(--md-radius-lg)]" /></div>
         </Surface>
 
         <div className="md-panel-column">
@@ -3052,7 +3054,7 @@ function BroadcastsView({ navigate }: { navigate: (path: string) => void }) {
         <SectionHeader title="Broadcasts" meta="scheduled, sent, and draft email sends" metaPlacement="responsive-inline" className="min-w-0 flex-1" />
         <p className="text-[12px] font-medium text-[var(--md-text)]">Average CTR 16.4% · open rate 50.6%</p>
       </div>
-      <div className="px-5 pb-5"><DataTable ariaLabel="Broadcasts" columnsButtonLabel="Manage broadcast columns" columns={columns} rows={crmEmailCampaigns} getRowKey={(broadcast) => broadcast.id} storageKey="crm-email-broadcasts" minimumWidth={1080} rowClassName="group h-[68px]" onRowClick={(broadcast) => navigate(getCrmEmailCampaignPath(broadcast, "stats"))} /></div>
+      <div className="px-5 pb-5"><DataTable clientPagination ariaLabel="Broadcasts" columnsButtonLabel="Manage broadcast columns" columns={columns} rows={crmEmailCampaigns} getRowKey={(broadcast) => broadcast.id} storageKey="crm-email-broadcasts" minimumWidth={1080} rowClassName="group h-[68px]" onRowClick={(broadcast) => navigate(getCrmEmailCampaignPath(broadcast, "stats"))} /></div>
     </Surface>
   )
 }
@@ -3199,7 +3201,7 @@ function EmailsView() {
       <div className="px-5 py-5">
         <SectionHeader title="Emails" meta={`${emailMarketingContacts.length} contact records with consent and delivery status`} metaPlacement="responsive-inline" />
       </div>
-      <div className="px-5 pb-5"><DataTable ariaLabel="Marketing emails" columnsButtonLabel="Manage email columns" columns={columns} rows={filteredContacts} getRowKey={(contact) => contact.email} storageKey="crm-marketing-emails" minimumWidth={1120} toolbarSearch={<label className="relative min-w-0 sm:w-[280px]"><span className="sr-only">Search emails</span><Search className="pointer-events-none absolute inset-inline-start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-8 bg-[var(--md-field-bg)] ps-9 text-base sm:text-[12px]" placeholder="Search email, contact, company, or list…" /></label>} toolbarFilters={<Select value={status} onValueChange={(value) => setStatus(value as typeof status)}><SelectTrigger className="h-8 min-w-[156px] bg-[var(--md-field-bg)] text-base sm:text-[12px]"><ListFilter className="size-3.5" strokeWidth={1.4} /><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("All statuses")}</SelectItem><SelectItem value="Subscribed">{t("Subscribed")}</SelectItem><SelectItem value="Unsubscribed">{t("Unsubscribed")}</SelectItem><SelectItem value="Bounced">{t("Bounced")}</SelectItem><SelectItem value="Pending">{t("Pending")}</SelectItem><SelectItem value="Replied">{t("Replied")}</SelectItem></SelectContent></Select>} emptyState={<div className="grid min-h-[180px] place-items-center p-6 text-center">
+      <div className="px-5 pb-5"><DataTable clientPagination ariaLabel="Marketing emails" columnsButtonLabel="Manage email columns" columns={columns} rows={filteredContacts} getRowKey={(contact) => contact.email} storageKey="crm-marketing-emails" minimumWidth={1120} toolbarSearch={<label className="relative min-w-0 sm:w-[280px]"><span className="sr-only">Search emails</span><Search className="pointer-events-none absolute inset-inline-start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-8 bg-[var(--md-field-bg)] ps-9 text-base sm:text-[12px]" placeholder="Search email, contact, company, or list…" /></label>} toolbarFilters={<Select value={status} onValueChange={(value) => setStatus(value as typeof status)}><SelectTrigger className="h-8 min-w-[156px] bg-[var(--md-field-bg)] text-base sm:text-[12px]"><ListFilter className="size-3.5" strokeWidth={1.4} /><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("All statuses")}</SelectItem><SelectItem value="Subscribed">{t("Subscribed")}</SelectItem><SelectItem value="Unsubscribed">{t("Unsubscribed")}</SelectItem><SelectItem value="Bounced">{t("Bounced")}</SelectItem><SelectItem value="Pending">{t("Pending")}</SelectItem><SelectItem value="Replied">{t("Replied")}</SelectItem></SelectContent></Select>} emptyState={<div className="grid min-h-[180px] place-items-center p-6 text-center">
           <div>
             <Search className="mx-auto size-5 text-[var(--md-subtle)]" strokeWidth={1.4} />
             <h3 className="mt-3 text-[14px] font-medium text-[var(--md-ink)]">No matching emails</h3>
@@ -3541,6 +3543,7 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
   const [dealListTotal, setDealListTotal] = useState(0)
   const [dealListFacets, setDealListFacets] = useState<DealRegisterPage["facets"]>(emptyDealFacets)
   const [dealListOffset, setDealListOffset] = useState(0)
+  const [dealListPageSize, setDealListPageSize] = useState(defaultPaginationPageSize)
   const [dealListSort, setDealListSort] = useState<DealRegisterSort | null>({ id: "created", direction: "desc" })
   const [dealPipelineFilter, setDealPipelineFilter] = useState("")
   const [dealStatusFilter, setDealStatusFilter] = useState("")
@@ -3661,7 +3664,7 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
         setDealListState("error")
       })
     return () => { active = false }
-  }, [dealListOffset, dealListSort, dealOwnerFilter, dealPipelineFilter, dealStatusFilter, debouncedDealQuery, reloadKey, t, viewMode])
+  }, [dealListOffset, dealListPageSize, dealListSort, dealOwnerFilter, dealPipelineFilter, dealStatusFilter, debouncedDealQuery, reloadKey, t, viewMode])
 
   async function loadMoreDealsForStage(pipelineId: string, stageId: string) {
     const current = stagePages[stageId]
@@ -3954,7 +3957,7 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
           onRowClick={openApiDealDetail}
           rowClassName="group h-[64px] hover:bg-[var(--md-hover)]"
           serverSorting={{ value: dealListSort, onChange: (next) => { setDealListSort(next ?? { id: "created", direction: "desc" }); setDealListOffset(0) } }}
-          pagination={{ offset: dealListOffset, limit: dealListPageSize, total: dealListTotal, loading: dealListState === "loading", onOffsetChange: setDealListOffset }}
+          pagination={{ offset: dealListOffset, limit: dealListPageSize, total: dealListTotal, loading: dealListState === "loading", onOffsetChange: setDealListOffset, onLimitChange: setDealListPageSize, error: dealListState === "error" }}
           compactToolbar
           toolbarSearch={<RegisterSearchField value={dealQuery} onChange={setDealQuery} onClear={() => setDealQuery("")} label="Search deals" placeholder="Deal, company, pipeline or owner…" className="sm:w-[210px]" />}
           toolbarFilters={<>

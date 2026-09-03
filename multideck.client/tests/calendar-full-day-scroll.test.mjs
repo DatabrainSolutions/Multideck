@@ -29,13 +29,14 @@ test("midnight drag endpoints advance the date instead of making a negative dura
   assert.match(view, /endMinutes - start.hour \* 60 - start.minute/)
 })
 
-test("calendar edit action uses Hugeicons Pen01 without changing other pencil uses", () => {
+test("calendar and legacy pencil actions share the approved Hugeicons Pen01", () => {
   const icons = read("../src/components/icons/hugeicons.tsx")
   const details = read("../src/components/multideck/meeting-details-popover.tsx")
   const gallery = read("../src/pages/components-gallery-page.tsx")
   assert.match(icons, /Pen01Icon as Pen01IconData/)
   assert.match(icons, /Pen01 = createMultideckIcon\(Pen01IconData, "Pen01"\)/)
-  assert.match(icons, /Pencil = createMultideckIcon\(PencilIconData, "Pencil"\)/)
+  assert.match(icons, /export const Pencil = Pen01\b/)
+  assert.doesNotMatch(icons, /\bPencilIcon(?:Data)?\b/)
   assert.match(details, /label="Edit event" icon=\{Pen01\}/)
   assert.match(gallery, /\["Edit event", Pen01\]/)
 })

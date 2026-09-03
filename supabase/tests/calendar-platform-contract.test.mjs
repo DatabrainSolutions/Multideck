@@ -246,8 +246,8 @@ test("calendar colours are bounded, editable and remain visual-only", () => {
   assert.match(popover, /"Save changes"/)
   assert.doesNotMatch(popover, /async function changeColour/)
   assert.match(picker, /meetingColourOptions/)
-  assert.match(calendarView, /overlap === "contained" \? 9 : 4/)
-  assert.match(calendarView, /overlapBoundary=\{overlap === "continuing"\}/)
+  assert.match(calendarView, /overlap === "contained" \? 8 : 4/)
+  assert.match(calendarView, /overlapBoundary=\{overlap !== "none"\} contained=\{overlap === "contained"\}/)
   assert.match(dexter, /Calendar event colours are visual-only operator preferences/)
 })
 
@@ -305,7 +305,7 @@ test("meeting details open beside the event and availability lives in Profile se
   assert.match(calendarPeriodCore, /export function calendarPeriodDates/)
   assert.match(calendarView, /calendarPeriodDates\(view, anchor, true\)/)
   assert.match(warehouseCalendar, /calendarPeriodDates\(view, anchorDate\)/)
-  assert.match(calendarView, /overlapBoundary && "border-2 border-\[var\(--md-surface\)\]"/)
+  assert.match(calendarView, /overlapBoundary && "after:pointer-events-none after:absolute after:inset-0 after:rounded-\[inherit\] after:border-2 after:border-\[var\(--md-surface\)\]"/)
   assert.doesNotMatch(calendarView, /overlapBoundary && "border-2 border-white"/)
   // Empty slots honour the visible timezone, and drag-to-move must stop at a compact attendee-impact review.
   assert.match(calendarView, /zonedToIso\(calendarDateKey\(day\)/)

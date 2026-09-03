@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { useTheme } from "@/lib/theme-provider"
@@ -521,6 +522,11 @@ const previewChargeRows: PreviewChargeRow[] = [
   { id: "OCART", description: "Pickup transport", supplier: "Severn Road Logistics", scope: "Road", status: "Review", cost: 610, sell: 630 },
   { id: "DTHC", description: "Destination handling", supplier: "Kobe Gateway Agency", scope: "Destination", status: "Blocked", cost: 304, sell: 360 },
 ]
+
+const previewPaginatedChargeRows: PreviewChargeRow[] = Array.from({ length: 57 }, (_, index) => ({
+  ...previewChargeRows[index % previewChargeRows.length],
+  id: `CH-${String(index + 1).padStart(3, "0")}`,
+}))
 
 const previewUnifiedChargeRowsSeed: UnifiedQuoteChargeRow[] = [
   { id: "preview-frt", code: "FRT", description: "International freight", supplierId: "supplier-bluewave", customerId: "customer-harbourworks", cost: 840, costCurrency: "USD", sell: 980, sellCurrency: "USD", costRoe: 1.25, sellRoe: 1.25, costRoeSource: "rate", sellRoeSource: "rate" },
@@ -1657,7 +1663,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewArrangeOrder, setPreviewArrangeOrder] = useState<string[]>(previewSidebarOrder)
   const [previewArrangePinned, setPreviewArrangePinned] = useState<string[]>([])
   const [previewPage, setPreviewPage] = useState(1)
-  const [previewPageSize, setPreviewPageSize] = useState(20)
+  const [previewPageSize, setPreviewPageSize] = useState(defaultPaginationPageSize)
   const [previewBookingFilter, setPreviewBookingFilter] = useState<string>(bookingFilters[0])
   const [previewTableView, setPreviewTableView] = useState<"All" | "Profitable">("All")
   const [previewTableSearch, setPreviewTableSearch] = useState("")
@@ -2658,7 +2664,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "pagination" ? (
         <div className="w-full max-w-[720px]">
           <div className="mb-3 grid gap-2">
-            {["Marlow Apparel Ltd", "Bauhaus Importe GmbH", "Black Forest Foods", "Pacific Goods Co", "Mediterranean Spice Trading"].map((customer) => (
+            {Array.from({ length: 57 }, (_, index) => `Sample customer ${String(index + 1).padStart(2, "0")}`).slice((previewPage - 1) * previewPageSize, previewPage * previewPageSize).map((customer) => (
               <div key={customer} className="flex h-12 items-center justify-between rounded-[var(--md-radius-lg)] bg-white/55 px-4 shadow-[var(--md-shadow-line)]">
                 <span className="text-[13px] font-medium text-[var(--md-ink)]">{customer}</span>
                 <span className="text-[12px] text-[var(--md-text)]">Active customer</span>
@@ -2667,8 +2673,8 @@ function ComponentPreview({ id }: { id: string }) {
           </div>
           <Pagination
             page={previewPage}
-            pageCount={Math.max(Math.ceil(customers.length / previewPageSize), 1)}
-            totalItems={customers.length}
+            pageCount={Math.max(Math.ceil(57 / previewPageSize), 1)}
+            totalItems={57}
             pageSize={previewPageSize}
             pageSizeOptions={[10, 20, 30, 50]}
             itemLabel="customers"
@@ -3016,11 +3022,12 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
           <DataTable
             columns={previewChargeColumns}
-            rows={previewChargeRows.filter((row) => (previewTableView === "All" || row.sell > row.cost) && (!previewTableStatus || row.status === previewTableStatus) && (!previewTableSearch.trim() || `${row.id} ${row.description} ${row.supplier}`.toLowerCase().includes(previewTableSearch.trim().toLowerCase())))}
+            clientPagination
+            rows={previewPaginatedChargeRows.filter((row) => (previewTableView === "All" || row.sell > row.cost) && (!previewTableStatus || row.status === previewTableStatus) && (!previewTableSearch.trim() || `${row.id} ${row.description} ${row.supplier}`.toLowerCase().includes(previewTableSearch.trim().toLowerCase())))}
             getRowKey={(row) => row.id}
             storageKey="gallery-charge-table"
             ariaLabel="Quote charges preview"
-            toolbarTabs={<RegisterViewSwitch options={["All", "Profitable"] as const} value={previewTableView} onChange={setPreviewTableView} counts={{ All: previewChargeRows.length, Profitable: previewChargeRows.filter((row) => row.sell > row.cost).length }} ariaLabel="Charge view" compact />}
+            toolbarTabs={<RegisterViewSwitch options={["All", "Profitable"] as const} value={previewTableView} onChange={setPreviewTableView} counts={{ All: previewPaginatedChargeRows.length, Profitable: previewPaginatedChargeRows.filter((row) => row.sell > row.cost).length }} ariaLabel="Charge view" compact />}
             toolbarSearch={<RegisterSearchField value={previewTableSearch} onChange={setPreviewTableSearch} onClear={() => setPreviewTableSearch("")} label="Search charges" placeholder="Search charges…" />}
             toolbarFilters={<RegisterFacetSelect label="Status" allLabel="All statuses" value={previewTableStatus} options={["Approved", "Review", "Blocked"].map((status) => ({ value: status, label: status }))} onChange={setPreviewTableStatus} className="w-[132px]" />}
           />

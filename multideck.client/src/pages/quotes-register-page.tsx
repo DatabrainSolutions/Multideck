@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { ArrowUpRight, FlaskConical, LoaderCircle, RefreshCw, Search, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -87,7 +88,7 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
   const [scope, setScope] = useState<QuoteScope>("All")
   const [debouncedQuickSearch, setDebouncedQuickSearch] = useState(quickSearch)
   const [page, setPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [rowsPerPage, setRowsPerPage] = useState(defaultPaginationPageSize)
   const [serverSort, setServerSort] = useState<RegisterSort | null>(() => readSavedSort(quoteTableStorageKey, { id: "updatedAt", direction: "desc" }))
   const [quotes, setQuotes] = useState<QuoteRegisterRecord[]>([])
   const [quoteTotal, setQuoteTotal] = useState(0)
@@ -404,6 +405,8 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
         totalItems={quoteTotal}
         pageSize={rowsPerPage}
         pageSizeOptions={rowsPerPageOptions}
+        loading={quotesLoading}
+        itemCount={quotes.length}
         itemLabel="quotes"
         onPageChange={setPage}
         onPageSizeChange={(nextRowsPerPage) => {

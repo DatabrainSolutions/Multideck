@@ -220,7 +220,7 @@ export function GeneratedReportsTable({
     },
   ], [onDownload, onView])
 
-  return <DataTable ariaLabel="Generated reports" columnsButtonLabel="Manage report columns" columns={columns} rows={reports} getRowKey={(report) => report.id} storageKey="generated-reports" rowClassName="group/row h-[82px]" className={className} />
+  return <DataTable clientPagination ariaLabel="Generated reports" columnsButtonLabel="Manage report columns" columns={columns} rows={reports} getRowKey={(report) => report.id} storageKey="generated-reports" rowClassName="group/row h-[82px]" className={className} />
 }
 
 export function reportStatusStyle(status: GeneratedReportStatus): CSSProperties {

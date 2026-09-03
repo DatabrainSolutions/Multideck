@@ -1,6 +1,7 @@
 import { edgeFetch } from "@/lib/api"
 import { getSupabaseSession } from "@/lib/supabase"
 import { invalidateFinanceReferenceReads } from "@/lib/finance-api"
+import { readFinanceRegisterPages } from "@/lib/finance-register-pages"
 
 export type AccountingProviderCode = "erpnext" | "xero" | "quickbooks_online" | "sage_accounting" | "sage_intacct" | "sage_50" | "sage_200" | "business_central" | "netsuite" | "zoho_books"
 export type FinanceLedger = "receivables" | "payables"
@@ -469,9 +470,8 @@ export function approveFinanceConfigurationRun(id: string) { return post<{ runId
 export function processFinanceIntegrationQueue(id: string) { return post<{ id: string; status: string; provider: AccountingProviderCode; externalObjectType: string; externalId: string; externalNumber: string | null; externalUrl: string | null }>(`/integration-queue/${encodeURIComponent(id)}/process`) }
 export function saveFinanceAdministration(legalEntityId: string, settings: FinanceAdministrationDraft, reason: string) { return put<{ legalEntityId: string; revision: number; ready: boolean; missing: string[] }>(`/administration/${encodeURIComponent(legalEntityId)}`, { settings, reason }) }
 export async function getFinanceDocuments(ledger: FinanceLedger) {
-  const result = await call<unknown>(`/documents?ledger=${ledger}`)
-  if (!isRecord(result) || !Array.isArray(result.documents)) throw new FinanceSubledgerApiError("Finance returned an invalid document list.")
-  return { documents: result.documents.map(normaliseFinanceDocument) }
+  const documents = await readFinanceRegisterPages((offset, limit) => call<unknown>(`/documents?ledger=${ledger}&offset=${offset}&limit=${limit}`), "documents")
+  return { documents: documents.map(normaliseFinanceDocument) }
 }
 export async function getFinanceDocument(id: string) {
   const result = await call<unknown>(`/documents/${encodeURIComponent(id)}`)
@@ -479,9 +479,8 @@ export async function getFinanceDocument(id: string) {
   return { ...result, document: normaliseFinanceDocument(result.document) } as unknown as FinanceDocumentDetail
 }
 export async function getFinanceCash(ledger?: FinanceLedger) {
-  const result = await call<unknown>(`/cash${ledger ? `?ledger=${ledger}` : ""}`)
-  if (!isRecord(result) || !Array.isArray(result.cashTransactions)) throw new FinanceSubledgerApiError("Finance returned an invalid cash list.")
-  return { cashTransactions: result.cashTransactions.map(normaliseFinanceCashTransaction) }
+  const cashTransactions = await readFinanceRegisterPages((offset, limit) => call<unknown>(`/cash?offset=${offset}&limit=${limit}${ledger ? `&ledger=${ledger}` : ""}`), "cashTransactions")
+  return { cashTransactions: cashTransactions.map(normaliseFinanceCashTransaction) }
 }
 export function getFinanceDraftOptions(ledger: FinanceLedger) { return call<FinanceDraftOptions>(`/draft-options?ledger=${ledger}`) }
 export function getProviderCustomerContext(connectionId: string, orgId: string) { return call<ProviderCustomerContext>(`/provider-customers/context?connectionId=${encodeURIComponent(connectionId)}&orgId=${encodeURIComponent(orgId)}`) }

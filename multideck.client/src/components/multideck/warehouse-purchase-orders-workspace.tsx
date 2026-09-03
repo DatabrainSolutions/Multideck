@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { AlertCircle, ArrowDownToLine, ArrowLeft, Check, ChevronDown, FileText as FileSearch, History, Link2, Loader2, Plus, ReceiptText, RefreshCw, Search, Send, Trash2, Upload, XCircle } from "@/components/icons/hugeicons"
 import { motion, useReducedMotion } from "motion/react"
@@ -385,7 +386,6 @@ export function WarehousePurchaseOrderCreateView({ navigate }: { navigate?: (pat
 
 const purchaseOrderScopes = ["Open", "All"] as const
 type PurchaseOrderScope = (typeof purchaseOrderScopes)[number]
-const purchaseOrderPageSize = 20
 
 const purchaseOrderStatuses = ["draft", "issued", "part_received", "received", "cancelled"] as const
 
@@ -404,6 +404,7 @@ export function WarehousePurchaseOrdersWorkspace({ navigate }: { navigate?: (pat
   const [orders, setOrders] = useState<WarehousePurchaseOrder[] | null>(null)
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
+  const [purchaseOrderPageSize, setPurchaseOrderPageSize] = useState(defaultPaginationPageSize)
   const [sort, setSort] = useState<WarehouseRegisterSort | null>(null)
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "")
   const [committedSearch, setCommittedSearch] = useState(search)
@@ -446,7 +447,7 @@ export function WarehousePurchaseOrdersWorkspace({ navigate }: { navigate?: (pat
     } finally {
       if (ticket === requestId.current) setPending(false)
     }
-  }, [facilityId, statusCode, scope, committedSearch, sort, offset, navigate])
+  }, [facilityId, statusCode, scope, committedSearch, sort, offset, purchaseOrderPageSize, navigate])
 
   useEffect(() => { void refresh() }, [refresh])
 
@@ -530,7 +531,7 @@ export function WarehousePurchaseOrdersWorkspace({ navigate }: { navigate?: (pat
       </>}
       toolbarOptions={<RegisterRevalidatingMark active={pending && loaded} />}
       serverSorting={{ value: sort, onChange: (value) => { setSort(value); setOffset(0) } }}
-      pagination={{ offset, limit: purchaseOrderPageSize, total, loading: pending, onOffsetChange: setOffset }}
+      pagination={{ offset, limit: purchaseOrderPageSize, total, loading: pending, onOffsetChange: setOffset, onLimitChange: setPurchaseOrderPageSize, error: Boolean(error) }}
     />
   </div>
 }

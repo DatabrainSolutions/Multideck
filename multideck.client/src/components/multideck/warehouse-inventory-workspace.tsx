@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AlertTriangle, Boxes, Combine, FlaskConical, Loader2, MapPinOff, PackagePlus, RefreshCw, Route, ShieldAlert, type LucideIcon } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -53,7 +54,6 @@ import {
 
 const controlClass = "!h-10 !w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 !px-3 !text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] active:!scale-100 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
 const noneValue = "__none__"
-const inventoryPageSize = 20
 
 function message(error: unknown) {
   return error instanceof WarehouseApiError ? error.message : error instanceof Error ? error.message : String(error)
@@ -196,6 +196,7 @@ export function WarehouseInventoryWorkspace() {
   const [totals, setTotals] = useState<Partial<Record<InventoryMode, number>>>({})
   const [facetOptionsByMode, setFacetOptionsByMode] = useState<Partial<Record<InventoryMode, string[]>>>({})
   const [offset, setOffset] = useState(0)
+  const [inventoryPageSize, setInventoryPageSize] = useState(defaultPaginationPageSize)
   const [sort, setSort] = useState<WarehouseRegisterSort | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [pending, setPending] = useState(true)
@@ -244,7 +245,7 @@ export function WarehouseInventoryWorkspace() {
     } finally {
       if (ticket === requestId.current) setPending(false)
     }
-  }, [committedSearch, facetValue, facilityId, mode, offset, sort])
+  }, [committedSearch, facetValue, facilityId, inventoryPageSize, mode, offset, sort])
 
   useEffect(() => { void refresh() }, [refresh])
 
@@ -481,7 +482,7 @@ export function WarehouseInventoryWorkspace() {
       compactToolbar
       emptyState={emptyState}
       serverSorting={{ value: sort, onChange: (value) => { setSort(value); setOffset(0) } }}
-      pagination={{ offset, limit: inventoryPageSize, total: totals[mode] ?? 0, loading: pending, onOffsetChange: setOffset }}
+      pagination={{ offset, limit: inventoryPageSize, total: totals[mode] ?? 0, loading: pending, onOffsetChange: setOffset, onLimitChange: setInventoryPageSize, error: Boolean(error) }}
     />
     <StockActionPanel balance={selectedBalance} open={Boolean(selectedBalance)} onClose={() => setSelectedBalance(null)} reference={huReference} units={actionUnits} onChanged={() => void refresh()} />
     <WarehouseObjectPanel unit={selectedUnit} open={Boolean(selectedUnit)} onClose={() => setSelectedUnit(null)} units={actionUnits} onChanged={() => void refresh()} />

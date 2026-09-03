@@ -200,7 +200,6 @@ import {
   Pen01Icon as Pen01IconData,
   Pen02Icon as Pen02IconData,
   PencilEdit01Icon as PencilEdit01IconData,
-  PencilIcon as PencilIconData,
   PieChartIcon as PieChartIconData,
   PinIcon as PinIconData,
   PinOffIcon as PinOffIconData,
@@ -528,8 +527,9 @@ export const PanelLeftOpen = createMultideckIcon(PanelLeftOpenIconData, "PanelLe
 export const PanelRightClose = createMultideckIcon(PanelRightCloseIconData, "PanelRightClose")
 export const Paperclip = createMultideckIcon(Attachment01IconData, "Paperclip")
 export const PenLine = createMultideckIcon(Pen02IconData, "PenLine")
-export const Pencil = createMultideckIcon(PencilIconData, "Pencil")
 export const Pen01 = createMultideckIcon(Pen01IconData, "Pen01")
+// Keep legacy edit/rename imports on Calendar's approved pen, never the old pencil glyph.
+export const Pencil = Pen01
 export const PencilEdit01 = createMultideckIcon(PencilEdit01IconData, "PencilEdit01")
 export const Phone = createMultideckIcon(TelephoneIconData, "Phone")
 export const Pilcrow = createMultideckIcon(ParagraphIconData, "Pilcrow")

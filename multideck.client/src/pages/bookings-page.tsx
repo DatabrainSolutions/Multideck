@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react"
 import { toast } from "sonner"
 import { ArrowDownAZ, ArrowUpAZ, CalendarClock, Search, Star, TriangleAlert, X } from "@/components/icons/hugeicons"
@@ -151,7 +152,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
   const [quickSearch, setQuickSearch] = useState("")
   const [debouncedQuickSearch, setDebouncedQuickSearch] = useState("")
   const [page, setPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [rowsPerPage, setRowsPerPage] = useState(defaultPaginationPageSize)
   const [dexterOpen, setDexterOpen] = useState(false)
   const [directionFilter, setDirectionFilter] = useState<(typeof directionFilters)[number]>(directionFilters[0])
   const [modeFilter, setModeFilter] = useState<(typeof modeFilters)[number]>(modeFilters[0])
@@ -598,6 +599,8 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
         totalItems={totalBookings}
         pageSize={rowsPerPage}
         pageSizeOptions={rowsPerPageOptions}
+        loading={bookingsLoading}
+        itemCount={tableRows.length}
         itemLabel="bookings"
         onPageChange={setPage}
         onPageSizeChange={(nextRowsPerPage) => {

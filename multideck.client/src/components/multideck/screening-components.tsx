@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { ChevronDown } from "@/components/icons/hugeicons"
 import { Pagination } from "@/components/multideck/pagination"
@@ -136,12 +137,13 @@ function ScreeningFact({ label, value, code = false }: { label: string; value: s
   )
 }
 
-export const SCREENING_MATCH_PAGE_SIZE = 12
+export const SCREENING_MATCH_PAGE_SIZE = defaultPaginationPageSize
 
 export function ScreeningMatchList({ matches, className }: { matches: ScreeningMatch[]; className?: string }) {
   const { t } = useLanguage()
   const [filter, setFilter] = useState("")
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(SCREENING_MATCH_PAGE_SIZE)
   const needle = filter.trim().toLowerCase()
   const visible = useMemo(() => {
     if (!needle) return matches
@@ -153,9 +155,9 @@ export function ScreeningMatchList({ matches, className }: { matches: ScreeningM
         .includes(needle)
     ))
   }, [matches, needle])
-  const pageCount = Math.max(1, Math.ceil(visible.length / SCREENING_MATCH_PAGE_SIZE))
+  const pageCount = Math.max(1, Math.ceil(visible.length / pageSize))
   const currentPage = Math.min(page, pageCount)
-  const paged = visible.slice((currentPage - 1) * SCREENING_MATCH_PAGE_SIZE, currentPage * SCREENING_MATCH_PAGE_SIZE)
+  const paged = visible.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   useEffect(() => {
     setPage(1)
@@ -192,13 +194,15 @@ export function ScreeningMatchList({ matches, className }: { matches: ScreeningM
           <button type="button" className="mt-2 text-[12px] font-medium text-[var(--md-accent)] underline decoration-from-font underline-offset-4" onClick={() => setFilter("")}>{t("Clear filter")}</button>
         </div>
       ) : null}
-      {visible.length > SCREENING_MATCH_PAGE_SIZE ? (
+      {matches.length > SCREENING_MATCH_PAGE_SIZE ? (
         <div className="pt-1">
           <Pagination
             page={currentPage}
             pageCount={pageCount}
             totalItems={visible.length}
-            pageSize={SCREENING_MATCH_PAGE_SIZE}
+            pageSize={pageSize}
+            onPageSizeChange={setPageSize}
+            itemCount={paged.length}
             onPageChange={setPage}
             itemLabel="listed names"
             className="rounded-[var(--md-radius-lg)]"

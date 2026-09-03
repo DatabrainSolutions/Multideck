@@ -472,7 +472,7 @@ function DetailedAuditTable({ records }: { records: readonly QuoteAuditRecord[] 
 
   return (
     <>
-      <DataTable
+      <DataTable clientPagination
         ariaLabel="Detailed audit events table"
         columnsButtonLabel="Manage audit table columns"
         columns={columns}

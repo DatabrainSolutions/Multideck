@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, Eye, FileCheck2, FileText, LoaderCircle, Plus, RefreshCw, Save, ScanText, Search, Send, Trash2, UserRound } from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
@@ -58,7 +59,6 @@ const defaultDeclarationFieldVisibility: DeclarationFieldVisibility = {
   optionalFields: false,
 }
 const declarationFieldVisibilityStorageKey = "multideck.customs.declaration-field-visibility"
-const customsRegisterPageSize = 50
 
 function customsExportCategory(path: readonly string[]) {
   const field = path[0] ?? ""
@@ -170,6 +170,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
   const [statusFilter, setStatusFilter] = useState("")
   const [destinationFilter, setDestinationFilter] = useState("")
   const [offset, setOffset] = useState(0)
+  const [customsRegisterPageSize, setCustomsRegisterPageSize] = useState(defaultPaginationPageSize)
   const [total, setTotal] = useState(0)
   const [availableTotal, setAvailableTotal] = useState(0)
   const [facets, setFacets] = useState<{ statuses: string[]; destinations: string[] }>({ statuses: [], destinations: [] })
@@ -246,7 +247,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
         if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
-  }, [debouncedSearch, destinationFilter, jobRelated, kind, offset, reloadToken, sort, statusFilter])
+  }, [customsRegisterPageSize, debouncedSearch, destinationFilter, jobRelated, kind, offset, reloadToken, sort, statusFilter])
 
   const columns = useMemo<DataTableColumn<CustomsDraftSummary>[]>(() => [
     {
@@ -419,7 +420,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
         onRowClick={(draft) => navigate(`/customs/${jobRelated ? "job-related" : "standalone"}/${kind}/${draft.id}`)}
         rowAriaLabel={(draft) => draft.reference}
         serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "lastSaved", direction: "desc" }); setOffset(0) } }}
-        pagination={{ offset, limit: customsRegisterPageSize, total, loading, onOffsetChange: setOffset }}
+        pagination={{ offset, limit: customsRegisterPageSize, total, loading, onOffsetChange: setOffset, onLimitChange: setCustomsRegisterPageSize, error: Boolean(loadError) }}
         rowContextActions={(draft) => [{
           id: "delete-draft",
           label: "Delete draft",

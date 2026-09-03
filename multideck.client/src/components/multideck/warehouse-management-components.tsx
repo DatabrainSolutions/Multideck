@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { workspaceStorageKey } from "@/lib/workspace-environment"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
@@ -67,7 +68,6 @@ import {
 const fieldControlClass =
   "!h-10 !w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 !px-3 !text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] active:!scale-100 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
 
-const warehouseRegisterPageSize = 20
 
 export const warehouseDialogHeaderClass =
   "bg-[var(--md-surface-soft)] px-6 py-5 pe-14 text-start shadow-[var(--md-stroke-bottom)] [&_[data-slot=dialog-title]]:text-[17px] [&_[data-slot=dialog-title]]:leading-6"
@@ -533,6 +533,7 @@ export function WarehouseFacilitiesView() {
   const [facilities, setFacilities] = useState<WarehouseFacility[] | null>(null)
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
+  const [warehouseRegisterPageSize, setWarehouseRegisterPageSize] = useState(defaultPaginationPageSize)
   const [sort, setSort] = useState<WarehouseRegisterSort | null>({ id: "facility", direction: "asc" })
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -574,7 +575,7 @@ export function WarehouseFacilitiesView() {
         setTotal(0)
       }).finally(() => { if (active) setLoading(false) }), 250)
     return () => { active = false; window.clearTimeout(timer) }
-  }, [activeFilter, offset, search, sort])
+  }, [activeFilter, offset, warehouseRegisterPageSize, search, sort])
 
   useEffect(() => setOffset(0), [activeFilter, search, sort])
 
@@ -719,7 +720,7 @@ export function WarehouseFacilitiesView() {
             )}
             toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search facilities" placeholder="Code, name, city" className="sm:min-w-[220px] sm:w-[220px]" />}
             serverSorting={{ value: sort, onChange: setSort }}
-            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset }}
+            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset, onLimitChange: setWarehouseRegisterPageSize, error: Boolean(loadError) }}
           />
         </motion.div>
       )}
@@ -1386,6 +1387,7 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
   const [items, setItems] = useState<WarehouseItem[] | null>(null)
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
+  const [warehouseRegisterPageSize, setWarehouseRegisterPageSize] = useState(defaultPaginationPageSize)
   const [sort, setSort] = useState<WarehouseRegisterSort | null>({ id: "sku", direction: "asc" })
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -1423,7 +1425,7 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
         setTotal(0)
       }).finally(() => { if (active) setLoading(false) }), 250)
     return () => { active = false; window.clearTimeout(timer) }
-  }, [activeFilter, facilityId, offset, search, sort])
+  }, [activeFilter, facilityId, offset, warehouseRegisterPageSize, search, sort])
 
   useEffect(() => setOffset(0), [activeFilter, facilityId, search, sort])
 
@@ -1657,7 +1659,7 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
             toolbarFilters={toolbarFilters}
             toolbarOptions={canManage ? <button type="button" onClick={openImport} disabled={!canCreate} className={cn(registerButtonClass, "disabled:pointer-events-none disabled:opacity-45")}><Upload className="size-3.5" strokeWidth={1.4} aria-hidden="true" /><span className="hidden sm:inline">{t("Import")}</span></button> : null}
             serverSorting={{ value: sort, onChange: setSort }}
-            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset }}
+            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset, onLimitChange: setWarehouseRegisterPageSize, error: Boolean(loadError) }}
           />
         </motion.div>
       )}
@@ -2042,6 +2044,7 @@ export function WarehouseLocationsView() {
   const [locations, setLocations] = useState<WarehouseLocation[] | null>(null)
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
+  const [warehouseRegisterPageSize, setWarehouseRegisterPageSize] = useState(defaultPaginationPageSize)
   const [sort, setSort] = useState<WarehouseRegisterSort | null>({ id: "code", direction: "asc" })
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -2093,7 +2096,7 @@ export function WarehouseLocationsView() {
         setTotal(0)
       }).finally(() => { if (active) setLoading(false) }), 250)
     return () => { active = false; window.clearTimeout(timer) }
-  }, [selectedFacilityId, activeFilter, offset, search, sort])
+  }, [selectedFacilityId, activeFilter, offset, warehouseRegisterPageSize, search, sort])
 
   useEffect(() => setOffset(0), [selectedFacilityId, activeFilter, search, sort])
 
@@ -2260,7 +2263,7 @@ export function WarehouseLocationsView() {
               </>
             )}
             serverSorting={{ value: sort, onChange: setSort }}
-            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset }}
+            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset, onLimitChange: setWarehouseRegisterPageSize, error: Boolean(loadError) }}
           />
         </motion.div>
       )}

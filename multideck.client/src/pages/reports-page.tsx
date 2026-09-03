@@ -328,7 +328,7 @@ function ReportsHistory() {
       ) : (
         <div className="grid gap-3">
           <ReportingPageHeader title="Reports" />
-          <DataTable
+          <DataTable clientPagination
             ariaLabel="Report history"
             columnsButtonLabel="Manage report columns"
             contentBeforeTable={reportFeedback}
@@ -579,7 +579,7 @@ function ScheduledReports() {
       ) : (
         <div className="grid gap-3">
           {scheduleHeader}
-          <DataTable ariaLabel="Scheduled reports" columnsButtonLabel="Manage scheduled report columns" contentBeforeTable={scheduleFeedback} columns={columns} rows={scheduleState === "empty" ? [] : scheduledReports} getRowKey={(row) => row.id} storageKey="scheduled-report-history-ui" rowClassName="h-[72px]" minimumWidth={1110} emptyState={<ScheduledReportsEmpty onCreate={() => openWizard()} />} />
+          <DataTable clientPagination ariaLabel="Scheduled reports" columnsButtonLabel="Manage scheduled report columns" contentBeforeTable={scheduleFeedback} columns={columns} rows={scheduleState === "empty" ? [] : scheduledReports} getRowKey={(row) => row.id} storageKey="scheduled-report-history-ui" rowClassName="h-[72px]" minimumWidth={1110} emptyState={<ScheduledReportsEmpty onCreate={() => openWizard()} />} />
         </div>
       )}
 

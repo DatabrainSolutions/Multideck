@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
 import { CheckCircle2, Download, FileText, History, LoaderCircle, RefreshCw, Search, ShieldAlert, ShieldCheck } from "@/components/icons/hugeicons"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
@@ -25,7 +26,6 @@ import {
 } from "@/lib/screening-api"
 import { cn } from "@/lib/utils"
 
-const RECENT_PAGE_SIZE = 10
 const fieldClass = "h-9 rounded-[var(--md-radius-md)] px-3 text-base md:text-[12.5px]"
 const secondaryActionClass = "h-8 rounded-[var(--md-radius-md)] px-2.5 text-[11.5px] font-medium transition-[background-color,box-shadow,color,opacity,transform] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"
 
@@ -84,6 +84,7 @@ export function ScreeningPage() {
   const [reporting, setReporting] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [recentPage, setRecentPage] = useState(1)
+  const [recentPageSize, setRecentPageSize] = useState(defaultPaginationPageSize)
   const [recentQuery, setRecentQuery] = useState("")
   const [recentsOpen, setRecentsOpen] = useState(false)
 
@@ -99,9 +100,9 @@ export function ScreeningPage() {
       decisionLabel(check),
     ].filter(Boolean).join(" ").toLocaleLowerCase(language).includes(query))
   }, [checks, language, recentQuery])
-  const recentPageCount = Math.max(1, Math.ceil(filteredRecent.length / RECENT_PAGE_SIZE))
-  const recentOffset = (recentPage - 1) * RECENT_PAGE_SIZE
-  const visibleRecent = useMemo(() => filteredRecent.slice(recentOffset, recentOffset + RECENT_PAGE_SIZE), [filteredRecent, recentOffset])
+  const recentPageCount = Math.max(1, Math.ceil(filteredRecent.length / recentPageSize))
+  const recentOffset = (recentPage - 1) * recentPageSize
+  const visibleRecent = useMemo(() => filteredRecent.slice(recentOffset, recentOffset + recentPageSize), [filteredRecent, recentOffset, recentPageSize])
 
   const recentColumns = useMemo<DataTableColumn<ScreeningCheck>[]>(() => [
     {
@@ -379,9 +380,10 @@ export function ScreeningPage() {
               )}
               pagination={{
                 offset: recentOffset,
-                limit: RECENT_PAGE_SIZE,
+                limit: recentPageSize,
                 total: filteredRecent.length,
-                onOffsetChange: (offset) => setRecentPage(Math.floor(offset / RECENT_PAGE_SIZE) + 1),
+                onOffsetChange: (offset) => setRecentPage(Math.floor(offset / recentPageSize) + 1),
+                onLimitChange: setRecentPageSize,
               }}
               emptyState={(
                 <div className="mx-auto max-w-md px-5 py-8">

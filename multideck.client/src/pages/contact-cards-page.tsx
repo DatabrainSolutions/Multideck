@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
@@ -263,6 +264,7 @@ export function ContactCardsPage({ navigate, currentUser }: { navigate: (path: s
   const [statusFilter, setStatusFilter] = useState("")
   const [automationFilter, setAutomationFilter] = useState("")
   const [offset, setOffset] = useState(0)
+  const [pageSize, setPageSize] = useState(defaultPaginationPageSize)
   const [sort, setSort] = useState<ContactCardSortState>({ id: "activity", direction: "desc" })
   const [ownerProfilePhotoUrls, setOwnerProfilePhotoUrls] = useState<Map<string, string>>(new Map())
   const ownerIds = useMemo(() => [...new Set(cards.map((card) => card.ownerUserId).filter(Boolean))], [cards])
@@ -284,7 +286,7 @@ export function ContactCardsPage({ navigate, currentUser }: { navigate: (path: s
 
   useEffect(() => {
     void loadContactCardsPage({
-      limit: 25,
+      limit: pageSize,
       offset,
       search: debouncedQuery,
       status: statusFilter,
@@ -292,7 +294,7 @@ export function ContactCardsPage({ navigate, currentUser }: { navigate: (path: s
       sortField: (sort?.id ?? "activity") as "card" | "status" | "source" | "automation" | "activity",
       sortDirection: sort?.direction ?? "desc",
     })
-  }, [automationFilter, debouncedQuery, offset, sort, statusFilter])
+  }, [automationFilter, debouncedQuery, offset, pageSize, sort, statusFilter])
 
   useEffect(() => {
     if (ownerIds.length === 0) {
@@ -460,7 +462,7 @@ export function ContactCardsPage({ navigate, currentUser }: { navigate: (path: s
             ariaLabel={t("Contact cards")}
             onRowClick={(card) => navigate(`/crm/contact-cards/${card.id}`)}
             serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "activity", direction: "desc" }); setOffset(0) } }}
-            pagination={{ offset, limit: 25, total: page.total, loading: status === "loading", onOffsetChange: setOffset }}
+            pagination={{ offset, limit: pageSize, total: page.total, loading: status === "loading", onOffsetChange: setOffset, onLimitChange: setPageSize, error: status === "error" }}
             compactToolbar
             toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search contact cards" placeholder="Search contact cards…" className="sm:w-[190px]" />}
             toolbarFilters={<>

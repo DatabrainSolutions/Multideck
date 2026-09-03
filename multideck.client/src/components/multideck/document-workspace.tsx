@@ -340,7 +340,7 @@ function DocumentList({
   return (
     <>
       <div className="hidden md:block">
-        <DataTable ariaLabel="Documents" columnsButtonLabel="Manage document columns" columns={columns} rows={[...documents]} getRowKey={(document) => document.id} storageKey="document-workspace-list" selectedRowKey={selectedDocumentId} onRowClick={onSelect} rowAriaLabel={(document) => `Open ${document.fileName}`} minimumWidth={760} tableClassName="table-fixed" />
+        <DataTable clientPagination ariaLabel="Documents" columnsButtonLabel="Manage document columns" columns={columns} rows={[...documents]} getRowKey={(document) => document.id} storageKey="document-workspace-list" selectedRowKey={selectedDocumentId} onRowClick={onSelect} rowAriaLabel={(document) => `Open ${document.fileName}`} minimumWidth={760} tableClassName="table-fixed" />
       </div>
 
       <ul className="divide-y divide-[var(--md-line)] md:hidden" aria-label={t("Documents")}>
