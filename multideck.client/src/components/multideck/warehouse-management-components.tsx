@@ -1,3 +1,4 @@
+import { workspaceStorageKey } from "@/lib/workspace-environment"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
@@ -161,7 +162,7 @@ function verticalScrollRegion(element: HTMLElement | null) {
   return null
 }
 
-const warehouseItemsReturnKey = "multideck:warehouse:items:return"
+const warehouseItemsReturnKey = workspaceStorageKey("multideck:warehouse:items:return")
 
 function readWarehouseItemsReturnState() {
   try {

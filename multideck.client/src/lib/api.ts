@@ -1,4 +1,4 @@
-import { supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
+import { resolveWorkspaceAccessToken, supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
 import {
   getOrCreateWorkspaceBootstrap,
   invalidateWorkspaceBootstrap,
@@ -229,7 +229,7 @@ async function parseApiError(response: Response) {
 export async function edgeFetch(functionName: string, path: string, accessToken: string, init: RequestInit = {}) {
   if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new Error("Supabase is not configured for this workspace.")
   const headers = new Headers(init.headers)
-  headers.set("Authorization", `Bearer ${accessToken}`)
+  headers.set("Authorization", `Bearer ${await resolveWorkspaceAccessToken(accessToken)}`)
   headers.set("apikey", supabasePublicApiKey)
 
   return fetch(`${supabaseFunctionsUrl}/${functionName}${path ? (path.startsWith("/") ? path : `/${path}`) : ""}`, {
@@ -240,6 +240,7 @@ export async function edgeFetch(functionName: string, path: string, accessToken:
 
 export async function getApiAuthSession(accessToken: string): Promise<ApiAuthSession> {
   return getOrCreateWorkspaceBootstrap(accessToken, async () => {
+    await resolveWorkspaceAccessToken(accessToken)
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), 8000)
     let response: Response

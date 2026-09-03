@@ -4,6 +4,7 @@ import { MotionConfig } from "motion/react"
 import { ThemeProvider } from "@/lib/theme-provider"
 import type { AdminRoute } from "@/pages/admin-page"
 import type { FinanceRoute } from "@/pages/finance-page"
+import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppShell } from "@/components/multideck/app-shell"
@@ -26,7 +27,8 @@ import {
   createProfilePhotoSignedUrls,
   type UserProfilePhoto,
 } from "@/lib/profile-photo"
-import { isSupabaseConfigured, supabase } from "@/lib/supabase"
+import { isTrainingWorkspace, selectWorkspaceEnvironment, trainingConfigurationError } from "@/lib/workspace-environment"
+import { authSupabase, isSupabaseConfigured, supabase } from "@/lib/supabase"
 import { ThemeProfileSync, themeStorageKey } from "@/lib/theme-preferences"
 import { LanguageProfileSync } from "@/lib/language-preferences"
 import { rememberRecentWorkContext } from "@/lib/recent-work-context"
@@ -451,6 +453,7 @@ export default function App() {
   const [route, setRoute] = useState(getRoute)
   const isExternalSurface = isExternalSurfaceRoute(route)
   const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
+  const [workspaceAccessError, setWorkspaceAccessError] = useState<string | null>(isTrainingWorkspace ? trainingConfigurationError : null)
   const [currentUser, setCurrentUser] = useState<AuthUserSummary | null>(null)
   const [profileMediaUrls, setProfileMediaUrls] = useState<ProfileMediaUrls>(emptyProfileMediaUrls)
   const hasResolvedAuthenticatedSessionRef = useRef(false)
@@ -573,6 +576,7 @@ export default function App() {
         hasResolvedAuthenticatedSessionRef.current = false
         setCurrentUser(null)
         setProfileMediaUrls(emptyProfileMediaUrls)
+        setWorkspaceAccessError(null)
         setAuthStatus("unauthenticated")
         return
       }
@@ -582,8 +586,11 @@ export default function App() {
       const requestId = ++sessionRequest
 
       if (!hasResolvedAuthenticatedSessionRef.current) setAuthStatus("checking")
-      getApiAuthSession(session.access_token)
+      // Auth callbacks must release the Supabase session lock before the
+      // training broker reads the main session.
+      Promise.resolve().then(() => getApiAuthSession(session.access_token))
         .catch((error) => {
+          if (isTrainingWorkspace) throw error
           console.error("The application profile could not be loaded.", error)
           return null
         })
@@ -600,11 +607,19 @@ export default function App() {
 
           hasResolvedAuthenticatedSessionRef.current = true
           setCurrentUser(nextUser)
+          setWorkspaceAccessError(null)
           setAuthStatus("authenticated")
+        })
+        .catch((error: unknown) => {
+          if (cancelled || requestId !== sessionRequest) return
+          activeAccessToken = null
+          hasResolvedAuthenticatedSessionRef.current = false
+          setCurrentUser(null)
+          setWorkspaceAccessError(error instanceof Error ? error.message : "Your workspace could not be opened. Try again.")
         })
     }
 
-    supabase.auth.getSession().then(({ data, error }) => {
+    authSupabase!.auth.getSession().then(({ data, error }) => {
       if (error) {
         console.error(error)
         void clearStaleSession()
@@ -619,7 +634,7 @@ export default function App() {
       applySession(null)
     })
 
-    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data } = authSupabase!.auth.onAuthStateChange((event, session) => {
       // When token refresh fails (stale session), clear storage and redirect to sign-in
       if ((event as string) === "TOKEN_REFRESH_FAILED") {
         console.warn("Token refresh failed — clearing stale session.")
@@ -743,6 +758,18 @@ export default function App() {
               <Suspense fallback={<ExternalRouteFallback />}>
                 <ContactCardPublicPage slug={route.split("/").at(-1) ?? ""} />
               </Suspense>
+            ) : workspaceAccessError && !isPasswordSetupRoute ? (
+              <div className="grid min-h-dvh place-items-center bg-[var(--md-page)] p-6">
+                <div className="max-w-md space-y-4">
+                  <h1 className="text-xl font-medium text-[var(--md-ink)]">{isTrainingWorkspace ? "Training could not be opened" : "Workspace could not be opened"}</h1>
+                  <p role="alert" className="text-sm leading-6 text-[var(--md-text)]">{workspaceAccessError}</p>
+                  <div className="flex flex-wrap gap-3">
+                    <Button onClick={() => window.location.reload()}>Try again</Button>
+                    {isTrainingWorkspace ? <Button variant="outline" onClick={() => selectWorkspaceEnvironment("main")}>Return to Main</Button>
+                      : <Button variant="outline" onClick={() => void authSupabase?.auth.signOut()}>Sign out</Button>}
+                  </div>
+                </div>
+              </div>
             ) : (!isLocalNavigationLab && ((authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth" && !isPasswordSetupRoute))) ? (
               <RouteFallback fullScreen />
             ) : !isLocalNavigationLab && (authStatus === "unauthenticated" || route === "/auth") ? (

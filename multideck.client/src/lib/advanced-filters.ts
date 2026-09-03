@@ -1,3 +1,4 @@
+import { workspaceStorageKey } from "./workspace-environment.ts"
 import { useCallback, useEffect, useState } from "react"
 
 /**
@@ -214,7 +215,7 @@ export type SavedFilterView = {
   savedAt: string
 }
 
-const savedFilterPrefix = "multideck.filters."
+const savedFilterPrefix = workspaceStorageKey("multideck.filters.")
 
 function isFilterQuery(value: unknown): value is FilterQuery {
   if (!value || typeof value !== "object") return false

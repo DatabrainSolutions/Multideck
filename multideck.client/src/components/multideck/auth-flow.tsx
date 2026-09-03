@@ -3,6 +3,8 @@ import type { Provider } from "@supabase/supabase-js"
 import { ArrowRight, Building2, Clock3, KeyRound, Loader2, Mail, ShieldCheck, TriangleAlert } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
+import { isTrainingWorkspace, trainingIsConfigured, selectWorkspaceEnvironment, workspaceEnvironment } from "@/lib/workspace-environment"
 import { Input } from "@/components/ui/input"
 import { AuthProviderSelector, type AuthProviderId } from "@/components/multideck/auth-provider-selector"
 import { VerificationCodeInput } from "@/components/multideck/verification-code-input"
@@ -11,7 +13,7 @@ import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_POLICY_DESCRIPTION, getPasswordPolicyError } from "@/lib/password-policy"
 import { clearVerifiedPasswordRecovery, hasVerifiedPasswordRecovery } from "@/lib/password-recovery"
-import { getSupabaseSession, initialPasswordRecoveryLink, isSupabaseConfigured, isWorkspaceRouterHost, multideckRootHost, supabase, supabaseConfigurationError, verifyPasswordRecoveryLink } from "@/lib/supabase"
+import { authSupabase, getAuthSupabaseSession, initialPasswordRecoveryLink, isSupabaseConfigured, isWorkspaceRouterHost, multideckRootHost, supabaseConfigurationError, verifyPasswordRecoveryLink } from "@/lib/supabase"
 import authPanelBackdrop from "@/assets/auth/auth-panel-backdrop.jpg"
 import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
@@ -98,7 +100,7 @@ const signedOutStats = [
 ]
 
 function getAuthRedirectUrl() {
-  return `${window.location.origin}/auth`
+  return `${window.location.origin}/auth${workspaceEnvironment === "training" ? "?workspace=training" : ""}`
 }
 
 const reservedWorkspaceSlugs = new Set(["admin", "api", "auth", "data", "support", "www"])
@@ -615,6 +617,7 @@ function SignInPanel({
   message,
   error,
   fieldErrors = {},
+  showWorkspaceChoice = false,
 }: {
   email: string
   password?: string
@@ -629,11 +632,28 @@ function SignInPanel({
   message?: string | null
   error?: string | null
   fieldErrors?: AuthFieldErrors
+  showWorkspaceChoice?: boolean
 }) {
   return (
     <div className="w-full max-w-[520px]">
-      <BrandLockup />
-      <h2 className="mt-10 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">Sign in to Multideck</h2>
+      <div className="flex items-start justify-between gap-6">
+        <BrandLockup />
+        {showWorkspaceChoice ? (
+          <div className="max-w-[190px] text-end">
+            <label className="inline-flex cursor-pointer items-center gap-3 text-[13px] font-medium text-[var(--md-ink)]" htmlFor="training-workspace">
+              Training
+              <Switch id="training-workspace" checked={isTrainingWorkspace}
+                disabled={isSubmitting || Boolean(busyProvider) || (!trainingIsConfigured && !isTrainingWorkspace)}
+                aria-describedby="training-workspace-hint"
+                onCheckedChange={(checked) => selectWorkspaceEnvironment(checked ? "training" : "main")} />
+            </label>
+            <p id="training-workspace-hint" className="mt-2 text-[11px] leading-4 text-[var(--md-subtle)]">
+              {isTrainingWorkspace ? "Practice data. Your usual sign-in." : trainingIsConfigured ? "Practise in a separate workspace." : "Available once your team sets it up."}
+            </p>
+          </div>
+        ) : null}
+      </div>
+      <h2 className="mt-10 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{isTrainingWorkspace && showWorkspaceChoice ? "Sign in to Training" : "Sign in to Multideck"}</h2>
       <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
         Use a sign-in method already connected to your account.
       </p>
@@ -1098,7 +1118,7 @@ export function AuthFlow({
       return
     }
 
-    void getSupabaseSession()
+    void getAuthSupabaseSession()
       .then((session) => {
         if (!cancelled) setRecoveryView(hasVerifiedPasswordRecovery(session) ? "form" : "invalid")
       })
@@ -1199,7 +1219,7 @@ export function AuthFlow({
       return
     }
 
-    if (!supabase) {
+    if (!authSupabase) {
       setError(supabaseConfigurationError ?? "Supabase is not configured for this workspace.")
       return
     }
@@ -1207,7 +1227,7 @@ export function AuthFlow({
     setIsSubmitting(true)
 
     try {
-      const { error: signInError } = await supabase.auth.signInWithOtp({
+      const { error: signInError } = await authSupabase!.auth.signInWithOtp({
         email: normalizedEmail,
         options: {
           emailRedirectTo: getAuthRedirectUrl(),
@@ -1244,7 +1264,7 @@ export function AuthFlow({
       return
     }
 
-    if (!supabase) {
+    if (!authSupabase) {
       setError(supabaseConfigurationError ?? "Supabase is not configured for this workspace.")
       return
     }
@@ -1252,7 +1272,7 @@ export function AuthFlow({
     setIsSubmitting(true)
 
     try {
-      const { data, error: passwordError } = await supabase.auth.signInWithPassword({
+      const { data, error: passwordError } = await authSupabase!.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       })
@@ -1285,14 +1305,14 @@ export function AuthFlow({
       showFieldError("email", "Enter a valid work email.", "recovery-email")
       return
     }
-    if (!supabase) {
+    if (!authSupabase) {
       setError(supabaseConfigurationError ?? "Supabase is not configured for this workspace.")
       return
     }
 
     setIsSubmitting(true)
     try {
-      const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      const { error: recoveryError } = await authSupabase!.auth.resetPasswordForEmail(normalizedEmail, {
         redirectTo: `${window.location.origin}/auth?mode=reset-password`,
       })
       if (recoveryError) throw recoveryError
@@ -1320,7 +1340,7 @@ export function AuthFlow({
       showFieldError("confirmation", "The two passwords do not match.", "confirm-password")
       return
     }
-    if (!supabase) {
+    if (!authSupabase) {
       setError(supabaseConfigurationError ?? "Supabase is not configured for this workspace.")
       return
     }
@@ -1330,12 +1350,12 @@ export function AuthFlow({
       if (step === "accept-invite") {
         if (!inviteVerification) throw new Error("The invitation link does not contain a valid ticket.")
 
-        const { data: acceptedInvitation, error: acceptError } = await supabase.functions.invoke<{ email?: string }>("accept-invitation", {
+        const { data: acceptedInvitation, error: acceptError } = await authSupabase!.functions.invoke<{ email?: string }>("accept-invitation", {
           body: { ticket: inviteVerification.ticket, password },
         })
         if (acceptError || !acceptedInvitation?.email) throw acceptError ?? new Error("The invitation could not be completed.")
 
-        const { data: signedIn, error: signInError } = await supabase.auth.signInWithPassword({
+        const { data: signedIn, error: signInError } = await authSupabase!.auth.signInWithPassword({
           email: acceptedInvitation.email,
           password,
         })
@@ -1355,18 +1375,18 @@ export function AuthFlow({
         return
       }
 
-      const passwordSession = await getSupabaseSession()
+      const passwordSession = await getAuthSupabaseSession()
       if (!hasVerifiedPasswordRecovery(passwordSession)) {
         clearVerifiedPasswordRecovery()
         setRecoveryView("invalid")
         setIsSubmitting(false)
         return
       }
-      const { error: updateError } = await supabase.auth.updateUser({ password })
+      const { error: updateError } = await authSupabase!.auth.updateUser({ password })
       if (updateError) throw updateError
 
       clearVerifiedPasswordRecovery()
-      const { error: revokeError } = await supabase.auth.signOut({ scope: "others" })
+      const { error: revokeError } = await authSupabase!.auth.signOut({ scope: "others" })
       setPassword("")
       setPasswordConfirmation("")
       if (revokeError) {
@@ -1390,7 +1410,7 @@ export function AuthFlow({
   async function signInWithProvider(provider: AuthProviderId) {
     clearFeedback()
 
-    if (!supabase) {
+    if (!authSupabase) {
       setError(supabaseConfigurationError ?? "Supabase is not configured for this workspace.")
       return
     }
@@ -1403,7 +1423,7 @@ export function AuthFlow({
           throw new Error("Passkeys are not supported in this browser.")
         }
 
-        const { data, error: passkeyError } = await supabase.auth.signInWithPasskey()
+        const { data, error: passkeyError } = await authSupabase!.auth.signInWithPasskey()
         if (passkeyError) throw passkeyError
         if (!data.session) throw new Error("Supabase did not return a session.")
 
@@ -1411,7 +1431,7 @@ export function AuthFlow({
         return
       }
 
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      const { error: oauthError } = await authSupabase!.auth.signInWithOAuth({
         provider: provider as Provider,
         options: {
           redirectTo: getAuthRedirectUrl(),
@@ -1451,7 +1471,7 @@ export function AuthFlow({
       return
     }
 
-    if (!supabase) {
+    if (!authSupabase) {
       setError(supabaseConfigurationError ?? "Supabase is not configured for this workspace.")
       return
     }
@@ -1459,7 +1479,7 @@ export function AuthFlow({
     setIsSubmitting(true)
 
     try {
-      const { data, error: verifyError } = await supabase.auth.verifyOtp({
+      const { data, error: verifyError } = await authSupabase!.auth.verifyOtp({
         email: normalizedEmail,
         token: normalizedCode,
         type: "email",
@@ -1496,6 +1516,7 @@ export function AuthFlow({
     <>
       {step === "signin" ? (
         <SignInPanel
+          showWorkspaceChoice={!galleryMode}
           email={email}
           password={password}
           onEmailChange={(value) => {

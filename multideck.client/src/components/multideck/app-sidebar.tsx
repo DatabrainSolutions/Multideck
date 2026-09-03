@@ -16,7 +16,8 @@ import { mdMotion, reduceMotion } from "@/lib/motion"
 import { isDefaultScope, mergeSavedOrder, useSidebarLayoutScope } from "@/lib/sidebar-preferences"
 import { hasPermission, isTenantAdministrator, type AuthUserSummary } from "@/lib/auth-user"
 import { createProfilePhotoSignedUrl } from "@/lib/profile-photo"
-import { supabase } from "@/lib/supabase"
+import { isTrainingWorkspace } from "@/lib/workspace-environment"
+import { authSupabase, supabase } from "@/lib/supabase"
 import { useAiAgentName } from "@/lib/user-preferences"
 import { mailboxLabelTone } from "@/lib/mailbox-label-colour"
 import { calendarNavItem, customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, todoNavItem, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
@@ -1615,6 +1616,12 @@ export function AppSidebar({
         ) : null}
       </div>
 
+      {isTrainingWorkspace ? (
+        <div className="relative z-10 mt-3 flex justify-center" role="status" aria-label="Training workspace">
+          <span className="rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a14)] px-2 py-1 text-[10px] font-semibold tracking-wider text-[var(--md-accent)]">TRAINING</span>
+        </div>
+      ) : null}
+
       <div className="relative z-10 mt-[var(--md-page-stack-gap)] min-h-0 flex-1">
         <div
           ref={sidebarScrollRef}
@@ -2261,7 +2268,7 @@ export function AppSidebar({
               className="flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-red)] transition-[background-color,color,transform] duration-150 hover:bg-[rgba(209,78,78,0.08)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(209,78,78,0.14)] motion-reduce:transition-none motion-reduce:active:scale-100"
               onClick={() => {
                 setAccountMenuOpen(false)
-                void supabase?.auth.signOut()
+                void authSupabase?.auth.signOut()
               }}
             >
               <LogOut data-icon="inline-start" className="size-4" strokeWidth={1.4} />

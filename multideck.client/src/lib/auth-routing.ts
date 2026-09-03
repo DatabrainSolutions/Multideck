@@ -1,4 +1,6 @@
-const authReturnToStorageKey = "multideck.auth.returnTo"
+import { workspaceStorageKey } from "./workspace-environment.ts"
+
+const authReturnToStorageKey = workspaceStorageKey("multideck.auth.returnTo")
 
 function isSafeAppPath(path: string | null): path is string {
   return Boolean(path && path.startsWith("/") && !path.startsWith("//") && !path.startsWith("/auth"))

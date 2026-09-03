@@ -1,4 +1,5 @@
 import {
+  refreshWorkspaceSession,
   getSupabaseSession,
   supabase,
   supabaseFunctionsUrl,
@@ -197,7 +198,7 @@ async function inboxAccessToken(forceRefresh = false): Promise<string> {
       current?.expires_at && current.expires_at <= Math.floor(Date.now() / 1000) + sessionRefreshLeewaySeconds,
     )
     if (shouldRefresh) {
-      const { data, error } = await supabase.auth.refreshSession()
+      const { data, error } = await refreshWorkspaceSession()
       if (error) throw error
       if (data.session?.access_token) return data.session.access_token
     }

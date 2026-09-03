@@ -8,7 +8,7 @@ import facebookLogo from "@/assets/auth/facebook.svg"
 import googleLogo from "@/assets/auth/google.svg"
 import linkedinLogo from "@/assets/auth/linkedin.svg"
 import microsoftLogo from "@/assets/auth/microsoft.svg"
-import { supabase } from "@/lib/supabase"
+import { authSupabase, supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
 export type AuthProviderId = "google" | "passkey" | "linkedin_oidc" | "facebook" | "azure"
@@ -217,8 +217,8 @@ export function AuthIdentityManager({ preview = false, embedded = false }: { pre
 
     try {
       const [{ data: identitiesData, error: identitiesError }, { data: passkeyData, error: passkeyError }] = await Promise.all([
-        supabase.auth.getUserIdentities(),
-        supabase.auth.passkey.list(),
+        authSupabase!.auth.getUserIdentities(),
+        authSupabase!.auth.passkey.list(),
       ])
 
       if (identitiesError) throw identitiesError
@@ -252,7 +252,7 @@ export function AuthIdentityManager({ preview = false, embedded = false }: { pre
     setBusyProvider(provider)
 
     try {
-      const { error } = await supabase.auth.linkIdentity({
+      const { error } = await authSupabase!.auth.linkIdentity({
         provider: provider as Provider,
         options: {
           redirectTo: getIdentityRedirectUrl(),
@@ -289,7 +289,7 @@ export function AuthIdentityManager({ preview = false, embedded = false }: { pre
     setBusyProvider("passkey")
 
     try {
-      const { error } = await supabase.auth.registerPasskey()
+      const { error } = await authSupabase!.auth.registerPasskey()
       if (error) throw error
       await refreshMethods()
       toast.success("Passkey connected")

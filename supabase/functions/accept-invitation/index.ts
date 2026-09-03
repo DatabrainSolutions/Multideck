@@ -1,3 +1,4 @@
+import { requireMainIdentityAdministration } from "../_shared/training-environment.ts"
 import { adminClient, body, corsHeaders, failure, HttpError, json } from "../_shared/backend.ts"
 import { verifyInvitationTicket } from "../_shared/invitation-ticket.ts"
 import { getPasswordPolicyError } from "../_shared/password-policy.ts"
@@ -27,6 +28,7 @@ Deno.serve(async (request) => {
     }
 
     const admin = adminClient()
+    await requireMainIdentityAdministration(admin)
     const { data: current, error: currentError } = await admin.auth.admin.getUserById(userId)
     if (currentError || !current.user?.email) throw new HttpError(410, "This invitation is no longer available.")
     if (

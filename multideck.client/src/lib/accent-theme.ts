@@ -9,7 +9,7 @@ import {
   type CompanyAppearanceBrand,
 } from "@/lib/company-appearance"
 import { readableInk } from "@/lib/color"
-import { supabase } from "@/lib/supabase"
+import { getClientAuth, supabase } from "@/lib/supabase"
 import { updateWorkspaceBootstrapPreferences } from "@/lib/workspace-bootstrap"
 import { watchCompanyAppearanceReset } from "@/lib/company-appearance-sync"
 
@@ -636,7 +636,7 @@ let canPersistProfileAccent = true
 let stopCompanyResetWatch: (() => void) | null = null
 
 async function currentSession(client: SupabaseClient) {
-  const { data, error } = await client.auth.getSession()
+  const { data, error } = await getClientAuth(client).getSession()
   if (error) throw error
   return data.session
 }
@@ -733,7 +733,7 @@ function watchAccentAuth(client: SupabaseClient) {
   if (watchingAuth) return
   watchingAuth = true
 
-  client.auth.onAuthStateChange((_event, session) => {
+  getClientAuth(client).onAuthStateChange((_event, session) => {
     const userId = session?.user.id ?? null
     const settled = loadPromise ?? Promise.resolve()
     void settled.then(() => {

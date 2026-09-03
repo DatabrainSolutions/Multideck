@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase"
+import { getClientAuth, supabase } from "@/lib/supabase"
 import { invalidateWorkspaceBootstrap } from "@/lib/workspace-bootstrap"
 
 export const profilePhotoBucket = "profile-photos" as const
@@ -126,7 +126,7 @@ export async function uploadCurrentUserProfilePhoto(
 ): Promise<UserProfilePhoto> {
   const client = requireSupabase()
   const mimeType = await validateProfilePhoto(file)
-  const { data: userData, error: userError } = await client.auth.getUser()
+  const { data: userData, error: userError } = await getClientAuth(client).getUser()
   if (userError) throw userError
   if (!userData.user) throw new Error("Sign in again before changing your profile photo.")
 
@@ -183,7 +183,7 @@ export async function uploadCurrentUserCoverPhoto(
 ): Promise<UserProfilePhoto> {
   const client = requireSupabase()
   const mimeType = await validateProfilePhoto(file)
-  const { data: userData, error: userError } = await client.auth.getUser()
+  const { data: userData, error: userError } = await getClientAuth(client).getUser()
   if (userError) throw userError
   if (!userData.user) throw new Error("Sign in again before changing your cover photo.")
 

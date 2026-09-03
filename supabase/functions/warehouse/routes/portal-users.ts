@@ -1,5 +1,6 @@
 
 // @ts-nocheck
+import { isTrainingDatabase } from "../../_shared/training-environment.ts"
 import {
   BUCKET,
   HttpError,
@@ -42,6 +43,7 @@ async function requireInternalCustomerScope(admin, actor, customerOrgId, request
 }
 export async function handlePortal(request, path, url, admin, actor) {
   requireCapability(actor, "warehouse_orders:read");
+  if (request.method !== "GET" && await isTrainingDatabase(admin)) throw new HttpError(403, "Manage accounts and permissions in Main. Training uses your team’s existing access.");
   if (request.method === "GET" && path[1] === "reference") {
     const facilityIds = await companyFacilityIds(admin, actor);
     const facilities = facilityIds.length ? await many(admin.from("WMS_Facilities")

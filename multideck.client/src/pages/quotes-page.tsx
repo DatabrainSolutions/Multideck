@@ -72,7 +72,7 @@ import { AutoPopulatedInput, matchesAutoPopulation } from "@/components/multidec
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { getApiTeamUsersByIds } from "@/lib/api"
 import { createProfilePhotoSignedUrl, createProfilePhotoSignedUrls } from "@/lib/profile-photo"
-import { supabase } from "@/lib/supabase"
+import { authSupabase, supabase } from "@/lib/supabase"
 import {
   loadUnlocodeDirectory,
   loadUnlocodeDirectoryMetadata,
@@ -5244,7 +5244,7 @@ export function QuoteDetailPage({
     }
 
     let cancelled = false
-    void supabase.auth.getSession()
+    void authSupabase!.auth.getSession()
       .then(({ data, error }) => {
         if (error) throw error
         if (!data.session) return []

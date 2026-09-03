@@ -12,6 +12,7 @@ export type AutoPopulationStateProps = {
 const MAX_REVEAL_SEGMENTS = 64
 const REVEAL_SEGMENT_DURATION_MS = 300
 const REVEAL_STAGGER_MS = 38
+const MIN_REVEAL_SPREAD_MS = REVEAL_STAGGER_MS * 8
 const MAX_REVEAL_SPREAD_MS = 780
 const revealSegmenter = new Intl.Segmenter("en", { granularity: "grapheme" })
 
@@ -64,8 +65,11 @@ function createAutoPopulationReveal(element: HTMLElement, value: string) {
 
   const fragment = document.createDocumentFragment()
   const segments = getRevealSegments(value)
-  // Keep a distinct leading edge without making a long address take seconds.
-  const staggerMs = Math.min(REVEAL_STAGGER_MS, MAX_REVEAL_SPREAD_MS / Math.max(1, segments.length - 1))
+  // Short location codes need the same perceptible wave as account codes;
+  // longer names and addresses retain their existing cadence and duration cap.
+  const steps = Math.max(0, segments.length - 1)
+  const spreadMs = steps ? Math.min(MAX_REVEAL_SPREAD_MS, Math.max(MIN_REVEAL_SPREAD_MS, steps * REVEAL_STAGGER_MS)) : 0
+  const staggerMs = spreadMs / Math.max(1, steps)
   segments.forEach((segment, index) => {
     // A newline inside an inline-block token cannot break the surrounding line.
     // Keep line separators in the text flow so multiline values never snap back.
@@ -88,7 +92,7 @@ function createAutoPopulationReveal(element: HTMLElement, value: string) {
 
   const timeout = window.setTimeout(
     cleanup,
-    REVEAL_SEGMENT_DURATION_MS + Math.max(0, segments.length - 1) * staggerMs + 40,
+    REVEAL_SEGMENT_DURATION_MS + spreadMs + 40,
   )
 
   function cleanup() {

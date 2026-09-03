@@ -1,3 +1,4 @@
+import { workspaceStorageKey } from "@/lib/workspace-environment"
 import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { AlertCircle, Camera, Check, FileImage, ImageUp, Pencil, RotateCcw, TicketCheck, Trash2, Upload, X } from "@/components/icons/hugeicons"
@@ -30,7 +31,7 @@ const impactTones: Record<SupportTicketImpact, { background: string; ink: string
 }
 const ticketTypes = Object.keys(typeLabels) as SupportTicketType[]
 const impactOptions: SupportTicketImpact[] = ["no_immediate_blocker", "slowed_down", "blocked"]
-const draftStorageKey = "multideck.support-ticket.draft.v2"
+const draftStorageKey = workspaceStorageKey("multideck.support-ticket.draft.v2")
 const allowedAttachmentTypes = new Set(["image/png", "image/jpeg", "image/webp"])
 const maximumAttachmentCount = 5
 const maximumAttachmentBytes = 10 * 1024 * 1024

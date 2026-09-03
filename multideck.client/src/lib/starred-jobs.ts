@@ -1,3 +1,4 @@
+import { workspaceStorageKey } from "./workspace-environment.ts"
 import { useCallback, useEffect, useState } from "react"
 import { setLiveJobStarred } from "@/lib/application-data-api"
 
@@ -11,7 +12,7 @@ import { setLiveJobStarred } from "@/lib/application-data-api"
  */
 type StarOverrides = Record<string, boolean>
 
-const storagePrefix = "multideck.starredJobs"
+const storagePrefix = workspaceStorageKey("multideck.starredJobs")
 const changedEvent = "multideck:starred-jobs-changed"
 
 function storageKey(userId: string | null | undefined) {

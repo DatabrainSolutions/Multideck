@@ -184,7 +184,7 @@ import { DEXTER_CONVERSATIONS_CHANGED_EVENT } from "@/lib/dexter-navigation"
 import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, useAiAgentName, writeAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_POLICY_DESCRIPTION, getPasswordPolicyError, passwordMeetsPolicy } from "@/lib/password-policy"
-import { getSupabaseSession, supabase } from "@/lib/supabase"
+import { authSupabase, getSupabaseSession, supabase } from "@/lib/supabase"
 import {
   ProfilePhotoValidationError,
   createProfilePhotoSignedUrl,
@@ -547,7 +547,7 @@ function ProfileTab({
       setIsProfileLoading(false)
     }
 
-    supabase.auth.getUser().then(({ data, error }) => {
+    authSupabase!.auth.getUser().then(({ data, error }) => {
       if (error || !data.user) {
         if (error) console.error(error)
         setIsProfileLoading(false)
@@ -561,7 +561,7 @@ function ProfileTab({
       toast.error("Could not load profile")
     })
 
-    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data } = authSupabase!.auth.onAuthStateChange((event, session) => {
       if ((event === "USER_UPDATED" || event === "SIGNED_IN") && session?.user) {
         applyProfile(createProfileFormFromUser(session.user))
       }
@@ -705,7 +705,7 @@ function ProfileTab({
     setIsProfileSaving(true)
 
     try {
-      const { data, error } = await supabase.auth.updateUser({
+      const { data, error } = await authSupabase!.auth.updateUser({
         data: {
           first_name: profile.firstName.trim(),
           last_name: profile.lastName.trim(),
@@ -1197,7 +1197,7 @@ function TwoFactorControl({
     }
 
     try {
-      const { data, error } = await supabase.auth.mfa.listFactors()
+      const { data, error } = await authSupabase!.auth.mfa.listFactors()
       if (error) throw error
       const verifiedFactor = data.totp.find((factor) => factor.status === "verified")
       setFactorId(verifiedFactor?.id ?? null)
@@ -1220,7 +1220,7 @@ function TwoFactorControl({
     setVerificationError(null)
 
     try {
-      const { data, error } = await supabase.auth.mfa.enroll({
+      const { data, error } = await authSupabase!.auth.mfa.enroll({
         factorType: "totp",
         friendlyName: "Multideck authenticator",
       })
@@ -1254,9 +1254,9 @@ function TwoFactorControl({
     setVerificationError(null)
 
     try {
-      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({ factorId: enrollment.id })
+      const { data: challenge, error: challengeError } = await authSupabase!.auth.mfa.challenge({ factorId: enrollment.id })
       if (challengeError) throw challengeError
-      const { error: verifyError } = await supabase.auth.mfa.verify({
+      const { error: verifyError } = await authSupabase!.auth.mfa.verify({
         factorId: enrollment.id,
         challengeId: challenge.id,
         code,
@@ -1281,7 +1281,7 @@ function TwoFactorControl({
     setStatus("removing")
 
     try {
-      const { error } = await supabase.auth.mfa.unenroll({ factorId })
+      const { error } = await authSupabase!.auth.mfa.unenroll({ factorId })
       if (error) throw error
       setFactorId(null)
       onFactorStatusChange?.(false)
@@ -1301,7 +1301,7 @@ function TwoFactorControl({
     setStatus("removing")
 
     try {
-      const { error } = await supabase.auth.mfa.unenroll({ factorId: enrollment.id })
+      const { error } = await authSupabase!.auth.mfa.unenroll({ factorId: enrollment.id })
       if (error) throw error
       setEnrollment(null)
       setVerificationCode("")
@@ -1430,7 +1430,7 @@ function SecurityTab() {
   useEffect(() => {
     if (!supabase) return
 
-    void supabase.auth.getUser().then(({ data, error }) => {
+    void authSupabase!.auth.getUser().then(({ data, error }) => {
       if (error) {
         console.error("Email verification status could not be loaded.", error)
         return
@@ -1444,10 +1444,10 @@ function SecurityTab() {
     setPasswordResetBusy(true)
 
     try {
-      const { data, error: userError } = await supabase.auth.getUser()
+      const { data, error: userError } = await authSupabase!.auth.getUser()
       if (userError) throw userError
       if (!data.user?.email) throw new Error(t("No email address is attached to this account."))
-      const { error } = await supabase.auth.resetPasswordForEmail(data.user.email, {
+      const { error } = await authSupabase!.auth.resetPasswordForEmail(data.user.email, {
         redirectTo: `${window.location.origin}/auth?mode=reset-password`,
       })
       if (error) throw error
@@ -1469,7 +1469,7 @@ function SecurityTab() {
     setSignOutBusy(true)
 
     try {
-      const { error } = await supabase.auth.signOut({ scope: "others" })
+      const { error } = await authSupabase!.auth.signOut({ scope: "others" })
       if (error) throw error
       toast.success(t("Other sessions signed out"))
     } catch (error) {
@@ -3958,7 +3958,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
   useEffect(() => {
     let active = true
     if (!supabase) return
-    void supabase.auth.getUser().then(({ data }) => {
+    void authSupabase!.auth.getUser().then(({ data }) => {
       if (!active || !data.user) return
       const key = `multideck.dexter-writing-profile-prompt-dismissed:${window.location.host}:${data.user.id}`
       setWritingProfilePromptKey(key)

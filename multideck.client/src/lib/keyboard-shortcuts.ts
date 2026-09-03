@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState } from "react"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { getApiWorkspacePreferences } from "@/lib/api"
-import { supabase } from "@/lib/supabase"
+import { getClientAuth, supabase } from "@/lib/supabase"
 import { updateWorkspaceBootstrapPreferences } from "@/lib/workspace-bootstrap"
 import {
   bindingsEqual,
@@ -154,7 +154,7 @@ function commit(next: ShortcutOverrides) {
 }
 
 async function currentSession(client: SupabaseClient) {
-  const { data, error } = await client.auth.getSession()
+  const { data, error } = await getClientAuth(client).getSession()
   if (error) throw error
 
   return data.session
@@ -238,7 +238,7 @@ function watchAuth(client: SupabaseClient) {
 
   // Signing in as somebody else must not leave the previous operator's bindings
   // live on this browser.
-  client.auth.onAuthStateChange((_event, session) => {
+  getClientAuth(client).onAuthStateChange((_event, session) => {
     const userId = session?.user.id ?? null
     const settled = loadPromise ?? Promise.resolve()
 

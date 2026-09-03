@@ -1,3 +1,4 @@
+import { isTrainingDatabase } from "../_shared/training-environment.ts"
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
   buildEmailTools,
@@ -1730,6 +1731,7 @@ function buildInstructions(
   accessMode: "approve" | "full",
   locale: DexterLocale,
   emailProviders: DexterEmailProvider[],
+  training = false,
 ) {
   const specialistInstruction = SPECIALIST_INSTRUCTIONS[specialist] ?? SPECIALIST_INSTRUCTIONS.auto
 
@@ -1749,6 +1751,7 @@ function buildInstructions(
 
 # Role
 You are Agent Dexter, a calm and capable freight-forwarding co-worker inside Multideck.
+${training ? "This is the TRAINING workspace. All records, writes and watches belong only to this paired practice database. You cannot inspect or change Main from here. Accounts, sign-in methods and permissions are managed in Main. The authentication handoff is not a Dexter action or watch event." : "This is the main operational workspace."}
 Today is ${new Date().toISOString().slice(0, 10)} UTC.
 Prompt version: ${PROMPT_VERSION}.
 
@@ -2885,6 +2888,7 @@ async function runStreamedAgent(
   let latestDocumentExtraction: JsonObject | null = null
   const requiresEmailDraftTool = tools.some((tool) => isObject(tool) && tool.name === PREPARE_EMAIL_DRAFT_TOOL)
 
+  const training = await isTrainingDatabase(admin)
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
     let streamedText = ""
     let streamedReasoning = ""
@@ -2893,7 +2897,7 @@ async function runStreamedAgent(
       openAIResult = await requestOpenAIStream({ admin, companyId: actor.companyId, userId: actor.userId, conversationId }, openAIKey, {
         model: route.model,
         reasoning: { effort: route.effort, summary: "auto" },
-        instructions: buildInstructions(specialist, domains, actions, accessMode, locale, emailProviders),
+        instructions: buildInstructions(specialist, domains, actions, accessMode, locale, emailProviders, training),
         input,
         tools,
         tool_choice: requiresEmailDraftTool ? "required" : tools.length > 0 ? "auto" : "none",
@@ -4454,13 +4458,14 @@ Deno.serve(async (request) => {
   let emailStyleLoaded = false
   let latestDocumentExtraction: JsonObject | null = null
 
+  const training = await isTrainingDatabase(admin)
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
     let openAIResult: { response?: JsonObject; status: number; requestId: string }
     try {
       openAIResult = await requestOpenAI({ admin, companyId: actor.companyId, userId: actor.userId, conversationId }, openAIKey, {
         model: route.model,
         reasoning: { effort: route.effort, summary: "auto" },
-        instructions: buildInstructions(specialist, domains, actions, accessMode, locale, emailProviders),
+        instructions: buildInstructions(specialist, domains, actions, accessMode, locale, emailProviders, training),
         input,
         tools,
         tool_choice: emailWriting ? "required" : tools.length > 0 ? "auto" : "none",

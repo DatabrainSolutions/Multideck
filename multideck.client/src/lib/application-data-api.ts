@@ -1,7 +1,7 @@
 import type { StatusTone } from "@/data/operational-data"
 import type { DomesticRoadJob, RoadJobStageId } from "@/components/multideck/domestic-road-components"
 import { createEmptyFilterQuery, filterQueryIsEmpty, type FilterQuery } from "@/lib/advanced-filters"
-import { authenticatedAccessChangedEvent, getSupabaseSession, supabase, supabaseFunctionsUrl } from "@/lib/supabase"
+import { authSupabase, getClientAuth, authenticatedAccessChangedEvent, getSupabaseSession, supabase, supabaseFunctionsUrl } from "@/lib/supabase"
 
 type BookingMode = "OCEAN" | "AIR" | "ROAD" | "MULTIMODAL" | "FAS" | "FSA"
 type BookingStatus = "On track" | "Delayed" | "Exception"
@@ -242,7 +242,7 @@ function requireClient() {
 }
 
 export async function getCurrentOperatorName() {
-  const { data, error } = await requireClient().auth.getUser()
+  const { data, error } = await authSupabase!.auth.getUser()
   if (error || !data.user) throw error ?? new Error("Authentication required.")
   const metadata = data.user.user_metadata as Record<string, unknown>
   const fullName = typeof metadata.full_name === "string" ? metadata.full_name : typeof metadata.name === "string" ? metadata.name : null
@@ -251,7 +251,7 @@ export async function getCurrentOperatorName() {
 
 async function requireCompanyId() {
   const client = requireClient()
-  const { data: userData, error: userError } = await client.auth.getUser()
+  const { data: userData, error: userError } = await getClientAuth(client).getUser()
   if (userError || !userData.user) throw userError ?? new Error("Authentication required.")
   const { data, error } = await client.from("cmp_Users").select("Company_ID").eq("Auth_User_ID", userData.user.id).single()
   if (error) throw error

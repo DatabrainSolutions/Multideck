@@ -4,6 +4,7 @@ import type { UserProfilePhoto } from "@/lib/profile-photo"
 import { invalidateRegisterPages, readCachedRegisterPage } from "@/lib/application-data-api"
 import { retainStreamedEmailAttachments } from "@/lib/dexter-streamed-attachments"
 import {
+  refreshWorkspaceSession,
   getSupabaseSession,
   supabase,
   supabaseFunctionsUrl,
@@ -753,7 +754,7 @@ export async function streamDexterMessage(
     // rejected the request before processing it; every other failure remains
     // an explicit operator retry so a write can never be replayed implicitly.
     if (response.status === 401 && !requestController.signal.aborted && supabase) {
-      const { data, error: refreshError } = await supabase.auth.refreshSession()
+      const { data, error: refreshError } = await refreshWorkspaceSession()
       if (refreshError || !data.session?.access_token) {
         throw new DexterApiError("Your session has expired. Sign in again to use Agent Dexter.")
       }

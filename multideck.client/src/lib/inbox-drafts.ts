@@ -1,3 +1,4 @@
+import { workspaceStorageKey } from "./workspace-environment.ts"
 import type { ComposerEdits, MailAddress, SendMode } from "@/lib/inbox-api"
 
 /**
@@ -7,7 +8,7 @@ import type { ComposerEdits, MailAddress, SendMode } from "@/lib/inbox-api"
  * inheriting private message content from a previous browser session.
  */
 
-const storageKey = "multideck.inbox.drafts"
+const storageKey = workspaceStorageKey("multideck.inbox.drafts")
 const maxLocalDrafts = 40
 const confirmedRemoteDraftIds = new Map<string, string>()
 

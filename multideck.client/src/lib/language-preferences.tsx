@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react"
 import { isLanguageCode, type LanguageCode } from "@/i18n/languages"
 import { useLanguage } from "@/i18n/language-provider"
 import { getApiWorkspacePreferences } from "@/lib/api"
-import { supabase } from "@/lib/supabase"
+import { getClientAuth, supabase } from "@/lib/supabase"
 import { updateWorkspaceBootstrapPreferences } from "@/lib/workspace-bootstrap"
 
 function readLanguagePreference(value: unknown): LanguageCode | null {
@@ -70,7 +70,7 @@ export function LanguageProfileSync() {
     const client: NonNullable<typeof supabase> = configuredClient
 
     async function syncProfileLanguage() {
-      const { data: sessionData, error: sessionError } = await client.auth.getSession()
+      const { data: sessionData, error: sessionError } = await getClientAuth(client).getSession()
       if (sessionError) {
         console.warn("Your language preference could not be loaded from your profile.", sessionError)
         return
@@ -119,7 +119,7 @@ export function LanguageProfileSync() {
     }
 
     void syncProfileLanguage()
-    const { data: listener } = client.auth.onAuthStateChange(() => {
+    const { data: listener } = getClientAuth(client).onAuthStateChange(() => {
       void syncProfileLanguage()
     })
 

@@ -1,8 +1,9 @@
+import { workspaceStorageKey } from "./workspace-environment.ts"
 export type RecentWorkContext =
   | { type: "booking"; recordId: string }
   | { type: "deal" }
 
-const storageKey = "multideck.dexter.recent-work"
+const storageKey = workspaceStorageKey("multideck.dexter.recent-work")
 
 export function workContextForRoute(path: string): RecentWorkContext | null {
   const bookingMatch = path.match(/^\/bookings\/([^/]+)$/)

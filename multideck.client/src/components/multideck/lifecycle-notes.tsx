@@ -54,7 +54,7 @@ import {
   type LifecycleNoteTarget,
 } from "@/lib/lifecycle-notes-api"
 import { createProfilePhotoSignedUrls } from "@/lib/profile-photo"
-import { supabase } from "@/lib/supabase"
+import { authSupabase, supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
 type MentionWindow = {
@@ -387,7 +387,7 @@ export function LifecycleNotes({
     const controller = new AbortController()
     let active = true
 
-    void supabase.auth.getSession().then(async ({ data, error }) => {
+    void authSupabase!.auth.getSession().then(async ({ data, error }) => {
       if (error || !data.session?.access_token) return
       const session = await getApiAuthSession(data.session.access_token)
       if (!active) return

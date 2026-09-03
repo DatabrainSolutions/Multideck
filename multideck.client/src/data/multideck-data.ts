@@ -1552,7 +1552,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Navigation",
     description: "The common exclusive-choice control: switch for booleans, spring pill for two to four choices, and dropdown for five or more.",
     details: "Use instead of creating page-local toggles or segmented buttons. It keeps interaction predictable while choosing the right amount of visual space for the number of options.",
-    foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Settings", route: "/settings" }, { label: "Overview", route: "/" }, { label: "Components", route: "/components?component=choice-control" }],
+    foundOn: [{ label: "Sign in", route: "/auth" }, { label: "Bookings", route: "/bookings" }, { label: "Settings", route: "/settings" }, { label: "Overview", route: "/" }, { label: "Components", route: "/components?component=choice-control" }],
     componentCode: `export function ChoiceControl(props) {\n  if ("checked" in props) return <Switch checked={props.checked} onCheckedChange={props.onCheckedChange} />\n  if (props.options.length <= 4) return <SegmentedControl {...props} />\n  return (\n    <Select value={props.value} onValueChange={props.onChange}>\n      <SelectTrigger><SelectValue /></SelectTrigger>\n      <SelectContent>{props.options.map((option) => <SelectItem value={option.value}>{option.label}</SelectItem>)}</SelectContent>\n    </Select>\n  )\n}`,
     usageCode: `<ChoiceControl\n  options={["Table", "Board"]}\n  value={viewMode}\n  onChange={setViewMode}\n  ariaLabel="Booking view"\n/>\n\n<ChoiceControl\n  options={transportModes}\n  value={mode}\n  onChange={setMode}\n  ariaLabel="Transport mode"\n/>`,
   },
@@ -3105,14 +3105,14 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     foundOn: [{ label: "Login & security", route: "/settings?tab=security" }, { label: "Components", route: "/components?component=auth-identity-manager" }],
     componentCode: `export function AuthIdentityManager() {
   async function connectProvider(provider) {
-    await supabase.auth.linkIdentity({
+    await authSupabase.auth.linkIdentity({
       provider,
       options: { redirectTo: window.location.origin + "/settings?tab=security" },
     })
   }
 
   async function registerPasskey() {
-    await supabase.auth.registerPasskey()
+    await authSupabase.auth.registerPasskey()
   }
 
   return <SignInMethodList onConnect={connectProvider} onRegisterPasskey={registerPasskey} />

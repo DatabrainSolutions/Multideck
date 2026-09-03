@@ -80,6 +80,12 @@ export default defineConfig(({ mode }) => {
   const environment = loadEnv(mode, __dirname, "")
 
   return {
+    // Deliberate public allowlist. Never expose all TRAINING_ variables: the
+    // session broker's service key belongs only in Supabase function secrets.
+    define: {
+      "import.meta.env.TRAINING_SUPABASE_URL": JSON.stringify(environment.TRAINING_SUPABASE_URL ?? ""),
+      "import.meta.env.TRAINING_SUPABASE_ANON_KEY": JSON.stringify(environment.TRAINING_SUPABASE_ANON_KEY ?? ""),
+    },
     plugins: [
       multideckMobileConfiguration(environment),
       {
