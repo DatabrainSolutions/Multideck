@@ -19,10 +19,10 @@ test("warehouse purchase orders have an explicit customer inbound role", () => {
   assert.match(warehouseRoute, /recordRoleCode: row\.WMSPO_RecordRoleCode \?\? "customer_inbound_instruction"/)
 })
 
-test("the finance purchase-order menu no longer opens the warehouse register", () => {
+test("the finance purchase-order menu stays separate from expected receipts", () => {
   assert.match(navigation, /label: "Supplier purchase orders", value: "Planned"/)
   assert.doesNotMatch(navigation, /label: "Supplier purchase orders"[^\n]*route: "\/warehouse\/purchase-orders"/)
-  assert.match(navigation, /label: "Customer purchase orders"[^\n]*route: "\/warehouse\/purchase-orders"/)
+  assert.match(navigation, /label: "Expected receipts"[^\n]*route: "\/warehouse\/purchase-orders"/)
 })
 
 test("warehouse purchase-order values cannot feed AP, accruals or job charges", () => {
@@ -33,7 +33,8 @@ test("warehouse purchase-order values cannot feed AP, accruals or job charges", 
 })
 
 test("warehouse UI and Dexter explain the operational boundary", () => {
-  assert.match(warehouseUi, /Customer purchase orders/)
+  assert.match(warehouseUi, /Expected receipt details/)
+  assert.match(warehouseUi, /Customer PO number/)
   assert.match(warehouseUi, /Values are reference-only and never enter the purchase subledger/)
   assert.match(warehouseUi, /Confirm for goods in/)
   assert.match(dexter, /never finance supplier purchase orders/)

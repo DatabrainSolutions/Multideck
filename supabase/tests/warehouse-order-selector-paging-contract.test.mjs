@@ -5,6 +5,7 @@ import test from "node:test"
 const route = readFileSync(new URL("../functions/warehouse/routes/orders.ts", import.meta.url), "utf8")
 const api = readFileSync(new URL("../../multideck.client/src/lib/warehouse.ts", import.meta.url), "utf8")
 const ui = readFileSync(new URL("../../multideck.client/src/components/multideck/warehouse-operations-components.tsx", import.meta.url), "utf8")
+const detailUi = readFileSync(new URL("../../multideck.client/src/components/multideck/warehouse-order-detail.tsx", import.meta.url), "utf8")
 const migration = readFileSync(new URL("../migrations/20260819120000_warehouse_order_selector_paging.sql", import.meta.url), "utf8")
 const benchmark = readFileSync(new URL("../../multideck.client/benchmarks/warehouse-order-selector-paging.mjs", import.meta.url), "utf8")
 
@@ -57,9 +58,9 @@ test("the order dialog uses debounced server pages without whole-catalogue compa
   assert.match(ui, /getWarehouseOrderReference\(\)/)
   assert.match(ui, /listWarehouseOrderCustomersPage\(\{ search: customerSearch\.trim\(\) \|\| undefined, limit: 25 \}\)/)
   assert.match(ui, /window\.setTimeout\(\(\) => \{[\s\S]*listWarehouseOrderItemsPage/)
-  assert.match(ui, /listWarehouseOrderLocationsPage/)
+  assert.match(detailUi, /window\.setTimeout\(\(\) => \{[\s\S]*listWarehouseOrderLocationsPage\(\{ facilityId, search: locationSearch, limit: 25, offset: 0 \}\)/)
   assert.match(ui, /Search items by SKU or description/)
-  assert.match(ui, /Search locations/)
+  assert.match(detailUi, /Search locations/)
 })
 
 test("the 200,000-row proof fixture remains local-only", () => {

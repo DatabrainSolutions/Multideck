@@ -308,26 +308,27 @@ export function WarehouseInventoryWorkspace() {
   }, [selectedBalance, selectedUnit])
 
   const query = search.trim().toLowerCase()
+  const facilityNameById = useMemo(() => new Map(facilities.map((facility) => [facility.id, facility.name])), [facilities])
 
   const filteredBalances = useMemo(() => balances.filter((row) => (
     (!facetValue || (row.inventoryStatusName ?? row.inventoryStatusCode) === facetValue)
-    && (!query || searchIndex([row.sku, row.itemDescription, row.handlingUnitCode, row.locationCode, row.batchNumber, row.lotNumber, row.customerName, row.inventoryStatusName]).includes(query))
+    && (!query || searchIndex([row.sku, row.itemDescription, row.handlingUnitCode, row.locationCode, row.batchNumber, row.lotNumber, row.customerName, row.facilityName, row.inventoryStatusName]).includes(query))
   )), [balances, facetValue, query])
 
   const filteredUnits = useMemo(() => units.filter((row) => (
     (!facetValue || row.typeName === facetValue)
-    && (!query || searchIndex([row.code, row.sscc, row.typeName, row.customerName, row.locationCode, row.inventoryStatusName, ...row.contents.map((line) => line.sku)]).includes(query))
-  )), [units, facetValue, query])
+    && (!query || searchIndex([row.code, row.sscc, row.typeName, row.customerName, row.locationCode, facilityNameById.get(row.facilityId), row.inventoryStatusName, ...row.contents.map((line) => line.sku)]).includes(query))
+  )), [units, facetValue, facilityNameById, query])
 
   const filteredMovements = useMemo(() => movements.filter((row) => (
     (!facetValue || (row.typeName ?? row.typeCode) === facetValue)
-    && (!query || searchIndex([row.sku, row.itemDescription, row.reference, row.handlingUnitCode, row.fromLocationCode, row.toLocationCode, row.reasonCode, row.typeName]).includes(query))
+    && (!query || searchIndex([row.sku, row.itemDescription, row.reference, row.handlingUnitCode, row.fromLocationCode, row.toLocationCode, row.facilityName, row.reasonCode, row.typeName]).includes(query))
   )), [movements, facetValue, query])
 
   const filteredExceptions = useMemo(() => exceptions.filter((row) => (
     (!facetValue || row.severityCode === facetValue)
-    && (!query || searchIndex([row.title, row.description, row.typeCode, row.statusCode, row.expectedLocationCode, row.actualLocationCode]).includes(query))
-  )), [exceptions, facetValue, query])
+    && (!query || searchIndex([row.title, row.description, row.typeCode, row.statusCode, row.expectedLocationCode, row.actualLocationCode, facilityNameById.get(row.facilityId)]).includes(query))
+  )), [exceptions, facetValue, facilityNameById, query])
 
   const counts: Partial<Record<InventoryMode, number>> = totals
 
@@ -342,6 +343,7 @@ export function WarehouseInventoryWorkspace() {
 
   const balanceColumns = useMemo<DataTableColumn<WarehouseInventoryBalance>[]>(() => [
     { id: "stock-item", label: "Item", width: 236, minWidth: 180, resizable: true, canHide: false, sortValue: (row) => row.sku, cell: (row) => <div className="min-w-0"><Code>{row.sku}</Code><p className="mt-0.5 truncate text-[11.5px] text-[var(--md-text)]">{row.itemDescription}</p></div> },
+    ...(!facilityId ? [{ id: "stock-warehouse", label: "Warehouse", width: 168, resizable: true, cell: (row: WarehouseInventoryBalance) => <span className="truncate text-[12px] text-[var(--md-ink)]">{row.facilityName}</span> }] : []),
     { id: "stock-object", label: "Warehouse object", width: 152, resizable: true, sortValue: (row) => row.handlingUnitCode, cell: (row) => row.handlingUnitCode ? <Code>{row.handlingUnitCode}</Code> : <span className="text-[12px] text-[var(--md-subtle)]">{t("Loose")}</span> },
     { id: "stock-location", label: "Location", width: 130, resizable: true, sortValue: (row) => row.locationCode, cell: (row) => <Code>{row.locationCode ?? "—"}</Code> },
     { id: "stock-lot", label: "Batch / lot", width: 138, resizable: true, sortValue: (row) => row.batchNumber ?? row.lotNumber, cell: (row) => <Code>{row.batchNumber ?? row.lotNumber ?? "—"}</Code> },
@@ -349,34 +351,37 @@ export function WarehouseInventoryWorkspace() {
     { id: "stock-status", label: "Condition", kind: "status", width: 142, resizable: true, sortValue: (row) => row.inventoryStatusName ?? row.inventoryStatusCode, cell: (row) => <StatusPill tone={statusTone(row.inventoryStatusCode)}>{t(row.inventoryStatusName ?? row.inventoryStatusCode)}</StatusPill> },
     { id: "stock-onHand", label: "On hand", width: 132, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.onHandQuantity, cell: (row) => <span dir="ltr" className="tabular-nums">{number.format(row.onHandQuantity)} {row.uomCode}</span> },
     { id: "stock-available", label: "Available", width: 124, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.availableQuantity, cell: (row) => <span dir="ltr" className="font-medium tabular-nums text-[var(--md-accent)]">{number.format(row.availableQuantity)}</span> },
-  ], [number, t])
+  ], [facilityId, number, t])
 
   const unitColumns = useMemo<DataTableColumn<WarehouseHandlingUnit>[]>(() => [
     { id: "object-object", label: "Warehouse object", width: 252, minWidth: 200, resizable: true, canHide: false, sortValue: (row) => row.code, cell: (row) => <WarehouseObjectSummary unit={row} /> },
+    ...(!facilityId ? [{ id: "object-warehouse", label: "Warehouse", width: 168, resizable: true, cell: (row: WarehouseHandlingUnit) => <span className="truncate text-[12px] text-[var(--md-ink)]">{facilityNameById.get(row.facilityId) ?? row.facilityId}</span> }] : []),
     { id: "object-customer", label: "Customer", width: 176, resizable: true, sortValue: (row) => row.customerName, cell: (row) => <span className="truncate text-[12px] text-[var(--md-text)]">{row.customerName ?? "—"}</span> },
     { id: "object-location", label: "Location", width: 130, resizable: true, sortValue: (row) => row.locationCode, cell: (row) => <Code>{row.locationCode ?? "—"}</Code> },
     { id: "object-contents", label: "Contents", width: 264, resizable: true, sortValue: (row) => row.contents.length, cell: (row) => <span className="truncate text-[12px] text-[var(--md-text)]">{row.contents.slice(0, 2).map((line) => `${line.sku} · ${number.format(line.quantity)} ${line.uomCode}`).join(", ") || t("Empty")}</span> },
     { id: "object-weight", label: "Gross weight", width: 138, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.grossWeightKg, cell: (row) => <span dir="ltr" className="tabular-nums">{row.grossWeightKg === null ? "—" : `${number.format(row.grossWeightKg)} kg`}</span> },
     { id: "object-status", label: "Status", kind: "status", width: 142, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.inventoryStatusName, cell: (row) => <StatusPill tone={statusTone(row.inventoryStatusCode)}>{t(row.inventoryStatusName)}</StatusPill> },
-  ], [number, t])
+  ], [facilityId, facilityNameById, number, t])
 
   const movementColumns = useMemo<DataTableColumn<WarehouseInventoryMovement>[]>(() => [
     { id: "movement-posted", label: "Posted", width: 176, minWidth: 150, resizable: true, canHide: false, sortValue: (row) => row.createdAt, cell: (row) => <span className="whitespace-nowrap text-[12px]">{dateTime.format(new Date(row.createdAt))}</span> },
+    ...(!facilityId ? [{ id: "movement-warehouse", label: "Warehouse", width: 168, resizable: true, cell: (row: WarehouseInventoryMovement) => <span className="truncate text-[12px] text-[var(--md-ink)]">{row.facilityName}</span> }] : []),
     { id: "movement-reference", label: "Reference", width: 146, resizable: true, sortValue: (row) => row.reference, cell: (row) => <Code>{row.reference ?? "—"}</Code> },
     { id: "movement-item", label: "Item", width: 190, resizable: true, sortValue: (row) => row.sku, cell: (row) => <div className="min-w-0"><Code>{row.sku}</Code><p className="truncate text-[11px] text-[var(--md-subtle)]">{row.handlingUnitCode ?? t("Loose stock")}</p></div> },
     { id: "movement-movement", label: "Movement", kind: "attribute", width: 152, resizable: true, sortValue: (row) => row.typeName ?? row.typeCode, cell: (row) => <StatusPill tone={row.typeCode === "receipt" ? "teal" : "blue"}>{t(row.typeName ?? row.typeCode)}</StatusPill> },
     { id: "movement-route", label: "Location", width: 168, resizable: true, cell: (row) => <span className="whitespace-nowrap text-[12px]"><Code>{row.fromLocationCode ?? "—"}</Code> <span aria-hidden="true" className="text-[var(--md-subtle)]">→</span> <Code>{row.toLocationCode ?? "—"}</Code></span> },
     { id: "movement-reason", label: "Reason", width: 152, resizable: true, sortValue: (row) => row.reasonCode, cell: (row) => <span className="truncate text-[12px] text-[var(--md-text)]">{row.reasonCode ? t(row.reasonCode) : "—"}</span> },
     { id: "movement-quantity", label: "Quantity", width: 138, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.quantity, cell: (row) => <span dir="ltr" className="tabular-nums">{number.format(row.quantity)} {row.uomCode}</span> },
-  ], [dateTime, number, t])
+  ], [dateTime, facilityId, number, t])
 
   const exceptionColumns = useMemo<DataTableColumn<WarehouseInventoryException>[]>(() => [
     { id: "exception-exception", label: "Exception", width: 340, minWidth: 240, resizable: true, canHide: false, sortValue: (row) => row.title, cell: (row) => <WarehouseExceptionSummary exception={row} /> },
+    ...(!facilityId ? [{ id: "exception-warehouse", label: "Warehouse", width: 168, resizable: true, cell: (row: WarehouseInventoryException) => <span className="truncate text-[12px] text-[var(--md-ink)]">{facilityNameById.get(row.facilityId) ?? row.facilityId}</span> }] : []),
     { id: "exception-severity", label: "Severity", kind: "status", width: 128, resizable: true, sortValue: (row) => row.severityCode, cell: (row) => <StatusPill tone={row.severityCode === "high" ? "red" : "amber"}>{t(row.severityCode)}</StatusPill> },
     { id: "exception-raised", label: "Raised", width: 176, resizable: true, sortValue: (row) => row.raisedAt, cell: (row) => <span className="whitespace-nowrap text-[12px]">{dateTime.format(new Date(row.raisedAt))}</span> },
     { id: "exception-expected", label: "Expected location", width: 160, resizable: true, sortValue: (row) => row.expectedLocationCode, cell: (row) => <Code>{row.expectedLocationCode ?? "—"}</Code> },
     { id: "exception-status", label: "Status", kind: "status", width: 138, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.statusCode, cell: (row) => <StatusPill tone={statusTone(row.statusCode)}>{t(row.statusCode)}</StatusPill> },
-  ], [dateTime, t])
+  ], [dateTime, facilityId, facilityNameById, t])
 
   const clearFilters = () => { setSearch(""); setCommittedSearch(""); setFacets(emptyFacets); setFacilityId(""); setOffset(0); setSort(null) }
   const hasFilters = Boolean(query || facetValue || facilityId)
@@ -496,8 +501,8 @@ export function WarehouseInventoryWorkspace() {
       pagination={{ offset, limit: inventoryPageSize, total: totals[mode] ?? 0, loading: pending, onOffsetChange: setOffset, onLimitChange: setInventoryPageSize, error: Boolean(error) }}
     />
     <StockActionPanel balance={selectedBalance} open={Boolean(selectedBalance)} onClose={() => setSelectedBalance(null)} reference={huReference} units={actionUnits} onChanged={() => void refresh()} />
-    <WarehouseObjectPanel unit={selectedUnit} open={Boolean(selectedUnit)} onClose={() => setSelectedUnit(null)} units={actionUnits} onChanged={() => void refresh()} />
-    <ExceptionPanel exception={selectedException} open={Boolean(selectedException)} onClose={() => setSelectedException(null)} onChanged={() => void refresh()} />
+    <WarehouseObjectPanel unit={selectedUnit} facilityName={selectedUnit ? facilityNameById.get(selectedUnit.facilityId) ?? null : null} open={Boolean(selectedUnit)} onClose={() => setSelectedUnit(null)} units={actionUnits} onChanged={() => void refresh()} />
+    <ExceptionPanel exception={selectedException} facilityName={selectedException ? facilityNameById.get(selectedException.facilityId) ?? null : null} open={Boolean(selectedException)} onClose={() => setSelectedException(null)} onChanged={() => void refresh()} />
     <CreateHandlingUnitDialog open={createOpen} onOpenChange={setCreateOpen} reference={reference} huReference={huReference} fixedFacilityId={facilityId} onChanged={() => void refresh()} />
     <EmptyLocationDialog open={emptyOpen} onOpenChange={setEmptyOpen} reference={reference} fixedFacilityId={facilityId} onChanged={() => void refresh()} />
   </div>
@@ -669,7 +674,7 @@ const objectModes = ["move", "consolidate"] as const
 type ObjectMode = (typeof objectModes)[number]
 const objectModeLabels: Record<ObjectMode, string> = { move: "Move it", consolidate: "Consolidate into it" }
 
-function WarehouseObjectPanel({ unit, open, onClose, units, onChanged }: { unit: WarehouseHandlingUnit | null; open: boolean; onClose: () => void; units: WarehouseHandlingUnit[]; onChanged: () => void }) {
+function WarehouseObjectPanel({ unit, facilityName, open, onClose, units, onChanged }: { unit: WarehouseHandlingUnit | null; facilityName: string | null; open: boolean; onClose: () => void; units: WarehouseHandlingUnit[]; onChanged: () => void }) {
   const { language, t } = useLanguage()
   const number = useMemo(() => new Intl.NumberFormat(language, { maximumFractionDigits: 6 }), [language])
   const [mode, setMode] = useState<ObjectMode>("move")
@@ -728,6 +733,7 @@ function WarehouseObjectPanel({ unit, open, onClose, units, onChanged }: { unit:
           </div>
           <dl className="mt-3 shadow-[var(--md-stroke-top)] pt-2.5">
             <FactRow label="Location" value={unit.locationCode ?? t("No physical location")} code={Boolean(unit.locationCode)} />
+            <FactRow label="Warehouse" value={facilityName} />
             <FactRow label="Customer" value={unit.customerName} />
             <FactRow label="Condition" value={t(unit.inventoryStatusName)} />
             <FactRow label="SSCC" value={unit.sscc} code />
@@ -883,7 +889,7 @@ const resolutionLabels: Record<string, string> = {
   approve_loss: "Approve the write-off",
 }
 
-function ExceptionPanel({ exception, open, onClose, onChanged }: { exception: WarehouseInventoryException | null; open: boolean; onClose: () => void; onChanged: () => void }) {
+function ExceptionPanel({ exception, facilityName, open, onClose, onChanged }: { exception: WarehouseInventoryException | null; facilityName: string | null; open: boolean; onClose: () => void; onChanged: () => void }) {
   const { language, t } = useLanguage()
   const dateTime = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }), [language])
   const [resolution, setResolution] = useState<"found" | "data_error" | "request_loss" | "approve_loss">("found")
@@ -941,6 +947,7 @@ function ExceptionPanel({ exception, open, onClose, onChanged }: { exception: Wa
           {exception.description ? <p className="mt-1.5 text-[12.5px] leading-5 text-[var(--md-text)]" dir="auto">{t(exception.description)}</p> : null}
           <dl className="mt-3 shadow-[var(--md-stroke-top)] pt-2.5">
             <FactRow label="Status" value={t(exception.statusCode)} />
+            <FactRow label="Warehouse" value={facilityName} />
             <FactRow label="Expected at" value={exception.expectedLocationCode} code />
             <FactRow label="Found at" value={exception.actualLocationCode} code />
             <FactRow label="Raised" value={dateTime.format(new Date(exception.raisedAt))} />

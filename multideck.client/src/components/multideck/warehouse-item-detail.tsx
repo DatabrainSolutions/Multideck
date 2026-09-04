@@ -175,6 +175,7 @@ export function WarehouseItemDetailView({
   const temperature = currentItem.temperatureMinC !== null || currentItem.temperatureMaxC !== null
     ? `${currentItem.temperatureMinC ?? "−∞"} – ${currentItem.temperatureMaxC ?? "∞"} °C`
     : null
+  const activeFacilities = currentItem.facilities?.filter((facility) => facility.isActive) ?? []
 
   return (
     <div className="grid gap-[var(--md-gap-lg)]">
@@ -194,7 +195,7 @@ export function WarehouseItemDetailView({
             <p className="mt-1.5 text-[13px] leading-5 text-[var(--md-text)]" dir="auto">
               {currentItem.description}
               {currentItem.customerOrgName ? <><span className="text-[var(--md-subtle)]"> · </span>{currentItem.customerOrgName}</> : null}
-              {currentItem.facilityName ? <><span className="text-[var(--md-subtle)]"> · </span>{currentItem.facilityName}</> : null}
+              {activeFacilities.length ? <><span className="text-[var(--md-subtle)]"> · </span>{activeFacilities.length} {t(activeFacilities.length === 1 ? "warehouse" : "warehouses")}</> : currentItem.facilityName ? <><span className="text-[var(--md-subtle)]"> · </span>{currentItem.facilityName}</> : null}
             </p>
           </div>
           {canManage && onEdit ? (
@@ -258,7 +259,15 @@ export function WarehouseItemDetailView({
         </div>
 
         <div className="grid gap-[var(--md-gap-lg)]">
-          <ItemSection index={2} title="Customs and origin">
+          <ItemSection index={2} title="Warehouses" meta="Where this customer SKU can be received, stored and picked.">
+            <dl>
+              {(activeFacilities.length ? activeFacilities : currentItem.facilityName ? [{ id: currentItem.facilityId ?? "default", code: "", name: currentItem.facilityName, isDefault: true, isActive: true }] : []).map((facility) => (
+                <ItemFact key={facility.id} label={facility.isDefault ? "Default warehouse" : "Also available at"} value={facility.name} />
+              ))}
+            </dl>
+          </ItemSection>
+
+          <ItemSection index={3} title="Customs and origin">
             <dl>
               <ItemFact label="HS code" value={currentItem.hsCode} code />
               <ItemFact label="Origin" value={currentItem.countryOfOriginCode} code />
@@ -268,7 +277,7 @@ export function WarehouseItemDetailView({
           </ItemSection>
 
           {dimensions || currentItem.netWeightKg !== null || currentItem.grossWeightKg !== null ? (
-            <ItemSection index={3} title="Size and weight">
+            <ItemSection index={4} title="Size and weight">
               <dl>
                 <ItemFact label="Dimensions" value={dimensions} code />
                 <ItemFact label="Volume" value={volume} code />

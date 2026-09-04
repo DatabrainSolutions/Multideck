@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 
 const migration = readFileSync(new URL("../migrations/20260819121000_warehouse_order_availability_read.sql", import.meta.url), "utf8")
+const lifecycleMigration = readFileSync(new URL("../migrations/20260904143000_warehouse_mobile_task_lifecycle.sql", import.meta.url), "utf8")
 const route = readFileSync(new URL("../functions/warehouse/routes/orders.ts", import.meta.url), "utf8")
 const client = readFileSync(new URL("../../multideck.client/src/lib/warehouse.ts", import.meta.url), "utf8")
 const ui = readFileSync(new URL("../../multideck.client/src/components/multideck/warehouse-order-detail.tsx", import.meta.url), "utf8")
@@ -34,16 +35,15 @@ test("the Edge path enforces an internal actor and authorised facilities without
   assert.match(route, /warehouse_edge_order_availability[\s\S]*p_allowed_facility_ids: facilityIds[\s\S]*p_limit_per_item: 25[\s\S]*p_total_limit: 500/)
 })
 
-test("the outbound detail asks only for order-scoped FIFO stock", () => {
-  const availabilityClient = client.slice(
-    client.indexOf("export function getOperationalWarehouseOrderAvailability"),
-    client.indexOf("export function checkOperationalWarehouseOrderDraftAvailability"),
-  )
-  assert.match(client, /getOperationalWarehouseOrderAvailability[\s\S]*\/orders\/\$\{orderId\}\/availability/)
-  assert.doesNotMatch(availabilityClient, /listWarehouseInventory|compatibility/)
-  assert.match(ui, /getOperationalWarehouseOrderAvailability\(orderId, facilityId\)/)
+test("the browser keeps draft checks bounded and delegates FIFO release to the server", () => {
+  assert.match(client, /checkOperationalWarehouseOrderDraftAvailability[\s\S]*\/orders\/availability-check/)
+  assert.match(client, /releaseOperationalWarehouseOrder[\s\S]*\/orders\/\$\{orderId\}\/release/)
+  assert.match(ui, /releaseOperationalWarehouseOrder\(order\.id\)/)
+  assert.doesNotMatch(ui, /getOperationalWarehouseOrderAvailability/)
   assert.doesNotMatch(ui, /listWarehouseInventory/)
-  assert.match(ui, /balance\.itemId === line\.itemId && balance\.customsStatusCode === line\.customsStatusCode/)
+  assert.match(lifecycleMigration, /create or replace function public\.warehouse_edge_release_order_mutation/)
+  assert.match(lifecycleMigration, /order by "WMSBalance_FirstReceiptAt", "WMSBalance_ID" for update/)
+  assert.match(lifecycleMigration, /"WMSBalance_AvailableQuantity"="WMSBalance_AvailableQuantity"-v_take/)
 })
 
 test("the 100,000-balance proof is local-only and performs no Supabase writes", () => {
