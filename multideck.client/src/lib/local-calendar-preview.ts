@@ -4,6 +4,7 @@ import type {
   CalendarAvailabilityPreferences,
   CalendarEvent,
   CalendarWorkspace,
+  ExternalEventResponse,
   ExternalEventPatch,
   ManagedMeeting,
   MeetingDraft,
@@ -155,8 +156,8 @@ function bookingByPath(state: PreviewState, organiserSlug: string, bookingSlug: 
 
 function previewExternalEvents(state: PreviewState): CalendarEvent[] {
   return state.externalEvents ?? [
-    { id: "preview-busy", title: "Busy", startAt: atDay(2, 14), endAt: atDay(2, 15), timeZone: state.availability.timeZone, status: "confirmed", provider: "calendar", calendarSource: "google", colour: "blue", canEdit: true, private: true },
-    { id: "preview-google-standup", title: "Ops stand-up", startAt: atDay(3, 9), endAt: atDay(3, 9, 30), timeZone: state.availability.timeZone, status: "confirmed", provider: "calendar", calendarSource: "google", colour: "blue", canEdit: true },
+    { id: "preview-busy", title: "Busy", startAt: atDay(2, 14), endAt: atDay(2, 15), timeZone: state.availability.timeZone, status: "confirmed", provider: "calendar", calendarSource: "google", colour: "blue", canEdit: false, canRespond: true, rsvpResponse: "needs_action", private: true },
+    { id: "preview-google-standup", title: "Ops stand-up", startAt: atDay(3, 9), endAt: atDay(3, 9, 30), timeZone: state.availability.timeZone, status: "confirmed", provider: "calendar", calendarSource: "google", colour: "blue", joinUrl: "https://meet.google.com/abc-defg-hij", canEdit: true, canRespond: false, rsvpResponse: "accepted" },
   ]
 }
 
@@ -174,6 +175,22 @@ export function updatePreviewExternalEvent(id: string, input: ExternalEventPatch
   const endAt = input.endAt ?? events[index].endAt
   if (Date.parse(endAt) <= Date.parse(startAt)) throw new Error("The event must finish after it starts.")
   const next: CalendarEvent = { ...events[index], startAt, endAt, title: events[index].private ? events[index].title : (input.title?.trim() || events[index].title) }
+  state.externalEvents = events.map((event) => event.id === id ? next : event)
+  writeState(state)
+  return next
+}
+
+export function respondToPreviewExternalEvent(id: string, response: ExternalEventResponse) {
+  const state = readState()
+  const events = previewExternalEvents(state)
+  const current = events.find((event) => event.id === id)
+  if (!current) throw new Error("That calendar invitation could not be found.")
+  if (!current.canRespond) throw new Error("This event is not an invitation you can answer.")
+  const next: CalendarEvent = {
+    ...current,
+    rsvpResponse: response,
+    participants: current.participants?.map((participant) => participant.self ? { ...participant, response } : participant),
+  }
   state.externalEvents = events.map((event) => event.id === id ? next : event)
   writeState(state)
   return next

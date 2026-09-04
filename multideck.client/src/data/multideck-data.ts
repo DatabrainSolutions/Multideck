@@ -3616,8 +3616,8 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "meeting-attendee-status",
     name: "Meeting Attendee Status",
     category: "Operations",
-    description: "Avatar, response summary and roster for a scheduled meeting so the organiser sees who accepted, declined or has not replied.",
-    details: "Use on calendar blocks (compact summary), meeting details and CRM timelines. Colleagues take the accent tint and external guests stay neutral; the response dot and label use the same accepted, maybe, declined and awaiting states the provider reports.",
+    description: "Profile photo, email, response summary and roster for a scheduled meeting so the organiser sees who accepted, declined or has not replied.",
+    details: "Use on calendar blocks (compact summary), meeting details and CRM timelines. Workspace profile photos fall back to initials, external guests stay neutral, and the response mark and label use the same accepted, maybe, declined and awaiting states the provider reports.",
     foundOn: [{ label: "Calendar · Event blocks", route: "/calendar" }, { label: "Calendar · Meeting details", route: "/calendar" }, { label: "Components", route: "/components?component=meeting-attendee-status" }],
     componentCode: `export function MeetingResponseSummary({ participants, compact }) {
   const counts = summariseResponses(participants)
@@ -3629,7 +3629,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
 export function MeetingAttendeeList({ participants }) {
   return sortByOrganiserThenResponse(participants).map((participant) => (
     <li>
-      <AttendeeAvatar name={participant.name} email={participant.email} response={participant.response} internal={participant.external === false} />
+      <AttendeeAvatar name={participant.name} email={participant.email} photoUrl={participant.photoUrl} response={participant.response} internal={participant.external === false} />
       <span>{participant.name}<small>{participant.email}</small></span>
       <span>{attendeeResponseMeta[participant.response].label}</span>
     </li>

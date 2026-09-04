@@ -13,7 +13,7 @@ class HttpError extends Error { constructor(status, message) { super(message); t
 async function calendarProviderAccessToken() { return "test-token" }
 function cleanText(value, limit) { return typeof value === "string" ? value.trim().slice(0, limit) : "" }
 `
-const { pushExternalEventChange } = await import(`data:text/javascript;base64,${Buffer.from(dependencies + stripTypeScriptTypes(source, { mode: "strip" })).toString("base64")}`)
+const { normaliseExternalEventResponse, pushExternalEventChange, pushExternalEventResponse } = await import(`data:text/javascript;base64,${Buffer.from(dependencies + stripTypeScriptTypes(source, { mode: "strip" })).toString("base64")}`)
 
 const event = {
   CALProviderEvent_ID: "event", CALProviderEvent_CompanyID: "company", CALProviderEvent_OwnerUserID: "owner",
@@ -85,6 +85,46 @@ test("syncing does not bypass expired credentials or provider write permissions"
     assert.equal(db.writes.length, 0)
     t.mock.restoreAll()
   }
+})
+
+test("RSVP writes use each provider's native response action before refreshing the mirror", async (t) => {
+  const invitation = {
+    ...event,
+    CALProviderEvent_ResponseCode: "needs_action",
+    CALProviderEvent_IsOrganiser: false,
+    CALProviderEvent_AttendeesJSON: [{ email: "owner@example.com", response: "needs_action", self: true }],
+  }
+  for (const provider of ["google", "microsoft"]) {
+    const db = database("connected", { CALConnection_ProviderCode: provider, CALConnection_Email: "owner@example.com" })
+    const requests = []
+    t.mock.method(globalThis, "fetch", async (url, options) => {
+      assert.equal(db.writes.length, 0)
+      requests.push({ url, options })
+      return new Response(provider === "google" ? "{}" : null, { status: provider === "google" ? 200 : 202 })
+    })
+    const result = await pushExternalEventResponse(db, invitation, "tentative")
+    assert.equal(requests.length, 1)
+    assert.equal(requests[0].options.method, provider === "google" ? "PATCH" : "POST")
+    if (provider === "google") {
+      assert.match(requests[0].url, /googleapis.*sendUpdates=all/)
+      assert.deepEqual(JSON.parse(requests[0].options.body), { attendeesOmitted: true, attendees: [{ email: "owner@example.com", responseStatus: "tentative" }] })
+    } else {
+      assert.match(requests[0].url, /graph\.microsoft.*tentativelyAccept/)
+      assert.deepEqual(JSON.parse(requests[0].options.body), { sendResponse: true })
+    }
+    assert.equal(result.row.CALProviderEvent_ResponseCode, "tentative")
+    assert.equal(db.writes[0].CALProviderEvent_AttendeesJSON[0].response, "tentative")
+    t.mock.restoreAll()
+  }
+})
+
+test("RSVP rejects organisers, unknown invitations and invalid responses without provider side effects", async (t) => {
+  const fetch = t.mock.method(globalThis, "fetch", async () => { throw new Error("Unexpected provider write") })
+  const invitation = { ...event, CALProviderEvent_ResponseCode: "needs_action", CALProviderEvent_IsOrganiser: false }
+  await assert.rejects(pushExternalEventResponse(database("connected"), { ...invitation, CALProviderEvent_IsOrganiser: true }, "accepted"), { status: 409 })
+  await assert.rejects(pushExternalEventResponse(database("connected"), { ...invitation, CALProviderEvent_ResponseCode: null }, "declined"), { status: 409 })
+  assert.throws(() => normaliseExternalEventResponse("later"), { status: 400 })
+  assert.equal(fetch.mock.callCount(), 0)
 })
 
 test("API and Dexter agree that syncing is editable, and preserve event-driven watches", () => {

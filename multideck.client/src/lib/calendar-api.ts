@@ -11,11 +11,15 @@ export type MeetingParticipant = {
   id?: string
   name: string
   email: string
+  photoUrl?: string | null
   role?: "organiser" | "attendee" | "optional"
   response?: "needs_action" | "accepted" | "tentative" | "declined"
   external?: boolean
   optional?: boolean
+  self?: boolean
 }
+
+export type ExternalEventResponse = "accepted" | "tentative" | "declined"
 
 /** One attendee suggestion from the tenant directory, CRM contacts or leads. */
 export type MeetingPersonSuggestion = {
@@ -62,7 +66,10 @@ export type CalendarEvent = {
   syncError?: string | null
   organiserUserId?: string
   canEdit: boolean
+  canRespond?: boolean
+  rsvpResponse?: MeetingParticipant["response"] | null
   private?: boolean
+  attendeeListState?: "available" | "unavailable" | "hidden"
   participants?: MeetingParticipant[]
   changeRequests?: MeetingChangeRequest[]
 }
@@ -340,6 +347,16 @@ export type ExternalEventPatch = { title?: string; startAt?: string; endAt?: str
 export async function updateExternalEvent(id: string, input: ExternalEventPatch) {
   if (localCalendarPreviewEnabled) return (await localPreview()).updatePreviewExternalEvent(id, input)
   return apiJson<CalendarEvent>(calendarFetch(`/external-events/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }), "The calendar event could not be changed.")
+}
+
+/** Accept, tentatively accept or decline a mirrored provider invitation. */
+export async function respondToExternalEvent(id: string, response: ExternalEventResponse) {
+  if (localCalendarPreviewEnabled) return (await localPreview()).respondToPreviewExternalEvent(id, response)
+  return apiJson<CalendarEvent>(calendarFetch(`/external-events/${encodeURIComponent(id)}/response`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ response }),
+  }), "The invitation response could not be saved.")
 }
 
 /** Route a change to the right endpoint for a Multideck meeting or a mirrored provider event. */

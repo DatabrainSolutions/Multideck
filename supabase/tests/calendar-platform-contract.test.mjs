@@ -305,8 +305,10 @@ test("meeting details open beside the event and availability lives in Profile se
   assert.match(calendarPeriodCore, /export function calendarPeriodDates/)
   assert.match(calendarView, /calendarPeriodDates\(view, anchor, true\)/)
   assert.match(warehouseCalendar, /calendarPeriodDates\(view, anchorDate\)/)
-  assert.match(calendarView, /overlapBoundary && "after:pointer-events-none after:absolute after:inset-0 after:rounded-\[inherit\] after:border-2 after:border-\[var\(--md-surface\)\]"/)
+  assert.match(calendarView, /overlapBoundary && "shadow-none after:pointer-events-none after:absolute after:inset-0 after:rounded-\[inherit\] after:border-\[1\.5px\] after:border-\[var\(--md-surface\)\] focus-visible:ring-0 focus-visible:brightness-\[\.9\]"/)
   assert.doesNotMatch(calendarView, /overlapBoundary && "border-2 border-white"/)
+  assert.match(calendarView, /focus-visible:ring-\[var\(--md-surface\)\]/)
+  assert.match(calendarView, /contained && "rounded-\[var\(--md-radius-sm\)\]"/)
   // Empty slots honour the visible timezone, and drag-to-move must stop at a compact attendee-impact review.
   assert.match(calendarView, /zonedToIso\(calendarDateKey\(day\)/)
   assert.match(calendarView, /onReviewMove\(event, startAt/)
