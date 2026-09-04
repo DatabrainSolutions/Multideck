@@ -537,17 +537,14 @@ function WarehouseSkuStockPanel({ sku, open, onClose, onSelectLine, onSelectPall
   }
 
   return (
-    <RecordDrawer
-      open={open}
-      onClose={onClose}
-      eyebrow={t("Stock in warehouse")}
-      title={sku.sku}
-      icon={Boxes}
-      width={820}
-      slideDistance={120}
-      motionTransition={mdMotion.drawer}
-      summary={(
-        <>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent className="max-h-[min(880px,calc(100dvh-32px))] w-[calc(100vw-32px)] gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[820px]">
+        <DialogHeader className={warehouseDialogHeaderClass}>
+          <DialogTitle><span data-i18n-skip dir="ltr">{sku.sku}</span></DialogTitle>
+          <DialogDescription>{t("Stock in warehouse")}</DialogDescription>
+        </DialogHeader>
+        <div className="grid min-h-0 gap-3 overflow-y-auto px-5 py-4 sm:px-6 sm:py-5">
+          <FactCard>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-[13px] leading-5 text-[var(--md-ink)]" dir="auto">{summary.itemDescription}</p>
@@ -561,15 +558,13 @@ function WarehouseSkuStockPanel({ sku, open, onClose, onSelectLine, onSelectPall
             <FactRow label="Allocated" value={`${number.format(summary.allocatedQuantity)} ${summary.uomCode}`} code />
             <FactRow label="Held" value={`${number.format(summary.heldQuantity)} ${summary.uomCode}`} code />
           </div>
-        </>
-      )}
-    >
-      {loadError ? (
-        <FactCard><div role="alert" className="py-5 text-center"><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Stock details are unavailable")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{loadError}</p></div></FactCard>
-      ) : !detail ? (
-        <FactCard><DotGridLoaderPanel label="Loading stock breakdown" minHeight={140} /></FactCard>
-      ) : (
-        <>
+          </FactCard>
+          {loadError ? (
+            <FactCard><div role="alert" className="py-5 text-center"><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Stock details are unavailable")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{loadError}</p></div></FactCard>
+          ) : !detail ? (
+            <FactCard><DotGridLoaderPanel label="Loading stock breakdown" minHeight={140} /></FactCard>
+          ) : (
+            <>
           <div className="grid gap-3 md:grid-cols-2">
             <FactCard>
               <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("By location type")}</p>
@@ -613,9 +608,11 @@ function WarehouseSkuStockPanel({ sku, open, onClose, onSelectLine, onSelectPall
             </div>
             {detail.lineTotal > detail.lines.length ? <p className="mt-3 pt-3 text-[11px] text-[var(--md-subtle)] shadow-[var(--md-stroke-top)]">{t(`Showing the first ${detail.lines.length} of ${detail.lineTotal} stock lines.`)}</p> : null}
           </FactCard>
-        </>
-      )}
-    </RecordDrawer>
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

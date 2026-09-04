@@ -8,9 +8,11 @@ const read = (path) => readFileSync(new URL(path, root), "utf8")
 const client = read("multideck.client/src/lib/warehouse.ts")
 const workspace = read("multideck.client/src/components/multideck/warehouse-inventory-workspace.tsx")
 const inventoryRoute = read("supabase/functions/warehouse/routes/inventory.ts")
+const warehouseAuthentication = read("supabase/functions/warehouse/shared/authentication.ts")
 const handlingRoute = read("supabase/functions/warehouse/routes/handling-units.ts")
 const migration = read("supabase/migrations/20260819102000_warehouse_inventory_register_paging.sql")
 const skuMigration = read("supabase/migrations/20260904170000_warehouse_inventory_sku_workspace.sql")
+const actorPerformanceMigration = read("supabase/migrations/20260904183000_warehouse_actor_context_performance.sql")
 const benchmark = read("multideck.client/benchmarks/warehouse-inventory-paging.mjs")
 
 test("inventory client exposes bounded stock and supporting register readers", () => {
@@ -34,10 +36,24 @@ test("inventory workspace fetches only its active page and defers action referen
   assert.doesNotMatch(workspace, /const stockViews =/)
   assert.match(workspace, /mode === "Stock" \? await listWarehouseStockSkusPage/)
   assert.match(workspace, /getWarehouseStockSkuDetail\(sku\.itemId, sku\.facilityId\)/)
+  assert.match(workspace, /<Dialog open=\{open\}[\s\S]*sm:max-w-\[820px\][\s\S]*Stock in warehouse/)
+  assert.doesNotMatch(workspace, /skuDetailCache|cachedSkuDetail|loadSkuDetail|onPointerEnter: preload/)
+  assert.match(workspace, /setDetail\(null\)[\s\S]*getWarehouseStockSkuDetail\(sku\.itemId, sku\.facilityId\)/)
   assert.match(workspace, /pagination=\{\{ offset, limit: inventoryPageSize, total: totals\[mode\]/)
   assert.match(workspace, /serverSorting=\{\{ value: sort/)
   assert.match(workspace, /listWarehouseFacilitiesPage\(\{ limit: 50 \}\)/)
   assert.match(workspace, /if \(!createOpen && !emptyOpen\) return[\s\S]*getWarehouseOrderReference\(\)/)
+})
+
+test("warehouse authentication resolves internal permissions and facilities in one database call", () => {
+  assert.match(warehouseAuthentication, /warehouse_edge_internal_actor_context/)
+  assert.match(warehouseAuthentication, /facilityIds: new Set\(Array\.isArray\(context\.facilityIds\)/)
+  assert.match(warehouseAuthentication, /if \(actor\.facilityScopeResolved\) return \[\.\.\.actor\.facilityIds\]/)
+  assert.match(actorPerformanceMigration, /create or replace function public\.warehouse_edge_internal_actor_context/)
+  assert.match(actorPerformanceMigration, /sys_UserRole_Permissions/)
+  assert.match(actorPerformanceMigration, /WMSFacility_IsDeleted/)
+  assert.match(actorPerformanceMigration, /revoke all on function public\.warehouse_edge_internal_actor_context\(uuid\) from public, anon, authenticated/)
+  assert.match(actorPerformanceMigration, /grant execute on function public\.warehouse_edge_internal_actor_context\(uuid\) to service_role/)
 })
 
 test("Edge routes scope and invoke bounded inventory read models", () => {
