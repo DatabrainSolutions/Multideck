@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
+import { stripTypeScriptTypes } from "node:module"
 
 const edgeFunction = readFileSync(
   new URL("../functions/create-support-ticket/index.ts", import.meta.url),
@@ -10,6 +11,7 @@ const cloudContract = readFileSync(
   new URL("../functions/create-support-ticket/cloud-contract.ts", import.meta.url),
   "utf8",
 )
+const { cloudSupportHeaders } = await import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(cloudContract)).toString("base64")}`)
 const client = readFileSync(
   new URL("../../multideck.client/src/lib/support-ticket.ts", import.meta.url),
   "utf8",
@@ -27,11 +29,23 @@ const legacyContract = readFileSync(
   "utf8",
 )
 
-test("signs intake without sending a browser customer or tenant selector", () => {
-  assert.match(cloudContract, /crypto\.subtle\.sign\("HMAC"/)
-  assert.match(cloudContract, /`\$\{timestamp\}\.\$\{nonce\}\.\$\{bodyDigest\}`/)
-  assert.match(cloudContract, /"x-multideck-tenant-host": tenantHost/)
-  assert.doesNotMatch(cloudContract, /x-multideck-tenant-id/i)
+test("signs intake with the deployed Ed25519 contract without transmitting the private key", async () => {
+  const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])
+  const privateKey = Buffer.from(await crypto.subtle.exportKey("pkcs8", pair.privateKey)).toString("base64")
+  const body = JSON.stringify({ action: "finalize", draftId: "example" })
+  const headers = await cloudSupportHeaders(privateKey, "support-test-key", "dev.multideck.app", body, 1788556491000, "unique-nonce")
+  const digest = Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body))).toString("hex")
+  const message = `${headers["x-multideck-timestamp"]}.unique-nonce.${digest}.dev.multideck.app.support-test-key`
+  const signature = Buffer.from(headers["x-multideck-signature"], "base64")
+  assert.equal(await crypto.subtle.verify("Ed25519", pair.publicKey, signature, new TextEncoder().encode(message)), true)
+  for (const altered of [message.replace("dev.multideck.app", "another.multideck.app"), message.replace("support-test-key", "another-key"), message.replace("unique-nonce", "replayed-nonce"), message.replace(digest, "0".repeat(64))]) {
+    assert.equal(await crypto.subtle.verify("Ed25519", pair.publicKey, signature, new TextEncoder().encode(altered)), false)
+  }
+  assert.equal(headers["x-multideck-key-id"], "support-test-key")
+  assert.equal(headers["x-multideck-tenant-host"], "dev.multideck.app")
+  assert.equal(JSON.stringify(headers).includes(privateKey), false)
+  assert.equal("x-multideck-credential" in headers, false)
+  assert.equal("x-multideck-tenant-id" in headers, false)
 })
 
 test("detects nested spoofed customer selectors", () => {
@@ -43,7 +57,9 @@ test("detects nested spoofed customer selectors", () => {
 test("derives the reporter for every intake stage and rejects browser customer identity", () => {
   assert.match(edgeFunction, /containsCustomerSelector\(body\)/)
   assert.match(edgeFunction, /reporterUserId: reporter\.workspaceUser\.User_ID/)
-  assert.match(edgeFunction, /\["create_draft", "prepare_attachment", "complete_attachment", "finalize"\]/)
+  assert.match(edgeFunction, /\["create_draft", "prepare_attachment", "complete_attachment", "finalize", "list_tickets", "get_ticket", "add_comment"\]/)
+  assert.match(edgeFunction, /cloudBody\.reporterName = reporter\.name/)
+  assert.match(edgeFunction, /cloudBody\.reporterEmail = reporter\.email/)
 })
 
 test("defaults to the legacy Databrain path and only enables Cloud from a server-side flag", () => {
@@ -51,12 +67,13 @@ test("defaults to the legacy Databrain path and only enables Cloud from a server
   assert.match(edgeFunction, /cloudTicketingEnabled[\s\S]*handleCloudTicket[\s\S]*handleLegacyTicket/)
   assert.match(edgeFunction, /DATABRAIN_TICKET_WEBHOOK_URL/)
   assert.match(edgeFunction, /X-Databrain-Webhook-Secret/)
-  assert.match(edgeFunction, /MULTIDECK_CLOUD_SUPPORT_CREDENTIAL/)
+  assert.match(edgeFunction, /MULTIDECK_CLOUD_SUPPORT_SIGNING_PRIVATE_KEY/)
+  assert.match(edgeFunction, /MULTIDECK_CLOUD_SUPPORT_KEY_ID/)
   assert.doesNotMatch(edgeFunction, /body\.MULTIDECK_CLOUD_SUPPORT_ENABLED|body\.cloudTicketingEnabled/)
 })
 
 test("keeps the legacy Settings form visible while the Cloud rollout flag is off", () => {
-  assert.match(settingsPage, /supportTicketFeatureEnabled \? <SupportHubTab \/> : <LegacySupportTab \/>/)
+  assert.match(settingsPage, /supportTicketFeatureEnabled \? <SupportHubTab navigate=\{navigate\} \/> : <LegacySupportTab \/>/)
   assert.match(settingsPage, /createLegacySupportTicket\(\{/)
   assert.match(settingsPage, /topic,[\s\S]*priority,[\s\S]*applicationUrl: window\.location\.href/)
 })

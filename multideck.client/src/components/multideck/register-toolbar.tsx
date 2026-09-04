@@ -63,7 +63,7 @@ export function RegisterViewSwitch<T extends string>({
       className={cn("p-[3px]", compact && "h-8 p-0.5 [&>button]:h-7 [&>button]:rounded-[calc(var(--md-radius-lg)-2px)] [&>button]:px-2 [&>button]:text-[12px] [&>button>span]:gap-1")}
       renderOption={(option) => {
         const count = counts?.[option]
-        const reservesCountSpace = counts !== undefined
+        const reservesCountSpace = compact ? count !== undefined : counts !== undefined
         return (
           <>
             <span>{t(option)}</span>

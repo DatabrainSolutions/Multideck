@@ -15,6 +15,7 @@ import { createSupportTicket, SupportTicketError, type CreateSupportTicketRespon
 import { cn } from "@/lib/utils"
 
 export const SUPPORT_TICKET_OPEN_EVENT = "multideck:open-support-ticket"
+export const SUPPORT_TICKET_SUBMITTED_EVENT = "multideck:support-ticket-submitted"
 export function openSupportTicket() { window.dispatchEvent(new Event(SUPPORT_TICKET_OPEN_EVENT)) }
 
 type Draft = { ticketType: SupportTicketType; impact: SupportTicketImpact; title: string; description: string; actualBehaviour: string; desiredOutcome: string }
@@ -314,6 +315,7 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
     try {
       const response = await createSupportTicket({ idempotencyKey: idempotencyRef.current, ticketType: draft.ticketType, impact: draft.impact, title: draft.title.trim(), description: draft.description.trim(), expectedBehaviour: null, actualBehaviour: draft.ticketType === "bug" ? draft.actualBehaviour.trim() || null : null, desiredOutcome: draft.ticketType === "feature_request" ? draft.desiredOutcome.trim() || null : null, attachments: draft.ticketType === "bug" ? files : [], context: { route: `${window.location.pathname}${window.location.search}`, appVersion: import.meta.env.VITE_APP_VERSION ?? "local", browser: browserName(), browserVersion: navigator.userAgent.match(/(?:Chrome|Firefox|Version|Edg)\/([\d.]+)/)?.[1] ?? "Unknown", operatingSystem: operatingSystem(), locale: navigator.language, viewport: `${window.innerWidth}×${window.innerHeight}` }, onProgress: (state) => setProgress(t(state === "creating" ? "Creating secure ticket" : state === "preparing_attachments" ? "Preparing screenshots" : state === "uploading" ? "Uploading screenshots" : "Confirming ticket")) })
       setResult(response); setDraft(emptyDraft); setFiles([]); window.localStorage.removeItem(draftStorageKey); idempotencyRef.current = `multideck-support-${crypto.randomUUID()}`
+      window.dispatchEvent(new Event(SUPPORT_TICKET_SUBMITTED_EVENT))
     } catch (submitError) { setError(submitError instanceof SupportTicketError ? t(submitError.message) : t("Support is temporarily unavailable. Your ticket details are still here; try again.")) }
     finally { setSubmitting(false); setProgress("") }
   }

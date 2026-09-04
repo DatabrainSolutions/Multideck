@@ -1570,17 +1570,6 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
-/* Lifecycle notes use Dexter's composer geometry without a field stroke. The
-   soft lift keeps keyboard focus visible while the nested surfaces carry the
-   boundary themselves. */
-.md-lifecycle-note-composer:focus-within {
-  box-shadow: 0 18px 42px rgba(42, 52, 50, 0.14);
-}
-
-.dark .md-lifecycle-note-composer:focus-within {
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
-}
-
 /* ── Dexter inline mentions ──────────────────────────────────────────────────
    A selected workspace object keeps the footprint of text, but becomes a
    durable reference. Light mode uses the pale fill/deep edge pairing; dark mode
@@ -6529,6 +6518,36 @@ html.md-summon-picking {
 @media (max-width: 640px) {
   .md-dictation-status-dock {
     bottom: max(14px, calc(env(safe-area-inset-bottom) + 10px));
+  }
+}
+
+/* Mobile calendar details move as one full-height surface. */
+.md-calendar-mobile-details {
+  will-change: transform;
+}
+
+.md-calendar-mobile-details[data-state="open"] {
+  animation: md-calendar-mobile-details-in var(--md-motion-panel) both;
+}
+
+.md-calendar-mobile-details[data-state="closed"] {
+  animation: md-calendar-mobile-details-out var(--md-motion-fast) both;
+}
+
+@keyframes md-calendar-mobile-details-in {
+  from { transform: translate3d(100%, 0, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes md-calendar-mobile-details-out {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(100%, 0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-calendar-mobile-details[data-state] {
+    animation: none;
+    transition: none;
   }
 }
 

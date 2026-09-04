@@ -1,24 +1,13 @@
-import { Fragment, useEffect, type MouseEvent } from "react"
-import {
-  Pagination as PaginationRoot,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination"
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Fragment, useEffect, useId } from "react"
+import { motion, useReducedMotion } from "motion/react"
+import { ChevronLeft, ChevronRight } from "@/components/icons/hugeicons"
+import { Button } from "@/components/ui/button"
+import { Pagination as PaginationRoot, PaginationContent, PaginationItem, PaginationEllipsis } from "@/components/ui/pagination"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/i18n/language-provider"
-import { paginationPageSizes, paginationRange } from "@/lib/pagination"
+import { paginationPageSizes, paginationRange, paginationVisiblePages } from "@/lib/pagination"
+import { mdMotion, reduceMotion } from "@/lib/motion"
 
 type PaginationProps = {
   page: number
@@ -30,145 +19,102 @@ type PaginationProps = {
   onPageSizeChange?: (pageSize: number) => void
   loading?: boolean
   error?: boolean
-  /** Actual rows returned; avoids claiming a full page when a request returned fewer. */
+  /** Actual returned rows, so a short response never claims a full page. */
   itemCount?: number
   itemLabel?: string
   className?: string
 }
 
-function getVisiblePages(page: number, pageCount: number) {
-  const pages = new Set([1, pageCount, page - 1, page, page + 1].filter((value) => value >= 1 && value <= pageCount))
-  return Array.from(pages).sort((a, b) => a - b)
-}
+const pageButtonClass = "relative isolate size-8 shrink-0 rounded-[var(--md-radius-md)] text-[12px] font-medium text-[var(--md-text)] transition-[color,background-color,transform] duration-150 hover:text-[var(--md-ink)] active:scale-95 disabled:opacity-35 motion-reduce:transition-none motion-reduce:transform-none max-sm:size-11"
 
+/** Multideck-owned navigation. It never fetches data or animates table rows. */
 export function Pagination({
-  page,
-  totalItems,
-  pageSize,
-  onPageChange,
-  pageSizeOptions = paginationPageSizes,
-  onPageSizeChange,
-  loading = false,
-  error = false,
-  itemCount,
-  itemLabel = "items",
-  className,
+  page, totalItems, pageSize, onPageChange,
+  pageSizeOptions = paginationPageSizes, onPageSizeChange,
+  loading = false, error = false, itemCount, itemLabel = "items", className,
 }: PaginationProps) {
-  const { t } = useLanguage()
-  const { pageCount: safePageCount, currentPage, start: startItem, end: endItem } = paginationRange(totalItems, page, pageSize, itemCount)
-  const visiblePages = getVisiblePages(currentPage, safePageCount)
-  const previousDisabled = loading || currentPage === 1
-  const nextDisabled = loading || currentPage === safePageCount
+  const { t, language } = useLanguage()
+  const id = useId()
+  const reducedMotion = useReducedMotion()
+  const range = paginationRange(totalItems, page, pageSize, itemCount)
+  const { pageCount: safePageCount, currentPage } = range
+  const visiblePages = paginationVisiblePages(currentPage, safePageCount)
+  const number = new Intl.NumberFormat(language)
   const sizeOptions = [...new Set([...pageSizeOptions, pageSize])].filter((size) => Number.isInteger(size) && size > 0).sort((a, b) => a - b)
 
   useEffect(() => {
     if (!loading && !error && page !== currentPage) onPageChange(currentPage)
   }, [currentPage, error, loading, onPageChange, page])
 
-  function selectPage(event: MouseEvent<HTMLAnchorElement>, nextPage: number) {
-    event.preventDefault()
-    if (!loading && nextPage !== currentPage) onPageChange(nextPage)
+  function selectPage(nextPage: number) {
+    if (!loading && nextPage !== currentPage && nextPage >= 1 && nextPage <= safePageCount) onPageChange(nextPage)
   }
 
   return (
     <PaginationRoot
-      className={cn("mx-0 flex-wrap gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)] sm:items-center sm:justify-between", className)}
-      aria-label={t(`${itemLabel} pagination`)}
-      aria-busy={loading}
+      className={cn("mx-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-3 py-2", className)}
+      aria-label={t(`${itemLabel} pagination`)} aria-busy={loading}
     >
-      <div className="flex flex-col gap-2 px-2 sm:flex-row sm:items-center sm:gap-4">
-        <p className="text-[13px] font-medium text-[var(--md-text)]" aria-live="polite" aria-atomic="true">
-          {loading ? t("Loading rows…") : error ? t("Rows could not be loaded.") : <>{t("Showing")} <span className="text-[var(--md-ink)]" data-i18n-skip dir="ltr">{startItem}-{endItem}</span> {t("of")}{" "}
-          <span className="text-[var(--md-ink)]" data-i18n-skip dir="ltr">{totalItems}</span> {t(itemLabel)}</>}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+        <p className="text-[12px] text-[var(--md-subtle)]" aria-live="polite" aria-atomic="true">
+          {loading ? t("Loading rows…") : error ? t("Rows could not be loaded.") : (
+            <motion.span key={`${range.start}-${range.end}-${range.total}`}
+              initial={reducedMotion ? false : { opacity: 0.5 }} animate={{ opacity: 1 }} transition={{ duration: reducedMotion ? 0 : 0.16 }}
+            >
+              <span className="font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip>{number.format(range.start)}–{number.format(range.end)}</span>
+              {" "}{t("of")}{" "}<span className="tabular-nums" data-i18n-skip>{number.format(range.total)}</span>{" "}{t(itemLabel)}
+            </motion.span>
+          )}
         </p>
-
         {onPageSizeChange ? (
-          <div className="flex items-center gap-2">
-            <span className="text-[12px] font-medium text-[var(--md-subtle)]">{t("Rows per page")}</span>
-            <Select disabled={loading} value={String(pageSize)} onValueChange={(value) => { onPageSizeChange(Number(value)); onPageChange(1) }}>
-              <SelectTrigger
-                size="sm"
-                className="h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-2 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
-                aria-label={t("Rows per page")}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
-                <SelectGroup>
-                  {sizeOptions.map((option) => (
-                    <SelectItem key={option} value={String(option)} className="text-[13px]">
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
+          <Select disabled={loading} value={String(pageSize)} onValueChange={(value) => { onPageSizeChange(Number(value)); onPageChange(1) }}>
+            <SelectTrigger size="sm" aria-label={t("Rows per page")}
+              className="gap-1.5 rounded-[var(--md-radius-md)] border-0 bg-transparent px-2 text-[12px] text-[var(--md-subtle)] shadow-none hover:bg-[var(--md-hover)] data-[size=sm]:h-8 max-sm:data-[size=sm]:h-11"
+            >
+              <SelectValue /><span aria-hidden="true">/ {t("page")}</span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>{sizeOptions.map((option) => <SelectItem key={option} value={String(option)}>{number.format(option)}</SelectItem>)}</SelectGroup>
+            </SelectContent>
+          </Select>
         ) : null}
       </div>
 
-      <PaginationContent>
-        <PaginationItem>
-          <PaginationPrevious
-            href="#"
-            text={t("Previous")}
-            aria-label={t("Previous page")}
-            aria-disabled={previousDisabled}
-            tabIndex={previousDisabled ? -1 : undefined}
-            className="rounded-[var(--md-radius-md)] text-[13px] text-[var(--md-text)] aria-disabled:pointer-events-none aria-disabled:opacity-35"
-            onClick={(event) => {
-              if (!previousDisabled) selectPage(event, currentPage - 1)
-              else event.preventDefault()
-            }}
-          />
-        </PaginationItem>
-
-        {visiblePages.map((pageNumber, index) => {
-          const previousPage = visiblePages[index - 1]
-          const hasGap = previousPage && pageNumber - previousPage > 1
-
-          return (
+      {safePageCount > 1 ? (
+        <PaginationContent className="gap-1 max-sm:ms-auto">
+          <PaginationItem>
+            <Button type="button" variant="ghost" size="icon" aria-label={t("Previous page")} title={t("Previous page")}
+              disabled={loading || currentPage === 1} className={pageButtonClass} onClick={() => selectPage(currentPage - 1)}>
+              <ChevronLeft className="size-4" aria-hidden="true" />
+            </Button>
+          </PaginationItem>
+          {visiblePages.map((pageNumber, index) => (
             <Fragment key={pageNumber}>
-              {hasGap ? (
-                <PaginationItem className="hidden sm:block">
-                  <PaginationEllipsis text={t("More pages")} className="text-[var(--md-subtle)]" />
-                </PaginationItem>
-              ) : null}
+              {index > 0 && pageNumber - visiblePages[index - 1] > 1 ? <PaginationItem className="hidden sm:block"><PaginationEllipsis text={t("More pages")} className="size-6 text-[var(--md-subtle)]" /></PaginationItem> : null}
               <PaginationItem className="hidden sm:block">
-                <PaginationLink
-                  href="#"
-                  isActive={pageNumber === currentPage}
-                  aria-label={`${t("Page")} ${pageNumber}`}
-                  aria-disabled={loading}
-                  tabIndex={loading ? -1 : undefined}
-                  className="rounded-[var(--md-radius-md)] text-[13px] text-[var(--md-text)] data-[active=true]:bg-[var(--md-sidebar-bg)] data-[active=true]:text-[var(--md-ink)] data-[active=true]:shadow-[var(--md-shadow-line)]"
-                  onClick={(event) => selectPage(event, pageNumber)}
-                >
-                  <span data-i18n-skip dir="ltr">{pageNumber}</span>
-                </PaginationLink>
+                <Button type="button" variant="ghost" size="icon" disabled={loading}
+                  aria-disabled={loading} aria-label={`${t("Page")} ${number.format(pageNumber)}`} aria-current={pageNumber === currentPage ? "page" : undefined}
+                  className={cn(pageButtonClass, pageNumber === currentPage && "text-[var(--md-ink)]")}
+                  onClick={() => selectPage(pageNumber)}>
+                  {pageNumber === currentPage ? <motion.span aria-hidden="true" layoutId={`${id}-page`}
+                    className="absolute inset-0 -z-10 rounded-[inherit] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]"
+                    transition={reduceMotion(Boolean(reducedMotion), mdMotion.fast)} /> : null}
+                  <span data-i18n-skip className="tabular-nums">{number.format(pageNumber)}</span>
+                </Button>
               </PaginationItem>
             </Fragment>
-          )
-        })}
-
-        <PaginationItem className="px-2 text-[12px] text-[var(--md-text)] sm:hidden">
-          {t("Page")} {currentPage} {t("of")} {safePageCount}
-        </PaginationItem>
-        <PaginationItem>
-          <PaginationNext
-            href="#"
-            text={t("Next")}
-            aria-label={t("Next page")}
-            aria-disabled={nextDisabled}
-            tabIndex={nextDisabled ? -1 : undefined}
-            className="rounded-[var(--md-radius-md)] text-[13px] text-[var(--md-text)] aria-disabled:pointer-events-none aria-disabled:opacity-35"
-            onClick={(event) => {
-              if (!nextDisabled) selectPage(event, currentPage + 1)
-              else event.preventDefault()
-            }}
-          />
-        </PaginationItem>
-      </PaginationContent>
+          ))}
+          <PaginationItem className="px-1 text-[12px] tabular-nums text-[var(--md-text)] sm:hidden">
+            {t("Page")} {number.format(currentPage)} {t("of")} {number.format(safePageCount)}
+          </PaginationItem>
+          <PaginationItem>
+            <Button type="button" variant="ghost" size="icon" aria-label={t("Next page")} title={t("Next page")}
+              disabled={loading || currentPage === safePageCount} className={pageButtonClass} onClick={() => selectPage(currentPage + 1)}>
+              <ChevronRight className="size-4" aria-hidden="true" />
+            </Button>
+          </PaginationItem>
+        </PaginationContent>
+      ) : null}
     </PaginationRoot>
   )
 }

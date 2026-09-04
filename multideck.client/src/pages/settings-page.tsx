@@ -83,6 +83,7 @@ import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import { openSupportTicket } from "@/components/multideck/support-ticket-dialog"
 import { CalendarConnectionSettings } from "@/components/multideck/calendar-connection-settings"
 import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
+import { SupportTicketWorkspace } from "@/pages/support-ticket-workspace"
 import {
   createLegacySupportTicket,
   SupportTicketError,
@@ -5203,16 +5204,26 @@ function LegacySupportTab() {
   )
 }
 
-function SupportHubTab() {
+function SupportHubTab({ navigate }: { navigate: (path: string) => void }) {
   const { t } = useLanguage()
+  const [ticketId, setTicketId] = useState(() => new URLSearchParams(window.location.search).get("ticket"))
+  useEffect(() => {
+    const update = () => setTicketId(new URLSearchParams(window.location.search).get("ticket"))
+    window.addEventListener("popstate", update)
+    return () => window.removeEventListener("popstate", update)
+  }, [])
+  function navigateSupport(path: string) {
+    navigate(path)
+    setTicketId(new URLSearchParams(window.location.search).get("ticket"))
+  }
   return (
     <>
       <SettingsPageHeader
         eyebrow={t("Resources / Support")}
         title={t("Support")}
-        description={t("Tell the support team what you need without losing the page or workflow you are working in.")}
+        description={t("Submit a ticket, track its status, and reply to the support team.")}
       />
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
+      {!ticketId ? <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
         <SettingsPanel title={t("Create a support ticket")} description={t("The same focused ticket experience is available here and from the bottom of the sidebar.")}>
           <div className="flex flex-col gap-5 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="max-w-xl">
@@ -5234,7 +5245,8 @@ function SupportHubTab() {
             </ol>
           </SettingsPanel>
         </aside>
-      </div>
+      </div> : null}
+      <SupportTicketWorkspace key={ticketId ?? "ticket-list"} ticketId={ticketId} navigate={navigateSupport} />
     </>
   )
 }
@@ -5281,7 +5293,7 @@ function TabContent({
     case "docs":
       return <DocsTab />
     case "support":
-      return supportTicketFeatureEnabled ? <SupportHubTab /> : <LegacySupportTab />
+      return supportTicketFeatureEnabled ? <SupportHubTab navigate={navigate} /> : <LegacySupportTab />
     default:
       return (
         <ProfileTab

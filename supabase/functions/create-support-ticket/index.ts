@@ -134,14 +134,20 @@ async function handleLegacyTicket(request: Request, body: JsonObject, reporter: 
 
 async function handleCloudTicket(request: Request, body: JsonObject, reporter: ReporterContext) {
   const cloudUrl = Deno.env.get("MULTIDECK_CLOUD_SUPPORT_URL")?.trim() ?? ""
-  const cloudCredential = Deno.env.get("MULTIDECK_CLOUD_SUPPORT_CREDENTIAL")?.trim() ?? ""
+  const cloudSigningPrivateKey = Deno.env.get("MULTIDECK_CLOUD_SUPPORT_SIGNING_PRIVATE_KEY")?.trim() ?? ""
+  const cloudSigningKeyId = Deno.env.get("MULTIDECK_CLOUD_SUPPORT_KEY_ID")?.trim() ?? ""
   const tenantHost = Deno.env.get("MULTIDECK_TENANT_HOST")?.trim().toLowerCase() ?? ""
-  if (!cloudUrl.startsWith("https://") || cloudCredential.length < 32 || !/^[a-z0-9-]+\.multideck\.app$/.test(tenantHost)) {
+  if (
+    !cloudUrl.startsWith("https://")
+    || cloudSigningPrivateKey.length < 40
+    || !/^[A-Za-z0-9._:-]{8,80}$/.test(cloudSigningKeyId)
+    || !/^[a-z0-9-]+\.multideck\.app$/.test(tenantHost)
+  ) {
     return supportUnavailable(request)
   }
 
   const action = cleanString(body.action, 40)
-  if (!["create_draft", "prepare_attachment", "complete_attachment", "finalize"].includes(action)) {
+  if (!["create_draft", "prepare_attachment", "complete_attachment", "finalize", "list_tickets", "get_ticket", "add_comment"].includes(action)) {
     return validationError(request, "Choose a supported ticket action.")
   }
 
@@ -149,6 +155,12 @@ async function handleCloudTicket(request: Request, body: JsonObject, reporter: R
   // every stage. Cloud combines it with the resolved machine credential, so a
   // browser cannot prepare, complete or finalise another reporter's draft.
   const cloudBody: JsonObject = { ...body, action, reporterUserId: reporter.workspaceUser.User_ID }
+  if (action === "add_comment") {
+    // Names and email addresses are evidence from the signed-in workspace,
+    // never identity claims accepted from a browser comment.
+    cloudBody.reporterName = reporter.name
+    cloudBody.reporterEmail = reporter.email
+  }
   if (action === "create_draft") {
     const submittedTicket = isPlainObject(body.ticket) ? body.ticket : {}
     const context = isPlainObject(submittedTicket.context) ? submittedTicket.context : {}
@@ -162,10 +174,15 @@ async function handleCloudTicket(request: Request, body: JsonObject, reporter: R
   }
 
   const upstreamBody = JSON.stringify(cloudBody)
-  const signedHeaders = await cloudSupportHeaders(cloudCredential, tenantHost, upstreamBody)
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), action === "complete_attachment" ? 25_000 : 15_000)
   try {
+    const signedHeaders = await cloudSupportHeaders(
+      cloudSigningPrivateKey,
+      cloudSigningKeyId,
+      tenantHost,
+      upstreamBody,
+    )
     const upstream = await fetch(cloudUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...signedHeaders },
@@ -185,6 +202,7 @@ async function handleCloudTicket(request: Request, body: JsonObject, reporter: R
     return json(request, payload, upstream.status)
   } catch (error) {
     const timedOut = error instanceof DOMException && error.name === "AbortError"
+    if (!timedOut) console.error("Cloud support request signing or delivery failed", error instanceof Error ? error.name : "unknown")
     return json(request, {
       code: timedOut ? "support_service_timeout" : "support_service_unavailable",
       message: timedOut

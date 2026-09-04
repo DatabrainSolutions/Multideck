@@ -801,7 +801,7 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
           />
         </div>
       )}
-      toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => { setSearch(""); setCommittedSearch(""); setOffset(0) }} label="Search orders" placeholder="Order, customer, SKU" className="sm:min-w-[136px] sm:w-[136px]" />}
+      toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => { setSearch(""); setCommittedSearch(""); setOffset(0) }} label="Search orders" placeholder="Order, customer, SKU" className="sm:min-w-[220px] sm:w-[240px]" />}
       toolbarFilters={(
         <>
           {typeFilter ? null : (

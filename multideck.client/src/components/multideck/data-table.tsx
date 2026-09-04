@@ -841,13 +841,16 @@ export function DataTable<Row>({
             <PopoverContent
               align="end"
               sideOffset={6}
+              collisionPadding={12}
+              aria-label={t("Table controls")}
+              data-mobile="true"
               onInteractOutside={(event) => { if (isInsideFloatingLayer(event.target)) event.preventDefault() }}
-              className="w-[min(340px,calc(100vw-24px))] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-2 shadow-[var(--md-shadow-popover)]"
+              className="group/table-controls w-[min(360px,calc(100vw-24px))] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto overscroll-contain rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-2 shadow-[var(--md-shadow-popover)]"
             >
-              <div className="grid gap-2">
-                {toolbarSearch ? <div className="min-w-0 [&>*]:w-full [&_input]:!rounded-[var(--md-radius-lg)]">{toolbarSearch}</div> : null}
-                {toolbarFilters ? <div className="flex min-w-0 flex-wrap items-center gap-1.5 [&_button]:!rounded-[var(--md-radius-lg)]">{toolbarFilters}</div> : null}
-                {toolbarOptions ? <div className="flex min-w-0 flex-wrap items-center gap-1.5">{toolbarOptions}</div> : null}
+              <div className="grid min-w-0 gap-3">
+                {toolbarSearch ? <div data-table-mobile-search className="min-w-0 [&>*]:!w-full [&>*]:!min-w-0 [&>*]:!max-w-none [&_input]:min-h-11 [&_input]:!rounded-[var(--md-radius-md)]">{toolbarSearch}</div> : null}
+                {toolbarFilters ? <div data-table-mobile-filters className="flex min-w-0 flex-col gap-2 [&>*]:w-full [&_button]:min-h-11 [&_button]:!rounded-[var(--md-radius-md)] [&>button]:justify-start">{toolbarFilters}</div> : null}
+                {toolbarOptions ? <div data-table-mobile-options className="flex min-w-0 flex-wrap items-center gap-2 border-t border-[var(--md-line)] pt-2 [&>button]:min-h-11 [&>button]:w-full [&>button]:justify-start">{toolbarOptions}</div> : null}
               </div>
             </PopoverContent>
           </Popover> : (

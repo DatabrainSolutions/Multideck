@@ -776,10 +776,10 @@ export function getCachedInlineAttachmentBlobUrl(attachmentId: string): { url: s
   return retainInlineAttachmentBlobUrl(attachmentId, entry.url)
 }
 
-/** Warms only the inline images that can appear in one rendered conversation. */
+/** The newest message opens expanded; older signatures wait for expansion. */
 export async function prefetchThreadInlineAttachmentBlobUrls(detail: InboxThreadDetail): Promise<void> {
   const attachmentIds = Array.from(new Set(
-    [...detail.messages].reverse().flatMap((message) => message.attachments)
+    (detail.messages.at(-1)?.attachments ?? [])
       .filter((attachment) => attachment.isInline && attachment.contentId)
       .map((attachment) => attachment.id),
   )).slice(0, 24)

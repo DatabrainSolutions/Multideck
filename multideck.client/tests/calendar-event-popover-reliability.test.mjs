@@ -4,6 +4,7 @@ import test from "node:test"
 
 const source = readFileSync(new URL("../src/components/multideck/meeting-details-popover.tsx", import.meta.url), "utf8")
 const calendarView = readFileSync(new URL("../src/components/multideck/calendar-view.tsx", import.meta.url), "utf8")
+const calendarPage = readFileSync(new URL("../src/pages/calendar-page.tsx", import.meta.url), "utf8")
 
 test("a stale dismissal cannot close the newly selected calendar event", () => {
   assert.match(source, /const latestSelection = useRef\(selection\)/)
@@ -28,4 +29,13 @@ test("calendar event clicks hand the open popover directly to the next event", (
   assert.match(calendarView, /data-calendar-event=""/)
   assert.match(source, /event\.target\.closest\("\[data-calendar-event\]"\)/)
   assert.match(source, /event\.preventDefault\(\)/)
+})
+
+test("the first empty-slot click dismisses event details without creating a meeting", () => {
+  assert.match(calendarPage, /eventDetailsOpen=\{Boolean\(selected\)\}/)
+  assert.match(calendarView, /onPointerDownCapture=\{\(event\) => \{/)
+  assert.match(calendarView, /event\.target\.closest\("\[data-calendar-create\]"\)/)
+  assert.match(calendarView, /data-calendar-create=""/)
+  assert.match(calendarView, /if \(!dragging && !dismissOnlyCreatePointer\.current\) createDrag\.begin/)
+  assert.match(calendarView, /if \(suppressCreateForDismiss\(\) \|\| createDrag\.suppressClick\(\)/)
 })

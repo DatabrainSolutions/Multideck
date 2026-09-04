@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type RefObject } from "react"
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react"
-import { Briefcase, Building2, CalendarDays, Check, Clock3, Copy, ExternalLink, MapPin, Palette, Pen01, Phone, TextQuote, Trash2, TriangleAlert, Users, Video, X } from "@/components/icons/hugeicons"
+import { ArrowLeft, Briefcase, Building2, CalendarDays, Check, Clock3, Copy, ExternalLink, MapPin, Palette, Pen01, Phone, TextQuote, Trash2, TriangleAlert, Users, Video, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { MeetingAttendeeList, MeetingResponseSummary } from "@/components/multideck/meeting-attendee-status"
 import { MeetingColourPicker } from "@/components/multideck/meeting-colour-picker"
@@ -30,6 +31,18 @@ const row: Variants = {
 }
 const still: Variants = { hidden: {}, visible: {}, exit: {} }
 
+function useMobileDetails() {
+  const [mobile, setMobile] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches)
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)")
+    const update = () => setMobile(query.matches)
+    update()
+    query.addEventListener("change", update)
+    return () => query.removeEventListener("change", update)
+  }, [])
+  return mobile
+}
+
 function formatDuration(minutes: number) {
   if (minutes < 60) return `${minutes} min`
   const hours = Math.floor(minutes / 60)
@@ -53,15 +66,15 @@ function meetingProviderForJoinUrl(url: string | null | undefined): CalendarProv
   return null
 }
 
-function IconAction({ label, icon: Icon, onClick, tone = "default", disabled }: { label: string; icon: ComponentType<{ className?: string; strokeWidth?: number }>; onClick: () => void; tone?: "default" | "danger"; disabled?: boolean }) {
+function IconAction({ label, icon: Icon, onClick, tone = "default", disabled, className, tooltipSide = "right" }: { label: string; icon: ComponentType<{ className?: string; strokeWidth?: number }>; onClick: () => void; tone?: "default" | "danger"; disabled?: boolean; className?: string; tooltipSide?: "bottom" | "right" }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button type="button" variant="ghost" size="icon" aria-label={label} disabled={disabled} onClick={onClick} className={cn("size-10 rounded-[calc(var(--md-radius-2xl)-4px)] text-[var(--md-subtle)] hover:text-[var(--md-ink)]", tone === "danger" && "hover:bg-[color-mix(in_srgb,var(--md-red)_8%,transparent)] hover:text-[var(--md-red)]")}>
+        <Button type="button" variant="ghost" size="icon" aria-label={label} disabled={disabled} onClick={onClick} className={cn("size-10 rounded-[calc(var(--md-radius-2xl)-4px)] text-[var(--md-subtle)] hover:text-[var(--md-ink)]", tone === "danger" && "hover:bg-[color-mix(in_srgb,var(--md-red)_8%,transparent)] hover:text-[var(--md-red)]", className)}>
           <Icon className="size-4" strokeWidth={1.5} />
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
+      <TooltipContent side={tooltipSide}>{label}</TooltipContent>
     </Tooltip>
   )
 }
@@ -106,7 +119,7 @@ function ChangeRequestRow({ meetingId, request, timeZone, onDecided }: { meeting
   )
 }
 
-function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: CalendarEvent; onClose: () => void; onChanged: () => void; navigate: (path: string) => void }) {
+function MeetingDetailsCard({ event, onClose, onChanged, navigate, mobile = false }: { event: CalendarEvent; onClose: () => void; onChanged: () => void; navigate: (path: string) => void; mobile?: boolean }) {
   const { language } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const zone = event.timeZone || "Europe/London"
@@ -212,10 +225,34 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The meeting could not be cancelled.") } finally { setSaving(false) }
   }
 
+  function startReschedule() {
+    setDetails({ title: event.title, agenda: event.agenda ?? "", location: event.location ?? "" })
+    setColour(event.colour ?? "teal")
+    setTimes({ startAt: event.startAt, endAt: event.endAt })
+    setError(null)
+    setMode("reschedule")
+  }
+
   return (
     <>
-      <div data-slot="meeting-details-surface" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-popover)] max-h-[min(80dvh,640px,var(--radix-popover-content-available-height))]">
-      <motion.div variants={row} className="flex shrink-0 items-start gap-3 px-5 pb-4 pt-5">
+      <div data-slot="meeting-details-surface" className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--md-surface)]", mobile ? "h-full max-h-none rounded-none shadow-none" : "max-h-[min(80dvh,640px,var(--radix-popover-content-available-height))] rounded-[var(--md-radius-2xl)] shadow-[var(--md-shadow-popover)]")}>
+      {mobile ? (
+        <div className="flex shrink-0 items-center gap-1 px-2 pb-2 pt-[max(8px,env(safe-area-inset-top))] shadow-[var(--md-stroke-bottom)]">
+          <Button type="button" variant="ghost" size="icon" aria-label="Back to calendar" disabled={saving || Boolean(responding)} onClick={onClose} className="size-11 rounded-[var(--md-radius-lg)] text-[var(--md-ink)]">
+            <ArrowLeft className="size-5" strokeWidth={1.5} aria-hidden="true" />
+          </Button>
+          <p className="px-1 text-[13px] font-medium text-[var(--md-ink)]">Event details</p>
+          <div className="ms-auto flex items-center gap-0.5">
+            {event.canEdit && !pending && mode === "view" ? (
+              <>
+                <IconAction label="Edit event" icon={Pen01} onClick={startReschedule} className="size-11" tooltipSide="bottom" />
+                <IconAction label={external ? "Delete event" : "Cancel meeting"} icon={Trash2} tone="danger" onClick={() => setMode("cancel")} className="size-11" tooltipSide="bottom" />
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      <motion.div variants={row} className={cn("flex shrink-0 items-start gap-3 px-5 pb-4", mobile ? "pt-4" : "pt-5")}>
         {mode !== "reschedule" ? <MeetingProviderMark provider={provider} calendarSource={external ? event.calendarSource : null} className="mt-0.5 size-6 shrink-0" /> : null}
         <div className="min-w-0 flex-1">
           {mode === "reschedule" && !event.private ? (
@@ -241,7 +278,7 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
         </motion.div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto pb-4">
+      <div className={cn("grid min-h-0 flex-1 content-start gap-3 overflow-y-auto", mobile ? "pb-[max(16px,env(safe-area-inset-bottom))]" : "pb-4")}>
         {event.canEdit && mode === "reschedule" && !external ? (
           <>
           <DetailRow icon={Palette}>
@@ -351,7 +388,7 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
 
       <AnimatePresence initial={false}>
         {mode !== "view" || error ? (
-          <motion.div key={mode} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: 0.1 } }} transition={reduceMotion(Boolean(shouldReduceMotion), { duration: 0.2, ease: mdEaseOut })} className="shrink-0 shadow-[var(--md-stroke-top)]">
+          <motion.div key={mode} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: 0.1 } }} transition={reduceMotion(Boolean(shouldReduceMotion), { duration: 0.2, ease: mdEaseOut })} className={cn("shrink-0 shadow-[var(--md-stroke-top)]", mobile && "pb-[env(safe-area-inset-bottom)]")}>
             <div className={cn("flex flex-wrap items-center gap-2 px-4 py-3", mode === "cancel" && "justify-between")}>
               {error ? <p role="alert" className="flex w-full items-center gap-2 text-[11.5px] text-[var(--md-red)]"><TriangleAlert className="size-3.5 shrink-0" />{error}</p> : null}
               {mode === "cancel" ? (
@@ -374,15 +411,15 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
       </AnimatePresence>
       </div>
 
-      <motion.div variants={row} role="group" aria-label="Event actions" className="flex shrink-0 flex-col gap-0.5 self-start rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-popover)]">
+      {!mobile ? <motion.div variants={row} role="group" aria-label="Event actions" className="flex shrink-0 flex-col gap-0.5 self-start rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-popover)]">
         {event.canEdit && !pending && mode === "view" ? (
           <>
-            <IconAction label="Edit event" icon={Pen01} onClick={() => { setDetails({ title: event.title, agenda: event.agenda ?? "", location: event.location ?? "" }); setColour(event.colour ?? "teal"); setTimes({ startAt: event.startAt, endAt: event.endAt }); setError(null); setMode("reschedule") }} />
+            <IconAction label="Edit event" icon={Pen01} onClick={startReschedule} />
             <IconAction label={external ? "Delete event" : "Cancel meeting"} icon={Trash2} tone="danger" onClick={() => setMode("cancel")} />
           </>
         ) : null}
         <IconAction label="Close" icon={X} disabled={saving || Boolean(responding)} onClick={onClose} />
-      </motion.div>
+      </motion.div> : null}
     </>
   )
 }
@@ -402,11 +439,50 @@ export function MeetingDetailsPopover({ selection, onClose, onChanged, navigate 
   navigate: (path: string) => void
 }) {
   const shouldReduceMotion = useReducedMotion()
+  const mobile = useMobileDetails()
+  const [mobileMounted, setMobileMounted] = useState(Boolean(selection))
+  const mobileSelection = useRef(selection)
   const cardRef = useRef<HTMLDivElement | null>(null)
   const latestSelection = useRef(selection)
   const interactedOutside = useRef(false)
   latestSelection.current = selection
+  if (selection) mobileSelection.current = selection
   const virtualRef = useMemo(() => ({ current: selection?.anchor ?? null }), [selection?.anchor])
+  useEffect(() => {
+    if (selection) {
+      setMobileMounted(true)
+      return
+    }
+    if (!mobileMounted) return
+    const timeout = window.setTimeout(() => {
+      setMobileMounted(false)
+      mobileSelection.current = null
+    }, shouldReduceMotion ? 0 : 300)
+    return () => window.clearTimeout(timeout)
+  }, [mobileMounted, selection, shouldReduceMotion])
+
+  if (mobile) {
+    const renderedSelection = selection ?? mobileSelection.current
+    if ((!selection && !mobileMounted) || !renderedSelection) return null
+    return (
+      <Sheet open={Boolean(selection)} onOpenChange={(open) => { if (!open && selection) onClose() }}>
+        <SheetContent
+          side="right"
+          showCloseButton={false}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            if (renderedSelection.anchor.isConnected) renderedSelection.anchor.focus({ preventScroll: true })
+          }}
+          className="md-calendar-mobile-details inset-0! z-[120]! h-[100dvh]! w-screen! max-w-none! gap-0! rounded-none! border-0! bg-[var(--md-surface)] p-0! shadow-none!"
+        >
+          <SheetTitle className="sr-only">{renderedSelection.event.private ? "Busy" : renderedSelection.event.title}</SheetTitle>
+          <SheetDescription className="sr-only">Calendar event details</SheetDescription>
+          <MeetingDetailsCard event={renderedSelection.event} onClose={onClose} onChanged={onChanged} navigate={navigate} mobile />
+        </SheetContent>
+      </Sheet>
+    )
+  }
+
   return (
     <AnimatePresence>
       {selection ? (

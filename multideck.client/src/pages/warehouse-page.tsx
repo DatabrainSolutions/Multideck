@@ -85,8 +85,9 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
   const isCustomer = currentUser?.actorType === "customer"
   // The dashboard carries all seven figures in its own band, and the calendar
   // needs its date controls in this space. Neither screen repeats the three
-  // operational chips in the page header.
-  const headerActions = activeSection === "Dashboard" || activeSection === "Calendar" || isCustomer ? [] : registerHeaderActions
+  // operational chips in the page header. Goods out keeps its register focused
+  // on orders, without the cross-warehouse summary chips or their request.
+  const headerActions = activeSection === "Dashboard" || activeSection === "Calendar" || activeSection === "Goods out" || isCustomer ? [] : registerHeaderActions
   const canManageItems = !isCustomer || hasPermission(currentUser, "Warehouse.Items.ManageOwn")
   const canCreateInbound = !isCustomer || hasPermission(currentUser, "Warehouse.Orders.CreateInboundOwn")
   const canCreateOutbound = !isCustomer || hasPermission(currentUser, "Warehouse.Orders.CreateOutboundOwn")
@@ -104,6 +105,7 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
     && route !== "/warehouse/purchase-orders/new"
     && activeSection !== "Dashboard"
     && activeSection !== "Calendar"
+    && activeSection !== "Goods out"
 
   useEffect(() => {
     if (!needsRegisterHeader) return

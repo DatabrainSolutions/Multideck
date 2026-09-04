@@ -1,4 +1,5 @@
 import paginationSource from "@/components/multideck/pagination.tsx?raw"
+import lifecycleNotesSource from "@/components/multideck/lifecycle-notes.tsx?raw"
 import screeningComponentsSource from "@/components/multideck/screening-components.tsx?raw"
 import dataTableSource from "@/components/multideck/data-table.tsx?raw"
 import tableCsvExportDialogSource from "@/components/multideck/table-csv-export-dialog.tsx?raw"
@@ -108,7 +109,7 @@ export const galleryComponents = [
     category: "Foundation",
     description: "The base Multideck panel. It gives workflow areas quiet depth without creating heavy card clutter.",
     details: "Use for primary panels, side panels, preview wells, and command areas. Radius and shadow come from tokens.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }],
     componentCode: `export function Surface({ tone = "panel", padding = "md", className, children }) {\n  return (\n    <section className={cn("rounded-[var(--md-radius-lg)]", toneClass[tone], paddingClass[padding], className)}>\n      {children}\n    </section>\n  )\n}\n\nexport function SectionHeader({ eyebrow, title, meta, action, className }) {\n  return (\n    <div className={cn("flex items-start justify-between gap-3", className)}>\n      <div className="@container/section-header-copy min-w-0 flex-1">\n        {eyebrow ? <p className="mb-1 text-xs font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}\n        <div className="min-w-0 @min-[520px]/section-header-copy:flex @min-[520px]/section-header-copy:items-baseline @min-[520px]/section-header-copy:justify-between @min-[520px]/section-header-copy:gap-5">\n          <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>\n          {meta ? <p className="mt-1 text-[12px] text-[var(--md-text)] @min-[520px]/section-header-copy:mt-0 @min-[520px]/section-header-copy:text-end">{meta}</p> : null}\n        </div>\n      </div>\n      {action ? <div className="shrink-0">{action}</div> : null}\n    </div>\n  )\n}`,
     usageCode: `<Surface tone="panel" padding="md">\n  <SectionHeader title="Live bookings" meta="updated 41s ago" />\n  <BookingRow booking={booking} />\n</Surface>`,
   },
@@ -257,7 +258,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "The single compact semantic pill treatment for workflow statuses and descriptive attributes across Multideck.",
     details: "Every status and attribute pill uses the established filled operator-table palette and footprint, whether it appears in a table, list, header, inspector, or history view. Optional icons may reinforce meaning, but the component never adds a competing dot or outlined treatment.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "To Do list", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }],
+    foundOn: [{ label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "To Do list", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }],
     componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n\n  return (\n    <Badge\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill="true"\n      className={cn(filledPillClass, toneClass[tone], className)}\n    >\n      {indicator !== false ? indicator : null}\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill kind="status" tone="purple">New</StatusPill>\n<StatusPill kind="status" tone="orange">Contacted</StatusPill>\n<StatusPill kind="status" tone="blue">Qualified</StatusPill>\n<StatusPill kind="status" tone="amber">Nurturing</StatusPill>\n<StatusPill kind="status" tone="green">Converted</StatusPill>\n<StatusPill kind="status" tone="red">Disqualified</StatusPill>\n\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
   },
@@ -882,7 +883,7 @@ export const galleryComponents = [
     name: "Pagination",
     category: "Navigation",
     description: "A compact control for moving through long operational lists without losing the current range.",
-    details: "Use below tables, card grids, and list views when the dataset is longer than the screen should comfortably show. Keep the range and rows-per-page control visible so operators can decide how dense the list should be.",
+    details: "Use below tables, card grids, and list views. The range and rows-per-page selector stay visible; navigation appears only when there is more than one page. Keyboard-accessible page buttons use a short active-state transition with reduced-motion support, while mobile shows a compact page counter and larger touch targets. Navigation stays bounded for large datasets and never fetches or animates the rows itself.",
 foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Opportunities", route: "/crm/deals" }, { label: "Phone calls", route: "/crm/phone-calls" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Road control", route: "/road-control" }, { label: "Documents", route: "/documents" }, { label: "Contracts", route: "/rates/contracts" }, { label: "Tariffs", route: "/rates/tariffs" }, { label: "Inventory", route: "/warehouse/inventory" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Goods out", route: "/warehouse/goods-out" }, { label: "Purchase orders", route: "/warehouse/purchase-orders" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Items", route: "/warehouse/items" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Users", route: "/admin/users" }, { label: "Activity log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash", route: "/finance/cash" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Marketing emails", route: "/crm/emails" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Settings", route: "/settings" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Components", route: "/components" }],
     componentCode: paginationSource,
     usageCode: `const [page, setPage] = useState(1)\nconst [rowsPerPage, setRowsPerPage] = useState(30)\nconst pageCount = Math.ceil(customers.length / rowsPerPage)\nconst paginatedCustomers = customers.slice((page - 1) * rowsPerPage, page * rowsPerPage)\n\n<Pagination\n  page={page}\n  pageCount={pageCount}\n  totalItems={customers.length}\n  pageSize={rowsPerPage}\n  pageSizeOptions={[10, 20, 30, 50]}\n  itemLabel="customers"\n  onPageChange={setPage}\n  onPageSizeChange={(nextRowsPerPage) => {\n    setRowsPerPage(nextRowsPerPage)\n    setPage(1)\n  }}\n/>`,
@@ -1169,33 +1170,15 @@ foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM cont
     name: "Lifecycle Notes",
     category: "Operations",
     description: "A shared operational note thread that follows a quote into its booking and Customs declaration, with exact tenant people and department tags.",
-    details: "Use when context must survive a freight workflow handoff. Notes are permission-checked at the current record and clearly labelled when carried from an earlier lifecycle stage. Authors can edit or soft-delete their own notes without removing the timeline evidence. Type @ to search active people and departments in the current tenant.",
+    details: "Use when context must survive a freight workflow handoff. A compact composer keeps the next action clear; only a newly added note animates, with reduced-motion support. Notes are permission-checked and labelled when carried from an earlier stage. Authors can edit or soft-delete their own notes without removing timeline evidence. Type @ to notify active tenant people and departments by email.",
     foundOn: [
       { label: "Quote notes", route: "/quotes/Q-19158" },
       { label: "Booking notes", route: "/bookings/md-22455" },
       { label: "Job-related Customs notes", route: "/customs/job-related/export" },
+      { label: "Standalone Customs notes", route: "/customs/standalone/export" },
       { label: "Components", route: "/components?component=lifecycle-notes" },
     ],
-    componentCode: `export function LifecycleNotes({ subjectType, subjectId }) {
-  const [notes, setNotes] = useState([])
-  const [draft, setDraft] = useState("")
-  const [mentions, setMentions] = useState([])
-
-  useEffect(() => {
-    getLifecycleNotes(subjectType, subjectId).then((page) => setNotes(page.notes))
-  }, [subjectType, subjectId])
-
-  return (
-    <Surface>
-      <NoteComposer
-        value={draft}
-        mentions={mentions}
-        onAdd={() => addLifecycleNote(subjectType, subjectId, draft, mentions)}
-      />
-      {notes.map((note) => <LifecycleNoteRow key={note.id} note={note} />)}
-    </Surface>
-  )
-}`,
+    componentCode: lifecycleNotesSource,
     usageCode: `<LifecycleNotes
   subjectType="booking"
   subjectId={booking.jobId}
@@ -1217,7 +1200,7 @@ foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM cont
     category: "Feedback",
     description: "The product's one waiting state: twenty-five cells lit as a travelling square spiral.",
     details: "Use it for every wait long enough to need a mark — a route still downloading, a register still fetching rows, a panel still resolving a document list. One object across the whole product means a wait never looks like a different feature loading. It animates only opacity and transform, so it can sit inside the box the loaded content will occupy without moving anything around it, and it reserves its own size so rows arriving cannot shift the page. `size=\"sm\"` fits a 32px toolbar; `decorative` drops the status role where the surrounding block already announces the wait in words. Reduced-motion mode holds the centre cell lit instead of cycling.",
-    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Every route", route: "/" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }],
+    foundOn: [{ label: "Support tickets", route: "/settings?tab=support" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Every route", route: "/" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }],
     componentCode: `const spiralOrder = [
   0, 1, 2, 3, 4,
   15, 16, 17, 18, 5,
@@ -1459,7 +1442,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
       <iframe
         title="Message content"
         sandbox={sandboxPermissions}
-        srcDoc={buildDocument({ html: replaceInlineImageSources(sanitizedHtml, inlineImageSources), theme, direction, language })}
+        srcDoc={buildDocument({ html: sanitizedHtml, theme, direction, language })}
         loading="eager"
         scrolling="no"
         style={{ height: frameHeight > 0 ? \`\${frameHeight}px\` : "72px" }}
@@ -1616,7 +1599,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "data-table",
     name: "Data Table",
     category: "Data",
-    description: "The canonical Multideck table with persisted layout, right-click row selection, and field-aware CSV export.",
+    description: "The canonical Multideck table with persisted layout, right-click row selection, field-aware CSV export, and a responsive Controls panel with full-width search and touch-friendly actions.",
     details: "Opt in to register-wide export with exportConfig.register and an explicit authorised, fully paginated loader. The icon beside column settings opens the shared Table Export dialog. Declare each column's data kind so alignment and status treatments stay consistent. Right-click any row and choose Select to reveal the sticky checkbox column; operators can select several rows, then use the CSV action to choose displayed columns or expand hairline record sections for hidden fields. Register endpoints stay lean: pass exportConfig.loadRecords when full detail such as lead contacts, account addresses, or Customs parties should be loaded only after export is requested. Use pagination with onLimitChange for server-paged registers, or clientPagination only when rows contains the complete local dataset. Sorting runs before local slicing; selecting all applies to the visible page. Do not enable local paging for server pages, cursor-based lists or line editors. Existing row actions such as Duplicate or Delete belong in rowContextActions so they share the same animated menu.",
     foundOn: [{ label: "Opportunities", route: "/crm/deals" }, { label: "Phone calls", route: "/crm/phone-calls" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Road control", route: "/road-control" }, { label: "Documents", route: "/documents" }, { label: "Contracts", route: "/rates/contracts" }, { label: "Tariffs", route: "/rates/tariffs" }, { label: "Inventory", route: "/warehouse/inventory" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Goods out", route: "/warehouse/goods-out" }, { label: "Marketing emails", route: "/crm/emails" }, { label: "Quotes", route: "/quotes" }, { label: "Quote carrier options", route: "/quotes/jq20013" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact card detail", route: "/crm/contact-cards/8a0c2dab-7597-45dc-8f3a-3992f57919a4" }, { label: "Bookings", route: "/bookings" }, { label: "Customs declarations", route: "/customs/standalone/export" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Rates & contracts", route: "/rates" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Users", route: "/admin/users" }, { label: "Active log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Broadcast history", route: "/admin/broadcast" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=data-table" }],
     componentCode: dataTableSource,
@@ -3526,7 +3509,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Meeting Time Picker",
     category: "Controls",
     description: "One calm row for when a meeting happens: branded date popover, typed or picked start and finish times, quick duration chips and the timezone.",
-    details: "Use wherever an operator sets a meeting or appointment window. Times are stored as ISO instants; the timezone only changes how they read. Start and finish accept typed values such as 9, 930, 9:30 or 2pm, and the finish list shows the resulting length.",
+    details: "Use wherever an operator sets a meeting or appointment window. Enable showLabels for the composer's responsive Date, Starts and Finishes fields. Times are stored as ISO instants; the timezone only changes how they read. Start and finish accept typed values such as 9, 930, 9:30 or 2pm, and the finish list shows the resulting length.",
     foundOn: [{ label: "Calendar · New meeting", route: "/calendar" }, { label: "Calendar · Reschedule from details", route: "/calendar" }, { label: "CRM leads · Schedule meeting", route: "/crm/leads" }, { label: "Settings · Availability (time fields)", route: "/settings?tab=availability" }, { label: "Components", route: "/components?component=meeting-time-picker" }],
     componentCode: `export function MeetingTimePicker({ startAt, endAt, timeZone, onChange, onTimeZoneChange }) {
   const start = zonedParts(startAt, timeZone)
@@ -3545,6 +3528,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
   )
 }`,
     usageCode: `<MeetingTimePicker
+  showLabels
   startAt={draft.startAt}
   endAt={draft.endAt}
   timeZone={draft.timeZone}
