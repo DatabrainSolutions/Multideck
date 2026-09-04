@@ -72,7 +72,7 @@ function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (
         <DropdownMenuContent align="end" className="w-[248px]">
           <DropdownMenuItem onSelect={() => dispatchTopBarAction(topBarActionEvents.createWarehouseObject)}>
             <PackagePlus className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
-            {t("New warehouse object")}
+            {t("New pallet")}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => dispatchTopBarAction(topBarActionEvents.reportWarehouseLocationEmpty)}>
             <MapPinOff className="size-3.5" strokeWidth={1.4} aria-hidden="true" />

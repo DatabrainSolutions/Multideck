@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react"
-import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { AnimatePresence, motion, useReducedMotion, type Transition } from "motion/react"
 import { X, type LucideIcon } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
@@ -44,6 +44,8 @@ export function SideDrawer({
   title,
   icon: Icon,
   width = 480,
+  slideDistance = 40,
+  motionTransition = mdMotion.panel,
   modal = true,
   restoreFocusTo,
   headerActions,
@@ -56,6 +58,9 @@ export function SideDrawer({
   title: string
   icon?: LucideIcon
   width?: number
+  /** Horizontal travel used to make wider drawers visibly emerge from their docked edge. */
+  slideDistance?: number
+  motionTransition?: Transition
   /** Non-modal drawers keep the register behind them interactive for rapid record switching. */
   modal?: boolean
   /** Explicit opener for drawers launched through app-wide events or an auto-focused form. */
@@ -133,7 +138,7 @@ export function SideDrawer({
   }, [open, restoreFocusTo])
 
   // The panel leans in from whichever edge it is docked to, which flips under right-to-left.
-  const offset = direction === "rtl" ? -40 : 40
+  const offset = direction === "rtl" ? -slideDistance : slideDistance
 
   return (
     <AnimatePresence initial={false}>
@@ -162,7 +167,7 @@ export function SideDrawer({
             initial={{ x: offset, opacity: 0, filter: "blur(8px)" }}
             animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
             exit={{ x: offset * 0.7, opacity: 0, filter: "blur(8px)" }}
-            transition={reduceMotion(reduce, mdMotion.panel)}
+            transition={reduceMotion(reduce, motionTransition)}
           >
             <div className="mb-3 flex items-center justify-between gap-3 px-1">
               <div className="flex min-w-0 items-center gap-3">
@@ -215,6 +220,8 @@ export function RecordDrawer({
   title,
   icon,
   width = 560,
+  slideDistance,
+  motionTransition,
   summary,
   children,
   actions,
@@ -226,6 +233,8 @@ export function RecordDrawer({
   title: string
   icon?: LucideIcon
   width?: number
+  slideDistance?: number
+  motionTransition?: Transition
   /** The record's own facts, before anything asks the operator a question. */
   summary: ReactNode
   children?: ReactNode
@@ -236,7 +245,7 @@ export function RecordDrawer({
   const { t } = useLanguage()
 
   return (
-    <SideDrawer open={open} onClose={onClose} eyebrow={eyebrow} title={title} icon={icon} width={width} bodyClassName="px-0">
+    <SideDrawer open={open} onClose={onClose} eyebrow={eyebrow} title={title} icon={icon} width={width} slideDistance={slideDistance} motionTransition={motionTransition} bodyClassName="px-0">
       <div className="grid gap-3 pb-1">
         <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3.5 shadow-[var(--md-shadow-line)]">{summary}</div>
         {children}

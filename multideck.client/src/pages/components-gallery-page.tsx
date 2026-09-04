@@ -1369,7 +1369,7 @@ const previewAutomationRuns: AutomationRun[] = [
   },
 ]
 
-const galleryRegisterViews = ["Stock", "Objects", "Movements", "Exceptions"] as const
+const galleryRegisterViews = ["Stock", "Movements", "Exceptions"] as const
 
 const previewWarehouseObject: WarehouseHandlingUnit = {
   id: "gallery-pallet", facilityId: "gallery-facility", parentHandlingUnitId: null,
@@ -3998,7 +3998,7 @@ function ComponentPreview({ id }: { id: string }) {
                 options={galleryRegisterViews}
                 value={galleryRegisterView}
                 onChange={setGalleryRegisterView}
-                counts={{ Stock: 33, Objects: 32, Movements: 71, Exceptions: 13 }}
+                counts={{ Stock: 33, Movements: 71, Exceptions: 13 }}
                 ariaLabel="Inventory view"
               />
               <RegisterToolbarDivider />

@@ -22,6 +22,7 @@ import { FactCard, FactFigure, FactRow } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { useLanguage } from "@/i18n/language-provider"
+import { mdMotion } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 import {
@@ -29,13 +30,15 @@ import {
   changeWarehouseStockStatus,
   consolidateWarehouseHandlingUnits,
   createWarehouseHandlingUnit,
+  getWarehouseHandlingUnit,
   getWarehouseHandlingUnitReference,
   getWarehouseOrderReference,
+  getWarehouseStockSkuDetail,
   listWarehouseFacilitiesPage,
   listWarehouseHandlingUnitsPage,
   listWarehouseInventoryExceptionsPage,
   listWarehouseInventoryMovementsPage,
-  listWarehouseInventoryPage,
+  listWarehouseStockSkusPage,
   listWarehouseOrderCustomersPage,
   listWarehouseOrderLocationsPage,
   moveWarehouseBalance,
@@ -51,6 +54,8 @@ import {
   type WarehouseInventoryMovement,
   type WarehouseOrderReference,
   type WarehouseRegisterSort,
+  type WarehouseStockSkuDetail,
+  type WarehouseStockSkuSummary,
 } from "@/lib/warehouse"
 
 const controlClass = "!h-10 !w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 !px-3 !text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] active:!scale-100 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
@@ -77,7 +82,7 @@ export function WarehouseQuantityUomField({ value, onChange, uomCode, max, label
   return <WarehouseFormField label={label} required><div className="grid grid-cols-[minmax(0,1fr)_64px] gap-2"><Input dir="ltr" type="number" min="0.000001" max={max} step="0.001" value={value} onChange={(event) => onChange(event.target.value)} className={controlClass} /><span data-i18n-skip dir="ltr" className="grid h-10 place-items-center rounded-[var(--md-radius-lg)] bg-white/48 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{uomCode}</span></div></WarehouseFormField>
 }
 
-/** Reusable compact summary for pallets, cartons, IBCs and other handling units. */
+/** Reusable compact summary for pallets and the less common handling-unit types. */
 export function WarehouseObjectSummary({ unit }: { unit: WarehouseHandlingUnit }) {
   const { t } = useLanguage()
   return <div className="grid gap-1"><div className="flex items-center gap-2"><Code>{unit.code}</Code><StatusPill tone={statusTone(unit.lifecycleStatusCode)}>{t(unit.lifecycleStatusCode)}</StatusPill></div><p className="text-[12px] text-[var(--md-text)]">{t(unit.typeName)} · {unit.contents.length} {t(unit.contents.length === 1 ? "stock line" : "stock lines")}</p><p className="text-[11px] text-[var(--md-subtle)]">{unit.locationCode ?? t("No physical location")}</p></div>
@@ -89,26 +94,24 @@ export function WarehouseExceptionSummary({ exception }: { exception: WarehouseI
   return <div className="grid gap-1"><div className="flex items-center gap-2"><p className="text-[13px] font-medium text-[var(--md-ink)]">{t(exception.title)}</p><StatusPill tone={statusTone(exception.statusCode)}>{t(exception.statusCode)}</StatusPill></div><p className="text-[12px] text-[var(--md-text)]">{exception.description ? t(exception.description) : t(exception.typeCode)}</p><p className="text-[11px] text-[var(--md-subtle)]">{exception.expectedLocationCode ? `${t("Expected")}: ${exception.expectedLocationCode}` : t(exception.typeCode)}</p></div>
 }
 
-type InventoryMode = "Stock" | "Objects" | "Movements" | "Exceptions"
+type InventoryMode = "Stock" | "Movements" | "Exceptions"
 
 /** Every register row is identified the same way, whichever view is showing. */
 type InventoryRow = { id: string }
 
-const inventoryModes = ["Stock", "Objects", "Movements", "Exceptions"] as const
-const emptyFacets: Record<InventoryMode, string> = { Stock: "", Objects: "", Movements: "", Exceptions: "" }
+const inventoryModes = ["Stock", "Movements", "Exceptions"] as const
+const emptyFacets: Record<InventoryMode, string> = { Stock: "", Movements: "", Exceptions: "" }
 
 /** The one facet that matters per view, so every mode reads the same way. */
 const facetLabels: Record<InventoryMode, string> = {
-  Stock: "Condition",
-  Objects: "Object type",
+  Stock: "Customer",
   Movements: "Movement",
   Exceptions: "Severity",
 }
 
 /** Written out rather than pluralised in code: "All condition" is not English. */
 const facetAllLabels: Record<InventoryMode, string> = {
-  Stock: "All conditions",
-  Objects: "All object types",
+  Stock: "All customers",
   Movements: "All movements",
   Exceptions: "All severities",
 }
@@ -189,8 +192,7 @@ export function WarehouseInventoryWorkspace() {
   const [reference, setReference] = useState<WarehouseOrderReference | null>(null)
   const [huReference, setHuReference] = useState<WarehouseHandlingUnitReference | null>(null)
   const [facilities, setFacilities] = useState<WarehouseFacility[]>([])
-  const [balances, setBalances] = useState<WarehouseInventoryBalance[]>([])
-  const [units, setUnits] = useState<WarehouseHandlingUnit[]>([])
+  const [skus, setSkus] = useState<WarehouseStockSkuSummary[]>([])
   const [actionUnits, setActionUnits] = useState<WarehouseHandlingUnit[]>([])
   const [movements, setMovements] = useState<WarehouseInventoryMovement[]>([])
   const [exceptions, setExceptions] = useState<WarehouseInventoryException[]>([])
@@ -202,6 +204,7 @@ export function WarehouseInventoryWorkspace() {
   const [loaded, setLoaded] = useState(false)
   const [pending, setPending] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedSku, setSelectedSku] = useState<WarehouseStockSkuSummary | null>(null)
   const [selectedBalance, setSelectedBalance] = useState<WarehouseInventoryBalance | null>(null)
   const [selectedUnit, setSelectedUnit] = useState<WarehouseHandlingUnit | null>(null)
   const [selectedException, setSelectedException] = useState<WarehouseInventoryException | null>(null)
@@ -228,13 +231,11 @@ export function WarehouseInventoryWorkspace() {
     setPending(true)
     try {
       const common = { facilityId: facilityId || undefined, search: committedSearch || undefined, facet: facetValue || undefined, sort, limit: inventoryPageSize, offset }
-      const result = mode === "Stock" ? await listWarehouseInventoryPage(common)
-        : mode === "Objects" ? await listWarehouseHandlingUnitsPage(common)
-          : mode === "Movements" ? await listWarehouseInventoryMovementsPage(common)
-            : await listWarehouseInventoryExceptionsPage({ ...common, openOnly: true })
+      const result = mode === "Stock" ? await listWarehouseStockSkusPage(common)
+        : mode === "Movements" ? await listWarehouseInventoryMovementsPage(common)
+          : await listWarehouseInventoryExceptionsPage({ ...common, openOnly: true })
       if (ticket !== requestId.current) return
-      if (mode === "Stock") setBalances(result.rows as WarehouseInventoryBalance[])
-      else if (mode === "Objects") setUnits(result.rows as WarehouseHandlingUnit[])
+      if (mode === "Stock") setSkus(result.rows as WarehouseStockSkuSummary[])
       else if (mode === "Movements") setMovements(result.rows as WarehouseInventoryMovement[])
       else setExceptions(result.rows as WarehouseInventoryException[])
       setTotals((current) => ({ ...current, [mode]: result.total }))
@@ -310,15 +311,10 @@ export function WarehouseInventoryWorkspace() {
   const query = search.trim().toLowerCase()
   const facilityNameById = useMemo(() => new Map(facilities.map((facility) => [facility.id, facility.name])), [facilities])
 
-  const filteredBalances = useMemo(() => balances.filter((row) => (
-    (!facetValue || (row.inventoryStatusName ?? row.inventoryStatusCode) === facetValue)
-    && (!query || searchIndex([row.sku, row.itemDescription, row.handlingUnitCode, row.locationCode, row.batchNumber, row.lotNumber, row.customerName, row.facilityName, row.inventoryStatusName]).includes(query))
-  )), [balances, facetValue, query])
-
-  const filteredUnits = useMemo(() => units.filter((row) => (
-    (!facetValue || row.typeName === facetValue)
-    && (!query || searchIndex([row.code, row.sscc, row.typeName, row.customerName, row.locationCode, facilityNameById.get(row.facilityId), row.inventoryStatusName, ...row.contents.map((line) => line.sku)]).includes(query))
-  )), [units, facetValue, facilityNameById, query])
+  const filteredSkus = useMemo(() => skus.filter((row) => (
+    (!facetValue || row.customerName === facetValue)
+    && (!query || searchIndex([row.sku, row.itemDescription, row.customerName, row.facilityName]).includes(query))
+  )), [facetValue, query, skus])
 
   const filteredMovements = useMemo(() => movements.filter((row) => (
     (!facetValue || (row.typeName ?? row.typeCode) === facetValue)
@@ -330,7 +326,11 @@ export function WarehouseInventoryWorkspace() {
     && (!query || searchIndex([row.title, row.description, row.typeCode, row.statusCode, row.expectedLocationCode, row.actualLocationCode, facilityNameById.get(row.facilityId)]).includes(query))
   )), [exceptions, facetValue, facilityNameById, query])
 
-  const counts: Partial<Record<InventoryMode, number>> = totals
+  const counts: Partial<Record<InventoryMode, number>> = {
+    Stock: totals.Stock,
+    Movements: totals.Movements,
+    Exceptions: totals.Exceptions,
+  }
 
   // Options come from the rows actually in hand, so the menu can never offer a
   // value that returns nothing.
@@ -341,27 +341,17 @@ export function WarehouseInventoryWorkspace() {
     if (facetValue && !facetOptions.includes(facetValue)) setFacets((current) => ({ ...current, [mode]: "" }))
   }, [facetValue, facetOptions, mode])
 
-  const balanceColumns = useMemo<DataTableColumn<WarehouseInventoryBalance>[]>(() => [
+  const stockColumns = useMemo<DataTableColumn<WarehouseStockSkuSummary>[]>(() => [
     { id: "stock-item", label: "Item", width: 236, minWidth: 180, resizable: true, canHide: false, sortValue: (row) => row.sku, cell: (row) => <div className="min-w-0"><Code>{row.sku}</Code><p className="mt-0.5 truncate text-[11.5px] text-[var(--md-text)]">{row.itemDescription}</p></div> },
-    ...(!facilityId ? [{ id: "stock-warehouse", label: "Warehouse", width: 168, resizable: true, cell: (row: WarehouseInventoryBalance) => <span className="truncate text-[12px] text-[var(--md-ink)]">{row.facilityName}</span> }] : []),
-    { id: "stock-object", label: "Warehouse object", width: 152, resizable: true, sortValue: (row) => row.handlingUnitCode, cell: (row) => row.handlingUnitCode ? <Code>{row.handlingUnitCode}</Code> : <span className="text-[12px] text-[var(--md-subtle)]">{t("Loose")}</span> },
-    { id: "stock-location", label: "Location", width: 130, resizable: true, sortValue: (row) => row.locationCode, cell: (row) => <Code>{row.locationCode ?? "—"}</Code> },
-    { id: "stock-lot", label: "Batch / lot", width: 138, resizable: true, sortValue: (row) => row.batchNumber ?? row.lotNumber, cell: (row) => <Code>{row.batchNumber ?? row.lotNumber ?? "—"}</Code> },
+    ...(!facilityId ? [{ id: "stock-warehouse", label: "Warehouse", width: 168, resizable: true, sortValue: (row: WarehouseStockSkuSummary) => row.facilityName, cell: (row: WarehouseStockSkuSummary) => <span className="truncate text-[12px] text-[var(--md-ink)]">{row.facilityName}</span> }] : []),
     { id: "stock-customer", label: "Customer", width: 168, resizable: true, sortValue: (row) => row.customerName, cell: (row) => <span className="truncate text-[12px] text-[var(--md-text)]">{row.customerName ?? "—"}</span> },
-    { id: "stock-status", label: "Condition", kind: "status", width: 142, resizable: true, sortValue: (row) => row.inventoryStatusName ?? row.inventoryStatusCode, cell: (row) => <StatusPill tone={statusTone(row.inventoryStatusCode)}>{t(row.inventoryStatusName ?? row.inventoryStatusCode)}</StatusPill> },
+    { id: "stock-locations", label: "Locations", width: 104, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.locationCount, cell: (row) => <span className="tabular-nums">{number.format(row.locationCount)}</span> },
+    { id: "stock-pallets", label: "Pallets", width: 96, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.palletCount, cell: (row) => <span className="tabular-nums">{number.format(row.palletCount)}</span> },
     { id: "stock-onHand", label: "On hand", width: 132, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.onHandQuantity, cell: (row) => <span dir="ltr" className="tabular-nums">{number.format(row.onHandQuantity)} {row.uomCode}</span> },
     { id: "stock-available", label: "Available", width: 124, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.availableQuantity, cell: (row) => <span dir="ltr" className="font-medium tabular-nums text-[var(--md-accent)]">{number.format(row.availableQuantity)}</span> },
+    { id: "stock-reserved", label: "Reserved", width: 116, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.reservedQuantity, cell: (row) => <span dir="ltr" className="tabular-nums">{number.format(row.reservedQuantity)}</span> },
+    { id: "stock-held", label: "Held", width: 104, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.heldQuantity, cell: (row) => <span dir="ltr" className="tabular-nums">{number.format(row.heldQuantity)}</span> },
   ], [facilityId, number, t])
-
-  const unitColumns = useMemo<DataTableColumn<WarehouseHandlingUnit>[]>(() => [
-    { id: "object-object", label: "Warehouse object", width: 252, minWidth: 200, resizable: true, canHide: false, sortValue: (row) => row.code, cell: (row) => <WarehouseObjectSummary unit={row} /> },
-    ...(!facilityId ? [{ id: "object-warehouse", label: "Warehouse", width: 168, resizable: true, cell: (row: WarehouseHandlingUnit) => <span className="truncate text-[12px] text-[var(--md-ink)]">{facilityNameById.get(row.facilityId) ?? row.facilityId}</span> }] : []),
-    { id: "object-customer", label: "Customer", width: 176, resizable: true, sortValue: (row) => row.customerName, cell: (row) => <span className="truncate text-[12px] text-[var(--md-text)]">{row.customerName ?? "—"}</span> },
-    { id: "object-location", label: "Location", width: 130, resizable: true, sortValue: (row) => row.locationCode, cell: (row) => <Code>{row.locationCode ?? "—"}</Code> },
-    { id: "object-contents", label: "Contents", width: 264, resizable: true, sortValue: (row) => row.contents.length, cell: (row) => <span className="truncate text-[12px] text-[var(--md-text)]">{row.contents.slice(0, 2).map((line) => `${line.sku} · ${number.format(line.quantity)} ${line.uomCode}`).join(", ") || t("Empty")}</span> },
-    { id: "object-weight", label: "Gross weight", width: 138, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.grossWeightKg, cell: (row) => <span dir="ltr" className="tabular-nums">{row.grossWeightKg === null ? "—" : `${number.format(row.grossWeightKg)} kg`}</span> },
-    { id: "object-status", label: "Status", kind: "status", width: 142, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.inventoryStatusName, cell: (row) => <StatusPill tone={statusTone(row.inventoryStatusCode)}>{t(row.inventoryStatusName)}</StatusPill> },
-  ], [facilityId, facilityNameById, number, t])
 
   const movementColumns = useMemo<DataTableColumn<WarehouseInventoryMovement>[]>(() => [
     { id: "movement-posted", label: "Posted", width: 176, minWidth: 150, resizable: true, canHide: false, sortValue: (row) => row.createdAt, cell: (row) => <span className="whitespace-nowrap text-[12px]">{dateTime.format(new Date(row.createdAt))}</span> },
@@ -409,7 +399,6 @@ export function WarehouseInventoryWorkspace() {
       <p className="mt-2 text-[13px] font-medium text-[var(--md-ink)]">{t(mode === "Exceptions" ? "No open exceptions" : "Nothing here yet")}</p>
       <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
         {t(mode === "Stock" ? "Stock appears here once an inbound order is booked in."
-          : mode === "Objects" ? "Create a pallet, IBC or carton to start tracking it."
           : mode === "Movements" ? "Every move, status change and sample is logged here."
           : "Every location count and stock discrepancy is resolved here.")}
       </p>
@@ -449,15 +438,10 @@ export function WarehouseInventoryWorkspace() {
   // namespaced per view instead, which is what keeps one view's saved widths and
   // sort out of another's.
   const view = mode === "Stock" ? {
-    columns: balanceColumns as unknown as DataTableColumn<InventoryRow>[],
-    rows: filteredBalances as InventoryRow[],
-    onRowClick: (row: InventoryRow) => setSelectedBalance(row as WarehouseInventoryBalance),
-    selectedRowKey: selectedBalance?.id ?? null,
-  } : mode === "Objects" ? {
-    columns: unitColumns as unknown as DataTableColumn<InventoryRow>[],
-    rows: filteredUnits as InventoryRow[],
-    onRowClick: (row: InventoryRow) => setSelectedUnit(row as WarehouseHandlingUnit),
-    selectedRowKey: selectedUnit?.id ?? null,
+    columns: stockColumns as unknown as DataTableColumn<InventoryRow>[],
+    rows: filteredSkus as InventoryRow[],
+    onRowClick: (row: InventoryRow) => setSelectedSku(row as WarehouseStockSkuSummary),
+    selectedRowKey: selectedSku?.id ?? null,
   } : mode === "Movements" ? {
     columns: movementColumns as unknown as DataTableColumn<InventoryRow>[],
     rows: filteredMovements as InventoryRow[],
@@ -475,11 +459,11 @@ export function WarehouseInventoryWorkspace() {
       ariaLabel={`Warehouse ${mode.toLowerCase()}`}
       exportConfig={{ fileName: `warehouse-${mode.toLowerCase()}`, register: {
         dateLabel: mode === "Movements" ? "Movement posted date" : mode === "Exceptions" ? "Exception raised date" : "Last updated date",
-        dateValue: (row) => mode === "Movements" ? (row as WarehouseInventoryMovement).createdAt : mode === "Exceptions" ? (row as WarehouseInventoryException).raisedAt : (row as WarehouseInventoryBalance | WarehouseHandlingUnit).updatedAt,
+        dateValue: (row) => mode === "Movements" ? (row as WarehouseInventoryMovement).createdAt : mode === "Exceptions" ? (row as WarehouseInventoryException).raisedAt : (row as WarehouseStockSkuSummary).updatedAt,
         busy: search.trim() !== committedSearch.trim(),
         loadAllRows: (signal) => collectExportPages<InventoryRow>(async (page) => {
           const common = { facilityId: facilityId || undefined, search: committedSearch || undefined, facet: facetValue || undefined, sort, ...page }
-          return mode === "Stock" ? listWarehouseInventoryPage(common) : mode === "Objects" ? listWarehouseHandlingUnitsPage(common)
+          return mode === "Stock" ? listWarehouseStockSkusPage(common)
             : mode === "Movements" ? listWarehouseInventoryMovementsPage(common) : listWarehouseInventoryExceptionsPage({ ...common, openOnly: true })
         }, (row) => row.id, signal),
       } }}
@@ -492,7 +476,7 @@ export function WarehouseInventoryWorkspace() {
       selectedRowKey={view.selectedRowKey}
       rowClassName="hover:bg-[var(--md-hover)]"
       toolbarTabs={toolbarTabs}
-      toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => { setSearch(""); setCommittedSearch("") }} label="Search warehouse records" placeholder="SKU, pallet, batch" className="sm:min-w-[136px] sm:w-[136px]" />}
+      toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => { setSearch(""); setCommittedSearch("") }} label="Search warehouse records" placeholder={mode === "Stock" ? "SKU, customer" : "SKU, pallet, batch"} className="sm:min-w-[136px] sm:w-[136px]" />}
       toolbarFilters={toolbarFilters}
       toolbarOptions={<RegisterRevalidatingMark active={pending && loaded} />}
       compactToolbar
@@ -500,6 +484,7 @@ export function WarehouseInventoryWorkspace() {
       serverSorting={{ value: sort, onChange: (value) => { setSort(value); setOffset(0) } }}
       pagination={{ offset, limit: inventoryPageSize, total: totals[mode] ?? 0, loading: pending, onOffsetChange: setOffset, onLimitChange: setInventoryPageSize, error: Boolean(error) }}
     />
+    <WarehouseSkuStockPanel sku={selectedSku} open={Boolean(selectedSku)} onClose={() => setSelectedSku(null)} onSelectLine={(line) => { setSelectedSku(null); setSelectedBalance(line) }} onSelectPallet={(unit) => { setSelectedSku(null); setSelectedUnit(unit) }} />
     <StockActionPanel balance={selectedBalance} open={Boolean(selectedBalance)} onClose={() => setSelectedBalance(null)} reference={huReference} units={actionUnits} onChanged={() => void refresh()} />
     <WarehouseObjectPanel unit={selectedUnit} facilityName={selectedUnit ? facilityNameById.get(selectedUnit.facilityId) ?? null : null} open={Boolean(selectedUnit)} onClose={() => setSelectedUnit(null)} units={actionUnits} onChanged={() => void refresh()} />
     <ExceptionPanel exception={selectedException} facilityName={selectedException ? facilityNameById.get(selectedException.facilityId) ?? null : null} open={Boolean(selectedException)} onClose={() => setSelectedException(null)} onChanged={() => void refresh()} />
@@ -512,6 +497,127 @@ const stockActions = ["move", "quarantine", "damage", "sample"] as const
 type StockAction = (typeof stockActions)[number]
 const stockActionLabels: Record<StockAction, string> = { move: "Move", quarantine: "Hold", damage: "Damage", sample: "Sample" }
 const stockActionButtons: Record<StockAction, string> = { move: "Move stock", quarantine: "Put on hold", damage: "Record damage", sample: "Take a sample" }
+
+function WarehouseSkuStockPanel({ sku, open, onClose, onSelectLine, onSelectPallet }: {
+  sku: WarehouseStockSkuSummary | null
+  open: boolean
+  onClose: () => void
+  onSelectLine: (line: WarehouseInventoryBalance) => void
+  onSelectPallet: (unit: WarehouseHandlingUnit) => void
+}) {
+  const { language, t } = useLanguage()
+  const number = useMemo(() => new Intl.NumberFormat(language, { maximumFractionDigits: 6 }), [language])
+  const [detail, setDetail] = useState<WarehouseStockSkuDetail | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [openingPalletId, setOpeningPalletId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open || !sku) return
+    let live = true
+    setDetail(null)
+    setLoadError(null)
+    getWarehouseStockSkuDetail(sku.itemId, sku.facilityId)
+      .then((value) => { if (live) setDetail(value) })
+      .catch((cause) => { if (live) setLoadError(message(cause)) })
+    return () => { live = false }
+  }, [open, sku])
+
+  if (!sku) return null
+  const summary = detail?.summary ?? sku
+
+  async function openPallet(palletId: string) {
+    setOpeningPalletId(palletId)
+    try {
+      onSelectPallet(await getWarehouseHandlingUnit(palletId, sku!.facilityId))
+    } catch (cause) {
+      toast.error(t("Pallet could not be opened"), { description: message(cause) })
+    } finally {
+      setOpeningPalletId(null)
+    }
+  }
+
+  return (
+    <RecordDrawer
+      open={open}
+      onClose={onClose}
+      eyebrow={t("Stock in warehouse")}
+      title={sku.sku}
+      icon={Boxes}
+      width={820}
+      slideDistance={120}
+      motionTransition={mdMotion.drawer}
+      summary={(
+        <>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[13px] leading-5 text-[var(--md-ink)]" dir="auto">{summary.itemDescription}</p>
+              <p className="mt-1 text-[11.5px] text-[var(--md-subtle)]">{summary.customerName ?? t("No customer")} · {summary.facilityName}</p>
+            </div>
+            <FactFigure value={number.format(summary.onHandQuantity)} unit={summary.uomCode} label="total on hand" />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-x-5 shadow-[var(--md-stroke-top)] pt-2.5 sm:grid-cols-4">
+            <FactRow label="Available" value={`${number.format(summary.availableQuantity)} ${summary.uomCode}`} code />
+            <FactRow label="Reserved" value={`${number.format(summary.reservedQuantity)} ${summary.uomCode}`} code />
+            <FactRow label="Allocated" value={`${number.format(summary.allocatedQuantity)} ${summary.uomCode}`} code />
+            <FactRow label="Held" value={`${number.format(summary.heldQuantity)} ${summary.uomCode}`} code />
+          </div>
+        </>
+      )}
+    >
+      {loadError ? (
+        <FactCard><div role="alert" className="py-5 text-center"><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Stock details are unavailable")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{loadError}</p></div></FactCard>
+      ) : !detail ? (
+        <FactCard><DotGridLoaderPanel label="Loading stock breakdown" minHeight={140} /></FactCard>
+      ) : (
+        <>
+          <div className="grid gap-3 md:grid-cols-2">
+            <FactCard>
+              <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("By location type")}</p>
+              <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Where this SKU is physically stored.")}</p>
+              <div className="mt-3 divide-y divide-[var(--md-line)]">
+                {detail.locationBreakdown.map((entry) => <div key={entry.code} className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0"><span className="text-[12px] text-[var(--md-text)]">{t(entry.label)}</span><span dir="ltr" className="text-[12px] font-medium tabular-nums text-[var(--md-ink)]">{number.format(entry.quantity)} {summary.uomCode}</span></div>)}
+              </div>
+            </FactCard>
+            <FactCard>
+              <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("By storage")}</p>
+              <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Palletised and loose quantities are separate from location type.")}</p>
+              <div className="mt-3 divide-y divide-[var(--md-line)]">
+                {detail.storageBreakdown.map((entry) => <div key={entry.code} className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0"><span className="text-[12px] text-[var(--md-text)]">{t(entry.label)}</span><span dir="ltr" className="text-[12px] font-medium tabular-nums text-[var(--md-ink)]">{number.format(entry.quantity)} {summary.uomCode}</span></div>)}
+              </div>
+            </FactCard>
+          </div>
+
+          {detail.pallets.length ? (
+            <FactCard>
+              <div className="flex items-end justify-between gap-3"><div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Pallets")}</p><p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Open a pallet to inspect or move it with its contents.")}</p></div><span className="text-[11px] tabular-nums text-[var(--md-subtle)]">{detail.pallets.length}</span></div>
+              <div className="mt-3 divide-y divide-[var(--md-line)]">
+                {detail.pallets.map((pallet) => (
+                  <button key={pallet.id} type="button" disabled={openingPalletId === pallet.id} onClick={() => void openPallet(pallet.id)} className="flex w-full items-center justify-between gap-4 py-2 text-start transition-colors hover:text-[var(--md-accent)] disabled:opacity-60 first:pt-0 last:pb-0">
+                    <span className="min-w-0"><Code>{pallet.code}</Code><span className="ms-2 text-[11px] text-[var(--md-subtle)]">{pallet.locationCode ?? t("No physical location")}</span></span>
+                    <span dir="ltr" className="shrink-0 text-[12px] font-medium tabular-nums">{number.format(pallet.quantity)} {summary.uomCode}</span>
+                  </button>
+                ))}
+              </div>
+            </FactCard>
+          ) : null}
+
+          <FactCard>
+            <div className="flex items-end justify-between gap-3"><div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Exact stock lines")}</p><p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Location, pallet, batch and condition behind the total.")}</p></div><span className="text-[11px] tabular-nums text-[var(--md-subtle)]">{detail.lineTotal}</span></div>
+            <div className="mt-3 divide-y divide-[var(--md-line)]">
+              {detail.lines.map((line) => (
+                <button key={line.id} type="button" onClick={() => onSelectLine(line)} className="grid w-full gap-1 py-2.5 text-start transition-colors hover:text-[var(--md-accent)] first:pt-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4">
+                  <span className="min-w-0"><span className="flex flex-wrap items-center gap-2"><Code>{line.locationCode ?? "—"}</Code><StatusPill tone={statusTone(line.inventoryStatusCode)}>{t(line.inventoryStatusName ?? line.inventoryStatusCode)}</StatusPill></span><span className="mt-1 block truncate text-[11px] text-[var(--md-subtle)]">{line.handlingUnitCode ? `${t("Pallet")} ${line.handlingUnitCode}` : t("Loose stock")}{line.batchNumber ?? line.lotNumber ? ` · ${line.batchNumber ?? line.lotNumber}` : ""}</span></span>
+                  <span dir="ltr" className="text-[12px] font-medium tabular-nums text-[var(--md-ink)]">{number.format(line.onHandQuantity)} {line.uomCode}<span className="ms-2 font-normal text-[var(--md-subtle)]">{number.format(line.availableQuantity)} {t("available")}</span></span>
+                </button>
+              ))}
+            </div>
+            {detail.lineTotal > detail.lines.length ? <p className="mt-3 pt-3 text-[11px] text-[var(--md-subtle)] shadow-[var(--md-stroke-top)]">{t(`Showing the first ${detail.lines.length} of ${detail.lineTotal} stock lines.`)}</p> : null}
+          </FactCard>
+        </>
+      )}
+    </RecordDrawer>
+  )
+}
 
 function StockActionPanel({ balance, open, onClose, reference, units, onChanged }: { balance: WarehouseInventoryBalance | null; open: boolean; onClose: () => void; reference: WarehouseHandlingUnitReference | null; units: WarehouseHandlingUnit[]; onChanged: () => void }) {
   const { language, t } = useLanguage()
@@ -576,6 +682,9 @@ function StockActionPanel({ balance, open, onClose, reference, units, onChanged 
       eyebrow={t("Stock")}
       title={balance.sku}
       icon={Boxes}
+      width={760}
+      slideDistance={120}
+      motionTransition={mdMotion.drawer}
       summary={(
         <>
           <div className="flex items-start justify-between gap-4">
@@ -585,7 +694,7 @@ function StockActionPanel({ balance, open, onClose, reference, units, onChanged 
           <p className="mt-1.5 text-[12.5px] leading-4 text-[var(--md-text)]" dir="auto">{balance.itemDescription}</p>
           <dl className="mt-3 shadow-[var(--md-stroke-top)] pt-2.5">
             <FactRow label="Location" value={balance.locationCode} code />
-            <FactRow label="On object" value={balance.handlingUnitCode ?? t("Loose stock")} code={Boolean(balance.handlingUnitCode)} />
+            <FactRow label="On pallet" value={balance.handlingUnitCode ?? t("Loose stock")} code={Boolean(balance.handlingUnitCode)} />
             <FactRow label="Batch / lot" value={balance.batchNumber ?? balance.lotNumber} code />
             <FactRow label="Customer" value={balance.customerName} />
             <FactRow label="Warehouse" value={balance.facilityName} />
@@ -632,7 +741,7 @@ function StockActionPanel({ balance, open, onClose, reference, units, onChanged 
               <SelectContent>{locations.filter((location) => !location.statusCode || location.statusCode === "available").map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent>
             </Select>
           </WarehouseFormField>
-          <WarehouseFormField label={t("Onto object")} hint={t("Leave as loose stock if it is not going onto a pallet.")}>
+          <WarehouseFormField label={t("Onto pallet")} hint={t("Leave as loose stock if it is not going onto a pallet.")}>
             <Select value={targetHuId || noneValue} onValueChange={(value) => setTargetHuId(value === noneValue ? "" : value)}>
               <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value={noneValue}>{t("Loose stock")}</SelectItem>{compatibleUnits.map((unit) => <SelectItem key={unit.id} value={unit.id}>{unit.code}</SelectItem>)}</SelectContent>
@@ -672,7 +781,7 @@ function StockActionPanel({ balance, open, onClose, reference, units, onChanged 
 
 const objectModes = ["move", "consolidate"] as const
 type ObjectMode = (typeof objectModes)[number]
-const objectModeLabels: Record<ObjectMode, string> = { move: "Move it", consolidate: "Consolidate into it" }
+const objectModeLabels: Record<ObjectMode, string> = { move: "Move pallet", consolidate: "Consolidate into pallet" }
 
 function WarehouseObjectPanel({ unit, facilityName, open, onClose, units, onChanged }: { unit: WarehouseHandlingUnit | null; facilityName: string | null; open: boolean; onClose: () => void; units: WarehouseHandlingUnit[]; onChanged: () => void }) {
   const { language, t } = useLanguage()
@@ -708,7 +817,7 @@ function WarehouseObjectPanel({ unit, facilityName, open, onClose, units, onChan
       } else {
         await consolidateWarehouseHandlingUnits({ facilityId: currentUnit.facilityId, targetHandlingUnitId: currentUnit.id, sourceHandlingUnitIds: sources, notes: notes || null })
       }
-      toast.success(t(mode === "move" ? "Object moved" : "Objects consolidated"))
+      toast.success(t(mode === "move" ? "Pallet moved" : "Pallets consolidated"))
       onClose()
       onChanged()
     } catch (cause) {
@@ -758,12 +867,12 @@ function WarehouseObjectPanel({ unit, facilityName, open, onClose, units, onChan
           className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3.5 text-[12.5px] font-medium text-[var(--md-accent-ink)] transition-[background-color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] active:scale-[0.97] motion-reduce:transform-none"
         >
           {saving ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" strokeWidth={1.6} /> : <Combine data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
-          {t(mode === "move" ? "Move object" : "Consolidate")}
+          {t(mode === "move" ? "Move pallet" : "Consolidate")}
         </Button>
       )}
     >
       <FactCard>
-      <SegmentedControl options={objectModes} value={mode} onChange={setMode} ariaLabel={t("Object action")} className="w-full" renderOption={(option) => t(objectModeLabels[option])} />
+      <SegmentedControl options={objectModes} value={mode} onChange={setMode} ariaLabel={t("Pallet action")} className="w-full" renderOption={(option) => t(objectModeLabels[option])} />
 
       {mode === "move" ? (
         <>
@@ -786,13 +895,13 @@ function WarehouseObjectPanel({ unit, facilityName, open, onClose, units, onChan
         </>
       ) : (
         <div className="grid gap-2">
-          <p className="text-[11.5px] font-medium text-[var(--md-text)]">{t("Which objects are being emptied into this one?")}</p>
+          <p className="text-[11.5px] font-medium text-[var(--md-text)]">{t("Which pallets are being emptied into this one?")}</p>
           {candidates.length ? candidates.map((candidate) => (
             <label key={candidate.id} className="flex cursor-pointer items-center gap-3 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 py-2 shadow-[var(--md-shadow-line)] transition-shadow duration-200 hover:shadow-[var(--md-shadow-soft)]">
               <input type="checkbox" checked={sources.includes(candidate.id)} onChange={(event) => setSources((current) => event.target.checked ? [...current, candidate.id] : current.filter((id) => id !== candidate.id))} />
               <WarehouseObjectSummary unit={candidate} />
             </label>
-          )) : <p className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 py-2.5 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("This customer has no other open objects in this warehouse.")}</p>}
+          )) : <p className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 py-2.5 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("This customer has no other open pallets in this warehouse.")}</p>}
         </div>
       )}
 
@@ -839,19 +948,19 @@ function CreateHandlingUnitDialog({ open, onOpenChange, reference, huReference, 
     setSaving(true)
     try {
       await createWarehouseHandlingUnit({ facilityId, customerOrgId: customerOrgId || null, locationId: locationId || null, typeCode, code: code || null, sscc: null, externalReference: null })
-      toast.success(t("Warehouse object created")); onOpenChange(false); onChanged()
+      toast.success(t("Pallet created")); onOpenChange(false); onChanged()
     } catch (cause) {
-      toast.error(t("Warehouse object could not be created"), { description: message(cause) })
+      toast.error(t("Pallet could not be created"), { description: message(cause) })
     } finally { setSaving(false) }
   }
 
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[560px]"><DialogHeader className={warehouseDialogHeaderClass}><DialogTitle>{t("New warehouse object")}</DialogTitle><DialogDescription>{t("Create a pallet, IBC, carton, drum, tote, or labelled loose unit.")}</DialogDescription></DialogHeader><div className="grid gap-4 px-6 py-5">
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[560px]"><DialogHeader className={warehouseDialogHeaderClass}><DialogTitle>{t("New pallet")}</DialogTitle><DialogDescription>{t("Create a pallet or another labelled storage unit.")}</DialogDescription></DialogHeader><div className="grid gap-4 px-6 py-5">
     <WarehouseFormField label={t("Warehouse")}><Select value={facilityId} onValueChange={(value) => { setFacilityId(value); setLocationId("") }}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.facilities.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
     <WarehouseFormField label={t("Customer")} hint={customers.hasMore ? t("Search to narrow the customer list.") : undefined}><div className="grid gap-1.5"><div className="relative"><Input value={customers.search} onChange={(event) => customers.setSearch(event.target.value)} placeholder={t("Search customers…")} className={controlClass} />{customers.loading ? <Loader2 className="pointer-events-none absolute end-3 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" /> : null}</div><Select value={customerOrgId} onValueChange={(value) => { setCustomerOrgId(value); setSelectedCustomer(customers.options.find((customer) => customer.id === value) ?? null) }}><SelectTrigger className={controlClass}><SelectValue placeholder={t("Choose customer")} /></SelectTrigger><SelectContent>{customers.options.map((customer) => <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>)}</SelectContent></Select>{customers.error ? <p role="alert" className="text-[11.5px] text-[var(--md-red)]">{customers.error}</p> : null}</div></WarehouseFormField>
-    <WarehouseFormField label={t("Object type")}><Select value={typeCode} onValueChange={setTypeCode}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{huReference?.types.map((type) => <SelectItem key={type.code} value={type.code}>{t(type.name)}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
+    <WarehouseFormField label={t("Pallet type")}><Select value={typeCode} onValueChange={setTypeCode}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{huReference?.types.map((type) => <SelectItem key={type.code} value={type.code}>{t(type.name)}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
     <WarehouseFormField label={t("Label code")} hint={t("Leave empty to generate a code.")}><Input dir="ltr" value={code} onChange={(event) => setCode(event.target.value)} className={controlClass}/></WarehouseFormField>
     <WarehouseFormField label={t("Initial location")} hint={locations.hasMore ? t("Search to narrow the location list.") : undefined}><div className="grid gap-1.5"><div className="relative"><Input value={locations.search} onChange={(event) => locations.setSearch(event.target.value)} placeholder={t("Search locations…")} className={controlClass} />{locations.loading ? <Loader2 className="pointer-events-none absolute end-3 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" /> : null}</div><Select value={locationId} onValueChange={setLocationId}><SelectTrigger className={controlClass}><SelectValue placeholder={t("Choose location")} /></SelectTrigger><SelectContent>{availableLocations.map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent></Select>{locations.error ? <p role="alert" className="text-[11.5px] text-[var(--md-red)]">{locations.error}</p> : null}</div></WarehouseFormField>
-  </div><DialogFooter className={warehouseDialogFooterClass}><Button variant="ghost" onClick={() => onOpenChange(false)}>{t("Cancel")}</Button><Button disabled={saving || !facilityId || !typeCode} onClick={() => void save()} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <Loader2 className="size-4 animate-spin"/> : <PackagePlus className="size-4"/>}{t("Create object")}</Button></DialogFooter></DialogContent></Dialog>
+  </div><DialogFooter className={warehouseDialogFooterClass}><Button variant="ghost" onClick={() => onOpenChange(false)}>{t("Cancel")}</Button><Button disabled={saving || !facilityId || !typeCode} onClick={() => void save()} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <Loader2 className="size-4 animate-spin"/> : <PackagePlus className="size-4"/>}{t("Create pallet")}</Button></DialogFooter></DialogContent></Dialog>
 }
 
 function EmptyLocationDialog({ open, onOpenChange, reference, fixedFacilityId, onChanged }: { open: boolean; onOpenChange: (open: boolean) => void; reference: WarehouseOrderReference | null; fixedFacilityId: string; onChanged: () => void }) {

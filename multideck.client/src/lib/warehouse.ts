@@ -539,6 +539,9 @@ export type WarehouseInventoryBalance = {
   itemDescription: string
   locationId: string | null
   locationCode: string | null
+  locationTypeCode?: string | null
+  zoneTypeCode?: string | null
+  zoneName?: string | null
   handlingUnitId: string | null
   handlingUnitCode: string | null
   handlingUnitTypeCode: string | null
@@ -556,10 +559,42 @@ export type WarehouseInventoryBalance = {
   allocatedQuantity: number
   heldQuantity: number
   availableQuantity: number
+  baseQuantity?: number
   isBonded: boolean
   firstReceiptAt: string | null
   lastMovementAt: string | null
   updatedAt: string
+}
+
+export type WarehouseStockSkuSummary = {
+  id: string
+  facilityId: string
+  facilityCode: string
+  facilityName: string
+  customerOrgId: string | null
+  customerName: string | null
+  itemId: string
+  sku: string
+  itemDescription: string
+  uomCode: string
+  onHandQuantity: number
+  reservedQuantity: number
+  allocatedQuantity: number
+  heldQuantity: number
+  availableQuantity: number
+  palletCount: number
+  locationCount: number
+  updatedAt: string
+}
+
+export type WarehouseStockSkuDetail = {
+  summary: Omit<WarehouseStockSkuSummary, "id">
+  locationBreakdown: { code: string; label: string; quantity: number }[]
+  storageBreakdown: { code: "palletised" | "loose"; label: string; quantity: number }[]
+  pallets: { id: string; code: string; typeCode: string; locationCode: string | null; quantity: number }[]
+  lines: WarehouseInventoryBalance[]
+  lineTotal: number
+  lineLimit: number
 }
 
 export type WarehouseOrderAvailability = {
@@ -884,6 +919,18 @@ export async function listWarehouseInventoryPage(options: { facilityId?: string;
   )
 }
 
+export async function listWarehouseStockSkusPage(options: { facilityId?: string; search?: string; facet?: string; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouseFacetedRegisterPage<WarehouseStockSkuSummary>(
+    `/inventory/skus${toQuery({ facilityId: options.facilityId, search: options.search, facet: options.facet, sort: options.sort?.id, direction: options.sort?.direction, limit, offset })}`,
+  )
+}
+
+export function getWarehouseStockSkuDetail(itemId: string, facilityId: string) {
+  return requestWarehouse<WarehouseStockSkuDetail>(`/inventory/sku-detail${toQuery({ itemId, facilityId })}`, "GET")
+}
+
 export async function listWarehouseInventoryMovementsPage(options: { facilityId?: string; itemId?: string; search?: string; facet?: string; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
   const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
   const offset = Math.max(0, options.offset ?? 0)
@@ -902,6 +949,10 @@ export async function listWarehouseHandlingUnitsPage(options: { facilityId?: str
 
 export function getWarehouseHandlingUnitReference(facilityId?: string) {
   return requestWarehouse<WarehouseHandlingUnitReference>(`/handling-units/reference${toQuery({ facilityId })}`, "GET")
+}
+
+export function getWarehouseHandlingUnit(handlingUnitId: string, facilityId: string) {
+  return requestWarehouse<WarehouseHandlingUnit>(`/handling-units/${handlingUnitId}${toQuery({ facilityId })}`, "GET")
 }
 
 export async function listWarehouseInventoryExceptionsPage(options: { facilityId?: string; search?: string; openOnly?: boolean; statusCode?: string; facet?: string; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
