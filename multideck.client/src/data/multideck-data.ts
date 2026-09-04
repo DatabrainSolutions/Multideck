@@ -1754,11 +1754,11 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
   },
   {
     id: "warehouse-object-summary",
-    name: "Warehouse Object Summary",
+    name: "Pallet Summary",
     category: "Operations",
     description: "A compact identity and contents summary for pallets, IBCs, cartons, drums, totes, and labelled loose stock.",
-    details: "Use wherever an operator chooses, moves, or consolidates a warehouse object. It keeps the label, lifecycle state, stock-line count, and physical location together.",
-    foundOn: [{ label: "Warehouse objects", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=warehouse-object-summary" }],
+    details: "Use wherever an operator chooses, moves, or consolidates a pallet. It keeps the label, lifecycle state, stock-line count, and physical location together.",
+    foundOn: [{ label: "Stock SKU details", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=warehouse-object-summary" }],
     componentCode: `export function WarehouseObjectSummary({ unit }) {
   return <div>
     <div>{unit.code}<StatusPill>{unit.lifecycleStatusCode}</StatusPill></div>

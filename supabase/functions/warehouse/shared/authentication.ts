@@ -25,7 +25,44 @@ export async function resolveActor(userDb, admin) {
   if (error || !auth.user) {
     throw new HttpError(401, "Sign in again to manage the warehouse.");
   }
-  const internal = await oneOrNull(admin.from("cmp_Users").select("User_ID,Company_ID,User_AccessStatus").eq("Auth_User_ID", auth.user.id).maybeSingle());
+  const { data: internalContext, error: internalContextError } = await admin.rpc("warehouse_edge_internal_actor_context", {
+    p_auth_user_id: auth.user.id
+  });
+  const fastContextAvailable = !internalContextError;
+  if (internalContextError && !["42883", "PGRST202"].includes(internalContextError.code ?? "")) {
+    throw new HttpError(500, internalContextError.message);
+  }
+  if (fastContextAvailable && internalContext && typeof internalContext === "object") {
+    const context = internalContext;
+    if (!context.companyId) {
+      throw new HttpError(403, "Your Multideck user is not assigned to a company yet.");
+    }
+    if (context.accessStatus && context.accessStatus !== "active") {
+      throw new HttpError(403, "Your Multideck access has been deactivated. Contact a workspace administrator.");
+    }
+    const permissions = new Set(Array.isArray(context.permissions) ? context.permissions.filter((value)=>typeof value === "string") : []);
+    const capabilities = new Set();
+    if (permissions.has("Warehouse.Read") || permissions.has("Warehouse.Write")) {
+      INTERNAL_WAREHOUSE_READ_CAPABILITIES.forEach((capability)=>capabilities.add(capability));
+    }
+    if (permissions.has("Warehouse.Write")) {
+      INTERNAL_WAREHOUSE_WRITE_CAPABILITIES.forEach((capability)=>capabilities.add(capability));
+    }
+    return {
+      authId: auth.user.id,
+      userId: context.userId,
+      companyId: context.companyId,
+      portalUserId: null,
+      organisationIds: new Set(),
+      manageableOrganisationIds: new Set(),
+      facilityIds: new Set(Array.isArray(context.facilityIds) ? context.facilityIds.filter((value)=>typeof value === "string") : []),
+      facilityScopeResolved: true,
+      customerFacilityPairs: new Set(),
+      capabilities,
+      permissions
+    };
+  }
+  const internal = fastContextAvailable ? null : await oneOrNull(admin.from("cmp_Users").select("User_ID,Company_ID,User_AccessStatus").eq("Auth_User_ID", auth.user.id).maybeSingle());
   if (internal) {
     if (!internal.Company_ID) {
       throw new HttpError(403, "Your Multideck user is not assigned to a company yet.");
@@ -49,6 +86,7 @@ export async function resolveActor(userDb, admin) {
       organisationIds: new Set(),
       manageableOrganisationIds: new Set(),
       facilityIds: new Set(),
+      facilityScopeResolved: false,
       customerFacilityPairs: new Set(),
       capabilities,
       permissions
@@ -97,6 +135,7 @@ export async function resolveActor(userDb, admin) {
     organisationIds,
     manageableOrganisationIds,
     facilityIds,
+    facilityScopeResolved: true,
     customerFacilityPairs,
     capabilities,
     permissions: new Set()
@@ -151,6 +190,7 @@ export async function companyFacilityIds(admin, actor) {
   if (!actor.companyId) return [
     ...actor.facilityIds
   ];
+  if (actor.facilityScopeResolved) return [...actor.facilityIds];
   const officeIds = await companyOfficeIds(admin, actor);
   if (!officeIds.length) return [];
   const facilities = await many(admin.from("WMS_Facilities").select("WMSFacility_ID").in("WMSFacility_OrgOfficeID", officeIds).eq("WMSFacility_IsDeleted", false));

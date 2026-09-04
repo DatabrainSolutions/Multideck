@@ -1171,7 +1171,7 @@ function ItemDialog({
               {form.quantityBasisCode === "count" ? <WarehouseSwitchField label={t("Allow partial units")} hint={t("Use only when this counted product can be split into fractions.")} checked={form.allowsFractionalQuantity} onCheckedChange={(checked) => update("allowsFractionalQuantity", checked)} /> : null}
               <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/40 p-4 shadow-[var(--md-shadow-line)]">
                 <div className="flex items-center justify-between gap-3">
-                  <div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Packaging conversions")}</p><p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Define fixed packs such as one box equalling twelve base units. Pallets remain warehouse objects, not quantities.")}</p></div>
+                  <div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Packaging conversions")}</p><p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Define fixed packs such as one box equalling twelve base units. Pallets contain stock; they are not quantities.")}</p></div>
                   <Button type="button" variant="ghost" size="sm" onClick={() => update("uoms", [...form.uoms, { key: crypto.randomUUID(), code: "", quantityInBaseUom: "1", grossWeightKg: "" }])} className="rounded-[var(--md-radius-md)] bg-white/55 shadow-[var(--md-shadow-line)]"><Plus className="size-4" />{t("Add unit")}</Button>
                 </div>
                 {form.uoms.map((uom) => <div key={uom.key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_40px] gap-2">

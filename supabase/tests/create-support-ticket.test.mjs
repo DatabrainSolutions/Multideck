@@ -48,6 +48,15 @@ test("signs intake with the deployed Ed25519 contract without transmitting the p
   assert.equal("x-multideck-tenant-id" in headers, false)
 })
 
+test("signs intake without sending a browser customer or tenant selector", () => {
+  assert.match(cloudContract, /crypto\.subtle\.sign\("Ed25519"/)
+  assert.match(cloudContract, /`\$\{timestamp\}\.\$\{nonce\}\.\$\{bodyDigest\}\.\$\{tenantHost\}\.\$\{keyId\}`/)
+  assert.match(cloudContract, /"x-multideck-key-id": keyId/)
+  assert.match(cloudContract, /"x-multideck-tenant-host": tenantHost/)
+  assert.doesNotMatch(cloudContract, /x-multideck-credential/i)
+  assert.doesNotMatch(cloudContract, /x-multideck-tenant-id/i)
+})
+
 test("detects nested spoofed customer selectors", () => {
   assert.match(cloudContract, /FORBIDDEN_CUSTOMER_KEYS = new Set\(\["tenantid", "customerid"\]\)/)
   assert.match(cloudContract, /containsCustomerSelector\(nested, depth \+ 1\)/)
@@ -69,6 +78,7 @@ test("defaults to the legacy Databrain path and only enables Cloud from a server
   assert.match(edgeFunction, /X-Databrain-Webhook-Secret/)
   assert.match(edgeFunction, /MULTIDECK_CLOUD_SUPPORT_SIGNING_PRIVATE_KEY/)
   assert.match(edgeFunction, /MULTIDECK_CLOUD_SUPPORT_KEY_ID/)
+  assert.doesNotMatch(edgeFunction, /MULTIDECK_CLOUD_SUPPORT_CREDENTIAL/)
   assert.doesNotMatch(edgeFunction, /body\.MULTIDECK_CLOUD_SUPPORT_ENABLED|body\.cloudTicketingEnabled/)
 })
 
