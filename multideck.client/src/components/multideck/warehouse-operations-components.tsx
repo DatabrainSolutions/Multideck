@@ -1,11 +1,12 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { AlertCircle, ArrowDownToLine, ArrowUpFromLine, Boxes, Loader2, Plus, RefreshCw, Trash2, Upload } from "@/components/icons/hugeicons"
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
+import { AlertCircle, ArrowDownToLine, ArrowUpFromLine, Boxes, Check, ChevronDown, Loader2, Plus, RefreshCw, Search, Trash2, Upload } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { WarehouseFormField, warehouseDialogFooterClass, warehouseDialogHeaderClass } from "@/components/multideck/warehouse-management-components"
@@ -108,6 +109,101 @@ function draftLocationAvailabilityKey(itemId: string, locationId: string, custom
 
 function blankLine(reference: WarehouseOrderReference | null, _facilityId: string, _customerOrgId: string, _typeCode: "inbound" | "outbound"): DraftLine {
   return { key: crypto.randomUUID(), itemId: "", quantity: "", lotNumber: "", expiryDate: "", locationId: "", customsStatusCode: reference?.customsStatuses[0]?.code ?? "free_circulation" }
+}
+
+/** The order form's customer choice is one searchable control, even for large directories. */
+function WarehouseOrderCustomerPicker({
+  value,
+  selectedCustomer,
+  options,
+  search,
+  loading,
+  hasMore,
+  disabled,
+  onSearchChange,
+  onValueChange,
+}: {
+  value: string
+  selectedCustomer: OrderCustomerOption | null
+  options: OrderCustomerOption[]
+  search: string
+  loading: boolean
+  hasMore: boolean
+  disabled?: boolean
+  onSearchChange: (value: string) => void
+  onValueChange: (value: string) => void
+}) {
+  const { direction, t } = useLanguage()
+  const [open, setOpen] = useState(false)
+  const listId = useId()
+  const selected = options.find((option) => option.id === value) ?? (selectedCustomer?.id === value ? selectedCustomer : null)
+
+  function setPickerOpen(nextOpen: boolean) {
+    setOpen(nextOpen)
+    if (!nextOpen) onSearchChange("")
+  }
+
+  function selectCustomer(customer: OrderCustomerOption) {
+    onValueChange(customer.id)
+    setPickerOpen(false)
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setPickerOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listId}
+          disabled={disabled}
+          className={cn(controlClass, "flex items-center justify-between gap-2 text-start disabled:cursor-not-allowed disabled:opacity-50")}
+        >
+          <span className={cn("min-w-0 truncate", !selected && "text-[var(--md-subtle)]")}>
+            {selected?.name ?? t("Search or choose customer")}
+          </span>
+          <ChevronDown className="size-3.5 shrink-0 text-[var(--md-subtle)]" aria-hidden="true" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={5}
+        dir={direction}
+        className="w-[var(--radix-popover-trigger-width)] min-w-[260px] gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-lift)]"
+      >
+        <div className="relative m-1">
+          <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" aria-hidden="true" />
+          <Input
+            autoFocus
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder={t("Search customers…")}
+            aria-label={t("Search customers")}
+            className="h-8 rounded-[var(--md-radius-md)] ps-8 text-[12px]"
+            dir="auto"
+          />
+          {loading ? <Loader2 className="pointer-events-none absolute end-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" aria-label={t("Loading customers")} /> : null}
+        </div>
+        <div id={listId} role="listbox" className="max-h-56 overflow-y-auto p-1 md-scrollbar">
+          {options.map((customer) => (
+            <button
+              key={customer.id}
+              type="button"
+              role="option"
+              aria-selected={customer.id === value}
+              onClick={() => selectCustomer(customer)}
+              className={cn("flex w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2.5 py-2 text-start text-[12px] hover:bg-[var(--md-hover)]", customer.id === value && "bg-[var(--md-selected-bg)]")}
+            >
+              <span className="min-w-0 flex-1 truncate">{customer.name}</span>
+              {customer.id === value ? <Check className="size-3.5 shrink-0 text-[var(--md-accent)]" aria-hidden="true" /> : null}
+            </button>
+          ))}
+          {!loading && !options.length ? <p className="px-3 py-5 text-center text-[12px] text-[var(--md-subtle)]">{t("No matching customers")}</p> : null}
+          {hasMore ? <p className="px-3 py-2 text-center text-[11px] text-[var(--md-subtle)]">{t("Search to narrow the customer list.")}</p> : null}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTypes = allOrderTypes, isCustomer = false, onSaved }: { open: boolean; onOpenChange: (open: boolean) => void; reference: WarehouseOrderReference | null; fixedType?: "inbound" | "outbound"; allowedTypes?: ("inbound" | "outbound")[]; isCustomer?: boolean; onSaved: () => void }) {
@@ -261,10 +357,6 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
     return () => { cancelled = true; window.clearTimeout(timer) }
   }, [open, isCustomer, form.facilityId, locationSearch])
 
-  const customerOptions = useMemo(() => {
-    const rows = selectedCustomer ? [selectedCustomer, ...customerRows] : customerRows
-    return rows.filter((row, index) => rows.findIndex((candidate) => candidate.id === row.id) === index)
-  }, [customerRows, selectedCustomer])
   const availableItems = useMemo(() => {
     const rows = [...selectedItems, ...itemRows]
     return rows
@@ -450,7 +542,7 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
         <div className="grid content-start gap-4">
           <div className="grid gap-3 md:grid-cols-3">
             <WarehouseFormField label="Warehouse" required><Select value={form.facilityId} onValueChange={(value) => resetLines(value, form.customerOrgId)}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.facilities.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
-            <WarehouseFormField label="Customer" required hint={customersHaveMore ? t("Search to narrow the customer list.") : undefined}><div className="grid gap-1.5">{isCustomer ? null : <div className="relative"><Input value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder={t("Search customers…")} className={controlClass} dir="auto" />{customerLoading ? <Loader2 className="pointer-events-none absolute end-3 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" /> : null}</div>}<Select value={form.customerOrgId} onValueChange={(value) => { setSelectedCustomer(customerOptions.find((customer) => customer.id === value) ?? null); resetLines(form.facilityId, value) }} disabled={isCustomer || customerLoading && customerOptions.length === 0}><SelectTrigger className={controlClass}><SelectValue placeholder={t("Choose customer")} /></SelectTrigger><SelectContent>{customerOptions.map((customer) => <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>)}</SelectContent></Select></div></WarehouseFormField>
+            <WarehouseFormField label="Customer" required><WarehouseOrderCustomerPicker value={form.customerOrgId} selectedCustomer={selectedCustomer} options={customerRows} search={customerSearch} loading={customerLoading} hasMore={customersHaveMore} disabled={isCustomer || customerLoading && customerRows.length === 0} onSearchChange={setCustomerSearch} onValueChange={(value) => { setSelectedCustomer(customerRows.find((customer) => customer.id === value) ?? null); resetLines(form.facilityId, value) }} /></WarehouseFormField>
             {!fixedType && allowedTypes.length > 1 ? <WarehouseFormField label="Direction" required><Select value={form.typeCode} onValueChange={(value) => changeType(value as "inbound" | "outbound")}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{allowedTypes.includes("inbound") ? <SelectItem value="inbound">Inbound receipt</SelectItem> : null}{allowedTypes.includes("outbound") ? <SelectItem value="outbound">Outbound release</SelectItem> : null}</SelectContent></Select></WarehouseFormField> : <WarehouseFormField label="Direction"><div className={`${controlClass} flex items-center`}>{form.typeCode === "inbound" ? "Inbound receipt" : "Outbound release"}</div></WarehouseFormField>}
             <WarehouseFormField label="Customer reference"><Input value={form.customerReference} onChange={(event) => patchForm({ customerReference: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
             <WarehouseFormField label="Requested date"><MultideckDatePicker value={form.requestedDate || null} onChange={(date) => patchForm({ requestedDate: date ?? "" })} placeholder="Select date" title="Requested date" description="Pick the date requested by the customer." triggerClassName={controlClass} /></WarehouseFormField>

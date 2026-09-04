@@ -17,7 +17,9 @@ test("Warehouse order setup returns only small reference data", () => {
   assert.match(route, /locations:\s*\[\][\s\S]*locationsDeferred:\s*true/)
 })
 
-test("item and location selectors are capped before rows reach the browser", () => {
+test("customer, item and location selectors are capped before rows reach the browser", () => {
+  assert.match(route, /path\[2\] === "customers"[\s\S]*boundedPage\(url, 25, 50\)/)
+  assert.match(route, /path\[2\] === "customers"[\s\S]*url\.searchParams\.get\("search"\)[\s\S]*\.ilike\("Org_Name"/)
   assert.match(route, /path\[2\] === "items"[\s\S]*boundedPage\(url, 25, 50\)/)
   assert.match(route, /warehouse_edge_item_selector_page/)
   assert.match(route, /path\[2\] === "locations"[\s\S]*requireInternalWarehouseRead\(actor\)[\s\S]*boundedPage\(url, 25, 50\)/)
@@ -48,10 +50,12 @@ test("the order dialog uses debounced server pages without whole-catalogue compa
     api.indexOf("export function createOperationalWarehouseOrder"),
   )
   assert.match(orderSelectors, /getWarehouseOrderReference\(\)[\s\S]*\/orders\/reference\?scope=setup/)
+  assert.match(orderSelectors, /listWarehouseOrderCustomersPage/)
   assert.match(orderSelectors, /listWarehouseOrderItemsPage/)
   assert.match(orderSelectors, /listWarehouseOrderLocationsPage/)
   assert.doesNotMatch(orderSelectors, /if \("facilities" in result\)|normalizeWarehouseSelectorPage/)
   assert.match(ui, /getWarehouseOrderReference\(\)/)
+  assert.match(ui, /listWarehouseOrderCustomersPage\(\{ search: customerSearch\.trim\(\) \|\| undefined, limit: 25 \}\)/)
   assert.match(ui, /window\.setTimeout\(\(\) => \{[\s\S]*listWarehouseOrderItemsPage/)
   assert.match(ui, /listWarehouseOrderLocationsPage/)
   assert.match(ui, /Search items by SKU or description/)

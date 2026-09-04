@@ -84,6 +84,10 @@ export function WizardDialog({
   const activeIndex = Math.max(0, steps.findIndex((step) => step.id === activeStepId))
   const isLastStep = activeIndex === steps.length - 1
   const isFormLayout = layout === "form"
+  // Keep the connector between the step markers, rather than stretching it to
+  // the dialog edges. Apart from being calmer, this avoids the first step
+  // looking as though the progress line runs into it.
+  const railInset = steps.length > 1 ? `${50 / steps.length}%` : "50%"
   // Which way the content travels. Reading it from the last index rather than
   // from the click means the rail, the Back button and a keyboard shortcut all
   // produce the same direction.
@@ -128,20 +132,23 @@ export function WizardDialog({
             which one this is, and which are already filled in. */}
         {!isFormLayout ? (
           <nav aria-label={t("Steps")} className={cn("shrink-0 pb-4 pt-4", presentation === "drawer" ? "px-5" : "px-6")}>
-            <ol className="relative flex items-start justify-between gap-2">
-            <span aria-hidden="true" className="absolute inset-x-0 top-[11px] h-0.5 rounded-full bg-[var(--md-line-strong)]" />
-            <motion.span
-              aria-hidden="true"
-              className="absolute inset-x-0 top-[11px] h-0.5 origin-left rounded-full bg-[var(--md-accent)] rtl:origin-right"
-              initial={false}
-              animate={{ scaleX: steps.length > 1 ? activeIndex / (steps.length - 1) : 1 }}
-              transition={shouldReduceMotion ? { duration: 0 } : mdMotion.panel}
-            />
+            <ol className="relative grid items-start gap-2" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
+            {steps.length > 1 ? <>
+              <span aria-hidden="true" className="absolute top-[11px] h-0.5 rounded-full bg-[var(--md-line-strong)]" style={{ insetInlineStart: railInset, insetInlineEnd: railInset }} />
+              <motion.span
+                aria-hidden="true"
+                className="absolute top-[11px] h-0.5 origin-left rounded-full bg-[var(--md-accent)] rtl:origin-right"
+                style={{ insetInlineStart: railInset, insetInlineEnd: railInset }}
+                initial={false}
+                animate={{ scaleX: activeIndex / (steps.length - 1) }}
+                transition={shouldReduceMotion ? { duration: 0 } : mdMotion.panel}
+              />
+            </> : null}
             {steps.map((step, index) => {
               const isCurrent = index === activeIndex
               const isDone = step.complete === true && !isCurrent
               return (
-                <li key={step.id} className="relative z-[1] flex min-w-0 flex-1 justify-center first:justify-start last:justify-end">
+                <li key={step.id} className="relative z-[1] flex min-w-0 justify-center">
                   <button
                     type="button"
                     onClick={() => goTo(index)}
@@ -154,7 +161,7 @@ export function WizardDialog({
                         isCurrent
                           ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[0_0_0_3px_var(--md-accent-a14)]"
                           : isDone
-                            ? "bg-[var(--md-accent-a18)] text-[var(--md-accent)] shadow-[inset_0_0_0_1px_var(--md-accent-a32)]"
+                            ? "bg-[color-mix(in_srgb,var(--md-surface)_82%,var(--md-accent)_18%)] text-[var(--md-accent)] shadow-[inset_0_0_0_1px_var(--md-accent-a32)]"
                             : "bg-[var(--md-field-bg)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_var(--md-line-strong)] group-hover:bg-[var(--md-field-bg-hover)] group-hover:text-[var(--md-ink)]",
                       )}
                     >
