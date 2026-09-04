@@ -28,9 +28,11 @@ const legacyContract = readFileSync(
 )
 
 test("signs intake without sending a browser customer or tenant selector", () => {
-  assert.match(cloudContract, /crypto\.subtle\.sign\("HMAC"/)
-  assert.match(cloudContract, /`\$\{timestamp\}\.\$\{nonce\}\.\$\{bodyDigest\}`/)
+  assert.match(cloudContract, /crypto\.subtle\.sign\("Ed25519"/)
+  assert.match(cloudContract, /`\$\{timestamp\}\.\$\{nonce\}\.\$\{bodyDigest\}\.\$\{tenantHost\}\.\$\{keyId\}`/)
+  assert.match(cloudContract, /"x-multideck-key-id": keyId/)
   assert.match(cloudContract, /"x-multideck-tenant-host": tenantHost/)
+  assert.doesNotMatch(cloudContract, /x-multideck-credential/i)
   assert.doesNotMatch(cloudContract, /x-multideck-tenant-id/i)
 })
 
@@ -51,7 +53,9 @@ test("defaults to the legacy Databrain path and only enables Cloud from a server
   assert.match(edgeFunction, /cloudTicketingEnabled[\s\S]*handleCloudTicket[\s\S]*handleLegacyTicket/)
   assert.match(edgeFunction, /DATABRAIN_TICKET_WEBHOOK_URL/)
   assert.match(edgeFunction, /X-Databrain-Webhook-Secret/)
-  assert.match(edgeFunction, /MULTIDECK_CLOUD_SUPPORT_CREDENTIAL/)
+  assert.match(edgeFunction, /MULTIDECK_CLOUD_SUPPORT_SIGNING_PRIVATE_KEY/)
+  assert.match(edgeFunction, /MULTIDECK_CLOUD_SUPPORT_KEY_ID/)
+  assert.doesNotMatch(edgeFunction, /MULTIDECK_CLOUD_SUPPORT_CREDENTIAL/)
   assert.doesNotMatch(edgeFunction, /body\.MULTIDECK_CLOUD_SUPPORT_ENABLED|body\.cloudTicketingEnabled/)
 })
 
