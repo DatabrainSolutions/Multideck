@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
+import type { QuoteDocumentCargo } from "./quote-document-cargo.ts"
 import {
   FunctionError,
   generatedDocumentsBucket,
@@ -33,6 +34,7 @@ export type QuotePdfDataset = {
   journey: Array<{ label: string; value: string }>
   routes: Array<{ leg: string; mode: string; movement: string; schedule: string; carrierService: string }>
   shipment: Array<{ label: string; value: string }>
+  cargo: QuoteDocumentCargo[]
   charges: Array<{ description: string; notes: string; quantity: string; rate: string; amount: string }>
   totals: Array<{ label: string; amount: string }>
   terms: string
@@ -92,6 +94,13 @@ export const quotePdfTemplate = `<!DOCTYPE html>
     .shipment { width: 100%; margin-bottom: 20px; border-collapse: collapse; table-layout: fixed; border-top: 1px solid #82938f; border-bottom: 1px solid #d9e2df; }
     .shipment td { width: 25%; padding: 9px 12px 10px 0; vertical-align: top; }
     .shipment td + td { padding-left: 12px; }
+    .cargo-plan { margin: 0 0 20px; }
+    .cargo { width: 100%; table-layout: fixed; border-collapse: collapse; }
+    .cargo caption { margin-bottom: 7px; text-align: left; color: #526864; font-size: 10px; font-weight: 600; }
+    .cargo thead { display: table-header-group; }
+    .cargo th { padding: 0 7px 6px 0; text-align: left; color: #526864; border-bottom: 1px solid #82938f; }
+    .cargo td { padding: 7px 7px 7px 0; vertical-align: top; border-bottom: 1px solid #e1e6e2; white-space: pre-line; overflow-wrap: anywhere; }
+    .cargo tr { break-inside: avoid; }
     .pricing { margin: 0 -15mm 18px; padding: 14px 15mm 15px; background: #f5f7f4; break-inside: avoid; }
     .pricing-title { margin: 0 0 9px; color: #526864; font-size: 11px; font-weight: 650; }
     table.charges { width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -161,6 +170,19 @@ export const quotePdfTemplate = `<!DOCTYPE html>
     <td><div class="label">{d.shipment[2].label}</div><div class="value">{d.shipment[2].value}</div></td>
     <td><div class="label">{d.shipment[3].label}</div><div class="value">{d.shipment[3].value}</div></td>
   </tr></table>
+
+  <div class="cargo-plan">
+    <table class="cargo">
+      <caption>Cargo details</caption>
+      <colgroup><col style="width:5%" /><col style="width:32%" /><col style="width:15%" /><col style="width:23%" /><col style="width:25%" /></colgroup>
+      <thead><tr><th scope="col">Line</th><th scope="col">Goods</th><th scope="col">Packages</th><th scope="col">Weight</th><th scope="col">Dimensions / volume</th></tr></thead>
+      <tbody>
+        {d.cargo[i]}
+        <tr><td>{d.cargo[i].line}</td><td>{d.cargo[i].description}<div class="charge-note">{d.cargo[i].details}</div></td><td>{d.cargo[i].packages}</td><td>{d.cargo[i].weights}</td><td>{d.cargo[i].measurements}</td></tr>
+        {d.cargo[i+1]}
+      </tbody>
+    </table>
+  </div>
 
   <div class="pricing">
     <div class="pricing-title">Cost breakdown</div>
@@ -235,9 +257,11 @@ function escapeHtml(value: unknown) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;")
+    .replace(/\{/g, "&#123;")
+    .replace(/\}/g, "&#125;")
 }
 
-function replaceCollection(template: string, collection: "routes" | "charges" | "totals", rows: string) {
+function replaceCollection(template: string, collection: "routes" | "cargo" | "charges" | "totals", rows: string) {
   const start = `{d.${collection}[i]}`
   const end = `{d.${collection}[i+1]}`
   const startIndex = template.indexOf(start)
@@ -254,11 +278,13 @@ function datasetValue(dataset: QuotePdfDataset, path: string) {
 }
 
 export function renderQuotePdfHtml(dataset: QuotePdfDataset) {
+  const cargoRows = dataset.cargo.map((line) => `<tr><td>${escapeHtml(line.line)}</td><td>${escapeHtml(line.description)}<div class="charge-note">${escapeHtml(line.details)}</div></td><td>${escapeHtml(line.packages)}</td><td>${escapeHtml(line.weights)}</td><td>${escapeHtml(line.measurements)}</td></tr>`).join("")
   const routeRows = dataset.routes.map((route) => `<tr><td class="route-leg">${escapeHtml(route.leg)}</td><td>${escapeHtml(route.mode)}</td><td>${escapeHtml(route.movement)}</td><td>${escapeHtml(route.schedule)}</td><td>${escapeHtml(route.carrierService)}</td></tr>`).join("")
   const chargeRows = dataset.charges.map((charge) => `<tr><td>${escapeHtml(charge.description)}<div class="charge-note">${escapeHtml(charge.notes)}</div></td><td>${escapeHtml(charge.rate)}</td><td>${escapeHtml(charge.quantity)}</td><td>${escapeHtml(charge.amount)}</td></tr>`).join("")
   const totalRows = dataset.totals.map((total) => `<tr><td class="total-label">${escapeHtml(total.label)}</td><td class="total-amount">${escapeHtml(total.amount)}</td></tr>`).join("")
   const withRoutes = replaceCollection(quotePdfTemplate, "routes", routeRows)
-  const withCharges = replaceCollection(withRoutes, "charges", chargeRows)
+  const withCargo = replaceCollection(withRoutes, "cargo", cargoRows)
+  const withCharges = replaceCollection(withCargo, "charges", chargeRows)
   const withTotals = replaceCollection(withCharges, "totals", totalRows)
   return withTotals.replace(/\{d\.([A-Za-z0-9_.\[\]]+)\}/g, (_match, path: string) => escapeHtml(datasetValue(dataset, path)))
 }

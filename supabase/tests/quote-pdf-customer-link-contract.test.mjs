@@ -59,7 +59,7 @@ test("quote issue renders an immutable Carbone PDF before delivery and binds it 
 test("the version-bound PDF preserves direct and multi-leg route plans without internal commercial data", () => {
   const dataset = workflow.match(/async function quotePdfDataset[\s\S]*?\ntype QuoteIssueRecipient/)?.[0] ?? ""
   assert.match(dataset, /Array\.isArray\(facts\.routingLegs\)/)
-  assert.match(dataset, /savedRoutingLegs\.length > 1/)
+  assert.match(dataset, /savedRoutingLegs\.length > 0/)
   assert.match(dataset, /plannedDateLabel\(route\.estimatedDeparture\)/)
   assert.match(dataset, /carrierService/)
   assert.match(dataset, /label: "Shipment \/ container"/)

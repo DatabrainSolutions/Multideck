@@ -41,7 +41,8 @@ test("quote readiness matches the current quote fields and inherited customer te
   assert.match(edge, /customerIncotermLabel\(quote\.incoterm, facts\.namedPlace\)/)
 })
 
-test("quote PDF terms use the customer organisation record when available", () => {
-  assert.match(edge, /from\("CRM_AccountProfiles"\)[\s\S]*CRMAccount_MetadataJSON/)
-  assert.match(edge, /organisationQuoteTerms\.terms \|\| quote\.terms \|\| context\.quote\.CusQuoteHeader_TermsText/)
+test("quote PDF terms belong to the saved version, not today's payer profile", () => {
+  const dataset = edge.match(/async function quotePdfDataset[\s\S]*?\ntype QuoteIssueRecipient/)?.[0] ?? ""
+  assert.match(dataset, /const effectiveTerms = printable\(\s*quote\.terms,/)
+  assert.doesNotMatch(dataset, /CRM_AccountProfiles|CusQuoteHeader_TermsText|organisationQuoteTerms/)
 })
