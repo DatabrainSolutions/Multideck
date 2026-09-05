@@ -3,13 +3,14 @@ import { readFile } from "node:fs/promises"
 import test from "node:test"
 
 const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8")
-const [registerApi, registerPage, quotePage, workflowApi, workflowEdge, migration] = await Promise.all([
+const [registerApi, registerPage, quotePage, workflowApi, workflowEdge, migration, submissionBoundary] = await Promise.all([
   read("multideck.client/src/lib/quote-api.ts"),
   read("multideck.client/src/pages/quotes-register-page.tsx"),
   read("multideck.client/src/pages/quotes-page.tsx"),
   read("multideck.client/src/lib/quote-workflow-api.ts"),
   read("supabase/functions/quotes-workflow/index.ts"),
   read("supabase/migrations/20260823182000_quote_resend_lifecycle.sql"),
+  read("supabase/migrations/20260904120000_quote_submission_document_boundary.sql"),
 ])
 
 test("quote register presents every persisted lifecycle instead of collapsing outcomes to Open", () => {
@@ -28,12 +29,13 @@ test("quote register refreshes from database changes and workflow writes invalid
   assert.match(migration, /alter publication supabase_realtime add table public\."CusQuote_Header"/)
 })
 
-test("accepted quotes expose a resend action backed by a new response cycle", () => {
+test("accepted response versions require a new draft before another customer decision cycle", () => {
   assert.match(quotePage, /quoteHasAcceptedHistory/)
-  assert.match(quotePage, /"Resend quote"/)
-  assert.match(quotePage, /"Resend secure quote"/)
-  assert.match(workflowEdge, /quote_workflow_issue_customer_response_v3/)
+  assert.match(quotePage, /currentVersionHasFinalResponse/)
+  assert.match(quotePage, /"New version"/)
+  assert.match(workflowEdge, /quote_workflow_prepare_customer_response_v4/)
+  assert.match(workflowEdge, /quote_workflow_finalize_customer_response_v4/)
   assert.match(migration, /CusQuoteHeader_LifecycleCode" = 'accepted'[\s\S]*CusQuoteHeader_LifecycleCode" = 'revised'/)
-  assert.match(migration, /issued := quote_api\.issue_customer_response/)
-  assert.match(migration, /Reissuing starts a new customer response cycle/)
+  assert.match(submissionBoundary, /Create a new quote version before sending another customer decision cycle/)
+  assert.match(submissionBoundary, /delivery_status_code = 'sent'/)
 })

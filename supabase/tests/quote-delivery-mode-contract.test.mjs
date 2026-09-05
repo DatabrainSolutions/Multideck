@@ -5,10 +5,11 @@ import test from "node:test"
 const root = new URL("../../", import.meta.url)
 const read = (path) => readFile(new URL(path, root), "utf8")
 
-const [core, workflow, migration, quotePage, responsePage, bookingPage, bookingComponents, api, dexter] = await Promise.all([
+const [core, workflow, migration, submissionBoundary, quotePage, responsePage, bookingPage, bookingComponents, api, dexter] = await Promise.all([
   read("supabase/functions/quotes-workflow/core.ts"),
   read("supabase/functions/quotes-workflow/index.ts"),
   read("supabase/migrations/20260822090000_quote_delivery_modes_and_won_parity.sql"),
+  read("supabase/migrations/20260904120000_quote_submission_document_boundary.sql"),
   read("multideck.client/src/pages/quotes-page.tsx"),
   read("multideck.client/src/pages/quote-response-page.tsx"),
   read("multideck.client/src/pages/bookings-page.tsx"),
@@ -34,18 +35,19 @@ test("Standard keeps the response link while Simple stays one-line; both attach 
   assert.doesNotMatch(simpleRenderer, /secure link|response link|url|expiresAt/)
   assert.match(workflow, /attachments:\s*\[\{[\s\S]*fileName: quoteDocument\.fileName[\s\S]*contentBase64: base64Encode\(quotePdfBytes\)/)
   assert.match(workflow, /deliveryMode === "standard" \? \{ bodyHtml: rendered\.html \} : \{\}/)
-  assert.match(workflow, /quote_workflow_disable_customer_response/)
+  assert.match(workflow, /quote_workflow_finalize_customer_response_v4/)
   assert.match(workflow, /responseControlsEnabled: deliveryMode === "standard"/)
   assert.ok(
-    workflow.indexOf('admin.rpc("quote_workflow_bind_customer_response_document"')
-      < workflow.indexOf('admin.rpc("quote_workflow_disable_customer_response"'),
-    "Simple response controls must be disabled only after the immutable PDF is bound",
+    workflow.indexOf('admin.rpc("quote_workflow_bind_pending_customer_response_document_v4"')
+      < workflow.indexOf("const delivery = await sendConnectedMailbox"),
+    "The immutable PDF must be bound before either delivery mode reaches the mail provider",
   )
   assert.ok(
-    workflow.indexOf('admin.rpc("quote_workflow_disable_customer_response"')
-      < workflow.indexOf("const delivery = await sendConnectedMailbox"),
-    "Simple delivery must fail closed before the external email send",
+    workflow.indexOf("const delivery = await sendConnectedMailbox")
+      < workflow.indexOf('admin.rpc("quote_workflow_finalize_customer_response_v4"'),
+    "The customer response state must be finalised only after confirmed external delivery",
   )
+  assert.match(submissionBoundary, /final_status := case when link_row\.delivery_mode_code = 'standard' then 'active' else 'revoked' end/)
   assert.match(workflow, /OUTBOUND_ATTACHMENT_LIMITS\.maxFileBytes/)
   assert.match(quotePage, /Generated from this saved quote and attached automatically/)
   assert.match(quotePage, /Simple emails do not include customer response controls/)
@@ -66,6 +68,8 @@ test("a typed one-send recipient does not overwrite saved quote or CRM contact d
   assert.match(migration, /revoke all on function public\.quote_workflow_disable_customer_response\(uuid\)[\s\S]*from public, anon, authenticated/)
   assert.match(migration, /grant execute on function public\.quote_workflow_disable_customer_response\(uuid\)[\s\S]*to service_role/)
   assert.match(migration, /responseControlsEnabled', requested_delivery_mode = 'standard'/)
+  assert.match(submissionBoundary, /when link_row\.recipient_source_code = 'saved' then link_row\.recipient_email/)
+  assert.match(submissionBoundary, /when link_row\.recipient_source_code = 'saved' then coalesce\(link_row\.recipient_name/)
 })
 
 test("latest delivery evidence stays behind a tenant-authorised public RPC", () => {

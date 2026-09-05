@@ -230,6 +230,7 @@ export function CompactCombobox({
   allLabel = "All options",
   emptyLabel = "No matching options",
   allowCustom = true,
+  clearable = true,
   resultLimit = MAX_RENDERED_COMBOBOX_OPTIONS,
   disabled,
   required,
@@ -252,6 +253,7 @@ export function CompactCombobox({
   allLabel?: string
   emptyLabel?: string
   allowCustom?: boolean
+  clearable?: boolean
   resultLimit?: number
   disabled?: boolean
   required?: boolean
@@ -395,7 +397,7 @@ export function CompactCombobox({
               onKeyDown={handleKeyDown}
               className="h-8 flex-1 truncate rounded-[var(--md-radius-lg)] bg-transparent px-1.5 text-[12px] shadow-none ring-0 hover:bg-transparent focus-visible:bg-transparent focus-visible:ring-0"
             />
-            {allowCustom && inputValue ? (
+            {allowCustom && clearable && inputValue ? (
               <Button
                 type="button"
                 variant="ghost"

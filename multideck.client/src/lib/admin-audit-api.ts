@@ -40,6 +40,13 @@ export type AdminActiveUser = {
   lastSeenAt: string
 }
 
+export type QuoteEditorPresence = {
+  id: string
+  name: string
+  email: string | null
+  lastSeenAt: string
+}
+
 export type AdminAuditResponse = {
   view: AdminAuditView
   rows: AdminAuditRow[]
@@ -165,4 +172,17 @@ export async function recordWorkspacePresence(route: string) {
     body: JSON.stringify({ route }),
   })
   if (!response.ok) throw new Error(await parseError(response))
+}
+
+export async function getQuoteEditorPresence(route: string): Promise<QuoteEditorPresence[]> {
+  const session = await getSupabaseSession()
+  if (!session?.access_token) return []
+  const response = await edgeFetch("admin-audit", "/presence/quote", session.access_token, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ route }),
+  })
+  if (!response.ok) throw new Error(await parseError(response))
+  const result = await response.json() as { editors?: QuoteEditorPresence[] }
+  return Array.isArray(result.editors) ? result.editors : []
 }

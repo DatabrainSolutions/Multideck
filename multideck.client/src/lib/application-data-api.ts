@@ -3,7 +3,7 @@ import type { DomesticRoadJob, RoadJobStageId } from "@/components/multideck/dom
 import { createEmptyFilterQuery, filterQueryIsEmpty, type FilterQuery } from "@/lib/advanced-filters"
 import { authSupabase, getClientAuth, authenticatedAccessChangedEvent, getSupabaseSession, supabase, supabaseFunctionsUrl } from "@/lib/supabase"
 
-type BookingMode = "OCEAN" | "AIR" | "ROAD" | "MULTIMODAL" | "FAS" | "FSA"
+type BookingMode = "OCEAN" | "AIR" | "ROAD" | "RAIL" | "MULTIMODAL" | "FAS" | "FSA"
 type BookingStatus = "On track" | "Delayed" | "Exception"
 type BookingDirection = "Import" | "Export" | "Domestic" | "Cross trade" | "Direction needed"
 

@@ -1,6 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
-import { cleanString, InboxHttpError, normalizeEmail } from "../inbox-api/core.ts"
-import { syncMailbox, type Actor } from "../inbox-api/runtime.ts"
+import { cleanString, InboxHttpError, normalizeEmail, sha256Hex } from "../inbox-api/core.ts"
+import { sendMail, syncMailbox, type Actor } from "../inbox-api/runtime.ts"
 import { processInboxSuggestionJobs } from "../_shared/inbox-suggested-updates.ts"
 
 type Row = Record<string, any>
@@ -113,6 +113,137 @@ async function syncMailboxWithRetry(admin: any, actor: Actor, mailboxId: string,
   throw lastError
 }
 
+function quoteFollowUpActor(row: Row): Actor {
+  const displayName = [row.actor_first_name, row.actor_last_name]
+    .map((value) => cleanString(value, 120))
+    .filter(Boolean)
+    .join(" ")
+  const email = normalizeEmail(row.actor_email) ?? ""
+  return {
+    userId: cleanString(row.actor_user_id, 80),
+    authUserId: cleanString(row.actor_auth_user_id, 80),
+    companyId: cleanString(row.company_id, 80),
+    email,
+    displayName: displayName || email || "Multideck user",
+  }
+}
+
+function retryableQuoteFollowUpError(error: unknown) {
+  if (!(error instanceof InboxHttpError)) return true
+  return error.status === 409 || error.status === 429 || error.status === 502 || error.status >= 500
+}
+
+function quoteFollowUpBody(reference: string, recipientName: string, senderName: string) {
+  const greeting = recipientName ? `Hello ${recipientName},` : "Hello,"
+  return [
+    greeting,
+    "",
+    `Just a quick follow-up on quote ${reference}. Please let us know if you have any questions or would like us to make any changes.`,
+    "",
+    "You can use the secure link in the original email to accept, decline, or request changes.",
+    "",
+    "Kind regards,",
+    senderName,
+  ].join("\n")
+}
+
+async function previouslySentQuoteFollowUp(
+  admin: any,
+  actor: Actor,
+  responseLinkId: string,
+  attemptNumber: number,
+) {
+  const keys = await Promise.all(
+    Array.from({ length: Math.max(1, attemptNumber) }, (_, index) =>
+      sha256Hex(`${actor.userId}:quote-follow-up:${responseLinkId}:${index + 1}`)
+    ),
+  )
+  const { data, error } = await admin
+    .from("Comm_Messages")
+    .select("CommMessage_ID,CommMessage_StatusCode")
+    .in("CommMessage_IdempotencyKey", keys)
+    .eq("CommMessage_StatusCode", "sent")
+    .order("CommMessage_SentAt", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return data as Row | null
+}
+
+async function processQuoteFollowUps(admin: any, limit = 2) {
+  const leaseToken = crypto.randomUUID()
+  const { data, error } = await admin.rpc("quote_workflow_claim_due_follow_ups", {
+    requested_lease_token: leaseToken,
+    requested_limit: limit,
+  })
+  if (error) throw error
+
+  const results: Array<Record<string, unknown>> = []
+  for (const row of Array.isArray(data) ? data as Row[] : []) {
+    const responseLinkId = cleanString(row.response_link_id, 80)
+    const mailboxId = cleanString(row.mailbox_id, 80)
+    const sourceMessageId = cleanString(row.source_message_id, 80)
+    const reference = cleanString(row.quote_reference, 160) || "Quote"
+    const recipientName = cleanString(row.recipient_name, 160)
+    const attemptNumber = Math.max(1, Math.min(3, Number(row.attempt_number) || 1))
+    const actor = quoteFollowUpActor(row)
+
+    try {
+      const alreadySent = await previouslySentQuoteFollowUp(admin, actor, responseLinkId, attemptNumber)
+      const delivery = alreadySent
+        ? { status: "sent", messageId: cleanString(alreadySent.CommMessage_ID, 80), reused: true }
+        : await sendMail(admin, actor, {
+          mailboxId,
+          mode: "reply",
+          sourceMessageId,
+          threadId: null,
+          draftId: null,
+          subject: `Re: Quote ${reference}`,
+          bodyText: quoteFollowUpBody(reference, recipientName, actor.displayName),
+          addedTo: [],
+          addedCc: [],
+          addedBcc: [],
+          removedAddresses: [],
+          attachments: [],
+          trackOpens: false,
+        }, `quote-follow-up:${responseLinkId}:${attemptNumber}`)
+
+      if (delivery.status !== "sent") {
+        throw new InboxHttpError(502, "The connected mail provider did not confirm the quote follow-up as sent.", "quote_follow_up_not_confirmed")
+      }
+      const { data: finished, error: finishError } = await admin.rpc("quote_workflow_finish_follow_up", {
+        requested_response_link_id: responseLinkId,
+        requested_lease_token: leaseToken,
+        requested_sent: true,
+        requested_provider_id: delivery.messageId ?? null,
+        requested_error: null,
+        requested_retryable: false,
+      })
+      if (finishError || finished !== true) throw finishError ?? new Error("Quote follow-up completion was not recorded.")
+      results.push({ responseLinkId, status: "sent", attempt: attemptNumber, reused: delivery.reused === true })
+    } catch (followUpError) {
+      const message = followUpError instanceof Error ? followUpError.message : "Quote follow-up delivery failed."
+      const { error: finishError } = await admin.rpc("quote_workflow_finish_follow_up", {
+        requested_response_link_id: responseLinkId,
+        requested_lease_token: leaseToken,
+        requested_sent: false,
+        requested_provider_id: null,
+        requested_error: message,
+        requested_retryable: retryableQuoteFollowUpError(followUpError),
+      })
+      if (finishError) console.error("quote follow-up failure could not be recorded", responseLinkId)
+      results.push({
+        responseLinkId,
+        status: "failed",
+        attempt: attemptNumber,
+        retryable: retryableQuoteFollowUpError(followUpError),
+        code: followUpError instanceof InboxHttpError ? followUpError.code : "quote_follow_up_failed",
+      })
+    }
+  }
+  return results
+}
+
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ code: "method_not_allowed" }, 405)
 
@@ -134,6 +265,7 @@ Deno.serve(async (request) => {
     // Give one expensive, strongly gated document job the full Edge runtime.
     // Provider mail sync can safely continue on the next ten-second pass, but
     // an OCR job must not be interrupted after publishing only half a review.
+    const quoteFollowUps = mode === "live" ? await processQuoteFollowUps(admin, 2) : []
     const suggestedUpdates = mode === "live" ? await processInboxSuggestionJobs(admin, 1) : []
 
     const workerLeaseToken = crypto.randomUUID()
@@ -300,7 +432,7 @@ Deno.serve(async (request) => {
     // Provider sync and suggestion extraction share the same bounded worker,
     // but remain separate leases. Strong metadata gates mean this does not call
     // a model for ordinary attachments or while the queue is idle.
-    return json({ ok: true, mode, owners: results.length, results, suggestedUpdates })
+    return json({ ok: true, mode, owners: results.length, results, quoteFollowUps, suggestedUpdates })
   } catch (error) {
     console.error("email-watch-worker failed", error instanceof Error ? error.message : "unknown")
     return json({ code: "worker_failed", message: "Email watch checks could not finish." }, 503)

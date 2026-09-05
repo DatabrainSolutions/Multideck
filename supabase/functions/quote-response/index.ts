@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
   assertCompetitorQuote,
+  parseDeclineReason,
   isQuoteResponseOriginAllowed,
   parseDecision,
   parseMessage,
@@ -274,6 +275,7 @@ Deno.serve(async (request) => {
     if (body.action === "submit") {
       const decision = parseDecision(body.decision)
       const message = parseMessage(body.message, decision)
+      const declineReasonCode = parseDeclineReason(body.declineReasonCode, decision)
       const competitorDocumentId = body.competitorDocumentId === null || body.competitorDocumentId === undefined || body.competitorDocumentId === ""
         ? null
         : String(body.competitorDocumentId)
@@ -288,6 +290,7 @@ Deno.serve(async (request) => {
         requested_competitor_document_id: competitorDocumentId,
         requested_source_ip_hash: await requestIpHash(request),
         requested_user_agent: request.headers.get("user-agent")?.slice(0, 500) ?? null,
+        requested_decline_reason: declineReasonCode,
       })
       if (error || !data) throw error ?? new Error("Quote response submission returned no result")
       return json(origin, data)

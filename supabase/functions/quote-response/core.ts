@@ -8,6 +8,17 @@ export const allowedCompetitorQuoteTypes = new Set([
   "image/webp",
 ])
 
+export const customerDeclineReasonCodes = [
+  "cost_too_high",
+  "estimated_times_too_late",
+  "found_cheaper_quote",
+  "research_only",
+  "job_no_longer_needed",
+  "other",
+] as const
+
+export type CustomerDeclineReasonCode = (typeof customerDeclineReasonCodes)[number]
+
 export class QuoteResponseError extends Error {
   constructor(public readonly status: number, public readonly clientMessage: string, public readonly auditMessage = clientMessage) {
     super(auditMessage)
@@ -32,18 +43,28 @@ export function isQuoteResponseOriginAllowed(value: unknown) {
 
 export function parseDecision(value: unknown) {
   if (value === "accepted" || value === "declined" || value === "challenged") return value
-  throw new QuoteResponseError(400, "Choose accept, decline or challenge.")
+  throw new QuoteResponseError(400, "Choose accept, decline or request changes.")
 }
 
 export function parseMessage(value: unknown, decision: "accepted" | "declined" | "challenged") {
   const message = typeof value === "string" ? value.trim() : ""
-  if ((decision === "declined" || decision === "challenged") && !message) {
-    throw new QuoteResponseError(400, decision === "declined"
-      ? "Tell us why you are declining this quote."
-      : "Tell us what you would like us to review.")
+  if (decision === "challenged" && !message) {
+    throw new QuoteResponseError(400, "Tell us what you would like us to review.")
   }
   if (message.length > 4_000) throw new QuoteResponseError(400, "Keep the response to 4,000 characters or fewer.")
   return message || null
+}
+
+export function parseDeclineReason(value: unknown, decision: "accepted" | "declined" | "challenged") {
+  const reason = typeof value === "string" ? value.trim() : ""
+  if (decision !== "declined") {
+    if (reason) throw new QuoteResponseError(400, "A decline reason can only be supplied when declining a quote.")
+    return null
+  }
+  if (!customerDeclineReasonCodes.includes(reason as CustomerDeclineReasonCode)) {
+    throw new QuoteResponseError(400, "Choose the main reason for declining this quote.")
+  }
+  return reason as CustomerDeclineReasonCode
 }
 
 export function safeFileName(value: string) {

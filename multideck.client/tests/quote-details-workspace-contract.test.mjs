@@ -78,11 +78,13 @@ test("company quote defaults are stored on the organisation and copied into a se
   assert.match(accountDetail, /Terms and conditions/u)
   assert.match(accountDetail, /Subject to rate \/ space/u)
   assert.match(details, /organisation\.quoteTerms/u)
-  assert.match(details, /terms: organisation\.quoteTerms\.terms/u)
-  assert.match(details, /subjectToTerms: organisation\.quoteTerms\.subjectTo/u)
-  assert.match(details, /customerNotes: organisation\.quoteTerms\.notes/u)
-  assert.match(details, /deadline: organisation\.quoteTerms\.deadline/u)
+  assert.match(details, /terms: organisation\.quoteTerms\?\.terms \?\? ""/u)
+  assert.match(details, /subjectToTerms: organisation\.quoteTerms\?\.subjectTo \?\? ""/u)
+  assert.match(details, /customerNotes: organisation\.quoteTerms\?\.notes \?\? ""/u)
+  assert.match(details, /deadline: organisation\.quoteTerms\?\.deadline \?\? ""/u)
   assert.match(accountDetail, /Default response deadline/u)
+  assert.match(accountDetail, /Quote follow-up delay/u)
+  assert.match(accountDetail, /Leave blank to use the company policy/u)
 })
 
 test("route inputs derive UN/LOCODE while transit and repeat frequency use linked compact controls", () => {
@@ -130,6 +132,47 @@ test("route inputs derive UN/LOCODE while transit and repeat frequency use linke
   assert.match(fields, /value\.mode === "interval"/u)
   assert.match(fields, /value\.mode === "times-per-month"/u)
   assert.match(fields, /PopoverTitle[\s\S]{0,160}Frequency notes/u)
+})
+
+test("transit time is calculated from the quote ETD and ETA", () => {
+  assert.match(page, /function quoteTransitDays\(estimatedDeparture: string \| undefined, estimatedArrival: string \| undefined\)/u)
+  assert.match(page, /Date\.UTC\(year, month - 1, day\)/u)
+  assert.match(page, /elapsedDays >= 0 \? String\(elapsedDays\) : ""/u)
+  assert.match(details, /label="ETD"[\s\S]{0,500}transitDays: quoteTransitDays\(value, quote\.estimatedArrival\)/u)
+  assert.match(details, /label="ETA"[\s\S]{0,500}transitDays: quoteTransitDays\(quote\.estimatedDeparture, value\)/u)
+  assert.match(details, /label="Transit time"[\s\S]{0,300}unit: "Days"[\s\S]{0,220}disabled onChange=\{\(\) => undefined\}/u)
+  assert.match(details, /transitDays: quoteTransitDays\(first\.estimatedDeparture, last\.estimatedArrival\)/u)
+  assert.match(page, /transitDays: quoteTransitDays\(estimatedDeparture, estimatedArrival\) \|\| fact\("transitDays"\)/u)
+})
+
+test("every send-blocking Incoterm and Sea FCL container field is visible in quote details", () => {
+  assert.match(page, /const incotermNotSuppliedValue = "N\/A"/u)
+  assert.match(page, /INCOTERMS_2020\.map\(\(term\) => \(\{ value: term\.code, label: `\$\{term\.code\} · \$\{term\.name\}` \}\)\)/u)
+  assert.match(page, /N\/A · Not supplied \/ not applicable/u)
+  assert.match(details, /const incotermDefinition = getIncotermDefinition\(quote\.incoterm\)/u)
+  assert.match(details, /const incotermNamedPlaceMissing = Boolean\(/u)
+  assert.match(details, /<QuoteCompactSelect label="Incoterms \/ scope"[\s\S]{0,500}onQuoteChange\("incoterm", value\)/u)
+  assert.match(details, /<QuoteCompactInput label=\{incotermNamedPlaceLabel\}[\s\S]{0,500}required=\{Boolean\(incotermDefinition\)\}[\s\S]{0,350}onQuoteChange\("incotermPlace", value\)/u)
+  assert.match(details, /incotermNotSupplied \? \([\s\S]{0,300}aria-label=\{t\("Quoted operational scope"\)\}/u)
+  assert.match(details, /label="Collection"[\s\S]{0,450}onQuoteChange\("collectionRequired", value\)/u)
+  assert.match(details, /label="Delivery"[\s\S]{0,450}onQuoteChange\("deliveryRequired", value\)/u)
+  assert.match(details, /label="Customs clearance"[\s\S]{0,450}onQuoteChange\("customsIncluded", value\)/u)
+  assert.match(details, /const isSeaContainerised[\s\S]{0,350}\/\\bfcl\\b\|container\/u/u)
+  assert.match(details, /\{isSeaContainerised \? \([\s\S]{0,500}aria-label=\{t\("Container requests"\)\}/u)
+  assert.match(details, /containerRequests\.map\(\(request, index\)/u)
+  assert.match(details, /label=\{index === 0 \? "Qty"[\s\S]{0,900}label=\{index === 0 \? "Container type"/u)
+  assert.match(details, /xl:grid-cols-\[minmax\(7rem,0\.5fr\)[\s\S]{0,220}minmax\(10rem,0\.8fr\)_2rem_auto\]/u)
+  assert.match(details, /onClick=\{addContainerRequest\}[\s\S]{0,250}Add container/u)
+  assert.match(details, /onClick=\{\(\) => removeContainerRequest\(index\)\}/u)
+  assert.match(page, /function quoteContainerSummary\(requests: QuoteContainerRequest\[\]\)/u)
+  assert.match(page, /containerRequestsJson: Array\.isArray\(facts\.containerRequests\)/u)
+  assert.match(page, /containerRequests: quoteContainerRequests\(quote\.containerRequestsJson, quote\.container\)/u)
+  assert.match(page, /container:\s*fact\("container"\)/u)
+  assert.match(page, /container:\s*quote\.container\b/u)
+  assert.match(page, /collectionRequired:\s*fact\("collectionRequired"\)/u)
+  assert.match(page, /deliveryRequired:\s*fact\("deliveryRequired"\)/u)
+  assert.match(page, /collectionRequired:\s*quote\.collectionRequired/u)
+  assert.match(page, /deliveryRequired:\s*quote\.deliveryRequired/u)
 })
 
 test("auto-populated fields animate provenance, remain editable, and return to normal after override", () => {
@@ -203,7 +246,9 @@ test("autosave updates an existing quote in place without remounting its route",
   assert.match(saveChanges, /if \(saveInFlightRef\.current\) return/u)
   assert.match(saveChanges, /Saving is taking longer than usual/u)
   assert.match(saveChanges, /setIssueReadiness\(result\.readiness\)/u)
-  assert.doesNotMatch(saveChanges, /getQuoteWorkflow/u)
+  assert.match(saveChanges, /getQuoteWorkflow\(result\.reference, \{ fresh: true \}\)/u)
+  assert.match(saveChanges, /versions: fresh\.versions/u)
+  assert.doesNotMatch(saveChanges, /applyLoadedWorkspace/u)
   assert.match(page, /saving \? "Saving…" : workflowError \? "Not saved" : "Unsaved changes"/u)
   assert.match(page, /const quoteUuidPattern = \/\^\[0-9a-f\]\{8\}/u)
   assert.match(page, /supplierId: uuidOrNull\(line\.supplierId\)/u)
@@ -241,6 +286,13 @@ test("each supplier can retain multiple carrier service options including a TBC 
 
 test("goods, cargo characteristics, hazardous details and customs agents remain operational data", () => {
   assert.ok((details.match(/<AmountCurrencyField\b/gu) ?? []).length >= 2, "Goods and insurance values must each split amount and currency.")
+  assert.match(page, /const freightPackageTypeOptions = \[/u)
+  for (const packageType of ["Pallets", "Cartons", "Boxes", "Crates", "Cases", "Packages", "Pieces", "Drums", "IBCs", "ULDs", "Loose \/ unpackaged"]) {
+    assert.match(page, new RegExp(`value: "${escaped(packageType)}"`, "u"), `${packageType} must be available as a freight package type.`)
+  }
+  assert.match(details, /<CompactCombobox[\s\S]{0,160}label="Package type"[\s\S]{0,240}options=\{freightPackageTypeOptions\}/u)
+  assert.match(details, /recommendedLabel="Common package types"/u)
+  assert.doesNotMatch(details, /<QuoteCompactInput label="Package type"/u)
   assert.match(details, /FMC TID/u)
   assert.match(details, /originIsUs[\s\S]*\["US", "USA", "UNITED STATES"/u)
   assert.match(details, /<CargoCharacteristicsField\b/u)
@@ -255,11 +307,11 @@ test("goods, cargo characteristics, hazardous details and customs agents remain 
   assert.match(details, /Destination customs agent/u)
 })
 
-test("customer terms are presented as inherited company data", () => {
+test("customer terms are presented as inherited payer account data", () => {
   assert.match(details, /`\$\{t\("Inherited from"\)\} \$\{quote\.customerTermsSource\}`/u)
   assert.match(details, /customerTermsSource/u)
-  assert.match(details, /Stored on the customer record/u)
-  assert.match(details, /Locked to customer record/u)
+  assert.match(details, /Stored on the payer account/u)
+  assert.match(details, /Locked to payer account/u)
   assert.ok((details.match(/<LockedQuoteTextarea\b/gu) ?? []).length >= 3, "Inherited terms and notes must use the locked field treatment.")
   assert.match(page, /function LockedQuoteTextarea/u)
   assert.match(page, /disabled[\s\S]{0,300}md-field-locked-line/u)
@@ -285,7 +337,6 @@ test("new quote detail fields load and save through the real workspace payload",
     "destinationCountry",
     "destinationTown",
     "destinationUnlocode",
-    "transitUnit",
     "frequencyInterval",
     "frequencyUnit",
     "frequencyTimesPerMonth",
@@ -310,9 +361,19 @@ test("new quote detail fields load and save through the real workspace payload",
     "destinationCustomsAgentName",
   ]) expectRoundTrip(field)
 
-  assert.match(page, /customerTermsSource:\s*hasCustomerTerms\s*\?\s*record\.customerName\s*:\s*fact\("customerTermsSource"\)/u)
-  assert.match(page, /terms:\s*customerTerms\?\.terms\?\.trim\(\)\s*\|\|\s*record\.terms\?\.trim\(\)/u)
-  assert.match(page, /customerNotes:\s*record\.customerNotes\?\.trim\(\)\s*\|\|\s*customerTerms\?\.notes\?\.trim\(\)/u)
+  assert.match(page, /transitUnit: estimatedDeparture && estimatedArrival \? "Days" : fact\("transitUnit"\) \|\| "Days"/u)
+  assert.match(page, /transitUnit:\s*quote\.transitUnit\b/u)
+
+  assert.match(page, /payerOrgId:\s*payer\.orgId/u)
+  assert.match(page, /payerName:\s*payer\.name/u)
+  assert.match(page, /payerAddress:\s*payer\.address/u)
+  assert.match(page, /payerContact:\s*payer\.contact/u)
+  assert.match(page, /payerEmail:\s*payer\.email/u)
+  assert.match(page, /payer:\s*\{[\s\S]*orgId:\s*quote\.payerOrgId/u)
+
+  assert.match(page, /customerTermsSource:\s*hasPayerTerms\s*\?\s*payerOrganisation\?\.name/u)
+  assert.match(page, /terms:\s*record\.terms\?\.trim\(\)\s*\|\|\s*payerTerms\?\.terms\?\.trim\(\)/u)
+  assert.match(page, /customerNotes:\s*record\.customerNotes\?\.trim\(\)\s*\|\|\s*payerTerms\?\.notes\?\.trim\(\)/u)
 
   assert.match(page, /incotermPlace:\s*fact\("namedPlace"\)/u)
   assert.match(page, /namedPlace:\s*quote\.incotermPlace/u)

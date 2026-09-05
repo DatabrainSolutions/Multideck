@@ -51,18 +51,19 @@ test("public quote links store only a SHA-256 token hash and all quote actions a
   assert.match(quoteResponseEdge, /requested_response_origin: origin/)
 })
 
-test("customer responses are single-use, version-bound and enforce useful decline or challenge context", () => {
+test("customer responses are single-use, version-bound and enforce structured decline or change context", () => {
   assert.match(quoteBookingMigration, /response_link_id uuid not null unique/)
   assert.match(quoteBookingMigration, /quote_version_id uuid not null references public\."CusQuote_Versions"/)
   assert.match(quoteBookingMigration, /decision_value in \('declined','challenged'\).*requested_message/s)
   assert.match(quoteBookingMigration, /TR_CusQuote_Versions_revoke_superseded_customer_links/)
   assert.match(quoteBookingMigration, /quote_version_id <> new\."CusQuoteVersion_ID"/)
   assert.match(quoteBookingMigration, /CusQuoteVersion_SnapshotJSON"#>>'\{quote,customerName\}'/)
-  assert.match(quoteResponseCore, /decision === "declined" \|\| decision === "challenged"/)
+  assert.match(quoteResponseCore, /decision === "challenged" && !message/)
+  assert.match(quoteResponseCore, /customerDeclineReasonCodes/)
   assert.match(quoteResponseCore, /Attach a competitor quote up to 10 MB/)
   assert.match(responsePage, /messageRequired = decision === "challenged"/)
-  assert.match(responsePage, /quoteLossReasons\.map/)
-  assert.match(responsePage, /formatQuoteLossReason\(lossReason, lossDetails\)/)
+  assert.match(responsePage, /quoteCustomerDeclineReasons\.map/)
+  assert.match(responsePage, /submitResponse\("declined", lossDetails, lossReason \|\| null\)/)
   assert.match(responsePage, /nextDecision === "challenged" && competitorQuote/)
   assert.match(quoteWorkflowEdge, /charge\.sellAmount \?\? charge\.sellLocal/)
   assert.match(quoteWorkflowEdge, /for \(const charge of charges\) totals\.set/)
