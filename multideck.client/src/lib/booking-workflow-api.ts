@@ -54,7 +54,12 @@ export type BookingWorkflowContainer = {
   status?: string | null
   packages?: string | number | null
   packageType?: string | null
-  grossWeightKg?: number | null
+  grossWeightKg?: string | number | null
+  tareWeightKg?: string | number | null
+  verifiedGrossMassKg?: string | number | null
+  vgmMethod?: string | null
+  reeferSetPoint?: string | number | null
+  reeferUnit?: string | null
   volumeCbm?: string | number | null
   sealNumber?: string | null
   notes?: string | null

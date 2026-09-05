@@ -2748,18 +2748,23 @@ function bookingContainerDataValue(container: BookingWorkflowContainer, key: "pa
 function BookingContainerDetails({
   containers,
   mode,
+  editable,
+  seaService,
   onAdd,
   onChange,
   onRemove,
 }: {
   containers: BookingWorkflowContainer[]
   mode: string
+  editable: boolean
+  seaService: boolean
   onAdd: () => void
   onChange: (index: number, field: BookingContainerDraftField, value: string) => void
   onRemove: (index: number) => void
 }) {
   const { t } = useLanguage()
   const columnLabels = ["Container no.", "Type", "Packages", "Package type", "Gross weight (kg)", "Volume (CBM)", "Seal no.", "Actions"] as const
+  const fieldIdPrefix = useId()
 
   return (
     <BookingCargoWiseGroup
@@ -2770,6 +2775,7 @@ function BookingContainerDetails({
           variant="ghost"
           className="h-7 rounded-[var(--md-radius-md)] px-2 text-[11px] font-medium text-[var(--md-accent)] hover:bg-[var(--md-accent-a08)]"
           onClick={onAdd}
+          disabled={!editable}
         >
           <Plus className="size-3.5" strokeWidth={1.45} aria-hidden="true" />
           {t("Add container")}
@@ -2778,8 +2784,8 @@ function BookingContainerDetails({
       contentClassName="gap-1.5"
     >
       {containers.length ? (
-        <div className="min-w-0 overflow-x-auto">
-          <div className="hidden min-w-[1020px] grid-cols-[minmax(140px,1.05fr)_minmax(112px,0.82fr)_minmax(76px,0.5fr)_minmax(106px,0.72fr)_minmax(112px,0.74fr)_minmax(100px,0.64fr)_minmax(112px,0.76fr)_40px] items-center gap-2 bg-[var(--md-surface-soft)] px-2 py-1.5 xl:grid">
+        <div className="@container min-w-0">
+          <div aria-hidden="true" className="hidden grid-cols-[minmax(140px,1.05fr)_minmax(112px,0.82fr)_minmax(76px,0.5fr)_minmax(106px,0.72fr)_minmax(112px,0.74fr)_minmax(100px,0.64fr)_minmax(112px,0.76fr)_40px] items-center gap-2 bg-[var(--md-surface-soft)] px-2 py-1.5 @[64rem]:grid">
             {columnLabels.map((label) => (
               <span key={label} className="text-[10px] font-medium text-[var(--md-subtle)]">{t(label)}</span>
             ))}
@@ -2790,22 +2796,33 @@ function BookingContainerDetails({
                 container.type ?? "",
                 ...(bookingEquipmentOptionsByMode[bookingModeKey(mode)] ?? bookingEquipmentOptionsByMode.multimodal),
               ].filter(Boolean))]
-              const fieldClassName = "h-8 min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-[11px] font-medium shadow-[var(--md-shadow-line)]"
+              const fieldClassName = "h-8 w-full min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-[11px] font-medium shadow-[var(--md-shadow-line)]"
+              const fields = [
+                ["Container number", "number", container.number ?? "", false],
+                ["Container type", "type", container.type ?? "", false],
+                ["Packages", "packages", bookingContainerDataValue(container, "packages"), true],
+                ["Package type", "packageType", bookingContainerDataValue(container, "packageType"), false],
+                ["Gross weight (kg)", "grossWeightKg", container.grossWeightKg ?? "", true],
+                ["Volume (CBM)", "volumeCbm", bookingContainerDataValue(container, "volumeCbm"), true],
+                ["Seal number", "sealNumber", bookingContainerDataValue(container, "sealNumber"), false],
+              ] as const
               return (
-                <div
+                <fieldset
                   key={container.id ?? `container-${index}`}
-                  className="grid min-w-[1020px] grid-cols-[minmax(140px,1.05fr)_minmax(112px,0.82fr)_minmax(76px,0.5fr)_minmax(106px,0.72fr)_minmax(112px,0.74fr)_minmax(100px,0.64fr)_minmax(112px,0.76fr)_40px] items-center gap-2 rounded-[var(--md-radius-lg)] bg-white/30 px-2 py-1.5 shadow-[var(--md-shadow-line)]"
+                  className="grid min-w-0 grid-cols-1 items-end gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-2 @[28rem]:grid-cols-2 @[44rem]:grid-cols-4 @[64rem]:grid-cols-[minmax(140px,1.05fr)_minmax(112px,0.82fr)_minmax(76px,0.5fr)_minmax(106px,0.72fr)_minmax(112px,0.74fr)_minmax(100px,0.64fr)_minmax(112px,0.76fr)_40px]"
                 >
-                  <Input aria-label={t("Container number")} value={container.number ?? ""} onChange={(event) => onChange(index, "number", event.target.value)} className={fieldClassName} />
-                  <Select value={container.type ?? ""} onValueChange={(value) => onChange(index, "type", value)}>
-                    <SelectTrigger aria-label={t("Container type")} className={fieldClassName}><SelectValue placeholder={t("Choose type")} /></SelectTrigger>
-                    <SelectContent>{typeOptions.map((option) => <SelectItem key={option} value={option}>{t(option)}</SelectItem>)}</SelectContent>
-                  </Select>
-                  <Input aria-label={t("Packages")} inputMode="decimal" value={bookingContainerDataValue(container, "packages")} onChange={(event) => onChange(index, "packages", event.target.value)} className={fieldClassName} />
-                  <Input aria-label={t("Package type")} value={bookingContainerDataValue(container, "packageType")} onChange={(event) => onChange(index, "packageType", event.target.value)} className={fieldClassName} />
-                  <Input aria-label={t("Gross weight (kg)")} inputMode="decimal" value={container.grossWeightKg ?? ""} onChange={(event) => onChange(index, "grossWeightKg", event.target.value)} className={fieldClassName} />
-                  <Input aria-label={t("Volume (CBM)")} inputMode="decimal" value={bookingContainerDataValue(container, "volumeCbm")} onChange={(event) => onChange(index, "volumeCbm", event.target.value)} className={fieldClassName} />
-                  <Input aria-label={t("Seal number")} value={bookingContainerDataValue(container, "sealNumber")} onChange={(event) => onChange(index, "sealNumber", event.target.value)} className={fieldClassName} />
+                  <legend className="sr-only">{t("Container")} {index + 1}</legend>
+                  {fields.map(([label, field, fieldValue, decimal]) => (
+                    <div key={field} className="grid min-w-0 gap-1 text-[11px] font-medium text-[var(--md-text)]">
+                      <label htmlFor={`${fieldIdPrefix}-${index}-${field}`} className="@[64rem]:sr-only">{t(label)}</label>
+                      {field === "type" ? (
+                        <Select disabled={!editable} value={container.type ?? ""} onValueChange={(value) => { if (editable) onChange(index, "type", value) }}>
+                          <SelectTrigger id={`${fieldIdPrefix}-${index}-${field}`} aria-label={t(label)} className={fieldClassName}><SelectValue placeholder={t("Choose type")} /></SelectTrigger>
+                          <SelectContent>{typeOptions.map((option) => <SelectItem key={option} value={option}>{t(option)}</SelectItem>)}</SelectContent>
+                        </Select>
+                      ) : <Input id={`${fieldIdPrefix}-${index}-${field}`} disabled={!editable} aria-label={t(label)} inputMode={decimal ? "decimal" : undefined} value={fieldValue} onChange={(event) => { if (editable) onChange(index, field, event.target.value) }} className={fieldClassName} />}
+                    </div>
+                  ))}
                   <Button
                     type="button"
                     variant="ghost"
@@ -2813,10 +2830,24 @@ function BookingContainerDetails({
                     aria-label={`${t("Remove container")} ${index + 1}`}
                     className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-[color-mix(in_srgb,var(--md-red)_8%,transparent)] hover:text-[var(--md-red)]"
                     onClick={() => onRemove(index)}
+                    disabled={!editable}
                   >
                     <Trash2 className="size-3.5" strokeWidth={1.35} aria-hidden="true" />
                   </Button>
-                </div>
+                  <details className="col-span-full min-w-0">
+                    <summary className="min-h-8 cursor-pointer py-1.5 text-[11px] font-medium text-[var(--md-accent)] focus-visible:outline-2 focus-visible:outline-offset-2">{t("Weight verification & temperature")}</summary>
+                    <div className="grid min-w-0 gap-2 py-2 @[36rem]:grid-cols-2 @[60rem]:grid-cols-3">
+                      <BookingCargoWiseField label="Tare weight (kg)" value={String(container.tareWeightKg ?? "")} editable={editable} onChange={(value) => onChange(index, "tareWeightKg", value)} />
+                      {seaService || container.verifiedGrossMassKg != null || container.vgmMethod ? <>
+                        <BookingCargoWiseField label="Verified gross mass (kg)" value={String(container.verifiedGrossMassKg ?? "")} editable={editable} onChange={(value) => onChange(index, "verifiedGrossMassKg", value)} />
+                        <BookingCargoWiseField label="VGM method" value={container.vgmMethod === "1" ? "1 - Weighed packed container" : container.vgmMethod === "2" ? "2 - Certified calculation" : container.vgmMethod || "Not recorded"} options={["Not recorded", "1 - Weighed packed container", "2 - Certified calculation"]} allowCustom={false} editable={editable} wrapValue onChange={(value) => onChange(index, "vgmMethod", value === "Not recorded" ? "" : value.split(" - ")[0])} />
+                      </> : null}
+                      <BookingCargoWiseField label="Reefer set point" value={String(container.reeferSetPoint ?? "")} editable={editable} onChange={(value) => onChange(index, "reeferSetPoint", value)} />
+                      <BookingCargoWiseField label="Temperature unit" value={container.reeferUnit || "Not recorded"} options={["Not recorded", "C", "F"]} allowCustom={false} editable={editable} onChange={(value) => onChange(index, "reeferUnit", value === "Not recorded" ? "" : value)} />
+                    </div>
+                    {seaService ? <p className="pb-2 text-[11px] leading-5 text-[var(--md-text)]">{t("Record VGM from the verified weighing evidence. Cargo weight is not automatically treated as VGM. Recording these values does not submit a VGM declaration.")}</p> : null}
+                  </details>
+                </fieldset>
               )
             })}
           </div>
@@ -3424,6 +3455,8 @@ function BookingRecordDetails({
         <BookingContainerDetails
           containers={workspace.containers}
           mode={record.booking.mode}
+          editable={editable}
+          seaService={fieldPolicy.sea}
           onAdd={onContainerAdd}
           onChange={onContainerChange}
           onRemove={onContainerRemove}
@@ -4991,15 +5024,16 @@ export function BookingDetailWorkspace({
 
   function updateDraftContainer(index: number, field: BookingContainerDraftField, value: string) {
     setDraftWorkspace((current) => {
-      if (!current) return current
+      if (!current || !Number.isInteger(index) || index < 0 || !current.containers[index]) return current
       const containers = [...current.containers]
-      const existing = containers[index] ?? { status: "planned", equipmentKind: "container", data: {} }
+      const existing = containers[index]
       if (field === "packages" || field === "packageType" || field === "volumeCbm" || field === "sealNumber") {
         const data = { ...existing.data, [field]: value }
         containers[index] = { ...existing, [field]: value, data }
-      } else if (field === "grossWeightKg") {
-        const numericValue = value.trim() === "" ? null : Number(value.replaceAll(",", ""))
-        containers[index] = { ...existing, grossWeightKg: Number.isFinite(numericValue) ? numericValue : null }
+      } else if (["grossWeightKg", "tareWeightKg", "verifiedGrossMassKg", "reeferSetPoint"].includes(field)) {
+        // Preserve incomplete/invalid input and all decimal digits. The server
+        // validates it atomically; invalid text must never silently clear data.
+        containers[index] = { ...existing, [field]: value.trim() === "" ? null : value }
       } else {
         containers[index] = { ...existing, [field]: value }
       }
