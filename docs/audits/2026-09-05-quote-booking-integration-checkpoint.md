@@ -52,3 +52,10 @@ No live database migrations or migration-history repairs were run. Existing depl
 - Production client build passed again (TypeScript and Vite), with the existing bundle-size warning.
 - Existing Quote/Booking lifecycle decisions remain unchanged. No additional feature implementation or live database changes were undertaken for this checkpoint.
 - Recovery tag for this publication: `safety/quote-booking-verified-cargo-2026-09-05`. The earlier dev checkpoint remains available at `safety/quote-booking-dev-sync-2026-09-05`.
+
+## Quote evidence checkpoint publication, 5 September 2026
+
+- Fresh `origin/dev` at `bafa6c3` is already an ancestor of the working branch. The two additional implementation commits are `0120849` (typed version-owned Quote cargo foundation) and `9dfc62b` (version-bound PDF evidence and cargo rendering). Fast-forward integration requires no conflict resolution or replacement of existing decisions.
+- Refreshed checks: 11 focused Quote cargo/PostgreSQL/document tests passed, zero failures or skips; the full `quotes-workflow` import graph passed Deno checking; the production client build passed with the existing bundle-size warning. These checks do not supersede the earlier repository-wide test limitations.
+- Recovery tag: `safety/quote-booking-quote-evidence-2026-09-05`. Previous checkpoints remain available. A newly generated, empty migration placeholder for future readiness work was removed; it contained no implementation or data.
+- This is a source-control safety checkpoint only. The new Quote cargo migration remains unapplied, and the completion ledger explicitly records unfinished editor, readiness, public-response and Booking handover work. No live database changes, customer email, Vercel settings or team configuration were changed. Hosted deployment and full live lifecycle verification are not claimed.
