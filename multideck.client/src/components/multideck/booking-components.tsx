@@ -106,7 +106,7 @@ import {
 } from "@/lib/booking-workflow-api"
 import { CopyFeedbackTransition, CopyStatusIcon } from "./copyable-field"
 import type { AuthUserSummary } from "@/lib/auth-user"
-import { freightBookingMode, freightFieldPolicy, freightShipmentAllowed, freightTransportField } from "@/lib/freight-field-policy"
+import { freightBookingMode, freightFieldPolicy, freightShipmentAllowed, freightTransportField, freightRouteOperationalFields } from "@/lib/freight-field-policy"
 import { freightPackageTypeOptions } from "@/lib/freight-package-types"
 
 export type Booking = (typeof bookings)[number]
@@ -2194,12 +2194,14 @@ function BookingCargoWiseField({
   emptyValue = "—",
   inputType = "text",
   label,
+  maxLength,
   onChange,
   onOptionSelect,
   options,
   placeholder = "Type or select",
   searchable = false,
   span = false,
+  wrapValue = false,
   value,
 }: {
   allowCustom?: boolean
@@ -2207,15 +2209,18 @@ function BookingCargoWiseField({
   emptyValue?: string
   inputType?: "text" | "date"
   label: string
+  maxLength?: number
   onChange?: (value: string) => void
   onOptionSelect?: (option: BookingFieldOption) => void
   options?: readonly (string | BookingFieldOption)[]
   placeholder?: string
   searchable?: boolean
   span?: boolean
+  wrapValue?: boolean
   value: string
 }) {
   const { t } = useLanguage()
+  const fieldId = useId()
   const normalizedOptions = options ? bookingFieldOptions(options, value) : []
 
   return (
@@ -2223,7 +2228,7 @@ function BookingCargoWiseField({
       "grid min-w-0 grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] items-center gap-1.5",
       span && "md:col-span-2 xl:col-span-1 2xl:col-span-2",
     )}>
-      <label className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</label>
+      <label htmlFor={editable && !(options && searchable) ? fieldId : undefined} className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</label>
       {editable && onChange ? (
         options && searchable ? (
           <CompactCombobox
@@ -2240,7 +2245,7 @@ function BookingCargoWiseField({
           />
         ) : options ? (
           <Select value={value} onValueChange={onChange}>
-            <SelectTrigger aria-label={t(label)} className="h-8 w-full min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-[11px] font-medium shadow-[var(--md-shadow-line)]">
+            <SelectTrigger id={fieldId} aria-label={t(label)} className="h-8 w-full min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-[11px] font-medium shadow-[var(--md-shadow-line)]">
               <SelectValue placeholder={t(placeholder)} />
             </SelectTrigger>
             <SelectContent>
@@ -2249,17 +2254,19 @@ function BookingCargoWiseField({
           </Select>
         ) : (
           <Input
+            id={fieldId}
             aria-label={t(label)}
             data-i18n-skip
             dir="auto"
             type={inputType}
+            maxLength={maxLength}
             value={value}
             onChange={(event) => onChange(event.target.value)}
             className="h-8 min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-[11px] font-medium shadow-[var(--md-shadow-line)]"
           />
         )
       ) : (
-        <span data-i18n-skip dir="auto" title={value} className="min-h-8 min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 py-1.5 text-[11px] font-medium leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
+        <span data-i18n-skip dir="auto" title={value} className={cn("min-h-8 min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 py-1.5 text-[11px] font-medium leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]", wrapValue ? "whitespace-pre-wrap break-words [overflow-wrap:anywhere]" : "truncate")}>
           {value || t(emptyValue)}
         </span>
       )}
@@ -3218,7 +3225,7 @@ function BookingRecordDetails({
                 <h4 className="text-[11px] font-medium text-[var(--md-ink)]">{t("Routing steps")}</h4>
                 <p className="text-[10px] text-[var(--md-subtle)]">{t("Add each movement in journey order.")}</p>
               </div>
-              <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[11px] text-[var(--md-accent)]" onClick={onRouteAdd}>
+              <Button type="button" variant="ghost" disabled={!editable || workspace.routes.length >= 30} className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[11px] text-[var(--md-accent)]" onClick={onRouteAdd}>
                 <Plus className="size-3.5" strokeWidth={1.35} aria-hidden="true" />
                 {t("Add routing step")}
               </Button>
@@ -3229,12 +3236,13 @@ function BookingRecordDetails({
               const legMode = bookingWorkspaceMode(leg.mode || record.booking.mode)
               const carrierName = recordText(asRecord(leg.routeData), "carrierName") || (index === 0 ? record.booking.carrier : "")
               const { field: transportField, label: transportLabel } = freightTransportField(legMode)
+              const operationalFields = freightRouteOperationalFields(legMode)
               return (
                 <div key={leg.id ?? `draft-route-${index}`} className="grid gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-2.5 shadow-[var(--md-shadow-line)]">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-[10.5px] font-medium text-[var(--md-text)]">{t("Step")} <span data-i18n-skip>{index + 1}</span>{leg.isMainCarriage ? <span className="ms-1.5 text-[var(--md-accent)]">· {t("Main carriage")}</span> : null}</p>
                     {!leg.id && workspace.routes.length > 1 ? (
-                      <Button type="button" variant="ghost" size="icon" aria-label={`${t("Remove routing step")} ${index + 1}`} className="size-7 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-red)]" onClick={() => onRouteRemove(index)}>
+                      <Button type="button" variant="ghost" size="icon" disabled={!editable} aria-label={`${t("Remove routing step")} ${index + 1}`} className="size-7 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-red)]" onClick={() => onRouteRemove(index)}>
                         <Trash2 className="size-3.5" strokeWidth={1.35} aria-hidden="true" />
                       </Button>
                     ) : null}
@@ -3258,6 +3266,13 @@ function BookingRecordDetails({
                     <BookingCargoWiseField label={transportLabel} value={String(leg[transportField] ?? "")} {...editRoute(index, transportField)} />
                     <BookingCargoWiseField label="Booking reference" value={leg.carrierBookingReference ?? ""} {...editRoute(index, "carrierBookingReference")} />
                   </div>
+                  {operationalFields.length ? <details className="min-w-0">
+                    <summary className="cursor-pointer rounded-[var(--md-radius-md)] py-2 text-[12px] font-medium text-[var(--md-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]">{t("Operational details")} · {t("Step")} {index + 1}</summary>
+                    <div className="grid min-w-0 gap-2 pt-2 md:grid-cols-2 xl:grid-cols-3 [--md-field-label-width:110px]">
+                      {operationalFields.map(({ field, label, maxLength }) => <BookingCargoWiseField key={field} label={label} value={String(leg[field] ?? "")} maxLength={maxLength} wrapValue {...editRoute(index, field)} />)}
+                    </div>
+                    <p className="mt-2 text-[12px] leading-relaxed text-[var(--md-text)]">{t("These references belong to this routing step. Changing its mode hides unrelated fields but retains their saved values.")}</p>
+                  </details> : null}
                 </div>
               )
             })}
@@ -4798,7 +4813,7 @@ export function BookingDetailWorkspace({
 
   function updateDraftRoute(index: number, field: keyof BookingWorkflowRoute, value: string) {
     setDraftWorkspace((current) => {
-      if (!current) return current
+      if (!current || typeof value !== "string" || !Number.isInteger(index) || index < 0 || index >= Math.max(current.routes.length, 1)) return current
       const routes = current.routes.length ? [...current.routes] : [{ order: 1, mode: current.booking.mode, isMainCarriage: true }]
       const existing = routes[index] ?? { order: index + 1, mode: current.booking.mode, isMainCarriage: index === 0 }
       routes[index] = { ...existing, [field]: value, routeData: { ...existing.routeData, [field]: value } }
@@ -4821,7 +4836,7 @@ export function BookingDetailWorkspace({
 
   function addDraftRoute() {
     setDraftWorkspace((current) => {
-      if (!current) return current
+      if (!current || current.routes.length >= 30) return current
       const routes = current.routes.length ? [...current.routes] : [{ order: 1, mode: current.booking.mode, isMainCarriage: true }]
       const previous = routes.at(-1)
       routes.push({

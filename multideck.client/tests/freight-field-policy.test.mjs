@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { freightBookingMode, freightFieldPolicy, freightModeKey, freightShipmentAllowed, freightTransportField } from "../src/lib/freight-field-policy.ts"
+import { freightBookingMode, freightFieldPolicy, freightModeKey, freightShipmentAllowed, freightTransportField, freightRouteOperationalFields } from "../src/lib/freight-field-policy.ts"
 
 test("sea containers follow the service across all commercial directions", () => {
   for (const direction of ["Import", "Export", "Cross trade", "Domestic"]) {
@@ -11,6 +11,20 @@ test("sea containers follow the service across all commercial directions", () =>
   }
   assert.equal(freightFieldPolicy({ mode: "Sea", shipmentType: "LCL" }).containerRequests, false)
   assert.equal(freightFieldPolicy({ mode: "Sea", shipmentType: "LCL", hasContainers: true }).containers, true)
+})
+
+test("operational references follow each actual leg mode without mixing sea, air, road and rail", () => {
+  const labels = mode => freightRouteOperationalFields(mode).map(item => item.label).join(";")
+  assert.match(labels("air"), /Master air waybill/)
+  assert.doesNotMatch(labels("air"), /bill of lading|Voyage|Trailer|CIM/)
+  assert.match(labels("OCEAN"), /Master bill of lading.*House bill of lading.*Voyage number/)
+  assert.doesNotMatch(labels("OCEAN"), /air waybill|Trailer|CIM/)
+  assert.match(labels("road"), /CMR.*Trailer/)
+  assert.match(labels("rail"), /CIM \/ SMGS/)
+  assert.doesNotMatch(labels("rail"), /air waybill|Voyage|Trailer/)
+  for (const mode of ["Warehouse", "Customs only", "Docs only"]) assert.deepEqual(freightRouteOperationalFields(mode), [])
+  assert.match(labels("future-mode"), /Master transport reference/)
+  assert.equal(freightRouteOperationalFields("sea").find(item => item.field === "voyageNumber").maxLength, 50)
 })
 
 test("air and ordinary road goods do not expose sea or vehicle-cargo fields", () => {

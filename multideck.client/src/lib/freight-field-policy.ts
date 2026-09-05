@@ -91,3 +91,26 @@ export function freightTransportField(mode?: string | null): { field: "flightNum
     default: return { field: "transportMeansName", label: "Transport service" }
   }
 }
+
+// These are existing typed Job_Routing columns. Visibility never clears data
+// from another mode: an operator can review it again by restoring that mode.
+export function freightRouteOperationalFields(mode?: string | null): ReadonlyArray<{
+  field: "masterTransportReference" | "houseTransportReference" | "voyageNumber" | "trailerNumber" | "serviceLevel"
+  label: string
+  maxLength: number
+}> {
+  const key = freightModeKey(mode)
+  if (["", "warehouse", "customs_only", "docs_only"].includes(key)) return []
+  const references = key === "air" ? ["Master air waybill (MAWB)", "House air waybill (HAWB)"]
+    : key === "sea" || key === "inland_waterway" ? ["Master bill of lading", "House bill of lading"]
+      : key === "road" ? ["CMR / consignment note", "Forwarder reference"]
+        : key === "rail" ? ["CIM / SMGS consignment note", "Forwarder reference"]
+          : ["Master transport reference", "House transport reference"]
+  return [
+    { field: "masterTransportReference", label: references[0], maxLength: 160 },
+    { field: "houseTransportReference", label: references[1], maxLength: 160 },
+    ...(key === "sea" || key === "inland_waterway" ? [{ field: "voyageNumber" as const, label: "Voyage number", maxLength: 50 }] : []),
+    ...(key === "road" ? [{ field: "trailerNumber" as const, label: "Trailer number", maxLength: 80 }] : []),
+    { field: "serviceLevel", label: "Leg service level", maxLength: 80 },
+  ]
+}
