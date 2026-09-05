@@ -2,6 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type K
 import "@/quotes-transfer.css"
 import { freightFieldPolicy, freightShipmentAllowed } from "@/lib/freight-field-policy"
 import { freightPackageTypeOptions } from "@/lib/freight-package-types"
+import { quoteWorkspaceFromVersion } from "@/lib/quote-version-presentation"
+import { QuoteSubmittedDetails } from "@/components/multideck/quote-details/quote-submitted-details"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
@@ -5428,39 +5430,6 @@ function quoteChargesFromWorkspace(workspace: QuoteWorkflowWorkspace): QuoteChar
   }))
 }
 
-function quoteWorkspaceFromVersion(
-  workspace: QuoteWorkflowWorkspace,
-  version: QuoteWorkflowVersion,
-): QuoteWorkflowWorkspace | null {
-  const payload = version.CusQuoteVersion_SnapshotJSON?.quote
-  if (!payload) return null
-  const { charges, ...quotePayload } = payload
-  const historicalCharges = Array.isArray(charges) ? charges : []
-  const totals = historicalCharges.reduce((result, line) => ({
-    cost: result.cost + Number(line.costLocal || 0),
-    sell: result.sell + Number(line.sellLocal || 0),
-  }), { cost: 0, sell: 0 })
-  return {
-    ...workspace,
-    quote: {
-      ...workspace.quote,
-      ...quotePayload,
-      id: workspace.quote.id,
-      reference: workspace.quote.reference,
-      lifecycle: version.CusQuoteVersion_StatusCode,
-      customerId: quotePayload.customerId || workspace.quote.customerId,
-      acceptedVersionId: workspace.quote.acceptedVersionId,
-      outcomeNotes: workspace.quote.outcomeNotes,
-    },
-    charges: historicalCharges,
-    totals: {
-      ...totals,
-      profit: totals.sell - totals.cost,
-      marginPct: totals.sell ? ((totals.sell - totals.cost) / totals.sell) * 100 : null,
-    },
-  }
-}
-
 function blankQuoteRevision(source: QuoteRecord): QuoteRecord {
   return {
     ...newQuoteDraft,
@@ -6273,16 +6242,17 @@ export function QuoteDetailPage({
     ? workspace?.versions.find((version) => version.CusQuoteVersion_ID === viewedVersionId) ?? null
     : null
   const presentedVersion = viewedVersion ?? currentVersion
+  const viewingSubmittedVersion = Boolean(presentedVersion?.CusQuoteVersion_IsSubmitted)
   const viewedVersionWorkspace = useMemo(
-    () => workspace && viewedVersion ? quoteWorkspaceFromVersion(workspace, viewedVersion) : null,
-    [viewedVersion, workspace],
+    () => workspace && presentedVersion?.CusQuoteVersion_IsSubmitted ? quoteWorkspaceFromVersion(workspace, presentedVersion) : null,
+    [presentedVersion, workspace],
   )
-  const viewingHistoricalVersion = Boolean(viewedVersion && !viewedVersion.CusQuoteVersion_IsCurrent && viewedVersionWorkspace)
+  const viewingHistoricalVersion = Boolean(viewedVersion && !viewedVersion.CusQuoteVersion_IsCurrent)
   const workspaceEditable = !viewingHistoricalVersion && !currentVersionIsSubmitted
-  const presentedQuote = viewingHistoricalVersion && viewedVersionWorkspace
-    ? quoteRecordFromWorkspace(viewedVersionWorkspace, lookups)
+  const presentedQuote = viewedVersionWorkspace
+    ? quoteRecordFromWorkspace(viewedVersionWorkspace, null)
     : draftQuote
-  const activeCharges = viewingHistoricalVersion && viewedVersionWorkspace
+  const activeCharges = viewedVersionWorkspace
     ? quoteChargesFromWorkspace(viewedVersionWorkspace)
     : draftCharges
   const activeTotals = useMemo(() => getChargeTotals(activeCharges), [activeCharges])
@@ -6545,6 +6515,10 @@ export function QuoteDetailPage({
 
   async function createNewQuoteVersion(strategy: "copy" | "blank") {
     if (!currentQuoteId || !workspace || !currentVersionIsSubmitted || creatingVersion || saving) return
+    if (viewingSubmittedVersion && !viewedVersionWorkspace) {
+      setWorkflowError("The selected version’s saved details are unavailable. Reload or select a readable submitted version before creating a revision.")
+      return
+    }
     setCreatingVersion(true)
     setWorkflowError("")
     try {
@@ -7006,6 +6980,12 @@ export function QuoteDetailPage({
   }
 
   function renderActiveWorkspacePanel() {
+    if (viewingSubmittedVersion && !viewedVersionWorkspace && ["overview", "details", "charges"].includes(activeTab)) {
+      return <Surface><p role="alert">{t("This version’s saved details are unavailable. Check Documents or reload the Quote; current details have not been substituted.")}</p></Surface>
+    }
+    if (viewingSubmittedVersion && presentedVersion && ["details", "overview", "charges"].includes(activeTab)) {
+      return <QuoteSubmittedDetails key={`${presentedVersion.CusQuoteVersion_ID}:${activeTab}`} version={presentedVersion} reference={workspace?.quote.reference ?? ""} overview={activeTab === "overview"} chargesOnly={activeTab === "charges"} />
+    }
     if (activeTab === "overview") {
       const overview = variant === "ai"
         ? <QuoteAiOverviewPanel quote={activeQuote} />
@@ -7173,7 +7153,7 @@ export function QuoteDetailPage({
                   </Popover>
                 ) : null}
                 {currentVersionIsSubmitted ? (
-                  <Button type="button" variant="ghost" disabled={saving || creatingVersion} onClick={() => setNewVersionDialogOpen(true)} className="h-7 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 text-[11px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent-a07)]">
+                  <Button type="button" variant="ghost" disabled={saving || creatingVersion || (viewingSubmittedVersion && !viewedVersionWorkspace)} onClick={() => setNewVersionDialogOpen(true)} className="h-7 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 text-[11px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent-a07)]">
                     <Plus className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
                     {t("New version")}
                   </Button>
@@ -7394,7 +7374,7 @@ export function QuoteDetailPage({
                   </TabsList>
                 </Surface>
               </div>
-                {activeTab === "details" ? null : (
+                {activeTab === "details" || viewingSubmittedVersion ? null : (
                   <QuoteWorkspaceContext
                     activeTab={activeTab}
                     quote={activeQuote}
