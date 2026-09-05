@@ -12,6 +12,20 @@ const foundation = read('20260905115938_quote_version_structured_cargo.sql')
 const readiness = read('20260904160000_quote_incoterm_scope_decision.sql')
 const migration = read('20260905123223_quote_cargo_issue_readiness.sql')
 const issue = read('20260904120100_quote_submission_document_boundary.sql')
+const handover = read('20260905123929_quote_booking_cargo_handover.sql')
+const bookingSave = read('20260905110317_booking_stable_cargo_equipment_identity.sql')
+const conversionSource = read('20260828135847_reconcile_directional_quote_booking_references.sql')
+const conversionStart = conversionSource.indexOf('create or replace function booking_api.convert_accepted_quote(')
+const conversionEnd = conversionSource.indexOf('\n$$;', conversionStart) + 4
+assert.ok(conversionStart >= 0 && conversionEnd > conversionStart)
+const conversion = conversionSource.slice(conversionStart, conversionEnd).replace(
+  'function booking_api.convert_accepted_quote(', 'function booking_api.convert_accepted_quote_before_sync_review_20260904(')
+const baseline = readFileSync(new URL('../baseline/public-schema.sql', import.meta.url), 'utf8')
+function table(name) {
+  const start = baseline.indexOf(`CREATE TABLE IF NOT EXISTS "public"."${name}" (`)
+  assert.ok(start >= 0)
+  return baseline.slice(start, baseline.indexOf('\n);', start) + 3)
+}
 const start = issue.indexOf('create or replace function public.quote_workflow_prepare_customer_response_v4(')
 const end = issue.indexOf('create or replace function public.quote_workflow_bind_pending_customer_response_document_v4(', start)
 assert.ok(start >= 0 && end > start)
@@ -19,7 +33,7 @@ assert.ok(start >= 0 && end > start)
 // Execute actual readiness, cargo validation/projection and pre-send prepare
 // functions. Minimal tables and permission resolution are explicit fixtures;
 // no live email, broad tenant schema or provider lifecycle is simulated.
-test('PostgreSQL: every saved Quote cargo line is checked before a response link is prepared', { skip: !available }, () => {
+test('PostgreSQL: line-aware Quote issue and lossless initial Booking cargo handover', { skip: !available }, () => {
   const directory = mkdtempSync(join(tmpdir(), 'multideck-quote-readiness-'))
   const data = join(directory, 'data')
   let started = false
@@ -68,10 +82,43 @@ test('PostgreSQL: every saved Quote cargo line is checked before a response link
         expires_at timestamptz,revoked_at timestamptz,delivery_status_code text,delivery_mode_code text,
         recipient_source_code text,created_by uuid
       );
+      ${['Job_Header','Job_Cargo','Job_Parties','Job_Routing','Job_Containers','Job_Costing_Lines'].map(table).join('\n')}
+      -- Fixture supplies numbering; production's reference allocator/trigger
+      -- remains unchanged and is not claimed as covered by this test.
+      create sequence test_job_numbers;
+      alter table public."Job_Header" alter column "Job_Number" set default nextval('test_job_numbers'),
+        add column "Job_BookingReference" text, add column "Job_BookingReferenceSequenceKey" text,
+        add column "Job_SourceQuoteID" uuid, add column "Job_SourceQuoteVersionID" uuid,
+        add column "Job_SourceQuoteResponseID" uuid, add column "Job_SourceSnapshotJSON" jsonb,
+        add column "Job_IncotermsCode" text, add column "Job_IncotermsLocation" text,
+        add column "Job_CollectionAddress" text, add column "Job_DeliveryAddress" text,
+        add column "Job_CustomerDeadline" date,add column "Job_FreightChargeAmount" numeric,add column "Job_FreightChargeCurrencyCode" text;
+      alter table public."Job_Cargo" add primary key ("JobCargo_ID");
+      alter table public."CusQuote_Header" add column "CusQuoteHeader_LifecycleCode" text default 'draft',
+        add column "CusQuoteHeader_AcceptedVersionID" uuid,add column "CusQuoteHeader_SalesOwnerID" uuid,
+        add column "CusQuoteHeader_LastEditedBy" uuid,add column "CusQuoteHeader_CreatedBy" uuid,
+        add column "CusQuoteHeader_Direction" text,add column "CusQuoteHeader_CarrierID" uuid,
+        add column "CusQuoteHeader_SupplierID" uuid,add column "CusQuoteHeader_CustomerNameSnapshot" text,
+        add column "CusQuoteHeader_ContactNameSnapshot" text,add column "CusQuoteHeader_JobID" uuid,
+        add column "CusQuoteHeader_LastEditedDate" timestamptz;
+      create table booking_api.events(company_id uuid,job_id uuid,event_type text,summary text,metadata jsonb,actor_user_id uuid);
+      create function booking_api.normalise_direction(text) returns text language sql as $$select lower($1)$$;
+      create function booking_api.normalise_mode(text) returns text language sql as $$select lower($1)$$;
+      create function booking_api.allocate_reference(uuid,text,text) returns text language sql as $$select 'TEST-'||gen_random_uuid()$$;
+      create function quote_api.jsonb_has_content(jsonb) returns boolean language sql as $$select coalesce($1<>'{}'::jsonb,false)$$;
+      create table public."Org_Master" ("Org_id" uuid);
+      create table public."sys_JobStatuses" ("JS_Code" text,"JS_IsActive" boolean);
+      insert into public."sys_JobStatuses" values('open',true);
+      create function booking_api.has_permission(uuid,text) returns boolean language sql as $$select $2='Bookings.Write' and exists(select 1 from public."cmp_Users" where "Auth_User_ID"=$1 and "User_AccessStatus"='active')$$;
+      -- The broad workspace response is outside this mutation test.
+      create function booking_api.workspace(uuid,text) returns jsonb language sql as $$select '{}'::jsonb$$;
       ${foundation}
       ${readiness}
       ${migration}
       ${issue.slice(start,end)}
+      ${conversion}
+      ${handover}
+      ${bookingSave}
       do $test$
       declare
         q uuid := gen_random_uuid(); v uuid := gen_random_uuid(); actor uuid := gen_random_uuid();
@@ -156,6 +203,75 @@ test('PostgreSQL: every saved Quote cargo line is checked before a response link
         if not (select prosecdef and coalesce('search_path=""'=any(proconfig),false) from pg_proc where oid='booking_api.quote_readiness(uuid)'::regprocedure)
           or (select prosecdef from pg_proc where oid='quote_api.cargo_issue_missing(jsonb,text,text)'::regprocedure) then raise exception 'Unsafe function boundary'; end if;
       end $test$;
+      do $handover_test$
+      declare q uuid:=gen_random_uuid(); v uuid:=gen_random_uuid(); actor uuid:=gen_random_uuid();
+        company uuid:=gen_random_uuid(); office uuid:=gen_random_uuid(); c1 uuid:=gen_random_uuid(); c2 uuid:=gen_random_uuid();
+        lines jsonb; result jsonb; job uuid; saved_cargo uuid; original_snapshot jsonb; event_count integer; wrong_version uuid:=gen_random_uuid();
+        bad_quote uuid:=gen_random_uuid(); bad_version uuid:=gen_random_uuid(); legacy_quote uuid:=gen_random_uuid(); legacy_version uuid:=gen_random_uuid();
+        single_quote uuid:=gen_random_uuid(); single_version uuid:=gen_random_uuid();
+      begin
+        insert into public."cmp_Users" values(actor,actor,company,'active');
+        insert into public."cmp_Offices" values(office,company);
+        insert into public."CusQuote_Header" ("CusQuoteHeader_ID","CusQuoteHeader_OrgOfficeID","CusQuoteHeader_LifecycleCode","CusQuoteHeader_AcceptedVersionID","CusQuoteHeader_CreatedBy") values(q,office,'draft',v,actor);
+        lines:=jsonb_build_array(
+          jsonb_build_object('id',c1,'description','Machinery','commodity','MACHINERY','packageQuantity',2,'packageType','Crates','grossWeightKg',1200.25,'netWeightKg',1100.5,'length',240.5,'width',80,'height',90,'lengthUnit','cm','volumeCbm',2.125678,'countryOfOrigin','gb','hsCode','8421','isHazardous',true,'chargeableWeightKg',1300.123),
+          jsonb_build_object('id',c2,'description','Spare parts','packageQuantity',3,'packageType','Cartons','grossWeightKg',75,'isTemperatureControlled',true)
+        );
+        original_snapshot:=jsonb_build_object('quote',jsonb_build_object('mode','Sea','direction','Export','shipmentFacts',jsonb_build_object('cargoLines',lines,'goodsValue','60000','goodsValueCurrency','GBP')));
+        insert into public."CusQuote_Versions" ("CusQuoteVersion_ID","CusQuoteHeader_ID","CusQuoteVersion_SnapshotJSON","CusQuoteVersion_IsSubmitted") values(v,q,original_snapshot,true);
+        select "CusQuoteVersion_SnapshotJSON" into original_snapshot from public."CusQuote_Versions" where "CusQuoteVersion_ID"=v;
+        begin perform booking_api.convert_accepted_quote_before_sync_review_20260904(q,actor,null); raise exception 'Unaccepted conversion allowed'; exception when invalid_parameter_value then null; end;
+        update public."CusQuote_Header" set "CusQuoteHeader_LifecycleCode"='accepted' where "CusQuoteHeader_ID"=q;
+        result:=booking_api.convert_accepted_quote_before_sync_review_20260904(q,actor,null); job:=(result->>'jobId')::uuid;
+        if (select count(*) from public."Job_Cargo" where "JobCargo_JobID"=job)<>2 then raise exception 'Accepted lines collapsed'; end if;
+        select "JobCargo_ID" into saved_cargo from public."Job_Cargo" where "JobCargo_JobID"=job and "JobCargo_SourceQuoteLineID"=c1;
+        if not exists(select 1 from public."Job_Cargo" where "JobCargo_ID"=saved_cargo and "JobCargo_SourceQuoteVersionID"=v
+          and "JobCargo_Description"='Machinery' and "JobCargo_Commodity"='MACHINERY' and "JobCargo_PackageQty"=2
+          and "JobCargo_GrossKilos"=1200.25 and "JobCargo_NettKilos"=1100.5 and "JobCargo_VolumeCBM"=2.125678
+          and "JobCargo_Length"=240.5 and "JobCargo_Width"=80 and "JobCargo_Height"=90 and "JobCargo_LengthUnit"='cm'
+          and "JobCargo_HSCode"='8421' and "JobCargo_CountryOfOriginCodeSnapshot"='GB' and "JobCargo_IsHazardous"
+          and "JobCargo_CargoJSON"->>'chargeableWeightKg'='1300.123') then raise exception 'Typed cargo or compatibility measurement lost'; end if;
+        if not exists(select 1 from public."Job_Cargo" where "JobCargo_JobID"=job and "JobCargo_SourceQuoteLineID"=c2 and "JobCargo_LineNo"=2 and "JobCargo_IsTemperatureControlled") then raise exception 'Second line evidence lost'; end if;
+        if exists(select 1 from public."Job_Cargo" where "JobCargo_JobID"=job and "JobCargo_DeclaredValueAmount" is not null) then raise exception 'Shipment value duplicated or arbitrarily allocated'; end if;
+        if (select "Job_SourceSnapshotJSON"#>>'{acceptedSnapshot,quote,shipmentFacts,goodsValue}' from public."Job_Header" where "Job_ID"=job)<>'60000' then raise exception 'Unallocated shipment value lost'; end if;
+        -- Repeat acceptance/conversion must not reset operational edits.
+        insert into public."Org_Master" select "Job_Customer" from public."Job_Header" where "Job_ID"=job;
+        perform booking_api.save_booking(actor,job,jsonb_build_object('cargo',(
+          select jsonb_agg("JobCargo_CargoJSON"||jsonb_build_object('id',"JobCargo_ID",'pieces',"JobCargo_Qty",'description',case when "JobCargo_ID"=saved_cargo then 'Operator correction' else "JobCargo_Description" end) order by "JobCargo_LineNo")
+            from public."Job_Cargo" where "JobCargo_JobID"=job
+        )));
+        if not exists(select 1 from public."Job_Cargo" where "JobCargo_ID"=saved_cargo and "JobCargo_SourceQuoteVersionID"=v and "JobCargo_SourceQuoteLineID"=c1 and "JobCargo_Length"=240.5 and not "JobCargo_IsDeleted") then raise exception 'Canonical save lost source identity or unexposed measurement'; end if;
+        select count(*) into event_count from booking_api.events;
+        result:=booking_api.convert_accepted_quote_before_sync_review_20260904(q,actor,null);
+        if not (result->>'reused')::boolean or (result->>'jobId')::uuid<>job or (select count(*) from booking_api.events)<>event_count
+          or (select "JobCargo_Description" from public."Job_Cargo" where "JobCargo_ID"=saved_cargo)<>'Operator correction' then raise exception 'Repeated conversion rewrote Booking'; end if;
+        if (select "CusQuoteVersion_SnapshotJSON" from public."CusQuote_Versions" where "CusQuoteVersion_ID"=v)<>original_snapshot then raise exception 'Booking changed Quote'; end if;
+        begin perform booking_api.insert_accepted_quote_cargo(job,v,actor); raise exception 'Initial helper replaced existing cargo'; exception when invalid_parameter_value then null; end;
+        begin perform booking_api.insert_accepted_quote_cargo(job,wrong_version,actor); raise exception 'Wrong version accepted'; exception when invalid_parameter_value then null; end;
+        begin update public."Job_Cargo" set "JobCargo_SourceQuoteLineID"=gen_random_uuid() where "JobCargo_ID"=saved_cargo; raise exception 'Orphan provenance allowed'; exception when foreign_key_violation then null; end;
+        if cardinality(quote_api.cargo_booking_missing(jsonb_set(lines,'{0,grossWeightKg}','1200.123')))=0 then raise exception 'Silent weight rounding allowed'; end if;
+        if cardinality(quote_api.cargo_booking_missing(jsonb_set(lines,'{0,commodity}',to_jsonb(repeat('A',51)))))=0 then raise exception 'Silent commodity truncation allowed'; end if;
+        insert into public."CusQuote_Header" ("CusQuoteHeader_ID","CusQuoteHeader_OrgOfficeID","CusQuoteHeader_LifecycleCode","CusQuoteHeader_AcceptedVersionID","CusQuoteHeader_CreatedBy") values(bad_quote,office,'accepted',bad_version,actor);
+        insert into public."CusQuote_Versions" ("CusQuoteVersion_ID","CusQuoteHeader_ID","CusQuoteVersion_SnapshotJSON","CusQuoteVersion_IsSubmitted")
+          values(bad_version,bad_quote,jsonb_set(original_snapshot,'{quote,shipmentFacts,cargoLines,0,grossWeightKg}','1200.123'),true);
+        select count(*) into event_count from booking_api.events;
+        begin perform booking_api.convert_accepted_quote_before_sync_review_20260904(bad_quote,actor,null); raise exception 'Lossy conversion permitted'; exception when invalid_parameter_value then null; end;
+        if exists(select 1 from public."Job_Header" where "Job_SourceQuoteID"=bad_quote)
+          or (select count(*) from booking_api.events)<>event_count then raise exception 'Rejected handover left partial Booking or event'; end if;
+        -- Quotes without the structured key keep their existing conversion.
+        insert into public."CusQuote_Header" ("CusQuoteHeader_ID","CusQuoteHeader_OrgOfficeID","CusQuoteHeader_LifecycleCode","CusQuoteHeader_AcceptedVersionID","CusQuoteHeader_CreatedBy") values(legacy_quote,office,'accepted',legacy_version,actor);
+        insert into public."CusQuote_Versions" ("CusQuoteVersion_ID","CusQuoteHeader_ID","CusQuoteVersion_SnapshotJSON","CusQuoteVersion_IsSubmitted")
+          values(legacy_version,legacy_quote,'{"quote":{"mode":"Air","direction":"Import","shipmentFacts":{"knownCargo":"Legacy cargo","packageQuantity":5,"packageType":"Cartons","grossWeightKg":25,"goodsValue":1000,"goodsValueCurrency":"GBP"}}}',true);
+        result:=booking_api.convert_accepted_quote_before_sync_review_20260904(legacy_quote,actor,null);
+        if not exists(select 1 from public."Job_Cargo" where "JobCargo_JobID"=(result->>'jobId')::uuid and "JobCargo_Description"='Legacy cargo' and "JobCargo_PackageQty"=5 and "JobCargo_DeclaredValueAmount"=1000 and "JobCargo_SourceQuoteLineID" is null) then raise exception 'Legacy conversion changed'; end if;
+        insert into public."CusQuote_Header" ("CusQuoteHeader_ID","CusQuoteHeader_OrgOfficeID","CusQuoteHeader_LifecycleCode","CusQuoteHeader_AcceptedVersionID","CusQuoteHeader_CreatedBy") values(single_quote,office,'accepted',single_version,actor);
+        insert into public."CusQuote_Versions" ("CusQuoteVersion_ID","CusQuoteHeader_ID","CusQuoteVersion_SnapshotJSON","CusQuoteVersion_IsSubmitted")
+          values(single_version,single_quote,jsonb_set(original_snapshot,'{quote,shipmentFacts,cargoLines}',jsonb_build_array(lines->0)),true);
+        result:=booking_api.convert_accepted_quote_before_sync_review_20260904(single_quote,actor,null);
+        if not exists(select 1 from public."Job_Cargo" where "JobCargo_JobID"=(result->>'jobId')::uuid and "JobCargo_DeclaredValueAmount"=60000 and "JobCargo_DeclaredValueCurrencyCodeSnapshot"='GBP') then raise exception 'Single-line goods value not retained'; end if;
+        if has_function_privilege('service_role','booking_api.insert_accepted_quote_cargo(uuid,uuid,uuid)','EXECUTE')
+          or has_function_privilege('authenticated','quote_api.cargo_booking_missing(jsonb)','EXECUTE') then raise exception 'Internal cargo insertion exposed'; end if;
+      end $handover_test$;
     `)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
