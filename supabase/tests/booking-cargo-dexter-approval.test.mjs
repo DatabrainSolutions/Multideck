@@ -71,6 +71,17 @@ test('Routing mode: explicit leg intent and mandatory approval in both access mo
   }
 })
 
+test('Shipment goods value: operational edit intent is separate from inspection or profit changes', () => {
+  const action = 'update_booking_shipment_value'
+  for (const mode of ['approve', 'full']) assert.equal(requiresExplicitActionApproval(action, mode), true)
+  for (const prompt of ['Update shipment goods value to 1200 GBP', 'Clear the goods value', 'Correct value of the goods']) {
+    assert.equal(operatorAuthorisesAction(prompt, action), true)
+  }
+  for (const prompt of ['Show the goods value', 'Change the profit margin', 'Update freight charges']) {
+    assert.equal(operatorAuthorisesAction(prompt, action), false)
+  }
+})
+
 test('Routing mode: preparation returns persisted review, rejects unavailable evidence, never executes the change', async () => {
   const action = 'change_booking_route_mode'
   const actor = { userId: crypto.randomUUID(), companyId: crypto.randomUUID(), authUserId: crypto.randomUUID() }
@@ -104,6 +115,25 @@ test('Routing mode: preparation returns persisted review, rejects unavailable ev
 // Execute each real response branch with only external/model dependencies
 // replaced. This covers what is emitted/persisted, not just source markers.
 const agentSource = readFileSync(new URL('../functions/agent-dexter/index.ts', import.meta.url), 'utf8')
+const valuePreviewSource = ['displayActionValue', 'actionChanges'].map(name => {
+  const start = agentSource.indexOf(`function ${name}(`)
+  assert.ok(start >= 0)
+  return agentSource.slice(start, agentSource.indexOf('\n}', start) + 2)
+}).join('\n')
+const valuePreview = new Function(`${stripTypeScriptTypes(valuePreviewSource)}; return actionChanges`)()
+test('Shipment value approval shows exact amount/currency, explicit clearing, and no unrelated cached before values', () => {
+  for (const locale of ['en-GB', 'en-US']) {
+    const args = { target_id: crypto.randomUUID(), amount: '12345678901234.5678', currency: 'usd', expected_updated_at: 'now', reason: 'Correct invoice' }
+    const current = { valueScope: 'shipment_goods', amount: '9000.0001', currency: 'GBP' }
+    const preview = valuePreview(locale, 'update_booking_shipment_value', args, current)
+    assert.equal(preview.length, 2)
+    assert.deepEqual(preview.map(item => [item.before, item.after, item.beforeKnown]), [['9000.0001', '12345678901234.5678', true], ['GBP', 'USD', true]])
+    const cleared = valuePreview(locale, 'update_booking_shipment_value', { amount: null, currency: null }, current)
+    assert.ok(cleared.every(item => item.kind === 'removed' && item.after === null))
+    const unrelated = valuePreview(locale, 'update_booking_shipment_value', args, { amount: '88', currency: 'EUR' })
+    assert.ok(unrelated.every(item => item.beforeKnown === false && item.before === null))
+  }
+})
 const sourceFunctions = ['isObject', 'cleanString', 'isUuid', 'documentEvidence', 'argumentsWithDocumentEvidence'].map(name => {
   const start = agentSource.indexOf(`function ${name}(`)
   assert.ok(start >= 0)

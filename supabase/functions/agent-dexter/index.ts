@@ -1312,7 +1312,7 @@ function watchTargetLabel(capability: string, record: JsonObject) {
         ? ["quoteNumber"]
         : capability === "phone_calls"
           ? ["callerName", "companyName", "phoneNumber"]
-      : ["booking_cargo", "booking_containers", "booking_routes"].includes(capability)
+      : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value"].includes(capability)
           ? ["targetLabel", "bookingReference", "description"]
       : capability === "bookings"
           ? ["bookingReference", "jobReference", "customerReference"]
@@ -1799,7 +1799,7 @@ If conversation history contains a claim that conflicts with a newer tool result
 
 # Freight-forwarding operating standard
 Container weight verification and temperature evidence is connected only when booking_containers is listed. Query by Booking reference, container number or exact recordId. Use bookingId, recordId, updatedAt and containerUpdatedAt from the latest read; never substitute the first container. Preserve every digit of decimal text. update_booking_container proposes one listed operational field and always requires explicit approval, including Full access: show the Booking reference, exact container, field and before/after values. Null clears a nullable field. Never infer VGM from cargo weight, claim to certify or submit a declaration, or treat an old Quote as current equipment evidence. Watching for you supports saved changes to one exact container through deterministic signals, with notifications only. Adding/removing containers, allocation, identity/type changes and commercial edits are not exposed by this action; use Booking Details. If the capability is absent, explain that it is unavailable rather than claiming generic update_booking supports it.
-Shipment goods value is separate from cargo-line declared values, freight charges and the historical accepted Quote total. Direct shipment-value read, edit and dedicated watch support is not connected to Dexter yet. Do not infer a current shipment total from a cargo summary, sum mixed currencies, use update_booking to claim a shipment-value change, or promise a value-specific watch. Direct the operator to Booking Details > Cargo and the accepted Quote review. This temporary limit does not remove existing Booking or cargo capabilities.
+Shipment goods value is separate from cargo-line declared values, freight charges, profit and the historical accepted Quote total. When booking_shipment_value is listed, read the exact Booking's amount, currency, recordId and updatedAt; retain every decimal digit and treat null as unknown, never zero. update_booking_shipment_value requires explicit approval in both access modes. Supply amount and currency together, retaining an unchanged member from the current saved record; null deliberately clears it. Show both values before and after. Changing the currency does not convert the amount, redistribute cargo allocations or alter the accepted Quote. Never infer a shipment total from cargo or sum mixed currencies. Watches notify on amount or currency changes on one exact Booking, with changed rules only; currency-aware thresholds and automatic edits are not supported. If this capability is absent, use Booking Details > Cargo instead of claiming generic update_booking can perform it.
 
 Per-leg operational references and planned dates are connected only when booking_routes is listed. Query by Booking reference or exact route recordId, using bookingId, recordId, updatedAt and routeUpdatedAt as current evidence. Identify the exact leg and its own mode, never substitute the first leg or the overall Booking mode. Retained off-mode transport values are not current evidence. update_booking_route proposes one allowlisted field for explicit approval even in Full access: show Booking, leg number/mode, field and before/after values. Date-only values mean midnight UTC; timestamps require an explicit timezone. Null clears a nullable field. No mode/location/carrier changes, reordering, adding/removing legs, actual/tracking dates or commercial edits are exposed by this action. Only when the separate change_booking_route_mode action is listed, propose a leg mode change using the exact identities and both timestamps. Its database-generated approval warns that shared transport references will be cleared and preserves the previous evidence in history. Never replace or downplay that review, invent its before values, or describe the change as already saved. Carrier and planned dates remain unchanged and need suitability review. Overall Booking mode changes still use Booking Details. Watching for you follows saved fields on an exact leg through deterministic signals and notifies only. If a capability is absent, explain the limit instead of claiming generic update_booking can perform the operation.
 Changing a routing step's mode always requires explicit review: use the dedicated change_booking_route_mode proposal when listed, otherwise Booking Details. Shared references start blank for the new mode; saved before/after references are retained in Activity and audit. Do not claim that an old bill of lading is now an air waybill or that generic Booking mode changes perform this per-leg review. Current mode/reference watches use booking_routes when listed. Dedicated route-reference history reads are not connected to Dexter yet; direct historical evidence requests to the job audit view rather than inventing evidence.
@@ -2471,6 +2471,16 @@ function customsDraftSummary(locale: DexterLocale, argumentsValue: JsonObject, d
 }
 
 function actionChanges(locale: DexterLocale, actionCode: string, argumentsValue: JsonObject, currentRecord?: JsonObject) {
+  if (actionCode === "update_booking_shipment_value") {
+    return ["amount", "currency"].map((field) => {
+      const beforeKnown = Boolean(currentRecord?.valueScope === "shipment_goods" && Object.hasOwn(currentRecord, field))
+      const before = beforeKnown ? displayActionValue(currentRecord?.[field]) : null
+      const raw = typeof argumentsValue[field] === "string" ? argumentsValue[field].trim() : null
+      const after = raw ? (field === "currency" ? raw.toUpperCase() : raw) : null
+      return { field: field === "amount" ? "Shipment goods amount" : "Shipment goods currency", before, after, value: after,
+        beforeKnown, kind: after === null ? "removed" : beforeKnown && before === null ? "added" : "changed" }
+    })
+  }
   if (actionCode === CREATE_PURCHASE_ORDER_ACTION) {
     return purchaseOrderActionChanges(locale, argumentsValue)
   }
@@ -2595,6 +2605,10 @@ function preparedActionDescription(
   currentRecord?: JsonObject,
   emailState?: DexterEmailToolState | null,
 ) {
+  if (actionCode === "update_booking_shipment_value") {
+    const reference = cleanString(currentRecord?.bookingReference, 80) || "the selected Booking"
+    return `Review shipment goods value for ${reference}. This changes the shipment total only: no currency conversion is performed, cargo-line allocations and the accepted Quote stay unchanged. ${fallback}`
+  }
   if (actionCode === CREATE_SUPPORT_TICKET_ACTION) {
     return sanitiseAnswer(supportTicketCopy(locale, "prepared", cleanString(args.title, 180)))
   }
