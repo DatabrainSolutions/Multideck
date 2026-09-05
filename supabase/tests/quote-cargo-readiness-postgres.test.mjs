@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { quoteCargoReviewFixture } from './quote-cargo-review-fixture.mjs'
 import { bookingShipmentValueFixture } from './booking-shipment-value-fixture.mjs'
+import { quoteRoutingModeReviewFixture } from './quote-routing-mode-review-fixture.mjs'
 
 const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
 const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
@@ -418,6 +419,7 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
       end $handover_test$;
       ${quoteCargoReviewFixture(read, sqlFunction)}
       ${bookingShipmentValueFixture(read)}
+      ${quoteRoutingModeReviewFixture(read, sqlFunction)}
     `)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])

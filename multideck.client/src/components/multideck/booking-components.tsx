@@ -4086,11 +4086,13 @@ function BookingQuoteSyncReviewPanel({
 }) {
   const { language, t } = useLanguage()
   const [pendingModeFields, setPendingModeFields] = useState<string[] | null>(null)
+  const pendingModeReviewToken = useRef<string | null>(null)
+  const [modeReviewError, setModeReviewError] = useState<string | null>(null)
   const reviewHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const applyTriggerRef = useRef<HTMLButtonElement | null>(null)
   const remainingDifferences = review.differences.filter((difference) => !review.appliedFields.includes(difference.key))
   const availableDifferences = remainingDifferences.filter((difference) => !difference.blockedReason)
-  const needsConfirmation = (difference: BookingQuoteSyncDifference) => difference.requiresConfirmation || difference.key === "mode" || difference.conflict
+  const needsConfirmation = (difference: BookingQuoteSyncDifference) => difference.requiresConfirmation || difference.key === "mode" || difference.warningCode === "mode_change" || difference.conflict
   const attentionCount = remainingDifferences.filter(needsConfirmation).length
   const selectedCount = availableDifferences.filter((difference) => selectedFields.has(difference.key)).length
   const controlsDisabled = busy || refreshing || detailsDirty || !review.reviewToken
@@ -4106,10 +4108,19 @@ function BookingQuoteSyncReviewPanel({
     ["isHazardous", "Hazardous"], ["isTemperatureControlled", "Temperature controlled"],
   ] as const
 
+  const routingDetailFields = [
+    ["mode", "Mode"], ["origin", "Origin"], ["originUnlocode", "Origin UN/LOCODE"],
+    ["destination", "Destination"], ["destinationUnlocode", "Destination UN/LOCODE"],
+    ["plannedDepartureAt", "Planned departure"], ["plannedArrivalAt", "Planned arrival"],
+    ["carrierName", "Carrier"], ["serviceLevel", "Service level"],
+  ] as const
+
   function requestApply(fields: string[], trigger: HTMLButtonElement) {
     if (controlsDisabled || fields.length === 0) return
+    setModeReviewError(null)
     applyTriggerRef.current = trigger
-    if (fields.includes("mode")) {
+    if (fields.includes("mode") || availableDifferences.some((difference) => fields.includes(difference.key) && difference.warningCode === "mode_change")) {
+      pendingModeReviewToken.current = review.reviewToken ?? null
       setPendingModeFields(fields)
       return
     }
@@ -4118,6 +4129,11 @@ function BookingQuoteSyncReviewPanel({
 
   function confirmModeChange() {
     if (!pendingModeFields || controlsDisabled) return
+    if (pendingModeReviewToken.current !== review.reviewToken) {
+      setPendingModeFields(null)
+      setModeReviewError("The quote review changed. Check the current differences and confirm again.")
+      return
+    }
     onApply(pendingModeFields, true)
     setPendingModeFields(null)
   }
@@ -4162,7 +4178,7 @@ function BookingQuoteSyncReviewPanel({
             <div className="overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]">
               {remainingDifferences.map((difference, index) => {
                 const selected = selectedFields.has(difference.key)
-                const warningLabel = difference.key === "mode" ? "Mode change"
+                const warningLabel = difference.key === "mode" || difference.warningCode === "mode_change" ? "Mode change"
                   : difference.warningCode === "cargo_removal" ? "Remove cargo"
                     : difference.warningCode === "booking_cargo_removed" ? "Restore cargo"
                       : difference.key.startsWith("cargo:") && difference.key.endsWith(":line") && !difference.previousQuoteValue && !difference.bookingValue ? "Add cargo"
@@ -4199,6 +4215,35 @@ function BookingQuoteSyncReviewPanel({
                       </span>
                     </span>
                   </label>
+                  {difference.key === "routing" ? (
+                    <details className="px-3 pb-3 sm:px-4">
+                      <summary className="cursor-pointer rounded-[var(--md-radius-sm)] py-1 text-[12px] font-medium text-[var(--md-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]">{t("Inspect routing plan")}</summary>
+                      <p className="mt-2 text-[12px] leading-5 text-[var(--md-text)]">{t("These are Quote-owned legs in route order. Booking-only legs remain separate and are not replaced.")}</p>
+                      <div className="mt-3 grid min-w-0 gap-4 sm:grid-cols-3">
+                        {([["Previous quote", difference.previousQuoteValue], ["Current booking", difference.bookingValue], ["New accepted quote", difference.newQuoteValue]] as const).map(([sourceLabel, routes]) => (
+                          <section key={sourceLabel} className="min-w-0">
+                            <h3 className="text-[12px] font-medium text-[var(--md-ink)]">{t(sourceLabel)}</h3>
+                            {!Array.isArray(routes) ? <p className="mt-2 text-[12px]">{t("Routing plan unavailable")}</p> : routes.length === 0 ? <p className="mt-2 text-[12px]">{t("No Quote-owned legs")}</p> : (
+                              <ol className="mt-2 grid gap-4">
+                                {routes.map((route: unknown, routeIndex: number) => {
+                                  const leg = route && typeof route === "object" && !Array.isArray(route) ? route as Record<string, unknown> : null
+                                  return <li key={routeIndex} className="min-w-0">
+                                    <h4 className="mb-1 text-[12px] font-medium text-[var(--md-ink)]">{t(`Leg ${routeIndex + 1}`)}</h4>
+                                    {!leg ? <p className="text-[12px]">{t("Routing leg unavailable")}</p> : <dl className="grid gap-1.5 text-[12px] leading-5">
+                                      {routingDetailFields.map(([field, label]) => <div key={field} className="min-w-0">
+                                        <dt className="text-[var(--md-text)]">{t(label)}</dt>
+                                        <dd data-i18n-skip dir="auto" className="whitespace-pre-wrap break-words text-[var(--md-ink)]">{leg[field] === null || leg[field] === undefined || leg[field] === "" ? t("Not recorded") : bookingQuoteSyncValue(leg[field], language)}</dd>
+                                      </div>)}
+                                    </dl>}
+                                  </li>
+                                })}
+                              </ol>
+                            )}
+                          </section>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
                   {difference.key.startsWith("cargo:") && difference.key.endsWith(":line") ? (
                     <details className="px-3 pb-3 sm:px-4">
                       <summary className="cursor-pointer rounded-[var(--md-radius-sm)] py-1 text-[12px] font-medium text-[var(--md-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]">
@@ -4229,6 +4274,7 @@ function BookingQuoteSyncReviewPanel({
 
           {detailsDirty ? <p role="status" className="mt-3 rounded-[var(--md-radius-md)] bg-[var(--md-status-amber-bg)] px-3 py-2 text-[11.5px] leading-5 text-[var(--md-status-amber-ink)]">{t("Save or discard your current booking edits before applying the accepted quote update.")}</p> : null}
           {error ? <p role="alert" className="mt-3 rounded-[var(--md-radius-md)] bg-[var(--md-status-red-bg)] px-3 py-2 text-[11.5px] leading-5 text-[var(--md-status-red-ink)]">{error}</p> : null}
+          {modeReviewError ? <p role="alert" className="mt-3 text-[12px] leading-5 text-[var(--md-status-red-ink)]">{t(modeReviewError)}</p> : null}
           {!review.reviewToken ? <p role="status" className="mt-3 text-[12px] leading-5 text-[var(--md-text)]">{t("Refresh to load the current review. If it remains unavailable, the workspace review service needs updating before these changes can be applied.")}</p> : null}
           <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
             <Button type="button" variant="ghost" disabled={busy || refreshing || pendingModeFields !== null} className="h-9 rounded-[var(--md-radius-lg)] px-3 text-[12px]" onClick={onRefresh}>{t(refreshing ? "Refreshing..." : "Refresh review")}</Button>
@@ -4263,6 +4309,7 @@ function BookingQuoteSyncReviewPanel({
           </DialogHeader>
           <div className="mx-5 rounded-[var(--md-radius-lg)] bg-[var(--md-status-amber-bg)] px-3 py-2.5 text-[11.5px] leading-5 text-[var(--md-status-amber-ink)] shadow-[var(--md-shadow-line)]">
             {t("Review the new mode and related equipment, routing and cargo details before continuing.")}
+            {pendingModeFields?.includes("routing") ? <p className="mt-2">{t("Shared transport references on legs changing mode will start blank. Their previous values remain in Booking audit history.")}</p> : null}
           </div>
           <DialogFooter className="mt-5 flex-col-reverse gap-2 bg-[var(--md-surface-soft)] px-5 py-4 shadow-[var(--md-stroke-top)] sm:flex-row sm:justify-end">
             <DialogClose asChild>
