@@ -1,5 +1,5 @@
 import { authenticateRequest, corsHeaders, jsonResponse } from "../_shared/document-functions.ts"
-import { BookingWorkflowError, parseAction, parseModeChangeConfirmation, parsePayload, parseQuoteSyncFields, parseReference, parseSequenceKey, parseUuid, toClientError } from "./core.ts"
+import { BookingWorkflowError, parseAction, parseModeChangeConfirmation, parsePayload, parseQuoteSyncFields, parseQuoteReviewToken, parseReference, parseSequenceKey, parseUuid, toClientError } from "./core.ts"
 
 const documentBucket = "multideck-documents"
 const maximumBookingDocumentBytes = 20 * 1024 * 1024
@@ -144,7 +144,7 @@ Deno.serve(async (request) => {
       return jsonResponse(request, data)
     }
     if (action === "quote-sync-review") {
-      const { data, error } = await admin.rpc("booking_workflow_quote_sync_review", {
+      const { data, error } = await admin.rpc("booking_workflow_quote_sync_review_v2", {
         caller_auth_user_id: userId,
         requested_job_id: parseUuid(body.jobId, "Booking"),
       })
@@ -157,11 +157,12 @@ Deno.serve(async (request) => {
       if (fields.includes("mode") && !confirmModeChange) {
         throw new BookingWorkflowError(400, "Confirm the mode change before applying it to the booking.")
       }
-      const { data, error } = await admin.rpc("booking_workflow_apply_quote_sync_confirmed", {
+      const { data, error } = await admin.rpc("booking_workflow_apply_quote_sync_v2", {
         caller_auth_user_id: userId,
         requested_job_id: parseUuid(body.jobId, "Booking"),
         requested_review_id: parseUuid(body.reviewId, "Quote update review"),
         requested_fields: fields,
+        expected_review_token: parseQuoteReviewToken(body.reviewToken),
         confirm_mode_change: confirmModeChange,
       })
       if (error || !data) throw error ?? new Error("Quote update returned no result")

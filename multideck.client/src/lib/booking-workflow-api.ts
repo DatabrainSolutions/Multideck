@@ -236,12 +236,15 @@ export type BookingQuoteSyncDifference = {
   bookingChanged: boolean
   conflict: boolean
   requiresConfirmation: boolean
-  warningCode?: "mode_change" | "booking_changed" | null
+  warningCode?: "mode_change" | "booking_changed" | "booking_cargo_removed" | "cargo_removal" | null
+  cargoDescription?: string
+  blockedReason?: string
   recommendation: "apply" | "review"
 }
 
 export type BookingQuoteSyncReview = {
   reviewId: string
+  reviewToken: string
   jobId: string
   quoteId: string
   quoteReference: string
@@ -307,12 +310,13 @@ export function getBookingQuoteSyncReview(jobId: string) {
   return invokeNullable<BookingQuoteSyncReview>({ action: "quote-sync-review", jobId }, "The accepted quote update could not be checked.")
 }
 
-export function applyBookingQuoteSync(jobId: string, reviewId: string, fields: string[], confirmModeChange = false) {
+export function applyBookingQuoteSync(jobId: string, reviewId: string, fields: string[], reviewToken: string, confirmModeChange = false) {
   return invoke<{ reviewId: string; status: "applied" | "partially_applied"; appliedFields: string[]; remainingFields: number; workspace: BookingWorkflowWorkspace }>({
     action: "apply-quote-sync",
     jobId,
     reviewId,
     fields,
+    reviewToken,
     confirmModeChange,
   }, "The accepted quote update could not be applied.")
 }

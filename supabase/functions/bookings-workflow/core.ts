@@ -51,14 +51,24 @@ export function parsePayload(value: unknown) {
 }
 
 export function parseQuoteSyncFields(value: unknown) {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 30) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 8030) {
     throw new BookingWorkflowError(400, "Choose at least one quote field to apply.")
   }
   const fields = [...new Set(value.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean))]
-  if (fields.length !== value.length || fields.some((field) => field.length > 80 || !/^[a-z][A-Za-z]*$/.test(field))) {
+  const cargoField = /^cargo:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:(description|commodity|packageQuantity|packageType|grossWeightKg|netWeightKg|volumeCbm|chargeableWeightKg|length|width|height|lengthUnit|hsCode|countryOfOrigin|isHazardous|isTemperatureControlled|line)$/
+  if (fields.length !== value.length || fields.some((field) => field.length > 80 || (!/^[a-z][A-Za-z]*$/.test(field) && !cargoField.test(field)))
+    || fields.filter((field) => !field.startsWith("cargo:")).length > 30
+    || fields.filter((field) => field.startsWith("cargo:")).length > 8000) {
     throw new BookingWorkflowError(400, "One or more selected quote fields are invalid.")
   }
   return fields
+}
+
+export function parseQuoteReviewToken(value: unknown) {
+  if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) {
+    throw new BookingWorkflowError(409, "Refresh the quote review before applying changes.")
+  }
+  return value
 }
 
 export function parseModeChangeConfirmation(value: unknown) {
@@ -77,5 +87,6 @@ export function toClientError(error: unknown) {
   if (code === "P0002") return new BookingWorkflowError(404, message || "That booking could not be found.", message)
   if (code === "22023" || code === "23514") return new BookingWorkflowError(400, message || "Check the booking details and try again.", message)
   if (code === "23505") return new BookingWorkflowError(409, "That booking action has already completed.", message)
+  if (code === "40001") return new BookingWorkflowError(409, "The Booking or quote review changed. Refresh the review and check your selections before applying.", message)
   return new BookingWorkflowError(500, "The booking workflow could not complete the request.", message || "Unexpected booking workflow failure")
 }

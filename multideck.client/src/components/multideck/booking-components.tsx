@@ -3965,36 +3965,45 @@ function bookingQuoteSyncValue(value: unknown, language: string) {
 
 function BookingQuoteSyncReviewPanel({
   busy,
+  refreshing,
   detailsDirty,
   expanded,
   error,
   onApply,
   onOpenDetails,
+  onRefresh,
   onToggle,
   review,
   selectedFields,
 }: {
   busy: boolean
+  refreshing: boolean
   detailsDirty: boolean
   expanded: boolean
   error: string | null
   onApply: (fields: string[], confirmModeChange?: boolean) => void
   onOpenDetails: () => void
+  onRefresh: () => void
   onToggle: (field: string, checked: boolean) => void
   review: BookingQuoteSyncReview
   selectedFields: Set<string>
 }) {
   const { language, t } = useLanguage()
   const [pendingModeFields, setPendingModeFields] = useState<string[] | null>(null)
+  const reviewHeadingRef = useRef<HTMLHeadingElement | null>(null)
+  const applyTriggerRef = useRef<HTMLButtonElement | null>(null)
   const remainingDifferences = review.differences.filter((difference) => !review.appliedFields.includes(difference.key))
+  const availableDifferences = remainingDifferences.filter((difference) => !difference.blockedReason)
   const needsConfirmation = (difference: BookingQuoteSyncDifference) => difference.requiresConfirmation || difference.key === "mode" || difference.conflict
   const attentionCount = remainingDifferences.filter(needsConfirmation).length
-  const selectedCount = remainingDifferences.filter((difference) => selectedFields.has(difference.key)).length
-  const controlsDisabled = busy || detailsDirty
+  const selectedCount = availableDifferences.filter((difference) => selectedFields.has(difference.key)).length
+  const controlsDisabled = busy || refreshing || detailsDirty || !review.reviewToken
   const headingId = `booking-quote-sync-${review.reviewId}`
   const proposedVersionLabel = review.proposedVersionNumber === 1 ? t("Original") : `V${review.proposedVersionNumber}`
 
-  function requestApply(fields: string[]) {
+  function requestApply(fields: string[], trigger: HTMLButtonElement) {
+    if (controlsDisabled || fields.length === 0) return
+    applyTriggerRef.current = trigger
     if (fields.includes("mode")) {
       setPendingModeFields(fields)
       return
@@ -4003,7 +4012,7 @@ function BookingQuoteSyncReviewPanel({
   }
 
   function confirmModeChange() {
-    if (!pendingModeFields) return
+    if (!pendingModeFields || controlsDisabled) return
     onApply(pendingModeFields, true)
     setPendingModeFields(null)
   }
@@ -4021,9 +4030,9 @@ function BookingQuoteSyncReviewPanel({
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 id={headingId} className="text-[13px] font-medium text-[var(--md-ink)]">{t("Newer accepted quote available")}</h2>
+              <h2 ref={reviewHeadingRef} tabIndex={-1} id={headingId} className="text-[13px] font-medium text-[var(--md-ink)]">{t("Newer accepted quote available")}</h2>
               <StatusPill tone="neutral"><span data-i18n-skip dir="ltr">{review.quoteReference}</span><span aria-hidden="true">·</span><span data-i18n-skip={review.proposedVersionNumber > 1 ? true : undefined} dir="ltr">{proposedVersionLabel}</span></StatusPill>
-              <StatusPill tone="amber">{t("Booking unchanged")}</StatusPill>
+              <StatusPill tone="amber">{t(review.appliedFields.length ? "Partially applied" : "Booking unchanged")}</StatusPill>
             </div>
             <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
               {t(`${remainingDifferences.length} ${remainingDifferences.length === 1 ? "field is" : "fields are"} ready to review${attentionCount ? `, including ${attentionCount} ${attentionCount === 1 ? "change that needs" : "changes that need"} attention` : ""}. Nothing changes until you approve it.`)}
@@ -4055,16 +4064,18 @@ function BookingQuoteSyncReviewPanel({
                       "grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] gap-3 px-3 py-3 transition-[background-color,opacity] duration-200 sm:grid-cols-[auto_minmax(145px,0.55fr)_minmax(0,1fr)] sm:items-center sm:px-4",
                       index > 0 && "shadow-[var(--md-stroke-top)]",
                       selected ? "bg-[var(--md-surface)]" : "opacity-75 hover:opacity-100",
-                      controlsDisabled && "cursor-not-allowed",
+                      (controlsDisabled || Boolean(difference.blockedReason)) && "cursor-not-allowed",
                     )}
                   >
-                    <Checkbox checked={selected} onCheckedChange={(checked) => onToggle(difference.key, checked === true)} aria-label={`${selected ? t("Exclude") : t("Include")} ${t(difference.label)}`} />
+                    <Checkbox checked={selected && !difference.blockedReason} disabled={Boolean(difference.blockedReason)} onCheckedChange={(checked) => onToggle(difference.key, checked === true)} aria-label={`${selected ? t("Exclude") : t("Include")} ${t(difference.label)}${difference.cargoDescription ? ` — ${difference.cargoDescription}` : ""}`} aria-describedby={difference.blockedReason ? `${headingId}-blocked-${index}` : undefined} />
                     <span className="min-w-0">
                       <span className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-[var(--md-ink)]">
                         {t(difference.label)}
-                        {needsConfirmation(difference) ? <StatusPill tone="amber">{t(difference.key === "mode" ? "Mode change" : "Booking changed")}</StatusPill> : <StatusPill tone="green">{t("Safe match")}</StatusPill>}
+                        {difference.blockedReason ? <StatusPill tone="amber">{t("Needs mapping")}</StatusPill> : needsConfirmation(difference) ? <StatusPill tone="amber">{t(difference.key === "mode" ? "Mode change" : difference.warningCode === "cargo_removal" ? "Remove cargo" : difference.warningCode === "booking_cargo_removed" ? "Restore cargo" : "Booking changed")}</StatusPill> : <StatusPill tone="green">{t("Safe match")}</StatusPill>}
                       </span>
                       <span className="mt-0.5 block text-[10.5px] text-[var(--md-subtle)]">{t(difference.section)}</span>
+                      {difference.cargoDescription ? <span data-i18n-skip dir="auto" className="mt-1 block break-words text-[12px] leading-5 text-[var(--md-text)]">{difference.cargoDescription}</span> : null}
+                      {difference.blockedReason ? <span id={`${headingId}-blocked-${index}`} className="mt-1 block text-[12px] leading-5 text-[var(--md-status-amber-ink)]">{t(difference.blockedReason)}</span> : null}
                     </span>
                     <span className="col-start-2 grid min-w-0 gap-2 sm:col-start-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
                       <span className="min-w-0 rounded-[var(--md-radius-sm)] bg-[var(--md-bg)] px-2.5 py-2">
@@ -4085,9 +4096,11 @@ function BookingQuoteSyncReviewPanel({
 
           {detailsDirty ? <p role="status" className="mt-3 rounded-[var(--md-radius-md)] bg-[var(--md-status-amber-bg)] px-3 py-2 text-[11.5px] leading-5 text-[var(--md-status-amber-ink)]">{t("Save or discard your current booking edits before applying the accepted quote update.")}</p> : null}
           {error ? <p role="alert" className="mt-3 rounded-[var(--md-radius-md)] bg-[var(--md-status-red-bg)] px-3 py-2 text-[11.5px] leading-5 text-[var(--md-status-red-ink)]">{error}</p> : null}
+          {!review.reviewToken ? <p role="status" className="mt-3 text-[12px] leading-5 text-[var(--md-text)]">{t("Refresh to load the current review. If it remains unavailable, the workspace review service needs updating before these changes can be applied.")}</p> : null}
           <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-            <Button type="button" variant="ghost" disabled={controlsDisabled || remainingDifferences.length === 0} className="h-9 rounded-[var(--md-radius-lg)] px-3 text-[12px]" onClick={() => requestApply(remainingDifferences.map((difference) => difference.key))}>{t("Apply all")}</Button>
-            <Button type="button" disabled={controlsDisabled || selectedCount === 0} className="h-9 min-w-[132px] rounded-[var(--md-radius-lg)] px-3 text-[12px]" onClick={() => requestApply(remainingDifferences.filter((difference) => selectedFields.has(difference.key)).map((difference) => difference.key))}>
+            <Button type="button" variant="ghost" disabled={busy || refreshing || pendingModeFields !== null} className="h-9 rounded-[var(--md-radius-lg)] px-3 text-[12px]" onClick={onRefresh}>{t(refreshing ? "Refreshing..." : "Refresh review")}</Button>
+            <Button type="button" variant="ghost" disabled={controlsDisabled || availableDifferences.length === 0} className="h-9 rounded-[var(--md-radius-lg)] px-3 text-[12px]" onClick={(event) => requestApply(availableDifferences.map((difference) => difference.key), event.currentTarget)}>{t(availableDifferences.length === remainingDifferences.length ? "Apply all" : "Apply available")}</Button>
+            <Button type="button" disabled={controlsDisabled || selectedCount === 0} className="h-9 min-w-[132px] rounded-[var(--md-radius-lg)] px-3 text-[12px]" onClick={(event) => requestApply(availableDifferences.filter((difference) => selectedFields.has(difference.key)).map((difference) => difference.key), event.currentTarget)}>
               <Check className="size-3.5" strokeWidth={1.7} aria-hidden="true" />{t(busy ? "Applying..." : `Apply selected (${selectedCount})`)}
             </Button>
           </div>
@@ -4096,7 +4109,12 @@ function BookingQuoteSyncReviewPanel({
       ) : null}
 
       <Dialog open={pendingModeFields !== null} onOpenChange={(open) => { if (!open) setPendingModeFields(null) }}>
-        <DialogContent className="!w-[calc(100vw-32px)] !max-w-[480px] overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)]">
+        <DialogContent onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          const trigger = applyTriggerRef.current
+          if (trigger?.isConnected && !trigger.disabled) trigger.focus()
+          else reviewHeadingRef.current?.focus()
+        }} className="!w-[calc(100vw-32px)] !max-w-[480px] overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)]">
           <DialogHeader className="px-5 pb-3 pt-5 text-start">
             <div className="flex items-start gap-3">
               <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-status-amber-bg)] text-[var(--md-status-amber-ink)] shadow-[var(--md-shadow-line)]">
@@ -4373,7 +4391,7 @@ export function BookingDetailWorkspace({
     setQuoteSyncReview(nextReview)
     setSelectedQuoteSyncFields(new Set(
       nextReview?.differences
-        .filter((difference) => !nextReview.appliedFields.includes(difference.key) && difference.recommendation === "apply" && !difference.requiresConfirmation && difference.key !== "mode" && !difference.conflict)
+        .filter((difference) => !nextReview.appliedFields.includes(difference.key) && !difference.blockedReason && difference.recommendation === "apply" && !difference.requiresConfirmation && difference.key !== "mode" && !difference.conflict)
         .map((difference) => difference.key) ?? [],
     ))
     setQuoteSyncCheckState("ready")
@@ -4805,10 +4823,10 @@ export function BookingDetailWorkspace({
     setApplyingQuoteSync(true)
     setQuoteSyncError(null)
     try {
-      const result = await applyBookingQuoteSync(loadedRecord.workspace.booking.jobId, quoteSyncReview.reviewId, fields, confirmModeChange)
+      const result = await applyBookingQuoteSync(loadedRecord.workspace.booking.jobId, quoteSyncReview.reviewId, fields, quoteSyncReview.reviewToken, confirmModeChange)
       await applySavedWorkspace(result.workspace)
       toast.success(t(result.status === "applied" ? "Accepted quote applied" : "Selected quote fields applied"), {
-        description: t(result.status === "applied" ? "The booking now matches the newer accepted quote." : `${result.remainingFields} fields still need your review.`),
+        description: t(result.status === "applied" ? "The accepted quote changes have been applied. Unselected operational details are preserved." : `${result.remainingFields} fields still need your review.`),
       })
       try {
         setQuoteSyncReviewState(await getBookingQuoteSyncReview(result.workspace.booking.jobId))
@@ -5003,11 +5021,13 @@ export function BookingDetailWorkspace({
         {quoteSyncReview ? (
           <BookingQuoteSyncReviewPanel
             busy={applyingQuoteSync}
+            refreshing={quoteSyncCheckState === "loading"}
             detailsDirty={detailsDirty}
             expanded={activeTab === "Details"}
             error={quoteSyncError}
-            onApply={(fields) => void applyQuoteSyncFields(fields)}
+            onApply={(fields, confirmModeChange) => void applyQuoteSyncFields(fields, confirmModeChange)}
             onOpenDetails={() => changeActiveTab("Details")}
+            onRefresh={() => void refreshQuoteSyncReview(loadedRecord.workspace!.booking.jobId)}
             onToggle={(field, checked) => setSelectedQuoteSyncFields((current) => {
               const next = new Set(current)
               if (checked) next.add(field)

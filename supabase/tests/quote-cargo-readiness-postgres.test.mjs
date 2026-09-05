@@ -4,6 +4,7 @@ import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { quoteCargoReviewFixture } from './quote-cargo-review-fixture.mjs'
 
 const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
 const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
@@ -410,6 +411,7 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
         if has_function_privilege('service_role','booking_api.insert_accepted_quote_cargo(uuid,uuid,uuid)','EXECUTE')
           or has_function_privilege('authenticated','quote_api.cargo_booking_missing(jsonb)','EXECUTE') then raise exception 'Internal cargo insertion exposed'; end if;
       end $handover_test$;
+      ${quoteCargoReviewFixture(read, sqlFunction)}
     `)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
