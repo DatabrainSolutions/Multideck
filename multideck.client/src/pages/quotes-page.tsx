@@ -110,7 +110,7 @@ import {
 } from "@/components/multideck/quote-details/quote-detail-model"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { calculateQuoteFreightDirection } from "@/lib/freight-direction"
-import { newQuoteCargoLine, quoteCargoSummary, readQuoteCargoLines, type QuoteCargoLine } from "@/lib/quote-cargo"
+import { newQuoteCargoLine, quoteCargoSummary, quoteCargoSafety, quoteCargoHandlingSummary, readQuoteCargoLines, type QuoteCargoLine } from "@/lib/quote-cargo"
 import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
 import { textareaSelectionAnchor, type TextareaSelection, type TextareaSelectionAnchor } from "@/lib/textarea-selection"
 import { formatQuoteLossReason, quoteCustomerDeclineReasons, quoteLossReasons } from "@/lib/quote-loss-reasons"
@@ -4845,7 +4845,7 @@ function QuoteDetailsPanelV2({
             onChange={(cargoLines) => onQuotePatch({ cargoLines })} />
           <div>
             <p className="mb-1.5 text-[10.5px] font-medium text-[var(--md-text)]">{t(quote.cargoLines ? "Shipment handling (in addition to line flags)" : "Cargo characteristics")}</p>
-            <CargoCharacteristicsField value={characteristics} onChange={(value) => { onQuoteChange("cargoCharacteristics", cargoCharacteristicsToString(value)); onQuoteChange("knownCargo", value.hazardous ? "Hazardous" : "General merchandise") }} hazardousDetails={hazardousDetails} onHazardousDetailsChange={updateHazardousDetails} disabled={!editable} />
+            <CargoCharacteristicsField value={characteristics} inherited={quoteCargoSafety(quote.cargoLines)} onChange={(value) => { onQuoteChange("cargoCharacteristics", cargoCharacteristicsToString(value)); onQuoteChange("knownCargo", value.hazardous ? "Hazardous" : "General merchandise") }} hazardousDetails={hazardousDetails} onHazardousDetailsChange={updateHazardousDetails} disabled={!editable} />
           </div>
         </div>
       </CompactSectionShell>
@@ -5616,7 +5616,7 @@ function uuidOrNull(value?: string | null) {
 }
 
 function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: QuoteWorkflowSources | null): QuoteSavePayload {
-  if (quote.cargoLines) quote = { ...quote, ...quoteCargoSummary(quote.cargoLines) }
+  if (quote.cargoLines) quote = { ...quote, ...quoteCargoSummary(quote.cargoLines), knownCargo: quoteCargoHandlingSummary(quote.cargoLines, quote.cargoCharacteristics || quote.knownCargo) }
   const mode = lookups?.modes.find((option) => option.name === quote.mode)?.code ?? quote.mode
   const shipmentTypeLabel = quote.shipmentType?.split(" - ", 1)[0] ?? ""
   const shipmentType = lookups?.shipmentTypes.find((option) => option.code === shipmentTypeLabel || option.name === quote.shipmentType)?.code ?? shipmentTypeLabel
@@ -6288,7 +6288,7 @@ export function QuoteDetailPage({
   const activeTotals = useMemo(() => getChargeTotals(activeCharges), [activeCharges])
   const activeQuote = {
     ...presentedQuote,
-    ...(presentedQuote.cargoLines ? quoteCargoSummary(presentedQuote.cargoLines) : {}),
+    ...(presentedQuote.cargoLines ? { ...quoteCargoSummary(presentedQuote.cargoLines), knownCargo: quoteCargoHandlingSummary(presentedQuote.cargoLines, presentedQuote.cargoCharacteristics || presentedQuote.knownCargo) } : {}),
     cost: workspace ? activeTotals.cost : draftQuote.cost,
     revenue: workspace ? activeTotals.revenue : draftQuote.revenue,
     profit: workspace ? activeTotals.profit : draftQuote.profit,

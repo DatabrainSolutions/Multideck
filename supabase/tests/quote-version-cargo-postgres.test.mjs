@@ -11,6 +11,7 @@ const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
 const read = (name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), 'utf8')
 const migration = read('20260905115938_quote_version_structured_cargo.sql')
 const opening = read('20260905160621_quote_open_structured_cargo.sql')
+const safety = read('20260905163327_quote_cargo_safety_summary.sql')
 const lifecycle = read('20260903120100_quote_draft_version_lifecycle.sql')
 const guardStart = lifecycle.indexOf('create or replace function quote_api.prevent_submitted_quote_version_mutation()')
 const guardEnd = lifecycle.indexOf('-- Keep the original implementation', guardStart)
@@ -186,6 +187,7 @@ test('PostgreSQL: structured Quote cargo survives draft saves and immutable vers
     const psql = ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-At']
     const oldSnapshots = run('psql', psql, 'select jsonb_agg("CusQuoteVersion_SnapshotJSON" order by "CusQuoteVersion_Number") from public."CusQuote_Versions";')
     run('psql', psql, opening)
+    run('psql', psql, safety)
     assert.equal(run('psql', psql, 'select jsonb_agg("CusQuoteVersion_SnapshotJSON" order by "CusQuoteVersion_Number") from public."CusQuote_Versions";'), oldSnapshots)
     const actor = '22222222-2222-4222-8222-222222222222'
     const opened = JSON.parse(run('psql', psql, `select public.quote_workflow_open_quote('${actor}');`))
@@ -206,10 +208,21 @@ test('PostgreSQL: structured Quote cargo survives draft saves and immutable vers
     assert.equal(save(payload).versionId, versionId, 'Opening and saving must retain the one mutable draft')
     const reloaded = mapping.quoteRecordFromWorkspace(workspace(load()), null)
     assert.deepEqual(reloaded.cargoLines, lines, 'Browser payload → actual normaliser/projection → reload must retain every field and exact precision')
+    assert.equal(load().knownCargo, 'Hazardous; Temperature controlled')
+    assert.equal(load().cargoCharacteristics, 'General cargo')
+    // An older or non-UI caller cannot override typed flags with a stale label.
+    save({ ...payload, shipmentFacts: { ...payload.shipmentFacts, knownCargo: 'General merchandise', cargoCharacteristics: 'Fragile' } })
+    assert.equal(load().knownCargo, 'Hazardous; Temperature controlled; Fragile')
+    assert.equal(load().cargoCharacteristics, 'Fragile')
+    save({ ...payload, shipmentFacts: { ...payload.shipmentFacts, cargoCharacteristics: 'Sensitive consignment' } })
+    assert.equal(load().knownCargo, 'Hazardous; Temperature controlled; Sensitive consignment')
     assert.equal(save(mapping.quoteSavePayload({ ...reloaded, cargoLines: [] }, [], null)).versionId, versionId)
     assert.deepEqual(load().cargoLines, [], 'Removing the final line must not revive a flat summary')
+    assert.equal(load().knownCargo, 'General merchandise', 'Derived hazard must clear without changing a separate manual choice')
     run('psql', psql, `
       do $$ begin
+        if has_function_privilege('service_role','quote_api.save_quote_before_cargo_safety_20260905(uuid,uuid,jsonb)','EXECUTE')
+          or has_function_privilege('authenticated','quote_api.cargo_handling_summary(jsonb)','EXECUTE') then raise exception 'Cargo safety bypass exposed'; end if;
         if has_function_privilege('anon','public.quote_workflow_open_quote(uuid)','EXECUTE')
           or has_function_privilege('authenticated','public.quote_workflow_open_quote(uuid)','EXECUTE')
           or not has_function_privilege('service_role','public.quote_workflow_open_quote(uuid)','EXECUTE') then raise exception 'Unsafe open grants'; end if;

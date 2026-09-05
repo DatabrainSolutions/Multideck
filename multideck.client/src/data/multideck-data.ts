@@ -225,7 +225,7 @@ export const galleryComponents = [
     id: "quote-detail-controls",
     name: "Quote Detail Controls",
     category: "Forms",
-    description: "Compact freight-aware form controls for organisation recommendations, linked locations, derived values, Incoterms, units, recurrence and cargo characteristics.",
+    description: "Compact freight-aware form controls for organisation recommendations, linked locations, derived values, Incoterms, units, recurrence and cargo characteristics. Cargo flags can inherit from individual goods lines without changing manual shipment handling.",
     details: "Use these controls in quote and booking detail workflows where expected input length should shape the field. Organisation comboboxes keep current, recent and related records above a hairline and retain the full directory below it. Location fields ask for country and port/location, then derive an editable UN/LOCODE from the official directory. Derived values use the shared auto-populated state until the operator overrides them.",
     foundOn: [
       { label: "Quote details", route: "/quotes/jq20013" },

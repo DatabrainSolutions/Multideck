@@ -6,7 +6,7 @@ import { stripTypeScriptTypes } from 'node:module'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const load = (source) => import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(source)).toString('base64')}`)
-const { quoteDocumentCargo, quoteDocumentCargoTotals } = await load(read('../functions/_shared/quote-document-cargo.ts'))
+const { quoteDocumentCargo, quoteDocumentCargoTotals, quoteDocumentHandling } = await load(read('../functions/_shared/quote-document-cargo.ts'))
 const renderer = read('../functions/_shared/quote-pdf.ts')
 const { renderQuotePdfHtml, quotePdfName } = await load(renderer.slice(renderer.indexOf('export type QuotePdfDataset')))
 const workflow = read('../functions/quotes-workflow/index.ts')
@@ -15,9 +15,9 @@ const datasetSource = workflow.slice(workflow.indexOf('function printable('), wo
 assert.ok(datasetSource.includes('async function quotePdfDataset('))
 // Run the production dataset builder and formatting functions. Only private
 // company branding/storage reads are fixture boundaries; no email or DB write.
-const buildDataset = new Function('workspaceBrand', 'quoteDocumentCargo', 'quoteDocumentCargoTotals', 'QuoteWorkflowError', 'templateSourcesBucket',
+const buildDataset = new Function('workspaceBrand', 'quoteDocumentCargo', 'quoteDocumentCargoTotals', 'QuoteWorkflowError', 'templateSourcesBucket', 'quoteDocumentHandling',
   stripTypeScriptTypes(helpers + datasetSource) + '\nreturn quotePdfDataset;')(
-  async () => null, quoteDocumentCargo, quoteDocumentCargoTotals, Error, 'test-template-sources')
+  async () => null, quoteDocumentCargo, quoteDocumentCargoTotals, Error, 'test-template-sources', quoteDocumentHandling)
 const admin = { from(table) {
   assert.equal(table, 'cmp_Company', 'Document must not fetch live payer/commercial records')
   const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: { Company_Name: 'Test freight company' }, error: null }) }
@@ -68,6 +68,7 @@ test('PDF dataset retains saved terms, parties, routes and all cargo despite lat
   assert.match(data.cargo[0].measurements, /230 × 100 × 125 cm/)
   assert.equal(data.shipment[2].value, '5 · 1275.3 kg')
   assert.match(data.shipment[3].value, /^2.3 CBM/)
+  assert.equal(data.shipment[4].value, 'Hazardous; Temperature controlled')
   assert.equal(data.charges.length, 1)
   assert.doesNotMatch(JSON.stringify(data), /PRIVATE|HIDDEN CHARGE|NEW /)
   assert.deepEqual(version, before)
@@ -117,10 +118,21 @@ test('actual HTML renderer escapes source text, keeps all cargo rows and exclude
   assert.match(html, /Spare parts &#123;d.company.name&#125;/)
   assert.match(html, /3 · Cartons/)
   assert.match(html, /Agreed terms on V1/)
+  assert.match(html, /Shipment handling<\/div><div class="value">Hazardous; Temperature controlled<\/div>/)
   assert.doesNotMatch(html, /\{d\.|PRIVATE|HIDDEN CHARGE|NEW TERMS/)
   assert.equal((html.match(/<tr><td>[12]<\/td><td>/g) || []).length, 2)
   assert.equal(quotePdfName('JQ20020', 1), 'JQ20020')
   assert.equal(quotePdfName('JQ20020', 2), 'JQ20020 - V2')
+})
+
+test('rendered shipment handling retains manual flags independently of line flags', async () => {
+  const manualQuote = structuredClone(quote)
+  manualQuote.shipmentFacts.cargoCharacteristics = 'Fragile; Food grade; PRIVATE HANDLING NOTE'
+  manualQuote.shipmentFacts.cargoLines.forEach(line => { line.isHazardous = false; line.isTemperatureControlled = false })
+  const data = await buildDataset(admin, context, { ...version, CusQuoteVersion_SnapshotJSON: { quote: manualQuote } })
+  const html = renderQuotePdfHtml(data)
+  assert.match(html, /Shipment handling<\/div><div class="value">Fragile; Food grade<\/div>/)
+  assert.doesNotMatch(html, /PRIVATE|Hazardous|Temperature controlled/)
 })
 
 // Optional local visual-QA output, generated from the production dataset and

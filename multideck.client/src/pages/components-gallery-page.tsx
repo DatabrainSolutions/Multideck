@@ -1596,6 +1596,7 @@ function QuoteDetailControlsPreview() {
   const [recurrence, setRecurrence] = useState<RecurrenceValue>({ ...EMPTY_RECURRENCE, mode: "interval", interval: "2", unit: "week" })
   const [amount, setAmount] = useState<AmountCurrencyValue>({ amount: "18000", currency: "EUR" })
   const [characteristics, setCharacteristics] = useState<CargoCharacteristics>(EMPTY_CARGO_CHARACTERISTICS)
+  const [inheritedSafety, setInheritedSafety] = useState(false)
   const [hazardous, setHazardous] = useState<HazardousDetails>(EMPTY_HAZARDOUS_DETAILS)
   const organisationOptions = [
     { id: "brook", value: "Brook Taverner Ltd", label: "Brook Taverner Ltd", description: "BROOKTAV · Customer" },
@@ -1620,7 +1621,8 @@ function QuoteDetailControlsPreview() {
         <IncotermField value={incoterm} onValueChange={setIncoterm} namedLocation={namedPlace} onNamedLocationChange={setNamedPlace} />
         <LocationFields label="Origin" value={location} options={locations} countries={locationCountries} onChange={setLocation} />
         <RecurrenceBuilder value={recurrence} onChange={setRecurrence} />
-        <CargoCharacteristicsField value={characteristics} onChange={setCharacteristics} hazardousDetails={hazardous} onHazardousDetailsChange={setHazardous} />
+        <Button variant="outline" aria-pressed={inheritedSafety} onClick={() => setInheritedSafety(value => !value)}>Preview flags from cargo lines</Button>
+        <CargoCharacteristicsField value={characteristics} inherited={{ hazardous: inheritedSafety, temperatureControlled: inheritedSafety }} onChange={setCharacteristics} hazardousDetails={hazardous} onHazardousDetailsChange={setHazardous} />
       </div>
     </CompactSectionShell>
   )

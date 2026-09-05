@@ -83,3 +83,23 @@ test('real customer PDF projection receives all saved goods and no internal comm
   assert.equal(JSON.stringify(output).includes('Private margin discussion'), false)
   assert.deepEqual(documentCargo.quoteDocumentCargoTotals(payload.shipmentFacts), { packageQuantity: '5', grossWeightKg: '100.3', volumeCbm: '0.000003' })
 })
+
+test('line safety is visible in shipment labels without becoming a sticky manual choice', () => {
+  const lines = fixtureLines()
+  const draft = { ...mapping.newQuoteDraft, cargoLines: lines, cargoCharacteristics: 'Fragile', knownCargo: 'General merchandise' }
+  const saved = mapping.quoteSavePayload(draft, [], null)
+  assert.equal(saved.shipmentFacts.knownCargo, 'Hazardous; Temperature controlled; Fragile')
+  assert.equal(saved.shipmentFacts.cargoCharacteristics, 'Fragile')
+  assert.deepEqual(cargo.quoteCargoSafety(lines), { hazardous: true, temperatureControlled: true })
+  const reloaded = mapping.quoteRecordFromWorkspace(workspace(saved.shipmentFacts), null)
+  const removed = mapping.quoteSavePayload({ ...reloaded, cargoLines: [lines[0]] }, [], null)
+  assert.equal(removed.shipmentFacts.knownCargo, 'Fragile')
+  assert.equal(removed.shipmentFacts.cargoCharacteristics, 'Fragile')
+  assert.equal(cargo.quoteCargoHandlingSummary([], 'Hazardous; Sensitive consignment'), 'Hazardous; Sensitive consignment')
+  assert.equal(cargo.quoteCargoHandlingSummary(lines, 'Hazardous; Fragile'), 'Hazardous; Temperature controlled; Fragile')
+  assert.equal(cargo.quoteCargoHandlingSummary([], 'General cargo'), 'General merchandise')
+  assert.equal(documentCargo.quoteDocumentHandling({ cargoLines: lines, cargoCharacteristics: 'Fragile', knownCargo: 'General merchandise' }), 'Hazardous; Temperature controlled; Fragile')
+  assert.equal(documentCargo.quoteDocumentHandling({ cargoLines: [], cargoCharacteristics: 'Hazardous; PRIVATE COST' }), 'Hazardous')
+  assert.equal(documentCargo.quoteDocumentHandling({}), 'No special handling recorded')
+  assert.throws(() => documentCargo.quoteDocumentHandling({ cargoLines: [{ isHazardous: 'false' }] }))
+})

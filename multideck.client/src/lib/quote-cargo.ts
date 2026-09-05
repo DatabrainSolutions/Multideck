@@ -61,3 +61,23 @@ export function quoteCargoSummary(lines: readonly QuoteCargoLine[]) {
     volumeCbm: quoteCargoTotal(lines, 'volumeCbm'), chargeableWeightKg: quoteCargoTotal(lines, 'chargeableWeightKg'),
     commodity: unique('commodity'), packageType: unique('packageType') }
 }
+
+export function quoteCargoSafety(lines: readonly QuoteCargoLine[] | undefined) {
+  return {
+    hazardous: Boolean(lines?.some(line => line.isHazardous)),
+    temperatureControlled: Boolean(lines?.some(line => line.isTemperatureControlled)),
+  }
+}
+
+/** Manual shipment handling is separate from the flags inherited from goods. */
+export function quoteCargoHandlingSummary(lines: readonly QuoteCargoLine[], manualHandling = '') {
+  const safety = quoteCargoSafety(lines)
+  const labels = new Map<string, string>()
+  if (safety.hazardous) labels.set('hazardous', 'Hazardous')
+  if (safety.temperatureControlled) labels.set('temperature controlled', 'Temperature controlled')
+  for (const token of manualHandling.split(/[;,|]/).map(value => value.trim()).filter(Boolean)) {
+    const key = token.toLowerCase()
+    if (!['general cargo', 'general merchandise'].includes(key) && !labels.has(key)) labels.set(key, token)
+  }
+  return [...labels.values()].join('; ') || 'General merchandise'
+}

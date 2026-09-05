@@ -976,6 +976,7 @@ const characteristicLabels: Record<CargoCharacteristicKey, string> = {
 
 export function CargoCharacteristicsField({
   value,
+  inherited = {},
   onChange,
   hazardousDetails,
   onHazardousDetailsChange,
@@ -983,6 +984,7 @@ export function CargoCharacteristicsField({
   disabled,
 }: {
   value: CargoCharacteristics
+  inherited?: Partial<CargoCharacteristics>
   onChange: (value: CargoCharacteristics) => void
   hazardousDetails: HazardousDetails
   onHazardousDetailsChange: (value: HazardousDetails) => void
@@ -991,8 +993,11 @@ export function CargoCharacteristicsField({
 }) {
   const { t } = useLanguage()
   const [hazardousOpen, setHazardousOpen] = useState(false)
+  const inheritedNoteId = useId()
+  const inheritedLabels = available.filter(key => inherited[key]).map(key => t(characteristicLabels[key]))
 
   function toggle(key: CargoCharacteristicKey) {
+    if (disabled || inherited[key]) return
     const checked = !value[key]
     onChange({ ...value, [key]: checked })
     if (key === "hazardous" && checked) setHazardousOpen(true)
@@ -1008,24 +1013,27 @@ export function CargoCharacteristicsField({
             variant="outline"
             size="sm"
             disabled={disabled}
-            aria-pressed={value[key]}
+            aria-disabled={inherited[key] || undefined}
+            aria-describedby={inherited[key] ? inheritedNoteId : undefined}
+            aria-pressed={value[key] || inherited[key] || false}
             onClick={() => toggle(key)}
             className={cn(
               "h-7 rounded-[var(--md-radius-lg)] px-2 text-[11px] font-normal transition-[background-color,color,box-shadow]",
-              value[key] && "border-transparent bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent-hover)] dark:bg-[var(--md-accent)] dark:text-[var(--md-accent-ink)] dark:hover:bg-[var(--md-accent-hover)]",
+              (value[key] || inherited[key]) && "border-transparent bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent-hover)] dark:bg-[var(--md-accent)] dark:text-[var(--md-accent-ink)] dark:hover:bg-[var(--md-accent-hover)]",
             )}
           >
             {key === "hazardous" ? <TriangleAlert className="size-3.5" aria-hidden="true" /> : null}
             {t(characteristicLabels[key])}
           </Button>
         ))}
-        {value.hazardous ? (
+        {value.hazardous || inherited.hazardous ? (
           <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => setHazardousOpen(true)} className="h-7 rounded-[var(--md-radius-lg)] px-2 text-[11px] text-[var(--md-accent)]">
             {t("Edit hazardous details")}
           </Button>
         ) : null}
       </div>
-      <HazardousDetailsDialog open={hazardousOpen} onOpenChange={setHazardousOpen} value={hazardousDetails} onChange={onHazardousDetailsChange} />
+      <p id={inheritedNoteId} className="text-[12px] leading-5 text-[var(--md-text)]">{inheritedLabels.length ? <>{inheritedLabels.join(', ')} · {t('Set on individual cargo lines. Change those lines to remove these flags.')}</> : null}</p>
+      <HazardousDetailsDialog open={hazardousOpen && !disabled} onOpenChange={setHazardousOpen} value={hazardousDetails} onChange={next => { if (!disabled) onHazardousDetailsChange(next) }} />
     </div>
   )
 }

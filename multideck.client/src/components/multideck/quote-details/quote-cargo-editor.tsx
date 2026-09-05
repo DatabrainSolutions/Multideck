@@ -68,6 +68,7 @@ export function QuoteCargoEditor({ lines, legacy, editable, chargeableWeight = t
             {lines.map((line, index) => <li key={line.id} className="min-w-0"><button type="button" aria-pressed={line.id === selected?.id} onClick={() => setSelectedId(line.id)} className={cn('w-full rounded-[var(--md-radius-md)] px-3 py-2 text-start text-[12px] leading-5 focus-visible:outline-2 focus-visible:outline-[var(--md-accent)]', line.id === selected?.id ? 'bg-[var(--md-accent-a12)] text-[var(--md-ink)]' : 'bg-[var(--md-surface-soft)] text-[var(--md-text)]')}>
               <span>{t('Line')} {index + 1}</span><span data-i18n-skip dir="auto" className="block truncate">{line.description || t('Description not recorded')}</span>
               <span data-i18n-skip className="block">{[line.packageQuantity, line.packageType].filter(Boolean).join(' · ') || '—'}</span>
+              {line.isHazardous || line.isTemperatureControlled ? <span className="block font-medium">{[line.isHazardous ? t('Hazardous') : '', line.isTemperatureControlled ? t('Temperature controlled') : ''].filter(Boolean).join(' · ')}</span> : null}
             </button></li>)}
           </ol>
           {selected ? <div className="grid min-w-0 content-start gap-3">

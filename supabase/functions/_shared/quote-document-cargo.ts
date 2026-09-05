@@ -95,3 +95,21 @@ export function quoteDocumentCargoTotals(facts: Record<string, unknown>) {
     return [key, fraction ? `${whole}.${fraction}` : String(whole)]
   }))
 }
+
+// Only recognised handling labels belong on the customer document. Never pass
+// arbitrary internal snapshot properties through this summary.
+export function quoteDocumentHandling(facts: Record<string, unknown>) {
+  const manual = text(facts.cargoCharacteristics) || text(facts.knownCargo)
+  const selected = new Set(manual.toLowerCase().split(/[;,|]/).map(value => value.trim()))
+  const lines = Object.hasOwn(facts, 'cargoLines') ? facts.cargoLines : []
+  if (!Array.isArray(lines)) throw new Error('Invalid saved quote cargo list')
+  for (const line of lines) {
+    if (!line || typeof line !== 'object' || Array.isArray(line)) throw new Error('Invalid saved quote cargo line')
+    for (const [key, label] of [['isHazardous', 'hazardous'], ['isTemperatureControlled', 'temperature controlled']]) {
+      if (Object.hasOwn(line, key) && typeof line[key] !== 'boolean') throw new Error('Invalid saved cargo safety flag')
+      if (line[key] === true) selected.add(label)
+    }
+  }
+  return ['Hazardous', 'Oversized', 'Temperature controlled', 'Fragile', 'Food grade']
+    .filter(label => selected.has(label.toLowerCase())).join('; ') || 'No special handling recorded'
+}

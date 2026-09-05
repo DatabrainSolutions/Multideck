@@ -22,7 +22,7 @@ import { renderBrandedEmail } from "../_shared/email-template.ts"
 import { governedModelFetch } from "../_shared/model-gateway.ts"
 import { readConfiguredTenantBrand, type TenantBrand } from "../_shared/tenant-branding.ts"
 import { generateQuotePdf, removeGeneratedQuotePdf, type GeneratedQuotePdf, type QuotePdfDataset } from "../_shared/quote-pdf.ts"
-import { quoteDocumentCargo, quoteDocumentCargoTotals } from "../_shared/quote-document-cargo.ts"
+import { quoteDocumentCargo, quoteDocumentCargoTotals, quoteDocumentHandling } from "../_shared/quote-document-cargo.ts"
 import { sendMail as sendConnectedMailbox, type Actor as InboxActor } from "../inbox-api/runtime.ts"
 import { base64Encode, OUTBOUND_ATTACHMENT_LIMITS } from "../inbox-api/core.ts"
 
@@ -551,6 +551,7 @@ async function quotePdfDataset(
       },
       { label: "Pieces / weight", value: [cargoTotals.packageQuantity, cargoTotals.grossWeightKg ? `${cargoTotals.grossWeightKg} kg` : ""].filter(Boolean).join(" · ") || "—" },
       { label: "Volume / incoterm", value: [cargoTotals.volumeCbm ? `${cargoTotals.volumeCbm} CBM` : "", customerIncotermLabel(quote.incoterm, facts.namedPlace)].filter((value) => value && value !== "—").join(" · ") || "—" },
+      { label: "Shipment handling", value: quoteDocumentHandling(facts) },
     ],
     charges: charges.map(({ currency: _currency, rawAmount: _rawAmount, ...charge }) => charge),
     totals: Array.from(totals.entries()).map(([currency, amount]) => ({ label: totals.size > 1 ? `Total ${currency}` : "Total", amount: moneyLabel(amount, currency) })),

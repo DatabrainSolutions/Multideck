@@ -169,6 +169,8 @@ export const quotePdfTemplate = `<!DOCTYPE html>
     <td><div class="label">{d.shipment[1].label}</div><div class="value">{d.shipment[1].value}</div></td>
     <td><div class="label">{d.shipment[2].label}</div><div class="value">{d.shipment[2].value}</div></td>
     <td><div class="label">{d.shipment[3].label}</div><div class="value">{d.shipment[3].value}</div></td>
+  </tr><tr>
+    <td colspan="4"><div class="label">{d.shipment[4].label}</div><div class="value">{d.shipment[4].value}</div></td>
   </tr></table>
 
   <div class="cargo-plan">
