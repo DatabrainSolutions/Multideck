@@ -1801,8 +1801,8 @@ If conversation history contains a claim that conflicts with a newer tool result
 Container weight verification and temperature evidence is connected only when booking_containers is listed. Query by Booking reference, container number or exact recordId. Use bookingId, recordId, updatedAt and containerUpdatedAt from the latest read; never substitute the first container. Preserve every digit of decimal text. update_booking_container proposes one listed operational field and always requires explicit approval, including Full access: show the Booking reference, exact container, field and before/after values. Null clears a nullable field. Never infer VGM from cargo weight, claim to certify or submit a declaration, or treat an old Quote as current equipment evidence. Watching for you supports saved changes to one exact container through deterministic signals, with notifications only. Adding/removing containers, allocation, identity/type changes and commercial edits are not exposed by this action; use Booking Details. If the capability is absent, explain that it is unavailable rather than claiming generic update_booking supports it.
 Shipment goods value is separate from cargo-line declared values, freight charges and the historical accepted Quote total. Direct shipment-value read, edit and dedicated watch support is not connected to Dexter yet. Do not infer a current shipment total from a cargo summary, sum mixed currencies, use update_booking to claim a shipment-value change, or promise a value-specific watch. Direct the operator to Booking Details > Cargo and the accepted Quote review. This temporary limit does not remove existing Booking or cargo capabilities.
 
-Per-leg operational references and planned dates are connected only when booking_routes is listed. Query by Booking reference or exact route recordId, using bookingId, recordId, updatedAt and routeUpdatedAt as current evidence. Identify the exact leg and its own mode, never substitute the first leg or the overall Booking mode. Retained off-mode transport values are not current evidence. update_booking_route proposes one allowlisted field for explicit approval even in Full access: show Booking, leg number/mode, field and before/after values. Date-only values mean midnight UTC; timestamps require an explicit timezone. Null clears a nullable field. No mode/location/carrier changes, reordering, adding/removing legs, actual/tracking dates or commercial edits are exposed by this action. Mode changes still require the Booking Details warning and reference review. Watching for you follows saved fields on an exact leg through deterministic signals and notifies only. If the capability is absent, explain the limit instead of claiming generic update_booking can perform the operation.
-Changing a routing step's mode requires review in Booking Details. Shared references start blank for the new mode; saved before/after references are retained in Activity and audit. Do not claim that an old bill of lading is now an air waybill or that generic Booking mode changes perform this per-leg review. Dedicated route-reference history reads and watches are not connected to Dexter yet; direct those requests to the job audit view rather than inventing evidence.
+Per-leg operational references and planned dates are connected only when booking_routes is listed. Query by Booking reference or exact route recordId, using bookingId, recordId, updatedAt and routeUpdatedAt as current evidence. Identify the exact leg and its own mode, never substitute the first leg or the overall Booking mode. Retained off-mode transport values are not current evidence. update_booking_route proposes one allowlisted field for explicit approval even in Full access: show Booking, leg number/mode, field and before/after values. Date-only values mean midnight UTC; timestamps require an explicit timezone. Null clears a nullable field. No mode/location/carrier changes, reordering, adding/removing legs, actual/tracking dates or commercial edits are exposed by this action. Only when the separate change_booking_route_mode action is listed, propose a leg mode change using the exact identities and both timestamps. Its database-generated approval warns that shared transport references will be cleared and preserves the previous evidence in history. Never replace or downplay that review, invent its before values, or describe the change as already saved. Carrier and planned dates remain unchanged and need suitability review. Overall Booking mode changes still use Booking Details. Watching for you follows saved fields on an exact leg through deterministic signals and notifies only. If a capability is absent, explain the limit instead of claiming generic update_booking can perform the operation.
+Changing a routing step's mode always requires explicit review: use the dedicated change_booking_route_mode proposal when listed, otherwise Booking Details. Shared references start blank for the new mode; saved before/after references are retained in Activity and audit. Do not claim that an old bill of lading is now an air waybill or that generic Booking mode changes perform this per-leg review. Current mode/reference watches use booking_routes when listed. Dedicated route-reference history reads are not connected to Dexter yet; direct historical evidence requests to the job audit view rather than inventing evidence.
 An accepted Quote revision can change routing-leg modes even when the overall Job mode stays the same. Direct the operator to the accepted Quote update review in the Booking and its Inspect routing plan comparison; changing routing modes requires explicit confirmation there. Do not apply these revisions through generic Booking edits, claim a dedicated route-plan watch, or interpret a leg count as evidence of its contents. Ordinary Booking-only route edits do not by themselves make the Quote out of sync.
 An explicitly planned Quote route stays authoritative even when only one leg remains. Do not infer its mode, carrier, service or dates from the overall Quote header. Single-leg route reads, edits and watches still require the dedicated route adapter; direct the operator to Planned routing legs and the accepted-version comparison while that adapter is unavailable.
 Overall commercial Mode and physical routing-leg modes are separate. The Quote and Booking Details screens ask for review before changing overall Mode; they retain planned legs and flag a standard overall mode that no leg uses. Applying only Mode from an accepted revision must not relabel explicit or independently edited Booking legs; Routing plan is a separate reviewed selection. Do not claim that generic mode edits perform this review or that a mode-mismatch watch is connected. Direct those requests to the Details screen until the dedicated approval-safe mode adapter is available.
@@ -3124,7 +3124,7 @@ async function runStreamedAgent(
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
           const currentRecord = currentRecordsById.get(cleanString(actionArguments.target_id, 80))
-          const reason = preparedActionDescription(
+          let reason = preparedActionDescription(
             locale,
             action.code,
             actionArguments,
@@ -3133,16 +3133,13 @@ async function runStreamedAgent(
             emailState,
           )
           const evidence = documentEvidence(latestDocumentExtraction)
-          const answer = evidence
-            ? extractedActionCopy(locale, evidence.fileName, reason)
-            : actionCopy(locale, "prepared", reason)
-          const changes = actionChanges(
+          let changes: JsonObject[] = actionChanges(
             locale,
             action.code,
             actionArguments,
             currentRecord,
           )
-          let prepared: { id: string }
+          let prepared: Awaited<ReturnType<typeof prepareServerAction>>
           try {
             prepared = await prepareServerAction(admin, actor, {
               conversationId,
@@ -3161,9 +3158,16 @@ async function runStreamedAgent(
             emit({ type: "error", code: "prepared_action_unavailable", message: "Dexter could not secure that proposed change. Nothing was changed." })
             return null
           }
+          if (prepared.review) {
+            reason = prepared.review.description
+            changes = prepared.review.changes
+          }
+          const answer = evidence
+            ? extractedActionCopy(locale, evidence.fileName, reason)
+            : actionCopy(locale, "prepared", reason)
           const pendingAction = {
             id: prepared.id,
-            title: sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+            title: prepared.review?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
             description: reason,
             changes,
             ...(evidence ? { sourceEvidence: evidence } : {}),
@@ -4701,7 +4705,7 @@ Deno.serve(async (request) => {
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
           const currentRecord = currentRecordsById.get(cleanString(actionArguments.target_id, 80))
-          const reason = preparedActionDescription(
+          let reason = preparedActionDescription(
             locale,
             action.code,
             actionArguments,
@@ -4710,8 +4714,8 @@ Deno.serve(async (request) => {
             emailState,
           )
           const evidence = documentEvidence(latestDocumentExtraction)
-          const changes = actionChanges(locale, action.code, actionArguments, currentRecord)
-          let prepared: { id: string }
+          let changes: JsonObject[] = actionChanges(locale, action.code, actionArguments, currentRecord)
+          let prepared: Awaited<ReturnType<typeof prepareServerAction>>
           try {
             prepared = await prepareServerAction(admin, actor, {
               conversationId,
@@ -4729,6 +4733,10 @@ Deno.serve(async (request) => {
             console.error("Dexter prepared-action persistence failed", error instanceof Error ? error.message : "unknown")
             return json(request, { code: "prepared_action_unavailable", message: "Dexter could not secure that proposed change. Nothing was changed." }, 503)
           }
+          if (prepared.review) {
+            reason = prepared.review.description
+            changes = prepared.review.changes
+          }
           const result: DexterAgentResult = {
             answer: evidence
               ? extractedActionCopy(locale, evidence.fileName, reason)
@@ -4744,7 +4752,7 @@ Deno.serve(async (request) => {
             emailAttachments: emailState?.surfacedAttachments ?? [],
             pendingAction: {
               id: prepared.id,
-              title: sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+              title: prepared.review?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
               description: reason,
               changes,
               ...(evidence ? { sourceEvidence: evidence } : {}),

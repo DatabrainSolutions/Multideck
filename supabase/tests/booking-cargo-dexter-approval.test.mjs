@@ -57,3 +57,89 @@ test(`${action}: proposal stores both exact identities without executing a write
   assert.equal(writes.filter(x => x.table === 'AI_DexterPreparedActions').length, 1)
 })
 }
+
+test('Routing mode: explicit leg intent and mandatory approval in both access modes', () => {
+  const action = 'change_booking_route_mode'
+  for (const mode of ['approve', 'full']) assert.equal(requiresExplicitActionApproval(action, mode), true)
+  for (const prompt of ['Change the second leg to Air', 'Switch route mode to sea']) {
+    assert.equal(operatorAuthorisesAction(prompt, action), true)
+  }
+  for (const prompt of ['Show the route mode', 'Change booking mode']) {
+    assert.equal(operatorAuthorisesAction(prompt, action), false)
+  }
+})
+
+test('Routing mode: preparation returns persisted review, rejects unavailable evidence, never executes the change', async () => {
+  const action = 'change_booking_route_mode'
+  const actor = { userId: crypto.randomUUID(), companyId: crypto.randomUUID(), authUserId: crypto.randomUUID() }
+  const changes = [{ field: 'Routing leg mode', before: 'sea', after: 'air', beforeKnown: true, kind: 'changed' },
+    { field: 'Master transport reference', before: 'MBL-123', after: null, beforeKnown: true, kind: 'removed' }]
+  let response = { data: { AIDexterPrepared_Title: 'Change TEST1 · Leg 2 mode',
+    AIDexterPrepared_Description: 'Warning: shared references will be cleared.', AIDexterPrepared_ChangesJSON: changes }, error: null }
+  const writes = []
+  const admin = { from(table) {
+    const builder = { select: () => builder, eq: () => builder, gt: () => builder,
+      maybeSingle: async () => ({ data: { AIDexterIntent_AllowedActionsJSON: [action], AIDexterIntent_AccessMode: 'full' }, error: null }),
+      insert: row => { writes.push({ table, row }); return builder }, single: async () => response }
+    return builder
+  }, rpc: () => assert.fail('Preparing must not execute a change') }
+  const input = { conversationId: null, clientSessionId: crypto.randomUUID(), intentPlanId: crypto.randomUUID(), grantId: crypto.randomUUID(),
+    actionCode: action, arguments: { target_id: crypto.randomUUID(), route_id: crypto.randomUUID(), mode: 'air',
+      expected_updated_at: '2026-09-05T12:00:00Z', expected_route_updated_at: '2026-09-05T12:00:00Z', reason: 'Operator changed service' },
+    title: 'Harmless change', description: 'Nothing will be cleared', changes: [], accessMode: 'full' }
+  const prepared = await prepareServerAction(admin, actor, input)
+  assert.deepEqual(prepared.review, { title: response.data.AIDexterPrepared_Title, description: response.data.AIDexterPrepared_Description, changes })
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0].table, 'AI_DexterPreparedActions')
+  assert.equal(writes[0].row.AIDexterPrepared_Status, 'prepared')
+  for (const invalid of [{ data: null, error: { message: 'unavailable' } },
+    { data: { ...response.data, AIDexterPrepared_ChangesJSON: [null] }, error: null }]) {
+    response = invalid
+    await assert.rejects(prepareServerAction(admin, actor, input), /prepared_action_unavailable/)
+  }
+})
+
+// Execute each real response branch with only external/model dependencies
+// replaced. This covers what is emitted/persisted, not just source markers.
+const agentSource = readFileSync(new URL('../functions/agent-dexter/index.ts', import.meta.url), 'utf8')
+const branchStart = '} else if (requiresExplicitActionApproval(action.code, accessMode)) {'
+const branchEnd = '\n        } else {\n          if (!security.allowedActionCodes.includes(action.code)'
+let offset = 0
+for (const streaming of [true, false]) {
+  const start = agentSource.indexOf(branchStart, offset) + branchStart.length
+  const end = agentSource.indexOf(branchEnd, start)
+  assert.ok(start >= branchStart.length && end > start, 'Actual mandatory approval response branch found')
+  offset = end
+  const executableBranch = stripTypeScriptTypes(`async function responseBranch(deps: any) {
+    const { argumentsWithDocumentEvidence, args, latestDocumentExtraction, currentRecordsById, cleanString,
+      preparedActionDescription, locale, action, emailState, documentEvidence, actionChanges, prepareServerAction,
+      admin, actor, conversationId, security, sanitiseAnswer, actionDisplayName, accessMode, emit,
+      extractedActionCopy, actionCopy, lane, route, PROMPT_VERSION, domainCodes, emailProviders,
+      reasoningSummaries, usage, json, request, persistExchange } = deps;
+    ${agentSource.slice(start, end)}
+  }`)
+  const responseBranch = new Function(`${executableBranch}; return responseBranch`)()
+  test(`Routing mode: ${streaming ? 'streamed' : 'persisted'} response displays canonical review in card and answer`, async () => {
+    const review = { title: 'Change TEST1 · Leg 1 mode', description: 'Warning: shared transport references will be cleared.',
+      changes: [{ field: 'Master transport reference', before: 'MBL-1', after: null, beforeKnown: true, kind: 'removed' }] }
+    const events = [], persisted = []
+    const deps = { args: {}, latestDocumentExtraction: null, currentRecordsById: new Map(), cleanString: () => '',
+      argumentsWithDocumentEvidence: args => args, preparedActionDescription: () => 'Misleading model copy',
+      locale: 'en-GB', action: { code: 'change_booking_route_mode', name: 'Model title', description: 'Model description' },
+      emailState: null, documentEvidence: () => null, actionChanges: () => [],
+      prepareServerAction: async () => ({ id: 'prepared-id', review }), admin: {}, actor: {}, conversationId: null,
+      security: {}, sanitiseAnswer: value => value, actionDisplayName: () => 'Model title', accessMode: 'full',
+      emit: event => events.push(event), extractedActionCopy: (_locale, _file, reason) => reason,
+      actionCopy: (_locale, _kind, reason) => reason, lane: 'test', route: {}, PROMPT_VERSION: 'test',
+      domainCodes: [], emailProviders: [], reasoningSummaries: [], usage: {}, request: {},
+      json: (_request, value) => value, persistExchange: async result => { persisted.push(result); return result } }
+    const response = await responseBranch(deps)
+    const result = streaming ? response : response.conversation
+    assert.deepEqual(result.pendingAction, { id: 'prepared-id', ...review })
+    assert.equal(result.answer, review.description)
+    if (streaming) {
+      assert.deepEqual(events.find(event => event.type === 'pending_action').pendingAction, result.pendingAction)
+      assert.equal(events.find(event => event.type === 'delta').delta, review.description)
+    } else assert.deepEqual(persisted, [result])
+  })
+}
