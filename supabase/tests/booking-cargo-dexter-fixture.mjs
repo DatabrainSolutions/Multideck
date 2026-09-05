@@ -203,6 +203,10 @@ begin
   threshold_watch := (result->>'id')::uuid;
   perform public.multideck_dexter_action_update_booking_cargo(company,actor,proposal || '{"value":"46"}');
   if exists(select 1 from public."AI_DexterWatchEvents" where "AIDexterWatchEvent_WatchID"=threshold_watch) then raise exception 'Nonmatching threshold fired'; end if;
+  perform public.multideck_dexter_action_update_booking_cargo(company,actor,proposal || '{"value":"100.01"}');
+  if (select count(*) from public."AI_DexterWatchEvents" where "AIDexterWatchEvent_WatchID"=threshold_watch)<>1 then raise exception 'Matching decimal threshold silent'; end if;
+  perform public.multideck_dexter_action_update_booking_cargo(company,actor,proposal || '{"value":"100.01"}');
+  if (select count(*) from public."AI_DexterWatchEvents" where "AIDexterWatchEvent_WatchID"=threshold_watch)<>1 then raise exception 'Decimal no-op notified'; end if;
   select count(*) into before_count from public."AI_DexterWatchEvents";
   update public."cmp_Users" set "User_AccessStatus"='revoked' where "User_ID"=actor;
   update public."Job_Cargo" set "JobCargo_GrossKilos"=200 where "JobCargo_ID"=line2;

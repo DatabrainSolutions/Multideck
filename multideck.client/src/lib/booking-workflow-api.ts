@@ -27,19 +27,19 @@ export type BookingWorkflowCargo = {
   description?: string | null
   knownCargo?: string | null
   commodity?: string | null
-  pieces?: number | null
+  pieces?: string | number | null
   packageType?: string | null
-  packageQuantity?: number | null
-  grossWeightKg?: number | null
-  netWeightKg?: number | null
-  volumeCbm?: number | null
-  length?: number | null
-  width?: number | null
-  height?: number | null
+  packageQuantity?: string | number | null
+  grossWeightKg?: string | number | null
+  netWeightKg?: string | number | null
+  volumeCbm?: string | number | null
+  length?: string | number | null
+  width?: string | number | null
+  height?: string | number | null
   lengthUnit?: string | null
   hsCode?: string | null
   countryOfOrigin?: string | null
-  declaredValue?: number | null
+  declaredValue?: string | number | null
   declaredValueCurrency?: string | null
   isHazardous?: boolean
   isTemperatureControlled?: boolean

@@ -4767,9 +4767,9 @@ export function BookingDetailWorkspace({
       const existing = cargo[index]
       const safetyField = field === "isHazardous" || field === "isTemperatureControlled"
       if (safetyField && value !== "Yes" && value !== "No") return current
-      const numericFields = new Set<keyof BookingWorkflowCargo>(["pieces", "packageQuantity", "grossWeightKg", "netWeightKg", "volumeCbm", "declaredValue", "length", "width", "height"])
-      const numericValue = value.trim() === "" ? null : Number(value.replaceAll(",", ""))
-      const nextValue = safetyField ? value === "Yes" : numericFields.has(field) ? (Number.isFinite(numericValue) ? numericValue : null) : value
+      // Preserve decimal and incomplete input exactly. The canonical save
+      // validates numeric range/scale; invalid input must not become a clear.
+      const nextValue = safetyField ? value === "Yes" : value
       const nextCargo = { ...existing, [field]: nextValue, cargoData: { ...existing.cargoData, [field]: safetyField ? nextValue : value } }
       if (safetyField || field === "knownCargo") {
         nextCargo.knownCargo = bookingCargoHandlingSummary(nextCargo, existing)

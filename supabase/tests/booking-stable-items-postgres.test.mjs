@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { cargoDexterFixture, cargoProjection, cargoDexterMigration, cargoDexterAssertions } from './booking-cargo-dexter-fixture.mjs'
 import { mutateBookingCargo } from './booking-cargo-client-fixture.mjs'
+import { cargoDecimalAssertions } from './booking-cargo-decimal-fixture.mjs'
 
 // Executes the actual save function against disposable PostgreSQL, never a tenant.
 // PG_TEST_BIN can point to a PostgreSQL bin directory in CI.
@@ -13,6 +14,7 @@ const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
 const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
 const baseline = readFileSync(new URL('../baseline/public-schema.sql', import.meta.url), 'utf8')
 const migration = readFileSync(new URL('../migrations/20260905110317_booking_stable_cargo_equipment_identity.sql', import.meta.url), 'utf8')
+const decimalMigration = readFileSync(new URL('../migrations/20260905172223_booking_cargo_decimal_boundary.sql', import.meta.url), 'utf8')
 const safetyEdit = mutateBookingCargo({ cargo: [{ description: 'First edited', grossWeightKg: 10,
   isHazardous: true, isTemperatureControlled: true, knownCargo: 'Hazardous; Temperature controlled; Fragile' }] }, 0, 'isHazardous', 'No').cargo[0]
 function table(name) {
@@ -147,7 +149,7 @@ test('PostgreSQL: stable booking items and approved Dexter cargo lifecycle, watc
     `
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], sql)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
-      cargoProjection + cargoDexterFixture(table) + cargoDexterMigration + cargoDexterAssertions)
+      cargoProjection + cargoDexterFixture(table) + cargoDexterMigration + decimalMigration + cargoDexterAssertions + cargoDecimalAssertions)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
     rmSync(directory, { recursive: true, force: true })
