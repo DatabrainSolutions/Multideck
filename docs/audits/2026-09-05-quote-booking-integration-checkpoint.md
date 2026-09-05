@@ -43,3 +43,12 @@ No live database migrations or migration-history repairs were run. Existing depl
 - Full repository suite and complete live lifecycle were not rerun for this checkpoint. The earlier broad-suite limitations still apply.
 - Recovery tag for the refreshed integration: `safety/quote-booking-dev-sync-2026-09-05`.
 - This is a source-control checkpoint, not a claim that all freight features are complete or that database migrations have been deployed. No live database, customer data, Vercel settings or team configuration was changed in this integration pass.
+
+## Verified cargo checkpoint publication, 5 September 2026
+
+- Fresh `origin/dev` is `390de33`, already an ancestor of the clean working branch. Only `ed33640` and `d8a8bae` were ahead; no conflicts or replacement of the team's changes were necessary.
+- The isolated Dexter cargo draft has now received the verification described in the completion ledger. It is included in this source checkpoint, superseding the earlier instruction to leave the unverified draft out of dev. Live migration reconciliation and deployment remain separate, unfinished work.
+- Reran the focused cargo approval, real disposable PostgreSQL lifecycle, security and support parity checks: 24 passed, zero failed, zero skipped. The earlier repository-wide limitations remain; this is not a claim that all tests or all freight workflows are complete.
+- Production client build passed again (TypeScript and Vite), with the existing bundle-size warning.
+- Existing Quote/Booking lifecycle decisions remain unchanged. No additional feature implementation or live database changes were undertaken for this checkpoint.
+- Recovery tag for this publication: `safety/quote-booking-verified-cargo-2026-09-05`. The earlier dev checkpoint remains available at `safety/quote-booking-dev-sync-2026-09-05`.
