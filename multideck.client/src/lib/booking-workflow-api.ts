@@ -23,6 +23,7 @@ export type BookingWorkflowCargo = {
   id?: string
   lineNumber?: number
   description?: string | null
+  knownCargo?: string | null
   commodity?: string | null
   pieces?: number | null
   packageType?: string | null
@@ -30,6 +31,10 @@ export type BookingWorkflowCargo = {
   grossWeightKg?: number | null
   netWeightKg?: number | null
   volumeCbm?: number | null
+  length?: number | null
+  width?: number | null
+  height?: number | null
+  lengthUnit?: string | null
   hsCode?: string | null
   countryOfOrigin?: string | null
   declaredValue?: number | null
@@ -45,7 +50,11 @@ export type BookingWorkflowContainer = {
   type?: string | null
   equipmentKind?: string | null
   status?: string | null
+  packages?: string | number | null
+  packageType?: string | null
   grossWeightKg?: number | null
+  volumeCbm?: string | number | null
+  sealNumber?: string | null
   notes?: string | null
   data?: Record<string, unknown>
 }
@@ -85,14 +94,23 @@ export type BookingWorkflowRoute = {
 
 export type BookingWorkflowDocument = {
   id: string
+  category?: "quote" | "job" | "customs" | null
   typeCode?: string | null
   title: string
+  description?: string | null
   status?: string | null
+  source?: string | null
   fileName?: string | null
   mimeType?: string | null
   fileSizeBytes?: number | null
-  isPrimary?: boolean
+  version?: string | number | null
+  isCurrent?: boolean
+  documentDate?: string | null
+  receivedAt?: string | null
   createdAt?: string | null
+  sourceRecordId?: string | null
+  sourceReference?: string | null
+  metadata?: Record<string, unknown> | null
 }
 
 export type BookingWorkflowDeclaration = {
@@ -169,6 +187,7 @@ export type BookingWorkflowWorkspace = {
     sourceQuoteVersionId?: string | null
     sourceQuoteResponseId?: string | null
     sourceSnapshot?: Record<string, unknown>
+    editableDetails?: Record<string, unknown>
     createdAt: string
     updatedAt: string
   }
@@ -205,6 +224,35 @@ export type BookingCustomsHandoff = {
   reused: boolean
 }
 
+export type BookingQuoteSyncDifference = {
+  key: string
+  label: string
+  section: string
+  previousQuoteValue: unknown
+  bookingValue: unknown
+  newQuoteValue: unknown
+  bookingChanged: boolean
+  conflict: boolean
+  requiresConfirmation: boolean
+  warningCode?: "mode_change" | "booking_changed" | null
+  recommendation: "apply" | "review"
+}
+
+export type BookingQuoteSyncReview = {
+  reviewId: string
+  jobId: string
+  quoteId: string
+  quoteReference: string
+  appliedVersionId?: string | null
+  appliedVersionNumber?: number | null
+  proposedVersionId: string
+  proposedVersionNumber: number
+  status: "pending" | "partially_applied"
+  differences: BookingQuoteSyncDifference[]
+  appliedFields: string[]
+  createdAt: string
+}
+
 function requireClient() {
   if (!supabase) throw new Error("Bookings are unavailable until this workspace is connected.")
   return supabase
@@ -223,10 +271,17 @@ async function functionError(error: unknown, fallback: string) {
   return error instanceof Error && error.message && !error.message.includes("non-2xx") ? error : new Error(fallback)
 }
 
-async function invoke<T>(body: Record<string, unknown>, fallback: string) {
+async function invoke<T>(body: Record<string, unknown>, fallback: string): Promise<T> {
   const { data, error } = await requireClient().functions.invoke<T>("bookings-workflow", { method: "POST", body })
   if (error) throw await functionError(error, fallback)
-  if (!data) throw new Error(fallback)
+  if (data === undefined || data === null) throw new Error(fallback)
+  return data
+}
+
+async function invokeNullable<T>(body: Record<string, unknown>, fallback: string): Promise<T | null> {
+  const { data, error } = await requireClient().functions.invoke<T | null>("bookings-workflow", { method: "POST", body })
+  if (error) throw await functionError(error, fallback)
+  if (data === undefined) throw new Error(fallback)
   return data
 }
 
@@ -244,6 +299,20 @@ export function getBookingWorkflow(reference: string) {
 
 export function saveBookingWorkflow(jobId: string, booking: Record<string, unknown>) {
   return invoke<BookingWorkflowWorkspace>({ action: "save", jobId, booking }, "The booking could not be saved.")
+}
+
+export function getBookingQuoteSyncReview(jobId: string) {
+  return invokeNullable<BookingQuoteSyncReview>({ action: "quote-sync-review", jobId }, "The accepted quote update could not be checked.")
+}
+
+export function applyBookingQuoteSync(jobId: string, reviewId: string, fields: string[], confirmModeChange = false) {
+  return invoke<{ reviewId: string; status: "applied" | "partially_applied"; appliedFields: string[]; remainingFields: number; workspace: BookingWorkflowWorkspace }>({
+    action: "apply-quote-sync",
+    jobId,
+    reviewId,
+    fields,
+    confirmModeChange,
+  }, "The accepted quote update could not be applied.")
 }
 
 export function getBookingCustomsReadiness(jobId: string) {

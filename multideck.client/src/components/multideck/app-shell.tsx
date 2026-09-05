@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
-import { Menu } from "@/components/icons/hugeicons"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { ArrowRight, CheckCircle2, Menu, PencilEdit01, TriangleAlert, X, XCircle } from "@/components/icons/hugeicons"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { useSidebarCollapsed } from "@/lib/sidebar-preferences"
 import { useLanguage } from "@/i18n/language-provider"
@@ -13,8 +14,183 @@ import { MeetingDialogHost } from "./meeting-dialog"
 import { cn } from "@/lib/utils"
 import { InboxWorkspaceProvider } from "@/lib/inbox-workspace"
 import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
+import { dismissWorkspaceNotification, markWorkspaceNotificationRead, workspaceNotificationFromRow, type WorkspaceNotification } from "@/lib/notification-api"
+import { supabase } from "@/lib/supabase"
 
 const warehouseItemsScrollKey = "multideck:warehouse:items:scroll-top"
+
+async function retryNotificationAction(action: () => Promise<void>) {
+  let lastError: unknown
+  for (const delay of [0, 500, 1_500]) {
+    if (delay) await new Promise((resolve) => window.setTimeout(resolve, delay))
+    try {
+      await action()
+      return
+    } catch (reason) {
+      lastError = reason
+    }
+  }
+  throw lastError
+}
+
+function quoteResponsePresentation(notification: WorkspaceNotification) {
+  const decision = typeof notification.metadata.decision === "string" ? notification.metadata.decision : ""
+  if (decision === "accepted") return { label: "Accepted", toneClass: "bg-[var(--md-status-green-bg)] text-[var(--md-status-green-ink)]", icon: CheckCircle2 }
+  if (decision === "declined") return { label: "Declined", toneClass: "bg-[var(--md-status-red-bg)] text-[var(--md-status-red-ink)]", icon: XCircle }
+  if (decision === "challenged") return { label: "Changes requested", toneClass: "bg-[var(--md-status-amber-bg)] text-[var(--md-status-amber-ink)]", icon: PencilEdit01 }
+  return { label: "Customer response", toneClass: "bg-[var(--md-status-amber-bg)] text-[var(--md-status-amber-ink)]", icon: TriangleAlert }
+}
+
+function CustomerResponseNotificationQueue({
+  currentUser,
+  navigate,
+  route,
+}: {
+  currentUser?: AuthUserSummary | null
+  navigate: (path: string) => void
+  route: string
+}) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const [queue, setQueue] = useState<WorkspaceNotification[]>([])
+  const [waitingForRoute, setWaitingForRoute] = useState<string | null>(null)
+  const seenIds = useRef(new Set<string>())
+  const active = queue[0] ?? null
+
+  const enqueue = useCallback((row: Record<string, unknown>) => {
+    if (!currentUser?.internalUserId || row.CommNotif_UserID !== currentUser.internalUserId) return
+    const notification = workspaceNotificationFromRow(row)
+    if (notification.status !== "unread"
+      || notification.metadata.event_type !== "quote_response"
+      || seenIds.current.has(notification.id)) return
+    seenIds.current.add(notification.id)
+    setQueue((current) => [...current, notification].sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)))
+  }, [currentUser?.internalUserId])
+
+  useEffect(() => {
+    const client = supabase
+    const internalUserId = currentUser?.internalUserId
+    if (!client || !internalUserId) return
+    let disposed = false
+    let retryTimer = 0
+    let channel: ReturnType<typeof client.channel> | null = null
+
+    const connect = () => {
+      if (disposed) return
+      const nextChannel = client
+        .channel(`quote-response-popups-${crypto.randomUUID()}`)
+        .on("postgres_changes", {
+          event: "INSERT",
+          schema: "public",
+          table: "Comm_Notifications",
+          filter: `CommNotif_UserID=eq.${internalUserId}`,
+        }, (payload) => enqueue(payload.new as Record<string, unknown>))
+      channel = nextChannel
+      nextChannel.subscribe((status) => {
+        if (disposed || channel !== nextChannel || status === "SUBSCRIBED") return
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          channel = null
+          if (status !== "CLOSED") void client.removeChannel(nextChannel)
+          window.clearTimeout(retryTimer)
+          retryTimer = window.setTimeout(connect, 2_500)
+        }
+      })
+    }
+
+    connect()
+    return () => {
+      disposed = true
+      window.clearTimeout(retryTimer)
+      const activeChannel = channel
+      channel = null
+      if (activeChannel) void client.removeChannel(activeChannel)
+    }
+  }, [currentUser?.internalUserId, enqueue])
+
+  const advance = useCallback(() => {
+    setQueue((current) => current.slice(1))
+    setWaitingForRoute(null)
+  }, [])
+
+  useEffect(() => {
+    if (!active || waitingForRoute) return
+    const timer = window.setTimeout(advance, 5_500)
+    return () => window.clearTimeout(timer)
+  }, [active, waitingForRoute, advance])
+
+  useLayoutEffect(() => {
+    if (!waitingForRoute || route !== waitingForRoute) return
+    let secondFrame = 0
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(advance)
+    })
+    return () => {
+      window.cancelAnimationFrame(firstFrame)
+      window.cancelAnimationFrame(secondFrame)
+    }
+  }, [route, waitingForRoute, advance])
+
+  if (!active) return null
+  const presentation = quoteResponsePresentation(active)
+  const ResponseIcon = presentation.icon
+  const actionUrl = typeof active.metadata.action_url === "string" && active.metadata.action_url.startsWith("/")
+    ? active.metadata.action_url
+    : null
+
+  function closeNotification() {
+    advance()
+    void retryNotificationAction(() => dismissWorkspaceNotification(active.id)).catch(() => {
+      // The bell retains the notification when persistence cannot be confirmed.
+    })
+  }
+
+  function openNotification() {
+    void retryNotificationAction(() => markWorkspaceNotificationRead(active.id)).catch(() => {
+      // Navigation remains useful; the bell can still be updated manually.
+    })
+    if (!actionUrl) {
+      advance()
+      return
+    }
+    setWaitingForRoute(actionUrl)
+    navigate(actionUrl)
+  }
+
+  return (
+    <div className="pointer-events-none fixed end-4 top-4 z-[90] w-[min(390px,calc(100vw-2rem))] sm:end-5 sm:top-5" aria-live="polite" aria-atomic="true">
+      <AnimatePresence initial={false} mode="wait">
+        <motion.section
+          key={active.id}
+          role="region"
+          aria-label={t("Customer quote response")}
+          initial={shouldReduceMotion ? false : { opacity: 0, y: -10, scale: 0.985 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -7, scale: 0.99 }}
+          transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          className="pointer-events-auto overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-glass-strong)] p-1.5 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] backdrop-blur-xl"
+        >
+          <div className="flex items-start gap-2.5 rounded-[calc(var(--md-radius-xl)-6px)] bg-[var(--md-surface)] px-3 py-3 shadow-[var(--md-shadow-line)]">
+            <span className={cn("mt-0.5 grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)]", presentation.toneClass)}>
+              <ResponseIcon className="size-4" strokeWidth={1.5} aria-hidden="true" />
+            </span>
+            <button type="button" className="min-w-0 flex-1 text-start outline-none focus-visible:rounded-[var(--md-radius-md)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" onClick={openNotification}>
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="text-[10.5px] font-medium uppercase tracking-[0.065em] text-[var(--md-subtle)]">{t(presentation.label)}</span>
+                <span className="text-[10.5px] text-[var(--md-subtle)]">{t("Customer quote response")}</span>
+              </span>
+              <span className="mt-1 block text-[13px] font-medium leading-5 text-[var(--md-ink)]">{t(active.title)}</span>
+              <span className="mt-0.5 block text-[12px] leading-[1.5] text-[var(--md-text)]">{t(active.body)}</span>
+              {actionUrl ? <span className="mt-2 inline-flex items-center gap-1.5 text-[11.5px] font-medium text-[var(--md-accent)]">{t(waitingForRoute ? "Opening quote..." : "Open quote")}<ArrowRight className="size-3.5" strokeWidth={1.5} aria-hidden="true" /></span> : null}
+            </button>
+            <Button type="button" variant="ghost" size="icon" aria-label={t("Dismiss notification")} className="size-9 shrink-0 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]" onClick={closeNotification}>
+              <X className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+            </Button>
+          </div>
+        </motion.section>
+      </AnimatePresence>
+    </div>
+  )
+}
 
 function readWarehouseItemsScrollTop() {
   try {
@@ -151,6 +327,7 @@ export function AppShell({
         </main>
       </div>
       {currentUser?.actorType === "internal" ? <MeetingDialogHost navigate={navigate} /> : null}
+      <CustomerResponseNotificationQueue currentUser={currentUser} navigate={navigate} route={route} />
       {supportTicketFeatureEnabled ? <SupportTicketDialog currentUser={currentUser} /> : null}
     </div>
   )

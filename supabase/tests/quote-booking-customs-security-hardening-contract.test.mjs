@@ -19,7 +19,7 @@ const [migration, bookingEdge, quoteEdge, quoteClient, bookingClient, dexterEdge
 
 test("email sends always require the operator's final approval", () => {
   assert.match(dexterEdge, /requiresExplicitActionApproval\(actionCode, input\.accessMode\)/)
-  assert.match(dexterEdge, /Sending email is the exception: always prepare the exact message/)
+  assert.match(dexterEdge, /if \(requiresExplicitActionApproval\(actionCode, input\.accessMode\)\)/)
   assert.equal(requiresExplicitActionApproval("send_email", "full"), true)
   assert.equal(requiresExplicitActionApproval("create_email_draft", "full"), false)
 })

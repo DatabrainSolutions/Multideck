@@ -4,11 +4,12 @@ import test from "node:test"
 
 const root = new URL("../", import.meta.url)
 const read = (path) => readFile(new URL(path, root), "utf8")
-const [migration, pagingMigration, refreshNoiseMigration, supportingReadMigration, edgeFunction, config, dexter] = await Promise.all([
+const [migration, pagingMigration, refreshNoiseMigration, supportingReadMigration, quotePresenceMigration, edgeFunction, config, dexter] = await Promise.all([
   read("migrations/20260818134500_admin_audit_workspace.sql"),
   read("migrations/20260819110000_admin_audit_register_paging.sql"),
   read("migrations/20260820190000_hide_session_refreshes_from_detailed_audit.sql"),
   read("migrations/20260819142000_admin_presence_inbox_reply_bounds.sql"),
+  read("migrations/20260904150000_quote_editor_presence.sql"),
   read("functions/admin-audit/index.ts"),
   read("config.toml"),
   read("functions/agent-dexter/index.ts"),
@@ -51,6 +52,22 @@ test("active presence is event-like browser evidence and not inferred from an op
   assert.match(supportingReadMigration, /"Presence_CompanyID",\s+"Presence_LastSeenAt" desc/)
   assert.match(edgeFunction, /request\.headers\.get\("cf-connecting-ip"\)/)
   assert.match(config, /\[functions\.admin-audit\][\s\S]*?verify_jwt = true/)
+})
+
+test("quote editor awareness is exact-route, tenant-safe and excludes sensitive presence evidence", () => {
+  assert.match(edgeFunction, /parts\.length === 2.*parts\[0\] === "presence".*parts\[1\] === "quote".*request\.method === "POST"/)
+  assert.ok(edgeFunction.includes('!/^\\/quotes\\/[a-z0-9-]{1,80}$/.test(route)'))
+  assert.match(edgeFunction, /route === "\/quotes\/new"/)
+  assert.match(edgeFunction, /\.eq\("Presence_CompanyID", current\.Company_ID\)/)
+  assert.match(edgeFunction, /\.eq\("Presence_LastRoute", route\)/)
+  assert.match(edgeFunction, /\.neq\("Presence_UserID", current\.User_ID\)/)
+  assert.match(edgeFunction, /Date\.now\(\) - 90_000/)
+  assert.match(edgeFunction, /\.limit\(6\)/)
+  assert.match(edgeFunction, /select\("User_ID,User_Firstname,User_Lastname,User_Email"\)/)
+  assert.doesNotMatch(edgeFunction.match(/async function quoteEditors[\s\S]*?\n\}/)?.[0] ?? "", /Presence_IPAddress|Presence_UserAgent/)
+  assert.match(quotePresenceMigration, /"IX_Admin_UserPresence_quote_editors"/)
+  assert.match(quotePresenceMigration, /where "Presence_LastRoute" like '\/quotes\/%'/)
+  assert.match(quotePresenceMigration, /not a Dexter data domain or Watching for you source/)
 })
 
 test("sensitive admin evidence is an explicit Dexter and Watching for you exception", () => {

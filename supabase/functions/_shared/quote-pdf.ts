@@ -25,8 +25,13 @@ export type QuotePdfDataset = {
     customerEmail: string
     customerAddress: string
     customerReference: string
+    billedToName: string
+    billedToAddress: string
+    billedToContact: string
+    billedToEmail: string
   }
   journey: Array<{ label: string; value: string }>
+  routes: Array<{ leg: string; mode: string; movement: string; schedule: string; carrierService: string }>
   shipment: Array<{ label: string; value: string }>
   charges: Array<{ description: string; notes: string; quantity: string; rate: string; amount: string }>
   totals: Array<{ label: string; amount: string }>
@@ -46,10 +51,10 @@ export type GeneratedQuotePdf = {
 
 // The HTML is deliberately kept beside the renderer. It is a real Carbone
 // template, not a second browser-only representation of the quote.
-export const quotePdfTemplate = `<!doctype html>
+export const quotePdfTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   <style>
     @page { size: A4; margin: 14mm 15mm 15mm; }
     * { box-sizing: border-box; }
@@ -77,6 +82,13 @@ export const quotePdfTemplate = `<!doctype html>
     .journey { width: 100%; margin: 0 0 14px; border-collapse: collapse; table-layout: fixed; background: #f2f6f3; }
     .journey td { width: 25%; padding: 11px 12px; vertical-align: top; }
     .journey td + td { border-left: 1px solid #d9e2dd; }
+    .route-plan { margin: 0 0 18px; break-inside: avoid; }
+    .route-plan-title { margin: 0 0 7px; color: #526864; font-size: 9px; font-weight: 650; letter-spacing: 0.4px; text-transform: uppercase; }
+    .routes { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .routes th { padding: 0 7px 6px 0; border-bottom: 1px solid #82938f; color: #526864; font-size: 7.5px; font-weight: 650; letter-spacing: 0.35px; text-align: left; text-transform: uppercase; }
+    .routes th:last-child, .routes td:last-child { padding-right: 0; }
+    .routes td { padding: 7px 7px 7px 0; border-bottom: 1px solid #e1e6e2; vertical-align: top; }
+    .routes .route-leg { color: #526864; font-weight: 650; }
     .shipment { width: 100%; margin-bottom: 20px; border-collapse: collapse; table-layout: fixed; border-top: 1px solid #82938f; border-bottom: 1px solid #d9e2df; }
     .shipment td { width: 25%; padding: 9px 12px 10px 0; vertical-align: top; }
     .shipment td + td { padding-left: 12px; }
@@ -113,14 +125,14 @@ export const quotePdfTemplate = `<!doctype html>
       </div>
     </div>
     <div class="logo-cell">
-      <img class="logo" src="{d.company.logoDataUri}" alt="">
+      <img class="logo" src="{d.company.logoDataUri}" alt="" />
     </div>
   </div>
 
   <table class="identity"><tr>
-    <td><div class="label">Billed to</div><div class="value">{d.quote.customerName}</div><p>{d.quote.customerAddress}</p><p>{d.quote.contactName}<br>{d.quote.customerEmail}</p></td>
-    <td><div class="label">From</div><div class="value">{d.company.name}</div><p>{d.company.address}</p><p>Registration {d.company.registration}<br>VAT {d.company.vatNumber}</p></td>
-    <td><div class="label">Contact</div><div class="value">Customer ref {d.quote.customerReference}</div><p>{d.company.email}<br>{d.company.website}</p><p class="muted">Quote version {d.quote.version}</p></td>
+    <td><div class="label">Billed to</div><div class="value">{d.quote.billedToName}</div><p>{d.quote.billedToAddress}</p><p>{d.quote.billedToContact}<br />{d.quote.billedToEmail}</p></td>
+    <td><div class="label">From</div><div class="value">{d.company.name}</div><p>{d.company.address}</p><p>Registration {d.company.registration}<br />VAT {d.company.vatNumber}</p></td>
+    <td><div class="label">Contact</div><div class="value">Customer ref {d.quote.customerReference}</div><p>{d.company.email}<br />{d.company.website}</p><p class="muted">Quote version {d.quote.version}</p></td>
   </tr></table>
 
   <table class="journey"><tr>
@@ -129,6 +141,19 @@ export const quotePdfTemplate = `<!doctype html>
     <td><div class="label">{d.journey[2].label}</div><div class="value">{d.journey[2].value}</div></td>
     <td><div class="label">{d.journey[3].label}</div><div class="value">{d.journey[3].value}</div></td>
   </tr></table>
+
+  <div class="route-plan">
+    <div class="route-plan-title">Planned route</div>
+    <table class="routes">
+      <colgroup><col style="width:7%" /><col style="width:10%" /><col style="width:33%" /><col style="width:25%" /><col style="width:25%" /></colgroup>
+      <thead><tr><th>Leg</th><th>Mode</th><th>Movement</th><th>Planned schedule</th><th>Carrier / service</th></tr></thead>
+      <tbody>
+        {d.routes[i]}
+        <tr><td class="route-leg">{d.routes[i].leg}</td><td>{d.routes[i].mode}</td><td>{d.routes[i].movement}</td><td>{d.routes[i].schedule}</td><td>{d.routes[i].carrierService}</td></tr>
+        {d.routes[i+1]}
+      </tbody>
+    </table>
+  </div>
 
   <table class="shipment"><tr>
     <td><div class="label">{d.shipment[0].label}</div><div class="value">{d.shipment[0].value}</div></td>
@@ -140,16 +165,18 @@ export const quotePdfTemplate = `<!doctype html>
   <div class="pricing">
     <div class="pricing-title">Cost breakdown</div>
     <table class="charges">
-      <colgroup><col style="width:52%"><col style="width:18%"><col style="width:12%"><col style="width:18%"></colgroup>
+      <colgroup><col style="width:52%" /><col style="width:18%" /><col style="width:12%" /><col style="width:18%" /></colgroup>
       <thead><tr><th>Description</th><th>Unit rate</th><th>Quantity</th><th>Amount</th></tr></thead>
       <tbody>
+        {d.charges[i]}
         <tr><td>{d.charges[i].description}<div class="charge-note">{d.charges[i].notes}</div></td><td>{d.charges[i].rate}</td><td>{d.charges[i].quantity}</td><td>{d.charges[i].amount}</td></tr>
-        <tr style="display:none"><td>{d.charges[i+1]}</td><td></td><td></td><td></td></tr>
+        {d.charges[i+1]}
       </tbody>
     </table>
     <table class="totals"><tbody>
+      {d.totals[i]}
       <tr><td class="total-label">{d.totals[i].label}</td><td class="total-amount">{d.totals[i].amount}</td></tr>
-      <tr style="display:none"><td>{d.totals[i+1]}</td><td></td></tr>
+      {d.totals[i+1]}
     </tbody></table>
   </div>
 
@@ -201,6 +228,47 @@ function safeReference(value: string) {
   return value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "quote"
 }
 
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
+function replaceCollection(template: string, collection: "routes" | "charges" | "totals", rows: string) {
+  const start = `{d.${collection}[i]}`
+  const end = `{d.${collection}[i+1]}`
+  const startIndex = template.indexOf(start)
+  const endIndex = template.indexOf(end, startIndex + start.length)
+  if (startIndex < 0 || endIndex < 0) throw new Error(`Quote PDF ${collection} template markers are unavailable`)
+  return `${template.slice(0, startIndex)}${rows}${template.slice(endIndex + end.length)}`
+}
+
+function datasetValue(dataset: QuotePdfDataset, path: string) {
+  return path.replace(/\[(\d+)\]/g, ".$1").split(".").reduce<unknown>((value, key) => {
+    if (!value || typeof value !== "object") return ""
+    return (value as Record<string, unknown>)[key]
+  }, dataset)
+}
+
+export function renderQuotePdfHtml(dataset: QuotePdfDataset) {
+  const routeRows = dataset.routes.map((route) => `<tr><td class="route-leg">${escapeHtml(route.leg)}</td><td>${escapeHtml(route.mode)}</td><td>${escapeHtml(route.movement)}</td><td>${escapeHtml(route.schedule)}</td><td>${escapeHtml(route.carrierService)}</td></tr>`).join("")
+  const chargeRows = dataset.charges.map((charge) => `<tr><td>${escapeHtml(charge.description)}<div class="charge-note">${escapeHtml(charge.notes)}</div></td><td>${escapeHtml(charge.rate)}</td><td>${escapeHtml(charge.quantity)}</td><td>${escapeHtml(charge.amount)}</td></tr>`).join("")
+  const totalRows = dataset.totals.map((total) => `<tr><td class="total-label">${escapeHtml(total.label)}</td><td class="total-amount">${escapeHtml(total.amount)}</td></tr>`).join("")
+  const withRoutes = replaceCollection(quotePdfTemplate, "routes", routeRows)
+  const withCharges = replaceCollection(withRoutes, "charges", chargeRows)
+  const withTotals = replaceCollection(withCharges, "totals", totalRows)
+  return withTotals.replace(/\{d\.([A-Za-z0-9_.\[\]]+)\}/g, (_match, path: string) => escapeHtml(datasetValue(dataset, path)))
+}
+
+export function quotePdfName(reference: string, versionValue: unknown) {
+  const version = Number(versionValue)
+  const versionSuffix = Number.isInteger(version) && version > 1 ? ` - V${version}` : ""
+  return `${safeReference(reference)}${versionSuffix}`
+}
+
 export async function generateQuotePdf(input: {
   admin: SupabaseClient
   companyId: string
@@ -223,11 +291,11 @@ export async function generateQuotePdf(input: {
       },
       body: JSON.stringify({
         data: input.dataset,
-        template: base64Utf8(quotePdfTemplate),
+        template: `data:text/html;base64,${base64Utf8(renderQuotePdfHtml(input.dataset))}`,
         convertTo: "pdf",
         converter: "C",
         lang: "en",
-        reportName: `Quote-${safeReference(input.reference)}`,
+        reportName: quotePdfName(input.reference, input.dataset.quote.version),
       }),
       signal: controller.signal,
     })
@@ -267,7 +335,7 @@ export async function generateQuotePdf(input: {
 
   const documentId = crypto.randomUUID()
   const createdAt = new Date()
-  const fileName = `Quote-${safeReference(input.reference)}.pdf`
+  const fileName = `${quotePdfName(input.reference, input.dataset.quote.version)}.pdf`
   const environment = (Deno.env.get("MULTIDECK_ENVIRONMENT")?.trim() || "production").replace(/[^a-z0-9_-]/gi, "-")
   const path = ["v1", environment, input.companyId, "generated", "quote", input.quoteId, input.quoteVersionId, `${documentId}.pdf`].join("/")
   const digest = await sha256(bytes)

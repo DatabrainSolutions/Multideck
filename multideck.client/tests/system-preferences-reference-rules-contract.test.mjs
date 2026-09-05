@@ -110,3 +110,10 @@ test("directional booking recipes keep the visible recipe while supporting Impor
   assert.match(migration, /Job_BookingReferenceSequenceKey/u)
   assert.match(migration, /J\{DIRECTION:1\}\{NUMBER:7\}/u)
 })
+
+test("an unrelated preference failure cannot blank the saved reference rules", () => {
+  assert.match(adminPage, /Promise\.allSettled\(\[getQuoteReferenceSettings\(\), getQuoteBranding\(\), getQuoteFollowUpSettings\(\)\]\)/u)
+  assert.match(adminPage, /referenceResult\.status === "fulfilled"/u)
+  assert.match(adminPage, /setBookingPatterns\(settings\.bookingPatterns\.map/u)
+  assert.match(adminPage, /followUpResult\.status === "fulfilled"/u)
+})

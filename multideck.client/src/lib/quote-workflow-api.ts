@@ -66,12 +66,20 @@ export type QuoteOrganisationOption = QuoteSupplierOption & {
     subjectTo: string
     notes: string
     deadline: string
+    followUpDays?: number | null
   } | null
 }
-export type QuoteLookupOption = { id: string; name: string; code?: string }
+export type QuoteLookupOption = { id: string; name: string; code?: string; countryCode?: string | null }
 export type QuoteCodeOption = { code: string; name: string }
 export type QuoteCountryOption = { code: string; name: string; alpha3?: string | null }
-export type QuotePartyDraft = { orgId?: string | null; name: string; address?: string | null; contact?: string | null }
+export type QuotePartyDraft = {
+  orgId?: string | null
+  name: string
+  address?: string | null
+  contact?: string | null
+  email?: string | null
+  code?: string | null
+}
 
 export type QuoteWorkflowCharge = {
   id: string
@@ -124,6 +132,8 @@ export type QuoteWorkflowRecord = {
   incoterm?: string | null
   validFrom?: string | null
   validTo?: string | null
+  estimatedDeparture?: string | null
+  estimatedArrival?: string | null
   deadline?: string | null
   supplierId?: string | null
   supplierName?: string | null
@@ -140,6 +150,7 @@ export type QuoteWorkflowRecord = {
   followUpAt?: string | null
   outcomeNotes?: string | null
   acceptedVersionId?: string | null
+  payer?: QuotePartyDraft | null
   shipper?: QuotePartyDraft | null
   consignee?: QuotePartyDraft | null
 }
@@ -149,7 +160,16 @@ export type QuoteWorkflowVersion = {
   CusQuoteVersion_Number: number
   CusQuoteVersion_StatusCode: string
   CusQuoteVersion_IsCurrent: boolean
+  CusQuoteVersion_IsSubmitted?: boolean
   CusQuoteVersion_CreatedAt: string
+  CusQuoteVersion_SubmittedAt?: string | null
+  CusQuoteVersion_SubmittedBy?: string | null
+  CusQuoteVersion_SnapshotJSON?: {
+    reference?: string
+    lifecycle?: string
+    savedAt?: string
+    quote?: QuoteSavePayload
+  } | null
   CusQuoteVersion_IssuedAt?: string | null
   CusQuoteVersion_GeneratedDocumentID?: string | null
   DOCB_GeneratedDocuments?: {
@@ -167,13 +187,14 @@ export type QuoteWorkflowEvent = {
   CusQuoteEvent_TypeCode: string
   CusQuoteEvent_Summary: string
   CusQuoteEvent_OccurredAt: string
-  CusQuoteEvent_MetadataJSON?: { message?: string | null; competitorDocumentId?: string | null } | null
+  CusQuoteEvent_MetadataJSON?: { message?: string | null; declineReasonCode?: string | null; competitorDocumentId?: string | null } | null
   cmp_Users?: { User_Firstname?: string; User_Lastname?: string } | null
 }
 
 export type QuoteWorkflowCustomerResponse = {
   decision: "accepted" | "declined" | "challenged"
   message: string | null
+  declineReasonCode: string | null
   respondedAt: string
   attachment: null | {
     id: string
@@ -251,6 +272,20 @@ export type QuoteWorkflowWorkspace = {
   versions: QuoteWorkflowVersion[]
   events: QuoteWorkflowEvent[]
   customerResponse: QuoteWorkflowCustomerResponse | null
+  documents: Array<{
+    id: string
+    versionId: string
+    versionNumber: number
+    fileName: string
+    mimeType: string
+    fileSizeBytes: number
+    createdAt: string
+    recipientEmail: string
+    deliveryMode: QuoteDeliveryMode
+    responseStatus: "active" | "responded" | "expired" | "revoked"
+    url: string | null
+    expiresAt: string | null
+  }>
   latestIssue: null | {
     responseLinkId: string
     quoteDocumentId: string | null
@@ -306,6 +341,13 @@ export type QuoteReferenceSettings = {
   }>
   customerPattern: string
   customerNextNumber: number | null
+}
+
+export type QuoteFollowUpSettings = {
+  enabled: boolean
+  defaultDelayDays: number
+  sendTime: string
+  timezone: string
 }
 
 export type ReferenceRuleTarget = "quote" | "booking" | "customer"
@@ -421,6 +463,10 @@ export function getQuoteReferenceSettings() {
   return invoke<QuoteReferenceSettings>({ action: "reference-settings" }, "Quote reference settings could not be loaded.")
 }
 
+export function getQuoteFollowUpSettings() {
+  return invoke<QuoteFollowUpSettings>({ action: "follow-up-settings" }, "Quote follow-up settings could not be loaded.")
+}
+
 export function getQuoteBranding() {
   return invoke<QuoteBranding>({ action: "branding" }, "Quote branding could not be loaded.")
 }
@@ -437,6 +483,10 @@ export async function uploadQuoteBrandingLogo(file: File) {
 
 export function saveQuoteReferenceSettings(settings: QuoteReferenceSettings) {
   return invoke<QuoteReferenceSettings>({ action: "save-reference-settings", ...settings }, "Quote reference settings could not be saved.")
+}
+
+export function saveQuoteFollowUpSettings(settings: QuoteFollowUpSettings) {
+  return invoke<QuoteFollowUpSettings>({ action: "save-follow-up-settings", ...settings }, "Quote follow-up settings could not be saved.")
 }
 
 export function draftQuoteReferenceRule(input: {
@@ -597,6 +647,8 @@ export type QuoteSaveResult = {
   reference: string
   lifecycle: string
   versionId: string
+  versionNumber?: number
+  versionState?: "draft" | "submitted"
   readiness: QuoteIssueReadiness
   version: QuoteWorkflowVersion
   events: QuoteWorkflowEvent[]
@@ -633,9 +685,18 @@ export function transitionQuoteWorkflow(quoteId: string, transition: "calculated
     })
 }
 
-/** @deprecated Quote-to-booking is the next delivery phase and is not active. */
-export function convertQuoteWorkflow(_quoteId: string, _readiness: { shipperId?: string; shipperName: string; consigneeId?: string; consigneeName: string; operationalNotes?: string }, _idempotencyKey = crypto.randomUUID()): Promise<{ quoteId: string; bookingId: string; bookingReference: string; reused: boolean }> {
-  return Promise.reject(new Error("Quote-to-booking is not active yet."))
+export function convertQuoteWorkflow(
+  quoteId: string,
+  _readiness?: { shipperId?: string; shipperName?: string; consigneeId?: string; consigneeName?: string; operationalNotes?: string },
+): Promise<{ quoteId?: string; bookingId: string; bookingReference: string; status?: string; requiresCustomerLink?: boolean; reused: boolean }> {
+  return invoke<{ quoteId?: string; bookingId: string; bookingReference: string; status?: string; requiresCustomerLink?: boolean; reused: boolean }>({ action: "convert", quoteId }, "The booking could not be created.")
+    .then((result) => {
+      invalidateQuoteWorkspaces()
+      invalidateRegisterPages("quotes:")
+      invalidateRegisterPages("bookings:")
+      invalidateRegisterPages("dashboard:")
+      return result
+    })
 }
 
 /** @deprecated Quote document generation remains owned by the document-builder workflow. */

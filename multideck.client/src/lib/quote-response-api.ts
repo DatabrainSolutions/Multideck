@@ -2,6 +2,13 @@ import { supabase } from "@/lib/supabase"
 import type { PublicBranding } from "@/lib/public-brand-theme"
 
 export type QuoteResponseDecision = "accepted" | "declined" | "challenged"
+export type QuoteCustomerDeclineReasonCode =
+  | "cost_too_high"
+  | "estimated_times_too_late"
+  | "found_cheaper_quote"
+  | "research_only"
+  | "job_no_longer_needed"
+  | "other"
 
 export type CustomerQuotePayload = {
   customerName?: string
@@ -114,9 +121,10 @@ export function submitCustomerQuoteResponse(
   decision: QuoteResponseDecision,
   message: string,
   competitorDocumentId: string | null,
+  declineReasonCode: QuoteCustomerDeclineReasonCode | null = null,
 ) {
   return invoke<QuoteResponseResult>(
-    { action: "submit", token, decision, message, competitorDocumentId },
+    { action: "submit", token, decision, message, competitorDocumentId, declineReasonCode },
     "Your response could not be submitted.",
   )
 }

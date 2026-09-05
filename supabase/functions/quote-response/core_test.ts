@@ -1,6 +1,7 @@
 import { assertEquals, assertMatch, assertThrows } from "jsr:@std/assert@1"
 import {
   assertCompetitorQuote,
+  parseDeclineReason,
   isQuoteResponseOriginAllowed,
   parseDecision,
   parseMessage,
@@ -29,11 +30,14 @@ Deno.test("quote responses accept only explicit single-use decisions", () => {
   assertThrows(() => parseToken("too-short"))
 })
 
-Deno.test("declines and challenges require customer context", () => {
+Deno.test("declines require a locked reason while change requests require context", () => {
   assertEquals(parseMessage("", "accepted"), null)
+  assertEquals(parseMessage("", "declined"), null)
   assertEquals(parseMessage("Please review transit time", "challenged"), "Please review transit time")
-  assertThrows(() => parseMessage("", "declined"))
   assertThrows(() => parseMessage("", "challenged"))
+  assertEquals(parseDeclineReason("cost_too_high", "declined"), "cost_too_high")
+  assertThrows(() => parseDeclineReason("", "declined"))
+  assertThrows(() => parseDeclineReason("cost_too_high", "accepted"))
 })
 
 Deno.test("optional competitor quotes are bounded and safely named", () => {

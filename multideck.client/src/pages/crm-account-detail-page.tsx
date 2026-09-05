@@ -23,6 +23,7 @@ import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, staggerRamp } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { CustomerApiError, getCustomer, getCustomerReference, updateAccount, updateAccountCompanyTypes, type AccountScoreExplanation, type ApiCustomerDetail, type CustomerReference, type UpdateAccountInput } from "@/lib/customer-api"
+import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { CustomerWarehouseAccess } from "@/pages/customer-detail-page"
 
 type CustomField = { id: string; label: string; value: string }
@@ -63,7 +64,7 @@ function sameIds(left: string[] | null, right: string[]) {
  *
  * Everything writes on its own. Nothing here opens a form.
  */
-export function CrmAccountDetailPage({ accountId, navigate }: { accountId: string; navigate: (path: string) => void }) {
+export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { accountId: string; navigate: (path: string) => void; currentUser: AuthUserSummary | null }) {
   const { language, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const [account, setAccount] = useState<ApiCustomerDetail | null>(null)
@@ -229,6 +230,9 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
       subjectTo: typeof record.subjectTo === "string" ? record.subjectTo : "",
       notes: typeof record.notes === "string" ? record.notes : "",
       deadline: typeof record.deadline === "string" ? record.deadline : "",
+      followUpDays: Number.isInteger(Number(record.followUpDays)) && Number(record.followUpDays) >= 1 && Number(record.followUpDays) <= 30
+        ? Number(record.followUpDays)
+        : null,
     }
   }, [account])
 
@@ -552,7 +556,7 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
 
               <Zone title={t("Quote defaults")}>
                 <p className="mb-3 max-w-3xl text-[12px] leading-5 text-[var(--md-text)]">
-                  {t("These terms, notes and the default response deadline are copied into quotes and managed on this company record.")}
+                  {t("These terms, notes and the default response deadline are copied into quotes and managed on this company record. A follow-up delay overrides the company policy for this customer only.")}
                 </p>
                 <InlineFieldGroup stacked directEdit>
                   <div className="grid gap-x-3 gap-y-3 lg:grid-cols-2">
@@ -587,6 +591,19 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
                       value={quoteTerms.deadline}
                       placeholder="Select date"
                       onSave={(deadline) => patch({ metadata: { ...currentAccount.metadata, quoteTerms: { ...quoteTerms, deadline } } })}
+                    />
+                    <InlineField
+                      label="Quote follow-up delay"
+                      kind="number"
+                      align="start"
+                      value={quoteTerms.followUpDays === null ? "" : String(quoteTerms.followUpDays)}
+                      placeholder="Use company policy"
+                      hint="1–30 days after sending. Leave blank to use the company policy."
+                      onSave={(followUpDays) => {
+                        const parsed = followUpDays ? Number(followUpDays) : null
+                        if (parsed !== null && (!Number.isInteger(parsed) || parsed < 1 || parsed > 30)) throw new Error("Use a whole number between 1 and 30 days.")
+                        return patch({ metadata: { ...currentAccount.metadata, quoteTerms: { ...quoteTerms, followUpDays: parsed } } })
+                      }}
                     />
                   </div>
                 </InlineFieldGroup>
@@ -805,6 +822,8 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
             <AccountOperationsPanel
               account={currentAccount}
               activeTab={activeTab}
+              canManageFinancial={hasPermission(currentUser, "Finance.Configuration.Manage")}
+              canManageBankDetails={hasPermission(currentUser, "Finance.Configuration.Manage") && hasPermission(currentUser, "Finance.Banks.Manage")}
               currencyOptions={reference?.currencies ?? []}
               financeReference={{
                 legalEntities: reference?.legalEntities ?? [],

@@ -61,7 +61,7 @@ test("accessible company quote defaults are exposed to the quote workspace", () 
   assert.match(sourceOptions, /metadata\.quoteTerms/)
   assert.match(sourceOptions, /quoteTerms: quoteTermsByOrganisation\.get\(id\) \?\? null/)
   assert.match(sourceOptions, /deadline: typeof quoteTerms\.deadline === "string" \? quoteTerms\.deadline : ""/)
-  assert.match(clientApi, /quoteTerms\?: \{\s*terms: string\s*subjectTo: string\s*notes: string\s*deadline: string\s*\} \| null/s)
+  assert.match(clientApi, /quoteTerms\?: \{\s*terms: string\s*subjectTo: string\s*notes: string\s*deadline: string\s*followUpDays\?: number \| null\s*\} \| null/s)
 })
 
 test("agent choices use the existing company type model", () => {

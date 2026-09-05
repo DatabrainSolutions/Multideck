@@ -323,14 +323,12 @@ function CurrencySelect({
   currencies,
   label,
   onValueChange,
-  isCurrencyAvailable,
   disabled,
 }: {
   value: string
   currencies: readonly QuoteChargeCurrency[]
   label: string
   onValueChange: (currency: string) => void
-  isCurrencyAvailable?: (currency: string) => boolean
   disabled?: boolean
 }) {
   const { t } = useLanguage()
@@ -345,7 +343,7 @@ function CurrencySelect({
       </SelectTrigger>
       <SelectContent className="min-w-[210px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
         {currencies.map((currency) => (
-          <SelectItem key={currency.code} value={currency.code} disabled={isCurrencyAvailable ? !isCurrencyAvailable(currency.code) : false}>
+          <SelectItem key={currency.code} value={currency.code}>
             <span className="grid w-full min-w-0 grid-cols-[38px_42px_minmax(0,1fr)] items-center gap-2">
               <span data-i18n-skip dir="ltr" className="text-center font-medium text-[var(--md-accent)]">{currency.symbol}</span>
               <span data-i18n-skip dir="ltr" className="font-medium text-[var(--md-ink)]">{currency.code}</span>
@@ -873,10 +871,13 @@ export function UnifiedQuoteChargesWorkspace({
       maxWidth: 128,
       resizable: true,
       sortValue: (row) => row.costCurrency,
-      cell: (row) => <CurrencySelect value={row.costCurrency} currencies={currencies} label="Cost currency" disabled={readOnly} isCurrencyAvailable={(currency) => rateFor(currency, "cost") !== null} onValueChange={(costCurrency) => {
+      cell: (row) => <CurrencySelect value={row.costCurrency} currencies={currencies} label="Cost currency" disabled={readOnly} onValueChange={(costCurrency) => {
         const costRoe = rateFor(costCurrency, "cost")
-        if (costRoe === null) return
-        updateRow(row.id, { costCurrency, costRoe, costRoeSource: "rate" })
+        updateRow(row.id, {
+          costCurrency,
+          costRoe: costRoe ?? 0,
+          costRoeSource: costRoe === null ? "manual" : "rate",
+        })
       }} />,
     },
     {
@@ -912,10 +913,13 @@ export function UnifiedQuoteChargesWorkspace({
       maxWidth: 128,
       resizable: true,
       sortValue: (row) => row.sellCurrency,
-      cell: (row) => <CurrencySelect value={row.sellCurrency} currencies={currencies} label="Sell currency" disabled={readOnly} isCurrencyAvailable={(currency) => rateFor(currency, "sell") !== null} onValueChange={(sellCurrency) => {
+      cell: (row) => <CurrencySelect value={row.sellCurrency} currencies={currencies} label="Sell currency" disabled={readOnly} onValueChange={(sellCurrency) => {
         const sellRoe = rateFor(sellCurrency, "sell")
-        if (sellRoe === null) return
-        updateRow(row.id, { sellCurrency, sellRoe, sellRoeSource: "rate" })
+        updateRow(row.id, {
+          sellCurrency,
+          sellRoe: sellRoe ?? 0,
+          sellRoeSource: sellRoe === null ? "manual" : "rate",
+        })
       }} />,
     },
     {

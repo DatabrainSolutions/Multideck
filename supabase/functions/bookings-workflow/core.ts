@@ -1,4 +1,4 @@
-export type BookingWorkflowAction = "open" | "workspace" | "save" | "customs-readiness" | "send-to-customs"
+export type BookingWorkflowAction = "open" | "workspace" | "save" | "customs-readiness" | "send-to-customs" | "quote-sync-review" | "apply-quote-sync"
 
 export class BookingWorkflowError extends Error {
   constructor(public readonly status: number, public readonly clientMessage: string, public readonly auditMessage = clientMessage) {
@@ -7,7 +7,7 @@ export class BookingWorkflowError extends Error {
 }
 
 export function parseAction(value: unknown): BookingWorkflowAction {
-  if (value === "open" || value === "workspace" || value === "save" || value === "customs-readiness" || value === "send-to-customs") return value
+  if (value === "open" || value === "workspace" || value === "save" || value === "customs-readiness" || value === "send-to-customs" || value === "quote-sync-review" || value === "apply-quote-sync") return value
   throw new BookingWorkflowError(400, "Choose a supported booking action.")
 }
 
@@ -48,6 +48,25 @@ export function parsePayload(value: unknown) {
   const payload = value as Record<string, unknown>
   if (JSON.stringify(payload).length > 500_000) throw new BookingWorkflowError(413, "This booking update is too large.")
   return payload
+}
+
+export function parseQuoteSyncFields(value: unknown) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 30) {
+    throw new BookingWorkflowError(400, "Choose at least one quote field to apply.")
+  }
+  const fields = [...new Set(value.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean))]
+  if (fields.length !== value.length || fields.some((field) => field.length > 80 || !/^[a-z][A-Za-z]*$/.test(field))) {
+    throw new BookingWorkflowError(400, "One or more selected quote fields are invalid.")
+  }
+  return fields
+}
+
+export function parseModeChangeConfirmation(value: unknown) {
+  if (value === undefined) return false
+  if (typeof value !== "boolean") {
+    throw new BookingWorkflowError(400, "Mode change confirmation is invalid.")
+  }
+  return value
 }
 
 export function toClientError(error: unknown) {

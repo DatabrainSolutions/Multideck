@@ -17,6 +17,12 @@ function cleanRoute(value: unknown) {
   return route
 }
 
+function cleanQuoteRoute(value: unknown) {
+  const route = cleanRoute(value)?.replace(/\/$/, "").toLowerCase() ?? null
+  if (!route || !/^\/quotes\/[a-z0-9-]{1,80}$/.test(route) || route === "/quotes/new") return null
+  return route
+}
+
 function requestIp(request: Request) {
   const candidate = [
     request.headers.get("cf-connecting-ip"),
@@ -48,9 +54,7 @@ async function requireTenantAdministrator(admin: any, current: any) {
   if (!allowed) throw new HttpError(403, "Only tenant administrators can open Admin.")
 }
 
-async function recordPresence(admin: any, current: any, authUserId: string, request: Request) {
-  const payload = await body<{ route?: string }>(request)
-  const route = cleanRoute(payload.route)
+async function writePresence(admin: any, current: any, authUserId: string, request: Request, route: string | null) {
   const now = new Date().toISOString()
   const { error } = await admin.from("Admin_UserPresence").upsert({
     Presence_UserID: current.User_ID,
@@ -63,6 +67,56 @@ async function recordPresence(admin: any, current: any, authUserId: string, requ
   }, { onConflict: "Presence_UserID" })
   if (error) throw new HttpError(500, error.message)
   return { recorded: true, lastSeenAt: now }
+}
+
+async function recordPresence(admin: any, current: any, authUserId: string, request: Request) {
+  const payload = await body<{ route?: string }>(request)
+  const route = cleanRoute(payload.route)
+  return writePresence(admin, current, authUserId, request, cleanQuoteRoute(route) ?? route)
+}
+
+async function quoteEditors(admin: any, current: any, authUserId: string, request: Request) {
+  const payload = await body<{ route?: string }>(request)
+  const route = cleanQuoteRoute(payload.route)
+  if (!route) throw new HttpError(400, "Choose a valid quote before checking active editors.")
+
+  await writePresence(admin, current, authUserId, request, route)
+  const activeSince = new Date(Date.now() - 90_000).toISOString()
+  const { data: presence, error: presenceError } = await admin
+    .from("Admin_UserPresence")
+    .select("Presence_UserID,Presence_LastSeenAt")
+    .eq("Presence_CompanyID", current.Company_ID)
+    .eq("Presence_LastRoute", route)
+    .neq("Presence_UserID", current.User_ID)
+    .gte("Presence_LastSeenAt", activeSince)
+    .order("Presence_LastSeenAt", { ascending: false })
+    .limit(6)
+  if (presenceError) throw new HttpError(500, presenceError.message)
+
+  const userIds = (presence ?? []).map((item: any) => item.Presence_UserID)
+  const { data: users, error: userError } = userIds.length
+    ? await admin
+      .from("cmp_Users")
+      .select("User_ID,User_Firstname,User_Lastname,User_Email")
+      .eq("Company_ID", current.Company_ID)
+      .eq("User_AccessStatus", "active")
+      .in("User_ID", userIds)
+    : { data: [], error: null }
+  if (userError) throw new HttpError(500, userError.message)
+  const usersById = new Map((users ?? []).map((user: any) => [user.User_ID, user]))
+
+  return {
+    editors: (presence ?? []).flatMap((item: any) => {
+      const user = usersById.get(item.Presence_UserID) as any
+      if (!user) return []
+      return [{
+        id: item.Presence_UserID,
+        name: [user.User_Firstname, user.User_Lastname].filter(Boolean).join(" ") || user.User_Email || "Workspace user",
+        email: user.User_Email ?? null,
+        lastSeenAt: item.Presence_LastSeenAt,
+      }]
+    }),
+  }
 }
 
 async function activeUsers(admin: any, current: any) {
@@ -141,6 +195,10 @@ Deno.serve(async (request) => {
 
     if (parts.length === 1 && parts[0] === "presence" && request.method === "POST") {
       return json(request, await recordPresence(admin, current, user.id, request))
+    }
+
+    if (parts.length === 2 && parts[0] === "presence" && parts[1] === "quote" && request.method === "POST") {
+      return json(request, await quoteEditors(admin, current, user.id, request))
     }
 
     if (parts.length || request.method !== "GET") throw new HttpError(405, "Method not allowed.")

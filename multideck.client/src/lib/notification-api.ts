@@ -11,6 +11,19 @@ export type WorkspaceNotification = {
   createdAt: string
 }
 
+export function workspaceNotificationFromRow(row: Record<string, unknown>): WorkspaceNotification {
+  return {
+    id: String(row.CommNotif_ID),
+    title: String(row.CommNotif_Title),
+    body: String(row.CommNotif_Body ?? ""),
+    priority: String(row.CommNotif_PriorityCode),
+    status: String(row.CommNotif_StatusCode),
+    targetId: row.CommNotif_TargetID ? String(row.CommNotif_TargetID) : null,
+    metadata: row.CommNotif_MetadataJSON && typeof row.CommNotif_MetadataJSON === "object" ? row.CommNotif_MetadataJSON as Record<string, unknown> : {},
+    createdAt: String(row.CommNotif_CreatedAt),
+  }
+}
+
 export async function listWorkspaceNotifications(take = 8) {
   if (!supabase) throw new Error("Notifications are not connected to this workspace.")
   const { data, error } = await supabase
@@ -20,16 +33,7 @@ export async function listWorkspaceNotifications(take = 8) {
     .order("CommNotif_CreatedAt", { ascending: false })
     .limit(Math.max(1, Math.min(take, 20)))
   if (error) throw error
-  return (data ?? []).map((row) => ({
-    id: String(row.CommNotif_ID),
-    title: String(row.CommNotif_Title),
-    body: String(row.CommNotif_Body ?? ""),
-    priority: String(row.CommNotif_PriorityCode),
-    status: String(row.CommNotif_StatusCode),
-    targetId: row.CommNotif_TargetID ? String(row.CommNotif_TargetID) : null,
-    metadata: row.CommNotif_MetadataJSON && typeof row.CommNotif_MetadataJSON === "object" ? row.CommNotif_MetadataJSON as Record<string, unknown> : {},
-    createdAt: String(row.CommNotif_CreatedAt),
-  })) satisfies WorkspaceNotification[]
+  return (data ?? []).map((row) => workspaceNotificationFromRow(row as Record<string, unknown>))
 }
 
 export async function markWorkspaceNotificationRead(notificationId: string) {
