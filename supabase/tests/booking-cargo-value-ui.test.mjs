@@ -61,6 +61,39 @@ const formatSource = source.slice(source.indexOf('function bookingQuoteSyncValue
 const { code: formatCode } = transformSync(formatSource, { loader: 'ts' })
 const formatCargoField = new Function(`${formatCode}; return bookingQuoteCargoFieldValue`)()
 
+const mutationSource = source.slice(source.indexOf('  function updateDraftDetail('), source.indexOf('  function updateDraftParty('))
+const { code: mutationCode } = transformSync(mutationSource, { loader: 'ts' })
+const mutate = (workspace, field, value) => {
+  let result = workspace
+  const update = new Function('setDraftWorkspace', 'setDraftBooking', `${mutationCode}; return updateDraftDetail`)(
+    callback => { result = callback(result) }, () => {},
+  )
+  update(field, value)
+  return result
+}
+
+test('shipment edits preserve exact decimals and cargo allocations without modifying accepted evidence', () => {
+  const original = { booking: { shipmentGoodsValue: { amount: '6000.1250', currency: 'GBP' }, editableDetails: { source: 'retained' } },
+    cargo: [{ declaredValue: 200, declaredValueCurrency: 'EUR' }], quoteSnapshot: { goodsValue: 6000.125 } }
+  let result = mutate(original, 'shipmentGoodsValueAmount', '99999999999999.9999')
+  result = mutate(result, 'shipmentGoodsValueCurrency', 'USD')
+  assert.deepEqual(result.booking.shipmentGoodsValue, { amount: '99999999999999.9999', currency: 'USD' })
+  assert.equal(original.booking.shipmentGoodsValue.amount, '6000.1250')
+  assert.equal(result.cargo, original.cargo)
+  assert.equal(result.quoteSnapshot, original.quoteSnapshot)
+  assert.equal(result.booking.editableDetails, original.booking.editableDetails)
+  assert.equal(mutate(result, 'shipmentGoodsValueAmount', '0').booking.shipmentGoodsValue.amount, '0')
+  assert.equal(mutate(result, 'shipmentGoodsValueAmount', '').booking.shipmentGoodsValue.amount, '')
+})
+
+test('old backend responses and non-string shipment edits do not create unsupported draft fields', () => {
+  const old = { booking: { editableDetails: {} }, cargo: [] }
+  assert.equal(mutate(old, 'shipmentGoodsValueAmount', '12'), old)
+  const current = { booking: { shipmentGoodsValue: { amount: null, currency: null } } }
+  assert.equal(mutate(current, 'shipmentGoodsValueAmount', true), current)
+  assert.equal(mutate(null, 'shipmentGoodsValueAmount', '12'), null)
+})
+
 test('whole-line comparisons distinguish absent lines, missing fields and explicit zero or false', () => {
   for (const language of ['en-GB', 'en-US']) {
     assert.equal(formatCargoField(null, 'grossWeightKg', language), 'No cargo line')

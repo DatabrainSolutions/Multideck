@@ -3279,6 +3279,13 @@ function BookingRecordDetails({
               <p className="mt-1">{t("From the accepted Quote snapshot, not an allocation to an individual cargo line.")}</p>
             </div>
           ) : null}
+          {workspace.booking.shipmentGoodsValue ? (
+            <div className="grid gap-2 px-3 pb-3 sm:grid-cols-2 [--md-field-label-width:110px]">
+              <BookingCargoWiseAmountField label="Shipment goods value" amount={workspace.booking.shipmentGoodsValue.amount ?? ""} currency={workspace.booking.shipmentGoodsValue.currency ?? ""} currencies={currencyOptions} editable={editable}
+                onAmountChange={(amount) => onDetailChange("shipmentGoodsValueAmount", amount)} onCurrencyChange={(currency) => onDetailChange("shipmentGoodsValueCurrency", currency)} />
+              <p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Current Booking total. Changing it does not redistribute cargo-line values.")}</p>
+            </div>
+          ) : null}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[12px]">
               <caption className="sr-only">{t("Select a cargo line to edit its goods details below")}</caption>
@@ -4097,7 +4104,7 @@ function BookingQuoteSyncReviewPanel({
                       (controlsDisabled || Boolean(difference.blockedReason)) && "cursor-not-allowed",
                     )}
                   >
-                    <Checkbox checked={selected && !difference.blockedReason} disabled={Boolean(difference.blockedReason)} onCheckedChange={(checked) => onToggle(difference.key, checked === true)} aria-label={`${selected ? t("Exclude") : t("Include")} ${t(difference.label)}${difference.cargoDescription ? ` — ${difference.cargoDescription}` : ""}`} aria-describedby={difference.blockedReason ? `${headingId}-blocked-${index}` : undefined} />
+                    <Checkbox checked={selected && !difference.blockedReason} disabled={Boolean(difference.blockedReason)} onCheckedChange={(checked) => onToggle(difference.key, checked === true)} aria-label={`${selected ? t("Exclude") : t("Include")} ${t(difference.label)}${difference.cargoDescription ? ` — ${difference.cargoDescription}` : ""}`} aria-describedby={[difference.blockedReason ? `${headingId}-blocked-${index}` : "", difference.reviewNote ? `${headingId}-note-${index}` : ""].filter(Boolean).join(" ") || undefined} />
                     <span className="min-w-0">
                       <span className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-[var(--md-ink)]">
                         {t(difference.label)}
@@ -4106,6 +4113,7 @@ function BookingQuoteSyncReviewPanel({
                       <span className="mt-0.5 block text-[10.5px] text-[var(--md-subtle)]">{t(difference.section)}</span>
                       {difference.cargoDescription ? <span data-i18n-skip dir="auto" className="mt-1 block break-words text-[12px] leading-5 text-[var(--md-text)]">{difference.cargoDescription}</span> : null}
                       {difference.blockedReason ? <span id={`${headingId}-blocked-${index}`} className="mt-1 block text-[12px] leading-5 text-[var(--md-status-amber-ink)]">{t(difference.blockedReason)}</span> : null}
+                      {difference.reviewNote ? <span id={`${headingId}-note-${index}`} className="mt-1 block text-[12px] leading-5 text-[var(--md-text)]">{t(difference.reviewNote)}</span> : null}
                     </span>
                     <span className="col-start-2 grid min-w-0 gap-2 sm:col-start-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
                       <span className="min-w-0 rounded-[var(--md-radius-sm)] bg-[var(--md-bg)] px-2.5 py-2">
@@ -4578,6 +4586,11 @@ export function BookingDetailWorkspace({
   function updateDraftDetail(field: string, value: string | boolean) {
     setDraftWorkspace((current) => {
       if (!current) return current
+      if (field === "shipmentGoodsValueAmount" || field === "shipmentGoodsValueCurrency") {
+        if (!current.booking.shipmentGoodsValue || typeof value !== "string") return current
+        const key = field === "shipmentGoodsValueAmount" ? "amount" : "currency"
+        return { ...current, booking: { ...current.booking, shipmentGoodsValue: { ...current.booking.shipmentGoodsValue, [key]: value } } }
+      }
       return { ...current, booking: { ...current.booking, editableDetails: { ...current.booking.editableDetails, [field]: value } } }
     })
     if (field === "isFavourite" && typeof value === "boolean") {
@@ -4959,6 +4972,7 @@ export function BookingDetailWorkspace({
         incotermLocation,
         freightChargeAmount,
         freightChargeCurrency,
+        ...(workspace.booking.shipmentGoodsValue ? { shipmentGoodsValue: workspace.booking.shipmentGoodsValue } : {}),
         collectionAddress: shipper?.address ?? workspace.booking.collectionAddress ?? null,
         deliveryAddress: consignee?.address ?? workspace.booking.deliveryAddress ?? null,
         editableDetails: effectiveEditableDetails,

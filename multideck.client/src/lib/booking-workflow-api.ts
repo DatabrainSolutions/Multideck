@@ -183,6 +183,7 @@ export type BookingWorkflowWorkspace = {
     incotermLocation?: string | null
     freightChargeAmount?: number | null
     freightChargeCurrency?: string | null
+    shipmentGoodsValue?: { amount: string | null; currency: string | null }
     collectionAddress?: string | null
     deliveryAddress?: string | null
     sourceQuoteId?: string | null
@@ -239,6 +240,7 @@ export type BookingQuoteSyncDifference = {
   warningCode?: "mode_change" | "booking_changed" | "booking_cargo_removed" | "cargo_removal" | null
   cargoDescription?: string
   blockedReason?: string
+  reviewNote?: string
   recommendation: "apply" | "review"
 }
 

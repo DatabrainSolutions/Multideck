@@ -16,30 +16,46 @@ const end = source.indexOf('function BookingDetailTabPage(', start)
 assert.ok(start > 0 && end > start)
 const parentCallback = source.match(/onApply=\{(\(fields, confirmModeChange\) => void applyQuoteSyncFields\(fields, confirmModeChange\))\}/)?.[1]
 assert.ok(parentCallback, 'The parent must forward explicit mode confirmation')
+const moneyField = source.slice(source.indexOf('function BookingCargoWiseAmountField('),source.indexOf('function BookingCargoWiseGroup('))
+const moneyOptions = source.slice(source.indexOf('function bookingFieldOptions('),source.indexOf('function BookingCargoWiseField('))
+const moneyEditorStart = source.indexOf('{workspace.booking.shipmentGoodsValue ? (')
+const moneyEditor = source.slice(moneyEditorStart,source.indexOf(') : null}',moneyEditorStart)+9)
+const detailMutation = source.slice(source.indexOf('  function updateDraftDetail('),source.indexOf('  function updateDraftParty('))
+assert.ok(moneyField && moneyOptions && moneyEditorStart>0 && detailMutation)
 const built = await build({
   stdin: { contents: `
-    import React, {useRef,useState} from 'react';import {createRoot} from 'react-dom/client';
+    import React, {useId,useRef,useState} from 'react';import {createRoot} from 'react-dom/client';
+    import {Input} from '@/components/ui/input';import {Select,SelectTrigger,SelectValue,SelectContent,SelectItem} from '@/components/ui/select';
     import {Button} from '@/components/ui/button';import {Checkbox} from '@/components/ui/checkbox';
     import {Dialog,DialogClose,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle} from '@/components/ui/dialog';
     import {ArrowRight,Check,TriangleAlert} from '@/components/icons/hugeicons';
     import {StatusPill} from '@/components/multideck/status-pill';import {Surface} from '@/components/multideck/surface';
     import {cn} from '@/lib/utils';import {useLanguage} from '@/i18n/language-provider';
     ${source.slice(start,end)}
+    ${moneyOptions}
+    ${moneyField}
     const cargoKey='cargo:00000000-0000-4000-8000-000000000001:grossWeightKg';
     const initial={reviewId:'synthetic-review',reviewToken:'a'.repeat(64),jobId:'synthetic-booking',quoteId:'synthetic-quote',quoteReference:'QA-QUOTE',
       appliedVersionNumber:1,proposedVersionNumber:2,status:'pending',appliedFields:[],differences:[
       {key:cargoKey,label:'Gross weight (kg)',cargoDescription:'Machinery crates — long goods description preserved for operational review',section:'Cargo',bookingValue:110,newQuoteValue:125,previousQuoteValue:100,conflict:true,requiresConfirmation:true,recommendation:'review'},
       {key:'mode',label:'Mode',section:'Job data',bookingValue:'Sea',newQuoteValue:'Air',conflict:false,requiresConfirmation:true,recommendation:'review',warningCode:'mode_change'},
       {key:'cargo',label:'Shipment goods value',section:'Goods',bookingValue:6000,newQuoteValue:6500,blockedReason:'Shipment goods value and cargo allocations need a separate review before applying this change.',requiresConfirmation:true,recommendation:'review'},
+      {key:'shipmentGoodsValue',label:'Shipment goods value',section:'Goods',bookingValue:{amount:6000.125,currency:'GBP'},newQuoteValue:{amount:6500.5555,currency:'EUR'},previousQuoteValue:{amount:6000,currency:'GBP'},conflict:true,requiresConfirmation:true,recommendation:'review',reviewNote:'Changes the shipment total only. Existing cargo-line values and currencies are retained; review their allocations separately.'},
       {key:'cargo:00000000-0000-4000-8000-000000000002:line',label:'Add cargo line',section:'Cargo',cargoDescription:'Replacement machine with accessories',previousQuoteValue:null,bookingValue:null,
         newQuoteValue:{description:'Replacement machine with accessories — packing information that must remain fully readable before approval.',commodity:'Machinery',packageQuantity:2,packageType:'Crates',grossWeightKg:250,netWeightKg:220,volumeCbm:1.234567,chargeableWeightKg:null,length:120,width:80,height:90,lengthUnit:'cm',hsCode:'847989',countryOfOrigin:'GB',isHazardous:false,isTemperatureControlled:false,internalNotes:'QA_INTERNAL_MUST_NOT_RENDER'},conflict:false,requiresConfirmation:true,recommendation:'review'}]};
     function Harness(){const [review,setReview]=useState(initial);const [selected,setSelected]=useState(new Set());const [error,setError]=useState(null);
+      const [workspace,setDraftWorkspace]=useState({booking:{shipmentGoodsValue:{amount:'6000.1250',currency:'GBP'},editableDetails:{}},cargo:[{declaredValue:200,declaredValueCurrency:'EUR'}]});
+      const {t}=useLanguage();const editable=true;const currencyOptions=['GBP','EUR','USD'];const setDraftBooking=()=>{};
+      ${detailMutation}
+      const onDetailChange=updateDraftDetail;
       const [busy,setBusy]=useState(false);const [refreshing,setRefreshing]=useState(false);const [receipt,setReceipt]=useState(null);
       function applyQuoteSyncFields(fields,confirmed){setBusy(true);setTimeout(()=>{setBusy(false);
         if(review.reviewToken===initial.reviewToken){setError('The Booking or quote review changed. Refresh the review and check your selections before applying.');return;}
         setReceipt({fields,confirmed,reviewToken:review.reviewToken});setReview({...review,status:'partially_applied',appliedFields:fields});setSelected(new Set());
       },350);}
       return <main className="p-4"><h1 className="mb-4 text-[18px]">Quote review QA — synthetic data, no live writes</h1>
+        ${moneyEditor}
+        <output id="value-receipt" className="mb-4 block break-words text-[12px]">{JSON.stringify(workspace)}</output>
         <BookingQuoteSyncReviewPanel busy={busy} refreshing={refreshing} detailsDirty={false} expanded error={error} review={review} selectedFields={selected}
           onApply={${parentCallback}} onOpenDetails={()=>{}}
           onToggle={(key,checked)=>setSelected(current=>{const next=new Set(current);checked?next.add(key):next.delete(key);return next;})}
