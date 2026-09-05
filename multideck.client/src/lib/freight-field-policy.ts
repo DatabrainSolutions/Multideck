@@ -52,7 +52,12 @@ export function freightShipmentAllowed(mode: string, shipmentType: string): bool
 export function freightFieldPolicy(context: FreightContext) {
   const mode = freightModeKey(context.mode)
   const shipment = freightShipmentCode(context.shipmentType)
-  const modes = new Set(mode === "multimodal" ? (context.legModes ?? []).map(freightModeKey) : [mode])
+  const legModes = (context.legModes ?? []).map(freightModeKey).filter(Boolean)
+  // The commercial mode does not rename transport legs. Include the physical
+  // legs even on a Sea/Air/etc. job, not only jobs labelled Multimodal.
+  const modes = new Set([mode, ...legModes])
+  const routingModeMismatch = ["sea", "air", "road", "rail", "inland_waterway"].includes(mode)
+    && legModes.length > 0 && !legModes.includes(mode)
   const sea = modes.has("sea") || modes.has("inland_waterway")
   const air = modes.has("air") || mode === "courier"
   const rail = modes.has("rail")
@@ -62,6 +67,7 @@ export function freightFieldPolicy(context: FreightContext) {
   const operational = ["booking", "departure", "arrival", "completed"].includes(context.stage ?? "draft")
   return {
     mode,
+    routingModeMismatch,
     transport,
     sea,
     air,

@@ -44,6 +44,28 @@ test("multimodal derives equipment from its actual legs", () => {
   assert.equal(freightFieldPolicy({ ...context, legModes: ["Road", "Air"] }).chargeableWeight, true)
 })
 
+test("commercial mode and actual legs contribute fields without silently reclassifying the job", () => {
+  const context = { mode: "Sea", shipmentType: "FCL", stage: "booking" }
+  const seaRoad = freightFieldPolicy({ ...context, legModes: ["OCEAN", "ROAD"] })
+  assert.equal(seaRoad.sea, true)
+  assert.equal(seaRoad.vehicle, true)
+  assert.equal(seaRoad.chargeableWeight, false)
+  assert.equal(seaRoad.routingModeMismatch, false)
+  const seaAir = freightFieldPolicy({ ...context, legModes: ["SEA", "FAS"] })
+  assert.equal(seaAir.chargeableWeight, true)
+  assert.equal(seaAir.containers, true)
+  assert.equal(seaAir.mode, "sea")
+  assert.equal(seaAir.routingModeMismatch, false)
+  const mismatch = freightFieldPolicy({ ...context, legModes: ["AIR"] })
+  assert.equal(mismatch.routingModeMismatch, true)
+  assert.equal(mismatch.air, true)
+  assert.equal(mismatch.mode, "sea", "The warning never rewrites the classification")
+  for (const legModes of [[], [null, ""]]) assert.equal(freightFieldPolicy({ ...context, legModes }).routingModeMismatch, false)
+  for (const mode of ["Multimodal", "Courier", "Warehouse", "Other"]) {
+    assert.equal(freightFieldPolicy({ mode, legModes: ["Road"] }).routingModeMismatch, false)
+  }
+})
+
 test("service filtering preserves valid rail and ULD choices and rejects cross-mode choices", () => {
   assert.equal(freightShipmentAllowed("Air", "ULD - Unit Load Device"), true)
   assert.equal(freightShipmentAllowed("Rail", "FCL - Full Container Load"), true)

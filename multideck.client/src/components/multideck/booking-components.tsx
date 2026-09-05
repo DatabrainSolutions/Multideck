@@ -2882,6 +2882,9 @@ function BookingRecordDetails({
   const [selectedCargoIndex, setSelectedCargoIndex] = useState(0)
   const [removingCargoIndex, setRemovingCargoIndex] = useState<number | null>(null)
   const [pendingRouteMode, setPendingRouteMode] = useState<{ index: number; mode: string; route: BookingWorkflowRoute } | null>(null)
+  const [pendingOverallMode, setPendingOverallMode] = useState<{ bookingId: string; from: string; to: string; shipmentType: string; routing: string } | null>(null)
+  const overallModeTriggerRef = useRef<HTMLDivElement>(null)
+  const overallModeCancelRef = useRef<HTMLButtonElement>(null)
   const routeModeCancelRef = useRef<HTMLButtonElement>(null)
   const routeModeFocusRef = useRef<HTMLElement | null>(null)
   const routeModeTriggersRef = useRef(new Map<number, HTMLDivElement>())
@@ -3040,14 +3043,43 @@ function BookingRecordDetails({
   const goodsDescription = cargoValue("description", value(facts, "goodsDescription", value(facts, "commodity")))
   const calculatedDirection = calculatedDirectionForBooking(workspace, lookups)
 
+  function requestOverallMode(mode: string) {
+    if (!editable || bookingWorkspaceMode(mode) === bookingWorkspaceMode(record.booking.mode)) return
+    setPendingOverallMode({ bookingId: record.booking.id, from: record.booking.mode, to: mode,
+      shipmentType: detailValue("shipmentType", record.booking.shipmentType), routing: JSON.stringify(workspace.routes) })
+  }
+
+  function confirmOverallMode() {
+    if (!editable || !pendingOverallMode) return
+    const shipmentType = detailValue("shipmentType", record.booking.shipmentType)
+    if (record.booking.id !== pendingOverallMode.bookingId || record.booking.mode !== pendingOverallMode.from
+      || shipmentType !== pendingOverallMode.shipmentType || JSON.stringify(workspace.routes) !== pendingOverallMode.routing) {
+      toast.error(t("Booking changed"), { description: t("Review the current mode and routing steps, then choose the mode again.") })
+    } else {
+      onBookingChange("mode", pendingOverallMode.to)
+      if (shipmentType && !freightShipmentAllowed(pendingOverallMode.to, shipmentType)) onDetailChange("shipmentType", "")
+    }
+    setPendingOverallMode(null)
+  }
+
   return (
     <Tabs defaultValue="control" className="min-w-0 gap-[var(--md-page-stack-gap-compact)]">
+      <div role="status" className={fieldPolicy.routingModeMismatch ? "text-[12px] leading-5 text-[var(--md-text)]" : "sr-only"}>
+        {fieldPolicy.routingModeMismatch ? <p>{t("Mode review")}: {t("No routing step uses the overall mode.")} {t("Check Mode in Control and the steps in Route & schedule. Nothing is changed automatically.")}</p> : null}
+      </div>
       <TabsList variant="line" aria-label={t("Booking detail sections")} className="w-full justify-start">
         <TabsTrigger value="control">{t("Control")}</TabsTrigger>
         <TabsTrigger value="parties">{t("Parties")}</TabsTrigger>
         <TabsTrigger value="route">{t("Route & schedule")}</TabsTrigger>
         <TabsTrigger value="cargo">{t("Cargo & equipment")}</TabsTrigger>
       </TabsList>
+      <Dialog open={pendingOverallMode !== null} onOpenChange={(open) => { if (!open) setPendingOverallMode(null) }}>
+        <DialogContent onOpenAutoFocus={(event) => { event.preventDefault(); overallModeCancelRef.current?.focus() }} onCloseAutoFocus={(event) => { event.preventDefault(); (overallModeTriggerRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)") ?? overallModeTriggerRef.current)?.focus() }}>
+          <DialogHeader><DialogTitle>{t("Change overall Booking mode?")}</DialogTitle><DialogDescription>{t("Existing routing steps keep their own modes, references, carriers and dates. An incompatible shipment type will be cleared for you to choose again. Cargo and equipment are retained; review them for the new mode. The Quote and existing documents will not change.")}</DialogDescription></DialogHeader>
+          <p className="text-[13px] font-medium" data-i18n-skip>{pendingOverallMode?.from} → {pendingOverallMode?.to}</p>
+          <DialogFooter><Button ref={overallModeCancelRef} variant="ghost" onClick={() => setPendingOverallMode(null)}>{t("Keep current mode")}</Button><Button disabled={!editable} onClick={confirmOverallMode}>{t("Change mode and review")}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
       <TabsContent value="control" className="grid gap-[var(--md-page-stack-gap-compact)]">
       <BookingCargoWiseGroup title="Job data">
         <div className="grid gap-3 xl:grid-cols-3">
@@ -3058,11 +3090,7 @@ function BookingRecordDetails({
               <BookingCargoWiseField label="Job ref" value={record.booking.jobRef} {...editField("jobRef")} />
               <BookingCargoWiseField label="Status" value={record.booking.status} options={["On track", "Delayed", "Exception"]} {...editField("status")} />
               <BookingCargoWiseField label="Progress" value={detailValue("progress", `${record.booking.progress}%`)} options={bookingProgressOptions} {...editDetail("progress")} />
-              <BookingCargoWiseField label="Mode" value={record.booking.mode} options={modeOptions} placeholder="Choose mode" allowCustom={false} {...editField("mode")} onChange={(nextMode) => {
-                onBookingChange("mode", nextMode)
-                const selectedShipmentType = detailValue("shipmentType", record.booking.shipmentType)
-                if (selectedShipmentType && !freightShipmentAllowed(nextMode, selectedShipmentType)) onDetailChange("shipmentType", "")
-              }} />
+              <div ref={overallModeTriggerRef} tabIndex={-1}><BookingCargoWiseField label="Mode" value={record.booking.mode} options={modeOptions} placeholder="Choose mode" allowCustom={false} {...editField("mode")} onChange={requestOverallMode} /></div>
               <BookingCargoWiseField label="Quote type" value={quoteType} options={bookingDirectionOptions} placeholder="Choose quote type" allowCustom={false} {...editDetail("quoteType")} />
               <BookingCargoWiseField label="Shipment type" value={detailValue("shipmentType", record.booking.shipmentType)} options={shipmentTypeOptions} placeholder="Choose shipment type" allowCustom={false} {...editDetail("shipmentType")} />
               <BookingCargoWiseField label="Last updated" value={updatedAt} />

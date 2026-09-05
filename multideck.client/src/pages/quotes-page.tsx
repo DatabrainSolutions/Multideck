@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
 import "@/quotes-transfer.css"
-import { freightFieldPolicy, freightShipmentAllowed } from "@/lib/freight-field-policy"
+import { freightFieldPolicy, freightModeKey, freightShipmentAllowed } from "@/lib/freight-field-policy"
 import { freightPackageTypeOptions } from "@/lib/freight-package-types"
 import { quoteWorkspaceFromVersion } from "@/lib/quote-version-presentation"
 import { QuoteSubmittedDetails } from "@/components/multideck/quote-details/quote-submitted-details"
@@ -3902,6 +3902,9 @@ function QuoteDetailsPanelV2({
   const { direction, language, t } = useLanguage()
   const [rateRequestOpen, setRateRequestOpen] = useState(false)
   const [confirmingCarrierId, setConfirmingCarrierId] = useState<string | null>(null)
+  const [pendingOverallMode, setPendingOverallMode] = useState<{ quoteId: string; from: string; to: string; shipmentType: string | undefined; routing: string } | null>(null)
+  const overallModeTriggerRef = useRef<HTMLDivElement>(null)
+  const overallModeCancelRef = useRef<HTMLButtonElement>(null)
   const [unlocodeDirectory, setUnlocodeDirectory] = useState<readonly UnlocodeDirectoryRecord[]>([])
   const [unlocodeDirectoryStatus, setUnlocodeDirectoryStatus] = useState<"loading" | "ready" | "error">("loading")
   const [unlocodeDirectoryCount, setUnlocodeDirectoryCount] = useState(0)
@@ -4141,6 +4144,24 @@ function QuoteDetailsPanelV2({
       [prefix]: value.unlocode || value.place,
       ...(routingLegs.length > 0 ? { routingLegsJson: quoteRoutingLegsValue(nextLegs) } : {}),
     })
+  }
+
+  function requestOverallMode(mode: string) {
+    if (!editable || freightModeKey(mode) === freightModeKey(quote.mode)) return
+    if (!quote.mode.trim()) { onQuotePatch({ mode }); return }
+    setPendingOverallMode({ quoteId: quote.id, from: quote.mode, to: mode, shipmentType: quote.shipmentType, routing: quote.routingLegsJson ?? "" })
+  }
+
+  function confirmOverallMode() {
+    if (!editable || !pendingOverallMode) return
+    if (quote.id !== pendingOverallMode.quoteId || quote.mode !== pendingOverallMode.from
+      || quote.shipmentType !== pendingOverallMode.shipmentType || (quote.routingLegsJson ?? "") !== pendingOverallMode.routing) {
+      toast.error(t("Quote changed"), { description: t("Review the current mode and routing legs, then choose the mode again.") })
+    } else {
+      onQuotePatch({ mode: pendingOverallMode.to,
+        shipmentType: freightShipmentAllowed(pendingOverallMode.to, quote.shipmentType ?? "") ? quote.shipmentType : "" })
+    }
+    setPendingOverallMode(null)
   }
 
   function baseRoutingLeg(): QuoteRoutingLeg {
@@ -4526,10 +4547,13 @@ function QuoteDetailsPanelV2({
   const incotermNamedPlaceLabel = incotermDefinition?.namedLocationLabel ?? "Named place"
   return (
     <div dir={direction} className="@container/quote-details grid items-start gap-2">
+      <div role="status" className={fieldPolicy.routingModeMismatch ? "text-[12px] leading-5 text-[var(--md-text)]" : "sr-only"}>
+        {fieldPolicy.routingModeMismatch ? <p>{t("Mode review")}: {t("No planned routing leg uses the overall mode.")} {t("Check Mode in Job data and the planned routing legs. Nothing is changed automatically.")}</p> : null}
+      </div>
       <CompactSectionShell title="Job data" meta="Core quote controls">
         <CompactFieldRow>
           <QuoteCompactSelect label="Source" value={quote.source ?? ""} options={["NEW - New Shipper", "REN - Renewal", "REP - Repeat lane", "TND - Tender"]} width="medium" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.source?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("source", value)} />
-          <QuoteCompactSelect label="Mode" value={quote.mode} options={modes} width="short" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.mode.trim()} disabled={!editable} dataOptions onChange={(mode) => { onQuoteChange("mode", mode); const next = shipmentTypeValue(mode, quote.shipmentType, shipmentTypeChoicesForMode(mode, shipmentTypes)); if (next !== quote.shipmentType) onQuoteChange("shipmentType", next) }} />
+          <div ref={overallModeTriggerRef} tabIndex={-1}><QuoteCompactSelect label="Mode" value={quote.mode} options={modes} width="short" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.mode.trim()} disabled={!editable} dataOptions onChange={requestOverallMode} /></div>
           <QuoteCompactSelect label="Shipment type" value={shipmentTypeValue(quote.mode, quote.shipmentType, shipmentTypeChoicesForMode(quote.mode, shipmentTypes))} options={shipmentTypeChoicesForMode(quote.mode, shipmentTypes)} width="medium" disabled={!editable} dataOptions onChange={(value) => onQuoteChange("shipmentType", value)} />
           {fieldPolicy.hblMode ? <QuoteCompactSelect label="HBL mode" value={quote.hblMode ?? ""} options={["CY/CFS", "CY/CY", "CFS/CFS", "Door/Door"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("hblMode", value)} /> : null}
           <QuoteCompactSelect label={calculatedDirection ? "Direction (auto)" : "Direction"} value={calculatedDirection ?? quote.direction ?? ""} options={["Export", "Import", "Domestic", "Cross trade"]} width="short" disabled={!editable || Boolean(calculatedDirection)} onChange={(value) => onQuoteChange("direction", value)} />
@@ -4883,6 +4907,13 @@ function QuoteDetailsPanelV2({
         </CompactSectionShell>
       </div>
 
+      <Dialog open={pendingOverallMode !== null} onOpenChange={(open) => { if (!open) setPendingOverallMode(null) }}>
+        <DialogContent onOpenAutoFocus={(event) => { event.preventDefault(); overallModeCancelRef.current?.focus() }} onCloseAutoFocus={(event) => { event.preventDefault(); (overallModeTriggerRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)") ?? overallModeTriggerRef.current)?.focus() }}>
+          <DialogHeader><DialogTitle>{t("Change overall Quote mode?")}</DialogTitle><DialogDescription>{t("Existing routing legs keep their own modes, carriers and dates. An incompatible shipment type will be cleared for you to choose again. Cargo and equipment are retained; review them for the new mode. Submitted versions, Bookings and documents will not change.")}</DialogDescription></DialogHeader>
+          <p className="text-[13px] font-medium" data-i18n-skip>{pendingOverallMode?.from} → {pendingOverallMode?.to || t("Not selected")}</p>
+          <DialogFooter><Button ref={overallModeCancelRef} variant="ghost" onClick={() => setPendingOverallMode(null)}>{t("Keep current mode")}</Button><Button disabled={!editable} onClick={confirmOverallMode}>{t("Change mode and review")}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={rateRequestOpen} onOpenChange={setRateRequestOpen}>
         <DialogContent dir={direction} className="rounded-[var(--md-radius-xl)] sm:max-w-[580px]">
           <DialogHeader className="text-start"><DialogTitle>{t("Prepare rate requests")}</DialogTitle><DialogDescription>{t("Review the supplier contacts and carrier options. This prepares drafts only; nothing is sent without approval.")}</DialogDescription></DialogHeader>

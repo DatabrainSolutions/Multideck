@@ -159,7 +159,7 @@ test("every send-blocking Incoterm and Sea FCL container field is visible in quo
   assert.match(details, /label="Delivery"[\s\S]{0,450}onQuoteChange\("deliveryRequired", value\)/u)
   assert.match(details, /label="Customs clearance"[\s\S]{0,450}onQuoteChange\("customsIncluded", value\)/u)
   assert.match(details, /const isSeaContainerised = fieldPolicy\.containerRequests/u)
-  assert.match(page, /import \{ freightFieldPolicy, freightShipmentAllowed \} from "@\/lib\/freight-field-policy"/u)
+  assert.match(page, /import \{ freightFieldPolicy, freightModeKey, freightShipmentAllowed \} from "@\/lib\/freight-field-policy"/u)
   assert.match(details, /\{isSeaContainerised \? \([\s\S]{0,500}aria-label=\{t\("Container requests"\)\}/u)
   assert.match(details, /containerRequests\.map\(\(request, index\)/u)
   assert.match(details, /label=\{index === 0 \? "Qty"[\s\S]{0,900}label=\{index === 0 \? "Container type"/u)
@@ -298,7 +298,8 @@ test("goods, cargo characteristics, hazardous details and customs agents remain 
   assert.match(details, /FMC TID/u)
   assert.match(details, /originIsUs[\s\S]*\["US", "USA", "UNITED STATES"/u)
   assert.match(details, /<CargoCharacteristicsField\b/u)
-  assert.match(fields, /aria-pressed=\{value\[key\]\}/u)
+  // A typed cargo-line safety flag is also a pressed shipment characteristic.
+  assert.match(fields, /aria-pressed=\{value\[key\] \|\| inherited\[key\] \|\| false\}/u)
   assert.match(fields, /key === "hazardous" && checked[\s\S]*setHazardousOpen\(true\)/u)
   assert.match(fields, /export function HazardousDetailsDialog/u)
   assert.match(fields, /Hazard class/u)
