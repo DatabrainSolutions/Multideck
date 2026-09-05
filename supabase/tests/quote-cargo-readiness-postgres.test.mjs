@@ -14,6 +14,7 @@ const migration = read('20260905123223_quote_cargo_issue_readiness.sql')
 const issue = read('20260904120100_quote_submission_document_boundary.sql')
 const handover = read('20260905123929_quote_booking_cargo_handover.sql')
 const bookingSave = read('20260905110317_booking_stable_cargo_equipment_identity.sql')
+const cargoRevision = read('20260905125327_quote_cargo_revision_comparison.sql')
 const conversionSource = read('20260828135847_reconcile_directional_quote_booking_references.sql')
 const conversionStart = conversionSource.indexOf('create or replace function booking_api.convert_accepted_quote(')
 const conversionEnd = conversionSource.indexOf('\n$$;', conversionStart) + 4
@@ -119,6 +120,7 @@ test('PostgreSQL: line-aware Quote issue and lossless initial Booking cargo hand
       ${conversion}
       ${handover}
       ${bookingSave}
+      ${cargoRevision}
       do $test$
       declare
         q uuid := gen_random_uuid(); v uuid := gen_random_uuid(); actor uuid := gen_random_uuid();
@@ -209,6 +211,8 @@ test('PostgreSQL: line-aware Quote issue and lossless initial Booking cargo hand
         lines jsonb; result jsonb; job uuid; saved_cargo uuid; original_snapshot jsonb; event_count integer; wrong_version uuid:=gen_random_uuid();
         bad_quote uuid:=gen_random_uuid(); bad_version uuid:=gen_random_uuid(); legacy_quote uuid:=gen_random_uuid(); legacy_version uuid:=gen_random_uuid();
         single_quote uuid:=gen_random_uuid(); single_version uuid:=gen_random_uuid();
+        revision uuid:=gen_random_uuid(); proposed_lines jsonb; observed_lines jsonb; differences jsonb; plan jsonb;
+        description_key text; weight_key text; new_line_id uuid:=gen_random_uuid(); manual_cargo uuid:=gen_random_uuid();
       begin
         insert into public."cmp_Users" values(actor,actor,company,'active');
         insert into public."cmp_Offices" values(office,company);
@@ -269,6 +273,54 @@ test('PostgreSQL: line-aware Quote issue and lossless initial Booking cargo hand
           values(single_version,single_quote,jsonb_set(original_snapshot,'{quote,shipmentFacts,cargoLines}',jsonb_build_array(lines->0)),true);
         result:=booking_api.convert_accepted_quote_before_sync_review_20260904(single_quote,actor,null);
         if not exists(select 1 from public."Job_Cargo" where "JobCargo_JobID"=(result->>'jobId')::uuid and "JobCargo_DeclaredValueAmount"=60000 and "JobCargo_DeclaredValueCurrencyCodeSnapshot"='GBP') then raise exception 'Single-line goods value not retained'; end if;
+        -- New revision: one conflicting description, one safe weight change,
+        -- one removal and one addition. Operational-only cargo is not a target.
+        insert into public."Job_Cargo" ("JobCargo_ID","JobCargo_JobID","JobCargo_LineNo","JobCargo_Description") values(manual_cargo,job,3,'Operator-added cargo');
+        proposed_lines:=jsonb_build_array(jsonb_set(jsonb_set(lines->0,'{description}','"New customer description"'),'{grossWeightKg}','1250'),
+          jsonb_build_object('id',new_line_id,'description','New customer goods','packageQuantity',1,'packageType','Cartons','grossWeightKg',20));
+        insert into public."CusQuote_Versions" ("CusQuoteVersion_ID","CusQuoteHeader_ID","CusQuoteVersion_SnapshotJSON","CusQuoteVersion_IsSubmitted","CusQuoteVersion_Number","CusQuoteVersion_IsCurrent")
+          values(revision,q,jsonb_set(original_snapshot,'{quote,shipmentFacts,cargoLines}',proposed_lines),true,2,false);
+        observed_lines:=booking_api.current_source_cargo_lines(job);
+        if jsonb_array_length(observed_lines)<>2 then raise exception 'Operational-only cargo included in Quote-owned comparison'; end if;
+        if booking_api.cargo_revision_differences(lines,observed_lines,lines)<>'[]'::jsonb then raise exception 'Booking-only edits created a Quote warning'; end if;
+        if booking_api.cargo_revision_differences(lines,observed_lines,jsonb_build_array(lines->1,lines->0))<>'[]'::jsonb then raise exception 'Reordering compared wrong cargo'; end if;
+        differences:=booking_api.cargo_revision_differences(lines,observed_lines,proposed_lines);
+        description_key:='cargo:'||c1||':description'; weight_key:='cargo:'||c1||':grossWeightKg';
+        if jsonb_array_length(differences)<>4 then raise exception 'Incorrect per-field cargo differences: %',differences; end if;
+        if not exists(select 1 from jsonb_array_elements(differences) d where d->>'key'=description_key and (d->>'conflict')::boolean and d->>'bookingValue'='Operator correction') then raise exception 'Operator conflict lost'; end if;
+        if not exists(select 1 from jsonb_array_elements(differences) d where d->>'key'=weight_key and not (d->>'conflict')::boolean) then raise exception 'Safe weight update incorrectly conflicts'; end if;
+        if not exists(select 1 from jsonb_array_elements(differences) d where d->>'operation'='remove' and (d->>'requiresConfirmation')::boolean) then raise exception 'Removal needs review'; end if;
+        begin perform booking_api.plan_quote_cargo_revision(job,v,revision,jsonb_build_array(weight_key),observed_lines); raise exception 'Unaccepted newer version planned'; exception when invalid_parameter_value then null; end;
+        update public."CusQuote_Header" set "CusQuoteHeader_AcceptedVersionID"=revision where "CusQuoteHeader_ID"=q;
+        plan:=booking_api.plan_quote_cargo_revision(job,v,revision,jsonb_build_array(weight_key),observed_lines);
+        if plan#>>'{changes,0,values,description}'<>'Operator correction' or (plan#>>'{changes,0,values,grossWeightKg}')::numeric<>1250
+          or (plan#>>'{changes,0,bookingCargoId}')::uuid<>saved_cargo then raise exception 'Selective plan overwrote unselected values or identity'; end if;
+        plan:=booking_api.plan_quote_cargo_revision(job,v,revision,jsonb_build_array(description_key,weight_key,'cargo:'||c2||':line','cargo:'||new_line_id||':line'),observed_lines);
+        if jsonb_array_length(plan->'changes')<>3 then raise exception 'Apply-all plan did not group fields by source identity'; end if;
+        if exists(select 1 from jsonb_array_elements(plan->'changes') item where item->>'bookingCargoId'=manual_cargo::text) then raise exception 'Operational cargo targeted'; end if;
+        -- Planning is read-only, even for explicit removal/addition selections.
+        if (select count(*) from public."Job_Cargo" where "JobCargo_JobID"=job and not "JobCargo_IsDeleted")<>3
+          or (select "JobCargo_Description" from public."Job_Cargo" where "JobCargo_ID"=saved_cargo)<>'Operator correction' then raise exception 'Planning applied changes'; end if;
+        begin perform booking_api.plan_quote_cargo_revision(job,v,revision,jsonb_build_array(weight_key,weight_key),observed_lines); raise exception 'Duplicate selection allowed'; exception when invalid_parameter_value then null; end;
+        begin perform booking_api.plan_quote_cargo_revision(job,v,revision,'["charges"]',observed_lines); raise exception 'Non-cargo field allowed'; exception when invalid_parameter_value then null; end;
+        begin perform booking_api.plan_quote_cargo_revision(job,wrong_version,revision,jsonb_build_array(weight_key),observed_lines); raise exception 'Stale baseline accepted'; exception when serialization_failure then null; end;
+        update public."Job_Cargo" set "JobCargo_GrossKilos"=1234 where "JobCargo_ID"=saved_cargo;
+        begin perform booking_api.plan_quote_cargo_revision(job,v,revision,jsonb_build_array(weight_key),observed_lines); raise exception 'Stale weight approval accepted'; exception when serialization_failure then null; end;
+        observed_lines:=booking_api.current_source_cargo_lines(job);
+        plan:=booking_api.plan_quote_cargo_revision(job,v,revision,jsonb_build_array(weight_key),observed_lines);
+        if (plan#>>'{changes,0,values,grossWeightKg}')::numeric<>1250 then raise exception 'Refreshed conflict review cannot proceed'; end if;
+        update public."Job_Cargo" set "JobCargo_IsDeleted"=true where "JobCargo_ID"=saved_cargo;
+        differences:=booking_api.cargo_revision_differences(lines,booking_api.current_source_cargo_lines(job),proposed_lines);
+        if not exists(select 1 from jsonb_array_elements(differences) d where d->>'sourceLineId'=c1::text and d->>'operation'='restore' and d->>'warningCode'='booking_cargo_removed') then raise exception 'Removed Booking line silently resurrected'; end if;
+        observed_lines:=booking_api.current_source_cargo_lines(job);
+        plan:=booking_api.plan_quote_cargo_revision(job,v,revision,jsonb_build_array('cargo:'||c1||':line'),observed_lines);
+        if plan#>>'{changes,0,operation}'<>'restore' or plan#>'{changes,0,bookingCargoId}'<>'null'::jsonb then raise exception 'Restoration did not require an explicit new line plan'; end if;
+        differences:=booking_api.cargo_revision_differences(lines,lines,jsonb_set(lines,'{0,commodity}','null'));
+        if not exists(select 1 from jsonb_array_elements(differences) d where d->>'field'='commodity' and d->'newQuoteValue'='null'::jsonb) then raise exception 'Explicit field clear lost'; end if;
+        differences:=booking_api.cargo_revision_differences(lines,jsonb_set(lines,'{0,description}',to_jsonb(repeat('Long Booking note ',500))),proposed_lines);
+        if not exists(select 1 from jsonb_array_elements(differences) d where d->>'key'=description_key and length(d->>'bookingValue')>4000 and (d->>'conflict')::boolean) then raise exception 'Operational text was shortened or blocked during comparison'; end if;
+        if has_function_privilege('service_role','booking_api.plan_quote_cargo_revision(uuid,uuid,uuid,jsonb,jsonb)','EXECUTE')
+          or has_function_privilege('authenticated','booking_api.current_source_cargo_lines(uuid)','EXECUTE') then raise exception 'Unwired internal cargo planner exposed'; end if;
         if has_function_privilege('service_role','booking_api.insert_accepted_quote_cargo(uuid,uuid,uuid)','EXECUTE')
           or has_function_privilege('authenticated','quote_api.cargo_booking_missing(jsonb)','EXECUTE') then raise exception 'Internal cargo insertion exposed'; end if;
       end $handover_test$;
