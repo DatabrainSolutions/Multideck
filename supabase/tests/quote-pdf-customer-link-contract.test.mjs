@@ -10,7 +10,7 @@ const [renderer, workflow, response, migration, submissionBoundary, brandingStor
   read("supabase/functions/quotes-workflow/index.ts"),
   read("supabase/functions/quote-response/index.ts"),
   read("supabase/migrations/20260820221145_quote_pdf_document_and_branding.sql"),
-  read("supabase/migrations/20260904120000_quote_submission_document_boundary.sql"),
+  read("supabase/migrations/20260904120100_quote_submission_document_boundary.sql"),
   read("supabase/migrations/20260820235125_allow_quote_brand_images_in_template_sources.sql"),
   read("multideck.client/src/pages/quote-response-page.tsx"),
   read("multideck.client/src/lib/quote-response-api.ts"),

@@ -5,7 +5,7 @@ import test from "node:test"
 const root = new URL("../../", import.meta.url)
 const [page, migration] = await Promise.all([
   readFile(new URL("multideck.client/src/pages/quotes-page.tsx", root), "utf8"),
-  readFile(new URL("supabase/migrations/20260904143000_repeat_quote_new_master.sql", root), "utf8"),
+  readFile(new URL("supabase/migrations/20260904143100_repeat_quote_new_master.sql", root), "utf8"),
 ])
 
 function sourceBetween(startMarker, endMarker) {

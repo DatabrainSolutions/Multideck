@@ -9,7 +9,7 @@ const [core, workflow, migration, submissionBoundary, quotePage, responsePage, b
   read("supabase/functions/quotes-workflow/core.ts"),
   read("supabase/functions/quotes-workflow/index.ts"),
   read("supabase/migrations/20260822090000_quote_delivery_modes_and_won_parity.sql"),
-  read("supabase/migrations/20260904120000_quote_submission_document_boundary.sql"),
+  read("supabase/migrations/20260904120100_quote_submission_document_boundary.sql"),
   read("multideck.client/src/pages/quotes-page.tsx"),
   read("multideck.client/src/pages/quote-response-page.tsx"),
   read("multideck.client/src/pages/bookings-page.tsx"),

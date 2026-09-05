@@ -10,7 +10,7 @@ const [registerApi, registerPage, quotePage, workflowApi, workflowEdge, migratio
   read("multideck.client/src/lib/quote-workflow-api.ts"),
   read("supabase/functions/quotes-workflow/index.ts"),
   read("supabase/migrations/20260823182000_quote_resend_lifecycle.sql"),
-  read("supabase/migrations/20260904120000_quote_submission_document_boundary.sql"),
+  read("supabase/migrations/20260904120100_quote_submission_document_boundary.sql"),
 ])
 
 test("quote register presents every persisted lifecycle instead of collapsing outcomes to Open", () => {

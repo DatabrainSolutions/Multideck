@@ -6,8 +6,8 @@ const root = new URL("../../", import.meta.url)
 const read = (path) => readFile(new URL(path, root), "utf8")
 
 const [migration, reconciliation, workflow, page, api] = await Promise.all([
-  read("supabase/migrations/20260903120000_quote_draft_version_lifecycle.sql"),
-  read("supabase/migrations/20260904110000_quote_version_foundation_reconciliation.sql"),
+  read("supabase/migrations/20260903120100_quote_draft_version_lifecycle.sql"),
+  read("supabase/migrations/20260904110100_quote_version_foundation_reconciliation.sql"),
   read("supabase/functions/quotes-workflow/index.ts"),
   read("multideck.client/src/pages/quotes-page.tsx"),
   read("multideck.client/src/lib/quote-workflow-api.ts"),

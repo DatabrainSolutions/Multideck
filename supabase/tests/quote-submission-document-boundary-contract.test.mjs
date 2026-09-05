@@ -6,7 +6,7 @@ const root = new URL("../../", import.meta.url)
 const read = (path) => readFile(new URL(path, root), "utf8")
 
 const [migration, dexterParityMigration, workflow, pdf, page, api] = await Promise.all([
-  read("supabase/migrations/20260904120000_quote_submission_document_boundary.sql"),
+  read("supabase/migrations/20260904120100_quote_submission_document_boundary.sql"),
   read("supabase/migrations/20260904121000_quote_delivery_dexter_parity.sql"),
   read("supabase/functions/quotes-workflow/index.ts"),
   read("supabase/functions/_shared/quote-pdf.ts"),
