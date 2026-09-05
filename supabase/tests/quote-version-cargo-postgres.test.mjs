@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { cargo, mapping, workspace, fixtureLines } from './quote-cargo-client-fixture.mjs'
+import { quoteDraftCargoEditFixture, quoteDraftCargoEditAssertions } from './quote-draft-cargo-edit-fixture.mjs'
 
 const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
 const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
@@ -236,6 +237,35 @@ test('PostgreSQL: structured Quote cargo survives draft saves and immutable vers
         begin perform public.quote_workflow_open_quote('${actor}'); raise exception 'Browser bypass'; exception when insufficient_privilege then null; end;
       end $$;
     `)
+    run('psql', psql, quoteDraftCargoEditFixture)
+    const staleTotals = { ...payload, shipmentFacts: { ...payload.shipmentFacts, grossWeightKg: '9999', packageQuantity: '9999' } }
+    save(staleTotals)
+    assert.equal(load().grossWeightKg, '9999', 'Reproduce the old non-UI save retaining a stale summary')
+    const beforeCargoBoundary = run('psql', psql, 'select jsonb_agg("CusQuoteVersion_SnapshotJSON" order by "CusQuoteVersion_ID") from public."CusQuote_Versions";')
+    run('psql', psql, read('20260905220124_quote_draft_cargo_edit_boundary.sql'))
+    assert.equal(run('psql', psql, 'select jsonb_agg("CusQuoteVersion_SnapshotJSON" order by "CusQuoteVersion_ID") from public."CusQuote_Versions";'), beforeCargoBoundary, 'Installing the boundary must not rewrite any existing Quote')
+    save(staleTotals)
+    assert.equal(load().grossWeightKg, cargo.quoteCargoSummary(lines).grossWeightKg, 'The same save now repairs the stale summary from its actual lines')
+    assert.equal(load().packageQuantity, cargo.quoteCargoSummary(lines).packageQuantity)
+    const summaryCases = [
+      [], lines,
+      [{ ...lines[0], packageQuantity: '0', grossWeightKg: '0', volumeCbm: '0', chargeableWeightKg: '0' }],
+      [lines[0], { ...lines[1], grossWeightKg: '', commodity: '', packageType: '' }],
+      [lines[0], { ...lines[1], commodity: 'Different commodity' }],
+      lines.map(line => ({ ...line, commodity: '  Machinery  ', packageType: ' Crates ' })),
+    ]
+    for (const cargoLines of summaryCases) {
+      const facts = { cargoLines, goodsValue: '12345.6789', container: '2 x 40GP', unrelated: { keep: true } }
+      const actual = JSON.parse(run('psql', psql, `select quote_api.normalise_cargo_facts(${sqlLiteral(facts)});`))
+      const expected = cargo.quoteCargoSummary(cargoLines)
+      assert.deepEqual(Object.fromEntries(Object.keys(expected).map(key => [key, actual[key]])), expected, 'Database totals must match the real Quote editor, including blanks, mixed types and exact decimals')
+      assert.equal(actual.goodsValue, facts.goodsValue)
+      assert.equal(actual.container, facts.container)
+      assert.deepEqual(actual.unrelated, facts.unrelated)
+    }
+    const legacyFacts = { grossWeightKg: '450', commodity: 'Legacy goods', packageType: 'Cartons' }
+    assert.deepEqual(JSON.parse(run('psql', psql, `select quote_api.normalise_cargo_facts(${sqlLiteral(legacyFacts)});`)), legacyFacts, 'No guessed cargo allocation for legacy Quotes')
+    run('psql', psql, quoteDraftCargoEditAssertions)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
     rmSync(directory, { recursive: true, force: true })
