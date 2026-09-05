@@ -108,6 +108,7 @@ import { CopyFeedbackTransition, CopyStatusIcon } from "./copyable-field"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { freightBookingMode, freightFieldPolicy, freightShipmentAllowed, freightTransportField, freightRouteOperationalFields } from "@/lib/freight-field-policy"
 import { freightPackageTypeOptions } from "@/lib/freight-package-types"
+import { changeBookingRouteMode, routeSharedReferenceFields } from "@/lib/booking-route-mode-change"
 
 export type Booking = (typeof bookings)[number]
 export type OperatorJob = (typeof operatorJobs)[number]
@@ -2880,6 +2881,10 @@ function BookingRecordDetails({
   const { language, t } = useLanguage()
   const [selectedCargoIndex, setSelectedCargoIndex] = useState(0)
   const [removingCargoIndex, setRemovingCargoIndex] = useState<number | null>(null)
+  const [pendingRouteMode, setPendingRouteMode] = useState<{ index: number; mode: string; route: BookingWorkflowRoute } | null>(null)
+  const routeModeCancelRef = useRef<HTMLButtonElement>(null)
+  const routeModeFocusRef = useRef<HTMLElement | null>(null)
+  const routeModeTriggersRef = useRef(new Map<number, HTMLDivElement>())
   const cargoIndex = Math.min(selectedCargoIndex, Math.max(0, workspace.cargo.length - 1))
   const updatedDate = new Date(record.booking.updatedAt)
   const updatedAt = !record.booking.updatedAt
@@ -3248,7 +3253,11 @@ function BookingRecordDetails({
                     ) : null}
                   </div>
                   <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-                    <BookingCargoWiseField label="Mode" value={legMode} options={modeOptions} allowCustom={false} {...editRoute(index, "mode")} />
+                    <div className="min-w-0" ref={(element) => { if (element) routeModeTriggersRef.current.set(index, element); else routeModeTriggersRef.current.delete(index) }}><BookingCargoWiseField label="Mode" value={legMode} options={modeOptions} allowCustom={false} editable={editable} onChange={(mode) => {
+                      if (!editable || bookingWorkspaceMode(mode) === legMode) return
+                      routeModeFocusRef.current = routeModeTriggersRef.current.get(index)?.querySelector("button") ?? null
+                      setPendingRouteMode({ index, mode, route: leg })
+                    }} /></div>
                     <BookingCargoWiseField label="Origin from" value={leg.originUnlocode || leg.origin || ""} options={legLocationFields} searchable placeholder="Search places or UN/LOCODEs" {...editRoute(index, "origin")} onChange={(nextValue) => { onRouteChange(index, "origin", nextValue); onRouteChange(index, "originUnlocode", "") }} onOptionSelect={(option) => {
                       const location = legLocations.find((item) => item.id === option.id)
                       if (location) onRouteLocationSelect(index, "origin", location)
@@ -3271,7 +3280,7 @@ function BookingRecordDetails({
                     <div className="grid min-w-0 gap-2 pt-2 md:grid-cols-2 xl:grid-cols-3 [--md-field-label-width:110px]">
                       {operationalFields.map(({ field, label, maxLength }) => <BookingCargoWiseField key={field} label={label} value={String(leg[field] ?? "")} maxLength={maxLength} wrapValue {...editRoute(index, field)} />)}
                     </div>
-                    <p className="mt-2 text-[12px] leading-relaxed text-[var(--md-text)]">{t("These references belong to this routing step. Changing its mode hides unrelated fields but retains their saved values.")}</p>
+                    <p className="mt-2 text-[12px] leading-relaxed text-[var(--md-text)]">{t("References belong to this routing step. A mode change requires review; saved previous references remain in the job audit history.")}</p>
                   </details> : null}
                 </div>
               )
@@ -3279,6 +3288,28 @@ function BookingRecordDetails({
           </div>
         </BookingCargoWiseGroup>
 
+        <Dialog open={pendingRouteMode !== null} onOpenChange={(open) => { if (!open) setPendingRouteMode(null) }}>
+          <DialogContent onOpenAutoFocus={(event) => { event.preventDefault(); routeModeCancelRef.current?.focus() }} onCloseAutoFocus={(event) => { event.preventDefault(); routeModeFocusRef.current?.focus() }}>
+            <DialogHeader>
+              <DialogTitle>{t("Change routing step mode?")}</DialogTitle>
+              <DialogDescription>{t("Master, house and carrier booking references and the generic transport service will start blank. Saved previous values remain in audit history when you save. Review the carrier, schedule and mode-specific details before saving. The Quote and existing documents will not change.")}</DialogDescription>
+            </DialogHeader>
+            <p className="text-[13px] font-medium">{t("Step")} {(pendingRouteMode?.index ?? 0) + 1}: {bookingWorkspaceMode(pendingRouteMode?.route.mode)} → {bookingWorkspaceMode(pendingRouteMode?.mode)}</p>
+            <DialogFooter>
+              <Button ref={routeModeCancelRef} variant="ghost" onClick={() => setPendingRouteMode(null)}>{t("Keep current mode")}</Button>
+              <Button disabled={!editable} onClick={() => {
+                if (!editable || !pendingRouteMode) return
+                // Do not apply a confirmation to a replaced or reordered draft leg.
+                if (workspace.routes[pendingRouteMode.index] === pendingRouteMode.route || (!workspace.routes.length && pendingRouteMode.index === 0)) {
+                  onRouteChange(pendingRouteMode.index, "mode", pendingRouteMode.mode)
+                } else {
+                  toast.error(t("Routing step changed"), { description: t("Review the current routing step and choose its mode again.") })
+                }
+                setPendingRouteMode(null)
+              }}>{t("Change mode and review")}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </TabsContent>
       <TabsContent value="cargo" className="grid gap-[var(--md-page-stack-gap-compact)]">
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
@@ -3949,6 +3980,26 @@ function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
               <div className="min-w-0">
                 <p className="text-[13px] font-medium leading-5 text-[var(--md-ink)]">{event.summary}</p>
                 <p className="mt-0.5 text-[12px] text-[var(--md-text)]">{event.actor || t("System")} · {t(event.type.replace(/_/g, " "))}</p>
+                {["route_mode_changed", "route_references_updated"].includes(event.type) ? <details className="mt-2 min-w-0">
+                  <summary className="cursor-pointer py-1 text-[12px] text-[var(--md-accent)] focus-visible:outline-2 focus-visible:outline-offset-2">{t("Review previous and current references")}</summary>
+                  <div className="mt-2 grid min-w-0 gap-3 sm:grid-cols-2">
+                    {(["beforeReferences", "afterReferences"] as const).map((key) => {
+                      const metadata = asRecord(event.metadata)
+                      const mode = recordText(metadata, key === "beforeReferences" ? "fromMode" : "toMode")
+                      const references = asRecord(metadata[key])
+                      const labels = freightRouteOperationalFields(mode)
+                      return <div key={key} className="min-w-0">
+                        <p className="text-[12px] font-medium">{t(key === "beforeReferences" ? "Previous" : "Current")} · {bookingWorkspaceMode(mode)}</p>
+                        <dl className="mt-2 grid gap-2 text-[12px]">
+                          {routeSharedReferenceFields.map((field) => <div key={field} className="min-w-0">
+                            <dt className="text-[var(--md-subtle)]">{t(labels.find((item) => item.field === field)?.label ?? (field === "carrierBookingReference" ? "Carrier booking reference" : field === "transportMeansName" ? "Transport service" : field === "masterTransportReference" ? "Master transport reference" : "House transport reference"))}</dt>
+                            <dd className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]" data-i18n-skip>{recordText(references, field) || "—"}</dd>
+                          </div>)}
+                        </dl>
+                      </div>
+                    })}
+                  </div>
+                </details> : null}
               </div>
             </div>
           ))}
@@ -4816,7 +4867,9 @@ export function BookingDetailWorkspace({
       if (!current || typeof value !== "string" || !Number.isInteger(index) || index < 0 || index >= Math.max(current.routes.length, 1)) return current
       const routes = current.routes.length ? [...current.routes] : [{ order: 1, mode: current.booking.mode, isMainCarriage: true }]
       const existing = routes[index] ?? { order: index + 1, mode: current.booking.mode, isMainCarriage: index === 0 }
-      routes[index] = { ...existing, [field]: value, routeData: { ...existing.routeData, [field]: value } }
+      routes[index] = field === "mode"
+        ? changeBookingRouteMode(existing, value, loadedRecord?.workspace?.routes.find((route) => Boolean(existing.id) && route.id === existing.id))
+        : { ...existing, [field]: value, routeData: { ...existing.routeData, [field]: value } }
       return { ...current, routes }
     })
   }

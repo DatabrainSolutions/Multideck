@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import {mutateBookingRoute} from './booking-route-client-fixture.mjs'
 import {routeSaveFixture,routeSaveMigration,routeSaveAssertions} from './booking-route-save-fixture.mjs'
+import {routeModeAssertions} from './booking-route-mode-fixture.mjs'
 
 const initial={booking:{mode:'multimodal',sourceQuoteVersionId:'accepted-version'},routes:[
   {mode:'road',origin:'Depot',destination:'Port',vehicleRegistration:'AB12 CDE',routeData:{originalEvidence:'preserve'}},
@@ -30,9 +31,10 @@ test('actual route updater keeps mode-specific references on the selected leg an
   const switched=mutateBookingRoute(edited,1,'mode','air')
   assert.equal(switched.routes[1].vessel,'Vessel A')
   assert.equal(switched.routes[1].voyageNumber,'VOY-3')
-  const restored=structuredClone(edited)
-  restored.routes[1].routeData.mode='sea'
-  assert.deepEqual(mutateBookingRoute(switched,1,'mode','sea'),restored)
+  assert.equal(switched.routes[1].masterTransportReference,'')
+  assert.equal(switched.routes[1].houseTransportReference,'')
+  assert.equal(mutateBookingRoute(switched,1,'mode','sea').routes[1].houseTransportReference,'')
+  assert.equal(edited.routes[1].houseTransportReference,'HBL-2')
   assert.equal(mutateBookingRoute(edited,0,'trailerNumber','').routes[0].trailerNumber,'')
   for(const index of [-1,4,1.5,NaN]) assert.equal(mutateBookingRoute(edited,index,'voyageNumber','bad'),edited)
 })
@@ -118,6 +120,10 @@ test('PostgreSQL: real route save and workspace projection round-trip per-mode f
     assert.notEqual(regression.status,0,'Regression must reproduce before the migration')
     assert.match(regression.stderr,/Legacy summary duplicated or overwrote the real first leg/)
     run('psql',args,routeSaveMigration+routeSaveAssertions)
+    const modeRegression=spawnSync(join(bin,'psql'),args,{input:routeModeAssertions,encoding:'utf8',timeout:30_000})
+    assert.notEqual(modeRegression.status,0,'Mode evidence regression must fail without the new trigger')
+    assert.match(modeRegression.stderr,/Original mode evidence or actor lost/)
+    run('psql',args,read('20260905183528_booking_route_mode_reference_history.sql')+routeModeAssertions)
   } finally {
     if(started)run('pg_ctl',['-D',data,'-m','immediate','-w','stop'])
     rmSync(directory,{recursive:true,force:true})
