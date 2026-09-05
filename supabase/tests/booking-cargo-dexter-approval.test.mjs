@@ -9,19 +9,20 @@ const executable = stripTypeScriptTypes(source).replace('"./email-approval.mjs"'
 const { operatorAuthorisesAction, allowedActionsForPrompt, prepareServerAction } =
   await import(`data:text/javascript;base64,${Buffer.from(executable).toString('base64')}`)
 
-for (const action of ['update_booking_cargo', 'update_booking_container']) {
+for (const action of ['update_booking_cargo', 'update_booking_container', 'update_booking_route']) {
 const container = action === 'update_booking_container'
+const route = action === 'update_booking_route'
 test(`${action}: edits require explicit approval even in Full access`, () => {
   for (const mode of ['approve', 'full']) assert.equal(requiresExplicitActionApproval(action, mode), true)
 })
 test(`${action}: edit intent is distinct from an inspection request`, () => {
-  for (const prompt of container
+  for (const prompt of route ? ['Update the second leg departure', 'Correct the vessel name', 'Clear the flight number'] : container
     ? ['Update container weight to 42 kg', 'Clear the reefer unit', 'Record verified gross mass']
     : ['Update cargo weight to 42 kg', 'Clear the cargo dimensions', 'Correct the goods description']) {
     assert.equal(operatorAuthorisesAction(prompt, action), true)
     assert.deepEqual(allowedActionsForPrompt(prompt, [action], 'full'), [action])
   }
-  assert.deepEqual(allowedActionsForPrompt(container ? 'Show the container VGM' : 'Show the cargo weight', [action], 'full'), [])
+  assert.deepEqual(allowedActionsForPrompt(route ? 'Show the second routing leg' : container ? 'Show the container VGM' : 'Show the cargo weight', [action], 'full'), [])
 })
 test(`${action}: proposal stores both exact identities without executing a write`, async () => {
   const writes = []
@@ -38,8 +39,9 @@ test(`${action}: proposal stores both exact identities without executing a write
   } }
   const input = {
     conversationId: null, clientSessionId: crypto.randomUUID(), intentPlanId: crypto.randomUUID(), grantId: crypto.randomUUID(),
-    actionCode: action, arguments: { target_id: bookingId, [container ? 'container_id' : 'cargo_id']: cargoId, field: 'grossWeightKg', value: '42',
+    actionCode: action, arguments: { target_id: bookingId, [route ? 'route_id' : container ? 'container_id' : 'cargo_id']: cargoId, field: route ? 'voyageNumber' : 'grossWeightKg', value: route ? 'VOY-42' : '42',
       ...(container ? { expected_container_updated_at: '2026-09-05T12:00:00Z' } : {}),
+      ...(route ? { expected_route_updated_at: '2026-09-05T12:00:00Z' } : {}),
       expected_updated_at: '2026-09-05T12:00:00Z', reason: 'Correct packing list' },
     title: 'Correct cargo weight', description: 'Second cargo line', changes: [{ field: 'grossWeightKg', before: 40, after: 42 }], accessMode: 'full',
   }

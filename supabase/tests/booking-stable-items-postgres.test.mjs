@@ -8,6 +8,7 @@ import { cargoDexterFixture, cargoProjection, cargoDexterMigration, cargoDexterA
 import { mutateBookingCargo } from './booking-cargo-client-fixture.mjs'
 import { cargoDecimalAssertions } from './booking-cargo-decimal-fixture.mjs'
 import { containerDexterFixture, containerDexterAssertions } from './booking-container-dexter-fixture.mjs'
+import { routeDexterFixture, routeDexterAssertions } from './booking-route-dexter-fixture.mjs'
 
 // Executes the actual save function against disposable PostgreSQL, never a tenant.
 // PG_TEST_BIN can point to a PostgreSQL bin directory in CI.
@@ -24,7 +25,7 @@ function table(name) {
   return baseline.slice(start, baseline.indexOf('\n);', start) + 3)
 }
 
-test('PostgreSQL: stable items, approved Dexter cargo/container lifecycle, watches and isolation', { skip: !available }, () => {
+test('PostgreSQL: stable items, approved Dexter cargo/container/route lifecycle, watches and isolation', { skip: !available }, () => {
   const directory = mkdtempSync(join(tmpdir(), 'multideck-stable-items-'))
   const data = join(directory, 'data')
   let started = false
@@ -153,6 +154,8 @@ test('PostgreSQL: stable items, approved Dexter cargo/container lifecycle, watch
       cargoProjection + cargoDexterFixture(table) + cargoDexterMigration + decimalMigration + cargoDexterAssertions + cargoDecimalAssertions)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
       containerDexterFixture + containerDexterAssertions)
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
+      routeDexterFixture(table) + routeDexterAssertions)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
     rmSync(directory, { recursive: true, force: true })

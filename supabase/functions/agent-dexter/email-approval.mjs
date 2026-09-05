@@ -5,5 +5,6 @@ export function requiresExplicitActionApproval(actionCode, accessMode) {
     "create_purchase_order",
     "update_booking_cargo",
     "update_booking_container",
+    "update_booking_route",
   ].includes(actionCode)
 }
