@@ -125,6 +125,7 @@ const ACTION_INTENTS: Record<string, RegExp> = {
   create_booking: /\b(create|add|start|make|open|new)\b.{0,80}\b(booking|shipment|job)\b|\bnew (booking|shipment|job)\b/,
   update_booking: /\b(update|edit|change|amend|correct|set|move)\b.{0,80}\b(booking|shipment|job|route)\b/,
   update_booking_cargo: /\b(update|edit|change|amend|correct|set|clear)\b.{0,80}\b(cargo|goods|packages?|weight|dimensions?|shipment)\b/,
+  update_booking_container: /\b(update|edit|change|amend|correct|set|clear|record)\b.{0,80}\b(containers?|vgm|tare|reefer|verified gross mass)\b/,
   create_customs_declaration: /\b(create|add|start|make|open|new|draft)\b.{0,80}\b(customs|declaration|cds|import|export)\b/,
   update_customs_declaration: /\b(update|edit|change|amend|correct|complete|fill)\b.{0,80}\b(customs|declaration|cds|import|export)\b/,
   create_icustoms_draft: /\b(create|save|send|prepare)\b.{0,80}\b(icustoms|provider)\b.{0,40}\b(draft|declaration)\b|\bprovider draft\b/,

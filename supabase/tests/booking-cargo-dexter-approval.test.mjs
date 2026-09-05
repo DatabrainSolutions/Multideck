@@ -9,18 +9,21 @@ const executable = stripTypeScriptTypes(source).replace('"./email-approval.mjs"'
 const { operatorAuthorisesAction, allowedActionsForPrompt, prepareServerAction } =
   await import(`data:text/javascript;base64,${Buffer.from(executable).toString('base64')}`)
 
-const action = 'update_booking_cargo'
-test('cargo edits require explicit approval even in Full access', () => {
+for (const action of ['update_booking_cargo', 'update_booking_container']) {
+const container = action === 'update_booking_container'
+test(`${action}: edits require explicit approval even in Full access`, () => {
   for (const mode of ['approve', 'full']) assert.equal(requiresExplicitActionApproval(action, mode), true)
 })
-test('cargo edit intent is distinct from an inspection request', () => {
-  for (const prompt of ['Update cargo weight to 42 kg', 'Clear the cargo dimensions', 'Correct the goods description']) {
+test(`${action}: edit intent is distinct from an inspection request`, () => {
+  for (const prompt of container
+    ? ['Update container weight to 42 kg', 'Clear the reefer unit', 'Record verified gross mass']
+    : ['Update cargo weight to 42 kg', 'Clear the cargo dimensions', 'Correct the goods description']) {
     assert.equal(operatorAuthorisesAction(prompt, action), true)
     assert.deepEqual(allowedActionsForPrompt(prompt, [action], 'full'), [action])
   }
-  assert.deepEqual(allowedActionsForPrompt('Show the cargo weight', [action], 'full'), [])
+  assert.deepEqual(allowedActionsForPrompt(container ? 'Show the container VGM' : 'Show the cargo weight', [action], 'full'), [])
 })
-test('cargo proposal stores both exact identities without executing a write', async () => {
+test(`${action}: proposal stores both exact identities without executing a write`, async () => {
   const writes = []
   const actor = { userId: crypto.randomUUID(), companyId: crypto.randomUUID(), authUserId: crypto.randomUUID() }
   const bookingId = crypto.randomUUID(), cargoId = crypto.randomUUID()
@@ -35,7 +38,8 @@ test('cargo proposal stores both exact identities without executing a write', as
   } }
   const input = {
     conversationId: null, clientSessionId: crypto.randomUUID(), intentPlanId: crypto.randomUUID(), grantId: crypto.randomUUID(),
-    actionCode: action, arguments: { target_id: bookingId, cargo_id: cargoId, field: 'grossWeightKg', value: '42',
+    actionCode: action, arguments: { target_id: bookingId, [container ? 'container_id' : 'cargo_id']: cargoId, field: 'grossWeightKg', value: '42',
+      ...(container ? { expected_container_updated_at: '2026-09-05T12:00:00Z' } : {}),
       expected_updated_at: '2026-09-05T12:00:00Z', reason: 'Correct packing list' },
     title: 'Correct cargo weight', description: 'Second cargo line', changes: [{ field: 'grossWeightKg', before: 40, after: 42 }], accessMode: 'full',
   }
@@ -50,3 +54,4 @@ test('cargo proposal stores both exact identities without executing a write', as
   await assert.rejects(prepareServerAction(admin, actor, input), /action_outside_operator_intent/)
   assert.equal(writes.filter(x => x.table === 'AI_DexterPreparedActions').length, 1)
 })
+}
