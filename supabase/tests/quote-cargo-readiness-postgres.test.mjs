@@ -11,6 +11,9 @@ const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
 const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
 const read = (name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), 'utf8')
 const foundation = read('20260905115938_quote_version_structured_cargo.sql')
+const cargoOpening = read('20260905160621_quote_open_structured_cargo.sql')
+const precisionChange = cargoOpening.slice(cargoOpening.indexOf('do $migration$'), cargoOpening.indexOf('end $migration$;') + 'end $migration$;'.length)
+assert.ok(precisionChange.startsWith('do $migration$') && precisionChange.endsWith('end $migration$;'))
 const readiness = read('20260904160000_quote_incoterm_scope_decision.sql')
 const migration = read('20260905123223_quote_cargo_issue_readiness.sql')
 const issue = read('20260904120100_quote_submission_document_boundary.sql')
@@ -134,6 +137,7 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
       -- The broad workspace response is outside this mutation test.
       create function booking_api.workspace(uuid,text) returns jsonb language sql as $$select '{}'::jsonb$$;
       ${foundation}
+      ${precisionChange}
       ${readiness}
       ${migration}
       ${issue.slice(start,end)}

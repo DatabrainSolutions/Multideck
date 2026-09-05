@@ -4,11 +4,13 @@ import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { cargo, mapping, workspace, fixtureLines } from './quote-cargo-client-fixture.mjs'
 
 const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
 const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
 const read = (name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), 'utf8')
 const migration = read('20260905115938_quote_version_structured_cargo.sql')
+const opening = read('20260905160621_quote_open_structured_cargo.sql')
 const lifecycle = read('20260903120100_quote_draft_version_lifecycle.sql')
 const guardStart = lifecycle.indexOf('create or replace function quote_api.prevent_submitted_quote_version_mutation()')
 const guardEnd = lifecycle.indexOf('-- Keep the original implementation', guardStart)
@@ -60,12 +62,19 @@ test('PostgreSQL: structured Quote cargo survives draft saves and immutable vers
       returns jsonb language plpgsql as $$
       declare version_id uuid; version_number integer; company uuid;
       begin
+        -- The broad initial save, identities and numbering remain fixtures.
+        -- The actual open action and draft-collapse/version projections execute.
+        if quote_id is null then
+          quote_id := gen_random_uuid();
+          insert into public."CusQuote_Header" ("CusQuoteHeader_ID") values(quote_id);
+        end if;
         select "Company_ID" into company from public."CusQuote_Versions" where "CusQuoteHeader_ID"=quote_id limit 1;
+        company := coalesce(company, '11111111-1111-4111-8111-111111111111'::uuid);
         select coalesce(max("CusQuoteVersion_Number"),0)+1 into version_number from public."CusQuote_Versions" where "CusQuoteHeader_ID"=quote_id;
         update public."CusQuote_Versions" set "CusQuoteVersion_IsCurrent"=false where "CusQuoteHeader_ID"=quote_id;
         insert into public."CusQuote_Versions" ("Company_ID","CusQuoteHeader_ID","CusQuoteVersion_Number","CusQuoteVersion_SnapshotJSON","CusQuoteVersion_IsCurrent")
         values(company,quote_id,version_number,jsonb_build_object('quote',payload),true) returning "CusQuoteVersion_ID" into version_id;
-        return jsonb_build_object('versionId',version_id,'versionNumber',version_number);
+        return jsonb_build_object('quoteId',quote_id,'versionId',version_id,'versionNumber',version_number);
       end $$;
       ${guard}
       ${draftSave}
@@ -171,6 +180,48 @@ test('PostgreSQL: structured Quote cargo survives draft saves and immutable vers
         begin delete from quote_api.version_cargo_lines; raise exception 'Independent writer bypass'; exception when insufficient_privilege then null; end;
       end $$;
       reset role;
+    `)
+    // Upgrade after the old-version tests so the migration is checked against
+    // real existing snapshots, not only a fresh empty fixture schema.
+    const psql = ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-At']
+    const oldSnapshots = run('psql', psql, 'select jsonb_agg("CusQuoteVersion_SnapshotJSON" order by "CusQuoteVersion_Number") from public."CusQuote_Versions";')
+    run('psql', psql, opening)
+    assert.equal(run('psql', psql, 'select jsonb_agg("CusQuoteVersion_SnapshotJSON" order by "CusQuoteVersion_Number") from public."CusQuote_Versions";'), oldSnapshots)
+    const actor = '22222222-2222-4222-8222-222222222222'
+    const opened = JSON.parse(run('psql', psql, `select public.quote_workflow_open_quote('${actor}');`))
+    const quoteId = opened.quoteId
+    const versionId = opened.versionId
+    const load = () => JSON.parse(run('psql', psql, `select "CusQuoteVersion_SnapshotJSON"->'quote'->'shipmentFacts' from public."CusQuote_Versions" where "CusQuoteVersion_ID"='${versionId}';`))
+    const initial = load()
+    assert.equal(initial.createdOnOpen, true)
+    assert.equal(initial.cargoLines.length, 1)
+    assert.equal(cargo.readQuoteCargoLines(initial.cargoLines)[0].description, '')
+    const lines = fixtureLines()
+    lines[0].id = initial.cargoLines[0].id
+    lines[0].volumeCbm = '0.123456789012345678901234'
+    const loaded = mapping.quoteRecordFromWorkspace(workspace(initial), null)
+    const payload = mapping.quoteSavePayload({ ...loaded, cargoLines: lines }, [], null)
+    const sqlLiteral = value => `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`
+    const save = value => JSON.parse(run('psql', psql, `select quote_api.save_quote('${actor}', '${quoteId}', ${sqlLiteral(value)});`))
+    assert.equal(save(payload).versionId, versionId, 'Opening and saving must retain the one mutable draft')
+    const reloaded = mapping.quoteRecordFromWorkspace(workspace(load()), null)
+    assert.deepEqual(reloaded.cargoLines, lines, 'Browser payload → actual normaliser/projection → reload must retain every field and exact precision')
+    assert.equal(save(mapping.quoteSavePayload({ ...reloaded, cargoLines: [] }, [], null)).versionId, versionId)
+    assert.deepEqual(load().cargoLines, [], 'Removing the final line must not revive a flat summary')
+    run('psql', psql, `
+      do $$ begin
+        if has_function_privilege('anon','public.quote_workflow_open_quote(uuid)','EXECUTE')
+          or has_function_privilege('authenticated','public.quote_workflow_open_quote(uuid)','EXECUTE')
+          or not has_function_privilege('service_role','public.quote_workflow_open_quote(uuid)','EXECUTE') then raise exception 'Unsafe open grants'; end if;
+        begin
+          update public."CusQuote_Versions" set "CusQuoteVersion_IsSubmitted"=true where "CusQuoteVersion_ID"='${versionId}';
+          raise exception 'Empty draft was submitted';
+        exception when invalid_parameter_value then null; end;
+      end $$;
+      set role authenticated;
+      do $$ begin
+        begin perform public.quote_workflow_open_quote('${actor}'); raise exception 'Browser bypass'; exception when insufficient_privilege then null; end;
+      end $$;
     `)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])

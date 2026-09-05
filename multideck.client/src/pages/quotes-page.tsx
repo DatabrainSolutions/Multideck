@@ -110,6 +110,8 @@ import {
 } from "@/components/multideck/quote-details/quote-detail-model"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { calculateQuoteFreightDirection } from "@/lib/freight-direction"
+import { newQuoteCargoLine, quoteCargoSummary, readQuoteCargoLines, type QuoteCargoLine } from "@/lib/quote-cargo"
+import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
 import { textareaSelectionAnchor, type TextareaSelection, type TextareaSelectionAnchor } from "@/lib/textarea-selection"
 import { formatQuoteLossReason, quoteCustomerDeclineReasons, quoteLossReasons } from "@/lib/quote-loss-reasons"
 import { listMailboxes, type Mailbox } from "@/lib/inbox-api"
@@ -460,6 +462,7 @@ type QuoteRecord = {
   opsRep?: string
   jobStatus?: string
   goodsValue?: string
+  cargoLines?: QuoteCargoLine[]
   goodsValueCurrency?: string
   insuranceValue?: string
   insuranceValueCurrency?: string
@@ -4815,6 +4818,7 @@ function QuoteDetailsPanelV2({
             <AmountCurrencyField label="Insurance value" value={{ amount: quote.insuranceValue ?? "", currency: quote.insuranceValueCurrency || quote.currency || "GBP" }} currencies={currencies} disabled={!editable} onChange={(value) => { onQuoteChange("insuranceValue", value.amount); onQuoteChange("insuranceValueCurrency", value.currency) }} width="medium" />
             <QuoteCompactInput label="Entries" value={quote.entries ?? ""} type="number" dir="ltr" width="code" disabled={!editable} onChange={(value) => onQuoteChange("entries", value)} />
             <QuoteCompactInput label="Lines" value={quote.invoiceLines ?? ""} type="number" dir="ltr" width="code" disabled={!editable} onChange={(value) => onQuoteChange("invoiceLines", value)} />
+            {!quote.cargoLines ? <>
             <CompactCombobox label="Commodity" value={quote.commodity ?? ""} options={(lookups?.commodities ?? []).map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.code }))} onValueChange={(value) => onQuoteChange("commodity", value)} placeholder="Search or type commodity" disabled={!editable} width="grow" />
             <QuoteCompactInput label="Packages / pieces" value={quote.packageQuantity ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("packageQuantity", value)} />
             <CompactCombobox
@@ -4833,10 +4837,14 @@ function QuoteDetailsPanelV2({
             <QuoteCompactInput label="Gross weight (kg)" value={quote.grossWeightKg ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("grossWeightKg", value)} />
             <QuoteCompactInput label="Volume (CBM)" value={quote.volumeCbm ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("volumeCbm", value)} />
             {fieldPolicy.chargeableWeight ? <QuoteCompactInput label="Chargeable weight (kg)" value={quote.chargeableWeightKg ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("chargeableWeightKg", value)} /> : null}
+            </> : null}
             {originIsUs ? <QuoteCompactSelect label="FMC TID" value={quote.fmcTid ?? ""} options={["Not required", "Required", "Pending"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("fmcTid", value)} /> : null}
           </CompactFieldRow>
+          <QuoteCargoEditor lines={quote.cargoLines} editable={editable} chargeableWeight={fieldPolicy.chargeableWeight}
+            legacy={{ description: quote.commodity || "", commodity: quote.commodity || "", packageQuantity: quote.packageQuantity || "", packageType: quote.packageType || "", grossWeightKg: quote.grossWeightKg || "", volumeCbm: quote.volumeCbm || "", chargeableWeightKg: quote.chargeableWeightKg || "", isHazardous: characteristics.hazardous, isTemperatureControlled: characteristics.temperatureControlled }}
+            onChange={(cargoLines) => onQuotePatch({ cargoLines })} />
           <div>
-            <p className="mb-1.5 text-[10.5px] font-medium text-[var(--md-text)]">{t("Cargo characteristics")}</p>
+            <p className="mb-1.5 text-[10.5px] font-medium text-[var(--md-text)]">{t(quote.cargoLines ? "Shipment handling (in addition to line flags)" : "Cargo characteristics")}</p>
             <CargoCharacteristicsField value={characteristics} onChange={(value) => { onQuoteChange("cargoCharacteristics", cargoCharacteristicsToString(value)); onQuoteChange("knownCargo", value.hazardous ? "Hazardous" : "General merchandise") }} hazardousDetails={hazardousDetails} onHazardousDetailsChange={updateHazardousDetails} disabled={!editable} />
           </div>
         </div>
@@ -5349,6 +5357,7 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     opsRep: fact("opsRep"),
     jobStatus: presentation.status,
     goodsValue: fact("goodsValue"),
+    cargoLines: readQuoteCargoLines(facts.cargoLines),
     goodsValueCurrency: fact("goodsValueCurrency") || record.currency || "GBP",
     insuranceValue: fact("insuranceValue"),
     insuranceValueCurrency: fact("insuranceValueCurrency") || record.currency || "GBP",
@@ -5455,6 +5464,7 @@ function quoteWorkspaceFromVersion(
 function blankQuoteRevision(source: QuoteRecord): QuoteRecord {
   return {
     ...newQuoteDraft,
+    cargoLines: [newQuoteCargoLine()],
     id: source.id,
     localRef: source.localRef,
     customer: source.customer,
@@ -5571,10 +5581,10 @@ function newRepeatMasterQuote(
 }
 
 function compactQuoteFacts(values: Record<string, unknown>) {
-  return Object.fromEntries(Object.entries(values).filter(([, value]) => {
+  return Object.fromEntries(Object.entries(values).filter(([key, value]) => {
     if (value === null || value === undefined) return false
     if (typeof value === "string") return Boolean(value.trim())
-    if (Array.isArray(value)) return value.length > 0
+    if (Array.isArray(value)) return key === "cargoLines" || value.length > 0
     return true
   }))
 }
@@ -5606,6 +5616,7 @@ function uuidOrNull(value?: string | null) {
 }
 
 function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: QuoteWorkflowSources | null): QuoteSavePayload {
+  if (quote.cargoLines) quote = { ...quote, ...quoteCargoSummary(quote.cargoLines) }
   const mode = lookups?.modes.find((option) => option.name === quote.mode)?.code ?? quote.mode
   const shipmentTypeLabel = quote.shipmentType?.split(" - ", 1)[0] ?? ""
   const shipmentType = lookups?.shipmentTypes.find((option) => option.code === shipmentTypeLabel || option.name === quote.shipmentType)?.code ?? shipmentTypeLabel
@@ -5726,6 +5737,7 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
       salesRep: quote.salesRep,
       opsRep: quote.opsRep,
       goodsValue: quote.goodsValue,
+      cargoLines: quote.cargoLines,
       goodsValueCurrency: quote.goodsValueCurrency,
       insuranceValue: quote.insuranceValue,
       insuranceValueCurrency: quote.insuranceValueCurrency,
@@ -6016,7 +6028,7 @@ export function QuoteDetailPage({
   const [intelligence, setIntelligence] = useState<QuoteIntelligenceSnapshot | null>(null)
   const [intelligenceUnavailable, setIntelligenceUnavailable] = useState(false)
   const [currentQuoteId, setCurrentQuoteId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(!isNewQuote)
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [transitioning, setTransitioning] = useState(false)
   const [workflowError, setWorkflowError] = useState("")
@@ -6026,6 +6038,7 @@ export function QuoteDetailPage({
   const failedSaveFingerprintRef = useRef<string | null>(null)
   const saveInFlightRef = useRef<symbol | null>(null)
   const quoteRequestGenerationRef = useRef(0)
+  const openingQuoteRef = useRef<ReturnType<typeof openQuoteWorkflow> | null>(null)
   const readinessRequestRef = useRef(0)
   const intelligenceRequestRef = useRef(0)
   const issuePreviewTimerRef = useRef<number | null>(null)
@@ -6120,7 +6133,8 @@ export function QuoteDetailPage({
     failedSaveFingerprintRef.current = null
     setSaving(false)
     setCurrentQuoteId(null)
-    setLoading(!isNewQuote)
+    setLoading(true)
+    if (!isNewQuote) openingQuoteRef.current = null
     setIntelligence(null)
     setIntelligenceUnavailable(false)
     setWorkflowError("")
@@ -6138,7 +6152,9 @@ export function QuoteDetailPage({
         // critical quote request or alarm the operator if enrichment is down.
         const loadSources = () => getQuoteSources().catch(() => null)
         if (isNewQuote) {
-          const openedQuote = await openQuoteWorkflow()
+          // Strict Mode replays effects in development. Both passes must await
+          // the same creation, never allocate a second master Quote reference.
+          const openedQuote = await (openingQuoteRef.current ??= openQuoteWorkflow())
           const openedWorkspace = await getQuoteWorkflow(openedQuote.reference)
           if (!cancelled) {
             const openedQuoteRecord = quoteRecordFromWorkspace(openedWorkspace, null)
@@ -6272,6 +6288,7 @@ export function QuoteDetailPage({
   const activeTotals = useMemo(() => getChargeTotals(activeCharges), [activeCharges])
   const activeQuote = {
     ...presentedQuote,
+    ...(presentedQuote.cargoLines ? quoteCargoSummary(presentedQuote.cargoLines) : {}),
     cost: workspace ? activeTotals.cost : draftQuote.cost,
     revenue: workspace ? activeTotals.revenue : draftQuote.revenue,
     profit: workspace ? activeTotals.profit : draftQuote.profit,
@@ -6371,6 +6388,7 @@ export function QuoteDetailPage({
   function updateDraftQuotePatch(patch: Partial<QuoteRecord>) {
     setDraftQuote((current) => {
       const next = { ...current, ...patch }
+      if (patch.cargoLines) Object.assign(next, quoteCargoSummary(patch.cargoLines))
       if ("origin" in patch || "destination" in patch) {
         next.route = next.origin.trim() && next.destination.trim() ? `${next.origin.trim()} to ${next.destination.trim()}` : ""
       }

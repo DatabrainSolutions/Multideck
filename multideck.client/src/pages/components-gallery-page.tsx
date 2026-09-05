@@ -9,6 +9,8 @@ import toastGeneralIcon from "@/assets/toasts/toast-general.png"
 import toastSuccessIcon from "@/assets/toasts/toast-success.png"
 import { Button } from "@/components/ui/button"
 import { Iphone } from "@/components/ui/iphone"
+import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
+import { newQuoteCargoLine } from "@/lib/quote-cargo"
 import {
   Context,
   ContextContent,
@@ -322,7 +324,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
@@ -1579,6 +1581,12 @@ const previewPhoneCallProviders = [
   { provider: "3cx" as const, label: "3CX employee calls", detail: "3CX call-detail and transcript collector", state: "not_configured" as const, lastAttemptAt: null, lastSucceededAt: null, lastFailedAt: null, consecutiveFailures: 0, errorCode: null },
 ]
 
+function QuoteCargoEditorPreview() {
+  const [lines, setLines] = useState(() => [{ ...newQuoteCargoLine(), description: "Machine parts", packageQuantity: "2", packageType: "Crates", grossWeightKg: "120.5" }, { ...newQuoteCargoLine(), description: "Spare seals", packageQuantity: "4", packageType: "Cartons", grossWeightKg: "18" }])
+  const [editable, setEditable] = useState(true)
+  return <div className="grid w-full gap-4"><Button variant="outline" onClick={() => setEditable(!editable)}>{editable ? "Preview submitted version" : "Return to draft"}</Button><QuoteCargoEditor lines={lines} editable={editable} onChange={setLines} /></div>
+}
+
 function QuoteDetailControlsPreview() {
   const [company, setCompany] = useState("Brook Taverner Ltd")
   const [incoterm, setIncoterm] = useState<IncotermCode | "">("FCA")
@@ -2132,6 +2140,7 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "quote-detail-controls" ? <QuoteDetailControlsPreview /> : null}
+      {id === "quote-cargo-editor" ? <QuoteCargoEditorPreview /> : null}
 
       {id === "status-pill" ? (
         <div className="grid w-full max-w-[640px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">

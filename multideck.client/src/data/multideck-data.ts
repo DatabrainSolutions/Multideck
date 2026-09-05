@@ -1,4 +1,5 @@
 import ticketAttachmentsSource from "@/components/multideck/ticket-attachments.tsx?raw"
+import quoteCargoEditorSource from "@/components/multideck/quote-details/quote-cargo-editor.tsx?raw"
 import paginationSource from "@/components/multideck/pagination.tsx?raw"
 import lifecycleNotesSource from "@/components/multideck/lifecycle-notes.tsx?raw"
 import screeningComponentsSource from "@/components/multideck/screening-components.tsx?raw"
@@ -232,6 +233,16 @@ export const galleryComponents = [
     ],
     componentCode: `export {\n  CompactCombobox,\n  LocationFields,\n  AutoFilledField,\n  IncotermField,\n  AmountCurrencyField,\n  NumberUnitField,\n  RecurrenceBuilder,\n  CargoCharacteristicsField,\n} from "@/components/multideck/quote-details/quote-detail-fields"`,
     usageCode: `<CompactCombobox\n  label="Shipper"\n  value={shipperName}\n  recommendedOptions={recentAndRelatedShippers}\n  options={allOrganisations}\n  recommendedLabel="Current, recent & related"\n  allLabel="All organisations"\n  onValueChange={setShipperName}\n/>\n\n<LocationFields label="Origin" value={origin} options={unlocodeDirectory} countries={countries} onChange={setOrigin} />\n<AutoFilledField label="UN/LOCODE" value={origin.unlocode} onChange={setUnlocode} autoPopulated={origin.unlocode === resolvedUnlocode} valueDirection="ltr" />\n<IncotermField value={incoterm} namedLocation={namedPlace} onNamedLocationChange={setNamedPlace} />\n<AmountCurrencyField label="Goods value" value={goodsValue} currencies={currencies} onChange={setGoodsValue} />`,
+  },
+  {
+    id: "quote-cargo-editor",
+    name: "Quote Cargo Editor",
+    category: "Forms",
+    description: "Select and edit individual goods lines without repeating a large form for every item.",
+    details: "The parent owns draft saving and version permissions. Stable line identifiers survive editing and reordering; shipment goods value is separate. In read-only mode, full line details are readable text. Removing a line requires confirmation and never alters submitted history.",
+    foundOn: [{ label: "New quote", route: "/quotes/new" }, { label: "Quotes", route: "/quotes" }, { label: "Components", route: "/components?component=quote-cargo-editor" }],
+    componentCode: quoteCargoEditorSource,
+    usageCode: `const [lines, setLines] = useState([newQuoteCargoLine()])\n\n<QuoteCargoEditor\n  lines={lines}\n  editable={!submitted}\n  chargeableWeight={mode === "Air"}\n  onChange={setLines}\n/>`,
   },
   {
     id: "inline-fields",
