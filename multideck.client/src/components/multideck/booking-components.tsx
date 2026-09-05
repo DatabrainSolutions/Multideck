@@ -2282,14 +2282,16 @@ function BookingCargoWiseAmountField({
   onCurrencyChange: (value: string) => void
 }) {
   const { t } = useLanguage()
+  const amountId = useId()
   const normalizedCurrencies = bookingFieldOptions(currencies, currency)
 
   return (
     <div className="grid min-w-0 grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] items-center gap-1.5">
-      <label className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</label>
+      <label htmlFor={editable ? amountId : undefined} className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</label>
       {editable ? (
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_72px] gap-1">
           <Input
+            id={amountId}
             aria-label={t(`${label} amount`)}
             inputMode="decimal"
             value={amount}
@@ -3268,6 +3270,15 @@ function BookingRecordDetails({
               <Plus className="size-3.5" aria-hidden="true" />{t("Add cargo line")}
             </Button>
           </div>
+          {recordText(facts, "goodsValue") !== "" ? (
+            <div className="px-3 pb-3 text-[12px] text-[var(--md-text)]">
+              <dl className="flex flex-wrap gap-x-2 gap-y-1">
+                <dt>{t("Quote goods value (shipment)")}</dt>
+                <dd data-i18n-skip className="font-medium text-[var(--md-ink)]">{[recordText(facts, "goodsValueCurrency"), recordText(facts, "goodsValue")].filter(Boolean).join(" ")}</dd>
+              </dl>
+              <p className="mt-1">{t("From the accepted Quote snapshot, not an allocation to an individual cargo line.")}</p>
+            </div>
+          ) : null}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[12px]">
               <caption className="sr-only">{t("Select a cargo line to edit its goods details below")}</caption>
@@ -3294,7 +3305,7 @@ function BookingRecordDetails({
         </Dialog>
         <BookingCargoWiseGroup title="Goods" contentClassName="sm:grid-cols-2 xl:grid-cols-4">
           <BookingCargoWiseAmountField label="Booking value" amount={valueAmount} currency={valueCurrency} currencies={currencyOptions} editable={editable} onAmountChange={(nextAmount) => onBookingChange("value", [valueCurrency, nextAmount].filter(Boolean).join(" "))} onCurrencyChange={(nextCurrency) => onBookingChange("value", [nextCurrency, valueAmount].filter(Boolean).join(" "))} />
-          <BookingCargoWiseAmountField label="Goods value" amount={cargoValue("declaredValue", value(facts, "goodsValue"))} currency={cargoValue("declaredValueCurrency", value(facts, "goodsValueCurrency", valueCurrency))} currencies={currencyOptions} editable={editable} onAmountChange={(nextAmount) => onCargoChange(cargoIndex, "declaredValue", nextAmount)} onCurrencyChange={(nextCurrency) => onCargoChange(cargoIndex, "declaredValueCurrency", nextCurrency)} />
+          <BookingCargoWiseAmountField label="Cargo line value" amount={cargoValue("declaredValue")} currency={cargoValue("declaredValueCurrency")} currencies={currencyOptions} editable={editable && Boolean(cargo)} onAmountChange={(nextAmount) => onCargoChange(cargoIndex, "declaredValue", nextAmount)} onCurrencyChange={(nextCurrency) => onCargoChange(cargoIndex, "declaredValueCurrency", nextCurrency)} />
           <BookingCargoWiseField label="Commodity" value={cargoValue("commodity", value(facts, "commodity"))} options={commodityOptions} searchable placeholder="Search commodities" {...editCargo(cargoIndex, "commodity")} />
           <BookingCargoWiseField label="Known cargo" value={knownCargo} options={bookingKnownCargoOptions} placeholder="Choose cargo type" allowCustom={false} {...editCargo(cargoIndex, "knownCargo")} />
           <div className="sm:col-span-2 xl:col-span-2 2xl:col-span-2">
@@ -3944,7 +3955,7 @@ function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
 function bookingQuoteSyncValue(value: unknown, language: string) {
   if (value === null || value === undefined || value === "") return "—"
   if (typeof value === "boolean") return value ? "Yes" : "No"
-  if (typeof value === "number") return new Intl.NumberFormat(language, { maximumFractionDigits: 3 }).format(value)
+  if (typeof value === "number") return new Intl.NumberFormat(language, { maximumFractionDigits: 20 }).format(value)
   if (typeof value === "string") {
     if (/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(value)) {
       const date = new Date(value.length === 10 ? `${value}T00:00:00` : value)
@@ -3961,6 +3972,12 @@ function bookingQuoteSyncValue(value: unknown, language: string) {
     return summary || "Updated details"
   }
   return String(value)
+}
+
+function bookingQuoteCargoFieldValue(cargo: unknown, key: string, language: string) {
+  if (!cargo || typeof cargo !== "object" || Array.isArray(cargo)) return "No cargo line"
+  const value = (cargo as Record<string, unknown>)[key]
+  return value === null || value === undefined || value === "" ? "Not recorded" : bookingQuoteSyncValue(value, language)
 }
 
 function BookingQuoteSyncReviewPanel({
@@ -4000,6 +4017,15 @@ function BookingQuoteSyncReviewPanel({
   const controlsDisabled = busy || refreshing || detailsDirty || !review.reviewToken
   const headingId = `booking-quote-sync-${review.reviewId}`
   const proposedVersionLabel = review.proposedVersionNumber === 1 ? t("Original") : `V${review.proposedVersionNumber}`
+  const cargoDetailFields = [
+    ["description", "Goods description"], ["commodity", "Commodity"],
+    ["packageQuantity", "Packages / pieces"], ["packageType", "Package type"],
+    ["grossWeightKg", "Gross weight (kg)"], ["netWeightKg", "Net weight (kg)"],
+    ["volumeCbm", "Volume (CBM)"], ["chargeableWeightKg", "Chargeable weight (kg)"],
+    ["length", "Length"], ["width", "Width"], ["height", "Height"], ["lengthUnit", "Dimension unit"],
+    ["hsCode", "HS code"], ["countryOfOrigin", "Country of origin"],
+    ["isHazardous", "Hazardous"], ["isTemperatureControlled", "Temperature controlled"],
+  ] as const
 
   function requestApply(fields: string[], trigger: HTMLButtonElement) {
     if (controlsDisabled || fields.length === 0) return
@@ -4057,12 +4083,16 @@ function BookingQuoteSyncReviewPanel({
             <div className="overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]">
               {remainingDifferences.map((difference, index) => {
                 const selected = selectedFields.has(difference.key)
+                const warningLabel = difference.key === "mode" ? "Mode change"
+                  : difference.warningCode === "cargo_removal" ? "Remove cargo"
+                    : difference.warningCode === "booking_cargo_removed" ? "Restore cargo"
+                      : difference.key.startsWith("cargo:") && difference.key.endsWith(":line") && !difference.previousQuoteValue && !difference.bookingValue ? "Add cargo"
+                        : difference.conflict ? "Booking changed" : "Review change"
                 return (
+                  <div key={difference.key} className={cn(index > 0 && "shadow-[var(--md-stroke-top)]")}>
                   <label
-                    key={difference.key}
                     className={cn(
                       "grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] gap-3 px-3 py-3 transition-[background-color,opacity] duration-200 sm:grid-cols-[auto_minmax(145px,0.55fr)_minmax(0,1fr)] sm:items-center sm:px-4",
-                      index > 0 && "shadow-[var(--md-stroke-top)]",
                       selected ? "bg-[var(--md-surface)]" : "opacity-75 hover:opacity-100",
                       (controlsDisabled || Boolean(difference.blockedReason)) && "cursor-not-allowed",
                     )}
@@ -4071,7 +4101,7 @@ function BookingQuoteSyncReviewPanel({
                     <span className="min-w-0">
                       <span className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-[var(--md-ink)]">
                         {t(difference.label)}
-                        {difference.blockedReason ? <StatusPill tone="amber">{t("Needs mapping")}</StatusPill> : needsConfirmation(difference) ? <StatusPill tone="amber">{t(difference.key === "mode" ? "Mode change" : difference.warningCode === "cargo_removal" ? "Remove cargo" : difference.warningCode === "booking_cargo_removed" ? "Restore cargo" : "Booking changed")}</StatusPill> : <StatusPill tone="green">{t("Safe match")}</StatusPill>}
+                        {difference.blockedReason ? <StatusPill tone="amber">{t("Needs mapping")}</StatusPill> : needsConfirmation(difference) ? <StatusPill tone="amber">{t(warningLabel)}</StatusPill> : <StatusPill tone="green">{t("Safe match")}</StatusPill>}
                       </span>
                       <span className="mt-0.5 block text-[10.5px] text-[var(--md-subtle)]">{t(difference.section)}</span>
                       {difference.cargoDescription ? <span data-i18n-skip dir="auto" className="mt-1 block break-words text-[12px] leading-5 text-[var(--md-text)]">{difference.cargoDescription}</span> : null}
@@ -4089,6 +4119,29 @@ function BookingQuoteSyncReviewPanel({
                       </span>
                     </span>
                   </label>
+                  {difference.key.startsWith("cargo:") && difference.key.endsWith(":line") ? (
+                    <details className="px-3 pb-3 sm:px-4">
+                      <summary className="cursor-pointer rounded-[var(--md-radius-sm)] py-1 text-[12px] font-medium text-[var(--md-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]">
+                        {t("Inspect all cargo details")}<span className="sr-only"> — {difference.cargoDescription || t(difference.label)}</span>
+                      </summary>
+                      <div className="mt-3 grid gap-4">
+                        {cargoDetailFields.map(([field, label]) => (
+                          <div key={field} className="grid min-w-0 gap-1.5">
+                            <h3 className="text-[12px] font-medium text-[var(--md-ink)]">{t(label)}</h3>
+                            <dl className="grid min-w-0 gap-3 text-[12px] leading-5 sm:grid-cols-3">
+                              {([["Previous quote", difference.previousQuoteValue], ["Current booking", difference.bookingValue], ["New accepted quote", difference.newQuoteValue]] as const).map(([sourceLabel, cargo]) => (
+                                <div key={sourceLabel} className="min-w-0">
+                                  <dt className="text-[var(--md-text)]">{t(sourceLabel)}</dt>
+                                  <dd data-i18n-skip dir="auto" className="whitespace-pre-wrap break-words text-[var(--md-ink)]">{bookingQuoteCargoFieldValue(cargo, field, language)}</dd>
+                                </div>
+                              ))}
+                            </dl>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
+                  </div>
                 )
               })}
             </div>
