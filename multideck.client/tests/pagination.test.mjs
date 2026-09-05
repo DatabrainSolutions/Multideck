@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import test from "node:test"
-import { defaultPaginationPageSize, paginationPageSizes, paginationRange } from "../src/lib/pagination.ts"
+import { defaultPaginationPageSize, paginationPageSizes, paginationRange, paginationVisiblePages } from "../src/lib/pagination.ts"
 import { readFinanceRegisterPages } from "../src/lib/finance-register-pages.ts"
 
 test("pagination starts at 30 rows while keeping every row-count option available", () => {
@@ -78,15 +78,28 @@ test("removed last pages, empty results and invalid inputs stay in bounds", () =
   assert.equal(paginationRange(57, 2, 20, 0).start, 0)
 })
 
+test("page navigation stays bounded and retains the first, last and neighbouring pages", () => {
+  assert.deepEqual(paginationVisiblePages(1, 1), [1])
+  assert.deepEqual(paginationVisiblePages(1, 8), [1, 2, 8])
+  assert.deepEqual(paginationVisiblePages(8, 8), [1, 7, 8])
+  assert.deepEqual(paginationVisiblePages(4, 8), [1, 3, 4, 5, 8])
+  assert.deepEqual(paginationVisiblePages(500_000, 1_000_000), [1, 499_999, 500_000, 500_001, 1_000_000])
+})
+
 test("the shared control resets page size atomically and guards loading, errors and page bounds", async () => {
   const source = await readFile(new URL("../src/components/multideck/pagination.tsx", import.meta.url), "utf8")
   assert.match(source, /onPageSizeChange\(Number\(value\)\); onPageChange\(1\)/)
   assert.match(source, /if \(!loading && !error && page !== currentPage\) onPageChange\(currentPage\)/)
-  assert.match(source, /if \(!loading && nextPage !== currentPage\)/)
+  assert.match(source, /if \(!loading && nextPage !== currentPage && nextPage >= 1 && nextPage <= safePageCount\)/)
   assert.match(source, /Select disabled=\{loading\}/)
   assert.match(source, /Rows could not be loaded/)
   assert.match(source, /aria-live="polite"/)
   assert.match(source, /aria-disabled=\{loading\}/)
+  assert.match(source, /safePageCount > 1/)
+  assert.match(source, /aria-label=\{t\("Previous page"\)\}/)
+  assert.match(source, /aria-label=\{t\("Next page"\)\}/)
+  assert.match(source, /useReducedMotion\(\)/)
+  assert.doesNotMatch(source, /href="#"/)
 })
 
 const serverRegisters = [

@@ -81,8 +81,8 @@ const staticLeafLabels: Record<string, string> = {
   "/warehouse/inventory": "Inventory",
   "/warehouse/items": "Items",
   "/warehouse/locations": "Locations",
-  "/warehouse/orders": "Orders",
-  "/warehouse/purchase-orders": "Customer purchase orders",
+  "/warehouse/orders": "Warehouse orders",
+  "/warehouse/purchase-orders": "Expected receipts",
   "/warehouse/users": "Users",
 }
 
@@ -103,8 +103,8 @@ const warehouseChildLabels: Record<string, string> = {
   inventory: "Inventory",
   items: "Items",
   locations: "Locations",
-  orders: "Orders",
-  "purchase-orders": "Customer purchase orders",
+  orders: "Warehouse orders",
+  "purchase-orders": "Expected receipts",
   users: "Users",
 }
 
@@ -291,8 +291,8 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
     return [
       { label: "Home", route: "/" },
       { label: "Warehouse", route: "/warehouse" },
-      { label: "Customer purchase orders", route: "/warehouse/purchase-orders" },
-      { label: purchaseOrderMatch[1] === "new" ? "New customer purchase order" : friendlyIdentifierLabel(purchaseOrderMatch[1], "Customer purchase order"), preserveDirection: purchaseOrderMatch[1] !== "new" },
+      { label: "Expected receipts", route: "/warehouse/purchase-orders" },
+      { label: purchaseOrderMatch[1] === "new" ? "New expected receipt" : friendlyIdentifierLabel(purchaseOrderMatch[1], "Expected receipt"), preserveDirection: purchaseOrderMatch[1] !== "new" },
     ]
   }
 

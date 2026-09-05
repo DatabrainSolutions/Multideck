@@ -32,7 +32,6 @@ export function MeetingProviderSelect({ value, onChange, connections, onConnect,
   disabled?: boolean
   className?: string
 }) {
-  const connection = meetingProviderConnection(value, connections)
   const ready = isMeetingProviderReady(value, connections)
 
   function item(provider: CalendarProvider) {
@@ -58,15 +57,11 @@ export function MeetingProviderSelect({ value, onChange, connections, onConnect,
           {otherProviders.map(item)}
         </SelectContent>
       </Select>
-      {isVideoMeetingProvider(value) ? (
-        ready ? (
-          <span className="min-w-0 truncate text-[11.5px] text-[var(--md-subtle)]">Join link created as {connection?.displayName || connection?.email || "your connected account"}</span>
-        ) : (
+      {isVideoMeetingProvider(value) && !ready ? (
           <span className="inline-flex min-w-0 items-center gap-1 text-[11.5px] text-[var(--md-amber-strong)]">
             {meetingProviderLabels[value]} is not connected.
             {onConnect ? <button type="button" onClick={onConnect} className="font-medium text-[var(--md-accent)] hover:underline">Connect in Settings</button> : null}
           </span>
-        )
       ) : null}
     </div>
   )

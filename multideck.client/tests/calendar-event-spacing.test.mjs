@@ -11,6 +11,18 @@ test("week events reserve a visual gap without moving their scheduled geometry",
   assert.match(view, /onGrip=\{weekGrip\(calendarEvent\)\}/)
 })
 
+test("overlapping events use one slightly stronger theme-aware separator", () => {
+  assert.match(view, /overlapBoundary && "shadow-none/)
+  assert.match(view, /after:border-\[1\.5px\] after:border-\[var\(--md-surface\)\]/)
+  assert.match(view, /focus-visible:ring-0 focus-visible:brightness-\[\.9\]/)
+  assert.doesNotMatch(view, /overlapBoundary && .*after:border-2/)
+})
+
+test("calendar starts directly with the schedule instead of repeating its timezone", () => {
+  assert.doesNotMatch(view, /Times shown in/)
+  assert.doesNotMatch(view, /Clock3/)
+})
+
 test("month cells and nested event tracks shrink within their assigned day column", () => {
   const month = view.slice(view.indexOf('data-calendar-day={key}'))
   assert.match(month, /min-h-32 min-w-0 border-b/)

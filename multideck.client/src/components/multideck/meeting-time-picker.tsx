@@ -84,13 +84,14 @@ function useTimeFormatter(locale: string) {
   }, [locale])
 }
 
-function TimeField({ label, value, options, onChange, formatTime, className }: {
+function TimeField({ label, value, options, onChange, formatTime, className, showLabel = false }: {
   label: string
   value: string
   options: Array<{ time: string; hint?: string }>
   onChange: (time: string) => void
   formatTime: (time: string) => string
   className?: string
+  showLabel?: boolean
 }) {
   const id = useId()
   const [open, setOpen] = useState(false)
@@ -121,6 +122,7 @@ function TimeField({ label, value, options, onChange, formatTime, className }: {
     <Popover open={open} onOpenChange={(next) => { if (!next) setOpen(false) }}>
       <PopoverAnchor asChild>
         <div ref={anchorRef} className={cn("relative", className)}>
+          {showLabel ? <label htmlFor={id} className="mb-1.5 block text-[11px] font-medium text-[var(--md-subtle)]">{label}</label> : null}
           <input
             id={id}
             type="text"
@@ -246,7 +248,7 @@ export function TimeZoneSelect({ value, onChange, variant = "chip", className, b
  * picked start and finish times, quick duration chips and the timezone the times
  * are read in. Values stay ISO instants; the zone only changes how they display.
  */
-export function MeetingTimePicker({ startAt, endAt, timeZone, onChange, onTimeZoneChange, minDate, className }: {
+export function MeetingTimePicker({ startAt, endAt, timeZone, onChange, onTimeZoneChange, minDate, className, showLabels = false }: {
   startAt: string
   endAt: string
   timeZone: string
@@ -254,6 +256,8 @@ export function MeetingTimePicker({ startAt, endAt, timeZone, onChange, onTimeZo
   onTimeZoneChange?: (timeZone: string) => void
   minDate?: string
   className?: string
+  /** Labelled, responsive fields for the meeting composer. */
+  showLabels?: boolean
 }) {
   const { language } = useLanguage()
   const zone = safeTimeZone(timeZone)
@@ -283,7 +287,9 @@ export function MeetingTimePicker({ startAt, endAt, timeZone, onChange, onTimeZo
 
   return (
     <div className={cn("grid gap-2", className)}>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className={cn(showLabels ? "grid grid-cols-2 items-end gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]" : "flex flex-wrap items-center gap-2")}>
+        <div className={showLabels ? "col-span-2 min-w-0 sm:col-span-1" : undefined}>
+        {showLabels ? <span className="mb-1.5 block text-[11px] font-medium text-[var(--md-subtle)]">Date</span> : null}
         <MultideckDatePicker
           value={start.dateKey}
           onChange={(dateKey) => { if (dateKey) setStart(dateKey, start.time) }}
@@ -291,15 +297,16 @@ export function MeetingTimePicker({ startAt, endAt, timeZone, onChange, onTimeZo
           minDate={minDate ?? getDateKey(new Date())}
           compact
           closeOnSelect
-          triggerClassName="h-9 w-auto min-w-[168px] rounded-[var(--md-radius-lg)] px-2.5 text-[13px]"
+          triggerClassName={cn("h-9 rounded-[var(--md-radius-lg)] px-2.5 text-[13px]", showLabels ? "w-full min-w-0" : "w-auto min-w-[168px]")}
           popoverClassName="w-[min(92vw,320px)]"
         />
-        <div className="flex shrink-0 items-center gap-2" role="group" aria-label="Meeting time range">
-          <TimeField label="Starts" value={start.time} options={ALL_DAY_OPTIONS} onChange={(time) => setStart(start.dateKey, time)} formatTime={formatTime} />
-          <span className="text-[12px] text-[var(--md-subtle)]" aria-hidden="true">–</span>
-          <TimeField label="Finishes" value={end.time} options={endOptions} onChange={setEnd} formatTime={formatTime} />
         </div>
-        <span className="text-[11.5px] tabular-nums text-[var(--md-subtle)]">{sameDay ? formatDurationLabel(durationMinutes) : `Ends ${new Intl.DateTimeFormat(language, { day: "numeric", month: "short", timeZone: zone }).format(new Date(endAt))}`}</span>
+        <div className={showLabels ? "contents" : "flex shrink-0 items-center gap-2"} role="group" aria-label="Meeting time range">
+          <TimeField showLabel={showLabels} className={showLabels ? "min-w-0 [&_input]:w-full" : undefined} label="Starts" value={start.time} options={ALL_DAY_OPTIONS} onChange={(time) => setStart(start.dateKey, time)} formatTime={formatTime} />
+          {!showLabels ? <span className="text-[12px] text-[var(--md-subtle)]" aria-hidden="true">–</span> : null}
+          <TimeField showLabel={showLabels} className={showLabels ? "min-w-0 [&_input]:w-full" : undefined} label="Finishes" value={end.time} options={endOptions} onChange={setEnd} formatTime={formatTime} />
+        </div>
+        {!showLabels || !sameDay ? <span className="text-[11.5px] tabular-nums text-[var(--md-subtle)]">{sameDay ? formatDurationLabel(durationMinutes) : `Ends ${new Intl.DateTimeFormat(language, { day: "numeric", month: "short", timeZone: zone }).format(new Date(endAt))}`}</span> : null}
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <div className="flex items-center gap-1" role="group" aria-label="Meeting length">

@@ -21,13 +21,20 @@ import {
   uuid,
 } from "../shared/mod.ts";
 
-function mapItem(row, orgNames, facilityNames, uoms = []) {
+function mapItem(row, orgNames, facilityNames, uoms = [], assignments = []) {
   return {
     id: row.WMSItem_ID,
     customerOrgId: row.WMSItem_CustomerOrgID,
     customerOrgName: orgNames.get(row.WMSItem_CustomerOrgID) ?? null,
     facilityId: row.WMSItem_DefaultFacilityID,
     facilityName: facilityNames.get(row.WMSItem_DefaultFacilityID) ?? null,
+    facilities: assignments.filter((assignment)=>assignment.WMSItemFacility_ItemID === row.WMSItem_ID).map((assignment)=>({
+      id: assignment.WMSItemFacility_FacilityID,
+      code: assignment.facilityCode ?? "",
+      name: assignment.facilityName ?? "",
+      isDefault: assignment.WMSItemFacility_IsDefault,
+      isActive: assignment.WMSItemFacility_IsActive
+    })),
     sku: row.WMSItem_SKU,
     description: row.WMSItem_Description,
     commodityDescription: row.WMSItem_CommodityDescription,
@@ -72,22 +79,30 @@ async function loadExactItem(admin, actor, itemId) {
   const facilityIds = await companyFacilityIds(admin, actor);
   if (!facilityIds.length) return null;
 
+  const assignmentRows = await many(admin.from("WMS_ItemFacilityAssignments")
+    .select("*")
+    .eq("WMSItemFacility_ItemID", itemId)
+    .in("WMSItemFacility_FacilityID", facilityIds)
+    .eq("WMSItemFacility_IsActive", true));
+  if (!assignmentRows.length) return null;
+
   let query = admin.from("WMS_Items")
     .select("*")
     .eq("WMSItem_ID", itemId)
-    .in("WMSItem_DefaultFacilityID", facilityIds)
     .eq("WMSItem_IsDeleted", false)
     .limit(1);
   if (!actor.companyId) query = query.in("WMSItem_CustomerOrgID", [...actor.organisationIds]);
   const item = await oneOrNull(query.maybeSingle());
   if (!item) return null;
 
-  const [uoms, organisation, facility] = await Promise.all([
+  const [uoms, organisation, facilities] = await Promise.all([
     many(admin.from("WMS_ItemUOMs").select("*").eq("WMSItemUOM_ItemID", item.WMSItem_ID).order("WMSItemUOM_UOMCode")),
     oneOrNull(admin.from("Org_Master").select("Org_id,Org_Name").eq("Org_id", item.WMSItem_CustomerOrgID).limit(1).maybeSingle()),
-    oneOrNull(admin.from("WMS_Facilities").select("WMSFacility_ID,WMSFacility_Name").eq("WMSFacility_ID", item.WMSItem_DefaultFacilityID).limit(1).maybeSingle()),
+    many(admin.from("WMS_Facilities").select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name").in("WMSFacility_ID", assignmentRows.map((row)=>row.WMSItemFacility_FacilityID))),
   ]);
-  return { item, uoms, organisation, facility, facilityIds };
+  const facilityMap = new Map(facilities.map((row)=>[row.WMSFacility_ID,row]));
+  const assignments = assignmentRows.map((row)=>({ ...row, facilityCode: facilityMap.get(row.WMSItemFacility_FacilityID)?.WMSFacility_Code, facilityName: facilityMap.get(row.WMSItemFacility_FacilityID)?.WMSFacility_Name }));
+  return { item, uoms, organisation, facility: facilityMap.get(item.WMSItem_DefaultFacilityID) ?? null, assignments, facilityIds };
 }
 
 function mapExactItem(context) {
@@ -96,7 +111,20 @@ function mapExactItem(context) {
     new Map(context.organisation ? [[context.organisation.Org_id, context.organisation.Org_Name]] : []),
     new Map(context.facility ? [[context.facility.WMSFacility_ID, context.facility.WMSFacility_Name]] : []),
     context.uoms,
+    context.assignments,
   );
+}
+
+async function enrichItemFacilities(admin, rows, allowedFacilityIds) {
+  if (!rows.length) return rows;
+  const assignments = await many(admin.from("WMS_ItemFacilityAssignments").select("*").in("WMSItemFacility_ItemID", rows.map((row)=>row.id)).in("WMSItemFacility_FacilityID", allowedFacilityIds).eq("WMSItemFacility_IsActive", true));
+  const facilityIds = [...new Set(assignments.map((row)=>row.WMSItemFacility_FacilityID))];
+  const facilities = facilityIds.length ? await many(admin.from("WMS_Facilities").select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name").in("WMSFacility_ID", facilityIds)) : [];
+  const facilityMap = new Map(facilities.map((row)=>[row.WMSFacility_ID,row]));
+  return rows.map((row)=>({
+    ...row,
+    facilities: assignments.filter((assignment)=>assignment.WMSItemFacility_ItemID===row.id).map((assignment)=>({ id: assignment.WMSItemFacility_FacilityID, code: facilityMap.get(assignment.WMSItemFacility_FacilityID)?.WMSFacility_Code ?? "", name: facilityMap.get(assignment.WMSItemFacility_FacilityID)?.WMSFacility_Name ?? "", isDefault: assignment.WMSItemFacility_IsDefault, isActive: assignment.WMSItemFacility_IsActive }))
+  }));
 }
 function itemPayload(input, actor, create) {
   const net = numberOrNull(input.netWeightKg), gross = numberOrNull(input.grossWeightKg), min = numberOrNull(input.temperatureMinC), max = numberOrNull(input.temperatureMaxC);
@@ -163,7 +191,10 @@ export async function handleItems(request, path, url, admin, actor) {
       p_limit: limit,
       p_offset: offset
     });
-    if (!error) return data ?? { rows: [], total: 0, limit, offset };
+    if (!error) {
+      const page = data ?? { rows: [], total: 0, limit, offset };
+      return { ...page, rows: await enrichItemFacilities(admin, page.rows ?? [], facilityIds) };
+    }
     if (["42883", "PGRST202"].includes(error.code ?? "")) {
       throw new HttpError(503, "Warehouse item paging is still being prepared. Try again shortly.");
     }
@@ -231,22 +262,25 @@ export async function handleItems(request, path, url, admin, actor) {
     let itemQuery = admin.from("WMS_Items")
       .select("*")
       .eq("WMSItem_ID", itemId)
-      .in("WMSItem_DefaultFacilityID", facilityIds)
       .eq("WMSItem_IsDeleted", false);
     if (!actor.companyId) itemQuery = itemQuery.in("WMSItem_CustomerOrgID", [...actor.organisationIds]);
     const item = await oneOrNull(itemQuery.maybeSingle());
     if (!item) throw new HttpError(404, "This SKU does not match any warehouse item.");
 
-    const [uoms, organisation, facility] = await Promise.all([
+    const assignmentRows = await many(admin.from("WMS_ItemFacilityAssignments").select("*").eq("WMSItemFacility_ItemID", item.WMSItem_ID).in("WMSItemFacility_FacilityID", facilityIds).eq("WMSItemFacility_IsActive", true));
+    if (!assignmentRows.length) throw new HttpError(404, "This SKU does not match any warehouse item.");
+    const [uoms, organisation, facilities] = await Promise.all([
       many(admin.from("WMS_ItemUOMs").select("*").eq("WMSItemUOM_ItemID", item.WMSItem_ID).order("WMSItemUOM_UOMCode")),
       oneOrNull(admin.from("Org_Master").select("Org_id,Org_Name").eq("Org_id", item.WMSItem_CustomerOrgID).maybeSingle()),
-      oneOrNull(admin.from("WMS_Facilities").select("WMSFacility_ID,WMSFacility_Name").eq("WMSFacility_ID", item.WMSItem_DefaultFacilityID).maybeSingle())
+      many(admin.from("WMS_Facilities").select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name").in("WMSFacility_ID", assignmentRows.map((row)=>row.WMSItemFacility_FacilityID)))
     ]);
+    const facilityMap = new Map(facilities.map((row)=>[row.WMSFacility_ID,row]));
     return mapItem(
       item,
       new Map(organisation ? [[organisation.Org_id, organisation.Org_Name]] : []),
-      new Map(facility ? [[facility.WMSFacility_ID, facility.WMSFacility_Name]] : []),
-      uoms
+      new Map(facilities.map((row)=>[row.WMSFacility_ID,row.WMSFacility_Name])),
+      uoms,
+      assignmentRows.map((row)=>({ ...row, facilityCode: facilityMap.get(row.WMSItemFacility_FacilityID)?.WMSFacility_Code, facilityName: facilityMap.get(row.WMSItemFacility_FacilityID)?.WMSFacility_Name }))
     );
   }
   if (request.method === "GET" && path[1] === "reference") {
@@ -335,7 +369,9 @@ export async function handleItems(request, path, url, admin, actor) {
   requireCapability(actor, "warehouse_items:manage");
   if (request.method === "PUT" && !existing) throw new HttpError(404, "This item does not exist in your workspace.");
   const input = bodyObject(await request.json());
-  const facilityId = uuid(input.facilityId, "facility");
+  const facilityId = uuid(input.defaultFacilityId ?? input.facilityId, "facility");
+  const requestedFacilityIds = Array.isArray(input.facilityIds) && input.facilityIds.length ? [...new Set(input.facilityIds.map((value)=>uuid(value,"facility")))] : [facilityId];
+  if (!requestedFacilityIds.includes(facilityId)) throw new HttpError(400, "The default warehouse must be one of the selected warehouses.");
   const customerOrgId = request.method === "POST" ? uuid(input.customerOrgId, "customer") : existing?.item.WMSItem_CustomerOrgID;
   const facilityIds = existing?.facilityIds ?? await companyFacilityIds(admin, actor);
   const organisation = customerOrgId ? await oneOrNull(admin.from("Org_Master")
@@ -343,7 +379,7 @@ export async function handleItems(request, path, url, admin, actor) {
     .eq("Org_id", customerOrgId)
     .limit(1)
     .maybeSingle()) : null;
-  const facility = facilityIds.includes(facilityId) ? await oneOrNull(admin.from("WMS_Facilities")
+  const facility = facilityIds.includes(facilityId) && requestedFacilityIds.every((value)=>facilityIds.includes(value)) ? await oneOrNull(admin.from("WMS_Facilities")
     .select("WMSFacility_ID,WMSFacility_Name")
     .eq("WMSFacility_ID", facilityId)
     .eq("WMSFacility_IsDeleted", false)
@@ -352,34 +388,67 @@ export async function handleItems(request, path, url, admin, actor) {
   if (!customerOrgId || !organisation || !facility || (!actor.companyId && !actor.organisationIds.has(customerOrgId))) {
     throw new HttpError(400, "Choose a customer and facility available in your workspace.");
   }
+  const activeRequestedFacilities = await many(admin.from("WMS_Facilities").select("WMSFacility_ID").in("WMSFacility_ID", requestedFacilityIds).eq("WMSFacility_IsActive", true).eq("WMSFacility_IsDeleted", false));
+  if (activeRequestedFacilities.length !== requestedFacilityIds.length) throw new HttpError(400, "Choose only active warehouses available in your workspace.");
+  if (existing) {
+    const removedFacilityIds = existing.assignments.map((assignment)=>assignment.WMSItemFacility_FacilityID).filter((value)=>!requestedFacilityIds.includes(value));
+    if (removedFacilityIds.length) {
+      const [stock, openOrderLines] = await Promise.all([
+        many(admin.from("WMS_InventoryBalances").select("WMSBalance_ID").eq("WMSBalance_ItemID", existing.item.WMSItem_ID).in("WMSBalance_FacilityID", removedFacilityIds).neq("WMSBalance_OnHandQuantity", 0).limit(1)),
+        many(admin.from("WMS_OrderLines").select("WMSOrderLine_OrderID").eq("WMSOrderLine_ItemID", existing.item.WMSItem_ID).limit(200)),
+      ]);
+      const candidateOrderIds = openOrderLines.map((row)=>row.WMSOrderLine_OrderID);
+      const openOrders = candidateOrderIds.length ? await many(admin.from("WMS_Orders").select("WMSOrder_ID").in("WMSOrder_ID", candidateOrderIds).in("WMSOrder_FacilityID", removedFacilityIds).not("WMSOrder_StatusCode", "in", "(complete,cancelled)").eq("WMSOrder_IsDeleted", false).limit(1)) : [];
+      if (stock.length || openOrders.length) throw new HttpError(409, "A warehouse with stock or open orders cannot be removed from this item.");
+    }
+  }
   requireCustomerScope(actor, customerOrgId, facilityId);
   const payload = {
     ...itemPayload(input, actor, request.method === "POST"),
     WMSItem_CustomerOrgID: customerOrgId,
     WMSItem_DefaultFacilityID: facilityId
   };
+  const preparedUoms = Array.isArray(input.uoms) ? input.uoms.filter((entry)=>clean(entry?.code,20)).map((entry)=>({
+    WMSItemUOM_ID: id(),
+    WMSItemUOM_UOMCode: clean(entry.code,20).toUpperCase(),
+    WMSItemUOM_QuantityInBaseUOM: numberOrNull(entry.quantityInBaseUom) ?? 1,
+    WMSItemUOM_GrossWeightKG: numberOrNull(entry.grossWeightKg),
+    WMSItemUOM_IsPurchasingUOM: bool(entry.purchasing),
+    WMSItemUOM_IsStockingUOM: bool(entry.stocking),
+    WMSItemUOM_IsSellingUOM: bool(entry.selling)
+  })) : null;
+  if (preparedUoms?.some((entry)=>entry.WMSItemUOM_QuantityInBaseUOM<=0)) throw new HttpError(400,"Packaging conversions must be greater than zero.");
   const saved = request.method === "POST" ? await one(admin.from("WMS_Items").insert({
     WMSItem_ID: id(),
     ...payload
   }).select().single(), "Could not create the item.") : await one(admin.from("WMS_Items").update(payload).eq("WMSItem_ID", itemId).select().single(), "This item does not exist in your workspace.");
-  if (Array.isArray(input.uoms)) {
+  const { error: assignmentError } = await admin.rpc("warehouse_edge_set_item_facilities", {
+    p_item_id: saved.WMSItem_ID,
+    p_default_facility_id: facilityId,
+    p_facility_ids: requestedFacilityIds,
+    p_actor_user_id: actor.userId,
+    p_allowed_facility_ids: facilityIds,
+    p_allowed_organisation_ids: [customerOrgId]
+  });
+  if (assignmentError) {
+    const status = assignmentError.message.includes("WMS400:") ? 400 : assignmentError.message.includes("WMS403:") ? 403 : assignmentError.message.includes("WMS404:") ? 404 : assignmentError.message.includes("WMS409:") ? 409 : 500;
+    throw new HttpError(status, assignmentError.message.replace(/^.*WMS(?:400|403|404|409|500):\s*/, ""));
+  }
+  if (preparedUoms) {
     await admin.from("WMS_ItemUOMs").delete().eq("WMSItemUOM_ItemID", saved.WMSItem_ID);
-    const uoms = input.uoms.filter((entry)=>clean(entry?.code,20)).map((entry)=>({
-      WMSItemUOM_ID: id(), WMSItemUOM_ItemID: saved.WMSItem_ID,
-      WMSItemUOM_UOMCode: clean(entry.code,20).toUpperCase(),
-      WMSItemUOM_QuantityInBaseUOM: numberOrNull(entry.quantityInBaseUom) ?? 1,
-      WMSItemUOM_GrossWeightKG: numberOrNull(entry.grossWeightKg),
-      WMSItemUOM_IsPurchasingUOM: bool(entry.purchasing), WMSItemUOM_IsStockingUOM: bool(entry.stocking), WMSItemUOM_IsSellingUOM: bool(entry.selling)
-    }));
-    if (uoms.some((entry)=>entry.WMSItemUOM_QuantityInBaseUOM<=0)) throw new HttpError(400,"Packaging conversions must be greater than zero.");
+    const uoms = preparedUoms.map((entry)=>({ ...entry, WMSItemUOM_ItemID: saved.WMSItem_ID }));
     if (uoms.length) await one(admin.from("WMS_ItemUOMs").insert(uoms).select().limit(1).single(),"Could not save the item packaging units.");
   }
   const uoms = await many(admin.from("WMS_ItemUOMs").select("*").eq("WMSItemUOM_ItemID", saved.WMSItem_ID).order("WMSItemUOM_UOMCode"));
+  const savedAssignments = await many(admin.from("WMS_ItemFacilityAssignments").select("*").eq("WMSItemFacility_ItemID", saved.WMSItem_ID).eq("WMSItemFacility_IsActive", true));
+  const savedFacilities = await many(admin.from("WMS_Facilities").select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name").in("WMSFacility_ID", savedAssignments.map((row)=>row.WMSItemFacility_FacilityID)));
+  const savedFacilityMap = new Map(savedFacilities.map((row)=>[row.WMSFacility_ID,row]));
   return mapItem(
     saved,
     new Map([[organisation.Org_id, organisation.Org_Name]]),
     new Map([[facility.WMSFacility_ID, facility.WMSFacility_Name]]),
     uoms,
+    savedAssignments.map((row)=>({ ...row, facilityCode: savedFacilityMap.get(row.WMSItemFacility_FacilityID)?.WMSFacility_Code, facilityName: savedFacilityMap.get(row.WMSItemFacility_FacilityID)?.WMSFacility_Name })),
   );
 }
 async function importItems(request, admin, actor) {

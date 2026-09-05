@@ -24,7 +24,7 @@ import { getWarehouseHeaderActions, getWarehouseWorkspaceData, rescheduleOperati
 import { toast } from "sonner"
 import { CustomerWarehouseAccess } from "@/pages/customer-detail-page"
 
-type WarehouseSection = "Dashboard" | "Facilities" | "Locations" | "Items" | "Inventory" | "Goods in" | "Goods out" | "Orders" | "Customer purchase orders" | "Calendar" | "Users"
+type WarehouseSection = "Dashboard" | "Facilities" | "Locations" | "Items" | "Inventory" | "Goods in" | "Goods out" | "Warehouse orders" | "Expected receipts" | "Calendar" | "Users"
 
 /**
  * The grid works in local wall-clock minutes; the order stores an instant. The slot
@@ -58,11 +58,11 @@ const warehouseSectionDescriptions: Record<WarehouseSection, string | null> = {
   Inventory: null,
   "Goods in": null,
   "Goods out": null,
-  Orders: null,
+  "Warehouse orders": null,
   Facilities: null,
   Locations: null,
   Items: null,
-  "Customer purchase orders": "Customer-provided order details used to plan expected goods into the warehouse. These are not finance supplier purchase orders.",
+  "Expected receipts": "Goods and quantities the customer expects to arrive, usually from a customer PO, ASN, transfer or return. No stock is booked until goods are received.",
   Users: null,
 }
 
@@ -73,7 +73,7 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
   const detailOrderNumber = warehouseOrderDetailNumber(route)
   const detailPurchaseOrderId = warehousePurchaseOrderDetailId(route)
   const detailItemSku = warehouseItemDetailSku(route)
-  const activeSection = (warehouseRouteItems.find((item) => item.route === route)?.label ?? (detailPurchaseOrderId || route === "/warehouse/purchase-orders/new" ? "Customer purchase orders" : detailOrderNumber ? "Orders" : detailItemSku ? "Items" : "Dashboard")) as WarehouseSection
+  const activeSection = (warehouseRouteItems.find((item) => item.route === route)?.label ?? (detailPurchaseOrderId || route === "/warehouse/purchase-orders/new" ? "Expected receipts" : detailOrderNumber ? "Warehouse orders" : detailItemSku ? "Items" : "Dashboard")) as WarehouseSection
   const [warehouseData, setWarehouseData] = useState<WarehouseWorkspaceData | null>(null)
   const [calendarData, setCalendarData] = useState<WarehouseWorkspaceData["calendar"] | null>(null)
   const [calendarRange, setCalendarRange] = useState(initialWarehouseCalendarRange)
@@ -85,8 +85,9 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
   const isCustomer = currentUser?.actorType === "customer"
   // The dashboard carries all seven figures in its own band, and the calendar
   // needs its date controls in this space. Neither screen repeats the three
-  // operational chips in the page header.
-  const headerActions = activeSection === "Dashboard" || activeSection === "Calendar" || isCustomer ? [] : registerHeaderActions
+  // operational chips in the page header. Goods out keeps its register focused
+  // on orders, without the cross-warehouse summary chips or their request.
+  const headerActions = activeSection === "Dashboard" || activeSection === "Calendar" || activeSection === "Goods out" || isCustomer ? [] : registerHeaderActions
   const canManageItems = !isCustomer || hasPermission(currentUser, "Warehouse.Items.ManageOwn")
   const canCreateInbound = !isCustomer || hasPermission(currentUser, "Warehouse.Orders.CreateInboundOwn")
   const canCreateOutbound = !isCustomer || hasPermission(currentUser, "Warehouse.Orders.CreateOutboundOwn")
@@ -104,6 +105,7 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
     && route !== "/warehouse/purchase-orders/new"
     && activeSection !== "Dashboard"
     && activeSection !== "Calendar"
+    && activeSection !== "Goods out"
 
   useEffect(() => {
     if (!needsRegisterHeader) return
@@ -297,8 +299,8 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
           {activeSection === "Inventory" ? <WarehouseInventoryWorkspace /> : null}
           {activeSection === "Goods in" ? <WarehouseOrdersManagementView typeFilter="inbound" registerRoute="/warehouse/goods-in" navigate={navigate} /> : null}
           {activeSection === "Goods out" ? <WarehouseOrdersManagementView typeFilter="outbound" registerRoute="/warehouse/goods-out" navigate={navigate} /> : null}
-          {activeSection === "Orders" ? <WarehouseOrdersManagementView isCustomer={isCustomer} canCreateInbound={canCreateInbound} canCreateOutbound={canCreateOutbound} registerRoute="/warehouse/orders" navigate={navigate} /> : null}
-          {activeSection === "Customer purchase orders" && !isCustomer ? <WarehousePurchaseOrdersWorkspace navigate={navigate} /> : null}
+          {activeSection === "Warehouse orders" ? <WarehouseOrdersManagementView isCustomer={isCustomer} canCreateInbound={canCreateInbound} canCreateOutbound={canCreateOutbound} registerRoute="/warehouse/orders" navigate={navigate} /> : null}
+          {activeSection === "Expected receipts" && !isCustomer ? <WarehousePurchaseOrdersWorkspace navigate={navigate} /> : null}
           {activeSection === "Users" && canManageUsers ? <WarehouseOrganisationUsersView currentUser={currentUser} /> : null}
           {activeSection === "Calendar" ? dashboardOrCalendarState ?? (
             <WarehouseCalendarView

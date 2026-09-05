@@ -9,6 +9,7 @@ export const mdMotion = {
   fast: { duration: 0.2, ease: mdEase },
   smooth: { duration: 0.24, ease: mdEase },
   panel: { duration: 0.3, ease: mdEaseOut },
+  drawer: { duration: 0.42, ease: mdEase },
   page: { duration: 0.34, ease: mdEaseOut },
   spring: { type: "spring" as const, stiffness: 420, damping: 42, mass: 0.8 },
   layout: { duration: 0.22, ease: mdEase },

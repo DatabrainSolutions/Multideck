@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { Check, CircleHelp, X } from "@/components/icons/hugeicons"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import type { MeetingParticipant } from "@/lib/calendar-api"
 import { cn } from "@/lib/utils"
 
@@ -27,13 +28,14 @@ export function summariseResponses(participants: MeetingParticipant[]) {
 }
 
 /**
- * A small initials disc for one attendee. Colleagues take the accent tint, external
- * guests stay neutral, and an optional response dot sits on the bottom edge so a
- * glance across a list shows who has replied.
+ * A small attendee identity. Workspace profile photos are used when available;
+ * initials remain the dependable fallback for external guests and colleagues
+ * without a photo. A response mark sits on the bottom edge for quick scanning.
  */
-export function AttendeeAvatar({ name, email, response, internal = false, size = "md", className }: {
+export function AttendeeAvatar({ name, email, photoUrl, response, internal = false, size = "md", className }: {
   name: string
   email: string
+  photoUrl?: string | null
   response?: MeetingParticipant["response"]
   internal?: boolean
   size?: "sm" | "md" | "lg"
@@ -42,14 +44,17 @@ export function AttendeeAvatar({ name, email, response, internal = false, size =
   const meta = response ? attendeeResponseMeta[response] : null
   const dimension = size === "sm" ? "size-5 text-[9px]" : size === "lg" ? "size-9 text-[12px]" : "size-7 text-[10.5px]"
   return (
-    <span className={cn("relative inline-grid shrink-0 place-items-center rounded-full font-semibold", dimension, internal ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "bg-[var(--md-surface-tint)] text-[var(--md-text)]", className)} aria-hidden="true">
-      {attendeeInitials(name, email)}
+    <Avatar size={size === "sm" ? "sm" : size === "lg" ? "lg" : "default"} className={cn("overflow-visible font-semibold", dimension, className)} aria-hidden="true">
+      {photoUrl ? <AvatarImage src={photoUrl} alt="" loading="lazy" /> : null}
+      <AvatarFallback className={cn("text-[inherit] font-semibold", internal ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "bg-[var(--md-surface-tint)] text-[var(--md-text)]")}>
+        {attendeeInitials(name, email)}
+      </AvatarFallback>
       {meta && response !== "needs_action" ? (
         <span className={cn("absolute -end-0.5 -bottom-0.5 grid place-items-center rounded-full shadow-[0_0_0_1.5px_var(--md-surface)]", size === "sm" ? "size-2.5" : "size-3", meta.dot)}>
           {response === "accepted" ? <Check className={size === "sm" ? "size-1.5" : "size-2"} strokeWidth={3} /> : response === "declined" ? <X className={size === "sm" ? "size-1.5" : "size-2"} strokeWidth={3} /> : <CircleHelp className={size === "sm" ? "size-1.5" : "size-2"} strokeWidth={3} />}
         </span>
       ) : null}
-    </span>
+    </Avatar>
   )
 }
 
@@ -58,8 +63,9 @@ export function AttendeeAvatar({ name, email, response, internal = false, size =
  * shows only the numbers with response marks, for calendar blocks and dense rows.
  */
 export function MeetingResponseSummary({ participants, compact = false, className }: { participants: MeetingParticipant[]; compact?: boolean; className?: string }) {
-  if (!participants.length) return null
-  const counts = summariseResponses(participants)
+  const invitees = participants.filter((participant) => participant.role !== "organiser")
+  if (!invitees.length) return null
+  const counts = summariseResponses(invitees)
   const parts = responseOrder.filter((response) => counts[response] > 0)
   if (compact) {
     return (
@@ -132,7 +138,7 @@ export function MeetingAttendeeList({ participants, maxVisible, filterable = fal
         const response = participant.response ?? "needs_action"
         return (
           <li key={participant.id || participant.email} className="flex items-center gap-3 rounded-[var(--md-radius-lg)] px-2 py-1.5 transition-colors hover:bg-[var(--md-surface-tint)]">
-            <AttendeeAvatar name={participant.name} email={participant.email} response={response} internal={participant.external === false} />
+            <AttendeeAvatar name={participant.name} email={participant.email} photoUrl={participant.photoUrl} response={response} internal={participant.external === false} />
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-1.5 text-[12.5px] font-medium text-[var(--md-ink)]">
                 <span className="truncate">{participant.name || participant.email}</span>

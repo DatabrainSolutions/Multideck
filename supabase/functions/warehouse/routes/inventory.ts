@@ -5,6 +5,7 @@ import {
   clean,
   companyFacilityIds,
   requireCapability,
+  uuid,
 } from "../shared/mod.ts";
 
 export async function handleInventory(path, url, admin, actor) {
@@ -15,6 +16,49 @@ export async function handleInventory(path, url, admin, actor) {
   const allowed = requestedFacility
     ? facilityIds.filter((value) => value === requestedFacility)
     : facilityIds;
+
+  if (path[1] === "skus") {
+    if (!url.searchParams.has("limit")) {
+      throw new HttpError(400, "Warehouse SKU lists require bounded paging.");
+    }
+    const { limit, offset } = boundedPage(url);
+    if (!allowed.length) return { rows: [], total: 0, limit, offset, facets: [] };
+    const { data, error } = await admin.rpc("warehouse_edge_inventory_skus_page", {
+      p_allowed_facility_ids: allowed,
+      p_allowed_org_ids: actor.companyId ? null : Array.from(actor.organisationIds),
+      p_search: clean(url.searchParams.get("search"), 160),
+      p_facet: clean(url.searchParams.get("facet"), 160),
+      p_sort: clean(url.searchParams.get("sort"), 60),
+      p_direction: url.searchParams.get("direction") === "asc" ? "asc" : "desc",
+      p_limit: limit,
+      p_offset: offset,
+    });
+    if (!error) return data ?? { rows: [], total: 0, limit, offset, facets: [] };
+    if (["42883", "PGRST202"].includes(error.code ?? "")) {
+      throw new HttpError(503, "Warehouse SKU totals are still being prepared. Try again shortly.");
+    }
+    throw new HttpError(500, error.message);
+  }
+
+  if (path[1] === "sku-detail") {
+    const facilityId = uuid(url.searchParams.get("facilityId"), "warehouse");
+    const itemId = uuid(url.searchParams.get("itemId"), "item");
+    if (!allowed.includes(facilityId)) throw new HttpError(404, "This SKU does not exist in the selected warehouse.");
+    const { data, error } = await admin.rpc("warehouse_edge_inventory_sku_detail", {
+      p_allowed_facility_ids: allowed,
+      p_allowed_org_ids: actor.companyId ? null : Array.from(actor.organisationIds),
+      p_facility_id: facilityId,
+      p_item_id: itemId,
+      p_line_limit: 50,
+    });
+    if (!error && data) return data;
+    if (!error) throw new HttpError(404, "This SKU has no stock in the selected warehouse.");
+    if (["42883", "PGRST202"].includes(error.code ?? "")) {
+      throw new HttpError(503, "Warehouse SKU details are still being prepared. Try again shortly.");
+    }
+    throw new HttpError(500, error.message);
+  }
+
   const mode = path[1] === "movements"
     ? "movements"
     : path[1] === "exceptions"

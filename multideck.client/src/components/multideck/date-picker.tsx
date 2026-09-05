@@ -721,8 +721,11 @@ export function MultideckDateTimePicker({
           aria-label={t(timeLabel)}
           dir="ltr"
           className={cn(
-            "h-11 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] ps-9 pe-2 text-[13px] tabular-nums shadow-[var(--md-shadow-line)] [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none",
+            "h-11 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] text-[13px] tabular-nums shadow-[var(--md-shadow-line)] [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none",
             timeClassName,
+            // Consumer-provided field styles can set !px-3. Keep the time text
+            // clear of the clock even in those denser, reusable form controls.
+            "!ps-9 !pe-2",
           )}
           onChange={(event) => {
             const nextTime = event.target.value

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8")
 const migration = read("supabase/migrations/20260819123000_warehouse_item_detail_read.sql")
+const assignmentMigration = read("supabase/migrations/20260904143000_warehouse_mobile_task_lifecycle.sql")
 const route = read("supabase/functions/warehouse/routes/items.ts")
 const handlingUnitsRoute = read("supabase/functions/warehouse/routes/handling-units.ts")
 const client = read("multideck.client/src/lib/warehouse.ts")
@@ -30,7 +31,12 @@ test("the exact detail route has no broad item context and loads only supporting
   assert.match(route, /warehouse_edge_item_id_by_sku/)
   assert.match(route, /WMSItemUOM_ItemID", item\.WMSItem_ID/)
   assert.match(route, /Org_id", item\.WMSItem_CustomerOrgID/)
-  assert.match(route, /WMSFacility_ID", item\.WMSItem_DefaultFacilityID/)
+  assert.match(route, /WMS_ItemFacilityAssignments/)
+  assert.match(route, /WMSItemFacility_ItemID", item\.WMSItem_ID/)
+  assert.match(route, /WMSItemFacility_FacilityID", facilityIds/)
+  assert.match(route, /WMS_Facilities"\)\.select\("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name"\)\.in\("WMSFacility_ID", assignmentRows\.map/)
+  assert.match(assignmentMigration, /IX_WMS_ItemFacilityAssignments_facility_item/)
+  assert.match(assignmentMigration, /revoke all on table public\."WMS_ItemFacilityAssignments" from public, anon, authenticated/)
 })
 
 test("the item screen uses exact detail without a whole-register compatibility fallback", () => {

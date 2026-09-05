@@ -14,12 +14,27 @@ export type ExternalEventChange = {
   action?: unknown
 }
 
+export type ExternalEventResponse = "accepted" | "tentative" | "declined"
+
 export type NormalisedExternalEventChange = {
   cancel: boolean
   title: string | null
   startAt: string | null
   endAt: string | null
   timeZone: string
+}
+
+const EXTERNAL_EVENT_RESPONSES = new Set<ExternalEventResponse>(["accepted", "tentative", "declined"])
+const STORED_EXTERNAL_EVENT_RESPONSES = new Set(["needs_action", ...EXTERNAL_EVENT_RESPONSES])
+
+function object(value: unknown): JsonObject {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {}
+}
+
+export function normaliseExternalEventResponse(value: unknown): ExternalEventResponse {
+  const response = cleanText(value, 20) as ExternalEventResponse
+  if (!EXTERNAL_EVENT_RESPONSES.has(response)) throw new HttpError(400, "Choose Yes, Maybe or No for this invitation.")
+  return response
 }
 
 export function externalSourceLabel(provider: unknown) {
@@ -123,5 +138,80 @@ export async function pushExternalEventChange(admin: SupabaseClient, event: Json
   }
   const { data, error } = await admin.from("CAL_ProviderEvents").update(updates).eq("CALProviderEvent_ID", event.CALProviderEvent_ID).select("*").single()
   if (error || !data) throw new HttpError(500, `${label} accepted the change but the Multideck mirror could not be refreshed. It will correct itself on the next sync.`)
+  return { row: data as JsonObject, provider }
+}
+
+function providerResponseStatus(response: ExternalEventResponse) {
+  return response === "accepted" ? "accepted" : response === "tentative" ? "tentative" : "declined"
+}
+
+function updatedStoredAttendees(value: unknown, connectionEmail: string, response: ExternalEventResponse) {
+  if (!Array.isArray(value)) return []
+  return value.slice(0, 100).map((candidate) => {
+    const attendee = object(candidate)
+    const email = cleanText(attendee.email, 320).toLowerCase()
+    return attendee.self === true || (connectionEmail && email === connectionEmail)
+      ? { ...attendee, response }
+      : attendee
+  })
+}
+
+/**
+ * Respond to an invitation as the connected calendar owner. The provider is
+ * authoritative: Multideck updates its mirror only after Google or Microsoft
+ * accepts the response request.
+ */
+export async function pushExternalEventResponse(admin: SupabaseClient, event: JsonObject, nextResponse: ExternalEventResponse) {
+  if (event.CALProviderEvent_IsCancelled === true) throw new HttpError(409, "This invitation was already removed from the provider.")
+  if (event.CALProviderEvent_IsOrganiser === true) throw new HttpError(409, "You organised this event, so there is no invitation to answer.")
+  if (!STORED_EXTERNAL_EVENT_RESPONSES.has(String(event.CALProviderEvent_ResponseCode))) throw new HttpError(409, "The provider has not identified this event as an invitation you can answer.")
+
+  const connection = await loadEventConnection(admin, event)
+  const provider = connection.CALConnection_ProviderCode as "google" | "microsoft"
+  if (event.CALProviderEvent_ResponseCode === nextResponse) return { row: event, provider }
+
+  const token = await calendarProviderAccessToken(admin, connection)
+  const providerId = encodeURIComponent(String(event.CALProviderEvent_ProviderID))
+  const label = externalSourceLabel(provider)
+  const connectionEmail = cleanText(connection.CALConnection_Email, 320).toLowerCase()
+  let response: Response
+
+  if (provider === "google") {
+    const attendees = Array.isArray(event.CALProviderEvent_AttendeesJSON) ? event.CALProviderEvent_AttendeesJSON.map(object) : []
+    const self = attendees.find((attendee) => attendee.self === true)
+      ?? attendees.find((attendee) => cleanText(attendee.email, 320).toLowerCase() === connectionEmail)
+    const email = cleanText(self?.email, 320).toLowerCase() || connectionEmail
+    if (!email.includes("@")) throw new HttpError(409, "Reconnect Google Calendar so Multideck can identify your invitation.")
+    const calendarId = encodeURIComponent(String(connection.CALConnection_CalendarID || "primary"))
+    response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${providerId}?sendUpdates=all`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeesOmitted: true, attendees: [{ email, responseStatus: providerResponseStatus(nextResponse) }] }),
+    })
+  } else {
+    const action = nextResponse === "accepted" ? "accept" : nextResponse === "tentative" ? "tentativelyAccept" : "decline"
+    response = await fetch(`https://graph.microsoft.com/v1.0/me/events/${providerId}/${action}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ sendResponse: true }),
+    })
+  }
+
+  if (!response.ok) {
+    if (response.status === 401) throw new HttpError(409, `${label} needs to be reconnected.`)
+    if (response.status === 403) throw new HttpError(403, `${label} did not allow this response. The invitation may belong to another account.`)
+    if (response.status === 404 || response.status === 410) throw new HttpError(409, `${label} no longer has this invitation.`)
+    throw new HttpError(502, `${label} could not save your response.`)
+  }
+
+  const updatedAt = new Date().toISOString()
+  const updates: JsonObject = {
+    CALProviderEvent_ResponseCode: nextResponse,
+    CALProviderEvent_AttendeesJSON: updatedStoredAttendees(event.CALProviderEvent_AttendeesJSON, connectionEmail, nextResponse),
+    CALProviderEvent_UpdatedAt: updatedAt,
+  }
+  const { data, error } = await admin.from("CAL_ProviderEvents").update(updates)
+    .eq("CALProviderEvent_ID", event.CALProviderEvent_ID).select("*").single()
+  if (error || !data) throw new HttpError(500, `${label} accepted your response but the Multideck mirror could not be refreshed. It will correct itself on the next sync.`)
   return { row: data as JsonObject, provider }
 }

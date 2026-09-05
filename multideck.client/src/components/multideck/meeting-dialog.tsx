@@ -197,7 +197,11 @@ export function MeetingDialogHost({ navigate }: { navigate: (path: string) => vo
 
   return (
     <Dialog open={Boolean(context)} onOpenChange={(open) => { if (!open) close() }}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-0 sm:max-w-[620px]" onEscapeKeyDown={(event) => { if (saving) event.preventDefault() }}>
+      <DialogContent
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-0 sm:max-w-[620px] ease-[cubic-bezier(0.22,1,0.36,1)] data-open:duration-250 data-open:zoom-in-98 data-closed:duration-150 data-closed:zoom-out-98 motion-reduce:animate-none!"
+        overlayClassName="ease-[cubic-bezier(0.22,1,0.36,1)] data-open:duration-250 data-closed:duration-150 motion-reduce:animate-none!"
+        onEscapeKeyDown={(event) => { if (saving) event.preventDefault() }}
+      >
         <DialogTitle className="sr-only">New meeting</DialogTitle>
         <DialogDescription className="sr-only">Choose the meeting details, attendees and how to join.</DialogDescription>
         <form className="flex min-h-0 flex-col" aria-label="Schedule meeting" onSubmit={(event) => { event.preventDefault(); void submit() }}>
@@ -213,15 +217,15 @@ export function MeetingDialogHost({ navigate }: { navigate: (path: string) => vo
               value={draft.title}
               autoFocus
               aria-label="Meeting title"
-              placeholder="Add a title"
+              placeholder="Title"
               onChange={(event) => update({ title: event.target.value })}
-              className="mt-2 w-full bg-transparent py-1.5 text-[22px] font-medium tracking-[-.015em] text-[var(--md-ink)] outline-none transition-[box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] placeholder:text-[var(--md-subtle)] shadow-[inset_0_-1px_0_var(--md-line-strong)] focus:shadow-[inset_0_-1.5px_0_var(--md-accent)]"
+              className="mt-2 w-full border-0 bg-transparent py-1.5 text-[22px]! leading-snug! font-medium! tracking-[-.015em] text-[var(--md-ink)] shadow-none outline-none placeholder:text-[var(--md-subtle)]"
             />
           </div>
 
           <div className="grid flex-1 content-start px-5 pt-3 pb-3">
             <Row icon={Clock3} label="When" align="start">
-              <MeetingTimePicker startAt={draft.startAt} endAt={draft.endAt} timeZone={draft.timeZone} onChange={update} onTimeZoneChange={(timeZone) => update({ timeZone })} />
+              <MeetingTimePicker showLabels startAt={draft.startAt} endAt={draft.endAt} timeZone={draft.timeZone} onChange={update} onTimeZoneChange={(timeZone) => update({ timeZone })} />
             </Row>
             <Row icon={Video} label="How attendees join">
               <MeetingProviderSelect

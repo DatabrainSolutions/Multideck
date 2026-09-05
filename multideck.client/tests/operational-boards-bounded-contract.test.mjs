@@ -14,7 +14,8 @@ test("Booking Board uses the same bounded server register page as the table", ()
   assert.doesNotMatch(bookingsPage, /listLiveBookings[,\s]/)
   assert.match(bookingsPage, /else setBoardRecords\(result\.rows\)/)
   assert.match(bookingsPage, /const totalBookings = tableTotal/)
-  assert.match(bookingsPage, /<BookingMetricStrip summary=\{tableSummary\}/)
+  assert.doesNotMatch(bookingsPage, /<BookingMetricStrip/u)
+  assert.match(bookingsPage, /totalCount=\{tableSummary\.total\}/u)
 })
 
 test("Road Control requests one bounded stage page or bounded Kanban lanes", () => {

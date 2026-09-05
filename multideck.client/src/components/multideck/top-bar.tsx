@@ -24,9 +24,9 @@ const topBarIconActionClass =
   "rounded-[var(--md-radius-md)] bg-white/42 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
 
 const warehouseCreateActions: Partial<Record<string, { label: string; eventName: (typeof topBarActionEvents)[keyof typeof topBarActionEvents] }>> = {
-  "/warehouse/goods-in": { label: "Goods in", eventName: topBarActionEvents.createWarehouseOrder },
-  "/warehouse/goods-out": { label: "Goods out", eventName: topBarActionEvents.createWarehouseOrder },
-  "/warehouse/orders": { label: "New order", eventName: topBarActionEvents.createWarehouseOrder },
+  "/warehouse/goods-in": { label: "New inbound order", eventName: topBarActionEvents.createWarehouseOrder },
+  "/warehouse/goods-out": { label: "New outbound order", eventName: topBarActionEvents.createWarehouseOrder },
+  "/warehouse/orders": { label: "New warehouse order", eventName: topBarActionEvents.createWarehouseOrder },
   "/warehouse/facilities": { label: "New facility", eventName: topBarActionEvents.createWarehouseFacility },
   "/warehouse/items": { label: "New item", eventName: topBarActionEvents.createWarehouseItem },
   "/warehouse/locations": { label: "New location", eventName: topBarActionEvents.createWarehouseLocation },
@@ -56,7 +56,7 @@ function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (
   const { t } = useLanguage()
 
   if (route === "/warehouse/purchase-orders") {
-    return <Button aria-label={t("New customer purchase order")} title={t("New customer purchase order")} className={topBarPrimaryActionClass} onClick={() => navigate("/warehouse/purchase-orders/new")}><Plus data-icon="inline-start" strokeWidth={1.2} /><span className="hidden sm:inline">{t("New customer purchase order")}</span></Button>
+    return <Button aria-label={t("New expected receipt")} title={t("New expected receipt")} className={topBarPrimaryActionClass} onClick={() => navigate("/warehouse/purchase-orders/new")}><Plus data-icon="inline-start" strokeWidth={1.2} /><span className="hidden sm:inline">{t("New expected receipt")}</span></Button>
   }
 
   if (route === "/warehouse/inventory") {
@@ -72,7 +72,7 @@ function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (
         <DropdownMenuContent align="end" className="w-[248px]">
           <DropdownMenuItem onSelect={() => dispatchTopBarAction(topBarActionEvents.createWarehouseObject)}>
             <PackagePlus className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
-            {t("New warehouse object")}
+            {t("New pallet")}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => dispatchTopBarAction(topBarActionEvents.reportWarehouseLocationEmpty)}>
             <MapPinOff className="size-3.5" strokeWidth={1.4} aria-hidden="true" />

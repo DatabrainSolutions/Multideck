@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase"
 import { isSecureSupportStatusUrl, normalizeSupportTicketConditionalFields } from "@/lib/support-ticket-submission"
+import { isSupportTicketConversation, isSupportTicketCursor, isSupportTicketMessage, isSupportTicketSummary } from "@/lib/support-ticket-conversation"
 
 export type SupportTicketType = "bug" | "feature_request" | "question" | "account_billing" | "security_concern"
 export type SupportTicketImpact = "blocked" | "slowed_down" | "no_immediate_blocker"
@@ -20,6 +21,38 @@ export type CreateSupportTicketRequest = {
 
 export type SupportTicket = { id: string; ticketNumber: string; status: string; priority: string; customerName: string; statusUrl: string | null }
 export type CreateSupportTicketResponse = { ticket: SupportTicket; duplicate: boolean }
+export type SupportTicketSummary = {
+  id: string
+  reference: string
+  title: string
+  description: string
+  ticketType: SupportTicketType
+  status: "new" | "in_progress" | "waiting_for_customer" | "resolved" | "closed"
+  needsReply: boolean
+  createdAt: string
+  updatedAt: string
+}
+export type SupportTicketMessage = { id: string; authorType: "customer" | "staff"; authorName: string; body: string; createdAt: string }
+export type SupportTicketConversation = { ticket: SupportTicketSummary; messages: SupportTicketMessage[]; nextCursor: string | null }
+
+function invalidConversationResponse() {
+  return new SupportTicketError("support_service_invalid_response", "Support did not confirm the requested details. Refresh and try again.", 502)
+}
+export async function listSupportTickets(before?: string) {
+  const result = await invoke<{ tickets: SupportTicketSummary[]; nextCursor: string | null }>({ action: "list_tickets", ...(before ? { before } : {}) })
+  if (!Array.isArray(result.tickets) || !result.tickets.every(isSupportTicketSummary) || !isSupportTicketCursor(result.nextCursor)) throw invalidConversationResponse()
+  return result
+}
+export async function getSupportTicket(ticketId: string, before?: string) {
+  const result = await invoke<SupportTicketConversation>({ action: "get_ticket", ticketId, ...(before ? { before } : {}) })
+  if (!isSupportTicketConversation(result, ticketId)) throw invalidConversationResponse()
+  return result
+}
+export async function addSupportTicketComment(ticketId: string, body: string, idempotencyKey: string) {
+  const result = await invoke<{ message: SupportTicketMessage; duplicate: boolean }>({ action: "add_comment", ticketId, body, idempotencyKey }, 30_000)
+  if (!isSupportTicketMessage(result.message) || result.message.authorType !== "customer" || typeof result.duplicate !== "boolean") throw invalidConversationResponse()
+  return result
+}
 export type LegacySupportTicketRequest = {
   idempotencyKey: string
   topic: string

@@ -131,7 +131,90 @@ export type WarehouseInventoryActionResult = {
   status?: string
 }
 
-function query(values: Record<string, string | boolean | undefined>) {
+export type WarehouseOrderLine = {
+  id: string
+  lineNumber: number
+  itemId: string
+  sku: string
+  description: string
+  statusCode: string
+  orderedQuantity: number
+  receivedQuantity: number
+  pickedQuantity: number
+  packedQuantity: number
+  dispatchedQuantity: number
+  remainingQuantity: number
+  uomCode: string
+  lotNumber: string | null
+  expiryDate: string | null
+  sourceLocationId: string | null
+  sourceLocationCode: string | null
+  targetLocationId: string | null
+  targetLocationCode: string | null
+  inventoryStatusCode: string
+  customsStatusCode: string
+  instructions: string | null
+}
+
+export type WarehouseOrder = {
+  id: string
+  facilityId: string
+  facilityCode: string
+  facilityName: string
+  customerOrgId: string
+  customerName: string
+  orderNumber: string
+  typeCode: "inbound" | "outbound"
+  statusCode: string
+  statusName: string | null
+  priorityCode: string
+  customerReference: string | null
+  requestedDate: string | null
+  appointmentStartAt: string | null
+  appointmentEndAt: string | null
+  vehicleReg: string | null
+  containerNumber: string | null
+  sealNumber: string | null
+  instructions: string | null
+  createdAt: string
+  updatedAt: string
+  lines: WarehouseOrderLine[]
+}
+
+export type WarehouseTask = {
+  id: string
+  type: "putaway" | "pick"
+  statusCode: string
+  facilityId: string
+  facilityName: string
+  orderId: string | null
+  orderNumber: string | null
+  orderLineId: string | null
+  itemId: string | null
+  sku: string | null
+  description: string | null
+  customerOrgId: string | null
+  customerName: string | null
+  quantity: number
+  completedQuantity: number
+  uomCode: string
+  sourceLocationId: string | null
+  sourceLocationCode: string | null
+  targetLocationId: string | null
+  targetLocationCode: string | null
+  lotId: string | null
+  lotNumber: string | null
+  createdAt: string
+}
+
+export type WarehousePage<T> = {
+  rows: T[]
+  total: number
+  limit: number
+  offset: number
+}
+
+function query(values: Record<string, string | number | boolean | undefined>) {
   const result = new URLSearchParams()
   Object.entries(values).forEach(([key, value]) => {
     if (value !== undefined && value !== "" && value !== false) result.set(key, String(value))
@@ -194,6 +277,45 @@ export function createWarehouseMobileApi(client: SupabaseClient, workspace: Work
     resolveLocationDataError: (input: { facilityId: string; exceptionId: string; notes: string }) => request<WarehouseInventoryActionResult>("/inventory/actions/resolve_location_exception", "POST", { requestId: requestId(), resolution: "data_error", actualLocationId: null, ...input }),
     moveHandlingUnit: (input: { facilityId: string; handlingUnitId: string; targetLocationId: string; actualSourceLocationId: string | null; overrideReason: string | null; notes: string | null }) => request<WarehouseInventoryActionResult>("/inventory/actions/move_hu", "POST", { requestId: requestId(), reasonCode: "mobile_relocation", ...input }),
     consolidateHandlingUnits: (input: { facilityId: string; targetHandlingUnitId: string; sourceHandlingUnitIds: string[]; notes: string | null }) => request<WarehouseInventoryActionResult>("/inventory/actions/consolidate", "POST", { requestId: requestId(), ...input }),
+    listOrders: (options: { facilityId: string; typeCode: "inbound" | "outbound"; openOnly?: boolean; search?: string; limit?: number; offset?: number }) => request<WarehousePage<WarehouseOrder>>(`/orders${query(options)}`),
+    getOrder: (orderId: string) => request<WarehouseOrder>(`/orders/${orderId}`),
+    receiveOrder: (orderId: string, input: {
+      receivingLocationId: string
+      notes: string | null
+      lines: {
+        orderLineId: string
+        quantity: number
+        damagedQuantity: number
+        missingQuantity: number
+        targetLocationId: string
+        lotNumber: string | null
+        batchNumber: string | null
+        manufactureDate: string | null
+        expiryDate: string | null
+      }[]
+    }) => request<WarehouseOrder>(`/orders/${orderId}/receive`, "POST", {
+      requestId: requestId(),
+      handlingUnitId: null,
+      newHandlingUnit: null,
+      ...input,
+    }),
+    listTasks: (options: { facilityId: string; type: "putaway" | "pick"; status?: "open"; limit?: number; offset?: number }) => request<WarehousePage<WarehouseTask>>(`/tasks${query(options)}`),
+    getTask: (taskId: string) => request<WarehouseTask>(`/tasks/${taskId}`),
+    confirmTask: (taskId: string, input: {
+      quantity: number
+      targetLocationId?: string
+      scannedSourceLocationCode?: string
+      scannedTargetLocationCode?: string
+      scannedItemCode?: string
+      notes?: string | null
+    }) => request<WarehouseTask>(`/tasks/${taskId}/confirm`, "POST", { requestId: requestId(), ...input }),
+    dispatchOrder: (orderId: string, input: {
+      vehicleReg: string | null
+      containerNumber: string | null
+      sealNumber: string | null
+      notes: string | null
+      lines: { orderLineId: string; quantity: number }[]
+    }) => request<WarehouseOrder>(`/orders/${orderId}/dispatch`, "POST", { requestId: requestId(), ...input }),
   }
 }
 

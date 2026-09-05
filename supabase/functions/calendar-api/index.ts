@@ -33,7 +33,7 @@ import { renderBrandedEmail } from "../_shared/email-template.ts"
 import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
 import { readConfiguredTenantBrand } from "../_shared/tenant-branding.ts"
 import { providerBusyRanges } from "../_shared/calendar-provider-availability.ts"
-import { normaliseExternalEventChange, pushExternalEventChange } from "../_shared/calendar-provider-events.ts"
+import { normaliseExternalEventChange, normaliseExternalEventResponse, pushExternalEventChange, pushExternalEventResponse } from "../_shared/calendar-provider-events.ts"
 
 type Actor = Record<string, unknown> & { User_ID: string; Company_ID: string; User_Email: string }
 type JsonObject = Record<string, unknown>
@@ -200,7 +200,106 @@ function can(permissions: string[], value: string) {
   return permissions.includes(value)
 }
 
-function meetingContract(row: Record<string, unknown>, participants: Record<string, unknown>[] = [], changeRequests: Record<string, unknown>[] = []) {
+type CalendarPersonPresentation = { id: string; name: string; email: string; photoUrl: string | null }
+type CalendarPeoplePresentation = { byId: Map<string, CalendarPersonPresentation>; byEmail: Map<string, CalendarPersonPresentation> }
+
+function emptyCalendarPeople(): CalendarPeoplePresentation {
+  return { byId: new Map(), byEmail: new Map() }
+}
+
+async function loadCalendarPeoplePresentation(
+  admin: SupabaseClient,
+  companyId: string,
+  meetings: Record<string, unknown>[],
+  participantGroups: Map<string, Record<string, unknown>[]>,
+  providerEvents: Record<string, unknown>[],
+): Promise<CalendarPeoplePresentation> {
+  const people = emptyCalendarPeople()
+  const { data, error } = await admin.from("cmp_Users")
+    .select("User_ID,User_Firstname,User_Lastname,User_Email,User_ProfilePhotoBucket,User_ProfilePhotoPath")
+    .eq("Company_ID", companyId).limit(2_000)
+  if (error) {
+    console.warn("Calendar attendee profiles could not be loaded.", error.message)
+    return people
+  }
+
+  const relevantIds = new Set(meetings.map((meeting) => String(meeting.CALMeeting_OrganiserUserID ?? "")))
+  const relevantEmails = new Set<string>()
+  for (const group of participantGroups.values()) for (const participant of group) {
+    if (participant.CALParticipant_UserID) relevantIds.add(String(participant.CALParticipant_UserID))
+    const email = cleanText(participant.CALParticipant_Email, 320).toLowerCase()
+    if (email) relevantEmails.add(email)
+  }
+  for (const event of providerEvents) for (const participant of Array.isArray(event.CALProviderEvent_AttendeesJSON) ? event.CALProviderEvent_AttendeesJSON : []) {
+    const email = cleanText((participant as JsonObject)?.email, 320).toLowerCase()
+    if (email) relevantEmails.add(email)
+  }
+  const relevantUsers = (data ?? []).filter((user) => relevantIds.has(String(user.User_ID)) || relevantEmails.has(cleanText(user.User_Email, 320).toLowerCase()))
+  const paths = [...new Set(relevantUsers.flatMap((user) => user.User_ProfilePhotoBucket === "profile-photos" && typeof user.User_ProfilePhotoPath === "string" ? [user.User_ProfilePhotoPath] : []))]
+  const signedByPath = new Map<string, string>()
+  if (paths.length) {
+    const { data: signedRows, error: signedError } = await admin.storage.from("profile-photos").createSignedUrls(paths, 900)
+    if (signedError) console.warn("Calendar attendee photos could not be signed.", signedError.message)
+    for (const signed of signedRows ?? []) {
+      if (typeof signed.path === "string" && typeof signed.signedUrl === "string") signedByPath.set(signed.path, signed.signedUrl)
+    }
+  }
+
+  for (const user of relevantUsers) {
+    const id = cleanText(user.User_ID, 60)
+    const email = cleanText(user.User_Email, 320).toLowerCase()
+    if (!id || !email.includes("@")) continue
+    const name = `${cleanText(user.User_Firstname, 80)} ${cleanText(user.User_Lastname, 80)}`.trim() || email.split("@")[0]
+    const path = user.User_ProfilePhotoBucket === "profile-photos" ? cleanText(user.User_ProfilePhotoPath, 1_000) : ""
+    const person = { id, name, email, photoUrl: path ? signedByPath.get(path) ?? null : null }
+    people.byId.set(id, person)
+    people.byEmail.set(email, person)
+  }
+  return people
+}
+
+function storedProviderParticipants(value: unknown, people: CalendarPeoplePresentation) {
+  if (!Array.isArray(value)) return []
+  const roles = new Set(["organiser", "attendee", "optional"])
+  const responses = new Set(["needs_action", "accepted", "tentative", "declined"])
+  return value.slice(0, 100).flatMap((candidate) => {
+    const participant = candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate as JsonObject : {}
+    const email = cleanText(participant.email, 320).toLowerCase()
+    if (!email.includes("@")) return []
+    const profile = people.byEmail.get(email)
+    const role = cleanText(participant.role, 20)
+    const responseCode = cleanText(participant.response, 20)
+    return [{
+      id: cleanText(participant.id, 500) || email,
+      name: profile?.name || cleanText(participant.name, 240) || email.split("@")[0],
+      email,
+      photoUrl: profile?.photoUrl ?? null,
+      role: roles.has(role) ? role : "attendee",
+      response: responses.has(responseCode) ? responseCode : "needs_action",
+      external: !profile,
+      self: participant.self === true,
+    }]
+  })
+}
+
+function meetingContract(row: Record<string, unknown>, participants: Record<string, unknown>[] = [], changeRequests: Record<string, unknown>[] = [], people = emptyCalendarPeople()) {
+  const attendeeContracts = participants.map((participant) => {
+    const email = cleanText(participant.CALParticipant_Email, 320).toLowerCase()
+    const profile = people.byId.get(String(participant.CALParticipant_UserID ?? "")) ?? people.byEmail.get(email)
+    return {
+      id: participant.CALParticipant_ID,
+      name: profile?.name || participant.CALParticipant_Name,
+      email,
+      photoUrl: profile?.photoUrl ?? null,
+      role: participant.CALParticipant_RoleCode,
+      response: participant.CALParticipant_ResponseCode,
+      external: profile ? false : participant.CALParticipant_IsExternal,
+    }
+  })
+  const organiser = people.byId.get(String(row.CALMeeting_OrganiserUserID ?? ""))
+  const presentedParticipants = organiser && !attendeeContracts.some((participant) => participant.email === organiser.email)
+    ? [{ id: `organiser:${organiser.id}`, name: organiser.name, email: organiser.email, photoUrl: organiser.photoUrl, role: "organiser", response: "accepted", external: false }, ...attendeeContracts]
+    : attendeeContracts.map((participant) => participant.email === organiser?.email ? { ...participant, role: "organiser", response: "accepted", external: false } : participant)
   return {
     id: row.CALMeeting_ID,
     title: row.CALMeeting_Title,
@@ -226,14 +325,7 @@ function meetingContract(row: Record<string, unknown>, participants: Record<stri
     syncError: row.CALMeeting_LastSyncError,
     organiserUserId: row.CALMeeting_OrganiserUserID,
     canEdit: true,
-    participants: participants.map((participant) => ({
-      id: participant.CALParticipant_ID,
-      name: participant.CALParticipant_Name,
-      email: participant.CALParticipant_Email,
-      role: participant.CALParticipant_RoleCode,
-      response: participant.CALParticipant_ResponseCode,
-      external: participant.CALParticipant_IsExternal,
-    })),
+    participants: presentedParticipants,
     changeRequests: changeRequests.map((request) => {
       const participant = participants.find((candidate) => candidate.CALParticipant_ID === request.CALChangeRequest_ParticipantID)
       return {
@@ -287,8 +379,13 @@ function connectionColourFallback(provider: unknown) {
  * connection is live: Multideck writes the change to the provider, never the
  * other way round.
  */
-function externalEventContract(row: Record<string, unknown>, connection: ConnectionPresentation | undefined) {
+function externalEventContract(row: Record<string, unknown>, connection: ConnectionPresentation | undefined, people = emptyCalendarPeople()) {
   const source = connection?.provider ?? null
+  const participants = row.CALProviderEvent_IsPrivate ? [] : storedProviderParticipants(row.CALProviderEvent_AttendeesJSON, people)
+  const responseCode = cleanText(row.CALProviderEvent_ResponseCode, 20)
+  const response = ["needs_action", "accepted", "tentative", "declined"].includes(responseCode) ? responseCode : null
+  const connectionReady = (source === "google" || source === "microsoft") && (connection?.status === "connected" || connection?.status === "syncing")
+  const organiser = row.CALProviderEvent_IsOrganiser === true
   return {
     id: row.CALProviderEvent_ID,
     title: row.CALProviderEvent_IsPrivate ? "Busy" : row.CALProviderEvent_Title || "Busy",
@@ -297,9 +394,14 @@ function externalEventContract(row: Record<string, unknown>, connection: Connect
     provider: "calendar",
     calendarSource: source,
     colour: connection?.colour ?? "neutral",
+    joinUrl: row.CALProviderEvent_JoinURL,
     status: row.CALProviderEvent_IsCancelled ? "cancelled" : "confirmed",
     private: row.CALProviderEvent_IsPrivate,
-    canEdit: (source === "google" || source === "microsoft") && (connection?.status === "connected" || connection?.status === "syncing") && !row.CALProviderEvent_IsCancelled,
+    canEdit: connectionReady && organiser && !row.CALProviderEvent_IsCancelled,
+    canRespond: connectionReady && !organiser && Boolean(response) && !row.CALProviderEvent_IsCancelled,
+    rsvpResponse: response,
+    attendeeListState: row.CALProviderEvent_IsPrivate ? "hidden" : row.CALProviderEvent_AttendeesSyncedAt || participants.length ? "available" : "unavailable",
+    participants,
   }
 }
 
@@ -313,6 +415,24 @@ async function updateExternalEvent(request: Request, admin: SupabaseClient, acto
   const { row, provider } = await pushExternalEventChange(admin, event, change)
   const { data: connection } = await admin.from("CAL_ProviderConnections").select("CALConnection_ProviderCode,CALConnection_ColourCode,CALConnection_StatusCode").eq("CALConnection_ID", row.CALProviderEvent_ConnectionID).maybeSingle()
   console.info(JSON.stringify({ event: change.cancel ? "calendar.external_event.deleted" : "calendar.external_event.updated", companyId: actor.Company_ID, userId: actor.User_ID, providerEventId: row.CALProviderEvent_ID, provider, startAt: change.startAt, endAt: change.endAt }))
+  return externalEventContract(row, {
+    provider,
+    colour: connection?.CALConnection_ColourCode || connectionColourFallback(provider),
+    status: connection?.CALConnection_StatusCode,
+  })
+}
+
+async function respondToExternalEvent(request: Request, admin: SupabaseClient, actor: Actor, id: string) {
+  const payload = await body<JsonObject>(request)
+  const nextResponse = normaliseExternalEventResponse(payload.response)
+  const { data: event, error } = await admin.from("CAL_ProviderEvents").select("*")
+    .eq("CALProviderEvent_ID", id).eq("CALProviderEvent_CompanyID", actor.Company_ID).eq("CALProviderEvent_OwnerUserID", actor.User_ID).maybeSingle()
+  if (error) throw new HttpError(500, error.message)
+  if (!event) throw new HttpError(404, "That calendar invitation was not found.")
+  const { row, provider } = await pushExternalEventResponse(admin, event, nextResponse)
+  const { data: connection } = await admin.from("CAL_ProviderConnections").select("CALConnection_ProviderCode,CALConnection_ColourCode,CALConnection_StatusCode")
+    .eq("CALConnection_ID", row.CALProviderEvent_ConnectionID).maybeSingle()
+  console.info(JSON.stringify({ event: "calendar.external_event.responded", companyId: actor.Company_ID, userId: actor.User_ID, providerEventId: row.CALProviderEvent_ID, provider, response: nextResponse }))
   return externalEventContract(row, {
     provider,
     colour: connection?.CALConnection_ColourCode || connectionColourFallback(provider),
@@ -666,6 +786,7 @@ async function listWorkspace(admin: SupabaseClient, actor: Actor, permissions: s
     loadParticipants(admin, meetingRows.map((row) => String(row.CALMeeting_ID))),
     loadBookingLinkHosts(admin, (linksResult.data ?? []).map((row) => String(row.CALBookingLink_ID))),
   ])
+  const people = await loadCalendarPeoplePresentation(admin, actor.Company_ID, meetingRows, participants, (providerResult.data ?? []) as unknown as Record<string, unknown>[])
   const { data: changeRows, error: changeError } = meetingRows.length
     ? await admin.from("CAL_ChangeRequests").select("*").in("CALChangeRequest_MeetingID", meetingRows.map((row) => row.CALMeeting_ID)).eq("CALChangeRequest_StatusCode", "pending").order("CALChangeRequest_CreatedAt")
     : { data: [], error: null }
@@ -706,8 +827,8 @@ async function listWorkspace(admin: SupabaseClient, actor: Actor, permissions: s
   return {
     range: { start: start.toISOString(), end: end.toISOString() },
     timeZone: availabilityResult.data?.CALAvailability_TimeZone ?? "Europe/London",
-    meetings: meetingRows.map((row) => meetingContract(row, participants.get(String(row.CALMeeting_ID)) ?? [], changesByMeeting.get(String(row.CALMeeting_ID)) ?? [])),
-    externalEvents: (providerResult.data ?? []).map((row) => externalEventContract(row, connectionPresentation.get(String(row.CALProviderEvent_ConnectionID)))),
+    meetings: meetingRows.map((row) => meetingContract(row, participants.get(String(row.CALMeeting_ID)) ?? [], changesByMeeting.get(String(row.CALMeeting_ID)) ?? [], people)),
+    externalEvents: (providerResult.data ?? []).map((row) => externalEventContract(row, connectionPresentation.get(String(row.CALProviderEvent_ConnectionID)), people)),
     ribbons,
     availability: availabilityResult.data ? {
       timeZone: availabilityResult.data.CALAvailability_TimeZone,
@@ -1281,6 +1402,10 @@ Deno.serve(async (request) => {
     if (path[0] === "external-events" && path[1] && path.length === 2 && request.method === "PATCH") {
       if (!can(permissions, "Calendar.ManageOwn")) throw new HttpError(403, "You do not have permission to change calendar events.")
       return json(request, await updateExternalEvent(request, admin, actor, path[1]))
+    }
+    if (path[0] === "external-events" && path[1] && path[2] === "response" && path.length === 3 && request.method === "PATCH") {
+      if (!can(permissions, "Calendar.ManageOwn")) throw new HttpError(403, "You do not have permission to respond to calendar invitations.")
+      return json(request, await respondToExternalEvent(request, admin, actor, path[1]))
     }
     if (path[0] === "meetings" && path[1] && path[2] === "change-requests" && path[3] && request.method === "PATCH") {
       if (!can(permissions, "Calendar.ManageOwn")) throw new HttpError(403, "You do not have permission to decide meeting changes.")

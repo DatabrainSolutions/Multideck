@@ -12,6 +12,7 @@ import { WarehouseSelectScreen } from "@/screens/WarehouseSelectScreen"
 import { ExceptionsScreen, HoldingFeesScreen, PalletsScreen, StockEnquiryScreen, StockItemsScreen } from "@/screens/WarehouseBrowseScreens"
 import { LocationCheckScreen } from "@/screens/LocationCheckScreen"
 import { ConsolidationScreen, PalletMoveScreen } from "@/screens/PalletActionScreens"
+import { PickScreen, PutawayScreen, ReceiveScreen, ShipScreen } from "@/screens/WarehouseTaskScreens"
 import { t } from "@/i18n"
 import { createWorkspaceClient, registerAuthAutoRefresh, releaseWorkspaceClient } from "@/auth/supabase"
 import { discoverWorkspace, forgetWorkspace, loadWorkspace, saveWorkspace, type WorkspaceConfiguration } from "@/auth/workspace"
@@ -25,6 +26,10 @@ export type RootStackParams = {
   SignIn: undefined
   WarehouseSelect: undefined
   Home: undefined
+  Receive: undefined
+  Putaway: undefined
+  Pick: undefined
+  Ship: undefined
   LocationCheck: undefined
   StockEnquiry: undefined
   StockItems: undefined
@@ -167,6 +172,10 @@ export default function App() {
               <Stack.Screen name="Home">
                 {({ navigation }) => <WarehouseHomeScreen onOpen={(route) => navigation.navigate(route)} />}
               </Stack.Screen>
+              <Stack.Screen name="Receive">{({ navigation }) => <ReceiveScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="Putaway">{({ navigation }) => <PutawayScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="Pick">{({ navigation }) => <PickScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="Ship">{({ navigation }) => <ShipScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
               <Stack.Screen name="LocationCheck">{({ navigation }) => <LocationCheckScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
               <Stack.Screen name="StockEnquiry">{({ navigation }) => <StockEnquiryScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
               <Stack.Screen name="StockItems">{({ navigation }) => <StockItemsScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>

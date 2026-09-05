@@ -1,11 +1,15 @@
 import { ActionTile, WarehouseScreen } from "@/components/WarehouseUI"
 import { wt } from "@/warehouse/i18n"
 
-export type WarehouseRouteName = "LocationCheck" | "StockEnquiry" | "StockItems" | "Pallets" | "PalletMove" | "Consolidation" | "Exceptions" | "HoldingFees"
+export type WarehouseRouteName = "Receive" | "Putaway" | "Pick" | "Ship" | "LocationCheck" | "StockEnquiry" | "StockItems" | "Pallets" | "PalletMove" | "Consolidation" | "Exceptions" | "HoldingFees"
 
 export function WarehouseHomeScreen({ onOpen }: { onOpen: (route: WarehouseRouteName) => void }) {
   return (
     <WarehouseScreen>
+      <ActionTile icon="↓" label={wt("receive")} detail={wt("receiveQueueDetail")} onPress={() => onOpen("Receive")} />
+      <ActionTile icon="↳" label={wt("putAway")} detail={wt("putawayQueueDetail")} onPress={() => onOpen("Putaway")} />
+      <ActionTile icon="✓" label={wt("pick")} detail={wt("pickQueueDetail")} onPress={() => onOpen("Pick")} />
+      <ActionTile icon="↑" label={wt("ship")} detail={wt("shipQueueDetail")} onPress={() => onOpen("Ship")} />
       <ActionTile icon="⌖" label={wt("locationCheck")} onPress={() => onOpen("LocationCheck")} />
       <ActionTile icon="⌕" label={wt("stockEnquiry")} onPress={() => onOpen("StockEnquiry")} />
       <ActionTile icon="▦" label={wt("stockItems")} onPress={() => onOpen("StockItems")} />

@@ -73,6 +73,8 @@ Run these from `multideck.server`. Live provider verification additionally requi
 
 ## Deployment coupling
 
+Inline signature repair runs only for messages in an authorised thread detail read. Recovered Content-IDs update existing attachment rows and are reused on subsequent reads; MIME filename matches avoid repeating attachment detail requests. This is rendering metadata, not a new operator capability: Dexter retains its existing permission-checked email/attachment reads, and Watching for you must not emit an event for a repaired image ID or trigger an LLM call. Mailbox sync and watch semantics are unchanged.
+
 `email-watch-worker` imports `inbox-api/core.ts` and `inbox-api/runtime.ts` at bundle time so its scheduled provider sync uses the same identity, delivery-report, and reply-matching rules as an interactive Inbox refresh. Any change to mailbox sync or tracking in either shared file must deploy and download-verify both functions together:
 
 ```sh

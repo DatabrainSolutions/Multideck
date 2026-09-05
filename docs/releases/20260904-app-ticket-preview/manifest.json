@@ -1,0 +1,24 @@
+{
+  "baseCommit": "01c0ccbfc2f41b18e5e58d7871597f2afd11e8fb",
+  "files": [
+    "multideck.client/src/lib/support-ticket.ts",
+    "multideck.client/src/lib/support-ticket-conversation.ts",
+    "multideck.client/src/pages/support-ticket-workspace.tsx",
+    "multideck.client/src/pages/settings-page.tsx",
+    "multideck.client/src/components/multideck/support-ticket-dialog.tsx",
+    "multideck.client/src/data/multideck-data.ts"
+  ],
+  "sourceSha256": {
+    "multideck.client/src/lib/support-ticket.ts": "a5a1e25041f1a2e895a2bb4b9a743ac530724f85322f449beb624359929ca520",
+    "multideck.client/src/lib/support-ticket-conversation.ts": "a41a9456c77fce47ecd6579b6298543bd06eea2fb405b8e3660564870191b569",
+    "multideck.client/src/pages/support-ticket-workspace.tsx": "2fdc9cc6a5f6ae7c234afd477d2195dad5563d05b2efd50b6c2c949a29b2f0ce",
+    "multideck.client/src/pages/settings-page.tsx": "e3af618ed19b78577580d27b44fbb020a4cc524ef152ecc7c12cbb5d45cbae61",
+    "multideck.client/src/components/multideck/support-ticket-dialog.tsx": "78da844b64071adba551a2b81f69081e172d96e85126cb7bc8611ae1594c21fd",
+    "multideck.client/src/data/multideck-data.ts": "16c4451bd74c85bd1e569ef004ac5dcc9a50953a3c7be4c153c5172e90da9d3a"
+  },
+  "deploymentId": "dpl_HbQLCmmyWLqzDksou4iu95QEvtdd",
+  "previewUrl": "https://multideck-app-580gfojde-databrain-solutions.vercel.app",
+  "aliases": [],
+  "servedAsset": "settings-page-DLng73S6.js",
+  "servedAssetSha256": "dc39549d7ff49428b77047774769909bd0702a3d335fb721c8736c67dd105800"
+}

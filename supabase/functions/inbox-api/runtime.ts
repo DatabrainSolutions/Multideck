@@ -2500,6 +2500,8 @@ async function hydrateOutlookInlineContentIds(admin: Db, actor: Actor, messages:
         const providerAttachmentId = cleanString(item.id, 1_000)
         if (!providerAttachmentId) return
         let contentId = cleanString(item.contentId, 240).replace(/^<|>$/g, "")
+        contentId ||= inferGraphContentIdFromFileName(item.name, referenced) ?? ""
+        contentId ||= mimeContentIdByFileName.get(cleanString(item.name, 260).toLowerCase()) ?? ""
         if (!contentId) {
           try {
             const detail = await providerJson(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(message.CommMessage_ProviderMessageID)}/attachments/${encodeURIComponent(providerAttachmentId)}?$select=id,contentId`, accessToken)
@@ -2514,15 +2516,26 @@ async function hydrateOutlookInlineContentIds(admin: Db, actor: Actor, messages:
         contentId ||= mimeContentIdByFileName.get(cleanString(item.name, 260).toLowerCase()) ?? ""
         if (!contentId || !referenced.has(contentId.toLowerCase())) return
 
-        const alreadyIndexed = indexedForMessage.some((existing) => {
-          if (cleanString(existing.CommAttachment_ContentID, 240).replace(/^<|>$/g, "").toLowerCase() === contentId.toLowerCase()) return true
+        const existingAttachment = indexedForMessage.find((existing) => {
           try {
             return cleanString(JSON.parse(existing.CommAttachment_MetadataJSON ?? "{}").providerAttachmentId, 1_000) === providerAttachmentId
           } catch {
             return false
           }
         })
-        if (alreadyIndexed) return
+        if (existingAttachment) {
+          const repaired = {
+            CommAttachment_ContentID: contentId,
+            CommAttachment_IsInline: true,
+            CommAttachment_Disposition: "inline",
+          }
+          if (existingAttachment.CommAttachment_ContentID !== contentId || existingAttachment.CommAttachment_IsInline !== true) {
+            await result(admin.from("Comm_MessageAttachments").update(repaired).eq("CommAttachment_ID", existingAttachment.CommAttachment_ID))
+            Object.assign(existingAttachment, repaired)
+          }
+          return
+        }
+        if (indexedForMessage.some((existing) => cleanString(existing.CommAttachment_ContentID, 240).replace(/^<|>$/g, "").toLowerCase() === contentId.toLowerCase())) return
 
         const now = new Date().toISOString()
         const inserted = {

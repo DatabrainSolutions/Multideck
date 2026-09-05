@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type RefObject } from "react"
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react"
-import { Briefcase, Building2, CalendarDays, Check, Clock3, Copy, ExternalLink, MapPin, Palette, Pen01, Phone, TextQuote, Trash2, TriangleAlert, Users, Video, X } from "@/components/icons/hugeicons"
+import { ArrowLeft, Briefcase, Building2, CalendarDays, Check, Clock3, Copy, ExternalLink, MapPin, Palette, Pen01, Phone, TextQuote, Trash2, TriangleAlert, Users, Video, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { MeetingAttendeeList, MeetingResponseSummary } from "@/components/multideck/meeting-attendee-status"
 import { MeetingColourPicker } from "@/components/multideck/meeting-colour-picker"
 import { MeetingProviderMark, meetingProviderLabels } from "@/components/multideck/meeting-provider-mark"
 import { MeetingTimePicker } from "@/components/multideck/meeting-time-picker"
-import { decideMeetingChangeRequest, updateExternalEvent, updateMeeting, type CalendarEvent, type MeetingChangeRequest, type MeetingColour, type MeetingDraft } from "@/lib/calendar-api"
+import { decideMeetingChangeRequest, respondToExternalEvent, updateExternalEvent, updateMeeting, type CalendarEvent, type CalendarProvider, type ExternalEventResponse, type MeetingChangeRequest, type MeetingColour, type MeetingDraft } from "@/lib/calendar-api"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdEaseIn, mdEaseOut, reduceMotion } from "@/lib/motion"
 import { cn } from "@/lib/utils"
@@ -30,6 +31,18 @@ const row: Variants = {
 }
 const still: Variants = { hidden: {}, visible: {}, exit: {} }
 
+function useMobileDetails() {
+  const [mobile, setMobile] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches)
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)")
+    const update = () => setMobile(query.matches)
+    update()
+    query.addEventListener("change", update)
+    return () => query.removeEventListener("change", update)
+  }, [])
+  return mobile
+}
+
 function formatDuration(minutes: number) {
   if (minutes < 60) return `${minutes} min`
   const hours = Math.floor(minutes / 60)
@@ -41,15 +54,27 @@ function joinHost(url: string) {
   try { const parsed = new URL(url); return `${parsed.host}${parsed.pathname === "/" ? "" : parsed.pathname}` } catch { return url }
 }
 
-function IconAction({ label, icon: Icon, onClick, tone = "default", disabled }: { label: string; icon: ComponentType<{ className?: string; strokeWidth?: number }>; onClick: () => void; tone?: "default" | "danger"; disabled?: boolean }) {
+function meetingProviderForJoinUrl(url: string | null | undefined): CalendarProvider | null {
+  if (!url) return null
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    const onDomain = (domain: string) => host === domain || host.endsWith(`.${domain}`)
+    if (onDomain("meet.google.com")) return "google_meet"
+    if (["zoom.us", "zoom.com", "zoomgov.com"].some(onDomain)) return "zoom"
+    if (["teams.microsoft.com", "teams.live.com", "teams.cloud.microsoft", "teams.microsoft.us"].some(onDomain)) return "microsoft_teams"
+  } catch { /* Provider URLs are presented as generic meeting links when malformed or unfamiliar. */ }
+  return null
+}
+
+function IconAction({ label, icon: Icon, onClick, tone = "default", disabled, className, tooltipSide = "right" }: { label: string; icon: ComponentType<{ className?: string; strokeWidth?: number }>; onClick: () => void; tone?: "default" | "danger"; disabled?: boolean; className?: string; tooltipSide?: "bottom" | "right" }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button type="button" variant="ghost" size="icon" aria-label={label} disabled={disabled} onClick={onClick} className={cn("size-10 rounded-[calc(var(--md-radius-2xl)-4px)] text-[var(--md-subtle)] hover:text-[var(--md-ink)]", tone === "danger" && "hover:bg-[color-mix(in_srgb,var(--md-red)_8%,transparent)] hover:text-[var(--md-red)]")}>
+        <Button type="button" variant="ghost" size="icon" aria-label={label} disabled={disabled} onClick={onClick} className={cn("size-10 rounded-[calc(var(--md-radius-2xl)-4px)] text-[var(--md-subtle)] hover:text-[var(--md-ink)]", tone === "danger" && "hover:bg-[color-mix(in_srgb,var(--md-red)_8%,transparent)] hover:text-[var(--md-red)]", className)}>
           <Icon className="size-4" strokeWidth={1.5} />
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
+      <TooltipContent side={tooltipSide}>{label}</TooltipContent>
     </Tooltip>
   )
 }
@@ -94,7 +119,7 @@ function ChangeRequestRow({ meetingId, request, timeZone, onDecided }: { meeting
   )
 }
 
-function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: CalendarEvent; onClose: () => void; onChanged: () => void; navigate: (path: string) => void }) {
+function MeetingDetailsCard({ event, onClose, onChanged, navigate, mobile = false }: { event: CalendarEvent; onClose: () => void; onChanged: () => void; navigate: (path: string) => void; mobile?: boolean }) {
   const { language } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const zone = event.timeZone || "Europe/London"
@@ -105,15 +130,20 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
   const [details, setDetails] = useState({ title: event.title, agenda: event.agenda ?? "", location: event.location ?? "" })
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [rsvpResponse, setRsvpResponse] = useState(event.rsvpResponse ?? "needs_action")
+  const [responding, setResponding] = useState<ExternalEventResponse | null>(null)
+  const [rsvpError, setRsvpError] = useState<string | null>(null)
 
-  useEffect(() => { setTimes({ startAt: event.startAt, endAt: event.endAt }); setColour(event.colour ?? "teal"); setMode("view"); setError(null) }, [event])
+  useEffect(() => { setTimes({ startAt: event.startAt, endAt: event.endAt }); setColour(event.colour ?? "teal"); setRsvpResponse(event.rsvpResponse ?? "needs_action"); setResponding(null); setRsvpError(null); setMode("view"); setError(null) }, [event])
 
   const pending = event.status === "sync_pending" || event.status === "provisioning"
   // Mirrored Google/Microsoft events: the provider owns them, so edits are
   // written there first and only the title and time can change from here.
   const external = event.provider === "calendar"
   const externalSource = event.calendarSource === "microsoft" ? "Microsoft Calendar" : "Google Calendar"
-  const provider = event.provider === "calendar" ? "multideck" : event.provider
+  const urlProvider = meetingProviderForJoinUrl(event.joinUrl)
+  const provider = event.provider === "calendar" ? urlProvider ?? "multideck" : event.provider
+  const joinProvider = urlProvider ?? (event.provider === "google_meet" || event.provider === "microsoft_teams" || event.provider === "zoom" ? event.provider : null)
   const durationMinutes = Math.round((Date.parse(event.endAt) - Date.parse(event.startAt)) / 60_000)
   const dateLine = useMemo(() => {
     const day = new Intl.DateTimeFormat(language, { weekday: "long", day: "numeric", month: "long", timeZone: zone }).format(new Date(event.startAt))
@@ -121,6 +151,8 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
     return { day, range: `${time.format(new Date(event.startAt))} – ${time.format(new Date(event.endAt))}` }
   }, [event.endAt, event.startAt, language, zone])
   const participants = event.participants ?? []
+  const invitees = participants.filter((participant) => participant.role !== "organiser")
+  const attendeeListState = event.private ? "hidden" : event.attendeeListState ?? (external ? "unavailable" : "available")
   const linked = event.linkedRecord
   const linkedRoute = linked ? (linked.type === "lead" ? `/crm/leads/${linked.id}` : linked.type === "account" ? `/crm/accounts/${linked.id}` : `/bookings/${linked.id}`) : null
   const LinkedIcon = linked?.type === "job" ? Briefcase : Building2
@@ -128,6 +160,19 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
   async function copyJoinLink() {
     if (!event.joinUrl) return
     try { await navigator.clipboard.writeText(event.joinUrl); setCopied(true); window.setTimeout(() => setCopied(false), 1600) } catch { toast.error("The link could not be copied.") }
+  }
+
+  async function respond(nextResponse: ExternalEventResponse) {
+    if (!event.canRespond || responding || rsvpResponse === nextResponse) return
+    setResponding(nextResponse); setRsvpError(null)
+    try {
+      const result = await respondToExternalEvent(event.id, nextResponse)
+      setRsvpResponse(result.rsvpResponse ?? nextResponse)
+      toast.success(nextResponse === "accepted" ? "Invitation accepted" : nextResponse === "tentative" ? "Marked as maybe" : "Invitation declined", { description: `${externalSource} has your response.` })
+      onChanged()
+    } catch (reason) {
+      setRsvpError(reason instanceof Error ? reason.message : "Your response could not be saved.")
+    } finally { setResponding(null) }
   }
 
   async function reschedule() {
@@ -180,13 +225,45 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The meeting could not be cancelled.") } finally { setSaving(false) }
   }
 
+  function startReschedule() {
+    setDetails({ title: event.title, agenda: event.agenda ?? "", location: event.location ?? "" })
+    setColour(event.colour ?? "teal")
+    setTimes({ startAt: event.startAt, endAt: event.endAt })
+    setError(null)
+    setMode("reschedule")
+  }
+
   return (
     <>
-      <div data-slot="meeting-details-surface" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-popover)] max-h-[min(80dvh,640px,var(--radix-popover-content-available-height))]">
-      <motion.div variants={row} className="flex shrink-0 items-start gap-3 px-5 pb-4 pt-5">
-        <MeetingProviderMark provider={provider} className="mt-0.5 size-6 shrink-0" />
-        <div className="min-w-0">
-          {mode === "reschedule" && !event.private ? <Input aria-label="Meeting title" value={details.title} disabled={saving} onChange={(e) => setDetails((value) => ({ ...value, title: e.target.value }))} /> : <h2 className="text-[17px] font-medium leading-6 tracking-[-.01em] text-[var(--md-ink)]">{event.private ? "Busy" : event.title}</h2>}
+      <div data-slot="meeting-details-surface" className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--md-surface)]", mobile ? "h-full max-h-none rounded-none shadow-none" : "max-h-[min(80dvh,640px,var(--radix-popover-content-available-height))] rounded-[var(--md-radius-2xl)] shadow-[var(--md-shadow-popover)]")}>
+      {mobile ? (
+        <div className="flex shrink-0 items-center gap-1 px-2 pb-2 pt-[max(8px,env(safe-area-inset-top))] shadow-[var(--md-stroke-bottom)]">
+          <Button type="button" variant="ghost" size="icon" aria-label="Back to calendar" disabled={saving || Boolean(responding)} onClick={onClose} className="size-11 rounded-[var(--md-radius-lg)] text-[var(--md-ink)]">
+            <ArrowLeft className="size-5" strokeWidth={1.5} aria-hidden="true" />
+          </Button>
+          <p className="px-1 text-[13px] font-medium text-[var(--md-ink)]">Event details</p>
+          <div className="ms-auto flex items-center gap-0.5">
+            {event.canEdit && !pending && mode === "view" ? (
+              <>
+                <IconAction label="Edit event" icon={Pen01} onClick={startReschedule} className="size-11" tooltipSide="bottom" />
+                <IconAction label={external ? "Delete event" : "Cancel meeting"} icon={Trash2} tone="danger" onClick={() => setMode("cancel")} className="size-11" tooltipSide="bottom" />
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      <motion.div variants={row} className={cn("flex shrink-0 items-start gap-3 px-5 pb-4", mobile ? "pt-4" : "pt-5")}>
+        {mode !== "reschedule" ? <MeetingProviderMark provider={provider} calendarSource={external ? event.calendarSource : null} className="mt-0.5 size-6 shrink-0" /> : null}
+        <div className="min-w-0 flex-1">
+          {mode === "reschedule" && !event.private ? (
+            <input
+              aria-label="Meeting title"
+              value={details.title}
+              disabled={saving}
+              onChange={(e) => setDetails((value) => ({ ...value, title: e.target.value }))}
+              className="block w-full border-0 bg-transparent p-0 text-[20px]! font-medium! leading-7! tracking-[-.02em] text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)] focus-visible:shadow-[inset_0_-1px_0_var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          ) : <h2 className="text-[17px] font-medium leading-6 tracking-[-.01em] text-[var(--md-ink)]">{event.private ? "Busy" : event.title}</h2>}
           {mode !== "reschedule" ? (
             <p className="mt-0.5 text-[12.5px] text-[var(--md-text)]">
               {dateLine.day}<span className="mx-1.5 text-[var(--md-subtle)]">·</span>{dateLine.range}<span className="mx-1.5 text-[var(--md-subtle)]">·</span><span className="text-[var(--md-subtle)]">{formatDuration(durationMinutes)}</span>
@@ -201,7 +278,7 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
         </motion.div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto pb-4">
+      <div className={cn("grid min-h-0 flex-1 content-start gap-3 overflow-y-auto", mobile ? "pb-[max(16px,env(safe-area-inset-bottom))]" : "pb-4")}>
         {event.canEdit && mode === "reschedule" && !external ? (
           <>
           <DetailRow icon={Palette}>
@@ -223,7 +300,7 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
           <DetailRow icon={Video}>
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <a href={event.joinUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--md-accent)] hover:underline">Join with {meetingProviderLabels[provider]}<ExternalLink className="size-3" strokeWidth={1.6} aria-hidden="true" /></a>
+                <a href={event.joinUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--md-accent)] hover:underline">{joinProvider ? `Join with ${meetingProviderLabels[joinProvider]}` : "Open meeting"}<ExternalLink className="size-3" strokeWidth={1.6} aria-hidden="true" /></a>
                 <p className="mt-0.5 truncate text-[11.5px] text-[var(--md-subtle)]" dir="ltr">{joinHost(event.joinUrl)}</p>
               </div>
               <Tooltip>
@@ -245,15 +322,22 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
           </DetailRow>
         ) : null}
 
-        {participants.length ? (
-          <DetailRow icon={Users}>
-            <div className="flex items-baseline justify-between gap-3">
-              <p className="text-[13px] text-[var(--md-ink)]">{participants.length} {participants.length === 1 ? "attendee" : "attendees"}</p>
-              <MeetingResponseSummary participants={participants} />
-            </div>
-            <MeetingAttendeeList participants={participants} maxVisible={4} filterable={participants.length > 6} className="-mx-2 mt-1.5" />
-          </DetailRow>
-        ) : null}
+        <DetailRow icon={Users}>
+          {participants.length ? (
+            <>
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="text-[13px] text-[var(--md-ink)]">{invitees.length ? `${invitees.length} invited` : "No one invited"}</p>
+                <MeetingResponseSummary participants={participants} />
+              </div>
+              <MeetingAttendeeList participants={participants} maxVisible={4} filterable={participants.length > 6} className="-mx-2 mt-1.5" />
+            </>
+          ) : (
+            <>
+              <p className="text-[13px] text-[var(--md-ink)]">{attendeeListState === "hidden" ? "Attendees hidden" : attendeeListState === "unavailable" ? "Guest list unavailable" : "No one invited"}</p>
+              <p className="mt-0.5 text-[11.5px] leading-4 text-[var(--md-subtle)]">{attendeeListState === "hidden" ? "Attendee details are hidden for this private event." : attendeeListState === "unavailable" ? "The provider has not supplied an attendee list for this event." : "This event has no invitees."}</p>
+            </>
+          )}
+        </DetailRow>
 
         {event.agenda && mode !== "reschedule" ? (
           <DetailRow icon={TextQuote}>
@@ -278,11 +362,33 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
         ) : null}
 
         {event.changeRequests?.map((request) => <ChangeRequestRow key={request.id} meetingId={event.id} request={request} timeZone={zone} onDecided={() => { onChanged(); onClose() }} />)}
+
+        {external && event.canRespond && joinProvider ? (
+          <motion.div variants={row} className="mx-5 border-t border-[var(--md-border)] pt-3">
+            <div>
+              <p className="text-[13px] font-medium text-[var(--md-ink)]">Going?</p>
+              <p className="mt-0.5 text-[11.5px] text-[var(--md-subtle)]" role="status" aria-live="polite">
+                {responding ? "Saving your response…" : rsvpResponse === "accepted" ? "You’re going" : rsvpResponse === "tentative" ? "You might go" : rsvpResponse === "declined" ? "You’re not going" : "You haven’t replied"}
+              </p>
+            </div>
+            <div role="group" aria-label="Respond to invitation" aria-busy={Boolean(responding)} className="mt-2 flex w-full rounded-full bg-[var(--md-surface-tint)] p-1 shadow-[var(--md-shadow-line)]">
+              {([
+                ["accepted", "Yes"],
+                ["declined", "No"],
+                ["tentative", "Maybe"],
+              ] as const).map(([value, label]) => {
+                const selected = rsvpResponse === value
+                return <button key={value} type="button" aria-pressed={selected} aria-label={value === "accepted" ? "Accept invitation" : value === "tentative" ? "Tentatively accept invitation" : "Decline invitation"} disabled={Boolean(responding)} onClick={() => void respond(value)} className={cn("h-8 min-w-0 flex-1 rounded-full px-2.5 text-[12px] font-medium outline-none transition-[background-color,color,opacity,scale] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[.98] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] disabled:cursor-wait disabled:opacity-60", selected ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)] shadow-[var(--md-premium-stroke-soft)]" : "text-[var(--md-text)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]")}>{label}</button>
+              })}
+            </div>
+            {rsvpError ? <p role="alert" className="mt-2 text-[11.5px] leading-4 text-[var(--md-red)]">{rsvpError}</p> : null}
+          </motion.div>
+        ) : null}
       </div>
 
       <AnimatePresence initial={false}>
         {mode !== "view" || error ? (
-          <motion.div key={mode} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: 0.1 } }} transition={reduceMotion(Boolean(shouldReduceMotion), { duration: 0.2, ease: mdEaseOut })} className="shrink-0 shadow-[var(--md-stroke-top)]">
+          <motion.div key={mode} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: 0.1 } }} transition={reduceMotion(Boolean(shouldReduceMotion), { duration: 0.2, ease: mdEaseOut })} className={cn("shrink-0 shadow-[var(--md-stroke-top)]", mobile && "pb-[env(safe-area-inset-bottom)]")}>
             <div className={cn("flex flex-wrap items-center gap-2 px-4 py-3", mode === "cancel" && "justify-between")}>
               {error ? <p role="alert" className="flex w-full items-center gap-2 text-[11.5px] text-[var(--md-red)]"><TriangleAlert className="size-3.5 shrink-0" />{error}</p> : null}
               {mode === "cancel" ? (
@@ -305,15 +411,15 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate }: { event: Ca
       </AnimatePresence>
       </div>
 
-      <motion.div variants={row} role="group" aria-label="Event actions" className="flex shrink-0 flex-col gap-0.5 self-start rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-popover)]">
+      {!mobile ? <motion.div variants={row} role="group" aria-label="Event actions" className="flex shrink-0 flex-col gap-0.5 self-start rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-popover)]">
         {event.canEdit && !pending && mode === "view" ? (
           <>
-            <IconAction label="Edit event" icon={Pen01} onClick={() => { setDetails({ title: event.title, agenda: event.agenda ?? "", location: event.location ?? "" }); setColour(event.colour ?? "teal"); setTimes({ startAt: event.startAt, endAt: event.endAt }); setError(null); setMode("reschedule") }} />
+            <IconAction label="Edit event" icon={Pen01} onClick={startReschedule} />
             <IconAction label={external ? "Delete event" : "Cancel meeting"} icon={Trash2} tone="danger" onClick={() => setMode("cancel")} />
           </>
         ) : null}
-        <IconAction label="Close" icon={X} disabled={saving} onClick={onClose} />
-      </motion.div>
+        <IconAction label="Close" icon={X} disabled={saving || Boolean(responding)} onClick={onClose} />
+      </motion.div> : null}
     </>
   )
 }
@@ -333,12 +439,60 @@ export function MeetingDetailsPopover({ selection, onClose, onChanged, navigate 
   navigate: (path: string) => void
 }) {
   const shouldReduceMotion = useReducedMotion()
+  const mobile = useMobileDetails()
+  const [mobileMounted, setMobileMounted] = useState(Boolean(selection))
+  const mobileSelection = useRef(selection)
   const cardRef = useRef<HTMLDivElement | null>(null)
+  const latestSelection = useRef(selection)
+  const interactedOutside = useRef(false)
+  latestSelection.current = selection
+  if (selection) mobileSelection.current = selection
   const virtualRef = useMemo(() => ({ current: selection?.anchor ?? null }), [selection?.anchor])
+  useEffect(() => {
+    if (selection) {
+      setMobileMounted(true)
+      return
+    }
+    if (!mobileMounted) return
+    const timeout = window.setTimeout(() => {
+      setMobileMounted(false)
+      mobileSelection.current = null
+    }, shouldReduceMotion ? 0 : 300)
+    return () => window.clearTimeout(timeout)
+  }, [mobileMounted, selection, shouldReduceMotion])
+
+  if (mobile) {
+    const renderedSelection = selection ?? mobileSelection.current
+    if ((!selection && !mobileMounted) || !renderedSelection) return null
+    return (
+      <Sheet open={Boolean(selection)} onOpenChange={(open) => { if (!open && selection) onClose() }}>
+        <SheetContent
+          side="right"
+          showCloseButton={false}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            if (renderedSelection.anchor.isConnected) renderedSelection.anchor.focus({ preventScroll: true })
+          }}
+          className="md-calendar-mobile-details inset-0! z-[120]! h-[100dvh]! w-screen! max-w-none! gap-0! rounded-none! border-0! bg-[var(--md-surface)] p-0! shadow-none!"
+        >
+          <SheetTitle className="sr-only">{renderedSelection.event.private ? "Busy" : renderedSelection.event.title}</SheetTitle>
+          <SheetDescription className="sr-only">Calendar event details</SheetDescription>
+          <MeetingDetailsCard event={renderedSelection.event} onClose={onClose} onChanged={onChanged} navigate={navigate} mobile />
+        </SheetContent>
+      </Sheet>
+    )
+  }
+
   return (
     <AnimatePresence>
       {selection ? (
-        <Popover key={selection.event.id} open onOpenChange={(open) => { if (!open) onClose() }}>
+        <Popover key={selection.event.id} open onOpenChange={(open) => {
+          // An outside press can finish dismissing the previous event after the
+          // click has already selected another one. Only that original selection
+          // is allowed to close itself, otherwise the new card briefly appears
+          // and is immediately cleared by the stale dismissal.
+          if (!open && latestSelection.current === selection) onClose()
+        }}>
           <PopoverAnchor virtualRef={virtualRef as RefObject<HTMLElement>} />
           <PopoverContent
             asChild
@@ -347,7 +501,33 @@ export function MeetingDetailsPopover({ selection, onClose, onChanged, navigate 
             sideOffset={10}
             collisionPadding={16}
             onOpenAutoFocus={(event) => { event.preventDefault(); cardRef.current?.focus({ preventScroll: true }) }}
-            onCloseAutoFocus={(event) => { event.preventDefault(); if (selection.anchor.isConnected) selection.anchor.focus({ preventScroll: true }) }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+              const shouldRestoreFocus = !interactedOutside.current
+              interactedOutside.current = false
+              // Escape and the explicit Close action return keyboard focus to
+              // the event. A pointer click elsewhere keeps its own target so a
+              // second calendar event receives the complete click sequence.
+              if (shouldRestoreFocus && selection.anchor.isConnected) selection.anchor.focus({ preventScroll: true })
+            }}
+            onInteractOutside={(event) => {
+              // Re-clicking the selected calendar block should keep its details
+              // stable instead of treating the same block as a dismiss target.
+              if (selection.anchor.contains(event.target as Node)) {
+                interactedOutside.current = false
+                event.preventDefault()
+                return
+              }
+              // Let another event's own click replace this selection directly.
+              // Dismissing on pointer-down would unmount the target before its
+              // click handler has a chance to open the next event.
+              if (event.target instanceof Element && event.target.closest("[data-calendar-event]")) {
+                interactedOutside.current = true
+                event.preventDefault()
+                return
+              }
+              interactedOutside.current = true
+            }}
             className="z-[120] w-[min(calc(100vw_-_32px),456px)] flex-row items-start gap-2 rounded-none border-0 bg-transparent p-0 text-[var(--md-ink)] shadow-none! data-open:animate-none data-closed:animate-none"
           >
             <motion.div
