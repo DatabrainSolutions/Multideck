@@ -43,19 +43,22 @@ function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID.test(value)
 }
 
-function actionTargetIds(value: unknown, propertyName = "", target = new Set<string>()) {
+function actionTargetIds(value: unknown, propertyName = "", target = new Set<string>(), depth = 0) {
+  // An upload ID is provenance, not an operational record being changed. The
+  // upload permission boundary runs before extraction; it confers no write scope.
+  if (depth === 1 && propertyName === "_document_evidence") return target
   if (Array.isArray(value)) {
     if (/(?:^|_)ids$/i.test(propertyName) || /Ids$/.test(propertyName)) {
       value.filter(isUuid).forEach((id) => target.add(id))
     }
-    value.forEach((item) => actionTargetIds(item, "", target))
+    value.forEach((item) => actionTargetIds(item, "", target, depth + 1))
     return target
   }
   if (!value || typeof value !== "object") {
     if ((/(?:^|_)id$/i.test(propertyName) || /Id$/.test(propertyName)) && isUuid(value)) target.add(value)
     return target
   }
-  Object.entries(value as JsonObject).forEach(([key, item]) => actionTargetIds(item, key, target))
+  Object.entries(value as JsonObject).forEach(([key, item]) => actionTargetIds(item, key, target, depth + 1))
   return target
 }
 

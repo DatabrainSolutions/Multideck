@@ -61,6 +61,8 @@ export function cargoDexterFixture(table) {
     alter table public."AI_DexterPreparedActions" add "AIDexterPrepared_ApprovedAt" timestamptz;
     ${functionSql(security, 'public._multideck_dexter_deny_prepared_action')}
     ${functionSql(security, 'public.multideck_dexter_execute_prepared_action')}
+    revoke all on function public.multideck_dexter_execute_prepared_action(uuid,uuid,uuid,uuid) from public,anon,authenticated;
+    grant execute on function public.multideck_dexter_execute_prepared_action(uuid,uuid,uuid,uuid) to service_role;
     ${functionSql(migration('20260830230000_security_scan_high_risk_hardening'), 'public.multideck_dexter_approve_prepared_action')}
     ${functionSql(migration('20260831001000_security_scan_mandatory_approval_registry_fallback'), 'private.multideck_dexter_guard_mandatory_approval')}
     create trigger mandatory_approval before update on public."AI_DexterPreparedActions"

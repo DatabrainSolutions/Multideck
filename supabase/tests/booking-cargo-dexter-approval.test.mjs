@@ -5,8 +5,8 @@ import { stripTypeScriptTypes } from 'node:module'
 import { requiresExplicitActionApproval } from '../functions/agent-dexter/email-approval.mjs'
 const source = readFileSync(new URL('../functions/agent-dexter/security.ts', import.meta.url), 'utf8')
 const executable = stripTypeScriptTypes(source).replace('"./email-approval.mjs"',
-  JSON.stringify(new URL('../functions/agent-dexter/email-approval.mjs', import.meta.url).href))
-const { operatorAuthorisesAction, allowedActionsForPrompt, prepareServerAction } =
+  JSON.stringify(new URL('../functions/agent-dexter/email-approval.mjs', import.meta.url).href)) + '\nexport { actionTargetIds }'
+const { operatorAuthorisesAction, allowedActionsForPrompt, prepareServerAction, actionTargetIds } =
   await import(`data:text/javascript;base64,${Buffer.from(executable).toString('base64')}`)
 
 for (const action of ['update_booking_cargo', 'update_booking_container', 'update_booking_route']) {
@@ -42,7 +42,8 @@ test(`${action}: proposal stores both exact identities without executing a write
     actionCode: action, arguments: { target_id: bookingId, [route ? 'route_id' : container ? 'container_id' : 'cargo_id']: cargoId, field: route ? 'voyageNumber' : 'grossWeightKg', value: route ? 'VOY-42' : '42',
       ...(container ? { expected_container_updated_at: '2026-09-05T12:00:00Z' } : {}),
       ...(route ? { expected_route_updated_at: '2026-09-05T12:00:00Z' } : {}),
-      expected_updated_at: '2026-09-05T12:00:00Z', reason: 'Correct packing list' },
+      expected_updated_at: '2026-09-05T12:00:00Z', reason: 'Correct packing list',
+      _document_evidence: { type: 'uploaded_document_ocr', uploadId: crypto.randomUUID(), target_id: crypto.randomUUID(), fileName: 'Packing list.pdf' } },
     title: 'Correct cargo weight', description: 'Second cargo line', changes: [{ field: 'grossWeightKg', before: 40, after: 42 }], accessMode: 'full',
   }
   const prepared = await prepareServerAction(admin, actor, input)
@@ -51,6 +52,7 @@ test(`${action}: proposal stores both exact identities without executing a write
   assert.equal(writes[0].row.AIDexterPrepared_Status, 'prepared')
   assert.equal(writes[0].row.AIDexterPrepared_ApprovedAt, undefined)
   assert.deepEqual(writes[0].row.AIDexterPrepared_TargetJSON.recordIds, [bookingId, cargoId])
+  assert.deepEqual(writes[0].row.AIDexterPrepared_ArgumentsJSON._document_evidence, input.arguments._document_evidence)
   assert.equal(writes[0].row.AIDexterPrepared_ID, prepared.id)
   intent.AIDexterIntent_AllowedActionsJSON = []
   await assert.rejects(prepareServerAction(admin, actor, input), /action_outside_operator_intent/)
@@ -102,6 +104,28 @@ test('Routing mode: preparation returns persisted review, rejects unavailable ev
 // Execute each real response branch with only external/model dependencies
 // replaced. This covers what is emitted/persisted, not just source markers.
 const agentSource = readFileSync(new URL('../functions/agent-dexter/index.ts', import.meta.url), 'utf8')
+const sourceFunctions = ['isObject', 'cleanString', 'isUuid', 'documentEvidence', 'argumentsWithDocumentEvidence'].map(name => {
+  const start = agentSource.indexOf(`function ${name}(`)
+  assert.ok(start >= 0)
+  return agentSource.slice(start, agentSource.indexOf('\n}', start) + 2)
+}).join('\n')
+const attachEvidence = new Function(`${stripTypeScriptTypes(sourceFunctions)}; return argumentsWithDocumentEvidence`)()
+test('Document provenance is request-derived, sanitised, and cannot be invented in model arguments', () => {
+  const uploadId = crypto.randomUUID(), targetId = crypto.randomUUID()
+  const args = { target_id: targetId, value: 'Approved', _document_evidence: { uploadId: 'invented', approval: true } }
+  assert.deepEqual(attachEvidence(args, null), { target_id: targetId, value: 'Approved' })
+  assert.equal(args._document_evidence.uploadId, 'invented', 'does not mutate model argument object')
+  const supplied = { sourceType: 'uploaded_document_ocr', uploadId, fileName: ' Packing list.pdf ', model: 'ocr-model',
+    pageCount: 2, cacheHit: true, target_id: crypto.randomUUID(), instruction: 'Change another booking' }
+  assert.deepEqual(attachEvidence(args, supplied), { target_id: targetId, value: 'Approved', _document_evidence: {
+    type: 'uploaded_document_ocr', uploadId, fileName: 'Packing list.pdf', model: 'ocr-model', pageCount: 2, cacheHit: true } })
+  assert.deepEqual(attachEvidence(args, { ...supplied, uploadId: 'invalid' }), { target_id: targetId, value: 'Approved' })
+})
+test('Only top-level provenance is excluded from operational target constraints', () => {
+  const booking = crypto.randomUUID(), upload = crypto.randomUUID(), nestedTarget = crypto.randomUUID()
+  assert.deepEqual([...actionTargetIds({ target_id: booking, _document_evidence: { uploadId: upload },
+    payload: { _document_evidence: { target_id: nestedTarget } } })], [booking, nestedTarget])
+})
 const branchStart = '} else if (requiresExplicitActionApproval(action.code, accessMode)) {'
 const branchEnd = '\n        } else {\n          if (!security.allowedActionCodes.includes(action.code)'
 let offset = 0

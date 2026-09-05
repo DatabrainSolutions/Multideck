@@ -2579,8 +2579,12 @@ function documentEvidence(value: unknown) {
 }
 
 function argumentsWithDocumentEvidence(args: JsonObject, extraction: JsonObject | null) {
+  // Provenance comes only from this request's checked extraction, never model
+  // tool arguments. The SQL executor retains it in audit, not mutation input.
+  const actionArguments = { ...args }
+  delete actionArguments._document_evidence
   const evidence = documentEvidence(extraction)
-  return evidence ? { ...args, _document_evidence: evidence } : args
+  return evidence ? { ...actionArguments, _document_evidence: evidence } : actionArguments
 }
 
 function preparedActionDescription(
