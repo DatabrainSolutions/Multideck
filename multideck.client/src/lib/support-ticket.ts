@@ -1,3 +1,4 @@
+import type { TicketAttachment } from "./ticket-attachments"
 import { supabase } from "@/lib/supabase"
 import { isSecureSupportStatusUrl, normalizeSupportTicketConditionalFields } from "@/lib/support-ticket-submission"
 import { isSupportTicketConversation, isSupportTicketCursor, isSupportTicketMessage, isSupportTicketSummary } from "@/lib/support-ticket-conversation"
@@ -32,7 +33,7 @@ export type SupportTicketSummary = {
   createdAt: string
   updatedAt: string
 }
-export type SupportTicketMessage = { id: string; authorType: "customer" | "staff"; authorName: string; body: string; createdAt: string }
+export type SupportTicketMessage = { id: string; authorType: "customer" | "staff"; authorName: string; body: string; createdAt: string; attachments?: TicketAttachment[] }
 export type SupportTicketConversation = { ticket: SupportTicketSummary; messages: SupportTicketMessage[]; nextCursor: string | null }
 
 function invalidConversationResponse() {
@@ -48,8 +49,8 @@ export async function getSupportTicket(ticketId: string, before?: string) {
   if (!isSupportTicketConversation(result, ticketId)) throw invalidConversationResponse()
   return result
 }
-export async function addSupportTicketComment(ticketId: string, body: string, idempotencyKey: string) {
-  const result = await invoke<{ message: SupportTicketMessage; duplicate: boolean }>({ action: "add_comment", ticketId, body, idempotencyKey }, 30_000)
+export async function addSupportTicketComment(ticketId: string, body: string, idempotencyKey: string, attachmentIds?: string[]) {
+  const result = await invoke<{ message: SupportTicketMessage; duplicate: boolean }>({ action: attachmentIds ? "send_message" : "add_comment", ticketId, body, idempotencyKey, ...(attachmentIds ? { attachmentIds } : {}) }, 30_000)
   if (!isSupportTicketMessage(result.message) || result.message.authorType !== "customer" || typeof result.duplicate !== "boolean") throw invalidConversationResponse()
   return result
 }
@@ -82,7 +83,7 @@ async function supportTicketError(error: unknown) {
   return new SupportTicketError(code, message, status)
 }
 
-async function invoke<T>(body: Record<string, unknown>, timeoutMs = 16_000): Promise<T> {
+export async function invoke<T>(body: Record<string, unknown>, timeoutMs = 16_000): Promise<T> {
   if (!supabase) throw new SupportTicketError("support_service_unavailable", "Support is temporarily unavailable. Your ticket details are still here; try again.", 503)
   const controller = new AbortController(); const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
   try {

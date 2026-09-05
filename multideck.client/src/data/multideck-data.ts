@@ -1,3 +1,4 @@
+import ticketAttachmentsSource from "@/components/multideck/ticket-attachments.tsx?raw"
 import paginationSource from "@/components/multideck/pagination.tsx?raw"
 import lifecycleNotesSource from "@/components/multideck/lifecycle-notes.tsx?raw"
 import screeningComponentsSource from "@/components/multideck/screening-components.tsx?raw"
@@ -55,6 +56,16 @@ function visualizationUsageCode(componentName: string, kind: string) {
 }
 
 export const galleryComponents = [
+  {
+    id: "conversation-attachments", name: "Conversation Attachments", category: "Controls",
+    description: "Compact image tiles and document previews for ticket messages, with quiet remove controls and a shared image viewer.",
+    details: "Use the picker and attachment list in a composer or beneath a sent message. Private files use short-lived links. Removal applies to unsent files only, with keyboard and touch access.",
+    foundOn: [{label:"Support conversation",route:"/settings?tab=support"},{label:"Components",route:"/components?component=conversation-attachments"}],
+    componentCode: ticketAttachmentsSource,
+    usageCode: `<TicketAttachmentPicker onAdd={draft.add} disabled={sending} />
+<TicketAttachmentList items={draft.items} onRemove={draft.remove} disabled={sending} />
+<TicketAttachmentList items={message.attachments} />`,
+  },
   {
     id: "colours",
     name: "Colours",
@@ -984,7 +995,7 @@ foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM cont
     category: "Operations",
     description: "A full-page PDF reader that places white document sheets directly over the blurred application, with multipage scrolling, owned zoom controls, and an explicit download lifecycle.",
     details: "Use for private generated documents that operators need to inspect without losing their place. The first sheet fits completely inside the viewport, a restrained glass rail keeps zoom and download actions available, and Download moves through Downloading and Done while focus, Escape and reduced-motion behaviour remain intact.",
-    foundOn: [{ label: "Standalone export", route: "/customs/standalone/export" }, { label: "Standalone import", route: "/customs/standalone/import" }, { label: "Components", route: "/components?component=pdf-document-viewer-dialog" }],
+    foundOn: [{ label: "Support conversation", route: "/settings?tab=support" }, { label: "Standalone export", route: "/customs/standalone/export" }, { label: "Standalone import", route: "/customs/standalone/import" }, { label: "Components", route: "/components?component=pdf-document-viewer-dialog" }],
     componentCode: `export function PdfDocumentViewerDialog({ open, onOpenChange, blob, title, fileName, onDownload }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

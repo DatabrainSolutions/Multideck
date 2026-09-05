@@ -2285,7 +2285,9 @@ export function AppSidebar({
               type="button"
               className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
               onClick={() => {
-                launchSupportTicket()
+                setAccountMenuOpen(false)
+                onRequestClose?.()
+                openSettingsSection("support")
               }}
             >
               <LifeBuoy data-icon="inline-start" className="size-4" strokeWidth={1.4} />
