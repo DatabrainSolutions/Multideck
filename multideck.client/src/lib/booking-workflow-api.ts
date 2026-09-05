@@ -20,6 +20,8 @@ export type BookingWorkflowParty = {
 }
 
 export type BookingWorkflowCargo = {
+  /** Vehicle carried as cargo, never the transporting truck's registration. */
+  vin?: string | null
   id?: string
   lineNumber?: number
   description?: string | null

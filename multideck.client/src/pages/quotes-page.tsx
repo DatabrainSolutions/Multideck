@@ -1,5 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
 import "@/quotes-transfer.css"
+import { freightFieldPolicy, freightShipmentAllowed } from "@/lib/freight-field-policy"
+import { freightPackageTypeOptions } from "@/lib/freight-package-types"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
@@ -164,26 +166,7 @@ type QuoteWorkspaceTab = "overview" | "details" | "charges" | "documents" | "not
 
 const quoteWorkspaceTabs: QuoteWorkspaceTab[] = ["overview", "details", "charges", "documents", "notes", "audit"]
 
-const freightPackageTypeOptions = [
-  { id: "PX", value: "Pallets", label: "Pallets", description: "PX · Standard freight pallets", keywords: ["PLT", "pallet"] },
-  { id: "CT", value: "Cartons", label: "Cartons", description: "CT · Cartons", keywords: ["CTN", "carton"] },
-  { id: "BX", value: "Boxes", label: "Boxes", description: "BX · Boxes", keywords: ["BOX", "box"] },
-  { id: "CR", value: "Crates", label: "Crates", description: "CR · Crates", keywords: ["CRT", "crate"] },
-  { id: "CS", value: "Cases", label: "Cases", description: "CS · Cases", keywords: ["CAS", "case"] },
-  { id: "PK", value: "Packages", label: "Packages", description: "PK · General packages", keywords: ["PKG", "package"] },
-  { id: "PP", value: "Pieces", label: "Pieces", description: "PP · Loose pieces", keywords: ["PCS", "piece"] },
-  { id: "bags", value: "Bags", label: "Bags", description: "Bags and flexible packaging", keywords: ["BAG", "bag"] },
-  { id: "sacks", value: "Sacks", label: "Sacks", description: "Sacks", keywords: ["SAK", "sack"] },
-  { id: "DR", value: "Drums", label: "Drums", description: "DR · Drums", keywords: ["DRM", "drum"] },
-  { id: "barrels", value: "Barrels", label: "Barrels", description: "Barrels", keywords: ["BRL", "barrel"] },
-  { id: "bundles", value: "Bundles", label: "Bundles", description: "Bundled cargo", keywords: ["BDL", "bundle", "bunch"] },
-  { id: "rolls", value: "Rolls", label: "Rolls", description: "Rolled goods", keywords: ["ROL", "roll"] },
-  { id: "reels", value: "Reels", label: "Reels", description: "Cable, wire or material reels", keywords: ["REL", "reel"] },
-  { id: "ibcs", value: "IBCs", label: "IBCs", description: "Intermediate bulk containers", keywords: ["IBC", "bulk container"] },
-  { id: "totes", value: "Totes", label: "Totes", description: "Reusable tote containers", keywords: ["TOT", "tote"] },
-  { id: "ulds", value: "ULDs", label: "ULDs", description: "Air cargo unit load devices", keywords: ["ULD", "air container", "air pallet"] },
-  { id: "loose", value: "Loose / unpackaged", label: "Loose / unpackaged", description: "Cargo without outer packaging", keywords: ["LSE", "loose", "unpacked"] },
-] as const satisfies readonly CompactComboboxOption[]
+// Quote and Booking use the same package vocabulary; existing custom values remain valid.
 
 const commonFreightPackageTypeOptions = freightPackageTypeOptions.slice(0, 7)
 const freightPackageTypeSelectOptions = freightPackageTypeOptions.map((option) => ({
@@ -1193,7 +1176,7 @@ function getDateInputValue(date: Date) {
 
 const transportModeOptions = ["Sea FCL", "Sea LCL", "Air", "Road", "Rail"]
 
-const cargoWiseModeOptions = ["Air", "Sea", "Road", "Rail"]
+const cargoWiseModeOptions = ["Air", "Sea", "Road", "Rail", "Multimodal", "Courier", "Warehouse", "Customs only", "Docs only", "Other"]
 
 const shipmentTypeOptionsByMode: Record<string, string[]> = {
   Air: ["ULD - Unit Load Device"],
@@ -1206,27 +1189,12 @@ function shipmentTypeOptions(mode: string) {
   return shipmentTypeOptionsByMode[mode] ?? shipmentTypeOptionsByMode.Sea
 }
 
-const shipmentTypeCodesByMode: Record<string, string[]> = {
-  sea: ["FCL", "LCL", "CONSOL", "BREAKBULK", "PROJECT"],
-  air: ["AIR", "CONSOL", "PROJECT"],
-  road: ["FTL", "LTL", "RO_RO", "PROJECT"],
-  rail: ["PROJECT", "OTHER"],
-  multimodal: ["FCL", "LCL", "FTL", "LTL", "AIR", "CONSOL", "BREAKBULK", "RO_RO", "PROJECT", "OTHER"],
-  courier: ["AIR", "OTHER"],
-  warehouse: ["OTHER"],
-  customs_only: ["CUSTOMS_ONLY"],
-  docs_only: ["DOCS_ONLY"],
-  other: ["OTHER"],
-}
-
 function shipmentTypeCode(value: string) {
   return value.split(" - ", 1)[0].trim().toUpperCase()
 }
 
 function shipmentTypeChoicesForMode(mode: string, choices: string[]) {
-  const allowedCodes = shipmentTypeCodesByMode[mode.trim().toLowerCase()]
-  if (!allowedCodes) return choices
-  return choices.filter((choice) => allowedCodes.includes(shipmentTypeCode(choice)))
+  return choices.filter((choice) => freightShipmentAllowed(mode, choice))
 }
 
 function shipmentTypeValue(mode: string, value?: string, choices?: string[]) {
@@ -4095,10 +4063,8 @@ function QuoteDetailsPanelV2({
     () => quoteContainerRequests(quote.containerRequestsJson, quote.container),
     [quote.container, quote.containerRequestsJson],
   )
-  const isSeaContainerised = [quote.mode, quote.shipmentType]
-    .map((value) => (value ?? "").trim().toLocaleLowerCase())
-    .some((value) => value === "sea" || value === "ocean")
-    && /\bfcl\b|container/u.test((quote.shipmentType ?? "").toLocaleLowerCase())
+  const fieldPolicy = freightFieldPolicy({ mode: quote.mode, shipmentType: quote.shipmentType, direction: quote.direction, stage: editable ? "draft" : "submitted", legModes: routingLegs.map((leg) => leg.mode) })
+  const isSeaContainerised = fieldPolicy.containerRequests
   const recurrence: RecurrenceValue = {
     ...EMPTY_RECURRENCE,
     mode: (["once", "interval", "times-per-month", "custom"] as const).includes(quote.frequency as RecurrenceValue["mode"])
@@ -4564,7 +4530,7 @@ function QuoteDetailsPanelV2({
           <QuoteCompactSelect label="Source" value={quote.source ?? ""} options={["NEW - New Shipper", "REN - Renewal", "REP - Repeat lane", "TND - Tender"]} width="medium" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.source?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("source", value)} />
           <QuoteCompactSelect label="Mode" value={quote.mode} options={modes} width="short" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.mode.trim()} disabled={!editable} dataOptions onChange={(mode) => { onQuoteChange("mode", mode); const next = shipmentTypeValue(mode, quote.shipmentType, shipmentTypeChoicesForMode(mode, shipmentTypes)); if (next !== quote.shipmentType) onQuoteChange("shipmentType", next) }} />
           <QuoteCompactSelect label="Shipment type" value={shipmentTypeValue(quote.mode, quote.shipmentType, shipmentTypeChoicesForMode(quote.mode, shipmentTypes))} options={shipmentTypeChoicesForMode(quote.mode, shipmentTypes)} width="medium" disabled={!editable} dataOptions onChange={(value) => onQuoteChange("shipmentType", value)} />
-          <QuoteCompactSelect label="HBL mode" value={quote.hblMode ?? ""} options={["CY/CFS", "CY/CY", "CFS/CFS", "Door/Door"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("hblMode", value)} />
+          {fieldPolicy.hblMode ? <QuoteCompactSelect label="HBL mode" value={quote.hblMode ?? ""} options={["CY/CFS", "CY/CY", "CFS/CFS", "Door/Door"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("hblMode", value)} /> : null}
           <QuoteCompactSelect label={calculatedDirection ? "Direction (auto)" : "Direction"} value={calculatedDirection ?? quote.direction ?? ""} options={["Export", "Import", "Domestic", "Cross trade"]} width="short" disabled={!editable || Boolean(calculatedDirection)} onChange={(value) => onQuoteChange("direction", value)} />
           <QuoteCompactSelect label="Department" value={quote.department ?? ""} options={lookups?.departments.map((item) => item.name) ?? []} width="short" disabled={!editable} dataOptions onChange={(value) => { const item = lookups?.departments.find((department) => department.name === value); onQuoteChange("department", value); onQuoteChange("departmentId", item?.id ?? "") }} />
           <QuoteCompactSelect label="Branch" value={quote.branch ?? ""} options={lookups?.offices.map((item) => ({ value: item.code || item.name, label: item.code || item.name })) ?? []} width="code" disabled={!editable} dataOptions onChange={(value) => { const item = lookups?.offices.find((office) => (office.code || office.name) === value); onQuoteChange("branch", value); onQuoteChange("officeId", item?.id ?? "") }} />
@@ -4866,7 +4832,7 @@ function QuoteDetailsPanelV2({
             />
             <QuoteCompactInput label="Gross weight (kg)" value={quote.grossWeightKg ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("grossWeightKg", value)} />
             <QuoteCompactInput label="Volume (CBM)" value={quote.volumeCbm ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("volumeCbm", value)} />
-            <QuoteCompactInput label="Chargeable weight (kg)" value={quote.chargeableWeightKg ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("chargeableWeightKg", value)} />
+            {fieldPolicy.chargeableWeight ? <QuoteCompactInput label="Chargeable weight (kg)" value={quote.chargeableWeightKg ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("chargeableWeightKg", value)} /> : null}
             {originIsUs ? <QuoteCompactSelect label="FMC TID" value={quote.fmcTid ?? ""} options={["Not required", "Required", "Pending"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("fmcTid", value)} /> : null}
           </CompactFieldRow>
           <div>

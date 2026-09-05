@@ -3158,6 +3158,18 @@ function ComponentPreview({ id }: { id: string }) {
             activeTab={previewCustomerTab}
             onChange={setPreviewCustomerTab}
           />
+          <Tabs defaultValue="control" className="mt-6">
+            <TabsList variant="line" aria-label={t("Booking detail sections")}>
+              <TabsTrigger value="control">{t("Control")}</TabsTrigger>
+              <TabsTrigger value="parties">{t("Parties")}</TabsTrigger>
+              <TabsTrigger value="route">{t("Route & schedule")}</TabsTrigger>
+              <TabsTrigger value="cargo">{t("Cargo & equipment")}</TabsTrigger>
+            </TabsList>
+            <TabsContent value="control"><p className="text-[13px] text-[var(--md-text)]">{t("Keep record controls separate from operational detail.")}</p></TabsContent>
+            <TabsContent value="parties"><p className="text-[13px] text-[var(--md-text)]">{t("Customer, payer, shipper and consignee.")}</p></TabsContent>
+            <TabsContent value="route"><p className="text-[13px] text-[var(--md-text)]">{t("Route legs and planned transport dates.")}</p></TabsContent>
+            <TabsContent value="cargo"><p className="text-[13px] text-[var(--md-text)]">{t("Cargo lines and mode-specific equipment.")}</p></TabsContent>
+          </Tabs>
         </div>
       ) : null}
 

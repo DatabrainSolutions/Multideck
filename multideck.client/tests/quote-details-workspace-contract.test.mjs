@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import test from "node:test"
+const packageTypes = readFileSync(new URL("../src/lib/freight-package-types.ts", import.meta.url), "utf8")
 
 const root = resolve(import.meta.dirname, "../..")
 const read = (path) => readFileSync(resolve(root, path), "utf8")
@@ -157,7 +158,8 @@ test("every send-blocking Incoterm and Sea FCL container field is visible in quo
   assert.match(details, /label="Collection"[\s\S]{0,450}onQuoteChange\("collectionRequired", value\)/u)
   assert.match(details, /label="Delivery"[\s\S]{0,450}onQuoteChange\("deliveryRequired", value\)/u)
   assert.match(details, /label="Customs clearance"[\s\S]{0,450}onQuoteChange\("customsIncluded", value\)/u)
-  assert.match(details, /const isSeaContainerised[\s\S]{0,350}\/\\bfcl\\b\|container\/u/u)
+  assert.match(details, /const isSeaContainerised = fieldPolicy\.containerRequests/u)
+  assert.match(page, /import \{ freightFieldPolicy, freightShipmentAllowed \} from "@\/lib\/freight-field-policy"/u)
   assert.match(details, /\{isSeaContainerised \? \([\s\S]{0,500}aria-label=\{t\("Container requests"\)\}/u)
   assert.match(details, /containerRequests\.map\(\(request, index\)/u)
   assert.match(details, /label=\{index === 0 \? "Qty"[\s\S]{0,900}label=\{index === 0 \? "Container type"/u)
@@ -286,9 +288,9 @@ test("each supplier can retain multiple carrier service options including a TBC 
 
 test("goods, cargo characteristics, hazardous details and customs agents remain operational data", () => {
   assert.ok((details.match(/<AmountCurrencyField\b/gu) ?? []).length >= 2, "Goods and insurance values must each split amount and currency.")
-  assert.match(page, /const freightPackageTypeOptions = \[/u)
+  assert.match(page, /import \{ freightPackageTypeOptions \} from "@\/lib\/freight-package-types"/u)
   for (const packageType of ["Pallets", "Cartons", "Boxes", "Crates", "Cases", "Packages", "Pieces", "Drums", "IBCs", "ULDs", "Loose \/ unpackaged"]) {
-    assert.match(page, new RegExp(`value: "${escaped(packageType)}"`, "u"), `${packageType} must be available as a freight package type.`)
+    assert.match(packageTypes, new RegExp(`value: "${escaped(packageType)}"`, "u"), `${packageType} must be available as a freight package type.`)
   }
   assert.match(details, /<CompactCombobox[\s\S]{0,160}label="Package type"[\s\S]{0,240}options=\{freightPackageTypeOptions\}/u)
   assert.match(details, /recommendedLabel="Common package types"/u)

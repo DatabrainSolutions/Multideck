@@ -44,7 +44,7 @@ test("booking selectors reuse the quote directories and dependent choices", () =
   assert.match(bookingComponents, /getQuoteSources\(\)/)
   assert.match(bookingComponents, /loadUnlocodeDirectory\(\)/)
   assert.match(bookingComponents, /filterLocationsForMode\(/)
-  assert.match(bookingComponents, /bookingShipmentTypeCodesByMode/)
+  assert.match(bookingComponents, /freightShipmentAllowed\(modeKey, option\.code\)/)
   assert.match(bookingComponents, /bookingEquipmentOptionsByMode/)
   assert.match(bookingComponents, /options=\{bookingDirectionOptions\}/)
   assert.match(bookingComponents, /options=\{bookingHblModeOptions\}/)
