@@ -1,6 +1,7 @@
-import { useId, useRef } from "react"
+import { useId, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { FileText, Paperclip, X } from "@/components/icons/hugeicons"
+import { TicketPdfPreview } from "./ticket-pdf-preview"
 import { Button } from "@/components/ui/button"
 import { ImageLightbox } from "@/components/multideck/image-lightbox"
 import { ticketFileAccept, ticketFileHint, type TicketAttachment } from "@/lib/ticket-attachments"
@@ -9,9 +10,10 @@ import { ticketFileAccept, ticketFileHint, type TicketAttachment } from "@/lib/t
 export function TicketAttachmentList({ items, onRemove, disabled = false }: {
   items: TicketAttachment[]; onRemove?: (id: string) => void; disabled?: boolean
 }) {
+  const [pdf, setPdf] = useState<TicketAttachment | null>(null)
   const reduced = useReducedMotion()
   const images = items.filter(file => file.mediaType.startsWith("image/")).map(file => ({id:file.id,src:file.signedUrl,alt:file.originalName}))
-  return <ImageLightbox items={images}>{lightbox => <ul aria-label={onRemove ? "Files to send" : "Attachments"} className="relative flex min-w-0 flex-wrap gap-2">
+  return <><ImageLightbox items={images}>{lightbox => <ul aria-label={onRemove ? "Files to send" : "Attachments"} className="relative flex min-w-0 flex-wrap gap-2">
     <AnimatePresence initial={false} mode="popLayout">
       {items.map(file => {
         const image = file.mediaType.startsWith("image/")
@@ -23,12 +25,13 @@ export function TicketAttachmentList({ items, onRemove, disabled = false }: {
         const tile = image ? "size-20 overflow-hidden rounded-[var(--md-radius-xl)]" : "flex min-h-22 w-64 max-w-full items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]"
         return <motion.li key={file.id} layout={reduced ? false : "position"} initial={reduced ? {opacity:0} : {opacity:0,scale:0.96,y:4}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:reduced?1:0.96,transition:{duration:reduced?0:0.14,ease:"easeIn"}}} transition={{duration:reduced?0:0.22,ease:[0.22,1,0.36,1]}} className="group relative max-w-full">
           {image ? <motion.button type="button" ref={node=>lightbox.registerTrigger(file.id,node)} layoutId={lightbox.layoutIdFor(file.id)} onClick={()=>lightbox.open(file.id)} aria-label={"Preview "+file.originalName} title={file.originalName} className={tile+" block outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-2 motion-safe:active:scale-[0.96]"}>{contents}</motion.button>
+            : file.mediaType === "application/pdf" ? <button type="button" onClick={() => setPdf(file)} aria-label={"Preview "+file.originalName} title={file.originalName} className={tile+" outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-2 motion-safe:active:scale-[0.96]"}>{contents}</button>
             : <a href={file.signedUrl} target="_blank" rel="noreferrer" download={file.originalName} aria-label={"Download "+file.originalName} title={file.originalName} className={tile+" outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-2 motion-safe:active:scale-[0.96]"}>{contents}</a>}
           {onRemove ? <button type="button" disabled={disabled} onClick={()=>onRemove(file.id)} aria-label={"Remove "+file.originalName} title={"Remove "+file.originalName} className="absolute right-0 top-0 z-10 flex size-10 items-start justify-end p-1 opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[var(--md-accent)] disabled:cursor-wait [@media(hover:none)]:opacity-100 motion-reduce:transition-none"><span className="grid size-6 place-items-center rounded-full bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-soft)] transition-transform duration-150 motion-safe:active:scale-[0.96]"><X className="size-3" strokeWidth={1.5} aria-hidden="true" /></span></button> : null}
         </motion.li>
       })}
     </AnimatePresence>
-  </ul>}</ImageLightbox>
+  </ul>}</ImageLightbox>{pdf ? <TicketPdfPreview key={pdf.id} file={pdf} onClose={() => setPdf(null)} /> : null}</>
 }
 
 export function TicketAttachmentPicker({onAdd,disabled=false}: {onAdd:(files:File[])=>void;disabled?:boolean}) {

@@ -15,12 +15,13 @@ const minZoom = 0.5
 const maxZoom = 3
 const zoomStep = 0.25
 
-export function PdfDocumentViewerDialog({ open, onOpenChange, blob, title, fileName, meta, onDownload }: {
+export function PdfDocumentViewerDialog({ open, onOpenChange, blob, title, fileName, meta, onDownload, loading = false }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   blob: Blob | null
   title: string
   fileName: string
+  loading?: boolean
   meta?: string
   onDownload: () => Promise<void>
 }) {
@@ -119,7 +120,7 @@ export function PdfDocumentViewerDialog({ open, onOpenChange, blob, title, fileN
       dir="inherit"
     >
       <DialogTitle className="sr-only">{title}</DialogTitle>
-      <DialogDescription className="sr-only">{t("Scrollable declaration PDF preview with zoom and download controls.")}</DialogDescription>
+      <DialogDescription className="sr-only">{t("Scrollable PDF preview with zoom and download controls.")}</DialogDescription>
 
       <div
         className="absolute end-3 top-3 z-20 flex max-w-[calc(100%-1.5rem)] items-center gap-1 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-surface)_78%,transparent)] p-1 text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.42),0_8px_28px_rgba(0,0,0,0.18)] backdrop-blur-xl sm:end-4 sm:top-4"
@@ -204,8 +205,8 @@ export function PdfDocumentViewerDialog({ open, onOpenChange, blob, title, fileN
         ) : (
           <div className="grid size-full place-items-center px-6 text-center">
             <div className="max-w-sm rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-surface)_76%,transparent)] px-4 py-3 text-[12px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)] backdrop-blur-xl">
-              {rendering ? <LoaderCircle className="mx-auto mb-2 size-4 animate-spin text-[var(--md-accent)] motion-reduce:animate-none" aria-hidden="true" /> : null}
-              <p>{rendering ? t("Preparing the declaration PDF preview") : t("The PDF preview could not be drawn. Download the document to open it.")}</p>
+              {rendering || loading ? <LoaderCircle className="mx-auto mb-2 size-4 animate-spin text-[var(--md-accent)] motion-reduce:animate-none" aria-hidden="true" /> : null}
+              <p>{rendering || loading ? t("Preparing the PDF preview") : t("The PDF preview could not be drawn. Download the document to open it.")}</p>
             </div>
           </div>
         )}

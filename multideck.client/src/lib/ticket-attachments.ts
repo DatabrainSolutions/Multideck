@@ -6,13 +6,13 @@ export const ticketFileTypes: Record<string, string> = {
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation", txt: "text/plain", csv: "text/csv",
 }
 export const ticketFileAccept = Object.keys(ticketFileTypes).map(extension => "." + extension).join(",")
-export const ticketFileHint = "Images, PDF, Word, Excel, PowerPoint, TXT or CSV. Up to 5 files, 10 MB each."
+export const ticketFileHint = "Images, PDF, Word, Excel, PowerPoint, TXT or CSV. Up to 5 files, 50 MB each."
 export const ticketFileMime = (file: File) => ticketFileTypes[file.name.split(".").at(-1)?.toLowerCase() ?? ""] ?? ""
 export function validateTicketFiles(files: File[]) {
   if (files.length > 5) throw new Error("Attach up to 5 files per message.")
   if (files.some(file => !ticketFileMime(file))) throw new Error("Choose an image, PDF, Word, Excel, PowerPoint, TXT or CSV file.")
-  if (files.some(file => !file.size || file.size > 10 * 1024 * 1024)) throw new Error("Each file must be between 1 byte and 10 MB.")
-  if (files.reduce((sum, file) => sum + file.size, 0) > 25 * 1024 * 1024) throw new Error("Keep the attachments under 25 MB in total.")
+  if (files.some(file => !file.size || file.size > 50 * 1024 * 1024)) throw new Error("Each file must be between 1 byte and 50 MB.")
+  if (files.reduce((sum, file) => sum + file.size, 0) > 100 * 1024 * 1024) throw new Error("Keep the attachments under 100 MB in total.")
   if (files.some(file => file.name.length > 200 || /[\x00-\x1f\\/]/.test(file.name))) throw new Error("Use a shorter file name without slashes or control characters.")
 }
 export type TicketFileRequest = <T>(body: Record<string, unknown>) => Promise<T>
@@ -28,7 +28,7 @@ export async function uploadTicketFiles(request: TicketFileRequest, ticketId: st
       const form = new FormData()
       form.append("cacheControl","900")
       form.append("", new Blob([file], {type:ticketFileMime(file)}), file.name)
-      const response = await fetch(prepared.attachment.signedUrl,{method:"PUT",headers:{"x-upsert":"false"},body:form,signal:AbortSignal.timeout(60000)})
+      const response = await fetch(prepared.attachment.signedUrl,{method:"PUT",headers:{"x-upsert":"false"},body:form,signal:AbortSignal.timeout(180000)})
       if(!response.ok)throw new Error("This file could not be uploaded. Your draft is still here; try again.")
       progress(`Checking file ${index + 1} of ${files.length}…`)
       const verified = await request<{attachment:{id:string;verified:boolean}}>({action:"complete_message_attachment",ticketId,visibility,attachmentId:prepared.attachment.id})
@@ -40,4 +40,3 @@ export async function uploadTicketFiles(request: TicketFileRequest, ticketId: st
   }
   return ids
 }
-
