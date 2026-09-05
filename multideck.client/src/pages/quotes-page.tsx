@@ -617,7 +617,7 @@ function quoteRoutingLegs(value: string | undefined): QuoteRoutingLeg[] {
 }
 
 function quoteRoutingLegsValue(legs: QuoteRoutingLeg[]) {
-  return legs.length > 1 ? JSON.stringify(legs) : ""
+  return legs.length > 0 ? JSON.stringify(legs) : ""
 }
 
 function quoteCountryFlag(countryCode: string) {
@@ -3666,6 +3666,7 @@ function QuoteCompactDatePicker({
   disabled,
   minDate,
   locked,
+  width = "short",
 }: {
   label: string
   value: string
@@ -3673,6 +3674,7 @@ function QuoteCompactDatePicker({
   disabled?: boolean
   minDate?: string
   locked?: boolean
+  width?: "short" | "full"
 }) {
   const picker = (
     <div className="relative">
@@ -3693,7 +3695,7 @@ function QuoteCompactDatePicker({
     </div>
   )
   return (
-    <CompactFieldShell label={label} width="short">
+    <CompactFieldShell label={label} width={width}>
       {locked ? <LockedFieldTooltip>{picker}</LockedFieldTooltip> : picker}
     </CompactFieldShell>
   )
@@ -4123,10 +4125,11 @@ function QuoteDetailsPanelV2({
   }
 
   function updateLocation(prefix: "origin" | "destination", value: LocationValue) {
+    if (!editable) return
     const countryField = prefix === "origin" ? "originCountry" : "destinationCountry"
     const townField = prefix === "origin" ? "originTown" : "destinationTown"
     const codeField = prefix === "origin" ? "originUnlocode" : "destinationUnlocode"
-    const nextLegs = routingLegs.length > 1 ? routingLegs.map((leg, index) => {
+    const nextLegs = routingLegs.length > 0 ? routingLegs.map((leg, index) => {
       if (prefix === "origin" && index === 0) return { ...leg, origin: value }
       if (prefix === "destination" && index === routingLegs.length - 1) return { ...leg, destination: value }
       return leg
@@ -4136,7 +4139,7 @@ function QuoteDetailsPanelV2({
       [townField]: value.place,
       [codeField]: value.unlocode,
       [prefix]: value.unlocode || value.place,
-      ...(routingLegs.length > 1 ? { routingLegsJson: quoteRoutingLegsValue(nextLegs) } : {}),
+      ...(routingLegs.length > 0 ? { routingLegsJson: quoteRoutingLegsValue(nextLegs) } : {}),
     })
   }
 
@@ -4155,7 +4158,8 @@ function QuoteDetailsPanelV2({
   }
 
   function addRoutingLeg() {
-    const current = routingLegs.length > 1 ? routingLegs : [baseRoutingLeg()]
+    if (!editable || routingLegs.length >= 30) return
+    const current = routingLegs.length > 0 ? routingLegs : [baseRoutingLeg()]
     const previous = current.at(-1) ?? baseRoutingLeg()
     const next: QuoteRoutingLeg = {
       id: `route-${crypto.randomUUID()}`,
@@ -4168,14 +4172,18 @@ function QuoteDetailsPanelV2({
       carrierName: "",
       serviceLevel: previous.serviceLevel || quote.serviceLevel || "Standard",
     }
-    onQuotePatch({ routingLegsJson: quoteRoutingLegsValue([...current, next]) })
+    persistRoutingLegs([...current, next])
   }
 
   function updateRoutingLeg(index: number, patch: Partial<QuoteRoutingLeg>) {
+    if (!editable || !Number.isInteger(index) || index < 0 || index >= routingLegs.length) return
     const nextLegs = routingLegs.map((leg, legIndex) => legIndex === index ? { ...leg, ...patch } : leg)
-    const updated = nextLegs[index]
-    if (!updated) return
     if (patch.destination && nextLegs[index + 1]) nextLegs[index + 1] = { ...nextLegs[index + 1], origin: patch.destination }
+    persistRoutingLegs(nextLegs)
+  }
+
+  function persistRoutingLegs(nextLegs: QuoteRoutingLeg[]) {
+    if (!editable || nextLegs.length === 0 || nextLegs.length > 30) return
     const first = nextLegs[0]
     const last = nextLegs.at(-1) ?? first
     onQuotePatch({
@@ -4206,20 +4214,8 @@ function QuoteDetailsPanelV2({
   }
 
   function removeLastRoutingLeg() {
-    if (routingLegs.length <= 1) return
-    const nextLegs = routingLegs.slice(0, -1)
-    const last = nextLegs.at(-1)
-    const estimatedArrival = last?.estimatedArrival || quote.estimatedArrival
-    onQuotePatch({
-      routingLegsJson: quoteRoutingLegsValue(nextLegs),
-      destination: last?.destination.unlocode || last?.destination.place || quote.destination,
-      destinationCountry: last?.destination.countryName || last?.destination.countryCode || quote.destinationCountry,
-      destinationTown: last?.destination.place || quote.destinationTown,
-      destinationUnlocode: last?.destination.unlocode || quote.destinationUnlocode,
-      estimatedArrival,
-      transitDays: quoteTransitDays(nextLegs[0]?.estimatedDeparture || quote.estimatedDeparture, estimatedArrival),
-      transitUnit: "Days",
-    })
+    if (!editable || routingLegs.length <= 1) return
+    persistRoutingLegs(routingLegs.slice(0, -1))
   }
 
   function updateRecurrence(value: RecurrenceValue) {
@@ -4565,7 +4561,7 @@ function QuoteDetailsPanelV2({
 
       <CompactSectionShell
         title="Route & service"
-        meta={routingLegs.length > 1 ? `${routingLegs.length} planned legs` : "Linked country, place and UN/LOCODE fields"}
+        meta={routingLegs.length > 0 ? `${routingLegs.length} planned ${routingLegs.length === 1 ? "leg" : "legs"}` : "Linked country, place and UN/LOCODE fields"}
         action={(
           <Button type="button" variant="ghost" size="sm" disabled={!editable || routingLegs.length >= 30} onClick={addRoutingLeg} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]">
             <Plus className="size-3" aria-hidden="true" />{t("Add routing leg")}
@@ -4650,19 +4646,19 @@ function QuoteDetailsPanelV2({
           </div>
           <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(9rem,0.7fr)_minmax(10rem,0.72fr)_minmax(10rem,0.72fr)_minmax(10rem,0.7fr)_minmax(24rem,1.7fr)] xl:items-start">
             <QuoteCompactInput label="Via" value={quote.via} width="full" disabled={!editable} onChange={(value) => onQuoteChange("via", value)} />
-            <QuoteCompactDatePicker label="ETD" value={quote.estimatedDeparture ?? ""} disabled={!editable} onChange={(value) => routingLegs.length > 1 ? updateRoutingLeg(0, { estimatedDeparture: value }) : onQuotePatch({ estimatedDeparture: value, transitDays: quoteTransitDays(value, quote.estimatedArrival), transitUnit: "Days" })} />
-            <QuoteCompactDatePicker label="ETA" value={quote.estimatedArrival ?? ""} minDate={quote.estimatedDeparture || undefined} disabled={!editable} onChange={(value) => routingLegs.length > 1 ? updateRoutingLeg(routingLegs.length - 1, { estimatedArrival: value }) : onQuotePatch({ estimatedArrival: value, transitDays: quoteTransitDays(quote.estimatedDeparture, value), transitUnit: "Days" })} />
+            <QuoteCompactDatePicker label="ETD" value={quote.estimatedDeparture ?? ""} disabled={!editable} onChange={(value) => routingLegs.length > 0 ? updateRoutingLeg(0, { estimatedDeparture: value }) : onQuotePatch({ estimatedDeparture: value, transitDays: quoteTransitDays(value, quote.estimatedArrival), transitUnit: "Days" })} />
+            <QuoteCompactDatePicker label="ETA" value={quote.estimatedArrival ?? ""} minDate={quote.estimatedDeparture || undefined} disabled={!editable} onChange={(value) => routingLegs.length > 0 ? updateRoutingLeg(routingLegs.length - 1, { estimatedArrival: value }) : onQuotePatch({ estimatedArrival: value, transitDays: quoteTransitDays(quote.estimatedDeparture, value), transitUnit: "Days" })} />
             <NumberUnitField label="Transit time" value={{ value: quoteTransitDays(quote.estimatedDeparture, quote.estimatedArrival) || quote.transitDays || "", unit: "Days" }} units={[{ value: "Days", label: "Days" }]} width="full" disabled onChange={() => undefined} />
             <RecurrenceBuilder value={recurrence} onChange={updateRecurrence} disabled={!editable} />
           </div>
-          {routingLegs.length > 1 ? (
+          {routingLegs.length > 0 ? (
             <div className="grid gap-1.5" role="group" aria-label={t("Planned routing legs")}>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-medium text-[var(--md-ink)]">{t("Planned routing legs")}</p>
                   <p className="text-[10px] text-[var(--md-subtle)]">{t("The first origin and final destination remain the shipment summary above.")}</p>
                 </div>
-                <Button type="button" variant="ghost" size="sm" disabled={!editable} onClick={removeLastRoutingLeg} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]">
+                <Button type="button" variant="ghost" size="sm" disabled={!editable || routingLegs.length <= 1} onClick={removeLastRoutingLeg} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]">
                   <Trash2 className="size-3" aria-hidden="true" />{t("Remove last leg")}
                 </Button>
               </div>
@@ -4671,8 +4667,8 @@ function QuoteDetailsPanelV2({
                   <QuoteCompactSelect label={`Leg ${index + 1} mode`} value={leg.mode} options={modes} width="full" disabled={!editable} dataOptions onChange={(value) => updateRoutingLeg(index, { mode: value })} />
                   <CompactCombobox label={`Leg ${index + 1} origin`} value={leg.origin.unlocode || leg.origin.place} options={routeLocationOptions} recommendedOptionLimit={3} placeholder="Search place or UN/LOCODE" disabled={!editable} width="full" onValueChange={(value) => updateRoutingLocation(index, "origin", value)} onOptionSelect={(option) => updateRoutingLocation(index, "origin", option.value, option)} />
                   <CompactCombobox label={`Leg ${index + 1} destination`} value={leg.destination.unlocode || leg.destination.place} options={routeLocationOptions} recommendedOptionLimit={3} placeholder="Search place or UN/LOCODE" disabled={!editable} width="full" onValueChange={(value) => updateRoutingLocation(index, "destination", value)} onOptionSelect={(option) => updateRoutingLocation(index, "destination", option.value, option)} />
-                  <QuoteCompactDatePicker label="Departure" value={leg.estimatedDeparture} disabled={!editable} onChange={(value) => updateRoutingLeg(index, { estimatedDeparture: value })} />
-                  <QuoteCompactDatePicker label="Arrival" value={leg.estimatedArrival} minDate={leg.estimatedDeparture || undefined} disabled={!editable} onChange={(value) => updateRoutingLeg(index, { estimatedArrival: value })} />
+                  <QuoteCompactDatePicker label="Departure" value={leg.estimatedDeparture} width="full" disabled={!editable} onChange={(value) => updateRoutingLeg(index, { estimatedDeparture: value })} />
+                  <QuoteCompactDatePicker label="Arrival" value={leg.estimatedArrival} width="full" minDate={leg.estimatedDeparture || undefined} disabled={!editable} onChange={(value) => updateRoutingLeg(index, { estimatedArrival: value })} />
                   <CompactCombobox label="Carrier" value={leg.carrierName} options={organisationDirectories.carrier.options} recommendedOptions={relatedOptions("carrier")} recommendedLabel="Suggested carriers" allLabel="All carriers" placeholder="TBC or search carriers" disabled={!editable} width="full" onValueChange={(value) => updateRoutingLeg(index, { carrierName: value, carrierId: organisationsById.get(leg.carrierId)?.name === value ? leg.carrierId : "" })} onOptionSelect={(option) => updateRoutingLeg(index, { carrierId: option.id ?? "", carrierName: option.value })} />
                   <QuoteCompactSelect label="Service level" value={leg.serviceLevel} options={["Economy", "Standard", "Express"]} width="full" disabled={!editable} onChange={(value) => updateRoutingLeg(index, { serviceLevel: value })} />
                 </div>

@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process'
 import { quoteCargoReviewFixture } from './quote-cargo-review-fixture.mjs'
 import { bookingShipmentValueFixture } from './booking-shipment-value-fixture.mjs'
 import { quoteRoutingModeReviewFixture } from './quote-routing-mode-review-fixture.mjs'
+import { quoteSingleLegRoutingFixture } from './quote-single-leg-routing-fixture.mjs'
 
 const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
 const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
@@ -420,6 +421,9 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
       ${quoteCargoReviewFixture(read, sqlFunction)}
       ${bookingShipmentValueFixture(read)}
       ${quoteRoutingModeReviewFixture(read, sqlFunction)}
+      ${quoteSingleLegRoutingFixture(read)}
+      -- Re-run the mixed-mode/reduction/rollback cases against the new projection.
+      ${quoteRoutingModeReviewFixture(read, sqlFunction, false)}
     `)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])

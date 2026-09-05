@@ -1,12 +1,14 @@
 // Real review/apply/routing functions in the parent's disposable PostgreSQL.
 // The parent explicitly fixtures identity, numbering and broad workspace reads.
-export function quoteRoutingModeReviewFixture(read, sqlFunction) {
+export function quoteRoutingModeReviewFixture(read, sqlFunction, install = true) {
   return `
+    ${install ? `
     create table public."sys_JobTransportModes" ("JTM_Code" text,"JTM_Name" text,"JTM_IsActive" boolean,"JTM_SortOrder" integer);
     insert into public."sys_JobTransportModes" values ('sea','Ocean',true,1),('air','Air',true,2),('road','Road',true,3),('rail','Rail',true,4);
     ${sqlFunction(read('20260820150000_booking_quote_customer_response.sql'),'booking_api.normalise_mode')}
     ${read('20260905183528_booking_route_mode_reference_history.sql')}
     ${read('20260905185420_quote_routing_mode_review_guard.sql')}
+    ` : ''}
     do $routing_test$
     declare actor uuid:=gen_random_uuid(); company uuid:=gen_random_uuid(); office uuid:=gen_random_uuid(); foreign_actor uuid:=gen_random_uuid();
       q uuid:=gen_random_uuid(); v1 uuid:=gen_random_uuid(); v2 uuid:=gen_random_uuid(); next_version uuid; last_version uuid; stale_review uuid;
