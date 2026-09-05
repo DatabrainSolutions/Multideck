@@ -1,5 +1,14 @@
 # Quote and Booking integration checkpoint
 
+## Selective cargo safety checkpoint, 5 September 2026
+
+- Fetched `origin/dev` at `1f6b74f`; it is already an ancestor of the implementation branch. Four additional commits (`8e326a2`, `308689f`, `3c2c3cc`, `ce69601`) cover structured cargo readiness, initial handover, private revision comparison and guarded persistence. No merge conflicts or wholesale branch replacements were needed. Existing lifecycle decisions remain recorded in `docs/plans/freight-workspace-completion.md`.
+- Unfinished public review integration is saved separately at `48cec3b` on `codex/safety-cargo-review-draft-2026-09-05`. Its migration is unverified and deliberately excluded from dev. Recover it for continued implementation and testing, not deployment.
+- Refreshed focused checks: 17 passed, zero failed or skipped, including real disposable PostgreSQL lifecycle tests and existing revision/container contracts. These do not make the inherited repository-wide failures green or prove the complete live lifecycle.
+- Production client build passed (TypeScript and Vite), with the existing bundle-size warning. No new product implementation was undertaken during this sync.
+- Recovery tag for this source checkpoint: `safety/quote-booking-cargo-revisions-2026-09-05`. Earlier recovery points remain available.
+- The new migrations remain unapplied. Public review/Apply wiring, structured Quote editor/public presentation, value allocations, live parity and broader mode work remain incomplete. This checkpoint does not change live databases, send customer email, or alter Vercel/team settings.
+
 Integrated the Quote/Booking working changes with origin/dev at a04b86b on 5 September 2026.
 
 ## Recovery
