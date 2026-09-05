@@ -21,6 +21,8 @@ const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
 const baseline = readFileSync(new URL('../baseline/public-schema.sql', import.meta.url), 'utf8')
 const migration = readFileSync(new URL('../migrations/20260905110317_booking_stable_cargo_equipment_identity.sql', import.meta.url), 'utf8')
 const decimalMigration = readFileSync(new URL('../migrations/20260905172223_booking_cargo_decimal_boundary.sql', import.meta.url), 'utf8')
+const allocationMigration = readFileSync(new URL('../migrations/20260905223353_booking_cargo_equipment_allocation_boundary.sql', import.meta.url), 'utf8')
+const allocationWorkspaceMigration = readFileSync(new URL('../migrations/20260905224722_booking_cargo_allocation_workspace.sql', import.meta.url), 'utf8')
 const safetyEdit = mutateBookingCargo({ cargo: [{ description: 'First edited', grossWeightKg: 10,
   isHazardous: true, isTemperatureControlled: true, knownCargo: 'Hazardous; Temperature controlled; Fragile' }] }, 0, 'isHazardous', 'No').cargo[0]
 function table(name) {
@@ -159,7 +161,10 @@ test('PostgreSQL: stable items, approved Dexter cargo/container/route lifecycle,
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
       containerDexterFixture + containerDexterAssertions)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
-      routeDexterFixture(table) + routeDexterAssertions)
+      routeDexterFixture(table) + `
+        alter table public."Job_Header" add primary key("Job_ID");
+        ${table('Job_PackCargoContainer')}
+      ` + allocationMigration + allocationWorkspaceMigration + routeDexterAssertions)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
       routeModeDexterFixture(table) + routeModeDexterAssertions)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],

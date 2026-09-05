@@ -66,6 +66,34 @@ export type BookingWorkflowContainer = {
   data?: Record<string, unknown>
 }
 
+export type BookingCargoAllocation = {
+  id: string
+  cargoId: string
+  containerId: string
+  /** Null assigns equipment for the whole journey; otherwise one saved leg. */
+  routeId: string | null
+  packageQuantity: string | null
+  grossWeightKg: string | null
+  volumeCbm: string | null
+  notes: string | null
+  archived: boolean
+}
+
+export type BookingCargoAllocationState = {
+  jobId: string
+  updatedAt: string
+  allocations: BookingCargoAllocation[]
+  balances: {
+    cargoId: string
+    routeId: string | null
+    remainingPackages: string | null
+    remainingGrossWeightKg: string | null
+    remainingVolumeCbm: string | null
+  }[]
+  /** Historical membership without known quantities or routing scope. */
+  legacyUnquantifiedLinks: { cargoId: string; containerId: string }[]
+}
+
 export type BookingWorkflowRoute = {
   id?: string
   order?: number
@@ -202,6 +230,8 @@ export type BookingWorkflowWorkspace = {
   parties: BookingWorkflowParty[]
   cargo: BookingWorkflowCargo[]
   containers: BookingWorkflowContainer[]
+  /** Missing on older deployments; never interpret absence as an empty plan. */
+  cargoAllocationState?: BookingCargoAllocationState
   routes: BookingWorkflowRoute[]
   documents: BookingWorkflowDocument[]
   declarations: BookingWorkflowDeclaration[]
