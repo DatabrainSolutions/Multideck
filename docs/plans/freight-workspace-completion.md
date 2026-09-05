@@ -21,7 +21,7 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 | Air | AWB, flight legs, ULD, dimensions, chargeable weight, screening, milestones | Representative Air flow without Sea-only fields | Pending |
 | Road | Stops, vehicle/trailer/driver, appointments, CMR/POD | Domestic and cross-border flows | Pending |
 | Rail and multimodal | Rail references/equipment and per-leg mixed-mode policy | Rail and mixed-mode save/reload flows | Pending |
-| Dexter | Read, approved writes and event-driven Watching parity for changed backend capabilities | Matching/non-matching/pause/resume and permission tests | Pending |
+| Dexter | Read, approved writes and event-driven Watching parity for changed backend capabilities | Matching/non-matching/pause/resume and permission tests | Exact cargo-line read/edit/watch implemented and tested locally; live and broader parity pending |
 | End-to-end | Quote draft/send/respond/PDF/Booking/revision/notification lifecycle | Real browser/API/database evidence, controlled test recipients only | Pending |
 | Release | Reviewed commits, live schema/function parity, deployment smoke tests | Exact commit and deployed artefact evidence; migration reconciliation | Pending |
 
@@ -52,3 +52,16 @@ Base `72a6b6c`, recovery tags retained. Implementation branch `codex/freight-wor
 - Preview environment repair awaits the user's scope choice; no Vercel project, environment or team setup was changed.
 
 Next: finish stable cargo round-trips and Dexter parity, structured Quote cargo snapshots and summaries, then mode-specific operational records. Do not deploy this migration/UI checkpoint as a completed all-mode platform or report the 95% target achieved.
+
+## Dexter cargo verification checkpoint, 5 September 2026
+
+- Resumed the isolated cargo draft from safety commit `74dca12` on the implementation branch after the source-control checkpoint. This work is not yet pushed or deployed.
+- Added an explicit `booking_cargo` read domain and one-field approved edit action using the canonical Booking save and measurements boundaries. Reads contain exact line/Booking identities and update evidence, not prices, margins or raw commercial JSON. Ordinary saves retain other lines and declared values; numeric values, units, safety flags and nullable clears are validated.
+- Approval is mandatory in both chat modes and in the database registry. Discovered and corrected the executor's cargo-specific conflict between a newly resolved target and a subsequently recorded explicit approval. Company, intent, session grant, current permissions and stale Booking checks remain enforced. The executor's unrelated action behavior is unchanged.
+- The Booking audit records the exact before/after field and operator reason. Replaying a successful prepared action returns its previous result without a second Booking mutation.
+- Cargo watches use exact line IDs and notify only. The evaluator emits each distinct changed event, remains quiet on no-op/nonmatching changes, respects pause/resume, and rechecks active ownership and Booking permission. Restrictive owner-history access and the privileged list wrapper also enforce current Booking access without replacing the existing private-support or CRM guards.
+- Local PostgreSQL tests execute the actual save, measurements, registered domain dispatch, action, prepared-action executor, approval trigger, watch creation/evaluation, notification insertion and owner RLS. They cover foreign lines/actors/workspaces, invalid and financial fields, stale approvals, dimensions/clears, preserved values, repeated changes, retries, permission loss and history isolation. Auth/permission resolution, unrelated product domains and the broad workspace read use declared isolated fixtures; these are not full live tenant, browser/AI or full RLS deployment tests.
+- JavaScript behavior tests exercise mandatory approval, operator edit versus read intent, and exact identity storage in a prepared (not executed) action. Existing Dexter/security contracts are also rerun.
+- Focused result: 24 tests passed with no skips. No Deno executable is available in this checkout environment, so a full Edge Function type-check is not claimed.
+- Still required before release: full live migration reconciliation, schema advisors, actual user-scoped Dexter chat and watch round trips, and the broader cargo allocation/DG/Quote model work. Adding/removing cargo, financial edits and detailed DG/equipment allocation are explicitly unsupported by this one-field Dexter action until their canonical workflows are completed.
+- Vercel read-only verification: merged `dev` commit `390de336ae6003228fe91ffce4c63218331be621` is READY as `dpl_7k1PA1WhsHX2EURAiciDMCK6vCvT`. This proves successful deployment of the previous integrated client checkpoint, not the new local cargo action or database migration. Earlier feature-branch environment failure remains distinct; no team/project configuration was changed.

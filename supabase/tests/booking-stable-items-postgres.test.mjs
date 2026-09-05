@@ -4,6 +4,7 @@ import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { cargoDexterFixture, cargoProjection, cargoDexterMigration, cargoDexterAssertions } from './booking-cargo-dexter-fixture.mjs'
 
 // Executes the actual save function against disposable PostgreSQL, never a tenant.
 // PG_TEST_BIN can point to a PostgreSQL bin directory in CI.
@@ -17,7 +18,7 @@ function table(name) {
   return baseline.slice(start, baseline.indexOf('\n);', start) + 3)
 }
 
-test('PostgreSQL: booking save preserves item identity, children and audit; rejects invalid identities atomically', { skip: !available }, () => {
+test('PostgreSQL: stable booking items and approved Dexter cargo lifecycle, watches and isolation', { skip: !available }, () => {
   const directory = mkdtempSync(join(tmpdir(), 'multideck-stable-items-'))
   const data = join(directory, 'data')
   let started = false
@@ -133,6 +134,8 @@ test('PostgreSQL: booking save preserves item identity, children and audit; reje
       end $test$;
     `
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], sql)
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
+      cargoProjection + cargoDexterFixture(table) + cargoDexterMigration + cargoDexterAssertions)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
     rmSync(directory, { recursive: true, force: true })

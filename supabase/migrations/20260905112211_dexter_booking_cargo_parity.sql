@@ -117,6 +117,11 @@ begin
   saved := public.booking_workflow_save(actor_auth_id, target_id, jsonb_build_object('cargo', cargo_lines));
   select booking_api.cargo_public_values(cargo)->field_name into field_value
     from public."Job_Cargo" cargo where cargo."JobCargo_ID"=cargo_id;
+  insert into booking_api.events(company_id, job_id, event_type, summary, metadata, actor_user_id)
+  values(p_company_id, target_id, 'dexter_cargo_updated', 'Approved cargo field updated',
+    jsonb_build_object('cargoId',cargo_id,'field',field_name,
+      'before',booking_api.cargo_public_values(cargo_row)->field_name,'after',field_value,
+      'reason',btrim(p_arguments->>'reason')), p_user_id);
   return jsonb_build_object('recordId', cargo_id, 'bookingId', target_id,
     'bookingReference', job_row."Job_BookingReference", 'field', field_name,
     'before', booking_api.cargo_public_values(cargo_row)->field_name, 'after', field_value,
@@ -167,16 +172,18 @@ on conflict ("AIDexterDomain_Code") do update set
 
 insert into public."sys_AIDexterActions" (
   "AIDexterAction_Code","AIDexterAction_DomainCode","AIDexterAction_Name","AIDexterAction_Description",
-  "AIDexterAction_Function","AIDexterAction_ParametersJSON","AIDexterAction_RequiredPermissionsJSON","AIDexterAction_IntentFamily"
+  "AIDexterAction_Function","AIDexterAction_ParametersJSON","AIDexterAction_RequiredPermissionsJSON","AIDexterAction_IntentFamily",
+  "AIDexterAction_AlwaysRequiresApproval"
 ) values ('update_booking_cargo','booking_cargo','Edit booking cargo field',
   'Propose one exact operational cargo field change for explicit approval. Read the current cargo line and booking updatedAt first. Null clears a nullable field. Cannot change prices, delete lines or replace allocations.',
   'multideck_dexter_action_update_booking_cargo',
   '{"type":"object","properties":{"target_id":{"type":"string","description":"Exact bookingId from booking_cargo"},"cargo_id":{"type":"string","description":"Exact recordId from booking_cargo"},"expected_updated_at":{"type":"string","description":"Exact updatedAt from the latest booking_cargo read"},"field":{"type":"string","enum":["description","commodity","pieces","packageQuantity","packageType","grossWeightKg","netWeightKg","volumeCbm","length","width","height","lengthUnit","hsCode","countryOfOrigin","isHazardous","isTemperatureControlled"]},"value":{"type":["string","null"]},"reason":{"type":"string"}},"required":["target_id","cargo_id","expected_updated_at","field","value","reason"],"additionalProperties":false}',
-  '["Bookings.Read","Bookings.Write"]','update_booking_cargo')
+  '["Bookings.Read","Bookings.Write"]','update_booking_cargo',true)
 on conflict ("AIDexterAction_Code") do update set
   "AIDexterAction_ParametersJSON"=excluded."AIDexterAction_ParametersJSON",
   "AIDexterAction_RequiredPermissionsJSON"=excluded."AIDexterAction_RequiredPermissionsJSON",
   "AIDexterAction_Function"=excluded."AIDexterAction_Function",
+  "AIDexterAction_AlwaysRequiresApproval"=true,
   "AIDexterAction_IsActive"=true,"AIDexterAction_UpdatedAt"=now();
 
 insert into public."sys_AIDexterWatchCapabilities" (
@@ -193,13 +200,109 @@ on conflict ("AIDexterWatchCapability_Code") do update set
 -- Preserve the existing evaluator and all other capabilities' semantics.
 do $$
 declare definition text; previous text := 'if v_matches and not coalesce(v_previously_matched, false) then';
+  scope_marker text := 'and watch_row."AIDexterWatch_StatusCode" = ''active''';
 begin
   definition := pg_get_functiondef('public._multideck_dexter_evaluate_watch_signal()'::regprocedure);
-  if position(previous in definition)=0 then
+  if (length(definition)-length(replace(definition,previous,'')))/length(previous) <> 1
+     or (length(definition)-length(replace(definition,scope_marker,'')))/length(scope_marker) <> 1 then
     raise exception 'Review the current watch evaluator before applying cargo watch parity.';
   end if;
+  definition := replace(definition, scope_marker, scope_marker || $guard$
+      and (watch_row."AIDexterWatch_CapabilityCode" <> 'booking_cargo' or exists (
+        select 1 from public."cmp_Users" owner_user
+        where owner_user."User_ID" = watch_row."AIDexterWatch_OwnerUserID"
+          and owner_user."Company_ID" = watch_row."AIDexterWatch_CompanyID"
+          and owner_user."User_AccessStatus" = 'active'
+          and booking_api.has_permission(owner_user."Auth_User_ID", 'Bookings.Read')
+      ))$guard$);
   execute replace(definition, previous,
     'if v_matches and ((watch."AIDexterWatch_CapabilityCode" = ''booking_cargo'' and watch."AIDexterWatch_RuleJSON"->>''operator'' = ''changed'') or not coalesce(v_previously_matched, false)) then');
+end $$;
+
+-- Preserve all existing capability-specific guards, including private support tickets.
+alter function public.multideck_dexter_create_watch(text,text,text,text,uuid,text,jsonb,jsonb)
+  rename to _multideck_dexter_create_watch_before_booking_cargo_20260905;
+create function public.multideck_dexter_create_watch(
+  p_capability text,p_title text,p_summary text,p_request text,p_target_id uuid,
+  p_target_label text,p_rule jsonb,p_action jsonb default null
+) returns jsonb language plpgsql volatile security definer set search_path = '' as $$
+declare context record;
+begin
+  select * into context from public._multideck_dexter_context();
+  if lower(btrim(p_capability)) = 'booking_cargo' then
+    if p_target_id is null or not exists (
+      select 1 from public."Job_Cargo" cargo
+      join public."Job_Header" job on job."Job_ID"=cargo."JobCargo_JobID" and not job."Job_IsDeleted"
+      join public."cmp_Offices" office on office."Office_ID"=coalesce(job."Job_OrgOfficeID",job."Job_OfficeID")
+      where cargo."JobCargo_ID"=p_target_id and not cargo."JobCargo_IsDeleted"
+        and office."Company_ID"=context.company_id
+    ) then raise exception 'Choose an exact active cargo line in this workspace.' using errcode='42501'; end if;
+    if p_action is not null then
+      raise exception 'Cargo watches notify only. Cargo edits require a fresh approved proposal.' using errcode='42501';
+    end if;
+  end if;
+  return public._multideck_dexter_create_watch_before_booking_cargo_20260905(
+    p_capability,p_title,p_summary,p_request,p_target_id,p_target_label,p_rule,p_action);
+end; $$;
+revoke all on function public._multideck_dexter_create_watch_before_booking_cargo_20260905(text,text,text,text,uuid,text,jsonb,jsonb)
+  from public,anon,authenticated;
+revoke all on function public.multideck_dexter_create_watch(text,text,text,text,uuid,text,jsonb,jsonb) from public,anon;
+grant execute on function public.multideck_dexter_create_watch(text,text,text,text,uuid,text,jsonb,jsonb) to authenticated,service_role;
+
+-- Existing owner policies stay authoritative. Add a restrictive cargo-only gate
+-- so losing Booking access also removes access to cargo watch history.
+create function public.multideck_dexter_can_read_cargo_watch(p_company_id uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists(select 1 from public."cmp_Users" u
+    where u."Auth_User_ID"=auth.uid() and u."Company_ID"=p_company_id
+      and u."User_AccessStatus"='active'
+      and booking_api.has_permission(u."Auth_User_ID",'Bookings.Read'));
+$$;
+revoke all on function public.multideck_dexter_can_read_cargo_watch(uuid) from public,anon;
+grant execute on function public.multideck_dexter_can_read_cargo_watch(uuid) to authenticated,service_role;
+create policy "Cargo watches require current Booking access" on public."AI_DexterWatches"
+as restrictive for select to authenticated using (
+  "AIDexterWatch_CapabilityCode" <> 'booking_cargo'
+  or public.multideck_dexter_can_read_cargo_watch("AIDexterWatch_CompanyID")
+);
+create policy "Cargo watch history requires current Booking access" on public."AI_DexterWatchEvents"
+as restrictive for select to authenticated using (
+  exists(select 1 from public."AI_DexterWatches" watch
+    where watch."AIDexterWatch_ID"="AIDexterWatchEvent_WatchID")
+);
+-- The list RPC is privileged and must apply the same check as direct RLS reads.
+alter function public.multideck_dexter_list_watches()
+  rename to _multideck_dexter_list_watches_before_booking_cargo_20260905;
+create function public.multideck_dexter_list_watches()
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare context record; result jsonb;
+begin
+  select * into context from public._multideck_dexter_context();
+  select coalesce(jsonb_agg(item order by ordinal),'[]'::jsonb) into result
+  from jsonb_array_elements(public._multideck_dexter_list_watches_before_booking_cargo_20260905())
+    with ordinality as rows(item,ordinal)
+  where item->>'capability' <> 'booking_cargo'
+    or public.multideck_dexter_can_read_cargo_watch(context.company_id);
+  return result;
+end; $$;
+revoke all on function public._multideck_dexter_list_watches_before_booking_cargo_20260905() from public,anon,authenticated;
+revoke all on function public.multideck_dexter_list_watches() from public,anon;
+grant execute on function public.multideck_dexter_list_watches() to authenticated,service_role;
+
+-- An explicitly approved cargo proposal may resolve its exact target during the
+-- read/preview step. Keep the intent, scope, grant and permission checks; only
+-- waive the autonomous-target check after approval for this mandatory action.
+do $$
+declare definition text;
+  marker text := 'if v_prepared."AIDexterPrepared_AccessMode"=''full'' and v_prepared."AIDexterPrepared_TargetID" is not null';
+begin
+  definition := pg_get_functiondef('public.multideck_dexter_execute_prepared_action(uuid,uuid,uuid,uuid)'::regprocedure);
+  if (length(definition)-length(replace(definition,marker,'')))/length(marker) <> 1 then
+    raise exception 'Review the current prepared-action executor before applying cargo approval parity.';
+  end if;
+  execute replace(definition,marker,marker || $guard$
+    and not (v_prepared."AIDexterPrepared_ActionCode"='update_booking_cargo'
+      and v_prepared."AIDexterPrepared_ApprovedAt" is not null)$guard$);
 end $$;
 
 revoke all on function booking_api.cargo_public_values(public."Job_Cargo") from public,anon,authenticated;
