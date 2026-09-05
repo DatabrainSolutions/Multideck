@@ -82,6 +82,7 @@ import { StatusPill, attributeToneFor, toneToVar } from "./status-pill"
 import { Surface } from "./surface"
 import { AnimatedList } from "./animated-list"
 import { setLiveJobStarred, type LiveBooking } from "@/lib/application-data-api"
+import { bookingCargoOtherHandling, bookingCargoHandlingSummary, bookingCargoSafetyConflict } from "@/lib/booking-cargo-handling"
 import { getQuoteSources, type QuoteOrganisationOption, type QuoteWorkflowSources } from "@/lib/quote-workflow-api"
 import { loadUnlocodeDirectory, unlocodeKind, type UnlocodeDirectoryRecord } from "@/lib/unlocode-directory"
 import {
@@ -126,7 +127,7 @@ type BookingLocationField = "origin" | "destination" | "via"
 const bookingDirectionOptions = ["Export", "Import", "Domestic", "Cross trade"] as const
 const bookingHblModeOptions = ["CY/CFS", "CY/CY", "CFS/CFS", "Door/Door"] as const
 const bookingIncotermOptions = ["EXW", "FCA", "FOB", "CIF", "DAP", "DDP"] as const
-const bookingKnownCargoOptions = ["General merchandise", "Hazardous", "Temperature controlled", "Oversized"] as const
+const bookingOtherHandlingOptions = ["General merchandise", "Oversized", "Fragile", "Food grade"] as const
 const bookingCustomsIncludedOptions = ["Yes", "No"] as const
 const bookingProgressOptions = ["0%", "20%", "40%", "60%", "80%", "100%"] as const
 
@@ -2190,6 +2191,7 @@ function bookingFieldOptions(options: readonly (string | BookingFieldOption)[], 
 function BookingCargoWiseField({
   allowCustom = true,
   editable = false,
+  emptyValue = "—",
   inputType = "text",
   label,
   onChange,
@@ -2202,6 +2204,7 @@ function BookingCargoWiseField({
 }: {
   allowCustom?: boolean
   editable?: boolean
+  emptyValue?: string
   inputType?: "text" | "date"
   label: string
   onChange?: (value: string) => void
@@ -2257,7 +2260,7 @@ function BookingCargoWiseField({
         )
       ) : (
         <span data-i18n-skip dir="auto" title={value} className="min-h-8 min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 py-1.5 text-[11px] font-medium leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
-          {value || "—"}
+          {value || t(emptyValue)}
         </span>
       )}
     </div>
@@ -2926,7 +2929,7 @@ function BookingRecordDetails({
   })
   const editDetail = (field: string) => ({ editable, onChange: (value: string) => onDetailChange(field, value) })
   const editParty = (role: string, field: keyof BookingWorkflowParty) => ({ editable, onChange: (value: string) => onPartyChange(role, field, value) })
-  const editCargo = (index: number, field: keyof BookingWorkflowCargo) => ({ editable, onChange: (value: string) => onCargoChange(index, field, value) })
+  const editCargo = (index: number, field: keyof BookingWorkflowCargo) => ({ editable: editable && Boolean(cargo), onChange: (value: string) => onCargoChange(index, field, value) })
   const editRoute = (index: number, field: keyof BookingWorkflowRoute) => ({ editable, onChange: (value: string) => onRouteChange(index, field, value) })
   const organisations = lookups?.organisations ?? []
   const lookupModes = lookups?.modes.length ? lookups.modes : [
@@ -3314,7 +3317,10 @@ function BookingRecordDetails({
           <BookingCargoWiseAmountField label="Booking value" amount={valueAmount} currency={valueCurrency} currencies={currencyOptions} editable={editable} onAmountChange={(nextAmount) => onBookingChange("value", [valueCurrency, nextAmount].filter(Boolean).join(" "))} onCurrencyChange={(nextCurrency) => onBookingChange("value", [nextCurrency, valueAmount].filter(Boolean).join(" "))} />
           <BookingCargoWiseAmountField label="Cargo line value" amount={cargoValue("declaredValue")} currency={cargoValue("declaredValueCurrency")} currencies={currencyOptions} editable={editable && Boolean(cargo)} onAmountChange={(nextAmount) => onCargoChange(cargoIndex, "declaredValue", nextAmount)} onCurrencyChange={(nextCurrency) => onCargoChange(cargoIndex, "declaredValueCurrency", nextCurrency)} />
           <BookingCargoWiseField label="Commodity" value={cargoValue("commodity", value(facts, "commodity"))} options={commodityOptions} searchable placeholder="Search commodities" {...editCargo(cargoIndex, "commodity")} />
-          <BookingCargoWiseField label="Known cargo" value={knownCargo} options={bookingKnownCargoOptions} placeholder="Choose cargo type" allowCustom={false} {...editCargo(cargoIndex, "knownCargo")} />
+          <BookingCargoWiseField label="Other handling" value={bookingCargoOtherHandling(knownCargo)} options={bookingOtherHandlingOptions} placeholder="Choose handling" allowCustom={false} {...editCargo(cargoIndex, "knownCargo")} />
+          <BookingCargoWiseField label="Hazardous" value={typeof cargo?.isHazardous === "boolean" ? (cargo.isHazardous ? "Yes" : "No") : ""} options={["Yes", "No"]} placeholder="Not recorded" emptyValue="Not recorded" allowCustom={false} {...editCargo(cargoIndex, "isHazardous")} />
+          <BookingCargoWiseField label="Temperature controlled" value={typeof cargo?.isTemperatureControlled === "boolean" ? (cargo.isTemperatureControlled ? "Yes" : "No") : ""} options={["Yes", "No"]} placeholder="Not recorded" emptyValue="Not recorded" allowCustom={false} {...editCargo(cargoIndex, "isTemperatureControlled")} />
+          {bookingCargoSafetyConflict(cargo, knownCargo) ? <p className="sm:col-span-2 xl:col-span-4 text-[12px] leading-5 text-[var(--md-text)]">{t("Earlier handling text mentions safety requirements that are not confirmed by this line's flags. Review the source documents before changing them.")} <span data-i18n-skip>{knownCargo}</span></p> : null}
           <div className="sm:col-span-2 xl:col-span-2 2xl:col-span-2">
             <BookingCargoWiseField label="Goods description" value={goodsDescription} placeholder="Describe the goods" {...editCargo(cargoIndex, "description")} />
           </div>
@@ -4756,13 +4762,19 @@ export function BookingDetailWorkspace({
 
   function updateDraftCargo(index: number, field: keyof BookingWorkflowCargo, value: string) {
     setDraftWorkspace((current) => {
-      if (!current) return current
+      if (!current || typeof value !== "string" || !Number.isInteger(index) || index < 0 || index >= current.cargo.length) return current
       const cargo = [...current.cargo]
-      const existing = cargo[index] ?? { lineNumber: index + 1 }
+      const existing = cargo[index]
+      const safetyField = field === "isHazardous" || field === "isTemperatureControlled"
+      if (safetyField && value !== "Yes" && value !== "No") return current
       const numericFields = new Set<keyof BookingWorkflowCargo>(["pieces", "packageQuantity", "grossWeightKg", "netWeightKg", "volumeCbm", "declaredValue", "length", "width", "height"])
       const numericValue = value.trim() === "" ? null : Number(value.replaceAll(",", ""))
-      const nextValue = numericFields.has(field) ? (Number.isFinite(numericValue) ? numericValue : null) : value
-      const nextCargo = { ...existing, [field]: nextValue, cargoData: { ...existing.cargoData, [field]: value } }
+      const nextValue = safetyField ? value === "Yes" : numericFields.has(field) ? (Number.isFinite(numericValue) ? numericValue : null) : value
+      const nextCargo = { ...existing, [field]: nextValue, cargoData: { ...existing.cargoData, [field]: safetyField ? nextValue : value } }
+      if (safetyField || field === "knownCargo") {
+        nextCargo.knownCargo = bookingCargoHandlingSummary(nextCargo, existing)
+        nextCargo.cargoData.knownCargo = nextCargo.knownCargo
+      }
       if (field === "declaredValue") {
         const currency = value.match(/\b[A-Za-z]{3}\b/)?.[0]?.toUpperCase()
         if (currency) nextCargo.declaredValueCurrency = currency

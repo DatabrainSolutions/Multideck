@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { cargoDexterFixture, cargoProjection, cargoDexterMigration, cargoDexterAssertions } from './booking-cargo-dexter-fixture.mjs'
+import { mutateBookingCargo } from './booking-cargo-client-fixture.mjs'
 
 // Executes the actual save function against disposable PostgreSQL, never a tenant.
 // PG_TEST_BIN can point to a PostgreSQL bin directory in CI.
@@ -12,6 +13,8 @@ const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
 const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
 const baseline = readFileSync(new URL('../baseline/public-schema.sql', import.meta.url), 'utf8')
 const migration = readFileSync(new URL('../migrations/20260905110317_booking_stable_cargo_equipment_identity.sql', import.meta.url), 'utf8')
+const safetyEdit = mutateBookingCargo({ cargo: [{ description: 'First edited', grossWeightKg: 10,
+  isHazardous: true, isTemperatureControlled: true, knownCargo: 'Hazardous; Temperature controlled; Fragile' }] }, 0, 'isHazardous', 'No').cargo[0]
 function table(name) {
   const start = baseline.indexOf(`CREATE TABLE IF NOT EXISTS "public"."${name}" (`)
   assert.ok(start >= 0)
@@ -98,6 +101,15 @@ test('PostgreSQL: stable booking items and approved Dexter cargo lifecycle, watc
         if (select count(*) from public."Job_CargoDangerousGoods" dg join public."Job_Cargo" c on c."JobCargo_ID"=dg."JobCargoDG_JobCargoID" where not c."JobCargo_IsDeleted") <> 1 then raise exception 'DG relationship detached'; end if;
         if (select count(*) from public."Job_ContainerSeals" s join public."Job_Containers" e on e."JobContainers_ID"=s."JobContainerSeal_JobContainerID" where not e."JobContainer_IsDeleted") <> 1 then raise exception 'Seal detached'; end if;
         if (select "JobContainer_VGMKilos" from public."Job_Containers" where "JobContainers_ID"=e1) <> 12345 then raise exception 'VGM lost'; end if;
+        perform booking_api.save_booking(actor,job,jsonb_set(saved,'{cargo,1,isHazardous}','true'));
+        if not (select "JobCargo_IsHazardous" from public."Job_Cargo" where "JobCargo_ID"=c1) then raise exception 'Safety setup failed'; end if;
+        perform booking_api.save_booking(actor,job,jsonb_set(saved,'{cargo,1}',
+          '${JSON.stringify(safetyEdit)}'::jsonb || jsonb_build_object('id',c1)));
+        if (select "JobCargo_IsHazardous" from public."Job_Cargo" where "JobCargo_ID"=c1)
+          or not (select "JobCargo_IsTemperatureControlled" from public."Job_Cargo" where "JobCargo_ID"=c1)
+          or (select "JobCargo_CargoJSON"->>'knownCargo' from public."Job_Cargo" where "JobCargo_ID"=c1) <> 'Temperature controlled; Fragile'
+          then raise exception 'Client safety edit did not persist exactly'; end if;
+        if not exists(select 1 from public."Job_CargoDangerousGoods" where "JobCargoDG_JobCargoID"=c1 and "JobCargoDG_UNNumber"='1234') then raise exception 'Safety edit lost DG evidence'; end if;
         select count(*) into before_events from booking_api.events;
         select jsonb_agg(to_jsonb(c) order by "JobCargo_ID") into before_state from public."Job_Cargo" c;
         begin
