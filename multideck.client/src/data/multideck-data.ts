@@ -1,3 +1,4 @@
+import ticketAttachmentsSource from "@/components/multideck/ticket-attachments.tsx?raw"
 import paginationSource from "@/components/multideck/pagination.tsx?raw"
 import lifecycleNotesSource from "@/components/multideck/lifecycle-notes.tsx?raw"
 import screeningComponentsSource from "@/components/multideck/screening-components.tsx?raw"
@@ -55,6 +56,16 @@ function visualizationUsageCode(componentName: string, kind: string) {
 }
 
 export const galleryComponents = [
+  {
+    id: "conversation-attachments", name: "Conversation Attachments", category: "Controls",
+    description: "Compact image tiles and document previews for ticket messages, with quiet remove controls and a shared image viewer.",
+    details: "Use the picker and attachment list in a composer or beneath a sent message. Private files use short-lived links. Removal applies to unsent files only, with keyboard and touch access.",
+    foundOn: [{label:"Support conversation",route:"/settings?tab=support"},{label:"Components",route:"/components?component=conversation-attachments"}],
+    componentCode: ticketAttachmentsSource,
+    usageCode: `<TicketAttachmentPicker onAdd={draft.add} disabled={sending} />
+<TicketAttachmentList items={draft.items} onRemove={draft.remove} disabled={sending} />
+<TicketAttachmentList items={message.attachments} />`,
+  },
   {
     id: "colours",
     name: "Colours",

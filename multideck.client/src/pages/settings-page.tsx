@@ -80,7 +80,6 @@ import { Pagination } from "@/components/multideck/pagination"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { normalizeTagTerms, TagEntryField } from "@/components/multideck/tag-entry-field"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
-import { openSupportTicket } from "@/components/multideck/support-ticket-dialog"
 import { CalendarConnectionSettings } from "@/components/multideck/calendar-connection-settings"
 import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
 import { SupportTicketWorkspace } from "@/pages/support-ticket-workspace"
@@ -5223,29 +5222,6 @@ function SupportHubTab({ navigate }: { navigate: (path: string) => void }) {
         title={t("Support")}
         description={t("Submit a ticket, track its status, and reply to the support team.")}
       />
-      {!ticketId ? <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
-        <SettingsPanel title={t("Create a support ticket")} description={t("The same focused ticket experience is available here and from the bottom of the sidebar.")}>
-          <div className="flex flex-col gap-5 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="max-w-xl">
-              <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Give support the full context in one go")}</p>
-              <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Choose the request type, explain the impact, and capture or attach a screenshot for bugs. Your company and reporter details are added securely.")}</p>
-            </div>
-            {supportTicketFeatureEnabled ? <Button type="button" className="min-h-11 shrink-0 rounded-[var(--md-radius-lg)] sm:min-h-10" onClick={openSupportTicket}>
-              <TicketCheck className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
-              {t("Submit a ticket")}
-            </Button> : <p className="max-w-xs text-[12px] leading-5 text-[var(--md-subtle)]">{t("Ticket submission is being enabled for this workspace in a controlled rollout.")}</p>}
-          </div>
-        </SettingsPanel>
-        <aside className="xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
-          <SettingsPanel title={t("What happens next")} description={t("Your ticket is stored in Multideck Cloud and linked to this workspace automatically.")}>
-            <ol className="grid gap-3 px-5 py-5 text-[12px] leading-5 text-[var(--md-text)]">
-              <li><span className="font-medium text-[var(--md-ink)]">{t("1. Confirmation")}</span><br />{t("You receive a ticket reference and secure status link only after Cloud confirms it is saved.")}</li>
-              <li><span className="font-medium text-[var(--md-ink)]">{t("2. Review")}</span><br />{t("The support team sees your impact, diagnostics, and any screenshots together.")}</li>
-              <li><span className="font-medium text-[var(--md-ink)]">{t("3. Reply")}</span><br />{t("Public replies and meaningful status changes arrive in a Multideck-branded email.")}</li>
-            </ol>
-          </SettingsPanel>
-        </aside>
-      </div> : null}
       <SupportTicketWorkspace key={ticketId ?? "ticket-list"} ticketId={ticketId} navigate={navigateSupport} />
     </>
   )

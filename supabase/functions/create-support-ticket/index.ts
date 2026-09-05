@@ -147,7 +147,7 @@ async function handleCloudTicket(request: Request, body: JsonObject, reporter: R
   }
 
   const action = cleanString(body.action, 40)
-  if (!["create_draft", "prepare_attachment", "complete_attachment", "finalize", "list_tickets", "get_ticket", "add_comment"].includes(action)) {
+  if (!["create_draft", "prepare_attachment", "complete_attachment", "finalize", "list_tickets", "get_ticket", "add_comment", "prepare_message_attachment", "complete_message_attachment", "send_message"].includes(action)) {
     return validationError(request, "Choose a supported ticket action.")
   }
 
@@ -175,7 +175,7 @@ async function handleCloudTicket(request: Request, body: JsonObject, reporter: R
 
   const upstreamBody = JSON.stringify(cloudBody)
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), action === "complete_attachment" ? 25_000 : 15_000)
+  const timeoutId = setTimeout(() => controller.abort(), (action === "complete_attachment" || action === "complete_message_attachment") ? 25_000 : 15_000)
   try {
     const signedHeaders = await cloudSupportHeaders(
       cloudSigningPrivateKey,

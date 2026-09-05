@@ -276,6 +276,7 @@ import { InlineField, InlineFieldCard, InlineSelectField } from "@/components/mu
 import { SideDrawer } from "@/components/multideck/side-drawer"
 import { WizardDialog } from "@/components/multideck/wizard-dialog"
 import { ScreenshotCaptureEditor, SupportTicketAttachmentPreview } from "@/components/multideck/support-ticket-dialog"
+import { TicketAttachmentsPreview } from "@/components/multideck/ticket-attachments-preview"
 import { ImageLightbox } from "@/components/multideck/image-lightbox"
 import { useLanguage } from "@/i18n/language-provider"
 
@@ -1856,6 +1857,7 @@ function ComponentPreview({ id }: { id: string }) {
 
   return (
     <div className="grid min-h-[430px] min-w-0 place-items-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-[var(--md-gap-xl)]">
+      {id === "conversation-attachments" ? <TicketAttachmentsPreview /> : null}
       {id === "inline-fields" ? (
         <div className="w-full max-w-[620px]">
           <InlineFieldCard title="Account facts" meta="Select a value to edit it">
