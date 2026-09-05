@@ -15,6 +15,15 @@ const issue = read('20260904120100_quote_submission_document_boundary.sql')
 const handover = read('20260905123929_quote_booking_cargo_handover.sql')
 const bookingSave = read('20260905110317_booking_stable_cargo_equipment_identity.sql')
 const cargoRevision = read('20260905125327_quote_cargo_revision_comparison.sql')
+const cargoPersistence = read('20260905130449_quote_cargo_revision_persistence.sql')
+const cargoWatch = read('20260905112211_dexter_booking_cargo_parity.sql')
+function sqlFunction(source, name) {
+  const start = source.indexOf(`create or replace function ${name}(`)
+  assert.ok(start >= 0)
+  const end = source.indexOf('\n$$;', start) + 4
+  assert.ok(end > start)
+  return source.slice(start, end)
+}
 const conversionSource = read('20260828135847_reconcile_directional_quote_booking_references.sql')
 const conversionStart = conversionSource.indexOf('create or replace function booking_api.convert_accepted_quote(')
 const conversionEnd = conversionSource.indexOf('\n$$;', conversionStart) + 4
@@ -34,7 +43,7 @@ assert.ok(start >= 0 && end > start)
 // Execute actual readiness, cargo validation/projection and pre-send prepare
 // functions. Minimal tables and permission resolution are explicit fixtures;
 // no live email, broad tenant schema or provider lifecycle is simulated.
-test('PostgreSQL: line-aware Quote issue and lossless initial Booking cargo handover', { skip: !available }, () => {
+test('PostgreSQL: Quote cargo issue, initial handover and selective revision persistence', { skip: !available }, () => {
   const directory = mkdtempSync(join(tmpdir(), 'multideck-quote-readiness-'))
   const data = join(directory, 'data')
   let started = false
@@ -103,6 +112,15 @@ test('PostgreSQL: line-aware Quote issue and lossless initial Booking cargo hand
         add column "CusQuoteHeader_ContactNameSnapshot" text,add column "CusQuoteHeader_JobID" uuid,
         add column "CusQuoteHeader_LastEditedDate" timestamptz;
       create table booking_api.events(company_id uuid,job_id uuid,event_type text,summary text,metadata jsonb,actor_user_id uuid);
+      alter table public."Job_Header" add column "Job_PendingQuoteVersionID" uuid,add column "Job_PendingQuoteResponseID" uuid,
+        add column "Job_QuoteSyncStatus" text default 'in_sync',add column "Job_QuoteSyncDetectedAt" timestamptz;
+      create table booking_api.quote_sync_reviews (
+        review_id uuid primary key,company_id uuid,job_id uuid,quote_id uuid,applied_version_id uuid,proposed_version_id uuid,
+        proposed_response_id uuid,status_code text default 'pending',differences jsonb,applied_fields jsonb default '[]',
+        decided_by uuid,decided_at timestamptz
+      );
+      ${table('Job_CargoDangerousGoods')}
+      alter table public."Job_CargoDangerousGoods" add foreign key ("JobCargoDG_JobCargoID") references public."Job_Cargo"("JobCargo_ID");
       create function booking_api.normalise_direction(text) returns text language sql as $$select lower($1)$$;
       create function booking_api.normalise_mode(text) returns text language sql as $$select lower($1)$$;
       create function booking_api.allocate_reference(uuid,text,text) returns text language sql as $$select 'TEST-'||gen_random_uuid()$$;
@@ -121,6 +139,13 @@ test('PostgreSQL: line-aware Quote issue and lossless initial Booking cargo hand
       ${handover}
       ${bookingSave}
       ${cargoRevision}
+      ${cargoPersistence}
+      create table public."AI_DexterWatches" ("AIDexterWatch_CompanyID" uuid,"AIDexterWatch_CapabilityCode" text,"AIDexterWatch_StatusCode" text,"AIDexterWatch_TargetID" uuid);
+      create table public."AI_DexterWatchSignals" ("AIDexterWatchSignal_CompanyID" uuid,"AIDexterWatchSignal_CapabilityCode" text,
+        "AIDexterWatchSignal_SourceTable" text,"AIDexterWatchSignal_SourceID" uuid,"AIDexterWatchSignal_OldJSON" jsonb,"AIDexterWatchSignal_NewJSON" jsonb);
+      ${sqlFunction(cargoWatch,'booking_api.cargo_public_values')}
+      ${sqlFunction(cargoWatch,'public._multideck_dexter_cargo_watch_change')}
+      create trigger cargo_watch after insert or update on public."Job_Cargo" for each row execute function public._multideck_dexter_cargo_watch_change();
       do $test$
       declare
         q uuid := gen_random_uuid(); v uuid := gen_random_uuid(); actor uuid := gen_random_uuid();
@@ -213,6 +238,7 @@ test('PostgreSQL: line-aware Quote issue and lossless initial Booking cargo hand
         single_quote uuid:=gen_random_uuid(); single_version uuid:=gen_random_uuid();
         revision uuid:=gen_random_uuid(); proposed_lines jsonb; observed_lines jsonb; differences jsonb; plan jsonb;
         description_key text; weight_key text; new_line_id uuid:=gen_random_uuid(); manual_cargo uuid:=gen_random_uuid();
+        review_id uuid:=gen_random_uuid(); second_cargo uuid; foreign_actor uuid:=gen_random_uuid(); before_events integer; before_signals integer;
       begin
         insert into public."cmp_Users" values(actor,actor,company,'active');
         insert into public."cmp_Offices" values(office,company);
@@ -292,6 +318,7 @@ test('PostgreSQL: line-aware Quote issue and lossless initial Booking cargo hand
         if not exists(select 1 from jsonb_array_elements(differences) d where d->>'operation'='remove' and (d->>'requiresConfirmation')::boolean) then raise exception 'Removal needs review'; end if;
         begin perform booking_api.plan_quote_cargo_revision(job,v,revision,jsonb_build_array(weight_key),observed_lines); raise exception 'Unaccepted newer version planned'; exception when invalid_parameter_value then null; end;
         update public."CusQuote_Header" set "CusQuoteHeader_AcceptedVersionID"=revision where "CusQuoteHeader_ID"=q;
+        update public."CusQuote_Versions" set "CusQuoteVersion_StatusCode"='accepted' where "CusQuoteVersion_ID"=revision;
         plan:=booking_api.plan_quote_cargo_revision(job,v,revision,jsonb_build_array(weight_key),observed_lines);
         if plan#>>'{changes,0,values,description}'<>'Operator correction' or (plan#>>'{changes,0,values,grossWeightKg}')::numeric<>1250
           or (plan#>>'{changes,0,bookingCargoId}')::uuid<>saved_cargo then raise exception 'Selective plan overwrote unselected values or identity'; end if;
@@ -321,6 +348,65 @@ test('PostgreSQL: line-aware Quote issue and lossless initial Booking cargo hand
         if not exists(select 1 from jsonb_array_elements(differences) d where d->>'key'=description_key and length(d->>'bookingValue')>4000 and (d->>'conflict')::boolean) then raise exception 'Operational text was shortened or blocked during comparison'; end if;
         if has_function_privilege('service_role','booking_api.plan_quote_cargo_revision(uuid,uuid,uuid,jsonb,jsonb)','EXECUTE')
           or has_function_privilege('authenticated','booking_api.current_source_cargo_lines(uuid)','EXECUTE') then raise exception 'Unwired internal cargo planner exposed'; end if;
+        -- Exercise persistence with the real guarded function and a synthetic
+        -- review row. Public review creation/token handling is a separate gate.
+        update public."Job_Cargo" set "JobCargo_IsDeleted"=false where "JobCargo_ID"=saved_cargo;
+        select "JobCargo_ID" into second_cargo from public."Job_Cargo" where "JobCargo_JobID"=job and "JobCargo_SourceQuoteLineID"=c2;
+        insert into public."Job_CargoDangerousGoods" ("JobCargoDG_JobCargoID","JobCargoDG_UNNumber") values(second_cargo,'1234');
+        observed_lines:=booking_api.current_source_cargo_lines(job);
+        differences:=booking_api.cargo_revision_differences(lines,observed_lines,proposed_lines);
+        insert into booking_api.quote_sync_reviews(review_id,company_id,job_id,quote_id,applied_version_id,proposed_version_id,differences)
+          values(review_id,company,job,q,v,revision,differences);
+        -- Sales can work on a later draft without revoking the accepted version
+        -- which operations has not applied yet.
+        update public."CusQuote_Header" set "CusQuoteHeader_LifecycleCode"='revised',"CusQuoteHeader_AcceptedVersionID"=null where "CusQuoteHeader_ID"=q;
+        insert into public."CusQuote_Versions" ("CusQuoteHeader_ID","CusQuoteVersion_Number","CusQuoteVersion_SnapshotJSON","CusQuoteVersion_IsSubmitted")
+          values(q,3,jsonb_set(original_snapshot,'{quote,shipmentFacts,cargoLines}',proposed_lines),false);
+        update public."Job_Header" set "Job_PendingQuoteVersionID"=revision,"Job_QuoteSyncStatus"='out_of_sync' where "Job_ID"=job;
+        insert into public."cmp_Users" values(foreign_actor,foreign_actor,gen_random_uuid(),'active');
+        select count(*) into before_events from booking_api.events;
+        begin perform booking_api.apply_quote_cargo_fields(foreign_actor,job,review_id,jsonb_build_array(weight_key),observed_lines); raise exception 'Cross-workspace apply allowed'; exception when insufficient_privilege then null; end;
+        begin perform booking_api.apply_quote_cargo_fields(gen_random_uuid(),job,review_id,jsonb_build_array(weight_key),observed_lines); raise exception 'Unauthorised apply allowed'; exception when insufficient_privilege then null; end;
+        begin perform booking_api.apply_quote_cargo_fields(actor,job,review_id,'["charges"]',observed_lines); raise exception 'Cargo helper changed financial fields'; exception when invalid_parameter_value then null; end;
+        if (select count(*) from booking_api.events)<>before_events then raise exception 'Rejected apply emitted success audit'; end if;
+        insert into public."AI_DexterWatches" values(company,'booking_cargo','active',saved_cargo);
+        select count(*) into before_signals from public."AI_DexterWatchSignals";
+        result:=booking_api.apply_quote_cargo_fields(actor,job,review_id,jsonb_build_array(weight_key),observed_lines);
+        if (select count(*) from public."AI_DexterWatchSignals")<>before_signals+1
+          or not exists(select 1 from public."AI_DexterWatchSignals" where "AIDexterWatchSignal_SourceID"=saved_cargo and "AIDexterWatchSignal_CompanyID"=company
+            and "AIDexterWatchSignal_NewJSON"->>'grossWeightKg'='1250.00') then raise exception 'Applied cargo change did not reach the existing event adapter'; end if;
+        if (result->>'remainingFields')::integer<>3 or (select "JobCargo_GrossKilos" from public."Job_Cargo" where "JobCargo_ID"=saved_cargo)<>1250
+          or (select "JobCargo_Description" from public."Job_Cargo" where "JobCargo_ID"=saved_cargo)<>'Operator correction'
+          or (select "Job_SourceQuoteVersionID" from public."Job_Header" where "Job_ID"=job)<>v then raise exception 'Partial application lost unselected state or prematurely advanced Quote'; end if;
+        if not exists(select 1 from booking_api.events where metadata->>'reviewId'=review_id::text and metadata->'appliedFields'=jsonb_build_array(weight_key)
+          and metadata ? 'beforeCargo' and metadata ? 'afterCargo' and metadata->>'quoteVersionId'=revision::text and actor_user_id=actor) then raise exception 'Exact cargo/version/actor audit absent'; end if;
+        begin
+          update public."CusQuote_Versions" set "CusQuoteVersion_IsSubmitted"=true,"CusQuoteVersion_StatusCode"='accepted' where "CusQuoteHeader_ID"=q and "CusQuoteVersion_Number"=3;
+          perform booking_api.apply_quote_cargo_fields(actor,job,review_id,jsonb_build_array(description_key),observed_lines);
+          raise exception 'Superseded accepted version was applied';
+        exception when invalid_parameter_value then null; end;
+        update public."Job_Cargo" set "JobCargo_GrossKilos"=1300 where "JobCargo_ID"=saved_cargo;
+        select count(*) into before_events from booking_api.events;
+        select count(*) into before_signals from public."AI_DexterWatchSignals";
+        result:=booking_api.apply_quote_cargo_fields(actor,job,review_id,jsonb_build_array(weight_key),observed_lines);
+        if not (result->>'reused')::boolean or (select "JobCargo_GrossKilos" from public."Job_Cargo" where "JobCargo_ID"=saved_cargo)<>1300
+          or (select count(*) from booking_api.events)<>before_events or (select count(*) from public."AI_DexterWatchSignals")<>before_signals then raise exception 'Retry reapplied an old approval or emitted another signal'; end if;
+        update public."Job_Cargo" set "JobCargo_Description"='Further operational correction' where "JobCargo_ID"=saved_cargo;
+        begin perform booking_api.apply_quote_cargo_fields(actor,job,review_id,jsonb_build_array(description_key),observed_lines); raise exception 'Stale description written'; exception when serialization_failure then null; end;
+        observed_lines:=booking_api.current_source_cargo_lines(job);
+        result:=booking_api.apply_quote_cargo_fields(actor,job,review_id,jsonb_build_array(description_key,'cargo:'||c2||':line','cargo:'||new_line_id||':line'),observed_lines);
+        if (result->>'remainingFields')::integer<>0 or (select "Job_SourceQuoteVersionID" from public."Job_Header" where "Job_ID"=job)<>revision
+          or (select "Job_QuoteSyncStatus" from public."Job_Header" where "Job_ID"=job)<>'in_sync'
+          or (select status_code from booking_api.quote_sync_reviews r where r.review_id=(result->>'reviewId')::uuid)<>'applied' then raise exception 'Completed cargo review did not advance applied version'; end if;
+        if (select "JobCargo_GrossKilos" from public."Job_Cargo" where "JobCargo_ID"=saved_cargo)<>1300
+          or (select "JobCargo_Description" from public."Job_Cargo" where "JobCargo_ID"=saved_cargo)<>'New customer description'
+          or (select "JobCargo_SourceQuoteVersionID" from public."Job_Cargo" where "JobCargo_ID"=saved_cargo)<>v then raise exception 'Selective application reset other values or original provenance'; end if;
+        if not (select "JobCargo_IsDeleted" from public."Job_Cargo" where "JobCargo_ID"=second_cargo)
+          or not exists(select 1 from public."Job_CargoDangerousGoods" where "JobCargoDG_JobCargoID"=second_cargo) then raise exception 'Cargo removal destroyed linked history'; end if;
+        if not exists(select 1 from public."Job_Cargo" where "JobCargo_JobID"=job and "JobCargo_SourceQuoteLineID"=new_line_id and "JobCargo_SourceQuoteVersionID"=revision and not "JobCargo_IsDeleted") then raise exception 'Selected addition missing'; end if;
+        if not exists(select 1 from public."Job_Cargo" where "JobCargo_ID"=manual_cargo and "JobCargo_Description"='Operator-added cargo' and not "JobCargo_IsDeleted") then raise exception 'Operational cargo lost'; end if;
+        if (select "CusQuoteVersion_SnapshotJSON" from public."CusQuote_Versions" where "CusQuoteVersion_ID"=v)<>original_snapshot then raise exception 'Persistence overwrote old Quote'; end if;
+        if has_function_privilege('service_role','booking_api.apply_quote_cargo_fields(uuid,uuid,uuid,jsonb,jsonb)','EXECUTE') then raise exception 'Unwired apply helper exposed'; end if;
         if has_function_privilege('service_role','booking_api.insert_accepted_quote_cargo(uuid,uuid,uuid)','EXECUTE')
           or has_function_privilege('authenticated','quote_api.cargo_booking_missing(jsonb)','EXECUTE') then raise exception 'Internal cargo insertion exposed'; end if;
       end $handover_test$;
