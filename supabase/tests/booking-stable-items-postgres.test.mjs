@@ -12,6 +12,7 @@ import { routeDexterFixture, routeDexterAssertions } from './booking-route-dexte
 import { routeModeDexterFixture, routeModeDexterAssertions } from './booking-route-mode-dexter-fixture.mjs'
 import { evidenceEnvelopeMigration, documentEvidenceAssertions } from './dexter-document-evidence-postgres-fixture.mjs'
 import { shipmentValueDexterFixture, shipmentValueDexterAssertions } from './booking-shipment-value-dexter-fixture.mjs'
+import { quoteCargoDexterFixture, quoteCargoDexterAssertions } from './quote-cargo-dexter-fixture.mjs'
 
 // Executes the actual save function against disposable PostgreSQL, never a tenant.
 // PG_TEST_BIN can point to a PostgreSQL bin directory in CI.
@@ -165,6 +166,8 @@ test('PostgreSQL: stable items, approved Dexter cargo/container/route lifecycle,
       documentEvidenceAssertions(false) + evidenceEnvelopeMigration + documentEvidenceAssertions(true) + routeModeDexterAssertions)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
       shipmentValueDexterFixture + shipmentValueDexterAssertions)
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
+      quoteCargoDexterFixture + quoteCargoDexterAssertions)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
     rmSync(directory, { recursive: true, force: true })

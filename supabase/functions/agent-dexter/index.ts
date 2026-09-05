@@ -1312,7 +1312,7 @@ function watchTargetLabel(capability: string, record: JsonObject) {
         ? ["quoteNumber"]
         : capability === "phone_calls"
           ? ["callerName", "companyName", "phoneNumber"]
-      : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value"].includes(capability)
+        : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value", "quote_cargo"].includes(capability)
           ? ["targetLabel", "bookingReference", "description"]
       : capability === "bookings"
           ? ["bookingReference", "jobReference", "customerReference"]
@@ -1806,7 +1806,7 @@ Changing a routing step's mode always requires explicit review: use the dedicate
 An accepted Quote revision can change routing-leg modes even when the overall Job mode stays the same. Direct the operator to the accepted Quote update review in the Booking and its Inspect routing plan comparison; changing routing modes requires explicit confirmation there. Do not apply these revisions through generic Booking edits, claim a dedicated route-plan watch, or interpret a leg count as evidence of its contents. Ordinary Booking-only route edits do not by themselves make the Quote out of sync.
 An explicitly planned Quote route stays authoritative even when only one leg remains. Do not infer its mode, carrier, service or dates from the overall Quote header. Single-leg route reads, edits and watches still require the dedicated route adapter; direct the operator to Planned routing legs and the accepted-version comparison while that adapter is unavailable.
 Overall commercial Mode and physical routing-leg modes are separate. The Quote and Booking Details screens ask for review before changing overall Mode; they retain planned legs and flag a standard overall mode that no leg uses. Applying only Mode from an accepted revision must not relabel explicit or independently edited Booking legs; Routing plan is a separate reviewed selection. Do not claim that generic mode edits perform this review or that a mode-mismatch watch is connected. Direct those requests to the Details screen until the dedicated approval-safe mode adapter is available.
-Individual Quote cargo-line read, edit and watch support is not connected yet. Quote summary evidence does not prove the contents of individual cargo lines. If asked for those operations, explain that limitation clearly; do not use update_quote to pretend to change cargo or claim that summary totals identify a particular line. The existing Quote lifecycle and summary capabilities remain available when listed.
+When quote_cargo is listed, it reads exact lines of the current Quote version, including quoteId, versionId, lineId, recordId, updatedAt, snapshotHash and editable. Keep exact decimals and unknown values. Never infer line contents from summary totals. update_quote_cargo requires explicit approval in both access modes and only edits a working draft with editable=true. Use quoteId as target_id, the separate versionId and lineId, and both freshness tokens from the same read. It changes one operational field, recomputes cargo summaries, retains other draft details and never sends a Quote, creates a revision or updates a Booking. Safety values are booleans; measurements are exact decimal strings or null. Submitted/pending-send versions require the operator to open a revised draft first. Quote cargo watches use recordId (not quoteId or lineId), notify on saved field changes only, and stay bound to that exact version and line; they do not follow a later version. No automatic edits, allocation/DG detail or historical-version search is implied. If this capability is absent, explain that limitation and use the Quote screen rather than generic update_quote.
 Individual booking cargo lines are connected only when the booking_cargo domain is listed. Query it by exact booking reference or cargo ID and use its recordId, bookingId and updatedAt as evidence. The update_booking_cargo action proposes one allowlisted field on one existing line and always requires explicit operator approval, including in Full access. Show the booking reference, cargo line, field and before/after values. Never substitute the first cargo line or reuse an old updatedAt after another change. Null clears a nullable field; measurements use a text number and safety flags use the explicit text true or false. Prices, margins, supplier charges, adding/removing lines, dangerous-goods detail and equipment allocation are not supported by this action; use Booking Details for those operations. Watching for you can follow persisted booking_cargo field changes by the exact cargo recordId, using deterministic database signals without recurring AI calls.
 Work fluently across air, sea, road, rail, customs, warehousing, quotations, bookings, milestones, exceptions, customer updates, and commercial handovers when those domains are connected.
 Use freight terminology accurately and only when it helps. Distinguish planned, estimated, actual, confirmed, and inferred information.
@@ -2470,7 +2470,30 @@ function customsDraftSummary(locale: DexterLocale, argumentsValue: JsonObject, d
   }
 }
 
+function quoteCargoActionRecord(records: Map<string, JsonObject>, args: JsonObject) {
+  return [...records.values()].find(record => record.cargoScope === "quote_version"
+    && record.quoteId === args.target_id && record.versionId === args.version_id && record.lineId === args.line_id
+    && record.snapshotHash === args.expected_snapshot_hash && record.updatedAt === args.expected_updated_at)
+}
+
 function actionChanges(locale: DexterLocale, actionCode: string, argumentsValue: JsonObject, currentRecord?: JsonObject) {
+  if (actionCode === "update_quote_cargo") {
+    const labels: Record<string, string> = { description: "Goods description", commodity: "Commodity", packageQuantity: "Packages / pieces",
+      packageType: "Package type", grossWeightKg: "Gross weight (kg)", netWeightKg: "Net weight (kg)", volumeCbm: "Volume (CBM)",
+      chargeableWeightKg: "Chargeable weight (kg)", length: "Length", width: "Width", height: "Height", lengthUnit: "Dimension unit",
+      hsCode: "HS code", countryOfOrigin: "Country of origin", isHazardous: "Hazardous", isTemperatureControlled: "Temperature controlled" }
+    const field = String(argumentsValue.field ?? "")
+    if (!labels[field]) return []
+    const beforeKnown = Boolean(currentRecord?.cargoScope === "quote_version" && currentRecord.quoteId === argumentsValue.target_id
+      && currentRecord.versionId === argumentsValue.version_id && currentRecord.lineId === argumentsValue.line_id
+      && currentRecord.snapshotHash === argumentsValue.expected_snapshot_hash && currentRecord.updatedAt === argumentsValue.expected_updated_at
+      && Object.hasOwn(currentRecord, field))
+    const before = beforeKnown ? displayActionValue(currentRecord?.[field]) : null
+    const raw = typeof argumentsValue.value === "string" ? argumentsValue.value.trim() : argumentsValue.value
+    const after = displayActionValue(field === "countryOfOrigin" && typeof raw === "string" ? raw.toUpperCase() : raw)
+    return [{ field: labels[field], before, after, value: after, beforeKnown,
+      kind: after === null ? "removed" : beforeKnown && before === null ? "added" : "changed" }]
+  }
   if (actionCode === "update_booking_shipment_value") {
     return ["amount", "currency"].map((field) => {
       const beforeKnown = Boolean(currentRecord?.valueScope === "shipment_goods" && Object.hasOwn(currentRecord, field))
@@ -2605,6 +2628,9 @@ function preparedActionDescription(
   currentRecord?: JsonObject,
   emailState?: DexterEmailToolState | null,
 ) {
+  if (actionCode === "update_quote_cargo") {
+    return `Review ${cleanString(currentRecord?.targetLabel, 200) || "the exact Quote draft cargo line"}. Cargo totals will be recalculated, but prices will not: review charges before issuing the Quote. Other draft details, submitted versions and the Booking remain unchanged. ${fallback}`
+  }
   if (actionCode === "update_booking_shipment_value") {
     const reference = cleanString(currentRecord?.bookingReference, 80) || "the selected Booking"
     return `Review shipment goods value for ${reference}. This changes the shipment total only: no currency conversion is performed, cargo-line allocations and the accepted Quote stay unchanged. ${fallback}`
@@ -3141,7 +3167,9 @@ async function runStreamedAgent(
           toolOutput = { error: "That write action is not available in this workspace." }
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
-          const currentRecord = currentRecordsById.get(cleanString(actionArguments.target_id, 80))
+          const currentRecord = action.code === "update_quote_cargo"
+            ? quoteCargoActionRecord(currentRecordsById, actionArguments)
+            : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
           let reason = preparedActionDescription(
             locale,
             action.code,
@@ -3223,7 +3251,9 @@ async function runStreamedAgent(
             }
           }
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
-          const currentRecord = currentRecordsById.get(cleanString(actionArguments.target_id, 80))
+          const currentRecord = action.code === "update_quote_cargo"
+            ? quoteCargoActionRecord(currentRecordsById, actionArguments)
+            : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
           const changes = actionChanges(locale, action.code, actionArguments, currentRecord)
           let prepared: { id: string }
           try {
@@ -4722,7 +4752,9 @@ Deno.serve(async (request) => {
           toolOutput = { error: "That write action is not available in this workspace." }
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
-          const currentRecord = currentRecordsById.get(cleanString(actionArguments.target_id, 80))
+          const currentRecord = action.code === "update_quote_cargo"
+            ? quoteCargoActionRecord(currentRecordsById, actionArguments)
+            : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
           let reason = preparedActionDescription(
             locale,
             action.code,
@@ -4804,7 +4836,9 @@ Deno.serve(async (request) => {
             return json(request, { conversation: await persistExchange(result) })
           }
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
-          const currentRecord = currentRecordsById.get(cleanString(actionArguments.target_id, 80))
+          const currentRecord = action.code === "update_quote_cargo"
+            ? quoteCargoActionRecord(currentRecordsById, actionArguments)
+            : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
           const changes = actionChanges(locale, action.code, actionArguments, currentRecord)
           let prepared: { id: string }
           try {

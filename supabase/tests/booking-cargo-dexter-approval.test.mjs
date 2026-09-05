@@ -121,6 +121,38 @@ const valuePreviewSource = ['displayActionValue', 'actionChanges'].map(name => {
   return agentSource.slice(start, agentSource.indexOf('\n}', start) + 2)
 }).join('\n')
 const valuePreview = new Function(`${stripTypeScriptTypes(valuePreviewSource)}; return actionChanges`)()
+const quoteResolverStart = agentSource.indexOf('function quoteCargoActionRecord(')
+const quoteRecordResolver = new Function(`${stripTypeScriptTypes(agentSource.slice(quoteResolverStart, agentSource.indexOf('\n}', quoteResolverStart) + 2))}; return quoteCargoActionRecord`)()
+test('Quote cargo: both access modes require approval and inspection is not edit intent', () => {
+  for (const mode of ['approve', 'full']) assert.equal(requiresExplicitActionApproval('update_quote_cargo', mode), true)
+  for (const prompt of ['Update the Quote cargo weight', 'Change the weight on Quote JQ123', 'Clear Quote goods dimensions']) {
+    assert.equal(operatorAuthorisesAction(prompt, 'update_quote_cargo'), true)
+  }
+  for (const prompt of ['Show the Quote cargo weight', 'Explain Quote cargo', 'Update the Booking cargo weight', 'Change the Quote profit']) {
+    assert.equal(operatorAuthorisesAction(prompt, 'update_quote_cargo'), false)
+  }
+})
+test('Quote cargo approval uses only the exact reviewed draft line and preserves decimals/clears', () => {
+  const args = { target_id: crypto.randomUUID(), version_id: crypto.randomUUID(), line_id: crypto.randomUUID(),
+    expected_snapshot_hash: 'reviewed', expected_updated_at: 'now', field: 'grossWeightKg', value: '0.123456789012345678901' }
+  const current = { cargoScope: 'quote_version', quoteId: args.target_id, versionId: args.version_id, lineId: args.line_id,
+    snapshotHash: 'reviewed', updatedAt: 'now', grossWeightKg: '42.00000000000001' }
+  for (const locale of ['en-GB', 'en-US']) {
+    const [review] = valuePreview(locale, 'update_quote_cargo', args, current)
+    assert.equal(review.before, current.grossWeightKg)
+    assert.equal(review.after, args.value)
+    assert.equal(review.beforeKnown, true)
+    assert.equal(valuePreview(locale, 'update_quote_cargo', { ...args, value: null }, current)[0].kind, 'removed')
+    for (const patch of [{ cargoScope: 'booking' }, { versionId: crypto.randomUUID() }, { lineId: crypto.randomUUID() }, { snapshotHash: 'stale' }, { updatedAt: 'earlier' }]) {
+      assert.equal(valuePreview(locale, 'update_quote_cargo', args, { ...current, ...patch })[0].beforeKnown, false)
+    }
+  }
+  const start = agentSource.indexOf('function quoteCargoActionRecord(')
+  const resolver = new Function(`${stripTypeScriptTypes(agentSource.slice(start, agentSource.indexOf('\n}', start) + 2))}; return quoteCargoActionRecord`)()
+  const records = new Map([[args.target_id, { grossWeightKg: '999' }], ['wrong-line', { ...current, lineId: crypto.randomUUID() }], ['exact-line', current]])
+  assert.equal(resolver(records, args), current)
+  assert.equal(resolver(records, { ...args, version_id: crypto.randomUUID() }), undefined)
+})
 test('Shipment value approval shows exact amount/currency, explicit clearing, and no unrelated cached before values', () => {
   for (const locale of ['en-GB', 'en-US']) {
     const args = { target_id: crypto.randomUUID(), amount: '12345678901234.5678', currency: 'usd', expected_updated_at: 'now', reason: 'Correct invoice' }
@@ -165,7 +197,7 @@ for (const streaming of [true, false]) {
   assert.ok(start >= branchStart.length && end > start, 'Actual mandatory approval response branch found')
   offset = end
   const executableBranch = stripTypeScriptTypes(`async function responseBranch(deps: any) {
-    const { argumentsWithDocumentEvidence, args, latestDocumentExtraction, currentRecordsById, cleanString,
+    const { argumentsWithDocumentEvidence, args, latestDocumentExtraction, currentRecordsById, cleanString, quoteCargoActionRecord,
       preparedActionDescription, locale, action, emailState, documentEvidence, actionChanges, prepareServerAction,
       admin, actor, conversationId, security, sanitiseAnswer, actionDisplayName, accessMode, emit,
       extractedActionCopy, actionCopy, lane, route, PROMPT_VERSION, domainCodes, emailProviders,
@@ -195,5 +227,29 @@ for (const streaming of [true, false]) {
       assert.deepEqual(events.find(event => event.type === 'pending_action').pendingAction, result.pendingAction)
       assert.equal(events.find(event => event.type === 'delta').delta, review.description)
     } else assert.deepEqual(persisted, [result])
+  })
+  test(`Quote cargo: ${streaming ? 'streamed' : 'persisted'} response prepares the exact line with reviewed before/after`, async () => {
+    const args = { target_id: crypto.randomUUID(), version_id: crypto.randomUUID(), line_id: crypto.randomUUID(),
+      expected_snapshot_hash: 'current', expected_updated_at: 'now', field: 'grossWeightKg', value: '0.1234567890123456789', reason: 'Confirmed packing' }
+    const record = { cargoScope: 'quote_version', quoteId: args.target_id, versionId: args.version_id, lineId: args.line_id,
+      snapshotHash: 'current', updatedAt: 'now', grossWeightKg: '42' }
+    const captured = [], events = []
+    const response = await responseBranch({ args, latestDocumentExtraction: null,
+      currentRecordsById: new Map([[args.target_id, { grossWeightKg: '999' }], ['actual-cargo-record-id', record]]),
+      quoteCargoActionRecord: quoteRecordResolver, cleanString: value => typeof value === 'string' ? value : '',
+      argumentsWithDocumentEvidence: value => value, preparedActionDescription: () => 'Only the working draft changes.',
+      locale: 'en-GB', action: { code: 'update_quote_cargo', name: 'Review Quote cargo', description: 'Draft only' },
+      emailState: null, documentEvidence: () => null, actionChanges: valuePreview,
+      prepareServerAction: async input => { captured.push(input); return { id: 'quote-proposal' } }, admin: {}, actor: {}, conversationId: null,
+      security: {}, sanitiseAnswer: value => value, actionDisplayName: () => 'Review Quote cargo', accessMode: 'full',
+      emit: event => events.push(event), extractedActionCopy: (_locale, _file, reason) => reason,
+      actionCopy: (_locale, _kind, reason) => reason, lane: 'test', route: {}, PROMPT_VERSION: 'test',
+      domainCodes: ['quote_cargo'], emailProviders: [], reasoningSummaries: [], usage: {}, request: {},
+      json: (_request, value) => value, persistExchange: async result => result })
+    const result = streaming ? response : response.conversation
+    assert.equal(captured.length, 1)
+    assert.equal(result.pendingAction.id, 'quote-proposal')
+    assert.deepEqual(result.pendingAction.changes.map(row => [row.before, row.after, row.beforeKnown]), [['42', args.value, true]])
+    if (streaming) assert.deepEqual(events.find(event => event.type === 'pending_action').pendingAction, result.pendingAction)
   })
 }
