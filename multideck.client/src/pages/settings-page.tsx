@@ -989,7 +989,7 @@ function ProfileTab({
           </div>
         </section>
 
-        <SettingsPanel title={t("Account details")} description={t("Your contact details and the job title shown with your account.")}>
+        <SettingsPanel title={t("Account details")}>
             <SettingsFieldRow label="Name">
             <div className="grid gap-3 sm:grid-cols-2">
               <SettingsInput
@@ -1088,7 +1088,7 @@ function ProfileTab({
             </div>
         </SettingsPanel>
 
-        <SettingsPanel title="Account control" description="Export your account history or start a reviewed deletion request.">
+        <SettingsPanel title="Account control">
           <SettingsFieldRow label="Export my data" description="A zip of every booking, document note, profile event, and audit log linked to your account.">
             {compactAction("Request export", () => toast.success("Data export requested"))}
           </SettingsFieldRow>
@@ -1158,7 +1158,6 @@ function AvailabilityTab() {
       <SettingsPageHeader
         eyebrow="Personal / Availability"
         title="Availability"
-        description="Set when people can book time with you, including your normal week, date exceptions, and booking rules."
       />
       <AvailabilitySettingsPanel
         id="availability-settings"
@@ -1485,7 +1484,6 @@ function SecurityTab() {
       <SettingsPageHeader
         eyebrow="Personal / Security"
         title="Security"
-        description="Protect live freight data with strong sign-in methods, two-factor authentication, and clear session control."
         actions={
           <Button
             type="button"
@@ -1501,13 +1499,13 @@ function SecurityTab() {
       />
       <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-[var(--md-page-stack-gap)]">
-          <SettingsPanel title="Two-factor authentication" description="Use a time-based authenticator code for a stronger second step.">
+          <SettingsPanel title="Two-factor authentication">
             <TwoFactorControl onFactorStatusChange={setMfaEnabled} />
           </SettingsPanel>
-        <SettingsPanel title="Sign-in methods" description="Your account is created by a Multideck administrator. Connect optional identities here for future sign-ins.">
+        <SettingsPanel title="Sign-in methods">
           <AuthIdentityManager embedded />
         </SettingsPanel>
-          <SettingsPanel title="Session control" description="The current browser remains signed in; every other active session can be revoked together.">
+          <SettingsPanel title="Session control">
             <IconRow
               icon={Laptop}
               title="This browser"
@@ -1725,7 +1723,7 @@ function CustomisationTab() {
       <SettingsPageHeader
         eyebrow="Personal / Customisation"
         title="Customisation"
-        description="Tune how Multideck reads, feels, and opens without changing the shared workspace for anyone else."
+        description="Changes apply only to you."
       />
       {/* Full width rather than inside the two-column grid below: the horizontal
           rail keeps every preview large enough to judge without making the page
@@ -1733,7 +1731,7 @@ function CustomisationTab() {
       <SettingsPanel
         className="mt-[var(--md-page-stack-gap)]"
         title="Accent colour"
-        description="Choose a Multideck accent or, when Admin Branding is complete, your company identity. Company colours and the co-branded sidebar apply only to your profile."
+        description="Company colours appear when Admin Branding is complete."
       >
         <div className="px-5 py-4">
           <AccentPicker />
@@ -1741,13 +1739,13 @@ function CustomisationTab() {
       </SettingsPanel>
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel title="Interface" description="Personal display choices update immediately on this browser.">
-          <SettingsFieldRow label="Appearance" description="Choose light, dark, or the mode used by this device.">
+          <SettingsFieldRow label="Appearance">
             <div className="max-w-[320px]">
               <ThemeToggle className="bg-[var(--md-glass)]" />
             </div>
           </SettingsFieldRow>
           <LanguageSettingField label="App language" />
-          <SettingsFieldRow label="Information density" description="Changes row height and breathing room without hiding data.">
+          <SettingsFieldRow label="Information density">
             <SettingsChoiceGroup
               options={["Compact", "Comfortable", "Roomy"]}
               value={density}
@@ -1755,18 +1753,17 @@ function CustomisationTab() {
               className="max-w-[420px]"
             />
           </SettingsFieldRow>
-          <SettingsFieldRow label="World clocks" description="Choose clear digital times or compact analogue faces.">
+          <SettingsFieldRow label="World clocks">
             <ClockDisplaySetting />
           </SettingsFieldRow>
         </SettingsPanel>
 
-        <SettingsPanel title="Starting point" description="Open the workspace where your day usually begins.">
+        <SettingsPanel title="Starting point">
           <SettingsFieldRow label="Start page">
             <StartPageSelect value={startPage} onChange={setStartPage} />
           </SettingsFieldRow>
           <SettingsToggleRow
             title="Keep filters between visits"
-            description="Return to the same owner, customer, and ETA filters after reload."
             checked={keepFilters}
             onCheckedChange={setKeepFilters}
           />
@@ -1863,7 +1860,6 @@ function NotificationsTab() {
       <SettingsPageHeader
         eyebrow="Personal / Notifications"
         title="Notifications"
-        description="Route urgent freight signals immediately and fold routine activity into a calmer scheduled digest."
         actions={
           <>
             <Button
@@ -1898,7 +1894,7 @@ function NotificationsTab() {
           <SettingsPanel title="Operational alerts" description="Email the updates that need attention away from the Multideck workspace.">
             <SettingsToggleRow
               title={t("Note mentions")}
-              description={t("Send a branded Multideck email when a person or department tags you in an operational note. In-app alerts remain on.")}
+              description={t("Email when a person or department tags you in a note. In-app alerts remain on.")}
               checked={preferences.lifecycle_note_mention}
               onCheckedChange={(checked) => setEmailPreference("lifecycle_note_mention", checked)}
             />
@@ -1933,10 +1929,10 @@ function NotificationsTab() {
               onCheckedChange={(checked) => setEmailPreference("document_parse", checked)}
             />
           </SettingsPanel>
-          <SettingsPanel title="Digest and reminders" description="Keep routine updates useful without turning them into interruptions.">
+          <SettingsPanel title="Digest and reminders">
             <SettingsToggleRow
               title="Daily digest"
-              description="A calm summary of open exceptions, due work, and customer risk."
+              description="Open exceptions, due work, and customer risk."
               checked={preferences.daily_digest}
               onCheckedChange={(checked) => setEmailPreference("daily_digest", checked)}
             />
@@ -1969,7 +1965,7 @@ function NotificationsTab() {
               onCheckedChange={(checked) => setEmailPreference("product_updates", checked)}
             />
           </SettingsPanel>
-          <SettingsPanel title="Account security" description="Critical account notices protect your workspace and cannot be switched off.">
+          <SettingsPanel title="Account security">
             <SettingsFieldRow label="Security emails" description="Password, email, identity, and multi-factor authentication changes.">
               <div className="flex items-center justify-end gap-2 text-[13px] text-[var(--md-text)]">
                 <ShieldCheck className="size-4 text-[var(--md-accent)]" strokeWidth={1.5} />
@@ -1989,7 +1985,7 @@ function ShortcutsTab() {
       <SettingsPageHeader
         eyebrow="Personal / Keyboard shortcuts"
         title="Keyboard shortcuts"
-        description="Every shortcut in Multideck, and the keys they are on. Hold two keys together for a chord such as H + J, or press two plain keys in a row for a sequence."
+        description="Hold keys together for a chord (H + J); press them in order for a sequence."
       />
       <section className="md-settings-panel mt-[var(--md-page-stack-gap)] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
         <KeyboardShortcutsPanel />
@@ -2025,7 +2021,7 @@ function DexterFieldGroup({
 }: {
   label: string
   description?: string
-  children: ReactNode
+  children?: ReactNode
   labelFor?: string
   className?: string
 }) {
@@ -2041,7 +2037,7 @@ function DexterFieldGroup({
         )}
         {description ? <p id={descriptionId} className="mt-1 max-w-[58ch] text-[12px] leading-5 text-[var(--md-text)]">{description}</p> : null}
       </div>
-      <div className="mt-3 min-w-0">{children}</div>
+      {children ? <div className="mt-3 min-w-0">{children}</div> : null}
     </div>
   )
 }
@@ -2303,21 +2299,20 @@ function AgentDexterTab() {
     <>
       <DexterFieldGroup
         label={t("Write emails like me")}
-        description={personalised("When on, Dexter applies your private style profile only to email drafts, replies and rewrites.")}
         labelFor="dexter-writing-style"
+        className="[&_label]:block"
       >
         <div className="flex min-h-10 items-center justify-between gap-4 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 shadow-[var(--md-shadow-line)]">
           <span className="text-[12px] font-medium text-[var(--md-text)]">{t(profile?.enabled ? "On" : "Off")}</span>
           <Switch
             id="dexter-writing-style"
-            aria-describedby="dexter-writing-style-description"
             checked={profile?.enabled === true}
             disabled={profileLoading || busy}
             onCheckedChange={(checked) => void toggleStyle(checked)}
           />
         </div>
       </DexterFieldGroup>
-      <DexterFieldGroup label={t("Writing profile updates")} description={t("Relearn from recent eligible sent emails whenever your writing style changes.")}>
+      <DexterFieldGroup label={t("Writing profile updates")}>
         <div>
           <div className="flex min-h-10 flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 shadow-[var(--md-shadow-line)]">
             <span className="text-[12px] text-[var(--md-text)]">{profileUpdatedLabel}</span>
@@ -2340,7 +2335,7 @@ function AgentDexterTab() {
           ) : null}
         </div>
       </DexterFieldGroup>
-      <DexterFieldGroup label={t("Writing profile")} description={personalised("Edit the guidance Dexter applies. Keep facts, names, prices and commitments out of this profile.")} labelFor="dexter-writing-profile" className="md:col-span-2">
+      <DexterFieldGroup label={t("Writing profile")} description={t("Keep facts, names, prices and commitments out of this profile.")} labelFor="dexter-writing-profile" className="md:col-span-2">
         <div>
           <SettingsTextarea
             id="dexter-writing-profile"
@@ -2368,13 +2363,11 @@ function AgentDexterTab() {
     <>
       <SettingsPageHeader
         title={aiAgentName}
-        description={personalised("Set how Dexter is named, how it writes and how voice input works for you.")}
-        descriptionPlacement="under-title"
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
-        <SettingsPanel title={t("Personal assistant")} description={t("Your personal name for the assistant appears throughout Multideck on this device.")}>
+        <SettingsPanel title={t("Personal assistant")}>
           <div className="px-5 py-5">
-            <DexterFieldGroup label={t("Assistant name")} description={t("Use a short name you will recognise in navigation, prompts and conversation.")} labelFor="dexter-assistant-name" className="max-w-[640px]">
+            <DexterFieldGroup label={t("Assistant name")} description={t("Only on this device.")} labelFor="dexter-assistant-name" className="max-w-[640px]">
               <form className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]" onSubmit={(event) => { event.preventDefault(); saveAgentName() }}>
                 <SettingsInput id="dexter-assistant-name" aria-describedby="dexter-assistant-name-description" value={agentNameDraft} maxLength={32} onChange={(event) => setAgentNameDraft(event.target.value)} />
                 <Button type="submit" disabled={!agentNameDirty} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100">
@@ -2385,23 +2378,23 @@ function AgentDexterTab() {
           </div>
         </SettingsPanel>
 
-        <SettingsPanel title={t("Writing preferences")} description={t("Built from up to 40 eligible emails sent in the last 12 months. Only the compact style profile is kept.")}>
-          <div className="grid gap-x-6 gap-y-7 px-5 py-5 md:grid-cols-2">
+        <SettingsPanel title={t("Writing preferences")} description={t("For email drafts, replies and rewrites. Only your style profile is kept.")}>
+          <div className="grid items-start gap-x-6 gap-y-5 px-5 py-5 md:grid-cols-2">
             {writingPreferences}
           </div>
         </SettingsPanel>
 
-        <SettingsPanel title={t("Voice and transcription")} description={t("Choose your microphone, shortcut and the uncommon terms dictation should recognise.")}>
-          <div className="grid gap-x-6 gap-y-7 px-5 py-5 md:grid-cols-2">
+        <SettingsPanel title={t("Voice and transcription")}>
+          <div className="grid items-start gap-x-6 gap-y-5 px-5 py-5 md:grid-cols-2">
             {transcriptionError ? (
               <div role="alert" className="flex items-start gap-2 text-[12.5px] leading-5 text-[var(--md-red)] md:col-span-2">
                 <CircleAlert className="mt-0.5 size-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
                 <span>{t(transcriptionError)}</span>
               </div>
             ) : null}
-            <DexterFieldGroup label={t("Microphone")} description={t("System default follows the input selected in your browser or operating system.")} labelFor="transcription-microphone">
+            <DexterFieldGroup label={t("Microphone")} labelFor="transcription-microphone" className="[&_label]:block">
               <Select value={selectedMicrophone} onValueChange={(value) => { setSelectedMicrophone(value); savePreferredMicrophone(value) }}>
-                <SelectTrigger id="transcription-microphone" aria-describedby="transcription-microphone-description" className="h-10 min-w-0 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-field-bg)] px-3 text-[16px] shadow-[var(--md-shadow-line)] sm:text-[13px]">
+                <SelectTrigger id="transcription-microphone" className="h-10 min-w-0 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-field-bg)] px-3 text-[16px] shadow-[var(--md-shadow-line)] sm:text-[13px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
@@ -2409,7 +2402,7 @@ function AgentDexterTab() {
                 </SelectContent>
               </Select>
             </DexterFieldGroup>
-            <DexterFieldGroup label={t("Dictation shortcut")} description={t("Focus a text field and hold the shortcut while speaking. Release it to transcribe.")}>
+            <DexterFieldGroup label={t("Dictation shortcut")}>
               <div className="flex min-h-10 flex-wrap items-center gap-3">
                 <ShortcutKeys binding={shortcut} />
                 <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 text-[12px] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)]" onClick={() => {
@@ -2420,8 +2413,9 @@ function AgentDexterTab() {
                   {t("Change shortcut")}
                 </Button>
               </div>
+              <p className="mt-2 text-[12px] leading-5 text-[var(--md-text)]">{t("Focus a text field. Hold the shortcut to speak; release to transcribe.")}</p>
             </DexterFieldGroup>
-            <DexterFieldGroup label={t("Custom dictionary")} description={t("Saved privately to your profile. Add terms the speech model may mishear.")} labelFor="transcription-dictionary" className="md:col-span-2">
+            <DexterFieldGroup label={t("Custom dictionary")} description={t("Add words dictation mishears. Saved privately to your profile.")} labelFor="transcription-dictionary" className="md:col-span-2">
               <div>
                 <TagEntryField
                   id="transcription-dictionary"
@@ -2444,20 +2438,10 @@ function AgentDexterTab() {
           </div>
         </SettingsPanel>
 
-        <SettingsPanel title={t("Privacy and control")} description={t("See what is retained, what always needs your approval and what you can remove.")}>
-          <div className="grid gap-x-6 gap-y-7 px-5 py-5 md:grid-cols-2 lg:grid-cols-3">
-            <DexterFieldGroup label={t("Recording handling")} description={t("Audio is sent securely for transcription and is not kept in Multideck. Transcript history is not stored by this feature.")}>
-              <span className="inline-flex min-h-9 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-                <ShieldCheck className="size-3.5 text-[var(--md-green)]" strokeWidth={1.5} aria-hidden="true" />
-                {t("No recording history")}
-              </span>
-            </DexterFieldGroup>
-            <DexterFieldGroup label={t("Sending approval")} description={personalised("Dexter never sends automatically. Only selecting the paper plane on an editable draft sends the email.")}>
-              <span className="inline-flex min-h-9 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-                <ShieldCheck className="size-3.5 text-[var(--md-green)]" strokeWidth={1.5} aria-hidden="true" />
-                {t("Operator click required")}
-              </span>
-            </DexterFieldGroup>
+        <SettingsPanel title={t("Privacy and control")}>
+          <div className="grid gap-x-6 gap-y-5 px-5 py-5 md:grid-cols-2 lg:grid-cols-3">
+            <DexterFieldGroup label={t("Recording handling")} description={t("Audio is sent securely for transcription and is not kept in Multideck. Transcript history is not stored by this feature.")} />
+            <DexterFieldGroup label={t("Sending approval")} description={personalised("Dexter never sends automatically. Only selecting the paper plane on an editable draft sends the email.")} />
             <DexterFieldGroup label={t("Reset writing profile")} description={t("Delete the derived profile and stop future refreshes. Your original sent emails remain in their provider and Inbox history.")}>
               <Button type="button" variant="ghost" disabled={!profile?.exists || busy} className="h-10 rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 text-[13px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.12)]" onClick={() => setResetOpen(true)}>
                 <Trash2 className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
@@ -4023,7 +4007,6 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
       <SettingsPageHeader
         eyebrow="Workspace / Integrations"
         title="Integrations"
-        description="Connect the systems operators already use so Multideck can pull context and push approved updates."
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <CalendarConnectionSettings navigate={navigate} />
@@ -4098,7 +4081,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
             <>
               <SettingsFieldRow
                 label={t("Default mail provider")}
-                description={t("Choose which connected provider opens first in Inbox and is preselected for new email composers. You can still switch provider at any time.")}
+                description={t("Opens first in Inbox and new emails. You can switch at any time.")}
                 align="start"
               >
                 <div>
@@ -4289,7 +4272,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                             type="submit"
                             variant="ghost"
                             disabled={busyProvider !== null || !groupMailboxAddress.trim()}
-                            className="h-10 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] hover:bg-[var(--md-accent-deep)] active:scale-[0.96] motion-reduce:active:scale-100"
+                            className="h-10 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] hover:bg-[var(--md-accent-deep)] active:scale-[0.96] motion-reduce:active:scale-100"
                           >
                             {busyProvider === "gmail" ? t("Adding inbox") : t("Add group inbox")}
                           </Button>
@@ -4375,7 +4358,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                               type="submit"
                               variant="ghost"
                               disabled={busyProvider !== null || !sharedMailboxAddress.trim()}
-                              className="h-10 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] hover:bg-[var(--md-accent-deep)] active:scale-[0.96] motion-reduce:active:scale-100"
+                              className="h-10 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] hover:bg-[var(--md-accent-deep)] active:scale-[0.96] motion-reduce:active:scale-100"
                             >
                               {busyProvider === "outlook" ? t("Adding mailbox") : t("Add mailbox")}
                             </Button>
@@ -4910,7 +4893,6 @@ function DocsTab() {
       <SettingsPageHeader
         eyebrow="Resources / Docs"
         title="Docs"
-        description="Find the shortest useful guide for the workflow in front of you, with shortcuts kept close for expert operators."
       />
       <section className="mt-[var(--md-page-stack-gap)] rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)] sm:p-5">
         <label className="relative block">
@@ -4980,7 +4962,7 @@ function DocsTab() {
               ))}
             </SettingsPanel>
           ) : null}
-          <SettingsPanel title="Keyboard shortcuts" description="Fast routes for frequent operator actions.">
+          <SettingsPanel title="Keyboard shortcuts">
             {[
               ["Command menu", "⌘ K"],
               ["New booking", "N then B"],
@@ -5083,7 +5065,6 @@ function LegacySupportTab() {
       <SettingsPageHeader
         eyebrow={t("Resources / Support")}
         title={t("Support")}
-        description={t("Get an answer quickly, or create a support ticket with enough context for the team to act on the first reply.")}
       />
       <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
         <form onSubmit={submitSupportTicket}>
@@ -5190,7 +5171,7 @@ function LegacySupportTab() {
           </SettingsPanel>
         </form>
         <aside className="xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
-          <SettingsPanel title={t("What to include")} description={t("The clearest tickets are usually resolved fastest.")}>
+          <SettingsPanel title={t("What to include")}>
             <ul className="grid gap-3 px-5 py-5 text-[12px] leading-5 text-[var(--md-text)]">
               <li><span className="font-medium text-[var(--md-ink)]">{t("Reference")}</span><br />{t("Booking, quote, shipment, customer, or invoice ID.")}</li>
               <li><span className="font-medium text-[var(--md-ink)]">{t("Expected result")}</span><br />{t("What you expected Multideck to do.")}</li>
@@ -5220,7 +5201,6 @@ function SupportHubTab({ navigate }: { navigate: (path: string) => void }) {
       <SettingsPageHeader
         eyebrow={t("Resources / Support")}
         title={t("Support")}
-        description={t("Submit a ticket, track its status, and reply to the support team.")}
       />
       <SupportTicketWorkspace key={ticketId ?? "ticket-list"} ticketId={ticketId} navigate={navigateSupport} />
     </>

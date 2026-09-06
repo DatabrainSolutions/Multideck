@@ -121,7 +121,7 @@ export function AvailabilitySettingsPanel({
     <SettingsPanel
       id={id}
       title={title}
-      description="When people can book time with you. Booking links use these hours unless a link sets its own."
+      description="Booking links use these hours unless a link sets its own."
       className={cn("scroll-mt-6", className)}
     >
       {loadError && !draft ? (
@@ -135,11 +135,11 @@ export function AvailabilitySettingsPanel({
         {draft ? <TimeZoneSelect variant="field" value={draft.timeZone} onChange={(timeZone) => update({ timeZone })} /> : <div className="h-10 w-full max-w-[320px] animate-pulse rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)]" aria-hidden="true" />}
       </SettingsFieldRow>
 
-      <SettingsFieldRow label="Working hours" description="Your normal week. Turn a day off to keep it clear." align="start">
+      <SettingsFieldRow label="Working hours" description="Turn off days you are unavailable." align="start">
         {draft ? <WorkingHoursEditor value={draft.workingHours} onChange={(workingHours) => update({ workingHours })} disabled={saving} className="-mx-2" /> : <div className="grid gap-1" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <div key={index} className="h-9 animate-pulse rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)]" />)}</div>}
       </SettingsFieldRow>
 
-      <SettingsFieldRow label="Date exceptions" description="Block a day or offer different hours without changing your normal week." align="start">
+      <SettingsFieldRow label="Date exceptions" description="Override your normal hours for a specific date." align="start">
         <div className="grid gap-1">
           {draft?.exceptions.map((exception, index) => {
             const unavailable = exception.unavailable !== false
@@ -181,7 +181,7 @@ export function AvailabilitySettingsPanel({
         </div>
       </SettingsFieldRow>
 
-      <SettingsFieldRow label="Booking rules" description="How much notice you need and how far ahead people may book." align="start">
+      <SettingsFieldRow label="Booking rules" align="start">
         <div className="grid gap-3 sm:grid-cols-2">
           <RuleSelect label="Minimum notice" value={draft?.minimumNoticeMinutes ?? 120} choices={NOTICE_CHOICES} disabled={busy} onChange={(minimumNoticeMinutes) => update({ minimumNoticeMinutes })} />
           <RuleSelect label="Book up to" value={draft?.bookingHorizonDays ?? 60} choices={HORIZON_CHOICES} disabled={busy} onChange={(bookingHorizonDays) => update({ bookingHorizonDays })} />

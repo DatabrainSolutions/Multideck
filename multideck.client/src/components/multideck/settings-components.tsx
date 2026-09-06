@@ -133,15 +133,15 @@ export function SettingsPageHeader({
   }
 
   return (
-    <header className="grid gap-3 py-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,560px)] lg:items-end lg:gap-[var(--md-page-section-gap)]">
+    <header className={cn("grid gap-3 py-1 lg:items-end", (description || actions) && "lg:grid-cols-[minmax(0,1fr)_minmax(320px,560px)] lg:gap-[var(--md-page-section-gap)]")}>
       <h1 className="flex items-center gap-2.5 text-balance text-[24px] font-medium leading-[1.1] tracking-[-0.02em] text-[var(--md-ink)]">
         {Icon ? <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><Icon className="size-4" strokeWidth={1.4} aria-hidden="true" /></span> : null}
         <span>{title}</span>
       </h1>
-      <div className="min-w-0 lg:justify-self-end lg:text-end">
+      {description || actions ? <div className="min-w-0 lg:justify-self-end lg:text-end">
         {description ? <p className="max-w-[65ch] text-pretty text-[14px] leading-6 text-[var(--md-text)] lg:ms-auto">{description}</p> : null}
         {actions ? <div className={cn("flex flex-wrap items-center gap-2 lg:justify-end", description && "mt-3")}>{actions}</div> : null}
-      </div>
+      </div> : null}
     </header>
   )
 }
@@ -293,7 +293,7 @@ export function SettingsToggleRow({
   disabled = false,
 }: {
   title: string
-  description: string
+  description?: string
   checked: boolean
   onCheckedChange?: (checked: boolean) => void
   meta?: ReactNode
@@ -306,11 +306,11 @@ export function SettingsToggleRow({
     <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(160px,260px)_minmax(0,1fr)] md:items-center">
       <div className="min-w-0">
         <label htmlFor={switchId} className={cn("text-[13px] font-medium text-[var(--md-ink)]", disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer")}>{title}</label>
-        <p id={descriptionId} className="mt-1 max-w-[260px] text-[12px] leading-5 text-[var(--md-text)]">{description}</p>
+        {description ? <p id={descriptionId} className="mt-1 max-w-[260px] text-[12px] leading-5 text-[var(--md-text)]">{description}</p> : null}
       </div>
       <div className="flex min-w-0 items-center justify-between gap-4">
         {meta ? <div className="min-w-0 text-[12px] text-[var(--md-text)]">{meta}</div> : <span />}
-        <Switch id={switchId} aria-describedby={descriptionId} checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
+        <Switch id={switchId} aria-describedby={description ? descriptionId : undefined} checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
       </div>
     </div>
   )

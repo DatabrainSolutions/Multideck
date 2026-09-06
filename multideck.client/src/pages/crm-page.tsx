@@ -1,4 +1,6 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
+import { createEmptyFilterQuery, filterQueryIsEmpty, type FilterFieldOption, type FilterQuery } from "@/lib/advanced-filters"
 import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
@@ -1385,19 +1387,13 @@ function PipelineSettingsDrawer({
 }
 
 export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: string) => void; currentUser?: AuthUserSummary | null }) {
-  const [activeFilter, setActiveFilter] = useState("all")
+  const [advancedFilter, setAdvancedFilter] = useState<FilterQuery>(() => createEmptyFilterQuery("lead"))
   const [leadScope, setLeadScope] = useState<LeadScope>("All")
   const currentLeadOwnerId = currentUser?.internalUserId ?? null
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(defaultPaginationPageSize)
-  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
-  const [sourceFilter, setSourceFilter] = useState("all")
-  const [ownerFilter, setOwnerFilter] = useState("all")
-  const [ratingFilter, setRatingFilter] = useState("all")
-  const [followUpFilter, setFollowUpFilter] = useState("all")
-  const [valueFilter, setValueFilter] = useState("all")
   const [dexterOpen, setDexterOpen] = useState(false)
   const [createLeadOpen, setCreateLeadOpen] = useState(false)
   const [leads, setLeads] = useState<Lead[]>([])
@@ -1439,15 +1435,8 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
     } : null
     listLeadsPage({
       search: debouncedSearch,
-      statusCode: activeFilter === "all" ? undefined : activeFilter,
-      sourceCode: sourceFilter === "all" ? undefined : sourceFilter,
-      ownerId: leadScope === "Mine"
-        ? currentLeadOwnerId ?? "__no_current_user__"
-        : ownerFilter === "all" || ownerFilter === "__unassigned__" ? undefined : ownerFilter,
-      unassigned: leadScope === "All" && ownerFilter === "__unassigned__",
-      ratingCode: ratingFilter === "all" ? undefined : ratingFilter,
-      followUpScope: followUpFilter === "all" ? undefined : followUpFilter as "overdue" | "scheduled" | "unscheduled",
-      valueScope: valueFilter === "all" ? undefined : valueFilter as "valued" | "unvalued",
+      ownerId: leadScope === "Mine" ? currentLeadOwnerId ?? "__no_current_user__" : undefined,
+      filterQuery: filterQueryIsEmpty(advancedFilter) ? null : advancedFilter,
       sort: serverSort,
       limit: rowsPerPage,
       offset: (page - 1) * rowsPerPage,
@@ -1477,27 +1466,43 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
     return () => {
       isMounted = false
     }
-  }, [activeFilter, currentLeadOwnerId, debouncedSearch, followUpFilter, leadScope, ownerFilter, page, ratingFilter, reloadToken, rowsPerPage, sort, sourceFilter, t, valueFilter])
+  }, [advancedFilter, currentLeadOwnerId, debouncedSearch, leadScope, page, reloadToken, rowsPerPage, sort, t])
 
-  const filterOptions = facets.statuses
-  const sourceOptions = facets.sources
-  const ownerOptions = facets.hasUnassigned ? [...facets.owners, { id: "__unassigned__", name: t("Unassigned") }] : facets.owners
-  const ratingOptions = facets.ratings
   const { dueFollowUps, recent: recentLeads, valued: valuedLeads, open: openLeads, qualified: qualifiedLeads } = summary
-  const advancedLeadFilters: Array<{ label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; allLabel: string }> = [
-    { label: "Stage", value: activeFilter, onChange: setActiveFilter, options: filterOptions.map((option) => ({ value: option.code, label: option.name })), allLabel: t("All stages") },
-    { label: "Source", value: sourceFilter, onChange: setSourceFilter, options: sourceOptions.map((option) => ({ value: option.code, label: option.name })), allLabel: t("All sources") },
-    { label: "Owner", value: ownerFilter, onChange: setOwnerFilter, options: ownerOptions.map((option) => ({ value: option.id, label: option.name })), allLabel: t("All owners") },
-    { label: "Rating", value: ratingFilter, onChange: setRatingFilter, options: ratingOptions.map((option) => ({ value: option.code, label: option.name })), allLabel: t("All ratings") },
+  const advancedFilterFields: FilterFieldOption[] = [
+    { value: "lead", label: t("Lead name") },
+    { value: "contact", label: t("Primary contact") },
+    { value: "email", label: t("Email") },
+    { value: "stage", label: t("Stage"), kind: "select", options: facets.statuses.map(item => ({ value: item.code, label: item.name })) },
+    { value: "source", label: t("Source"), kind: "select", options: facets.sources.map(item => ({ value: item.code, label: item.name })) },
+    { value: "owner", label: t("Owner"), kind: "select", options: facets.owners.map(item => ({ value: item.id, label: item.name })) },
+    { value: "rating", label: t("Rating"), kind: "select", options: facets.ratings.map(item => ({ value: item.code, label: item.name })) },
+    { value: "follow-up", label: t("Follow-up"), kind: "select", options: [
+      { value: "overdue", label: t("Overdue") }, { value: "scheduled", label: t("Scheduled") }, { value: "unscheduled", label: t("Not scheduled") },
+    ] },
+    { value: "value", label: t("Value"), kind: "select", options: [
+      { value: "valued", label: t("Value recorded") }, { value: "unvalued", label: t("No value recorded") },
+    ] },
+    { value: "next-follow-up", label: t("Next follow-up date"), kind: "date" },
+    { value: "created", label: t("Created date"), kind: "date" },
+    { value: "last-activity", label: t("Last activity date"), kind: "date" },
+    { value: "trade-lane", label: t("Trade lane") },
+    { value: "service", label: t("Service interest") },
   ]
-  const activeAdvancedFilterCount = [sourceFilter, ownerFilter, ratingFilter, followUpFilter, valueFilter].filter((value) => value !== "all").length
-    + (activeFilter === "all" ? 0 : 1)
+  const countAdvancedMatches = useCallback(async (query: FilterQuery) => {
+    const result = await listLeadsPage({
+      search: debouncedSearch,
+      ownerId: leadScope === "Mine" ? currentLeadOwnerId ?? "__no_current_user__" : undefined,
+      filterQuery: filterQueryIsEmpty(query) ? null : query, limit: 1, offset: 0,
+    })
+    return result.total
+  }, [debouncedSearch, leadScope, currentLeadOwnerId])
 
   const pageCount = Math.max(Math.ceil(total / rowsPerPage), 1)
 
   useEffect(() => {
     setPage(1)
-  }, [activeFilter, debouncedSearch, followUpFilter, leadScope, ownerFilter, ratingFilter, sourceFilter, valueFilter])
+  }, [advancedFilter, debouncedSearch, leadScope])
 
   useEffect(() => {
     if (page > pageCount) setPage(pageCount)
@@ -1516,12 +1521,7 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
   function clearLeadFilters() {
     setSearchQuery("")
     setLeadScope("All")
-    setActiveFilter("all")
-    setSourceFilter("all")
-    setOwnerFilter("all")
-    setRatingFilter("all")
-    setFollowUpFilter("all")
-    setValueFilter("all")
+    setAdvancedFilter(createEmptyFilterQuery("lead"))
     setPage(1)
   }
 
@@ -1534,9 +1534,6 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
             {t("Qualify prospects using their source, engagement, next action, commercial fit, and real opportunity context.")}
           </>
         }
-        meta={loadState === "ready"
-          ? `${new Intl.NumberFormat(language).format(summary.leads)} ${t("leads")} · ${new Intl.NumberFormat(language).format(dueFollowUps)} ${t("follow-ups due")} · ${new Intl.NumberFormat(language).format(recentLeads)} ${t("created in the last 30 days")}`
-          : t("Live CRM qualification data")}
         onSpeakToDexter={() => setDexterOpen(true)}
       />
 
@@ -1588,69 +1585,6 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
 
       {loadState === "ready" ? (
         <>
-          {advancedFiltersOpen ? (
-            <section
-              className="overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]"
-              aria-label={t("Advanced lead filters")}
-            >
-              <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] px-3 py-3 sm:px-4 sm:py-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-[12px] font-medium text-[var(--md-text)]">{t("Advanced lead filters")}</p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    disabled={!activeAdvancedFilterCount && !searchQuery}
-                    className="h-8 w-fit rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)] disabled:opacity-45"
-                    onClick={clearLeadFilters}
-                  >
-                    <RotateCcw className="size-3.5" strokeWidth={1.4} />
-                    {t("Clear filters")}
-                  </Button>
-                </div>
-
-                <fieldset className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                  <legend className="sr-only">{t("Advanced lead filters")}</legend>
-                  {advancedLeadFilters.map((filter) => (
-                    <label key={filter.label} className="grid gap-1.5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 text-[11px] font-medium text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
-                      {t(filter.label)}
-                      <Select value={filter.value} onValueChange={filter.onChange}>
-                        <SelectTrigger className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-popover)]">
-                          <SelectItem value="all" className="text-[12px]">{filter.allLabel}</SelectItem>
-                          {filter.options.map((option) => <SelectItem key={option.value} value={option.value} className="text-[12px]"><span data-i18n-skip dir="auto">{option.label}</span></SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </label>
-                  ))}
-                  <label className="grid gap-1.5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 text-[11px] font-medium text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
-                    {t("Follow-up")}
-                    <Select value={followUpFilter} onValueChange={setFollowUpFilter}>
-                      <SelectTrigger className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
-                      <SelectContent className="rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-popover)]">
-                        <SelectItem value="all" className="text-[12px]">{t("All follow-ups")}</SelectItem>
-                        <SelectItem value="overdue" className="text-[12px]">{t("Overdue")}</SelectItem>
-                        <SelectItem value="scheduled" className="text-[12px]">{t("Scheduled")}</SelectItem>
-                        <SelectItem value="unscheduled" className="text-[12px]">{t("Not scheduled")}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </label>
-                  <label className="grid gap-1.5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 text-[11px] font-medium text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
-                    {t("Value")}
-                    <Select value={valueFilter} onValueChange={setValueFilter}>
-                      <SelectTrigger className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
-                      <SelectContent className="rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-popover)]">
-                        <SelectItem value="all" className="text-[12px]">{t("All values")}</SelectItem>
-                        <SelectItem value="valued" className="text-[12px]">{t("Value recorded")}</SelectItem>
-                        <SelectItem value="unvalued" className="text-[12px]">{t("No value recorded")}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </label>
-                </fieldset>
-              </div>
-            </section>
-          ) : null}
           <CrmLeadQualificationTable
             leads={leads}
             onOpenLead={openLeadDetail}
@@ -1659,13 +1593,8 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
               busy: revalidating || Boolean(loadError) || searchQuery.trim() !== debouncedSearch,
               loadAllRows: (signal) => collectExportPages((exportPage) => listLeadsPage({
                 search: debouncedSearch,
-                statusCode: activeFilter === "all" ? undefined : activeFilter,
-                sourceCode: sourceFilter === "all" ? undefined : sourceFilter,
-                ownerId: leadScope === "Mine" ? currentLeadOwnerId ?? "__no_current_user__" : ownerFilter === "all" || ownerFilter === "__unassigned__" ? undefined : ownerFilter,
-                unassigned: leadScope === "All" && ownerFilter === "__unassigned__",
-                ratingCode: ratingFilter === "all" ? undefined : ratingFilter,
-                followUpScope: followUpFilter === "all" ? undefined : followUpFilter as "overdue" | "scheduled" | "unscheduled",
-                valueScope: valueFilter === "all" ? undefined : valueFilter as "valued" | "unvalued",
+                ownerId: leadScope === "Mine" ? currentLeadOwnerId ?? "__no_current_user__" : undefined,
+                filterQuery: filterQueryIsEmpty(advancedFilter) ? null : advancedFilter,
                 sort: sort ? { id: ({ stage: "status", qualification: "rating", engagement: "last-activity", "follow-up": "next-follow-up" } as Record<string, string>)[sort.id] ?? sort.id, direction: sort.direction } : null,
                 ...exportPage,
               }, { forceRefresh: true }), (lead) => lead.id, signal),
@@ -1693,20 +1622,15 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
                   ) : null}
               </div>
             )}
-            toolbarFilters={(
-                <Button
-                  type="button"
-                  variant="ghost"
-                  aria-label={t("Advanced filters")}
-                  aria-expanded={advancedFiltersOpen}
-                  className={advancedFiltersOpen ? "h-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2.5 text-[12px] shadow-[var(--md-shadow-line)]" : "h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px]"}
-                  onClick={() => setAdvancedFiltersOpen((current) => !current)}
-                >
-                  <SlidersHorizontal className="size-3.5" strokeWidth={1.4} />
-                  <span className="hidden lg:inline">{t("Advanced filters")}</span>
-                  {activeAdvancedFilterCount ? <span className="grid min-w-4 place-items-center rounded-full bg-[var(--md-accent-a11)] px-1 text-[10px] font-medium text-[var(--md-accent)]" data-i18n-skip>{activeAdvancedFilterCount}</span> : null}
-                </Button>
-            )}
+            toolbarFilters={<AdvancedFilterPopover
+              fields={advancedFilterFields}
+              value={advancedFilter}
+              onChange={(value) => { setAdvancedFilter(value); setPage(1) }}
+              storageKey="crm-lead-register"
+              itemLabel="leads"
+              totalCount={total}
+              countMatches={countAdvancedMatches}
+            />}
             emptyState={summary.leads ? (
               <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
                 <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">

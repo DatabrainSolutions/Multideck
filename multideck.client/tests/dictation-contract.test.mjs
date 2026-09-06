@@ -33,7 +33,7 @@ test("dictation is push-to-talk with no field icon or pause control", () => {
   assert.doesNotMatch(controller, /getBoundingClientRect|ResizeObserver|md-dictation-field-overlay/)
   assert.doesNotMatch(styles, /md-dictation-field-overlay|md-dictation-wave/)
   assert.match(controller, /md-dictation-status-dock/)
-  assert.match(settings, /hold the shortcut while speaking\. Release it to transcribe\./i)
+  assert.match(settings, /Hold the shortcut to speak; release to transcribe\./i)
 })
 
 test("stale microphone permission responses cannot hijack a newer hold", () => {
@@ -80,7 +80,7 @@ test("Dexter settings expose microphone, shortcut and private custom vocabulary 
   assert.match(settings, /title=\{t\("Privacy and control"\)\}/)
   assert.doesNotMatch(settings, /dexter-preference-marker|scrollIntoView|DexterSettingsLinkRow/)
   assert.match(settings, /function DexterFieldGroup/)
-  assert.match(settings, /grid gap-x-6 gap-y-7 px-5 py-5 md:grid-cols-2/)
+  assert.match(settings, /grid items-start gap-x-6 gap-y-5 px-5 py-5 md:grid-cols-2/)
   assert.match(settings, /md:grid-cols-2 lg:grid-cols-3/)
   assert.doesNotMatch(settings, /Eligible history|Eligible messages|Last refreshed/)
   assert.match(settings, /System default/)
@@ -91,7 +91,8 @@ test("Dexter settings expose microphone, shortcut and private custom vocabulary 
   assert.doesNotMatch(settings, /Profile status/)
   assert.match(settings, /Custom dictionary/)
   assert.match(settings, /Saved privately to your profile/)
-  assert.match(settings, /No recording history/)
+  assert.match(settings, /Audio is sent securely for transcription and is not kept in Multideck/)
+  assert.match(settings, /Transcript history is not stored by this feature/)
   assert.match(shortcuts, /id: "dictation\.toggle"[\s\S]*defaultBinding: chord\("Fn"\)/)
 })
 

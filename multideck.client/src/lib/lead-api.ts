@@ -3,6 +3,7 @@ import { invalidateCrmResources, readCachedCrmResource, type CrmReadOptions } fr
 import { fallbackEngagementSignal, getCrmEngagementSignals, type CrmEngagementSignal } from "@/lib/crm-engagement"
 import type { FollowUpRecommendationCode } from "@/lib/follow-up-recommendation"
 import { getSupabaseSession, supabase } from "@/lib/supabase"
+import { filterQueryIsEmpty, type FilterQuery } from "@/lib/advanced-filters"
 
 export type ApiLead = {
   id: string
@@ -218,6 +219,7 @@ export type LeadRegisterPage = {
 }
 
 export type LeadRegisterInput = {
+  filterQuery?: FilterQuery | null
   search?: string
   statusCode?: string
   ownerId?: string
@@ -332,7 +334,11 @@ async function fetchLeadRegisterPage(input: LeadRegisterInput) {
   const controller = new AbortController()
   const timeoutId = globalThis.setTimeout(() => controller.abort(), 15_000)
   try {
-    const { data, error } = await supabase.rpc("multideck_crm_lead_register_page", args).abortSignal(controller.signal)
+    const hasConditions = input.filterQuery && !filterQueryIsEmpty(input.filterQuery)
+    const { data, error } = await supabase.rpc(
+      hasConditions ? "multideck_crm_lead_register_filtered_page" : "multideck_crm_lead_register_page",
+      hasConditions ? { ...args, p_filter_query: input.filterQuery } : args,
+    ).abortSignal(controller.signal)
     if (!error) return data as LeadRegisterPage
     if (missingRegisterRpc(error)) throw new LeadApiError("CRM lead paging is still being prepared. Try again shortly.")
     if (error.code === "42501" || error.code === "22023" || error.code === "P0002") throw new LeadApiError(error.message)

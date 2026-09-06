@@ -1,7 +1,7 @@
 import { workspaceStorageKey } from "@/lib/workspace-environment"
-import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
+import { useEffect, useId, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { AlertCircle, Camera, Check, FileImage, ImageUp, Pencil, RotateCcw, TicketCheck, Trash2, Upload, X } from "@/components/icons/hugeicons"
+import { AlertCircle, Camera, Check, ImageUp, Pencil, RotateCcw, TicketCheck, Trash2, Upload, X } from "@/components/icons/hugeicons"
 
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -9,6 +9,8 @@ import { ImageLightbox, type ImageLightboxControls } from "@/components/multidec
 import { Input } from "@/components/ui/input"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { mdMotion, reduceMotion } from "@/lib/motion"
 import { useLanguage } from "@/i18n/language-provider"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { createSupportTicket, SupportTicketError, type CreateSupportTicketResponse, type SupportTicketImpact, type SupportTicketType } from "@/lib/support-ticket"
@@ -114,11 +116,12 @@ function ImpactPillSelector({ value, onChange, labels, ariaLabel }: { value: Sup
         role="radio"
         aria-checked={selected}
         tabIndex={selected ? 0 : -1}
-        whileTap={shouldReduceMotion ? undefined : { scale: 0.96 }}
+        whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+        transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.micro)}
         onClick={() => onChange(option)}
         onKeyDown={(event) => moveSelection(event, option)}
         className={cn(
-          "flex min-h-11 min-w-0 items-center gap-2 rounded-full bg-[var(--md-surface)] px-3 py-2 text-[12px] font-medium leading-4 text-[var(--md-text)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,color,box-shadow,scale] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] motion-reduce:transition-none",
+          "flex min-h-11 min-w-0 items-center gap-1.5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-2.5 py-2 text-[12px] font-medium leading-4 text-[var(--md-text)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] motion-reduce:transition-none sm:min-h-10",
           selected && "hover:bg-[var(--impact-background)]",
         )}
         style={selected ? {
@@ -137,10 +140,10 @@ function ImpactPillSelector({ value, onChange, labels, ariaLabel }: { value: Sup
             {selected ? <motion.span
               key={`${option}-selected`}
               className="absolute inset-0 grid place-items-center"
-              initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.25, filter: "blur(4px)" }}
-              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-              exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.25, filter: "blur(4px)" }}
-              transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", duration: 0.3, bounce: 0 }}
+              initial={shouldReduceMotion ? false : { opacity: 0, y: 2 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, transition: reduceMotion(Boolean(shouldReduceMotion), mdMotion.exit) }}
+              transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.micro)}
             ><Check className="size-4" /></motion.span> : null}
           </AnimatePresence>
         </span>
@@ -209,6 +212,8 @@ export function ScreenshotCaptureEditor({ file, onChange, onCancel }: { file: Fi
 
 export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSummary | null }) {
   const { t } = useLanguage()
+  const choiceId = useId()
+  const shouldReduceMotion = useReducedMotion()
   const compact = useCompactViewport()
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState<Draft>(readDraft)
@@ -320,27 +325,34 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
     finally { setSubmitting(false); setProgress("") }
   }
 
-  const renderForm = (imageLightbox: ImageLightboxControls) => <div className="flex min-h-0 flex-1 flex-col"><div className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 sm:px-6 sm:pb-6">
-    {result ? <div className="grid min-h-[420px] place-items-center text-center" role="status" aria-live="polite"><div className="max-w-md"><span className="mx-auto grid size-16 place-items-center rounded-full bg-[var(--md-status-green-bg)] text-[var(--md-status-green-ink)] shadow-[var(--md-shadow-line)]"><Check className="size-7" /></span><h3 className="mt-5 text-[22px] font-medium tracking-[-0.02em] text-[var(--md-ink)]">{t("Ticket {reference} submitted").replace("{reference}", result.ticket.ticketNumber)}</h3><p className="mt-2 text-[13px] leading-6 text-[var(--md-text)]">{t("We’ve received your ticket. The support team can now review the full context and will reply by email.")}</p><div className="mt-6 flex flex-wrap justify-center gap-2"><Button variant="outline" onClick={() => requestClose(false)}>{t("Done")}</Button>{result.ticket.statusUrl ? <Button asChild><a href={result.ticket.statusUrl} target="_blank" rel="noreferrer">{t("View status")}</a></Button> : null}</div></div></div> : <form ref={formRef} onSubmit={submit} aria-busy={submitting || undefined} className="grid gap-5 pt-2">
-      <div className="grid gap-2 min-[440px]:grid-cols-2"><ContextFact label={t("Company")} value={companyName} /><ContextFact label={t("Reporter")} value={reporterName} /></div>
-      <fieldset><legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("What can we help with?")}</legend><div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">{ticketTypes.map((type, index) => <button key={type} type="button" aria-pressed={draft.ticketType === type} onClick={() => selectTicketType(type)} className={cn("flex min-h-[72px] min-w-0 flex-col items-center justify-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-3 py-2.5 text-center text-[11.5px] font-medium leading-4 text-[var(--md-text)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,color,scale] hover:bg-[var(--md-hover)] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] motion-reduce:transition-none motion-reduce:active:scale-100", index === ticketTypes.length - 1 && "col-span-2 sm:col-span-1", draft.ticketType === type && "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)] ring-1 ring-[var(--md-accent-a20)]")}>{type === "security_concern" ? <AlertCircle className="mb-1 size-4 shrink-0" /> : type === "bug" ? <TicketCheck className="mb-1 size-4 shrink-0" /> : <FileImage className="mb-1 size-4 shrink-0" />}<span className="min-w-0 text-balance">{t(typeLabels[type])}</span></button>)}</div></fieldset>
+  const renderForm = (imageLightbox: ImageLightboxControls) => <div className="support-ticket-form flex min-h-0 flex-1 flex-col"><div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 sm:px-5">
+    {result ? <div className="grid min-h-[360px] place-items-center text-center" role="status" aria-live="polite"><div className="max-w-md"><span className="mx-auto grid size-16 place-items-center rounded-full bg-[var(--md-status-green-bg)] text-[var(--md-status-green-ink)] shadow-[var(--md-shadow-line)]"><Check className="size-7" /></span><h3 className="mt-5 text-[22px] font-medium tracking-[-0.02em] text-[var(--md-ink)]">{t("Ticket {reference} submitted").replace("{reference}", result.ticket.ticketNumber)}</h3><p className="mt-2 text-[13px] leading-6 text-[var(--md-text)]">{t("We’ve received your ticket. The support team can now review the full context and will reply by email.")}</p><div className="mt-6 flex flex-wrap justify-center gap-2"><Button variant="outline" onClick={() => requestClose(false)}>{t("Done")}</Button>{result.ticket.statusUrl ? <Button asChild><a href={result.ticket.statusUrl} target="_blank" rel="noreferrer">{t("View status")}</a></Button> : null}</div></div></div> : <form ref={formRef} onSubmit={submit} aria-busy={submitting || undefined} className="flex flex-col gap-4 pt-3">
+      <dl className="grid grid-cols-2 gap-4 pb-3 shadow-[var(--md-stroke-bottom)]"><ContextFact label={t("Company")} value={companyName} /><ContextFact label={t("Reporter")} value={reporterName} /></dl>
+      <fieldset className="min-w-0">
+        <legend className="mb-2 text-[12px] font-medium text-[var(--md-ink)]">{t("What can we help with?")}</legend>
+        <ToggleGroup type="single" value={draft.ticketType} onValueChange={(value) => { if (value) selectTicketType(value as SupportTicketType) }} aria-label={t("What can we help with?")} className="ticket-type-options" size="sm">
+          {ticketTypes.map((type) => <ToggleGroupItem key={type} value={type} className="ticket-type-option">
+            {draft.ticketType === type ? <motion.span aria-hidden="true" layoutId={`${choiceId}-ticket-type`} className="ticket-type-selection" transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.layout)} /> : null}
+            <span className="relative">{t(typeLabels[type])}</span>
+          </ToggleGroupItem>)}
+        </ToggleGroup>
+      </fieldset>
       {draft.ticketType === "security_concern" ? <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-status-amber-bg)] px-3 py-2.5 text-[12px] leading-5 text-[var(--md-status-amber-ink)]"><strong>{t("Keep secrets out of the ticket.")}</strong> {t("Do not include passwords, API keys, access tokens, or recovery codes.")}</div> : null}
       <Field label={t("Summary")} htmlFor="support-ticket-title" error={fieldErrors.title}><Input id="support-ticket-title" value={draft.title} maxLength={180} dir="auto" aria-invalid={Boolean(fieldErrors.title) || undefined} aria-describedby={fieldErrors.title ? "support-ticket-title-error" : undefined} onChange={(event) => change("title", event.target.value)} placeholder={t("A short description of the issue")} /></Field>
-      <Field label={t("Description")} htmlFor="support-ticket-description" error={fieldErrors.description}><Textarea id="support-ticket-description" value={draft.description} maxLength={12000} dir="auto" aria-invalid={Boolean(fieldErrors.description) || undefined} aria-describedby={fieldErrors.description ? "support-ticket-description-error" : undefined} onChange={(event) => change("description", event.target.value)} className="min-h-28" placeholder={t("Tell us what you were trying to do and anything the team should know.")} /></Field>
-      <fieldset className="grid gap-1.5"><legend className="w-full px-4 py-1.5 text-center text-[12px] font-medium text-balance text-[var(--md-ink)]">{t("What is the impact to you?")}</legend><ImpactPillSelector value={draft.impact} onChange={(value) => change("impact", value)} ariaLabel={t("Customer impact")} labels={{ blocked: t(impactLabels.blocked), slowed_down: t(impactLabels.slowed_down), no_immediate_blocker: t(impactLabels.no_immediate_blocker) }} /></fieldset>
-      {draft.ticketType === "bug" ? <Field label={t("What happened")} htmlFor="support-ticket-actual" error={fieldErrors.actualBehaviour}><Textarea id="support-ticket-actual" value={draft.actualBehaviour} dir="auto" aria-invalid={Boolean(fieldErrors.actualBehaviour) || undefined} aria-describedby={fieldErrors.actualBehaviour ? "support-ticket-actual-error" : undefined} onChange={(event) => change("actualBehaviour", event.target.value)} className="min-h-24" /></Field> : null}
-      {draft.ticketType === "feature_request" ? <Field label={t("What outcome would you like?")} htmlFor="support-ticket-outcome" error={fieldErrors.desiredOutcome}><Textarea id="support-ticket-outcome" value={draft.desiredOutcome} dir="auto" aria-invalid={Boolean(fieldErrors.desiredOutcome) || undefined} aria-describedby={fieldErrors.desiredOutcome ? "support-ticket-outcome-error" : undefined} onChange={(event) => change("desiredOutcome", event.target.value)} className="min-h-24" /></Field> : null}
+      <div className={cn("grid gap-3", (draft.ticketType === "bug" || draft.ticketType === "feature_request") && "sm:grid-cols-2")}>
+        <Field label={t("Description")} htmlFor="support-ticket-description" error={fieldErrors.description}><Textarea id="support-ticket-description" value={draft.description} maxLength={12000} dir="auto" aria-invalid={Boolean(fieldErrors.description) || undefined} aria-describedby={fieldErrors.description ? "support-ticket-description-error" : undefined} onChange={(event) => change("description", event.target.value)} className="min-h-24" placeholder={t("Tell us what you were trying to do and anything the team should know.")} /></Field>
+        {draft.ticketType === "bug" ? <Field label={t("What happened")} htmlFor="support-ticket-actual" error={fieldErrors.actualBehaviour}><Textarea id="support-ticket-actual" value={draft.actualBehaviour} dir="auto" aria-invalid={Boolean(fieldErrors.actualBehaviour) || undefined} aria-describedby={fieldErrors.actualBehaviour ? "support-ticket-actual-error" : undefined} onChange={(event) => change("actualBehaviour", event.target.value)} className="min-h-24" /></Field> : null}
+        {draft.ticketType === "feature_request" ? <Field label={t("What outcome would you like?")} htmlFor="support-ticket-outcome" error={fieldErrors.desiredOutcome}><Textarea id="support-ticket-outcome" value={draft.desiredOutcome} dir="auto" aria-invalid={Boolean(fieldErrors.desiredOutcome) || undefined} aria-describedby={fieldErrors.desiredOutcome ? "support-ticket-outcome-error" : undefined} onChange={(event) => change("desiredOutcome", event.target.value)} className="min-h-24" /></Field> : null}
+      </div>
+      <fieldset className="min-w-0"><legend className="mb-2 text-[12px] font-medium text-[var(--md-ink)]">{t("What is the impact to you?")}</legend><ImpactPillSelector value={draft.impact} onChange={(value) => change("impact", value)} ariaLabel={t("Customer impact")} labels={{ blocked: t(impactLabels.blocked), slowed_down: t(impactLabels.slowed_down), no_immediate_blocker: t(impactLabels.no_immediate_blocker) }} /></fieldset>
       {draft.ticketType === "bug" ? <fieldset className="grid gap-1.5">
         <legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("Screenshot (optional)")}</legend>
-        <div onDragOver={(event) => event.preventDefault()} onDrop={drop} className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
-          <p className="mb-2 text-[11px] leading-5 text-[var(--md-subtle)]">{t("Your browser will ask what to share. Multideck captures one frame and stops sharing immediately.")}</p>
+        <div onDragOver={(event) => event.preventDefault()} onDrop={drop} className="mt-1.5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => void captureScreenshot()}><Camera className="size-3.5" />{t("Capture screenshot")}</Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="size-3.5" />{t("Upload")}</Button>
-            <span className="text-[11px] text-[var(--md-subtle)]">{t("You can also paste or drop an image here")}</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => void captureScreenshot()}><Camera data-icon="inline-start" />{t("Capture screenshot")}</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload data-icon="inline-start" />{t("Upload")}</Button>
             <input ref={fileInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="sr-only" aria-label={t("Upload screenshots")} onChange={fileChange} />
           </div>
-          <p className="mt-2 text-[10px] leading-4 text-[var(--md-subtle)]">{t("Up to five PNG, JPEG, or WebP images; 10 MB each and 25 MB total.")}</p>
           {files.length ? <div className="mt-3 flex flex-wrap gap-3" role="list" aria-label={t("Attached screenshots")}>
             {files.map((file) => {
               const key = fileKey(file)
@@ -364,7 +376,7 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
     {editingFile ? <div className="absolute inset-0 z-20 overflow-y-auto bg-[var(--md-surface)] p-3 sm:p-5"><ScreenshotCaptureEditor file={editingFile} onChange={(next) => { setFiles((current) => current.includes(editingFile) ? current.map((candidate) => candidate === editingFile ? next : candidate) : [...current, next]); setEditingFile(null) }} onCancel={() => setEditingFile(null)} /></div> : null}
   </div>{!result && !editingFile ? <footer className="sticky bottom-0 grid shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] items-center gap-2 bg-[var(--md-surface-soft)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[var(--md-stroke-top)] [&>button]:w-full sm:flex sm:flex-wrap sm:justify-end sm:px-6 sm:[&>button]:w-auto"><Button type="button" variant="ghost" disabled={submitting} onClick={() => requestClose(false)}>{t("Cancel")}</Button><Button type="button" disabled={submitting} onClick={() => formRef.current?.requestSubmit()}>{submitting ? <ImageUp className="size-3.5 animate-pulse motion-reduce:animate-none" /> : <TicketCheck className="size-3.5" />}{progress || t("Send ticket")}</Button></footer> : null}</div>
 
-  const header = <><DialogHeader className="px-4 pe-14 pt-4 sm:px-6 sm:pe-16 sm:pt-5"><DialogTitle className="text-[18px] font-medium text-[var(--md-ink)]">{t("Submit a ticket")}</DialogTitle><DialogDescription className="max-w-[58ch] text-[12px] leading-5 text-[var(--md-text)]">{t("Give the support team enough context to act on the first reply.")}</DialogDescription></DialogHeader></>
+  const header = <><DialogHeader className="gap-1 px-5 pe-14 pt-5 text-start"><DialogTitle className="text-[18px] font-medium text-[var(--md-ink)]">{t("Submit a ticket")}</DialogTitle><DialogDescription className="max-w-[58ch] text-[12px] leading-5 text-[var(--md-text)]">{t("Give the support team enough context to act on the first reply.")}</DialogDescription></DialogHeader></>
   const sheetHeader = <SheetHeader className="px-4 pe-14 pb-2 pt-4"><SheetTitle className="text-[18px]">{t("Submit a ticket")}</SheetTitle><SheetDescription className="text-[12px] leading-5">{t("Give the support team enough context to act on the first reply.")}</SheetDescription></SheetHeader>
   const lightboxItems = files.flatMap((file) => {
     const src = attachmentPreviewUrls.get(file)
@@ -382,7 +394,7 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
     }}
   >
     {(imageLightbox) => <>
-      {compact ? <Sheet open={open} onOpenChange={requestClose}><SheetContent ref={surfaceRef} side="bottom" className="h-[min(94dvh,900px)] max-h-[calc(100dvh-env(safe-area-inset-top))] rounded-t-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)]" showCloseButton={!submitting} closeLabel={t("Close")}>{sheetHeader}{renderForm(imageLightbox)}</SheetContent></Sheet> : <Dialog open={open} onOpenChange={requestClose}><DialogContent ref={surfaceRef} className="h-[min(88dvh,820px)] gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)] sm:max-w-[760px]" showCloseButton={!submitting} closeLabel={t("Close")}>{header}{renderForm(imageLightbox)}</DialogContent></Dialog>}
+      {compact ? <Sheet open={open} onOpenChange={requestClose}><SheetContent ref={surfaceRef} side="bottom" className="support-ticket-surface h-[94dvh] max-h-[calc(100dvh-env(safe-area-inset-top))] rounded-t-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)]" showCloseButton={!submitting} closeLabel={t("Close")}>{sheetHeader}{renderForm(imageLightbox)}</SheetContent></Sheet> : <Dialog open={open} onOpenChange={requestClose}><DialogContent ref={surfaceRef} className="support-ticket-surface flex max-h-[88dvh] flex-col gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)] sm:max-w-[680px]" showCloseButton={!submitting} closeLabel={t("Close")}>{header}{renderForm(imageLightbox)}</DialogContent></Dialog>}
       <Dialog open={closeConfirmationOpen} onOpenChange={setCloseConfirmationOpen}>
         <DialogContent className="gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[440px]" closeLabel={t("Keep editing")}>
           <DialogHeader className="gap-2 px-5 pb-5 pe-14 pt-5 text-start sm:px-6 sm:pb-6 sm:pe-16 sm:pt-6">
@@ -399,8 +411,8 @@ export function SupportTicketDialog({ currentUser }: { currentUser?: AuthUserSum
   </ImageLightbox>
 }
 
-function Field({ label, htmlFor, error, children }: { label: string; htmlFor: string; error?: string; children: ReactNode }) { return <label htmlFor={htmlFor} className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{label}{children}{error ? <span id={`${htmlFor}-error`} className="text-[11px] font-normal leading-4 text-[var(--md-red)]">{error}</span> : null}</label> }
-function ContextFact({ label, value }: { label: string; value: string }) { return <div className="min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 py-2.5 shadow-[var(--md-shadow-line)]"><p className="text-[11px] text-[var(--md-subtle)]">{label}</p><p className="mt-0.5 break-words text-[12px] font-medium leading-4 text-[var(--md-ink)]" data-i18n-skip dir="auto">{value}</p></div> }
+function Field({ label, htmlFor, error, children }: { label: string; htmlFor: string; error?: string; children: ReactNode }) { return <label htmlFor={htmlFor} data-invalid={Boolean(error) || undefined} className="flex min-w-0 flex-col gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">{label}{children}{error ? <span id={`${htmlFor}-error`} className="text-[11px] font-normal leading-4 text-[var(--md-red)]">{error}</span> : null}</label> }
+function ContextFact({ label, value }: { label: string; value: string }) { return <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5"><dt className="text-[11px] text-[var(--md-subtle)]">{label}</dt><dd className="min-w-0 break-words text-[12px] font-medium leading-4 text-[var(--md-ink)]" data-i18n-skip dir="auto">{value}</dd></div> }
 function ContextMini({ label, value }: { label: string; value: string }) { return <div><dt className="text-[var(--md-subtle)]">{label}</dt><dd className="mt-0.5 truncate text-[var(--md-text)]" data-i18n-skip dir="auto">{value}</dd></div> }
 
 export function SupportTicketAttachmentPreview({ file, onOpen, onEdit, onRemove, previewUrl, layoutId, thumbnailRef }: {
