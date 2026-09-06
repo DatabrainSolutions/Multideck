@@ -110,6 +110,7 @@ import { CopyFeedbackTransition, CopyStatusIcon } from "./copyable-field"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { freightBookingMode, freightFieldPolicy, freightShipmentAllowed, freightTransportField, freightRouteOperationalFields } from "@/lib/freight-field-policy"
 import { bookingEquipmentKindChoices, bookingEquipmentPresentation, newBookingEquipment, type BookingEquipmentKind } from "@/lib/booking-equipment-policy"
+import { bookingRouteScheduleFields, routeScheduleParts, changeRouteScheduleDate, changeRouteScheduleTime } from "@/lib/booking-route-schedule"
 import { freightPackageTypeOptions } from "@/lib/freight-package-types"
 import { changeBookingRouteMode, routeSharedReferenceFields } from "@/lib/booking-route-mode-change"
 
@@ -1279,17 +1280,17 @@ function BookingRouteSummary({ record }: { record: BookingDetailRecord }) {
   const routes = record.workspace?.routes ?? []
   const firstRoute = routes[0]
   const lastRoute = routes.at(-1)
-  const formatDate = (value: string) => {
+  const formatDate = (value: string | null | undefined) => {
     if (!value) return "—"
-    const date = new Date(value.length === 10 ? `${value}T12:00:00` : value)
+    const date = new Date(value.length === 10 ? `${value}T12:00:00Z` : value)
     return Number.isNaN(date.getTime())
       ? value
-      : new Intl.DateTimeFormat(language, { day: "2-digit", month: "short", year: "numeric" }).format(date)
+      : new Intl.DateTimeFormat(language, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(date)
   }
   const originFlag = bookingLocationFlag(record.booking.origin, firstRoute?.originUnlocode)
   const destinationFlag = bookingLocationFlag(record.booking.destination, lastRoute?.destinationUnlocode)
-  const estimatedDeparture = firstRoute?.plannedDepartureAt || record.booking.departureDate
-  const estimatedArrival = lastRoute?.plannedArrivalAt || record.booking.arrivalDate || record.booking.eta
+  const estimatedDeparture = firstRoute ? firstRoute.plannedDepartureAt : record.booking.departureDate
+  const estimatedArrival = lastRoute ? lastRoute.plannedArrivalAt : record.booking.arrivalDate || record.booking.eta
   const legCount = Math.max(routes.length, 1)
   const modeKey = bookingModeKey(record.booking.mode)
   const ModeIcon = modeKey === "air" ? Plane : modeKey === "ocean" || modeKey === "sea" ? Ship : modeKey === "road" ? Truck : Route
@@ -2211,7 +2212,7 @@ function BookingCargoWiseField({
   allowCustom?: boolean
   editable?: boolean
   emptyValue?: string
-  inputType?: "text" | "date"
+  inputType?: "text" | "date" | "time"
   label: string
   maxLength?: number
   onChange?: (value: string) => void
@@ -2263,6 +2264,7 @@ function BookingCargoWiseField({
             data-i18n-skip
             dir="auto"
             type={inputType}
+            step={inputType === "time" ? 1 : undefined}
             maxLength={maxLength}
             value={value}
             onChange={(event) => onChange(event.target.value)}
@@ -2276,6 +2278,37 @@ function BookingCargoWiseField({
       )}
     </div>
   )
+}
+
+function BookingRouteScheduleFields({ route, editable, onChange }: {
+  route: BookingWorkflowRoute
+  editable: boolean
+  onChange: (field: keyof BookingWorkflowRoute, value: string) => void
+}) {
+  const { t } = useLanguage()
+  return <div className="grid min-w-0 gap-2 md:col-span-2 xl:col-span-3">
+    <p className="text-xs leading-5 text-[var(--md-text)]">{t("Planned schedule · all dates and times are UTC. Dates without a time are stored as midnight UTC. These fields do not change actual movement history.")}</p>
+    <div className="grid min-w-0 gap-3 md:grid-cols-2">
+      {bookingRouteScheduleFields.map(({ field, label }) => {
+        const current = route[field]
+        const parts = routeScheduleParts(current)
+        return <div key={field} data-schedule-field={field} className="grid min-w-0 gap-1.5">
+          {parts.invalid ? <div className="text-xs leading-5">
+            <p>{t(label)}: <span data-i18n-skip className="break-all">{current}</span></p>
+            <p>{t("This saved timestamp needs review. It has not been changed.")}</p>
+            {editable ? <Button type="button" variant="ghost" className="h-8 px-2 text-xs" onClick={(event) => {
+              const group = event.currentTarget.closest("[data-schedule-field]")
+              onChange(field, "")
+              requestAnimationFrame(() => group?.querySelector<HTMLInputElement>("input")?.focus())
+            }}>{t("Clear invalid timestamp")}: {t(label)}</Button> : null}
+          </div> : <>
+            <BookingCargoWiseField label={`${label} date (UTC)`} inputType="date" value={parts.date} editable={editable} onChange={(date) => onChange(field, changeRouteScheduleDate(current, date))} />
+            <BookingCargoWiseField label={`${label} time (UTC)`} inputType="time" value={parts.time} editable={editable && Boolean(parts.date)} onChange={(time) => onChange(field, changeRouteScheduleTime(current, time))} />
+          </>}
+        </div>
+      })}
+    </div>
+  </div>
 }
 
 function BookingCargoWiseAmountField({
@@ -3133,8 +3166,10 @@ function BookingRecordDetails({
   const valueCurrency = (bookingValueMatch?.[1] ?? bookingValueMatch?.[4] ?? workspace.booking.freightChargeCurrency ?? currencyOptions[0]?.value ?? "").toUpperCase()
   const firstWorkspaceRoute = workspace.routes[0]
   const lastWorkspaceRoute = workspace.routes.at(-1) ?? firstWorkspaceRoute
-  const estimatedDeparture = String(firstWorkspaceRoute?.plannedDepartureAt ?? record.booking.departureDate ?? "").slice(0, 10)
-  const estimatedArrival = String(lastWorkspaceRoute?.plannedArrivalAt ?? record.booking.arrivalDate ?? "").slice(0, 10)
+  const departureParts = routeScheduleParts(firstWorkspaceRoute ? firstWorkspaceRoute.plannedDepartureAt : record.booking.departureDate)
+  const arrivalParts = routeScheduleParts(lastWorkspaceRoute ? lastWorkspaceRoute.plannedArrivalAt : record.booking.arrivalDate)
+  const estimatedDeparture = departureParts.date
+  const estimatedArrival = arrivalParts.date
   const knownCargo = cargoValue("knownCargo", cargoDataValue("knownCargo", value(facts, "knownCargo")))
   const goodsDescription = cargoValue("description", value(facts, "goodsDescription", value(facts, "commodity")))
   const calculatedDirection = calculatedDirectionForBooking(workspace, lookups)
@@ -3322,13 +3357,13 @@ function BookingRecordDetails({
                 <BookingCargoWiseField label="Equipment / load" value={record.booking.container} options={bookingEquipmentOptionsByMode[modeKey] ?? bookingEquipmentOptionsByMode.multimodal} placeholder="Choose equipment" {...editField("container")} />
                 {fieldPolicy.hblMode ? <BookingCargoWiseField label="HBL mode" value={detailValue("hblMode", value(facts, "hblMode"))} options={bookingHblModeOptions} placeholder="Choose HBL mode" allowCustom={false} {...editDetail("hblMode")} /> : null}
                 <BookingCargoWiseField label="Incoterms" value={incotermCode} options={bookingIncotermOptions} placeholder="Choose Incoterm" allowCustom={false} editable={editable} onChange={(nextCode) => onDetailChange("incoterms", [nextCode, incotermLocation].filter(Boolean).join(" "))} />
-                <BookingCargoWiseField label="ETD" value={estimatedDeparture} inputType="date" editable={editable} onChange={(nextDate) => {
+                <BookingCargoWiseField label="ETD" value={estimatedDeparture} inputType="date" editable={editable && !departureParts.invalid} onChange={(nextDate) => {
                   onBookingChange("departureDate", nextDate)
-                  if (firstWorkspaceRoute) onRouteChange(0, "plannedDepartureAt", nextDate)
+                  if (firstWorkspaceRoute) onRouteChange(0, "plannedDepartureAt", changeRouteScheduleDate(firstWorkspaceRoute.plannedDepartureAt, nextDate))
                 }} />
-                <BookingCargoWiseField label="ETA" value={estimatedArrival} inputType="date" editable={editable} onChange={(nextDate) => {
+                <BookingCargoWiseField label="ETA" value={estimatedArrival} inputType="date" editable={editable && !arrivalParts.invalid} onChange={(nextDate) => {
                   onBookingChange("arrivalDate", nextDate)
-                  if (lastWorkspaceRoute) onRouteChange(Math.max(workspace.routes.length - 1, 0), "plannedArrivalAt", nextDate)
+                  if (lastWorkspaceRoute) onRouteChange(Math.max(workspace.routes.length - 1, 0), "plannedArrivalAt", changeRouteScheduleDate(lastWorkspaceRoute.plannedArrivalAt, nextDate))
                 }} />
               </div>
             </div>
@@ -3394,8 +3429,8 @@ function BookingRecordDetails({
                       const organisation = organisations.find((item) => item.id === option.id)
                       if (organisation) onRouteOrganisationSelect(index, organisation)
                     }} />
-                    <BookingCargoWiseField label="Departure" value={leg.plannedDepartureAt ? String(leg.plannedDepartureAt).slice(0, 10) : ""} inputType="date" {...editRoute(index, "plannedDepartureAt")} />
-                    <BookingCargoWiseField label="Arrival" value={leg.plannedArrivalAt ? String(leg.plannedArrivalAt).slice(0, 10) : ""} inputType="date" {...editRoute(index, "plannedArrivalAt")} />
+                    <BookingCargoWiseField label="Departure (UTC)" value={routeScheduleParts(leg.plannedDepartureAt).date} inputType="date" editable={editable && !routeScheduleParts(leg.plannedDepartureAt).invalid} onChange={(date) => onRouteChange(index, "plannedDepartureAt", changeRouteScheduleDate(leg.plannedDepartureAt, date))} />
+                    <BookingCargoWiseField label="Arrival (UTC)" value={routeScheduleParts(leg.plannedArrivalAt).date} inputType="date" editable={editable && !routeScheduleParts(leg.plannedArrivalAt).invalid} onChange={(date) => onRouteChange(index, "plannedArrivalAt", changeRouteScheduleDate(leg.plannedArrivalAt, date))} />
                     <BookingCargoWiseField label={transportLabel} value={String(leg[transportField] ?? "")} {...editRoute(index, transportField)} />
                     <BookingCargoWiseField label="Booking reference" value={leg.carrierBookingReference ?? ""} {...editRoute(index, "carrierBookingReference")} />
                   </div>
@@ -3403,6 +3438,7 @@ function BookingRecordDetails({
                     <summary className="cursor-pointer rounded-[var(--md-radius-md)] py-2 text-[12px] font-medium text-[var(--md-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]">{t("Operational details")} · {t("Step")} {index + 1}</summary>
                     <div className="grid min-w-0 gap-2 pt-2 md:grid-cols-2 xl:grid-cols-3 [--md-field-label-width:110px]">
                       {operationalFields.map(({ field, label, maxLength }) => <BookingCargoWiseField key={field} label={label} value={String(leg[field] ?? "")} maxLength={maxLength} wrapValue {...editRoute(index, field)} />)}
+                      <BookingRouteScheduleFields route={leg} editable={editable} onChange={(field, nextValue) => onRouteChange(index, field, nextValue)} />
                     </div>
                     <p className="mt-2 text-[12px] leading-relaxed text-[var(--md-text)]">{t("References belong to this routing step. A mode change requires review; saved previous references remain in the job audit history.")}</p>
                   </details> : null}
@@ -5252,8 +5288,8 @@ export function BookingDetailWorkspace({
           mode: modeCode,
           origin: route.originUnlocode || route.origin || draftBooking.origin,
           destination: route.destinationUnlocode || route.destination || draftBooking.destination,
-          plannedDepartureAt: route.plannedDepartureAt || draftBooking.departureAt || draftBooking.departureDate || null,
-          plannedArrivalAt: route.plannedArrivalAt || draftBooking.arrivalAt || draftBooking.arrivalDate || null,
+          plannedDepartureAt: workspace.routes.length ? route.plannedDepartureAt || null : draftBooking.departureAt || draftBooking.departureDate || null,
+          plannedArrivalAt: workspace.routes.length ? route.plannedArrivalAt || null : draftBooking.arrivalAt || draftBooking.arrivalDate || null,
           vehicleRegistration: route.vehicleRegistration || null,
         },
         routes: workspace.routes.map((leg, index) => ({

@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process'
 import {mutateBookingRoute} from './booking-route-client-fixture.mjs'
 import {routeSaveFixture,routeSaveMigration,routeSaveAssertions} from './booking-route-save-fixture.mjs'
 import {routeModeAssertions} from './booking-route-mode-fixture.mjs'
+import {changeRouteScheduleDate,changeRouteScheduleTime} from '../../multideck.client/src/lib/booking-route-schedule.ts'
 
 const initial={booking:{mode:'multimodal',sourceQuoteVersionId:'accepted-version'},routes:[
   {mode:'road',origin:'Depot',destination:'Port',vehicleRegistration:'AB12 CDE',routeData:{originalEvidence:'preserve'}},
@@ -15,6 +16,9 @@ const initial={booking:{mode:'multimodal',sourceQuoteVersionId:'accepted-version
   {mode:'rail',origin:'Airport',destination:'Depot',railService:'Rail 45'},
 ]}
 let edited=structuredClone(initial)
+edited=mutateBookingRoute(edited,0,'plannedPickupAt',changeRouteScheduleTime('2026-09-18','08:45'))
+edited=mutateBookingRoute(edited,1,'plannedDepartureAt',changeRouteScheduleDate('2026-09-18T00:30:45.123456+05:30','2026-09-20'))
+edited=mutateBookingRoute(edited,3,'plannedDeliveryAt',changeRouteScheduleTime('2026-10-18','11:30'))
 for(const [index,field,value] of [[0,'masterTransportReference','CMR-1'],[0,'trailerNumber','TR-2'],[1,'masterTransportReference','MBL-1'],
   [1,'houseTransportReference','HBL-2'],[1,'voyageNumber','VOY-3'],[2,'masterTransportReference','125-12345675'],[2,'houseTransportReference','HAWB-1'],
   [3,'masterTransportReference','CIM-1'],[3,'houseTransportReference','RAIL-FWD-1'],[3,'serviceLevel','Block train']]) {
@@ -25,6 +29,9 @@ test('actual route updater keeps mode-specific references on the selected leg an
   assert.equal(edited.routes[1].voyageNumber,'VOY-3')
   assert.equal(edited.routes[2].masterTransportReference,'125-12345675')
   assert.equal(edited.routes[3].serviceLevel,'Block train')
+  assert.equal(edited.routes[0].plannedPickupAt,'2026-09-18T08:45:00Z')
+  assert.equal(edited.routes[1].plannedDepartureAt,'2026-09-20T19:00:45.123456Z')
+  assert.equal(edited.routes[3].plannedDeliveryAt,'2026-10-18T11:30:00Z')
   assert.equal(edited.routes[0].routeData.originalEvidence,'preserve')
   assert.deepEqual(edited.booking,initial.booking)
   assert.equal(initial.routes[0].trailerNumber,undefined)
@@ -86,6 +93,10 @@ test('PostgreSQL: real route save and workspace projection round-trip per-mode f
           values(job,1,'202609',actor,gen_random_uuid(),office,'multimodal'),(other_job,2,'202609',actor,gen_random_uuid(),office,'road');
         perform booking_api.save_booking_route_legs(actor,job,source);
         result:=booking_api.test_read_routes(job);
+        if (result#>>'{0,plannedPickupAt}')::timestamptz is distinct from '2026-09-18T08:45:00Z'::timestamptz
+          or (result#>>'{1,plannedDepartureAt}')::timestamptz is distinct from '2026-09-20T19:00:45.123456Z'::timestamptz
+          or (result#>>'{3,plannedDeliveryAt}')::timestamptz is distinct from '2026-10-18T11:30:00Z'::timestamptz
+          then raise exception 'UI schedule lost UTC instant or fractional precision';end if;
         if jsonb_array_length(result)<>4 or result#>>'{0,trailerNumber}' is distinct from 'TR-2'
           or result#>>'{1,voyageNumber}' is distinct from 'VOY-3' or result#>>'{1,houseTransportReference}' is distinct from 'HBL-2'
           or result#>>'{2,masterTransportReference}' is distinct from '125-12345675'
@@ -102,6 +113,10 @@ test('PostgreSQL: real route save and workspace projection round-trip per-mode f
         source:=jsonb_set(source,'{routes,0,trailerNumber}','""');
         perform booking_api.save_booking_route_legs(actor,job,source);
         if booking_api.test_read_routes(job)->0 ? 'trailerNumber' then raise exception 'Explicit clear was ignored';end if;
+        source:=jsonb_set(source,'{routes,1,plannedDepartureAt}','""');
+        perform booking_api.save_booking_route_legs(actor,job,source);
+        if nullif(booking_api.test_read_routes(job)#>>'{1,plannedDepartureAt}','') is not null
+          then raise exception 'Explicit schedule clear was ignored';end if;
         before_rows:=booking_api.test_read_routes(job);
         begin perform booking_api.save_booking_route_legs(foreign_actor,job,source);raise exception 'Foreign company accepted';exception when insufficient_privilege then null;end;
         begin perform booking_api.save_booking_route_legs(null,job,source);raise exception 'Missing actor accepted';exception when insufficient_privilege then null;end;
