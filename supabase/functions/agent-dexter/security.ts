@@ -133,6 +133,7 @@ const ACTION_INTENTS: Record<string, RegExp> = {
   change_booking_route_mode: /\b(change|switch|set|correct|update)\b.{0,80}\b(rout(?:e|ing)|legs?)\b.{0,80}\b(mode|sea|air|road|rail|courier|multimodal)\b/,
   update_booking_shipment_value: /\b(update|edit|change|correct|set|clear|record)\b.{0,80}\b(shipment goods value|shipment value|goods value|value of (?:the )?goods)\b/,
   update_quote_cargo: /\b(update|edit|change|amend|correct|set|clear)\b(?=.{0,160}\bquote\b)(?=.{0,160}\b(cargo|goods|packages?|weight|dimensions?|commodity)\b)/,
+  replace_booking_allocations: /\b(update|edit|change|amend|correct|set|clear|add|remove|replace|allocate|assign|reassign|swap)\b.{0,120}\b(allocations?|allocation plan|cargo|goods)\b/,
   create_customs_declaration: /\b(create|add|start|make|open|new|draft)\b.{0,80}\b(customs|declaration|cds|import|export)\b/,
   update_customs_declaration: /\b(update|edit|change|amend|correct|complete|fill)\b.{0,80}\b(customs|declaration|cds|import|export)\b/,
   create_icustoms_draft: /\b(create|save|send|prepare)\b.{0,80}\b(icustoms|provider)\b.{0,40}\b(draft|declaration)\b|\bprovider draft\b/,

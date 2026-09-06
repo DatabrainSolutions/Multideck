@@ -1,4 +1,5 @@
 import { isTrainingDatabase } from "../_shared/training-environment.ts"
+import { bookingAllocationActionRecord, bookingAllocationActionChanges } from "./booking-allocation-review.ts"
 import { ensureScreeningList } from "../_shared/screening-ingest.ts"
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
@@ -1312,7 +1313,7 @@ function watchTargetLabel(capability: string, record: JsonObject) {
         ? ["quoteNumber"]
         : capability === "phone_calls"
           ? ["callerName", "companyName", "phoneNumber"]
-        : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value", "quote_cargo"].includes(capability)
+        : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value", "quote_cargo", "booking_allocations"].includes(capability)
           ? ["targetLabel", "bookingReference", "description"]
       : capability === "bookings"
           ? ["bookingReference", "jobReference", "customerReference"]
@@ -1798,7 +1799,8 @@ Never claim to have seen, verified, contacted, sent, saved, changed, approved, c
 If conversation history contains a claim that conflicts with a newer tool result, use the newer tool result and briefly note the discrepancy when it matters.
 
 # Freight-forwarding operating standard
-Container weight verification and temperature evidence is connected only when booking_containers is listed. Query by Booking reference, container number or exact recordId. Use bookingId, recordId, updatedAt and containerUpdatedAt from the latest read; never substitute the first container. Preserve every digit of decimal text. update_booking_container proposes one listed operational field and always requires explicit approval, including Full access: show the Booking reference, exact container, field and before/after values. Null clears a nullable field. Never infer VGM from cargo weight, claim to certify or submit a declaration, or treat an old Quote as current equipment evidence. Watching for you supports saved changes to one exact container through deterministic signals, with notifications only. Adding/removing containers, identity/type changes and commercial edits are not exposed by this action; use Booking Details. Quantified cargo-to-equipment allocation reads, edits and watches are not yet connected: explain this limitation, and do not claim generic update_booking can allocate goods or that container totals identify which cargo is packed. If the capability is absent, explain that it is unavailable rather than claiming generic update_booking supports it.
+Container weight verification and temperature evidence is connected only when booking_containers is listed. Query by Booking reference, container number or exact recordId. Use bookingId, recordId, updatedAt and containerUpdatedAt from the latest read; never substitute the first container. Preserve every digit of decimal text. update_booking_container proposes one listed operational field and always requires explicit approval, including Full access: show the Booking reference, exact container, field and before/after values. Null clears a nullable field. Never infer VGM from cargo weight, claim to certify or submit a declaration, or treat an old Quote as current equipment evidence. Watching for you supports saved changes to one exact container through deterministic signals, with notifications only. Adding/removing containers, identity/type changes and commercial edits are not exposed by this action; use Booking Details. Quantified allocations use the separate booking_allocations capability, never this container action or generic update_booking. If the capability is absent, explain that it is unavailable rather than claiming generic update_booking supports it.
+When booking_allocations is listed, query by exact Booking reference or ID to read the complete allocation plan, cargo/equipment/leg identities and cargo totals. Use recordId/bookingId, updatedAt and reviewHash from that same complete read. replace_booking_allocations proposes a full plan atomically and always requires explicit approval in both access modes. Retain unchanged rows and IDs, assign fresh UUIDs to new allocations, and show all additions, edits and omitted-row removals. Preserve exact decimal text and null for unknown quantities; never infer allocation from container totals or VGM. Use either whole-journey or individual-leg scope for each cargo line, not both. A saved plan watch uses the Booking recordId, field allocations and operator changed, and sends one notification per changed save; no automatic edits or recurring AI calls. Legacy unquantified links are not quantified allocations. No capacity, DG compatibility, packing completion or VGM certification is implied. If the capability is absent or the full plan cannot be read, explain the limitation and use Booking Details instead of making a partial replacement.
 Shipment goods value is separate from cargo-line declared values, freight charges, profit and the historical accepted Quote total. When booking_shipment_value is listed, read the exact Booking's amount, currency, recordId and updatedAt; retain every decimal digit and treat null as unknown, never zero. update_booking_shipment_value requires explicit approval in both access modes. Supply amount and currency together, retaining an unchanged member from the current saved record; null deliberately clears it. Show both values before and after. Changing the currency does not convert the amount, redistribute cargo allocations or alter the accepted Quote. Never infer a shipment total from cargo or sum mixed currencies. Watches notify on amount or currency changes on one exact Booking, with changed rules only; currency-aware thresholds and automatic edits are not supported. If this capability is absent, use Booking Details > Cargo instead of claiming generic update_booking can perform it.
 
 Per-leg operational references and planned dates are connected only when booking_routes is listed. Query by Booking reference or exact route recordId, using bookingId, recordId, updatedAt and routeUpdatedAt as current evidence. Identify the exact leg and its own mode, never substitute the first leg or the overall Booking mode. Retained off-mode transport values are not current evidence. update_booking_route proposes one allowlisted field for explicit approval even in Full access: show Booking, leg number/mode, field and before/after values. Date-only values mean midnight UTC; timestamps require an explicit timezone. Null clears a nullable field. No mode/location/carrier changes, reordering, adding/removing legs, actual/tracking dates or commercial edits are exposed by this action. Only when the separate change_booking_route_mode action is listed, propose a leg mode change using the exact identities and both timestamps. Its database-generated approval warns that shared transport references will be cleared and preserves the previous evidence in history. Never replace or downplay that review, invent its before values, or describe the change as already saved. Carrier and planned dates remain unchanged and need suitability review. Overall Booking mode changes still use Booking Details. Watching for you follows saved fields on an exact leg through deterministic signals and notifies only. If a capability is absent, explain the limit instead of claiming generic update_booking can perform the operation.
@@ -2477,6 +2479,7 @@ function quoteCargoActionRecord(records: Map<string, JsonObject>, args: JsonObje
 }
 
 function actionChanges(locale: DexterLocale, actionCode: string, argumentsValue: JsonObject, currentRecord?: JsonObject) {
+  if (actionCode === "replace_booking_allocations") return bookingAllocationActionChanges(argumentsValue, currentRecord)
   if (actionCode === "update_quote_cargo") {
     const labels: Record<string, string> = { description: "Goods description", commodity: "Commodity", packageQuantity: "Packages / pieces",
       packageType: "Package type", grossWeightKg: "Gross weight (kg)", netWeightKg: "Net weight (kg)", volumeCbm: "Volume (CBM)",
@@ -2628,6 +2631,9 @@ function preparedActionDescription(
   currentRecord?: JsonObject,
   emailState?: DexterEmailToolState | null,
 ) {
+  if (actionCode === "replace_booking_allocations") {
+    return `Review the complete cargo allocation plan for ${cleanString(currentRecord?.bookingReference, 80) || "the selected Booking"}. Every addition, change and removal is shown. Omitted allocations are retired with history retained. Cargo totals, equipment totals, VGM and the accepted Quote remain unchanged. ${fallback}`
+  }
   if (actionCode === "update_quote_cargo") {
     return `Review ${cleanString(currentRecord?.targetLabel, 200) || "the exact Quote draft cargo line"}. Cargo totals will be recalculated, but prices will not: review charges before issuing the Quote. Other draft details, submitted versions and the Booking remain unchanged. ${fallback}`
   }
@@ -3167,7 +3173,9 @@ async function runStreamedAgent(
           toolOutput = { error: "That write action is not available in this workspace." }
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
-          const currentRecord = action.code === "update_quote_cargo"
+          const currentRecord = action.code === "replace_booking_allocations"
+            ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
+            : action.code === "update_quote_cargo"
             ? quoteCargoActionRecord(currentRecordsById, actionArguments)
             : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
           let reason = preparedActionDescription(
@@ -3251,7 +3259,9 @@ async function runStreamedAgent(
             }
           }
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
-          const currentRecord = action.code === "update_quote_cargo"
+          const currentRecord = action.code === "replace_booking_allocations"
+            ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
+            : action.code === "update_quote_cargo"
             ? quoteCargoActionRecord(currentRecordsById, actionArguments)
             : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
           const changes = actionChanges(locale, action.code, actionArguments, currentRecord)
@@ -4752,7 +4762,9 @@ Deno.serve(async (request) => {
           toolOutput = { error: "That write action is not available in this workspace." }
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
-          const currentRecord = action.code === "update_quote_cargo"
+          const currentRecord = action.code === "replace_booking_allocations"
+            ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
+            : action.code === "update_quote_cargo"
             ? quoteCargoActionRecord(currentRecordsById, actionArguments)
             : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
           let reason = preparedActionDescription(
@@ -4836,7 +4848,9 @@ Deno.serve(async (request) => {
             return json(request, { conversation: await persistExchange(result) })
           }
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
-          const currentRecord = action.code === "update_quote_cargo"
+          const currentRecord = action.code === "replace_booking_allocations"
+            ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
+            : action.code === "update_quote_cargo"
             ? quoteCargoActionRecord(currentRecordsById, actionArguments)
             : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
           const changes = actionChanges(locale, action.code, actionArguments, currentRecord)

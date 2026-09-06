@@ -3,11 +3,30 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 import { requiresExplicitActionApproval } from '../functions/agent-dexter/email-approval.mjs'
+const allocationReview = stripTypeScriptTypes(readFileSync(new URL('../functions/agent-dexter/booking-allocation-review.ts', import.meta.url), 'utf8'))
+const { bookingAllocationActionRecord, bookingAllocationActionChanges } = await import(`data:text/javascript;base64,${Buffer.from(allocationReview).toString('base64')}`)
 const source = readFileSync(new URL('../functions/agent-dexter/security.ts', import.meta.url), 'utf8')
 const executable = stripTypeScriptTypes(source).replace('"./email-approval.mjs"',
   JSON.stringify(new URL('../functions/agent-dexter/email-approval.mjs', import.meta.url).href)) + '\nexport { actionTargetIds }'
 const { operatorAuthorisesAction, allowedActionsForPrompt, prepareServerAction, actionTargetIds } =
   await import(`data:text/javascript;base64,${Buffer.from(executable).toString('base64')}`)
+
+test('Allocation plans require explicit intent/approval and exact complete evidence', () => {
+  for (const mode of ['approve', 'full']) assert.equal(requiresExplicitActionApproval('replace_booking_allocations', mode), true)
+  for (const prompt of ['Replace the allocation plan', 'Add an allocation', 'Swap cargo between the two containers', 'Clear allocations']) {
+    assert.equal(operatorAuthorisesAction(prompt, 'replace_booking_allocations'), true, prompt)
+  }
+  assert.deepEqual(allowedActionsForPrompt('Show the allocation plan', ['replace_booking_allocations'], 'full'), [])
+  const args = { target_id: crypto.randomUUID(), expected_updated_at: 'now', expected_review_hash: 'hash', allocations: [] }
+  for (const record of [{}, { allocationScope: 'booking_plan', complete: false }, { allocationScope: 'booking_plan', complete: true, bookingId: args.target_id, updatedAt: 'old', reviewHash: 'hash', allocations: [] }]) {
+    assert.throws(() => bookingAllocationActionRecord(new Map([['record', record]]), args), /complete current/)
+  }
+  const record = { allocationScope: 'booking_plan', complete: true, bookingId: args.target_id, updatedAt: 'now', reviewHash: 'hash', allocations: [] }
+  assert.deepEqual(bookingAllocationActionChanges(args, record), [])
+  assert.throws(() => bookingAllocationActionChanges({ ...args, allocations: [{ id: 'same' }, { id: 'same' }] }, record), /stable identity/)
+  const line = { id: crypto.randomUUID(), cargoId: crypto.randomUUID(), containerId: crypto.randomUUID(), routeId: crypto.randomUUID() }
+  assert.deepEqual([...actionTargetIds({ ...args, allocations: [line] })], [args.target_id, line.id, line.cargoId, line.containerId, line.routeId])
+})
 
 for (const action of ['update_booking_cargo', 'update_booking_container', 'update_booking_route']) {
 const container = action === 'update_booking_container'
@@ -120,7 +139,7 @@ const valuePreviewSource = ['displayActionValue', 'actionChanges'].map(name => {
   assert.ok(start >= 0)
   return agentSource.slice(start, agentSource.indexOf('\n}', start) + 2)
 }).join('\n')
-const valuePreview = new Function(`${stripTypeScriptTypes(valuePreviewSource)}; return actionChanges`)()
+const valuePreview = new Function('bookingAllocationActionChanges', `${stripTypeScriptTypes(valuePreviewSource)}; return actionChanges`)(bookingAllocationActionChanges)
 const quoteResolverStart = agentSource.indexOf('function quoteCargoActionRecord(')
 const quoteRecordResolver = new Function(`${stripTypeScriptTypes(agentSource.slice(quoteResolverStart, agentSource.indexOf('\n}', quoteResolverStart) + 2))}; return quoteCargoActionRecord`)()
 test('Quote cargo: both access modes require approval and inspection is not edit intent', () => {
@@ -197,7 +216,7 @@ for (const streaming of [true, false]) {
   assert.ok(start >= branchStart.length && end > start, 'Actual mandatory approval response branch found')
   offset = end
   const executableBranch = stripTypeScriptTypes(`async function responseBranch(deps: any) {
-    const { argumentsWithDocumentEvidence, args, latestDocumentExtraction, currentRecordsById, cleanString, quoteCargoActionRecord,
+    const { argumentsWithDocumentEvidence, args, latestDocumentExtraction, currentRecordsById, cleanString, quoteCargoActionRecord, bookingAllocationActionRecord,
       preparedActionDescription, locale, action, emailState, documentEvidence, actionChanges, prepareServerAction,
       admin, actor, conversationId, security, sanitiseAnswer, actionDisplayName, accessMode, emit,
       extractedActionCopy, actionCopy, lane, route, PROMPT_VERSION, domainCodes, emailProviders,
@@ -205,6 +224,27 @@ for (const streaming of [true, false]) {
     ${agentSource.slice(start, end)}
   }`)
   const responseBranch = new Function(`${executableBranch}; return responseBranch`)()
+  test(`Allocation plan: ${streaming ? 'streamed' : 'persisted'} approval shows every addition/removal using the exact read`, async () => {
+    const old = { id: crypto.randomUUID(), cargoId: crypto.randomUUID(), containerId: crypto.randomUUID(), routeId: null, packageQuantity: '1.000001', grossWeightKg: null, volumeCbm: null, notes: 'Old' }
+    const next = { ...old, id: crypto.randomUUID(), packageQuantity: '2.000001', notes: 'New' }
+    const args = { target_id: crypto.randomUUID(), expected_updated_at: 'now', expected_review_hash: 'hash', allocations: [next], reason: 'Replace the plan' }
+    const record = { allocationScope: 'booking_plan', complete: true, bookingId: args.target_id, updatedAt: 'now', reviewHash: 'hash', allocations: [old], cargo: [{ id: old.cargoId, description: 'Parts' }], equipment: [{ id: old.containerId, number: 'BOX-A' }] }
+    const changes = valuePreview('en-GB', 'replace_booking_allocations', args, record), events = []
+    const deps = { args, latestDocumentExtraction: null, currentRecordsById: new Map([['plan', record], [args.target_id, { allocations: [] }]]),
+      bookingAllocationActionRecord, cleanString: value => typeof value === 'string' ? value : '', argumentsWithDocumentEvidence: value => value,
+      preparedActionDescription: () => 'Complete allocation plan', locale: 'en-GB', action: { code: 'replace_booking_allocations', name: 'Review plan' },
+      emailState: null, documentEvidence: () => null, actionChanges: valuePreview,
+      prepareServerAction: async () => ({ id: 'allocation-proposal' }), admin: {}, actor: {}, conversationId: null, security: {},
+      sanitiseAnswer: value => value, actionDisplayName: () => 'Review plan', accessMode: 'full', emit: event => events.push(event),
+      actionCopy: (_locale, _kind, reason) => reason, lane: 'test', route: {}, PROMPT_VERSION: 'test', domainCodes: ['booking_allocations'], emailProviders: [], reasoningSummaries: [], usage: {}, request: {},
+      json: (_request, value) => value, persistExchange: async result => result }
+    const response = await responseBranch(deps), result = streaming ? response : response.conversation
+    assert.deepEqual(result.pendingAction.changes, changes)
+    assert.deepEqual(changes.map(change => change.kind), ['removed', 'added'])
+    assert.match(changes[0].before, /Parts.*BOX-A.*1.000001.*Unknown/)
+    assert.match(changes[1].after, /2.000001/)
+    await assert.rejects(responseBranch({ ...deps, currentRecordsById: new Map([[args.target_id, { ...record, reviewHash: 'stale' }]]) }), /complete current/)
+  })
   test(`Routing mode: ${streaming ? 'streamed' : 'persisted'} response displays canonical review in card and answer`, async () => {
     const review = { title: 'Change TEST1 · Leg 1 mode', description: 'Warning: shared transport references will be cleared.',
       changes: [{ field: 'Master transport reference', before: 'MBL-1', after: null, beforeKnown: true, kind: 'removed' }] }
