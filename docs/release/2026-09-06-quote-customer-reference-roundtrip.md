@@ -17,3 +17,17 @@ Two synthetic cargo lines survived saving and reloading with stable IDs and exac
 22 focused tests passed (customer-reference helper, real editor load/save mapping, structured cargo and immutable submitted versions), zero skipped. Deno checks passed for both complete `quotes-workflow` and `agent-dexter` import graphs. The root deployment build passed; the existing large-chunk warning remains.
 
 Before release, development functions were `quotes-workflow` v74 and `agent-dexter` v157, both JWT-verified. Deployment and hosted corrected reload evidence must be recorded below before claiming the fix live.
+
+## Development release and hosted proof
+
+- Fetched and merged the team's four new `origin/dev` commits through `e698be2`, preserving finance/accounts changes and their duplicate-file cleanup. The combined Deno check caught an undefined `FINANCE_EDGE_ACTIONS` left in the merged Dexter handler. Restored the explicit set of the three existing finance actions, without altering approval or permission rules; 91 finance/Dexter checks pass.
+- Released source commit `45d3fe913db3a343324f5bdc719a47a1d0a8060b`: development `quotes-workflow` v75 and `agent-dexter` v158. Downloaded and SHA-256-compared all 32 bundled source-file instances to the checkout. Both retain JWT verification and return 401 to unauthenticated requests. No database migration or finance function deployment was performed.
+- Fast-forwarded `origin/dev` to the same commit. Vercel `dpl_9aurZcwHdL6RbyJm8JeWeTSWBfo2` is READY; approved host `dev.multideck.app` and its immutable deployment URL serve the same `/assets/app-BHnsOjsQ.js`. Existing Vercel setup was not changed.
+- Reloading the existing test Quote restored its saved enquiry reference, with no data repair required. Keyboard select-all/delete then autosaved an explicit empty string; database read and hard-reload UI both confirmed it remained empty. Master `JQ20022` and draft version ID remained unchanged. Restored `QA-FREIGHT-20260906-NOT-A-SHIPMENT` through the editor afterwards.
+- The browser automation's `fill("")` did not change this controlled input; a normal keyboard clear did. This is not recorded as an application save defect. The prior unrelated animation AbortError remains in the tab log.
+
+## Additional ownership display correction
+
+Hosted Overview incorrectly showed demo person `AM1 - Maya Stone` when the same Quote's top bar correctly showed Unassigned. Removed only the missing-owner fallback, retaining explicitly recorded names and legacy-code formatting. Empty operations ownership also displays Unassigned. Local focused tests now total 23 passing, and the build passes. Hosted ownership verification remains pending until this follow-up client release is READY.
+
+The full send/response/PDF/Booking-revision lifecycle and deeper all-mode/Dexter gates remain open; these round-trip fixes do not certify the complete goal.

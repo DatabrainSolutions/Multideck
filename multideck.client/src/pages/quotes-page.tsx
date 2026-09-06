@@ -964,7 +964,7 @@ const salesRepresentativeOptions = systemPeople
   .map((person) => `${person.code} - ${person.name}`)
 
 function salesRepresentativeValue(salesRep?: string, emptyWhenMissing = false) {
-  if (!salesRep?.trim()) return emptyWhenMissing ? "" : salesRepresentativeOptions[0]
+  if (!salesRep?.trim()) return emptyWhenMissing ? "" : "Unassigned"
   const normalizedSalesRep = salesRep.trim()
   return salesRepresentativeOptions.find((option) => option.startsWith(`${normalizedSalesRep} - `))
     ?? salesRepresentativeOptions.find((option) => option.endsWith(` - ${normalizedSalesRep}`))
@@ -1464,7 +1464,7 @@ function QuoteOverviewSignals({
   const quoteMetadata = [
     { label: "Quote owner", value: salesRepresentativeValue(quote.salesRep) },
     { label: "Created", value: quote.createdAt ?? "—" },
-    { label: "Operations owner", value: quote.opsRep ?? "—" },
+    { label: "Operations owner", value: quote.opsRep?.trim() || "Unassigned" },
     { label: "Valid until", value: quote.validity || "—" },
   ]
   const temperatureEvidence = intelligence?.metrics.aiTemperature
@@ -2471,7 +2471,7 @@ function QuoteOverviewPanel({ quote }: { quote: QuoteRecord }) {
           <div className="mt-2 grid gap-1.5">
             <DenseFact label="Type" value={quote.quoteType ?? "Local client"} detail={quote.source} />
             <DenseFact label="Status" value={quote.jobStatus ?? quote.status} detail={quote.revisionReason} />
-            <DenseFact label="Sales" value={quote.salesRep ?? "AM1"} detail={`Ops ${quote.opsRep ?? "OP2"}`} />
+            <DenseFact label="Sales" value={salesRepresentativeValue(quote.salesRep)} detail={`Ops ${quote.opsRep?.trim() || "Unassigned"}`} />
             <DenseFact label="Entries" value={quote.entries ?? "1"} detail={`${quote.invoiceLines ?? "1"} invoice lines`} />
             <DenseFact label="Values" value={quote.goodsValue ?? "0.00 GBP"} detail={`${quote.insuranceValue ?? "0.00 GBP"} insured`} />
           </div>

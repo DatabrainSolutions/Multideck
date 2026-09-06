@@ -22,7 +22,7 @@ const ast = ts.createSourceFile('quotes-page.tsx', source, ts.ScriptTarget.Lates
 const names = ['newQuoteDraft', 'quoteUuidPattern', 'millisecondsPerCalendarDay', 'uuidOrNull',
   'quoteContainerRequests', 'quoteRoutingLegs', 'compactQuoteFacts', 'quoteDirectionForSave',
   'calculatedDirectionForQuote', 'quoteSavePayload', 'quoteRecordFromWorkspace',
-  'quoteLifecyclePresentation', 'quoteTransitDays', 'quoteDateInputValue', 'getDateInputValue']
+  'quoteLifecyclePresentation', 'quoteTransitDays', 'quoteDateInputValue', 'getDateInputValue', 'salesRepresentativeValue']
 const statements = names.map(name => {
   const node = ast.statements.find(statement => ts.isFunctionDeclaration(statement)
     ? statement.name?.text === name
@@ -30,7 +30,7 @@ const statements = names.map(name => {
   assert.ok(node, `Production mapping ${name} must exist`)
   return node.getText(ast)
 })
-export const mapping = evaluate(`${statements.join('\n')}\nexport { newQuoteDraft, quoteSavePayload, quoteRecordFromWorkspace };`, { ...cargo, ...freight })
+export const mapping = evaluate(`${statements.join('\n')}\nexport { newQuoteDraft, quoteSavePayload, quoteRecordFromWorkspace, salesRepresentativeValue };`, { ...cargo, ...freight, salesRepresentativeOptions: ['AM1 - Maya Stone'] })
 let openingExpression
 function visit(node) {
   if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'openedQuote') openingExpression = node.initializer.getText(ast)

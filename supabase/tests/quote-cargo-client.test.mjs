@@ -2,6 +2,15 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { cargo, documentCargo, mapping, workspace, fixtureLines, openOnce } from './quote-cargo-client-fixture.mjs'
 
+test('unassigned Quote owner never falls back to a demo person while explicit legacy and real owners remain readable', () => {
+  for (const value of [undefined, '', '   ']) {
+    assert.equal(mapping.salesRepresentativeValue(value), 'Unassigned')
+    assert.equal(mapping.salesRepresentativeValue(value, true), '')
+  }
+  assert.equal(mapping.salesRepresentativeValue('AM1'), 'AM1 - Maya Stone')
+  assert.equal(mapping.salesRepresentativeValue('Lee Wright'), 'Lee Wright')
+})
+
 test('customer enquiry reference round-trips independently of the locked master reference, including an explicit clear', () => {
   for (const reference of ['QA-FREIGHT-20260906-NOT-A-SHIPMENT', '', 'Customer / enquiry 42']) {
     const input = workspace({})
