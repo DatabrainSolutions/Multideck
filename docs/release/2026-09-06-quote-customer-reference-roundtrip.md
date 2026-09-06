@@ -28,6 +28,15 @@ Before release, development functions were `quotes-workflow` v74 and `agent-dext
 
 ## Additional ownership display correction
 
-Hosted Overview incorrectly showed demo person `AM1 - Maya Stone` when the same Quote's top bar correctly showed Unassigned. Removed only the missing-owner fallback, retaining explicitly recorded names and legacy-code formatting. Empty operations ownership also displays Unassigned. Local focused tests now total 23 passing, and the build passes. Hosted ownership verification remains pending until this follow-up client release is READY.
+Hosted Overview incorrectly showed demo person `AM1 - Maya Stone` when the same Quote's top bar correctly showed Unassigned. Removed only the missing-owner fallback, retaining explicitly recorded names and legacy-code formatting. Empty operations ownership also displays Unassigned. Local focused tests now total 23 passing, and the build passes.
+
+Follow-up client commit `e167329ea5c1f4f41bf849d46bd8d1998c93587b` was fast-forwarded to `origin/dev`. Vercel deployment `dpl_DvT2SefCSNGztsSs2ehyE1yDkTMy` is READY. Hard reload and the rendered Overview on `dev.multideck.app/quotes/jq20022` confirm both Quote owner and Operations owner now show Unassigned. This change does not assign or mutate an owner.
+
+## Additional hosted draft checks
+
+- Saved Sea/FCL, requested one 40GP and one 20GP through the actual editor. Scoped database reads confirm two separate requests with quantity 1 each. Both requests and both original cargo lines survive hard reload.
+- Selected Air from the saved Sea Quote. The review dialog explicitly describes retaining routing/cargo/equipment and leaving submitted versions/Bookings/documents unchanged. Chose Keep current mode; the screen and saved snapshot remained Sea/FCL with both requests. This proves cancellation, not the confirmed mode-change lifecycle.
+- Selected United Kingdom / Felixstowe (`GBFXT`) and Netherlands / Rotterdam (`NLRTM`) using official location options. The UK branch's automatic direction became Export. Database and hard-reload UI agree. Blank/partial routes previously displayed Cross trade; that separate incomplete-route presentation remains to review, not silently certified here.
+- The single draft version remains `44e4b47b-b9b3-42dd-ad76-30df16a4db66`, unsubmitted. Customer test label restored. Cargo IDs `05c3aa23-eb93-4a88-bd90-9414e29e34de` and `2561514a-4620-4074-bd78-d997a35ac5a6` and exact quantities/measurements remain intact. No email, customer response, acceptance or Booking mutation occurred.
 
 The full send/response/PDF/Booking-revision lifecycle and deeper all-mode/Dexter gates remain open; these round-trip fixes do not certify the complete goal.
