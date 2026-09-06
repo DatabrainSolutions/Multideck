@@ -1,0 +1,358 @@
+{
+  "projectId": "aqtwypsuijxlnvtxpuxe",
+  "status": "review_only_not_deployed",
+  "migrations": [
+    {
+      "file": "20260905110317_booking_stable_cargo_equipment_identity.sql",
+      "sha256": "77c9fb1d452ff7de1bb73bd5ac72d192e89b762bd4dc1bc0eae47a29d2572cfd"
+    },
+    {
+      "file": "20260905112211_dexter_booking_cargo_parity.sql",
+      "sha256": "9c4d4cf63b5e0796a9bd6610201770765d200c8a67f0ad9a1cff20bcdb6b22a3"
+    },
+    {
+      "file": "20260905115938_quote_version_structured_cargo.sql",
+      "sha256": "4b369b75089357478b7556bb0e91896558c6c756cd4fe39b15c6ad39504421e8"
+    },
+    {
+      "file": "20260905123223_quote_cargo_issue_readiness.sql",
+      "sha256": "6be36fc55d773f7118b3aa47fa3b96b57b4b0791c639c51e519545845e3606f2"
+    },
+    {
+      "file": "20260905123929_quote_booking_cargo_handover.sql",
+      "sha256": "7676e586d48bb6df87cf7b1f182889f7172fe024214ddc2f3ce6df766d4b0b07"
+    },
+    {
+      "file": "20260905125327_quote_cargo_revision_comparison.sql",
+      "sha256": "4bf26090d1e3c6f1bef54e12157db09442b14ec20661f94349d95d11e1aa5251"
+    },
+    {
+      "file": "20260905130449_quote_cargo_revision_persistence.sql",
+      "sha256": "6bd4d29410502669ac716da0d7d4d0cc5049b62e37d1362277615e9e7456e103"
+    },
+    {
+      "file": "20260905132442_quote_cargo_review_integration.sql",
+      "sha256": "071cef7237fe3abd60d8cf0ac1683cf7822212c8ad3d89ac89912983f1069c4f"
+    },
+    {
+      "file": "20260905151617_booking_shipment_goods_value.sql",
+      "sha256": "5cd459e48f3870d40fc83232d95c24855fe3df5ba13b38ec50a04feebe35c3bf"
+    },
+    {
+      "file": "20260905160621_quote_open_structured_cargo.sql",
+      "sha256": "9610e1d94c792699a8289c44f64cf8e18d623eedd4d5ec54563849c32634e5e4"
+    },
+    {
+      "file": "20260905163327_quote_cargo_safety_summary.sql",
+      "sha256": "e770934b09936120f8b4acfaca43f0661d718c7aa57361ee368d9177d4bf89cc"
+    },
+    {
+      "file": "20260905172223_booking_cargo_decimal_boundary.sql",
+      "sha256": "ffa8110897cc4374d6a8fa85e8f4bde268d970601f75d31ca688fd3e859e3a95"
+    },
+    {
+      "file": "20260905182616_booking_route_single_save_authority.sql",
+      "sha256": "6cec350d37c713a201a1ef613e879014d18712a927ce3a7842041edc7d9e3c96"
+    },
+    {
+      "file": "20260905183528_booking_route_mode_reference_history.sql",
+      "sha256": "3eb0a1a3c5487e139925060bcda604dc381c673983d589acc28f6595fc70f0d8"
+    },
+    {
+      "file": "20260905185420_quote_routing_mode_review_guard.sql",
+      "sha256": "56873bfe31b9f24b3747326ba1e61bcbab1e08dc6ef9fd16abd0df01ca9cfe8d"
+    },
+    {
+      "file": "20260905192002_quote_single_leg_routing_authority.sql",
+      "sha256": "c140f4ad0a1aeeb26f12dc88fe2f9014041250f8c454ef645cd3bc323be49631"
+    },
+    {
+      "file": "20260905195412_quote_overall_mode_route_authority.sql",
+      "sha256": "d767b4b33da24771b1d40c75086e13124d120f649777474fbd1d162484d51397"
+    },
+    {
+      "file": "20260905201222_booking_container_operational_values.sql",
+      "sha256": "f1befd19ade99cf0b7f07431c3329117cf4c77c39ae43fc9733e1fd532e01d4e"
+    },
+    {
+      "file": "20260905205443_dexter_booking_container_parity.sql",
+      "sha256": "c3d4745f389c682d48ae7f8907dbf259b52b750097c3ef0a5adf6c68265d9dc5"
+    },
+    {
+      "file": "20260905210719_dexter_booking_routing_parity.sql",
+      "sha256": "bf5192c9c097ebdf7d3f3013fbbf8965bc9bbc08a58eee435e65e714dfbd088e"
+    },
+    {
+      "file": "20260905212002_dexter_route_mode_approval.sql",
+      "sha256": "326b049270a944a355f3017f8b37bdbc19097d681b9da55108eeed4097a7af76"
+    },
+    {
+      "file": "20260905213832_dexter_document_evidence_envelope.sql",
+      "sha256": "ee583d6a668e3091840ff2707eadb221002de57081b802868a9e377ec0006092"
+    },
+    {
+      "file": "20260905214653_dexter_shipment_value_parity.sql",
+      "sha256": "2defad96c1f507407fbc45bf4384d075e45a8a95078a4700d8c71919cf65ef0b"
+    },
+    {
+      "file": "20260905220124_quote_draft_cargo_edit_boundary.sql",
+      "sha256": "91a77ea33e0b942ffa73227adf8e0db3c09006140a69c6a3a7398253831206fe"
+    },
+    {
+      "file": "20260905221303_dexter_quote_cargo_parity.sql",
+      "sha256": "ec6df6b0fdbae51abec9f3ca7cc0a23b62e53831ec0504ddccbd25e8e530b272"
+    },
+    {
+      "file": "20260905223353_booking_cargo_equipment_allocation_boundary.sql",
+      "sha256": "3fd9285a79ed36dbd6a4fb5dbe345469ff435bbfbfcede64456102838e6ca554"
+    },
+    {
+      "file": "20260905224722_booking_cargo_allocation_workspace.sql",
+      "sha256": "9db27ae376818ed5a6d680a338687b867ac880dc75f2847ddb5ad9f6bfde6e9a"
+    },
+    {
+      "file": "20260906060021_dexter_booking_allocation_parity.sql",
+      "sha256": "2e27ee4a29f6030dec9de8e016eac4381f7990a9dd058583347e69ba389766c3"
+    },
+    {
+      "file": "20260906062554_booking_equipment_kind_preservation.sql",
+      "sha256": "a7dbbbdee7c3cdae28b9110e4e1dbc7e8cfffe1970b905ae92472be47ae99d3e"
+    },
+    {
+      "file": "20260906082224_screening_active_source_freshness.sql",
+      "sha256": "0b52814ba5549ad8ff5c8644eec18f61b37ac5564e20b1266c0fc844d62685d6"
+    }
+  ],
+  "functions": [
+    {
+      "name": "quotes-workflow",
+      "verifyJwt": true,
+      "entrypoint": "quotes-workflow/index.ts",
+      "files": [
+        {
+          "file": "_shared/document-functions.ts",
+          "sha256": "f4e90475a1f054c0fa59310ea68db442af99289663ef32b431f80165d7244004"
+        },
+        {
+          "file": "_shared/email-markdown.ts",
+          "sha256": "bc18acd5feb9f40e16bb4783b7b825b9fff257e2881483b9be17135e8b4e7c36"
+        },
+        {
+          "file": "_shared/email-template.ts",
+          "sha256": "a5fc9b790e83c375f58538cba0013f42d9f6f488a0728e8ca649542ac0afed5e"
+        },
+        {
+          "file": "_shared/model-gateway.ts",
+          "sha256": "b330a286302f3818b8765477f27e3fedabdf8070967ed45eee82befd6baa9f9e"
+        },
+        {
+          "file": "_shared/multideck-app-origin.ts",
+          "sha256": "0d25a072b713e3219b71995c4ccba3bedd6c89f7573eae96aa1df6807c41aef3"
+        },
+        {
+          "file": "_shared/quote-document-cargo.ts",
+          "sha256": "8fc22ec403f4286a250a1aeb4c3f0b60e4069d2906c7ff2f6e5c115084ffd645"
+        },
+        {
+          "file": "_shared/quote-pdf.ts",
+          "sha256": "9e94c4b63801f9db482e6d86c9ed97020f09abe401d0ec4bb67a0de963642910"
+        },
+        {
+          "file": "_shared/tenant-branding.ts",
+          "sha256": "b9c4bba49f63d7e0e9a90f6b14dfb2242e7198e1eb68f588944cf877db3bcd32"
+        },
+        {
+          "file": "inbox-api/core.ts",
+          "sha256": "ddaf8678cd9b38dd8ac31fc90f631d30fb5b04c19d725b6a5a7ba8e7c989d1f0"
+        },
+        {
+          "file": "inbox-api/runtime.ts",
+          "sha256": "d851979bf0bccb546df3f3742f0a39c986713ec42cea1e893b97bdb7cfb62821"
+        },
+        {
+          "file": "quote-intelligence/core.ts",
+          "sha256": "9159e4fa67afecd34af5f0caa86eecaa96d3acbeaa2ad9e0999f024eed326664"
+        },
+        {
+          "file": "quote-intelligence/runtime.ts",
+          "sha256": "b07c289082336f3afafe1452117d6db979bfc723a853051ef2b34b4dc046b7c9"
+        },
+        {
+          "file": "quotes-workflow/core.ts",
+          "sha256": "14d579b704b0bdf6450a6ead474a20fa8ab0cfe749a143532088d066c561624f"
+        },
+        {
+          "file": "quotes-workflow/index.ts",
+          "sha256": "1b81db6417c42c2a6fe96977e49f5d84e507fe8380aa53909e9ce3b6b2690ad3"
+        }
+      ]
+    },
+    {
+      "name": "quote-response",
+      "verifyJwt": false,
+      "entrypoint": "quote-response/index.ts",
+      "files": [
+        {
+          "file": "_shared/document-functions.ts",
+          "sha256": "f4e90475a1f054c0fa59310ea68db442af99289663ef32b431f80165d7244004"
+        },
+        {
+          "file": "_shared/multideck-app-origin.ts",
+          "sha256": "0d25a072b713e3219b71995c4ccba3bedd6c89f7573eae96aa1df6807c41aef3"
+        },
+        {
+          "file": "_shared/tenant-branding.ts",
+          "sha256": "b9c4bba49f63d7e0e9a90f6b14dfb2242e7198e1eb68f588944cf877db3bcd32"
+        },
+        {
+          "file": "quote-response/core.ts",
+          "sha256": "0c771b688917f3fd259ab121d015f3c391e970d84fe460ab93e0a700e650e9fd"
+        },
+        {
+          "file": "quote-response/index.ts",
+          "sha256": "480bbd874531ef84e6d65b0c403ccb2f1a9663cb6afe413e360a0f05396885ff"
+        }
+      ]
+    },
+    {
+      "name": "bookings-workflow",
+      "verifyJwt": true,
+      "entrypoint": "bookings-workflow/index.ts",
+      "files": [
+        {
+          "file": "_shared/document-functions.ts",
+          "sha256": "f4e90475a1f054c0fa59310ea68db442af99289663ef32b431f80165d7244004"
+        },
+        {
+          "file": "bookings-workflow/core.ts",
+          "sha256": "594b5f36e3d8365db90c0b7a7bad75d704f1c13b7c3967b443b35ed99130d3eb"
+        },
+        {
+          "file": "bookings-workflow/index.ts",
+          "sha256": "a691cc209c14569815c18c9f2a1df277a3c6c154a1e3e52096434aae006c60d9"
+        }
+      ]
+    },
+    {
+      "name": "agent-dexter",
+      "verifyJwt": true,
+      "entrypoint": "agent-dexter/index.ts",
+      "files": [
+        {
+          "file": "_shared/backend.ts",
+          "sha256": "6d6cbe63c02fa8fceb96dfef069a89e3f845bb55460506a0ff59c60a2fbf1697"
+        },
+        {
+          "file": "_shared/customer-documents.ts",
+          "sha256": "54e421451802b37b9e978c8a3fd70c58c6c1da6cfed3ee5774e3113a4ed8e4a1"
+        },
+        {
+          "file": "_shared/customs-invoice-ocr.ts",
+          "sha256": "6d838cbb4dd5c4445a69dd4d91662a4f735e7cee53694fe59fa9e786293427de"
+        },
+        {
+          "file": "_shared/dexter-document-ocr.ts",
+          "sha256": "9862a576f61c69d08adc4cbc965ecc0916b44ba191f346a1cd4a4ac07fe272e8"
+        },
+        {
+          "file": "_shared/dexter-uploads.ts",
+          "sha256": "c3b0cae30a54c1c04543444a9661a42503016962cc6d0674334975236b6af687"
+        },
+        {
+          "file": "_shared/invoice-document-normalizer.ts",
+          "sha256": "dea238636bf2ff2d42aef38251cc9c7b9b76a13da14598a8590db88cda057b62"
+        },
+        {
+          "file": "_shared/model-gateway.ts",
+          "sha256": "b330a286302f3818b8765477f27e3fedabdf8070967ed45eee82befd6baa9f9e"
+        },
+        {
+          "file": "_shared/screening-ingest.ts",
+          "sha256": "1b81e30f93d3b517fa3efc15f987a3e9b12c40b9d4d1d8605d5c4cb0eb18caef"
+        },
+        {
+          "file": "_shared/screening.ts",
+          "sha256": "530b662d226e42574dcc5dda5f576c32480cb25e7a67169c247518b47fa3b052"
+        },
+        {
+          "file": "_shared/training-environment.ts",
+          "sha256": "dc21cd93f2231ec0669359ed3e7d9751799c26d2d5d98a201fb4642aa108e548"
+        },
+        {
+          "file": "agent-dexter/booking-allocation-review.ts",
+          "sha256": "c2d6f77142e62e56178efdf71eb1f7040b65dda2933dc6e595eab99761ff15a4"
+        },
+        {
+          "file": "agent-dexter/email-approval.mjs",
+          "sha256": "f409d506335813ef0180d9c6ea682fab4987a131cfc2b53adfbd0911a992910c"
+        },
+        {
+          "file": "agent-dexter/email-context.ts",
+          "sha256": "60d3bbeb009be012c97db8855f809ec105fc0b63b56d37dd2e62a7b40063f330"
+        },
+        {
+          "file": "agent-dexter/index.ts",
+          "sha256": "83b9fb839ada6acd7d9f1cde43cc5cf50a916636e16761f2ef0faf31e83d1bcf"
+        },
+        {
+          "file": "agent-dexter/scope-guard.ts",
+          "sha256": "d417e7cde79afb13463e936d40dfd8aad64fd7b561f55f397d95c7dd4468e477"
+        },
+        {
+          "file": "agent-dexter/security.ts",
+          "sha256": "83d4f96c076ebb4db5e142d88206c6263353c234e701b298606c2a90e46f122a"
+        },
+        {
+          "file": "inbox-api/core.ts",
+          "sha256": "ddaf8678cd9b38dd8ac31fc90f631d30fb5b04c19d725b6a5a7ba8e7c989d1f0"
+        },
+        {
+          "file": "inbox-api/runtime.ts",
+          "sha256": "d851979bf0bccb546df3f3742f0a39c986713ec42cea1e893b97bdb7cfb62821"
+        }
+      ]
+    },
+    {
+      "name": "screening",
+      "verifyJwt": true,
+      "entrypoint": "screening/index.ts",
+      "files": [
+        {
+          "file": "_shared/backend.ts",
+          "sha256": "6d6cbe63c02fa8fceb96dfef069a89e3f845bb55460506a0ff59c60a2fbf1697"
+        },
+        {
+          "file": "_shared/screening-ingest.ts",
+          "sha256": "1b81e30f93d3b517fa3efc15f987a3e9b12c40b9d4d1d8605d5c4cb0eb18caef"
+        },
+        {
+          "file": "_shared/screening.ts",
+          "sha256": "530b662d226e42574dcc5dda5f576c32480cb25e7a67169c247518b47fa3b052"
+        },
+        {
+          "file": "screening/index.ts",
+          "sha256": "472a6939d6015b5cd68d8a1a7f3f2facd5922669590dc415ffefcf8d658d0d45"
+        }
+      ]
+    },
+    {
+      "name": "screening-list-worker",
+      "verifyJwt": false,
+      "entrypoint": "screening-list-worker/index.ts",
+      "files": [
+        {
+          "file": "_shared/screening-ingest.ts",
+          "sha256": "1b81e30f93d3b517fa3efc15f987a3e9b12c40b9d4d1d8605d5c4cb0eb18caef"
+        },
+        {
+          "file": "_shared/screening.ts",
+          "sha256": "530b662d226e42574dcc5dda5f576c32480cb25e7a67169c247518b47fa3b052"
+        },
+        {
+          "file": "screening-list-worker/index.ts",
+          "sha256": "b418958677440f9369a3818dab9199ae459e9d57277f335965a2f579434f1be1"
+        }
+      ]
+    }
+  ]
+}

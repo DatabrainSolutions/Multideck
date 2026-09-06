@@ -8,6 +8,8 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 ## Delivery and evidence ledger
 
+6 September release compatibility checkpoint: live screening has an active canonical UKSL source and importer improvements absent from the local legacy-only prerequisite. Reconciled these without reactivating the retired source; the reviewed development release now contains 29 freight migrations plus an active-source-compatible freshness migration and six coordinated functions. The full populated current-schema rehearsal and 80 focused checks pass. [Release evidence](../release/2026-09-06-freight-active-source-release.md). This checkpoint is not a deployment or end-to-end completion claim.
+
 | Workstream | Required outcome | Evidence gate | State |
 | --- | --- | --- | --- |
 | Deployment | Explain failure, restore affected deployment without altering team setup | Vercel failure logs, successful matching build and route smoke test | Branch-scoped configuration cause confirmed in live settings/logs; existing dev READY and approved-host workspace renders; local diagnostic fix tested; newer implementation not released |

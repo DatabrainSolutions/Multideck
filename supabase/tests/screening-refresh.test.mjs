@@ -2,15 +2,15 @@ import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import test from "node:test"
 import { refreshOfsiList, ensureScreeningList } from "../functions/_shared/screening-ingest.ts"
-import { parseOfsiEntries, UK_OFSI_CSV_URL } from "../functions/_shared/screening.ts"
+import { parseOfsiEntries, createUkslEntryParser, UK_OFSI_CSV_URL } from "../functions/_shared/screening.ts"
 
 const csv = "Report Date: 03-Sep-2026\nUnique ID,OFSI Group ID,Name 1,Name 6,Name type,Designation Type,Regime Name,Address Country,Date Designated,UK Statement of Reasons\nRUS1234,,ALFA,SHIPPING LTD,Primary Name,Entity,Russia,GB,01/03/2022,Listed for logistical support\n"
 const hash = (text) => createHash("sha256").update(text).digest("hex")
 
-function workspace({ current = null, fresh = false, insertError = false, publishError = false } = {}) {
+function workspace({ current = null, fresh = false, insertError = false, publishError = false, sourceCode = 'uk_ofsi_consolidated', insertDelay = false } = {}) {
   const source = { ScreeningListSource_DownloadUrl: UK_OFSI_CSV_URL }
-  const state = { current, fresh, token: null, failed: false, fetches: 0, publications: 0, entries: [], snapshots: [], source }
-  const status = () => ({ loaded: Boolean(state.current), stale: !state.fresh || state.failed, refreshing: Boolean(state.token), snapshotId: state.current?.ScreeningListSnapshot_ID, downloadedAt: state.current?.ScreeningListSnapshot_DownloadedAt })
+  const state = { current, fresh, token: null, failed: false, fetches: 0, publications: 0, entries: [], snapshots: [], source, activeInserts: 0, maxInserts: 0 }
+  const status = () => ({ sourceCode, loaded: Boolean(state.current), stale: !state.fresh || state.failed, refreshing: Boolean(state.token), snapshotId: state.current?.ScreeningListSnapshot_ID, downloadedAt: state.current?.ScreeningListSnapshot_DownloadedAt })
   const admin = {
     async rpc(name, args = {}) {
       if (name === "cmp_screening_list_status") return { data: status(), error: null }
@@ -40,12 +40,17 @@ function workspace({ current = null, fresh = false, insertError = false, publish
         update(value) { operation = "update"; payload = value; return query }, delete() { operation = "delete"; return query },
         maybeSingle() { return query },
         then(resolve, reject) {
-          return Promise.resolve().then(() => {
+          return Promise.resolve().then(async () => {
             if (table === "sys_ScreeningListSources") return { data: source }
             if (operation === "insert") {
               if (table === "sys_ScreeningListEntries") {
-                if (insertError) return { error: { message: "Entry insert failed" } }
-                state.entries.push(...payload)
+                state.activeInserts++
+                state.maxInserts = Math.max(state.maxInserts, state.activeInserts)
+                try {
+                  if (insertDelay) await new Promise(resolve => setTimeout(resolve, 1))
+                  if (insertError) return { error: { message: "Entry insert failed" } }
+                  state.entries.push(...payload)
+                } finally { state.activeInserts-- }
               } else state.snapshots.push(payload)
             }
             if (operation === "select") return { data: filters.some(([k,v]) => k === "ScreeningListSnapshot_StatusCode" && v === "current") ? state.current : [] }
@@ -100,6 +105,39 @@ test("fresh verified reuse makes no provider request", async (t) => {
   t.mock.method(globalThis, "fetch", () => { throw new Error("Unexpected download") })
   assert.equal((await ensureScreeningList(admin)).ready, true)
 })
+
+test("active deployed UKSL identity is used without reactivating the legacy source", async (t) => {
+  const { admin, state } = workspace({ sourceCode: 'uk_sanctions_list' })
+  t.mock.method(globalThis, "fetch", async () => new Response(csv))
+  const result = await ensureScreeningList(admin)
+  assert.equal(result.ready, true)
+  assert.equal(result.refresh.sourceCode, 'uk_sanctions_list')
+  assert.equal(state.snapshots[0].ScreeningListSnapshot_SourceCode, 'uk_sanctions_list')
+})
+
+test("UKSL parser preserves designation IDs and deduplicates repeated addresses", () => {
+  const entries = []
+  const parser = createUkslEntryParser(entry => entries.push(entry))
+  parser.push('Unique ID,Name 1,Address Country,Type of Entity\nRUS1,ALFA,GB,Entity\nRUS1,ALFA,US,Entity\nRUS2,ALFA,GB,Entity\n')
+  parser.end()
+  assert.deepEqual(entries.map(entry => entry.groupId), ['RUS1', 'RUS2'])
+  assert.equal(entries[0].ukRef, 'RUS1')
+  assert.equal(entries[0].groupType, 'Entity')
+})
+
+for (const insertError of [false, true]) {
+  test(`large UKSL batches remain bounded and settle before ${insertError ? 'failure' : 'publication'}`, async (t) => {
+    const { admin, state } = workspace({ sourceCode: 'uk_sanctions_list', insertDelay: true, insertError })
+    const large = 'Unique ID,Name 1\n' + Array.from({ length: 20001 }, (_, i) => `TEST${i},Synthetic ${i}\n`).join('')
+    t.mock.method(globalThis, "fetch", async () => new Response(large))
+    const result = await ensureScreeningList(admin)
+    assert.ok(state.maxInserts > 1 && state.maxInserts <= 12)
+    assert.equal(state.activeInserts, 0)
+    assert.equal(result.ready, !insertError)
+    assert.equal(state.publications, insertError ? 0 : 1)
+    if (!insertError) assert.equal(state.entries.length, 20001)
+  })
+}
 
 for (const failure of ["http", "stream", "empty", "insert", "publish"]) {
   test(`${failure} failure preserves the previous snapshot and never returns ready`, async (t) => {

@@ -1,21 +1,33 @@
 // Schema-only or synthetic populated rehearsal, never hosted certification.
-// Usage: node .../freight-schema-rehearsal.mjs /absolute/schema-only-dump.sql [--populated]
+// Usage: node .../freight-schema-rehearsal.mjs /absolute/schema-only-dump.sql [--populated] [--release-plan=/absolute/plan.json]
 import assert from 'node:assert/strict'
 import {readFileSync,mkdtempSync,rmSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join,isAbsolute} from 'node:path'
 import {spawnSync} from 'node:child_process'
 import {createHash} from 'node:crypto'
-const [schemaPath,fixtureMode]=process.argv.slice(2)
-assert.ok(!fixtureMode||fixtureMode==='--populated','Only --populated is supported')
+const [schemaPath,...options]=process.argv.slice(2)
+assert.ok(options.every(option=>option==='--populated'||option.startsWith('--release-plan=')),'Unsupported option')
+assert.equal(new Set(options.map(option=>option.split('=')[0])).size,options.length,'Duplicate option')
+const fixtureMode=options.includes('--populated')
+const releasePlanPath=options.find(option=>option.startsWith('--release-plan='))?.slice('--release-plan='.length)
+if(releasePlanPath)assert.ok(isAbsolute(releasePlanPath),'Release plan path must be absolute')
 assert.ok(schemaPath&&isAbsolute(schemaPath),'Provide an absolute schema-only dump path')
 const schema=readFileSync(schemaPath,'utf8')
 assert.ok(schema.includes('-- PostgreSQL database dump'),'Expected a pg_dump schema file')
 assert.ok(!/^COPY .* FROM stdin;|^INSERT INTO /m.test(schema),'Business data must not be included')
 const root=new URL('../../',import.meta.url)
 const manifest=JSON.parse(readFileSync(new URL('../../../docs/release/2026-09-06-freight-supabase-parity.json',import.meta.url)))
-const files=manifest.pendingFreightMigrations.map(item=>item.file)
+const plan=releasePlanPath?JSON.parse(readFileSync(releasePlanPath,'utf8')):null
+const migrations=plan?.migrations??manifest.pendingFreightMigrations
+assert.ok(Array.isArray(migrations)&&migrations.length>0,'Migration plan must not be empty')
+const files=migrations.map(item=>item.file)
+const screeningFixture=fixtureMode&&files.includes('20260906082224_screening_active_source_freshness.sql')
 assert.deepEqual(files,[...new Set(files)].sort(),'Migration plan must be unique and chronological')
+for(const migration of migrations){
+  assert.match(migration.file,/^\d{14}_[a-z0-9_]+\.sql$/)
+  if(plan)assert.equal(createHash('sha256').update(readFileSync(new URL('migrations/'+migration.file,root))).digest('hex'),migration.sha256,'Release migration changed since review')
+}
 const bin=process.env.PG_TEST_BIN||'/opt/homebrew/opt/postgresql@17/bin'
 const directory=mkdtempSync(join(tmpdir(),'multideck-freight-chain-')),data=join(directory,'data')
 let started=false,stage='initialise';const applied=[]
@@ -46,8 +58,9 @@ try{
   if(fixtureMode){
     stage='synthetic populated fixtures'
     sql(readFileSync(new URL('../fixtures/freight-chain-before.sql',import.meta.url),'utf8'))
+    if(screeningFixture)sql(readFileSync(new URL('../fixtures/freight-screening-before.sql',import.meta.url),'utf8'))
   }
-  for(const {file} of manifest.pendingFreightMigrations){
+  for(const {file} of migrations){
     assert.match(file,/^\d{14}_[a-z0-9_]+\.sql$/)
     stage=file;sql(readFileSync(new URL('migrations/'+file,root),'utf8'));applied.push(file)
     console.log('Applied locally: '+file)
@@ -69,6 +82,7 @@ try{
   if(fixtureMode){
     stage='populated preservation assertions'
     sql(readFileSync(new URL('../fixtures/freight-chain-after.sql',import.meta.url),'utf8'))
+    if(screeningFixture)sql(readFileSync(new URL('../fixtures/freight-screening-after.sql',import.meta.url),'utf8'))
   }
   console.log(JSON.stringify({status:fixtureMode?'populated_rehearsal_passed':'structural_rehearsal_passed',schemaSha256:createHash('sha256').update(schema).digest('hex'),applied,
     migrationHashes:files.map(file=>({file,sha256:createHash('sha256').update(readFileSync(new URL('migrations/'+file,root))).digest('hex')})),
@@ -77,6 +91,9 @@ try{
       'no invented financial values or allocations','exact typed projection with zero and unknown distinctions',
       'existing cargo registry conflict update','unrelated registry and watch signal preservation','submitted mutation and deletion denial','invalid draft cargo rejection']:[],
     fixtureHashes:fixtureMode?['before','after'].map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-chain-'+name+'.sql',import.meta.url))).digest('hex')})):[],
+    screeningChecks:screeningFixture?['existing source and snapshot preservation','entry preservation','unrelated source preservation',
+      'no invented feed provenance or freshness','service-only refresh boundary']:[],
+    screeningFixtureHashes:screeningFixture?['before','after'].map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-screening-'+name+'.sql',import.meta.url))).digest('hex')})):[],
     hostedLifecycleVerified:false}))
 }catch(error){
   console.error(JSON.stringify({status:'stopped',stage,applied,error:error.message}))
