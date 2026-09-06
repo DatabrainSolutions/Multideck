@@ -165,10 +165,10 @@ export function SupportTicketWorkspace({ ticketId, navigate }: { ticketId: strin
                 <span className="font-medium text-[var(--md-ink)]">{t(support ? "Support team" : "You")}</span>
                 <span data-i18n-skip className="break-all text-[var(--md-subtle)]">{message.authorName}</span>
               </div>
-              <div className={`rounded-[var(--md-radius-xl)] px-4 py-3 ${support ? "rounded-tl-[var(--md-radius-sm)] bg-[var(--md-hover)]" : "rounded-tr-[var(--md-radius-sm)] bg-[var(--md-accent-a12)]"}`}>
-                {message.body ? <p data-i18n-skip className="whitespace-pre-wrap break-words text-sm leading-6 text-[var(--md-ink)] [overflow-wrap:anywhere]">{message.body}</p> : null}
-                {message.attachments?.length ? <div className={message.body ? "mt-3" : ""}><TicketAttachmentList items={message.attachments} /></div> : null}
-              </div>
+              {message.body ? <div className={`rounded-[var(--md-radius-xl)] px-4 py-3 ${support ? "rounded-tl-[var(--md-radius-sm)] bg-[var(--md-hover)]" : "rounded-tr-[var(--md-radius-sm)] bg-[var(--md-accent-a12)]"}`}>
+                <p data-i18n-skip className="whitespace-pre-wrap break-words text-sm leading-6 text-[var(--md-ink)] [overflow-wrap:anywhere]">{message.body}</p>
+              </div> : null}
+              {message.attachments?.length ? <div className={message.body ? "mt-2" : ""}><TicketAttachmentList items={message.attachments} align={support ? "start" : "end"} /></div> : null}
               <time dateTime={message.createdAt} className={`mt-1.5 block text-[11px] text-[var(--md-subtle)] ${support ? "" : "text-right"}`}>{date(message.createdAt)}</time>
             </div>
           </motion.li>

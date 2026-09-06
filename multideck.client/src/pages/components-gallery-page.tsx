@@ -8,6 +8,7 @@ import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
 import toastSuccessIcon from "@/assets/toasts/toast-success.png"
 import { Button } from "@/components/ui/button"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Iphone } from "@/components/ui/iphone"
 import {
   Context,
@@ -307,7 +308,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "booking-link-kind-picker", "booking-host-picker", "booking-question-builder", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "booking-link-kind-picker", "booking-host-picker", "booking-question-builder", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "toggle-group", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
   },
   {
     label: "Auth components",
@@ -2941,6 +2942,13 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "toggle-group" ? (
+        <ToggleGroup type="single" defaultValue="bug" variant="outline" aria-label="Ticket type">
+          <ToggleGroupItem value="bug">Bug</ToggleGroupItem>
+          <ToggleGroupItem value="feature_request">Feature request</ToggleGroupItem>
+          <ToggleGroupItem value="question">Question</ToggleGroupItem>
+        </ToggleGroup>
+      ) : null}
       {id === "segmented-control" ? (
         <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-white/50 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <SegmentedControl options={bookingViewModes} value={previewBookingView} onChange={setPreviewBookingView} />

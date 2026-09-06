@@ -1,3 +1,4 @@
+import toggleGroupSource from "@/components/ui/toggle-group.tsx?raw"
 import ticketAttachmentsSource from "@/components/multideck/ticket-attachments.tsx?raw"
 import paginationSource from "@/components/multideck/pagination.tsx?raw"
 import lifecycleNotesSource from "@/components/multideck/lifecycle-notes.tsx?raw"
@@ -1567,6 +1568,16 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
 />`,
   },
   {
+    id: "toggle-group",
+    name: "Toggle Group",
+    category: "Navigation",
+    description: "Compact, keyboard-accessible option buttons for single or multiple selections.",
+    details: "Use for short options that should remain visible together. The ticket form composes this primitive with a travelling selection highlight. A single selection should ignore empty changes when a choice is required.",
+    foundOn: [{ label: "Submit a ticket · sidebar", route: "/" }, { label: "Components", route: "/components?component=toggle-group" }],
+    componentCode: toggleGroupSource,
+    usageCode: `<ToggleGroup type="single" value={ticketType} onValueChange={(value) => { if (value) setTicketType(value) }} aria-label="Ticket type">\n  <ToggleGroupItem value="bug">Bug</ToggleGroupItem>\n  <ToggleGroupItem value="feature_request">Feature request</ToggleGroupItem>\n  <ToggleGroupItem value="question">Question</ToggleGroupItem>\n</ToggleGroup>`,
+  },
+  {
     id: "segmented-control",
     name: "Segmented Control",
     category: "Navigation",
@@ -1642,7 +1653,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Operations",
     description: "The advanced quote filter, opened as a compact panel beside the toolbar button, with condition groups, field operators and saved filters.",
     details: "Open it from the table toolbar to combine commercial, route, ownership, timing and workflow conditions. Each group matches all or any of its conditions, the footer shows how many quotes the draft would return, and a named filter can be saved and picked again from the panel header.",
-    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Components", route: "/components?component=quote-search-builder" }],
+    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "CRM Leads", route: "/crm/leads" }, { label: "Components", route: "/components?component=quote-search-builder" }],
     componentCode: `<AdvancedFilterPopover\n  fields={quoteSearchFieldOptions}\n  value={search}\n  onChange={setSearch}\n  storageKey="quote-register"\n  label="Advanced search"\n  title="Advanced quote search"\n  itemLabel="quotes"\n  countMatches={countDraftMatches}\n  totalCount={quotes.length}\n/>`,
     usageCode: `const [search, setSearch] = useState(createEmptyQuoteSearch)\nconst visibleQuotes = quotes.filter((quote) => quoteMatchesSearch(quote, search))\n\n<DataTable\n  columns={columns}\n  rows={visibleQuotes}\n  toolbarFilters={<AdvancedFilterPopover fields={quoteSearchFieldOptions} value={search} onChange={setSearch} storageKey="quote-register" />}\n/>`,
   },

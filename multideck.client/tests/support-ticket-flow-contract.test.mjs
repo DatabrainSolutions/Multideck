@@ -77,7 +77,9 @@ test("the screenshot surface discloses and enforces the exact attachment constra
   assert.match(dialog, /maximumAttachmentCount = 5/)
   assert.match(dialog, /maximumAttachmentBytes = 10 \* 1024 \* 1024/)
   assert.match(dialog, /maximumAttachmentTotalBytes = 25 \* 1024 \* 1024/)
-  assert.match(dialog, /Up to five PNG, JPEG, or WebP images; 10 MB each and 25 MB total\./)
+  assert.match(dialog, /const maximumAttachmentCount = 5/)
+  assert.match(dialog, /const maximumAttachmentBytes = 10 \* 1024 \* 1024/)
+  assert.match(dialog, /const maximumAttachmentTotalBytes = 25 \* 1024 \* 1024/)
   assert.match(dialog, /accept="image\/png,image\/jpeg,image\/webp"/)
 })
 
@@ -96,10 +98,10 @@ test("ticket attachments use square icon-only previews and a keyboard-safe share
   assert.match(imageLightbox, /phase === "closing" \? 0\.2 : 0\.28/)
 })
 
-test("the ticket form uses the wide desktop dialog and reflows dense choices on narrow screens", () => {
-  assert.match(dialog, /sm:max-w-\[760px\]/)
+test("the ticket form uses a compact desktop dialog and reflows dense choices on narrow screens", () => {
+  assert.match(dialog, /sm:max-w-\[680px\]/)
   assert.doesNotMatch(dialog, /className="h-\[min\(90vh,860px\)\] max-w-\[760px\]/)
-  assert.match(dialog, /col-span-2 sm:col-span-1/)
+  assert.match(dialog, /<ToggleGroup type="single" value=\{draft.ticketType\}/)
   assert.match(dialog, /grid-cols-1 min-\[480px\]:grid-cols-3/)
   assert.match(dialog, /sm:\[&>button\]:w-auto/)
   assert.match(dialog, /closeLabel=\{t\("Close"\)\}/)
@@ -111,8 +113,8 @@ test("impact choices use severity pills with an animated selected icon", () => {
   assert.match(dialog, /slowed_down: \{ background: "--md-status-amber-bg", ink: "--md-status-amber-ink", indicator: "--md-amber" \}/)
   assert.match(dialog, /no_immediate_blocker: \{ background: "--md-status-green-bg", ink: "--md-status-green-ink", indicator: "--md-green" \}/)
   assert.match(dialog, /role="radiogroup"[\s\S]*?rounded-full[\s\S]*?<AnimatePresence initial=\{false\}>/)
-  assert.match(dialog, /opacity: 0, scale: 0\.25, filter: "blur\(4px\)"/)
-  assert.match(dialog, /type: "spring", duration: 0\.3, bounce: 0/)
+  assert.match(dialog, /opacity: 0, y: 2/)
+  assert.match(dialog, /reduceMotion\(Boolean\(shouldReduceMotion\), mdMotion\.micro\)/)
   assert.match(dialog, /useReducedMotion\(\)/)
 })
 

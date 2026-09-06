@@ -257,7 +257,8 @@ export function AdvancedFilterPopover({
         aria-label={t(title)}
         onInteractOutside={(event) => { if (isInsideFloatingLayer(event.target)) event.preventDefault() }}
         onFocusOutside={(event) => { if (isInsideFloatingLayer(event.target)) event.preventDefault() }}
-        className="w-[min(640px,calc(100vw-20px))] gap-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-popover)]"
+        className="w-[min(640px,calc(100vw-20px))] gap-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1"
+        style={{ boxShadow: "var(--md-shadow-soft)" }}
       >
         <div className="flex flex-wrap items-center gap-2 px-2 pb-2 pt-1.5">
           <div className="min-w-0 flex-1">

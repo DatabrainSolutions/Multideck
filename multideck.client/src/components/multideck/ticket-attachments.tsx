@@ -7,22 +7,22 @@ import { ImageLightbox } from "@/components/multideck/image-lightbox"
 import { ticketFileAccept, ticketFileHint, type TicketAttachment } from "@/lib/ticket-attachments"
 
 // Multideck-owned. Identical geometry and motion are used in App and Cloud.
-export function TicketAttachmentList({ items, onRemove, disabled = false }: {
-  items: TicketAttachment[]; onRemove?: (id: string) => void; disabled?: boolean
+export function TicketAttachmentList({ items, onRemove, disabled = false, align = "start" }: {
+  items: TicketAttachment[]; onRemove?: (id: string) => void; disabled?: boolean; align?: "start" | "end"
 }) {
   const [pdf, setPdf] = useState<TicketAttachment | null>(null)
   const reduced = useReducedMotion()
   const images = items.filter(file => file.mediaType.startsWith("image/")).map(file => ({id:file.id,src:file.signedUrl,alt:file.originalName}))
-  return <><ImageLightbox items={images}>{lightbox => <ul aria-label={onRemove ? "Files to send" : "Attachments"} className="relative flex min-w-0 flex-wrap gap-2">
+  return <><ImageLightbox items={images}>{lightbox => <ul aria-label={onRemove ? "Files to send" : "Attachments"} className={"relative flex min-w-0 flex-wrap gap-2 " + (align === "end" ? "justify-end" : "")}>
     <AnimatePresence initial={false} mode="popLayout">
       {items.map(file => {
         const image = file.mediaType.startsWith("image/")
         const extension = file.originalName.split(".").at(-1)?.toUpperCase() || "FILE"
         const preview = image
           ? <img src={file.signedUrl} alt="" width={80} height={80} className="size-full object-cover outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10" />
-          : <span className="flex aspect-square size-20 shrink-0 flex-col items-center justify-center gap-1.5 rounded-[calc(var(--md-radius-xl)-4px)] bg-[var(--md-surface-tint)] text-[var(--md-text)]"><FileText className="size-6" strokeWidth={1.5} aria-hidden="true" /><span className="text-[10px] font-medium tracking-wide">{extension}</span></span>
-        const contents = <>{preview}{!image ? <span className="min-w-0 flex-1 py-2 pl-3 pr-9 text-left"><span data-i18n-skip className="block truncate text-[13px] font-medium text-[var(--md-ink)]" title={file.originalName}>{file.originalName}</span><span className="mt-1 block text-xs tabular-nums text-[var(--md-text)]">{file.byteSize < 1048576 ? Math.max(1, Math.round(file.byteSize / 1024)) + " KB" : (file.byteSize / 1048576).toFixed(1) + " MB"}</span></span> : null}</>
-        const tile = image ? "size-20 overflow-hidden rounded-[var(--md-radius-xl)]" : "flex min-h-22 w-64 max-w-full items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]"
+          : <span className="flex aspect-square size-12 shrink-0 items-center justify-center rounded-[calc(var(--md-radius-xl)-4px)] bg-[var(--md-surface-tint)] text-[var(--md-text)]"><FileText className="size-5" strokeWidth={1.5} aria-hidden="true" /></span>
+        const contents = <>{preview}{!image ? <span className="min-w-0 flex-1 py-1 pl-2.5 pr-8 text-left"><span data-i18n-skip className="block truncate text-[13px] font-medium text-[var(--md-ink)]" title={file.originalName}>{file.originalName}</span><span className="mt-0.5 block text-[11px] tabular-nums text-[var(--md-text)]">{extension} · {file.byteSize < 1048576 ? Math.max(1, Math.round(file.byteSize / 1024)) + " KB" : (file.byteSize / 1048576).toFixed(1) + " MB"}</span></span> : null}</>
+        const tile = image ? "size-20 overflow-hidden rounded-[var(--md-radius-xl)]" : "flex h-14 w-60 max-w-full items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]"
         return <motion.li key={file.id} layout={reduced ? false : "position"} initial={reduced ? {opacity:0} : {opacity:0,scale:0.96,y:4}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:reduced?1:0.96,transition:{duration:reduced?0:0.14,ease:"easeIn"}}} transition={{duration:reduced?0:0.22,ease:[0.22,1,0.36,1]}} className="group relative max-w-full">
           {image ? <motion.button type="button" ref={node=>lightbox.registerTrigger(file.id,node)} layoutId={lightbox.layoutIdFor(file.id)} onClick={()=>lightbox.open(file.id)} aria-label={"Preview "+file.originalName} title={file.originalName} className={tile+" block outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-2 motion-safe:active:scale-[0.96]"}>{contents}</motion.button>
             : file.mediaType === "application/pdf" ? <button type="button" onClick={() => setPdf(file)} aria-label={"Preview "+file.originalName} title={file.originalName} className={tile+" outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-2 motion-safe:active:scale-[0.96]"}>{contents}</button>

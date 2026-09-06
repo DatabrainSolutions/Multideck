@@ -6578,3 +6578,122 @@ html.md-summon-picking {
     outline-color: Highlight;
   }
 }
+
+/* Ticket creation: compact choices and quiet, interruptible control feedback. */
+.support-ticket-form form {
+  gap: var(--md-gap-md);
+}
+
+.support-ticket-form details {
+  padding-block: var(--md-gap-xs);
+  padding-inline: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ticket-type-options {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  gap: var(--md-gap-xs);
+  padding: var(--md-gap-xs);
+  border-radius: var(--md-radius-lg);
+  background: var(--md-surface-soft);
+}
+
+.ticket-type-options .ticket-type-option {
+  position: relative;
+  isolation: isolate;
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: var(--md-radius-md);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--md-text);
+  background: transparent;
+  transition: color var(--md-motion-fast), scale var(--md-motion-fast);
+}
+
+.ticket-type-options .ticket-type-option:hover,
+.ticket-type-options .ticket-type-option[data-state="on"] {
+  color: var(--md-ink);
+}
+
+.ticket-type-options .ticket-type-option:active {
+  scale: 0.98;
+}
+
+.ticket-type-selection {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--md-surface);
+  box-shadow: var(--md-shadow-line);
+}
+
+.support-ticket-form [data-slot="input"],
+.support-ticket-form [data-slot="textarea"] {
+  background: var(--md-surface-soft);
+  font-weight: 400;
+}
+
+.support-ticket-form [data-slot="textarea"] {
+  field-sizing: fixed;
+  resize: vertical;
+  height: 80px;
+  min-height: 80px;
+  flex: 1;
+}
+
+.support-ticket-form [data-slot="input"]:hover,
+.support-ticket-form [data-slot="textarea"]:hover,
+.support-ticket-form [data-slot="input"]:focus-visible,
+.support-ticket-form [data-slot="textarea"]:focus-visible {
+  background: var(--md-field-bg-hover);
+}
+
+.support-ticket-surface [data-slot="button"] {
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.support-ticket-surface [data-slot="button"]:active {
+  scale: 0.98;
+}
+
+.support-ticket-surface [data-slot="button"] svg {
+  transition: transform var(--md-motion-fast);
+}
+
+.support-ticket-surface [data-slot="button"]:hover svg {
+  transform: translateY(-1px);
+}
+
+@media (max-width: 639px) {
+  .ticket-type-options .ticket-type-option,
+  .support-ticket-form [data-slot="button"],
+  .support-ticket-form [data-slot="input"] {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticket-type-options .ticket-type-option,
+  .support-ticket-surface [data-slot="button"],
+  .support-ticket-surface [data-slot="button"] svg {
+    transition: none;
+  }
+
+  .ticket-type-options .ticket-type-option:active,
+  .support-ticket-surface [data-slot="button"]:active {
+    scale: 1;
+  }
+
+  .support-ticket-surface [data-slot="button"]:hover svg {
+    transform: none;
+  }
+}
