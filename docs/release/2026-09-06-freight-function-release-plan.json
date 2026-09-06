@@ -1,6 +1,6 @@
 {
   "projectId": "aqtwypsuijxlnvtxpuxe",
-  "status": "review_only_not_deployed",
+  "status": "development_backend_deployed_client_and_lifecycle_pending",
   "migrations": [
     {
       "file": "20260905110317_booking_stable_cargo_equipment_identity.sql",

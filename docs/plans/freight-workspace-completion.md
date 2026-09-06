@@ -8,7 +8,7 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 ## Delivery and evidence ledger
 
-6 September release compatibility checkpoint: live screening has an active canonical UKSL source and importer improvements absent from the local legacy-only prerequisite. Reconciled these without reactivating the retired source; the reviewed development release now contains 29 freight migrations plus an active-source-compatible freshness migration and six coordinated functions. The full populated current-schema rehearsal and 80 focused checks pass. [Release evidence](../release/2026-09-06-freight-active-source-release.md). This checkpoint is not a deployment or end-to-end completion claim.
+6 September release checkpoint: reconciled the live canonical UKSL source and importer improvements without reactivating the retired source. All 29 freight migrations plus the active-source freshness migration and six coordinated functions are now deployed to development. Verified exact migration identities, all 47 deployed source-file instances, unchanged existing record fingerprints and negative access boundaries. The full populated current-schema rehearsal and 80 focused checks pass. [Release evidence](../release/2026-09-06-freight-active-source-release.md). The matching client deployment, positive hosted lifecycle and all-mode operational depth remain unfinished; this is not end-to-end completion.
 
 | Workstream | Required outcome | Evidence gate | State |
 | --- | --- | --- | --- |

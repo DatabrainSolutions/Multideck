@@ -19,4 +19,18 @@ The shared importer preserves the live worker's 1,000-row batches with at most 1
 
 This is pre-release evidence, not hosted lifecycle certification. A controlled development migration/function release, post-release permission/data checks, client deployment and browser-to-email/PDF/Booking/Dexter tests remain required. Operational depth across all modes remains part of the original goal.
 
+## Development backend deployment completed
+
+The 30 reviewed migrations were applied with their original filename identities. Live history now has 437 entries (407 + 30); the legacy-only screening prerequisite remains absent. No historical ledger rows were changed. CLI reported a post-apply local catalogue-cache warning because Docker is unavailable; all migration identities and live structures were subsequently verified independently, so this was not a failed database apply.
+
+All six functions are ACTIVE and their original JWT settings are preserved: Quote 74, public response 40, Booking 40, Dexter 157, screening 45 and screening worker 47. Each deployed bundle was downloaded into its own isolated directory and all 47 planned source-file instances exactly matched reviewed SHA256 values. Other deployed functions remained unchanged.
+
+Before/after whole-row fingerprints match for all 37 Quote versions, 27 Quote headers, 76 Bookings, 21 cargo rows, 10 equipment rows, 44 routing rows, 2 screening sources, 3 screening snapshots and 38,069 screening entries. Newly introduced nullable columns were excluded from the comparison; separate checks confirm zero invented shipment values, cargo projections or allocations. The active source remains `uk_sanctions_list`. No customer email or operational Booking update was initiated.
+
+Unauthenticated HTTP requests are denied by Quote/Booking/Dexter/screening (401); the worker denies a missing shared secret (401). Public response rejects an unrelated origin (403) and an invalid token from the approved development origin (404). Authenticated SQL-role checks with no bound user deny both watch helpers, both private schemas, trusted Quote finalization, revision application and screening refresh. These are negative boundary checks, not a successful signed-in end-to-end flow or cross-tenant certification.
+
+Security advisors add two expected no-policy INFO findings for the typed service-only tables and two authenticated SECURITY DEFINER warnings for boolean RLS watch helpers. Reviewed the latter: each binds `auth.uid()` to an active user in the exact company and checks the relevant Quote/Booking permission. No new anonymously executable SECURITY DEFINER function was reported. Existing broader security findings remain outstanding; they were not blanket-dismissed or changed during this release.
+
+[Machine-readable deployment evidence](2026-09-06-freight-development-backend-release.json). **Client deployment and real hosted lifecycle verification are still pending.** In particular, accepted-Quote revision application requires the updated client to carry the server's review token; do not weaken that guard to accommodate a stale client. The next release step is the matching client build/deployment without changing team configuration, followed by signed-in flow checks and the remaining all-mode operational work.
+
 CLI behaviour reviewed at the pinned release: [pending-list handling](https://github.com/supabase/cli/blob/v2.111.0/apps/cli-go/internal/migration/up/up.go), [history fetch](https://github.com/supabase/cli/blob/v2.111.0/apps/cli-go/internal/migration/fetch/fetch.go), [dry-run and push](https://github.com/supabase/cli/blob/v2.111.0/apps/cli-go/internal/db/push/push.go).
