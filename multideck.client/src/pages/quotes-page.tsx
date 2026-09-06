@@ -5283,7 +5283,7 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     id: record.reference,
     status: presentation.status,
     statusTone: presentation.tone,
-    localRef: record.customerReference?.trim() || record.reference.trim(),
+    localRef: typeof record.customerReference === "string" ? record.customerReference : record.reference.trim(),
     quoteType: fact("quoteType"),
     source: fact("source"),
     workflowStatus: fact("workflowStatus") || presentation.status,

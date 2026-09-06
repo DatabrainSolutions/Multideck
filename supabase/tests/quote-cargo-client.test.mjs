@@ -2,6 +2,19 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { cargo, documentCargo, mapping, workspace, fixtureLines, openOnce } from './quote-cargo-client-fixture.mjs'
 
+test('customer enquiry reference round-trips independently of the locked master reference, including an explicit clear', () => {
+  for (const reference of ['QA-FREIGHT-20260906-NOT-A-SHIPMENT', '', 'Customer / enquiry 42']) {
+    const input = workspace({})
+    input.quote.reference = 'JQ20022'
+    input.quote.customerReference = reference
+    const loaded = mapping.quoteRecordFromWorkspace(input, null)
+    assert.equal(loaded.id, 'JQ20022')
+    assert.equal(loaded.localRef, reference)
+    assert.equal(mapping.quoteSavePayload(loaded, [], null).customerReference, reference)
+  }
+  assert.equal(mapping.quoteRecordFromWorkspace(workspace({}), null).localRef, 'Q-CARGO')
+})
+
 test('replayed new-Quote creation awaits the same request instead of allocating another reference', async () => {
   const ref = { current: null }
   let calls = 0, finish
