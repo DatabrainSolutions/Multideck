@@ -8,6 +8,16 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 ## Delivery and evidence ledger
 
+6 September notification/overview development release: fast-forwarded six
+commits to origin/dev (`f235088`); exact Vercel Git deployment is READY and the
+approved hostname serves the matching asset. Hosted read-only checks confirm
+the real Quote readiness marker, retained original acceptance/Booking link,
+honest unavailable forecast and saved Quote document listing. Twenty-seven
+focused release checks pass; team/project configuration is unchanged. No
+Edge Function, logo, email, acceptance, Customs or tenant-record write occurred.
+Fresh revision and hosted queue delivery remain open, along with broader
+all-mode depth. [Release evidence](../release/2026-09-06-notification-overview-development-release.md).
+
 6 September notification queue checkpoint: local corrections hold the next
 popup until the requested Quote workspace is ready, prevent late events from
 replacing the popup currently being read, and clear queue state on account
