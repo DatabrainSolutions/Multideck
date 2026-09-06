@@ -8,6 +8,33 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 ## Delivery and evidence ledger
 
+6 September continuation: fresh Git fetch confirms clean `314ffc2` with zero
+divergence from origin/dev; its exact Vercel Git deployment is READY and the
+approved development hostname loads the signed-in Booking. Hosted Job ref
+edit/save/reload succeeded and was restored through an explicit clear, which
+returns the default JOB-49 on Save and reload. Accepted Original version hash,
+badge and PDF listing remain intact. Two callback regressions and the complete
+client build pass. Existing preview-environment repair scope, V2 send/accept/
+selective-apply approval and wider all-mode/isolation gates remain open.
+See `docs/release/2026-09-06-booking-save-response-evidence.md` for precise
+restoration semantics and evidence limits. Goal continues in task
+`01a077ed-3ff5-7bb0-ae56-17d1376b4a49` from
+`01a0331f-1a15-7291-ae6c-56f29927ef4c`; its scope and recorded decisions persist.
+
+Next independent all-mode slice: operator-recorded route milestones. Read-only
+development inspection confirms `Job_RouteMilestones` exists with separate
+planned, estimated and actual timestamps, source/reference fields and 14 active
+dictionary entries; there are currently zero records. Current Booking API types,
+Edge workflow and migration sources have no milestone adapter. This is a verified
+integration gap, not an implemented feature. Reuse the typed foundation through
+the canonical Booking permission/audit boundary, with exact-leg editor/read,
+approved Dexter actions and deterministic watches together. Preserve source and
+history, reject stale/foreign changes, and verify representative Sea/Air/Road/Rail
+flows. Keep tracking ingestion deferred and exclude Customs release entry or
+changes from this slice. Deeper DG, Air screening, Road appointments/driver,
+Rail scheduling, per-leg readiness and the remaining hosted revision/isolation
+gates retain their full place in the objective.
+
 6 September Booking-save correction: applied migration `20260906174532` so all
 save branches return the same complete workspace as Open. Local PostgreSQL
 response/version/isolation checks, 34 related contracts and retained-schema
