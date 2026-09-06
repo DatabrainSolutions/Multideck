@@ -111,6 +111,9 @@ export type BookingWorkflowRoute = {
   plannedDepartureAt?: string | null
   plannedArrivalAt?: string | null
   plannedDeliveryAt?: string | null
+  cargoCutoffAt?: string | null
+  documentationCutoffAt?: string | null
+  vgmCutoffAt?: string | null
   carrierId?: string | null
   carrierBookingReference?: string | null
   masterTransportReference?: string | null
@@ -185,6 +188,7 @@ export type BookingWorkflowEvent = {
 }
 
 export type BookingWorkflowWorkspace = {
+  routeCutoffsSupported?: boolean
   booking: {
     jobId: string
     bookingReference: string

@@ -14,6 +14,8 @@ export function changeBookingRouteMode(route: BookingWorkflowRoute, mode: string
   return {
     ...route,
     ...cleared,
+    // Do not invent capability on an older backend or copy a deadline into a new mode.
+    ...Object.fromEntries(["cargoCutoffAt", "documentationCutoffAt", "vgmCutoffAt"].filter((field) => field in route).map((field) => [field, ""])),
     mode,
     routeData: {
       ...route.routeData,

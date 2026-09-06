@@ -111,6 +111,7 @@ import type { AuthUserSummary } from "@/lib/auth-user"
 import { freightBookingMode, freightFieldPolicy, freightShipmentAllowed, freightTransportField, freightRouteOperationalFields } from "@/lib/freight-field-policy"
 import { bookingEquipmentKindChoices, bookingEquipmentPresentation, newBookingEquipment, type BookingEquipmentKind } from "@/lib/booking-equipment-policy"
 import { bookingRouteScheduleFields, routeScheduleParts, changeRouteScheduleDate, changeRouteScheduleTime } from "@/lib/booking-route-schedule"
+import { bookingRouteCutoffFields, routeCutoffInputValue, changeRouteCutoff } from "@/lib/booking-route-cutoffs"
 import { freightPackageTypeOptions } from "@/lib/freight-package-types"
 import { changeBookingRouteMode, routeSharedReferenceFields } from "@/lib/booking-route-mode-change"
 import { bookingRecordAvailability } from "@/lib/booking-record-availability"
@@ -2312,6 +2313,80 @@ function BookingRouteScheduleFields({ route, editable, onChange }: {
   </div>
 }
 
+function BookingRouteCutoffFields({ route, editable, onChange }: {
+  route: BookingWorkflowRoute
+  editable: boolean
+  onChange: (field: keyof BookingWorkflowRoute, value: string) => void
+}) {
+  const { t } = useLanguage()
+  const id = useId()
+  const [editing, setEditing] = useState<{ original: BookingWorkflowRoute; values: Record<string, string> } | null>(null)
+  const [error, setError] = useState("")
+  const [errorField, setErrorField] = useState("")
+  const editButton = useRef<HTMLButtonElement>(null)
+  const summary = useRef<HTMLParagraphElement>(null)
+  const fields = bookingRouteCutoffFields.filter(({ field }) => field !== "vgmCutoffAt" || route.mode === "sea")
+  return <div className="grid min-w-0 gap-2 md:col-span-2 xl:col-span-3">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <p ref={summary} tabIndex={-1} className="text-xs font-medium">{t("Carrier cut-offs · UTC")}</p>
+      {editable ? <Button ref={editButton} type="button" variant="ghost" className="h-8 px-2 text-xs" onClick={() => {
+        setError("")
+        setErrorField("")
+        setEditing({ original: route, values: Object.fromEntries(fields.map(({ field }) => [field, routeCutoffInputValue(route[field])])) })
+      }}>{t("Edit cut-offs")}</Button> : null}
+    </div>
+    <dl className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+      {fields.map(({ field, label }) => <div key={field} className="min-w-0 text-xs leading-5">
+        <dt className="text-[var(--md-text)]">{t(label)}</dt>
+        <dd data-i18n-skip className="break-words">{route[field] ? `${routeCutoffInputValue(route[field]).replace("T", " ")} UTC` : t("Not recorded")}</dd>
+      </div>)}
+    </dl>
+    <p className="text-xs leading-5 text-[var(--md-text)]">{t("Carrier deadlines, not departure times or proof of completion. Leave unknown deadlines blank.")}</p>
+    <Dialog open={Boolean(editing)} onOpenChange={(open) => { if (!open) setEditing(null) }}>
+      <DialogContent className="max-w-lg" onCloseAutoFocus={(event) => { event.preventDefault(); (editButton.current ?? summary.current)?.focus() }}>
+        <DialogHeader><DialogTitle>{t("Edit carrier cut-offs")}</DialogTitle><DialogDescription>{t("Enter the carrier-confirmed date and time in UTC. No time is assumed. Blank fields clear the corresponding deadline; other route details stay unchanged.")}</DialogDescription></DialogHeader>
+        <form className="grid min-w-0 gap-4" noValidate onSubmit={(event) => {
+          event.preventDefault()
+          if (!editing) return
+          if (!editable || editing.original !== route) { setError(t("This routing step changed. Close this editor and review the current values before trying again.")); return }
+          const values: Array<[keyof BookingWorkflowRoute, string]> = []
+          for (const { field } of fields) {
+            const input = event.currentTarget.elements.namedItem(field) as HTMLInputElement
+            try {
+              if (!input.validity.valid) throw new Error("Enter a complete cut-off date and time in UTC.")
+              values.push([field, changeRouteCutoff(route[field], editing.values[field])])
+            } catch (failure) {
+              setError(t(failure instanceof Error ? failure.message : "Check the cut-off date and time."))
+              setErrorField(field)
+              input.focus()
+              return
+            }
+          }
+          for (const [field, value] of values) if (value !== (route[field] || "")) onChange(field, value)
+          setEditing(null)
+        }}>
+          {fields.map(({ field, label }) => <label key={field} className="grid min-w-0 gap-1.5 text-xs font-medium">
+            {t(label)} {t("(UTC)")}
+            <Input name={field} type="datetime-local" step="1" dir="ltr" value={editing?.values[field] || ""}
+              aria-describedby={errorField === field ? `${id}-error` : undefined}
+              aria-invalid={errorField === field || undefined}
+              disabled={!editable}
+              className="min-w-0 text-base sm:text-[13px]"
+              onChange={(event) => {
+                const value = event.target.value
+                setError("")
+                setErrorField("")
+                setEditing((current) => current ? { ...current, values: { ...current.values, [field]: value } } : current)
+              }} />
+          </label>)}
+          {error ? <p id={`${id}-error`} role={errorField ? undefined : "alert"} className="text-xs leading-5 text-[var(--md-text)]">{error}</p> : null}
+          <DialogFooter><Button type="button" variant="ghost" onClick={() => setEditing(null)}>{t("Cancel")}</Button><Button type="submit" disabled={!editable}>{t("Apply cut-offs")}</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  </div>
+}
+
 function BookingCargoWiseAmountField({
   amount,
   currencies,
@@ -3328,6 +3403,7 @@ function BookingRecordDetails({
                     <div className="grid min-w-0 gap-2 pt-2 md:grid-cols-2 xl:grid-cols-3 [--md-field-label-width:110px]">
                       {operationalFields.map(({ field, label, maxLength }) => <BookingCargoWiseField key={field} label={label} value={String(leg[field] ?? "")} maxLength={maxLength} wrapValue {...editRoute(index, field)} />)}
                       <BookingRouteScheduleFields route={leg} editable={editable} onChange={(field, nextValue) => onRouteChange(index, field, nextValue)} />
+                      {workspace.routeCutoffsSupported ? <BookingRouteCutoffFields route={leg} editable={editable} onChange={(field, value) => onRouteChange(index, field, value)} /> : null}
                     </div>
                     <p className="mt-2 text-[12px] leading-relaxed text-[var(--md-text)]">{t("References belong to this routing step. A mode change requires review; saved previous references remain in the job audit history.")}</p>
                   </details> : null}
@@ -3341,7 +3417,7 @@ function BookingRecordDetails({
           <DialogContent onOpenAutoFocus={(event) => { event.preventDefault(); routeModeCancelRef.current?.focus() }} onCloseAutoFocus={(event) => { event.preventDefault(); routeModeFocusRef.current?.focus() }}>
             <DialogHeader>
               <DialogTitle>{t("Change routing step mode?")}</DialogTitle>
-              <DialogDescription>{t("Master, house and carrier booking references and the generic transport service will start blank. Saved previous values remain in audit history when you save. Review the carrier, schedule and mode-specific details before saving. The Quote and existing documents will not change.")}</DialogDescription>
+              <DialogDescription>{t("Master, house and carrier booking references, the generic transport service and carrier cut-offs will start blank. Saved previous values remain in audit history when you save. Review the carrier, schedule and mode-specific details before saving. The Quote and existing documents will not change.")}</DialogDescription>
             </DialogHeader>
             <p className="text-[13px] font-medium">{t("Step")} {(pendingRouteMode?.index ?? 0) + 1}: {bookingWorkspaceMode(pendingRouteMode?.route.mode)} → {bookingWorkspaceMode(pendingRouteMode?.mode)}</p>
             <DialogFooter>
@@ -4054,6 +4130,20 @@ function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
                     })}
                   </div>
                 </details> : null}
+                {event.type === "route_cutoffs_updated" ? <details className="mt-2 min-w-0">
+                  <summary className="cursor-pointer py-1 text-xs text-[var(--md-accent)] focus-visible:outline-2 focus-visible:outline-offset-2">{t("Review previous and current cut-offs")}</summary>
+                  <div className="mt-2 grid min-w-0 gap-3 sm:grid-cols-2">
+                    {(["before", "after"] as const).map((key) => <div key={key} className="min-w-0 text-xs">
+                      <p className="font-medium">{t(key === "before" ? "Previous" : "Current")}</p>
+                      <dl className="mt-2 grid gap-2">
+                        {bookingRouteCutoffFields.map(({ field, label }) => <div key={field}>
+                          <dt className="text-[var(--md-text)]">{t(label)}</dt>
+                          <dd data-i18n-skip className="break-words">{recordText(asRecord(asRecord(event.metadata)[key]), field) || t("Not recorded")}</dd>
+                        </div>)}
+                      </dl>
+                    </div>)}
+                  </div>
+                </details> : null}
               </div>
             </div>
           ))}
@@ -4363,7 +4453,7 @@ function BookingQuoteSyncReviewPanel({
           </DialogHeader>
           <div className="mx-5 rounded-[var(--md-radius-lg)] bg-[var(--md-status-amber-bg)] px-3 py-2.5 text-[11.5px] leading-5 text-[var(--md-status-amber-ink)] shadow-[var(--md-shadow-line)]">
             {t("Review the new mode and related equipment, routing and cargo details before continuing.")}
-            {pendingModeFields?.includes("routing") ? <p className="mt-2">{t("Shared transport references on legs changing mode will start blank. Their previous values remain in Booking audit history.")}</p> : null}
+            {pendingModeFields?.includes("routing") ? <p className="mt-2">{t("Shared transport references and carrier cut-offs on legs changing mode will start blank. Their previous values remain in Booking audit history.")}</p> : null}
           </div>
           <DialogFooter className="mt-5 flex-col-reverse gap-2 bg-[var(--md-surface-soft)] px-5 py-4 shadow-[var(--md-stroke-top)] sm:flex-row sm:justify-end">
             <DialogClose asChild>
@@ -4977,7 +5067,9 @@ export function BookingDetailWorkspace({
       const existing = routes[index] ?? { order: index + 1, mode: current.booking.mode, isMainCarriage: index === 0 }
       routes[index] = field === "mode"
         ? changeBookingRouteMode(existing, value, loadedRecord?.workspace?.routes.find((route) => Boolean(existing.id) && route.id === existing.id))
-        : { ...existing, [field]: value, routeData: { ...existing.routeData, [field]: value } }
+        : bookingRouteCutoffFields.some((item) => item.field === field)
+          ? { ...existing, [field]: value }
+          : { ...existing, [field]: value, routeData: { ...existing.routeData, [field]: value } }
       return { ...current, routes }
     })
   }

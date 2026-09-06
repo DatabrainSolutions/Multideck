@@ -80,6 +80,15 @@ test(`${action}: proposal stores both exact identities without executing a write
 })
 }
 
+test('Routing cut-offs: deadline edits are distinct from reads and VGM mass changes', () => {
+  for (const prompt of ['Update the cargo cut-off', 'Set the documentation deadline', 'Change the VGM cutoff', 'Clear the VGM deadline']) {
+    assert.equal(operatorAuthorisesAction(prompt, 'update_booking_route'), true, prompt)
+  }
+  for (const prompt of ['Show the cargo cut-off', 'Read the VGM deadline', 'Set VGM to 18000 kg', 'Change the profit margin']) {
+    assert.equal(operatorAuthorisesAction(prompt, 'update_booking_route'), false, prompt)
+  }
+})
+
 test('Routing mode: explicit leg intent and mandatory approval in both access modes', () => {
   const action = 'change_booking_route_mode'
   for (const mode of ['approve', 'full']) assert.equal(requiresExplicitActionApproval(action, mode), true)

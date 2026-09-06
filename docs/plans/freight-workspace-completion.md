@@ -8,6 +8,18 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 ## Delivery and evidence ledger
 
+6 September routing cut-off checkpoint: implemented typed cargo/documentation
+deadlines and Sea-only VGM deadlines per leg, a compact capability-gated editor,
+explicit mode-reset warnings and before/after audit. No ETD-derived defaults or
+tracking connection. Existing route save/permissions remain authoritative;
+older clients preserve omitted deadline keys. Dexter reads, approval-safe
+edits, mode-review evidence and deterministic field-change watches are updated
+together. Thirty-eight unique focused tests, isolated Chrome en-GB/en-US
+deadline checks, prior schedule regressions, build and final type check passed.
+**Local only, not deployed**; hosted persistence/audit/watch proof and controlled
+development release remain next. No email, acceptance, Customs or tenant-record
+write occurred. [Evidence and release steps](../release/2026-09-06-route-cutoff-local-evidence.md).
+
 6 September notification/overview development release: fast-forwarded six
 commits to origin/dev (`f235088`); exact Vercel Git deployment is READY and the
 approved hostname serves the matching asset. Hosted read-only checks confirm

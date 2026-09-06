@@ -8,22 +8,30 @@ import {cut} from '../booking-container-client-fixture.mjs'
 const client=fileURLToPath(new URL('../../../multideck.client/',import.meta.url))
 const {build}=createRequire(`${client}package.json`)('esbuild')
 const built=await build({stdin:{contents:`
-import React,{useState,useId} from 'react';import {createRoot} from 'react-dom/client';
+import React,{useState,useId,useRef} from 'react';import {createRoot} from 'react-dom/client';
 import {Button} from '@/components/ui/button';import {Input} from '@/components/ui/input';
 import {Select,SelectTrigger,SelectValue,SelectContent,SelectItem} from '@/components/ui/select';
+import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription,DialogFooter} from '@/components/ui/dialog';
 import {CompactCombobox} from '@/components/multideck/quote-details/quote-detail-fields';
 import {cn} from '@/lib/utils';import {useLanguage} from '@/i18n/language-provider';
 import {bookingRouteScheduleFields,routeScheduleParts,changeRouteScheduleDate,changeRouteScheduleTime} from '@/lib/booking-route-schedule';
 import {changeBookingRouteMode} from '@/lib/booking-route-mode-change';
+import {bookingRouteCutoffFields,routeCutoffInputValue,changeRouteCutoff} from '@/lib/booking-route-cutoffs';
 ${cut('function bookingFieldOptions(', 'function BookingCargoWiseAmountField(')}
 function App(){
   const initial={booking:{mode:'sea'},routes:[{id:'synthetic',mode:'sea',plannedDepartureAt:'2026-09-18T00:30:45.123456+05:30',plannedArrivalAt:'2026-10-18T10:00:00Z',routeData:{actualArrivalAt:'retained-history'}}],quoteSnapshot:{version:1}};
+  const cutoffs=new URLSearchParams(location.search).has('cutoffs');
+  if(cutoffs) Object.assign(initial.routes[0],{cargoCutoffAt:'2026-09-17T10:30:45.123456+02:00',documentationCutoffAt:null,vgmCutoffAt:null});
+  if(new URLSearchParams(location.search).has('air')) initial.routes[0].mode='air';
   if(new URLSearchParams(location.search).has('invalid')) initial.routes[0].plannedDepartureAt='2026-09-18T08:45:00';
   const [draftWorkspace,setDraftWorkspace]=useState(initial),[editable,setEditable]=useState(true);
   const loadedRecord={workspace:initial};
   ${cut('  function updateDraftRoute(', '  function selectDraftRouteOrganisation(')}
   return <><h1>Planned routing schedule QA</h1><Button onClick={()=>setEditable(v=>!v)}>{editable?'Read only':'Edit'}</Button>
-    <BookingRouteScheduleFields route={draftWorkspace.routes[0]} editable={editable} onChange={(field,value)=>updateDraftRoute(0,field,value)}/>
+    {cutoffs ? <><Button onClick={()=>updateDraftRoute(0,'carrierBookingReference','CHANGED')}>Concurrent route change</Button>
+      <Button onClick={()=>updateDraftRoute(0,'mode','air')}>Confirm Air mode</Button>
+      <BookingRouteCutoffFields route={draftWorkspace.routes[0]} editable={editable} onChange={(field,value)=>updateDraftRoute(0,field,value)}/></>
+      : <BookingRouteScheduleFields route={draftWorkspace.routes[0]} editable={editable} onChange={(field,value)=>updateDraftRoute(0,field,value)}/>}
     <details><summary>Inspect test state</summary><output id="receipt" className="break-all">{JSON.stringify(draftWorkspace)}</output></details></>;
 }
 createRoot(document.getElementById('root')).render(<main className="grid min-w-0 gap-4 p-4 [--md-field-label-width:110px]"><App/></main>);
