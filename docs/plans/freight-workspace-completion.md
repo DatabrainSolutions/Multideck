@@ -8,6 +8,18 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 ## Delivery and evidence ledger
 
+6 September milestone groundwork: implemented a local typed, exact-leg milestone
+save/read boundary with independent dates, stale/foreign-write rejection, source
+protection, recorded-mode preservation and attributed correction/void history.
+The broad real-PostgreSQL suite passes new Sea/Air/Road/Rail assertions and the
+existing freight/approval/watch regressions; retained-schema structural rehearsal
+also passes. Fresh remote/deployment reads still confirm `314ffc2` and the accepted
+Original fingerprint is unchanged. **Not released or a completed milestone feature:**
+operator UI/Edge action and dedicated Dexter read/approved-write/watch parity are
+the next body of work and mandatory release gates. Do not deploy the foundation
+alone. Existing revision/preview approvals and broader depth/isolation gates
+remain open. See `docs/release/2026-09-06-route-milestone-foundation-evidence.md`.
+
 6 September continuation: fresh Git fetch confirms clean `314ffc2` with zero
 divergence from origin/dev; its exact Vercel Git deployment is READY and the
 approved development hostname loads the signed-in Booking. Hosted Job ref

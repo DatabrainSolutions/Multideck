@@ -79,6 +79,21 @@ try{
         or not has_function_privilege('service_role',signature,'execute') then raise exception 'Service boundary incorrect: %',signature;end if;
     end loop;
   end $$;`)
+  const milestoneFoundation = files.includes('20260906182852_booking_route_milestone_foundation.sql')
+  if(milestoneFoundation){
+    stage='milestone structural assertions'
+    sql(`do $$begin
+      if not (select relrowsecurity from pg_class where oid='public."Job_RouteMilestones"'::regclass)
+        then raise exception 'Milestone RLS missing';end if;
+      if has_function_privilege('anon','public.booking_workflow_save_route_milestone(uuid,uuid,jsonb)','execute')
+        or has_function_privilege('authenticated','public.booking_workflow_save_route_milestone(uuid,uuid,jsonb)','execute')
+        or not has_function_privilege('service_role','public.booking_workflow_save_route_milestone(uuid,uuid,jsonb)','execute')
+        or has_function_privilege('service_role','booking_api.save_route_milestone(uuid,uuid,jsonb)','execute')
+        then raise exception 'Milestone service boundary incorrect';end if;
+      if booking_api.parse_milestone_time('"2026-09-01T09:00+01:00"')<>'2026-09-01T08:00Z'::timestamptz
+        or booking_api.parse_milestone_time('null') is not null then raise exception 'Milestone date conversion failed';end if;
+    end $$;`)
+  }
   if(fixtureMode){
     stage='populated preservation assertions'
     sql(readFileSync(new URL('../fixtures/freight-chain-after.sql',import.meta.url),'utf8'))
@@ -87,6 +102,7 @@ try{
   console.log(JSON.stringify({status:fixtureMode?'populated_rehearsal_passed':'structural_rehearsal_passed',schemaSha256:createHash('sha256').update(schema).digest('hex'),applied,
     migrationHashes:files.map(file=>({file,sha256:createHash('sha256').update(readFileSync(new URL('migrations/'+file,root))).digest('hex')})),
     postChainChecks:['typed cargo tables','typed cargo RLS','finalization service boundary','allocation action service boundary','quote revision service boundary'],
+    milestoneChecks:milestoneFoundation?['existing table RLS retained','service-only milestone save','private mutation helper','explicit-offset conversion and clear']:[],
     populatedChecks:fixtureMode?['Quote version and header preservation','Booking cargo equipment route and membership preservation',
       'no invented financial values or allocations','exact typed projection with zero and unknown distinctions',
       'existing cargo registry conflict update','unrelated registry and watch signal preservation','submitted mutation and deletion denial','invalid draft cargo rejection']:[],
