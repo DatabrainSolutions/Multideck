@@ -153,7 +153,7 @@ test("Dexter action tools stay OpenAI strict-schema compatible", () => {
 })
 
 test("Dexter redirects off-topic requests without narrowing useful freight work", () => {
-  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-08-29-support-english"/)
+  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-09-01-finance-support"/)
   assert.match(edgeFunction, /# Scope boundary/)
   assert.match(edgeFunction, /Dexter is for freight forwarding and the work required to operate a freight-forwarding business/)
   assert.match(edgeFunction, /Examples include sports fixtures, recipes and cooking, entertainment, celebrity news, general trivia/)
@@ -502,7 +502,7 @@ test("Approve pauses before writes while Full access executes only registered ac
   assert.match(dexterSecurityMigration, /grant execute on function public\.multideck_dexter_execute_prepared_action\(uuid,uuid,uuid,uuid\) to service_role/)
   assert.match(dexterSecurityMigration, /AIDexterPrepared_Status"='succeeded'/)
   assert.match(edgeFunction, /requiresExplicitActionApproval\(actionCode, input\.accessMode\)/)
-  assert.match(edgeFunction, /Sending email, creating a support ticket and creating a purchase order are exceptions: always prepare the exact action/)
+  assert.match(edgeFunction, /Sending email, creating a support ticket and creating an expected receipt are exceptions: always prepare the exact action/)
 })
 
 test("untrusted Home email subjects cannot turn a suggestion into an automatic send", () => {

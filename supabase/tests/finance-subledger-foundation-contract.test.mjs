@@ -15,6 +15,8 @@ const reportingBoundary = read("../migrations/20260829194132_harden_finance_repo
 const demoTaxControls = read("../migrations/20260829200354_guard_demo_finance_tax_posting.sql")
 const demoReadinessControls = read("../migrations/20260829202112_normalise_demo_finance_readiness.sql")
 const documentRecovery = read("../migrations/20260830111301_finance_document_recovery.sql")
+const tenantOwnedFinanceDocuments = read("../migrations/20260901103000_tenant_owned_finance_documents.sql")
+const providerPartyBulkSync = read("../migrations/20260902113000_provider_party_bulk_sync.sql")
 const functionSource = read("../functions/finance-subledger/index.ts")
 const customerFunctionSource = read("../functions/customers/index.ts")
 const providerSource = read("../functions/_shared/accounting-providers.ts")
@@ -23,12 +25,14 @@ const webhookSource = read("../functions/erpnext-webhook/index.ts")
 const dexterSource = read("../functions/agent-dexter/index.ts")
 const appSource = read("../../multideck.client/src/pages/finance-page.tsx")
 const documentPageSource = read("../../multideck.client/src/pages/finance-document-page.tsx")
+const purchaseIntakeSource = read("../../multideck.client/src/pages/finance-purchase-intake-page.tsx")
 const financeSetupSource = read("../../multideck.client/src/pages/finance-setup-page.tsx")
 const financeLineEditorSource = read("../../multideck.client/src/components/multideck/finance-document-line-editor.tsx")
 const providerCustomerWizardSource = read("../../multideck.client/src/components/multideck/provider-customer-setup-wizard.tsx")
 const financeExcelSource = read("../../multideck.client/src/lib/finance-document-excel.ts")
 const financeProformaSource = read("../../multideck.client/src/lib/finance-proforma.ts")
 const accountOperationsSource = read("../../multideck.client/src/components/multideck/account-operations-workspace.tsx")
+const crmAccountsSource = read("../../multideck.client/src/pages/crm-accounts-page.tsx")
 const apiSource = read("../../multideck.client/src/lib/finance-subledger-api.ts")
 const appRouterSource = read("../../multideck.client/src/App.tsx")
 const navigationSource = read("../../multideck.client/src/data/navigation-data.ts")
@@ -391,6 +395,24 @@ test("Dexter has evidence-backed finance reads, allowlisted drafts and event-dri
   assert.doesNotMatch(lifecycle, /openai|anthropic|chat\/completions|generateText/i)
 })
 
+test("finance drafts derive their company from the signed-in tenant", () => {
+  includesEvery(functionSource, [
+    "async function tenantLegalEntity",
+    '.eq("Company_ID", current.Company_ID)',
+    'if (data.length !== 1) throw new HttpError(409, "This tenant must have exactly one active company before creating finance records.")',
+    "const tenantInput: ControlledDraftInput = { ...input, legalEntityId: tenantEntity.LegalEntity_ID }",
+    "const controlledInput: ControlledCashInput = { ...input, legalEntityId: tenantEntity.LegalEntity_ID }",
+  ])
+  assert.doesNotMatch(tenantOwnedFinanceDocuments, /legalEntityId/)
+  assert.doesNotMatch(documentPageSource, /finance-detail-entity|legalEntityId:/)
+  assert.doesNotMatch(appSource, /finance-document-entity|finance-cash-entity/)
+  assert.doesNotMatch(purchaseIntakeSource, /t\("Legal entity"\)|legalEntityId: item\.legalEntityId/)
+  includesEvery(dexterSource, [
+    "The signed-in tenant company is used automatically.",
+    "type: cleanString(args.type, 40), partyOrgId",
+  ])
+})
+
 test("the operator UI covers both ledgers, cash, job and manual sources", () => {
   includesEvery(appSource, [
     "Sales ledger",
@@ -468,7 +490,7 @@ test("missing customers can be linked or created in ERPNext and Sage 50 through 
   ])
   includesEvery(functionSource, [
     "providerCustomerConnection",
-    "This accounting system does not have a customer setup wizard yet.",
+    "This accounting system does not have an account setup workflow yet.",
     "Finance.Integration.Manage",
     "erpNextCreate(\"Customer\"",
     "erpNextCreate(\"Address\"",
@@ -864,4 +886,70 @@ test("new-tenant provisioning contains the exact finance document recovery migra
   const baselineRecovery = baseline.slice(start, end).trim()
   const migrationRecovery = documentRecovery.slice(documentRecovery.indexOf("begin;")).trim()
   assert.equal(baselineRecovery, migrationRecovery)
+})
+
+test("new-tenant provisioning contains the tenant-owned finance document contract", () => {
+  const marker = baseline.indexOf("-- BEGIN MIGRATION 20260901103000_tenant_owned_finance_documents.sql")
+  const endMarker = baseline.indexOf("-- END MIGRATION 20260901103000_tenant_owned_finance_documents.sql", marker)
+  assert.notEqual(marker, -1)
+  assert.notEqual(endMarker, -1)
+  const baselineSection = baseline.slice(baseline.indexOf("-- Finance documents and cash records", marker), endMarker).trim()
+  assert.equal(baselineSection, tenantOwnedFinanceDocuments.trim())
+})
+
+test("customer and supplier registers provide a permissioned bulk accounting sync with retained per-account outcomes", () => {
+  includesEvery(functionSource, [
+    'parts[0] === "provider-parties"',
+    'parts[1] === "sync"',
+    'requirePermission(admin, current.User_ID, "Finance.Integration.Manage")',
+    'ACCISR_SettingsJSON: { kind: "party_master", partyType',
+    '"party_account_synced"',
+    '"party_account_sync_failed"',
+    'admin.from("ACCI_SyncRuns")',
+    'admin.from("ACCI_SyncEvents")',
+    'admin.rpc("multideck_crm_accessible_account_ids"',
+    'connection.ACCIC_ProviderCode === "erpnext"',
+    'hyperExtRequest(`/api/${partyType}/`',
+  ])
+  includesEvery(apiSource, ["getProviderPartySyncOverview", "syncProviderParties", '"/provider-parties/sync"'])
+  includesEvery(crmAccountsSource, [
+    'organisationType?: OrganisationRegisterType',
+    'hasPermission(currentUser, "Finance.Integration.Manage")',
+    't("Sync with accounting system")',
+    '"Sync all accounts"',
+    'displayedSync.results.map',
+    'result.status === "synced" ? "Synced" : "Failed"',
+  ])
+  includesEvery(appRouterSource, [
+    '<CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} organisationType="customer" />',
+    '<CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} organisationType="supplier" />',
+  ])
+  includesEvery(navigationSource, ['label: "Supplier accounts"', 'route: "/suppliers"'])
+})
+
+test("bulk account sync is readable by Dexter and emits deterministic completion signals without a Dexter write action", () => {
+  includesEvery(providerPartyBulkSync, [
+    "_multideck_dexter_domain_finance_before_provider_party_sync",
+    "'recordKind','provider_party_sync'",
+    "'accountResults'",
+    "_multideck_dexter_provider_party_sync_watch_change",
+    'new."ACCISR_StatusCode" in (\'synced\',\'failed\')',
+    "AI_DexterWatchSignals",
+    'watch."AIDexterWatch_StatusCode"=\'active\'',
+    '"accountSyncStatus"',
+  ])
+  assert.doesNotMatch(providerPartyBulkSync, /multideck_dexter_action_[a-z_]*party/i)
+  includesEvery(dexterSource, [
+    "Customer and supplier account-sync results are available through finance evidence",
+    "must never claim to have created, linked or retried a provider account",
+  ])
+})
+
+test("new-tenant provisioning contains the provider party bulk-sync parity migration", () => {
+  const marker = baseline.indexOf("-- BEGIN MIGRATION 20260902113000_provider_party_bulk_sync.sql")
+  const endMarker = baseline.indexOf("-- END MIGRATION 20260902113000_provider_party_bulk_sync.sql", marker)
+  assert.notEqual(marker, -1)
+  assert.notEqual(endMarker, -1)
+  const baselineSection = baseline.slice(baseline.indexOf("-- Retain customer and supplier bulk-sync results", marker), endMarker).trim()
+  assert.equal(baselineSection, providerPartyBulkSync.trim())
 })

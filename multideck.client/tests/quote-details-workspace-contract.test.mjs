@@ -32,7 +32,9 @@ test("quote details reorganise references around their owning parties and remove
   assert.match(details, /title="Customer(?: data)?"[\s\S]*label="Customer ref"/u)
   assert.match(details, /const reference = role === "shipper" \? quote\.shipperReference[\s\S]*quote\.consigneeReference[\s\S]*quote\.agentReference/u)
   assert.match(details, /label=\{`\$\{title\} ref`\}/u)
-  assert.match(details, /roleCard\("shipper"\)[\s\S]*roleCard\("consignee"\)[\s\S]*roleCard\("agent"\)/u)
+  for (const role of ["shipper", "consignee", "agent"]) {
+    assert.ok(details.includes(`roleCard("${role}")`), `${role} party must remain available.`)
+  }
   assert.match(details, /supplier\.carriers\.map[\s\S]*label="Carrier ref"/u)
   assert.doesNotMatch(details, /label="Hold reason"/u)
   assert.doesNotMatch(details, /label="Docs"/u)

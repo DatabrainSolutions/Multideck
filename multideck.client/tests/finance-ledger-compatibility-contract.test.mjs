@@ -12,8 +12,8 @@ test("legacy finance responses are normalised before register rendering", () => 
     '"update_required"',
     "FINDoc_ExportStatusCode: statusString(value.FINDoc_ExportStatusCode, statusString(value.FINDoc_PostingStatusCode, \"not_available\"))",
     "FINCash_ExportStatusCode: statusString(value.FINCash_ExportStatusCode, statusString(value.FINCash_PostingStatusCode, \"not_available\"))",
-    "result.documents.map(normaliseFinanceDocument)",
-    "result.cashTransactions.map(normaliseFinanceCashTransaction)",
+    "documents.map(normaliseFinanceDocument)",
+    "cashTransactions.map(normaliseFinanceCashTransaction)",
   ]) assert.ok(api.includes(evidence), `Missing compatibility evidence: ${evidence}`)
 })
 

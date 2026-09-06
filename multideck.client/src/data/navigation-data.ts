@@ -206,6 +206,7 @@ export const sidebarAreas: SidebarArea[] = [
         label: "Suppliers & payables",
         icon: SlidersHorizontal,
         children: [
+          { label: "Supplier accounts", icon: Users, route: "/suppliers" },
           { label: "Supplier invoices & credits", icon: SlidersHorizontal, route: "/finance/payables" },
           { label: "Supplier document intake", icon: Upload, route: "/finance/payables/intake" },
           { label: "Payables approvals", icon: BadgeCheck, route: "/finance/payables/approvals" },

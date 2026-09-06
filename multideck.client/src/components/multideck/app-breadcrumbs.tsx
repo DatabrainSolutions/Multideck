@@ -43,6 +43,7 @@ const staticLeafLabels: Record<string, string> = {
   "/crm/drive": "Drive",
   "/crm/settings": "CRM settings",
   "/customers": "Customers",
+  "/suppliers": "Supplier accounts",
   "/finance/receivables": "Sales ledger",
   "/finance/receivables/approvals": "Receivables approvals",
   "/finance/receivables/cash": "Customer receipts & allocation",
@@ -240,6 +241,15 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
       { label: "Home", route: "/" },
       { label: "Customers", route: "/customers" },
       recordBreadcrumb(leafLabel, customerMatch[1], "Customer"),
+    ]
+  }
+
+  const supplierMatch = route.match(/^\/suppliers\/([^/]+)$/)
+  if (supplierMatch) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Supplier accounts", route: "/suppliers" },
+      recordBreadcrumb(leafLabel, supplierMatch[1], "Supplier"),
     ]
   }
 

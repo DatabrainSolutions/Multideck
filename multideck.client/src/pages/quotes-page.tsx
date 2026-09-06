@@ -3730,6 +3730,8 @@ function QuoteCompactSelect({
   invalid,
   disabled,
   dataOptions,
+  autoPopulated,
+  autoPopulationDescription,
   className,
 }: {
   label: string
@@ -3741,6 +3743,8 @@ function QuoteCompactSelect({
   invalid?: boolean
   disabled?: boolean
   dataOptions?: boolean
+  autoPopulated?: boolean
+  autoPopulationDescription?: string
   className?: string
 }) {
   const { t } = useLanguage()
@@ -3749,19 +3753,21 @@ function QuoteCompactSelect({
   const emptyValue = "__empty_quote_detail__"
   return (
     <CompactFieldShell label={label} htmlFor={id} width={width} required={required} invalid={invalid} className={className}>
-      <Select value={value || emptyValue} onValueChange={(next) => onChange(next === emptyValue ? "" : next)} disabled={disabled} required={required}>
-        <SelectTrigger id={id} aria-invalid={invalid || undefined} className="h-8 w-full rounded-[var(--md-radius-lg)] px-1.5 text-[12px]">
-          <SelectValue placeholder={t("Select")} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={emptyValue}>{t("Select")}</SelectItem>
-          {normalized.map((option) => (
-            <SelectItem key={option.value} value={option.value} data-i18n-skip={dataOptions || undefined} dir={dataOptions ? "auto" : undefined}>
-              {dataOptions ? option.label : t(option.label)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <div className="relative">
+        <Select value={value || emptyValue} onValueChange={(next) => onChange(next === emptyValue ? "" : next)} disabled={disabled} required={required}>
+          <SelectTrigger id={id} aria-invalid={invalid || undefined} aria-description={autoPopulated ? t(autoPopulationDescription ?? "Filled from linked information. You can edit this value manually.") : undefined} data-auto-populated={autoPopulated || undefined} className="h-8 w-full rounded-[var(--md-radius-lg)] px-1.5 text-[12px]">
+            <SelectValue placeholder={t("Select")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={emptyValue}>{t("Select")}</SelectItem>
+            {normalized.map((option) => (
+              <SelectItem key={option.value} value={option.value} data-i18n-skip={dataOptions || undefined} dir={dataOptions ? "auto" : undefined}>
+                {dataOptions ? option.label : t(option.label)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </CompactFieldShell>
   )
 }
@@ -4567,7 +4573,7 @@ function QuoteDetailsPanelV2({
       </CompactSectionShell>
 
       <div className="grid items-stretch gap-2 @min-[40rem]/quote-details:grid-cols-2 @min-[80rem]/quote-details:grid-cols-4">
-        <CompactSectionShell title="Customer" className="[&>header]:h-8 [&>header]:overflow-hidden">
+        <CompactSectionShell title="Customer data" className="[&>header]:h-8 [&>header]:overflow-hidden">
           <div className="grid min-w-0 grid-cols-12 gap-x-2 gap-y-1.5">
             <CompactCombobox label="Customer" value={quote.customer} options={organisationDirectories.customer.options} clearable={!quote.customerId} onValueChange={(value) => { if (quote.customerId && customerOrganisation?.name !== value) return; onQuoteChange("customer", value); if (customerOrganisation && customerOrganisation.name !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search customers or type manually" allLabel="All customers" emptyLabel="No matching customer company" disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customer.trim()} width="full" className="col-span-12" />
             <CompactCombobox label="Account code" value={quote.clientCode ?? ""} options={organisationDirectories.customer.codes} clearable={!quote.customerId} autoPopulated={matchesAutoPopulation(quote.clientCode, customerOrganisation?.code)} autoPopulationDescription={customerAutoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode("customer", value)) return; if (quote.customerId && customerOrganisation?.code !== value) return; onQuoteChange("clientCode", value); if (customerOrganisation && customerOrganisation.code !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search account codes" allLabel="All customer codes" emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-7 [&_input]:tracking-tight" />
@@ -4578,9 +4584,9 @@ function QuoteDetailsPanelV2({
             <QuoteCompactInput label="Email" value={quote.customerEmail ?? ""} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerEmail, customerSourceContact?.email)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuoteChange("customerEmail", value)} />
           </div>
         </CompactSectionShell>
+        {roleCard("agent")}
         {roleCard("shipper")}
         {roleCard("consignee")}
-        {roleCard("agent")}
       </div>
 
       <CompactSectionShell
