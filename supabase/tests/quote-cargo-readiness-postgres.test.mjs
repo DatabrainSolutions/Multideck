@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { quoteCargoReviewFixture } from './quote-cargo-review-fixture.mjs'
+import { quoteDetailClearAssertions } from './quote-detail-clear-fixture.mjs'
 import { bookingShipmentValueFixture } from './booking-shipment-value-fixture.mjs'
 import { quoteRoutingModeReviewFixture } from './quote-routing-mode-review-fixture.mjs'
 import { quoteSingleLegRoutingFixture } from './quote-single-leg-routing-fixture.mjs'
@@ -422,6 +423,7 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
           or has_function_privilege('authenticated','quote_api.cargo_booking_missing(jsonb)','EXECUTE') then raise exception 'Internal cargo insertion exposed'; end if;
       end $handover_test$;
       ${quoteCargoReviewFixture(read, sqlFunction)}
+      ${quoteDetailClearAssertions}
       ${bookingShipmentValueFixture(read)}
       ${quoteRoutingModeReviewFixture(read, sqlFunction)}
       ${quoteSingleLegRoutingFixture(read)}
