@@ -32,6 +32,14 @@ const currentResponseHistoryMigration = read(
 const edgeFunction = read(
   "supabase/functions/agent-dexter/index.ts",
 )
+
+test("finance edge dispatch has an explicit defined allowlist without capturing other operational actions", () => {
+  const declarations = edgeFunction.match(/const CREATE_FINANCE_DOCUMENT_DRAFT_ACTION = [\s\S]*?const FINANCE_EDGE_ACTIONS = new Set\(\[[\s\S]*?\]\)/)?.[0]
+  assert.ok(declarations, "The finance dispatch constants must exist together")
+  const actions = new Function(`${declarations}; return FINANCE_EDGE_ACTIONS`)()
+  assert.deepEqual([...actions], ["create_finance_document_draft", "create_finance_cash_draft", "assign_job_management_period"])
+  for (const action of ["update_booking_cargo", "update_quote_cargo", "post_finance_document", "unknown"]) assert.equal(actions.has(action), false)
+})
 const emailContext = read(
   "supabase/functions/agent-dexter/email-context.ts",
 )
