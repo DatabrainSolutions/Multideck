@@ -90,9 +90,49 @@ try {
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth),1280)
     await page.evaluate(()=>{document.body.style.zoom='1'})
     console.log(language+' / '+motion+': mode-specific add, custom types, confirmation/cancel/focus, repeated menus, retained history, mixed modes, read-only and reflow passed')
+    for(const [scenario,choices] of [
+      ['sea-lcl',['Container']],['rail-lcl',['Container','Wagon']],['waterway-lcl',['Container']],
+      ['road-sea',['Container','Vehicle','Trailer']],['courier-road',['Vehicle','Trailer']],
+      ['courier-air',['ULD','Vehicle','Trailer']],['courier-unknown',[]],
+    ]) {
+      await page.goto(url+'?language='+language+'&scenario='+scenario)
+      await page.getByText('Equipment details',{exact:true}).waitFor()
+      const before=await state()
+      assert.deepEqual(before.containers,[],scenario+': no automatic equipment assignment')
+      const policy=JSON.parse(await page.locator('#policy').textContent())
+      assert.equal(policy.containerRequests,false,scenario+': no whole-container customer request')
+      if(!choices.length) {
+        assert.equal(await page.getByRole('button',{name:'Add equipment',exact:true}).isDisabled(),true)
+        assert.equal(policy.uld,false)
+        continue
+      }
+      const add=page.getByRole('button',{name:choices.length===1?'Add '+choices[0]:'Add equipment',exact:true})
+      await add.focus();await page.keyboard.press('Enter')
+      if(choices.length>1) {
+        assert.deepEqual(await page.getByRole('menuitem').allTextContents(),choices)
+        await page.getByRole('menuitem',{name:choices[0],exact:true}).focus();await page.keyboard.press('Enter')
+      }
+      const row=page.locator('fieldset').first()
+      const numberLabel=choices[0]==='Vehicle'?'Vehicle registration':choices[0]+' number'
+      await page.waitForFunction(label=>document.activeElement?.getAttribute('aria-label')===label,numberLabel)
+      await row.getByRole('textbox',{name:numberLabel,exact:true}).fill('SYNTHETIC-LCL')
+      const after=await state()
+      assert.equal(after.containers.length,1)
+      assert.equal(after.containers[0].equipmentKind,choices[0].toLowerCase())
+      assert.equal(after.containers[0].grossWeightKg,null)
+      assert.deepEqual(after.containers[0].data,{})
+      assert.deepEqual(after.quoteSnapshot,before.quoteSnapshot)
+      for(const width of [320,1280]) {
+        await page.setViewportSize({width,height:960})
+        assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth),width)
+      }
+      if(scenario==='sea-lcl' && language==='en-GB' && motion==='reduce') await page.screenshot({path:screenshotPath.replace(/\.png$/,'-lcl.png'),fullPage:true})
+    }
+    console.log(language+' / '+motion+': seven empty LCL, mixed-leg and Courier service scenarios passed without Quote mutation or automatic allocation')
   }
   assert.deepEqual(errors,[])
-  await page.getByRole('button',{name:'Edit draft',exact:true}).click()
+  await page.goto(url)
+  await page.getByText('Equipment details',{exact:true}).waitFor()
   await page.screenshot({path:screenshotPath,fullPage:true})
   console.log('No browser errors. Screenshot: '+screenshotPath)
 } finally {await browser.close()}

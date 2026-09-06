@@ -13,6 +13,50 @@ test("sea containers follow the service across all commercial directions", () =>
   assert.equal(freightFieldPolicy({ mode: "Sea", shipmentType: "LCL", hasContainers: true }).containers, true)
 })
 
+test("shared containers become available operationally without adding a whole-container Quote request", () => {
+  for (const mode of ["Sea", "SEA_LCL", "Rail", "Inland waterway"]) {
+    for (const shipmentType of ["LCL", "LCL - Less than Container Load", "CONSOL"]) {
+      for (const direction of ["Import", "Export", "Cross trade", "Domestic"]) {
+        for (const stage of ["draft", "submitted", "booking", "departure", "arrival", "completed"]) {
+          const context = { mode, shipmentType, direction, stage }
+          const policy = freightFieldPolicy(context)
+          assert.equal(policy.containerRequests, false)
+          assert.equal(policy.containers, !["draft", "submitted"].includes(stage))
+          assert.equal(policy.uld, false)
+          assert.equal(policy.vin, false)
+        }
+      }
+    }
+  }
+  for (const mode of ["Air", "Road", "Courier", "Warehouse", "Other"]) {
+    assert.equal(freightFieldPolicy({ mode, shipmentType: "LCL", stage: "booking" }).containers, false)
+  }
+})
+
+test("mixed-mode equipment availability does not change customer requests or require an assignment", () => {
+  for (const [mode, shipmentType, legModes] of [
+    ["Road", "FTL", ["road", "sea"]], ["Air", "AIR", ["air", "rail"]],
+    ["Multimodal", "LTL", ["road", "inland_waterway"]],
+  ]) {
+    const context = { mode, shipmentType, legModes, stage: "booking" }
+    const before = structuredClone(context)
+    const policy = freightFieldPolicy(context)
+    assert.equal(policy.containers, true)
+    assert.equal(policy.containerRequests, false)
+    assert.deepEqual(context, before)
+    assert.equal(freightFieldPolicy({ ...context, stage: "draft" }).containers, false)
+  }
+})
+
+test("Courier chargeable weight is commercial; ULDs require an actual Air mode or leg", () => {
+  const courier = freightFieldPolicy({ mode: "Courier", stage: "booking" })
+  assert.equal(courier.chargeableWeight, true)
+  assert.equal(courier.air, false)
+  assert.equal(courier.uld, false)
+  assert.equal(freightFieldPolicy({ mode: "Courier", legModes: ["Road"], stage: "booking" }).uld, false)
+  assert.equal(freightFieldPolicy({ mode: "Courier", legModes: ["AIR"], stage: "booking" }).uld, true)
+})
+
 test("operational references follow each actual leg mode without mixing sea, air, road and rail", () => {
   const labels = mode => freightRouteOperationalFields(mode).map(item => item.label).join(";")
   assert.match(labels("air"), /Master air waybill/)

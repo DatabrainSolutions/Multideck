@@ -14,6 +14,7 @@ const built=await build({stdin:{contents:`
   import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuItem} from '@/components/ui/dropdown-menu';
   import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription,DialogFooter} from '@/components/ui/dialog';
   import {bookingEquipmentKindChoices,bookingEquipmentPresentation,newBookingEquipment} from '@/lib/booking-equipment-policy';
+  import {freightFieldPolicy} from '@/lib/freight-field-policy';
   import {Plus,Trash2,Container,ChevronDown} from '@/components/icons/hugeicons';import {cn} from '@/lib/utils';
   import {useLanguage} from '@/i18n/language-provider';
   ${cut('const bookingEquipmentOptionsByMode:', 'function bookingTabSlug(')}
@@ -23,20 +24,31 @@ const built=await build({stdin:{contents:`
   ${cut('function BookingCargoWiseGroup(', 'function chartPointPath(')}
   ${containerComponentSource}
   function App(){
+    const scenarios={
+      'sea-lcl':{mode:'sea',shipmentType:'LCL',legModes:[]},
+      'rail-lcl':{mode:'rail',shipmentType:'LCL',legModes:[]},
+      'waterway-lcl':{mode:'inland_waterway',shipmentType:'LCL',legModes:[]},
+      'road-sea':{mode:'road',shipmentType:'FTL',legModes:['road','sea']},
+      'courier-road':{mode:'courier',shipmentType:'PARCEL',legModes:['road']},
+      'courier-air':{mode:'courier',shipmentType:'PARCEL',legModes:['air','road']},
+      'courier-unknown':{mode:'courier',shipmentType:'PARCEL',legModes:[]},
+    };
+    const scenario=scenarios[new URLSearchParams(location.search).get('scenario')];
     const [editable,setEditable]=useState(true),[seaService,setSeaService]=useState(true);
-    const [mode,setMode]=useState('sea');
-    const [draftWorkspace,setDraftWorkspace]=useState({containers:[
+    const [mode,setMode]=useState(scenario?.mode ?? 'sea');
+    const [draftWorkspace,setDraftWorkspace]=useState({containers:scenario?[]:[
       {id:'one',number:'SYNTHETIC-1',type:'40RF',grossWeightKg:'20000.123456',tareWeightKg:'4000.123456',verifiedGrossMassKg:null,reeferSetPoint:'-18.125',reeferUnit:'C',data:{packages:'450',packageType:'Cartons',volumeCbm:'30',sealNumber:'SEAL-1'}},
       {id:'two',number:'SYNTHETIC-2',type:'20GP',data:{}}],quoteSnapshot:{version:1}});
+    const context={mode,shipmentType:scenario?.shipmentType??'FCL',stage:'booking',legModes:scenario?.legModes??(mode==='multimodal'?['air','road','rail']:[]),hasContainers:draftWorkspace.containers.some(item=>bookingEquipmentPresentation(item.equipmentKind).key==='container')};
     ${containerMutationSource}
     return <><h1>Container operations QA</h1><div className="flex flex-wrap gap-2">
       <Button onClick={()=>setEditable(v=>!v)}>{editable?'View read-only':'Edit draft'}</Button>
-      <label>QA mode<select aria-label="QA mode" value={mode} onChange={event=>setMode(event.target.value)}>{['sea','air','road','rail','multimodal'].map(value=><option key={value}>{value}</option>)}</select></label>
+      <label>QA mode<select aria-label="QA mode" value={mode} onChange={event=>setMode(event.target.value)}>{['sea','air','road','rail','multimodal','inland_waterway','courier'].map(value=><option key={value}>{value}</option>)}</select></label>
       <Button onClick={()=>setSeaService(v=>!v)}>{seaService?'Use Rail':'Use Sea'}</Button></div>
-      <BookingContainerDetails containers={draftWorkspace.containers} mode={mode} equipmentKinds={bookingEquipmentKindChoices({mode,shipmentType:'FCL',stage:'booking',legModes:mode==='multimodal'?['air','road','rail']:[],hasContainers:mode==='rail'})} editable={editable} seaService={seaService && (mode==='sea'||mode==='multimodal')}
+      <BookingContainerDetails containers={draftWorkspace.containers} mode={mode} equipmentKinds={bookingEquipmentKindChoices(context)} editable={editable} seaService={seaService && freightFieldPolicy(context).sea}
         onChange={updateDraftContainer} onAdd={kind=>setDraftWorkspace(v=>({...v,containers:[...v.containers,newBookingEquipment(kind)]}))}
         onRemove={index=>setDraftWorkspace(v=>({...v,containers:v.containers.filter((_,i)=>i!==index)}))}/>
-      <details><summary>Inspect test state</summary><output id="receipt" className="block break-words">{JSON.stringify(draftWorkspace)}</output></details></>;
+      <details><summary>Inspect test state</summary><output id="receipt" className="block break-words">{JSON.stringify(draftWorkspace)}</output><output id="policy" className="block break-words">{JSON.stringify(freightFieldPolicy(context))}</output></details></>;
   }
   createRoot(document.getElementById('root')).render(<main className="grid grid-cols-1 gap-4 p-4 text-[13px]"><App/></main>);
 `,loader:'tsx',resolveDir:client},bundle:true,write:false,format:'esm',jsx:'automatic',alias:{'@':`${client}src`},plugins:[{name:'qa-language',setup(b){

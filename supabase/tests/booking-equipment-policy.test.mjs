@@ -13,9 +13,35 @@ test('physical modes drive equipment choices without confusing cargo packaging o
   }
   for(const mode of ['Warehouse','Customs only','Docs only','Multimodal']) assert.deepEqual(policy.bookingEquipmentKindChoices({mode,stage:'booking'}),[])
   assert.deepEqual(policy.bookingEquipmentKindChoices({mode:'Air',stage:'draft'}),[])
-  assert.deepEqual(policy.bookingEquipmentKindChoices({mode:'Sea',shipmentType:'LCL',stage:'booking'}),[])
+  assert.deepEqual(policy.bookingEquipmentKindChoices({mode:'Sea',shipmentType:'LCL',stage:'booking'}),['container'])
   assert.deepEqual(policy.bookingEquipmentKindChoices({mode:'Rail',shipmentType:'WAGON',stage:'booking',hasContainers:true}),['container','wagon'])
   assert.ok(!Object.values(policy.bookingEquipmentKinds).some(kind=>kind.types.includes('Carton')||kind.types.includes('Loose')))
+})
+
+test('first LCL equipment is optional, blank and independent of the Quote or shipment totals',()=>{
+  for(const mode of ['Sea','Rail','Inland waterway']) {
+    const kinds=policy.bookingEquipmentKindChoices({mode,shipmentType:'LCL',stage:'booking'})
+    assert.ok(kinds.includes('container'))
+    const original={containers:[],cargo:[{packages:'450',grossWeightKg:'1500'}],quoteSnapshot:{version:1,shipmentType:'LCL'}}
+    const added=addBookingEquipment(original,'container')
+    assert.equal(added.containers.length,1)
+    assert.equal(added.containers[0].grossWeightKg,null)
+    assert.equal(added.containers[0].packages,undefined)
+    assert.deepEqual(added.containers[0].data,{})
+    assert.equal(added.cargo,original.cargo)
+    assert.equal(added.quoteSnapshot,original.quoteSnapshot)
+  }
+})
+
+test('Courier does not assume aircraft equipment and mixed legs can record optional containers',()=>{
+  assert.deepEqual(policy.bookingEquipmentKindChoices({mode:'Courier',stage:'booking'}),[])
+  assert.deepEqual(policy.bookingEquipmentKindChoices({mode:'Courier',stage:'booking',legModes:['road']}),['vehicle','trailer'])
+  assert.deepEqual(policy.bookingEquipmentKindChoices({mode:'Courier',stage:'booking',legModes:['air','road']}),['uld','vehicle','trailer'])
+  assert.deepEqual(policy.bookingEquipmentKindChoices({mode:'Road',shipmentType:'FTL',stage:'booking',legModes:['road','sea']}),['container','vehicle','trailer'])
+  assert.deepEqual(policy.bookingEquipmentKindChoices({mode:'Air',shipmentType:'AIR',stage:'booking',legModes:['air','rail']}),['container','uld','wagon'])
+  for(const shipmentType of ['BREAKBULK','RO_RO','WAGON','OTHER']) {
+    assert.ok(!policy.bookingEquipmentKindChoices({mode:'Sea',shipmentType,stage:'booking'}).includes('container'))
+  }
 })
 
 test('new rows carry explicit kinds, never allocate totals or alter existing evidence',()=>{

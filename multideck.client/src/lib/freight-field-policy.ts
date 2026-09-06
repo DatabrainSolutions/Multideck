@@ -59,12 +59,19 @@ export function freightFieldPolicy(context: FreightContext) {
   const routingModeMismatch = ["sea", "air", "road", "rail", "inland_waterway"].includes(mode)
     && legModes.length > 0 && !legModes.includes(mode)
   const sea = modes.has("sea") || modes.has("inland_waterway")
-  const air = modes.has("air") || mode === "courier"
+  const air = modes.has("air")
   const rail = modes.has("rail")
   const road = modes.has("road")
   const containerService = ["FCL", "CONTAINER"].includes(shipment)
   const transport = !["", "warehouse", "customs_only", "docs_only"].includes(mode)
   const operational = ["booking", "departure", "arrival", "completed"].includes(context.stage ?? "draft")
+  // A customer buying LCL space is not requesting a whole container. Operations
+  // can still record the shared container once known. On mixed-mode journeys,
+  // the overall service cannot describe every leg: allow optional container
+  // recording for a distinct Sea/Rail/Waterway leg without assuming one exists.
+  const sharedContainerService = ["LCL", "CONSOL"].includes(shipment)
+  const containerLeg = legModes.some((leg) => leg !== mode && ["sea", "rail", "inland_waterway"].includes(leg))
+  const operationalContainers = operational && (sharedContainerService || containerLeg)
   return {
     mode,
     routingModeMismatch,
@@ -74,11 +81,11 @@ export function freightFieldPolicy(context: FreightContext) {
     road,
     rail,
     hblMode: sea,
-    chargeableWeight: air,
+    chargeableWeight: air || mode === "courier",
     // VIN describes vehicle cargo, not the lorry carrying ordinary goods.
     vin: context.vehicleCargo === true || shipment === "RO_RO",
     containerRequests: (sea || rail) && containerService,
-    containers: (sea || rail) && (containerService || context.hasContainers === true),
+    containers: (sea || rail) && (containerService || operationalContainers || context.hasContainers === true),
     uld: air && operational,
     vehicle: road && operational,
     wagon: rail && operational,
