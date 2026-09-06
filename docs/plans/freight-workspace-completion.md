@@ -8,6 +8,19 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 ## Delivery and evidence ledger
 
+6 September Dexter routing review correction: real hosted read/prepare testing
+found the approval card listing technical arguments instead of the exact leg's
+business change. Corrected both response paths to use current, identity- and
+timestamp-matched route evidence, readable Booking/leg/mode context and one
+before/after field with explicit timezone. Forty-two focused checks and full
+Dexter type checking pass. Released Dexter 160 with JWT retained and all 19
+downloaded source files matching; every other function unchanged. Chrome
+confirms the corrected card persists after reload. Both synthetic proposals
+were denied, zero actions executed, and the route fingerprint remains unchanged.
+Hosted positive approved-write/watch, revised Quote acceptance/partial apply and
+wider operational depth remain open; no 95% claim. See
+`docs/release/2026-09-06-dexter-route-review-evidence.md`.
+
 6 September routing cut-off development release: published `3757407` to
 `origin/dev` by verified fast-forward; Vercel deployment
 `dpl_DmkCToSYE8nmNmHoZK5hfWB4ESmD` READY and approved hostname serves the new

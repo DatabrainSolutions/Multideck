@@ -68,7 +68,35 @@ Seventeen are byte-identical to the checkout. The only changed existing file is
 only `agent-dexter`, with JWT retained, and requires downloaded-source comparison
 plus a fresh hosted proposal/deny check. No other Edge Function is included.
 
-At this checkpoint the correction is locally tested, not yet confirmed live.
+## Development release and hosted readback
+
+Released source commit `09b7a7c` as Dexter **160 ACTIVE**, JWT verification
+retained. Bundle SHA-256:
+`37b61ffd09ab3e158ce8161826f5fb75c734bee92e9dfc87683f9e20131d9f92`.
+Downloaded all 19 files after release: every file exactly matches the reviewed
+release. All other Edge Function metadata is unchanged; no schema or project
+configuration change was made.
+
+A fresh real Dexter prompt produced proposal
+`4538ecf2-c007-4068-9ac6-f40892d0d618` with heading
+`Edit JE0991134 · Leg 1 · Sea` and one `Cargo cut-off` addition,
+`18 Sept 2026 at 10:30:00 UTC`. The saved proposal has `before: null`,
+`beforeKnown: true`, and the original ISO value/identities/concurrency tokens
+remain in its execution arguments. The technical argument list is no longer
+presented as business changes.
+
+Chrome visual inspection confirms the readable card and normal controls.
+Full page reload retained the same proposed change. Normal Deny completed;
+both test proposals are now `declined`, this conversation has zero execution
+audit rows, and the routing row retains the identical fingerprint recorded
+above. Captured browser warning/error logs after reload and denial are empty.
+No Booking field was applied. The chat/denial history is intentionally retained.
+
+This proves the hosted read → proposed review → reload → deny path, not the
+positive approved-write or watch lifecycle. Fresh responsive/keyboard and US
+English browser review checks were not run; both English formats are covered
+by the helper tests. No frontend source changed.
+
 Positive hosted approved-write/watch lifecycle, accepted Quote revision/partial
 apply and wider all-mode operational depth remain unfinished. This evidence does
 not establish 95% completion. PDF-logo, live tracking, calculator and Customs
