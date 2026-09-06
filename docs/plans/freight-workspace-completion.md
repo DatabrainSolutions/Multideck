@@ -8,6 +8,16 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 ## Delivery and evidence ledger
 
+6 September Booking-save correction: applied migration `20260906174532` so all
+save branches return the same complete workspace as Open. Local PostgreSQL
+response/version/isolation checks, 34 related contracts and retained-schema
+rehearsal pass. Hosted Save retains the Original badge and accepted PDF group.
+That test exposed a separate missing Job-ref input-to-save mapping; corrected
+locally with two executed callback regressions. Client release and hosted
+Job-ref persistence/restore remain pending at this checkpoint. No Quote version
+or acceptance rule changed. See
+`docs/release/2026-09-06-booking-save-response-evidence.md`.
+
 6 September hosted Dexter approval/watch correction: the positive test exposed
 a legacy-only request-role check that rejected normal server approvals. Added
 and applied only migration `20260906171016`, preserving service-only execution

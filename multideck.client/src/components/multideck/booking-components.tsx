@@ -4844,6 +4844,7 @@ export function BookingDetailWorkspace({
     : loadedRecord
 
   function updateDraftBooking(field: keyof LiveBooking, value: string | boolean) {
+    if (field === "jobRef") updateDraftDetail("jobReference", value)
     setDraftBooking((current) => {
       if (!current) return current
       const next = { ...current, [field]: value } as LiveBooking
