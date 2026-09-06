@@ -16,6 +16,7 @@ import { InboxWorkspaceProvider } from "@/lib/inbox-workspace"
 import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
 import { dismissWorkspaceNotification, markWorkspaceNotificationRead, workspaceNotificationFromRow, type WorkspaceNotification } from "@/lib/notification-api"
 import { supabase } from "@/lib/supabase"
+import { quoteWorkspaceRoute, waitForQuoteWorkspace } from "@/lib/quote-workspace-readiness"
 
 const warehouseItemsScrollKey = "multideck:warehouse:items:scroll-top"
 
@@ -54,6 +55,7 @@ function CustomerResponseNotificationQueue({
   const shouldReduceMotion = useReducedMotion()
   const [queue, setQueue] = useState<WorkspaceNotification[]>([])
   const [waitingForRoute, setWaitingForRoute] = useState<string | null>(null)
+  const [openingUnavailable, setOpeningUnavailable] = useState(false)
   const seenIds = useRef(new Set<string>())
   const active = queue[0] ?? null
 
@@ -64,7 +66,8 @@ function CustomerResponseNotificationQueue({
       || notification.metadata.event_type !== "quote_response"
       || seenIds.current.has(notification.id)) return
     seenIds.current.add(notification.id)
-    setQueue((current) => [...current, notification].sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)))
+    setQueue((current) => current.length === 0 ? [notification] : [current[0],
+      ...[...current.slice(1), notification].sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))])
   }, [currentUser?.internalUserId])
 
   useEffect(() => {
@@ -84,7 +87,7 @@ function CustomerResponseNotificationQueue({
           schema: "public",
           table: "Comm_Notifications",
           filter: `CommNotif_UserID=eq.${internalUserId}`,
-        }, (payload) => enqueue(payload.new as Record<string, unknown>))
+        }, (payload) => { if (!disposed) enqueue(payload.new as Record<string, unknown>) })
       channel = nextChannel
       nextChannel.subscribe((status) => {
         if (disposed || channel !== nextChannel || status === "SUBSCRIBED") return
@@ -110,6 +113,7 @@ function CustomerResponseNotificationQueue({
   const advance = useCallback(() => {
     setQueue((current) => current.slice(1))
     setWaitingForRoute(null)
+    setOpeningUnavailable(false)
   }, [])
 
   useEffect(() => {
@@ -119,22 +123,15 @@ function CustomerResponseNotificationQueue({
   }, [active, waitingForRoute, advance])
 
   useLayoutEffect(() => {
-    if (!waitingForRoute || route !== waitingForRoute) return
-    let secondFrame = 0
-    const firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(advance)
-    })
-    return () => {
-      window.cancelAnimationFrame(firstFrame)
-      window.cancelAnimationFrame(secondFrame)
-    }
+    if (!waitingForRoute || quoteWorkspaceRoute(route) !== waitingForRoute) return
+    return waitForQuoteWorkspace(waitingForRoute, advance, () => setOpeningUnavailable(true))
   }, [route, waitingForRoute, advance])
 
   if (!active) return null
   const presentation = quoteResponsePresentation(active)
   const ResponseIcon = presentation.icon
-  const actionUrl = typeof active.metadata.action_url === "string" && active.metadata.action_url.startsWith("/")
-    ? active.metadata.action_url
+  const actionUrl = typeof active.metadata.action_url === "string"
+    ? quoteWorkspaceRoute(active.metadata.action_url)
     : null
 
   function closeNotification() {
@@ -145,6 +142,7 @@ function CustomerResponseNotificationQueue({
   }
 
   function openNotification() {
+    if (waitingForRoute) return
     void retryNotificationAction(() => markWorkspaceNotificationRead(active.id)).catch(() => {
       // Navigation remains useful; the bell can still be updated manually.
     })
@@ -173,7 +171,7 @@ function CustomerResponseNotificationQueue({
             <span className={cn("mt-0.5 grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)]", presentation.toneClass)}>
               <ResponseIcon className="size-4" strokeWidth={1.5} aria-hidden="true" />
             </span>
-            <button type="button" className="min-w-0 flex-1 text-start outline-none focus-visible:rounded-[var(--md-radius-md)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" onClick={openNotification}>
+            <button type="button" aria-disabled={Boolean(waitingForRoute)} className="min-w-0 flex-1 text-start outline-none focus-visible:rounded-[var(--md-radius-md)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" onClick={openNotification}>
               <span className="flex flex-wrap items-center gap-2">
                 <span className="text-[10.5px] font-medium uppercase tracking-[0.065em] text-[var(--md-subtle)]">{t(presentation.label)}</span>
                 <span className="text-[10.5px] text-[var(--md-subtle)]">{t("Customer quote response")}</span>
@@ -181,6 +179,7 @@ function CustomerResponseNotificationQueue({
               <span className="mt-1 block text-[13px] font-medium leading-5 text-[var(--md-ink)]">{t(active.title)}</span>
               <span className="mt-0.5 block text-[12px] leading-[1.5] text-[var(--md-text)]">{t(active.body)}</span>
               {actionUrl ? <span className="mt-2 inline-flex items-center gap-1.5 text-[11.5px] font-medium text-[var(--md-accent)]">{t(waitingForRoute ? "Opening quote..." : "Open quote")}<ArrowRight className="size-3.5" strokeWidth={1.5} aria-hidden="true" /></span> : null}
+              {openingUnavailable ? <span role="status" className="mt-1 block text-[12px] text-[var(--md-text)]">{t("The Quote has not finished loading. You can wait or dismiss this notification.")}</span> : null}
             </button>
             <Button type="button" variant="ghost" size="icon" aria-label={t("Dismiss notification")} className="size-9 shrink-0 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]" onClick={closeNotification}>
               <X className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
@@ -327,7 +326,7 @@ export function AppShell({
         </main>
       </div>
       {currentUser?.actorType === "internal" ? <MeetingDialogHost navigate={navigate} /> : null}
-      <CustomerResponseNotificationQueue currentUser={currentUser} navigate={navigate} route={route} />
+      <CustomerResponseNotificationQueue key={currentUser?.id ?? "signed-out"} currentUser={currentUser} navigate={navigate} route={route} />
       {supportTicketFeatureEnabled ? <SupportTicketDialog currentUser={currentUser} /> : null}
     </div>
   )

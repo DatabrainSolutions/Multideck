@@ -8,6 +8,15 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 ## Delivery and evidence ledger
 
+6 September notification queue checkpoint: local corrections hold the next
+popup until the requested Quote workspace is ready, prevent late events from
+replacing the popup currently being read, and clear queue state on account
+changes. Ten focused tests, the client build and isolated Chrome timing,
+failure/retry, keyboard, account and responsive checks pass. Existing bell,
+preferences and persistence APIs are unchanged. Hosted delivery/readiness and
+source deployment remain pending; no email or tenant record was changed.
+[Evidence and explicit harness limits](../release/2026-09-06-quote-response-queue-evidence.md).
+
 6 September development clear-fix release: applied exactly the detail/route
 clear migrations following fresh full-schema rehearsal and isolated CLI dry
 run. Live function text matches the intended changes; protected metadata and

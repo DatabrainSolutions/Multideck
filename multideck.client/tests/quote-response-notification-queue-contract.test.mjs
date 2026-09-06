@@ -23,7 +23,7 @@ test("customer quote responses enter one global FIFO popup queue", () => {
   assert.match(shell, /Date\.parse\(left\.createdAt\) - Date\.parse\(right\.createdAt\)/u)
   assert.match(shell, /const active = queue\[0\] \?\? null/u)
   assert.match(shell, /setQueue\(\(current\) => current\.slice\(1\)\)/u)
-  assert.match(shell, /<CustomerResponseNotificationQueue currentUser=\{currentUser\} navigate=\{navigate\} route=\{route\} \/>/u)
+  assert.match(shell, /<CustomerResponseNotificationQueue key=\{currentUser\?\.id \?\? "signed-out"\} currentUser=\{currentUser\} navigate=\{navigate\} route=\{route\} \/>/u)
 })
 
 test("the popup times out independently while the existing bell remains unchanged", () => {
@@ -49,11 +49,11 @@ test("realtime reconnect and cleanup cannot recursively remove the same channel"
   assert.doesNotMatch(shell, /if \(channel\) void client\.removeChannel\(channel\)/u)
 })
 
-test("opening a response waits for the quote route before advancing the queue", () => {
+test("opening a response waits for the loaded quote workspace before advancing the queue", () => {
   assert.match(shell, /setWaitingForRoute\(actionUrl\)/u)
   assert.match(shell, /navigate\(actionUrl\)/u)
-  assert.match(shell, /if \(!waitingForRoute \|\| route !== waitingForRoute\) return/u)
-  assert.match(shell, /window\.requestAnimationFrame\(\(\) => \{[\s\S]*window\.requestAnimationFrame\(advance\)/u)
+  assert.match(shell, /quoteWorkspaceRoute\(route\) !== waitingForRoute/u)
+  assert.match(shell, /waitForQuoteWorkspace\(waitingForRoute, advance/u)
 })
 
 test("customer-response records carry the quote action and decision metadata", () => {
