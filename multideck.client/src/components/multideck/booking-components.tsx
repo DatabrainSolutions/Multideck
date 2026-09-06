@@ -45,7 +45,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { MultideckDateRangePicker } from "@/components/multideck/date-picker"
-import { DexterActionPill, SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
+import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
@@ -113,6 +113,7 @@ import { bookingEquipmentKindChoices, bookingEquipmentPresentation, newBookingEq
 import { bookingRouteScheduleFields, routeScheduleParts, changeRouteScheduleDate, changeRouteScheduleTime } from "@/lib/booking-route-schedule"
 import { freightPackageTypeOptions } from "@/lib/freight-package-types"
 import { changeBookingRouteMode, routeSharedReferenceFields } from "@/lib/booking-route-mode-change"
+import { bookingRecordAvailability } from "@/lib/booking-record-availability"
 
 export type Booking = (typeof bookings)[number]
 export type OperatorJob = (typeof operatorJobs)[number]
@@ -2391,132 +2392,17 @@ function BookingCargoWiseGroup({
   )
 }
 
-function chartPointPath(
-  values: readonly number[],
-  width: number,
-  height: number,
-  inset = { top: 12, right: 4, bottom: 22, left: 34 },
-) {
-  const usableWidth = width - inset.left - inset.right
-  const usableHeight = height - inset.top - inset.bottom
-  const points = values.map((value, index) => ({
-    x: values.length === 1 ? inset.left + (usableWidth / 2) : inset.left + ((index / (values.length - 1)) * usableWidth),
-    y: inset.top + ((100 - value) / 100) * usableHeight,
-  }))
-  const line = points.reduce((path, point, index) => {
-    if (index === 0) return `M${point.x.toFixed(1)},${point.y.toFixed(1)}`
-
-    const previous = points[index - 1]
-    const beforePrevious = points[index - 2] ?? previous
-    const next = points[index + 1] ?? point
-    const clampY = (value: number) => Math.max(inset.top, Math.min(height - inset.bottom, value))
-    const controlOneX = previous.x + ((point.x - beforePrevious.x) / 6)
-    const controlOneY = clampY(previous.y + ((point.y - beforePrevious.y) / 6))
-    const controlTwoX = point.x - ((next.x - previous.x) / 6)
-    const controlTwoY = clampY(point.y - ((next.y - previous.y) / 6))
-
-    return `${path} C${controlOneX.toFixed(1)},${controlOneY.toFixed(1)} ${controlTwoX.toFixed(1)},${controlTwoY.toFixed(1)} ${point.x.toFixed(1)},${point.y.toFixed(1)}`
-  }, "")
-
-  return {
-    points,
-    line,
-  }
-}
-
-function BookingDexterArrivalConfidence({ record }: { record: BookingDetailRecord }) {
-  const { language, t } = useLanguage()
-  const shouldReduceMotion = useReducedMotion()
-  const gradientId = useId().replaceAll(":", "")
-  const reliableCarrier = Boolean(record.booking.carrier && !/pending|not supplied/i.test(record.booking.carrier))
-  const hasSchedule = Boolean(record.booking.eta && record.booking.departureDate)
-  const statusBase = record.booking.status === "Exception" ? 30 : record.booking.status === "Delayed" ? 54 : 78
-  const arrivalConfidence = Math.max(18, Math.min(96, statusBase + (record.booking.progress >= 25 ? 5 : 0) + (hasSchedule ? 4 : 0) + (reliableCarrier ? 6 : 0)))
-  const offsets = record.booking.status === "Exception" ? [22, 17, 12, 8, 4, 0] : record.booking.status === "Delayed" ? [7, 11, 5, -2, 2, 0] : [-17, -12, -9, -7, -3, 0]
-  const confidenceSeries = offsets.map((offset) => Math.max(12, Math.min(98, arrivalConfidence + offset)))
-  const chartWidth = 360
-  const chartHeight = 88
-  const chartInset = { top: 12, right: 4, bottom: 22, left: 34 }
-  const plotBottom = chartHeight - chartInset.bottom
-  const { points, line } = chartPointPath(confidenceSeries, chartWidth, chartHeight)
-  const area = `${line} L${chartWidth - chartInset.right},${plotBottom} L${chartInset.left},${plotBottom} Z`
-  const latestPoint = points.at(-1) ?? { x: chartWidth, y: chartHeight }
-  const chartColor = "color-mix(in srgb, var(--md-accent-lift-warm) 70%, var(--md-status-green-ink))"
-  const signalCount = [record.booking.status, record.booking.progress >= 0, hasSchedule, reliableCarrier].filter(Boolean).length
-  const departureValue = record.booking.departureAt || record.booking.departureDate
-  const arrivalValue = record.booking.arrivalAt || record.booking.arrivalDate
-  const departureTime = Date.parse(departureValue)
-  const arrivalTime = Date.parse(arrivalValue)
-  const hasScheduledWindow = Number.isFinite(departureTime) && Number.isFinite(arrivalTime) && arrivalTime > departureTime
-  const scheduledTimes = confidenceSeries.map((_, index) => (
-    hasScheduledWindow
-      ? new Date(departureTime + ((arrivalTime - departureTime) * (index / (confidenceSeries.length - 1))))
-      : null
-  ))
-  const usesClockTime = hasScheduledWindow && (arrivalTime - departureTime) <= 3 * 24 * 60 * 60 * 1000
-  const timeFormatter = new Intl.DateTimeFormat(language, usesClockTime
-    ? { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }
-    : { day: "numeric", month: "short" })
-  const xTicks = [0, Math.floor((confidenceSeries.length - 1) / 2), confidenceSeries.length - 1].map((index) => ({
-    x: points[index]?.x ?? chartInset.left,
-    label: scheduledTimes[index]
-      ? timeFormatter.format(scheduledTimes[index])
-      : index === 0
-        ? (record.booking.departureDate || t("Departure"))
-        : index === confidenceSeries.length - 1
-          ? (record.booking.arrivalDate || t("Arrival"))
-          : t("Mid-route"),
-  }))
-  const yTicks = [50, 75, 100]
-
+function BookingDexterForecastStatus() {
+  const { t } = useLanguage()
+  // No validated forecast exists in the Booking API. Status, progress and
+  // planned dates must never be presented as a model's probability or history.
   return (
-    <Surface padding="none" className="relative h-full min-h-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-accent-abyss-deep)] px-3 pb-2.5 pt-2.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12),0_10px_22px_var(--md-accent-veil-cast-a18)]">
-      <span aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-85">
-        <SpectralBloomShader tone="brand" shape="composer" />
-      </span>
-      <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(2,13,11,0.08),rgba(1,9,8,0.48))]" />
-      <div className="relative z-10 flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="flex items-center gap-1 text-[10px] font-medium uppercase leading-3 tracking-[0.04em] text-white/64"><AiBrain className="size-3 text-white/85" strokeWidth={1.5} />{t("Dexter forecast")}</p>
-          <p className="mt-1 text-[12px] font-medium text-white">{t("On-time probability by journey time")}</p>
-          <p className="mt-0.5 text-[9.5px] text-white/55"><span data-i18n-skip dir="ltr">{signalCount}/4</span> · {t("booking signals available")}</p>
-        </div>
-        <div className="flex shrink-0 items-baseline gap-1">
-          <span data-i18n-skip dir="ltr" className="text-[28px] font-medium leading-none tracking-[-0.03em] text-white tabular-nums">{arrivalConfidence}</span>
-          <span className="text-[11px] text-white/58">%</span>
-        </div>
+    <Surface padding="none" className="relative h-full min-h-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-accent-abyss-deep)] p-3 text-white">
+      <div className="grid gap-2">
+        <p className="flex items-center gap-1.5 text-[12px] font-medium"><AiBrain className="size-3.5" strokeWidth={1.5} aria-hidden="true" />{t("Dexter forecast")}</p>
+        <p className="text-[14px] font-medium">{t("Forecast unavailable")}</p>
+        <p className="text-[12px] leading-relaxed">{t("No validated arrival forecast is connected to this booking. Planned dates are not an on-time probability.")}</p>
       </div>
-
-      <div className="relative z-10 mt-1.5">
-        <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="h-[78px] w-full overflow-visible" role="img" aria-label={`${t("On-time probability by journey time")} ${arrivalConfidence}%`} preserveAspectRatio="none">
-          <defs>
-            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={chartColor} stopOpacity="0.4" />
-              <stop offset="100%" stopColor={chartColor} stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <text x={chartInset.left} y="7" fill="rgba(255,255,255,0.58)" fontSize="7.5">{t("Confidence (%)")}</text>
-          {yTicks.map((value) => {
-            const y = chartInset.top + ((100 - value) / 100) * (chartHeight - chartInset.top - chartInset.bottom)
-            return (
-              <g key={value}>
-                <line x1={chartInset.left} x2={chartWidth - chartInset.right} y1={y} y2={y} stroke="rgba(255,255,255,0.09)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                <text x={chartInset.left - 5} y={y + 2.5} textAnchor="end" fill="rgba(255,255,255,0.5)" fontSize="7" data-i18n-skip>{value}%</text>
-              </g>
-            )
-          })}
-          <line x1={chartInset.left} x2={chartInset.left} y1={chartInset.top} y2={plotBottom} stroke="rgba(255,255,255,0.22)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-          <line x1={chartInset.left} x2={chartWidth - chartInset.right} y1={plotBottom} y2={plotBottom} stroke="rgba(255,255,255,0.22)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-          <motion.path d={area} fill={`url(#${gradientId})`} initial={shouldReduceMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: shouldReduceMotion ? 0 : 0.34, ease: [0.22, 1, 0.36, 1] }} />
-          <motion.path d={line} fill="none" stroke={chartColor} strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" initial={shouldReduceMotion ? false : { pathLength: 0, opacity: 0 }} animate={{ pathLength: 1, opacity: 1 }} transition={{ duration: shouldReduceMotion ? 0 : 0.48, ease: [0.16, 1, 0.3, 1] }} />
-          <circle cx={latestPoint.x} cy={latestPoint.y} r="2.5" fill={chartColor} stroke="rgba(255,255,255,0.82)" strokeWidth="1.25" vectorEffect="non-scaling-stroke" />
-          {xTicks.map((tick, index) => (
-            <text key={`${tick.label}-${index}`} x={tick.x} y={chartHeight - 8} textAnchor={index === 0 ? "start" : index === xTicks.length - 1 ? "end" : "middle"} fill="rgba(255,255,255,0.52)" fontSize="7" data-i18n-skip>{tick.label}</text>
-          ))}
-          <text x={chartWidth - chartInset.right} y={chartHeight - 1} textAnchor="end" fill="rgba(255,255,255,0.42)" fontSize="6.5">{t("Scheduled journey")}</text>
-        </svg>
-      </div>
-      <p className="relative z-10 mt-1 truncate text-[9px] text-white/50">{t("Forecast across the scheduled departure-to-arrival window")}</p>
     </Surface>
   )
 }
@@ -2593,7 +2479,7 @@ function BookingOverviewSignals({ record, tabs }: { record: BookingDetailRecord;
         </Surface>
       </div>
 
-      <BookingDexterArrivalConfidence record={record} />
+      <BookingDexterForecastStatus />
     </div>
   )
 }
@@ -2635,18 +2521,20 @@ function BookingBlockerSection({ record }: { record: BookingDetailRecord }) {
 
 function BookingAvailabilityInspector({ record }: { record: BookingDetailRecord }) {
   const { t } = useLanguage()
-  const hasFixture = hasPrototypeDetailData(record)
+  const documents = bookingRecordAvailability(record.workspace?.documents)
+  const customs = bookingRecordAvailability(record.workspace?.declarations)
+  const charges = bookingRecordAvailability(record.workspace?.charges)
   const rows = [
     ["Booking register", "Available", "green"],
     ["Operator task", record.job ? "Available" : "No linked task", record.job ? "green" : "neutral"],
-    ["Documents", hasFixture ? "Prototype fixture" : "Not connected", hasFixture ? "teal" : "neutral"],
-    ["Customs", hasFixture ? "Prototype fixture" : "Not connected", hasFixture ? "teal" : "neutral"],
-    ["Cost ledger", hasFixture ? "Prototype fixture" : "Not connected", hasFixture ? "teal" : "neutral"],
+    ["Documents", documents.label, documents.tone],
+    ["Customs declarations", customs.label, customs.tone],
+    ["Charge lines", charges.label, charges.tone],
   ] as const
 
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-      <BookingSectionHeading icon={<Database className="size-4" strokeWidth={1.5} />} title={t("Operational readiness")} />
+      <BookingSectionHeading icon={<Database className="size-4" strokeWidth={1.5} />} title={t("Saved workspace data")} />
       <div className="px-5 py-2">
         {rows.map(([label, state, tone]) => (
           <div key={label} className="flex items-center justify-between gap-4 py-3 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] first:shadow-none">
@@ -2666,38 +2554,39 @@ function bookingSignalAvailable(value: string | number | null | undefined) {
 
 function BookingOperationalCoverage({ record }: { record: BookingDetailRecord }) {
   const { t } = useLanguage()
-  const reliableCarrier = bookingSignalAvailable(record.booking.carrier) && !/pending/i.test(record.booking.carrier)
+  const hasCarrier = bookingSignalAvailable(record.booking.carrier) && !/pending/i.test(record.booking.carrier)
   const groups = [
     {
       label: "Movement",
-      signals: [reliableCarrier, bookingSignalAvailable(record.booking.currentLocation), record.booking.progress > 0],
+      signals: [hasCarrier, bookingSignalAvailable(record.booking.currentLocation), record.booking.progress > 0],
     },
     {
       label: "Schedule",
       signals: [bookingSignalAvailable(record.booking.departureDate), bookingSignalAvailable(record.booking.eta)],
     },
     {
-      label: "Commercial close-out",
+      label: "Commercial references",
       signals: [bookingSignalAvailable(record.booking.value), bookingSignalAvailable(record.booking.invoice)],
     },
   ].map((group) => {
-    const readySignals = group.signals.filter(Boolean).length
-    const score = Math.round((readySignals / group.signals.length) * 100)
-    const tone: StatusTone = score === 100 ? "green" : score >= 50 ? "amber" : "red"
-    const state = score === 100 ? "Ready" : score > 0 ? "Needs input" : "Not ready"
-    return { ...group, readySignals, score, state, tone }
+    const recordedSignals = group.signals.filter(Boolean).length
+    const score = Math.round((recordedSignals / group.signals.length) * 100)
+    const tone: StatusTone = score > 0 ? "teal" : "neutral"
+    const state = score === 100 ? "Recorded" : score > 0 ? "Partly recorded" : "Not recorded"
+    return { ...group, recordedSignals, score, state, tone }
   })
   const totalSignals = groups.reduce((total, group) => total + group.signals.length, 0)
-  const readySignals = groups.reduce((total, group) => total + group.readySignals, 0)
+  const recordedSignals = groups.reduce((total, group) => total + group.recordedSignals, 0)
 
   return (
     <Surface padding="none" className="h-full min-w-0 overflow-hidden rounded-[var(--md-radius-xl)]">
       <BookingSectionHeading
         icon={<ChartBar className="size-4" strokeWidth={1.5} />}
-        title={t("Operational readiness")}
-        meta={`${readySignals}/${totalSignals} · ${t("booking controls ready")}`}
+        title={t("Booking information coverage")}
+        meta={`${recordedSignals}/${totalSignals} · ${t("fields recorded")}`}
       />
-      <div className="grid gap-4 px-4 py-4" role="group" aria-label={t("Operational readiness")}>
+      <p className="px-4 pt-3 text-[12px] leading-relaxed text-[var(--md-text)]">{t("Field presence only; not departure clearance or financial close-out approval.")}</p>
+      <div className="grid gap-4 px-4 py-4" role="group" aria-label={t("Booking information coverage")}>
         {groups.map((group) => (
           <div key={group.label} className="grid min-w-0 grid-cols-[minmax(108px,0.34fr)_minmax(0,1fr)_42px] items-center gap-3">
             <div className="min-w-0">
@@ -3248,7 +3137,7 @@ function BookingRecordDetails({
               <BookingCargoWiseField label="Customer PO" value={detailValue("customerPO", value(facts, "customerPO"))} {...editDetail("customerPO")} />
               <BookingCargoWiseField label="Supplier ref" value={detailValue("supplierReference", record.booking.supplierRef)} {...editDetail("supplierReference")} />
               <BookingCargoWiseField label="Invoice" value={detailValue("invoiceReference", record.booking.invoice)} {...editDetail("invoiceReference")} />
-              <BookingCargoWiseField label="Documents" value={detailValue("documentsStatus", t("Not connected"))} {...editDetail("documentsStatus")} />
+              <BookingCargoWiseField label="Documents" value={t(bookingRecordAvailability(workspace.documents).label)} />
               <BookingCargoWiseField label="Workflow" value={detailValue("workflowStatus", record.booking.status)} {...editDetail("workflowStatus")} />
             </div>
           </div>
