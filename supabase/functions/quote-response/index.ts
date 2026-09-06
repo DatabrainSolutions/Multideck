@@ -14,6 +14,7 @@ import {
 } from "./core.ts"
 import { signedUrlLifetimeSeconds } from "../_shared/document-functions.ts"
 import { readConfiguredTenantBrand, type TenantBrand } from "../_shared/tenant-branding.ts"
+import { customerQuoteResponseView } from "./public-view.ts"
 
 const documentBucket = "multideck-documents"
 
@@ -98,17 +99,10 @@ function publicBrandContract(brand: TenantBrand) {
  * unreadable configuration deliberately degrades to the fixed Multideck public
  * fallback instead of making the quote itself unavailable.
  */
-async function attachQuoteBrand(admin: Db, tokenHash: string, value: unknown) {
+async function attachQuoteBrand(admin: Db, companyId: string, value: unknown) {
   const view = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
   if (!view) return value
   try {
-    const { data: link, error } = await admin.schema("quote_api")
-      .from("customer_response_links")
-      .select("company_id")
-      .eq("token_hash", tokenHash)
-      .maybeSingle()
-    if (error) throw error
-    const companyId = link?.company_id ? String(link.company_id) : ""
     const brand = companyId ? await readConfiguredTenantBrand(admin, companyId) : null
     return { ...view, branding: brand ? publicBrandContract(brand) : null }
   } catch (error) {
@@ -269,8 +263,9 @@ Deno.serve(async (request) => {
         requested_response_origin: origin,
       })
       if (error || !data) throw error ?? new Error("Quote response view returned no result")
-      const view = await attachQuoteDocument(admin, data)
-      return json(origin, await attachQuoteBrand(admin, tokenHash, view))
+      const companyId = typeof data._brandingCompanyId === "string" ? data._brandingCompanyId : ""
+      const view = await attachQuoteDocument(admin, customerQuoteResponseView(data))
+      return json(origin, await attachQuoteBrand(admin, companyId, view))
     }
     if (body.action === "submit") {
       const decision = parseDecision(body.decision)
