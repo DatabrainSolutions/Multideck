@@ -52,10 +52,12 @@ must use the Booking comparison screen. Do not claim a generic Dexter edit or
 watch gains that capability from this migration. Completing that adapter is
 still part of the broader freight goal.
 
-This migration is **local and unapplied**. Before deployment, recheck the exact
-target function and current migration ledger, rehearse on the current full
-schema, run advisors, and verify the hosted selected-field readback. Do not
-reapply or silently repair historical accepted changes without review.
+This migration was subsequently **applied to development only** together with
+the selected-route clear fix. Fresh-schema rehearsal, exact live function and
+ledger verification, unchanged function metadata/permissions and unchanged
+advisors are recorded in the [route-clear release evidence](2026-09-06-quote-route-clear-evidence.md).
+Hosted selected-field browser readback and source publication remain pending.
+Do not reapply or silently repair historical accepted changes without review.
 
 PDF logo work and tracking remain deferred. No provider call, live customer
 record, mailbox, financial transaction or team deployment setting was changed.

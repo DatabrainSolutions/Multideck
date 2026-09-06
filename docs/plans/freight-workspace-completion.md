@@ -8,6 +8,17 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 ## Delivery and evidence ledger
 
+6 September development clear-fix release: applied exactly the detail/route
+clear migrations following fresh full-schema rehearsal and isolated CLI dry
+run. Live function text matches the intended changes; protected metadata and
+all other checked definitions across 1,012 application functions are unchanged.
+Both exact migration identities are present, service-only execution remains
+enforced and advisors have zero added/removed findings. No hosted Booking record,
+Customs declaration, email or PDF was changed. Fresh revised-Quote browser
+readback and origin/dev source publication remain pending; requested permission
+for one labelled JQ20022 V2 email and selected updates to test JE0991134.
+[Release evidence](../release/2026-09-06-quote-route-clear-evidence.md).
+
 6 September selected-route revision checkpoint: reproduced and corrected a
 cleared accepted ETD that remained on the Booking route, plus the corresponding
 selected ETA/carrier/service/address clear path and stale location-code fallback.

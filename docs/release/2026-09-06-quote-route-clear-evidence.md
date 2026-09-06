@@ -60,11 +60,31 @@ delivery or a signed-in hosted Booking lifecycle.
 
 ## Scope and release boundary
 
-Both clear fixes remain **local and unapplied**. Hosted function/ledger
-reconciliation, advisors and selected-field browser readback are still required
-before reporting them released. There is no data backfill or historical repair.
+Both clear fixes were subsequently **applied to development only** on 6
+September. A fresh application-schema export (SHA-256
+`25d141ac4f1238ab9096fbb2f69d0984452c315fbb689c33a02a6f5e61650770`)
+passed the existing structural rehearsal with exactly these two migrations.
+The isolated CLI checkout's dry run listed those two files, with no seeds or
+roles. The push succeeded and both exact version/name pairs are in the live
+migration ledger. A Docker catalog-cache warning was local tooling only;
+subsequent database reads verified the deployment, so it was not retried.
 
-No iCustoms call, declaration, hosted Booking, mailbox, issued PDF, payment,
+At 13:03 UTC, the deployed function matched the pre-release function with
+exactly the four intended payload-block substitutions. A digest across 1,012
+application functions, excluding only this function's body, was unchanged
+(`eb451d3028eaf02f4353846e22b18c24`). This includes the target's privilege and
+configuration metadata and all other checked function definitions. Public and
+authenticated roles remain denied direct execution of the review/apply entry
+point; service-role execution remains allowed. Security advisors remain 1,555,
+with zero added/removed findings after excluding observation timestamps; this
+does not resolve or certify the pre-existing advisory backlog.
+
+Selected-field browser readback through a freshly accepted revised test Quote
+is still pending. The source commits have not yet been published/merged to
+origin/dev. No frontend or Edge Function deployment was needed for these two
+database changes. There is no data backfill or historical repair.
+
+No iCustoms call, declaration, hosted Booking record, mailbox, issued PDF, payment,
 Calculator, tenant credential or team deployment setting was changed. Customs
 is treated as potentially live and excluded from mutation. Logo and tracking
 work remain deferred.
