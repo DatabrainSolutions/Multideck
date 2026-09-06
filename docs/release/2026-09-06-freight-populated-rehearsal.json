@@ -1,0 +1,258 @@
+{
+  "checkedAt": "2026-09-06T08:00:37.603Z",
+  "projectId": "aqtwypsuijxlnvtxpuxe",
+  "liveReadOnly": true,
+  "liveQuoteVersions": {
+    "total": 37,
+    "submitted": 13,
+    "structuredCargo": 0,
+    "explicitNullCargo": 0
+  },
+  "pendingRegistryCollisions": [],
+  "run": {
+    "status": "populated_rehearsal_passed",
+    "schemaSha256": "10f03c22dc848d904ba4ef30842450cc45036a6bd6d7f86a9e85054d343031c8",
+    "applied": [
+      "20260905110317_booking_stable_cargo_equipment_identity.sql",
+      "20260905112211_dexter_booking_cargo_parity.sql",
+      "20260905115938_quote_version_structured_cargo.sql",
+      "20260905123223_quote_cargo_issue_readiness.sql",
+      "20260905123929_quote_booking_cargo_handover.sql",
+      "20260905125327_quote_cargo_revision_comparison.sql",
+      "20260905130449_quote_cargo_revision_persistence.sql",
+      "20260905132442_quote_cargo_review_integration.sql",
+      "20260905151617_booking_shipment_goods_value.sql",
+      "20260905160621_quote_open_structured_cargo.sql",
+      "20260905163327_quote_cargo_safety_summary.sql",
+      "20260905172223_booking_cargo_decimal_boundary.sql",
+      "20260905182616_booking_route_single_save_authority.sql",
+      "20260905183528_booking_route_mode_reference_history.sql",
+      "20260905185420_quote_routing_mode_review_guard.sql",
+      "20260905192002_quote_single_leg_routing_authority.sql",
+      "20260905195412_quote_overall_mode_route_authority.sql",
+      "20260905201222_booking_container_operational_values.sql",
+      "20260905205443_dexter_booking_container_parity.sql",
+      "20260905210719_dexter_booking_routing_parity.sql",
+      "20260905212002_dexter_route_mode_approval.sql",
+      "20260905213832_dexter_document_evidence_envelope.sql",
+      "20260905214653_dexter_shipment_value_parity.sql",
+      "20260905220124_quote_draft_cargo_edit_boundary.sql",
+      "20260905221303_dexter_quote_cargo_parity.sql",
+      "20260905223353_booking_cargo_equipment_allocation_boundary.sql",
+      "20260905224722_booking_cargo_allocation_workspace.sql",
+      "20260906060021_dexter_booking_allocation_parity.sql",
+      "20260906062554_booking_equipment_kind_preservation.sql"
+    ],
+    "migrationHashes": [
+      {
+        "file": "20260905110317_booking_stable_cargo_equipment_identity.sql",
+        "sha256": "77c9fb1d452ff7de1bb73bd5ac72d192e89b762bd4dc1bc0eae47a29d2572cfd"
+      },
+      {
+        "file": "20260905112211_dexter_booking_cargo_parity.sql",
+        "sha256": "9c4d4cf63b5e0796a9bd6610201770765d200c8a67f0ad9a1cff20bcdb6b22a3"
+      },
+      {
+        "file": "20260905115938_quote_version_structured_cargo.sql",
+        "sha256": "4b369b75089357478b7556bb0e91896558c6c756cd4fe39b15c6ad39504421e8"
+      },
+      {
+        "file": "20260905123223_quote_cargo_issue_readiness.sql",
+        "sha256": "6be36fc55d773f7118b3aa47fa3b96b57b4b0791c639c51e519545845e3606f2"
+      },
+      {
+        "file": "20260905123929_quote_booking_cargo_handover.sql",
+        "sha256": "7676e586d48bb6df87cf7b1f182889f7172fe024214ddc2f3ce6df766d4b0b07"
+      },
+      {
+        "file": "20260905125327_quote_cargo_revision_comparison.sql",
+        "sha256": "4bf26090d1e3c6f1bef54e12157db09442b14ec20661f94349d95d11e1aa5251"
+      },
+      {
+        "file": "20260905130449_quote_cargo_revision_persistence.sql",
+        "sha256": "6bd4d29410502669ac716da0d7d4d0cc5049b62e37d1362277615e9e7456e103"
+      },
+      {
+        "file": "20260905132442_quote_cargo_review_integration.sql",
+        "sha256": "071cef7237fe3abd60d8cf0ac1683cf7822212c8ad3d89ac89912983f1069c4f"
+      },
+      {
+        "file": "20260905151617_booking_shipment_goods_value.sql",
+        "sha256": "5cd459e48f3870d40fc83232d95c24855fe3df5ba13b38ec50a04feebe35c3bf"
+      },
+      {
+        "file": "20260905160621_quote_open_structured_cargo.sql",
+        "sha256": "9610e1d94c792699a8289c44f64cf8e18d623eedd4d5ec54563849c32634e5e4"
+      },
+      {
+        "file": "20260905163327_quote_cargo_safety_summary.sql",
+        "sha256": "e770934b09936120f8b4acfaca43f0661d718c7aa57361ee368d9177d4bf89cc"
+      },
+      {
+        "file": "20260905172223_booking_cargo_decimal_boundary.sql",
+        "sha256": "ffa8110897cc4374d6a8fa85e8f4bde268d970601f75d31ca688fd3e859e3a95"
+      },
+      {
+        "file": "20260905182616_booking_route_single_save_authority.sql",
+        "sha256": "6cec350d37c713a201a1ef613e879014d18712a927ce3a7842041edc7d9e3c96"
+      },
+      {
+        "file": "20260905183528_booking_route_mode_reference_history.sql",
+        "sha256": "3eb0a1a3c5487e139925060bcda604dc381c673983d589acc28f6595fc70f0d8"
+      },
+      {
+        "file": "20260905185420_quote_routing_mode_review_guard.sql",
+        "sha256": "56873bfe31b9f24b3747326ba1e61bcbab1e08dc6ef9fd16abd0df01ca9cfe8d"
+      },
+      {
+        "file": "20260905192002_quote_single_leg_routing_authority.sql",
+        "sha256": "c140f4ad0a1aeeb26f12dc88fe2f9014041250f8c454ef645cd3bc323be49631"
+      },
+      {
+        "file": "20260905195412_quote_overall_mode_route_authority.sql",
+        "sha256": "d767b4b33da24771b1d40c75086e13124d120f649777474fbd1d162484d51397"
+      },
+      {
+        "file": "20260905201222_booking_container_operational_values.sql",
+        "sha256": "f1befd19ade99cf0b7f07431c3329117cf4c77c39ae43fc9733e1fd532e01d4e"
+      },
+      {
+        "file": "20260905205443_dexter_booking_container_parity.sql",
+        "sha256": "c3d4745f389c682d48ae7f8907dbf259b52b750097c3ef0a5adf6c68265d9dc5"
+      },
+      {
+        "file": "20260905210719_dexter_booking_routing_parity.sql",
+        "sha256": "bf5192c9c097ebdf7d3f3013fbbf8965bc9bbc08a58eee435e65e714dfbd088e"
+      },
+      {
+        "file": "20260905212002_dexter_route_mode_approval.sql",
+        "sha256": "326b049270a944a355f3017f8b37bdbc19097d681b9da55108eeed4097a7af76"
+      },
+      {
+        "file": "20260905213832_dexter_document_evidence_envelope.sql",
+        "sha256": "ee583d6a668e3091840ff2707eadb221002de57081b802868a9e377ec0006092"
+      },
+      {
+        "file": "20260905214653_dexter_shipment_value_parity.sql",
+        "sha256": "2defad96c1f507407fbc45bf4384d075e45a8a95078a4700d8c71919cf65ef0b"
+      },
+      {
+        "file": "20260905220124_quote_draft_cargo_edit_boundary.sql",
+        "sha256": "91a77ea33e0b942ffa73227adf8e0db3c09006140a69c6a3a7398253831206fe"
+      },
+      {
+        "file": "20260905221303_dexter_quote_cargo_parity.sql",
+        "sha256": "ec6df6b0fdbae51abec9f3ca7cc0a23b62e53831ec0504ddccbd25e8e530b272"
+      },
+      {
+        "file": "20260905223353_booking_cargo_equipment_allocation_boundary.sql",
+        "sha256": "3fd9285a79ed36dbd6a4fb5dbe345469ff435bbfbfcede64456102838e6ca554"
+      },
+      {
+        "file": "20260905224722_booking_cargo_allocation_workspace.sql",
+        "sha256": "9db27ae376818ed5a6d680a338687b867ac880dc75f2847ddb5ad9f6bfde6e9a"
+      },
+      {
+        "file": "20260906060021_dexter_booking_allocation_parity.sql",
+        "sha256": "2e27ee4a29f6030dec9de8e016eac4381f7990a9dd058583347e69ba389766c3"
+      },
+      {
+        "file": "20260906062554_booking_equipment_kind_preservation.sql",
+        "sha256": "a7dbbbdee7c3cdae28b9110e4e1dbc7e8cfffe1970b905ae92472be47ae99d3e"
+      }
+    ],
+    "postChainChecks": [
+      "typed cargo tables",
+      "typed cargo RLS",
+      "finalization service boundary",
+      "allocation action service boundary",
+      "quote revision service boundary"
+    ],
+    "populatedChecks": [
+      "Quote version and header preservation",
+      "Booking cargo equipment route and membership preservation",
+      "no invented financial values or allocations",
+      "exact typed projection with zero and unknown distinctions",
+      "existing cargo registry conflict update",
+      "unrelated registry and watch signal preservation",
+      "submitted mutation and deletion denial",
+      "invalid draft cargo rejection"
+    ],
+    "fixtureHashes": [
+      {
+        "name": "before",
+        "sha256": "2c2a5637537e1eb0ee4cfbf312412dfef9c2a4e2aec7ce7a19b75be44c501129"
+      },
+      {
+        "name": "after",
+        "sha256": "b81cae4b2a5bc90dc86480fe4d9fb785511b2c3f26faa4f8b8460217a51b8b39"
+      }
+    ],
+    "hostedLifecycleVerified": false
+  },
+  "historyInventory": {
+    "liveRows": 407,
+    "trackedLocalFiles": 470,
+    "exactNameAndVersionEntries": 182,
+    "differentTimestampSameNameEntries": 189,
+    "localEntriesAbsentByExactNameAndVersion": 93,
+    "liveOnlyEntries": 32,
+    "versionNameCollisions": [
+      {
+        "file": "20260819100000_party_screening_ofsi.sql",
+        "version": "20260819100000",
+        "name": "party_screening_ofsi",
+        "live": {
+          "version": "20260819100000",
+          "name": "road_control_bounded_board"
+        }
+      },
+      {
+        "file": "20260819140000_screening_listing_notes.sql",
+        "version": "20260819140000",
+        "name": "screening_listing_notes",
+        "live": {
+          "version": "20260819140000",
+          "name": "warehouse_portal_user_paging"
+        }
+      },
+      {
+        "file": "20260829191512_allow_incomplete_finance_drafts 2.sql",
+        "version": "20260829191512",
+        "name": "allow_incomplete_finance_drafts 2",
+        "live": {
+          "version": "20260829191512",
+          "name": "allow_incomplete_finance_drafts"
+        }
+      },
+      {
+        "file": "20260829191646_fix_finance_number_sequence_conflict 2.sql",
+        "version": "20260829191646",
+        "name": "fix_finance_number_sequence_conflict 2",
+        "live": {
+          "version": "20260829191646",
+          "name": "fix_finance_number_sequence_conflict"
+        }
+      },
+      {
+        "file": "20260829191749_register_finance_audit_record_types 2.sql",
+        "version": "20260829191749",
+        "name": "register_finance_audit_record_types 2",
+        "live": {
+          "version": "20260829191749",
+          "name": "register_finance_audit_record_types"
+        }
+      },
+      {
+        "file": "20260829194132_harden_finance_reporting_boundary 2.sql",
+        "version": "20260829194132",
+        "name": "harden_finance_reporting_boundary 2",
+        "live": {
+          "version": "20260829194132",
+          "name": "harden_finance_reporting_boundary"
+        }
+      }
+    ],
+    "interpretation": "Metadata identity only, not SQL equivalence. Duplicate tracked file variants are counted as entries. No history repair, deletion or blind push performed."
+  }
+}

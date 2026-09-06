@@ -1,4 +1,5 @@
 import { isTrainingDatabase } from "../_shared/training-environment.ts"
+import { bookingAllocationActionRecord, bookingAllocationActionChanges } from "./booking-allocation-review.ts"
 import { ensureScreeningList } from "../_shared/screening-ingest.ts"
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
@@ -83,7 +84,7 @@ const MAX_PROMPT_CHARACTERS = 4_000
 const MAX_HISTORY_MESSAGES = 30
 const MAX_TOOL_ROUNDS = 4
 const MAX_TOOL_CALLS = 6
-const PROMPT_VERSION = "freight-coworker-2026-08-29-support-english"
+const PROMPT_VERSION = "freight-coworker-2026-09-01-finance-support"
 const EMAIL_STYLE_TOOL = "load_operator_email_style"
 const PREPARE_EMAIL_DRAFT_TOOL = "prepare_email_draft"
 const DEXTER_SCOPE_REDIRECT_TOOL = "redirect_off_topic_request"
@@ -422,6 +423,14 @@ function supportTicketCopy(
   }
   return copy[locale][key]
 }
+const CREATE_FINANCE_DOCUMENT_DRAFT_ACTION = "create_finance_document_draft"
+const CREATE_FINANCE_CASH_DRAFT_ACTION = "create_finance_cash_draft"
+const ASSIGN_JOB_MANAGEMENT_PERIOD_ACTION = "assign_job_management_period"
+const FINANCE_EDGE_ACTIONS = new Set([
+  CREATE_FINANCE_DOCUMENT_DRAFT_ACTION,
+  CREATE_FINANCE_CASH_DRAFT_ACTION,
+  ASSIGN_JOB_MANAGEMENT_PERIOD_ACTION,
+])
 
 const CUSTOMS_DRAFT_ACTIONS = new Set([
   CREATE_CUSTOMS_DECLARATION_ACTION,
@@ -448,6 +457,9 @@ function actionDisplayName(locale: DexterLocale, actionCode: string, fallback: s
       [COMPLETE_TODO_TASK_ACTION]: "Complete To Do task",
       [DELETE_TODO_TASK_ACTION]: "Remove To Do task",
       [CREATE_SUPPORT_TICKET_ACTION]: "Create support ticket",
+      [CREATE_FINANCE_DOCUMENT_DRAFT_ACTION]: "Create finance document draft",
+      [CREATE_FINANCE_CASH_DRAFT_ACTION]: "Create receipt or payment draft",
+      [ASSIGN_JOB_MANAGEMENT_PERIOD_ACTION]: "Assign job management period",
     },
     "en-US": {
       [CREATE_CUSTOMS_DECLARATION_ACTION]: "Create Customs declaration draft",
@@ -460,6 +472,9 @@ function actionDisplayName(locale: DexterLocale, actionCode: string, fallback: s
       [COMPLETE_TODO_TASK_ACTION]: "Complete To Do task",
       [DELETE_TODO_TASK_ACTION]: "Remove To Do task",
       [CREATE_SUPPORT_TICKET_ACTION]: "Create support ticket",
+      [CREATE_FINANCE_DOCUMENT_DRAFT_ACTION]: "Create finance document draft",
+      [CREATE_FINANCE_CASH_DRAFT_ACTION]: "Create receipt or payment draft",
+      [ASSIGN_JOB_MANAGEMENT_PERIOD_ACTION]: "Assign job management period",
     },
   } satisfies Record<DexterLocale, Record<string, string>>)[locale]
   return actionNames[actionCode] ?? fallback
@@ -889,6 +904,85 @@ async function createSupportTicketAction(
   }
 }
 
+async function financeActionFetch(
+  authorization: string,
+  actionCode: string,
+  args: JsonObject,
+  executionKey: string,
+) {
+  if (actionCode === ASSIGN_JOB_MANAGEMENT_PERIOD_ACTION) {
+    const legalEntityId = cleanString(args.legalEntityId, 80)
+    const jobId = cleanString(args.jobId, 80)
+    const periodCode = cleanString(args.periodCode, 6)
+    const reason = cleanString(args.reason, 500)
+    if (!isUuid(legalEntityId) || !isUuid(jobId) || !/^\d{4}(0[1-9]|1[0-2])$/.test(periodCode) || !reason) {
+      return { data: null, error: { code: "invalid_action", message: "Choose the exact job, legal entity, YYYYMM management period and reason before proposing the assignment." } }
+    }
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() ?? ""
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")?.trim() ?? ""
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/finance-accruals/jobs/${jobId}/period`, {
+        method: "PUT",
+        headers: { Authorization: authorization, apikey: anonKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ legalEntityId, periodCode, reason, idempotencyKey: executionKey }),
+      })
+      const result = await response.json().catch(() => ({}))
+      return response.ok ? { data: result, error: null } : { data: null, error: { code: `finance_${response.status}`, message: cleanString(result?.detail, 300) || "The job management period could not be assigned." } }
+    } catch {
+      return { data: null, error: { code: "finance_unavailable", message: "The Finance Accruals Edge Function could not be reached. Nothing was changed." } }
+    }
+  }
+  const partyOrgId = cleanString(args.partyOrgId, 80)
+  if (!isUuid(partyOrgId)) {
+    return { data: null, error: { code: "invalid_action", message: "Choose the exact customer or supplier before preparing the draft. The signed-in tenant company is used automatically." } }
+  }
+  const sourceLines = Array.isArray(args.lines) ? args.lines : []
+  const sourceAllocations = Array.isArray(args.allocations) ? args.allocations : []
+  const exchangeRate = Number(args.exchangeRate)
+  if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+    return { data: null, error: { code: "invalid_action", message: "Provide the exact reviewed exchange rate from transaction currency to the tenant company’s base currency." } }
+  }
+  if (actionCode === CREATE_FINANCE_DOCUMENT_DRAFT_ACTION && sourceLines.length === 0) {
+    return { data: null, error: { code: "invalid_action", message: "The approved finance document needs at least one reviewed line." } }
+  }
+  const bankAccountId = cleanString(args.bankAccountId, 80)
+  if (actionCode === CREATE_FINANCE_CASH_DRAFT_ACTION && !isUuid(bankAccountId)) {
+    return { data: null, error: { code: "invalid_action", message: "Choose the exact active bank account before preparing a receipt or payment draft." } }
+  }
+  const path = actionCode === CREATE_FINANCE_DOCUMENT_DRAFT_ACTION ? "/documents/draft" : "/cash/draft"
+  const payload = actionCode === CREATE_FINANCE_DOCUMENT_DRAFT_ACTION
+    ? {
+      type: cleanString(args.type, 40), partyOrgId,
+      documentDate: cleanString(args.documentDate, 10), dueDate: cleanString(args.dueDate, 10) || null,
+      currencyCode: cleanString(args.currencyCode, 3).toUpperCase(),
+      exchangeRate,
+      sourceJobId: isUuid(cleanString(args.sourceJobId, 80)) ? cleanString(args.sourceJobId, 80) : null,
+      lines: sourceLines, idempotencyKey: executionKey,
+    }
+    : {
+      type: cleanString(args.type, 40), partyOrgId,
+      bankAccountId,
+      transactionDate: cleanString(args.transactionDate, 10), currencyCode: cleanString(args.currencyCode, 3).toUpperCase(),
+      exchangeRate, amount: Number(args.amount), reference: cleanString(args.reference, 180) || null,
+      allocations: sourceAllocations, idempotencyKey: executionKey,
+    }
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() ?? ""
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")?.trim() ?? ""
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/finance-subledger${path}`, {
+      method: "POST",
+      headers: { Authorization: authorization, apikey: anonKey, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    const result = await response.json().catch(() => ({}))
+    return response.ok
+      ? { data: result, error: null }
+      : { data: null, error: { code: `finance_${response.status}`, message: cleanString(result?.detail, 300) || "The finance draft could not be created." } }
+  } catch {
+    return { data: null, error: { code: "finance_unavailable", message: "The Finance Edge Function could not be reached. Nothing was changed." } }
+  }
+}
+
 async function executeWorkspaceAction(
   authorization: string,
   actionCode: string,
@@ -898,6 +992,9 @@ async function executeWorkspaceAction(
 ) {
   if (actionCode === CREATE_SUPPORT_TICKET_ACTION) {
     return await createSupportTicketAction(authorization, args, executionKey, locale)
+  }
+  if (FINANCE_EDGE_ACTIONS.has(actionCode)) {
+    return await financeActionFetch(authorization, actionCode, args, executionKey)
   }
   if (actionCode === CREATE_PURCHASE_ORDER_ACTION) {
     const facilityId = cleanString(args.facility_id, 80)
@@ -1312,6 +1409,8 @@ function watchTargetLabel(capability: string, record: JsonObject) {
         ? ["quoteNumber"]
         : capability === "phone_calls"
           ? ["callerName", "companyName", "phoneNumber"]
+        : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value", "quote_cargo", "booking_allocations"].includes(capability)
+          ? ["targetLabel", "bookingReference", "description"]
       : capability === "bookings"
           ? ["bookingReference", "jobReference", "customerReference"]
         : capability === "inbox_suggestions"
@@ -1796,6 +1895,18 @@ Never claim to have seen, verified, contacted, sent, saved, changed, approved, c
 If conversation history contains a claim that conflicts with a newer tool result, use the newer tool result and briefly note the discrepancy when it matters.
 
 # Freight-forwarding operating standard
+Equipment identity, weight and temperature evidence is connected only when booking_containers is listed. It includes containers, aircraft ULDs, vehicles, trailers and wagons; use the saved equipmentKind, never infer it from the Booking mode or call every record a sea container. Query by Booking reference, equipment number or exact recordId. Use bookingId, recordId, updatedAt and containerUpdatedAt from the latest read; never substitute the first equipment record. Preserve every digit of decimal text. update_booking_container proposes one listed operational field and always requires explicit approval, including Full access: show the Booking reference, exact equipment, field and before/after values. Null clears a nullable field. Never infer VGM from cargo weight, offer VGM for a non-container kind, claim to certify or submit a declaration, or treat an old Quote as current equipment evidence. Watching for you supports saved changes to one exact equipment record through deterministic signals, with notifications only. Adding/removing equipment, identity/type changes and commercial edits are not exposed by this action; use Booking Details. Quantified allocations use the separate booking_allocations capability, never this equipment action or generic update_booking. If the capability is absent, explain that it is unavailable rather than claiming generic update_booking supports it.
+When booking_allocations is listed, query by exact Booking reference or ID to read the complete allocation plan, cargo/equipment/leg identities and cargo totals. Use recordId/bookingId, updatedAt and reviewHash from that same complete read. replace_booking_allocations proposes a full plan atomically and always requires explicit approval in both access modes. Retain unchanged rows and IDs, assign fresh UUIDs to new allocations, and show all additions, edits and omitted-row removals. Preserve exact decimal text and null for unknown quantities; never infer allocation from container totals or VGM. Use either whole-journey or individual-leg scope for each cargo line, not both. A saved plan watch uses the Booking recordId, field allocations and operator changed, and sends one notification per changed save; no automatic edits or recurring AI calls. Legacy unquantified links are not quantified allocations. No capacity, DG compatibility, packing completion or VGM certification is implied. If the capability is absent or the full plan cannot be read, explain the limitation and use Booking Details instead of making a partial replacement.
+Shipment goods value is separate from cargo-line declared values, freight charges, profit and the historical accepted Quote total. When booking_shipment_value is listed, read the exact Booking's amount, currency, recordId and updatedAt; retain every decimal digit and treat null as unknown, never zero. update_booking_shipment_value requires explicit approval in both access modes. Supply amount and currency together, retaining an unchanged member from the current saved record; null deliberately clears it. Show both values before and after. Changing the currency does not convert the amount, redistribute cargo allocations or alter the accepted Quote. Never infer a shipment total from cargo or sum mixed currencies. Watches notify on amount or currency changes on one exact Booking, with changed rules only; currency-aware thresholds and automatic edits are not supported. If this capability is absent, use Booking Details > Cargo instead of claiming generic update_booking can perform it.
+
+Per-leg operational references and planned dates are connected only when booking_routes is listed. Query by Booking reference or exact route recordId, using bookingId, recordId, updatedAt and routeUpdatedAt as current evidence. Identify the exact leg and its own mode, never substitute the first leg or the overall Booking mode. Retained off-mode transport values are not current evidence. update_booking_route proposes one allowlisted field for explicit approval even in Full access: show Booking, leg number/mode, field and before/after values. Date-only values mean midnight UTC; timestamps require an explicit timezone. Null clears a nullable field. No mode/location/carrier changes, reordering, adding/removing legs, actual/tracking dates or commercial edits are exposed by this action. Only when the separate change_booking_route_mode action is listed, propose a leg mode change using the exact identities and both timestamps. Its database-generated approval warns that shared transport references will be cleared and preserves the previous evidence in history. Never replace or downplay that review, invent its before values, or describe the change as already saved. Carrier and planned dates remain unchanged and need suitability review. Overall Booking mode changes still use Booking Details. Watching for you follows saved fields on an exact leg through deterministic signals and notifies only. If a capability is absent, explain the limit instead of claiming generic update_booking can perform the operation.
+Changing a routing step's mode always requires explicit review: use the dedicated change_booking_route_mode proposal when listed, otherwise Booking Details. Shared references start blank for the new mode; saved before/after references are retained in Activity and audit. Do not claim that an old bill of lading is now an air waybill or that generic Booking mode changes perform this per-leg review. Current mode/reference watches use booking_routes when listed. Dedicated route-reference history reads are not connected to Dexter yet; direct historical evidence requests to the job audit view rather than inventing evidence.
+An accepted Quote revision can change routing-leg modes even when the overall Job mode stays the same. Direct the operator to the accepted Quote update review in the Booking and its Inspect routing plan comparison; changing routing modes requires explicit confirmation there. Do not apply these revisions through generic Booking edits, claim a dedicated route-plan watch, or interpret a leg count as evidence of its contents. Ordinary Booking-only route edits do not by themselves make the Quote out of sync.
+An explicitly planned Quote route stays authoritative even when only one leg remains. Do not infer its mode, carrier, service or dates from the overall Quote header. Single-leg route reads, edits and watches still require the dedicated route adapter; direct the operator to Planned routing legs and the accepted-version comparison while that adapter is unavailable.
+Overall commercial Mode and physical routing-leg modes are separate. The Quote and Booking Details screens ask for review before changing overall Mode; they retain planned legs and flag a standard overall mode that no leg uses. Applying only Mode from an accepted revision must not relabel explicit or independently edited Booking legs; Routing plan is a separate reviewed selection. Do not claim that generic mode edits perform this review or that a mode-mismatch watch is connected. Direct those requests to the Details screen until the dedicated approval-safe mode adapter is available.
+When quote_cargo is listed, it reads exact lines of the current Quote version, including quoteId, versionId, lineId, recordId, updatedAt, snapshotHash and editable. Keep exact decimals and unknown values. Never infer line contents from summary totals. update_quote_cargo requires explicit approval in both access modes and only edits a working draft with editable=true. Use quoteId as target_id, the separate versionId and lineId, and both freshness tokens from the same read. It changes one operational field, recomputes cargo summaries, retains other draft details and never sends a Quote, creates a revision or updates a Booking. Safety values are booleans; measurements are exact decimal strings or null. Submitted/pending-send versions require the operator to open a revised draft first. Quote cargo watches use recordId (not quoteId or lineId), notify on saved field changes only, and stay bound to that exact version and line; they do not follow a later version. No automatic edits, allocation/DG detail or historical-version search is implied. If this capability is absent, explain that limitation and use the Quote screen rather than generic update_quote.
+Individual booking cargo lines are connected only when the booking_cargo domain is listed. Query it by exact booking reference or cargo ID and use its recordId, bookingId and updatedAt as evidence. The update_booking_cargo action proposes one allowlisted field on one existing line and always requires explicit operator approval, including in Full access. Show the booking reference, cargo line, field and before/after values. Never substitute the first cargo line or reuse an old updatedAt after another change. Null clears a nullable field; measurements use a text number and safety flags use the explicit text true or false. Prices, margins, supplier charges, adding/removing lines, dangerous-goods detail and equipment allocation are not supported by this action; use Booking Details for those operations. Watching for you can follow persisted booking_cargo field changes by the exact cargo recordId, using deterministic database signals without recurring AI calls.
+The legacy quotes-domain customerReference is the master Quote reference, not the customer's editable enquiry reference. Customer enquiry-reference reads, edits and watches are not yet exposed through that domain; say so and direct the operator to Customer ref in Quote Details. Never claim the master reference is the customer's enquiry reference, rename the master to change it, or promise a watch on that unsupported field. Existing Quote lifecycle and cargo watches are unchanged.
 Work fluently across air, sea, road, rail, customs, warehousing, quotations, bookings, milestones, exceptions, customer updates, and commercial handovers when those domains are connected.
 Use freight terminology accurately and only when it helps. Distinguish planned, estimated, actual, confirmed, and inferred information.
 Treat ETD, ETA, ATD, ATA, cut-offs, free time, Incoterms, chargeable weight, demurrage, detention, customs status, carrier acceptance, space, rates, surcharges, and contract terms as materially different facts.
@@ -1837,6 +1948,10 @@ App-wide dictation and transcription preferences are input assistance, not a Dex
 Gmail labels and Outlook folders are read-only provider organisation. When read_email_thread returns folders, use those visible names as context and never invent a missing label or folder. Label changes and folder moves do not emit a dedicated tenant-safe watch event in this release, so never claim that Watching for you can monitor those organisational changes; direct the operator to Inbox to browse them.
 Email search covers Multideck's rolling retained window: 12 calendar months for useful mail and 30 days for Spam and Trash. If search_email returns outsideRetentionWindow=true, explain that the requested period is outside Multideck's retained window; never claim that Gmail or Microsoft has no older email.
 Dexter has connected read and approval-safe write support for warehouse goods in, goods out, inventory, locations, facilities, items and warehouse orders. Warehouse orders have a typed customer source; they are not finance purchase or sales ledgers. Customer PO sources are never finance supplier purchase orders, and their references never enter the purchase subledger. Use warehouse_execution to inspect putaway and pick tasks and their source evidence. Use only the listed actions: create or edit setup records and warehouse orders; release an exact outbound order to deterministic allocation and pick tasks; receive an exact inbound order; dispatch an exact outbound order only after warehouse staff have picked it; cancel or reschedule a non-final order; create, move or consolidate handling units; move stock; change stock status; record a sample; report a location empty; or resolve an exact location exception. Putaway and pick confirmation remain deliberately unavailable to Dexter writes because chat must not invent physical scans. These actions always run through the authenticated Warehouse Edge Function and its existing validation, permission and audit boundaries. Never invent scan evidence, quantities, locations, lots, damage, custody details or physical confirmation. Ask for the missing evidence before preparing a physical warehouse action.
+Finance recovery capability identifier: finance-recovery.
+Multideck is the authoritative accounting ledger and reporting source. Use native financial-summary evidence for profit and loss, balance sheet and trial-balance questions, and keep nativePostingStatus separate from externalMirrorStatus. External accounting packages are optional mirrors, never the owner of the books. Compliance-obligation evidence is a jurisdiction foundation, not proof that direct filing is certified or enabled; state the readiness gate and source authority, and never claim payroll support.
+Charge-line finance rule — universal across operations (supersedes any later job-level release wording): apply the same accounting lifecycle to freight and shipment, warehouse and customs jobs, and to shared charges. Explain each job charge line's operational domain and source provenance, expected revenue and cost, revenue and cost nominal codes, posted actuals, remaining WIP or accrual and recognised gross profit. Treat customs invoice values, cargo declared values and warehouse goods values as operational valuation evidence, never as Multideck revenue or cost. A posted AR invoice line reclassifies only outstanding revenue WIP on the exact linked job charge line; a posted AP invoice line reclassifies only outstanding cost accrual on the exact linked job charge line. The reclassification is limited to local net excluding VAT and does not change recognised gross profit. If the invoice line is unmatched, or no adjustment existed on that charge, report the actual as a genuine gross-profit movement and never imply another charge was released.
+Finance is available through the finance domain for sales invoices, customer credits, purchase invoices, supplier credits, customer receipts, supplier payments, allocations, job links, native-ledger status, external-mirror status, job management periods, accrual/WIP reviews, postings and reversals. Finance evidence keeps native posting separate from optional external-mirror delivery. A retained mirror error, attempt count and recovery route never mean that the authoritative Multideck posting failed. For management reporting, explain the assigned YYYYMM period, expected versus recognised revenue and cost, outside-period activity, proposed revenue WIP, proposed cost accrual, adjusted margin, review status, posting batch and reversal evidence. When an exact job-linked AR invoice posts, Multideck automatically reverses that job's oldest outstanding revenue WIP up to the invoice local net amount excluding VAT. When an exact job-linked AP invoice posts, it automatically reverses that job's oldest outstanding cost accrual on the same progressive basis. Report the source document, released local amount and release posting batch from finance evidence; never claim a credit note causes an automatic release or that more than the remaining adjustment was reversed. Dexter may propose the allowlisted assignment of one exact job to one exact legal entity and management period, with a clear reason and normal approval. Preparing a period review, overriding a calculated amount, approving, posting or manually reversing any remaining balance remain manual controls in Accruals & WIP; never claim to have performed them. Dexter may explain blocked posting evidence and direct the operator to the exact transaction workspace, but retrying an external-mirror delivery, revoking approval and returning a document to draft also remain manual finance controls. Never claim to have retried, reopened or repaired an external-mirror delivery. Dexter may otherwise prepare only an exact finance document draft or cash draft through the listed finance actions. Supplier invoice and credit-note files can be processed singly or in a batch from Supplier document intake; that workspace requires an operator to review supplier, type, totals, tax and duplicate warnings before draft, review or bulk posting. The temporary extraction queue is deliberately not a Dexter write action or Watching for you event, while every created finance document uses the existing finance evidence and deterministic watch lifecycle. Show the legal entity, party, dates, currency, exchange rate, bank account, every line or allocation, source job, and either the source-backed tax classification or an explicit Tax pending state before approval. The Finance boundary resolves the statutory rate from the legal entity's approved, effective-dated treatment; Dexter must never propose or override a tax rate. If the source evidence does not identify a tax treatment, pass null and explain that the incomplete draft cannot enter finance review. Never choose a plausible treatment merely to complete the action. The resulting record remains a Multideck draft and must follow the product's separate finance review and posting approval. Finance approval posts the balanced native journal to Multideck; it mirrors externally only when configured. Never claim that chat approval posted the draft or that an external package became the source of truth. Never invent an amount, tax treatment, charge code, customer, supplier, job, bank account, allocation, currency, exchange rate or provider mapping. Dexter has no generic table, SQL, Finance Setup, organisation financial-setting, counterparty-bank or accounting-provider write access. Customer and supplier account-sync results are available through finance evidence and event-driven Watching for you signals. The external provider master-data change itself is deliberately not a Dexter write action: it requires Finance Integration permission and an operator to run Sync with accounting system from the Customers or Supplier accounts register. Dexter may explain the latest per-account successes and failures and direct the operator to the relevant register to retry, but must never claim to have created, linked or retried a provider account. A current provider preflight may supply the exact provisional base currency for draft capture, but only an administrator can activate it by approving Finance Setup; review, posting and Dexter must never repair or guess accounting master data. If a provider adapter or mapping is unavailable, say so and direct the operator to Finance setup rather than guessing.
 The warehouse_calendar domain is read-only. Its blocks are derived from warehouse order requested dates and appointment windows. Query it when the operator asks what is scheduled, but never claim to create, edit or delete a calendar block directly. To change a schedule, use the appropriate underlying order action; the calendar will reflect the confirmed order change.
 The calendar domain contains the operator's canonical Multideck meetings, confirmed times, providers and provider-sync state. Use create_meeting, reschedule_meeting, cancel_meeting and approve_meeting_change only for an exact requested change and only through the listed approval-safe action. Before approving an attendee proposal, use the exact meeting and change-request identifiers returned by the calendar domain and preserve the original confirmed time until the provider update succeeds. A provisioning or sync_pending state is not success: the previous confirmed time remains authoritative until the provider update succeeds. Never invent availability, attendees, join links, provider confirmation or a proposed time. The booking_links domain contains the operator's personal reusable booking types. Use create_booking_link, edit_booking_link and pause_booking_link only for an exact personal booking type after approval. These actions cover the core meeting type, its kind (one-to-one, round robin or collective), its hosts by colleague email, and active state; direct the operator to Calendar > Booking links when availability overrides, public-form questions, required fields or cut-offs need visual review. Round robin links pool every host's free time and give each booking to the least-booked free host; collective links only offer times when every host is free. The external_events domain contains Google and Microsoft calendar events Multideck mirrors for the operator; private events show only as Busy. A joinUrl is provider-supplied evidence that the event has an online meeting: return it when the operator asks how to join, and never infer a link from the calendar source alone. Use update_external_event and delete_external_event only for an exact organiser-owned mirrored event after approval. Use respond_external_event only when canRespond is true and the operator explicitly asks to accept, tentatively accept or decline that exact invitation. Multideck queues these changes and writes them to the provider, so a queued change is not yet confirmed until the worker reports success. Never retitle a private event, answer an organiser-owned event, or invent provider confirmation.
 Expected receipts are available through the purchase_orders data domain. Dexter may inspect their customer PO reference, supplier, dates, reference totals, matched lines and linked inbound warehouse order. A draft expected receipt may be proposed only through create_purchase_order, must show the complete header and every line, always waits for explicit approval, and is completed by the Warehouse Edge Function. Customer PO extraction itself stays in the Expected receipts screen so the operator can review the source PDF; Dexter must not claim that it extracted a document.
@@ -2458,7 +2573,41 @@ function customsDraftSummary(locale: DexterLocale, argumentsValue: JsonObject, d
   }
 }
 
+function quoteCargoActionRecord(records: Map<string, JsonObject>, args: JsonObject) {
+  return [...records.values()].find(record => record.cargoScope === "quote_version"
+    && record.quoteId === args.target_id && record.versionId === args.version_id && record.lineId === args.line_id
+    && record.snapshotHash === args.expected_snapshot_hash && record.updatedAt === args.expected_updated_at)
+}
+
 function actionChanges(locale: DexterLocale, actionCode: string, argumentsValue: JsonObject, currentRecord?: JsonObject) {
+  if (actionCode === "replace_booking_allocations") return bookingAllocationActionChanges(argumentsValue, currentRecord)
+  if (actionCode === "update_quote_cargo") {
+    const labels: Record<string, string> = { description: "Goods description", commodity: "Commodity", packageQuantity: "Packages / pieces",
+      packageType: "Package type", grossWeightKg: "Gross weight (kg)", netWeightKg: "Net weight (kg)", volumeCbm: "Volume (CBM)",
+      chargeableWeightKg: "Chargeable weight (kg)", length: "Length", width: "Width", height: "Height", lengthUnit: "Dimension unit",
+      hsCode: "HS code", countryOfOrigin: "Country of origin", isHazardous: "Hazardous", isTemperatureControlled: "Temperature controlled" }
+    const field = String(argumentsValue.field ?? "")
+    if (!labels[field]) return []
+    const beforeKnown = Boolean(currentRecord?.cargoScope === "quote_version" && currentRecord.quoteId === argumentsValue.target_id
+      && currentRecord.versionId === argumentsValue.version_id && currentRecord.lineId === argumentsValue.line_id
+      && currentRecord.snapshotHash === argumentsValue.expected_snapshot_hash && currentRecord.updatedAt === argumentsValue.expected_updated_at
+      && Object.hasOwn(currentRecord, field))
+    const before = beforeKnown ? displayActionValue(currentRecord?.[field]) : null
+    const raw = typeof argumentsValue.value === "string" ? argumentsValue.value.trim() : argumentsValue.value
+    const after = displayActionValue(field === "countryOfOrigin" && typeof raw === "string" ? raw.toUpperCase() : raw)
+    return [{ field: labels[field], before, after, value: after, beforeKnown,
+      kind: after === null ? "removed" : beforeKnown && before === null ? "added" : "changed" }]
+  }
+  if (actionCode === "update_booking_shipment_value") {
+    return ["amount", "currency"].map((field) => {
+      const beforeKnown = Boolean(currentRecord?.valueScope === "shipment_goods" && Object.hasOwn(currentRecord, field))
+      const before = beforeKnown ? displayActionValue(currentRecord?.[field]) : null
+      const raw = typeof argumentsValue[field] === "string" ? argumentsValue[field].trim() : null
+      const after = raw ? (field === "currency" ? raw.toUpperCase() : raw) : null
+      return { field: field === "amount" ? "Shipment goods amount" : "Shipment goods currency", before, after, value: after,
+        beforeKnown, kind: after === null ? "removed" : beforeKnown && before === null ? "added" : "changed" }
+    })
+  }
   if (actionCode === CREATE_PURCHASE_ORDER_ACTION) {
     return purchaseOrderActionChanges(locale, argumentsValue)
   }
@@ -2567,8 +2716,12 @@ function documentEvidence(value: unknown) {
 }
 
 function argumentsWithDocumentEvidence(args: JsonObject, extraction: JsonObject | null) {
+  // Provenance comes only from this request's checked extraction, never model
+  // tool arguments. The SQL executor retains it in audit, not mutation input.
+  const actionArguments = { ...args }
+  delete actionArguments._document_evidence
   const evidence = documentEvidence(extraction)
-  return evidence ? { ...args, _document_evidence: evidence } : args
+  return evidence ? { ...actionArguments, _document_evidence: evidence } : actionArguments
 }
 
 function preparedActionDescription(
@@ -2579,6 +2732,16 @@ function preparedActionDescription(
   currentRecord?: JsonObject,
   emailState?: DexterEmailToolState | null,
 ) {
+  if (actionCode === "replace_booking_allocations") {
+    return `Review the complete cargo allocation plan for ${cleanString(currentRecord?.bookingReference, 80) || "the selected Booking"}. Every addition, change and removal is shown. Omitted allocations are retired with history retained. Cargo totals, equipment totals, VGM and the accepted Quote remain unchanged. ${fallback}`
+  }
+  if (actionCode === "update_quote_cargo") {
+    return `Review ${cleanString(currentRecord?.targetLabel, 200) || "the exact Quote draft cargo line"}. Cargo totals will be recalculated, but prices will not: review charges before issuing the Quote. Other draft details, submitted versions and the Booking remain unchanged. ${fallback}`
+  }
+  if (actionCode === "update_booking_shipment_value") {
+    const reference = cleanString(currentRecord?.bookingReference, 80) || "the selected Booking"
+    return `Review shipment goods value for ${reference}. This changes the shipment total only: no currency conversion is performed, cargo-line allocations and the accepted Quote stay unchanged. ${fallback}`
+  }
   if (actionCode === CREATE_SUPPORT_TICKET_ACTION) {
     return sanitiseAnswer(supportTicketCopy(locale, "prepared", cleanString(args.title, 180)))
   }
@@ -3111,8 +3274,12 @@ async function runStreamedAgent(
           toolOutput = { error: "That write action is not available in this workspace." }
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
-          const currentRecord = currentRecordsById.get(cleanString(actionArguments.target_id, 80))
-          const reason = preparedActionDescription(
+          const currentRecord = action.code === "replace_booking_allocations"
+            ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
+            : action.code === "update_quote_cargo"
+            ? quoteCargoActionRecord(currentRecordsById, actionArguments)
+            : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
+          let reason = preparedActionDescription(
             locale,
             action.code,
             actionArguments,
@@ -3121,16 +3288,13 @@ async function runStreamedAgent(
             emailState,
           )
           const evidence = documentEvidence(latestDocumentExtraction)
-          const answer = evidence
-            ? extractedActionCopy(locale, evidence.fileName, reason)
-            : actionCopy(locale, "prepared", reason)
-          const changes = actionChanges(
+          let changes: JsonObject[] = actionChanges(
             locale,
             action.code,
             actionArguments,
             currentRecord,
           )
-          let prepared: { id: string }
+          let prepared: Awaited<ReturnType<typeof prepareServerAction>>
           try {
             prepared = await prepareServerAction(admin, actor, {
               conversationId,
@@ -3149,9 +3313,16 @@ async function runStreamedAgent(
             emit({ type: "error", code: "prepared_action_unavailable", message: "Dexter could not secure that proposed change. Nothing was changed." })
             return null
           }
+          if (prepared.review) {
+            reason = prepared.review.description
+            changes = prepared.review.changes
+          }
+          const answer = evidence
+            ? extractedActionCopy(locale, evidence.fileName, reason)
+            : actionCopy(locale, "prepared", reason)
           const pendingAction = {
             id: prepared.id,
-            title: sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+            title: prepared.review?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
             description: reason,
             changes,
             ...(evidence ? { sourceEvidence: evidence } : {}),
@@ -3189,7 +3360,11 @@ async function runStreamedAgent(
             }
           }
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
-          const currentRecord = currentRecordsById.get(cleanString(actionArguments.target_id, 80))
+          const currentRecord = action.code === "replace_booking_allocations"
+            ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
+            : action.code === "update_quote_cargo"
+            ? quoteCargoActionRecord(currentRecordsById, actionArguments)
+            : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
           const changes = actionChanges(locale, action.code, actionArguments, currentRecord)
           let prepared: { id: string }
           try {
@@ -4688,8 +4863,12 @@ Deno.serve(async (request) => {
           toolOutput = { error: "That write action is not available in this workspace." }
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
-          const currentRecord = currentRecordsById.get(cleanString(actionArguments.target_id, 80))
-          const reason = preparedActionDescription(
+          const currentRecord = action.code === "replace_booking_allocations"
+            ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
+            : action.code === "update_quote_cargo"
+            ? quoteCargoActionRecord(currentRecordsById, actionArguments)
+            : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
+          let reason = preparedActionDescription(
             locale,
             action.code,
             actionArguments,
@@ -4698,8 +4877,8 @@ Deno.serve(async (request) => {
             emailState,
           )
           const evidence = documentEvidence(latestDocumentExtraction)
-          const changes = actionChanges(locale, action.code, actionArguments, currentRecord)
-          let prepared: { id: string }
+          let changes: JsonObject[] = actionChanges(locale, action.code, actionArguments, currentRecord)
+          let prepared: Awaited<ReturnType<typeof prepareServerAction>>
           try {
             prepared = await prepareServerAction(admin, actor, {
               conversationId,
@@ -4717,6 +4896,10 @@ Deno.serve(async (request) => {
             console.error("Dexter prepared-action persistence failed", error instanceof Error ? error.message : "unknown")
             return json(request, { code: "prepared_action_unavailable", message: "Dexter could not secure that proposed change. Nothing was changed." }, 503)
           }
+          if (prepared.review) {
+            reason = prepared.review.description
+            changes = prepared.review.changes
+          }
           const result: DexterAgentResult = {
             answer: evidence
               ? extractedActionCopy(locale, evidence.fileName, reason)
@@ -4732,7 +4915,7 @@ Deno.serve(async (request) => {
             emailAttachments: emailState?.surfacedAttachments ?? [],
             pendingAction: {
               id: prepared.id,
-              title: sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+              title: prepared.review?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
               description: reason,
               changes,
               ...(evidence ? { sourceEvidence: evidence } : {}),
@@ -4766,7 +4949,11 @@ Deno.serve(async (request) => {
             return json(request, { conversation: await persistExchange(result) })
           }
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
-          const currentRecord = currentRecordsById.get(cleanString(actionArguments.target_id, 80))
+          const currentRecord = action.code === "replace_booking_allocations"
+            ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
+            : action.code === "update_quote_cargo"
+            ? quoteCargoActionRecord(currentRecordsById, actionArguments)
+            : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
           const changes = actionChanges(locale, action.code, actionArguments, currentRecord)
           let prepared: { id: string }
           try {

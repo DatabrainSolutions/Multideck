@@ -14,13 +14,15 @@ import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { WizardDialog, type WizardStep } from "@/components/multideck/wizard-dialog"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { useLanguage } from "@/i18n/language-provider"
-import type { AuthUserSummary } from "@/lib/auth-user"
+import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { createCustomer, getCustomer, getCustomerReference, listAccountsPage, type AccountRegisterPage, type ApiCustomer, type CreateCustomerInput, type CustomerReference, type RegisterSort } from "@/lib/customer-api"
 import { engagementTemperatureTone, fallbackEngagementSignal } from "@/lib/crm-engagement"
 import { countActiveFilterConditions, createEmptyFilterQuery, filterQueryIsEmpty, type FilterFieldOption, type FilterQuery } from "@/lib/advanced-filters"
 import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
+import { getProviderPartySyncOverview, syncProviderParties, type ProviderPartySyncOverview, type ProviderPartySyncResponse, type ProviderPartyType } from "@/lib/finance-subledger-api"
 
 const emptyAccount = (): CreateCustomerInput => ({
   name: "", orgTypeIds: [], addressLine1: null, townCity: null, postZipCode: null, countryCode: null,
@@ -31,11 +33,13 @@ const accountScopes = ["All", "Mine"] as const
 type AccountScope = typeof accountScopes[number]
 const emptyAccountSummary: AccountRegisterPage["summary"] = { accounts: 0, contacts: 0, needsAttention: 0, marketingOptedIn: 0, unassigned: 0, healthy: 0 }
 const emptyAccountFacets: AccountRegisterPage["facets"] = { relationships: [], owners: [], hasUnassigned: false }
+type OrganisationRegisterType = "company" | ProviderPartyType
 
-export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: string) => void; currentUser?: AuthUserSummary | null }) {
+export function CrmAccountsPage({ navigate, currentUser, organisationType = "company" }: { navigate: (path: string) => void; currentUser?: AuthUserSummary | null; organisationType?: OrganisationRegisterType }) {
   const { language, t } = useLanguage()
-  const title = "Companies"
-  const routeBase = "/crm/accounts"
+  const title = organisationType === "customer" ? "Customers" : organisationType === "supplier" ? "Suppliers" : "Companies"
+  const singular = organisationType === "customer" ? "customer" : organisationType === "supplier" ? "supplier" : "company"
+  const routeBase = organisationType === "customer" ? "/customers" : organisationType === "supplier" ? "/suppliers" : "/crm/accounts"
   const [accounts, setAccounts] = useState<ApiCustomer[]>([])
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
@@ -61,7 +65,15 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
   const [summary, setSummary] = useState(emptyAccountSummary)
   const [facets, setFacets] = useState(emptyAccountFacets)
   const [sort, setSort] = useState<RegisterSort | null>({ id: "account", direction: "asc" })
+  const [syncOpen, setSyncOpen] = useState(false)
+  const [syncState, setSyncState] = useState<"idle" | "loading" | "ready" | "error" | "syncing">("idle")
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const [syncOverview, setSyncOverview] = useState<ProviderPartySyncOverview | null>(null)
+  const [selectedConnectionId, setSelectedConnectionId] = useState("")
+  const [latestSync, setLatestSync] = useState<ProviderPartySyncResponse | null>(null)
   const currentOwnerId = currentUser?.internalUserId ?? null
+  const canManageAccounting = hasPermission(currentUser, "Finance.Integration.Manage")
+  const requiredOrgTypeId = organisationType === "company" ? null : reference?.organisationTypes.find((type) => type.name.trim().toLowerCase() === organisationType)?.id ?? null
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250)
@@ -76,7 +88,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
     lastConsumedReloadToken.current = reloadToken
     setState("loading")
     listAccountsPage({
-      organisationType: "company",
+      organisationType,
       search: debouncedQuery,
       marketingScope: "all",
       relationship: relationshipFilter,
@@ -96,7 +108,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
       })
       .catch((error) => { console.error("Accounts could not be loaded.", error); if (active) setState("error") })
     return () => { active = false }
-  }, [accountPageSize, accountScope, advancedFilter, currentOwnerId, debouncedQuery, offset, ownerFilter, relationshipFilter, reloadToken, sort])
+  }, [accountPageSize, accountScope, advancedFilter, currentOwnerId, debouncedQuery, offset, organisationType, ownerFilter, relationshipFilter, reloadToken, sort])
 
   useEffect(() => {
     if (reference) return
@@ -105,15 +117,40 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
     getCustomerReference().then((data) => {
       if (!active) return
       setReference(data)
+      if (organisationType !== "company") {
+        const requiredType = data.organisationTypes.find((type) => type.name.trim().toLowerCase() === organisationType)
+        if (requiredType) setDraft((current) => current.orgTypeIds.length ? current : { ...current, orgTypeIds: [requiredType.id] })
+      }
       setReferenceState("ready")
     }).catch((error) => {
       console.error("Account reference data could not be loaded.", error)
       if (active) setReferenceState("error")
     })
     return () => { active = false }
-  }, [reference, referenceReloadToken])
+  }, [organisationType, reference, referenceReloadToken])
 
   useEffect(() => subscribeTopBarAction(topBarActionEvents.createCrmAccount, openCreate), [])
+
+  useEffect(() => {
+    if (!syncOpen || organisationType === "company") return
+    let active = true
+    setSyncState("loading")
+    setSyncError(null)
+    getProviderPartySyncOverview(organisationType)
+      .then((data) => {
+        if (!active) return
+        setSyncOverview(data)
+        setSelectedConnectionId((current) => current || data.connections[0]?.id || "")
+        setSyncState("ready")
+      })
+      .catch((error) => {
+        if (!active) return
+        const message = error instanceof Error ? error.message : t("The accounting sync history could not be loaded.")
+        setSyncError(message === "Finance endpoint not found." ? t("This workspace is waiting for the latest accounting sync service update.") : message)
+        setSyncState("error")
+      })
+    return () => { active = false }
+  }, [organisationType, syncOpen, t])
 
   const needsAttention = summary.needsAttention
   const contactTotal = summary.contacts
@@ -140,7 +177,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
     { value: "lastContactAt", label: "Last contact", kind: "date" },
   ], [ownerOptions, reference?.organisationTypes, relationshipOptions])
   const countAdvancedMatches = useCallback((filterQuery: FilterQuery) => listAccountsPage({
-    organisationType: "company",
+    organisationType,
     search: debouncedQuery,
     marketingScope: "all",
     relationship: relationshipFilter,
@@ -149,11 +186,11 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
     sort,
     limit: 1,
     offset: 0,
-  }, { forceRefresh: true }).then((page) => page.total), [accountScope, currentOwnerId, debouncedQuery, ownerFilter, relationshipFilter, sort])
+  }, { forceRefresh: true }).then((page) => page.total), [accountScope, currentOwnerId, debouncedQuery, organisationType, ownerFilter, relationshipFilter, sort])
 
   const accountColumns = useMemo<DataTableColumn<ApiCustomer>[]>(() => [
     {
-      id: "account", label: "Company", width: 280, minWidth: 220, maxWidth: 410, canHide: false, resizable: true,
+      id: "account", label: singular[0].toUpperCase() + singular.slice(1), width: 280, minWidth: 220, maxWidth: 410, canHide: false, resizable: true,
       sortValue: (account) => account.name,
       cell: (account) => <div className="grid min-h-11 min-w-0 content-center"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{account.name}</span><span className="mt-0.5 block truncate text-[12px] text-[var(--md-text)]">{[account.industry, account.location].filter(Boolean).join(" · ") || t("No location recorded")}</span></div>,
     },
@@ -186,7 +223,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
     { id: "contacts", label: "Contacts", width: 100, minWidth: 88, sortValue: (account) => account.contactCount, cellClassName: "text-[13px] tabular-nums text-[var(--md-ink)]", cell: (account) => account.contactCount },
     { id: "marketing", label: "Marketing", kind: "status", width: 120, minWidth: 110, sortValue: (account) => account.marketingOptIn ? 1 : 0, cell: (account) => <StatusPill tone={account.marketingOptIn ? "green" : "red"}>{t(account.marketingOptIn ? "Opted in" : "Opted out")}</StatusPill> },
     { id: "open", label: "Open", headerContent: <span className="sr-only">{t("Open")}</span>, width: 52, minWidth: 52, maxWidth: 52, canHide: false, canPin: false, cell: () => <ArrowRight className="size-4 text-[var(--md-subtle)] transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transition-none" strokeWidth={1.4} /> },
-  ], [t])
+  ], [singular, t])
 
   function clearAccountFilters() {
     setQuery("")
@@ -199,6 +236,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
   function openCreate() {
     setCreateError(null)
     setCreateSection("account")
+    setDraft((current) => ({ ...current, orgTypeIds: requiredOrgTypeId && !current.orgTypeIds.includes(requiredOrgTypeId) ? [...current.orgTypeIds, requiredOrgTypeId] : current.orgTypeIds }))
     setCreateOpen(true)
   }
 
@@ -207,6 +245,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
     if (nextOpen) {
       setCreateError(null)
       setCreateSection("account")
+      setDraft((current) => ({ ...current, orgTypeIds: requiredOrgTypeId && !current.orgTypeIds.includes(requiredOrgTypeId) ? [...current.orgTypeIds, requiredOrgTypeId] : current.orgTypeIds }))
     }
   }
 
@@ -214,14 +253,14 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
     setCreating(true)
     setCreateError(null)
     try {
-      const account = await createCustomer(draft)
-      toast.success(t("Company created"))
+      const account = await createCustomer({ ...draft, orgTypeIds: requiredOrgTypeId && !draft.orgTypeIds.includes(requiredOrgTypeId) ? [...draft.orgTypeIds, requiredOrgTypeId] : draft.orgTypeIds })
+      toast.success(t(`${singular[0].toUpperCase() + singular.slice(1)} created`))
       setCreateOpen(false)
-      setDraft(emptyAccount())
+      setDraft({ ...emptyAccount(), orgTypeIds: requiredOrgTypeId ? [requiredOrgTypeId] : [] })
       setReloadToken((value) => value + 1)
       navigate(`${routeBase}/${account.id}`)
     } catch (error) {
-      setCreateError(error instanceof Error ? t(error.message) : t("The company could not be created. Check the details and try again."))
+      setCreateError(error instanceof Error ? t(error.message) : t(`The ${singular} could not be created. Check the details and try again.`))
     } finally {
       setCreating(false)
     }
@@ -231,30 +270,49 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
     setDraft((current) => ({ ...current, [key]: value }))
   }
 
+  async function runAccountSync() {
+    if (organisationType === "company" || !selectedConnectionId) return
+    setSyncState("syncing")
+    setSyncError(null)
+    try {
+      const result = await syncProviderParties(selectedConnectionId, organisationType)
+      setLatestSync(result)
+      setSyncOverview(await getProviderPartySyncOverview(organisationType))
+      setSyncState("ready")
+      setReloadToken((value) => value + 1)
+      toast.success(t(result.failed ? `${result.synced} accounts synced; ${result.failed} failed` : `${result.synced} accounts synced`))
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : t("The accounting account sync could not be completed."))
+      setSyncState("error")
+    }
+  }
+
   const accountSteps: WizardStep[] = [
-    { id: "account", label: "Company details", hint: "Name the company and choose every role it has.", complete: Boolean(draft.name.trim() && draft.orgTypeIds.length) },
-    { id: "address", label: "Address", hint: "Record the address operators will use for this company.", complete: Boolean(draft.addressLine1 || draft.townCity || draft.postZipCode || draft.countryCode) },
+    { id: "account", label: `${singular[0].toUpperCase() + singular.slice(1)} details`, hint: `Name the ${singular} and choose every role it has.`, complete: Boolean(draft.name.trim() && draft.orgTypeIds.length) },
+    { id: "address", label: "Address", hint: `Record the address operators will use for this ${singular}.`, complete: Boolean(draft.addressLine1 || draft.townCity || draft.postZipCode || draft.countryCode) },
     { id: "contact", label: "Primary contact", hint: "Add one useful person now, or leave this step blank.", complete: Boolean(draft.contactFirstName || draft.contactLastName || draft.contactEmail) },
   ]
   const countryCodeIsValid = !draft.countryCode || /^[A-Z]{2}$/.test(draft.countryCode)
+  const displayedSync = latestSync ?? syncOverview?.runs[0] ?? null
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t(title)} className="md-page md-page-stack-compact">
       <header className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t(title)}</h1><p className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Organisations")}</p></div><p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t("Every company, its contacts and all operational roles kept in one place.")}</p></div>
+        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t(title)}</h1><p className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Organisations")}</p></div><p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t(organisationType === "company" ? "Every company, its contacts and all operational roles kept in one place." : organisationType === "customer" ? "Customer accounts, contacts and accounting-system status in one place." : "Supplier accounts, contacts and accounting-system status in one place.")}</p></div>
         <div className="flex flex-wrap gap-2">
+          {organisationType !== "company" && canManageAccounting ? <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-lg)]" onClick={() => { setLatestSync(null); setSyncOpen(true) }}><RefreshCw className="size-4" strokeWidth={1.4} />{t("Sync with accounting system")}</Button> : null}
           <DexterActionPill onClick={() => setDexterOpen(true)} label={t("Ask Dexter")} />
         </div>
       </header>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
         {[
-          [t("Total companies"), summary.accounts, t("all company records")],
+          [t(`Total ${title.toLowerCase()}`), summary.accounts, t(`all ${singular} records`)],
           [t("Contacts"), contactTotal, t("recorded contacts")],
           [t("Needs attention"), needsAttention, t("need attention now")],
           [t("Marketing opted in"), marketingOptIns, t("with marketing consent")],
           [t("Unassigned"), unassignedAccounts, t("without an assigned owner")],
-          [t("Healthy companies"), healthyAccounts, t("health score 70 or above")],
+          [t(`Healthy ${title.toLowerCase()}`), healthyAccounts, t("health score 70 or above")],
         ].map(([label, value, detail]) => (
           <Surface key={String(label)} padding="none" className="h-[44px] min-w-0 rounded-[var(--md-radius-lg)] px-3 py-1.5">
             <div className="flex h-full min-w-0 items-center gap-2.5">
@@ -271,22 +329,22 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
       </div>
 
       <DataTable
-        key="crm-company-organisations-v1"
-        ariaLabel="Company directory"
-        columnsButtonLabel="Manage company columns"
-        storageKey="crm-company-organisations-v1"
+        key={`crm-${organisationType}-organisations-v1`}
+        ariaLabel={`${title} directory`}
+        columnsButtonLabel={`Manage ${singular} columns`}
+        storageKey={`crm-${organisationType}-organisations-v1`}
         columns={accountColumns}
         rows={accounts}
         getRowKey={(account) => account.id}
         exportConfig={{
-          fileName: "crm-companies",
-          recordCategory: "Company details",
+          fileName: `crm-${title.toLowerCase()}`,
+          recordCategory: `${singular[0].toUpperCase() + singular.slice(1)} details`,
           register: {
             dateLabel: "Last contact date",
             dateValue: (account) => account.lastContactAt,
             busy: query.trim() !== debouncedQuery,
             loadAllRows: (signal) => collectExportPages((page) => listAccountsPage({
-              organisationType: "company", search: debouncedQuery, marketingScope: "all",
+              organisationType, search: debouncedQuery, marketingScope: "all",
               relationship: relationshipFilter,
               owner: accountScope === "Mine" ? currentOwnerId ?? "__no_current_user__" : ownerFilter,
               filterQuery: filterQueryIsEmpty(advancedFilter) ? null : advancedFilter, sort, ...page,
@@ -299,8 +357,8 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
         serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "account", direction: "asc" }); setOffset(0) } }}
         pagination={{ offset, limit: accountPageSize, total, loading: state === "loading", onOffsetChange: setOffset, onLimitChange: setAccountPageSize, error: state === "error" }}
         compactToolbar
-        toolbarTabs={<RegisterViewSwitch options={accountScopes} value={accountScope} onChange={setAccountScope} counts={{ All: accountScope === "All" ? summary.accounts : undefined, Mine: accountScope === "Mine" ? summary.accounts : undefined }} ariaLabel="Company ownership filter" compact />}
-        toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search companies" placeholder="Search companies…" className="sm:w-[180px]" />}
+        toolbarTabs={<RegisterViewSwitch options={accountScopes} value={accountScope} onChange={setAccountScope} counts={{ All: accountScope === "All" ? summary.accounts : undefined, Mine: accountScope === "Mine" ? summary.accounts : undefined }} ariaLabel={`${singular[0].toUpperCase() + singular.slice(1)} ownership filter`} compact />}
+        toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label={`Search ${title.toLowerCase()}`} placeholder={`Search ${title.toLowerCase()}…`} className="sm:w-[180px]" />}
         toolbarFilters={<>
           <RegisterFacetSelect label="Relationship status" allLabel="All relationships" value={relationshipFilter} options={relationshipOptions} onChange={setRelationshipFilter} className="w-[132px]" />
           <RegisterFacetSelect label="Owner" allLabel="All owners" value={ownerFilter} options={ownerOptions} onChange={setOwnerFilter} className="w-[126px]" />
@@ -308,29 +366,70 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
             fields={advancedFilterFields}
             value={advancedFilter}
             onChange={(value) => { setAdvancedFilter(value); setOffset(0) }}
-            storageKey="crm-company-organisation-register"
-            itemLabel="companies"
+            storageKey={`crm-${organisationType}-organisation-register`}
+            itemLabel={title.toLowerCase()}
             totalCount={total}
             countMatches={countAdvancedMatches}
           />
         </>}
         toolbarOptions={<RegisterRevalidatingMark active={state === "loading" && accounts.length > 0} />}
         emptyState={state === "loading"
-          ? <RecordState icon={<DotGridLoader size="sm" decorative />} title={t("Loading companies…")} />
+          ? <RecordState icon={<DotGridLoader size="sm" decorative />} title={t(`Loading ${title.toLowerCase()}…`)} />
           : state === "error"
-            ? <RecordState icon={<RefreshCw className="size-5" />} title={t("Companies could not be loaded.")} detail={t("Check your connection and try again.")} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} />
-            : <RecordState icon={<Building2 className="size-5" />} title={accountFiltersActive ? t("No companies match these filters.") : t("No companies yet.")} detail={accountFiltersActive ? t("Clear a filter or try another name, location, owner or relationship status.") : t("Create the first company to keep its contacts and operational roles together.")} action={accountFiltersActive ? <Button variant="outline" onClick={clearAccountFilters}>{t("Clear filters")}</Button> : <Button onClick={openCreate}>{t("New company")}</Button>} />}
+            ? <RecordState icon={<RefreshCw className="size-5" />} title={t(`${title} could not be loaded.`)} detail={t("Check your connection and try again.")} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} />
+            : <RecordState icon={<Building2 className="size-5" />} title={accountFiltersActive ? t(`No ${title.toLowerCase()} match these filters.`) : t(`No ${title.toLowerCase()} yet.`)} detail={accountFiltersActive ? t("Clear a filter or try another name, location, owner or relationship status.") : t(`Create the first ${singular} to keep its contacts and operational roles together.`)} action={accountFiltersActive ? <Button variant="outline" onClick={clearAccountFilters}>{t("Clear filters")}</Button> : <Button onClick={openCreate}>{t(`New ${singular}`)}</Button>} />}
       />
+
+      {organisationType !== "company" ? (
+        <Dialog open={syncOpen} onOpenChange={(next) => { if (syncState !== "syncing") setSyncOpen(next) }}>
+          <DialogContent className="max-h-[88vh] overflow-hidden border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]">
+            <DialogHeader className="text-start">
+              <DialogTitle>{t(`Sync ${title.toLowerCase()} with accounting system`)}</DialogTitle>
+              <DialogDescription>{t(`Create or link every Multideck ${singular} in the connected accounting system. Existing mappings are verified and every result is retained.`)}</DialogDescription>
+            </DialogHeader>
+            <div className="grid min-h-0 gap-4 overflow-y-auto pe-1">
+              {syncState === "loading" ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label={`Loading ${singular} sync history`} /></div> : null}
+              {syncState === "ready" || syncState === "syncing" ? (
+                <label className="grid gap-1.5 text-start text-[13px] font-medium text-[var(--md-ink)]">
+                  <span>{t("Accounting system")}</span>
+                  <select value={selectedConnectionId} onChange={(event) => setSelectedConnectionId(event.target.value)} disabled={syncState === "syncing" || !syncOverview?.connections.length} className="h-10 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[14px] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] disabled:opacity-60">
+                    {syncOverview?.connections.length ? syncOverview.connections.map((connection) => <option key={connection.id} value={connection.id}>{connection.providerName}{connection.externalCompany ? ` · ${connection.externalCompany}` : ""}</option>) : <option value="">{t("No active accounting connection")}</option>}
+                  </select>
+                </label>
+              ) : null}
+              {!syncOverview?.connections.length && syncState === "ready" ? <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-4 text-[13px] leading-5 text-[var(--md-text)]"><p className="font-medium text-[var(--md-ink)]">{t("Connect an accounting system first")}</p><p className="mt-1">{t("Activate ERPNext or Sage 50 Desktop in Finance setup before syncing accounts.")}</p></div> : null}
+              {displayedSync ? (
+                <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-1">
+                  <div className="grid grid-cols-3 gap-1 px-3 py-3 text-center">
+                    <SyncMetric label={t("Processed")} value={displayedSync.total} />
+                    <SyncMetric label={t("Synced")} value={displayedSync.synced} tone="teal" />
+                    <SyncMetric label={t("Failed")} value={displayedSync.failed} tone={displayedSync.failed ? "red" : "neutral"} />
+                  </div>
+                  <div className="max-h-[310px] divide-y divide-[var(--md-line)] overflow-y-auto rounded-[calc(var(--md-radius-xl)-4px)] bg-[var(--md-surface)]">
+                    {displayedSync.results.map((result) => <div key={result.organisationId} className="grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"><div className="min-w-0"><p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{result.organisationName}</p><p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(result.message)}</p>{result.providerPartyId ? <p className="mt-1 truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{result.providerPartyId}</p> : null}</div><StatusPill tone={result.status === "synced" ? "teal" : "red"}>{t(result.status === "synced" ? "Synced" : "Failed")}</StatusPill></div>)}
+                  </div>
+                  {displayedSync.completedAt ? <p className="px-3 py-2 text-[10.5px] text-[var(--md-subtle)]">{t("Completed")} · {new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(displayedSync.completedAt))}</p> : null}
+                </div>
+              ) : syncState === "ready" ? <p className="py-8 text-center text-[13px] text-[var(--md-text)]">{t(`No ${singular} account syncs have run yet.`)}</p> : null}
+              {syncError ? <p role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_8%,var(--md-surface))] px-4 py-3 text-[13px] leading-5 text-[var(--md-red)]">{t(syncError)}</p> : null}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setSyncOpen(false)} disabled={syncState === "syncing"}>{t("Close")}</Button>
+              <Button type="button" onClick={() => void runAccountSync()} disabled={!selectedConnectionId || syncState === "loading" || syncState === "syncing"}>{syncState === "syncing" ? <RefreshCw className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}{t(syncState === "syncing" ? "Syncing accounts" : "Sync all accounts")}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
 
       <WizardDialog
         open={createOpen}
         onOpenChange={changeCreateOpen}
-        title="New company"
-        description="Start with the company, all of its roles and one useful contact. You can add commercial detail after saving."
+        title={`New ${singular}`}
+        description={`Start with the ${singular}, all of its roles and one useful contact. You can add commercial detail after saving.`}
         steps={accountSteps}
         activeStepId={createSection}
         onStepChange={setCreateSection}
-        submitLabel="Create company"
+        submitLabel={`Create ${singular}`}
         onSubmit={() => void create()}
         saving={creating}
         submitDisabled={!draft.name.trim() || !draft.orgTypeIds.length || !countryCodeIsValid}
@@ -345,7 +444,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
               <MultiSelectMenu
                 value={draft.orgTypeIds}
                 options={(reference?.organisationTypes ?? []).map((type) => ({ value: type.id, label: t(type.name) }))}
-                onValueChange={(value) => update("orgTypeIds", value)}
+                onValueChange={(value) => update("orgTypeIds", requiredOrgTypeId && !value.includes(requiredOrgTypeId) ? [...value, requiredOrgTypeId] : value)}
                 placeholder={reference ? "Choose company types" : "Loading company types"}
                 label="Company types"
                 required={!draft.orgTypeIds.length}
@@ -382,6 +481,10 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
 
 function RecordState({ icon, title, detail, action }: { icon: ReactNode; title: string; detail?: string; action?: ReactNode }) {
   return <div className="grid min-h-[260px] place-items-center border-t border-[var(--md-line)] px-6 py-10 text-center"><div className="max-w-sm"><span className="mx-auto grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">{icon}</span><p className="mt-4 text-[14px] font-medium text-[var(--md-ink)]">{title}</p>{detail ? <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{detail}</p> : null}{action ? <div className="mt-4">{action}</div> : null}</div></div>
+}
+
+function SyncMetric({ label, value, tone = "neutral" }: { label: string; value: number; tone?: "neutral" | "teal" | "red" }) {
+  return <div><p className="text-[10.5px] font-medium text-[var(--md-subtle)]">{label}</p><p className={tone === "teal" ? "mt-1 text-[20px] font-medium tabular-nums text-[var(--md-accent)]" : tone === "red" ? "mt-1 text-[20px] font-medium tabular-nums text-[var(--md-red)]" : "mt-1 text-[20px] font-medium tabular-nums text-[var(--md-ink)]"}>{value}</p></div>
 }
 
 function Field({ label, value, onChange, required, type = "text", hint, error, maxLength, dir }: { label: string; value: string; onChange: (value: string) => void; required?: boolean; type?: string; hint?: string; error?: string; maxLength?: number; dir?: "ltr" | "rtl" | "auto" }) {

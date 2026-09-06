@@ -32,6 +32,14 @@ const currentResponseHistoryMigration = read(
 const edgeFunction = read(
   "supabase/functions/agent-dexter/index.ts",
 )
+
+test("finance edge dispatch has an explicit defined allowlist without capturing other operational actions", () => {
+  const declarations = edgeFunction.match(/const CREATE_FINANCE_DOCUMENT_DRAFT_ACTION = [\s\S]*?const FINANCE_EDGE_ACTIONS = new Set\(\[[\s\S]*?\]\)/)?.[0]
+  assert.ok(declarations, "The finance dispatch constants must exist together")
+  const actions = new Function(`${declarations}; return FINANCE_EDGE_ACTIONS`)()
+  assert.deepEqual([...actions], ["create_finance_document_draft", "create_finance_cash_draft", "assign_job_management_period"])
+  for (const action of ["update_booking_cargo", "update_quote_cargo", "post_finance_document", "unknown"]) assert.equal(actions.has(action), false)
+})
 const emailContext = read(
   "supabase/functions/agent-dexter/email-context.ts",
 )
@@ -153,7 +161,7 @@ test("Dexter action tools stay OpenAI strict-schema compatible", () => {
 })
 
 test("Dexter redirects off-topic requests without narrowing useful freight work", () => {
-  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-08-29-support-english"/)
+  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-09-01-finance-support"/)
   assert.match(edgeFunction, /# Scope boundary/)
   assert.match(edgeFunction, /Dexter is for freight forwarding and the work required to operate a freight-forwarding business/)
   assert.match(edgeFunction, /Examples include sports fixtures, recipes and cooking, entertainment, celebrity news, general trivia/)
@@ -502,7 +510,7 @@ test("Approve pauses before writes while Full access executes only registered ac
   assert.match(dexterSecurityMigration, /grant execute on function public\.multideck_dexter_execute_prepared_action\(uuid,uuid,uuid,uuid\) to service_role/)
   assert.match(dexterSecurityMigration, /AIDexterPrepared_Status"='succeeded'/)
   assert.match(edgeFunction, /requiresExplicitActionApproval\(actionCode, input\.accessMode\)/)
-  assert.match(edgeFunction, /Sending email, creating a support ticket and creating a purchase order are exceptions: always prepare the exact action/)
+  assert.match(edgeFunction, /Sending email, creating a support ticket and creating an expected receipt are exceptions: always prepare the exact action/)
 })
 
 test("untrusted Home email subjects cannot turn a suggestion into an automatic send", () => {

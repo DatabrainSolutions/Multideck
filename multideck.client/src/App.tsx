@@ -40,7 +40,6 @@ const AgentDexterPage = lazy(() => import("@/pages/agent-dexter-page").then((mod
 const AuthFlowPage = lazy(() => import("@/pages/auth-flow-page").then((module) => ({ default: module.AuthFlowPage })))
 const ComponentsGalleryPage = lazy(() => import("@/pages/components-gallery-page").then((module) => ({ default: module.ComponentsGalleryPage })))
 const CustomerDetailPage = lazy(() => import("@/pages/customer-detail-page").then((module) => ({ default: module.CustomerDetailPage })))
-const CustomersPage = lazy(() => import("@/pages/customers-page").then((module) => ({ default: module.CustomersPage })))
 const InboxPage = lazy(() => import("@/pages/inbox-page").then((module) => ({ default: module.InboxPage })))
 const ToDoPage = lazy(() => import("@/pages/to-do-page").then((module) => ({ default: module.ToDoPage })))
 const CalendarPage = lazy(() => import("@/pages/calendar-page").then((module) => ({ default: module.CalendarPage })))
@@ -134,6 +133,7 @@ const validRoutes = new Set([
   "/crm/drive",
   "/crm/settings",
   "/customers",
+  "/suppliers",
   "/inbox",
   "/to-do",
   "/calendar",
@@ -236,9 +236,9 @@ function isCustomsDeclarationEditRoute(path: string) {
 /** Old CRM links still land on their current product destination. */
 function getLegacyCrmRoute(path: string) {
   if (path === "/crm/marketing") return "/crm/drive"
-  if (path === "/crm/suppliers") return "/crm/accounts"
+  if (path === "/crm/suppliers") return "/suppliers"
   const supplierDetail = path.match(/^\/crm\/suppliers\/([^/]+)$/)
-  if (supplierDetail) return `/crm/accounts/${supplierDetail[1]}`
+  if (supplierDetail) return `/suppliers/${supplierDetail[1]}`
   return null
 }
 
@@ -318,7 +318,7 @@ function isCrmLeadConversionRoute(path: string) {
 }
 
 function isCustomerDetailRoute(path: string) {
-  return /^\/customers\/[^/]+$/.test(path)
+  return /^\/(customers|suppliers)\/[^/]+$/.test(path)
 }
 
 function getRoute() {
@@ -811,7 +811,8 @@ export default function App() {
                   {isCrmDealDetailRoute(route) ? <CrmDealDetailPage key={route} dealId={route.split("/").at(-1) ?? ""} navigate={navigate} /> : null}
                   {route === "/crm/drive" ? <CrmDrivePage currentUser={currentUser} /> : null}
                   {route === "/crm/settings" ? <CrmSettingsPage currentUser={currentUser} /> : null}
-                  {route === "/customers" ? <CustomersPage navigate={navigate} /> : null}
+                  {route === "/customers" ? <CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} organisationType="customer" /> : null}
+                  {route === "/suppliers" ? <CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} organisationType="supplier" /> : null}
                   {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/inbox" ? <InboxPage navigate={navigate} /> : null}
                   {route === "/to-do" ? <ToDoPage operatorName={currentUser?.name} /> : null}

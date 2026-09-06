@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import test from "node:test"
+const packageTypes = readFileSync(new URL("../src/lib/freight-package-types.ts", import.meta.url), "utf8")
 
 const root = resolve(import.meta.dirname, "../..")
 const read = (path) => readFileSync(resolve(root, path), "utf8")
@@ -31,7 +32,9 @@ test("quote details reorganise references around their owning parties and remove
   assert.match(details, /title="Customer(?: data)?"[\s\S]*label="Customer ref"/u)
   assert.match(details, /const reference = role === "shipper" \? quote\.shipperReference[\s\S]*quote\.consigneeReference[\s\S]*quote\.agentReference/u)
   assert.match(details, /label=\{`\$\{title\} ref`\}/u)
-  assert.match(details, /roleCard\("shipper"\)[\s\S]*roleCard\("consignee"\)[\s\S]*roleCard\("agent"\)/u)
+  for (const role of ["shipper", "consignee", "agent"]) {
+    assert.ok(details.includes(`roleCard("${role}")`), `${role} party must remain available.`)
+  }
   assert.match(details, /supplier\.carriers\.map[\s\S]*label="Carrier ref"/u)
   assert.doesNotMatch(details, /label="Hold reason"/u)
   assert.doesNotMatch(details, /label="Docs"/u)
@@ -157,7 +160,8 @@ test("every send-blocking Incoterm and Sea FCL container field is visible in quo
   assert.match(details, /label="Collection"[\s\S]{0,450}onQuoteChange\("collectionRequired", value\)/u)
   assert.match(details, /label="Delivery"[\s\S]{0,450}onQuoteChange\("deliveryRequired", value\)/u)
   assert.match(details, /label="Customs clearance"[\s\S]{0,450}onQuoteChange\("customsIncluded", value\)/u)
-  assert.match(details, /const isSeaContainerised[\s\S]{0,350}\/\\bfcl\\b\|container\/u/u)
+  assert.match(details, /const isSeaContainerised = fieldPolicy\.containerRequests/u)
+  assert.match(page, /import \{ freightFieldPolicy, freightModeKey, freightShipmentAllowed \} from "@\/lib\/freight-field-policy"/u)
   assert.match(details, /\{isSeaContainerised \? \([\s\S]{0,500}aria-label=\{t\("Container requests"\)\}/u)
   assert.match(details, /containerRequests\.map\(\(request, index\)/u)
   assert.match(details, /label=\{index === 0 \? "Qty"[\s\S]{0,900}label=\{index === 0 \? "Container type"/u)
@@ -286,9 +290,9 @@ test("each supplier can retain multiple carrier service options including a TBC 
 
 test("goods, cargo characteristics, hazardous details and customs agents remain operational data", () => {
   assert.ok((details.match(/<AmountCurrencyField\b/gu) ?? []).length >= 2, "Goods and insurance values must each split amount and currency.")
-  assert.match(page, /const freightPackageTypeOptions = \[/u)
+  assert.match(page, /import \{ freightPackageTypeOptions \} from "@\/lib\/freight-package-types"/u)
   for (const packageType of ["Pallets", "Cartons", "Boxes", "Crates", "Cases", "Packages", "Pieces", "Drums", "IBCs", "ULDs", "Loose \/ unpackaged"]) {
-    assert.match(page, new RegExp(`value: "${escaped(packageType)}"`, "u"), `${packageType} must be available as a freight package type.`)
+    assert.match(packageTypes, new RegExp(`value: "${escaped(packageType)}"`, "u"), `${packageType} must be available as a freight package type.`)
   }
   assert.match(details, /<CompactCombobox[\s\S]{0,160}label="Package type"[\s\S]{0,240}options=\{freightPackageTypeOptions\}/u)
   assert.match(details, /recommendedLabel="Common package types"/u)
@@ -296,7 +300,8 @@ test("goods, cargo characteristics, hazardous details and customs agents remain 
   assert.match(details, /FMC TID/u)
   assert.match(details, /originIsUs[\s\S]*\["US", "USA", "UNITED STATES"/u)
   assert.match(details, /<CargoCharacteristicsField\b/u)
-  assert.match(fields, /aria-pressed=\{value\[key\]\}/u)
+  // A typed cargo-line safety flag is also a pressed shipment characteristic.
+  assert.match(fields, /aria-pressed=\{value\[key\] \|\| inherited\[key\] \|\| false\}/u)
   assert.match(fields, /key === "hazardous" && checked[\s\S]*setHazardousOpen\(true\)/u)
   assert.match(fields, /export function HazardousDetailsDialog/u)
   assert.match(fields, /Hazard class/u)

@@ -13,6 +13,23 @@ export class QuoteWorkflowError extends Error {
   }
 }
 
+// The legacy header column now holds the immutable master Quote reference.
+// The customer's editable enquiry reference belongs to the current snapshot.
+export function quoteWorkspaceCustomerReference(versions: Record<string, unknown>[], legacyReference: unknown): string {
+  const current = versions.filter((version) => version.CusQuoteVersion_IsCurrent === true)
+  if (current.length > 1) throw new QuoteWorkflowError(409, "This quote has conflicting current versions. Refresh before editing.")
+  const snapshot = current[0]?.CusQuoteVersion_SnapshotJSON
+  const quote = snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
+    ? (snapshot as Record<string, unknown>).quote : undefined
+  if (quote && typeof quote === "object" && !Array.isArray(quote) && Object.hasOwn(quote, "customerReference")) {
+    const value = (quote as Record<string, unknown>).customerReference
+    if (value === null) return ""
+    if (typeof value !== "string") throw new QuoteWorkflowError(409, "The saved customer reference is invalid. Review this quote before editing.")
+    return value
+  }
+  return typeof legacyReference === "string" ? legacyReference : ""
+}
+
 export function requiredText(value: unknown, label: string, maximum = 500) {
   if (typeof value !== "string" || !value.trim()) throw new QuoteWorkflowError(400, `${label} is required.`)
   return value.trim().slice(0, maximum)

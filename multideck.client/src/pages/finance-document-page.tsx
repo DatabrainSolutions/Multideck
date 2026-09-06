@@ -168,7 +168,6 @@ export function FinanceDocumentPage({
 
   const draftPayload = (): FinanceDraftInput => ({
     type: document!.FINDoc_TypeCode,
-    legalEntityId: document!.FINDoc_LegalEntityID,
     partyOrgId,
     documentDate,
     dueDate: dueDate || null,
@@ -313,8 +312,7 @@ export function FinanceDocumentPage({
         {posted ? <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-teal),transparent_92%)] p-4 text-[13px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"><span>{t("This document is posted to the Multideck ledger and is immutable. Export and print tools remain available.")}</span>{detail.externalReference ? safeExternalUrl ? <a href={safeExternalUrl} target="_blank" rel="noreferrer" className="font-medium text-[var(--md-accent)] hover:underline">{t("Open external mirror")}</a> : <span data-i18n-skip dir="ltr">{detail.externalReference.ACCIER_ExternalNumber ?? detail.externalReference.ACCIER_ExternalID}</span> : null}</div> : null}
 
         <SettingsPanel title={t("Document details")} description={t(editable ? "Draft fields remain editable until the document enters finance review." : "These fields are read-only at the current lifecycle stage.")}>
-          <div className="grid gap-4 py-1 md:grid-cols-2 xl:grid-cols-4">
-            <div className="space-y-2"><FieldLabel htmlFor="finance-detail-entity">{t("Legal entity")}</FieldLabel><Input id="finance-detail-entity" value={document.legalEntityName} disabled /></div>
+          <div className="grid gap-4 py-1 md:grid-cols-3">
             <div className="space-y-2"><FieldLabel htmlFor="finance-detail-source">{t("Source")}</FieldLabel><Select value={sourceKind} disabled={!editable} onValueChange={(value: "manual" | "job") => { setSourceKind(value); if (value === "manual") setSourceJobId("") }}><SelectTrigger id="finance-detail-source"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="manual">{t("Ad hoc or ancillary")}</SelectItem><SelectItem value="job">{t("Freight job")}</SelectItem></SelectContent></Select></div>
             <div className="space-y-2"><FieldLabel htmlFor="finance-detail-date">{t("Document date")}</FieldLabel><Input id="finance-detail-date" type="date" value={documentDate} onChange={(event) => setDocumentDate(event.target.value)} disabled={!editable} data-i18n-skip dir="ltr" /></div>
             <div className="space-y-2"><FieldLabel htmlFor="finance-detail-due">{t("Due date")}</FieldLabel><Input id="finance-detail-due" type="date" value={dueDate} min={documentDate} onChange={(event) => setDueDate(event.target.value)} disabled={!editable} data-i18n-skip dir="ltr" /></div>

@@ -3,7 +3,8 @@ import type { DomesticRoadJob, RoadJobStageId } from "@/components/multideck/dom
 import { createEmptyFilterQuery, filterQueryIsEmpty, type FilterQuery } from "@/lib/advanced-filters"
 import { authSupabase, getClientAuth, authenticatedAccessChangedEvent, getSupabaseSession, supabase, supabaseFunctionsUrl } from "@/lib/supabase"
 
-type BookingMode = "OCEAN" | "AIR" | "ROAD" | "RAIL" | "MULTIMODAL" | "FAS" | "FSA"
+import { freightBookingMode, type FreightBookingMode } from "@/lib/freight-field-policy"
+type BookingMode = FreightBookingMode
 type BookingStatus = "On track" | "Delayed" | "Exception"
 type BookingDirection = "Import" | "Export" | "Domestic" | "Cross trade" | "Direction needed"
 
@@ -264,10 +265,7 @@ function tone(value: unknown): StatusTone {
 }
 
 function bookingMode(value: unknown): BookingMode {
-  const normalized = String(value ?? "ROAD").trim().toUpperCase()
-  if (normalized === "SEA") return "OCEAN"
-  if (["OCEAN", "AIR", "ROAD", "MULTIMODAL", "FAS", "FSA"].includes(normalized)) return normalized as BookingMode
-  return "ROAD"
+  return freightBookingMode(value)
 }
 
 function toLiveBooking(row: Record<string, unknown>): LiveBooking {

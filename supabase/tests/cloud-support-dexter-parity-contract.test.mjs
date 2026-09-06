@@ -19,6 +19,10 @@ const dexter = readFileSync(
   new URL("../functions/agent-dexter/index.ts", import.meta.url),
   "utf8",
 )
+const approvalBoundary = readFileSync(
+  new URL("../functions/agent-dexter/email-approval.mjs", import.meta.url),
+  "utf8",
+)
 const tenantBaseline = readFileSync(
   new URL("../baseline/public-schema.sql", import.meta.url),
   "utf8",

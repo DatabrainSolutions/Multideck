@@ -12,7 +12,8 @@ const controls = read("../migrations/20260820082034_platform_screening_controls.
 let bin
 try { bin = execFileSync("pg_config", ["--bindir"], { encoding: "utf8" }).trim() } catch { /* explicitly skipped below */ }
 
-test("automatic screening migration and lifecycle in a disposable PostgreSQL cluster", { skip: !bin || !existsSync(join(bin, "initdb")), timeout: 60_000 }, async () => {
+for (const mode of ['legacy', 'active-legacy', 'active-uksl']) {
+test(`automatic screening migration and lifecycle (${mode}) in a disposable PostgreSQL cluster`, { skip: !bin || !existsSync(join(bin, "initdb")), timeout: 60_000 }, async () => {
   const directory = mkdtempSync(join(tmpdir(), "screening-db-test-"))
   const data = join(directory, "data")
   const psqlArgs = ["-h", directory, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-X", "-q", "-t", "-A"]
@@ -43,15 +44,19 @@ test("automatic screening migration and lifecycle in a disposable PostgreSQL clu
     schema += `create trigger screening_snapshot_test after insert or update of "ScreeningListSnapshot_StatusCode" on "sys_ScreeningListSnapshots" for each row execute function public._multideck_dexter_screening_signal();
       create trigger screening_result_test after insert on "CMP_ScreeningChecks" for each row execute function public._multideck_dexter_screening_signal();
       insert into "sys_ScreeningListSources" ("ScreeningListSource_Code","ScreeningListSource_Name","ScreeningListSource_Publisher","ScreeningListSource_DownloadUrl") values ('uk_ofsi_consolidated','OFSI','OFSI','https://old.invalid');`
+    if (mode !== 'legacy') schema = schema.replace('https://old.invalid', 'https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.csv')
+    if (mode === 'active-uksl') schema = schema.replaceAll('uk_ofsi_consolidated', 'uk_sanctions_list')
     sql(schema)
-    sql(read("../migrations/20260903120000_screening_automatic_freshness.sql"))
+    sql(read(mode === 'legacy' ? "../migrations/20260903120000_screening_automatic_freshness.sql" : "../migrations/20260906082224_screening_active_source_freshness.sql"))
     const run = promisify(execFile)
     const claims = await Promise.all([1,2].map(() => run(join(bin, "psql"), [...psqlArgs, "-c", "select public.cmp_claim_screening_refresh(gen_random_uuid());"], { encoding: "utf8" })))
     assert.deepEqual(claims.map(result => result.stdout.trim()).sort(), ["acquired", "busy"])
     sql('update "sys_ScreeningListSources" set "ScreeningListSource_RefreshToken"=null,"ScreeningListSource_RefreshExpiresAt"=null,"ScreeningListSource_LastAttemptAt"=null;')
-    sql(read("./screening-freshness-database.sql"))
+    const lifecycle = read("./screening-freshness-database.sql")
+    sql(mode === 'active-uksl' ? lifecycle.replaceAll('uk_ofsi_consolidated', 'uk_sanctions_list') : lifecycle)
   } finally {
     if (started) execFileSync(join(bin, "pg_ctl"), ["-D", data, "stop", "-m", "immediate"], { stdio: "pipe" })
     rmSync(directory, { recursive: true, force: true })
   }
 })
+}

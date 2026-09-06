@@ -779,7 +779,7 @@ export const warehouseCalendarEvents: WarehouseCalendarEvent[] = [
 ]
 
 export type BookingStatus = "On track" | "Delayed" | "Exception"
-export type BookingMode = "OCEAN" | "AIR" | "ROAD" | "RAIL" | "MULTIMODAL" | "FAS" | "FSA"
+export type BookingMode = import("@/lib/freight-field-policy").FreightBookingMode
 export type BookingDirection = "Import" | "Export" | "Domestic" | "Cross trade"
 export type BookingShipmentType = "FCL" | "LCL" | "Breakbulk" | "RoRo" | "Dry bulk" | "Liquid bulk" | "Project cargo" | "General cargo" | "ULD" | "Air consolidation" | "Back-to-back" | "Express / courier" | "Charter" | "FTL" | "LTL" | "Groupage" | "Pallet network" | "Dedicated vehicle" | "Parcel / express" | "Multiple"
 

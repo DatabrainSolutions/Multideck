@@ -42,7 +42,6 @@ type IntakeItem = {
   error: string
   selected: boolean
   extraction: FinancePurchaseExtractionResult | null
-  legalEntityId: string
   partyOrgId: string
   type: FinanceDocumentType | ""
   documentDate: string
@@ -96,7 +95,6 @@ function fromExtraction(fileName: string, extraction: FinancePurchaseExtractionR
     error: "",
     selected: true,
     extraction,
-    legalEntityId,
     partyOrgId: supplierMatches.length === 1 ? supplierMatches[0].Org_id : "",
     type: extraction.documentType === "unknown" ? "" : extraction.documentType,
     documentDate: extraction.documentDate,
@@ -113,7 +111,7 @@ function blockers(item: IntakeItem, options: FinanceDraftOptions | null, duplica
   if (!item.extraction || !options) return ["Extraction is incomplete"]
   if (!item.partyOrgId) issues.push("Choose the supplier")
   if (!item.type) issues.push("Choose invoice or credit note")
-  if (!item.legalEntityId) issues.push("Choose the legal entity")
+  if (options.legalEntities.length !== 1) issues.push("Tenant company setup requires attention")
   if (!item.documentDate) issues.push("Check the document date")
   if (!/^[A-Z]{3}$/.test(item.currencyCode)) issues.push("Check the currency")
   if (!(Number(item.exchangeRate) > 0)) issues.push("Enter the exchange rate")
@@ -163,7 +161,7 @@ export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate:
     if (files.length > selected.length) toast.error(t("A batch can contain up to 25 documents."))
     const queued = selected.map<IntakeItem>((file) => ({
       id: crypto.randomUUID(), fileName: file.name, status: "extracting", stage: "uploading", error: "", selected: true,
-      extraction: null, legalEntityId: options.legalEntities[0]?.LegalEntity_ID ?? "", partyOrgId: "", type: "",
+      extraction: null, partyOrgId: "", type: "",
       documentDate: "", dueDate: "", currencyCode: "", exchangeRate: "1", lines: [], duplicateAccepted: false,
     }))
     setItems((current) => [...current, ...queued])
@@ -205,7 +203,6 @@ export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate:
       try {
         const document = await createFinanceDraft({
           type: item.type as FinanceDocumentType,
-          legalEntityId: item.legalEntityId,
           partyOrgId: item.partyOrgId,
           documentDate: item.documentDate,
           dueDate: item.dueDate || null,
@@ -231,8 +228,8 @@ export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate:
   }
 
   const taxOptions = useMemo<FinanceDocumentTaxOption[]>(() => (options?.taxTreatments ?? [])
-    .filter((tax) => tax.FINLocTaxTreatment_LegalEntityID === active?.legalEntityId && ["purchase", "both"].includes(tax.FINLocTaxTreatment_TransactionType))
-    .map((tax) => ({ id: tax.FINLocTaxTreatment_ID, code: tax.FINLocTaxTreatment_Code, name: tax.FINLocTaxTreatment_Name, ratePercent: Number(tax.FINLocTaxTreatment_RatePercent), approved: true })), [active?.legalEntityId, options])
+    .filter((tax) => tax.FINLocTaxTreatment_LegalEntityID === options?.legalEntities[0]?.LegalEntity_ID && ["purchase", "both"].includes(tax.FINLocTaxTreatment_TransactionType))
+    .map((tax) => ({ id: tax.FINLocTaxTreatment_ID, code: tax.FINLocTaxTreatment_Code, name: tax.FINLocTaxTreatment_Name, ratePercent: Number(tax.FINLocTaxTreatment_RatePercent), approved: true })), [options])
 
   const counts = {
     extracting: items.filter((item) => item.status === "extracting").length,
@@ -279,7 +276,6 @@ export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate:
             <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
               <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{active.extraction.supplierName || t("Supplier document")}</h2><p className="mt-1 text-[12px] text-[var(--md-subtle)]"><span data-i18n-skip dir="ltr">{active.extraction.documentNumber || active.fileName}</span> · {t(active.type === "debit_note" ? "Credit note" : "Invoice")}</p></div><Button type="button" size="icon-sm" variant="ghost" aria-label={t("Remove from batch")} onClick={() => { setItems((current) => current.filter((item) => item.id !== active.id)); setActiveId(items.find((item) => item.id !== active.id)?.id ?? "") }}><Trash2 /></Button></div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <label className="space-y-1 text-[12px] font-medium text-[var(--md-text)]">{t("Legal entity")}<Select value={active.legalEntityId} onValueChange={(legalEntityId) => update(active.id, { legalEntityId })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{options?.legalEntities.map((entity) => <SelectItem key={entity.LegalEntity_ID} value={entity.LegalEntity_ID}>{entity.LegalEntity_Name}</SelectItem>)}</SelectContent></Select></label>
                 <label className="space-y-1 text-[12px] font-medium text-[var(--md-text)]">{t("Supplier")}<Select value={active.partyOrgId} onValueChange={(partyOrgId) => update(active.id, { partyOrgId })}><SelectTrigger><SelectValue placeholder={t("Choose supplier")} /></SelectTrigger><SelectContent>{options?.parties.map((party) => <SelectItem key={party.Org_id} value={party.Org_id}>{party.Org_Name}</SelectItem>)}</SelectContent></Select></label>
                 <label className="space-y-1 text-[12px] font-medium text-[var(--md-text)]">{t("Document type")}<Select value={active.type} onValueChange={(type: "pl_invoice" | "debit_note") => update(active.id, { type })}><SelectTrigger><SelectValue placeholder={t("Choose type")} /></SelectTrigger><SelectContent><SelectItem value="pl_invoice">{t("Purchase invoice")}</SelectItem><SelectItem value="debit_note">{t("Supplier credit note")}</SelectItem></SelectContent></Select></label>
                 <label className="space-y-1 text-[12px] font-medium text-[var(--md-text)]">{t("Document date")}<Input type="date" value={active.documentDate} onChange={(event) => update(active.id, { documentDate: event.target.value })} data-i18n-skip dir="ltr" /></label>

@@ -12,6 +12,7 @@ import {
   parseReference,
   parseUuid,
   QuoteWorkflowError,
+  quoteWorkspaceCustomerReference,
   requiredText,
   toClientError,
   validateSavePayload,
@@ -22,6 +23,7 @@ import { renderBrandedEmail } from "../_shared/email-template.ts"
 import { governedModelFetch } from "../_shared/model-gateway.ts"
 import { readConfiguredTenantBrand, type TenantBrand } from "../_shared/tenant-branding.ts"
 import { generateQuotePdf, removeGeneratedQuotePdf, type GeneratedQuotePdf, type QuotePdfDataset } from "../_shared/quote-pdf.ts"
+import { quoteDocumentCargo, quoteDocumentCargoTotals, quoteDocumentHandling } from "../_shared/quote-document-cargo.ts"
 import { sendMail as sendConnectedMailbox, type Actor as InboxActor } from "../inbox-api/runtime.ts"
 import { base64Encode, OUTBOUND_ATTACHMENT_LIMITS } from "../inbox-api/core.ts"
 
@@ -424,29 +426,22 @@ async function quotePdfDataset(
   version: Row,
 ): Promise<QuotePdfDataset> {
   const snapshot = isObject(version.CusQuoteVersion_SnapshotJSON) ? version.CusQuoteVersion_SnapshotJSON : {}
+  if (!Object.keys(snapshot).length || (Object.hasOwn(snapshot, "quote") && !isObject(snapshot.quote))) {
+    throw new QuoteWorkflowError(409, "This quote version has no usable saved document details. Review the version before sending.")
+  }
   const quote = isObject(snapshot.quote) ? snapshot.quote : snapshot
   const facts = isObject(quote.shipmentFacts) ? quote.shipmentFacts : {}
   const payer = isObject(quote.payer) ? quote.payer : {}
-  const payerOrganisationId = cleanString(payer.orgId, 36) || String(context.quote.CusQuoteHeader_CustomerID || "")
-  const payerTermsResult = payerOrganisationId
-    ? await admin
-      .from("CRM_AccountProfiles")
-      .select("CRMAccount_MetadataJSON")
-      .eq("CRMAccount_OrgID", payerOrganisationId)
-      .eq("CRMAccount_IsDeleted", false)
-      .maybeSingle()
-    : { data: null, error: null }
-  if (payerTermsResult.error) throw payerTermsResult.error
-  const payerMetadata = isObject(payerTermsResult.data?.CRMAccount_MetadataJSON)
-    ? payerTermsResult.data.CRMAccount_MetadataJSON
-    : {}
-  const organisationQuoteTerms = isObject(payerMetadata.quoteTerms) ? payerMetadata.quoteTerms : {}
+  const cargo = quoteDocumentCargo(facts)
+  const cargoTotals = quoteDocumentCargoTotals(facts)
+  // Payer terms are inherited when the draft is saved, not when an issued
+  // version is rendered. Current CRM/header values may belong to a later deal.
   const effectiveTerms = printable(
-    organisationQuoteTerms.terms || quote.terms || context.quote.CusQuoteHeader_TermsText,
-    "Please refer to the agreed trading terms for this quotation.",
+    quote.terms,
+    "No additional terms recorded in this quote version.",
   )
   const effectiveCustomerNotes = printable(
-    quote.customerNotes || context.quote.CusQuoteHeader_CustomerNotes || organisationQuoteTerms.notes,
+    quote.customerNotes,
     "No additional notes.",
   )
   const rawCharges = Array.isArray(quote.charges) ? quote.charges : Array.isArray(snapshot.charges) ? snapshot.charges : []
@@ -470,26 +465,26 @@ async function quotePdfDataset(
   const totals = new Map<string, number>()
   for (const charge of charges) totals.set(charge.currency, (totals.get(charge.currency) ?? 0) + charge.rawAmount)
   const savedRoutingLegs = Array.isArray(facts.routingLegs)
-    ? facts.routingLegs.filter((item) => isObject(item)).slice(0, 30) as Row[]
+    ? facts.routingLegs.filter((item) => isObject(item)) as Row[]
     : []
-  const routePlan = savedRoutingLegs.length > 1
+  const routePlan = savedRoutingLegs.length > 0
     ? savedRoutingLegs
     : [{
-      mode: quote.mode || context.quote.CusQuoteHeader_ModeCode,
-      origin: { unlocode: facts.originUnlocode, place: quote.loadingPoint || context.quote.CusQuoteHeader_LoadingPoint },
-      destination: { unlocode: facts.destinationUnlocode, place: quote.dischargePoint || context.quote.CusQuoteHeader_DischargePoint },
+      mode: quote.mode,
+      origin: { unlocode: facts.originUnlocode, place: quote.loadingPoint },
+      destination: { unlocode: facts.destinationUnlocode, place: quote.dischargePoint },
       estimatedDeparture: facts.estimatedDeparture,
       estimatedArrival: facts.estimatedArrival,
-      carrierName: quote.carrierName || context.quote.CusQuoteHeader_CarrierNameSnapshot,
-      serviceLevel: quote.serviceLevel || context.quote.CusQuoteHeader_ServiceLevel,
+      carrierName: quote.carrierName,
+      serviceLevel: quote.serviceLevel,
     }]
   const routes = routePlan.map((route, index) => {
-    const origin = quoteRouteLocation(route.origin, index === 0 ? quote.loadingPoint || context.quote.CusQuoteHeader_LoadingPoint : "TBC")
-    const destination = quoteRouteLocation(route.destination, index === routePlan.length - 1 ? quote.dischargePoint || context.quote.CusQuoteHeader_DischargePoint : "TBC")
+    const origin = quoteRouteLocation(route.origin, index === 0 ? quote.loadingPoint : "TBC")
+    const destination = quoteRouteLocation(route.destination, index === routePlan.length - 1 ? quote.dischargePoint : "TBC")
     const carrierService = [printable(route.carrierName, ""), printable(route.serviceLevel, "")].filter(Boolean).join(" · ") || "TBC"
     return {
       leg: String(index + 1),
-      mode: printable(route.mode || quote.mode || context.quote.CusQuoteHeader_ModeCode).toUpperCase(),
+      mode: printable(route.mode || quote.mode).toUpperCase(),
       movement: `${origin} → ${destination}`,
       schedule: `${plannedDateLabel(route.estimatedDeparture)} → ${plannedDateLabel(route.estimatedArrival)}`,
       carrierService,
@@ -527,40 +522,42 @@ async function quotePdfDataset(
       reference: context.reference,
       version: printable(version.CusQuoteVersion_Number, "1"),
       issuedDate: dateLabel(version.CusQuoteVersion_CreatedAt || snapshot.savedAt),
-      validUntil: dateLabel(quote.validTo || context.quote.CusQuoteHeader_ValidTo),
-      customerName: printable(quote.customerName || context.customerName, "Customer"),
-      contactName: printable(quote.contactName || context.recipient?.name, ""),
-      customerEmail: printable(context.recipient?.email || quote.contactEmail || context.quote.CusQuoteHeader_ContactEmailSnapshot, ""),
+      validUntil: typeof quote.validTo === "string" && quote.validTo.trim() ? dateLabel(quote.validTo) : "—",
+      customerName: printable(quote.customerName, "Customer"),
+      contactName: printable(quote.contactName, ""),
+      customerEmail: printable(quote.contactEmail, ""),
       customerAddress: printable(quote.customerAddress || quote.billingAddress, ""),
-      customerReference: printable(quote.customerReference || context.quote.CusQuoteHeader_CustomerReference),
-      billedToName: printable(payer.name || quote.customerName || context.customerName, "Customer"),
+      customerReference: printable(quote.customerReference),
+      billedToName: printable(payer.name || quote.customerName, "Customer"),
       billedToAddress: printable(payer.address || quote.customerAddress || quote.billingAddress, ""),
-      billedToContact: printable(payer.contact || quote.contactName || context.recipient?.name, ""),
-      billedToEmail: printable(payer.email || facts.payerEmail || quote.contactEmail || context.quote.CusQuoteHeader_ContactEmailSnapshot, ""),
+      billedToContact: printable(payer.contact || quote.contactName, ""),
+      billedToEmail: printable(payer.email || facts.payerEmail || quote.contactEmail, ""),
     },
     journey: [
       { label: "Collection point", value: printable(quote.collectionAddress) },
-      { label: "Port of loading", value: printable(quote.loadingPoint || context.quote.CusQuoteHeader_LoadingPoint) },
-      { label: "Port of discharge", value: printable(quote.dischargePoint || context.quote.CusQuoteHeader_DischargePoint) },
+      { label: "Port of loading", value: printable(quote.loadingPoint) },
+      { label: "Port of discharge", value: printable(quote.dischargePoint) },
       { label: "Delivery address", value: printable(quote.deliveryAddress) },
     ],
     routes,
+    cargo,
     shipment: [
-      { label: "Mode / service", value: [printable(quote.mode || context.quote.CusQuoteHeader_ModeCode, ""), printable(quote.serviceLevel || context.quote.CusQuoteHeader_ServiceLevel, "")].filter(Boolean).join(" · ") || "—" },
+      { label: "Mode / service", value: [printable(quote.mode, ""), printable(quote.serviceLevel, "")].filter(Boolean).join(" · ") || "—" },
       {
         label: "Shipment / container",
         value: [
-          printable(quote.shipmentType || context.quote.CusQuoteHeader_ShipmentTypeCode, ""),
+          printable(quote.shipmentType, ""),
           printable(facts.container, ""),
         ].filter(Boolean).join(" · ") || "—",
       },
-      { label: "Pieces / weight", value: [printable(facts.packageQuantity, ""), facts.grossWeightKg ? `${printable(facts.grossWeightKg)} kg` : ""].filter(Boolean).join(" · ") || "—" },
-      { label: "Volume / incoterm", value: [facts.volumeCbm ? `${printable(facts.volumeCbm)} CBM` : "", customerIncotermLabel(quote.incoterm, facts.namedPlace)].filter((value) => value && value !== "—").join(" · ") || "—" },
+      { label: "Pieces / weight", value: [cargoTotals.packageQuantity, cargoTotals.grossWeightKg ? `${cargoTotals.grossWeightKg} kg` : ""].filter(Boolean).join(" · ") || "—" },
+      { label: "Volume / incoterm", value: [cargoTotals.volumeCbm ? `${cargoTotals.volumeCbm} CBM` : "", customerIncotermLabel(quote.incoterm, facts.namedPlace)].filter((value) => value && value !== "—").join(" · ") || "—" },
+      { label: "Shipment handling", value: quoteDocumentHandling(facts) },
     ],
     charges: charges.map(({ currency: _currency, rawAmount: _rawAmount, ...charge }) => charge),
     totals: Array.from(totals.entries()).map(([currency, amount]) => ({ label: totals.size > 1 ? `Total ${currency}` : "Total", amount: moneyLabel(amount, currency) })),
     terms: effectiveTerms,
-    conditions: printable(facts.subjectToTerms, "Rates are subject to carrier changes, equipment and space availability until the booking is confirmed."),
+    conditions: printable(facts.subjectToTerms, "No additional conditions recorded in this quote version."),
     customerNotes: effectiveCustomerNotes,
   }
 }
@@ -1466,7 +1463,7 @@ async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateReque
       customerId, customerName: String(customerResult.data?.Org_Name || quote.CusQuoteHeader_CustomerNameSnapshot || ""),
       contactId: quote.CusQuoteHeader_CustomerContact ? String(quote.CusQuoteHeader_CustomerContact) : "",
       contactName: quote.CusQuoteHeader_ContactNameSnapshot, contactEmail: quote.CusQuoteHeader_ContactEmailSnapshot,
-      customerReference: quote.CusQuoteHeader_CustomerReference,
+      customerReference: quoteWorkspaceCustomerReference(versionResult.data ?? [], quote.CusQuoteHeader_CustomerReference),
       officeId: quote.CusQuoteHeader_OrgOfficeID || quote.OrgOffice_ID,
       departmentId: quote.CusQuoteHeader_DepartmentID,
       salesOwnerId: quote.CusQuoteHeader_SalesOwnerID,

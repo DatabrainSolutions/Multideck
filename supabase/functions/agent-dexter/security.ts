@@ -43,19 +43,22 @@ function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID.test(value)
 }
 
-function actionTargetIds(value: unknown, propertyName = "", target = new Set<string>()) {
+function actionTargetIds(value: unknown, propertyName = "", target = new Set<string>(), depth = 0) {
+  // An upload ID is provenance, not an operational record being changed. The
+  // upload permission boundary runs before extraction; it confers no write scope.
+  if (depth === 1 && propertyName === "_document_evidence") return target
   if (Array.isArray(value)) {
     if (/(?:^|_)ids$/i.test(propertyName) || /Ids$/.test(propertyName)) {
       value.filter(isUuid).forEach((id) => target.add(id))
     }
-    value.forEach((item) => actionTargetIds(item, "", target))
+    value.forEach((item) => actionTargetIds(item, "", target, depth + 1))
     return target
   }
   if (!value || typeof value !== "object") {
     if ((/(?:^|_)id$/i.test(propertyName) || /Id$/.test(propertyName)) && isUuid(value)) target.add(value)
     return target
   }
-  Object.entries(value as JsonObject).forEach(([key, item]) => actionTargetIds(item, key, target))
+  Object.entries(value as JsonObject).forEach(([key, item]) => actionTargetIds(item, key, target, depth + 1))
   return target
 }
 
@@ -124,6 +127,13 @@ const ACTION_INTENTS: Record<string, RegExp> = {
   send_email: /\bsend\b.{0,100}\b(e-?mail|message|reply|response|it|this)\b|\be-?mail\b.{0,80}\b(now|today|immediately|straight away)\b|\bplease send\b/,
   create_booking: /\b(create|add|start|make|open|new)\b.{0,80}\b(booking|shipment|job)\b|\bnew (booking|shipment|job)\b/,
   update_booking: /\b(update|edit|change|amend|correct|set|move)\b.{0,80}\b(booking|shipment|job|route)\b/,
+  update_booking_cargo: /\b(update|edit|change|amend|correct|set|clear)\b.{0,80}\b(cargo|goods|packages?|weight|dimensions?|shipment)\b/,
+  update_booking_container: /\b(update|edit|change|amend|correct|set|clear|record)\b.{0,80}\b(containers?|ulds?|vehicles?|trailers?|wagons?|equipment|vgm|tare|reefer|verified gross mass)\b/,
+  update_booking_route: /\b(update|edit|change|amend|correct|set|clear|record)\b.{0,80}\b(rout(?:e|ing)|legs?|vessel|voyage|flight|trailer|rail|waybill|bill of lading|departure|arrival|pickup|delivery)\b/,
+  change_booking_route_mode: /\b(change|switch|set|correct|update)\b.{0,80}\b(rout(?:e|ing)|legs?)\b.{0,80}\b(mode|sea|air|road|rail|courier|multimodal)\b/,
+  update_booking_shipment_value: /\b(update|edit|change|correct|set|clear|record)\b.{0,80}\b(shipment goods value|shipment value|goods value|value of (?:the )?goods)\b/,
+  update_quote_cargo: /\b(update|edit|change|amend|correct|set|clear)\b(?=.{0,160}\bquote\b)(?=.{0,160}\b(cargo|goods|packages?|weight|dimensions?|commodity)\b)/,
+  replace_booking_allocations: /\b(update|edit|change|amend|correct|set|clear|add|remove|replace|allocate|assign|reassign|swap)\b.{0,120}\b(allocations?|allocation plan|cargo|goods)\b/,
   create_customs_declaration: /\b(create|add|start|make|open|new|draft)\b.{0,80}\b(customs|declaration|cds|import|export)\b/,
   update_customs_declaration: /\b(update|edit|change|amend|correct|complete|fill)\b.{0,80}\b(customs|declaration|cds|import|export)\b/,
   create_icustoms_draft: /\b(create|save|send|prepare)\b.{0,80}\b(icustoms|provider)\b.{0,40}\b(draft|declaration)\b|\bprovider draft\b/,
@@ -380,7 +390,7 @@ export async function prepareServerAction(admin: Db, actor: DexterActor, input: 
   const id = crypto.randomUUID()
   const target = proposedTargetIds[0] ?? ""
   const expiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString()
-  const { error } = await admin.from("AI_DexterPreparedActions").insert({
+  const preparedRow = {
     AIDexterPrepared_ID: id,
     AIDexterPrepared_CompanyID: actor.companyId,
     AIDexterPrepared_UserID: actor.userId,
@@ -402,7 +412,19 @@ export async function prepareServerAction(admin: Db, actor: DexterActor, input: 
     AIDexterPrepared_AccessMode: input.accessMode,
     AIDexterPrepared_Status: "prepared",
     AIDexterPrepared_ExpiresAt: expiresAt,
-  })
+  }
+  if (input.actionCode === "change_booking_route_mode") {
+    // The database trigger binds the review to current saved references. Return
+    // the exact persisted card, never model-supplied copy hiding the reset.
+    const { data, error } = await admin.from("AI_DexterPreparedActions").insert(preparedRow)
+      .select("AIDexterPrepared_Title,AIDexterPrepared_Description,AIDexterPrepared_ChangesJSON").single()
+    if (error || typeof data?.AIDexterPrepared_Title !== "string" || typeof data?.AIDexterPrepared_Description !== "string" ||
+        !Array.isArray(data?.AIDexterPrepared_ChangesJSON) || !data.AIDexterPrepared_ChangesJSON.every((item: unknown) => item !== null && typeof item === "object" && !Array.isArray(item))) {
+      throw new Error("prepared_action_unavailable")
+    }
+    return { id, expiresAt, review: { title: data.AIDexterPrepared_Title, description: data.AIDexterPrepared_Description, changes: data.AIDexterPrepared_ChangesJSON as JsonObject[] } }
+  }
+  const { error } = await admin.from("AI_DexterPreparedActions").insert(preparedRow)
   if (error) throw new Error("prepared_action_unavailable")
   return { id, expiresAt }
 }
