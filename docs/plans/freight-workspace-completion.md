@@ -8,6 +8,23 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 ## Delivery and evidence ledger
 
+6 September routing cut-off development release: published `3757407` to
+`origin/dev` by verified fast-forward; Vercel deployment
+`dpl_DmkCToSYE8nmNmHoZK5hfWB4ESmD` READY and approved hostname serves the new
+asset. Applied only migration `20260906143817` after fresh actual-schema
+rehearsal and exact one-migration dry run. Released only Dexter 159, JWT
+preserved, all 18 downloaded files matching reviewed source. No team setup
+changes or new security-advisor findings. Before/after fingerprints preserved
+45 existing routes and 38 Quote versions. Hosted synthetic JE0991134 testing
+proved deadline set/save/reload, mode-warning cancellation, native clear/save/
+reload, and attributed before/after audit. Deadlines restored to blank; Sea
+mode and Quote history unchanged. Browser helper blank-fill discrepancy was
+isolated without an application patch. The previous precaution-help reply was
+not implementation progress; this release is verified progress. Hosted
+Dexter/watch and accepted-revision lifecycle plus wider all-mode depth remain
+unfinished; do not infer 95% completion. See
+`docs/release/2026-09-06-route-cutoff-development-release.md`.
+
 6 September routing cut-off checkpoint: implemented typed cargo/documentation
 deadlines and Sea-only VGM deadlines per leg, a compact capability-gated editor,
 explicit mode-reset warnings and before/after audit. No ETD-derived defaults or
