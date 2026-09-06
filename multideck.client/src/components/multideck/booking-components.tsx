@@ -109,6 +109,7 @@ import {
 import { CopyFeedbackTransition, CopyStatusIcon } from "./copyable-field"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { freightBookingMode, freightFieldPolicy, freightShipmentAllowed, freightTransportField, freightRouteOperationalFields } from "@/lib/freight-field-policy"
+import { bookingEquipmentKindChoices, bookingEquipmentPresentation, newBookingEquipment, type BookingEquipmentKind } from "@/lib/booking-equipment-policy"
 import { freightPackageTypeOptions } from "@/lib/freight-package-types"
 import { changeBookingRouteMode, routeSharedReferenceFields } from "@/lib/booking-route-mode-change"
 
@@ -2750,6 +2751,7 @@ function bookingContainerDataValue(container: BookingWorkflowContainer, key: "pa
 function BookingContainerDetails({
   containers,
   mode,
+  equipmentKinds,
   editable,
   seaService,
   onAdd,
@@ -2758,33 +2760,65 @@ function BookingContainerDetails({
 }: {
   containers: BookingWorkflowContainer[]
   mode: string
+  equipmentKinds?: BookingEquipmentKind[]
   editable: boolean
   seaService: boolean
-  onAdd: () => void
+  onAdd: (kind: BookingEquipmentKind) => void
   onChange: (index: number, field: BookingContainerDraftField, value: string) => void
   onRemove: (index: number) => void
 }) {
   const { t } = useLanguage()
-  const columnLabels = ["Container no.", "Type", "Packages", "Package type", "Gross weight (kg)", "Volume (CBM)", "Seal no.", "Actions"] as const
+  const kinds = equipmentKinds ?? bookingEquipmentKindChoices({ mode, stage: "booking", hasContainers: containers.some((item) => bookingEquipmentPresentation(item.equipmentKind).key === "container") })
+  const columnLabels = ["Equipment no.", "Type", "Packages", "Package type", "Gross weight (kg)", "Volume (CBM)", "Seal no.", "Actions"] as const
   const fieldIdPrefix = useId()
+  const pendingFocus = useRef<number | null>(null)
+  const openingKindDialog = useRef(false)
+  const addRef = useRef<HTMLButtonElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const removeFocus = useRef<HTMLElement | null>(null)
+  const [removing, setRemoving] = useState<{ index: number; item: BookingWorkflowContainer } | null>(null)
+  const [reclassifying, setReclassifying] = useState<{ index: number; item: BookingWorkflowContainer; kind: BookingEquipmentKind } | null>(null)
+  useEffect(() => {
+    if (pendingFocus.current !== null) {
+      document.getElementById(`${fieldIdPrefix}-${pendingFocus.current}-number`)?.focus()
+      if (kinds.length === 1) pendingFocus.current = null
+    }
+  }, [containers.length, fieldIdPrefix, kinds.length])
+  function add(kind: BookingEquipmentKind) {
+    if (!editable || !kinds.includes(kind)) return
+    pendingFocus.current = containers.length
+    onAdd(kind)
+  }
 
   return (
     <BookingCargoWiseGroup
-      title="Container details"
+      title="Equipment details"
       action={(
+        kinds.length > 1 ? <DropdownMenu><DropdownMenuTrigger asChild>
+          <Button ref={addRef} type="button" variant="ghost" disabled={!editable} className="min-h-8 gap-1 px-2 text-xs text-[var(--md-accent)]"><Plus className="size-3.5" aria-hidden="true" />{t("Add equipment")}</Button>
+        </DropdownMenuTrigger><DropdownMenuContent align="end" onCloseAutoFocus={(event) => {
+          if (pendingFocus.current === null) return
+          event.preventDefault()
+          document.getElementById(`${fieldIdPrefix}-${pendingFocus.current}-number`)?.focus()
+          pendingFocus.current = null
+        }}>
+          {kinds.map((kind) => <DropdownMenuItem key={kind} onSelect={() => add(kind)}>{t(bookingEquipmentPresentation(kind).label)}</DropdownMenuItem>)}
+        </DropdownMenuContent></DropdownMenu> :
         <Button
+          ref={addRef}
           type="button"
           variant="ghost"
           className="h-7 rounded-[var(--md-radius-md)] px-2 text-[11px] font-medium text-[var(--md-accent)] hover:bg-[var(--md-accent-a08)]"
-          onClick={onAdd}
-          disabled={!editable}
+          onClick={() => { if (kinds[0]) add(kinds[0]) }}
+          disabled={!editable || !kinds.length}
         >
           <Plus className="size-3.5" strokeWidth={1.45} aria-hidden="true" />
-          {t("Add container")}
+          {kinds.length ? `${t("Add")} ${t(bookingEquipmentPresentation(kinds[0]).label)}` : t("Add equipment")}
         </Button>
       )}
       contentClassName="gap-1.5"
     >
+      {!kinds.length ? <p className="text-xs leading-5 text-[var(--md-text)]">{t("Add a physical routing leg or choose a container service to record transport equipment. Existing records remain available below.")}</p> : null}
       {containers.length ? (
         <div className="@container min-w-0">
           <div aria-hidden="true" className="hidden grid-cols-[minmax(140px,1.05fr)_minmax(112px,0.82fr)_minmax(76px,0.5fr)_minmax(106px,0.72fr)_minmax(112px,0.74fr)_minmax(100px,0.64fr)_minmax(112px,0.76fr)_40px] items-center gap-2 bg-[var(--md-surface-soft)] px-2 py-1.5 @[64rem]:grid">
@@ -2794,14 +2828,17 @@ function BookingContainerDetails({
           </div>
           <div className="grid gap-1.5 pt-1.5">
             {containers.map((container, index) => {
+              const equipment = bookingEquipmentPresentation(container.equipmentKind)
+              const seaContainer = seaService && equipment.key === "container"
+              const retainedVgm = container.verifiedGrossMassKg != null || Boolean(container.vgmMethod)
               const typeOptions = [...new Set([
                 container.type ?? "",
-                ...(bookingEquipmentOptionsByMode[bookingModeKey(mode)] ?? bookingEquipmentOptionsByMode.multimodal),
+                ...equipment.types,
               ].filter(Boolean))]
               const fieldClassName = "h-8 w-full min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-[11px] font-medium shadow-[var(--md-shadow-line)]"
               const fields = [
-                ["Container number", "number", container.number ?? "", false],
-                ["Container type", "type", container.type ?? "", false],
+                [equipment.numberLabel, "number", container.number ?? "", false],
+                [`${equipment.label} type`, "type", container.type ?? "", false],
                 ["Packages", "packages", bookingContainerDataValue(container, "packages"), true],
                 ["Package type", "packageType", bookingContainerDataValue(container, "packageType"), false],
                 ["Gross weight (kg)", "grossWeightKg", container.grossWeightKg ?? "", true],
@@ -2813,25 +2850,29 @@ function BookingContainerDetails({
                   key={container.id ?? `container-${index}`}
                   className="grid min-w-0 grid-cols-1 items-end gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-2 @[28rem]:grid-cols-2 @[44rem]:grid-cols-4 @[64rem]:grid-cols-[minmax(140px,1.05fr)_minmax(112px,0.82fr)_minmax(76px,0.5fr)_minmax(106px,0.72fr)_minmax(112px,0.74fr)_minmax(100px,0.64fr)_minmax(112px,0.76fr)_40px]"
                 >
-                  <legend className="sr-only">{t("Container")} {index + 1}</legend>
+                  <legend className="px-1 text-xs font-medium text-[var(--md-ink)]">
+                    <DropdownMenu><DropdownMenuTrigger asChild><Button id={`${fieldIdPrefix}-${index}-kind`} type="button" variant="ghost" disabled={!editable || !kinds.length} aria-label={`${t("Change equipment kind")} ${index + 1}: ${t(equipment.label)}`} className="min-h-8 gap-1 px-1 text-xs">{t(equipment.label)} {index + 1}<ChevronDown className="size-3" aria-hidden="true" /></Button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" onCloseAutoFocus={(event) => { if (openingKindDialog.current) { event.preventDefault(); openingKindDialog.current = false } }}>
+                        {kinds.map((kind) => <DropdownMenuItem key={kind} disabled={kind === equipment.key} onSelect={() => { if (editable) { openingKindDialog.current = true; removeFocus.current = document.getElementById(`${fieldIdPrefix}-${index}-kind`); setReclassifying({ index, item: container, kind }) } }}>{t(bookingEquipmentPresentation(kind).label)}</DropdownMenuItem>)}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </legend>
+                  {!kinds.includes(equipment.key as BookingEquipmentKind) ? <p className="col-span-full text-xs leading-5 text-[var(--md-text)]">{t("Retained equipment: this kind does not match the current routing/service. Review it before saving; no values have been changed automatically.")}</p> : null}
                   {fields.map(([label, field, fieldValue, decimal]) => (
                     <div key={field} className="grid min-w-0 gap-1 text-[11px] font-medium text-[var(--md-text)]">
-                      <label htmlFor={`${fieldIdPrefix}-${index}-${field}`} className="@[64rem]:sr-only">{t(label)}</label>
+                      {field !== "type" ? <label htmlFor={`${fieldIdPrefix}-${index}-${field}`} className="@[64rem]:sr-only">{t(label)}</label> : null}
                       {field === "type" ? (
-                        <Select disabled={!editable} value={container.type ?? ""} onValueChange={(value) => { if (editable) onChange(index, "type", value) }}>
-                          <SelectTrigger id={`${fieldIdPrefix}-${index}-${field}`} aria-label={t(label)} className={fieldClassName}><SelectValue placeholder={t("Choose type")} /></SelectTrigger>
-                          <SelectContent>{typeOptions.map((option) => <SelectItem key={option} value={option}>{t(option)}</SelectItem>)}</SelectContent>
-                        </Select>
-                      ) : <Input id={`${fieldIdPrefix}-${index}-${field}`} disabled={!editable} aria-label={t(label)} inputMode={decimal ? "decimal" : undefined} value={fieldValue} onChange={(event) => { if (editable) onChange(index, field, event.target.value) }} className={fieldClassName} />}
+                        <CompactCombobox label={label} disabled={!editable} value={container.type ?? ""} options={typeOptions.map((option) => ({ value: option, label: option }))} allowCustom width="full" className="@[64rem]:[&>div:first-child]:sr-only" placeholder="Choose or type code" onValueChange={(value) => { if (editable) onChange(index, "type", value) }} />
+                      ) : <Input id={`${fieldIdPrefix}-${index}-${field}`} disabled={!editable} aria-label={t(label)} inputMode={decimal ? "decimal" : undefined} maxLength={field === "number" ? 50 : undefined} value={fieldValue} onChange={(event) => { if (editable) onChange(index, field, event.target.value) }} className={fieldClassName} />}
                     </div>
                   ))}
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    aria-label={`${t("Remove container")} ${index + 1}`}
+                    aria-label={`${t("Remove")} ${t(equipment.label)} ${index + 1}`}
                     className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-[color-mix(in_srgb,var(--md-red)_8%,transparent)] hover:text-[var(--md-red)]"
-                    onClick={() => onRemove(index)}
+                    onClick={(event) => { if (editable) { removeFocus.current = event.currentTarget; setRemoving({ index, item: container }) } }}
                     disabled={!editable}
                   >
                     <Trash2 className="size-3.5" strokeWidth={1.35} aria-hidden="true" />
@@ -2840,14 +2881,15 @@ function BookingContainerDetails({
                     <summary className="min-h-8 cursor-pointer py-1.5 text-[11px] font-medium text-[var(--md-accent)] focus-visible:outline-2 focus-visible:outline-offset-2">{t("Weight verification & temperature")}</summary>
                     <div className="grid min-w-0 gap-2 py-2 @[36rem]:grid-cols-2 @[60rem]:grid-cols-3">
                       <BookingCargoWiseField label="Tare weight (kg)" value={String(container.tareWeightKg ?? "")} editable={editable} onChange={(value) => onChange(index, "tareWeightKg", value)} />
-                      {seaService || container.verifiedGrossMassKg != null || container.vgmMethod ? <>
-                        <BookingCargoWiseField label="Verified gross mass (kg)" value={String(container.verifiedGrossMassKg ?? "")} editable={editable} onChange={(value) => onChange(index, "verifiedGrossMassKg", value)} />
-                        <BookingCargoWiseField label="VGM method" value={container.vgmMethod === "1" ? "1 - Weighed packed container" : container.vgmMethod === "2" ? "2 - Certified calculation" : container.vgmMethod || "Not recorded"} options={["Not recorded", "1 - Weighed packed container", "2 - Certified calculation"]} allowCustom={false} editable={editable} wrapValue onChange={(value) => onChange(index, "vgmMethod", value === "Not recorded" ? "" : value.split(" - ")[0])} />
+                      {seaContainer || retainedVgm ? <>
+                        <BookingCargoWiseField label="Verified gross mass (kg)" value={String(container.verifiedGrossMassKg ?? "")} editable={editable && equipment.key === "container"} onChange={(value) => onChange(index, "verifiedGrossMassKg", value)} />
+                        <BookingCargoWiseField label="VGM method" value={container.vgmMethod === "1" ? "1 - Weighed packed container" : container.vgmMethod === "2" ? "2 - Certified calculation" : container.vgmMethod || "Not recorded"} options={["Not recorded", "1 - Weighed packed container", "2 - Certified calculation"]} allowCustom={false} editable={editable && equipment.key === "container"} wrapValue onChange={(value) => onChange(index, "vgmMethod", value === "Not recorded" ? "" : value.split(" - ")[0])} />
                       </> : null}
                       <BookingCargoWiseField label="Reefer set point" value={String(container.reeferSetPoint ?? "")} editable={editable} onChange={(value) => onChange(index, "reeferSetPoint", value)} />
                       <BookingCargoWiseField label="Temperature unit" value={container.reeferUnit || "Not recorded"} options={["Not recorded", "C", "F"]} allowCustom={false} editable={editable} onChange={(value) => onChange(index, "reeferUnit", value === "Not recorded" ? "" : value)} />
                     </div>
-                    {seaService ? <p className="pb-2 text-[11px] leading-5 text-[var(--md-text)]">{t("Record VGM from the verified weighing evidence. Cargo weight is not automatically treated as VGM. Recording these values does not submit a VGM declaration.")}</p> : null}
+                    {seaContainer ? <p className="pb-2 text-[11px] leading-5 text-[var(--md-text)]">{t("Record VGM from the verified weighing evidence. Cargo weight is not automatically treated as VGM. Recording these values does not submit a VGM declaration.")}</p> : null}
+                    {retainedVgm && equipment.key !== "container" ? <p className="text-xs leading-5 text-[var(--md-text)]">{t("Historical VGM values are retained for review, not treated as a declaration for this equipment kind.")}</p> : null}
                   </details>
                 </fieldset>
               )
@@ -2857,9 +2899,23 @@ function BookingContainerDetails({
       ) : (
         <div className="flex min-h-16 items-center justify-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 text-center shadow-[var(--md-shadow-line)]">
           <Container className="size-4 text-[var(--md-accent)]" strokeWidth={1.35} aria-hidden="true" />
-          <p className="text-[11.5px] text-[var(--md-text)]">{t("No container details have been added yet.")}</p>
+          <p className="text-xs text-[var(--md-text)]">{t("No equipment details have been added yet.")}</p>
         </div>
       )}
+      <Dialog open={removing !== null} onOpenChange={(open) => { if (!open) setRemoving(null) }}>
+        <DialogContent onOpenAutoFocus={(event) => { event.preventDefault(); cancelRef.current?.focus() }} onCloseAutoFocus={(event) => { event.preventDefault(); (removeFocus.current?.isConnected ? removeFocus.current : addRef.current)?.focus() }}>
+          <DialogHeader><DialogTitle>{t("Remove equipment from this Booking?")}</DialogTitle><DialogDescription>{t("This takes effect when you save the Booking. Saved equipment history is retained. Remove or reassign any cargo allocations before saving.")}</DialogDescription></DialogHeader>
+          <p className="break-words text-sm">{removing ? `${bookingEquipmentPresentation(removing.item.equipmentKind).label} ${removing.index + 1} · ${removing.item.number || t("Number not recorded")}` : ""}</p>
+          <DialogFooter><Button ref={cancelRef} variant="ghost" onClick={() => setRemoving(null)}>{t("Keep equipment")}</Button><Button disabled={!editable || !removing || containers[removing.index] !== removing.item} onClick={() => { if (editable && removing && containers[removing.index] === removing.item) { onRemove(removing.index); setRemoving(null) } }}>{t("Remove equipment")}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={reclassifying !== null} onOpenChange={(open) => { if (!open) setReclassifying(null) }}>
+        <DialogContent onOpenAutoFocus={(event) => { event.preventDefault(); cancelRef.current?.focus() }} onCloseAutoFocus={(event) => { event.preventDefault(); (removeFocus.current?.isConnected ? removeFocus.current : addRef.current)?.focus() }}>
+          <DialogHeader><DialogTitle>{t("Change equipment kind?")}</DialogTitle><DialogDescription>{t("Review the equipment type, identifying number and cargo allocations for the new kind. Existing values will not be recalculated or cleared. The change and previous identity are recorded when you save; the Quote is unchanged.")}</DialogDescription></DialogHeader>
+          <p className="break-words text-sm">{reclassifying ? `${bookingEquipmentPresentation(reclassifying.item.equipmentKind).label} → ${bookingEquipmentPresentation(reclassifying.kind).label}` : ""}</p>
+          <DialogFooter><Button ref={cancelRef} variant="ghost" onClick={() => setReclassifying(null)}>{t("Keep current kind")}</Button><Button disabled={!editable || !reclassifying || containers[reclassifying.index] !== reclassifying.item || !kinds.includes(reclassifying.kind)} onClick={() => { if (editable && reclassifying && containers[reclassifying.index] === reclassifying.item && kinds.includes(reclassifying.kind)) { onChange(reclassifying.index, "equipmentKind", reclassifying.kind); setReclassifying(null) } }}>{t("Change kind and review")}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </BookingCargoWiseGroup>
   )
 }
@@ -2900,7 +2956,7 @@ function BookingRecordDetails({
   onCargoAdd: () => void
   onCargoRemove: (index: number) => void
   onBookingChange: (field: keyof LiveBooking, value: string | boolean) => void
-  onContainerAdd: () => void
+  onContainerAdd: (kind: BookingEquipmentKind) => void
   onContainerChange: (index: number, field: BookingContainerDraftField, value: string) => void
   onContainerRemove: (index: number) => void
   onDetailChange: (field: string, value: string | boolean) => void
@@ -3000,6 +3056,7 @@ function BookingRecordDetails({
   }))
   const modeKey = bookingModeKey(record.booking.mode)
   const fieldPolicy = freightFieldPolicy({ mode: record.booking.mode, shipmentType: detailValue("shipmentType", record.booking.shipmentType), direction: record.booking.direction, stage: "booking", legModes: workspace.routes.map((leg) => leg.mode), hasContainers: workspace.containers.length > 0, vehicleCargo: Boolean(record.booking.vin) })
+  const equipmentKinds = bookingEquipmentKindChoices({ mode: record.booking.mode, shipmentType: detailValue("shipmentType", record.booking.shipmentType), stage: "booking", legModes: workspace.routes.map((leg) => leg.mode), hasContainers: workspace.containers.some((item) => bookingEquipmentPresentation(item.equipmentKind).key === "container") })
   const shipmentTypeOptions: BookingFieldOption[] = (lookups?.shipmentTypes ?? [])
     .filter((option) => freightShipmentAllowed(modeKey, option.code))
     .map((option) => ({ id: `shipment:${option.code}`, value: option.code, label: `${option.code} - ${option.name}` }))
@@ -3459,10 +3516,11 @@ function BookingRecordDetails({
               ))
             : <BookingCargoWiseField label="Custom fields" value={detailValue("customFields", t("No additional fields recorded"))} span {...editDetail("customFields")} />}
         </BookingCargoWiseGroup>
-      {fieldPolicy.containers ? (
+      {equipmentKinds.length > 0 || workspace.containers.length > 0 ? (
         <BookingContainerDetails
           containers={workspace.containers}
           mode={record.booking.mode}
+          equipmentKinds={equipmentKinds}
           editable={editable}
           seaService={fieldPolicy.sea}
           onAdd={onContainerAdd}
@@ -3471,7 +3529,7 @@ function BookingRecordDetails({
         />
       ) : null}
 
-      {allocationEditor && (fieldPolicy.containers || workspace.cargoAllocationState?.allocations.length || workspace.cargoAllocationState?.legacyUnquantifiedLinks.length)
+      {allocationEditor && (equipmentKinds.length > 0 || workspace.containers.length > 0 || workspace.cargoAllocationState?.allocations.length || workspace.cargoAllocationState?.legacyUnquantifiedLinks.length)
         ? <BookingCargoWiseGroup title="Cargo allocation">{allocationEditor}</BookingCargoWiseGroup> : null}
       </TabsContent>
     </Tabs>
@@ -4437,7 +4495,7 @@ function BookingDetailTabPage({
   onCargoChange: (index: number, field: keyof BookingWorkflowCargo, value: string) => void
   onCargoAdd: () => void
   onCargoRemove: (index: number) => void
-  onContainerAdd: () => void
+  onContainerAdd: (kind: BookingEquipmentKind) => void
   onContainerChange: (index: number, field: BookingContainerDraftField, value: string) => void
   onContainerRemove: (index: number) => void
   customsError: string | null
@@ -5058,10 +5116,10 @@ export function BookingDetailWorkspace({
     })
   }
 
-  function addDraftContainer() {
+  function addDraftContainer(kind: BookingEquipmentKind) {
     setDraftWorkspace((current) => current ? {
       ...current,
-      containers: [...current.containers, { number: "", type: "", equipmentKind: "container", status: "planned", grossWeightKg: null, data: {} }],
+      containers: [...current.containers, newBookingEquipment(kind)],
     } : current)
   }
 

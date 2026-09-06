@@ -36,12 +36,13 @@ test(`${action}: edits require explicit approval even in Full access`, () => {
 })
 test(`${action}: edit intent is distinct from an inspection request`, () => {
   for (const prompt of route ? ['Update the second leg departure', 'Correct the vessel name', 'Clear the flight number'] : container
-    ? ['Update container weight to 42 kg', 'Clear the reefer unit', 'Record verified gross mass']
+    ? ['Update container weight to 42 kg', 'Clear the reefer unit', 'Record verified gross mass', 'Update the ULD weight', 'Correct wagon tare weight', 'Record trailer temperature', 'Set vehicle gross weight', 'Clear equipment temperature unit']
     : ['Update cargo weight to 42 kg', 'Clear the cargo dimensions', 'Correct the goods description']) {
     assert.equal(operatorAuthorisesAction(prompt, action), true)
     assert.deepEqual(allowedActionsForPrompt(prompt, [action], 'full'), [action])
   }
   assert.deepEqual(allowedActionsForPrompt(route ? 'Show the second routing leg' : container ? 'Show the container VGM' : 'Show the cargo weight', [action], 'full'), [])
+  if (container) for (const prompt of ['Show the ULD weight','What is the wagon tare weight?','Read the trailer temperature']) assert.deepEqual(allowedActionsForPrompt(prompt,[action],'full'),[])
 })
 test(`${action}: proposal stores both exact identities without executing a write`, async () => {
   const writes = []

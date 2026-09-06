@@ -45,9 +45,9 @@ test('read-only container controls cannot add, remove or edit and details remain
   const calls=[]
   const rows=fields({number:'SAVED'},true,false,(...args)=>calls.push(args))
   assert.ok(rows.some(node=>node.type==='summary'))
-  for(const node of rows.filter(node=>['Input','Select','Button'].includes(node.type)))assert.equal(node.props.disabled,true)
+  for(const node of rows.filter(node=>['Input','CompactCombobox','Button'].includes(node.type)))assert.equal(node.props.disabled,true)
   for(const node of rows.filter(node=>node.type==='BookingCargoWiseField'))assert.equal(node.props.editable,false)
   rows.find(node=>node.type==='Input').props.onChange({target:{value:'UNWANTED'}})
-  rows.find(node=>node.type==='Select').props.onValueChange('20GP')
+  rows.find(node=>node.type==='CompactCombobox').props.onValueChange('20GP')
   assert.deepEqual(calls,[])
 })

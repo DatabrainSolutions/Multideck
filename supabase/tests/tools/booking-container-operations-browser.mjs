@@ -7,11 +7,14 @@ import { cut, containerComponentSource, containerMutationSource } from '../booki
 const client=fileURLToPath(new URL('../../../multideck.client/',import.meta.url))
 const {build}=createRequire(`${client}package.json`)('esbuild')
 const built=await build({stdin:{contents:`
-  import React,{useState,useId} from 'react';import {createRoot} from 'react-dom/client';
+  import React,{useState,useId,useRef,useEffect} from 'react';import {createRoot} from 'react-dom/client';
   import {Button} from '@/components/ui/button';import {Input} from '@/components/ui/input';
   import {Select,SelectTrigger,SelectValue,SelectContent,SelectItem} from '@/components/ui/select';
   import {CompactCombobox} from '@/components/multideck/quote-details/quote-detail-fields';
-  import {Plus,Trash2,Container} from '@/components/icons/hugeicons';import {cn} from '@/lib/utils';
+  import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuItem} from '@/components/ui/dropdown-menu';
+  import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription,DialogFooter} from '@/components/ui/dialog';
+  import {bookingEquipmentKindChoices,bookingEquipmentPresentation,newBookingEquipment} from '@/lib/booking-equipment-policy';
+  import {Plus,Trash2,Container,ChevronDown} from '@/components/icons/hugeicons';import {cn} from '@/lib/utils';
   import {useLanguage} from '@/i18n/language-provider';
   ${cut('const bookingEquipmentOptionsByMode:', 'function bookingTabSlug(')}
   ${cut('function bookingModeKey(', 'function bookingModeOptionValue(')}
@@ -21,15 +24,17 @@ const built=await build({stdin:{contents:`
   ${containerComponentSource}
   function App(){
     const [editable,setEditable]=useState(true),[seaService,setSeaService]=useState(true);
+    const [mode,setMode]=useState('sea');
     const [draftWorkspace,setDraftWorkspace]=useState({containers:[
       {id:'one',number:'SYNTHETIC-1',type:'40RF',grossWeightKg:'20000.123456',tareWeightKg:'4000.123456',verifiedGrossMassKg:null,reeferSetPoint:'-18.125',reeferUnit:'C',data:{packages:'450',packageType:'Cartons',volumeCbm:'30',sealNumber:'SEAL-1'}},
       {id:'two',number:'SYNTHETIC-2',type:'20GP',data:{}}],quoteSnapshot:{version:1}});
     ${containerMutationSource}
     return <><h1>Container operations QA</h1><div className="flex flex-wrap gap-2">
       <Button onClick={()=>setEditable(v=>!v)}>{editable?'View read-only':'Edit draft'}</Button>
+      <label>QA mode<select aria-label="QA mode" value={mode} onChange={event=>setMode(event.target.value)}>{['sea','air','road','rail','multimodal'].map(value=><option key={value}>{value}</option>)}</select></label>
       <Button onClick={()=>setSeaService(v=>!v)}>{seaService?'Use Rail':'Use Sea'}</Button></div>
-      <BookingContainerDetails containers={draftWorkspace.containers} mode={seaService?'sea':'rail'} editable={editable} seaService={seaService}
-        onChange={updateDraftContainer} onAdd={()=>setDraftWorkspace(v=>({...v,containers:[...v.containers,{id:crypto.randomUUID(),data:{}}]}))}
+      <BookingContainerDetails containers={draftWorkspace.containers} mode={mode} equipmentKinds={bookingEquipmentKindChoices({mode,shipmentType:'FCL',stage:'booking',legModes:mode==='multimodal'?['air','road','rail']:[],hasContainers:mode==='rail'})} editable={editable} seaService={seaService && (mode==='sea'||mode==='multimodal')}
+        onChange={updateDraftContainer} onAdd={kind=>setDraftWorkspace(v=>({...v,containers:[...v.containers,newBookingEquipment(kind)]}))}
         onRemove={index=>setDraftWorkspace(v=>({...v,containers:v.containers.filter((_,i)=>i!==index)}))}/>
       <details><summary>Inspect test state</summary><output id="receipt" className="block break-words">{JSON.stringify(draftWorkspace)}</output></details></>;
   }

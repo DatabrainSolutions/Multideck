@@ -14,6 +14,7 @@ import { evidenceEnvelopeMigration, documentEvidenceAssertions } from './dexter-
 import { shipmentValueDexterFixture, shipmentValueDexterAssertions } from './booking-shipment-value-dexter-fixture.mjs'
 import { quoteCargoDexterFixture, quoteCargoDexterAssertions } from './quote-cargo-dexter-fixture.mjs'
 import { allocationDexterMigration, allocationDexterAssertions } from './booking-allocation-dexter-fixture.mjs'
+import { equipmentKindMigration, equipmentKindAssertions } from './booking-equipment-kind-fixture.mjs'
 
 // Executes the actual save function against disposable PostgreSQL, never a tenant.
 // PG_TEST_BIN can point to a PostgreSQL bin directory in CI.
@@ -160,7 +161,7 @@ test('PostgreSQL: stable items, approved Dexter cargo/container/route lifecycle,
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
       cargoProjection + cargoDexterFixture(table) + cargoDexterMigration + decimalMigration + cargoDexterAssertions + cargoDecimalAssertions)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
-      containerDexterFixture + containerDexterAssertions)
+      containerDexterFixture + equipmentKindMigration + equipmentKindAssertions + containerDexterAssertions)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
       routeDexterFixture(table) + `
         alter table public."Job_Header" add primary key("Job_ID");

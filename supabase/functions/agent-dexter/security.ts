@@ -128,7 +128,7 @@ const ACTION_INTENTS: Record<string, RegExp> = {
   create_booking: /\b(create|add|start|make|open|new)\b.{0,80}\b(booking|shipment|job)\b|\bnew (booking|shipment|job)\b/,
   update_booking: /\b(update|edit|change|amend|correct|set|move)\b.{0,80}\b(booking|shipment|job|route)\b/,
   update_booking_cargo: /\b(update|edit|change|amend|correct|set|clear)\b.{0,80}\b(cargo|goods|packages?|weight|dimensions?|shipment)\b/,
-  update_booking_container: /\b(update|edit|change|amend|correct|set|clear|record)\b.{0,80}\b(containers?|vgm|tare|reefer|verified gross mass)\b/,
+  update_booking_container: /\b(update|edit|change|amend|correct|set|clear|record)\b.{0,80}\b(containers?|ulds?|vehicles?|trailers?|wagons?|equipment|vgm|tare|reefer|verified gross mass)\b/,
   update_booking_route: /\b(update|edit|change|amend|correct|set|clear|record)\b.{0,80}\b(rout(?:e|ing)|legs?|vessel|voyage|flight|trailer|rail|waybill|bill of lading|departure|arrival|pickup|delivery)\b/,
   change_booking_route_mode: /\b(change|switch|set|correct|update)\b.{0,80}\b(rout(?:e|ing)|legs?)\b.{0,80}\b(mode|sea|air|road|rail|courier|multimodal)\b/,
   update_booking_shipment_value: /\b(update|edit|change|correct|set|clear|record)\b.{0,80}\b(shipment goods value|shipment value|goods value|value of (?:the )?goods)\b/,
