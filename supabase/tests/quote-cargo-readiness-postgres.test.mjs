@@ -10,6 +10,7 @@ import { quoteRoutingModeReviewFixture } from './quote-routing-mode-review-fixtu
 import { quoteSingleLegRoutingFixture } from './quote-single-leg-routing-fixture.mjs'
 import { quoteOverallModeFixture } from './quote-overall-mode-fixture.mjs'
 import { bookingContainerOperationsFixture } from './booking-container-operations-fixture.mjs'
+import { quoteDeliveryRecipientFixture } from './quote-delivery-recipient-fixture.mjs'
 
 const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
 const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
@@ -429,6 +430,7 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
       ${read('20260905195412_quote_overall_mode_route_authority.sql')}
       ${quoteOverallModeFixture()}
       ${bookingContainerOperationsFixture(read)}
+      ${quoteDeliveryRecipientFixture(read)}
     `)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
