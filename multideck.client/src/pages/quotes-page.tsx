@@ -1105,17 +1105,6 @@ const quoteChargeCurrencyDefinitions: readonly QuoteChargeCurrency[] = [
   { code: "CAD", name: "Canadian dollar", symbol: "C$", decimalPlaces: 2, subUnitRatio: 100 },
 ]
 
-const quoteChargeSupplierParties: readonly QuoteChargeParty[] = [
-  { id: "supplier-hellmann", code: "HELWLG", name: "Hellmann Worldwide Logistics", roles: ["supplier"] },
-  { id: "supplier-harbourline", code: "HARFWD", name: "Harbourline Forwarding Ltd", roles: ["supplier"] },
-  { id: "supplier-quayline", code: "QUAPRT", name: "Quayline Port Services", roles: ["supplier"] },
-  { id: "supplier-kobe", code: "KOBGAT", name: "Kobe Gateway Agency", roles: ["supplier"] },
-  { id: "supplier-harbourpoint", code: "HARBRO", name: "Harbourpoint Brokerage", roles: ["supplier"] },
-  { id: "supplier-eastgate", code: "EASCAR", name: "Eastgate Cartage", roles: ["supplier"] },
-  { id: "supplier-carrier-pending", code: "PENDING", name: "Carrier pending", roles: ["supplier"] },
-  { id: "supplier-severn", code: "SEVLOG", name: "Severn Road Logistics", roles: ["supplier"] },
-]
-
 const quoteChargeReferenceRates: Readonly<Record<QuoteCurrency, number>> = {
   GBP: 1,
   USD: 1.25,
@@ -2215,16 +2204,59 @@ function QuoteChargesPanel({
   )
 }
 
+function quoteChargeSupplierIdentity(charge: QuoteCharge, index: number) {
+  if (uuidOrNull(charge.supplierId)) return charge.supplierId!
+  // Keep a saved, unlinked label as evidence; never infer an organisation ID by name.
+  return charge.creditor?.trim() && charge.creditor !== "Supplier pending"
+    ? `recorded-supplier-${charge.id ?? index}` : null
+}
+
+function quoteChargeParties(quote: QuoteRecord, charges: QuoteCharge[], lookups: QuoteWorkflowSources | null): QuoteChargeParty[] {
+  const parties = new Map<string, QuoteChargeParty>()
+  parties.set("", { id: "", code: "Pending", name: "No supplier selected", roles: ["supplier"] })
+  const supplierIds = new Set([...(lookups?.suppliers ?? []), ...(lookups?.carriers ?? []), ...(lookups?.agents ?? [])].map((party) => party.id))
+  for (const organisation of lookups?.organisations ?? []) {
+    if (!uuidOrNull(organisation.id) || (!supplierIds.has(organisation.id) && !organisation.types.some((type) => /supplier|carrier|shipping line|haulier|freight forwarder|\bagents?\b/i.test(type)))) continue
+    parties.set(organisation.id, { id: organisation.id, code: organisation.code || organisation.name, name: organisation.name, roles: ["supplier"] })
+  }
+  if (uuidOrNull(quote.supplierId) && quote.supplier?.trim() && !parties.has(quote.supplierId!)) {
+    parties.set(quote.supplierId!, { id: quote.supplierId!, code: "Selected", name: quote.supplier, roles: ["supplier"] })
+  }
+  charges.forEach((charge, index) => {
+    const id = quoteChargeSupplierIdentity(charge, index)
+    if (id && !parties.has(id)) parties.set(id, { id, code: "Recorded", name: charge.creditor?.trim() || "Recorded supplier", roles: ["supplier"] })
+  })
+  if (quote.customer.trim()) {
+    const id = uuidOrNull(quote.customerId) ?? "customer-current"
+    const previous = parties.get(id)
+    parties.set(id, { id, code: quote.clientCode || quote.customer, name: quote.customer, roles: [...(previous?.roles ?? []), "customer"] })
+  }
+  return [...parties.values()]
+}
+
+function newQuoteChargeRow(quote: QuoteRecord): UnifiedQuoteChargeRow {
+  return {
+    id: crypto.randomUUID(), code: "", description: "New charge",
+    supplierId: uuidOrNull(quote.supplierId),
+    customerId: quote.customer.trim() ? uuidOrNull(quote.customerId) ?? "customer-current" : null,
+    cost: 0, sell: 0, costCurrency: quote.currency, sellCurrency: quote.currency,
+    costRoe: 1, sellRoe: 1, costRoeSource: "rate", sellRoeSource: "rate",
+    calculationBasis: "fixed", quantity: 1,
+  }
+}
+
 function UnifiedQuoteChargesPanel({
   quote,
   charges,
   editable,
   onRowsChange,
+  lookups,
 }: {
   quote: QuoteRecord
   charges: QuoteCharge[]
   editable: boolean
   onRowsChange: (charges: QuoteCharge[]) => void
+  lookups: QuoteWorkflowSources | null
 }) {
   const [financeCurrencies, setFinanceCurrencies] = useState<QuoteChargeCurrency[] | null>(null)
   const [financeRates, setFinanceRates] = useState<ApiFinanceExchangeRate[] | null>(null)
@@ -2266,13 +2298,7 @@ function UnifiedQuoteChargesPanel({
     }
   }, [quote.currency])
 
-  const parties = useMemo<QuoteChargeParty[]>(() => [
-    ...quoteChargeSupplierParties,
-    { id: "customer-current", code: quote.clientCode ?? "CUSTOMER", name: quote.customer, roles: ["customer"] },
-    { id: "customer-cedar", code: "CEDLOO", name: "Cedar & Loom Trading", roles: ["customer"] },
-    { id: "customer-asterline", code: "ASTCOM", name: "Asterline Components", roles: ["customer"] },
-    { id: "customer-northstar", code: "NORTRA", name: "Northstar Trading", roles: ["customer"] },
-  ], [quote.clientCode, quote.customer])
+  const parties = useMemo(() => quoteChargeParties(quote, charges, lookups), [quote, charges, lookups])
 
   const currencies = financeCurrencies ?? quoteChargeCurrencyDefinitions
 
@@ -2348,13 +2374,12 @@ function UnifiedQuoteChargesPanel({
   }, [currencies, financeRates, quote.currency, quote.jobRoes])
 
   const rows = useMemo<UnifiedQuoteChargeRow[]>(() => charges.map((charge, index) => {
-    const supplier = quoteChargeSupplierParties.find((party) => party.name === charge.creditor)
     return {
       id: charge.id ?? `quote-charge-${index + 1}`,
       code: charge.code,
       description: charge.description,
-      supplierId: charge.supplierId ?? supplier?.id ?? null,
-      customerId: charge.customerId ?? "customer-current",
+      supplierId: quoteChargeSupplierIdentity(charge, index),
+      customerId: quote.customer.trim() ? uuidOrNull(quote.customerId) ?? "customer-current" : null,
       cost: charge.costAmount,
       costCurrency: charge.costCurrency,
       sell: charge.sellAmount,
@@ -2369,11 +2394,11 @@ function UnifiedQuoteChargesPanel({
       baseSell: charge.localSell,
       profit: charge.localSell - charge.localCost,
     }
-  }), [charges])
+  }), [charges, quote.customer, quote.customerId])
 
   function updateCharges(nextRows: UnifiedQuoteChargeRow[]) {
-    onRowsChange(nextRows.map((row, index) => {
-      const current = charges.find((charge) => charge.id === row.id) ?? charges[index]
+    onRowsChange(nextRows.map((row) => {
+      const current = charges[rows.findIndex((original) => original.id === row.id)]
       const supplier = parties.find((party) => party.id === row.supplierId)
       const costRoe = row.costRoe && row.costRoe > 0 ? row.costRoe : 0
       const sellRoe = row.sellRoe && row.sellRoe > 0 ? row.sellRoe : 0
@@ -2382,8 +2407,8 @@ function UnifiedQuoteChargesPanel({
         id: row.id,
         code: row.code,
         description: row.description,
-        creditor: supplier?.name ?? current?.creditor ?? "Supplier pending",
-        supplierId: row.supplierId,
+        creditor: row.supplierId ? supplier?.name ?? current?.creditor ?? "" : "Supplier pending",
+        supplierId: uuidOrNull(row.supplierId),
         customerId: row.customerId,
         costCurrency: row.costCurrency as QuoteCurrency,
         costAmount: row.cost,
@@ -2397,7 +2422,7 @@ function UnifiedQuoteChargesPanel({
         calculationBasis: row.calculationBasis ?? current?.calculationBasis ?? "fixed",
         quantity: row.quantity ?? current?.quantity ?? 1,
         localSell: row.baseSell ?? (sellRoe > 0 ? row.sell / sellRoe : 0),
-        department: current?.department ?? quote.department ?? "SEA",
+        department: current?.department ?? quote.department ?? "",
         internalNotes: current?.internalNotes ?? "",
         additionalDetail: current?.additionalDetail ?? "",
       }
@@ -2408,6 +2433,7 @@ function UnifiedQuoteChargesPanel({
     <UnifiedQuoteChargesWorkspace
       rows={rows}
       onRowsChange={updateCharges}
+      createRow={() => newQuoteChargeRow(quote)}
       parties={parties}
       currencies={currencies}
       exchangeRates={exchangeRates}
@@ -7043,6 +7069,7 @@ export function QuoteDetailPage({
           charges={activeCharges}
           editable={workspaceEditable}
           onRowsChange={setDraftCharges}
+          lookups={lookups}
         />
       )
     }

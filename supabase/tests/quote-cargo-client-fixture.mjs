@@ -22,7 +22,8 @@ const ast = ts.createSourceFile('quotes-page.tsx', source, ts.ScriptTarget.Lates
 const names = ['newQuoteDraft', 'quoteUuidPattern', 'millisecondsPerCalendarDay', 'uuidOrNull',
   'quoteContainerRequests', 'quoteRoutingLegs', 'compactQuoteFacts', 'quoteDirectionForSave',
   'calculatedDirectionForQuote', 'quoteSavePayload', 'quoteRecordFromWorkspace',
-  'quoteLifecyclePresentation', 'quoteTransitDays', 'quoteDateInputValue', 'getDateInputValue', 'salesRepresentativeValue']
+  'quoteLifecyclePresentation', 'quoteTransitDays', 'quoteDateInputValue', 'getDateInputValue', 'salesRepresentativeValue',
+  'quoteChargeSupplierIdentity', 'quoteChargeParties', 'newQuoteChargeRow']
 const statements = names.map(name => {
   const node = ast.statements.find(statement => ts.isFunctionDeclaration(statement)
     ? statement.name?.text === name
@@ -30,13 +31,24 @@ const statements = names.map(name => {
   assert.ok(node, `Production mapping ${name} must exist`)
   return node.getText(ast)
 })
-export const mapping = evaluate(`${statements.join('\n')}\nexport { newQuoteDraft, quoteSavePayload, quoteRecordFromWorkspace, salesRepresentativeValue };`, { ...cargo, ...freight, salesRepresentativeOptions: ['AM1 - Maya Stone'] })
+export const mapping = evaluate(`${statements.join('\n')}\nexport { newQuoteDraft, quoteSavePayload, quoteRecordFromWorkspace, salesRepresentativeValue, quoteChargeSupplierIdentity, quoteChargeParties, newQuoteChargeRow, uuidOrNull };`, { ...cargo, ...freight, salesRepresentativeOptions: ['AM1 - Maya Stone'] })
 let openingExpression
+let chargeUpdateFunction
 function visit(node) {
   if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'openedQuote') openingExpression = node.initializer.getText(ast)
+  if (ts.isFunctionDeclaration(node) && node.name?.text === 'updateCharges') chargeUpdateFunction = node.getText(ast)
   ts.forEachChild(node, visit)
 }
 visit(ast)
+assert.ok(chargeUpdateFunction)
+export function updateChargeRows({ quote, charges, rows, parties, nextRows }) {
+  let updated
+  evaluate(`${chargeUpdateFunction}\nupdateCharges(nextRows)`, {
+    quote, charges, rows, parties, nextRows, uuidOrNull: mapping.uuidOrNull,
+    onRowsChange: value => { updated = value },
+  })
+  return updated
+}
 assert.ok(openingExpression?.includes('openQuoteWorkflow'))
 export const openOnce = new Function('openingQuoteRef', 'openQuoteWorkflow', `return (async () => ${openingExpression})()`)
 export const workspace = facts => ({ quote: { reference: 'Q-CARGO', lifecycle: 'draft', shipmentFacts: facts, currency: 'GBP' }, totals: { marginPct: null, profit: 0, cost: 0, sell: 0 } })
