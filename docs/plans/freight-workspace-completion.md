@@ -10,7 +10,7 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 | Workstream | Required outcome | Evidence gate | State |
 | --- | --- | --- | --- |
-| Deployment | Explain failure, restore affected deployment without altering team setup | Vercel failure logs, successful matching build and route smoke test | Investigating |
+| Deployment | Explain failure, restore affected deployment without altering team setup | Vercel failure logs, successful matching build and route smoke test | Branch-scoped configuration cause confirmed in live settings/logs; existing dev READY and approved-host workspace renders; local diagnostic fix tested; newer implementation not released |
 | Shared policy | Consistent mode/direction/service/stage choices, field visibility and validation | Behaviour tests across supported combinations and browser checks | In progress |
 | Booking Details | Control, Parties, Route & schedule, Cargo & equipment sections with persistent job context | Keyboard, narrow/wide and reduced-motion browser checks | Implemented locally; wide browser checked; narrow/keyboard pending |
 | Cargo | Editable multiple lines, dimensions, dangerous goods and equipment allocation | Save/reload, totals, conversion, revised Quote and isolation tests | Multi-line editor, stable save, typed allocation, operator allocation controls and Dexter allocation adapters locally verified; deeper DG and hosted lifecycle pending |
