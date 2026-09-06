@@ -20,3 +20,11 @@ Dexter continues to read the same authoritative readiness and delivery evidence;
 - Current Supabase function documentation and changelog checked. Relevant function-security guidance remains empty search paths and least privilege; no relevant breaking change for this operation was identified.
 
 Deployment and post-apply verification pending in this checkpoint. Full email/PDF/customer acceptance/Booking evidence and the wider goal remain open.
+
+## Development apply result
+
+Fetched the actual development migration ledger into `/tmp/multideck-recipient-release.Qq7zZB`, then staged only this migration. Dry run named exactly that file, no seeds or roles. CLI applied its original `20260906094835` identity; the ledger contains it exactly once. The Docker-dependent local catalogue-cache warning occurred after successful apply and is not a failed database release.
+
+Post-apply readiness is `{ready:true,missing:[],warnings:[]}` with both pre-apply hashes unchanged. Anonymous/authenticated execution of the private readiness helper remains denied. Security advisors have 1,555 existing findings before and after and no new finding keys; this is not a clean-security certification or remediation of existing findings. Hosted Send dialog no longer shows the saved-contact-email readiness blocker; recipient entry is still required before sending.
+
+Merged team dev changes through `0ac3d92` without conflicts; the merged frontend build passes. No other pending repository migrations were applied and no Vercel/team settings changed. Email/acceptance testing is still in progress.
