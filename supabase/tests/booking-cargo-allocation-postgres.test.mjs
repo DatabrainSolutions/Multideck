@@ -4,12 +4,14 @@ import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
+import { stripTypeScriptTypes } from 'node:module'
 
 const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
 const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
 const read = name => readFileSync(new URL(name, import.meta.url), 'utf8')
 const baseline = read('../baseline/public-schema.sql')
 const migration = read('../migrations/20260905223353_booking_cargo_equipment_allocation_boundary.sql')
+const { bookingCargoAllocationPayload } = await import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(read('../../multideck.client/src/lib/booking-cargo-allocations.ts'))).toString('base64')}`)
 const routingMigration = read('../migrations/20260902153715_booking_multi_leg_routes_and_cargo_dimensions.sql')
 function routingFunction(name) {
   const start = routingMigration.indexOf(`create or replace function ${name}(`)
@@ -272,6 +274,28 @@ test('PostgreSQL: precise cargo/equipment allocations, leg scope, canonical save
     assert.notEqual(competing.status, 0)
     assert.match(competing.stderr, /Booking changed\. Reload/)
     assert.equal(sql('select count(*) from booking_api.cargo_equipment_allocations where not is_deleted;').trim(), '1')
+
+    // The real client serializer submits to the canonical RPC, not a substitute
+    // allocation writer. Workspace assembly/Auth remain the declared fixtures.
+    const actor = '10000000-0000-4000-8000-000000000001', job = '50000000-0000-4000-8000-000000000001'
+    const saved = JSON.parse(sql(`select booking_api.workspace_extended('${actor}','ALLOC1');`).trim())
+    const draft = structuredClone(saved)
+    draft.cargoAllocationState.allocations[0].notes = "Operator's exact saved allocation"
+    const payload = bookingCargoAllocationPayload(draft, saved)
+    const literal = value => `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`
+    const updated = JSON.parse(sql(`select public.booking_workflow_save('${actor}','${job}',${literal(payload)});`).trim())
+    assert.equal(updated.cargoAllocationState.allocations[0].notes, "Operator's exact saved allocation")
+    assert.notEqual(updated.booking.updatedAt, saved.booking.updatedAt)
+    const stale = spawnSync(join(bin, 'psql'), args, { input: `select public.booking_workflow_save('${actor}','${job}',${literal(payload)});`, encoding: 'utf8', timeout: 5000 })
+    assert.notEqual(stale.status, 0)
+    assert.match(stale.stderr, /Booking changed\. Reload/)
+    const cleared = structuredClone(updated)
+    cleared.cargoAllocationState.allocations = []
+    const removal = bookingCargoAllocationPayload(cleared, updated)
+    const final = JSON.parse(sql(`select public.booking_workflow_save('${actor}','${job}',${literal(removal)});`).trim())
+    assert.deepEqual(final.cargoAllocationState.allocations, [])
+    assert.equal(sql(`select count(*) from booking_api.cargo_equipment_allocations where id='${updated.cargoAllocationState.allocations[0].id}' and is_deleted;`).trim(), '1')
+    assert.equal(sql(`select "Job_SourceSnapshotJSON"->>'version' from public."Job_Header" where "Job_ID"='${job}';`).trim(), 'accepted original')
   } finally {
     if (started) spawnSync(join(bin, 'pg_ctl'), ['-D', data, '-m', 'immediate', '-w', 'stop'])
     rmSync(directory, { recursive: true, force: true })

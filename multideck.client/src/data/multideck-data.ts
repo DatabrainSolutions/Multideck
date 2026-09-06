@@ -1,5 +1,6 @@
 import ticketAttachmentsSource from "@/components/multideck/ticket-attachments.tsx?raw"
 import quoteCargoEditorSource from "@/components/multideck/quote-details/quote-cargo-editor.tsx?raw"
+import cargoAllocationEditorSource from "@/components/multideck/cargo-allocation-editor.tsx?raw"
 import paginationSource from "@/components/multideck/pagination.tsx?raw"
 import lifecycleNotesSource from "@/components/multideck/lifecycle-notes.tsx?raw"
 import screeningComponentsSource from "@/components/multideck/screening-components.tsx?raw"
@@ -243,6 +244,16 @@ export const galleryComponents = [
     foundOn: [{ label: "New quote", route: "/quotes/new" }, { label: "Quotes", route: "/quotes" }, { label: "Components", route: "/components?component=quote-cargo-editor" }],
     componentCode: quoteCargoEditorSource,
     usageCode: `const [lines, setLines] = useState([newQuoteCargoLine()])\n\n<QuoteCargoEditor\n  lines={lines}\n  editable={!submitted}\n  chargeableWeight={mode === "Air"}\n  onChange={setLines}\n/>`,
+  },
+  {
+    id: "cargo-allocation-editor",
+    name: "Cargo Allocation Editor",
+    category: "Forms",
+    description: "Assign saved goods lines to equipment, with separate balances for each routing leg or the whole journey.",
+    details: "Use inside Booking Cargo & equipment. Quantities stay exact, blanks mean unknown, and legacy links remain separate. The parent owns saving, permissions and stale-update protection. Removal requires confirmation; allocations do not overwrite container totals, VGM or accepted Quotes.",
+    foundOn: [{ label: "Booking details", route: "/bookings/je0991133" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=cargo-allocation-editor" }],
+    componentCode: cargoAllocationEditorSource,
+    usageCode: `<CargoAllocationEditor\n  cargo={workspace.cargo}\n  equipment={workspace.containers}\n  routes={workspace.routes}\n  allocations={workspace.cargoAllocationState?.allocations}\n  legacyLinks={workspace.cargoAllocationState?.legacyUnquantifiedLinks}\n  editable={canEdit && !saving}\n  validationAttempt={validationAttempt}\n  onChange={updateDraftAllocations}\n/>`,
   },
   {
     id: "inline-fields",

@@ -83,6 +83,8 @@ import { Surface } from "./surface"
 import { AnimatedList } from "./animated-list"
 import { setLiveJobStarred, type LiveBooking } from "@/lib/application-data-api"
 import { bookingCargoOtherHandling, bookingCargoHandlingSummary, bookingCargoSafetyConflict } from "@/lib/booking-cargo-handling"
+import { analyseCargoAllocations, bookingCargoAllocationPayload } from "@/lib/booking-cargo-allocations"
+import { CargoAllocationEditor } from "./cargo-allocation-editor"
 import { getQuoteSources, type QuoteOrganisationOption, type QuoteWorkflowSources } from "@/lib/quote-workflow-api"
 import { loadUnlocodeDirectory, unlocodeKind, type UnlocodeDirectoryRecord } from "@/lib/unlocode-directory"
 import {
@@ -2863,6 +2865,8 @@ function BookingContainerDetails({
 }
 
 function BookingRecordDetails({
+  allocationEditor,
+  allocationValidationAttempt = 0,
   currentUser,
   editable,
   locationDirectory,
@@ -2886,6 +2890,8 @@ function BookingRecordDetails({
   record,
   workspace,
 }: {
+  allocationEditor?: ReactNode
+  allocationValidationAttempt?: number
   currentUser?: AuthUserSummary | null
   editable: boolean
   locationDirectory: readonly UnlocodeDirectoryRecord[]
@@ -2910,6 +2916,8 @@ function BookingRecordDetails({
   workspace: BookingWorkflowWorkspace
 }) {
   const { language, t } = useLanguage()
+  const [detailSection, setDetailSection] = useState(allocationValidationAttempt ? "cargo" : "control")
+  useEffect(() => { if (allocationValidationAttempt) setDetailSection("cargo") }, [allocationValidationAttempt])
   const [selectedCargoIndex, setSelectedCargoIndex] = useState(0)
   const [removingCargoIndex, setRemovingCargoIndex] = useState<number | null>(null)
   const [pendingRouteMode, setPendingRouteMode] = useState<{ index: number; mode: string; route: BookingWorkflowRoute } | null>(null)
@@ -3094,7 +3102,7 @@ function BookingRecordDetails({
   }
 
   return (
-    <Tabs defaultValue="control" className="min-w-0 gap-[var(--md-page-stack-gap-compact)]">
+    <Tabs value={detailSection} onValueChange={setDetailSection} className="min-w-0 gap-[var(--md-page-stack-gap-compact)]">
       <div role="status" className={fieldPolicy.routingModeMismatch ? "text-[12px] leading-5 text-[var(--md-text)]" : "sr-only"}>
         {fieldPolicy.routingModeMismatch ? <p>{t("Mode review")}: {t("No routing step uses the overall mode.")} {t("Check Mode in Control and the steps in Route & schedule. Nothing is changed automatically.")}</p> : null}
       </div>
@@ -3463,6 +3471,8 @@ function BookingRecordDetails({
         />
       ) : null}
 
+      {allocationEditor && (fieldPolicy.containers || workspace.cargoAllocationState?.allocations.length || workspace.cargoAllocationState?.legacyUnquantifiedLinks.length)
+        ? <BookingCargoWiseGroup title="Cargo allocation">{allocationEditor}</BookingCargoWiseGroup> : null}
       </TabsContent>
     </Tabs>
   )
@@ -4385,6 +4395,9 @@ function BookingQuoteSyncReviewPanel({
 }
 
 function BookingDetailTabPage({
+  allocationEditor,
+  allocationValidationAttempt,
+  editable,
   activeTab,
   bookingLookups,
   currentUser,
@@ -4414,6 +4427,9 @@ function BookingDetailTabPage({
   record,
   workspace,
 }: {
+  allocationEditor?: ReactNode
+  allocationValidationAttempt?: number
+  editable: boolean
   activeTab: BookingDetailTab
   bookingLookups: QuoteWorkflowSources | null
   currentUser?: AuthUserSummary | null
@@ -4443,7 +4459,7 @@ function BookingDetailTabPage({
   record: BookingDetailRecord
   workspace: BookingWorkflowWorkspace
 }) {
-  if (activeTab === "Details") return <BookingRecordDetails currentUser={currentUser} editable locationDirectory={locationDirectory} lookups={bookingLookups} onCargoChange={onCargoChange} onCargoAdd={onCargoAdd} onCargoRemove={onCargoRemove} onBookingChange={onBookingChange} onContainerAdd={onContainerAdd} onContainerChange={onContainerChange} onContainerRemove={onContainerRemove} onDetailChange={onDetailChange} onPartyChange={onPartyChange} onOrganisationSelect={onOrganisationSelect} onLocationSelect={onLocationSelect} onRouteAdd={onRouteAdd} onRouteChange={onRouteChange} onRouteLocationSelect={onRouteLocationSelect} onRouteOrganisationSelect={onRouteOrganisationSelect} onRouteRemove={onRouteRemove} record={record} workspace={workspace} />
+  if (activeTab === "Details") return <BookingRecordDetails allocationEditor={allocationEditor} allocationValidationAttempt={allocationValidationAttempt} currentUser={currentUser} editable={editable} locationDirectory={locationDirectory} lookups={bookingLookups} onCargoChange={onCargoChange} onCargoAdd={onCargoAdd} onCargoRemove={onCargoRemove} onBookingChange={onBookingChange} onContainerAdd={onContainerAdd} onContainerChange={onContainerChange} onContainerRemove={onContainerRemove} onDetailChange={onDetailChange} onPartyChange={onPartyChange} onOrganisationSelect={onOrganisationSelect} onLocationSelect={onLocationSelect} onRouteAdd={onRouteAdd} onRouteChange={onRouteChange} onRouteLocationSelect={onRouteLocationSelect} onRouteOrganisationSelect={onRouteOrganisationSelect} onRouteRemove={onRouteRemove} record={record} workspace={workspace} />
   if (activeTab === "Documents") return <BookingDocumentsWorkspace record={record} />
   if (activeTab === "Customs") return <BookingCustomsWorkspace customsError={customsError} navigate={navigate} onWorkspaceSaved={onWorkspaceSaved} onViewChange={onCustomsViewChange} readiness={customsReadiness} record={record} view={customsView} />
   if (activeTab === "Finance") return <BookingFinanceWorkspace record={record} />
@@ -4609,6 +4625,7 @@ export function BookingDetailWorkspace({
   const [locationDirectory, setLocationDirectory] = useState<readonly UnlocodeDirectoryRecord[]>([])
   const [loadState, setLoadState] = useState<"loading" | "ready" | "not-found" | "error">("loading")
   const [savingDetails, setSavingDetails] = useState(false)
+  const [allocationValidationAttempt, setAllocationValidationAttempt] = useState(0)
   const [customsReadiness, setCustomsReadiness] = useState<BookingCustomsReadiness | null>(null)
   const [customsView, setCustomsView] = useState<BookingCustomsView>("source")
   const [customsError, setCustomsError] = useState<string | null>(null)
@@ -5106,6 +5123,12 @@ export function BookingDetailWorkspace({
       return
     }
     const workspace = draftWorkspace
+    const allocationIssue = analyseCargoAllocations(workspace.cargo, workspace.containers, workspace.routes, workspace.cargoAllocationState?.allocations ?? []).issues[0]
+    if (allocationIssue) {
+      setAllocationValidationAttempt(attempt => attempt + 1)
+      toast.error(t("Review cargo allocations"), { description: t(allocationIssue.message) })
+      return
+    }
     const route = workspace.routes[0] ?? {}
     const lastRoute = workspace.routes.at(-1) ?? route
     const modeCode = draftBooking.mode === "OCEAN" ? "sea" : draftBooking.mode.toLowerCase()
@@ -5140,6 +5163,7 @@ export function BookingDetailWorkspace({
     setSavingDetails(true)
     try {
       const savedWorkspace = await saveBookingWorkflow(workspace.booking.jobId, {
+        ...bookingCargoAllocationPayload(workspace, loadedRecord.workspace),
         customerId: workspace.booking.customerId ?? null,
         carrierId: workspace.booking.carrierId ?? null,
         supplierId: workspace.booking.supplierId ?? null,
@@ -5310,6 +5334,18 @@ export function BookingDetailWorkspace({
           data-booking-tab-panel
         >
           <BookingDetailTabPage
+            editable={!savingDetails && !applyingQuoteSync}
+            allocationValidationAttempt={allocationValidationAttempt}
+            allocationEditor={draftWorkspace && (draftWorkspace.cargoAllocationState || draftWorkspace.containers.length) ? <CargoAllocationEditor
+              cargo={draftWorkspace.cargo} equipment={draftWorkspace.containers} routes={draftWorkspace.routes}
+              allocations={draftWorkspace.cargoAllocationState?.allocations}
+              legacyLinks={draftWorkspace.cargoAllocationState?.legacyUnquantifiedLinks}
+              editable={!savingDetails && !applyingQuoteSync} validationAttempt={allocationValidationAttempt}
+              onChange={allocations => {
+                if (savingDetails || applyingQuoteSync) return
+                setDraftWorkspace(current => current?.cargoAllocationState ? { ...current, cargoAllocationState: { ...current.cargoAllocationState, allocations } } : current)
+              }}
+            /> : undefined}
             activeTab={activeTab}
             bookingLookups={bookingLookups}
             currentUser={currentUser}

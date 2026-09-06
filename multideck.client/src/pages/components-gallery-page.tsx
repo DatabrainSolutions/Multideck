@@ -10,6 +10,8 @@ import toastSuccessIcon from "@/assets/toasts/toast-success.png"
 import { Button } from "@/components/ui/button"
 import { Iphone } from "@/components/ui/iphone"
 import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
+import { CargoAllocationEditor } from "@/components/multideck/cargo-allocation-editor"
+import type { BookingCargoAllocation } from "@/lib/booking-workflow-api"
 import { newQuoteCargoLine } from "@/lib/quote-cargo"
 import {
   Context,
@@ -324,7 +326,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
@@ -1581,6 +1583,25 @@ const previewPhoneCallProviders = [
   { provider: "3cx" as const, label: "3CX employee calls", detail: "3CX call-detail and transcript collector", state: "not_configured" as const, lastAttemptAt: null, lastSucceededAt: null, lastFailedAt: null, consecutiveFailures: 0, errorCode: null },
 ]
 
+function CargoAllocationEditorPreview() {
+  const cargoId = "00000000-0000-4000-8000-000000000001"
+  const firstEquipment = "00000000-0000-4000-8000-000000000002"
+  const secondEquipment = "00000000-0000-4000-8000-000000000003"
+  const [editable, setEditable] = useState(true)
+  const [validationAttempt, setValidationAttempt] = useState(0)
+  const [allocations, setAllocations] = useState<BookingCargoAllocation[]>(() => [
+    { id: "00000000-0000-4000-8000-000000000004", cargoId, containerId: firstEquipment, routeId: null, packageQuantity: "6", grossWeightKg: "600.25", volumeCbm: "8.125", notes: null, archived: false },
+    { id: "00000000-0000-4000-8000-000000000005", cargoId, containerId: secondEquipment, routeId: null, packageQuantity: null, grossWeightKg: null, volumeCbm: null, notes: null, archived: false },
+  ])
+  return <div className="grid w-full gap-4">
+    <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setEditable(!editable)}>{editable ? "Preview read-only" : "Return to editing"}</Button><Button variant="outline" onClick={() => setValidationAttempt(attempt => attempt + 1)}>Check allocations</Button></div>
+    <CargoAllocationEditor cargo={[{ id: cargoId, description: "Machine parts", packageQuantity: "10", grossWeightKg: "1000.5", volumeCbm: "14.25" }]}
+      equipment={[{ id: firstEquipment, type: "40GP" }, { id: secondEquipment, type: "20GP" }]}
+      routes={[{ id: "00000000-0000-4000-8000-000000000006", mode: "Sea", originUnlocode: "GBFXT", destinationUnlocode: "USNYC" }]}
+      allocations={allocations} editable={editable} validationAttempt={validationAttempt} onChange={setAllocations} />
+  </div>
+}
+
 function QuoteCargoEditorPreview() {
   const [lines, setLines] = useState(() => [{ ...newQuoteCargoLine(), description: "Machine parts", packageQuantity: "2", packageType: "Crates", grossWeightKg: "120.5" }, { ...newQuoteCargoLine(), description: "Spare seals", packageQuantity: "4", packageType: "Cartons", grossWeightKg: "18" }])
   const [editable, setEditable] = useState(true)
@@ -2143,6 +2164,7 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "quote-detail-controls" ? <QuoteDetailControlsPreview /> : null}
       {id === "quote-cargo-editor" ? <QuoteCargoEditorPreview /> : null}
+      {id === "cargo-allocation-editor" ? <CargoAllocationEditorPreview /> : null}
 
       {id === "status-pill" ? (
         <div className="grid w-full max-w-[640px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
