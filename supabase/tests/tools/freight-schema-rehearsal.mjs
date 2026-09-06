@@ -1,12 +1,13 @@
-// Data-free structural rehearsal, never a hosted lifecycle certification.
-// Usage: node .../freight-schema-rehearsal.mjs /absolute/schema-only-dump.sql
+// Schema-only or synthetic populated rehearsal, never hosted certification.
+// Usage: node .../freight-schema-rehearsal.mjs /absolute/schema-only-dump.sql [--populated]
 import assert from 'node:assert/strict'
 import {readFileSync,mkdtempSync,rmSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join,isAbsolute} from 'node:path'
 import {spawnSync} from 'node:child_process'
 import {createHash} from 'node:crypto'
-const [schemaPath]=process.argv.slice(2)
+const [schemaPath,fixtureMode]=process.argv.slice(2)
+assert.ok(!fixtureMode||fixtureMode==='--populated','Only --populated is supported')
 assert.ok(schemaPath&&isAbsolute(schemaPath),'Provide an absolute schema-only dump path')
 const schema=readFileSync(schemaPath,'utf8')
 assert.ok(schema.includes('-- PostgreSQL database dump'),'Expected a pg_dump schema file')
@@ -42,6 +43,10 @@ try{
   stage='current application schema'
   sql(schema)
   console.log('Current application schema restored; managed-service fixtures remain explicit.')
+  if(fixtureMode){
+    stage='synthetic populated fixtures'
+    sql(readFileSync(new URL('../fixtures/freight-chain-before.sql',import.meta.url),'utf8'))
+  }
   for(const {file} of manifest.pendingFreightMigrations){
     assert.match(file,/^\d{14}_[a-z0-9_]+\.sql$/)
     stage=file;sql(readFileSync(new URL('migrations/'+file,root),'utf8'));applied.push(file)
@@ -61,9 +66,18 @@ try{
         or not has_function_privilege('service_role',signature,'execute') then raise exception 'Service boundary incorrect: %',signature;end if;
     end loop;
   end $$;`)
-  console.log(JSON.stringify({status:'structural_rehearsal_passed',schemaSha256:createHash('sha256').update(schema).digest('hex'),applied,
+  if(fixtureMode){
+    stage='populated preservation assertions'
+    sql(readFileSync(new URL('../fixtures/freight-chain-after.sql',import.meta.url),'utf8'))
+  }
+  console.log(JSON.stringify({status:fixtureMode?'populated_rehearsal_passed':'structural_rehearsal_passed',schemaSha256:createHash('sha256').update(schema).digest('hex'),applied,
     migrationHashes:files.map(file=>({file,sha256:createHash('sha256').update(readFileSync(new URL('migrations/'+file,root))).digest('hex')})),
-    postChainChecks:['typed cargo tables','typed cargo RLS','finalization service boundary','allocation action service boundary','quote revision service boundary'],hostedLifecycleVerified:false}))
+    postChainChecks:['typed cargo tables','typed cargo RLS','finalization service boundary','allocation action service boundary','quote revision service boundary'],
+    populatedChecks:fixtureMode?['Quote version and header preservation','Booking cargo equipment route and membership preservation',
+      'no invented financial values or allocations','exact typed projection with zero and unknown distinctions',
+      'existing cargo registry conflict update','unrelated registry and watch signal preservation','submitted mutation and deletion denial','invalid draft cargo rejection']:[],
+    fixtureHashes:fixtureMode?['before','after'].map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-chain-'+name+'.sql',import.meta.url))).digest('hex')})):[],
+    hostedLifecycleVerified:false}))
 }catch(error){
   console.error(JSON.stringify({status:'stopped',stage,applied,error:error.message}))
   process.exitCode=1
