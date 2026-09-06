@@ -8,6 +8,18 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 ## Delivery and evidence ledger
 
+6 September selected-route revision checkpoint: reproduced and corrected a
+cleared accepted ETD that remained on the Booking route, plus the corresponding
+selected ETA/carrier/service/address clear path and stale location-code fallback.
+The 25-case route matrix checks selected versus retained fields, actual-date and
+operational evidence preservation, submitted snapshots, audit and retries.
+The focused 13-test run and a populated rehearsal of the retained application
+schema with 31 freight migrations pass. Both detail/route clear migrations are
+local only; fresh hosted parity, release and browser readback remain pending.
+Customs/iCustoms is potentially live and excluded from mutation; Quote/Booking
+data is internal testing. Calculator integration, logo work and tracking remain
+deferred. [Evidence and limits](../release/2026-09-06-quote-route-clear-evidence.md).
+
 6 September accepted-revision checkpoint: a new executable regression proved that selecting cleared terms could leave the old wording in Booking compatibility details even after the review completed. The local migration now preserves explicit clears for selected detail fields and leaves unselected fields alone. Twelve null/empty/whitespace cases cover four fields through the canonical database apply/read chain; the combined 13-test run passes. No hosted migration or data write was performed. Full-schema rehearsal, hosted readback and the existing dedicated Dexter accepted-revision adapter gap remain release gates. [Evidence and limits](../release/2026-09-06-quote-revision-clear-evidence.md).
 
 6 September scope clarification: the user explicitly reconfirmed the **broader freight goal**. PDF logo work is deferred unless it directly blocks Quote sending or Booking creation; do not resume renderer investigation or deploy the prior local logo-source correction as part of cosmetic work. Tracking integration remains deferred separately.

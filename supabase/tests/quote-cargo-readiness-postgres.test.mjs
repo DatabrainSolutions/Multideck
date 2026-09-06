@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { quoteCargoReviewFixture } from './quote-cargo-review-fixture.mjs'
 import { quoteDetailClearAssertions } from './quote-detail-clear-fixture.mjs'
+import { quoteRouteClearAssertions } from './quote-route-clear-fixture.mjs'
 import { bookingShipmentValueFixture } from './booking-shipment-value-fixture.mjs'
 import { quoteRoutingModeReviewFixture } from './quote-routing-mode-review-fixture.mjs'
 import { quoteSingleLegRoutingFixture } from './quote-single-leg-routing-fixture.mjs'
@@ -431,6 +432,8 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
       ${quoteRoutingModeReviewFixture(read, sqlFunction, false)}
       ${read('20260905195412_quote_overall_mode_route_authority.sql')}
       ${quoteOverallModeFixture()}
+      ${read('20260906122039_quote_sync_selected_route_clears.sql')}
+      ${quoteRouteClearAssertions}
       ${bookingContainerOperationsFixture(read)}
       ${quoteDeliveryRecipientFixture(read)}
     `)
