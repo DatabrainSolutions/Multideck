@@ -1,8 +1,11 @@
 import type {
+  BookingHostCandidate,
   BookingLink,
   CalendarAvailabilityPreferences,
   CalendarEvent,
   CalendarWorkspace,
+  ExternalEventResponse,
+  ExternalEventPatch,
   ManagedMeeting,
   MeetingDraft,
   MeetingEmailTemplate,
@@ -37,6 +40,7 @@ type PreviewManaged = {
 
 type PreviewState = {
   meetings: CalendarEvent[]
+  externalEvents?: CalendarEvent[]
   bookingLinks: BookingLink[]
   availability: CalendarAvailabilityPreferences
   holds: PreviewHold[]
@@ -91,7 +95,7 @@ function initialState(): PreviewState {
     bookingLinks: [{
       id: "preview-booking-planning", organiserSlug: "harry", slug: "planning-call", title: "30-minute planning call",
       description: "Choose a time to talk through your next shipment or follow-up.", durationMinutes: 30, provider: "multideck",
-      location: null, status: "active", availability: null, minimumNoticeMinutes: null, bookingHorizonDays: null,
+      location: null, status: "active", kind: "one_on_one", hosts: [], availability: null, minimumNoticeMinutes: null, bookingHorizonDays: null,
       bufferBeforeMinutes: null, bufferAfterMinutes: null,
       questions: [{ id: "company", label: "Company", type: "short_text", builtIn: true }],
       rescheduleCutoffMinutes: 120, cancellationCutoffMinutes: 120, path: "/book/harry/planning-call", updatedAt: new Date().toISOString(),
@@ -150,8 +154,46 @@ function bookingByPath(state: PreviewState, organiserSlug: string, bookingSlug: 
   return link
 }
 
-function previewExternalEvents(): CalendarEvent[] {
-  return [{ id: "preview-busy", title: "Busy", startAt: atDay(2, 14), endAt: atDay(2, 15), status: "confirmed", provider: "calendar", colour: "neutral", canEdit: false, private: true }]
+function previewExternalEvents(state: PreviewState): CalendarEvent[] {
+  return state.externalEvents ?? [
+    { id: "preview-busy", title: "Busy", startAt: atDay(2, 14), endAt: atDay(2, 15), timeZone: state.availability.timeZone, status: "confirmed", provider: "calendar", calendarSource: "google", colour: "blue", canEdit: false, canRespond: true, rsvpResponse: "needs_action", private: true },
+    { id: "preview-google-standup", title: "Ops stand-up", startAt: atDay(3, 9), endAt: atDay(3, 9, 30), timeZone: state.availability.timeZone, status: "confirmed", provider: "calendar", calendarSource: "google", colour: "blue", joinUrl: "https://meet.google.com/abc-defg-hij", canEdit: true, canRespond: false, rsvpResponse: "accepted" },
+  ]
+}
+
+export function updatePreviewExternalEvent(id: string, input: ExternalEventPatch) {
+  const state = readState()
+  const events = previewExternalEvents(state)
+  const index = events.findIndex((event) => event.id === id)
+  if (index < 0) throw new Error("That calendar event could not be found.")
+  if (input.action === "cancel") {
+    state.externalEvents = events.filter((event) => event.id !== id)
+    writeState(state)
+    return { ...events[index], status: "cancelled" as const }
+  }
+  const startAt = input.startAt ?? events[index].startAt
+  const endAt = input.endAt ?? events[index].endAt
+  if (Date.parse(endAt) <= Date.parse(startAt)) throw new Error("The event must finish after it starts.")
+  const next: CalendarEvent = { ...events[index], startAt, endAt, title: events[index].private ? events[index].title : (input.title?.trim() || events[index].title) }
+  state.externalEvents = events.map((event) => event.id === id ? next : event)
+  writeState(state)
+  return next
+}
+
+export function respondToPreviewExternalEvent(id: string, response: ExternalEventResponse) {
+  const state = readState()
+  const events = previewExternalEvents(state)
+  const current = events.find((event) => event.id === id)
+  if (!current) throw new Error("That calendar invitation could not be found.")
+  if (!current.canRespond) throw new Error("This event is not an invitation you can answer.")
+  const next: CalendarEvent = {
+    ...current,
+    rsvpResponse: response,
+    participants: current.participants?.map((participant) => participant.self ? { ...participant, response } : participant),
+  }
+  state.externalEvents = events.map((event) => event.id === id ? next : event)
+  writeState(state)
+  return next
 }
 
 function zonedParts(value: number, timeZone: string) {
@@ -192,7 +234,7 @@ function isPreviewSlotAvailable(state: PreviewState, link: BookingLink, start: n
   const overlaps = (from: string, until: string) => blockedStart < Date.parse(until) && blockedEnd > Date.parse(from)
   if (state.meetings.some((meeting) => meeting.id !== excludedMeetingId && meeting.status !== "cancelled" && overlaps(meeting.startAt, meeting.endAt))) return false
   if (state.holds.some((hold) => !hold.meetingId && hold.id !== excludedHoldId && Date.parse(hold.expiresAt) > Date.now() && overlaps(hold.startAt, hold.endAt))) return false
-  return !previewExternalEvents().some((event) => overlaps(event.startAt, event.endAt))
+  return !previewExternalEvents(state).some((event) => overlaps(event.startAt, event.endAt))
 }
 
 export function getPreviewCalendarWorkspace(start: string, end: string): CalendarWorkspace {
@@ -203,7 +245,7 @@ export function getPreviewCalendarWorkspace(start: string, end: string): Calenda
     range: { start, end },
     timeZone: state.availability.timeZone,
     meetings: state.meetings.filter((meeting) => meeting.status !== "cancelled" && Date.parse(meeting.endAt) > from && Date.parse(meeting.startAt) < until),
-    externalEvents: previewExternalEvents(),
+    externalEvents: previewExternalEvents(state).filter((event) => Date.parse(event.endAt) > from && Date.parse(event.startAt) < until),
     ribbons: [
       { id: "preview-delivery", kind: "delivery", title: "MD-22479 delivers", at: atDay(1, 12), route: "/bookings", tone: "green" },
       { id: "preview-follow-up", kind: "crm_follow_up", title: "Follow up Northstar", at: atDay(1, 12), route: "/crm/leads", tone: "amber" },
@@ -283,13 +325,33 @@ export function savePreviewAvailability(availability: CalendarAvailabilityPrefer
   return { saved: true, availability }
 }
 
-export function createPreviewBookingLink(input: Omit<Partial<BookingLink>, "id" | "path" | "updatedAt"> & { title: string; durationMinutes: number; provider: BookingLink["provider"]; questions: BookingLink["questions"]; slug?: string }) {
+const previewHostCandidates: BookingHostCandidate[] = [
+  { userId: "preview-self", name: "Harry Phillips", email: "harry@multideck.app", detail: "Founder", self: true, connectedProviders: ["google"] },
+  { userId: "preview-priya", name: "Priya Shah", email: "priya@multideck.app", detail: "Operations lead", self: false, connectedProviders: ["google", "microsoft"] },
+  { userId: "preview-tom", name: "Tom Ellis", email: "tom@multideck.app", detail: "Customs", self: false, connectedProviders: [] },
+  { userId: "preview-mei", name: "Mei Lin", email: "mei@multideck.app", detail: "Sales", self: false, connectedProviders: ["zoom"] },
+]
+
+export function listPreviewBookingHostCandidates() {
+  return { hosts: previewHostCandidates }
+}
+
+function previewHosts(kind: BookingLink["kind"] | undefined, hostUserIds: string[] | undefined, fallback: BookingLink["hosts"]) {
+  if (!kind || kind === "one_on_one") return []
+  if (!hostUserIds) return fallback
+  const ids = [...new Set(["preview-self", ...hostUserIds])]
+  if (ids.length < 2) throw new Error("Round robin and collective booking links need at least two hosts.")
+  return ids.flatMap((id) => { const host = previewHostCandidates.find((candidate) => candidate.userId === id); return host ? [{ userId: host.userId, name: host.name, email: host.email }] : [] })
+}
+
+export function createPreviewBookingLink(input: Omit<Partial<BookingLink>, "id" | "path" | "updatedAt"> & { title: string; durationMinutes: number; provider: BookingLink["provider"]; questions: BookingLink["questions"]; slug?: string; hostUserIds?: string[] }) {
   const state = readState()
   const slug = slugify(input.slug || input.title)
   if (state.bookingLinks.some((item) => item.organiserSlug === "harry" && item.slug === slug)) throw new Error("That local booking-link address is already in use.")
   const link: BookingLink = {
     id: crypto.randomUUID(), organiserSlug: "harry", slug, title: input.title.trim(), description: input.description ?? null,
     durationMinutes: input.durationMinutes, provider: input.provider, location: input.location ?? null, status: "active",
+    kind: input.kind ?? "one_on_one", hosts: previewHosts(input.kind, input.hostUserIds, input.hosts ?? []),
     availability: input.availability ?? null, minimumNoticeMinutes: input.minimumNoticeMinutes ?? null,
     bookingHorizonDays: input.bookingHorizonDays ?? null, bufferBeforeMinutes: input.bufferBeforeMinutes ?? null,
     bufferAfterMinutes: input.bufferAfterMinutes ?? null, questions: input.questions,
@@ -301,11 +363,15 @@ export function createPreviewBookingLink(input: Omit<Partial<BookingLink>, "id" 
   return link
 }
 
-export function updatePreviewBookingLink(id: string, input: Partial<BookingLink>) {
+export function updatePreviewBookingLink(id: string, input: Partial<BookingLink> & { hostUserIds?: string[] }) {
   const state = readState()
   const index = state.bookingLinks.findIndex((link) => link.id === id)
   if (index < 0) throw new Error("That local booking link could not be found.")
-  state.bookingLinks[index] = { ...state.bookingLinks[index], ...input, id, updatedAt: new Date().toISOString() }
+  const { hostUserIds, ...patch } = input
+  const current = state.bookingLinks[index]
+  const kind = patch.kind ?? current.kind
+  const hosts = patch.kind !== undefined || hostUserIds !== undefined ? previewHosts(kind, hostUserIds ?? current.hosts.map((host) => host.userId), current.hosts) : current.hosts
+  state.bookingLinks[index] = { ...current, ...patch, kind, hosts, id, updatedAt: new Date().toISOString() }
   writeState(state)
   return state.bookingLinks[index]
 }
@@ -336,7 +402,7 @@ export function getPreviewPublicBooking(organiserSlug: string, bookingSlug: stri
   const link = bookingByPath(readState(), organiserSlug, bookingSlug)
   return {
     title: link.title, description: link.description, durationMinutes: link.durationMinutes, provider: link.provider,
-    location: link.location, organiser: { name: "Harry Phillips" }, questions: link.questions, status: link.status,
+    location: link.location, organiser: { name: "Harry Phillips" }, kind: link.kind, hostNames: link.hosts.map((host) => host.name), questions: link.questions, status: link.status,
     branding: { displayName: "Demo Organisation", logoUrl: null, primaryColor: "#0A7068", secondaryColor: "#164E49", backgroundColor: "#F3F4F4", surfaceColor: "#FFFFFF", textColor: "#292929", appearanceMode: "light", cornerStyle: "rounded", emailSignOff: "Demo Organisation · Freight handled with care" },
     workspaceName: "Demo Organisation",
     localPreview: true,
@@ -450,7 +516,7 @@ export function getPreviewManagedSlots(token: string, from: string, until: strin
   const link: BookingLink = existing ?? {
     id: "preview-managed-availability", organiserSlug: "preview", slug: "managed", title: meeting.title, description: meeting.agenda ?? null,
     durationMinutes, provider: meeting.provider === "calendar" ? "multideck" : meeting.provider, location: meeting.location ?? null, status: "active",
-    availability: null, minimumNoticeMinutes: null, bookingHorizonDays: null, bufferBeforeMinutes: null, bufferAfterMinutes: null,
+    kind: "one_on_one", hosts: [], availability: null, minimumNoticeMinutes: null, bookingHorizonDays: null, bufferBeforeMinutes: null, bufferAfterMinutes: null,
     questions: [], rescheduleCutoffMinutes: 0, cancellationCutoffMinutes: 0, path: "", updatedAt: new Date().toISOString(),
   }
   const slots: string[] = []

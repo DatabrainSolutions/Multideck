@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 
 /**
  * World-clock maths for the dashboard. Formatters are the expensive part of

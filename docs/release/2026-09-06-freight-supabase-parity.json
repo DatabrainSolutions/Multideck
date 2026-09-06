@@ -1,0 +1,320 @@
+{
+  "checkedAt": "2026-09-06T07:27:56.249Z",
+  "projectId": "aqtwypsuijxlnvtxpuxe",
+  "localCheckpoint": "09ccd6d",
+  "pendingFreightMigrations": [
+    {
+      "file": "20260905110317_booking_stable_cargo_equipment_identity.sql",
+      "version": "20260905110317",
+      "name": "booking_stable_cargo_equipment_identity",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905112211_dexter_booking_cargo_parity.sql",
+      "version": "20260905112211",
+      "name": "dexter_booking_cargo_parity",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905115938_quote_version_structured_cargo.sql",
+      "version": "20260905115938",
+      "name": "quote_version_structured_cargo",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905123223_quote_cargo_issue_readiness.sql",
+      "version": "20260905123223",
+      "name": "quote_cargo_issue_readiness",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905123929_quote_booking_cargo_handover.sql",
+      "version": "20260905123929",
+      "name": "quote_booking_cargo_handover",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905125327_quote_cargo_revision_comparison.sql",
+      "version": "20260905125327",
+      "name": "quote_cargo_revision_comparison",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905130449_quote_cargo_revision_persistence.sql",
+      "version": "20260905130449",
+      "name": "quote_cargo_revision_persistence",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905132442_quote_cargo_review_integration.sql",
+      "version": "20260905132442",
+      "name": "quote_cargo_review_integration",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905151617_booking_shipment_goods_value.sql",
+      "version": "20260905151617",
+      "name": "booking_shipment_goods_value",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905160621_quote_open_structured_cargo.sql",
+      "version": "20260905160621",
+      "name": "quote_open_structured_cargo",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905163327_quote_cargo_safety_summary.sql",
+      "version": "20260905163327",
+      "name": "quote_cargo_safety_summary",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905172223_booking_cargo_decimal_boundary.sql",
+      "version": "20260905172223",
+      "name": "booking_cargo_decimal_boundary",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905182616_booking_route_single_save_authority.sql",
+      "version": "20260905182616",
+      "name": "booking_route_single_save_authority",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905183528_booking_route_mode_reference_history.sql",
+      "version": "20260905183528",
+      "name": "booking_route_mode_reference_history",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905185420_quote_routing_mode_review_guard.sql",
+      "version": "20260905185420",
+      "name": "quote_routing_mode_review_guard",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905192002_quote_single_leg_routing_authority.sql",
+      "version": "20260905192002",
+      "name": "quote_single_leg_routing_authority",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905195412_quote_overall_mode_route_authority.sql",
+      "version": "20260905195412",
+      "name": "quote_overall_mode_route_authority",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905201222_booking_container_operational_values.sql",
+      "version": "20260905201222",
+      "name": "booking_container_operational_values",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905205443_dexter_booking_container_parity.sql",
+      "version": "20260905205443",
+      "name": "dexter_booking_container_parity",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905210719_dexter_booking_routing_parity.sql",
+      "version": "20260905210719",
+      "name": "dexter_booking_routing_parity",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905212002_dexter_route_mode_approval.sql",
+      "version": "20260905212002",
+      "name": "dexter_route_mode_approval",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905213832_dexter_document_evidence_envelope.sql",
+      "version": "20260905213832",
+      "name": "dexter_document_evidence_envelope",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905214653_dexter_shipment_value_parity.sql",
+      "version": "20260905214653",
+      "name": "dexter_shipment_value_parity",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905220124_quote_draft_cargo_edit_boundary.sql",
+      "version": "20260905220124",
+      "name": "quote_draft_cargo_edit_boundary",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905221303_dexter_quote_cargo_parity.sql",
+      "version": "20260905221303",
+      "name": "dexter_quote_cargo_parity",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905223353_booking_cargo_equipment_allocation_boundary.sql",
+      "version": "20260905223353",
+      "name": "booking_cargo_equipment_allocation_boundary",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260905224722_booking_cargo_allocation_workspace.sql",
+      "version": "20260905224722",
+      "name": "booking_cargo_allocation_workspace",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260906060021_dexter_booking_allocation_parity.sql",
+      "version": "20260906060021",
+      "name": "dexter_booking_allocation_parity",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    },
+    {
+      "file": "20260906062554_booking_equipment_kind_preservation.sql",
+      "version": "20260906062554",
+      "name": "booking_equipment_kind_preservation",
+      "exactVersionPresent": false,
+      "sameNameVersions": []
+    }
+  ],
+  "schemaProbes": {
+    "quoteVersionCargo": null,
+    "bookingCargoAllocations": null
+  },
+  "deployedFunctions": [
+    {
+      "slug": "agent-dexter",
+      "version": 156,
+      "updated_at": 1788520298467,
+      "status": "ACTIVE"
+    },
+    {
+      "slug": "quotes-workflow",
+      "version": 73,
+      "updated_at": 1788537785799,
+      "status": "ACTIVE"
+    },
+    {
+      "slug": "quote-response",
+      "version": 39,
+      "updated_at": 1788505389122,
+      "status": "ACTIVE"
+    },
+    {
+      "slug": "bookings-workflow",
+      "version": 39,
+      "updated_at": 1788512787019,
+      "status": "ACTIVE"
+    }
+  ],
+  "sourceMarkers": [
+    {
+      "slug": "quotes-workflow",
+      "name": "functions/_shared/quote-pdf.ts",
+      "marker": "quote-document-cargo.ts",
+      "present": false
+    },
+    {
+      "slug": "agent-dexter",
+      "name": "functions/agent-dexter/index.ts",
+      "marker": "booking-allocation-review.ts",
+      "present": false
+    },
+    {
+      "slug": "quotes-workflow",
+      "name": "functions/quotes-workflow/index.ts",
+      "marker": "quote-document-cargo.ts",
+      "present": false
+    }
+  ],
+  "securityBefore": [
+    {
+      "category": "INFO/rls_enabled_no_policy",
+      "count": 1312
+    },
+    {
+      "category": "WARN/function_search_path_mutable",
+      "count": 64
+    },
+    {
+      "category": "WARN/anon_security_definer_function_executable",
+      "count": 20
+    },
+    {
+      "category": "WARN/authenticated_security_definer_function_executable",
+      "count": 155
+    },
+    {
+      "category": "WARN/auth_leaked_password_protection",
+      "count": 1
+    }
+  ],
+  "securityAfter": [
+    {
+      "category": "INFO/rls_enabled_no_policy",
+      "count": 1312
+    },
+    {
+      "category": "WARN/function_search_path_mutable",
+      "count": 64
+    },
+    {
+      "category": "WARN/anon_security_definer_function_executable",
+      "count": 19
+    },
+    {
+      "category": "WARN/authenticated_security_definer_function_executable",
+      "count": 154
+    },
+    {
+      "category": "WARN/auth_leaked_password_protection",
+      "count": 1
+    }
+  ],
+  "correction": {
+    "migration": "20260906072644_quote_finalization_service_boundary",
+    "anonExecute": false,
+    "authenticatedExecute": false,
+    "serviceRoleExecute": true,
+    "bodyHashBefore": "e4fff6b43500f08d3813651d2e24442e",
+    "bodyHashAfter": "e4fff6b43500f08d3813651d2e24442e",
+    "scope": "ACL only; no record mutation or function body change"
+  },
+  "limitations": [
+    "Migration-name/ID absence is not full schema equivalence testing.",
+    "Source-marker checks prove selected feature divergence, not complete bundle equality.",
+    "Advisor warnings are untriaged unless explicitly reviewed; RLS-without-policy is not automatically a vulnerability.",
+    "No hosted email send or customer-response mutation was performed.",
+    "No other tenant or Vercel/team settings changed."
+  ]
+}

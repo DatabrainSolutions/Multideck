@@ -8,7 +8,7 @@ const sidebar = readFileSync(new URL("../src/components/multideck/app-sidebar.ts
 const topBar = readFileSync(new URL("../src/components/multideck/top-bar.tsx", import.meta.url), "utf8")
 const navigation = readFileSync(new URL("../src/data/navigation-data.ts", import.meta.url), "utf8")
 
-test("Deals board and CRM sidebar counts come from authenticated lists and New deal opens lead conversion", () => {
+test("Deals board uses authenticated lists, sidebar omits totals, and New deal opens lead conversion", () => {
   const dealsSection = dealsPage.slice(dealsPage.indexOf("export function CrmDealsPage"))
   assert.match(dealApi, /multideck_crm_deal_register_page/)
   assert.match(dealsSection, /listDealsPage\(\{/)
@@ -20,11 +20,7 @@ test("Deals board and CRM sidebar counts come from authenticated lists and New d
   assert.match(dealsSection, /function startDealFromLead\(leadId: string\)/)
   assert.match(dealsSection, /const path = `\/crm\/leads\/\$\{encodeURIComponent\(leadId\)\}\/convert`/)
   assert.match(dealsSection, /if \(navigate\) navigate\(path\)/)
-  assert.match(sidebar, /import \{ listLeadsPage \} from "@\/lib\/lead-api"/)
-  assert.match(sidebar, /listLeadsPage\(\{ limit: 1, offset: 0 \}\)/)
-  assert.match(sidebar, /listDealsPage\(\{ limit: 1, offset: 0 \}\)/)
-  assert.match(sidebar, /setCrmLeadCount\(leads\.status === "fulfilled" \? leads\.value\.total : null\)/)
-  assert.match(sidebar, /setCrmDealCount\(deals\.status === "fulfilled" \? deals\.value\.total : null\)/)
+  assert.doesNotMatch(sidebar, /listLeadsPage|listDealsPage|crmLeadCount|crmDealCount/)
   const crmNavigation = navigation.slice(navigation.indexOf('id: "sales-crm"'), navigation.indexOf('id: "rates-contracts"'))
   assert.doesNotMatch(crmNavigation, /label: "Leads", value:/)
   assert.doesNotMatch(crmNavigation, /label: "Deals", value:/)

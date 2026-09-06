@@ -1,3 +1,5 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AiBrain, ArrowRight, Mail, RefreshCw, UserRoundCheck, UsersRound } from "@/components/icons/hugeicons"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
@@ -14,7 +16,6 @@ import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-
 
 const consentScopes = ["All", "Opted in", "Opted out"] as const
 type ConsentScope = typeof consentScopes[number]
-const contactPageSize = 50
 const emptyContactSummary: ContactRegisterPage["summary"] = { contacts: 0, recentlyContacted: 0, marketingOptedIn: 0, marketingOptedOut: 0 }
 const emptyContactFacets: ContactRegisterPage["facets"] = { accounts: [], channels: [] }
 
@@ -33,6 +34,7 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
   const [dexterOpen, setDexterOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [offset, setOffset] = useState(0)
+  const [contactPageSize, setContactPageSize] = useState(defaultPaginationPageSize)
   const [total, setTotal] = useState(0)
   const [summary, setSummary] = useState(emptyContactSummary)
   const [facets, setFacets] = useState(emptyContactFacets)
@@ -70,7 +72,7 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
       })
       .catch((error) => { console.error("Contacts could not be loaded.", error); if (active) setState("error") })
     return () => { active = false }
-  }, [accountFilter, channelFilter, consentFilter, debouncedQuery, offset, reloadToken, sort])
+  }, [accountFilter, channelFilter, consentFilter, contactPageSize, debouncedQuery, offset, reloadToken, sort])
 
   useEffect(() => subscribeTopBarAction(topBarActionEvents.createCrmContact, () => setCreateOpen(true)), [])
 
@@ -125,12 +127,22 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
         exportConfig={{
           fileName: "crm-contacts",
           recordCategory: "Contact details",
+          register: {
+            dateLabel: "Last contact date",
+            dateValue: (contact) => contact.lastContactAt,
+            busy: query.trim() !== debouncedQuery,
+            loadAllRows: (signal) => collectExportPages((page) => listContactsPage({
+              search: debouncedQuery,
+              consentScope: consentFilter === "Opted in" ? "opted_in" : consentFilter === "Opted out" ? "opted_out" : "all",
+              accountId: accountFilter, channel: channelFilter, sort, ...page,
+            }, { forceRefresh: true }), (contact) => contact.id, signal),
+          },
           loadRecords: (selectedContacts) => Promise.all(selectedContacts.map((contact) => getContact(contact.id))),
         }}
         onRowClick={(contact) => navigate(`/crm/contacts/${contact.id}`)}
         rowClassName="group hover:bg-[var(--md-hover)]"
         serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "contact", direction: "asc" }); setOffset(0) } }}
-        pagination={{ offset, limit: contactPageSize, total, loading: state === "loading", onOffsetChange: setOffset }}
+        pagination={{ offset, limit: contactPageSize, total, loading: state === "loading", onOffsetChange: setOffset, onLimitChange: setContactPageSize, error: state === "error" }}
         compactToolbar
         toolbarTabs={<RegisterViewSwitch options={consentScopes} value={consentFilter} onChange={setConsentFilter} counts={{ All: summary.contacts, "Opted in": optedIn, "Opted out": optedOut }} ariaLabel="Marketing consent filter" compact />}
         toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search contacts" placeholder="Search contacts…" className="sm:w-[180px]" />}

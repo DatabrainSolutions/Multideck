@@ -8,6 +8,8 @@ Deno.test("accepts the explicit quote workflow actions", () => {
   assertEquals(parseAction("issue-draft"), "issue-draft")
   assertEquals(parseAction("issue-preview"), "issue-preview")
   assertEquals(parseAction("issue"), "issue")
+  assertEquals(parseAction("follow-up-settings"), "follow-up-settings")
+  assertEquals(parseAction("save-follow-up-settings"), "save-follow-up-settings")
   assertEquals(parseLifecycleAction("accepted"), "accepted")
 })
 

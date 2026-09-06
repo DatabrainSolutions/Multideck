@@ -364,16 +364,16 @@ async function organisationFoundation(admin: any, organisationId: string, profil
   const secondError = [capabilityResult, weeklyHoursResult, overrideResult, officeResult, targetOrganisationResult, targetContactResult].find((result) => result.error)?.error
   if (secondError) throw new HttpError(500, secondError.message)
 
-  const addressTypeMap = new Map(addressTypes.map((item: Row) => [item.sys_AddressType_ID, item]))
+  const addressTypeMap = new Map<string, Row>(addressTypes.map((item: Row) => [item.sys_AddressType_ID, item]))
   const capabilitiesByAddress = new Map<string, Row[]>()
   const hoursByAddress = new Map<string, Row[]>()
   const overridesByAddress = new Map<string, Row[]>()
   for (const item of capabilityResult.data ?? []) capabilitiesByAddress.set(item.OrgAdd_ID, [...(capabilitiesByAddress.get(item.OrgAdd_ID) ?? []), item])
   for (const item of weeklyHoursResult.data ?? []) hoursByAddress.set(item.OrgAddHours_OrgAddID, [...(hoursByAddress.get(item.OrgAddHours_OrgAddID) ?? []), item])
   for (const item of overrideResult.data ?? []) overridesByAddress.set(item.OrgAddOverride_OrgAddID, [...(overridesByAddress.get(item.OrgAddOverride_OrgAddID) ?? []), item])
-  const officeMap = new Map((officeResult.data ?? []).map((item: Row) => [item.Office_ID, item]))
-  const targetOrganisationMap = new Map((targetOrganisationResult.data ?? []).map((item: Row) => [item.Org_id, item]))
-  const targetContactMap = new Map((targetContactResult.data ?? []).map((item: Row) => [item.OrgContact_ID, item]))
+  const officeMap = new Map<string, Row>((officeResult.data ?? []).map((item: Row) => [item.Office_ID, item]))
+  const targetOrganisationMap = new Map<string, Row>((targetOrganisationResult.data ?? []).map((item: Row) => [item.Org_id, item]))
+  const targetContactMap = new Map<string, Row>((targetContactResult.data ?? []).map((item: Row) => [item.OrgContact_ID, item]))
 
   return {
     officeAssignments: assignments.flatMap((assignment: Row) => {
@@ -596,7 +596,7 @@ async function contactDetail(admin: any, companyId: string, userId: string, perm
     ? await admin.from("Org_Master").select("Org_id,Org_Name,Org_AccCode").in("Org_id", employmentOrganisationIds)
     : { data: [], error: null }
   if (employmentOrganisationError) throw new HttpError(500, employmentOrganisationError.message)
-  const employmentOrganisationMap = new Map((employmentOrganisations ?? []).map((item: Row) => [item.Org_id, item]))
+  const employmentOrganisationMap = new Map<string, Row>((employmentOrganisations ?? []).map((item: Row) => [item.Org_id, item]))
   const consents = consentResult.data
   return {
     ...summary,

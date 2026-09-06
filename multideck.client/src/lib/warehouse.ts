@@ -1,5 +1,5 @@
 import { AlarmClock, ArrowDownToLine, ArrowUpFromLine, Boxes, Clock3, PackageCheck, ShieldAlert, type LucideIcon } from "@/components/icons/hugeicons"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import type {
   WarehouseCalendarCustomer,
   WarehouseCalendarEvent,
@@ -112,6 +112,7 @@ export type WarehouseItem = {
   customerOrgName: string | null
   facilityId: string | null
   facilityName: string | null
+  facilities?: { id: string; code: string; name: string; isDefault: boolean; isActive: boolean }[]
   sku: string
   description: string
   commodityDescription: string | null
@@ -189,10 +190,14 @@ type WarehouseItemAttributes = {
 export type CreateWarehouseItemInput = WarehouseItemAttributes & {
   customerOrgId: string
   facilityId: string
+  facilityIds: string[]
+  defaultFacilityId: string
 }
 
 export type UpdateWarehouseItemInput = WarehouseItemAttributes & {
   facilityId: string
+  facilityIds: string[]
+  defaultFacilityId: string
   isActive: boolean
 }
 
@@ -534,6 +539,9 @@ export type WarehouseInventoryBalance = {
   itemDescription: string
   locationId: string | null
   locationCode: string | null
+  locationTypeCode?: string | null
+  zoneTypeCode?: string | null
+  zoneName?: string | null
   handlingUnitId: string | null
   handlingUnitCode: string | null
   handlingUnitTypeCode: string | null
@@ -551,10 +559,42 @@ export type WarehouseInventoryBalance = {
   allocatedQuantity: number
   heldQuantity: number
   availableQuantity: number
+  baseQuantity?: number
   isBonded: boolean
   firstReceiptAt: string | null
   lastMovementAt: string | null
   updatedAt: string
+}
+
+export type WarehouseStockSkuSummary = {
+  id: string
+  facilityId: string
+  facilityCode: string
+  facilityName: string
+  customerOrgId: string | null
+  customerName: string | null
+  itemId: string
+  sku: string
+  itemDescription: string
+  uomCode: string
+  onHandQuantity: number
+  reservedQuantity: number
+  allocatedQuantity: number
+  heldQuantity: number
+  availableQuantity: number
+  palletCount: number
+  locationCount: number
+  updatedAt: string
+}
+
+export type WarehouseStockSkuDetail = {
+  summary: Omit<WarehouseStockSkuSummary, "id">
+  locationBreakdown: { code: string; label: string; quantity: number }[]
+  storageBreakdown: { code: "palletised" | "loose"; label: string; quantity: number }[]
+  pallets: { id: string; code: string; typeCode: string; locationCode: string | null; quantity: number }[]
+  lines: WarehouseInventoryBalance[]
+  lineTotal: number
+  lineLimit: number
 }
 
 export type WarehouseOrderAvailability = {
@@ -653,6 +693,9 @@ export type WarehouseOperationalOrder = {
   statusName: string | null
   priorityCode: string
   customerReference: string | null
+  sourceTypeCode?: WarehouseOrderSourceTypeCode | null
+  sourceReference?: string | null
+  sourceRecordId?: string | null
   requestedDate: string | null
   appointmentStartAt: string | null
   appointmentEndAt: string | null
@@ -665,7 +708,42 @@ export type WarehouseOperationalOrder = {
   lines: WarehouseOrderLine[]
   receipts: { id: string; receiptNumber: string; statusCode: string; receivedAt: string | null; hasDiscrepancy: boolean; notes: string | null }[]
   dispatches: { id: string; dispatchNumber: string; statusCode: string; dispatchedAt: string | null; vehicleReg: string | null; containerNumber: string | null; sealNumber: string | null }[]
+  tasks?: WarehouseTask[]
 }
+
+export type WarehouseTask = {
+  id: string
+  type: "putaway" | "pick"
+  statusCode: "queued" | "in_progress" | "complete" | "cancelled"
+  facilityId: string
+  facilityCode: string
+  facilityName: string
+  orderId: string
+  orderNumber: string
+  orderLineId: string
+  itemId: string
+  sku: string
+  description: string
+  customerOrgId: string
+  customerName: string
+  quantity: number
+  completedQuantity: number
+  uomCode: string
+  sourceBalanceId: string | null
+  sourceLocationId: string | null
+  sourceLocationCode: string | null
+  targetLocationId: string | null
+  targetLocationCode: string | null
+  lotId: string | null
+  lotNumber: string | null
+  createdAt: string
+  completedAt: string | null
+  completedBy: string | null
+}
+
+export type WarehouseInboundSourceTypeCode = "customer_purchase_order" | "asn" | "transfer" | "return" | "manual_exception"
+export type WarehouseOutboundSourceTypeCode = "sales_order" | "transfer" | "return_to_supplier" | "disposal" | "manual_exception"
+export type WarehouseOrderSourceTypeCode = WarehouseInboundSourceTypeCode | WarehouseOutboundSourceTypeCode
 
 type WarehouseDashboardSnapshot = {
   orders: WarehouseOperationalOrder[]
@@ -703,6 +781,9 @@ export type CreateWarehouseOrderInput = {
   typeCode: "inbound" | "outbound"
   priorityCode: string | null
   customerReference: string | null
+  sourceTypeCode: WarehouseOrderSourceTypeCode
+  sourceReference: string | null
+  sourceRecordId: string | null
   requestedDate: string | null
   appointmentStartAt: string | null
   appointmentEndAt: string | null
@@ -838,6 +919,18 @@ export async function listWarehouseInventoryPage(options: { facilityId?: string;
   )
 }
 
+export async function listWarehouseStockSkusPage(options: { facilityId?: string; search?: string; facet?: string; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouseFacetedRegisterPage<WarehouseStockSkuSummary>(
+    `/inventory/skus${toQuery({ facilityId: options.facilityId, search: options.search, facet: options.facet, sort: options.sort?.id, direction: options.sort?.direction, limit, offset })}`,
+  )
+}
+
+export function getWarehouseStockSkuDetail(itemId: string, facilityId: string) {
+  return requestWarehouse<WarehouseStockSkuDetail>(`/inventory/sku-detail${toQuery({ itemId, facilityId })}`, "GET")
+}
+
 export async function listWarehouseInventoryMovementsPage(options: { facilityId?: string; itemId?: string; search?: string; facet?: string; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
   const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
   const offset = Math.max(0, options.offset ?? 0)
@@ -856,6 +949,10 @@ export async function listWarehouseHandlingUnitsPage(options: { facilityId?: str
 
 export function getWarehouseHandlingUnitReference(facilityId?: string) {
   return requestWarehouse<WarehouseHandlingUnitReference>(`/handling-units/reference${toQuery({ facilityId })}`, "GET")
+}
+
+export function getWarehouseHandlingUnit(handlingUnitId: string, facilityId: string) {
+  return requestWarehouse<WarehouseHandlingUnit>(`/handling-units/${handlingUnitId}${toQuery({ facilityId })}`, "GET")
 }
 
 export async function listWarehouseInventoryExceptionsPage(options: { facilityId?: string; search?: string; openOnly?: boolean; statusCode?: string; facet?: string; sort?: WarehouseRegisterSort | null; limit?: number; offset?: number } = {}) {
@@ -993,6 +1090,22 @@ export function receiveOperationalWarehouseOrder(orderId: string, input: Receive
 
 export function dispatchOperationalWarehouseOrder(orderId: string, input: DispatchWarehouseOrderInput) {
   return requestWarehouse<WarehouseOperationalOrder>(`/orders/${orderId}/dispatch`, "POST", input)
+}
+
+export function releaseOperationalWarehouseOrder(orderId: string) {
+  return requestWarehouse<WarehouseOperationalOrder>(`/orders/${orderId}/release`, "POST", { requestId: crypto.randomUUID() })
+}
+
+export async function listWarehouseTasksPage(options: { type?: "putaway" | "pick"; facilityId?: string; orderId?: string; status?: "open" | WarehouseTask["statusCode"]; limit?: number; offset?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50))
+  const offset = Math.max(0, options.offset ?? 0)
+  return requestWarehouseRegisterPage<WarehouseTask>(
+    `/tasks${toQuery({ type: options.type, facilityId: options.facilityId, orderId: options.orderId, status: options.status, limit, offset })}`,
+  )
+}
+
+export function confirmWarehouseTask(taskId: string, input: { quantity: number; targetLocationId?: string | null }) {
+  return requestWarehouse<WarehouseTask>(`/tasks/${taskId}/confirm`, "POST", { requestId: crypto.randomUUID(), ...input })
 }
 
 /**

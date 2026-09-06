@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react"
-import { getSupabaseSession } from "@/lib/supabase"
+import { authenticatedAccessChangedEvent, getSupabaseSession, supabaseFunctionsUrl } from "@/lib/supabase"
 import { getTenantBranding, type TenantBranding } from "@/lib/tenant-branding-api"
 
 export type CompanyAppearanceBrand = Pick<
@@ -12,7 +12,7 @@ type CompanyAppearanceState = {
   brand: CompanyAppearanceBrand | null
 }
 
-const storageKey = "multideck.companyAppearance"
+const storageKey = `multideck.companyAppearance:${supabaseFunctionsUrl}`
 const listeners = new Set<() => void>()
 
 function isHex(value: unknown): value is string {
@@ -69,6 +69,7 @@ let state: CompanyAppearanceState = { status: initialBrand ? "ready" : "idle", b
 let loadedUserId: string | null = null
 let request: Promise<CompanyAppearanceState> | null = null
 let requestVersion = 0
+let loadedAt = 0
 
 function publish(next: CompanyAppearanceState) {
   state = next
@@ -113,7 +114,7 @@ export async function loadCompanyAppearance({ force = false } = {}) {
   }
 
   if (loadedUserId === userId && request) return request
-  if (!force && loadedUserId === userId && (state.status === "ready" || state.status === "unavailable")) return state
+  if (!force && loadedUserId === userId && Date.now() - loadedAt < 60_000 && (state.status === "ready" || state.status === "unavailable")) return state
 
   loadedUserId = userId
   const version = ++requestVersion
@@ -122,6 +123,7 @@ export async function loadCompanyAppearance({ force = false } = {}) {
     .then((branding) => {
       if (version !== requestVersion || loadedUserId !== userId) return state
       const brand = isCompanyAppearanceBrand(branding) ? branding : null
+      loadedAt = Date.now()
       cacheBrand(brand)
       publish({ status: brand ? "ready" : "unavailable", brand })
       return state
@@ -141,6 +143,7 @@ export async function loadCompanyAppearance({ force = false } = {}) {
 export function notifyCompanyAppearanceChanged(branding: TenantBranding) {
   requestVersion += 1
   request = null
+  loadedAt = Date.now()
   const brand = isCompanyAppearanceBrand(branding) ? branding : null
   cacheBrand(brand)
   publish({ status: brand ? "ready" : "unavailable", brand })
@@ -148,6 +151,15 @@ export function notifyCompanyAppearanceChanged(branding: TenantBranding) {
 
 export function useCompanyAppearance(userId?: string | null) {
   const snapshot = useSyncExternalStore(subscribeCompanyAppearance, getCompanyAppearanceSnapshot, getCompanyAppearanceSnapshot)
-  useEffect(() => { void loadCompanyAppearance({ force: true }) }, [userId])
+  useEffect(() => { void loadCompanyAppearance() }, [userId])
   return snapshot
 }
+
+if (typeof window !== "undefined") window.addEventListener(authenticatedAccessChangedEvent, () => {
+  requestVersion += 1
+  request = null
+  loadedAt = 0
+  // Refresh after Auth releases its lock. Keep the verified public company
+  // identity visible while checking, avoiding a logo flash on token refresh.
+  window.setTimeout(() => { if (listeners.size) void loadCompanyAppearance() }, 0)
+})

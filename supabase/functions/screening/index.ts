@@ -10,13 +10,7 @@ import {
   requirePermission,
   routeParts,
 } from "../_shared/backend.ts"
-import { refreshOfsiList } from "../_shared/screening-ingest.ts"
-
-async function listStatus(admin: any) {
-  const { data, error } = await admin.rpc("cmp_screening_list_status")
-  if (error) throw new HttpError(500, error.message)
-  return data
-}
+import { ensureScreeningList } from "../_shared/screening-ingest.ts"
 
 function checkSummary(row: any) {
   return {
@@ -194,18 +188,17 @@ Deno.serve(async (request) => {
     if (request.method === "GET") {
       await requirePermission(admin, current.User_ID, "Screening.Read")
       const orgId = new URL(request.url).searchParams.get("orgId")
-      const [list, checks] = await Promise.all([
-        listStatus(admin),
+      const [freshness, checks] = await Promise.all([
+        ensureScreeningList(admin),
         listChecks(admin, companyId, orgId),
       ])
-      return json(request, { list, checks })
+      return json(request, { list: { ...freshness.list, refreshMessage: freshness.ready ? null : freshness.refresh.message }, checks })
     }
 
     if (request.method === "POST" && parts[0] === "refresh") {
       await requirePermission(admin, current.User_ID, "Screening.Write")
-      const result = await refreshOfsiList(admin)
-      if (result.status === "failed") throw new HttpError(502, result.message)
-      return json(request, { list: await listStatus(admin), refresh: result })
+      const result = await ensureScreeningList(admin)
+      return json(request, { list: { ...result.list, refreshMessage: result.ready ? null : result.refresh.message }, refresh: result.refresh })
     }
 
     if (request.method === "POST" && parts[0] === "checks" && parts[1] && parts[2] === "decision") {
@@ -228,6 +221,10 @@ Deno.serve(async (request) => {
       const payload = await body<Record<string, unknown>>(request)
       const subjectName = normalize(payload.subjectName ?? payload.name)
       if (!subjectName) throw new HttpError(400, "Enter a party name to screen.")
+      const freshness = await ensureScreeningList(admin)
+      if (!freshness.ready) throw new HttpError(503, freshness.refresh.status === "pending"
+        ? "The UK Sanctions List is being checked. Try screening again shortly."
+        : "The UK Sanctions List could not be verified. No screening result was returned. Please retry in a minute.")
       const { data, error } = await admin.rpc("cmp_run_screening_check_v2", {
         p_company_id: companyId,
         p_user_id: current.User_ID,
@@ -241,7 +238,7 @@ Deno.serve(async (request) => {
         p_include_similar: payload.includeSimilar === true,
       })
       if (error) throw new HttpError(error.code === "22023" ? 400 : 500, error.message)
-      return json(request, data, 201)
+      return json(request, { ...data, list: freshness.list }, 201)
     }
 
     throw new HttpError(405, "Method not allowed.")

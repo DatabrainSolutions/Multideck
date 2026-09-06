@@ -138,10 +138,8 @@ function escapeCsvCell(value: unknown) {
   // Spreadsheet applications can execute formula-looking CSV cells. Keep the
   // exported value visible while forcing user-authored strings to remain plain
   // text. Negative numeric values must retain their numeric meaning.
-  const firstArrayValue = Array.isArray(value) ? value.find((entry) => entry !== null && entry !== undefined) : undefined
-  const isFormulaLikeString = typeof value === "string" && /^[=+\-@]/.test(value)
-  const isFormulaLikeArray = typeof firstArrayValue === "string" && /^[=+\-@]/.test(firstArrayValue)
-  if (isFormulaLikeString || isFormulaLikeArray) formatted = `'${formatted}`
+  const isTextCell = typeof value === "string" || Array.isArray(value)
+  if (isTextCell && /^[\s\u0000-\u001f]*[=+\-@]/.test(formatted)) formatted = `'${formatted}`
   return `"${formatted.replaceAll('"', '""')}"`
 }
 

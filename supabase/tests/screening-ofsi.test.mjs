@@ -105,7 +105,7 @@ test("registers screening as a Dexter domain, action and watch with no live gove
   assert.match(migration, /ofsistorage\.blob\.core\.windows\.net\/publishlive\/2022format\/ConList\.csv/)
   assert.match(edgeFunction, /domain === "screening"/)
   assert.match(edgeFunction, /the screening data domain/)
-  assert.match(edgeFunction, /Use screening for UK OFSI list freshness/)
+  assert.match(edgeFunction, /Use screening for UK Sanctions List freshness/)
 })
 
 test("returns every qualifying OFSI match through trigram search instead of a silent 12-row cap", () => {

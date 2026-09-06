@@ -1,0 +1,117 @@
+{
+  "date": "2026-09-03",
+  "scope": "development",
+  "mainSupabaseProject": "aqtwypsuijxlnvtxpuxe",
+  "mainMigrationVersion": "20260903104323",
+  "migrationSha256": "c749a56436a8766eb5b7e2b42dee92f538bedd8ec63c2fed9675f34121cc6374",
+  "vercelProject": "multideck-app-dev",
+  "vercelDeployment": "dpl_bX5jtXVnMWS6UFp1rmgcpaSzMKiD",
+  "vercelSource": "CLI upload of local working checkout; no Git push",
+  "vercelBranch": "dev",
+  "vercelEnvironment": "preview",
+  "vercelState": "READY",
+  "vercelAlias": "dev.multideck.app",
+  "functions": [
+    {
+      "slug": "team",
+      "version": 68,
+      "verify_jwt": true,
+      "files": 8,
+      "sha256": "8ebaec02ec64e02cb1fda4c6bfadaac3277a785df08353b493c25d6c5ded545d",
+      "sourceMatches": true
+    },
+    {
+      "slug": "accept-invitation",
+      "version": 37,
+      "verify_jwt": false,
+      "files": 5,
+      "sha256": "a355d31d0a15c396e543d7d6469898c72917e91b2ddbb1bde32becb985a10ba1",
+      "sourceMatches": true
+    },
+    {
+      "slug": "warehouse",
+      "version": 63,
+      "verify_jwt": true,
+      "files": 19,
+      "sha256": "95f2352066b1e53bf827e94a9fb0e291e889291f0aedb0b89cadd4cfce0db56f",
+      "sourceMatches": true
+    },
+    {
+      "slug": "agent-dexter",
+      "version": 149,
+      "verify_jwt": true,
+      "files": 15,
+      "sha256": "cf61f8a77fe8a8d68bb14fe95b1932085903ac9af9c97509d87ada2bc21a1269",
+      "sourceMatches": true
+    },
+    {
+      "slug": "training-session",
+      "version": 1,
+      "verify_jwt": false,
+      "files": 3,
+      "sha256": "08634e8765ff1631db8d686a6c217ea3377f8ef5945bb324a749da9131eb40c1",
+      "sourceMatches": true
+    }
+  ],
+  "httpChecks": [
+    {
+      "check": "broker-unconfigured",
+      "status": 503
+    },
+    {
+      "check": "broker-wrong-origin",
+      "status": 403
+    },
+    {
+      "check": "broker-method",
+      "status": 405
+    },
+    {
+      "check": "pairing-private",
+      "status": 401
+    },
+    {
+      "check": "team-auth",
+      "status": 401
+    },
+    {
+      "check": "warehouse-auth",
+      "status": 401
+    },
+    {
+      "check": "dexter-auth",
+      "status": 401
+    },
+    {
+      "check": "sync-private-valid-signature",
+      "status": 401
+    }
+  ],
+  "frontend": {
+    "url": "https://dev.multideck.app/auth",
+    "status": 200,
+    "assets": [
+      "/assets/multideck-logo-mark-CFw0aPNq.svg",
+      "/assets/app-CQpn2CSt.js",
+      "/assets/multideck-app.css"
+    ],
+    "htmlSha256": "26af75b7e0fbcff5b0359d445b68c629d03f764a812c0fc536b9ea25af07675c"
+  },
+  "mainAssertions": {
+    "pairingRows": 0,
+    "mainProfileSyncEnabled": true,
+    "authInsertAndEmailUpdate": "passed, rolled back",
+    "guardsInstalled": 9,
+    "authenticatedCanReadPairing": false,
+    "authenticatedCanSyncIdentity": false,
+    "publicSignupDisabled": true,
+    "anonymousSignupDisabled": true
+  },
+  "trainingProject": "not available; end-to-end handoff unverified",
+  "buildVariableAllowlistCheck": {
+    "publicUrlIncluded": true,
+    "publicKeyIncluded": true,
+    "privateSecretExcluded": true
+  },
+  "mainAuthCallbackAllowlist": "unverified; no scoped Auth-config read available through connected tools"
+}

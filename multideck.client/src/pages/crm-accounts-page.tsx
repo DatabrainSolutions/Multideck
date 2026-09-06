@@ -1,3 +1,5 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { ArrowRight, Building2, RefreshCw } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -29,7 +31,6 @@ const emptyAccount = (): CreateCustomerInput => ({
 
 const accountScopes = ["All", "Mine"] as const
 type AccountScope = typeof accountScopes[number]
-const accountPageSize = 50
 const emptyAccountSummary: AccountRegisterPage["summary"] = { accounts: 0, contacts: 0, needsAttention: 0, marketingOptedIn: 0, unassigned: 0, healthy: 0 }
 const emptyAccountFacets: AccountRegisterPage["facets"] = { relationships: [], owners: [], hasUnassigned: false }
 type OrganisationRegisterType = "company" | ProviderPartyType
@@ -59,6 +60,7 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
   const [referenceReloadToken, setReferenceReloadToken] = useState(0)
   const [draft, setDraft] = useState<CreateCustomerInput>(emptyAccount())
   const [offset, setOffset] = useState(0)
+  const [accountPageSize, setAccountPageSize] = useState(defaultPaginationPageSize)
   const [total, setTotal] = useState(0)
   const [summary, setSummary] = useState(emptyAccountSummary)
   const [facets, setFacets] = useState(emptyAccountFacets)
@@ -106,7 +108,7 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
       })
       .catch((error) => { console.error("Accounts could not be loaded.", error); if (active) setState("error") })
     return () => { active = false }
-  }, [accountScope, advancedFilter, currentOwnerId, debouncedQuery, offset, organisationType, ownerFilter, relationshipFilter, reloadToken, sort])
+  }, [accountPageSize, accountScope, advancedFilter, currentOwnerId, debouncedQuery, offset, organisationType, ownerFilter, relationshipFilter, reloadToken, sort])
 
   useEffect(() => {
     if (reference) return
@@ -337,12 +339,23 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
         exportConfig={{
           fileName: `crm-${title.toLowerCase()}`,
           recordCategory: `${singular[0].toUpperCase() + singular.slice(1)} details`,
+          register: {
+            dateLabel: "Last contact date",
+            dateValue: (account) => account.lastContactAt,
+            busy: query.trim() !== debouncedQuery,
+            loadAllRows: (signal) => collectExportPages((page) => listAccountsPage({
+              organisationType, search: debouncedQuery, marketingScope: "all",
+              relationship: relationshipFilter,
+              owner: accountScope === "Mine" ? currentOwnerId ?? "__no_current_user__" : ownerFilter,
+              filterQuery: filterQueryIsEmpty(advancedFilter) ? null : advancedFilter, sort, ...page,
+            }, { forceRefresh: true }), (account) => account.id, signal),
+          },
           loadRecords: (selectedAccounts) => Promise.all(selectedAccounts.map((account) => getCustomer(account.id))),
         }}
         onRowClick={(account) => navigate(`${routeBase}/${account.id}`)}
         rowClassName="group hover:bg-[var(--md-hover)]"
         serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "account", direction: "asc" }); setOffset(0) } }}
-        pagination={{ offset, limit: accountPageSize, total, loading: state === "loading", onOffsetChange: setOffset }}
+        pagination={{ offset, limit: accountPageSize, total, loading: state === "loading", onOffsetChange: setOffset, onLimitChange: setAccountPageSize, error: state === "error" }}
         compactToolbar
         toolbarTabs={<RegisterViewSwitch options={accountScopes} value={accountScope} onChange={setAccountScope} counts={{ All: accountScope === "All" ? summary.accounts : undefined, Mine: accountScope === "Mine" ? summary.accounts : undefined }} ariaLabel={`${singular[0].toUpperCase() + singular.slice(1)} ownership filter`} compact />}
         toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label={`Search ${title.toLowerCase()}`} placeholder={`Search ${title.toLowerCase()}…`} className="sm:w-[180px]" />}

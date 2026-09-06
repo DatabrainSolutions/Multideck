@@ -16,7 +16,7 @@ import type {
   CrmFollowUpOpportunity,
   CrmFollowUpReason,
 } from "@/lib/lead-api"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import { CountUpValue } from "./rolling-digits"
 import { StatusPill, toneToVar } from "./status-pill"
 import { Surface } from "./surface"

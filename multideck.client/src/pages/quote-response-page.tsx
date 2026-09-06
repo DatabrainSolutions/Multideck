@@ -10,8 +10,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/i18n/language-provider"
 import { releasePdfPageImages, renderPdfPageImages, type RenderedPdfPage } from "@/lib/customs-invoice-pdf-preview"
-import { getCustomerQuote, submitCustomerQuoteResponse, uploadCompetitorQuote, type QuoteResponseDecision, type QuoteResponseResult, type QuoteResponseView } from "@/lib/quote-response-api"
-import { formatQuoteLossReason, quoteLossReasons } from "@/lib/quote-loss-reasons"
+import { getCustomerQuote, submitCustomerQuoteResponse, uploadCompetitorQuote, type QuoteCustomerDeclineReasonCode, type QuoteResponseDecision, type QuoteResponseResult, type QuoteResponseView } from "@/lib/quote-response-api"
+import { quoteCustomerDeclineReasons } from "@/lib/quote-loss-reasons"
 import { publicBrandTheme, type PublicBranding } from "@/lib/public-brand-theme"
 import { cn } from "@/lib/utils"
 
@@ -68,7 +68,7 @@ export function QuoteResponsePage({ token }: { token: string }) {
   const [competitorPreviewUrl, setCompetitorPreviewUrl] = useState("")
   const [uploadedDocumentId, setUploadedDocumentId] = useState<string | null>(null)
   const [declineDialogOpen, setDeclineDialogOpen] = useState(false)
-  const [lossReason, setLossReason] = useState("")
+  const [lossReason, setLossReason] = useState<QuoteCustomerDeclineReasonCode | "">("")
   const [lossDetails, setLossDetails] = useState("")
   const [result, setResult] = useState<QuoteResponseResult | null>(null)
   const [loading, setLoading] = useState(true)
@@ -115,7 +115,11 @@ export function QuoteResponsePage({ token }: { token: string }) {
     }
   }
 
-  async function submitResponse(nextDecision = decision, nextMessage = message) {
+  async function submitResponse(
+    nextDecision = decision,
+    nextMessage = message,
+    nextDeclineReasonCode: QuoteCustomerDeclineReasonCode | null = nextDecision === "declined" ? lossReason || null : null,
+  ) {
     if (!nextDecision || submitting) return
     if (nextDecision === "challenged" && !nextMessage.trim()) {
       setValidationAttempted(true)
@@ -132,7 +136,7 @@ export function QuoteResponsePage({ token }: { token: string }) {
         documentId = upload.documentId
         setUploadedDocumentId(documentId)
       }
-      setResult(await submitCustomerQuoteResponse(token, nextDecision, nextMessage, documentId))
+      setResult(await submitCustomerQuoteResponse(token, nextDecision, nextMessage, documentId, nextDeclineReasonCode))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Your response could not be submitted.")
     } finally { setSubmitting(false) }
@@ -237,13 +241,13 @@ export function QuoteResponsePage({ token }: { token: string }) {
           <DialogDescription>{t("Choose the main reason and add any detail that will help the freight team.")}</DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {quoteLossReasons.map((reason) => <Button key={reason} type="button" variant="ghost" aria-pressed={lossReason === reason} className={cn("h-auto min-h-10 justify-start whitespace-normal rounded-[var(--md-radius-lg)] px-3 py-2 text-start text-[12px] shadow-[var(--md-shadow-line)]", lossReason === reason && "bg-[var(--md-accent-a10)] text-[var(--md-accent)]")} onClick={() => setLossReason(reason)}>{t(reason)}</Button>)}
+          {quoteCustomerDeclineReasons.map((reason) => <Button key={reason.code} type="button" variant="ghost" aria-pressed={lossReason === reason.code} className={cn("h-auto min-h-10 justify-start whitespace-normal rounded-[var(--md-radius-lg)] px-3 py-2 text-start text-[12px] shadow-[var(--md-shadow-line)]", lossReason === reason.code && "bg-[var(--md-accent-a10)] text-[var(--md-accent)]")} onClick={() => setLossReason(reason.code)}>{t(reason.label)}</Button>)}
         </div>
-        <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]"><span>{t(lossReason === "Other" ? "Reason" : "Additional detail (optional)")}</span><Textarea value={lossDetails} onChange={(event) => setLossDetails(event.target.value)} maxLength={4000} placeholder={t("Add useful context for the freight team")} className="min-h-24 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]" /></label>
+        <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]"><span>{t("Additional detail (optional)")}</span><Textarea value={lossDetails} onChange={(event) => setLossDetails(event.target.value)} maxLength={4000} placeholder={t("Add useful context for the freight team")} className="min-h-24 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]" /></label>
         {error ? <p role="alert" className="flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] px-3 py-2 text-[12px] leading-5 text-[var(--md-red)]"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{t(error)}</p> : null}
         <DialogFooter>
           <Button type="button" variant="ghost" disabled={submitting} onClick={() => { setDeclineDialogOpen(false); setDecision(null) }}>{t("Cancel")}</Button>
-          <Button type="button" disabled={!lossReason || (lossReason === "Other" && !lossDetails.trim()) || submitting} className="bg-[var(--md-red)] text-white hover:bg-[var(--md-red-strong)]" onClick={() => void submitResponse("declined", formatQuoteLossReason(lossReason, lossDetails))}>{submitting ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <XCircle className="size-4" />}{t(submitting ? "Submitting response…" : "Confirm decline")}</Button>
+          <Button type="button" disabled={!lossReason || submitting} className="bg-[var(--md-red)] text-white hover:bg-[var(--md-red-strong)]" onClick={() => void submitResponse("declined", lossDetails, lossReason || null)}>{submitting ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <XCircle className="size-4" />}{t(submitting ? "Submitting response…" : "Confirm decline")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

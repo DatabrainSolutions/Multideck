@@ -1,5 +1,5 @@
 import type { LanguageCode } from "@/i18n/languages"
-import { supabase } from "@/lib/supabase"
+import { authSupabase, supabase } from "@/lib/supabase"
 
 export const notificationEventTypes = [
   "customs_hold",
@@ -36,7 +36,7 @@ export const defaultNotificationEmailPreferences: NotificationEmailPreferences =
 
 async function requireWorkspaceUserId() {
   if (!supabase) throw new Error("Supabase is not configured for this workspace.")
-  const { data: authData, error: authError } = await supabase.auth.getUser()
+  const { data: authData, error: authError } = await authSupabase!.auth.getUser()
   if (authError || !authData.user) throw authError ?? new Error("Authentication required.")
 
   const { data, error } = await supabase

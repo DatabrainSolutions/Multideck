@@ -4,7 +4,7 @@ import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { mdMotion, staggerRamp } from "@/lib/motion"
 import { getLocalTimeZone, getTimeZoneOffsetMinutes, useMinuteTick } from "@/lib/clock"
-import { cityQueues } from "@/data/multideck-data"
+import { cityQueues } from "@/data/operational-data"
 import type { DashboardClockQueue } from "@/lib/dashboard-live-data"
 import { Surface } from "./surface"
 

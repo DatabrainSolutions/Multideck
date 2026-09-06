@@ -1,8 +1,9 @@
+import { workspaceStorageKey } from "./workspace-environment.ts"
 import type { ExtractedInvoiceLine, InvoiceLineSelection } from "@/lib/customs-invoice-import"
 import type { EvidencePage } from "@/lib/customs-invoice-evidence"
 import type { InvoiceDocumentMetadata } from "@/lib/customs-invoice-import-api"
 
-const storageKeyPrefix = "multideck.customs.invoice-import"
+const storageKeyPrefix = workspaceStorageKey("multideck.customs.invoice-import")
 const recoveryVersion = 3
 
 export type InvoiceImportReviewFilter = "all" | "attention" | "approved"

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import { useTheme, type ThemeMode } from "@/lib/theme-provider"
 import { getApiWorkspacePreferences } from "@/lib/api"
-import { supabase } from "@/lib/supabase"
+import { getClientAuth, supabase } from "@/lib/supabase"
 import { updateWorkspaceBootstrapPreferences } from "@/lib/workspace-bootstrap"
 
 type ThemeSetter = ThemeMode | ((current: ThemeMode) => ThemeMode)
@@ -224,7 +224,7 @@ export function ThemeProfileSync() {
 
     async function hydrateProfileTheme() {
       const startedRevision = preferenceRevision
-      const { data: sessionData, error: sessionError } = await client.auth.getSession()
+      const { data: sessionData, error: sessionError } = await getClientAuth(client).getSession()
       if (sessionError) {
         console.warn("Your appearance preference could not be loaded from your profile.", sessionError)
         return
@@ -297,7 +297,7 @@ export function ThemeProfileSync() {
 
     window.addEventListener("storage", noteThemeFromAnotherTab)
     void hydrateProfileTheme()
-    const { data: listener } = client.auth.onAuthStateChange(() => {
+    const { data: listener } = getClientAuth(client).onAuthStateChange(() => {
       void hydrateProfileTheme()
     })
 

@@ -1,3 +1,4 @@
+import { workspaceStorageKey } from "@/lib/workspace-environment"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
@@ -5,7 +6,7 @@ import { Surface } from "@/components/multideck/surface"
 import { useLanguage } from "@/i18n/language-provider"
 import { openBookingWorkflow } from "@/lib/booking-workflow-api"
 
-const requestStorageKey = "multideck.booking.open-request"
+const requestStorageKey = workspaceStorageKey("multideck.booking.open-request")
 
 function requestKey() {
   const saved = window.sessionStorage.getItem(requestStorageKey)

@@ -4,6 +4,7 @@ import { MotionConfig } from "motion/react"
 import { ThemeProvider } from "@/lib/theme-provider"
 import type { AdminRoute } from "@/pages/admin-page"
 import type { FinanceRoute } from "@/pages/finance-page"
+import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppShell } from "@/components/multideck/app-shell"
@@ -26,7 +27,8 @@ import {
   createProfilePhotoSignedUrls,
   type UserProfilePhoto,
 } from "@/lib/profile-photo"
-import { isSupabaseConfigured, supabase } from "@/lib/supabase"
+import { isTrainingWorkspace, selectWorkspaceEnvironment, trainingConfigurationError } from "@/lib/workspace-environment"
+import { authSupabase, isSupabaseConfigured, supabase } from "@/lib/supabase"
 import { ThemeProfileSync, themeStorageKey } from "@/lib/theme-preferences"
 import { LanguageProfileSync } from "@/lib/language-preferences"
 import { rememberRecentWorkContext } from "@/lib/recent-work-context"
@@ -449,7 +451,9 @@ class WorkspaceErrorBoundary extends Component<{
 
 export default function App() {
   const [route, setRoute] = useState(getRoute)
+  const isExternalSurface = isExternalSurfaceRoute(route)
   const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
+  const [workspaceAccessError, setWorkspaceAccessError] = useState<string | null>(isTrainingWorkspace ? trainingConfigurationError : null)
   const [currentUser, setCurrentUser] = useState<AuthUserSummary | null>(null)
   const [profileMediaUrls, setProfileMediaUrls] = useState<ProfileMediaUrls>(emptyProfileMediaUrls)
   const hasResolvedAuthenticatedSessionRef = useRef(false)
@@ -479,6 +483,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (isExternalSurface) return
     const profilePhoto = currentUser?.profilePhoto ?? null
     const coverPhoto = currentUser?.coverPhoto ?? null
     const photos = [profilePhoto, coverPhoto].filter((photo): photo is UserProfilePhoto => Boolean(photo))
@@ -524,6 +529,7 @@ export default function App() {
       cancelled = true
     }
   }, [
+    isExternalSurface,
     currentUser?.coverPhoto,
     currentUser?.profilePhoto,
     profileMediaUrls.coverPhotoPath,
@@ -541,6 +547,15 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    // Public links own their identity and data. An operator opening one does
+    // not need a private workspace bootstrap, profile images or preferences.
+    if (isExternalSurface) {
+      hasResolvedAuthenticatedSessionRef.current = false
+      setCurrentUser(null)
+      setProfileMediaUrls(emptyProfileMediaUrls)
+      setAuthStatus("checking")
+      return
+    }
     if (!supabase) {
       setCurrentUser(null)
       setAuthStatus("unauthenticated")
@@ -555,11 +570,13 @@ export default function App() {
       if (cancelled) return
 
       if (!session?.user) {
+        sessionRequest += 1
         activeAccessToken = null
         invalidateWorkspaceBootstrap()
         hasResolvedAuthenticatedSessionRef.current = false
         setCurrentUser(null)
         setProfileMediaUrls(emptyProfileMediaUrls)
+        setWorkspaceAccessError(null)
         setAuthStatus("unauthenticated")
         return
       }
@@ -569,8 +586,11 @@ export default function App() {
       const requestId = ++sessionRequest
 
       if (!hasResolvedAuthenticatedSessionRef.current) setAuthStatus("checking")
-      getApiAuthSession(session.access_token)
+      // Auth callbacks must release the Supabase session lock before the
+      // training broker reads the main session.
+      Promise.resolve().then(() => getApiAuthSession(session.access_token))
         .catch((error) => {
+          if (isTrainingWorkspace) throw error
           console.error("The application profile could not be loaded.", error)
           return null
         })
@@ -587,11 +607,19 @@ export default function App() {
 
           hasResolvedAuthenticatedSessionRef.current = true
           setCurrentUser(nextUser)
+          setWorkspaceAccessError(null)
           setAuthStatus("authenticated")
+        })
+        .catch((error: unknown) => {
+          if (cancelled || requestId !== sessionRequest) return
+          activeAccessToken = null
+          hasResolvedAuthenticatedSessionRef.current = false
+          setCurrentUser(null)
+          setWorkspaceAccessError(error instanceof Error ? error.message : "Your workspace could not be opened. Try again.")
         })
     }
 
-    supabase.auth.getSession().then(({ data, error }) => {
+    authSupabase!.auth.getSession().then(({ data, error }) => {
       if (error) {
         console.error(error)
         void clearStaleSession()
@@ -606,7 +634,7 @@ export default function App() {
       applySession(null)
     })
 
-    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data } = authSupabase!.auth.onAuthStateChange((event, session) => {
       // When token refresh fails (stale session), clear storage and redirect to sign-in
       if ((event as string) === "TOKEN_REFRESH_FAILED") {
         console.warn("Token refresh failed — clearing stale session.")
@@ -622,7 +650,7 @@ export default function App() {
       cancelled = true
       data.subscription.unsubscribe()
     }
-  }, [])
+  }, [isExternalSurface])
 
   /** Clear stale Supabase session from storage when tokens can no longer be refreshed. */
   function clearStaleSession() {
@@ -666,7 +694,7 @@ export default function App() {
   }, [authStatus, currentUser, route])
 
   useEffect(() => {
-    if (authStatus !== "authenticated" || currentUser?.actorType !== "internal") return
+    if (!isWorkspaceRoute || authStatus !== "authenticated" || currentUser?.actorType !== "internal") return
     const updatePresence = () => {
       if (document.visibilityState === "visible") void recordWorkspacePresence(route).catch(() => undefined)
     }
@@ -677,7 +705,7 @@ export default function App() {
       window.clearInterval(intervalId)
       document.removeEventListener("visibilitychange", updatePresence)
     }
-  }, [authStatus, currentUser?.actorType, route])
+  }, [authStatus, currentUser?.actorType, isWorkspaceRoute, route])
 
   // Old and prototype-only CRM bookmarks are rewritten in place, so the address
   // bar only shows routes that operators can genuinely use.
@@ -711,7 +739,7 @@ export default function App() {
       {isExternalSurfaceRoute(route) ? null : <ThemeProfileSync />}
       <LanguageProvider>
         <WorkspaceErrorBoundary resetKey={`${route}:${authStatus}`}>
-          <LanguageProfileSync />
+          {isExternalSurface ? null : <LanguageProfileSync />}
           <TooltipProvider>
             <MotionConfig reducedMotion="user" transition={mdMotion.fast}>
             {isQuoteResponseRoute(route) ? (
@@ -730,6 +758,18 @@ export default function App() {
               <Suspense fallback={<ExternalRouteFallback />}>
                 <ContactCardPublicPage slug={route.split("/").at(-1) ?? ""} />
               </Suspense>
+            ) : workspaceAccessError && !isPasswordSetupRoute ? (
+              <div className="grid min-h-dvh place-items-center bg-[var(--md-page)] p-6">
+                <div className="max-w-md space-y-4">
+                  <h1 className="text-xl font-medium text-[var(--md-ink)]">{isTrainingWorkspace ? "Training could not be opened" : "Workspace could not be opened"}</h1>
+                  <p role="alert" className="text-sm leading-6 text-[var(--md-text)]">{workspaceAccessError}</p>
+                  <div className="flex flex-wrap gap-3">
+                    <Button onClick={() => window.location.reload()}>Try again</Button>
+                    {isTrainingWorkspace ? <Button variant="outline" onClick={() => selectWorkspaceEnvironment("main")}>Return to Main</Button>
+                      : <Button variant="outline" onClick={() => void authSupabase?.auth.signOut()}>Sign out</Button>}
+                  </div>
+                </div>
+              </div>
             ) : (!isLocalNavigationLab && ((authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth" && !isPasswordSetupRoute))) ? (
               <RouteFallback fullScreen />
             ) : !isLocalNavigationLab && (authStatus === "unauthenticated" || route === "/auth") ? (
@@ -759,7 +799,7 @@ export default function App() {
                   {route === "/crm/phone-calls" ? <CrmPhoneCallsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isCrmPhoneCallDetailRoute(route) ? <CrmPhoneCallsPage callId={route.split("/").at(-1) ?? ""} navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/crm/accounts" ? <CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} /> : null}
-                  {isCrmAccountDetailRoute(route) ? <CrmAccountDetailPage accountId={route.split("/").at(-1) ?? ""} navigate={navigate} /> : null}
+                  {isCrmAccountDetailRoute(route) ? <CrmAccountDetailPage accountId={route.split("/").at(-1) ?? ""} navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/crm/leads" ? <CrmLeadsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isCrmLeadConversionRoute(route) ? <LeadConversionPage navigate={navigate} leadId={route.split("/").at(-2) ?? ""} /> : null}
                   {isCrmLeadDetailRoute(route) ? <CrmLeadDetailPage navigate={navigate} leadId={route.split("/").at(-1) ?? ""} currentUser={currentUser} /> : null}
@@ -803,7 +843,7 @@ export default function App() {
                   {route.startsWith("/admin") && route !== "/admin/finance" ? <AdminPage route={route as AdminRoute} currentUser={currentUser} /> : null}
                   {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} navigate={navigate} /> : null}
                   {route === "/bookings" ? <BookingsPage navigate={navigate} currentUser={currentUser} /> : null}
-                  {isBookingDetailRoute(route) ? <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-1) ?? "md-22455"} /> : null}
+                  {isBookingDetailRoute(route) ? <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-1) ?? "md-22455"} currentUser={currentUser} /> : null}
                   {route === "/road-control" ? <RoadControlPage navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/road-control/new" ? <DomesticRoadBookingPage navigate={navigate} /> : null}
                   {isRoadJobDetailRoute(route) ? <DomesticRoadBookingPage key={route} navigate={navigate} roadJobId={route.split("/").at(-1) ?? ""} /> : null}

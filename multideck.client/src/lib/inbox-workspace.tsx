@@ -69,6 +69,7 @@ type InboxWorkspaceValue = {
 
 const InboxWorkspaceContext = createContext<InboxWorkspaceValue | null>(null)
 const threadDetailCacheTtlMs = 60_000
+const threadDetailCacheLimit = 48
 
 const supportedViews = new Set<InboxNavigationView>(["all", "shared", "suggested", "sent", "drafts", "archive", "spam", "trash"])
 
@@ -252,6 +253,7 @@ export function InboxWorkspaceProvider({
   }, [])
 
   const fetchThreadPage = useCallback(async (request: ThreadQuery, append = false, force = false) => {
+    const requestScope = accountScopeRef.current
     const key = threadCacheKey(request.mailboxId, request.folder ?? "inbox", request.query ?? "", request.folderId)
     const existing = threadCacheRef.current[key]
     if (!append && !force && existing) {
@@ -263,6 +265,7 @@ export function InboxWorkspaceProvider({
 
     const next = listThreads(request)
       .then((page) => {
+        if (accountScopeRef.current !== requestScope || threadPageRequestsRef.current.get(requestKey) !== next) throw new Error("The inbox workspace changed.")
         setThreadCache((current) => {
           const updated = { ...current, [key]: mergeThreadPage(current[key], page, append) }
           threadCacheRef.current = updated
@@ -270,7 +273,9 @@ export function InboxWorkspaceProvider({
         })
         return page
       })
-      .finally(() => threadPageRequestsRef.current.delete(requestKey))
+      .finally(() => {
+        if (threadPageRequestsRef.current.get(requestKey) === next) threadPageRequestsRef.current.delete(requestKey)
+      })
     threadPageRequestsRef.current.set(requestKey, next)
     return next
   }, [])
@@ -283,39 +288,50 @@ export function InboxWorkspaceProvider({
     return null
   }, [])
   const rememberThreadDetail = useCallback((detail: InboxThreadDetail) => {
+    threadDetailsRef.current.delete(detail.id)
     threadDetailsRef.current.set(detail.id, { detail, cachedAt: Date.now() })
+    while (threadDetailsRef.current.size > threadDetailCacheLimit) {
+      const oldest = threadDetailsRef.current.keys().next().value
+      if (oldest === undefined) break
+      threadDetailsRef.current.delete(oldest)
+    }
   }, [])
   const fetchThreadDetail = useCallback(async (threadId: string, force = false) => {
+    const requestScope = accountScopeRef.current
     const cached = readThreadDetail(threadId)
     if (!force && cached) return cached
     const pending = threadDetailRequestsRef.current.get(threadId)
-    if (!force && pending) return pending
+    if (pending) return pending
     const next = getThread(threadId)
-      .then(async (detail) => {
-        // Conversation intent includes its private inline images. Start this
-        // before selection and only publish the cached detail once they settle,
-        // so even a fast click cannot reveal the body ahead of its CID images.
-        await prefetchThreadInlineAttachmentBlobUrls(detail)
-        threadDetailsRef.current.set(threadId, { detail, cachedAt: Date.now() })
+      .then((detail) => {
+        if (accountScopeRef.current !== requestScope || threadDetailRequestsRef.current.get(threadId) !== next) throw new Error("The inbox workspace changed.")
+        // Text is ready now. Warm the expanded message's images concurrently;
+        // a slow signature must never hold the entire conversation behind it.
+        void prefetchThreadInlineAttachmentBlobUrls(detail).catch(() => undefined)
+        rememberThreadDetail(detail)
         return detail
       })
-      .finally(() => threadDetailRequestsRef.current.delete(threadId))
+      .finally(() => {
+        if (threadDetailRequestsRef.current.get(threadId) === next) threadDetailRequestsRef.current.delete(threadId)
+      })
     threadDetailRequestsRef.current.set(threadId, next)
     return next
-  }, [readThreadDetail])
+  }, [readThreadDetail, rememberThreadDetail])
   const prefetchThreadDetail = useCallback((threadId: string) => {
     if (readThreadDetail(threadId) || threadDetailRequestsRef.current.has(threadId)) return
     void fetchThreadDetail(threadId).catch(() => undefined)
   }, [fetchThreadDetail, readThreadDetail])
   const fetchOlderThreadMessages = useCallback(async (threadId: string, offset: number) => {
+    const requestScope = accountScopeRef.current
     const safeOffset = Math.max(0, Math.floor(offset))
     const requestKey = `${threadId}:${safeOffset}`
     const pending = olderThreadRequestsRef.current.get(requestKey)
     if (pending) return pending
 
     const next = getThread(threadId, { offset: safeOffset, limit: 25 })
-      .then(async (page) => {
-        await prefetchThreadInlineAttachmentBlobUrls(page)
+      .then((page) => {
+        if (accountScopeRef.current !== requestScope || olderThreadRequestsRef.current.get(requestKey) !== next) throw new Error("The inbox workspace changed.")
+        // Older messages arrive collapsed. Their images load on expansion.
         const current = readThreadDetail(threadId)
         if (!current) {
           rememberThreadDetail(page)
@@ -341,7 +357,9 @@ export function InboxWorkspaceProvider({
         rememberThreadDetail(detail)
         return detail
       })
-      .finally(() => olderThreadRequestsRef.current.delete(requestKey))
+      .finally(() => {
+        if (olderThreadRequestsRef.current.get(requestKey) === next) olderThreadRequestsRef.current.delete(requestKey)
+      })
     olderThreadRequestsRef.current.set(requestKey, next)
     return next
   }, [readThreadDetail, rememberThreadDetail])

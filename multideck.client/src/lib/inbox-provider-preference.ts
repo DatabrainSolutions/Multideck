@@ -1,5 +1,5 @@
 import type { MailProvider } from "@/lib/inbox-contract"
-import { supabase } from "@/lib/supabase"
+import { authSupabase, supabase } from "@/lib/supabase"
 
 export const inboxProviderPreferenceChangedEvent = "multideck:inbox-provider-preference-changed"
 const inboxProviderPreferenceStoragePrefix = "multideck.inbox.default-provider"
@@ -23,7 +23,7 @@ function isPreferenceSchemaUnavailable(error: unknown) {
 
 async function localPreferenceKey() {
   if (typeof window === "undefined" || !supabase) return null
-  const { data } = await supabase.auth.getUser()
+  const { data } = await authSupabase!.auth.getUser()
   if (!data.user) return null
   return `${inboxProviderPreferenceStoragePrefix}:${window.location.host}:${data.user.id}`
 }

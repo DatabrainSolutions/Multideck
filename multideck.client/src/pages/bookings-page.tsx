@@ -1,10 +1,11 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react"
 import { toast } from "sonner"
 import { ArrowDownAZ, ArrowUpAZ, CalendarClock, Search, Star, TriangleAlert, X } from "@/components/icons/hugeicons"
 import {
   BookingBoardPreview,
   BookingListHeader,
-  BookingMetricStrip,
   BookingModePill,
   BookingStatusPill,
   bookingSearchFieldOptions,
@@ -151,7 +152,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
   const [quickSearch, setQuickSearch] = useState("")
   const [debouncedQuickSearch, setDebouncedQuickSearch] = useState("")
   const [page, setPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [rowsPerPage, setRowsPerPage] = useState(defaultPaginationPageSize)
   const [dexterOpen, setDexterOpen] = useState(false)
   const [directionFilter, setDirectionFilter] = useState<(typeof directionFilters)[number]>(directionFilters[0])
   const [modeFilter, setModeFilter] = useState<(typeof modeFilters)[number]>(modeFilters[0])
@@ -490,7 +491,6 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
         onViewModeChange={setViewMode}
         onSpeakToDexter={() => setDexterOpen(true)}
       />
-      <BookingMetricStrip summary={tableSummary} />
       {bookingsError ? <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 py-3 text-[13px] text-[var(--md-red)]">{t("Bookings could not be loaded.")} {bookingsError}</div> : null}
       {viewMode === "Table" ? (
         <DataTable
@@ -500,13 +500,24 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
           rows={bookingsLoading ? [] : tableRows}
           getRowKey={(booking) => booking.id}
           storageKey={bookingTableStorageKey}
+          exportConfig={{ fileName: "multideck-bookings", register: {
+            dateLabel: "Departure date", dateValue: (booking) => booking.departureAt,
+            busy: bookingsLoading || Boolean(bookingsError) || quickSearch !== debouncedQuickSearch,
+            loadAllRows: (signal) => collectExportPages((page) => listLiveBookingsPage({
+              search: debouncedQuickSearch, scope: registerScope, operatorCode: currentOperatorCode,
+              direction: directionFilter === "All directions" ? undefined : directionFilter,
+              mode: modeFilter === "All modes" ? undefined : modeFilter,
+              shipmentType: shipmentTypeFilter === "All types" ? undefined : shipmentTypeFilter,
+              filterQuery: search, sort: serverSort, ...page,
+            }, signal), (booking) => booking.id, signal),
+          } }}
           serverSorting={{ value: serverSort, onChange: setServerSort }}
           rowClassName={() => "hover:bg-[var(--md-hover)]"}
           onRowClick={openBooking}
           toolbarTabs={<RegisterViewSwitch options={bookingOwnershipScopes} value={scope} onChange={setScope} counts={{ [scope]: tableTotal } as Partial<Record<BookingScope, number>>} ariaLabel="Booking ownership filter" compact />}
           toolbarFilters={(
             <>
-              <div aria-label={t("Booking shape")} className="flex max-w-full flex-wrap items-center gap-1.5">
+              <div aria-label={t("Booking shape")} className="flex max-w-full flex-wrap items-center gap-1.5 group-data-[mobile=true]/table-controls:grid group-data-[mobile=true]/table-controls:grid-cols-2 group-data-[mobile=true]/table-controls:gap-2">
                 <ShapeFilter compact label={t("Direction")} options={directionFilters} value={directionFilter} onChange={setDirectionFilter} />
                 <ShapeFilter compact label={t("Mode")} options={modeFilters} value={modeFilter} onChange={changeMode} />
                 {shipmentTypeFilters.length > 1 ? <ShapeFilter compact label={t("Type")} options={shipmentTypeFilters} value={shipmentTypeFilter} onChange={setShipmentTypeFilter} /> : null}
@@ -553,7 +564,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
                 onClick={() => setServerSort((current) => ({ id: "customerCargo", direction: current?.id === "customerCargo" && current.direction === "asc" ? "desc" : "asc" }))}
               >
                 {serverSort?.id === "customerCargo" && serverSort.direction === "desc" ? <ArrowUpAZ className="size-3.5" strokeWidth={1.45} /> : <ArrowDownAZ className="size-3.5" strokeWidth={1.45} />}
-                <span aria-hidden="true">{serverSort?.id === "customerCargo" && serverSort.direction === "desc" ? "Z–A" : "A–Z"}</span>
+                <span aria-hidden="true"><span className="hidden group-data-[mobile=true]/table-controls:inline">{t("Customer name")}{": "}</span>{serverSort?.id === "customerCargo" && serverSort.direction === "desc" ? "Z–A" : "A–Z"}</span>
               </Button>
           )}
           emptyState={bookingsLoading ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading bookings…" /></div> : (
@@ -598,6 +609,8 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
         totalItems={totalBookings}
         pageSize={rowsPerPage}
         pageSizeOptions={rowsPerPageOptions}
+        loading={bookingsLoading}
+        itemCount={tableRows.length}
         itemLabel="bookings"
         onPageChange={setPage}
         onPageSizeChange={(nextRowsPerPage) => {
@@ -620,7 +633,7 @@ function ShapeFilter<T extends string>({ label, options, value, onChange, compac
         value={value}
         onChange={onChange}
         ariaLabel={label}
-        className={compact ? "h-8 min-w-[148px] px-2.5 text-[12px]" : undefined}
+        className={compact ? "h-8 min-w-[148px] px-2.5 text-[12px] group-data-[mobile=true]/table-controls:min-w-0 group-data-[mobile=true]/table-controls:w-full" : undefined}
       />
     </div>
   )

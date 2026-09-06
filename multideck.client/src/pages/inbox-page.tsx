@@ -1186,13 +1186,16 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       // Keep the current rows mounted while the first page is replaced. New
       // provider mail therefore appears without a full-page loading flash.
       if (sync.synced > 0 && mailboxId === targetMailboxId) await loadThreads(null, true)
-      if (selectedThreadMailboxId === targetMailboxId) await refreshSelectedThread()
+      if (sync.synced > 0 && selectedThreadMailboxId === targetMailboxId) await refreshSelectedThread()
       return sync
     } finally {
       mailboxSyncInFlightRef.current = null
       setSyncingMailboxId((current) => current === targetMailboxId ? null : current)
     }
   }, [loadThreads, mailboxId, refreshAccounts, refreshSelectedThread, selectedThreadMailboxId])
+
+  const runMailboxSyncRef = useRef(runMailboxSync)
+  runMailboxSyncRef.current = runMailboxSync
 
   // Historical mail continues in bounded batches while the operator is in the
   // Inbox. Once indexed, the same provider cursor becomes a lightweight delta
@@ -1218,7 +1221,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
         return
       }
       try {
-        const sync = await runMailboxSync(targetMailboxId)
+        const sync = await runMailboxSyncRef.current(targetMailboxId)
         if (cancelled) return
         schedule(sync?.hasMore ? indexContinuationDelayMs : liveMailboxSyncIntervalMs)
       } catch (error) {
@@ -1248,11 +1251,14 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       if (timerId !== null) window.clearTimeout(timerId)
       document.removeEventListener("visibilitychange", onVisibilityChange)
     }
-  }, [activeMailbox?.id, activeMailbox?.inboundEnabled, activeMailbox?.indexStatus, activeMailbox?.status, runMailboxSync])
+  }, [activeMailbox?.id, activeMailbox?.inboundEnabled, activeMailbox?.indexStatus, activeMailbox?.status])
 
   /* ----------------------------------------------------------- thread detail */
 
   useEffect(() => {
+    // Also invalidate pending detail when selection is cleared or this effect
+    // unmounts, so rapid switching cannot restore an earlier conversation.
+    const requestId = ++threadRequestRef.current
     setOlderMessagesLoading(false)
     setOlderMessagesError(null)
     if (!selectedThreadId) {
@@ -1263,7 +1269,6 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       return
     }
 
-    const requestId = ++threadRequestRef.current
     setThreadError(null)
 
     const cached = readThreadDetail(selectedThreadId)
@@ -1293,6 +1298,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
         setThreadError(errorMessageFor(error, t("Unable to open this conversation.")))
         setThreadState("error")
       })
+    return () => { threadRequestRef.current += 1 }
   }, [fetchThreadDetail, readThreadDetail, selectedThreadId, t])
 
   const loadOlderMessages = useCallback(async () => {
@@ -1314,8 +1320,9 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
   // provider delta sync alone cannot refresh a visible status. Poll only the
   // selected conversation, pause in the background, and preserve the current
   // content if a refresh fails.
+  const hasOutboundTracking = thread?.id === selectedThreadId && thread.messages.some((message) => message.direction === "outbound" && message.delivery)
   useEffect(() => {
-    if (!selectedThreadId) return
+    if (!selectedThreadId || !hasOutboundTracking) return
     let cancelled = false
     let timerId: number | null = null
     const schedule = (delay: number) => {
@@ -1341,7 +1348,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       if (timerId !== null) window.clearTimeout(timerId)
       document.removeEventListener("visibilitychange", onVisibilityChange)
     }
-  }, [refreshSelectedThread, selectedThreadId])
+  }, [hasOutboundTracking, refreshSelectedThread, selectedThreadId])
 
   useEffect(() => {
     if (typeof window === "undefined" || window.location.pathname !== "/inbox") return

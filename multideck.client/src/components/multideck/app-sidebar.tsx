@@ -16,15 +16,14 @@ import { mdMotion, reduceMotion } from "@/lib/motion"
 import { isDefaultScope, mergeSavedOrder, useSidebarLayoutScope } from "@/lib/sidebar-preferences"
 import { hasPermission, isTenantAdministrator, type AuthUserSummary } from "@/lib/auth-user"
 import { createProfilePhotoSignedUrl } from "@/lib/profile-photo"
-import { supabase } from "@/lib/supabase"
+import { isTrainingWorkspace } from "@/lib/workspace-environment"
+import { authSupabase, supabase } from "@/lib/supabase"
 import { useAiAgentName } from "@/lib/user-preferences"
 import { mailboxLabelTone } from "@/lib/mailbox-label-colour"
 import { calendarNavItem, customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, todoNavItem, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
 import { readSettingsSectionFromUrl, settingsNavigationGroups, type SettingsSectionId } from "@/data/settings-navigation"
 import { useLanguage } from "@/i18n/language-provider"
 import { deleteDexterConversation, getDexterUsage, listDexterConversationsPage, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
-import { listDealsPage } from "@/lib/deal-api"
-import { listLeadsPage } from "@/lib/lead-api"
 import { companyAccentPreferenceId, useAccentPresetId } from "@/lib/accent-theme"
 import { companyAppearanceInitials, useCompanyAppearance } from "@/lib/company-appearance"
 import {
@@ -39,7 +38,7 @@ import { MailProviderMark, mailProviderLabels } from "@/components/multideck/mai
 import { useOptionalInboxWorkspace, type InboxNavigationView } from "@/lib/inbox-workspace"
 import { defaultCoverPhotoUrl } from "@/lib/default-cover-photo"
 import type { MailboxFolder } from "@/lib/inbox-api"
-import { dismissAllWorkspaceNotifications, dismissWorkspaceNotification, listWorkspaceNotifications, markAllWorkspaceNotificationsRead, markWorkspaceNotificationRead, markWorkspaceNotificationUnread, type WorkspaceNotification } from "@/lib/notification-api"
+import { useWorkspaceNotifications } from "@/lib/use-workspace-notifications"
 import { openSupportTicket } from "@/components/multideck/support-ticket-dialog"
 import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
 
@@ -103,13 +102,6 @@ const notificationsReveal = {
 
 const notificationItemExit = { opacity: 0, x: -8, transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] } }
 
-let notificationChannelSequence = 0
-
-function nextNotificationChannelName() {
-  notificationChannelSequence += 1
-  return `sidebar-notifications-live-${notificationChannelSequence}`
-}
-
 function notificationTime(value: string) {
   const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 60_000))
   if (minutes < 1) return "now"
@@ -121,49 +113,8 @@ function notificationTime(value: string) {
 function NotificationBell() {
   const { direction, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
-  const [notifications, setNotifications] = useState<WorkspaceNotification[]>([])
+  const { notifications, updateNotificationStatus, dismissNotification, markAllRead, clearNotifications } = useWorkspaceNotifications()
   const unreadCount = notifications.filter((notification) => notification.status === "unread").length
-
-  function updateNotificationStatus(notificationId: string, status: "read" | "unread") {
-    setNotifications((current) => current.map((notification) => notification.id === notificationId ? { ...notification, status } : notification))
-    const request = status === "read" ? markWorkspaceNotificationRead(notificationId) : markWorkspaceNotificationUnread(notificationId)
-    void request.catch(() => refreshNotifications())
-  }
-
-  function dismissNotification(notificationId: string) {
-    setNotifications((current) => current.filter((notification) => notification.id !== notificationId))
-    void dismissWorkspaceNotification(notificationId).catch(() => refreshNotifications())
-  }
-
-  function markAllRead() {
-    setNotifications((current) => current.map((notification) => ({ ...notification, status: "read" })))
-    void markAllWorkspaceNotificationsRead().catch(() => refreshNotifications())
-  }
-
-  function clearNotifications() {
-    setNotifications([])
-    void dismissAllWorkspaceNotifications().catch(() => refreshNotifications())
-  }
-
-  const refreshNotifications = useCallback(() => {
-    void listWorkspaceNotifications()
-      .then(setNotifications)
-      .catch((error) => console.error("Notifications could not be loaded.", error))
-  }, [])
-
-  useEffect(() => {
-    refreshNotifications()
-    const client = supabase
-    if (!client) return
-    const channel = client
-      // Desktop and mobile sidebars can exist at the same time. Supabase does
-      // not allow new callbacks to be added to an already-subscribed channel,
-      // so every mounted bell needs its own channel instance.
-      .channel(nextNotificationChannelName())
-      .on("postgres_changes", { event: "*", schema: "public", table: "Comm_Notifications" }, refreshNotifications)
-      .subscribe()
-    return () => { void client.removeChannel(channel) }
-  }, [refreshNotifications])
 
   function openNotificationSettings() {
     window.history.pushState({}, "", "/settings?tab=notifications")
@@ -986,7 +937,6 @@ function InboxContextSidebar({
           >
             <FolderNounIcon className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} aria-hidden="true" />
             <span className="min-w-0 flex-1 truncate">{t(folderNoun)}</span>
-            <span data-i18n-skip dir="ltr" className="text-[11px] tabular-nums text-[var(--md-subtle)]">{folderRows.length}</span>
             <motion.span
               aria-hidden="true"
               animate={{ rotate: foldersExpanded ? 0 : -90 }}
@@ -1129,23 +1079,6 @@ export function AppSidebar({
   const canReadPhoneCalls = hasPermission(currentUser, "CRM.PhoneCalls.Read")
   const canShowDocumentBuilder = import.meta.env.DEV || canReadDocuments
   const canOpenAdmin = isTenantAdministrator(currentUser)
-  const isCrmRoute = route === "/crm" || route.startsWith("/crm/")
-  const [crmDealCount, setCrmDealCount] = useState<number | null>(null)
-  const [crmLeadCount, setCrmLeadCount] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (isCustomer || !isCrmRoute) return
-    let active = true
-    Promise.allSettled([
-      listLeadsPage({ limit: 1, offset: 0 }),
-      listDealsPage({ limit: 1, offset: 0 }),
-    ]).then(([leads, deals]) => {
-      if (!active) return
-      setCrmLeadCount(leads.status === "fulfilled" ? leads.value.total : null)
-      setCrmDealCount(deals.status === "fulfilled" ? deals.value.total : null)
-    })
-    return () => { active = false }
-  }, [route, isCrmRoute, isCustomer])
 
   const availableAreas = useMemo<SidebarArea[]>(() => {
     if (!isCustomer) {
@@ -1156,16 +1089,7 @@ export function AppSidebar({
         if (area.id !== "sales-crm") return area
         return {
           ...area,
-          destinations: area.destinations.filter((destination) => destination.id !== "crm-phone-calls" || canReadPhoneCalls).map((destination) => destination.id === "crm-leads-opportunities"
-            ? {
-                ...destination,
-                children: destination.children?.map((item) => {
-                  if (item.route === "/crm/leads") return { ...item, value: crmLeadCount === null ? undefined : String(crmLeadCount) }
-                  if (item.route === "/crm/deals") return { ...item, value: crmDealCount === null ? undefined : String(crmDealCount) }
-                  return item
-                }),
-              }
-            : destination),
+          destinations: area.destinations.filter((destination) => destination.id !== "crm-phone-calls" || canReadPhoneCalls),
         }
       })
     }
@@ -1173,7 +1097,7 @@ export function AppSidebar({
     const destinations = customerWarehouseNavigation.filter((item) =>
       item.route !== "/warehouse/users" || canManageWarehouseUsers)
     return [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations }]
-  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, canReadPhoneCalls, crmDealCount, crmLeadCount])
+  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, canReadPhoneCalls])
   const favouriteCandidates = useMemo(() => sidebarFavouriteCandidates(availableAreas), [availableAreas])
   const { scope: favouritesScope, save: saveFavourites } = useSidebarLayoutScope(favouritesScopeId)
   const favouriteIds = useMemo(
@@ -1678,6 +1602,12 @@ export function AppSidebar({
           </Button>
         ) : null}
       </div>
+
+      {isTrainingWorkspace ? (
+        <div className="relative z-10 mt-3 flex justify-center" role="status" aria-label="Training workspace">
+          <span className="rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a14)] px-2 py-1 text-[10px] font-semibold tracking-wider text-[var(--md-accent)]">TRAINING</span>
+        </div>
+      ) : null}
 
       <div className="relative z-10 mt-[var(--md-page-stack-gap)] min-h-0 flex-1">
         <div
@@ -2319,17 +2249,18 @@ export function AppSidebar({
 
             <Separator className="mx-3 bg-[var(--md-line-strong)]" />
             <div className="p-2">
-            {!isCustomer ? <button
+            {/* Keep sign out away from the profile trigger beneath this popover. */}
+            <button
               type="button"
-              className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
+              className="flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-red)] transition-[background-color,color,transform] duration-150 hover:bg-[rgba(209,78,78,0.08)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(209,78,78,0.14)] motion-reduce:transition-none motion-reduce:active:scale-100"
               onClick={() => {
                 setAccountMenuOpen(false)
-                openSettingsSection("profile")
+                void authSupabase?.auth.signOut()
               }}
             >
-              <Settings data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-              <span className="min-w-0 flex-1 truncate">{t("Account settings")}</span>
-            </button> : null}
+              <LogOut data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+              <span className="min-w-0 flex-1 truncate">{t("Sign out")}</span>
+            </button>
             {canOpenAdmin ? (
               <>
                 <button
@@ -2370,7 +2301,9 @@ export function AppSidebar({
               type="button"
               className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
               onClick={() => {
-                launchSupportTicket()
+                setAccountMenuOpen(false)
+                onRequestClose?.()
+                openSettingsSection("support")
               }}
             >
               <LifeBuoy data-icon="inline-start" className="size-4" strokeWidth={1.4} />
@@ -2378,18 +2311,20 @@ export function AppSidebar({
             </button> : null}
             <Separator className="my-1 bg-[var(--md-line-strong)]" />
             <ThemeToggle showAppearanceLabel={false} className="h-11 rounded-[var(--md-radius-lg)] px-2.5 shadow-none" />
+            {!isCustomer ? <>
             <Separator className="my-1 bg-[var(--md-line-strong)]" />
             <button
               type="button"
-              className="flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-red)] transition-[background-color,color,transform] duration-150 hover:bg-[rgba(209,78,78,0.08)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(209,78,78,0.14)] motion-reduce:transition-none motion-reduce:active:scale-100"
+              className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
               onClick={() => {
                 setAccountMenuOpen(false)
-                void supabase?.auth.signOut()
+                openSettingsSection("profile")
               }}
             >
-              <LogOut data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-              <span className="min-w-0 flex-1 truncate">{t("Sign out")}</span>
+              <Settings data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+              <span className="min-w-0 flex-1 truncate">{t("Account settings")}</span>
             </button>
+            </> : null}
             </div>
           </PopoverContent>
         </Popover>

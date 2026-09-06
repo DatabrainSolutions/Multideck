@@ -1,3 +1,4 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useEffect, useMemo, useState } from "react"
 import { KanbanSquare, List, SlidersHorizontal } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -20,7 +21,6 @@ type RoadScope = (typeof roadScopeOptions)[number]
 const roadViewModes = ["List", "Kanban"] as const
 type RoadViewMode = (typeof roadViewModes)[number]
 const roadViewStorageKey = "multideck.view.road-control"
-const roadPageSize = 20
 const roadViewOptions = [
   { value: "List", label: "List", icon: List },
   { value: "Kanban", label: "Kanban", icon: KanbanSquare },
@@ -37,6 +37,7 @@ export function RoadControlPage({ navigate, currentUser }: { navigate: (path: st
   const [stageCounts, setStageCounts] = useState<RoadControlCounts>(emptyRoadCounts)
   const [filteredTotal, setFilteredTotal] = useState(0)
   const [page, setPage] = useState(1)
+  const [roadPageSize, setRoadPageSize] = useState(defaultPaginationPageSize)
   const [roadJobsLoading, setRoadJobsLoading] = useState(true)
   const [roadJobsError, setRoadJobsError] = useState<string | null>(null)
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set())
@@ -64,7 +65,7 @@ export function RoadControlPage({ navigate, currentUser }: { navigate: (path: st
       if (!controller.signal.aborted) setRoadJobsLoading(false)
     })
     return () => controller.abort()
-  }, [activeStage, currentUser?.initials, page, scope, viewMode])
+  }, [activeStage, currentUser?.initials, page, roadPageSize, scope, viewMode])
 
   const stages = useMemo(() => roadJobStages.map((item) => ({
     ...item,
@@ -174,6 +175,9 @@ export function RoadControlPage({ navigate, currentUser }: { navigate: (path: st
           pageCount={pageCount}
           totalItems={filteredTotal}
           pageSize={roadPageSize}
+          onPageSizeChange={setRoadPageSize}
+          loading={roadJobsLoading}
+          itemCount={roadJobs.length}
           itemLabel="road jobs"
           onPageChange={setPage}
         />

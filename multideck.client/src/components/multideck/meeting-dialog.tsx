@@ -16,7 +16,7 @@ import { MeetingTimePicker } from "@/components/multideck/meeting-time-picker"
 import {
   createMeeting,
   defaultMeetingProviderForInbox,
-  getCalendarWorkspace,
+  getCalendarConnections,
   getMeetingCrmContext,
   isLocalCalendarPreview,
   type CalendarConnection,
@@ -27,6 +27,8 @@ import { listMailboxes } from "@/lib/inbox-api"
 import { resolveDefaultInboxProvider, type Mailbox } from "@/lib/inbox-contract"
 import { inboxProviderPreferenceChangedEvent, loadDefaultInboxProvider } from "@/lib/inbox-provider-preference"
 import { subscribeMeetingComposer, type MeetingComposerContext } from "@/lib/meeting-composer-events"
+import { getSupabaseSession } from "@/lib/supabase"
+import { invalidateCachedCrmResources, readCachedCrmResource } from "@/lib/crm-read-cache"
 import { cn } from "@/lib/utils"
 
 export const CALENDAR_CHANGED_EVENT = "multideck:calendar:changed"
@@ -64,18 +66,16 @@ function defaultDraft(context: MeetingComposerContext, provider: CalendarProvide
 /**
  * The join-link platform a fresh meeting starts on follows the operator's default
  * inbox: Gmail → Google Meet, Outlook → Microsoft Teams, nothing chosen → Teams.
- * Resolved once per session and refreshed when the inbox preference changes.
+ * Shared briefly for this account and refreshed when the inbox preference changes.
  */
-let defaultProviderPromise: Promise<CalendarProvider> | null = null
-function resolveDefaultProvider(): Promise<CalendarProvider> {
-  // Local preview has no provider connections, so it starts on a meeting without a join link.
-  if (isLocalCalendarPreview()) return Promise.resolve<CalendarProvider>("multideck")
-  if (!defaultProviderPromise) {
-    defaultProviderPromise = Promise.all([loadDefaultInboxProvider().catch(() => null), listMailboxes().catch((): Mailbox[] => [])])
-      .then(([preferred, mailboxes]) => defaultMeetingProviderForInbox(resolveDefaultInboxProvider(mailboxes, preferred)))
-      .catch((): CalendarProvider => FALLBACK_PROVIDER)
-  }
-  return defaultProviderPromise
+async function resolveDefaultProvider(): Promise<CalendarProvider> {
+  if (isLocalCalendarPreview()) return "multideck"
+  const session = await getSupabaseSession()
+  if (!session?.user) return FALLBACK_PROVIDER
+  return readCachedCrmResource(session.user.id, "calendar-default-provider", () =>
+    Promise.all([loadDefaultInboxProvider().catch(() => null), listMailboxes().catch((): Mailbox[] => [])])
+      .then(([preferred, mailboxes]) => defaultMeetingProviderForInbox(resolveDefaultInboxProvider(mailboxes, preferred))),
+  )
 }
 
 function Row({ icon: Icon, label, children, align = "center" }: { icon: ComponentType<{ className?: string; strokeWidth?: number }>; label: string; children: React.ReactNode; align?: "center" | "start" }) {
@@ -101,7 +101,7 @@ export function MeetingDialogHost({ navigate }: { navigate: (path: string) => vo
   const session = useRef(0)
 
   useEffect(() => {
-    const reset = () => { defaultProviderPromise = null }
+    const reset = () => invalidateCachedCrmResources(null, ["calendar-default-provider"])
     window.addEventListener(inboxProviderPreferenceChangedEvent, reset)
     return () => window.removeEventListener(inboxProviderPreferenceChangedEvent, reset)
   }, [])
@@ -121,18 +121,17 @@ export function MeetingDialogHost({ navigate }: { navigate: (path: string) => vo
     if (!context) return
     const controller = new AbortController()
     const current = session.current
-    const now = new Date()
     void Promise.all([
-      getCalendarWorkspace(new Date(now.getTime() - 86_400_000).toISOString(), new Date(now.getTime() + 7 * 86_400_000).toISOString(), controller.signal),
+      getCalendarConnections(controller.signal),
       resolveDefaultProvider(),
     ])
-      .then(([workspace, preferredProvider]) => {
+      .then(([providerConnections, preferredProvider]) => {
         if (controller.signal.aborted || session.current !== current) return
-        setConnections(workspace.connections)
+        setConnections(providerConnections)
         if (providerTouched.current) return
         setDraft((value): MeetingDraft => ({
           ...value,
-          provider: isMeetingProviderReady(preferredProvider, workspace.connections) ? preferredProvider : "multideck",
+          provider: isMeetingProviderReady(preferredProvider, providerConnections) ? preferredProvider : "multideck",
         }))
       })
       .catch(() => {
@@ -198,7 +197,11 @@ export function MeetingDialogHost({ navigate }: { navigate: (path: string) => vo
 
   return (
     <Dialog open={Boolean(context)} onOpenChange={(open) => { if (!open) close() }}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-0 sm:max-w-[620px]" onEscapeKeyDown={(event) => { if (saving) event.preventDefault() }}>
+      <DialogContent
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-0 sm:max-w-[620px] ease-[cubic-bezier(0.22,1,0.36,1)] data-open:duration-250 data-open:zoom-in-98 data-closed:duration-150 data-closed:zoom-out-98 motion-reduce:animate-none!"
+        overlayClassName="ease-[cubic-bezier(0.22,1,0.36,1)] data-open:duration-250 data-closed:duration-150 motion-reduce:animate-none!"
+        onEscapeKeyDown={(event) => { if (saving) event.preventDefault() }}
+      >
         <DialogTitle className="sr-only">New meeting</DialogTitle>
         <DialogDescription className="sr-only">Choose the meeting details, attendees and how to join.</DialogDescription>
         <form className="flex min-h-0 flex-col" aria-label="Schedule meeting" onSubmit={(event) => { event.preventDefault(); void submit() }}>
@@ -214,15 +217,15 @@ export function MeetingDialogHost({ navigate }: { navigate: (path: string) => vo
               value={draft.title}
               autoFocus
               aria-label="Meeting title"
-              placeholder="Add a title"
+              placeholder="Title"
               onChange={(event) => update({ title: event.target.value })}
-              className="mt-2 w-full bg-transparent py-1.5 text-[22px] font-medium tracking-[-.015em] text-[var(--md-ink)] outline-none transition-[box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] placeholder:text-[var(--md-subtle)] shadow-[inset_0_-1px_0_var(--md-line-strong)] focus:shadow-[inset_0_-1.5px_0_var(--md-accent)]"
+              className="mt-2 w-full border-0 bg-transparent py-1.5 text-[22px]! leading-snug! font-medium! tracking-[-.015em] text-[var(--md-ink)] shadow-none outline-none placeholder:text-[var(--md-subtle)]"
             />
           </div>
 
           <div className="grid flex-1 content-start px-5 pt-3 pb-3">
             <Row icon={Clock3} label="When" align="start">
-              <MeetingTimePicker startAt={draft.startAt} endAt={draft.endAt} timeZone={draft.timeZone} onChange={update} onTimeZoneChange={(timeZone) => update({ timeZone })} />
+              <MeetingTimePicker showLabels startAt={draft.startAt} endAt={draft.endAt} timeZone={draft.timeZone} onChange={update} onTimeZoneChange={(timeZone) => update({ timeZone })} />
             </Row>
             <Row icon={Video} label="How attendees join">
               <MeetingProviderSelect

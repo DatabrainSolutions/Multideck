@@ -25,10 +25,11 @@ import {
 
 async function mapOrders(admin, rows, context) {
   if (!rows.length) return [];
-  const ids = rows.map((r)=>r.WMSOrder_ID), [lines, receipts, dispatches] = await Promise.all([
+  const ids = rows.map((r)=>r.WMSOrder_ID), [lines, receipts, dispatches, tasks] = await Promise.all([
     many(admin.from("WMS_OrderLines").select("*").in("WMSOrderLine_OrderID", ids)),
     many(admin.from("WMS_Receipts").select("*").in("WMSReceipt_OrderID", ids)),
-    many(admin.from("WMS_Dispatches").select("*").in("WMSDispatch_OrderID", ids))
+    many(admin.from("WMS_Dispatches").select("*").in("WMSDispatch_OrderID", ids)),
+    many(admin.from("WMS_Tasks").select("*").in("WMSTask_OrderID", ids).in("WMSTask_TypeCode", ["putaway", "pick"]).order("WMSTask_CreatedAt"))
   ]);
   const itemIds = [...new Set(lines.map((line)=>line.WMSOrderLine_ItemID).filter(Boolean))];
   const locationIds = [...new Set(lines.flatMap((line)=>[line.WMSOrderLine_SourceLocationID, line.WMSOrderLine_TargetLocationID]).filter(Boolean))];
@@ -85,6 +86,9 @@ async function mapOrders(admin, rows, context) {
       statusName: sm.get(r.WMSOrder_StatusCode) ?? null,
       priorityCode: r.WMSOrder_PriorityCode,
       customerReference: r.WMSOrder_CustomerReference,
+      sourceTypeCode: r.WMSOrder_SourceTypeCode ?? "manual_exception",
+      sourceReference: r.WMSOrder_SourceReference ?? r.WMSOrder_CustomerReference ?? r.WMSOrder_OrderNumber,
+      sourceRecordId: r.WMSOrder_SourceRecordID ?? null,
       requestedDate: r.WMSOrder_RequestedDate,
       appointmentStartAt: r.WMSOrder_AppointmentStartAt,
       appointmentEndAt: r.WMSOrder_AppointmentEndAt,
@@ -139,6 +143,21 @@ async function mapOrders(admin, rows, context) {
           vehicleReg: x.WMSDispatch_VehicleReg,
           containerNumber: x.WMSDispatch_ContainerNumber,
           sealNumber: x.WMSDispatch_SealNumber
+        })),
+      tasks: tasks.filter((x)=>x.WMSTask_OrderID === r.WMSOrder_ID).map((x)=>({
+          id: x.WMSTask_ID,
+          type: x.WMSTask_TypeCode,
+          statusCode: x.WMSTask_StatusCode,
+          orderLineId: x.WMSTask_OrderLineID,
+          itemId: x.WMSTask_ItemID,
+          quantity: x.WMSTask_Quantity,
+          completedQuantity: x.WMSTask_CompletedQuantity ?? 0,
+          uomCode: x.WMSTask_UOMCode,
+          sourceBalanceId: x.WMSTask_BalanceID,
+          sourceLocationId: x.WMSTask_SourceLocationID,
+          targetLocationId: x.WMSTask_TargetLocationID,
+          createdAt: x.WMSTask_CreatedAt,
+          completedAt: x.WMSTask_CompletedAt
         }))
     };
   });
@@ -413,7 +432,7 @@ export async function handleOrders(request, path, url, admin, actor) {
     throw new HttpError(404, "Warehouse endpoint not found.");
   }
   const input = ["POST", "PUT"].includes(request.method) && request.headers.get("content-type")?.includes("application/json") ? bodyObject(await request.json()) : {};
-  const action = request.method === "PUT" && orderId && path.length === 2 ? "update" : !orderId ? "create" : path[2] === "receive" ? "receive" : path[2] === "dispatch" ? "dispatch" : path[2] === "cancel" ? "cancel" : path[2] === "reschedule" ? "reschedule" : null;
+  const action = request.method === "PUT" && orderId && path.length === 2 ? "update" : !orderId ? "create" : path[2] === "receive" ? "receive" : path[2] === "release" ? "release" : path[2] === "dispatch" ? "dispatch" : path[2] === "cancel" ? "cancel" : path[2] === "reschedule" ? "reschedule" : null;
   if (!action) throw new HttpError(404, "Warehouse endpoint not found.");
   const facilityIds = await companyFacilityIds(admin, actor);
   if (!facilityIds.length) throw new HttpError(403, "Choose a warehouse you can access.");
@@ -442,6 +461,29 @@ export async function handleOrders(request, path, url, admin, actor) {
     p_actor_user_id: actor.userId,
     p_allowed_facility_ids: facilityIds,
     p_allowed_organisation_ids: allowedOrganisationIds
+  }) : action === "release" ? await admin.rpc("warehouse_edge_release_order_mutation", {
+    p_order_id: orderId,
+    p_payload: input,
+    p_actor_user_id: actor.userId,
+    p_allowed_facility_ids: facilityIds,
+    p_allowed_organisation_ids: allowedOrganisationIds
+  }) : action === "dispatch" ? await admin.rpc("warehouse_edge_dispatch_mutation", {
+    p_order_id: orderId,
+    p_payload: input,
+    p_actor_user_id: actor.userId,
+    p_allowed_facility_ids: facilityIds,
+    p_allowed_organisation_ids: allowedOrganisationIds
+  }) : action === "create" ? await admin.rpc("warehouse_edge_create_order_mutation", {
+    p_payload: input,
+    p_actor_user_id: actor.userId,
+    p_actor_portal_user_id: actor.portalUserId,
+    p_allowed_facility_ids: facilityIds,
+    p_allowed_organisation_ids: allowedOrganisationIds
+  }) : action === "cancel" ? await admin.rpc("warehouse_edge_cancel_order_mutation", {
+    p_order_id: orderId,
+    p_actor_user_id: actor.userId,
+    p_allowed_facility_ids: facilityIds,
+    p_allowed_organisation_ids: allowedOrganisationIds
   }) : action === "update" ? await admin.rpc("warehouse_edge_update_order_mutation", {
     p_order_id: orderId,
     p_payload: input,
@@ -458,7 +500,8 @@ export async function handleOrders(request, path, url, admin, actor) {
     p_allowed_organisation_ids: allowedOrganisationIds
   });
   if (error) {
-    throw new HttpError(error.message.includes("WMS400:") ? 400 : error.message.includes("WMS409:") ? 409 : 500, error.message.replace(/^.*WMS(?:400|409):\s*/, ""));
+    const status = error.message.includes("WMS400:") ? 400 : error.message.includes("WMS403:") ? 403 : error.message.includes("WMS404:") ? 404 : error.message.includes("WMS409:") ? 409 : 500;
+    throw new HttpError(status, error.message.replace(/^.*WMS(?:400|403|404|409|500):\s*/, ""));
   }
   const refreshed = await loadExactOrderById(admin, actor, facilityIds, data);
   if (!refreshed) throw new HttpError(404, "The updated warehouse order could not be reloaded.");

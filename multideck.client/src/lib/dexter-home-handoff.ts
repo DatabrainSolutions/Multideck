@@ -1,3 +1,4 @@
+import { workspaceStorageKey } from "./workspace-environment.ts"
 import type { DexterUploadedDocument } from "@/lib/dexter-api"
 import type { DexterAccessMode, DexterSpecialistId } from "@/components/multideck/agent-dexter-components"
 import type { DexterMentionSnapshot } from "@/data/dexter-mentions"
@@ -24,7 +25,7 @@ export type DexterHomeHandoff = {
   uploadedDocuments: DexterUploadedDocument[]
 }
 
-const handoffKey = "multideck.dexterHomeHandoff"
+const handoffKey = workspaceStorageKey("multideck.dexterHomeHandoff")
 
 function isHandoff(value: unknown): value is DexterHomeHandoff {
   if (!value || typeof value !== "object") return false

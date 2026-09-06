@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
+import { requiresExplicitActionApproval } from "../functions/agent-dexter/email-approval.mjs"
 
 const migration = readFileSync(
   new URL("../migrations/20260828140000_cloud_support_ticket_dexter_parity.sql", import.meta.url),
@@ -58,7 +59,9 @@ test("refuses restricted and security ticket callbacks at both App boundaries", 
 
 test("keeps support creation approval-only and tenant-derived", () => {
   assert.match(dexter, /requiresExplicitActionApproval\(action\.code, accessMode\)/)
-  assert.match(approvalBoundary, /"create_support_ticket"/)
+  for (const mode of ["approve", "full", "read_only"]) {
+    assert.equal(requiresExplicitActionApproval("create_support_ticket", mode), true)
+  }
   assert.match(dexter, /Cloud will assign the customer from this tenant credential/)
   assert.match(dexter, /Never request or include a tenant or customer identifier/)
   assert.match(dexter, /allowedTypes = new Set\(\["bug", "feature_request", "question", "account_billing"\]\)/)

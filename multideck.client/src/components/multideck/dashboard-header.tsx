@@ -28,7 +28,7 @@ import {
   savedDashboardViews,
   type DashboardCustomRange,
   type DashboardRange,
-} from "@/data/multideck-data"
+} from "@/data/operational-data"
 import { MultideckDateRangePicker, getDefaultDateRange } from "./date-picker"
 import { SegmentedControl } from "./workflow-components"
 

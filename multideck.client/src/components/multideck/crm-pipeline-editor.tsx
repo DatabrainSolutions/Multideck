@@ -67,7 +67,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { cn } from "@/lib/utils"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import { Surface } from "./surface"
 import { toneToVar } from "./status-pill"
 

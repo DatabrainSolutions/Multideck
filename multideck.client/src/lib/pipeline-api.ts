@@ -1,5 +1,5 @@
 import { callCrmMutation, callCrmRpc, CrmSupabaseError } from "@/lib/crm-supabase"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import { invalidateCrmResources, readCachedCrmResource, type CrmReadOptions } from "@/lib/crm-read-cache"
 import { getSupabaseSession } from "@/lib/supabase"
 

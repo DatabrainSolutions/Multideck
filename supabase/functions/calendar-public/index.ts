@@ -29,6 +29,8 @@ function json(request: Request, value: unknown, status = 200) {
   response.headers.set("Cache-Control", "private, no-store, max-age=0")
   return response
 }
+type BookingHost = { id: string; name: string; email: string }
+type BookingLinkKind = "one_on_one" | "round_robin" | "collective"
 type BookingLinkRow = Record<string, unknown> & {
   CALBookingLink_ID: string
   CALBookingLink_CompanyID: string
@@ -37,27 +39,93 @@ type BookingLinkRow = Record<string, unknown> & {
   CALBookingLink_DurationMinutes: number
   CALBookingLink_ProviderCode: string
   CALBookingLink_StatusCode: string
+  /** Hosts loaded with the link. One-to-one links have exactly the owner. */
+  hosts?: BookingHost[]
 }
 
 function object(value: unknown): JsonObject {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {}
 }
 
-function publicQuestions(row: BookingLinkRow) {
+const QUESTION_TYPES = new Set(["short_text", "long_text", "email", "phone", "number", "select", "checkbox"])
+
+type PublicQuestion = { id: string; label: string; type: string; required: boolean; builtIn: boolean; options?: string[] }
+
+function publicQuestions(row: BookingLinkRow): PublicQuestion[] {
   const fallback = [
     { id: "company", label: "Company", type: "short_text", required: false, builtIn: true },
-    { id: "phone", label: "Phone", type: "short_text", required: false, builtIn: true },
+    { id: "phone", label: "Phone", type: "phone", required: false, builtIn: true },
     { id: "notes", label: "What would you like to discuss?", type: "long_text", required: false, builtIn: true },
   ]
   const source = Array.isArray(row.CALBookingLink_QuestionsJSON) && row.CALBookingLink_QuestionsJSON.length ? row.CALBookingLink_QuestionsJSON : fallback
-  return source.slice(0, 10).flatMap((value: unknown, index: number) => {
+  return source.slice(0, 12).flatMap((value: unknown, index: number) => {
     const question = object(value)
     const label = cleanText(question.label, 180)
     if (!label) return []
     const requestedId = cleanText(question.id, 80)
     const builtIn = ["company", "phone", "notes"].includes(requestedId)
-    return [{ id: builtIn ? requestedId : requestedId || `question-${index + 1}`, label, type: question.type === "long_text" ? "long_text" : "short_text", required: question.required === true, builtIn }]
+    const requestedType = cleanText(question.type, 20)
+    const type = QUESTION_TYPES.has(requestedType) ? requestedType : requestedType === "long_text" ? "long_text" : "short_text"
+    const options = type === "select" ? (Array.isArray(question.options) ? question.options : []).map((option) => cleanText(option, 120)).filter(Boolean) : undefined
+    return [{ id: builtIn ? requestedId : requestedId || `question-${index + 1}`, label, type, required: question.required === true, builtIn, ...(options ? { options } : {}) }]
   })
+}
+
+/** Validate one answer against its question type. Returns the stored value or null when empty. */
+function answerFor(question: PublicQuestion, raw: unknown): string | boolean | number | null {
+  if (question.type === "checkbox") {
+    const checked = raw === true || raw === "true" || raw === "yes" || raw === "on"
+    if (question.required && !checked) throw new HttpError(400, `${question.label} must be ticked to continue.`)
+    return checked ? true : null
+  }
+  const answer = cleanText(raw, question.type === "long_text" ? 10_000 : 1_000)
+  if (!answer) {
+    if (question.required) throw new HttpError(400, `${question.label} is required.`)
+    return null
+  }
+  if (question.type === "email") return emailAddress(answer)
+  if (question.type === "phone") {
+    if (!/^[+\d][\d\s().-]{5,}$/.test(answer)) throw new HttpError(400, `${question.label} needs a valid phone number.`)
+    return answer
+  }
+  if (question.type === "number") {
+    const parsed = Number(answer.replace(/,/g, ""))
+    if (!Number.isFinite(parsed)) throw new HttpError(400, `${question.label} needs a number.`)
+    return parsed
+  }
+  if (question.type === "select") {
+    if (!question.options?.includes(answer)) throw new HttpError(400, `Choose one of the listed options for ${question.label}.`)
+    return answer
+  }
+  return answer
+}
+
+function linkKind(row: BookingLinkRow): BookingLinkKind {
+  const kind = cleanText(row.CALBookingLink_KindCode, 20)
+  return kind === "round_robin" || kind === "collective" ? kind : "one_on_one"
+}
+
+function linkHosts(row: BookingLinkRow): BookingHost[] {
+  const hosts = row.hosts ?? []
+  if (linkKind(row) === "one_on_one" || !hosts.length) return [organiserFrom(row)]
+  return hosts
+}
+
+/** For provider-backed links only hosts with that provider connected can take a booking. */
+async function bookableHosts(admin: SupabaseClient, row: BookingLinkRow) {
+  const hosts = linkHosts(row)
+  const provider = providerConnectionCode(row.CALBookingLink_ProviderCode)
+  if (!provider) return hosts
+  const { data, error } = await admin.from("CAL_ProviderConnections").select("CALConnection_UserID")
+    .eq("CALConnection_CompanyID", row.CALBookingLink_CompanyID).eq("CALConnection_ProviderCode", provider).eq("CALConnection_StatusCode", "connected")
+    .in("CALConnection_UserID", hosts.map((host) => host.id))
+  if (error) throw new HttpError(503, "The meeting provider connection could not be checked safely.")
+  const connected = new Set((data ?? []).map((row) => String(row.CALConnection_UserID)))
+  return hosts.filter((host) => connected.has(host.id))
+}
+
+function providerConnectionCode(provider: unknown) {
+  return provider === "google_meet" ? "google" : provider === "microsoft_teams" ? "microsoft" : provider === "zoom" ? "zoom" : null
 }
 
 function originFor(request: Request) {
@@ -96,7 +164,21 @@ async function loadBookingLink(admin: SupabaseClient, organiserSlug: string, boo
     .eq("User_ID", data.CALBookingLink_OwnerUserID).maybeSingle()
   if (organiserError || !organiser) throw new HttpError(404, "The organiser for this booking link is not available.")
   data.cmp_Users = organiser
-  return data as BookingLinkRow
+  const row = data as BookingLinkRow
+  if (linkKind(row) !== "one_on_one") {
+    const { data: hostRows, error: hostError } = await admin.from("CAL_BookingLinkHosts")
+      .select("CALBookingLinkHost_UserID,CALBookingLinkHost_SortOrder,cmp_Users(User_ID,User_Firstname,User_Lastname,User_Email,User_AccessStatus)")
+      .eq("CALBookingLinkHost_BookingLinkID", row.CALBookingLink_ID).order("CALBookingLinkHost_SortOrder")
+    if (hostError) throw new HttpError(500, "This booking page could not be loaded.")
+    row.hosts = (hostRows ?? []).flatMap((host) => {
+      const profile = object(Array.isArray(host.cmp_Users) ? host.cmp_Users[0] : host.cmp_Users)
+      if (profile.User_AccessStatus !== "active") return []
+      const email = cleanText(profile.User_Email, 320)
+      return [{ id: String(host.CALBookingLinkHost_UserID), name: `${cleanText(profile.User_Firstname, 80)} ${cleanText(profile.User_Lastname, 80)}`.trim() || email.split("@")[0] || "Host", email }]
+    })
+    if (!row.hosts.length) row.hosts = [organiserFrom(row)]
+  }
+  return row
 }
 
 async function publicBrand(admin: SupabaseClient, companyId: string) {
@@ -110,6 +192,7 @@ async function publicBrand(admin: SupabaseClient, companyId: string) {
 
 function bookingContract(row: BookingLinkRow, branding: Awaited<ReturnType<typeof publicBrand>>) {
   const organiser = organiserFrom(row)
+  const kind = linkKind(row)
   return {
     title: row.CALBookingLink_Title,
     description: row.CALBookingLink_Description,
@@ -117,6 +200,8 @@ function bookingContract(row: BookingLinkRow, branding: Awaited<ReturnType<typeo
     provider: row.CALBookingLink_ProviderCode,
     location: row.CALBookingLink_Location,
     organiser: { name: organiser.name },
+    kind,
+    hostNames: kind === "one_on_one" ? [organiser.name] : linkHosts(row).map((host) => host.name),
     questions: publicQuestions(row),
     status: row.CALBookingLink_StatusCode,
     branding: branding.brand ? {
@@ -135,13 +220,41 @@ function bookingContract(row: BookingLinkRow, branding: Awaited<ReturnType<typeo
   }
 }
 
-async function readAvailability(admin: SupabaseClient, row: BookingLinkRow, from: Date, until: Date, options: {
+type AvailabilityOptions = {
   durationMinutes?: number
   excludeReservationId?: string | null
   excludeMeetingId?: string | null
-} = {}) {
+}
+
+/**
+ * Slots for the whole link. One-to-one reads the owner. Round robin offers a
+ * time when any bookable host is free and remembers who; collective offers a
+ * time only when every host is free.
+ */
+async function readAvailability(admin: SupabaseClient, row: BookingLinkRow, from: Date, until: Date, options: AvailabilityOptions = {}) {
+  const kind = linkKind(row)
+  if (kind === "one_on_one") {
+    const single = await readHostAvailability(admin, row, row.CALBookingLink_OwnerUserID, from, until, options)
+    return { ...single, kind, slotHosts: new Map(single.slots.map((slot) => [slot, [row.CALBookingLink_OwnerUserID]])) }
+  }
+  const hosts = kind === "round_robin" ? await bookableHosts(admin, row) : linkHosts(row)
+  if (!hosts.length) throw new HttpError(503, "No host on this booking link can take bookings right now.")
+  const perHost = await Promise.all(hosts.map((host) => readHostAvailability(admin, row, host.id, from, until, options)))
+  const slotHosts = new Map<string, string[]>()
+  for (const [index, availability] of perHost.entries()) {
+    for (const slot of availability.slots) slotHosts.set(slot, [...(slotHosts.get(slot) ?? []), hosts[index].id])
+  }
+  const slots = [...slotHosts.entries()]
+    .filter(([, hostIds]) => kind === "round_robin" ? hostIds.length > 0 : hostIds.length === hosts.length)
+    .map(([slot]) => slot).sort()
+  if (kind === "collective") for (const slot of [...slotHosts.keys()]) if (!slots.includes(slot)) slotHosts.delete(slot)
+  const owner = perHost[hosts.findIndex((host) => host.id === row.CALBookingLink_OwnerUserID)] ?? perHost[0]
+  return { timeZone: owner.timeZone, slots, rules: owner.rules, kind, slotHosts }
+}
+
+async function readHostAvailability(admin: SupabaseClient, row: BookingLinkRow, hostUserId: string, from: Date, until: Date, options: AvailabilityOptions = {}) {
   const { data: preferences, error } = await admin.from("CAL_UserAvailability").select("*")
-    .eq("CALAvailability_UserID", row.CALBookingLink_OwnerUserID).maybeSingle()
+    .eq("CALAvailability_UserID", hostUserId).maybeSingle()
   if (error) throw new HttpError(500, "Available times could not be loaded.")
   const timeZone = preferences?.CALAvailability_TimeZone ?? "Europe/London"
   const workingHours = (row.CALBookingLink_OverrideAvailabilityJSON ?? preferences?.CALAvailability_WorkingHoursJSON ?? DEFAULT_WORKING_HOURS) as WorkingHours
@@ -153,16 +266,21 @@ async function readAvailability(admin: SupabaseClient, row: BookingLinkRow, from
   const horizonEnd = new Date(Date.now() + horizon * 86_400_000)
   const cappedUntil = until < horizonEnd ? until : horizonEnd
   let reservationQuery = admin.from("CAL_Reservations").select("CALReservation_ID,CALReservation_StartAt,CALReservation_EndAt,CALReservation_BufferBeforeMinutes,CALReservation_BufferAfterMinutes")
-      .eq("CALReservation_OwnerUserID", row.CALBookingLink_OwnerUserID).eq("CALReservation_StatusCode", "active")
+      .eq("CALReservation_OwnerUserID", hostUserId).eq("CALReservation_StatusCode", "active")
       .lt("CALReservation_StartAt", cappedUntil.toISOString()).gt("CALReservation_EndAt", from.toISOString())
   if (options.excludeReservationId) reservationQuery = reservationQuery.neq("CALReservation_ID", options.excludeReservationId)
-  const [reservations, providerEvents] = await Promise.all([
+  const [reservations, providerEvents, attended] = await Promise.all([
     reservationQuery,
     admin.from("CAL_ProviderEvents").select("CALProviderEvent_MeetingID,CALProviderEvent_StartAt,CALProviderEvent_EndAt")
-      .eq("CALProviderEvent_OwnerUserID", row.CALBookingLink_OwnerUserID).eq("CALProviderEvent_IsCancelled", false)
+      .eq("CALProviderEvent_OwnerUserID", hostUserId).eq("CALProviderEvent_IsCancelled", false)
       .lt("CALProviderEvent_StartAt", cappedUntil.toISOString()).gt("CALProviderEvent_EndAt", from.toISOString()),
+    // Meetings this host attends as a colleague (collective co-host) hold no reservation of their own.
+    admin.from("CAL_MeetingParticipants").select("CAL_Meetings!inner(CALMeeting_ID,CALMeeting_StartAt,CALMeeting_EndAt,CALMeeting_StatusCode)")
+      .eq("CALParticipant_UserID", hostUserId).eq("CALParticipant_IsExternal", false).neq("CALParticipant_ResponseCode", "declined")
+      .neq("CAL_Meetings.CALMeeting_StatusCode", "cancelled")
+      .lt("CAL_Meetings.CALMeeting_StartAt", cappedUntil.toISOString()).gt("CAL_Meetings.CALMeeting_EndAt", from.toISOString()),
   ])
-  if (reservations.error || providerEvents.error) throw new HttpError(500, "Available times could not be loaded.")
+  if (reservations.error || providerEvents.error || attended.error) throw new HttpError(500, "Available times could not be loaded.")
   const busy: BusyRange[] = [
     ...(reservations.data ?? []).map((item) => ({
       startAt: new Date(Date.parse(item.CALReservation_StartAt) - Number(item.CALReservation_BufferBeforeMinutes || 0) * 60_000).toISOString(),
@@ -171,6 +289,11 @@ async function readAvailability(admin: SupabaseClient, row: BookingLinkRow, from
     ...(providerEvents.data ?? [])
       .filter((item) => !options.excludeMeetingId || item.CALProviderEvent_MeetingID !== options.excludeMeetingId)
       .map((item) => ({ startAt: item.CALProviderEvent_StartAt, endAt: item.CALProviderEvent_EndAt })),
+    ...(attended.data ?? []).flatMap((item) => {
+      const meeting = object(Array.isArray(item.CAL_Meetings) ? item.CAL_Meetings[0] : item.CAL_Meetings)
+      if (!meeting.CALMeeting_StartAt || (options.excludeMeetingId && meeting.CALMeeting_ID === options.excludeMeetingId)) return []
+      return [{ startAt: String(meeting.CALMeeting_StartAt), endAt: String(meeting.CALMeeting_EndAt) }]
+    }),
   ]
   return {
     timeZone,
@@ -380,9 +503,9 @@ async function sendVerification(admin: SupabaseClient, row: BookingLinkRow, hold
   const apiKey = Deno.env.get("RESEND_API_KEY")
   if (!apiKey) throw new HttpError(503, "Email verification is temporarily unavailable.")
   const { workspaceName } = await publicBrand(admin, row.CALBookingLink_CompanyID)
-  const organiser = organiserFrom(row)
-  const { data: hold, error: holdError } = await admin.from("CAL_BookingHolds").select("CALBookingHold_Name").eq("CALBookingHold_ID", holdId).maybeSingle()
+  const { data: hold, error: holdError } = await admin.from("CAL_BookingHolds").select("CALBookingHold_Name,CALBookingHold_HostUserID").eq("CALBookingHold_ID", holdId).maybeSingle()
   if (holdError || !hold) throw new HttpError(503, "The booking hold could not be checked before sending verification.")
+  const organiser = linkHosts(row).find((host) => host.id === hold.CALBookingHold_HostUserID) ?? organiserFrom(row)
   const template = defaultCalendarEmailTemplate("booking_verification")
   const copy = renderCalendarEmailTemplate(template, {
     meeting_title: row.CALBookingLink_Title,
@@ -429,6 +552,27 @@ async function sendVerification(admin: SupabaseClient, row: BookingLinkRow, hold
   if (auditError) console.error("Calendar verification delivery audit could not be recorded", { holdId, providerDeliveryId: delivery.id ?? null })
 }
 
+/**
+ * Choose who takes this booking. Round robin favours the free host with the
+ * fewest upcoming bookings from this link so work spreads evenly; ties fall to
+ * host order. Collective bookings sit on the owner's calendar with co-hosts
+ * invited.
+ */
+async function assignHost(admin: SupabaseClient, row: BookingLinkRow, freeHostIds: string[]) {
+  const kind = linkKind(row)
+  if (kind !== "round_robin") return row.CALBookingLink_OwnerUserID
+  const ordered = linkHosts(row).map((host) => host.id).filter((id) => freeHostIds.includes(id))
+  if (!ordered.length) throw new HttpError(409, "That time has just become unavailable. Choose another time.")
+  if (ordered.length === 1) return ordered[0]
+  const { data, error } = await admin.from("CAL_Meetings").select("CALMeeting_OrganiserUserID")
+    .eq("CALMeeting_BookingLinkID", row.CALBookingLink_ID).in("CALMeeting_OrganiserUserID", ordered)
+    .neq("CALMeeting_StatusCode", "cancelled").gte("CALMeeting_StartAt", new Date().toISOString())
+  if (error) throw new HttpError(503, "Hosts could not be balanced safely.")
+  const load = new Map(ordered.map((id) => [id, 0]))
+  for (const meeting of data ?? []) load.set(String(meeting.CALMeeting_OrganiserUserID), (load.get(String(meeting.CALMeeting_OrganiserUserID)) ?? 0) + 1)
+  return ordered.reduce((best, id) => (load.get(id) ?? 0) < (load.get(best) ?? 0) ? id : best, ordered[0])
+}
+
 async function createHold(request: Request, admin: SupabaseClient, row: BookingLinkRow) {
   const payload = await body<JsonObject>(request)
   if (cleanText(payload.website, 200)) return { accepted: true }
@@ -438,17 +582,18 @@ async function createHold(request: Request, admin: SupabaseClient, row: BookingL
   const suppliedAnswers = object(payload.answers)
   const answers: JsonObject = {}
   for (const question of publicQuestions(row)) {
-    const raw = question.id === "company" ? payload.company : question.id === "phone" ? payload.phone : suppliedAnswers[question.id]
-    const answer = cleanText(raw, question.type === "long_text" ? 10_000 : 1_000)
-    if (question.required && !answer) throw new HttpError(400, `${question.label} is required.`)
-    if (answer) answers[question.id] = answer
+    const raw = question.id === "company" ? payload.company ?? suppliedAnswers.company : question.id === "phone" ? payload.phone ?? suppliedAnswers.phone : suppliedAnswers[question.id]
+    const answer = answerFor(question, raw)
+    if (answer !== null) answers[question.id] = answer
   }
   const { start, end } = parseMeetingRange(payload.startAt, payload.endAt)
   const expectedEnd = start.getTime() + Number(row.CALBookingLink_DurationMinutes) * 60_000
   if (Math.abs(end.getTime() - expectedEnd) > 1_000) throw new HttpError(400, "That time does not match this booking link.")
   await rateLimit(admin, row.CALBookingLink_CompanyID, "hold", `${requestClientKey(request)}|${email}`, 8)
   const availability = await readAvailability(admin, row, new Date(start.getTime() - 1_000), new Date(end.getTime() + 1_000))
-  if (!availability.slots.some((slot) => Math.abs(Date.parse(slot) - start.getTime()) < 1_000)) throw new HttpError(409, "That time has just become unavailable. Choose another time.")
+  const matchedSlot = availability.slots.find((slot) => Math.abs(Date.parse(slot) - start.getTime()) < 1_000)
+  if (!matchedSlot) throw new HttpError(409, "That time has just become unavailable. Choose another time.")
+  const hostUserId = await assignHost(admin, row, availability.slotHosts.get(matchedSlot) ?? [])
   const holdId = crypto.randomUUID()
   const reservationId = crypto.randomUUID()
   const code = verificationCode()
@@ -456,7 +601,7 @@ async function createHold(request: Request, admin: SupabaseClient, row: BookingL
   const { error: reservationError } = await admin.from("CAL_Reservations").insert({
     CALReservation_ID: reservationId,
     CALReservation_CompanyID: row.CALBookingLink_CompanyID,
-    CALReservation_OwnerUserID: row.CALBookingLink_OwnerUserID,
+    CALReservation_OwnerUserID: hostUserId,
     CALReservation_SourceCode: "hold",
     CALReservation_SourceID: holdId,
     CALReservation_StartAt: start.toISOString(),
@@ -472,6 +617,7 @@ async function createHold(request: Request, admin: SupabaseClient, row: BookingL
     CALBookingHold_CompanyID: row.CALBookingLink_CompanyID,
     CALBookingHold_BookingLinkID: row.CALBookingLink_ID,
     CALBookingHold_ReservationID: reservationId,
+    CALBookingHold_HostUserID: hostUserId,
     CALBookingHold_Name: name,
     CALBookingHold_Email: email,
     CALBookingHold_CompanyName: cleanText(answers.company, 240) || null,
@@ -533,8 +679,11 @@ async function verifyHold(request: Request, admin: SupabaseClient, row: BookingL
   const { data: reservation, error: reservationError } = await admin.from("CAL_Reservations").select("*").eq("CALReservation_ID", hold.CALBookingHold_ReservationID).eq("CALReservation_StatusCode", "active").maybeSingle()
   if (reservationError) throw new HttpError(503, "That booking time could not be checked safely.")
   if (!reservation) throw new HttpError(409, "That time is no longer available. Choose another time.")
+  const hostUserId = cleanText(hold.CALBookingHold_HostUserID, 60) || row.CALBookingLink_OwnerUserID
+  // Collective bookings need every host still free; other kinds only the assigned host.
+  const checkedHosts = linkKind(row) === "collective" ? [...new Set([hostUserId, ...linkHosts(row).map((host) => host.id)])] : [hostUserId]
   const { data: newBusy, error: newBusyError } = await admin.from("CAL_ProviderEvents").select("CALProviderEvent_ID")
-    .eq("CALProviderEvent_OwnerUserID", row.CALBookingLink_OwnerUserID).eq("CALProviderEvent_IsCancelled", false)
+    .in("CALProviderEvent_OwnerUserID", checkedHosts).eq("CALProviderEvent_IsCancelled", false)
     .lt("CALProviderEvent_StartAt", reservation.CALReservation_EndAt).gt("CALProviderEvent_EndAt", reservation.CALReservation_StartAt).limit(1)
   if (newBusyError) throw new HttpError(503, "The organiser's calendar could not be checked safely.")
   if (newBusy?.length) {
@@ -542,13 +691,13 @@ async function verifyHold(request: Request, admin: SupabaseClient, row: BookingL
     if (releaseError) throw new HttpError(503, "The unavailable time could not be released safely.")
     throw new HttpError(409, "That time has just become unavailable. Your details are preserved; choose another time.")
   }
-  const liveBusy = await providerBusyRanges(
+  const liveBusyByHost = await Promise.all(checkedHosts.map((host) => providerBusyRanges(
     admin,
-    row.CALBookingLink_OwnerUserID,
+    host,
     new Date(Date.parse(reservation.CALReservation_StartAt) - Number(reservation.CALReservation_BufferBeforeMinutes || 0) * 60_000),
     new Date(Date.parse(reservation.CALReservation_EndAt) + Number(reservation.CALReservation_BufferAfterMinutes || 0) * 60_000),
-  )
-  if (liveBusy.length) {
+  )))
+  if (liveBusyByHost.some((ranges) => ranges.length)) {
     const { error: releaseError } = await admin.from("CAL_Reservations").update({ CALReservation_StatusCode: "released" }).eq("CALReservation_ID", hold.CALBookingHold_ReservationID)
     if (releaseError) throw new HttpError(503, "The unavailable time could not be released safely.")
     throw new HttpError(409, "That time has just become unavailable on the organiser's calendar. Your details are preserved; choose another time.")
@@ -556,7 +705,7 @@ async function verifyHold(request: Request, admin: SupabaseClient, row: BookingL
   if (["google_meet", "microsoft_teams", "zoom"].includes(row.CALBookingLink_ProviderCode)) {
     const provider = row.CALBookingLink_ProviderCode === "google_meet" ? "google" : row.CALBookingLink_ProviderCode === "microsoft_teams" ? "microsoft" : "zoom"
     const { data: connection, error: connectionError } = await admin.from("CAL_ProviderConnections").select("CALConnection_ID,CALConnection_StatusCode")
-      .eq("CALConnection_UserID", row.CALBookingLink_OwnerUserID).eq("CALConnection_ProviderCode", provider).maybeSingle()
+      .eq("CALConnection_UserID", hostUserId).eq("CALConnection_ProviderCode", provider).maybeSingle()
     if (connectionError) throw new HttpError(503, "The meeting provider connection could not be checked safely.")
     if (!connection || connection.CALConnection_StatusCode !== "connected") {
       const { error: pauseError } = await admin.from("CAL_BookingLinks").update({ CALBookingLink_StatusCode: "paused", CALBookingLink_UpdatedAt: new Date().toISOString() }).eq("CALBookingLink_ID", row.CALBookingLink_ID)

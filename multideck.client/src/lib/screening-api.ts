@@ -19,6 +19,8 @@ export type ScreeningListStatus = {
   entryCount?: number
   groupCount?: number
   stale?: boolean
+  refreshing?: boolean
+  refreshMessage?: string | null
 }
 
 export type ScreeningMatch = {
@@ -118,7 +120,7 @@ export async function runScreeningCheck(input: RunScreeningCheckInput) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
-  }) as Promise<ScreeningCheck>
+  }) as Promise<ScreeningCheck & { list?: ScreeningListStatus }>
 }
 
 export async function decideScreeningCheck(checkId: string, action: "manual_clean" | "sanctioned", note?: string | null) {

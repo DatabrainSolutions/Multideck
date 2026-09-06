@@ -12,11 +12,13 @@ const migration = (await Promise.all([
   read("supabase/migrations/20260819101226_quote_workspace_v1_indexes.sql"),
 ])).join("\n")
 const quoteLossMigration = await read("supabase/migrations/20260820112421_require_quote_loss_reason.sql")
+const routeScheduleMigration = await read("supabase/migrations/20260902153715_booking_multi_leg_routes_and_cargo_dimensions.sql")
 const rollback = await read("supabase/rollbacks/20260819100028_quote_workspace_v1_rollback.sql")
 const workflowEdge = await read("supabase/functions/quotes-workflow/index.ts")
 const workflowCore = await read("supabase/functions/quotes-workflow/core.ts")
 const quotePage = await read("multideck.client/src/pages/quotes-page.tsx")
 const quoteWorkflowPage = await read("multideck.client/src/pages/quote-workflow-page.tsx")
+const quoteWorkflowClient = await read("multideck.client/src/lib/quote-workflow-api.ts")
 
 test("quotes extend the canonical records with versions and audit events", () => {
   assert.match(migration, /"CusQuoteHeader_LifecycleCode" varchar\(40\) not null default 'draft'/)
@@ -54,6 +56,34 @@ test("the live Edge boundary is authenticated, permission checked and company sc
   assert.match(workflowEdge, /rpc\("quote_workflow_transition_quote"/)
   assert.match(migration, /revoke all on function public\.quote_workflow_save_quote[\s\S]+from public, anon, authenticated/)
   assert.match(workflowEdge, /String\(office\.Company_ID\) !== operator\.companyId/)
+})
+
+test("accepted quotes have a protected operator conversion path", () => {
+  assert.match(workflowCore, /\"convert\"/)
+  assert.match(workflowEdge, /if \(action === \"convert\"\)/)
+  assert.match(workflowEdge, /CusQuoteHeader_OrgOfficeID,OrgOffice_ID,CusQuoteHeader_IsDeleted/)
+  assert.match(workflowEdge, /String\(quoteOffice\.Company_ID\) !== operator\.companyId/)
+  assert.match(workflowEdge, /quote_workflow_has_permission[\s\S]*permission_value: "Bookings\.Write"/)
+  assert.match(workflowEdge, /permission_value: \"Bookings\.Write\"/)
+  assert.match(workflowEdge, /booking_api\.convert_accepted_quote/)
+  assert.match(quoteWorkflowClient, /action: \"convert\"/)
+  assert.doesNotMatch(quoteWorkflowClient, /Quote-to-booking is not active yet/)
+  assert.match(quotePage, /transitionQuoteWorkflow\(currentQuoteId, "accepted"\)/)
+  assert.match(quoteWorkflowPage, /convertQuoteWorkflow\(record\.id/)
+})
+
+test("quote ETD and ETA are operational schedule fields rather than validity dates", () => {
+  assert.match(quotePage, /QuoteCompactDatePicker label="ETD" value=\{quote\.estimatedDeparture/u)
+  assert.match(quotePage, /QuoteCompactDatePicker label="ETA" value=\{quote\.estimatedArrival/u)
+  assert.match(quotePage, /estimatedDeparture: quote\.estimatedDeparture/u)
+  assert.match(quotePage, /estimatedArrival: quote\.estimatedArrival/u)
+  assert.match(quotePage, /estimatedDeparture: fact\("estimatedDeparture"\)/u)
+  assert.match(routeScheduleMigration, /schedule\.estimated_departure as "Estimated_Departure"/u)
+  assert.match(routeScheduleMigration, /schedule\.estimated_arrival as "Estimated_Arrival"/u)
+  assert.match(routeScheduleMigration, /operational ETD and ETA, separate commercial validity/u)
+  assert.match(routeScheduleMigration, /create or replace function public\._multideck_dexter_quote_watch_source_change/u)
+  assert.match(routeScheduleMigration, /TR_CusQuote_Header_dexter_watch/u)
+  assert.doesNotMatch(routeScheduleMigration, /TR_CusQuote_Header_dexter_schedule_watch/u)
 })
 
 test("the migration excludes booking conversion and document-builder ownership", () => {

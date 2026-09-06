@@ -1,7 +1,7 @@
 import { createContext, useContext, type ReactNode } from "react"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 
 export const TablePillKindContext = createContext<"status" | "attribute" | null>(null)
 

@@ -1,5 +1,7 @@
 export const UK_OFSI_SOURCE_CODE = "uk_ofsi_consolidated"
-export const UK_OFSI_CSV_URL = "https://ofsistorage.blob.core.windows.net/publishlive/2022format/ConList.csv"
+export const UK_SANCTIONS_LIST_SOURCE_CODE = "uk_sanctions_list"
+// Both deployed source identities are retained; the database selects the active one.
+export const UK_OFSI_CSV_URL = "https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.csv"
 export const SCREENING_STALE_AFTER_HOURS = 36
 export const SCREENING_SIMILAR_THRESHOLD = 0.82
 
@@ -106,6 +108,7 @@ export function createCsvParser(onRow: (row: string[]) => void) {
     },
     end() {
       if (quotePending) quoted = false
+      if (quoted) throw new Error("The sanctions CSV ended inside a quoted field.")
       if (quoted || field || row.length) commitRow()
     },
   }
@@ -141,6 +144,7 @@ function listedOn(value: string | null) {
 }
 
 function ukRefFrom(row: Map<string, string>) {
+  if (!row.has("group id")) return cell(row, "unique id")
   const direct = cell(row, "uk sanctions list ref")
   if (direct) return direct
   const other = cell(row, "other information")
@@ -150,12 +154,12 @@ function ukRefFrom(row: Map<string, string>) {
 
 function isHeaderRow(values: string[]) {
   const keys = values.map(headerKey)
-  return keys.includes("group id") && keys.includes("name 1")
+  return (keys.includes("group id") || keys.includes("unique id")) && keys.includes("name 1")
 }
 
 function ofsiEntryFromValues(keys: string[], values: string[]): ParsedScreeningEntry | null {
   const row = new Map(keys.map((key, index) => [key, values[index] ?? ""]))
-  const groupId = cell(row, "group id", "ofsi group id")
+  const groupId = cell(row, "group id", "unique id", "ofsi group id")
   const name = [
     cell(row, "name 1"),
     cell(row, "name 2"),
@@ -172,13 +176,13 @@ function ofsiEntryFromValues(keys: string[], values: string[]): ParsedScreeningE
     uniqueId: cell(row, "unique id"),
     name: name.slice(0, 500),
     normalizedName: normalizedName.slice(0, 500),
-    aliasType: cell(row, "alias type"),
-    groupType: cell(row, "group type"),
+    aliasType: cell(row, "alias type", "name type"),
+    groupType: cell(row, "group type", "designation type", "type of entity"),
     regime: cell(row, "regime name", "regime"),
-    country: cell(row, "country"),
-    listedOn: listedOn(cell(row, "listed on")),
+    country: cell(row, "country", "address country", "country of birth", "nationality ies"),
+    listedOn: listedOn(cell(row, "listed on", "date designated")),
     ukRef: ukRefFrom(row),
-    otherInformation: extractOfsiListingNotes(cell(row, "other information")),
+    otherInformation: clipListingNotes(cell(row, "uk statement of reasons") || "") || extractOfsiListingNotes(cell(row, "other information")),
   }
 }
 
@@ -249,16 +253,27 @@ function clipListingNotes(value: string) {
   return clipped ? clipped.slice(0, 4000) : null
 }
 
-export function createOfsiEntryParser(onEntry: (entry: ParsedScreeningEntry) => void) {
+function createEntryParser(onEntry: (entry: ParsedScreeningEntry) => void, uksl: boolean) {
   let keys: string[] | null = null
   let entryCount = 0
+  const seen = new Set<string>()
   const csv = createCsvParser((values) => {
     if (!keys) {
       if (isHeaderRow(values)) keys = values.map(headerKey)
       return
     }
+    if ((uksl || keys.includes("ofsi group id")) && values.length !== keys.length) throw new Error("The sanctions CSV contains an incomplete record.")
     const entry = ofsiEntryFromValues(keys, values)
     if (!entry) return
+    if (uksl) {
+      // Live UKSL designations use Unique ID, including records with no OFSI ID.
+      if (!entry.uniqueId) throw new Error("The sanctions record has no designation identifier.")
+      entry.groupId = entry.uniqueId
+      entry.ukRef = entry.uniqueId
+      const identity = `${entry.groupId}\u0000${entry.normalizedName}`
+      if (seen.has(identity)) return
+      seen.add(identity)
+    }
     entryCount += 1
     onEntry(entry)
   })
@@ -273,6 +288,14 @@ export function createOfsiEntryParser(onEntry: (entry: ParsedScreeningEntry) => 
       if (!entryCount) throw new Error("The OFSI list did not contain any usable names.")
     },
   }
+}
+
+export function createOfsiEntryParser(onEntry: (entry: ParsedScreeningEntry) => void) {
+  return createEntryParser(onEntry, false)
+}
+
+export function createUkslEntryParser(onEntry: (entry: ParsedScreeningEntry) => void) {
+  return createEntryParser(onEntry, true)
 }
 
 export function parseOfsiEntries(csvText: string) {

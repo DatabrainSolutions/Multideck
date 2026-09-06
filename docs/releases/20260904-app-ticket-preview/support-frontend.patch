@@ -1,0 +1,311 @@
+--- a/multideck.client/src/lib/support-ticket.ts
++++ b/multideck.client/src/lib/support-ticket.ts
+@@ -1,5 +1,6 @@
+ import { supabase } from "@/lib/supabase"
+ import { isSecureSupportStatusUrl, normalizeSupportTicketConditionalFields } from "@/lib/support-ticket-submission"
++import { isSupportTicketConversation, isSupportTicketCursor, isSupportTicketMessage, isSupportTicketSummary } from "@/lib/support-ticket-conversation"
+ 
+ export type SupportTicketType = "bug" | "feature_request" | "question" | "account_billing" | "security_concern"
+ export type SupportTicketImpact = "blocked" | "slowed_down" | "no_immediate_blocker"
+@@ -20,6 +21,38 @@
+ 
+ export type SupportTicket = { id: string; ticketNumber: string; status: string; priority: string; customerName: string; statusUrl: string | null }
+ export type CreateSupportTicketResponse = { ticket: SupportTicket; duplicate: boolean }
++export type SupportTicketSummary = {
++  id: string
++  reference: string
++  title: string
++  description: string
++  ticketType: SupportTicketType
++  status: "new" | "in_progress" | "waiting_for_customer" | "resolved" | "closed"
++  needsReply: boolean
++  createdAt: string
++  updatedAt: string
++}
++export type SupportTicketMessage = { id: string; authorType: "customer" | "staff"; authorName: string; body: string; createdAt: string }
++export type SupportTicketConversation = { ticket: SupportTicketSummary; messages: SupportTicketMessage[]; nextCursor: string | null }
++
++function invalidConversationResponse() {
++  return new SupportTicketError("support_service_invalid_response", "Support did not confirm the requested details. Refresh and try again.", 502)
++}
++export async function listSupportTickets(before?: string) {
++  const result = await invoke<{ tickets: SupportTicketSummary[]; nextCursor: string | null }>({ action: "list_tickets", ...(before ? { before } : {}) })
++  if (!Array.isArray(result.tickets) || !result.tickets.every(isSupportTicketSummary) || !isSupportTicketCursor(result.nextCursor)) throw invalidConversationResponse()
++  return result
++}
++export async function getSupportTicket(ticketId: string, before?: string) {
++  const result = await invoke<SupportTicketConversation>({ action: "get_ticket", ticketId, ...(before ? { before } : {}) })
++  if (!isSupportTicketConversation(result, ticketId)) throw invalidConversationResponse()
++  return result
++}
++export async function addSupportTicketComment(ticketId: string, body: string, idempotencyKey: string) {
++  const result = await invoke<{ message: SupportTicketMessage; duplicate: boolean }>({ action: "add_comment", ticketId, body, idempotencyKey }, 30_000)
++  if (!isSupportTicketMessage(result.message) || result.message.authorType !== "customer" || typeof result.duplicate !== "boolean") throw invalidConversationResponse()
++  return result
++}
+ export type LegacySupportTicketRequest = {
+   idempotencyKey: string
+   topic: string
+--- /dev/null
++++ b/multideck.client/src/lib/support-ticket-conversation.ts
+@@ -0,0 +1,31 @@
++import type { SupportTicketConversation, SupportTicketMessage, SupportTicketSummary } from "./support-ticket"
++
++const record = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === "object" && !Array.isArray(value))
++const timestamp = (value: unknown) => typeof value === "string" && Number.isFinite(Date.parse(value))
++const ticketTypes = new Set(["bug", "feature_request", "question", "account_billing", "security_concern"])
++const statuses = new Set(["new", "in_progress", "waiting_for_customer", "resolved", "closed"])
++
++export function isSupportTicketSummary(value: unknown): value is SupportTicketSummary {
++  return record(value) && typeof value.id === "string" && Boolean(value.id)
++    && typeof value.reference === "string" && Boolean(value.reference)
++    && typeof value.title === "string" && typeof value.description === "string"
++    && ticketTypes.has(String(value.ticketType)) && statuses.has(String(value.status))
++    && typeof value.needsReply === "boolean" && timestamp(value.createdAt) && timestamp(value.updatedAt)
++}
++
++export function isSupportTicketMessage(value: unknown): value is SupportTicketMessage {
++  return record(value) && typeof value.id === "string" && Boolean(value.id)
++    && (value.authorType === "customer" || value.authorType === "staff")
++    && typeof value.authorName === "string" && typeof value.body === "string"
++    && timestamp(value.createdAt) && value.internal !== true && value.visibility !== "internal"
++}
++
++export function isSupportTicketCursor(value: unknown): value is string | null {
++  return value === null || (typeof value === "string" && value.length > 0)
++}
++
++export function isSupportTicketConversation(value: unknown, ticketId: string): value is SupportTicketConversation {
++  return record(value) && isSupportTicketSummary(value.ticket) && value.ticket.id === ticketId
++    && Array.isArray(value.messages) && value.messages.every(isSupportTicketMessage)
++    && isSupportTicketCursor(value.nextCursor)
++}
+--- /dev/null
++++ b/multideck.client/src/pages/support-ticket-workspace.tsx
+@@ -0,0 +1,120 @@
++import { useEffect, useRef, useState, type FormEvent } from "react"
++import { ArrowLeft, RefreshCw, Send } from "@/components/icons/hugeicons"
++import { Surface } from "@/components/multideck/surface"
++import { StatusPill } from "@/components/multideck/status-pill"
++import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
++import { SUPPORT_TICKET_SUBMITTED_EVENT } from "@/components/multideck/support-ticket-dialog"
++import { Button } from "@/components/ui/button"
++import { Textarea } from "@/components/ui/textarea"
++import { useLanguage } from "@/i18n/language-provider"
++import { addSupportTicketComment, getSupportTicket, listSupportTickets, type SupportTicketConversation, type SupportTicketMessage, type SupportTicketSummary } from "@/lib/support-ticket"
++
++const statusLabels = { new: "Open", in_progress: "In progress", waiting_for_customer: "Waiting for your reply", resolved: "Resolved", closed: "Closed" }
++const mergeMessages = (existing: SupportTicketMessage[], incoming: SupportTicketMessage[]) => [...new Map([...existing, ...incoming].map((message) => [message.id, message])).values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
++
++// A complete Settings workflow, composed from existing Multideck-owned parts.
++export function SupportTicketWorkspace({ ticketId, navigate }: { ticketId: string | null; navigate: (path: string) => void }) {
++  const { t, language } = useLanguage()
++  const [tickets, setTickets] = useState<SupportTicketSummary[]>([])
++  const [conversation, setConversation] = useState<SupportTicketConversation | null>(null)
++  const [cursor, setCursor] = useState<string | null>(null)
++  const [loading, setLoading] = useState(true)
++  const [loadingMore, setLoadingMore] = useState(false)
++  const [error, setError] = useState<string | null>(null)
++  const [attempt, setAttempt] = useState(0)
++  const [draft, setDraft] = useState("")
++  const [sending, setSending] = useState(false)
++  const [commentError, setCommentError] = useState<string | null>(null)
++  const [sent, setSent] = useState(false)
++  const submission = useRef<{ body: string; key: string } | null>(null)
++  const date = (value: string) => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
++  const showStatus = (ticket: SupportTicketSummary) => <StatusPill tone={ticket.status === "resolved" || ticket.status === "closed" ? "green" : "amber"}>{t(statusLabels[ticket.status] || "Status unavailable")}</StatusPill>
++
++  useEffect(() => {
++    const refresh = () => setAttempt((value) => value + 1)
++    window.addEventListener(SUPPORT_TICKET_SUBMITTED_EVENT, refresh)
++    return () => window.removeEventListener(SUPPORT_TICKET_SUBMITTED_EVENT, refresh)
++  }, [])
++
++  useEffect(() => {
++    let active = true
++    setLoading(true)
++    setError(null)
++    const request = ticketId
++      ? getSupportTicket(ticketId).then((result) => { if (active) { setConversation({ ...result, messages: mergeMessages([], result.messages) }); setCursor(result.nextCursor) } })
++      : listSupportTickets().then((result) => { if (active) { setTickets(result.tickets); setCursor(result.nextCursor) } })
++    void request.catch(() => { if (active) setError(t("Support details could not be loaded. Your ticket has not been changed; try again.")) })
++      .finally(() => { if (active) setLoading(false) })
++    return () => { active = false }
++  }, [ticketId, attempt, t])
++
++  async function loadMore() {
++    if (!cursor || loadingMore) return
++    setLoadingMore(true)
++    setError(null)
++    try {
++      if (ticketId) {
++        const result = await getSupportTicket(ticketId, cursor)
++        if (result.nextCursor === cursor) throw new Error("Support pagination did not advance.")
++        setConversation((current) => current ? { ...current, messages: mergeMessages(current.messages, result.messages) } : result)
++        setCursor(result.nextCursor)
++      } else {
++        const result = await listSupportTickets(cursor)
++        if (result.nextCursor === cursor) throw new Error("Support pagination did not advance.")
++        setTickets((current) => [...new Map([...current, ...result.tickets].map((ticket) => [ticket.id, ticket])).values()])
++        setCursor(result.nextCursor)
++      }
++    } catch { setError(t("Earlier records could not be loaded. Try again.")) }
++    finally { setLoadingMore(false) }
++  }
++
++  async function sendComment(event: FormEvent) {
++    event.preventDefault()
++    if (!ticketId || sending) return
++    const body = draft.trim()
++    if (!body || body.length > 12000) { setCommentError(t("Write a reply of up to 12,000 characters.")); return }
++    if (!submission.current || submission.current.body !== body) submission.current = { body, key: crypto.randomUUID() }
++    setSending(true)
++    setCommentError(null)
++    setSent(false)
++    try {
++      const result = await addSupportTicketComment(ticketId, body, submission.current.key)
++      setConversation((current) => current ? { ...current, messages: mergeMessages(current.messages, [result.message]) } : current)
++      setDraft("")
++      submission.current = null
++      setSent(true)
++      setAttempt((value) => value + 1)
++    } catch { setCommentError(t("Your reply could not be confirmed. Your text is still here; try again.")) }
++    finally { setSending(false) }
++  }
++
++  return <Surface padding="lg" className="mt-[var(--md-page-stack-gap)] min-w-0">
++    <div className="flex flex-wrap items-center justify-between gap-3">
++      {ticketId ? <Button variant="ghost" onClick={() => navigate("/settings?tab=support")} disabled={sending}><ArrowLeft className="size-4" aria-hidden="true" />{t("Your tickets")}</Button> : <h2 className="text-[16px] font-medium">{t("Your tickets")}</h2>}
++      <Button variant="outline" disabled={loading || sending} onClick={() => setAttempt((value) => value + 1)}><RefreshCw className="size-4" aria-hidden="true" />{t("Refresh")}</Button>
++    </div>
++    {error ? <p role="alert" className="mt-4 text-sm text-[var(--md-red)]">{error}</p> : null}
++    {loading ? <DotGridLoader label="Loading support details…" size="sm" className="my-5" /> : null}
++    {!loading && !error && !ticketId ? <div className="mt-4 divide-y divide-[var(--md-hairline)]">
++      {tickets.length ? tickets.map((ticket) => <button key={ticket.id} type="button" onClick={() => navigate(`/settings?tab=support&ticket=${encodeURIComponent(ticket.id)}`)} className="flex w-full flex-wrap items-center justify-between gap-3 py-4 text-left outline-none hover:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]">
++        <span className="min-w-0 flex-1"><span data-i18n-skip className="block text-sm font-medium break-words">{ticket.reference} · {ticket.title}</span><span className="mt-1 block text-xs text-[var(--md-subtle)]">{date(ticket.updatedAt)}</span></span>{showStatus(ticket)}
++      </button>) : <p className="py-5 text-sm text-[var(--md-text)]">{t("You have no support tickets yet. Submit a ticket above or from the sidebar.")}</p>}
++    </div> : null}
++    {!loading && ticketId && conversation ? <div className="mt-5">
++      <div className="flex flex-wrap items-center gap-3"><h2 className="text-lg font-medium">{conversation.ticket.reference}</h2>{showStatus(conversation.ticket)}</div>
++      <h3 data-i18n-skip className="mt-3 text-base font-medium break-words">{conversation.ticket.title}</h3>
++      <p data-i18n-skip className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--md-text)]">{conversation.ticket.description}</p>
++      <h3 className="mt-7 text-sm font-medium">{t("Conversation")}</h3>
++      {!conversation.messages.length ? <p className="mt-3 text-sm text-[var(--md-text)]">{t("No replies yet. The support team will reply here and by email.")}</p> : <ol className="mt-3 divide-y divide-[var(--md-hairline)]">
++        {conversation.messages.map((message) => <li key={message.id} className="py-4"><div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"><span className="font-medium">{message.authorName} · {t(message.authorType === "staff" ? "Support team" : "You")}</span><time dateTime={message.createdAt} className="text-[var(--md-subtle)]">{date(message.createdAt)}</time></div><p data-i18n-skip className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--md-text)]">{message.body}</p></li>)}
++      </ol>}
++      {conversation.ticket.status === "closed" ? <p className="mt-5 text-sm text-[var(--md-text)]">{t("This ticket is closed. Submit a new ticket if you need more help.")}</p> : <form onSubmit={sendComment} className="mt-5 grid gap-3">
++        <label htmlFor="support-reply" className="text-sm font-medium">{t("Reply to support")}</label>
++        <Textarea id="support-reply" value={draft} maxLength={12000} disabled={sending} onChange={(event) => { setDraft(event.target.value); setSent(false) }} aria-invalid={Boolean(commentError) || undefined} aria-describedby="support-reply-feedback" className="min-h-28" />
++        <p id="support-reply-feedback" role={commentError ? "alert" : "status"} className="text-xs text-[var(--md-text)]">{commentError || (sent ? t("Your reply has been added to the ticket.") : t("Your reply is shared with the Multideck support team."))}</p>
++        <div className="flex justify-end"><Button type="submit" disabled={sending || Boolean(error)}><Send className="size-4" aria-hidden="true" />{t(sending ? "Sending reply…" : "Send reply")}</Button></div>
++      </form>}
++    </div> : null}
++    {!loading && cursor ? <Button variant="outline" className="mt-4" onClick={() => void loadMore()} disabled={loadingMore}>{t(loadingMore ? "Loading…" : ticketId ? "Load earlier replies" : "Load more tickets")}</Button> : null}
++  </Surface>
++}
+--- a/multideck.client/src/pages/settings-page.tsx
++++ b/multideck.client/src/pages/settings-page.tsx
+@@ -83,6 +83,7 @@
+ import { openSupportTicket } from "@/components/multideck/support-ticket-dialog"
+ import { CalendarConnectionSettings } from "@/components/multideck/calendar-connection-settings"
+ import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
++import { SupportTicketWorkspace } from "@/pages/support-ticket-workspace"
+ import {
+   createLegacySupportTicket,
+   SupportTicketError,
+@@ -5203,16 +5204,26 @@
+   )
+ }
+ 
+-function SupportHubTab() {
++function SupportHubTab({ navigate }: { navigate: (path: string) => void }) {
+   const { t } = useLanguage()
++  const [ticketId, setTicketId] = useState(() => new URLSearchParams(window.location.search).get("ticket"))
++  useEffect(() => {
++    const update = () => setTicketId(new URLSearchParams(window.location.search).get("ticket"))
++    window.addEventListener("popstate", update)
++    return () => window.removeEventListener("popstate", update)
++  }, [])
++  function navigateSupport(path: string) {
++    navigate(path)
++    setTicketId(new URLSearchParams(window.location.search).get("ticket"))
++  }
+   return (
+     <>
+       <SettingsPageHeader
+         eyebrow={t("Resources / Support")}
+         title={t("Support")}
+-        description={t("Tell the support team what you need without losing the page or workflow you are working in.")}
++        description={t("Submit a ticket, track its status, and reply to the support team.")}
+       />
+-      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
++      {!ticketId ? <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
+         <SettingsPanel title={t("Create a support ticket")} description={t("The same focused ticket experience is available here and from the bottom of the sidebar.")}>
+           <div className="flex flex-col gap-5 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
+             <div className="max-w-xl">
+@@ -5234,7 +5245,8 @@
+             </ol>
+           </SettingsPanel>
+         </aside>
+-      </div>
++      </div> : null}
++      <SupportTicketWorkspace key={ticketId ?? "ticket-list"} ticketId={ticketId} navigate={navigateSupport} />
+     </>
+   )
+ }
+@@ -5281,7 +5293,7 @@
+     case "docs":
+       return <DocsTab />
+     case "support":
+-      return supportTicketFeatureEnabled ? <SupportHubTab /> : <LegacySupportTab />
++      return supportTicketFeatureEnabled ? <SupportHubTab navigate={navigate} /> : <LegacySupportTab />
+     default:
+       return (
+         <ProfileTab
+--- a/multideck.client/src/components/multideck/support-ticket-dialog.tsx
++++ b/multideck.client/src/components/multideck/support-ticket-dialog.tsx
+@@ -15,6 +15,7 @@
+ import { cn } from "@/lib/utils"
+ 
+ export const SUPPORT_TICKET_OPEN_EVENT = "multideck:open-support-ticket"
++export const SUPPORT_TICKET_SUBMITTED_EVENT = "multideck:support-ticket-submitted"
+ export function openSupportTicket() { window.dispatchEvent(new Event(SUPPORT_TICKET_OPEN_EVENT)) }
+ 
+ type Draft = { ticketType: SupportTicketType; impact: SupportTicketImpact; title: string; description: string; actualBehaviour: string; desiredOutcome: string }
+@@ -314,6 +315,7 @@
+     try {
+       const response = await createSupportTicket({ idempotencyKey: idempotencyRef.current, ticketType: draft.ticketType, impact: draft.impact, title: draft.title.trim(), description: draft.description.trim(), expectedBehaviour: null, actualBehaviour: draft.ticketType === "bug" ? draft.actualBehaviour.trim() || null : null, desiredOutcome: draft.ticketType === "feature_request" ? draft.desiredOutcome.trim() || null : null, attachments: draft.ticketType === "bug" ? files : [], context: { route: `${window.location.pathname}${window.location.search}`, appVersion: import.meta.env.VITE_APP_VERSION ?? "local", browser: browserName(), browserVersion: navigator.userAgent.match(/(?:Chrome|Firefox|Version|Edg)\/([\d.]+)/)?.[1] ?? "Unknown", operatingSystem: operatingSystem(), locale: navigator.language, viewport: `${window.innerWidth}×${window.innerHeight}` }, onProgress: (state) => setProgress(t(state === "creating" ? "Creating secure ticket" : state === "preparing_attachments" ? "Preparing screenshots" : state === "uploading" ? "Uploading screenshots" : "Confirming ticket")) })
+       setResult(response); setDraft(emptyDraft); setFiles([]); window.localStorage.removeItem(draftStorageKey); idempotencyRef.current = `multideck-support-${crypto.randomUUID()}`
++      window.dispatchEvent(new Event(SUPPORT_TICKET_SUBMITTED_EVENT))
+     } catch (submitError) { setError(submitError instanceof SupportTicketError ? t(submitError.message) : t("Support is temporarily unavailable. Your ticket details are still here; try again.")) }
+     finally { setSubmitting(false); setProgress("") }
+   }
+--- a/multideck.client/src/data/multideck-data.ts
++++ b/multideck.client/src/data/multideck-data.ts
+@@ -108,7 +108,7 @@
+     category: "Foundation",
+     description: "The base Multideck panel. It gives workflow areas quiet depth without creating heavy card clutter.",
+     details: "Use for primary panels, side panels, preview wells, and command areas. Radius and shadow come from tokens.",
+-    foundOn: [{ label: "Overview", route: "/" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }],
++    foundOn: [{ label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }],
+     componentCode: `export function Surface({ tone = "panel", padding = "md", className, children }) {\n  return (\n    <section className={cn("rounded-[var(--md-radius-lg)]", toneClass[tone], paddingClass[padding], className)}>\n      {children}\n    </section>\n  )\n}\n\nexport function SectionHeader({ eyebrow, title, meta, action, className }) {\n  return (\n    <div className={cn("flex items-start justify-between gap-3", className)}>\n      <div className="@container/section-header-copy min-w-0 flex-1">\n        {eyebrow ? <p className="mb-1 text-xs font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}\n        <div className="min-w-0 @min-[520px]/section-header-copy:flex @min-[520px]/section-header-copy:items-baseline @min-[520px]/section-header-copy:justify-between @min-[520px]/section-header-copy:gap-5">\n          <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>\n          {meta ? <p className="mt-1 text-[12px] text-[var(--md-text)] @min-[520px]/section-header-copy:mt-0 @min-[520px]/section-header-copy:text-end">{meta}</p> : null}\n        </div>\n      </div>\n      {action ? <div className="shrink-0">{action}</div> : null}\n    </div>\n  )\n}`,
+     usageCode: `<Surface tone="panel" padding="md">\n  <SectionHeader title="Live bookings" meta="updated 41s ago" />\n  <BookingRow booking={booking} />\n</Surface>`,
+   },
+@@ -257,7 +257,7 @@
+     category: "Feedback",
+     description: "The single compact semantic pill treatment for workflow statuses and descriptive attributes across Multideck.",
+     details: "Every status and attribute pill uses the established filled operator-table palette and footprint, whether it appears in a table, list, header, inspector, or history view. Optional icons may reinforce meaning, but the component never adds a competing dot or outlined treatment.",
+-    foundOn: [{ label: "Overview", route: "/" }, { label: "To Do list", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }],
++    foundOn: [{ label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "To Do list", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }],
+     componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n\n  return (\n    <Badge\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill="true"\n      className={cn(filledPillClass, toneClass[tone], className)}\n    >\n      {indicator !== false ? indicator : null}\n      {children}\n    </Badge>\n  )\n}`,
+     usageCode: `<StatusPill kind="status" tone="purple">New</StatusPill>\n<StatusPill kind="status" tone="orange">Contacted</StatusPill>\n<StatusPill kind="status" tone="blue">Qualified</StatusPill>\n<StatusPill kind="status" tone="amber">Nurturing</StatusPill>\n<StatusPill kind="status" tone="green">Converted</StatusPill>\n<StatusPill kind="status" tone="red">Disqualified</StatusPill>\n\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
+   },
+@@ -1217,7 +1217,7 @@
+     category: "Feedback",
+     description: "The product's one waiting state: twenty-five cells lit as a travelling square spiral.",
+     details: "Use it for every wait long enough to need a mark — a route still downloading, a register still fetching rows, a panel still resolving a document list. One object across the whole product means a wait never looks like a different feature loading. It animates only opacity and transform, so it can sit inside the box the loaded content will occupy without moving anything around it, and it reserves its own size so rows arriving cannot shift the page. `size=\"sm\"` fits a 32px toolbar; `decorative` drops the status role where the surrounding block already announces the wait in words. Reduced-motion mode holds the centre cell lit instead of cycling.",
+-    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Every route", route: "/" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }],
++    foundOn: [{ label: "Support tickets", route: "/settings?tab=support" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Every route", route: "/" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }],
+     componentCode: `const spiralOrder = [
+   0, 1, 2, 3, 4,
+   15, 16, 17, 18, 5,

@@ -31,26 +31,27 @@ import { cn } from "@/lib/utils"
 import {
   WarehouseApiError,
   cancelOperationalWarehouseOrder,
+  confirmWarehouseTask,
   dispatchOperationalWarehouseOrder,
   downloadWarehouseOrderDocument,
   getOperationalWarehouseOrderByNumber,
-  getOperationalWarehouseOrderAvailability,
   listWarehouseOrderDocuments,
   listWarehouseOrderLocationsPage,
+  listWarehouseTasksPage,
   receiveOperationalWarehouseOrder,
+  releaseOperationalWarehouseOrder,
   reviewWarehouseOrderDocument,
   uploadWarehouseOrderDocument,
   type DispatchWarehouseOrderInput,
   type ReceiveWarehouseOrderInput,
-  type WarehouseOrderAvailability,
   type WarehouseOperationalOrder,
   type WarehouseOrderDocument,
   type WarehouseOrderLine,
   type WarehouseOrderReference,
+  type WarehouseTask,
 } from "@/lib/warehouse"
 
 const controlClass = "!h-9 !w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-soft)] !px-2.5 !text-[12.5px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] active:!scale-100 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
-const automaticValue = "__auto__"
 const maxOrderDocumentBytes = 25 * 1024 * 1024
 
 type PostingRow = {
@@ -101,6 +102,17 @@ function statusTone(status: string): "green" | "amber" | "red" | "blue" | "teal"
   if (["booked", "planned", "part_complete"].includes(status)) return "amber"
   if (["in_progress", "picked", "packed"].includes(status)) return "blue"
   return "neutral"
+}
+
+const sourceTypeLabels: Record<string, string> = {
+  customer_purchase_order: "Customer purchase order",
+  asn: "Advance shipping notice",
+  sales_order: "Sales order",
+  transfer: "Warehouse transfer",
+  return: "Customer return",
+  return_to_supplier: "Return to supplier",
+  disposal: "Disposal",
+  manual_exception: "Manual exception",
 }
 
 function documentKind(orderDocument: WarehouseOrderDocument) {
@@ -160,7 +172,13 @@ function OrderProgressRail({ order, progress }: { order: WarehouseOperationalOrd
   const shouldReduceMotion = useReducedMotion()
   const stages = orderStages[order.typeCode]
   const cancelled = order.statusCode === "cancelled"
-  const reached = cancelled ? -1 : progress >= 1 ? 2 : progress > 0 ? 1 : 0
+  const ordered = order.lines.reduce((total, line) => total + line.orderedQuantity, 0)
+  const picked = order.lines.reduce((total, line) => total + line.pickedQuantity, 0)
+  const dispatched = order.lines.reduce((total, line) => total + line.dispatchedQuantity, 0)
+  const reached = cancelled ? -1
+    : order.typeCode === "outbound"
+      ? dispatched >= ordered && ordered > 0 ? 2 : picked > 0 || order.statusCode === "in_progress" ? 1 : 0
+      : progress >= 1 ? 2 : progress > 0 ? 1 : 0
 
   return (
     <div className="grid gap-4 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6">
@@ -221,7 +239,7 @@ function OrderLineRow({ line, order, index }: { line: WarehouseOrderLine; order:
   const { language, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const number = useMemo(() => new Intl.NumberFormat(language, { maximumFractionDigits: 3 }), [language])
-  const done = order.typeCode === "inbound" ? line.receivedQuantity : line.dispatchedQuantity
+  const done = order.typeCode === "inbound" ? line.receivedQuantity : line.pickedQuantity
   const fill = line.orderedQuantity > 0 ? Math.max(0, Math.min(1, done / line.orderedQuantity)) : 0
 
   return (
@@ -250,9 +268,9 @@ function OrderLineRow({ line, order, index }: { line: WarehouseOrderLine; order:
           {number.format(done)}<span className="text-[var(--md-subtle)]"> / </span>{number.format(line.orderedQuantity)} <span className="font-normal text-[var(--md-text)]">{line.uomCode}</span>
         </p>
         <p className="mt-1 text-[11px] leading-4 text-[var(--md-subtle)]">
-          {line.remainingQuantity > 0
-            ? `${number.format(line.remainingQuantity)} ${t(order.typeCode === "inbound" ? "still to receive" : "still to pick")}`
-            : t("Line complete")}
+          {order.typeCode === "inbound"
+            ? line.remainingQuantity > 0 ? `${number.format(line.remainingQuantity)} ${t("still to receive")}` : t("Line complete")
+            : `${number.format(line.dispatchedQuantity)} ${t("dispatched")} · ${number.format(Math.max(0, line.orderedQuantity - line.pickedQuantity))} ${t("still to pick")}`}
         </p>
       </div>
     </motion.div>
@@ -302,7 +320,6 @@ export function WarehouseOrderDetailView({
   const [order, setOrder] = useState<WarehouseOperationalOrder | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [rows, setRows] = useState<PostingRow[]>([])
-  const [stock, setStock] = useState<WarehouseOrderAvailability[]>([])
   const [locationRows, setLocationRows] = useState<WarehouseOrderReference["locations"]>([])
   const [locationSearch, setLocationSearch] = useState("")
   const [locationsLoading, setLocationsLoading] = useState(false)
@@ -317,6 +334,10 @@ export function WarehouseOrderDetailView({
   const [documents, setDocuments] = useState<WarehouseOrderDocument[] | null>(null)
   const [documentsHaveMore, setDocumentsHaveMore] = useState(false)
   const [documentsLoadingMore, setDocumentsLoadingMore] = useState(false)
+  const [tasks, setTasks] = useState<WarehouseTask[]>([])
+  const [taskQuantities, setTaskQuantities] = useState<Record<string, string>>({})
+  const [taskTargets, setTaskTargets] = useState<Record<string, string>>({})
+  const [tasksLoading, setTasksLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -339,12 +360,14 @@ export function WarehouseOrderDetailView({
   useEffect(() => {
     if (!order || seededOrderRef.current === order.id) return
     seededOrderRef.current = order.id
-    setRows(order.lines.filter((line) => line.remainingQuantity > 0).map((line) => ({
+    setRows(order.lines.map((line) => ({ line, quantity: order.typeCode === "inbound" ? line.remainingQuantity : Math.max(0, line.pickedQuantity - line.dispatchedQuantity) }))
+      .filter(({ quantity }) => quantity > 0)
+      .map(({ line, quantity }) => ({
       orderLineId: line.id,
-      quantity: String(line.remainingQuantity),
+      quantity: String(quantity),
       damagedQuantity: "0",
       missingQuantity: "0",
-      locationId: (order.typeCode === "inbound" ? line.targetLocationId : line.sourceLocationId) ?? "",
+      locationId: order.typeCode === "inbound" ? "" : line.sourceLocationId ?? "",
       lotId: "",
       lotNumber: line.lotNumber ?? "",
       batchNumber: line.lotNumber ?? "",
@@ -360,7 +383,24 @@ export function WarehouseOrderDetailView({
 
   const orderId = order?.id
   const facilityId = order?.facilityId
-  const isOutbound = order?.typeCode === "outbound"
+
+  const loadTasks = useCallback(async function loadTasks(id: string) {
+    setTasksLoading(true)
+    try {
+      const page = await listWarehouseTasksPage({ orderId: id, limit: 50 })
+      setTasks(page.rows)
+      setTaskQuantities(Object.fromEntries(page.rows.map((task) => [task.id, String(Math.max(0, task.quantity - task.completedQuantity))])))
+      setTaskTargets(Object.fromEntries(page.rows.map((task) => [task.id, task.targetLocationId ?? ""])))
+    } catch {
+      setTasks([])
+    } finally {
+      setTasksLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (orderId) void loadTasks(orderId)
+  }, [loadTasks, orderId])
 
   useEffect(() => {
     if (!canOperate || !facilityId) {
@@ -403,6 +443,14 @@ export function WarehouseOrderDetailView({
     }
     return [...new Map([...selected, ...locationRows].map((location) => [location.id, location])).values()]
   }, [locationRows, order])
+  const receivingLocations = useMemo(() => locations.filter((location) => {
+    const kind = `${location.typeCode ?? ""} ${location.zoneName ?? ""}`.toLowerCase()
+    return ["dock", "staging", "receiving", "goods in"].some((token) => kind.includes(token))
+  }), [locations])
+  const putawayLocations = useMemo(() => locations.filter((location) => (
+    (!location.statusCode || location.statusCode === "available")
+    && !receivingLocations.some((receivingLocation) => receivingLocation.id === location.id)
+  )), [locations, receivingLocations])
 
   useEffect(() => {
     if (!orderId) return
@@ -419,13 +467,6 @@ export function WarehouseOrderDetailView({
     })
     return () => { live = false }
   }, [orderId])
-
-  useEffect(() => {
-    if (!isOutbound || !facilityId || !orderId) return
-    let live = true
-    getOperationalWarehouseOrderAvailability(orderId, facilityId).then((value) => { if (live) setStock(value) }).catch(() => { if (live) setStock([]) })
-    return () => { live = false }
-  }, [isOutbound, facilityId, orderId])
 
   function goBack() {
     navigate?.(backTo)
@@ -473,6 +514,41 @@ export function WarehouseOrderDetailView({
       }
       seededOrderRef.current = null
       await load()
+      await loadTasks(order.id)
+    } catch (cause) {
+      setError(message(cause))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function releaseForPicking() {
+    if (!order) return
+    setSaving(true); setError(null)
+    try {
+      await releaseOperationalWarehouseOrder(order.id)
+      toast.success(t("Outbound order released to picking"))
+      seededOrderRef.current = null
+      await load()
+      await loadTasks(order.id)
+    } catch (cause) {
+      setError(message(cause))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function completeTask(task: WarehouseTask) {
+    const quantity = Number(taskQuantities[task.id])
+    const targetLocationId = taskTargets[task.id] || null
+    if (!quantity || (task.type === "putaway" && !targetLocationId)) return
+    setSaving(true); setError(null)
+    try {
+      await confirmWarehouseTask(task.id, { quantity, targetLocationId: task.type === "putaway" ? targetLocationId : null })
+      toast.success(t(task.type === "putaway" ? "Putaway confirmed" : "Pick confirmed"))
+      seededOrderRef.current = null
+      await load()
+      await loadTasks(task.orderId)
     } catch (cause) {
       setError(message(cause))
     } finally {
@@ -591,7 +667,11 @@ export function WarehouseOrderDetailView({
   const done = order.lines.reduce((total, line) => total + (order.typeCode === "inbound" ? line.receivedQuantity : line.dispatchedQuantity), 0)
   const progress = ordered > 0 ? Math.max(0, Math.min(1, done / ordered)) : 0
   const final = ["complete", "cancelled"].includes(order.statusCode)
-  const canPost = canOperate && !final && rows.length > 0
+  const openTasks = tasks.filter((task) => !["complete", "cancelled"].includes(task.statusCode))
+  const hasOpenPickTasks = openTasks.some((task) => task.type === "pick")
+  const hasDispatchableStock = order.typeCode === "outbound" && order.lines.some((line) => line.pickedQuantity > line.dispatchedQuantity)
+  const canRelease = canOperate && order.typeCode === "outbound" && !final && !hasOpenPickTasks && !hasDispatchableStock && order.lines.some((line) => line.remainingQuantity > 0)
+  const canPost = canOperate && !final && rows.length > 0 && (order.typeCode === "inbound" || hasDispatchableStock)
   const postBlocked = rows.some((row) => order.typeCode === "inbound"
     ? Number(row.quantity) + Number(row.missingQuantity) <= 0 || (Number(row.quantity) > 0 && !row.locationId)
     : Number(row.quantity) <= 0)
@@ -635,7 +715,13 @@ export function WarehouseOrderDetailView({
                 className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3.5 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] transition-[background-color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] active:scale-[0.97] motion-reduce:transform-none"
               >
                 {saving ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" strokeWidth={1.6} /> : order.typeCode === "inbound" ? <ArrowDownToLine data-icon="inline-start" className="size-4" strokeWidth={1.4} /> : <ArrowUpFromLine data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
-                {t(order.typeCode === "inbound" ? "Receive goods" : "Dispatch goods")}
+                {t(order.typeCode === "inbound" ? "Receive goods" : "Ship picked goods")}
+              </Button>
+            ) : null}
+            {canRelease ? (
+              <Button type="button" disabled={saving} onClick={() => void releaseForPicking()} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3.5 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)]">
+                {saving ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : <ArrowUpFromLine data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
+                {t("Release to picking")}
               </Button>
             ) : null}
           </div>
@@ -671,11 +757,34 @@ export function WarehouseOrderDetailView({
             </div>
           </OrderSection>
 
+          {tasksLoading || tasks.length ? (
+            <OrderSection index={1} title="Warehouse tasks" meta="Mobile is the preferred way to scan and complete floor work. These controls are the office fallback.">
+              {tasksLoading ? <DotGridLoaderPanel label="Loading warehouse tasks" minHeight={92} /> : (
+                <div className="grid gap-2">
+                  {tasks.map((task) => {
+                    const remaining = Math.max(0, task.quantity - task.completedQuantity)
+                    const complete = task.statusCode === "complete"
+                    return <div key={task.id} className="grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)] lg:grid-cols-[minmax(0,1fr)_140px_190px_auto] lg:items-end">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2"><StatusPill tone={complete ? "green" : task.statusCode === "in_progress" ? "blue" : "amber"}>{t(task.type === "putaway" ? "Putaway" : "Pick")}</StatusPill><Code>{task.sku}</Code></div>
+                        <p className="mt-1 truncate text-[11.5px] text-[var(--md-text)]">{task.description}</p>
+                        <p className="mt-1 text-[11px] text-[var(--md-subtle)]">{task.sourceLocationCode ?? t("Receiving area")}{task.targetLocationCode ? ` → ${task.targetLocationCode}` : ""} · {remaining} {task.uomCode} {t("remaining")}</p>
+                      </div>
+                      {!complete ? <WarehouseFormField label={t("Quantity")}><Input type="number" min="0.001" max={remaining} step="0.001" value={taskQuantities[task.id] ?? String(remaining)} onChange={(event) => setTaskQuantities((current) => ({ ...current, [task.id]: event.target.value }))} className={controlClass} /></WarehouseFormField> : <span />}
+                      {!complete && task.type === "putaway" ? <WarehouseFormField label={t("Put away to")}><Select value={taskTargets[task.id] ?? ""} onValueChange={(value) => setTaskTargets((current) => ({ ...current, [task.id]: value }))}><SelectTrigger className={controlClass}><SelectValue placeholder={t("Choose storage location")} /></SelectTrigger><SelectContent>{putawayLocations.filter((location) => location.id !== task.sourceLocationId).map((location) => <SelectItem key={location.id} value={location.id}>{location.code}{location.zoneName ? ` · ${location.zoneName}` : ""}</SelectItem>)}</SelectContent></Select></WarehouseFormField> : <span />}
+                      {!complete ? <Button type="button" disabled={saving || !Number(taskQuantities[task.id]) || (task.type === "putaway" && !taskTargets[task.id])} onClick={() => void completeTask(task)} className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] text-[var(--md-accent-ink)]">{t(task.type === "putaway" ? "Confirm putaway" : "Confirm pick")}</Button> : <span className="pb-2 text-end text-[11.5px] text-[var(--md-green)]">{t("Completed")}</span>}
+                    </div>
+                  })}
+                </div>
+              )}
+            </OrderSection>
+          ) : null}
+
           {canPost ? (
             <OrderSection
-              index={1}
-              title={order.typeCode === "inbound" ? "Post the receipt" : "Post the dispatch"}
-              meta="Quantities post straight to the inventory ledger and to current balances."
+              index={2}
+              title={order.typeCode === "inbound" ? "Receive the delivery" : "Ship picked goods"}
+              meta={order.typeCode === "inbound" ? "Receiving creates putaway tasks so stock can be moved from the receiving area into storage." : "Only quantities confirmed as picked can be shipped."}
             >
               <div className="grid gap-4">
                 <WarehouseFormField
@@ -731,8 +840,6 @@ export function WarehouseOrderDetailView({
                 {rows.map((row) => {
                   const line = order.lines.find((candidate) => candidate.id === row.orderLineId)
                   if (!line) return null
-                  const lots = stock.filter((balance) => balance.itemId === line.itemId && balance.customsStatusCode === line.customsStatusCode && balance.availableQuantity > 0)
-
                   return (
                     <div key={row.orderLineId} className="grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
                       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -744,10 +851,10 @@ export function WarehouseOrderDetailView({
                           <WarehouseFormField label={t("Received")} required><Input type="number" min="0" max={line.remainingQuantity} step="0.001" value={row.quantity} onChange={(event) => patchRow(row.orderLineId, { quantity: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
                           <WarehouseFormField label={t("Damaged")} hint={t("On hand but unavailable.")}><Input type="number" min="0" max={row.quantity} step="0.001" value={row.damagedQuantity} onChange={(event) => patchRow(row.orderLineId, { damagedQuantity: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
                           <WarehouseFormField label={t("Missing")} hint={t("Never added to stock.")}><Input type="number" min="0" max={line.remainingQuantity} step="0.001" value={row.missingQuantity} onChange={(event) => patchRow(row.orderLineId, { missingQuantity: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
-                          <WarehouseFormField label={t("Put away to")} required>
+                          <WarehouseFormField label={t("Receive into")} required hint={t("Use a dock or staging location. Putaway is confirmed as a separate task.")}>
                             <Select value={row.locationId} onValueChange={(value) => patchRow(row.orderLineId, { locationId: value })}>
                               <SelectTrigger className={controlClass}><SelectValue placeholder={t("Choose a location")} /></SelectTrigger>
-                              <SelectContent>{locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent>
+                              <SelectContent>{receivingLocations.map((location) => <SelectItem key={location.id} value={location.id}>{location.code}{location.zoneName ? ` · ${location.zoneName}` : ""}</SelectItem>)}</SelectContent>
                             </Select>
                           </WarehouseFormField>
                           <WarehouseFormField label={t("Lot number")}><Input value={row.lotNumber} onChange={(event) => patchRow(row.orderLineId, { lotNumber: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
@@ -756,28 +863,9 @@ export function WarehouseOrderDetailView({
                           <WarehouseFormField label={t("Expiry")}><MultideckDatePicker value={row.expiryDate || null} onChange={(date) => patchRow(row.orderLineId, { expiryDate: date ?? "" })} placeholder="Select date" title="Expiry date" description="Pick the date this stock expires." triggerClassName={controlClass} minDate={row.manufactureDate || undefined} /></WarehouseFormField>
                         </div>
                       ) : (
-                        <div className="grid gap-3 sm:grid-cols-3">
-                          <WarehouseFormField label={t("Dispatched")} required><Input type="number" min="0" max={line.remainingQuantity} step="0.001" value={row.quantity} onChange={(event) => patchRow(row.orderLineId, { quantity: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
-                          <WarehouseFormField label={t("Pick from")}>
-                            <Select value={row.locationId || automaticValue} onValueChange={(value) => patchRow(row.orderLineId, { locationId: value === automaticValue ? "" : value, lotId: "" })}>
-                              <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value={automaticValue}>{t("Oldest stock first")}</SelectItem>
-                                {locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          </WarehouseFormField>
-                          <WarehouseFormField label={t("Batch / lot")}>
-                            <Select value={row.lotId || automaticValue} onValueChange={(value) => { const selected = lots.find((lot) => lot.lotId === value); patchRow(row.orderLineId, { lotId: value === automaticValue ? "" : value, locationId: selected?.locationId ?? row.locationId }) }}>
-                              <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value={automaticValue}>{t("Oldest stock first")}</SelectItem>
-                                {lots.filter((lot, index) => lot.lotId && lots.findIndex((candidate) => candidate.lotId === lot.lotId) === index).map((lot) => (
-                                  <SelectItem key={lot.lotId!} value={lot.lotId!}>{lot.batchNumber ?? lot.lotNumber} · {lot.availableQuantity} {lot.uomCode}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </WarehouseFormField>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <WarehouseFormField label={t("Ship now")} required hint={t("This cannot exceed the quantity already picked.")}><Input type="number" min="0" max={Math.max(0, line.pickedQuantity - line.dispatchedQuantity)} step="0.001" value={row.quantity} onChange={(event) => patchRow(row.orderLineId, { quantity: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
+                          <div className="self-end rounded-[var(--md-radius-md)] bg-[var(--md-accent-a07)] px-3 py-2 text-[11.5px] leading-4 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("Picking is already confirmed. Shipping now posts the final stock movement.")}</div>
                         </div>
                       )}
                     </div>
@@ -803,7 +891,8 @@ export function WarehouseOrderDetailView({
         <div className="grid gap-[var(--md-gap-lg)]">
           <OrderSection index={2} title="Order details">
             <dl>
-              <OrderFact label="Customer reference" value={order.customerReference} code />
+              <OrderFact label="Source" value={order.sourceTypeCode ? sourceTypeLabels[order.sourceTypeCode] ?? order.sourceTypeCode : order.typeCode === "outbound" ? "Sales order" : "Inbound order"} />
+              <OrderFact label="Source reference" value={order.sourceReference ?? order.customerReference} code />
               <OrderFact label="Requested" value={order.requestedDate ? dateOnly.format(new Date(`${order.requestedDate}T00:00:00`)) : null} />
               <OrderFact label="Slot" value={order.appointmentStartAt ? dateTime.format(new Date(order.appointmentStartAt)) : null} />
               <OrderFact label="Priority" value={order.priorityCode ? t(order.priorityCode) : null} />

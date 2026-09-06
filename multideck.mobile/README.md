@@ -46,12 +46,20 @@ The authenticated mobile shell is designed for Zebra-style scan-as-keyboard devi
 large targets, accept scanner suffix Enter, and keep operational codes left-to-right. The first
 live warehouse slice uses the existing tenant Warehouse Edge Function for:
 
+- receiving booked goods-in orders into a dock or staging location, which creates putaway work;
+- completing putaway tasks with source and destination location scans;
+- completing released outbound pick tasks with source-location and item scans;
+- shipping only quantities that have already been picked and confirmed;
 - location checks and system-versus-physical stock comparison;
 - stock enquiry by SKU, pallet, lot, customer, or location;
 - stock-item and pallet lookup;
 - pallet moves, including an audited reason when the scanned source overrides the system location;
 - pallet consolidation with an explicit destructive-action review;
 - open exception review, location-empty reporting, and resolving stock found at its expected location.
+
+Warehouse orders and their commercial source references are created in the Multideck web app. Mobile is the preferred
+place for warehouse staff to execute and scan the physical Receive → Put away → Pick → Ship work;
+the same operational actions remain available to authorised operators on the web when needed.
 
 Holding-time fee configuration is intentionally not persisted yet. The financial decisions that
 must be confirmed before adding its migration and audited API are recorded in

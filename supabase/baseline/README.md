@@ -25,8 +25,14 @@ The current snapshot predates `20260901164232_seamless_calendar_meetings_booking
 `20260901224717_calendar_foreign_key_indexes.sql`,
 `20260901230000_calendar_operational_milestones.sql`,
 `20260901233300_parallel_calendar_connections.sql`, and
-`20260901234500_calendar_meeting_colours.sql`. Until an authoritative schema-only snapshot is
-regenerated from a validated tenant branch, every new tenant must apply all five migrations in
+`20260901234500_calendar_meeting_colours.sql`, followed by
+`20260902160000_calendar_booking_kinds_external_events.sql`,
+`20260902220000_calendar_edit_while_syncing.sql`, and
+`20260904110000_calendar_provider_event_attendees.sql`,
+`20260904113000_calendar_provider_event_attendee_sync_state.sql`, and
+`20260904120000_calendar_external_event_rsvp.sql`, and
+`20260904123000_calendar_provider_event_join_links.sql`. Until an authoritative schema-only snapshot is
+regenerated from a validated tenant branch, every new tenant must apply all eleven migrations in
 timestamp order after `public-schema.sql`, then deploy `calendar-api`, `calendar-public`,
 `calendar-oauth`, `calendar-webhook`, and `calendar-worker`. Do not copy the Calendar tables or the
 service-only operational-milestone and bounded meeting-colour contracts into this snapshot by hand: the migrations also install

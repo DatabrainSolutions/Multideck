@@ -61,7 +61,7 @@ test("an invalidated in-flight read cannot restore stale data after a mutation",
   const staleRead = readCachedWarehouseResource(scope, "/orders", firstLoad)
   invalidateWarehouseResources(scope)
   resolveFirst(["stale-order"])
-  assert.deepEqual(await staleRead, ["stale-order"])
+  await assert.rejects(staleRead, { name: "AbortError" })
 
   const freshRead = await readCachedWarehouseResource(scope, "/orders", async () => {
     calls += 1

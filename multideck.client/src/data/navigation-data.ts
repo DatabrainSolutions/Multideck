@@ -51,6 +51,7 @@ import {
 
 export type NavItem = {
   label: string
+  /** Numeric values are reserved for live unread/actionable notification state, never record totals. */
   value?: string
   icon: LucideIcon
   route?: string
@@ -74,8 +75,8 @@ export const warehouseNavigation: SidebarDestination[] = [
   { id: "warehouse-inventory", label: "Inventory", icon: Boxes, route: "/warehouse/inventory" },
   { id: "warehouse-goods-in", label: "Goods in", icon: PackagePlus, route: "/warehouse/goods-in" },
   { id: "warehouse-goods-out", label: "Goods out", icon: PackageMinus, route: "/warehouse/goods-out" },
-  { id: "warehouse-orders", label: "Orders", icon: ClipboardCheck, route: "/warehouse/orders" },
-  { id: "warehouse-purchase-orders", label: "Customer purchase orders", icon: ReceiptText, route: "/warehouse/purchase-orders" },
+  { id: "warehouse-orders", label: "Warehouse orders", icon: ClipboardCheck, route: "/warehouse/orders" },
+  { id: "warehouse-purchase-orders", label: "Expected receipts", icon: ReceiptText, route: "/warehouse/purchase-orders" },
   {
     id: "warehouse-setup",
     label: "Setup",
@@ -90,7 +91,7 @@ export const warehouseNavigation: SidebarDestination[] = [
 
 export const customerWarehouseNavigation: SidebarDestination[] = [
   { id: "warehouse-inventory", label: "Inventory", icon: Boxes, route: "/warehouse/inventory" },
-  { id: "warehouse-orders", label: "Orders", icon: ClipboardCheck, route: "/warehouse/orders" },
+  { id: "warehouse-orders", label: "Warehouse orders", icon: ClipboardCheck, route: "/warehouse/orders" },
   { id: "warehouse-items", label: "Items", icon: Package, route: "/warehouse/items" },
   { id: "warehouse-users", label: "Users", icon: Users, route: "/warehouse/users" },
 ]
@@ -326,10 +327,10 @@ export const sidebarAreas: SidebarArea[] = [
 export const sidebarPrimary: NavItem[] = [
   { label: "Overview", value: "G O", icon: LayoutDashboard, route: "/" },
   { label: "To Do list", icon: ClipboardCheck, route: "/to-do" },
-  { label: "Warehouse", value: "12", icon: Forklift, route: "/warehouse" },
-  { label: "Customers", value: "39", icon: Users, route: "/customers" },
-  { label: "CRM", value: "9", icon: BriefcaseBusiness, route: "/crm" },
-  { label: "Exceptions", value: "2", icon: TriangleAlert },
+  { label: "Warehouse", icon: Forklift, route: "/warehouse" },
+  { label: "Customers", icon: Users, route: "/customers" },
+  { label: "CRM", icon: BriefcaseBusiness, route: "/crm" },
+  { label: "Exceptions", icon: TriangleAlert },
 ]
 
 export const sidebarSecondary: NavItem[] = [

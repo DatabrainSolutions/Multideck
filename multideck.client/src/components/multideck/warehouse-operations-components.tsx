@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { AlertCircle, ArrowDownToLine, ArrowUpFromLine, Boxes, Loader2, Plus, RefreshCw, Trash2, Upload } from "@/components/icons/hugeicons"
+import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
+import { AlertCircle, ArrowDownToLine, ArrowUpFromLine, Boxes, Check, ChevronDown, Loader2, Plus, RefreshCw, Search, Trash2, Upload } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { WarehouseFormField, warehouseDialogFooterClass, warehouseDialogHeaderClass } from "@/components/multideck/warehouse-management-components"
@@ -32,7 +35,6 @@ import {
   listOperationalWarehouseOrdersPage,
   listWarehouseOrderCustomersPage,
   listWarehouseOrderItemsPage,
-  listWarehouseOrderLocationsPage,
   listWarehouseFacilitiesPage,
   receiveOperationalWarehouseOrder,
   uploadWarehouseOrderDocument,
@@ -42,6 +44,7 @@ import {
   type WarehouseDraftAvailabilityQuery,
   type WarehouseFacility,
   type WarehouseOperationalOrder,
+  type WarehouseOrderSourceTypeCode,
   type WarehouseOrderReference,
   type WarehouseRegisterSort,
 } from "@/lib/warehouse"
@@ -65,7 +68,7 @@ function EmptyState({ loading, error, empty, onRetry }: { loading: boolean; erro
         {loading ? <DotGridLoader decorative /> : error ? <AlertCircle className="size-5" strokeWidth={1.4} /> : <Boxes className="size-5" strokeWidth={1.4} />}
       </span>
       <p className="text-[14px] font-medium text-[var(--md-ink)]">{loading ? t("Loading warehouse orders") : error ? t("Warehouse orders are unavailable") : t(empty)}</p>
-      <p className="mt-1 max-w-[440px] text-[13px] leading-5 text-[var(--md-text)]">{error ?? (loading ? "" : t("Orders appear here as the team books work in."))}</p>
+      <p className="mt-1 max-w-[440px] text-[13px] leading-5 text-[var(--md-text)]">{error ?? (loading ? "" : t("Warehouse orders appear here as work is booked in."))}</p>
       {error ? <Button variant="ghost" onClick={onRetry} className="mt-4 h-9 rounded-[var(--md-radius-lg)] bg-white/48 shadow-[var(--md-shadow-line)]"><RefreshCw className="size-4" strokeWidth={1.4} />{t("Try again")}</Button> : null}
     </div>
   )
@@ -94,25 +97,143 @@ function toneForStatus(status: string): "green" | "amber" | "red" | "blue" | "te
 }
 
 type DraftLine = { key: string; itemId: string; quantity: string; lotNumber: string; expiryDate: string; locationId: string; customsStatusCode: string }
-type OrderForm = { facilityId: string; customerOrgId: string; typeCode: "inbound" | "outbound"; customerReference: string; requestedDate: string; appointmentStartAt: string; vehicleReg: string; containerNumber: string; sealNumber: string; instructions: string; lines: DraftLine[] }
+type OrderForm = { facilityId: string; customerOrgId: string; typeCode: "inbound" | "outbound"; sourceTypeCode: WarehouseOrderSourceTypeCode; sourceReference: string; requestedDate: string; appointmentStartAt: string; vehicleReg: string; containerNumber: string; sealNumber: string; instructions: string; lines: DraftLine[] }
 type DraftLineAvailability = { available: number; uomCode: string }
 type OrderCustomerOption = WarehouseOrderReference["customers"][number]
 type OrderItemOption = WarehouseOrderReference["items"][number]
-type OrderLocationOption = WarehouseOrderReference["locations"][number]
 
 function draftLineAvailabilityKey(lineKey: string) { return `line:${lineKey}` }
 function draftItemAvailabilityKey(itemId: string, customsStatusCode: string) { return `item:${itemId}:${customsStatusCode}` }
-function draftLocationAvailabilityKey(itemId: string, locationId: string, customsStatusCode: string) { return `location:${itemId}:${locationId}:${customsStatusCode}` }
 
 function blankLine(reference: WarehouseOrderReference | null, _facilityId: string, _customerOrgId: string, _typeCode: "inbound" | "outbound"): DraftLine {
   return { key: crypto.randomUUID(), itemId: "", quantity: "", lotNumber: "", expiryDate: "", locationId: "", customsStatusCode: reference?.customsStatuses[0]?.code ?? "free_circulation" }
+}
+
+const inboundSourceTypes = [
+  { value: "customer_purchase_order", label: "Customer purchase order" },
+  { value: "asn", label: "Advance shipping notice (ASN)" },
+  { value: "transfer", label: "Warehouse transfer" },
+  { value: "return", label: "Customer return" },
+  { value: "manual_exception", label: "Manual exception" },
+] as const
+
+const outboundSourceTypes = [
+  { value: "sales_order", label: "Sales order" },
+  { value: "transfer", label: "Warehouse transfer" },
+  { value: "return_to_supplier", label: "Return to supplier" },
+  { value: "disposal", label: "Disposal" },
+  { value: "manual_exception", label: "Manual exception" },
+] as const
+
+function defaultSourceType(typeCode: "inbound" | "outbound"): WarehouseOrderSourceTypeCode {
+  return typeCode === "inbound" ? "customer_purchase_order" : "sales_order"
+}
+
+function sourceTypeLabel(code: string | null | undefined, typeCode: "inbound" | "outbound") {
+  const options = typeCode === "inbound" ? inboundSourceTypes : outboundSourceTypes
+  return options.find((option) => option.value === code)?.label ?? (typeCode === "inbound" ? "Inbound order" : "Sales order")
+}
+
+/** The order form's customer choice is one searchable control, even for large directories. */
+function WarehouseOrderCustomerPicker({
+  value,
+  selectedCustomer,
+  options,
+  search,
+  loading,
+  hasMore,
+  disabled,
+  onSearchChange,
+  onValueChange,
+}: {
+  value: string
+  selectedCustomer: OrderCustomerOption | null
+  options: OrderCustomerOption[]
+  search: string
+  loading: boolean
+  hasMore: boolean
+  disabled?: boolean
+  onSearchChange: (value: string) => void
+  onValueChange: (value: string) => void
+}) {
+  const { direction, t } = useLanguage()
+  const [open, setOpen] = useState(false)
+  const listId = useId()
+  const selected = options.find((option) => option.id === value) ?? (selectedCustomer?.id === value ? selectedCustomer : null)
+
+  function setPickerOpen(nextOpen: boolean) {
+    setOpen(nextOpen)
+    if (!nextOpen) onSearchChange("")
+  }
+
+  function selectCustomer(customer: OrderCustomerOption) {
+    onValueChange(customer.id)
+    setPickerOpen(false)
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setPickerOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listId}
+          disabled={disabled}
+          className={cn(controlClass, "flex items-center justify-between gap-2 text-start disabled:cursor-not-allowed disabled:opacity-50")}
+        >
+          <span className={cn("min-w-0 truncate", !selected && "text-[var(--md-subtle)]")}>
+            {selected?.name ?? t("Search or choose customer")}
+          </span>
+          <ChevronDown className="size-3.5 shrink-0 text-[var(--md-subtle)]" aria-hidden="true" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={5}
+        dir={direction}
+        className="w-[var(--radix-popover-trigger-width)] min-w-[260px] gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-lift)]"
+      >
+        <div className="relative m-1">
+          <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" aria-hidden="true" />
+          <Input
+            autoFocus
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder={t("Search customers…")}
+            aria-label={t("Search customers")}
+            className="h-8 rounded-[var(--md-radius-md)] ps-8 text-[12px]"
+            dir="auto"
+          />
+          {loading ? <Loader2 className="pointer-events-none absolute end-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" aria-label={t("Loading customers")} /> : null}
+        </div>
+        <div id={listId} role="listbox" className="max-h-56 overflow-y-auto p-1 md-scrollbar">
+          {options.map((customer) => (
+            <button
+              key={customer.id}
+              type="button"
+              role="option"
+              aria-selected={customer.id === value}
+              onClick={() => selectCustomer(customer)}
+              className={cn("flex w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2.5 py-2 text-start text-[12px] hover:bg-[var(--md-hover)]", customer.id === value && "bg-[var(--md-selected-bg)]")}
+            >
+              <span className="min-w-0 flex-1 truncate">{customer.name}</span>
+              {customer.id === value ? <Check className="size-3.5 shrink-0 text-[var(--md-accent)]" aria-hidden="true" /> : null}
+            </button>
+          ))}
+          {!loading && !options.length ? <p className="px-3 py-5 text-center text-[12px] text-[var(--md-subtle)]">{t("No matching customers")}</p> : null}
+          {hasMore ? <p className="px-3 py-2 text-center text-[11px] text-[var(--md-subtle)]">{t("Search to narrow the customer list.")}</p> : null}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTypes = allOrderTypes, isCustomer = false, onSaved }: { open: boolean; onOpenChange: (open: boolean) => void; reference: WarehouseOrderReference | null; fixedType?: "inbound" | "outbound"; allowedTypes?: ("inbound" | "outbound")[]; isCustomer?: boolean; onSaved: () => void }) {
   const firstFacility = reference?.facilities[0]?.id ?? ""
   const firstCustomer = reference?.customers[0]?.id ?? ""
   const initialType = fixedType ?? allowedTypes[0] ?? "inbound"
-  const [form, setForm] = useState<OrderForm>(() => ({ facilityId: firstFacility, customerOrgId: firstCustomer, typeCode: initialType, customerReference: "", requestedDate: "", appointmentStartAt: "", vehicleReg: "", containerNumber: "", sealNumber: "", instructions: "", lines: [blankLine(reference, firstFacility, firstCustomer, initialType)] }))
+  const [form, setForm] = useState<OrderForm>(() => ({ facilityId: firstFacility, customerOrgId: firstCustomer, typeCode: initialType, sourceTypeCode: defaultSourceType(initialType), sourceReference: "", requestedDate: "", appointmentStartAt: "", vehicleReg: "", containerNumber: "", sealNumber: "", instructions: "", lines: [blankLine(reference, firstFacility, firstCustomer, initialType)] }))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [availabilityChecks, setAvailabilityChecks] = useState<Record<string, DraftLineAvailability> | null>(null)
@@ -127,11 +248,6 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
   const [itemSearch, setItemSearch] = useState("")
   const [itemLoading, setItemLoading] = useState(false)
   const [itemsHaveMore, setItemsHaveMore] = useState(false)
-  const [locationRows, setLocationRows] = useState<OrderLocationOption[]>([])
-  const [selectedLocations, setSelectedLocations] = useState<OrderLocationOption[]>([])
-  const [locationSearch, setLocationSearch] = useState("")
-  const [locationLoading, setLocationLoading] = useState(false)
-  const [locationsHaveMore, setLocationsHaveMore] = useState(false)
   const [selectorError, setSelectorError] = useState<string | null>(null)
   const [section, setSection] = useState("details")
   const [activeLineKey, setActiveLineKey] = useState("")
@@ -145,17 +261,15 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
     const customerOrgId = reference?.customers[0]?.id ?? ""
     const typeCode = fixedType ?? allowedTypes[0] ?? "inbound"
     const line = blankLine(reference, facilityId, customerOrgId, typeCode)
-    setForm({ facilityId, customerOrgId, typeCode, customerReference: "", requestedDate: "", appointmentStartAt: "", vehicleReg: "", containerNumber: "", sealNumber: "", instructions: "", lines: [line] })
+    setForm({ facilityId, customerOrgId, typeCode, sourceTypeCode: defaultSourceType(typeCode), sourceReference: "", requestedDate: "", appointmentStartAt: "", vehicleReg: "", containerNumber: "", sealNumber: "", instructions: "", lines: [line] })
     setSection("details")
     setActiveLineKey(line.key)
     setSupportingFile(null)
     setError(null)
     setCustomerSearch("")
     setItemSearch("")
-    setLocationSearch("")
     setSelectedCustomer(null)
     setSelectedItems([])
-    setSelectedLocations([])
   }, [open, reference, fixedType, allowedTypes])
 
   useEffect(() => {
@@ -227,55 +341,12 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
     return () => { cancelled = true; window.clearTimeout(timer) }
   }, [open, form.facilityId, form.customerOrgId, itemSearch])
 
-  useEffect(() => {
-    if (!open || isCustomer || !form.facilityId) {
-      setLocationRows([])
-      setLocationsHaveMore(false)
-      return
-    }
-    let cancelled = false
-    const timer = window.setTimeout(() => {
-      setLocationLoading(true)
-      listWarehouseOrderLocationsPage({
-        facilityId: form.facilityId,
-        search: locationSearch.trim() || undefined,
-        limit: 25,
-      })
-        .then((page) => {
-          if (cancelled) return
-          setLocationRows(page.rows)
-          setLocationsHaveMore(page.hasMore)
-          setSelectorError(null)
-        })
-        .catch((cause) => {
-          if (!cancelled) {
-            setLocationRows([])
-            setLocationsHaveMore(false)
-            setSelectorError(errorMessage(cause))
-          }
-        })
-        .finally(() => { if (!cancelled) setLocationLoading(false) })
-    }, 220)
-    return () => { cancelled = true; window.clearTimeout(timer) }
-  }, [open, isCustomer, form.facilityId, locationSearch])
-
-  const customerOptions = useMemo(() => {
-    const rows = selectedCustomer ? [selectedCustomer, ...customerRows] : customerRows
-    return rows.filter((row, index) => rows.findIndex((candidate) => candidate.id === row.id) === index)
-  }, [customerRows, selectedCustomer])
   const availableItems = useMemo(() => {
     const rows = [...selectedItems, ...itemRows]
     return rows
       .filter((item) => item.facilityId === form.facilityId && item.customerOrgId === form.customerOrgId)
       .filter((row, index, all) => all.findIndex((candidate) => candidate.id === row.id) === index)
   }, [form.customerOrgId, form.facilityId, itemRows, selectedItems])
-  const availableLocations = useMemo(() => {
-    const rows = [...selectedLocations, ...locationRows]
-    return rows
-      .filter((location) => location.facilityId === form.facilityId)
-      .filter((row, index, all) => all.findIndex((candidate) => candidate.id === row.id) === index)
-  }, [form.facilityId, locationRows, selectedLocations])
-
   const draftAvailabilityQueries = useMemo<WarehouseDraftAvailabilityQuery[]>(() => {
     if (form.typeCode !== "outbound") return []
     const queries = new Map<string, WarehouseDraftAvailabilityQuery>()
@@ -291,17 +362,8 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
       const key = draftItemAvailabilityKey(item.id, itemCustomsStatus)
       queries.set(key, { key, itemId: item.id, locationId: null, lotNumber: null, customsStatusCode: itemCustomsStatus, uomCode: item.uomCode })
     }
-    if (activeLine?.itemId) {
-      const item = availableItems.find((candidate) => candidate.id === activeLine.itemId)
-      if (item) {
-        for (const location of availableLocations) {
-          const key = draftLocationAvailabilityKey(item.id, location.id, activeLine.customsStatusCode)
-          queries.set(key, { key, itemId: item.id, locationId: location.id, lotNumber: null, customsStatusCode: activeLine.customsStatusCode, uomCode: item.uomCode })
-        }
-      }
-    }
     return [...queries.values()].slice(0, 100)
-  }, [activeLineKey, availableItems, availableLocations, form.lines, form.typeCode])
+  }, [activeLineKey, availableItems, form.lines, form.typeCode])
   const draftAvailabilityRequest = useMemo(() => JSON.stringify(draftAvailabilityQueries), [draftAvailabilityQueries])
 
   useEffect(() => {
@@ -364,17 +426,15 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
   const hasOutboundStockIssue = form.typeCode === "outbound" && (
     availabilityChecks === null || Boolean(availabilityError) || form.lines.some((line) => Boolean(line.itemId) && Number(line.quantity) > (lineAvailability[line.key]?.available ?? 0))
   )
-  function availableFor(itemId: string, locationId = "", customsStatusCode = "") {
+  function availableFor(itemId: string, customsStatusCode = "") {
     if (!itemId || form.typeCode !== "outbound" || availabilityChecks === null) return null
-    const key = locationId
-      ? draftLocationAvailabilityKey(itemId, locationId, customsStatusCode)
-      : draftItemAvailabilityKey(itemId, customsStatusCode)
+    const key = draftItemAvailabilityKey(itemId, customsStatusCode)
     return availabilityChecks[key]?.available ?? 0
   }
   function patchForm(patch: Partial<OrderForm>) { setForm((current) => ({ ...current, ...patch })) }
   function patchLine(key: string, patch: Partial<DraftLine>) { setForm((current) => ({ ...current, lines: current.lines.map((line) => line.key === key ? { ...line, ...patch } : line) })) }
-  function resetLines(facilityId: string, customerOrgId: string) { const line = blankLine(reference, facilityId, customerOrgId, form.typeCode); patchForm({ facilityId, customerOrgId, lines: [line] }); setActiveLineKey(line.key); setItemSearch(""); setLocationSearch(""); setSelectedItems([]); setSelectedLocations([]) }
-  function changeType(typeCode: "inbound" | "outbound") { const line = blankLine(reference, form.facilityId, form.customerOrgId, typeCode); patchForm({ typeCode, lines: [line] }); setActiveLineKey(line.key) }
+  function resetLines(facilityId: string, customerOrgId: string) { const line = blankLine(reference, facilityId, customerOrgId, form.typeCode); patchForm({ facilityId, customerOrgId, lines: [line] }); setActiveLineKey(line.key); setItemSearch(""); setSelectedItems([]) }
+  function changeType(typeCode: "inbound" | "outbound") { const line = blankLine(reference, form.facilityId, form.customerOrgId, typeCode); patchForm({ typeCode, sourceTypeCode: defaultSourceType(typeCode), sourceReference: "", lines: [line] }); setActiveLineKey(line.key) }
   function addLine() { const line = blankLine(reference, form.facilityId, form.customerOrgId, form.typeCode); patchForm({ lines: [...form.lines, line] }); setActiveLineKey(line.key) }
   function removeLine(key: string) { const remaining = form.lines.filter((line) => line.key !== key); patchForm({ lines: remaining }); setActiveLineKey(remaining[0]?.key ?? "") }
 
@@ -387,12 +447,12 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
     try {
       const payload: CreateWarehouseOrderInput = {
         facilityId: form.facilityId, customerOrgId: form.customerOrgId, typeCode: form.typeCode, priorityCode: "normal",
-        customerReference: form.customerReference.trim() || null, requestedDate: form.requestedDate || null,
+        customerReference: form.sourceReference.trim() || null, sourceTypeCode: form.sourceTypeCode, sourceReference: form.sourceReference.trim() || null, sourceRecordId: null, requestedDate: form.requestedDate || null,
         appointmentStartAt: form.appointmentStartAt ? new Date(form.appointmentStartAt).toISOString() : null, appointmentEndAt: null,
         vehicleReg: form.vehicleReg.trim() || null, containerNumber: form.containerNumber.trim() || null, sealNumber: form.sealNumber.trim() || null, instructions: form.instructions.trim() || null,
         lines: form.lines.map((line) => {
           const item = availableItems.find((candidate) => candidate.id === line.itemId)
-          return { itemId: line.itemId, quantity: Number(line.quantity), uomCode: item?.uomCode ?? null, lotNumber: line.lotNumber.trim() || null, expiryDate: line.expiryDate || null, sourceLocationId: !isCustomer && form.typeCode === "outbound" ? line.locationId || null : null, targetLocationId: !isCustomer && form.typeCode === "inbound" ? line.locationId || null : null, customsStatusCode: line.customsStatusCode || null, goodsValue: null, currencyCode: null, instructions: null }
+          return { itemId: line.itemId, quantity: Number(line.quantity), uomCode: item?.uomCode ?? null, lotNumber: line.lotNumber.trim() || null, expiryDate: line.expiryDate || null, sourceLocationId: null, targetLocationId: null, customsStatusCode: line.customsStatusCode || null, goodsValue: null, currencyCode: null, instructions: null }
         }),
       }
       const created = await createOperationalWarehouseOrder(payload)
@@ -410,10 +470,10 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
 
   // Exactly the conditions the old footer button used — the wizard changes where
   // the operator is standing, not what the server will accept.
-  const submitBlocked = hasOutboundStockIssue || !form.facilityId || !form.customerOrgId || form.lines.some((line) => !line.itemId || Number(line.quantity) <= 0 || (!isCustomer && !line.locationId))
+  const submitBlocked = hasOutboundStockIssue || !form.facilityId || !form.customerOrgId || !form.sourceReference.trim() || form.lines.some((line) => !line.itemId || Number(line.quantity) <= 0)
 
   const orderSteps: WizardStep[] = [
-    { id: "details", label: "The order", hint: "Whose stock this is, which warehouse it belongs to, and when it is expected.", complete: Boolean(form.facilityId && form.customerOrgId) },
+    { id: "details", label: "The order", hint: "Why stock is moving, whose stock it is, and which warehouse will handle it.", complete: Boolean(form.facilityId && form.customerOrgId && form.sourceReference.trim()) },
     { id: "lines", label: `Items (${form.lines.length})`, hint: "What is arriving or leaving, and how much of it.", complete: form.lines.length > 0 && !form.lines.some((line) => !line.itemId || Number(line.quantity) <= 0) },
     { id: "transport", label: "Transport", hint: "Vehicle, container and anything the warehouse team should know. All optional." },
   ]
@@ -422,8 +482,8 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
     <WizardDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={form.typeCode === "inbound" ? "Book goods in" : "New outbound order"}
-      description="Book the order now. The physical receipt or dispatch is posted later, when the work is actually done."
+      title={form.typeCode === "inbound" ? "New inbound order" : "New outbound order"}
+      description="Create the warehouse order on the web. Mobile is the preferred place to receive, put away, pick and ship it."
       steps={orderSteps}
       activeStepId={section}
       onStepChange={setSection}
@@ -448,9 +508,10 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
         <div className="grid content-start gap-4">
           <div className="grid gap-3 md:grid-cols-3">
             <WarehouseFormField label="Warehouse" required><Select value={form.facilityId} onValueChange={(value) => resetLines(value, form.customerOrgId)}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.facilities.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
-            <WarehouseFormField label="Customer" required hint={customersHaveMore ? t("Search to narrow the customer list.") : undefined}><div className="grid gap-1.5">{isCustomer ? null : <div className="relative"><Input value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder={t("Search customers…")} className={controlClass} dir="auto" />{customerLoading ? <Loader2 className="pointer-events-none absolute end-3 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" /> : null}</div>}<Select value={form.customerOrgId} onValueChange={(value) => { setSelectedCustomer(customerOptions.find((customer) => customer.id === value) ?? null); resetLines(form.facilityId, value) }} disabled={isCustomer || customerLoading && customerOptions.length === 0}><SelectTrigger className={controlClass}><SelectValue placeholder={t("Choose customer")} /></SelectTrigger><SelectContent>{customerOptions.map((customer) => <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>)}</SelectContent></Select></div></WarehouseFormField>
+            <WarehouseFormField label="Customer" required><WarehouseOrderCustomerPicker value={form.customerOrgId} selectedCustomer={selectedCustomer} options={customerRows} search={customerSearch} loading={customerLoading} hasMore={customersHaveMore} disabled={isCustomer || customerLoading && customerRows.length === 0} onSearchChange={setCustomerSearch} onValueChange={(value) => { setSelectedCustomer(customerRows.find((customer) => customer.id === value) ?? null); resetLines(form.facilityId, value) }} /></WarehouseFormField>
             {!fixedType && allowedTypes.length > 1 ? <WarehouseFormField label="Direction" required><Select value={form.typeCode} onValueChange={(value) => changeType(value as "inbound" | "outbound")}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{allowedTypes.includes("inbound") ? <SelectItem value="inbound">Inbound receipt</SelectItem> : null}{allowedTypes.includes("outbound") ? <SelectItem value="outbound">Outbound release</SelectItem> : null}</SelectContent></Select></WarehouseFormField> : <WarehouseFormField label="Direction"><div className={`${controlClass} flex items-center`}>{form.typeCode === "inbound" ? "Inbound receipt" : "Outbound release"}</div></WarehouseFormField>}
-            <WarehouseFormField label="Customer reference"><Input value={form.customerReference} onChange={(event) => patchForm({ customerReference: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
+            <WarehouseFormField label="Source type" required><Select value={form.sourceTypeCode} onValueChange={(value) => patchForm({ sourceTypeCode: value as WarehouseOrderSourceTypeCode })}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{(form.typeCode === "inbound" ? inboundSourceTypes : outboundSourceTypes).map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
+            <WarehouseFormField label="Source reference" required hint={form.typeCode === "inbound" ? "The customer's PO, ASN, transfer or return reference." : "The customer's sales order, transfer, return or disposal reference."}><Input value={form.sourceReference} onChange={(event) => patchForm({ sourceReference: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
             <WarehouseFormField label="Requested date"><MultideckDatePicker value={form.requestedDate || null} onChange={(date) => patchForm({ requestedDate: date ?? "" })} placeholder="Select date" title="Requested date" description="Pick the date requested by the customer." triggerClassName={controlClass} /></WarehouseFormField>
             <WarehouseFormField label="Appointment"><MultideckDateTimePicker value={form.appointmentStartAt} onChange={(appointmentStartAt) => patchForm({ appointmentStartAt })} placeholder="Select date" title="Appointment" description="Pick the appointment date and time." triggerClassName={controlClass} timeClassName={controlClass} /></WarehouseFormField>
           </div>
@@ -482,14 +543,11 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
                     : undefined
               return <div key={line.key} className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/36 p-4 shadow-[var(--md-shadow-line)] md:grid-cols-12">
                 <WarehouseFormField label={`Item ${index + 1}`} required hint={itemsHaveMore ? t("Search to narrow the item list.") : undefined} className="md:col-span-5"><div className="grid gap-1.5"><div className="relative"><Input value={itemSearch} onChange={(event) => setItemSearch(event.target.value)} placeholder={t("Search items by SKU or description…")} className={controlClass} dir="auto" />{itemLoading ? <Loader2 className="pointer-events-none absolute end-3 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" /> : null}</div><Select value={line.itemId} onValueChange={(value) => { const selected = availableItems.find((candidate) => candidate.id === value); if (selected) setSelectedItems((current) => current.some((candidate) => candidate.id === selected.id) ? current : [...current, selected]); patchLine(line.key, { itemId: value, quantity: line.quantity || "1", locationId: form.typeCode === "outbound" ? "" : line.locationId }) }} disabled={!form.facilityId || !form.customerOrgId || itemLoading && availableItems.length === 0}><SelectTrigger className={controlClass}><SelectValue placeholder={t("Choose item")} /></SelectTrigger><SelectContent>{availableItems.map((option) => {
-                  const itemAvailable = availableFor(option.id, "", line.customsStatusCode)
+                  const itemAvailable = availableFor(option.id, line.customsStatusCode)
                   return <SelectItem key={option.id} value={option.id} disabled={itemAvailable !== null && itemAvailable <= 0}>{option.sku} · {option.description}{itemAvailable === null ? "" : ` · ${number.format(itemAvailable)} ${option.uomCode} ${t("available")}`}</SelectItem>
                 })}</SelectContent></Select></div></WarehouseFormField>
                 <WarehouseFormField label="Quantity" required hint={quantityHint} error={quantityError} className="md:col-span-3"><Input type="number" min="0.000001" max={form.typeCode === "outbound" && line.itemId && availabilityChecks !== null ? availability.available : undefined} step="0.001" value={line.quantity} onChange={(event) => patchLine(line.key, { quantity: event.target.value })} disabled={!line.itemId} aria-invalid={Boolean(quantityError)} className={controlClass} dir="ltr" /></WarehouseFormField>
-                {!isCustomer ? <WarehouseFormField label={form.typeCode === "inbound" ? "Target location" : "Source location"} required hint={locationsHaveMore ? t("Search to narrow the location list.") : undefined} className="md:col-span-4"><div className="grid gap-1.5"><div className="relative"><Input value={locationSearch} onChange={(event) => setLocationSearch(event.target.value)} placeholder={t("Search locations…")} className={controlClass} dir="auto" />{locationLoading ? <Loader2 className="pointer-events-none absolute end-3 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--md-subtle)]" /> : null}</div><Select value={line.locationId} onValueChange={(value) => { const selected = availableLocations.find((candidate) => candidate.id === value); if (selected) setSelectedLocations((current) => current.some((candidate) => candidate.id === selected.id) ? current : [...current, selected]); patchLine(line.key, { locationId: value }) }} disabled={!line.itemId || locationLoading && availableLocations.length === 0}><SelectTrigger className={controlClass}><SelectValue placeholder={t("Choose location")} /></SelectTrigger><SelectContent>{availableLocations.map((location) => {
-                  const locationAvailable = availableFor(line.itemId, location.id, line.customsStatusCode)
-                  return <SelectItem key={location.id} value={location.id} disabled={locationAvailable !== null && locationAvailable <= 0}>{location.code}{locationAvailable === null ? "" : ` · ${number.format(locationAvailable)} ${item?.uomCode ?? ""} ${t("available")}`}</SelectItem>
-                })}</SelectContent></Select></div></WarehouseFormField> : <div className="md:col-span-4 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a07)] px-3 py-2 text-[12px] leading-5 text-[var(--md-text)]">{t("Warehouse staff will assign the storage or picking location.")}</div>}
+                <div className="md:col-span-4 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a07)] px-3 py-2 text-[12px] leading-5 text-[var(--md-text)]">{t(form.typeCode === "inbound" ? "The receiving team assigns a dock or staging location, then completes putaway." : "Releasing the outbound order assigns FIFO pick locations to warehouse tasks.")}</div>
                 <WarehouseFormField label="Customs" className="md:col-span-3"><Select value={line.customsStatusCode} onValueChange={(value) => patchLine(line.key, { customsStatusCode: value })}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.customsStatuses.map((status) => <SelectItem key={status.code} value={status.code}>{status.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
                 <WarehouseFormField label={item?.requiresLot ? "Lot / batch (required at receipt)" : "Lot / batch"} className="md:col-span-4"><Input value={line.lotNumber} onChange={(event) => patchLine(line.key, { lotNumber: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
                 <WarehouseFormField label={item?.requiresExpiry ? "Expiry (required at receipt)" : "Expiry"} className="md:col-span-4"><MultideckDatePicker value={line.expiryDate || null} onChange={(date) => patchLine(line.key, { expiryDate: date ?? "" })} placeholder="Select date" title="Expiry date" description="Pick the date this stock expires." triggerClassName={controlClass} /></WarehouseFormField>
@@ -514,7 +572,6 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
 
 const orderScopes = ["Open", "All"] as const
 type OrderScope = (typeof orderScopes)[number]
-const warehouseOrderPageSize = 20
 
 /** How far through its lines an order already is, as a single readable fraction. */
 function orderProgress(order: WarehouseOperationalOrder) {
@@ -535,6 +592,7 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
   const [total, setTotal] = useState(0)
   const [statusFacets, setStatusFacets] = useState<string[]>([])
   const [offset, setOffset] = useState(0)
+  const [warehouseOrderPageSize, setWarehouseOrderPageSize] = useState(defaultPaginationPageSize)
   const [sort, setSort] = useState<WarehouseRegisterSort | null>(null)
   const [facilityId, setFacilityId] = useState("")
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "")
@@ -614,7 +672,7 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
     } finally {
       if (ticket === requestId.current) setPending(false)
     }
-  }, [facilityId, typeFilter, directionFacet, statusFacet, scope, committedSearch, sort, offset])
+  }, [facilityId, typeFilter, directionFacet, statusFacet, scope, committedSearch, sort, offset, warehouseOrderPageSize])
 
   useEffect(() => { void refresh() }, [refresh])
 
@@ -646,7 +704,7 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
   const visible = useMemo(() => (orders ?? []).filter((order) => (
     (!statusFacet || (order.statusName ?? order.statusCode) === statusFacet)
     && (!directionFacet || order.typeCode === directionFacet)
-    && (!query || [order.orderNumber, order.customerReference, order.customerName, order.facilityName, order.facilityCode, order.vehicleReg, order.containerNumber, ...order.lines.map((line) => line.sku)]
+    && (!query || [order.orderNumber, order.sourceReference, order.customerReference, order.sourceTypeCode, order.customerName, order.facilityName, order.facilityCode, order.vehicleReg, order.containerNumber, ...order.lines.map((line) => line.sku)]
       .filter(Boolean).join(" ").toLowerCase().includes(query))
   )), [orders, statusFacet, directionFacet, query])
 
@@ -661,7 +719,7 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
   }, [statusFacet, statusOptions])
 
   const columns = useMemo<DataTableColumn<WarehouseOperationalOrder>[]>(() => [
-    { id: "order", label: "Order", width: 192, minWidth: 150, resizable: true, canHide: false, sortValue: (order) => order.orderNumber, cell: (order) => <div className="min-w-0"><span className="text-[12.5px] font-medium tabular-nums text-[var(--md-ink)]">{order.orderNumber}</span><p className="truncate text-[11px] text-[var(--md-subtle)]">{order.customerReference ?? t("No customer reference")}</p></div> },
+    { id: "order", label: "Warehouse order", width: 210, minWidth: 165, resizable: true, canHide: false, sortValue: (order) => order.orderNumber, cell: (order) => <div className="min-w-0"><span className="text-[12.5px] font-medium tabular-nums text-[var(--md-ink)]">{order.orderNumber}</span><p className="truncate text-[11px] text-[var(--md-subtle)]">{sourceTypeLabel(order.sourceTypeCode, order.typeCode)}{order.sourceReference ?? order.customerReference ? ` · ${order.sourceReference ?? order.customerReference}` : ""}</p></div> },
     { id: "customer", label: "Customer", width: 200, resizable: true, sortValue: (order) => order.customerName, cell: (order) => <span className="truncate text-[12.5px] font-medium text-[var(--md-ink)]">{order.customerName}</span> },
     { id: "warehouse", label: "Warehouse", width: 176, resizable: true, sortValue: (order) => order.facilityName, cell: (order) => <div className="min-w-0"><span className="truncate text-[12.5px] text-[var(--md-ink)]">{order.facilityName}</span><p className="text-[11px] tabular-nums text-[var(--md-subtle)]">{order.facilityCode}</p></div> },
     // The direction column only earns its width on the combined queue. Goods in
@@ -704,7 +762,7 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
       <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
         {t(typeFilter === "inbound" ? "Book a delivery in to receive it against a location and batch."
           : typeFilter === "outbound" ? "Place an order to pick and dispatch available stock."
-          : "Orders appear here as the team books work in.")}
+          : "Warehouse orders appear here as work is booked in.")}
       </p>
     </div>
   )
@@ -712,6 +770,14 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
   return <div className="grid gap-[var(--md-page-stack-gap)]">
     <DataTable
       ariaLabel={typeFilter === "inbound" ? "Goods in" : typeFilter === "outbound" ? "Goods out" : "Warehouse orders"}
+      exportConfig={{ fileName: `warehouse-${typeFilter ?? "orders"}`, register: {
+        dateLabel: "Order created date", dateValue: (row) => row.createdAt,
+        busy: search.trim() !== committedSearch.trim(),
+        loadAllRows: (signal) => collectExportPages((page) => listOperationalWarehouseOrdersPage({
+          facilityId: facilityId || undefined, typeCode: typeFilter ?? (directionFacet || undefined),
+          status: statusFacet || undefined, openOnly: scope === "Open", search: committedSearch.trim() || undefined, sort, ...page,
+        }), (row) => row.id, signal),
+      } }}
       columnsButtonLabel="Manage order columns"
       storageKey={`warehouse-orders-${typeFilter ?? "all"}`}
       columns={columns}
@@ -735,7 +801,7 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
           />
         </div>
       )}
-      toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => { setSearch(""); setCommittedSearch(""); setOffset(0) }} label="Search orders" placeholder="Order, customer, SKU" className="sm:min-w-[136px] sm:w-[136px]" />}
+      toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => { setSearch(""); setCommittedSearch(""); setOffset(0) }} label="Search orders" placeholder="Order, customer, SKU" className="sm:min-w-[220px] sm:w-[240px]" />}
       toolbarFilters={(
         <>
           {typeFilter ? null : (
@@ -768,7 +834,7 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
       )}
       toolbarOptions={<RegisterRevalidatingMark active={pending && loaded} />}
       serverSorting={{ value: sort, onChange: (value) => { setSort(value); setOffset(0) } }}
-      pagination={{ offset, limit: warehouseOrderPageSize, total, loading: pending, onOffsetChange: setOffset }}
+      pagination={{ offset, limit: warehouseOrderPageSize, total, loading: pending, onOffsetChange: setOffset, onLimitChange: setWarehouseOrderPageSize, error: Boolean(error) }}
     />
     <CreateOrderDialog open={createOpen} onOpenChange={setCreateOpen} reference={reference} fixedType={createType} allowedTypes={allowedTypes} isCustomer={isCustomer} onSaved={() => void refresh()} />
   </div>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Download,
   FileText,
+  LockKeyhole,
   LoaderCircle,
   Plus,
   Trash2,
@@ -234,12 +235,16 @@ export function AccountDetailTabs({
 export function AccountOperationsPanel({
   account,
   activeTab,
+  canManageFinancial,
+  canManageBankDetails,
   currencyOptions,
   financeReference,
   onChange,
 }: {
   account: ApiCustomerDetail;
   activeTab: Exclude<AccountDetailTab, "overview">;
+  canManageFinancial: boolean;
+  canManageBankDetails: boolean;
   currencyOptions: Array<{ code: string; name: string }>;
   financeReference: Pick<CustomerReference, "legalEntities" | "paymentTerms" | "taxTreatments">;
   onChange: (account: ApiCustomerDetail) => void;
@@ -289,6 +294,8 @@ export function AccountOperationsPanel({
       <Financial
         draft={draft}
         setDraft={setDraft}
+        canManageFinancial={canManageFinancial}
+        canManageBankDetails={canManageBankDetails}
         currencyOptions={currencyOptions}
         financeReference={financeReference}
       />
@@ -344,7 +351,7 @@ export function AccountOperationsPanel({
         {activeTab === "contacts" ? null : (
           <Button
             onClick={() => void save()}
-            disabled={saving || account.operations == null}
+            disabled={saving || account.operations == null || (activeTab === "financial" && !canManageFinancial)}
           >
             {saving ? t("Saving…") : t("Save changes")}
           </Button>
@@ -729,9 +736,13 @@ function accountBankDetails(data: Record<string, unknown>) {
 function Financial({
   draft,
   setDraft,
+  canManageFinancial,
+  canManageBankDetails,
   currencyOptions,
   financeReference,
 }: Omit<Props, "account"> & {
+  canManageFinancial: boolean;
+  canManageBankDetails: boolean;
   currencyOptions: Array<{ code: string; name: string }>;
   financeReference: FinanceReference;
 }) {
@@ -890,6 +901,10 @@ function Financial({
     { id: "payables", label: t("Accounts Payable") },
     { id: "bank-details", label: t("Bank Details") },
   ];
+  const readOnly = activeFinancialTab === "bank-details" ? !canManageBankDetails : !canManageFinancial;
+  const restrictionMessage = activeFinancialTab === "bank-details"
+    ? "Bank details are read-only. A finance manager or administrator can change them."
+    : "Financial terms and accounting settings are read-only. A finance manager or administrator can change them.";
 
   return (
     <>
@@ -897,7 +912,14 @@ function Financial({
         title="Financial details"
         detail="Maintain company currencies, customer terms, supplier terms and approved payment details separately for this account."
       />
-      <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(260px,420px)] sm:items-end">
+      {readOnly ? (
+        <div id="account-financial-read-only" role="status" className="mb-4 flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 py-2.5 text-[11.5px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+          <LockKeyhole className="mt-0.5 size-3.5 shrink-0 text-[var(--md-subtle)]" aria-hidden="true" />
+          <span>{t(restrictionMessage)}</span>
+        </div>
+      ) : null}
+      <fieldset disabled={!canManageFinancial} aria-describedby={!canManageFinancial ? "account-financial-read-only" : undefined} className="contents disabled:opacity-75">
+        <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(260px,420px)] sm:items-end">
         <div>
           <p className="text-[12px] font-medium text-[var(--md-ink)]">
             {t("Operating currencies")}
@@ -917,17 +939,19 @@ function Financial({
           disabled={!operatingCurrencyOptions.length}
           className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-3 text-[13px]"
         />
-      </div>
+        </div>
+      </fieldset>
       <TabsRail
         tabs={tabs}
         activeTab={activeFinancialTab}
         onChange={(tab) => setActiveFinancialTab(tab as FinancialTab)}
         className="mb-4"
       />
-      <div
-        role="tabpanel"
-        aria-label={tabs.find((tab) => tab.id === activeFinancialTab)?.label}
-      >
+      <fieldset disabled={readOnly} aria-describedby={readOnly ? "account-financial-read-only" : undefined} className="contents disabled:opacity-75">
+        <div
+          role="tabpanel"
+          aria-label={tabs.find((tab) => tab.id === activeFinancialTab)?.label}
+        >
         {activeFinancialTab === "receivables" ? (
           <>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -1550,7 +1574,8 @@ function Financial({
             )}
           </>
         )}
-      </div>
+        </div>
+      </fieldset>
     </>
   );
 }

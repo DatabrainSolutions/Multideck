@@ -82,6 +82,7 @@ function frameStyles(theme: "light" | "dark") {
        image must arrive at the size it was written at, without a frame the
        sender never asked for. */
     img { max-width: 100% !important; height: auto; }
+    img[data-md-inline-pending] { visibility: hidden; }
     table { max-width: 100% !important; }
     /* Mail is laid out in tables, so cell rules would draw a grid over an entire
        newsletter. Only a table that asked for borders gets them. */
@@ -112,23 +113,13 @@ function normalizeContentId(value: string) {
   return decoded.trim().replace(/^<|>$/g, "").toLowerCase()
 }
 
-function replaceInlineImageSources(html: string, sources: ReadonlyMap<string, string>) {
-  if (!sources.size) return html
-  return html.replace(/(\s+src\s*=\s*["'])cid:([^"']+)(["'])/gi, (match, start, rawContentId, end) => {
-    const source = sources.get(normalizeContentId(String(rawContentId)))
-    return source ? `${start}${source}${end}` : match
-  })
-}
-
 function buildDocument({
   html,
-  inlineImageSources,
   theme,
   direction,
   language,
 }: {
   html: string
-  inlineImageSources: ReadonlyMap<string, string>
   theme: "light" | "dark"
   direction: "ltr" | "rtl"
   language: string
@@ -137,13 +128,14 @@ function buildDocument({
   // website, but it makes an opened email look broken until the frame nears the
   // viewport. Preserve the sender's markup while making every secure image an
   // immediate load inside the already sandboxed document.
-  const eagerHtml = replaceInlineImageSources(html, inlineImageSources).replace(/<img\b[^>]*>/gi, (tag) => {
+  const eagerHtml = html.replace(/<img\b[^>]*>/gi, (tag) => {
     const withoutLoadingHints = tag
+      .replace(/\s+data-md-inline-pending(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, "")
       .replace(/\s+loading\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
       .replace(/\s+fetchpriority\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
 
     return withoutLoadingHints.replace(/\s*\/?>$/, (closing) =>
-      ` loading="eager" fetchpriority="high"${closing.includes("/") ? " />" : ">"}`,
+      ` loading="eager" fetchpriority="high"${/\ssrc\s*=\s*["']cid:/i.test(tag) ? ' data-md-inline-pending=""' : ""}${closing.includes("/") ? " />" : ">"}`,
     )
   })
 
@@ -232,20 +224,14 @@ export function EmailMessageRenderer({
           return null
         }
         opened.push(result)
-        return [normalizeContentId(attachment.contentId ?? ""), result.url] as const
+        const contentId = normalizeContentId(attachment.contentId ?? "")
+        setInlineImageSources((current) => new Map(current).set(contentId, result.url))
       } catch {
         // The message remains readable and keeps its alt text if an individual
         // provider image has expired or is blocked by the mailbox policy.
-        return null
+        if (!cancelled) setInlineImageSources((current) => new Map(current).set(normalizeContentId(attachment.contentId ?? ""), ""))
       }
-    })).then((entries) => {
-      if (!cancelled) {
-        setInlineImageSources(new Map([
-          ...readyEntries,
-          ...entries.filter((entry): entry is readonly [string, string] => entry !== null),
-        ]))
-      }
-    })
+    }))
 
     return () => {
       cancelled = true
@@ -265,20 +251,54 @@ export function EmailMessageRenderer({
       sanitizedHtml
         ? buildDocument({
             html: sanitizedHtml,
-            inlineImageSources,
             theme: isDark ? "dark" : "light",
             direction,
             language,
           })
         : null,
-    [direction, inlineImageSources, isDark, language, sanitizedHtml],
+    [direction, isDark, language, sanitizedHtml],
   )
+
+  useEffect(() => {
+    const frame = frameRef.current
+    if (!frame || !document_) return
+    // Download completion must not navigate srcdoc again: that reloads remote
+    // images and can leave the old document visible while navigation is pending.
+    // Only install authenticated blob URLs against exact CID references.
+    const applyImages = () => {
+      const expected = new Set(inlineAttachments.filter((attachment) => attachment.isInline && attachment.contentId).slice(0, 24).map((attachment) => normalizeContentId(attachment.contentId!)))
+      for (const image of Array.from(frame.contentDocument?.images ?? [])) {
+        const source = image.getAttribute("src") ?? ""
+        if (!/^cid:/i.test(source)) continue
+        const contentId = normalizeContentId(source.slice(4))
+        const resolved = inlineImageSources.get(contentId)
+        if (resolved) {
+          image.decoding = "async"
+          image.src = resolved
+        }
+        // Reserve the sender's image space while bytes are pending. A failed
+        // or unavailable image reveals its original alt text for recovery.
+        if (inlineImageSources.has(contentId) || !expected.has(contentId)) image.removeAttribute("data-md-inline-pending")
+      }
+    }
+    frame.addEventListener("load", applyImages)
+    applyImages()
+    const readyFrame = requestAnimationFrame(applyImages)
+    return () => {
+      cancelAnimationFrame(readyFrame)
+      frame.removeEventListener("load", applyImages)
+    }
+    // Attachment identity is represented by the scalar key, not array identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [document_, inlineImageKey, inlineImageSources])
 
   useEffect(() => {
     const frame = frameRef.current
     if (!frame || !document_) return
 
     let observer: ResizeObserver | null = null
+    let observedBody: HTMLElement | null = null
+    let readyFrame = 0
     let cancelled = false
 
     const measure = () => {
@@ -294,15 +314,26 @@ export function EmailMessageRenderer({
       measure()
       const body = frame.contentDocument?.body
       if (!body || typeof ResizeObserver === "undefined") return
+      if (body === observedBody) return
+      observer?.disconnect()
+      observedBody = body
       observer = new ResizeObserver(measure)
       observer.observe(body)
     }
 
     frame.addEventListener("load", attach)
-    if (frame.contentDocument?.readyState === "complete") attach()
+    // `load` waits for every remote image. Size the parsed body as soon as it
+    // exists so a slow image host cannot clip readable text to the initial 72px.
+    const attachWhenParsed = () => {
+      if (cancelled) return
+      if (frame.contentDocument?.body?.childNodes.length) attach()
+      else readyFrame = requestAnimationFrame(attachWhenParsed)
+    }
+    readyFrame = requestAnimationFrame(attachWhenParsed)
 
     return () => {
       cancelled = true
+      cancelAnimationFrame(readyFrame)
       frame.removeEventListener("load", attach)
       observer?.disconnect()
     }

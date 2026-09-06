@@ -41,7 +41,8 @@ test("Documents table requests active server pages and never slices a full works
   assert.doesNotMatch(edge, /compatibilityPage\(legacy\.data/)
   assert.match(page, /window\.setTimeout\(\(\) => setDebouncedDocumentQuery\(documentQuery\.trim\(\)\), 250\)/)
   assert.match(page, /serverSorting=\{\{ value: documentSort/)
-  assert.match(page, /pagination=\{\{ offset: documentOffset, limit: 20, total: generatedDocumentTotal/)
+  assert.match(page, /pagination=\{\{ offset: documentOffset, limit: documentPageSize, total: generatedDocumentTotal/)
+  assert.match(page, /onLimitChange: setDocumentPageSize/)
   assert.match(page, /getGeneratedDocumentsPage\(\{/)
 })
 

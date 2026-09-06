@@ -1,5 +1,5 @@
 import type { LucideIcon } from "@/components/icons/hugeicons"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import type { QuoteRegisterRecord } from "@/data/quote-register-data"
 import type { LiveBooking } from "@/lib/application-data-api"
 import type { DashboardOverviewReadModel } from "@/lib/dashboard-api"

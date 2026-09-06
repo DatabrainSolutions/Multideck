@@ -1,4 +1,4 @@
-import { getSupabaseSession, supabase, supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
+import {refreshWorkspaceSession,  getSupabaseSession, supabase, supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
 
 const endpoint = `${supabaseFunctionsUrl}/customs-invoice-ocr`
 const maxBytes = 10 * 1024 * 1024
@@ -71,7 +71,7 @@ export async function extractPurchaseOrder(
 async function accessToken(refresh: boolean) {
   const current = await getSupabaseSession()
   if (refresh || (current?.expires_at && current.expires_at <= Math.floor(Date.now() / 1000) + 30)) {
-    const { data, error } = await supabase!.auth.refreshSession()
+    const { data, error } = await refreshWorkspaceSession()
     if (error) throw new PurchaseOrderExtractionError("Sign in again to import a purchase order.", 401)
     if (data.session?.access_token) return data.session.access_token
   }

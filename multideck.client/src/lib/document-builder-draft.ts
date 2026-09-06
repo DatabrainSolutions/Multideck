@@ -1,3 +1,4 @@
+import { workspaceStorageKey } from "./workspace-environment.ts"
 import type {
   DocumentContentSectionCode,
   DocumentOutputFormat,
@@ -21,10 +22,10 @@ type LegacyDocumentBuilderDraft = Omit<DocumentBuilderDraft, "schemaVersion" | "
   schemaVersion: 1
 }
 
-const databaseName = "multideck-document-builder"
+const databaseName = workspaceStorageKey("multideck-document-builder")
 const storeName = "drafts"
-const activeMarker = "multideck:document-builder:active"
-const activeDraftIdKey = "multideck:document-builder:draft-id"
+const activeMarker = workspaceStorageKey("multideck:document-builder:active")
+const activeDraftIdKey = workspaceStorageKey("multideck:document-builder:draft-id")
 
 function openDatabase() {
   return new Promise<IDBDatabase>((resolve, reject) => {

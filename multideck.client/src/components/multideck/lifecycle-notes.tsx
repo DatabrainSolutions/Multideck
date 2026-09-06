@@ -54,7 +54,7 @@ import {
   type LifecycleNoteTarget,
 } from "@/lib/lifecycle-notes-api"
 import { createProfilePhotoSignedUrls } from "@/lib/profile-photo"
-import { supabase } from "@/lib/supabase"
+import { authSupabase, supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
 type MentionWindow = {
@@ -295,6 +295,10 @@ export function LifecycleNotes({
   const { language, t } = useLanguage()
   const listId = useId()
   const threadRef = useRef<HTMLDivElement | null>(null)
+  const scrollFrameRef = useRef<number | null>(null)
+  const savingRef = useRef(false)
+  const draftRevisionRef = useRef(0)
+  const [addedNoteId, setAddedNoteId] = useState<string | null>(null)
   const scrolledSubjectRef = useRef<string | null>(null)
   const [notes, setNotes] = useState<LifecycleNote[]>(previewState?.notes ?? [])
   const [currentUserId, setCurrentUserId] = useState<string | null>(previewState?.currentUserId ?? null)
@@ -318,6 +322,17 @@ export function LifecycleNotes({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [announcement, setAnnouncement] = useState("")
   const normalizedSubjectId = subjectId?.trim() || null
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current)
+  }, [normalizedSubjectId, subjectType])
+
+  function scheduleScroll(callback: () => void) {
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current)
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null
+      callback()
+    })
+  }
   const authorIdSignature = useMemo(
     () => [...new Set(notes.flatMap((note) => note.author.id ? [note.author.id] : []))].sort().join("|"),
     [notes],
@@ -335,7 +350,7 @@ export function LifecycleNotes({
       setHasMore(page.hasMore)
       setCanWrite(page.canWrite)
       if (before && thread) {
-        window.requestAnimationFrame(() => {
+        scheduleScroll(() => {
           thread.scrollTop += thread.scrollHeight - previousScrollHeight
         })
       }
@@ -387,7 +402,7 @@ export function LifecycleNotes({
     const controller = new AbortController()
     let active = true
 
-    void supabase.auth.getSession().then(async ({ data, error }) => {
+    void authSupabase!.auth.getSession().then(async ({ data, error }) => {
       if (error || !data.session?.access_token) return
       const session = await getApiAuthSession(data.session.access_token)
       if (!active) return
@@ -420,7 +435,7 @@ export function LifecycleNotes({
 
   useEffect(() => {
     if (loading || !notes.length || scrolledSubjectRef.current === normalizedSubjectId) return
-    window.requestAnimationFrame(() => {
+    scheduleScroll(() => {
       const thread = threadRef.current
       if (thread) thread.scrollTop = thread.scrollHeight
       scrolledSubjectRef.current = normalizedSubjectId
@@ -460,7 +475,9 @@ export function LifecycleNotes({
 
   async function saveNote(value = draft) {
     const body = value.trim()
-    if (!body || !normalizedSubjectId || saving || !canWrite) return
+    if (!body || !normalizedSubjectId || savingRef.current || !canWrite) return
+    savingRef.current = true
+    const submittedRevision = draftRevisionRef.current
     const retainedMentions = selectedMentions.filter((mention) => body.includes(`@${mention.label}`)).slice(0, 20)
     setSaving(true)
     setSaveError(null)
@@ -477,23 +494,28 @@ export function LifecycleNotes({
         deletedAt: null,
       } satisfies LifecycleNote : await addLifecycleNote(subjectType, normalizedSubjectId, body, retainedMentions)
       setNotes((current) => [note, ...current])
+      setAddedNoteId(note.id)
       if (note.author.id) setCurrentUserId(note.author.id)
-      setDraft("")
-      setSelectedMentions([])
-      setMentionWindow(null)
+      // Preserve anything typed while this request was in flight.
+      if (draftRevisionRef.current === submittedRevision) {
+        setDraft("")
+        setSelectedMentions([])
+        setMentionWindow(null)
+      }
       setAnnouncement(t("Note added"))
       toast.success(t("Note added"), { description: t(subjectType === "quote"
         ? "It will stay with the quote through booking and Customs."
         : subjectType === "booking"
           ? "It will stay with the booking and its Customs declaration."
           : "It has been added to this Customs declaration.") })
-      window.requestAnimationFrame(() => {
+      scheduleScroll(() => {
         const thread = threadRef.current
         if (thread) thread.scrollTop = thread.scrollHeight
       })
     } catch (reason) {
       setSaveError(reason instanceof Error ? reason.message : t("The note could not be added. Your text is still here."))
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
@@ -561,17 +583,6 @@ export function LifecycleNotes({
 
   return (
     <Surface padding="none" className={cn("min-w-0 overflow-visible rounded-[var(--md-radius-xl)]", className)}>
-      <div className="flex flex-col gap-2 border-b border-[var(--md-line)] px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:px-5 sm:py-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <MessageSquareText className="size-4 text-[var(--md-accent)]" aria-hidden="true" />
-            <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Notes")}</h2>
-          </div>
-          <p className="mt-1 max-w-[70ch] text-[11.5px] leading-5 text-[var(--md-text)]">{t("Notes added earlier in the journey stay visible as the quote becomes a booking and then a Customs declaration.")}</p>
-        </div>
-        {notes.length ? <span className="shrink-0 text-[11px] text-[var(--md-subtle)]">{notes.length}{hasMore ? "+" : ""} {t(notes.length === 1 && !hasMore ? "note" : "notes")}</span> : null}
-      </div>
-
       {!normalizedSubjectId ? (
         <div className="grid min-h-48 place-items-center px-5 py-8 text-center">
           <div className="max-w-md">
@@ -594,7 +605,7 @@ export function LifecycleNotes({
             ref={threadRef}
             tabIndex={notes.length ? 0 : undefined}
             aria-label={notes.length ? t("Operational note conversation") : undefined}
-            className="max-h-[min(58svh,38rem)] min-h-36 overflow-y-auto overscroll-contain px-4 py-4 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)] sm:px-5 sm:py-5 md-scrollbar"
+            className="max-h-[min(58svh,38rem)] overflow-y-auto overscroll-contain px-4 py-4 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)] sm:px-5 sm:py-5 md-scrollbar"
           >
             {notes.length ? (
               <>
@@ -618,7 +629,7 @@ export function LifecycleNotes({
                             <span className="h-px flex-1 bg-[var(--md-line)]" aria-hidden="true" />
                           </li>
                         ) : null}
-                        <li>
+                        <li className={note.id === addedNoteId ? "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-200 motion-safe:ease-out" : undefined}>
                           <LifecycleNoteRow
                             note={note}
                             currentSubject={subjectType}
@@ -634,26 +645,27 @@ export function LifecycleNotes({
                 </ol>
               </>
             ) : (
-              <div className="grid min-h-36 place-items-center text-center">
-                <div className="max-w-md">
-                  <MessageSquareText className="mx-auto size-5 text-[var(--md-subtle)]" aria-hidden="true" />
-                  <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t("No notes yet")}</p>
-                  <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Add context that the next team should not have to rediscover.")}</p>
+              <div className="flex items-start gap-3">
+                <MessageSquareText className="mt-0.5 size-4 shrink-0 text-[var(--md-subtle)]" aria-hidden="true" />
+                <div>
+                  <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No notes yet")}</p>
+                  <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Leave an update, decision or handover for your team.")}</p>
                 </div>
               </div>
             )}
           </div>
 
           {canWrite ? (
-            <form className="border-t border-[var(--md-line)] bg-[var(--md-surface)] px-4 py-4 sm:px-5" onSubmit={(event) => { event.preventDefault(); void saveNote() }}>
-              <div className="md-composer md-lifecycle-note-composer relative rounded-[26px] bg-[var(--md-composer-shell-bg)] p-1.5 shadow-none">
-                <div className="rounded-[21px] bg-[var(--md-composer-panel-bg)] px-3.5 pb-2.5 pt-3 sm:px-4">
+            <form className="px-4 pb-4 sm:px-5 sm:pb-5" aria-label={t("Write a note")} aria-busy={saving} onSubmit={(event) => { event.preventDefault(); void saveNote() }}>
+              <div className="md-lifecycle-note-composer relative rounded-[var(--md-radius-lg)] border border-[var(--md-line)] bg-[var(--md-surface)] transition-[border-color,box-shadow] duration-150 ease-out focus-within:border-[var(--md-accent)] focus-within:ring-2 focus-within:ring-[var(--md-accent-a14)] motion-reduce:transition-none">
+                <div className="px-3 pb-3 pt-3 sm:px-4">
+                <p className="mb-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Add a note")}</p>
                 <DexterMentionInput
                   value={draft}
                   items={mentionItems}
                   selectedMentions={selectedMentionItems}
-                  placeholder="Add operational context. Type @ to tag a person or department."
-                  minHeight={64}
+                  placeholder="What does your team need to know?"
+                  minHeight={56}
                   maxHeight={160}
                   className="text-[13px] leading-5"
                   ariaLabel="Add a note"
@@ -664,32 +676,36 @@ export function LifecycleNotes({
                       setSaveError(t("Notes can be up to 4,000 characters."))
                       return
                     }
+                    draftRevisionRef.current += 1
                     setDraft(value)
                     setSaveError(null)
                     setMentionWindow(currentMentionWindow(value, value.length))
                   }}
                   onMentionsChange={(items) => {
+                    draftRevisionRef.current += 1
                     setSelectedMentions(items.flatMap((item) => item.type === "user" || item.type === "department"
                       ? [{ type: item.type, id: item.id.slice(item.type.length + 1), label: item.title }]
                       : []).slice(0, 20))
                   }}
                   onSend={(value) => void saveNote(value)}
                 />
-                <div className="mt-3 flex items-end gap-3">
+                <div className="mt-3 flex flex-wrap items-end gap-3">
                   <div className="min-w-0 flex-1">
-                    <p id={`${listId}-help`} className="text-[10.5px] leading-4 text-[var(--md-subtle)]">{t("Type @ to tag someone and send them a Multideck notification email. Press Ctrl or Command + Enter to add the note.")}</p>
+                    <p id={`${listId}-help`} className="text-[11px] leading-4 text-[var(--md-subtle)]">{t("Type @ to notify a person or department by email.")}</p>
+                    <p className="mt-1 hidden text-[11px] leading-4 text-[var(--md-subtle)] sm:block">{t("Ctrl / ⌘ + Enter to add")}</p>
                     {targetError ? <p role="alert" className="mt-1 text-[11px] leading-4 text-[var(--md-red)]">{t("Tags are temporarily unavailable. Your note is safe and can still be added without a tag.")}</p> : null}
                     {saveError ? <p id={`${listId}-error`} role="alert" data-i18n-skip dir="auto" className="mt-1 text-[11px] text-[var(--md-red)]">{saveError}</p> : null}
                   </div>
                   {draft.length > 3200 ? <span className="shrink-0 text-[10.5px] tabular-nums text-[var(--md-subtle)]">{draft.length}/4000</span> : null}
                   <Button
                     type="submit"
-                    size="icon"
+                    size="sm"
                     disabled={!draft.trim() || saving}
                     aria-label={t(saving ? "Adding note" : "Add note")}
-                    className="size-10 shrink-0 rounded-full bg-[var(--md-accent)] p-0 text-white shadow-[0_8px_20px_var(--md-accent-a20)] transition-[transform,opacity,background-color] hover:bg-[var(--md-accent-strong)] active:scale-95 disabled:opacity-45"
+                    className="min-h-11 min-w-28 shrink-0 rounded-[var(--md-radius-md)] transition-[transform,opacity,background-color] duration-150 ease-out motion-safe:active:scale-[0.98] motion-reduce:transition-none sm:min-h-9"
                   >
                     {saving ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <SendHorizontal className="size-3.5" aria-hidden="true" />}
+                    {t(saving ? "Adding…" : "Add note")}
                   </Button>
                 </div>
                 </div>

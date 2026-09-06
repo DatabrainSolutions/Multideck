@@ -32,7 +32,7 @@ import { Input } from "@/components/ui/input"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { cn } from "@/lib/utils"
-import type { GeneratedReport, GeneratedReportStatus, ReportTemplate } from "@/data/multideck-data"
+import type { GeneratedReport, GeneratedReportStatus, ReportTemplate } from "@/data/operational-data"
 import { StatusPill, toneToVar } from "./status-pill"
 import { Surface } from "./surface"
 import { ReportVisualizationBlock, type ChartDataPoint, type ChartSeries, type ReportVisualizationOptions, type VisualizationKind } from "./chart-components"
@@ -220,7 +220,7 @@ export function GeneratedReportsTable({
     },
   ], [onDownload, onView])
 
-  return <DataTable ariaLabel="Generated reports" columnsButtonLabel="Manage report columns" columns={columns} rows={reports} getRowKey={(report) => report.id} storageKey="generated-reports" rowClassName="group/row h-[82px]" className={className} />
+  return <DataTable clientPagination ariaLabel="Generated reports" columnsButtonLabel="Manage report columns" columns={columns} rows={reports} getRowKey={(report) => report.id} storageKey="generated-reports" rowClassName="group/row h-[82px]" className={className} />
 }
 
 export function reportStatusStyle(status: GeneratedReportStatus): CSSProperties {

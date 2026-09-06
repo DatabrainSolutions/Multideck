@@ -1,9 +1,10 @@
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import type { DomesticRoadJob, RoadJobStageId } from "@/components/multideck/domestic-road-components"
 import { createEmptyFilterQuery, filterQueryIsEmpty, type FilterQuery } from "@/lib/advanced-filters"
-import { getSupabaseSession, supabase } from "@/lib/supabase"
+import { authSupabase, getClientAuth, authenticatedAccessChangedEvent, getSupabaseSession, supabase, supabaseFunctionsUrl } from "@/lib/supabase"
 
-type BookingMode = "OCEAN" | "AIR" | "ROAD" | "MULTIMODAL" | "FAS" | "FSA"
+import { freightBookingMode, type FreightBookingMode } from "@/lib/freight-field-policy"
+type BookingMode = FreightBookingMode
 type BookingStatus = "On track" | "Delayed" | "Exception"
 type BookingDirection = "Import" | "Export" | "Domestic" | "Cross trade" | "Direction needed"
 
@@ -109,7 +110,7 @@ export function readCachedRegisterPage<T>(
 ): Promise<T> {
   if (signal?.aborted) return Promise.reject(registerAbortError())
 
-  const key = `${scope}\u0000${resource}`
+  const key = `${supabaseFunctionsUrl}:${scope}\u0000${resource}`
   const now = Date.now()
   let entry = registerPageCache.get(key) as RegisterCacheEntry<T> | undefined
   if (entry?.value !== undefined && entry.expiresAt > now) {
@@ -124,15 +125,14 @@ export function readCachedRegisterPage<T>(
     const inFlight = load(controller.signal)
       .then((value) => {
         globalThis.clearTimeout(timeoutId)
-        if (registerPageCache.get(key) === next) {
-          registerPageCache.set(key, {
-            value,
-            expiresAt: Date.now() + REGISTER_CACHE_TTL_MS,
-            consumers: new Set(),
-            lastAccessedAt: Date.now(),
-          })
-          pruneRegisterPageCache()
-        }
+        if (controller.signal.aborted || registerPageCache.get(key) !== next) throw registerAbortError()
+        registerPageCache.set(key, {
+          value,
+          expiresAt: Date.now() + REGISTER_CACHE_TTL_MS,
+          consumers: new Set(),
+          lastAccessedAt: Date.now(),
+        })
+        pruneRegisterPageCache()
         return value
       })
       .catch((error) => {
@@ -190,6 +190,8 @@ export function invalidateRegisterPages(resourcePrefix: string) {
   }
 }
 
+if (typeof window !== "undefined") window.addEventListener(authenticatedAccessChangedEvent, () => invalidateRegisterPages(""))
+
 export async function setLiveJobStarred(bookingReference: string, starred: boolean) {
   const session = await getSupabaseSession()
   if (!session?.user) throw new Error("Sign in again to update starred jobs.")
@@ -241,7 +243,7 @@ function requireClient() {
 }
 
 export async function getCurrentOperatorName() {
-  const { data, error } = await requireClient().auth.getUser()
+  const { data, error } = await authSupabase!.auth.getUser()
   if (error || !data.user) throw error ?? new Error("Authentication required.")
   const metadata = data.user.user_metadata as Record<string, unknown>
   const fullName = typeof metadata.full_name === "string" ? metadata.full_name : typeof metadata.name === "string" ? metadata.name : null
@@ -250,7 +252,7 @@ export async function getCurrentOperatorName() {
 
 async function requireCompanyId() {
   const client = requireClient()
-  const { data: userData, error: userError } = await client.auth.getUser()
+  const { data: userData, error: userError } = await getClientAuth(client).getUser()
   if (userError || !userData.user) throw userError ?? new Error("Authentication required.")
   const { data, error } = await client.from("cmp_Users").select("Company_ID").eq("Auth_User_ID", userData.user.id).single()
   if (error) throw error
@@ -263,10 +265,7 @@ function tone(value: unknown): StatusTone {
 }
 
 function bookingMode(value: unknown): BookingMode {
-  const normalized = String(value ?? "ROAD").trim().toUpperCase()
-  if (normalized === "SEA") return "OCEAN"
-  if (["OCEAN", "AIR", "ROAD", "MULTIMODAL", "FAS", "FSA"].includes(normalized)) return normalized as BookingMode
-  return "ROAD"
+  return freightBookingMode(value)
 }
 
 function toLiveBooking(row: Record<string, unknown>): LiveBooking {

@@ -24,7 +24,8 @@ test("portal user lists are server-paged and exact access-link reads stay bounde
 test("customer access UI requests and navigates 20-user pages", () => {
   assert.match(client, /listWarehousePortalUsersPage/)
   assert.doesNotMatch(client, /listWarehousePortalUsers\(customerOrgId/)
-  assert.match(view, /listWarehousePortalUsersPage\(customerId, \{ limit: 20, offset: userOffset \}\)/)
+  assert.match(view, /listWarehousePortalUsersPage\(customerId, \{ limit: userPageSize, offset: userOffset \}\)/)
+  assert.match(view, /onPageSizeChange=\{setUserPageSize\}/)
   assert.match(view, /setUsers\(nextUsers\.rows\)/)
   assert.match(view, /totalItems=\{userTotal\}/)
 })

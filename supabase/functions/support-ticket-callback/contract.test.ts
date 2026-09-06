@@ -6,7 +6,9 @@ const event = {
   ticketId: "22222222-2222-4222-8222-222222222222",
   reference: "MD-00001",
   reporterUserId: "33333333-3333-4333-8333-333333333333",
-  status: "in_progress",
+  status: "in_progress" as const,
+  ticketType: "bug" as const,
+  restricted: false as const,
   needsReply: true,
   messageId: null,
   changedAt: "2026-08-28T12:00:00.000Z",
@@ -20,6 +22,8 @@ Deno.test("parses the minimal signed callback contract", () => {
 Deno.test("rejects invalid identifiers, statuses and tenant hosts", () => {
   assertThrows(() => parseCloudTicketCallback({ ...event, ticketId: "wrong" }))
   assertThrows(() => parseCloudTicketCallback({ ...event, status: "security_concern" }))
+  assertThrows(() => parseCloudTicketCallback({ ...event, ticketType: "unknown" }))
+  assertThrows(() => parseCloudTicketCallback({ ...event, restricted: "false" }))
   assertThrows(() => parseCloudTicketCallback({ ...event, tenantHost: "https://tenant.multideck.app" }))
 })
 

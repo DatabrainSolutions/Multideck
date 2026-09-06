@@ -1,3 +1,5 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import {
@@ -97,7 +99,7 @@ import {
   crmPipelineBoards,
   crmPipelineStages,
   type StatusTone,
-} from "@/data/multideck-data"
+} from "@/data/operational-data"
 import { useLanguage } from "@/i18n/language-provider"
 import type { DashboardKpi } from "@/lib/dashboard-live-data"
 import { mdMotion } from "@/lib/motion"
@@ -142,7 +144,6 @@ type DealViewMode = "Board" | "List"
 const emptyLeadSummary: LeadRegisterPage["summary"] = { leads: 0, open: 0, converted: 0, disqualified: 0, unassigned: 0, dueFollowUps: 0, valued: 0, recent: 0, qualified: 0, estimatedValue: 0 }
 const emptyLeadFacets: LeadRegisterPage["facets"] = { statuses: [], sources: [], ratings: [], owners: [], hasUnassigned: false }
 const emptyDealFacets: DealRegisterPage["facets"] = { pipelines: [], stages: [], statuses: [], owners: [], hasUnassigned: false }
-const dealListPageSize = 50
 const leadScopes = ["All", "Mine"] as const
 type LeadScope = (typeof leadScopes)[number]
 
@@ -1390,7 +1391,7 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [page, setPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(20)
+  const [rowsPerPage, setRowsPerPage] = useState(defaultPaginationPageSize)
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
   const [sourceFilter, setSourceFilter] = useState("all")
   const [ownerFilter, setOwnerFilter] = useState("all")
@@ -1524,45 +1525,6 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
     setPage(1)
   }
 
-  function exportLeads() {
-    if (!leads.length) {
-      toast.error(t("No leads to export"))
-      return
-    }
-
-    const escapeCsv = (value: string | number | null | undefined) => {
-      const text = value === null || value === undefined ? "" : String(value)
-      return `"${text.replaceAll("\"", "\"\"")}"`
-    }
-    const rows = leads.map((lead) => [
-      lead.companyName,
-      lead.primaryContactName,
-      lead.primaryContactEmail,
-      lead.sourceName,
-      lead.ownerName,
-      lead.statusName,
-      lead.ratingName,
-      lead.qualificationScore,
-      lead.lastActivityAt,
-      lead.nextFollowUpAt,
-      lead.createdAt,
-      lead.valueAmount,
-      lead.valueCurrencyCode,
-      lead.valueContext,
-    ])
-    const csv = [
-      [t("Company"), t("Primary contact"), t("Email"), t("Source"), t("Owner"), t("Stage"), t("Rating"), t("Qualification score"), t("Last activity"), t("Next follow-up"), t("Created"), t("Value"), t("Currency"), t("Opportunity context")],
-      ...rows,
-    ].map((row) => row.map(escapeCsv).join(",")).join("\n")
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
-    const anchor = document.createElement("a")
-    anchor.href = url
-    anchor.download = `multideck-leads-${new Date().toISOString().slice(0, 10)}.csv`
-    anchor.click()
-    URL.revokeObjectURL(url)
-    toast.success(t("Lead export downloaded"))
-  }
-
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Leads")} className="md-page md-page-stack-compact">
       <CrmPageHeader
@@ -1576,17 +1538,6 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
           ? `${new Intl.NumberFormat(language).format(summary.leads)} ${t("leads")} · ${new Intl.NumberFormat(language).format(dueFollowUps)} ${t("follow-ups due")} · ${new Intl.NumberFormat(language).format(recentLeads)} ${t("created in the last 30 days")}`
           : t("Live CRM qualification data")}
         onSpeakToDexter={() => setDexterOpen(true)}
-        action={
-          <Button
-            variant="ghost"
-            disabled={loadState !== "ready" || !leads.length}
-            className="h-10 rounded-[var(--md-radius-lg)] bg-white/45 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/70"
-            onClick={exportLeads}
-          >
-            <Download data-icon="inline-start" strokeWidth={1.2} />
-            {t("Export this page")}
-          </Button>
-        }
       />
 
       {loadState === "ready" ? (
@@ -1704,6 +1655,21 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
             leads={leads}
             onOpenLead={openLeadDetail}
             loadExportRecords={(selectedLeads) => Promise.all(selectedLeads.map((lead) => getLead(lead.id)))}
+            registerExport={{
+              busy: revalidating || Boolean(loadError) || searchQuery.trim() !== debouncedSearch,
+              loadAllRows: (signal) => collectExportPages((exportPage) => listLeadsPage({
+                search: debouncedSearch,
+                statusCode: activeFilter === "all" ? undefined : activeFilter,
+                sourceCode: sourceFilter === "all" ? undefined : sourceFilter,
+                ownerId: leadScope === "Mine" ? currentLeadOwnerId ?? "__no_current_user__" : ownerFilter === "all" || ownerFilter === "__unassigned__" ? undefined : ownerFilter,
+                unassigned: leadScope === "All" && ownerFilter === "__unassigned__",
+                ratingCode: ratingFilter === "all" ? undefined : ratingFilter,
+                followUpScope: followUpFilter === "all" ? undefined : followUpFilter as "overdue" | "scheduled" | "unscheduled",
+                valueScope: valueFilter === "all" ? undefined : valueFilter as "valued" | "unvalued",
+                sort: sort ? { id: ({ stage: "status", qualification: "rating", engagement: "last-activity", "follow-up": "next-follow-up" } as Record<string, string>)[sort.id] ?? sort.id, direction: sort.direction } : null,
+                ...exportPage,
+              }, { forceRefresh: true }), (lead) => lead.id, signal),
+            }}
             emptyMessage={summary.leads ? t(leadScope === "Mine" ? "No leads assigned to you." : "No leads match this view.") : t("No leads have been recorded yet.")}
             serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "lead", direction: "asc" }); setPage(1) } }}
             toolbarTabs={<RegisterViewSwitch options={leadScopes} value={leadScope} onChange={changeLeadScope} counts={revalidating ? {} : { All: leadScope === "All" ? total : undefined, Mine: leadScope === "Mine" ? total : undefined }} ariaLabel="Lead ownership filter" compact />}
@@ -1761,6 +1727,8 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
             totalItems={total}
             pageSize={rowsPerPage}
             pageSizeOptions={rowsPerPageOptions}
+            loading={revalidating}
+            itemCount={leads.length}
             itemLabel="leads"
             onPageChange={setPage}
             onPageSizeChange={(nextRowsPerPage) => {
@@ -2399,7 +2367,7 @@ export function CrmListDetailPage({ navigate, listId }: { navigate: (path: strin
           <div className="px-5 py-4">
             <SectionHeader title="Members" meta="people currently included in this audience" metaPlacement="responsive-inline" />
           </div>
-          <div className="px-5 pb-5"><DataTable ariaLabel="List members" columnsButtonLabel="Manage list member columns" columns={memberColumns} rows={list.members} getRowKey={(member) => `${member[0]}-${member[2]}`} storageKey={`crm-list-members-${list.id}`} minimumWidth={860} className="rounded-[var(--md-radius-lg)]" /></div>
+          <div className="px-5 pb-5"><DataTable clientPagination ariaLabel="List members" columnsButtonLabel="Manage list member columns" columns={memberColumns} rows={list.members} getRowKey={(member) => `${member[0]}-${member[2]}`} storageKey={`crm-list-members-${list.id}`} minimumWidth={860} className="rounded-[var(--md-radius-lg)]" /></div>
         </Surface>
 
         <div className="md-panel-column">
@@ -3052,7 +3020,7 @@ function BroadcastsView({ navigate }: { navigate: (path: string) => void }) {
         <SectionHeader title="Broadcasts" meta="scheduled, sent, and draft email sends" metaPlacement="responsive-inline" className="min-w-0 flex-1" />
         <p className="text-[12px] font-medium text-[var(--md-text)]">Average CTR 16.4% · open rate 50.6%</p>
       </div>
-      <div className="px-5 pb-5"><DataTable ariaLabel="Broadcasts" columnsButtonLabel="Manage broadcast columns" columns={columns} rows={crmEmailCampaigns} getRowKey={(broadcast) => broadcast.id} storageKey="crm-email-broadcasts" minimumWidth={1080} rowClassName="group h-[68px]" onRowClick={(broadcast) => navigate(getCrmEmailCampaignPath(broadcast, "stats"))} /></div>
+      <div className="px-5 pb-5"><DataTable clientPagination ariaLabel="Broadcasts" columnsButtonLabel="Manage broadcast columns" columns={columns} rows={crmEmailCampaigns} getRowKey={(broadcast) => broadcast.id} storageKey="crm-email-broadcasts" minimumWidth={1080} rowClassName="group h-[68px]" onRowClick={(broadcast) => navigate(getCrmEmailCampaignPath(broadcast, "stats"))} /></div>
     </Surface>
   )
 }
@@ -3199,7 +3167,7 @@ function EmailsView() {
       <div className="px-5 py-5">
         <SectionHeader title="Emails" meta={`${emailMarketingContacts.length} contact records with consent and delivery status`} metaPlacement="responsive-inline" />
       </div>
-      <div className="px-5 pb-5"><DataTable ariaLabel="Marketing emails" columnsButtonLabel="Manage email columns" columns={columns} rows={filteredContacts} getRowKey={(contact) => contact.email} storageKey="crm-marketing-emails" minimumWidth={1120} toolbarSearch={<label className="relative min-w-0 sm:w-[280px]"><span className="sr-only">Search emails</span><Search className="pointer-events-none absolute inset-inline-start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-8 bg-[var(--md-field-bg)] ps-9 text-base sm:text-[12px]" placeholder="Search email, contact, company, or list…" /></label>} toolbarFilters={<Select value={status} onValueChange={(value) => setStatus(value as typeof status)}><SelectTrigger className="h-8 min-w-[156px] bg-[var(--md-field-bg)] text-base sm:text-[12px]"><ListFilter className="size-3.5" strokeWidth={1.4} /><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("All statuses")}</SelectItem><SelectItem value="Subscribed">{t("Subscribed")}</SelectItem><SelectItem value="Unsubscribed">{t("Unsubscribed")}</SelectItem><SelectItem value="Bounced">{t("Bounced")}</SelectItem><SelectItem value="Pending">{t("Pending")}</SelectItem><SelectItem value="Replied">{t("Replied")}</SelectItem></SelectContent></Select>} emptyState={<div className="grid min-h-[180px] place-items-center p-6 text-center">
+      <div className="px-5 pb-5"><DataTable clientPagination ariaLabel="Marketing emails" columnsButtonLabel="Manage email columns" columns={columns} rows={filteredContacts} getRowKey={(contact) => contact.email} storageKey="crm-marketing-emails" minimumWidth={1120} toolbarSearch={<label className="relative min-w-0 sm:w-[280px]"><span className="sr-only">Search emails</span><Search className="pointer-events-none absolute inset-inline-start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-8 bg-[var(--md-field-bg)] ps-9 text-base sm:text-[12px]" placeholder="Search email, contact, company, or list…" /></label>} toolbarFilters={<Select value={status} onValueChange={(value) => setStatus(value as typeof status)}><SelectTrigger className="h-8 min-w-[156px] bg-[var(--md-field-bg)] text-base sm:text-[12px]"><ListFilter className="size-3.5" strokeWidth={1.4} /><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("All statuses")}</SelectItem><SelectItem value="Subscribed">{t("Subscribed")}</SelectItem><SelectItem value="Unsubscribed">{t("Unsubscribed")}</SelectItem><SelectItem value="Bounced">{t("Bounced")}</SelectItem><SelectItem value="Pending">{t("Pending")}</SelectItem><SelectItem value="Replied">{t("Replied")}</SelectItem></SelectContent></Select>} emptyState={<div className="grid min-h-[180px] place-items-center p-6 text-center">
           <div>
             <Search className="mx-auto size-5 text-[var(--md-subtle)]" strokeWidth={1.4} />
             <h3 className="mt-3 text-[14px] font-medium text-[var(--md-ink)]">No matching emails</h3>
@@ -3541,6 +3509,7 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
   const [dealListTotal, setDealListTotal] = useState(0)
   const [dealListFacets, setDealListFacets] = useState<DealRegisterPage["facets"]>(emptyDealFacets)
   const [dealListOffset, setDealListOffset] = useState(0)
+  const [dealListPageSize, setDealListPageSize] = useState(defaultPaginationPageSize)
   const [dealListSort, setDealListSort] = useState<DealRegisterSort | null>({ id: "created", direction: "desc" })
   const [dealPipelineFilter, setDealPipelineFilter] = useState("")
   const [dealStatusFilter, setDealStatusFilter] = useState("")
@@ -3661,7 +3630,7 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
         setDealListState("error")
       })
     return () => { active = false }
-  }, [dealListOffset, dealListSort, dealOwnerFilter, dealPipelineFilter, dealStatusFilter, debouncedDealQuery, reloadKey, t, viewMode])
+  }, [dealListOffset, dealListPageSize, dealListSort, dealOwnerFilter, dealPipelineFilter, dealStatusFilter, debouncedDealQuery, reloadKey, t, viewMode])
 
   async function loadMoreDealsForStage(pipelineId: string, stageId: string) {
     const current = stagePages[stageId]
@@ -3954,7 +3923,7 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
           onRowClick={openApiDealDetail}
           rowClassName="group h-[64px] hover:bg-[var(--md-hover)]"
           serverSorting={{ value: dealListSort, onChange: (next) => { setDealListSort(next ?? { id: "created", direction: "desc" }); setDealListOffset(0) } }}
-          pagination={{ offset: dealListOffset, limit: dealListPageSize, total: dealListTotal, loading: dealListState === "loading", onOffsetChange: setDealListOffset }}
+          pagination={{ offset: dealListOffset, limit: dealListPageSize, total: dealListTotal, loading: dealListState === "loading", onOffsetChange: setDealListOffset, onLimitChange: setDealListPageSize, error: dealListState === "error" }}
           compactToolbar
           toolbarSearch={<RegisterSearchField value={dealQuery} onChange={setDealQuery} onClear={() => setDealQuery("")} label="Search deals" placeholder="Deal, company, pipeline or owner…" className="sm:w-[210px]" />}
           toolbarFilters={<>
@@ -3969,7 +3938,15 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
               <Button type="button" variant="outline" className="h-8" onClick={() => setReloadKey((key) => key + 1)}>{t("Try again")}</Button>
             </div>
           ) : undefined}
-          exportConfig={{ fileName: "crm-deals", recordCategory: "Deal details", loadRecords: (selectedDeals) => Promise.all(selectedDeals.map((deal) => getDeal(deal.id))) }}
+          exportConfig={{ fileName: "crm-deals", recordCategory: "Deal details", loadRecords: (selectedDeals) => Promise.all(selectedDeals.map((deal) => getDeal(deal.id))), register: {
+            busy: dealQuery.trim() !== debouncedDealQuery,
+            dateLabel: "Deal created date", dateValue: (deal) => deal.createdAt,
+            loadAllRows: (signal) => collectExportPages((page) => listDealsPage({
+              search: debouncedDealQuery, pipelineId: dealPipelineFilter || undefined, statusCode: dealStatusFilter || undefined,
+              ownerId: dealOwnerFilter && dealOwnerFilter !== "__unassigned__" ? dealOwnerFilter : undefined,
+              unassigned: dealOwnerFilter === "__unassigned__", sort: dealListSort ?? { id: "created", direction: "desc" }, ...page,
+            }, { forceRefresh: true }), (deal) => deal.id, signal),
+          } }}
           emptyState={dealListState === "idle" || dealListState === "loading"
             ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading deals…" /></div>
             : dealListState === "error"

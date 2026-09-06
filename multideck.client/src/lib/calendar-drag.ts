@@ -217,6 +217,107 @@ export function useCalendarEventDrag({
   return { preview, begin, dragging: preview !== null }
 }
 
+export type CalendarDayDragPreview = {
+  eventId: string
+  /** Day cell currently under the pointer, or null while over nothing droppable. */
+  dateKey: string | null
+  originDateKey: string
+  x: number
+  y: number
+  width: number
+}
+
+type ActiveDayDrag = {
+  eventId: string
+  pointerId: number
+  originX: number
+  originY: number
+  originDateKey: string
+  width: number
+  started: boolean
+}
+
+/**
+ * Pick an event up from one day cell and drop it on another, for month grids
+ * where blocks are not positioned by time. Day cells announce themselves with a
+ * `data-calendar-day="YYYY-MM-DD"` attribute; the pointer decides the target so
+ * the caller can lift a ghost of the card and tint the cell it will land on,
+ * the same feel as the Kanban board. Time of day is preserved on commit.
+ */
+export function useCalendarDayDrag({ onCommit }: { onCommit: (change: { eventId: string; dateKey: string }) => void }) {
+  const [preview, setPreview] = useState<CalendarDayDragPreview | null>(null)
+  const previewRef = useRef<CalendarDayDragPreview | null>(null)
+  const active = useRef<ActiveDayDrag | null>(null)
+  const latest = useRef(onCommit)
+  latest.current = onCommit
+
+  const begin = useCallback((event: ReactPointerEvent, seed: { eventId: string; dateKey: string }) => {
+    if (event.button !== 0 && event.pointerType === "mouse") return
+    const width = event.currentTarget instanceof HTMLElement ? event.currentTarget.getBoundingClientRect().width : 160
+    active.current = { eventId: seed.eventId, pointerId: event.pointerId, originX: event.clientX, originY: event.clientY, originDateKey: seed.dateKey, width, started: false }
+  }, [])
+
+  useEffect(() => {
+    function dayUnderPointer(x: number, y: number) {
+      const element = document.elementFromPoint(x, y)
+      const cell = element instanceof Element ? element.closest<HTMLElement>("[data-calendar-day]") : null
+      return cell?.dataset.calendarDay ?? null
+    }
+    function move(nativeEvent: PointerEvent) {
+      const drag = active.current
+      if (!drag || nativeEvent.pointerId !== drag.pointerId) return
+      if (!drag.started) {
+        if (Math.abs(nativeEvent.clientX - drag.originX) < DRAG_THRESHOLD_PX && Math.abs(nativeEvent.clientY - drag.originY) < DRAG_THRESHOLD_PX) return
+        drag.started = true
+      }
+      nativeEvent.preventDefault()
+      const next = { eventId: drag.eventId, dateKey: dayUnderPointer(nativeEvent.clientX, nativeEvent.clientY), originDateKey: drag.originDateKey, x: nativeEvent.clientX, y: nativeEvent.clientY, width: drag.width }
+      previewRef.current = next
+      setPreview(next)
+    }
+    function finish(nativeEvent: PointerEvent) {
+      const drag = active.current
+      if (!drag || nativeEvent.pointerId !== drag.pointerId) return
+      active.current = null
+      const current = previewRef.current
+      previewRef.current = null
+      setPreview(null)
+      if (!current || !drag.started || !current.dateKey || current.dateKey === drag.originDateKey) return
+      latest.current({ eventId: current.eventId, dateKey: current.dateKey })
+    }
+    function cancel(nativeEvent: KeyboardEvent) {
+      if (nativeEvent.key !== "Escape" || !active.current) return
+      active.current = null
+      previewRef.current = null
+      setPreview(null)
+    }
+    window.addEventListener("pointermove", move, { passive: false })
+    window.addEventListener("pointerup", finish)
+    window.addEventListener("pointercancel", finish)
+    window.addEventListener("keydown", cancel)
+    return () => {
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", finish)
+      window.removeEventListener("pointercancel", finish)
+      window.removeEventListener("keydown", cancel)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!preview) return
+    const previousCursor = document.body.style.cursor
+    const previousSelect = document.body.style.userSelect
+    document.body.style.cursor = "grabbing"
+    document.body.style.userSelect = "none"
+    return () => {
+      document.body.style.cursor = previousCursor
+      document.body.style.userSelect = previousSelect
+    }
+  }, [preview])
+
+  return { preview, begin, dragging: preview !== null }
+}
+
 /** `07:30` from minutes past midnight. */
 export function minutesToTimeKey(minutes: number) {
   const whole = Math.max(0, Math.round(minutes))

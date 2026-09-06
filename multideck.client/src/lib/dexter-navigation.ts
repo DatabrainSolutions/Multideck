@@ -1,3 +1,4 @@
+import { workspaceStorageKey } from "./workspace-environment.ts"
 export const DEXTER_NEW_CONVERSATION_EVENT = "multideck:dexter-new-conversation"
 export const DEXTER_SELECT_CONVERSATION_EVENT = "multideck:dexter-select-conversation"
 export const DEXTER_CONVERSATIONS_CHANGED_EVENT = "multideck:dexter-conversations-changed"
@@ -12,8 +13,8 @@ export function announceDexterConversationsChanged(detail: DexterConversationsCh
   window.dispatchEvent(new CustomEvent(DEXTER_CONVERSATIONS_CHANGED_EVENT, { detail }))
 }
 
-const conversationHandoffKey = "multideck.dexterConversationHandoff"
-const taskHandoffKey = "multideck.dexterTaskHandoff"
+const conversationHandoffKey = workspaceStorageKey("multideck.dexterConversationHandoff")
+const taskHandoffKey = workspaceStorageKey("multideck.dexterTaskHandoff")
 const conversationQueryKey = "conversation"
 const conversationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 

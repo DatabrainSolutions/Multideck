@@ -1,4 +1,4 @@
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import { callCrmRpc } from "@/lib/crm-supabase"
 
 export type CrmEngagementTemperature = "Cold" | "Warm" | "Hot"

@@ -1,13 +1,18 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { useTheme } from "@/lib/theme-provider"
-import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, PackageCheck, Pencil, Pin, Search, Settings2, Ship, Star, Trash2, UserRound, Zap } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, PackageCheck, Pen01, Pencil, Pin, Search, Settings2, Ship, Star, Trash2, UserRound, Zap } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
 import toastSuccessIcon from "@/assets/toasts/toast-success.png"
 import { Button } from "@/components/ui/button"
 import { Iphone } from "@/components/ui/iphone"
+import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
+import { CargoAllocationEditor } from "@/components/multideck/cargo-allocation-editor"
+import type { BookingCargoAllocation } from "@/lib/booking-workflow-api"
+import { newQuoteCargoLine } from "@/lib/quote-cargo"
 import {
   Context,
   ContextContent,
@@ -75,7 +80,7 @@ import {
 } from "@/components/multideck/customer-components"
 import { CrmActivityTimeline, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
 import { CopyableField } from "@/components/multideck/copyable-field"
-import { AutoPopulatedInput, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
+import { AutoPopulatedInput, AutoPopulatedTextarea, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
 import { TagEntryField } from "@/components/multideck/tag-entry-field"
 import { CardMiniature, CardStylePresetPicker, ContactCardLayoutPicker, ContactCardSocialLinksEditor, QrStylePicker } from "@/components/multideck/contact-card-design"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
@@ -255,11 +260,12 @@ import { VerificationCodeInput } from "@/components/multideck/verification-code-
 import { CalendarDayRibbon, CalendarView } from "@/components/multideck/calendar-view"
 import { MeetingColourPicker } from "@/components/multideck/meeting-colour-picker"
 import { MeetingAttendeePicker } from "@/components/multideck/meeting-attendee-picker"
+import { BookingHostPicker, BookingLinkKindPicker, BookingQuestionBuilder, defaultBookingQuestions } from "@/components/multideck/booking-link-builder"
 import { MeetingAttendeeList, MeetingResponseSummary } from "@/components/multideck/meeting-attendee-status"
 import { MeetingProviderSelect } from "@/components/multideck/meeting-provider-select"
 import { MeetingTimePicker } from "@/components/multideck/meeting-time-picker"
 import { WorkingHoursEditor, defaultWorkingHours, type WorkingHours } from "@/components/multideck/working-hours-editor"
-import type { CalendarEvent, CalendarProvider, CalendarRibbon, MeetingColour, MeetingParticipant, MeetingPersonSuggestion } from "@/lib/calendar-api"
+import type { BookingHostCandidate, BookingLinkKind, BookingQuestion, CalendarEvent, CalendarProvider, CalendarRibbon, MeetingColour, MeetingParticipant, MeetingPersonSuggestion } from "@/lib/calendar-api"
 import { CustomsReadinessReview } from "@/components/multideck/customs-readiness-review"
 import { UnifiedQuoteChargesWorkspace, type UnifiedQuoteChargeRow } from "@/components/multideck/unified-quote-charges-workspace"
 import { quoteMatchesSearch, quoteSearchFieldOptions, type QuoteSearchQuery } from "@/lib/quote-filters"
@@ -274,6 +280,7 @@ import { InlineField, InlineFieldCard, InlineSelectField } from "@/components/mu
 import { SideDrawer } from "@/components/multideck/side-drawer"
 import { WizardDialog } from "@/components/multideck/wizard-dialog"
 import { ScreenshotCaptureEditor, SupportTicketAttachmentPreview } from "@/components/multideck/support-ticket-dialog"
+import { TicketAttachmentsPreview } from "@/components/multideck/ticket-attachments-preview"
 import { ImageLightbox } from "@/components/multideck/image-lightbox"
 import { useLanguage } from "@/i18n/language-provider"
 
@@ -304,7 +311,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "booking-link-kind-picker", "booking-host-picker", "booking-question-builder", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
   },
   {
     label: "Auth components",
@@ -319,7 +326,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
@@ -507,6 +514,7 @@ function previewBookingFilterValue(booking: (typeof bookings)[number], field: st
 
 type PreviewChargeRow = {
   id: string
+  createdAt?: string
   description: string
   supplier: string
   scope: string
@@ -520,6 +528,12 @@ const previewChargeRows: PreviewChargeRow[] = [
   { id: "OCART", description: "Pickup transport", supplier: "Severn Road Logistics", scope: "Road", status: "Review", cost: 610, sell: 630 },
   { id: "DTHC", description: "Destination handling", supplier: "Kobe Gateway Agency", scope: "Destination", status: "Blocked", cost: 304, sell: 360 },
 ]
+
+const previewPaginatedChargeRows: PreviewChargeRow[] = Array.from({ length: 57 }, (_, index) => ({
+  ...previewChargeRows[index % previewChargeRows.length],
+  id: `CH-${String(index + 1).padStart(3, "0")}`,
+  createdAt: new Date(Date.UTC(2026, 7, 1 + index)).toISOString(),
+}))
 
 const previewUnifiedChargeRowsSeed: UnifiedQuoteChargeRow[] = [
   { id: "preview-frt", code: "FRT", description: "International freight", supplierId: "supplier-bluewave", customerId: "customer-harbourworks", cost: 840, costCurrency: "USD", sell: 980, sellCurrency: "USD", costRoe: 1.25, sellRoe: 1.25, costRoeSource: "rate", sellRoeSource: "rate" },
@@ -1360,7 +1374,7 @@ const previewAutomationRuns: AutomationRun[] = [
   },
 ]
 
-const galleryRegisterViews = ["Stock", "Objects", "Movements", "Exceptions"] as const
+const galleryRegisterViews = ["Stock", "Movements", "Exceptions"] as const
 
 const previewWarehouseObject: WarehouseHandlingUnit = {
   id: "gallery-pallet", facilityId: "gallery-facility", parentHandlingUnitId: null,
@@ -1569,6 +1583,31 @@ const previewPhoneCallProviders = [
   { provider: "3cx" as const, label: "3CX employee calls", detail: "3CX call-detail and transcript collector", state: "not_configured" as const, lastAttemptAt: null, lastSucceededAt: null, lastFailedAt: null, consecutiveFailures: 0, errorCode: null },
 ]
 
+function CargoAllocationEditorPreview() {
+  const cargoId = "00000000-0000-4000-8000-000000000001"
+  const firstEquipment = "00000000-0000-4000-8000-000000000002"
+  const secondEquipment = "00000000-0000-4000-8000-000000000003"
+  const [editable, setEditable] = useState(true)
+  const [validationAttempt, setValidationAttempt] = useState(0)
+  const [allocations, setAllocations] = useState<BookingCargoAllocation[]>(() => [
+    { id: "00000000-0000-4000-8000-000000000004", cargoId, containerId: firstEquipment, routeId: null, packageQuantity: "6", grossWeightKg: "600.25", volumeCbm: "8.125", notes: null, archived: false },
+    { id: "00000000-0000-4000-8000-000000000005", cargoId, containerId: secondEquipment, routeId: null, packageQuantity: null, grossWeightKg: null, volumeCbm: null, notes: null, archived: false },
+  ])
+  return <div className="grid w-full gap-4">
+    <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setEditable(!editable)}>{editable ? "Preview read-only" : "Return to editing"}</Button><Button variant="outline" onClick={() => setValidationAttempt(attempt => attempt + 1)}>Check allocations</Button></div>
+    <CargoAllocationEditor cargo={[{ id: cargoId, description: "Machine parts", packageQuantity: "10", grossWeightKg: "1000.5", volumeCbm: "14.25" }]}
+      equipment={[{ id: firstEquipment, type: "40GP" }, { id: secondEquipment, type: "20GP" }]}
+      routes={[{ id: "00000000-0000-4000-8000-000000000006", mode: "Sea", originUnlocode: "GBFXT", destinationUnlocode: "USNYC" }]}
+      allocations={allocations} editable={editable} validationAttempt={validationAttempt} onChange={setAllocations} />
+  </div>
+}
+
+function QuoteCargoEditorPreview() {
+  const [lines, setLines] = useState(() => [{ ...newQuoteCargoLine(), description: "Machine parts", packageQuantity: "2", packageType: "Crates", grossWeightKg: "120.5" }, { ...newQuoteCargoLine(), description: "Spare seals", packageQuantity: "4", packageType: "Cartons", grossWeightKg: "18" }])
+  const [editable, setEditable] = useState(true)
+  return <div className="grid w-full gap-4"><Button variant="outline" onClick={() => setEditable(!editable)}>{editable ? "Preview submitted version" : "Return to draft"}</Button><QuoteCargoEditor lines={lines} editable={editable} onChange={setLines} /></div>
+}
+
 function QuoteDetailControlsPreview() {
   const [company, setCompany] = useState("Brook Taverner Ltd")
   const [incoterm, setIncoterm] = useState<IncotermCode | "">("FCA")
@@ -1578,6 +1617,7 @@ function QuoteDetailControlsPreview() {
   const [recurrence, setRecurrence] = useState<RecurrenceValue>({ ...EMPTY_RECURRENCE, mode: "interval", interval: "2", unit: "week" })
   const [amount, setAmount] = useState<AmountCurrencyValue>({ amount: "18000", currency: "EUR" })
   const [characteristics, setCharacteristics] = useState<CargoCharacteristics>(EMPTY_CARGO_CHARACTERISTICS)
+  const [inheritedSafety, setInheritedSafety] = useState(false)
   const [hazardous, setHazardous] = useState<HazardousDetails>(EMPTY_HAZARDOUS_DETAILS)
   const organisationOptions = [
     { id: "brook", value: "Brook Taverner Ltd", label: "Brook Taverner Ltd", description: "BROOKTAV · Customer" },
@@ -1602,7 +1642,8 @@ function QuoteDetailControlsPreview() {
         <IncotermField value={incoterm} onValueChange={setIncoterm} namedLocation={namedPlace} onNamedLocationChange={setNamedPlace} />
         <LocationFields label="Origin" value={location} options={locations} countries={locationCountries} onChange={setLocation} />
         <RecurrenceBuilder value={recurrence} onChange={setRecurrence} />
-        <CargoCharacteristicsField value={characteristics} onChange={setCharacteristics} hazardousDetails={hazardous} onHazardousDetailsChange={setHazardous} />
+        <Button variant="outline" aria-pressed={inheritedSafety} onClick={() => setInheritedSafety(value => !value)}>Preview flags from cargo lines</Button>
+        <CargoCharacteristicsField value={characteristics} inherited={{ hazardous: inheritedSafety, temperatureControlled: inheritedSafety }} onChange={setCharacteristics} hazardousDetails={hazardous} onHazardousDetailsChange={setHazardous} />
       </div>
     </CompactSectionShell>
   )
@@ -1623,9 +1664,24 @@ const previewMeetingRoster: MeetingParticipant[] = [
   { id: "r5", name: "Jordan Reyes", email: "jordan@atlasfreight.example", response: "declined", external: true },
 ]
 
+const previewBookingHosts: BookingHostCandidate[] = [
+  { userId: "h-self", name: "Harry Phillips", email: "harry@databrain.co.uk", detail: "Founder", self: true, connectedProviders: ["google"] },
+  { userId: "h-priya", name: "Priya Shah", email: "priya@multideck.app", detail: "Operations lead", self: false, connectedProviders: ["google", "microsoft"] },
+  { userId: "h-tom", name: "Tom Ellis", email: "tom@multideck.app", detail: "Customs", self: false, connectedProviders: [] },
+  { userId: "h-mei", name: "Mei Lin", email: "mei@multideck.app", detail: "Sales", self: false, connectedProviders: ["zoom"] },
+]
+const loadPreviewBookingHosts = () => Promise.resolve({ hosts: previewBookingHosts })
+const previewBookingQuestions: BookingQuestion[] = [
+  ...defaultBookingQuestions.filter((question) => question.id !== "phone").map((question) => ({ ...question, required: question.id === "company" })),
+  { id: "q-lane", label: "Which lane are you shipping?", type: "select", required: true, options: ["Sea freight", "Air freight", "Road"] },
+]
+
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
+  const [previewBookingKind, setPreviewBookingKind] = useState<BookingLinkKind>("round_robin")
+  const [previewBookingHostIds, setPreviewBookingHostIds] = useState<string[]>(["h-priya", "h-tom"])
+  const [previewBookingForm, setPreviewBookingForm] = useState<BookingQuestion[]>(previewBookingQuestions)
   const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
   const [previewSidebarFavouriteIds, setPreviewSidebarFavouriteIds] = useState<string[]>([])
   const [previewTodoChecked, setPreviewTodoChecked] = useState(false)
@@ -1641,7 +1697,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewArrangeOrder, setPreviewArrangeOrder] = useState<string[]>(previewSidebarOrder)
   const [previewArrangePinned, setPreviewArrangePinned] = useState<string[]>([])
   const [previewPage, setPreviewPage] = useState(1)
-  const [previewPageSize, setPreviewPageSize] = useState(20)
+  const [previewPageSize, setPreviewPageSize] = useState(defaultPaginationPageSize)
   const [previewBookingFilter, setPreviewBookingFilter] = useState<string>(bookingFilters[0])
   const [previewTableView, setPreviewTableView] = useState<"All" | "Profitable">("All")
   const [previewTableSearch, setPreviewTableSearch] = useState("")
@@ -1774,8 +1830,13 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewOrganisation, setPreviewOrganisation] = useState<ApiCustomerDetail>(previewOrganisationSeed)
   const [previewDriveRenamingId, setPreviewDriveRenamingId] = useState<string | null>(null)
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
+  const [previewCalendarLayers, setPreviewCalendarLayers] = useState(["Operational dates", "Personal events"])
   const previewAutoPopulationSource = "1 Harbour Exchange Square, London, E14 9GE, GB"
-  const [previewAutoPopulationValue, setPreviewAutoPopulationValue] = useState(previewAutoPopulationSource)
+  const previewAutoPopulationCodeSource = "GBLON"
+  const previewAutoPopulationNotesSource = "Collect from the loading bay.\nCall the office on arrival."
+  const [previewAutoPopulationValue, setPreviewAutoPopulationValue] = useState("")
+  const [previewAutoPopulationCode, setPreviewAutoPopulationCode] = useState("")
+  const [previewAutoPopulationNotes, setPreviewAutoPopulationNotes] = useState("")
   const [previewDictionaryTerms, setPreviewDictionaryTerms] = useState(["Multideck", "Jenkar", "UN/LOCODE", "Incoterms"])
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
   const previewNow = useLiveNow()
@@ -1827,6 +1888,7 @@ function ComponentPreview({ id }: { id: string }) {
 
   return (
     <div className="grid min-h-[430px] min-w-0 place-items-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-[var(--md-gap-xl)]">
+      {id === "conversation-attachments" ? <TicketAttachmentsPreview /> : null}
       {id === "inline-fields" ? (
         <div className="w-full max-w-[620px]">
           <InlineFieldCard title="Account facts" meta="Select a value to edit it">
@@ -1855,9 +1917,29 @@ function ComponentPreview({ id }: { id: string }) {
             autoPopulated={matchesAutoPopulation(previewAutoPopulationValue, previewAutoPopulationSource)}
             autoPopulationDescription="Filled from the selected customer. Edit this field to override it for this quote."
           />
+          <label htmlFor="gallery-auto-populated-code" className="text-[12px] font-medium text-[var(--md-ink)]">UN/LOCODE</label>
+          <AutoPopulatedInput
+            id="gallery-auto-populated-code"
+            value={previewAutoPopulationCode}
+            onChange={(event) => setPreviewAutoPopulationCode(event.target.value)}
+            autoPopulated={matchesAutoPopulation(previewAutoPopulationCode, previewAutoPopulationCodeSource)}
+            autoPopulationDescription="Filled from the selected location. Edit this field to override it."
+          />
+          <label htmlFor="gallery-auto-populated-notes" className="text-[12px] font-medium text-[var(--md-ink)]">Collection notes</label>
+          <AutoPopulatedTextarea
+            id="gallery-auto-populated-notes"
+            value={previewAutoPopulationNotes}
+            onChange={(event) => setPreviewAutoPopulationNotes(event.target.value)}
+            autoPopulated={matchesAutoPopulation(previewAutoPopulationNotes, previewAutoPopulationNotesSource)}
+            autoPopulationDescription="Filled from the collection address. Edit this field to override it."
+          />
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[11px] leading-4 text-[var(--md-subtle)]">Edit the address to return it to normal.</p>
-            <Button type="button" variant="ghost" size="sm" className="h-7 rounded-[var(--md-radius-md)] px-2 text-[11px]" onClick={() => setPreviewAutoPopulationValue(previewAutoPopulationSource)}>Refill from customer</Button>
+            <p className="text-[11px] leading-4 text-[var(--md-subtle)]">Fill the fields to preview the letter stagger. Edit any value to override it.</p>
+            <Button type="button" variant="ghost" size="sm" className="h-7 rounded-[var(--md-radius-md)] px-2 text-[11px]" onClick={() => {
+              setPreviewAutoPopulationValue(previewAutoPopulationSource)
+              setPreviewAutoPopulationCode(previewAutoPopulationCodeSource)
+              setPreviewAutoPopulationNotes(previewAutoPopulationNotesSource)
+            }}>Fill from linked records</Button>
           </div>
         </div>
       ) : null}
@@ -1951,6 +2033,9 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "meeting-attendee-picker" ? <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><MeetingAttendeePicker value={previewMeetingAttendees} onChange={setPreviewMeetingAttendees} search={async (query) => ({ people: previewMeetingPeople.filter((person) => !query.trim() ? person.kind === "team" : [person.name, person.email, person.detail ?? ""].some((value) => value.toLowerCase().includes(query.trim().toLowerCase()))) })} /></div> : null}
 
       {id === "working-hours-editor" ? <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3 shadow-[var(--md-shadow-line)]"><WorkingHoursEditor value={previewWorkingHours} onChange={setPreviewWorkingHours} /></div> : null}
+      {id === "booking-link-kind-picker" ? <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]"><BookingLinkKindPicker value={previewBookingKind} onChange={setPreviewBookingKind} /></div> : null}
+      {id === "booking-host-picker" ? <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]"><BookingHostPicker value={previewBookingHostIds} onChange={setPreviewBookingHostIds} kind="round_robin" provider="google_meet" load={loadPreviewBookingHosts} /></div> : null}
+      {id === "booking-question-builder" ? <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]"><BookingQuestionBuilder value={previewBookingForm} onChange={setPreviewBookingForm} /></div> : null}
       {id === "meeting-attendee-status" ? <div className="w-full max-w-[460px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]"><div className="flex items-baseline justify-between gap-3 px-2"><p className="text-[12px] font-medium text-[var(--md-ink)]">5 attendees</p><MeetingResponseSummary participants={previewMeetingRoster} /></div><MeetingAttendeeList participants={previewMeetingRoster} maxVisible={3} className="mt-2" /><div className="mt-3 flex items-center justify-between gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2 text-[10.5px] tabular-nums text-[var(--md-subtle)]"><span>10:00–10:45 · compact mark for calendar blocks</span><MeetingResponseSummary participants={previewMeetingRoster} compact /></div></div> : null}
 
       {id === "wizard-dialog" ? (
@@ -2026,6 +2111,7 @@ function ComponentPreview({ id }: { id: string }) {
               ["Warehouse", Forklift],
               ["Appearance", Moon02],
               ["Settings", Settings2],
+              ["Edit event", Pen01],
             ].map(([label, Icon]) => (
               <div key={label as string} className="grid min-h-24 place-items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
                 <Icon className="size-6 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
@@ -2077,6 +2163,8 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "quote-detail-controls" ? <QuoteDetailControlsPreview /> : null}
+      {id === "quote-cargo-editor" ? <QuoteCargoEditorPreview /> : null}
+      {id === "cargo-allocation-editor" ? <CargoAllocationEditorPreview /> : null}
 
       {id === "status-pill" ? (
         <div className="grid w-full max-w-[640px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
@@ -2117,11 +2205,13 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "screening-list-freshness" ? (
-        <div className="w-full max-w-[640px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+        <div className="grid w-full max-w-[760px] gap-6">
           <ScreeningListFreshness
-            list={{ loaded: true, sourceName: "UK OFSI consolidated list", publisher: "UK Office of Financial Sanctions Implementation", entryCount: 18420, downloadedAt: new Date().toISOString(), stale: false }}
-            action={<Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-md)]">Refresh list</Button>}
+            compact
+            list={{ loaded: true, sourceName: "UK Sanctions List", stale: false }}
           />
+          <ScreeningListFreshness compact list={null} loading />
+          <ScreeningListFreshness compact list={{ loaded: true, sourceName: "UK Sanctions List", stale: true }} />
         </div>
       ) : null}
 
@@ -2613,7 +2703,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "pagination" ? (
         <div className="w-full max-w-[720px]">
           <div className="mb-3 grid gap-2">
-            {["Marlow Apparel Ltd", "Bauhaus Importe GmbH", "Black Forest Foods", "Pacific Goods Co", "Mediterranean Spice Trading"].map((customer) => (
+            {Array.from({ length: 57 }, (_, index) => `Sample customer ${String(index + 1).padStart(2, "0")}`).slice((previewPage - 1) * previewPageSize, previewPage * previewPageSize).map((customer) => (
               <div key={customer} className="flex h-12 items-center justify-between rounded-[var(--md-radius-lg)] bg-white/55 px-4 shadow-[var(--md-shadow-line)]">
                 <span className="text-[13px] font-medium text-[var(--md-ink)]">{customer}</span>
                 <span className="text-[12px] text-[var(--md-text)]">Active customer</span>
@@ -2622,8 +2712,8 @@ function ComponentPreview({ id }: { id: string }) {
           </div>
           <Pagination
             page={previewPage}
-            pageCount={Math.max(Math.ceil(customers.length / previewPageSize), 1)}
-            totalItems={customers.length}
+            pageCount={Math.max(Math.ceil(57 / previewPageSize), 1)}
+            totalItems={57}
             pageSize={previewPageSize}
             pageSizeOptions={[10, 20, 30, 50]}
             itemLabel="customers"
@@ -2921,6 +3011,18 @@ function ComponentPreview({ id }: { id: string }) {
               placeholder="Select transport modes"
               label="Transport modes"
             />
+            <span className="mt-3 text-[12px] font-medium text-[var(--md-text)]">Toolbar filter</span>
+            <MultiSelectMenu
+              variant="toolbar"
+              value={previewCalendarLayers}
+              options={[
+                { value: "Operational dates", label: "Operational dates", leading: <span className="flex h-3 w-8 overflow-hidden rounded-full ring-1 ring-[var(--md-line-strong)]"><span className="flex-1 bg-[var(--md-calendar-ribbon-sky-bg)]" /><span className="flex-1 bg-[var(--md-status-purple-bg)]" /></span> },
+                { value: "Personal events", label: "Personal events", leading: <span className="h-3 w-8 rounded-full bg-[var(--md-calendar-blue)] ring-1 ring-[var(--md-line-strong)]" /> },
+              ]}
+              onValueChange={setPreviewCalendarLayers}
+              label="Show on calendar"
+              className="justify-self-start"
+            />
           </div>
         </div>
       ) : null}
@@ -2955,15 +3057,21 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "data-table" ? (
+      {id === "data-table" || id === "table-export" ? (
         <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
           <DataTable
             columns={previewChargeColumns}
-            rows={previewChargeRows.filter((row) => (previewTableView === "All" || row.sell > row.cost) && (!previewTableStatus || row.status === previewTableStatus) && (!previewTableSearch.trim() || `${row.id} ${row.description} ${row.supplier}`.toLowerCase().includes(previewTableSearch.trim().toLowerCase())))}
+            clientPagination
+            rows={previewPaginatedChargeRows.filter((row) => (previewTableView === "All" || row.sell > row.cost) && (!previewTableStatus || row.status === previewTableStatus) && (!previewTableSearch.trim() || `${row.id} ${row.description} ${row.supplier}`.toLowerCase().includes(previewTableSearch.trim().toLowerCase())))}
             getRowKey={(row) => row.id}
             storageKey="gallery-charge-table"
+            exportConfig={{ fileName: "example-charges", register: {
+              dateLabel: "Example charge created date", dateValue: (row) => row.createdAt,
+              scopeDescription: "Example data only. All records includes every example matching the current view and filters; this page includes only its paginated rows.",
+              loadAllRows: async () => previewPaginatedChargeRows.filter((row) => (previewTableView === "All" || row.sell > row.cost) && (!previewTableStatus || row.status === previewTableStatus) && (!previewTableSearch.trim() || `${row.id} ${row.description} ${row.supplier}`.toLowerCase().includes(previewTableSearch.trim().toLowerCase()))),
+            } }}
             ariaLabel="Quote charges preview"
-            toolbarTabs={<RegisterViewSwitch options={["All", "Profitable"] as const} value={previewTableView} onChange={setPreviewTableView} counts={{ All: previewChargeRows.length, Profitable: previewChargeRows.filter((row) => row.sell > row.cost).length }} ariaLabel="Charge view" compact />}
+            toolbarTabs={<RegisterViewSwitch options={["All", "Profitable"] as const} value={previewTableView} onChange={setPreviewTableView} counts={{ All: previewPaginatedChargeRows.length, Profitable: previewPaginatedChargeRows.filter((row) => row.sell > row.cost).length }} ariaLabel="Charge view" compact />}
             toolbarSearch={<RegisterSearchField value={previewTableSearch} onChange={setPreviewTableSearch} onClear={() => setPreviewTableSearch("")} label="Search charges" placeholder="Search charges…" />}
             toolbarFilters={<RegisterFacetSelect label="Status" allLabel="All statuses" value={previewTableStatus} options={["Approved", "Review", "Blocked"].map((status) => ({ value: status, label: status }))} onChange={setPreviewTableStatus} className="w-[132px]" />}
           />
@@ -3085,6 +3193,18 @@ function ComponentPreview({ id }: { id: string }) {
             activeTab={previewCustomerTab}
             onChange={setPreviewCustomerTab}
           />
+          <Tabs defaultValue="control" className="mt-6">
+            <TabsList variant="line" aria-label={t("Booking detail sections")}>
+              <TabsTrigger value="control">{t("Control")}</TabsTrigger>
+              <TabsTrigger value="parties">{t("Parties")}</TabsTrigger>
+              <TabsTrigger value="route">{t("Route & schedule")}</TabsTrigger>
+              <TabsTrigger value="cargo">{t("Cargo & equipment")}</TabsTrigger>
+            </TabsList>
+            <TabsContent value="control"><p className="text-[13px] text-[var(--md-text)]">{t("Keep record controls separate from operational detail.")}</p></TabsContent>
+            <TabsContent value="parties"><p className="text-[13px] text-[var(--md-text)]">{t("Customer, payer, shipper and consignee.")}</p></TabsContent>
+            <TabsContent value="route"><p className="text-[13px] text-[var(--md-text)]">{t("Route legs and planned transport dates.")}</p></TabsContent>
+            <TabsContent value="cargo"><p className="text-[13px] text-[var(--md-text)]">{t("Cargo lines and mode-specific equipment.")}</p></TabsContent>
+          </Tabs>
         </div>
       ) : null}
 
@@ -3925,7 +4045,7 @@ function ComponentPreview({ id }: { id: string }) {
                 options={galleryRegisterViews}
                 value={galleryRegisterView}
                 onChange={setGalleryRegisterView}
-                counts={{ Stock: 33, Objects: 32, Movements: 71, Exceptions: 13 }}
+                counts={{ Stock: 33, Movements: 71, Exceptions: 13 }}
                 ariaLabel="Inventory view"
               />
               <RegisterToolbarDivider />

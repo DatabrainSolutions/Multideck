@@ -1,4 +1,6 @@
 import { edgeFetch } from "@/lib/api"
+import { getSupabaseSession } from "@/lib/supabase"
+import { invalidateCachedCrmResources, readCachedCrmResource } from "@/lib/crm-read-cache"
 
 export type TenantBrandCornerStyle = "rounded" | "sharp"
 export type TenantBrandAppearance = "light" | "dark"
@@ -55,11 +57,17 @@ async function responseJson<T>(responsePromise: Response | Promise<Response>, fa
   throw new Error(payload?.detail || fallback)
 }
 
-export function getTenantBranding(accessToken: string) {
-  return responseJson<TenantBranding>(
-    edgeFetch("tenant-branding", "", accessToken),
-    "Brand settings could not be loaded.",
-  )
+export async function getTenantBranding(accessToken: string) {
+  const session = await getSupabaseSession()
+  if (!session?.user || session.access_token !== accessToken) throw new Error("Sign in again to load brand settings.")
+  return readCachedCrmResource(session.user.id, "tenant-branding", () => responseJson<TenantBranding>(
+    edgeFetch("tenant-branding", "", accessToken), "Brand settings could not be loaded.",
+  ))
+}
+
+function brandingChanged<T>(value: T) {
+  invalidateCachedCrmResources(null, ["tenant-branding"])
+  return value
 }
 
 export function importTenantBranding(accessToken: string, websiteUrl: string) {
@@ -70,14 +78,14 @@ export function importTenantBranding(accessToken: string, websiteUrl: string) {
       body: JSON.stringify({ websiteUrl }),
     }),
     "Luna could not import that website.",
-  )
+  ).then(brandingChanged)
 }
 
 export function discardTenantBrandImport(accessToken: string) {
   return responseJson<{ discarded: true }>(
     edgeFetch("tenant-branding", "/discard-import", accessToken, { method: "POST" }),
     "The imported brand draft could not be discarded.",
-  )
+  ).then(brandingChanged)
 }
 
 export function saveTenantBrandImportDraft(accessToken: string, pendingImport: TenantBrandImport) {
@@ -88,7 +96,7 @@ export function saveTenantBrandImportDraft(accessToken: string, pendingImport: T
       body: JSON.stringify(pendingImport),
     }),
     "The imported brand draft could not be saved.",
-  )
+  ).then(brandingChanged)
 }
 
 export function saveTenantBranding(
@@ -107,5 +115,5 @@ export function saveTenantBranding(
   return responseJson<TenantBranding>(
     edgeFetch("tenant-branding", "/save", accessToken, { method: "POST", body: form }),
     "Brand settings could not be saved.",
-  )
+  ).then(brandingChanged)
 }

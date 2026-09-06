@@ -1,8 +1,13 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
 import "@/quotes-transfer.css"
+import { freightFieldPolicy, freightModeKey, freightShipmentAllowed } from "@/lib/freight-field-policy"
+import { freightPackageTypeOptions } from "@/lib/freight-package-types"
+import { quoteWorkspaceFromVersion } from "@/lib/quote-version-presentation"
+import { QuoteSubmittedDetails } from "@/components/multideck/quote-details/quote-submitted-details"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
+import { toast } from "sonner"
 import {
   AiEditing,
   AiBeautify,
@@ -39,7 +44,7 @@ import {
   X,
 } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from "@/components/ui/avatar"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -68,11 +73,12 @@ import { DexterDockedPage } from "@/components/multideck/dexter-companion-sideba
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { MultideckDatePicker } from "@/components/multideck/date-picker"
 import { CopyFeedbackTransition, CopyStatusIcon } from "@/components/multideck/copyable-field"
-import { AutoPopulatedInput, AutoPopulationIndicator, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
+import { AutoPopulatedInput, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { getApiTeamUsersByIds } from "@/lib/api"
+import { getQuoteEditorPresence, type QuoteEditorPresence } from "@/lib/admin-audit-api"
 import { createProfilePhotoSignedUrl, createProfilePhotoSignedUrls } from "@/lib/profile-photo"
-import { supabase } from "@/lib/supabase"
+import { authSupabase, supabase } from "@/lib/supabase"
 import {
   loadUnlocodeDirectory,
   loadUnlocodeDirectoryMetadata,
@@ -96,6 +102,8 @@ import {
   EMPTY_CARGO_CHARACTERISTICS,
   EMPTY_HAZARDOUS_DETAILS,
   EMPTY_RECURRENCE,
+  getIncotermDefinition,
+  INCOTERMS_2020,
   type CargoCharacteristics,
   type HazardousDetails,
   type LocationOption,
@@ -103,8 +111,11 @@ import {
   type RecurrenceValue,
 } from "@/components/multideck/quote-details/quote-detail-model"
 import { mdMotion, reduceMotion } from "@/lib/motion"
+import { calculateQuoteFreightDirection } from "@/lib/freight-direction"
+import { newQuoteCargoLine, quoteCargoSummary, quoteCargoSafety, quoteCargoHandlingSummary, readQuoteCargoLines, type QuoteCargoLine } from "@/lib/quote-cargo"
+import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
 import { textareaSelectionAnchor, type TextareaSelection, type TextareaSelectionAnchor } from "@/lib/textarea-selection"
-import { formatQuoteLossReason, quoteLossReasons } from "@/lib/quote-loss-reasons"
+import { formatQuoteLossReason, quoteCustomerDeclineReasons, quoteLossReasons } from "@/lib/quote-loss-reasons"
 import { listMailboxes, type Mailbox } from "@/lib/inbox-api"
 import { cn } from "@/lib/utils"
 import {
@@ -114,7 +125,7 @@ import {
   type ApiFinanceExchangeRate,
 } from "@/lib/finance-api"
 import { useLanguage } from "@/i18n/language-provider"
-import { systemPeople, type StatusTone } from "@/data/multideck-data"
+import { systemPeople, type StatusTone } from "@/data/operational-data"
 import { quoteRegisterRecords, type QuoteRegisterRecord } from "@/data/quote-register-data"
 import { getSalesQuote } from "@/lib/quote-api"
 import {
@@ -138,9 +149,11 @@ import {
   type QuoteIssueExpiryPreset,
   type QuoteIssueRecipient,
   type QuoteIssueRecipientInput,
+  type QuoteOrganisationOption,
   type QuoteSavePayload,
   type QuoteWorkflowCharge,
   type QuoteWorkflowSources,
+  type QuoteWorkflowVersion,
   type QuoteWorkflowWorkspace,
 } from "@/lib/quote-workflow-api"
 
@@ -156,6 +169,38 @@ type QuoteCurrency = "GBP" | "USD" | "EUR" | "JPY" | "AUD" | "CAD"
 type QuoteWorkspaceTab = "overview" | "details" | "charges" | "documents" | "notes" | "audit"
 
 const quoteWorkspaceTabs: QuoteWorkspaceTab[] = ["overview", "details", "charges", "documents", "notes", "audit"]
+
+// Quote and Booking use the same package vocabulary; existing custom values remain valid.
+
+const commonFreightPackageTypeOptions = freightPackageTypeOptions.slice(0, 7)
+const freightPackageTypeSelectOptions = freightPackageTypeOptions.map((option) => ({
+  value: option.value,
+  label: `${option.value} · ${option.description}`,
+}))
+
+const incotermNotSuppliedValue = "N/A"
+const incotermOptions = [
+  ...INCOTERMS_2020.map((term) => ({ value: term.code, label: `${term.code} · ${term.name}` })),
+  { value: incotermNotSuppliedValue, label: "N/A · Not supplied / not applicable" },
+] as const
+
+function quoteIncotermDisplay(value: string | undefined, namedPlace?: string) {
+  if (value?.trim().toUpperCase() === incotermNotSuppliedValue) return "Not supplied / not applicable"
+  return [value, namedPlace].filter(Boolean).join(" · ")
+}
+
+const seaContainerTypeOptions = [
+  { id: "20GP", value: "20GP", label: "20GP", description: "20 ft standard dry container", keywords: ["20DV", "20DC", "twenty foot"] },
+  { id: "40GP", value: "40GP", label: "40GP", description: "40 ft standard dry container", keywords: ["40DV", "40DC", "forty foot"] },
+  { id: "40HC", value: "40HC", label: "40HC", description: "40 ft high-cube container", keywords: ["40HQ", "high cube"] },
+  { id: "45HC", value: "45HC", label: "45HC", description: "45 ft high-cube container", keywords: ["45HQ", "high cube"] },
+  { id: "20RF", value: "20RF", label: "20RF", description: "20 ft refrigerated container", keywords: ["20RE", "reefer"] },
+  { id: "40RF", value: "40RF", label: "40RF", description: "40 ft refrigerated high-cube container", keywords: ["40RH", "reefer"] },
+  { id: "20OT", value: "20OT", label: "20OT", description: "20 ft open-top container", keywords: ["open top"] },
+  { id: "40OT", value: "40OT", label: "40OT", description: "40 ft open-top container", keywords: ["open top"] },
+  { id: "20FR", value: "20FR", label: "20FR", description: "20 ft flat-rack container", keywords: ["flat rack"] },
+  { id: "40FR", value: "40FR", label: "40FR", description: "40 ft flat-rack container", keywords: ["flat rack"] },
+] as const satisfies readonly CompactComboboxOption[]
 
 const LockPasswordSolidRoundedIcon = [["path", {
   d: "M12 3.25C10.067 3.25 8.5 4.817 8.5 6.75V8.31016C9.61773 8.27048 10.7654 8.25 12 8.25C13.2346 8.25 14.3823 8.27048 15.5 8.31016V6.75C15.5 4.817 13.933 3.25 12 3.25ZM6.5 6.75V8.52712C4.93233 9.00686 3.74925 10.3861 3.52452 12.0552C3.37636 13.1556 3.25 14.3118 3.25 15.5C3.25 16.6882 3.37636 17.8444 3.52452 18.9448C3.79609 20.9618 5.46716 22.5555 7.52522 22.6501C8.95364 22.7158 10.4042 22.75 12 22.75C13.5958 22.75 15.0464 22.7158 16.4748 22.6501C18.5328 22.5555 20.2039 20.9618 20.4755 18.9448C20.6236 17.8444 20.75 16.6882 20.75 15.5C20.75 14.3118 20.6236 13.1556 20.4755 12.0552C20.2508 10.3861 19.0677 9.00686 17.5 8.52712V6.75C17.5 3.71243 15.0376 1.25 12 1.25C8.96243 1.25 6.5 3.71243 6.5 6.75ZM17 15.4902C17 14.9379 16.5523 14.4902 16 14.4902C15.4477 14.4902 15 14.9379 15 15.4902V15.5002C15 16.0525 15.4477 16.5002 16 16.5002C16.5523 16.5002 17 16.0525 17 15.5002V15.4902ZM12 14.4902C12.5523 14.4902 13 14.9379 13 15.4902V15.5002C13 16.0525 12.5523 16.5002 12 16.5002C11.4477 16.5002 11 16.0525 11 15.5002V15.4902C11 14.9379 11.4477 14.4902 12 14.4902ZM9 15.4902C9 14.9379 8.55228 14.4902 8 14.4902C7.44772 14.4902 7 14.9379 7 15.4902V15.5002C7 16.0525 7.44772 16.5002 8 16.5002C8.55228 16.5002 9 16.0525 9 15.5002V15.4902Z",
@@ -187,8 +232,8 @@ function LockedFieldTooltip({ children }: { children: ReactNode }) {
           <HugeiconsIcon icon={LockPasswordSolidRoundedIcon} className="size-3.5" aria-hidden="true" />
         </span>
         <span className="min-w-0">
-          <span className="block text-[11.5px] font-medium leading-4">{t("Locked to customer record")}</span>
-          <span className="mt-0.5 block text-[10.5px] leading-4 opacity-75">{t("This value comes from the selected customer's organisation record. Update it there to keep every quote consistent.")}</span>
+          <span className="block text-[11.5px] font-medium leading-4">{t("Locked to payer account")}</span>
+          <span className="mt-0.5 block text-[10.5px] leading-4 opacity-75">{t("This value comes from the selected payer's account record. Update it there to keep every quote consistent.")}</span>
         </span>
       </TooltipContent>
     </Tooltip>
@@ -329,6 +374,9 @@ type QuoteRecord = {
   docsStatus?: string
   workflow?: string
   revisionReason?: string
+  copiedFromQuoteId?: string
+  copiedFromQuoteReference?: string
+  copyReason?: "customer_changed" | "repeat_quote"
   createdAt?: string
   customer: string
   customerId?: string
@@ -337,6 +385,12 @@ type QuoteRecord = {
   customerAddress?: string
   customerContact?: string
   customerEmail?: string
+  payerOrgId?: string
+  payerCode?: string
+  payerName?: string
+  payerAddress?: string
+  payerContact?: string
+  payerEmail?: string
   shipperCode?: string
   shipperOrgId?: string
   shipperName?: string
@@ -362,6 +416,7 @@ type QuoteRecord = {
   route: string
   mode: string
   container: string
+  containerRequestsJson?: string
   incoterm: string
   incotermPlace?: string
   origin: string
@@ -373,8 +428,11 @@ type QuoteRecord = {
   destinationTown?: string
   destinationUnlocode?: string
   via: string
+  routingLegsJson?: string
   startDate?: string
   endDate?: string
+  estimatedDeparture?: string
+  estimatedArrival?: string
   deadline?: string
   validity: string
   direction?: string
@@ -406,6 +464,7 @@ type QuoteRecord = {
   opsRep?: string
   jobStatus?: string
   goodsValue?: string
+  cargoLines?: QuoteCargoLine[]
   goodsValueCurrency?: string
   insuranceValue?: string
   insuranceValueCurrency?: string
@@ -429,6 +488,8 @@ type QuoteRecord = {
   grossWeightKg?: string
   volumeCbm?: string
   chargeableWeightKg?: string
+  collectionRequired?: string
+  deliveryRequired?: string
   customsIncluded?: string
   originCustomsAgentId?: string
   originCustomsAgentName?: string
@@ -450,6 +511,119 @@ type QuoteRecord = {
   revenueRoe?: number
   jobRoes?: JobRoe[]
   details?: Record<string, string>
+}
+
+type PendingCustomerOrganisationChange = {
+  organisation: QuoteOrganisationOption
+  patch: Partial<QuoteRecord>
+}
+
+type QuoteRoutingLeg = {
+  id: string
+  mode: string
+  origin: LocationValue
+  destination: LocationValue
+  estimatedDeparture: string
+  estimatedArrival: string
+  carrierId: string
+  carrierName: string
+  serviceLevel: string
+}
+
+type QuoteContainerRequest = {
+  id: string
+  quantity: string
+  type: string
+}
+
+function quoteContainerRequests(value: string | undefined, fallback: string | undefined): QuoteContainerRequest[] {
+  if (value) {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      if (Array.isArray(parsed)) {
+        const requests = parsed.slice(0, 20).flatMap((item, index) => {
+          if (!item || typeof item !== "object" || Array.isArray(item)) return []
+          const record = item as Record<string, unknown>
+          const quantity = typeof record.quantity === "number" ? String(record.quantity) : typeof record.quantity === "string" ? record.quantity : ""
+          const type = typeof record.type === "string" ? record.type : ""
+          return [{
+            id: typeof record.id === "string" && record.id ? record.id : `container-${index + 1}`,
+            quantity,
+            type,
+          }]
+        })
+        if (requests.length) return requests
+      }
+    } catch {
+      // Older quotes store one readable container summary instead of rows.
+    }
+  }
+
+  const requests = (fallback ?? "").split(/[;\n]+/u).flatMap((item, index) => {
+    const trimmed = item.trim()
+    if (!trimmed) return []
+    const match = trimmed.match(/^(\d+)\s*[x×]\s*(.+)$/iu)
+    return [{
+      id: `container-${index + 1}`,
+      quantity: match?.[1] ?? "1",
+      type: (match?.[2] ?? trimmed).trim(),
+    }]
+  }).slice(0, 20)
+  return requests.length ? requests : [{ id: "container-1", quantity: "", type: "" }]
+}
+
+function quoteContainerSummary(requests: QuoteContainerRequest[]) {
+  return requests.flatMap((request) => {
+    const quantity = Number(request.quantity)
+    const type = request.type.trim()
+    return Number.isInteger(quantity) && quantity > 0 && type ? [`${quantity} × ${type}`] : []
+  }).join("; ")
+}
+
+function quoteRoutingLegs(value: string | undefined): QuoteRoutingLeg[] {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.slice(0, 30).flatMap((item, index) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return []
+      const record = item as Record<string, unknown>
+      const location = (candidate: unknown): LocationValue => {
+        const source = candidate && typeof candidate === "object" && !Array.isArray(candidate)
+          ? candidate as Record<string, unknown>
+          : {}
+        return {
+          countryCode: typeof source.countryCode === "string" ? source.countryCode : "",
+          countryName: typeof source.countryName === "string" ? source.countryName : "",
+          place: typeof source.place === "string" ? source.place : "",
+          unlocode: typeof source.unlocode === "string" ? source.unlocode : "",
+        }
+      }
+      return [{
+        id: typeof record.id === "string" && record.id ? record.id : `route-${index + 1}`,
+        mode: typeof record.mode === "string" ? record.mode : "",
+        origin: location(record.origin),
+        destination: location(record.destination),
+        estimatedDeparture: typeof record.estimatedDeparture === "string" ? record.estimatedDeparture : "",
+        estimatedArrival: typeof record.estimatedArrival === "string" ? record.estimatedArrival : "",
+        carrierId: typeof record.carrierId === "string" ? record.carrierId : "",
+        carrierName: typeof record.carrierName === "string" ? record.carrierName : "",
+        serviceLevel: typeof record.serviceLevel === "string" ? record.serviceLevel : "",
+      }]
+    })
+  } catch {
+    return []
+  }
+}
+
+function quoteRoutingLegsValue(legs: QuoteRoutingLeg[]) {
+  return legs.length > 0 ? JSON.stringify(legs) : ""
+}
+
+function quoteCountryFlag(countryCode: string) {
+  const code = countryCode.trim().toLocaleUpperCase()
+  if (!/^[A-Z]{2}$/.test(code)) return ""
+  return String.fromCodePoint(...[...code].map((letter) => 127397 + letter.charCodeAt(0)))
 }
 
 type QuotePageVariant = "operator" | "ai" | "cargowise"
@@ -670,6 +844,12 @@ const newQuoteDraft: QuoteRecord = {
   customerAddress: "",
   customerContact: "",
   customerEmail: "",
+  payerOrgId: "",
+  payerCode: "",
+  payerName: "",
+  payerAddress: "",
+  payerContact: "",
+  payerEmail: "",
   shipperCode: "",
   shipperName: "",
   shipperAddress: "",
@@ -706,6 +886,8 @@ const newQuoteDraft: QuoteRecord = {
   via: "",
   startDate: "",
   endDate: "",
+  estimatedDeparture: "",
+  estimatedArrival: "",
   deadline: "",
   validity: "",
   direction: "",
@@ -755,7 +937,9 @@ const newQuoteDraft: QuoteRecord = {
   grossWeightKg: "",
   volumeCbm: "",
   chargeableWeightKg: "",
-  customsIncluded: "No",
+  collectionRequired: "",
+  deliveryRequired: "",
+  customsIncluded: "",
   originCustomsAgentId: "",
   originCustomsAgentName: "",
   destinationCustomsAgentId: "",
@@ -816,6 +1000,46 @@ function QuotePersonAvatar({
         {personInitials(name)}
       </AvatarFallback>
     </Avatar>
+  )
+}
+
+function QuoteCoEditorWarning({
+  editors,
+  photoUrls,
+}: {
+  editors: QuoteEditorPresence[]
+  photoUrls: Map<string, string>
+}) {
+  const { t } = useLanguage()
+  if (!editors.length) return null
+  const names = editors.map((editor) => editor.name)
+  const visibleEditors = editors.slice(0, 3)
+  const summary = editors.length === 1
+    ? `${editors[0].name} ${t("also has this quote open")}`
+    : `${editors[0].name} ${t("and")} ${editors.length - 1} ${t(editors.length === 2 ? "other person also have this quote open" : "other people also have this quote open")}`
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label={`${summary}. ${t("Coordinate before making overlapping changes.")}`}
+      title={names.join(", ")}
+      className="flex h-8 min-w-0 shrink items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-status-amber-bg)] px-2.5 text-[11px] font-medium text-[var(--md-status-amber-ink)] shadow-[var(--md-shadow-line)]"
+    >
+      <TriangleAlert className="size-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+      <AvatarGroup className="shrink-0" aria-hidden="true">
+        {visibleEditors.map((editor) => (
+          <QuotePersonAvatar
+            key={editor.id}
+            name={editor.name}
+            photoUrl={photoUrls.get(editor.id)}
+            className="size-5"
+            fallbackClassName="text-[8px]"
+          />
+        ))}
+      </AvatarGroup>
+      <span className="truncate" data-i18n-skip dir="auto">{summary}</span>
+    </div>
   )
 }
 
@@ -936,13 +1160,28 @@ function quoteDateInputValue(value: string) {
   return getDateInputValue(parsed)
 }
 
+const millisecondsPerCalendarDay = 86_400_000
+
+function quoteTransitDays(estimatedDeparture: string | undefined, estimatedArrival: string | undefined) {
+  const departure = quoteDateInputValue(estimatedDeparture ?? "")
+  const arrival = quoteDateInputValue(estimatedArrival ?? "")
+  if (!departure || !arrival) return ""
+
+  const utcTimestamp = (dateKey: string) => {
+    const [year, month, day] = dateKey.split("-").map(Number)
+    return Date.UTC(year, month - 1, day)
+  }
+  const elapsedDays = Math.round((utcTimestamp(arrival) - utcTimestamp(departure)) / millisecondsPerCalendarDay)
+  return elapsedDays >= 0 ? String(elapsedDays) : ""
+}
+
 function getDateInputValue(date: Date) {
   return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, "0")}-${`${date.getDate()}`.padStart(2, "0")}`
 }
 
 const transportModeOptions = ["Sea FCL", "Sea LCL", "Air", "Road", "Rail"]
 
-const cargoWiseModeOptions = ["Air", "Sea", "Road", "Rail"]
+const cargoWiseModeOptions = ["Air", "Sea", "Road", "Rail", "Multimodal", "Courier", "Warehouse", "Customs only", "Docs only", "Other"]
 
 const shipmentTypeOptionsByMode: Record<string, string[]> = {
   Air: ["ULD - Unit Load Device"],
@@ -955,27 +1194,12 @@ function shipmentTypeOptions(mode: string) {
   return shipmentTypeOptionsByMode[mode] ?? shipmentTypeOptionsByMode.Sea
 }
 
-const shipmentTypeCodesByMode: Record<string, string[]> = {
-  sea: ["FCL", "LCL", "CONSOL", "BREAKBULK", "PROJECT"],
-  air: ["AIR", "CONSOL", "PROJECT"],
-  road: ["FTL", "LTL", "RO_RO", "PROJECT"],
-  rail: ["PROJECT", "OTHER"],
-  multimodal: ["FCL", "LCL", "FTL", "LTL", "AIR", "CONSOL", "BREAKBULK", "RO_RO", "PROJECT", "OTHER"],
-  courier: ["AIR", "OTHER"],
-  warehouse: ["OTHER"],
-  customs_only: ["CUSTOMS_ONLY"],
-  docs_only: ["DOCS_ONLY"],
-  other: ["OTHER"],
-}
-
 function shipmentTypeCode(value: string) {
   return value.split(" - ", 1)[0].trim().toUpperCase()
 }
 
 function shipmentTypeChoicesForMode(mode: string, choices: string[]) {
-  const allowedCodes = shipmentTypeCodesByMode[mode.trim().toLowerCase()]
-  if (!allowedCodes) return choices
-  return choices.filter((choice) => allowedCodes.includes(shipmentTypeCode(choice)))
+  return choices.filter((choice) => freightShipmentAllowed(mode, choice))
 }
 
 function shipmentTypeValue(mode: string, value?: string, choices?: string[]) {
@@ -2709,7 +2933,7 @@ function QuoteCargoWiseOverviewPanel({ quote, intelligence, intelligenceUnavaila
   const { t } = useLanguage()
   const currency = quote.currency || ""
   const displayMoney = (value: number) => currency ? money(value, currency) : value.toFixed(2)
-  const incoterm = [quote.incoterm, quote.incotermPlace].filter(Boolean).join(" · ")
+  const incoterm = quoteIncotermDisplay(quote.incoterm, quote.incotermPlace)
 
   return (
     <div className="md-quote-cargowise-overview grid gap-2">
@@ -3240,7 +3464,7 @@ function QuoteCargoWiseDetailsPanel({
           <CargoWiseSelectField label="Known cargo" value={quote.knownCargo ?? ""} options={["General merchandise", "Hazardous", "Temperature controlled", "Oversized"]} editable={editable} onChange={(value) => onQuoteChange("knownCargo", value)} span />
           <CargoWiseSelectField label="FMC TID" value={quote.fmcTid ?? ""} options={["Not required", "Required", "Pending"]} editable={editable} onChange={(value) => onQuoteChange("fmcTid", value)} span />
           <CargoWiseField label="Packages / pieces" value={quote.packageQuantity ?? ""} editable={editable} onChange={(value) => onQuoteChange("packageQuantity", value)} />
-          <CargoWiseField label="Package type" value={quote.packageType ?? ""} editable={editable} onChange={(value) => onQuoteChange("packageType", value)} />
+          <CargoWiseSelectField label="Package type" value={quote.packageType ?? ""} options={freightPackageTypeSelectOptions} editable={editable} dataOptions onChange={(value) => onQuoteChange("packageType", value)} />
           <CargoWiseField label="Gross weight (kg)" value={quote.grossWeightKg ?? ""} editable={editable} onChange={(value) => onQuoteChange("grossWeightKg", value)} />
           <CargoWiseField label="Volume (CBM)" value={quote.volumeCbm ?? ""} editable={editable} onChange={(value) => onQuoteChange("volumeCbm", value)} />
           <CargoWiseField label="Chargeable weight (kg)" value={quote.chargeableWeightKg ?? ""} editable={editable} onChange={(value) => onQuoteChange("chargeableWeightKg", value)} />
@@ -3442,6 +3666,7 @@ function QuoteCompactDatePicker({
   disabled,
   minDate,
   locked,
+  width = "short",
 }: {
   label: string
   value: string
@@ -3449,6 +3674,7 @@ function QuoteCompactDatePicker({
   disabled?: boolean
   minDate?: string
   locked?: boolean
+  width?: "short" | "full"
 }) {
   const picker = (
     <div className="relative">
@@ -3469,7 +3695,7 @@ function QuoteCompactDatePicker({
     </div>
   )
   return (
-    <CompactFieldShell label={label} width="short">
+    <CompactFieldShell label={label} width={width}>
       {locked ? <LockedFieldTooltip>{picker}</LockedFieldTooltip> : picker}
     </CompactFieldShell>
   )
@@ -3529,7 +3755,7 @@ function QuoteCompactSelect({
     <CompactFieldShell label={label} htmlFor={id} width={width} required={required} invalid={invalid} className={className}>
       <div className="relative">
         <Select value={value || emptyValue} onValueChange={(next) => onChange(next === emptyValue ? "" : next)} disabled={disabled} required={required}>
-          <SelectTrigger id={id} aria-invalid={invalid || undefined} data-auto-populated={autoPopulated || undefined} className={cn("h-8 w-full rounded-[var(--md-radius-lg)] px-1.5 text-[12px]", autoPopulated && "pe-8")}>
+          <SelectTrigger id={id} aria-invalid={invalid || undefined} aria-description={autoPopulated ? t(autoPopulationDescription ?? "Filled from linked information. You can edit this value manually.") : undefined} data-auto-populated={autoPopulated || undefined} className="h-8 w-full rounded-[var(--md-radius-lg)] px-1.5 text-[12px]">
             <SelectValue placeholder={t("Select")} />
           </SelectTrigger>
           <SelectContent>
@@ -3541,7 +3767,6 @@ function QuoteCompactSelect({
             ))}
           </SelectContent>
         </Select>
-        <AutoPopulationIndicator active={Boolean(autoPopulated)} description={autoPopulationDescription} />
       </div>
     </CompactFieldShell>
   )
@@ -3667,6 +3892,8 @@ function QuoteDetailsPanelV2({
   requireCoreFields = true,
   validationAttempted,
   onQuoteChange,
+  onQuotePatch,
+  onCustomerOrganisationChange,
   lookups,
 }: {
   quote: QuoteRecord
@@ -3674,22 +3901,32 @@ function QuoteDetailsPanelV2({
   requireCoreFields?: boolean
   validationAttempted: boolean
   onQuoteChange: (field: keyof QuoteRecord, value: string) => void
+  onQuotePatch: (patch: Partial<QuoteRecord>) => void
+  onCustomerOrganisationChange?: (change: PendingCustomerOrganisationChange) => void
   lookups?: QuoteWorkflowSources | null
 }) {
   const { direction, language, t } = useLanguage()
   const [rateRequestOpen, setRateRequestOpen] = useState(false)
   const [confirmingCarrierId, setConfirmingCarrierId] = useState<string | null>(null)
+  const [pendingOverallMode, setPendingOverallMode] = useState<{ quoteId: string; from: string; to: string; shipmentType: string | undefined; routing: string } | null>(null)
+  const overallModeTriggerRef = useRef<HTMLDivElement>(null)
+  const overallModeCancelRef = useRef<HTMLButtonElement>(null)
   const [unlocodeDirectory, setUnlocodeDirectory] = useState<readonly UnlocodeDirectoryRecord[]>([])
   const [unlocodeDirectoryStatus, setUnlocodeDirectoryStatus] = useState<"loading" | "ready" | "error">("loading")
   const [unlocodeDirectoryCount, setUnlocodeDirectoryCount] = useState(0)
-  const organisations = lookups?.organisations ?? []
-  const currencies = lookups?.currencies.map((option) => option.code) ?? ["GBP", "EUR", "USD"]
-  const modes = lookups?.modes.map((option) => option.name) ?? cargoWiseModeOptions
-  const shipmentTypes = lookups?.shipmentTypes.map((option) => `${option.code} - ${option.name}`) ?? shipmentTypeOptions(quote.mode)
-  const countries = lookups?.countries ?? []
-  const customerOrganisation = organisations.find((option) => option.id === quote.customerId)
+  const organisations = useMemo(() => lookups?.organisations ?? [], [lookups?.organisations])
+  const currencies = useMemo(() => lookups?.currencies.map((option) => option.code) ?? ["GBP", "EUR", "USD"], [lookups?.currencies])
+  const modes = useMemo(() => lookups?.modes.map((option) => option.name) ?? cargoWiseModeOptions, [lookups?.modes])
+  const shipmentTypes = useMemo(() => lookups?.shipmentTypes.map((option) => `${option.code} - ${option.name}`) ?? shipmentTypeOptions(quote.mode), [lookups?.shipmentTypes, quote.mode])
+  const countries = useMemo(() => lookups?.countries ?? [], [lookups?.countries])
+  const calculatedDirection = calculatedDirectionForQuote(quote, lookups)
+  const organisationsById = useMemo(() => new Map(organisations.map((organisation) => [organisation.id, organisation])), [organisations])
+  const customerOrganisation = organisationsById.get(quote.customerId ?? "")
     ?? organisations.find((option) => option.name.trim().toLocaleLowerCase() === quote.customer.trim().toLocaleLowerCase())
+  const payerOrganisation = organisationsById.get(quote.payerOrgId ?? "")
+    ?? organisations.find((option) => option.name.trim().toLocaleLowerCase() === quote.payerName?.trim().toLocaleLowerCase())
   const customerSourceContact = customerOrganisation?.contacts?.find((contact) => contact.isOperational)
+  const payerSourceContact = payerOrganisation?.contacts?.find((contact) => contact.isOperational)
   const customerAutoPopulationDescription = customerOrganisation
     ? `Filled from ${customerOrganisation.name}. Edit this field to override it for this quote.`
     : undefined
@@ -3712,59 +3949,70 @@ function QuoteDetailsPanelV2({
   }, [])
   const customerAddresses = customerOrganisation?.addresses ?? []
   const customerOperationalContacts = (customerOrganisation?.contacts ?? []).filter((contact) => contact.isOperational)
+  const payerAddresses = payerOrganisation?.addresses ?? []
+  const payerOperationalContacts = (payerOrganisation?.contacts ?? []).filter((contact) => contact.isOperational)
+  const payerAutoPopulationDescription = payerOrganisation
+    ? `Filled from ${payerOrganisation.name}. Its account terms govern this quote.`
+    : undefined
   const supplierOptions = useMemo(() => supplierOptionsFromQuote(quote), [quote.supplierOptionsJson, quote.supplierId, quote.supplier, quote.carrierId, quote.carrier])
-  const organisationOptions: CompactComboboxOption[] = organisations.map((organisation) => ({
-    id: organisation.id,
-    value: organisation.name,
-    label: organisation.name,
-    description: [organisation.code, (organisation.types ?? []).join(" · ")].filter(Boolean).join(" · "),
-    keywords: [organisation.code, ...(organisation.types ?? [])],
-  }))
-  const organisationCodeOptions = (options: readonly CompactComboboxOption[]) => options.flatMap((option) => {
-    const organisation = organisations.find((item) => item.id === option.id)
-    if (!organisation?.code) return []
-    return [{
-      ...option,
-      value: organisation.code,
-      label: organisation.code,
-      description: organisation.name,
-      keywords: [organisation.name, ...(organisation.types ?? [])],
-    }]
-  })
-  type OrganisationRole = "customer" | "supplier" | "carrier" | "agent" | "shipper" | "consignee"
+  type OrganisationRole = "customer" | "payer" | "supplier" | "carrier" | "agent" | "shipper" | "consignee"
   const organisationRecentOptionLimit = 10
-  const organisationHasRole = (organisationId: string | undefined, role: OrganisationRole) => {
-    if (!organisationId) return false
-    const organisation = organisations.find((item) => item.id === organisationId)
-    const types = organisation?.types?.map((type) => type.trim().toLocaleLowerCase()) ?? []
-    if (types.length) {
-      if (role === "customer") return types.includes("customer")
-      if (role === "supplier") return types.includes("supplier")
-      if (role === "carrier") return types.some((type) => /^(carrier|shipping line|haulier|freight forwarder)$/.test(type))
-      if (role === "agent") return types.some((type) => /\bagents?\b/.test(type))
-      if (role === "shipper") return types.some((type) => /\bshipper\b|\bconsignor\b/.test(type))
-      return types.some((type) => /\bconsignee\b/.test(type))
+  const organisationDirectories = useMemo(() => {
+    const roles: OrganisationRole[] = ["customer", "payer", "supplier", "carrier", "agent", "shipper", "consignee"]
+    const directories = Object.fromEntries(roles.map((role) => [role, {
+      options: [] as CompactComboboxOption[], codes: [] as CompactComboboxOption[], ids: new Set<string>(),
+    }])) as Record<OrganisationRole, { options: CompactComboboxOption[]; codes: CompactComboboxOption[]; ids: Set<string> }>
+    const fallbackIds = {
+      supplier: new Set(lookups?.suppliers.map((item) => item.id)),
+      carrier: new Set(lookups?.carriers.map((item) => item.id)),
+      agent: new Set(lookups?.agents.map((item) => item.id)),
     }
-    const roleDirectory = role === "supplier" ? lookups?.suppliers : role === "carrier" ? lookups?.carriers : role === "agent" ? lookups?.agents : null
-    return roleDirectory?.some((item) => item.id === organisationId) ?? false
-  }
-
-  const relatedOptions = (role: OrganisationRole) => {
-    const recommendations = customerOrganisation?.relatedPartyRecommendations?.filter((item) => item.role.toLocaleLowerCase().includes(role)) ?? []
-    return recommendations.flatMap((recommendation) => {
-      const organisation = organisations.find((item) => item.id === recommendation.organisationId)
-      if (!organisation || !organisationHasRole(organisation.id, role)) return []
+    for (const organisation of organisations) {
+      const types = (organisation.types ?? []).map((type) => type.trim().toLocaleLowerCase())
+      const matches = (role: OrganisationRole) => {
+        if (!types.length) return role in fallbackIds && fallbackIds[role as keyof typeof fallbackIds].has(organisation.id)
+        if (role === "customer" || role === "payer") return types.includes("customer")
+        if (role === "supplier") return types.includes("supplier")
+        if (role === "carrier") return types.some((type) => /^(carrier|shipping line|haulier|freight forwarder)$/.test(type))
+        if (role === "agent") return types.some((type) => /\bagents?\b/.test(type))
+        if (role === "shipper") return types.some((type) => /\bshipper\b|\bconsignor\b/.test(type))
+        return types.some((type) => /\bconsignee\b/.test(type))
+      }
+      const option: CompactComboboxOption = {
+        id: organisation.id, value: organisation.name, label: organisation.name,
+        description: [organisation.code, (organisation.types ?? []).join(" · ")].filter(Boolean).join(" · "),
+        keywords: [organisation.code, ...(organisation.types ?? [])],
+      }
+      for (const role of roles) {
+        if (!matches(role)) continue
+        directories[role].ids.add(organisation.id)
+        directories[role].options.push(option)
+        if (organisation.code) directories[role].codes.push({
+          ...option, value: organisation.code, label: organisation.code, description: organisation.name,
+          keywords: [organisation.name, ...(organisation.types ?? [])],
+        })
+      }
+    }
+    return directories
+  }, [organisations, lookups?.suppliers, lookups?.carriers, lookups?.agents])
+  const organisationHasRole = (id: string | undefined, role: OrganisationRole) => Boolean(id && organisationDirectories[role].ids.has(id))
+  const relatedDirectories = useMemo(() => {
+    const roles: OrganisationRole[] = ["customer", "payer", "supplier", "carrier", "agent", "shipper", "consignee"]
+    const result: Record<OrganisationRole, CompactComboboxOption[]> = { customer: [], payer: [], supplier: [], carrier: [], agent: [], shipper: [], consignee: [] }
+    for (const role of roles) result[role] = (customerOrganisation?.relatedPartyRecommendations ?? []).flatMap((recommendation) => {
+      if (!recommendation.role.toLocaleLowerCase().includes(role)) return []
+      const organisation = organisationsById.get(recommendation.organisationId)
+      if (!organisation || !organisationDirectories[role].ids.has(organisation.id)) return []
       return [{
-        id: organisation.id,
-        value: organisation.name,
-        label: organisation.name,
-        description: recommendation.source === "saved_default"
-          ? t("Related to this customer")
+        id: organisation.id, value: organisation.name, label: organisation.name,
+        description: recommendation.source === "saved_default" ? t("Related to this customer")
           : `${t("Previously used with this customer")} · ${recommendation.usageCount}`,
         keywords: [organisation.code, ...(organisation.types ?? [])],
-      } satisfies CompactComboboxOption]
+      }]
     })
-  }
+    return result
+  }, [customerOrganisation, organisationsById, organisationDirectories, t])
+  const relatedOptions = (role: OrganisationRole) => relatedDirectories[role]
 
   const officialLocationOptions = useMemo<LocationOption[]>(() => {
     const regionNames = typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames([language], { type: "region" }) : null
@@ -3780,28 +4028,39 @@ function QuoteDetailsPanelV2({
     }))
   }, [countries, language, unlocodeDirectory])
 
+  const officialLocationsByUnlocode = useMemo(() => new Map(officialLocationOptions.map((option) => [option.unlocode, option])), [officialLocationOptions])
   const locationOptions = useMemo<LocationOption[]>(() => {
-    const optionsByUnlocode = new Map(officialLocationOptions.map((option) => [option.unlocode, option]))
     const unlinkedOptions: LocationOption[] = []
     const regionNames = typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames([language], { type: "region" }) : null
-
     organisations.forEach((organisation) => (organisation.addresses ?? []).forEach((address) => {
       const place = address.townCity?.trim() ?? ""
       const countryCode = (address.countryCode || address.country || "").trim().toLocaleUpperCase()
       const countryName = countryCode.length === 2 ? regionNames?.of(countryCode) || address.country?.trim() || countryCode : address.country?.trim() || countryCode
       const unlocode = address.unlocode?.trim().toLocaleUpperCase() ?? ""
-      if (!place && !countryName && !unlocode) return
-      const recommended = [quote.customerId, quote.shipperOrgId, quote.consigneeOrgId].includes(organisation.id)
-      const official = unlocode ? optionsByUnlocode.get(unlocode) : null
-      if (official) {
-        if (recommended) optionsByUnlocode.set(unlocode, { ...official, recommended: true })
-        return
-      }
-      unlinkedOptions.push({ id: `organisation-address:${address.id}`, place, countryName, countryCode, unlocode, recommended })
+      if ((!place && !countryName && !unlocode) || (unlocode && officialLocationsByUnlocode.has(unlocode))) return
+      unlinkedOptions.push({ id: `organisation-address:${address.id}`, place, countryName, countryCode, unlocode })
     }))
-
-    return [...optionsByUnlocode.values(), ...unlinkedOptions]
-  }, [officialLocationOptions, organisations, quote.customerId, quote.shipperOrgId, quote.consigneeOrgId, language])
+    return [...officialLocationsByUnlocode.values(), ...unlinkedOptions]
+  }, [officialLocationsByUnlocode, organisations, language])
+  const routeLocationOptions = useMemo<CompactComboboxOption[]>(() => locationOptions.map((option) => ({
+    id: option.id,
+    value: option.unlocode || option.place,
+    label: [option.unlocode, option.place].filter(Boolean).join(" · "),
+    description: option.countryName,
+    keywords: [option.countryCode, option.countryName, option.place, option.unlocode, ...(option.aliases ?? [])],
+    iconText: quoteCountryFlag(option.countryCode),
+  })), [locationOptions])
+  // Changing a party only changes this small overlay, not the 116k-row directory.
+  const recommendedLocationIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const organisationId of [quote.customerId, quote.shipperOrgId, quote.consigneeOrgId]) {
+      for (const address of organisationsById.get(organisationId ?? "")?.addresses ?? []) {
+        const official = officialLocationsByUnlocode.get(address.unlocode?.trim().toLocaleUpperCase() ?? "")
+        ids.add(official?.id ?? `organisation-address:${address.id}`)
+      }
+    }
+    return ids
+  }, [quote.customerId, quote.shipperOrgId, quote.consigneeOrgId, organisationsById, officialLocationsByUnlocode])
 
   const originLocation: LocationValue = {
     countryCode: quote.originCountry?.length === 2 ? quote.originCountry : "",
@@ -3815,6 +4074,13 @@ function QuoteDetailsPanelV2({
     place: quote.destinationTown || (quote.destinationUnlocode ? "" : quote.destination),
     unlocode: quote.destinationUnlocode ?? "",
   }
+  const routingLegs = useMemo(() => quoteRoutingLegs(quote.routingLegsJson), [quote.routingLegsJson])
+  const containerRequests = useMemo(
+    () => quoteContainerRequests(quote.containerRequestsJson, quote.container),
+    [quote.container, quote.containerRequestsJson],
+  )
+  const fieldPolicy = freightFieldPolicy({ mode: quote.mode, shipmentType: quote.shipmentType, direction: quote.direction, stage: editable ? "draft" : "submitted", legModes: routingLegs.map((leg) => leg.mode) })
+  const isSeaContainerised = fieldPolicy.containerRequests
   const recurrence: RecurrenceValue = {
     ...EMPTY_RECURRENCE,
     mode: (["once", "interval", "times-per-month", "custom"] as const).includes(quote.frequency as RecurrenceValue["mode"])
@@ -3842,70 +4108,212 @@ function QuoteDetailsPanelV2({
     notes: quote.hazardousNotes || quote.hazardousEmergencyContact || "",
   }
 
+  function updateContainerRequests(nextRequests: QuoteContainerRequest[]) {
+    const requests = nextRequests.slice(0, 20)
+    onQuotePatch({
+      containerRequestsJson: JSON.stringify(requests),
+      container: quoteContainerSummary(requests),
+    })
+  }
+
+  function addContainerRequest() {
+    if (containerRequests.length >= 20) return
+    updateContainerRequests([
+      ...containerRequests,
+      { id: crypto.randomUUID(), quantity: "", type: "" },
+    ])
+  }
+
+  function updateContainerRequest(index: number, patch: Partial<QuoteContainerRequest>) {
+    updateContainerRequests(containerRequests.map((request, requestIndex) => requestIndex === index ? { ...request, ...patch } : request))
+  }
+
+  function removeContainerRequest(index: number) {
+    const nextRequests = containerRequests.filter((_, requestIndex) => requestIndex !== index)
+    updateContainerRequests(nextRequests.length ? nextRequests : [{ id: crypto.randomUUID(), quantity: "", type: "" }])
+  }
+
   function updateLocation(prefix: "origin" | "destination", value: LocationValue) {
+    if (!editable) return
     const countryField = prefix === "origin" ? "originCountry" : "destinationCountry"
     const townField = prefix === "origin" ? "originTown" : "destinationTown"
     const codeField = prefix === "origin" ? "originUnlocode" : "destinationUnlocode"
-    onQuoteChange(countryField, value.countryName || value.countryCode)
-    onQuoteChange(townField, value.place)
-    onQuoteChange(codeField, value.unlocode)
-    onQuoteChange(prefix, value.unlocode || value.place)
+    const nextLegs = routingLegs.length > 0 ? routingLegs.map((leg, index) => {
+      if (prefix === "origin" && index === 0) return { ...leg, origin: value }
+      if (prefix === "destination" && index === routingLegs.length - 1) return { ...leg, destination: value }
+      return leg
+    }) : routingLegs
+    onQuotePatch({
+      [countryField]: value.countryName || value.countryCode,
+      [townField]: value.place,
+      [codeField]: value.unlocode,
+      [prefix]: value.unlocode || value.place,
+      ...(routingLegs.length > 0 ? { routingLegsJson: quoteRoutingLegsValue(nextLegs) } : {}),
+    })
+  }
+
+  function requestOverallMode(mode: string) {
+    if (!editable || freightModeKey(mode) === freightModeKey(quote.mode)) return
+    if (!quote.mode.trim()) { onQuotePatch({ mode }); return }
+    setPendingOverallMode({ quoteId: quote.id, from: quote.mode, to: mode, shipmentType: quote.shipmentType, routing: quote.routingLegsJson ?? "" })
+  }
+
+  function confirmOverallMode() {
+    if (!editable || !pendingOverallMode) return
+    if (quote.id !== pendingOverallMode.quoteId || quote.mode !== pendingOverallMode.from
+      || quote.shipmentType !== pendingOverallMode.shipmentType || (quote.routingLegsJson ?? "") !== pendingOverallMode.routing) {
+      toast.error(t("Quote changed"), { description: t("Review the current mode and routing legs, then choose the mode again.") })
+    } else {
+      onQuotePatch({ mode: pendingOverallMode.to,
+        shipmentType: freightShipmentAllowed(pendingOverallMode.to, quote.shipmentType ?? "") ? quote.shipmentType : "" })
+    }
+    setPendingOverallMode(null)
+  }
+
+  function baseRoutingLeg(): QuoteRoutingLeg {
+    return {
+      id: "route-1",
+      mode: quote.mode,
+      origin: originLocation,
+      destination: destinationLocation,
+      estimatedDeparture: quote.estimatedDeparture ?? "",
+      estimatedArrival: quote.estimatedArrival ?? "",
+      carrierId: quote.carrierId ?? "",
+      carrierName: quote.carrier ?? "",
+      serviceLevel: quote.serviceLevel ?? "",
+    }
+  }
+
+  function addRoutingLeg() {
+    if (!editable || routingLegs.length >= 30) return
+    const current = routingLegs.length > 0 ? routingLegs : [baseRoutingLeg()]
+    const previous = current.at(-1) ?? baseRoutingLeg()
+    const next: QuoteRoutingLeg = {
+      id: `route-${crypto.randomUUID()}`,
+      mode: previous.mode || quote.mode,
+      origin: previous.destination,
+      destination: { countryCode: "", countryName: "", place: "", unlocode: "" },
+      estimatedDeparture: previous.estimatedArrival,
+      estimatedArrival: "",
+      carrierId: "",
+      carrierName: "",
+      serviceLevel: previous.serviceLevel || quote.serviceLevel || "Standard",
+    }
+    persistRoutingLegs([...current, next])
+  }
+
+  function updateRoutingLeg(index: number, patch: Partial<QuoteRoutingLeg>) {
+    if (!editable || !Number.isInteger(index) || index < 0 || index >= routingLegs.length) return
+    const nextLegs = routingLegs.map((leg, legIndex) => legIndex === index ? { ...leg, ...patch } : leg)
+    if (patch.destination && nextLegs[index + 1]) nextLegs[index + 1] = { ...nextLegs[index + 1], origin: patch.destination }
+    persistRoutingLegs(nextLegs)
+  }
+
+  function persistRoutingLegs(nextLegs: QuoteRoutingLeg[]) {
+    if (!editable || nextLegs.length === 0 || nextLegs.length > 30) return
+    const first = nextLegs[0]
+    const last = nextLegs.at(-1) ?? first
+    onQuotePatch({
+      routingLegsJson: quoteRoutingLegsValue(nextLegs),
+      origin: first.origin.unlocode || first.origin.place,
+      originCountry: first.origin.countryName || first.origin.countryCode,
+      originTown: first.origin.place,
+      originUnlocode: first.origin.unlocode,
+      destination: last.destination.unlocode || last.destination.place,
+      destinationCountry: last.destination.countryName || last.destination.countryCode,
+      destinationTown: last.destination.place,
+      destinationUnlocode: last.destination.unlocode,
+      estimatedDeparture: first.estimatedDeparture,
+      estimatedArrival: last.estimatedArrival,
+      transitDays: quoteTransitDays(first.estimatedDeparture, last.estimatedArrival),
+      transitUnit: "Days",
+    })
+  }
+
+  function updateRoutingLocation(index: number, field: "origin" | "destination", value: string, option?: CompactComboboxOption) {
+    const selected = option?.id ? locationOptions.find((location) => location.id === option.id) : undefined
+    const nextLocation: LocationValue = selected
+      ? { countryCode: selected.countryCode, countryName: selected.countryName, place: selected.place, unlocode: selected.unlocode }
+      : /^[A-Za-z]{2}[A-Za-z0-9]{3}$/.test(value.trim())
+        ? { countryCode: value.trim().slice(0, 2).toLocaleUpperCase(), countryName: "", place: "", unlocode: value.trim().toLocaleUpperCase() }
+        : { countryCode: "", countryName: "", place: value, unlocode: "" }
+    updateRoutingLeg(index, { [field]: nextLocation })
+  }
+
+  function removeLastRoutingLeg() {
+    if (!editable || routingLegs.length <= 1) return
+    persistRoutingLegs(routingLegs.slice(0, -1))
   }
 
   function updateRecurrence(value: RecurrenceValue) {
-    onQuoteChange("frequency", value.mode)
-    onQuoteChange("frequencyInterval", value.interval)
-    onQuoteChange("frequencyUnit", value.unit)
-    onQuoteChange("frequencyTimesPerMonth", value.timesPerMonth)
-    onQuoteChange("frequencyCount", value.totalOccurrences)
-    onQuoteChange("frequencyNotes", value.notes)
+    onQuotePatch({
+      frequency: value.mode,
+      frequencyInterval: value.interval,
+      frequencyUnit: value.unit,
+      frequencyTimesPerMonth: value.timesPerMonth,
+      frequencyCount: value.totalOccurrences,
+      frequencyNotes: value.notes,
+    })
   }
 
   function updateHazardousDetails(value: HazardousDetails) {
-    onQuoteChange("hazardousUnNumber", value.unNumber)
-    onQuoteChange("hazardousShippingName", value.properShippingName)
-    onQuoteChange("hazardousClass", value.hazardClass)
-    onQuoteChange("hazardousPackingGroup", value.packingGroup)
-    onQuoteChange("packageQuantity", value.packageCount)
-    onQuoteChange("packageType", value.packageType)
-    onQuoteChange("hazardousNetWeightKg", value.netWeightKg)
-    onQuoteChange("grossWeightKg", value.grossWeightKg)
-    onQuoteChange("hazardousMarinePollutant", value.marinePollutant ? "Yes" : "No")
-    onQuoteChange("hazardousLimitedQuantity", value.limitedQuantity ? "Yes" : "No")
-    onQuoteChange("hazardousNotes", value.notes)
+    onQuotePatch({
+      hazardousUnNumber: value.unNumber,
+      hazardousShippingName: value.properShippingName,
+      hazardousClass: value.hazardClass,
+      hazardousPackingGroup: value.packingGroup,
+      packageQuantity: value.packageCount,
+      packageType: value.packageType,
+      hazardousNetWeightKg: value.netWeightKg,
+      grossWeightKg: value.grossWeightKg,
+      hazardousMarinePollutant: value.marinePollutant ? "Yes" : "No",
+      hazardousLimitedQuantity: value.limitedQuantity ? "Yes" : "No",
+      hazardousNotes: value.notes,
+    })
   }
 
-  function organisationForRole(role: "customer" | "shipper" | "consignee" | "agent") {
-    const organisationId = role === "customer" ? quote.customerId : role === "shipper" ? quote.shipperOrgId : role === "consignee" ? quote.consigneeOrgId : quote.agentOrgId
-    const organisationName = role === "customer" ? quote.customer : role === "shipper" ? quote.shipperName : role === "consignee" ? quote.consigneeName : quote.agentName
-    return organisations.find((organisation) => organisation.id === organisationId)
+  function organisationForRole(role: "customer" | "payer" | "shipper" | "consignee" | "agent") {
+    const organisationId = role === "customer" ? quote.customerId : role === "payer" ? quote.payerOrgId : role === "shipper" ? quote.shipperOrgId : role === "consignee" ? quote.consigneeOrgId : quote.agentOrgId
+    const organisationName = role === "customer" ? quote.customer : role === "payer" ? quote.payerName : role === "shipper" ? quote.shipperName : role === "consignee" ? quote.consigneeName : quote.agentName
+    return organisationsById.get(organisationId ?? "")
       ?? organisations.find((organisation) => organisation.name.trim().toLocaleLowerCase() === organisationName?.trim().toLocaleLowerCase())
   }
 
   function operationalContactsForOrganisation(organisationId: string | undefined) {
-    return organisations.find((organisation) => organisation.id === organisationId)?.contacts.filter((contact) => contact.isOperational) ?? []
+    return organisationsById.get(organisationId ?? "")?.contacts.filter((contact) => contact.isOperational) ?? []
   }
 
-  function selectAddress(role: "customer" | "shipper" | "consignee" | "agent", addressId: string) {
+  function selectAddress(role: "customer" | "payer" | "shipper" | "consignee" | "agent", addressId: string) {
     const address = organisationForRole(role)?.addresses.find((item) => item.id === addressId)
     if (!address) return
-    onQuoteChange(role === "customer" ? "customerAddress" : role === "shipper" ? "shipperAddress" : role === "consignee" ? "consigneeAddress" : "agentAddress", address.address)
+    onQuoteChange(role === "customer" ? "customerAddress" : role === "payer" ? "payerAddress" : role === "shipper" ? "shipperAddress" : role === "consignee" ? "consigneeAddress" : "agentAddress", address.address)
   }
 
-  function selectContact(role: "customer" | "shipper" | "consignee" | "agent", contactId: string) {
+  function selectContact(role: "customer" | "payer" | "shipper" | "consignee" | "agent", contactId: string) {
     const contact = operationalContactsForOrganisation(organisationForRole(role)?.id).find((item) => item.id === contactId)
     if (!contact) return
     if (role === "customer") {
-      onQuoteChange("contactId", contact.id)
-      onQuoteChange("customerContact", contact.name)
-      onQuoteChange("customerEmail", contact.email ?? "")
+      onQuotePatch({
+        contactId: contact.id,
+        customerContact: contact.name,
+        customerEmail: contact.email ?? "",
+      })
       return
     }
-    onQuoteChange(role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact", contact.name)
-    onQuoteChange(role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail", contact.email ?? "")
+    if (role === "payer") {
+      onQuotePatch({
+        payerContact: contact.name,
+        payerEmail: contact.email ?? "",
+      })
+      return
+    }
+    onQuotePatch({
+      [role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact"]: contact.name,
+      [role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail"]: contact.email ?? "",
+    })
   }
 
-  function selectOrganisationByCode(role: "customer" | "shipper" | "consignee" | "agent", code: string) {
+  function selectOrganisationByCode(role: "customer" | "payer" | "shipper" | "consignee" | "agent", code: string) {
     const normalizedCode = code.trim().toLocaleLowerCase()
     const organisation = organisations.find((item) => normalizedCode && item.code.trim().toLocaleLowerCase() === normalizedCode && organisationHasRole(item.id, role))
     if (!organisation) return false
@@ -3913,74 +4321,132 @@ function QuoteDetailsPanelV2({
     return true
   }
 
-  function selectOrganisation(role: "customer" | "shipper" | "consignee" | "agent", organisationId: string) {
-    const organisation = organisations.find((item) => item.id === organisationId)
+  function selectOrganisation(role: "customer" | "payer" | "shipper" | "consignee" | "agent", organisationId: string) {
+    const organisation = organisationsById.get(organisationId ?? "")
     if (!organisation) return
     const address = organisation.addresses?.[0]?.address ?? ""
     const contact = operationalContactsForOrganisation(organisation.id)[0]
     if (role === "customer") {
-      onQuoteChange("customerId", organisation.id)
-      onQuoteChange("clientCode", organisation.code)
-      onQuoteChange("customer", organisation.name)
-      onQuoteChange("customerAddress", address)
-      onQuoteChange("contactId", contact?.id ?? "")
-      onQuoteChange("customerContact", contact?.name ?? "")
-      onQuoteChange("customerEmail", contact?.email ?? "")
-      onQuoteChange("customerTermsSource", organisation.name)
-      if (organisation.quoteTerms) {
-        onQuoteChange("terms", organisation.quoteTerms.terms)
-        onQuoteChange("subjectToTerms", organisation.quoteTerms.subjectTo)
-        onQuoteChange("customerNotes", organisation.quoteTerms.notes)
-        onQuoteChange("deadline", organisation.quoteTerms.deadline)
+      const useCustomerAsPayer = !quote.payerOrgId || quote.payerOrgId === quote.customerId || quote.customerId !== organisation.id
+      const patch: Partial<QuoteRecord> = {
+        customerId: organisation.id,
+        clientCode: organisation.code,
+        customer: organisation.name,
+        customerAddress: address,
+        contactId: contact?.id ?? "",
+        customerContact: contact?.name ?? "",
+        customerEmail: contact?.email ?? "",
+        ...(useCustomerAsPayer ? {
+          payerOrgId: organisation.id,
+          payerCode: organisation.code,
+          payerName: organisation.name,
+          payerAddress: address,
+          payerContact: contact?.name ?? "",
+          payerEmail: contact?.email ?? "",
+        } : {}),
+        ...(useCustomerAsPayer ? {
+          customerTermsSource: organisation.name,
+          terms: organisation.quoteTerms?.terms ?? "",
+          subjectToTerms: organisation.quoteTerms?.subjectTo ?? "",
+          customerNotes: organisation.quoteTerms?.notes ?? "",
+          deadline: organisation.quoteTerms?.deadline ?? "",
+        } : {}),
       }
+      if (quote.customerId && quote.customerId !== organisation.id && onCustomerOrganisationChange) {
+        onCustomerOrganisationChange({ organisation, patch })
+        return
+      }
+      onQuotePatch(patch)
+      return
+    }
+    if (role === "payer") {
+      onQuotePatch({
+        payerOrgId: organisation.id,
+        payerCode: organisation.code,
+        payerName: organisation.name,
+        payerAddress: address,
+        payerContact: contact?.name ?? "",
+        payerEmail: contact?.email ?? "",
+        customerTermsSource: organisation.name,
+        terms: organisation.quoteTerms?.terms ?? "",
+        subjectToTerms: organisation.quoteTerms?.subjectTo ?? "",
+        customerNotes: organisation.quoteTerms?.notes ?? "",
+        deadline: organisation.quoteTerms?.deadline ?? "",
+      })
       return
     }
     if (role === "shipper") {
-      onQuoteChange("shipperOrgId", organisation.id)
-      onQuoteChange("shipperCode", organisation.code)
-      onQuoteChange("shipperName", organisation.name)
-      onQuoteChange("shipperAddress", address)
-      onQuoteChange("shipperContact", contact?.name ?? "")
-      onQuoteChange("shipperEmail", contact?.email ?? "")
+      onQuotePatch({
+        shipperOrgId: organisation.id,
+        shipperCode: organisation.code,
+        shipperName: organisation.name,
+        shipperAddress: address,
+        shipperContact: contact?.name ?? "",
+        shipperEmail: contact?.email ?? "",
+      })
       return
     }
     if (role === "consignee") {
-      onQuoteChange("consigneeOrgId", organisation.id)
-      onQuoteChange("consigneeCode", organisation.code)
-      onQuoteChange("consigneeName", organisation.name)
-      onQuoteChange("consigneeAddress", address)
-      onQuoteChange("consigneeContact", contact?.name ?? "")
-      onQuoteChange("consigneeEmail", contact?.email ?? "")
+      onQuotePatch({
+        consigneeOrgId: organisation.id,
+        consigneeCode: organisation.code,
+        consigneeName: organisation.name,
+        consigneeAddress: address,
+        consigneeContact: contact?.name ?? "",
+        consigneeEmail: contact?.email ?? "",
+      })
       return
     }
-    onQuoteChange("agentOrgId", organisation.id)
-    onQuoteChange("agentCode", organisation.code)
-    onQuoteChange("agentName", organisation.name)
-    onQuoteChange("agentAddress", address)
-    onQuoteChange("agentContact", contact?.name ?? "")
-    onQuoteChange("agentEmail", contact?.email ?? "")
+    onQuotePatch({
+      agentOrgId: organisation.id,
+      agentCode: organisation.code,
+      agentName: organisation.name,
+      agentAddress: address,
+      agentContact: contact?.name ?? "",
+      agentEmail: contact?.email ?? "",
+    })
   }
 
-  function useCustomerForParty(role: "shipper" | "consignee" | "agent") {
-    onQuoteChange(role === "shipper" ? "shipperOrgId" : role === "consignee" ? "consigneeOrgId" : "agentOrgId", quote.customerId ?? "")
-    onQuoteChange(role === "shipper" ? "shipperCode" : role === "consignee" ? "consigneeCode" : "agentCode", quote.clientCode ?? "")
-    onQuoteChange(role === "shipper" ? "shipperName" : role === "consignee" ? "consigneeName" : "agentName", quote.customer)
-    onQuoteChange(role === "shipper" ? "shipperAddress" : role === "consignee" ? "consigneeAddress" : "agentAddress", quote.customerAddress ?? "")
-    onQuoteChange(role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact", quote.customerContact ?? "")
-    onQuoteChange(role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail", quote.customerEmail ?? "")
+  function useCustomerForParty(role: "payer" | "shipper" | "consignee" | "agent") {
+    if (role === "payer") {
+      onQuotePatch({
+        payerOrgId: quote.customerId ?? "",
+        payerCode: quote.clientCode ?? "",
+        payerName: quote.customer,
+        payerAddress: quote.customerAddress ?? "",
+        payerContact: quote.customerContact ?? "",
+        payerEmail: quote.customerEmail ?? "",
+        customerTermsSource: customerOrganisation?.name ?? quote.customer,
+        terms: customerOrganisation?.quoteTerms?.terms ?? "",
+        subjectToTerms: customerOrganisation?.quoteTerms?.subjectTo ?? "",
+        customerNotes: customerOrganisation?.quoteTerms?.notes ?? "",
+        deadline: customerOrganisation?.quoteTerms?.deadline ?? "",
+      })
+      return
+    }
+    onQuotePatch({
+      [role === "shipper" ? "shipperOrgId" : role === "consignee" ? "consigneeOrgId" : "agentOrgId"]: quote.customerId ?? "",
+      [role === "shipper" ? "shipperCode" : role === "consignee" ? "consigneeCode" : "agentCode"]: quote.clientCode ?? "",
+      [role === "shipper" ? "shipperName" : role === "consignee" ? "consigneeName" : "agentName"]: quote.customer,
+      [role === "shipper" ? "shipperAddress" : role === "consignee" ? "consigneeAddress" : "agentAddress"]: quote.customerAddress ?? "",
+      [role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact"]: quote.customerContact ?? "",
+      [role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail"]: quote.customerEmail ?? "",
+    })
   }
 
   function persistSupplierOptions(next: QuoteSupplierOptionDraft[]) {
-    onQuoteChange("supplierOptionsJson", JSON.stringify(next))
     const firstSupplier = next[0]
     const firstCarrier = firstSupplier?.carriers[0]
-    onQuoteChange("supplierId", firstSupplier?.supplierId ?? "")
-    onQuoteChange("supplier", firstSupplier?.supplierName ?? "")
-    onQuoteChange("supplierOffice", firstSupplier?.supplierOffice ?? "")
-    onQuoteChange("carrierId", firstCarrier?.carrierId ?? "")
-    onQuoteChange("carrier", firstCarrier?.carrierName ?? "")
-    onQuoteChange("carrierOffice", firstCarrier?.carrierOffice ?? "")
-    onQuoteChange("carrierReference", firstCarrier?.reference ?? "")
+    onQuotePatch({
+      supplierOptionsJson: JSON.stringify(next),
+      supplierId: firstSupplier?.supplierId ?? "",
+      supplier: firstSupplier?.supplierName ?? "",
+      supplierOffice: firstSupplier?.supplierOffice ?? "",
+      carrierId: firstCarrier?.carrierId ?? "",
+      carrier: firstCarrier?.carrierName ?? "",
+      carrierOffice: firstCarrier?.carrierOffice ?? "",
+      carrierReference: firstCarrier?.reference ?? "",
+    })
   }
 
   function patchSupplier(supplierId: string, patch: Partial<QuoteSupplierOptionDraft>) {
@@ -4022,9 +4488,9 @@ function QuoteDetailsPanelV2({
     const reference = role === "shipper" ? quote.shipperReference ?? "" : role === "consignee" ? quote.consigneeReference ?? "" : quote.agentReference ?? ""
     const addresses = selectedOrganisation?.addresses ?? []
     const operationalContacts = operationalContactsForOrganisation(selectedOrganisation?.id)
-    const filteredOptions = organisationOptions.filter((option) => organisationHasRole(option.id, role))
-    const codeOptions = organisationCodeOptions(filteredOptions)
-    const preferredOptions = relatedOptions(role)
+    const filteredOptions = organisationDirectories[role].options
+    const codeOptions = organisationDirectories[role].codes
+    const preferredOptions = [...relatedOptions(role)]
     const normalizedName = name.trim().toLocaleLowerCase()
     const selectedOption = filteredOptions.find((option) => option.id === selectedId)
       ?? filteredOptions.find((option) => normalizedName && option.value.trim().toLocaleLowerCase() === normalizedName)
@@ -4054,7 +4520,7 @@ function QuoteDetailsPanelV2({
             placeholder={`Search ${roleSearchLabel} or type manually`}
             disabled={!editable}
             width="full"
-            className="col-span-7"
+            className="col-span-12"
             onValueChange={(value) => {
               onQuoteChange(role === "shipper" ? "shipperName" : role === "consignee" ? "consigneeName" : "agentName", value)
               const selected = organisations.find((item) => item.id === selectedId)
@@ -4062,8 +4528,8 @@ function QuoteDetailsPanelV2({
             }}
             onOptionSelect={(option) => option.id && selectOrganisation(role, option.id)}
           />
-          <CompactCombobox label="Account code" value={code} options={codeOptions} placeholder="Search account codes" allLabel={`All ${roleSearchLabel} codes`} emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-5 [&_input]:tracking-tight" autoPopulated={matchesAutoPopulation(code, selectedOrganisation?.code)} autoPopulationDescription={autoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode(role, value)) return; onQuoteChange(role === "shipper" ? "shipperCode" : role === "consignee" ? "consigneeCode" : "agentCode", value); const selected = organisations.find((item) => item.id === selectedId); if (selected && selected.code !== value) onQuoteChange(role === "shipper" ? "shipperOrgId" : role === "consignee" ? "consigneeOrgId" : "agentOrgId", "") }} onOptionSelect={(option) => option.id && selectOrganisation(role, option.id)} />
-          <QuoteCompactInput label={`${title} ref`} value={reference} width="full" className="col-span-12" disabled={!editable} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperReference" : role === "consignee" ? "consigneeReference" : "agentReference", value)} />
+          <CompactCombobox label="Account code" value={code} options={codeOptions} placeholder="Search account codes" allLabel={`All ${roleSearchLabel} codes`} emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-7 [&_input]:tracking-tight" autoPopulated={matchesAutoPopulation(code, selectedOrganisation?.code)} autoPopulationDescription={autoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode(role, value)) return; onQuoteChange(role === "shipper" ? "shipperCode" : role === "consignee" ? "consigneeCode" : "agentCode", value); const selected = organisations.find((item) => item.id === selectedId); if (selected && selected.code !== value) onQuoteChange(role === "shipper" ? "shipperOrgId" : role === "consignee" ? "consigneeOrgId" : "agentOrgId", "") }} onOptionSelect={(option) => option.id && selectOrganisation(role, option.id)} />
+          <QuoteCompactInput label={`${title} ref`} value={reference} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperReference" : role === "consignee" ? "consigneeReference" : "agentReference", value)} />
           <CompactCombobox label="Address" value={address} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(address, selectedOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={autoPopulationDescription} options={addresses.map((item) => ({ id: item.id, value: item.address, label: item.label || item.address, description: item.address }))} onOptionSelect={(option) => option.id && selectAddress(role, option.id)} onValueChange={(value) => onQuoteChange(role === "shipper" ? "shipperAddress" : role === "consignee" ? "consigneeAddress" : "agentAddress", value)} />
           <CompactCombobox label="Operational contact" value={contact} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(contact, selectedContact?.name)} autoPopulationDescription={autoPopulationDescription} options={operationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact(role, option.id)} onValueChange={(value) => onQuoteChange(role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact", value)} />
           <QuoteCompactInput label="Email" value={email} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(email, selectedContact?.email)} autoPopulationDescription={autoPopulationDescription} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail", value)} />
@@ -4074,15 +4540,29 @@ function QuoteDetailsPanelV2({
 
   const originIsUs = [originLocation.countryCode, originLocation.countryName, originLocation.unlocode.slice(0, 2)]
     .some((value) => ["US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"].includes(value.trim().toLocaleUpperCase()))
+  const incotermDefinition = getIncotermDefinition(quote.incoterm)
+  const incotermNotSupplied = quote.incoterm.trim().toUpperCase() === incotermNotSuppliedValue
+  const incotermAddressFallback = incotermDefinition?.code === "EXW"
+    ? quote.collectionAddress
+    : (["DAP", "DPU", "DDP"].includes(incotermDefinition?.code ?? "") ? quote.deliveryAddress : "")
+  const incotermNamedPlaceMissing = Boolean(
+    incotermDefinition
+    && !quote.incotermPlace?.trim()
+    && !incotermAddressFallback?.trim(),
+  )
+  const incotermNamedPlaceLabel = incotermDefinition?.namedLocationLabel ?? "Named place"
   return (
-    <div dir={direction} className="grid items-start gap-2">
+    <div dir={direction} className="@container/quote-details grid items-start gap-2">
+      <div role="status" className={fieldPolicy.routingModeMismatch ? "text-[12px] leading-5 text-[var(--md-text)]" : "sr-only"}>
+        {fieldPolicy.routingModeMismatch ? <p>{t("Mode review")}: {t("No planned routing leg uses the overall mode.")} {t("Check Mode in Job data and the planned routing legs. Nothing is changed automatically.")}</p> : null}
+      </div>
       <CompactSectionShell title="Job data" meta="Core quote controls">
         <CompactFieldRow>
           <QuoteCompactSelect label="Source" value={quote.source ?? ""} options={["NEW - New Shipper", "REN - Renewal", "REP - Repeat lane", "TND - Tender"]} width="medium" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.source?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("source", value)} />
-          <QuoteCompactSelect label="Mode" value={quote.mode} options={modes} width="short" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.mode.trim()} disabled={!editable} dataOptions onChange={(mode) => { onQuoteChange("mode", mode); const next = shipmentTypeValue(mode, quote.shipmentType, shipmentTypeChoicesForMode(mode, shipmentTypes)); if (next !== quote.shipmentType) onQuoteChange("shipmentType", next) }} />
+          <div ref={overallModeTriggerRef} tabIndex={-1}><QuoteCompactSelect label="Mode" value={quote.mode} options={modes} width="short" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.mode.trim()} disabled={!editable} dataOptions onChange={requestOverallMode} /></div>
           <QuoteCompactSelect label="Shipment type" value={shipmentTypeValue(quote.mode, quote.shipmentType, shipmentTypeChoicesForMode(quote.mode, shipmentTypes))} options={shipmentTypeChoicesForMode(quote.mode, shipmentTypes)} width="medium" disabled={!editable} dataOptions onChange={(value) => onQuoteChange("shipmentType", value)} />
-          <QuoteCompactSelect label="HBL mode" value={quote.hblMode ?? ""} options={["CY/CFS", "CY/CY", "CFS/CFS", "Door/Door"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("hblMode", value)} />
-          <QuoteCompactSelect label="Quote type" value={quote.direction ?? ""} options={["Export", "Import", "Domestic", "Cross trade"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("direction", value)} />
+          {fieldPolicy.hblMode ? <QuoteCompactSelect label="HBL mode" value={quote.hblMode ?? ""} options={["CY/CFS", "CY/CY", "CFS/CFS", "Door/Door"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("hblMode", value)} /> : null}
+          <QuoteCompactSelect label={calculatedDirection ? "Direction (auto)" : "Direction"} value={calculatedDirection ?? quote.direction ?? ""} options={["Export", "Import", "Domestic", "Cross trade"]} width="short" disabled={!editable || Boolean(calculatedDirection)} onChange={(value) => onQuoteChange("direction", value)} />
           <QuoteCompactSelect label="Department" value={quote.department ?? ""} options={lookups?.departments.map((item) => item.name) ?? []} width="short" disabled={!editable} dataOptions onChange={(value) => { const item = lookups?.departments.find((department) => department.name === value); onQuoteChange("department", value); onQuoteChange("departmentId", item?.id ?? "") }} />
           <QuoteCompactSelect label="Branch" value={quote.branch ?? ""} options={lookups?.offices.map((item) => ({ value: item.code || item.name, label: item.code || item.name })) ?? []} width="code" disabled={!editable} dataOptions onChange={(value) => { const item = lookups?.offices.find((office) => (office.code || office.name) === value); onQuoteChange("branch", value); onQuoteChange("officeId", item?.id ?? "") }} />
           <QuoteCompactSelect label="Priority" value={quote.priority ?? ""} options={["Low", "Standard", "High", "Tender"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("priority", value)} />
@@ -4092,15 +4572,15 @@ function QuoteDetailsPanelV2({
         </CompactFieldRow>
       </CompactSectionShell>
 
-      <div className="grid items-stretch gap-2 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid items-stretch gap-2 @min-[40rem]/quote-details:grid-cols-2 @min-[80rem]/quote-details:grid-cols-4">
         <CompactSectionShell title="Customer data" className="[&>header]:h-8 [&>header]:overflow-hidden">
           <div className="grid min-w-0 grid-cols-12 gap-x-2 gap-y-1.5">
-            <CompactCombobox label="Customer" value={quote.customer} options={organisationOptions.filter((option) => organisationHasRole(option.id, "customer"))} onValueChange={(value) => { onQuoteChange("customer", value); if (customerOrganisation && customerOrganisation.name !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search customers or type manually" allLabel="All customers" emptyLabel="No matching customer company" disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customer.trim()} width="full" className="col-span-7" />
-            <CompactCombobox label="Account code" value={quote.clientCode ?? ""} options={organisationCodeOptions(organisationOptions.filter((option) => organisationHasRole(option.id, "customer")))} autoPopulated={matchesAutoPopulation(quote.clientCode, customerOrganisation?.code)} autoPopulationDescription={customerAutoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode("customer", value)) return; onQuoteChange("clientCode", value); if (customerOrganisation && customerOrganisation.code !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search account codes" allLabel="All customer codes" emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-5 [&_input]:tracking-tight" />
-            <QuoteCompactInput label="Customer ref" value={quote.localRef ?? ""} width="full" className="col-span-7" disabled={!editable} onChange={(value) => onQuoteChange("localRef", value)} />
+            <CompactCombobox label="Customer" value={quote.customer} options={organisationDirectories.customer.options} clearable={!quote.customerId} onValueChange={(value) => { if (quote.customerId && customerOrganisation?.name !== value) return; onQuoteChange("customer", value); if (customerOrganisation && customerOrganisation.name !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search customers or type manually" allLabel="All customers" emptyLabel="No matching customer company" disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customer.trim()} width="full" className="col-span-12" />
+            <CompactCombobox label="Account code" value={quote.clientCode ?? ""} options={organisationDirectories.customer.codes} clearable={!quote.customerId} autoPopulated={matchesAutoPopulation(quote.clientCode, customerOrganisation?.code)} autoPopulationDescription={customerAutoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode("customer", value)) return; if (quote.customerId && customerOrganisation?.code !== value) return; onQuoteChange("clientCode", value); if (customerOrganisation && customerOrganisation.code !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search account codes" allLabel="All customer codes" emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-7 [&_input]:tracking-tight" />
             <QuoteCompactInput label="Customer PO" value={quote.customerPO ?? ""} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange("customerPO", value)} />
             <CompactCombobox label="Address" value={quote.customerAddress ?? ""} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerAddress, customerOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={customerAutoPopulationDescription} options={customerAddresses.map((item) => ({ id: item.id, value: item.address, label: item.label || item.address, description: item.address }))} onOptionSelect={(option) => option.id && selectAddress("customer", option.id)} onValueChange={(value) => onQuoteChange("customerAddress", value)} />
-            <CompactCombobox label="Operational contact" value={quote.customerContact ?? ""} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerContact, customerSourceContact?.name)} autoPopulationDescription={customerAutoPopulationDescription} options={customerOperationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact("customer", option.id)} onValueChange={(value) => { onQuoteChange("customerContact", value); if (value !== quote.customerContact) onQuoteChange("contactId", "") }} />
+            <QuoteCompactInput label="Customer ref" value={quote.localRef ?? ""} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange("localRef", value)} />
+            <CompactCombobox label="Operational contact" value={quote.customerContact ?? ""} width="full" className="col-span-7" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerContact, customerSourceContact?.name)} autoPopulationDescription={customerAutoPopulationDescription} options={customerOperationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact("customer", option.id)} onValueChange={(value) => { onQuoteChange("customerContact", value); if (value !== quote.customerContact) onQuoteChange("contactId", "") }} />
             <QuoteCompactInput label="Email" value={quote.customerEmail ?? ""} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerEmail, customerSourceContact?.email)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuoteChange("customerEmail", value)} />
           </div>
         </CompactSectionShell>
@@ -4109,17 +4589,122 @@ function QuoteDetailsPanelV2({
         {roleCard("consignee")}
       </div>
 
-      <CompactSectionShell title="Route & service" meta="Linked country, place and UN/LOCODE fields">
+      <CompactSectionShell
+        title="Route & service"
+        meta={routingLegs.length > 0 ? `${routingLegs.length} planned ${routingLegs.length === 1 ? "leg" : "legs"}` : "Linked country, place and UN/LOCODE fields"}
+        action={(
+          <Button type="button" variant="ghost" size="sm" disabled={!editable || routingLegs.length >= 30} onClick={addRoutingLeg} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]">
+            <Plus className="size-3" aria-hidden="true" />{t("Add routing leg")}
+          </Button>
+        )}
+      >
         <div className="grid gap-2">
+          {isSeaContainerised ? (
+            <div className="grid gap-1.5" role="group" aria-label={t("Container requests")}>
+              {containerRequests.map((request, index) => {
+                const rowInvalid = requireCoreFields && validationAttempted && (!request.quantity || !request.type.trim())
+                return (
+                  <div key={request.id} className="grid min-w-0 items-start gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(7rem,0.5fr)_minmax(11rem,1.15fr)_minmax(5rem,0.35fr)_minmax(10rem,0.8fr)_2rem_auto]">
+                    {index === 0 ? (
+                      <>
+                        <QuoteCompactSelect label="Incoterms / scope" value={quote.incoterm} options={incotermOptions} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.incoterm.trim()} disabled={!editable} onChange={(value) => onQuoteChange("incoterm", value)} />
+                        <QuoteCompactInput label={incotermNamedPlaceLabel} value={quote.incotermPlace ?? ""} width="full" required={Boolean(incotermDefinition)} invalid={requireCoreFields && validationAttempted && incotermNamedPlaceMissing} disabled={!editable} onChange={(value) => onQuoteChange("incotermPlace", value)} />
+                      </>
+                    ) : <div className="hidden xl:col-span-2 xl:block" aria-hidden="true" />}
+                    <QuoteCompactInput
+                      label={index === 0 ? "Qty" : `Qty ${index + 1}`}
+                      value={request.quantity}
+                      type="number"
+                      width="full"
+                      required={requireCoreFields}
+                      invalid={rowInvalid && !request.quantity}
+                      disabled={!editable}
+                      onChange={(value) => updateContainerRequest(index, { quantity: value.replace(/\D+/gu, "").slice(0, 3) })}
+                    />
+                    <CompactCombobox
+                      label={index === 0 ? "Container type" : `Container type ${index + 1}`}
+                      value={request.type}
+                      options={seaContainerTypeOptions}
+                      placeholder="Choose or type"
+                      allLabel="Common container types"
+                      emptyLabel="No matching container type"
+                      width="full"
+                      required={requireCoreFields}
+                      invalid={rowInvalid && !request.type.trim()}
+                      disabled={!editable}
+                      onValueChange={(value) => updateContainerRequest(index, { type: value })}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={!editable}
+                      aria-label={t(`Remove container request ${index + 1}`)}
+                      onClick={() => removeContainerRequest(index)}
+                      className="mt-5 size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-[var(--md-red-soft)] hover:text-[var(--md-red)]"
+                    >
+                      <Trash2 className="size-3.5" aria-hidden="true" />
+                    </Button>
+                    {index === 0 ? (
+                      <Button type="button" variant="ghost" size="sm" disabled={!editable || containerRequests.length >= 20} onClick={addContainerRequest} className="mt-5 h-8 justify-self-start rounded-[var(--md-radius-md)] px-2 text-[10.5px] sm:justify-self-end xl:justify-self-start">
+                        <Plus className="size-3" aria-hidden="true" />{t("Add container")}
+                      </Button>
+                    ) : <div className="hidden xl:block" aria-hidden="true" />}
+                  </div>
+                )
+              })}
+              {requireCoreFields && validationAttempted && !quote.container.trim() ? (
+                <p className="text-[10.5px] leading-4 text-[var(--md-red)]">{t("Add at least one complete container request")}</p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(8rem,0.55fr)_minmax(18rem,1.6fr)]">
+              <QuoteCompactSelect label="Incoterms / scope" value={quote.incoterm} options={incotermOptions} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.incoterm.trim()} disabled={!editable} onChange={(value) => onQuoteChange("incoterm", value)} />
+              <QuoteCompactInput label={incotermNamedPlaceLabel} value={quote.incotermPlace ?? ""} width="full" required={Boolean(incotermDefinition)} invalid={requireCoreFields && validationAttempted && incotermNamedPlaceMissing} disabled={!editable} onChange={(value) => onQuoteChange("incotermPlace", value)} />
+            </div>
+          )}
+          {incotermNotSupplied ? (
+            <div className="grid min-w-0 gap-2 sm:grid-cols-3" role="group" aria-label={t("Quoted operational scope")}>
+              <QuoteCompactSelect label="Collection" value={quote.collectionRequired ?? ""} options={[{ value: "No", label: "Not included" }, { value: "Yes", label: "Included" }]} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.collectionRequired?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("collectionRequired", value)} />
+              <QuoteCompactSelect label="Delivery" value={quote.deliveryRequired ?? ""} options={[{ value: "No", label: "Not included" }, { value: "Yes", label: "Included" }]} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.deliveryRequired?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("deliveryRequired", value)} />
+              <QuoteCompactSelect label="Customs clearance" value={quote.customsIncluded ?? ""} options={[{ value: "No", label: "Not included" }, { value: "Yes", label: "Included" }]} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customsIncluded?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("customsIncluded", value)} />
+            </div>
+          ) : null}
           <div className="grid gap-2 xl:grid-cols-2">
-            <LocationFields mode={quote.mode} label="Origin from" value={originLocation} options={locationOptions} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} />
-            <LocationFields mode={quote.mode} label="Destination to" value={destinationLocation} options={locationOptions} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} />
+            <LocationFields mode={quote.mode} label="Origin from" value={originLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} />
+            <LocationFields mode={quote.mode} label="Destination to" value={destinationLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} />
           </div>
-          <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(11rem,0.8fr)_minmax(10rem,0.6fr)_minmax(27rem,1.8fr)] lg:items-start">
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(9rem,0.7fr)_minmax(10rem,0.72fr)_minmax(10rem,0.72fr)_minmax(10rem,0.7fr)_minmax(24rem,1.7fr)] xl:items-start">
             <QuoteCompactInput label="Via" value={quote.via} width="full" disabled={!editable} onChange={(value) => onQuoteChange("via", value)} />
-            <NumberUnitField label="Transit time" value={{ value: quote.transitDays ?? "", unit: quote.transitUnit ?? "Days" }} units={[{ value: "Hours", label: "Hours" }, { value: "Days", label: "Days" }, { value: "Weeks", label: "Weeks" }]} width="full" disabled={!editable} onChange={(value) => { onQuoteChange("transitDays", value.value); onQuoteChange("transitUnit", value.unit) }} />
+            <QuoteCompactDatePicker label="ETD" value={quote.estimatedDeparture ?? ""} disabled={!editable} onChange={(value) => routingLegs.length > 0 ? updateRoutingLeg(0, { estimatedDeparture: value }) : onQuotePatch({ estimatedDeparture: value, transitDays: quoteTransitDays(value, quote.estimatedArrival), transitUnit: "Days" })} />
+            <QuoteCompactDatePicker label="ETA" value={quote.estimatedArrival ?? ""} minDate={quote.estimatedDeparture || undefined} disabled={!editable} onChange={(value) => routingLegs.length > 0 ? updateRoutingLeg(routingLegs.length - 1, { estimatedArrival: value }) : onQuotePatch({ estimatedArrival: value, transitDays: quoteTransitDays(quote.estimatedDeparture, value), transitUnit: "Days" })} />
+            <NumberUnitField label="Transit time" value={{ value: quoteTransitDays(quote.estimatedDeparture, quote.estimatedArrival) || quote.transitDays || "", unit: "Days" }} units={[{ value: "Days", label: "Days" }]} width="full" disabled onChange={() => undefined} />
             <RecurrenceBuilder value={recurrence} onChange={updateRecurrence} disabled={!editable} />
           </div>
+          {routingLegs.length > 0 ? (
+            <div className="grid gap-1.5" role="group" aria-label={t("Planned routing legs")}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-medium text-[var(--md-ink)]">{t("Planned routing legs")}</p>
+                  <p className="text-[10px] text-[var(--md-subtle)]">{t("The first origin and final destination remain the shipment summary above.")}</p>
+                </div>
+                <Button type="button" variant="ghost" size="sm" disabled={!editable || routingLegs.length <= 1} onClick={removeLastRoutingLeg} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]">
+                  <Trash2 className="size-3" aria-hidden="true" />{t("Remove last leg")}
+                </Button>
+              </div>
+              {routingLegs.map((leg, index) => (
+                <div key={leg.id} className="grid min-w-0 gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)] xl:grid-cols-[5.5rem_minmax(10rem,1fr)_minmax(10rem,1fr)_9rem_9rem_minmax(11rem,1fr)_8rem] xl:items-end">
+                  <QuoteCompactSelect label={`Leg ${index + 1} mode`} value={leg.mode} options={modes} width="full" disabled={!editable} dataOptions onChange={(value) => updateRoutingLeg(index, { mode: value })} />
+                  <CompactCombobox label={`Leg ${index + 1} origin`} value={leg.origin.unlocode || leg.origin.place} options={routeLocationOptions} recommendedOptionLimit={3} placeholder="Search place or UN/LOCODE" disabled={!editable} width="full" onValueChange={(value) => updateRoutingLocation(index, "origin", value)} onOptionSelect={(option) => updateRoutingLocation(index, "origin", option.value, option)} />
+                  <CompactCombobox label={`Leg ${index + 1} destination`} value={leg.destination.unlocode || leg.destination.place} options={routeLocationOptions} recommendedOptionLimit={3} placeholder="Search place or UN/LOCODE" disabled={!editable} width="full" onValueChange={(value) => updateRoutingLocation(index, "destination", value)} onOptionSelect={(option) => updateRoutingLocation(index, "destination", option.value, option)} />
+                  <QuoteCompactDatePicker label="Departure" value={leg.estimatedDeparture} width="full" disabled={!editable} onChange={(value) => updateRoutingLeg(index, { estimatedDeparture: value })} />
+                  <QuoteCompactDatePicker label="Arrival" value={leg.estimatedArrival} width="full" minDate={leg.estimatedDeparture || undefined} disabled={!editable} onChange={(value) => updateRoutingLeg(index, { estimatedArrival: value })} />
+                  <CompactCombobox label="Carrier" value={leg.carrierName} options={organisationDirectories.carrier.options} recommendedOptions={relatedOptions("carrier")} recommendedLabel="Suggested carriers" allLabel="All carriers" placeholder="TBC or search carriers" disabled={!editable} width="full" onValueChange={(value) => updateRoutingLeg(index, { carrierName: value, carrierId: organisationsById.get(leg.carrierId)?.name === value ? leg.carrierId : "" })} onOptionSelect={(option) => updateRoutingLeg(index, { carrierId: option.id ?? "", carrierName: option.value })} />
+                  <QuoteCompactSelect label="Service level" value={leg.serviceLevel} options={["Economy", "Standard", "Express"]} width="full" disabled={!editable} onChange={(value) => updateRoutingLeg(index, { serviceLevel: value })} />
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </CompactSectionShell>
 
@@ -4131,8 +4716,8 @@ function QuoteDetailsPanelV2({
         <div className="grid gap-1.5">
           {supplierOptions.map((supplier, supplierIndex) => {
             const selectedSupplier = organisations.find((item) => item.id === supplier.supplierId)
-            const supplierDirectory = organisationOptions.filter((option) => organisationHasRole(option.id, "supplier"))
-            const carrierDirectory = organisationOptions.filter((option) => organisationHasRole(option.id, "carrier"))
+            const supplierDirectory = organisationDirectories.supplier.options
+            const carrierDirectory = organisationDirectories.carrier.options
             const carrierColumns: DataTableColumn<QuoteCarrierOptionDraft>[] = [
               {
                 id: "carrier",
@@ -4146,7 +4731,7 @@ function QuoteDetailsPanelV2({
                 cell: (carrier) => {
                   const selectedCarrier = organisations.find((item) => item.id === carrier.carrierId)
                   const carrierSequence = supplier.carriers.indexOf(carrier) + 1
-                  return <div className="flex min-w-0 items-center gap-1.5"><span data-i18n-skip dir="ltr" aria-label={`${t("Carrier ID")} ${carrierSequence}`} className="inline-grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[11px] font-medium text-[var(--md-ink)]">{carrierSequence}</span><CompactCombobox label="Carrier" value={carrier.carrierName} options={carrierDirectory} recommendedOptions={relatedOptions("carrier")} recommendedOptionLimit={organisationRecentOptionLimit} recommendedLabel="Suggested carriers" allLabel="All organisations" onValueChange={(value) => patchCarrier(supplier.id, carrier.id, { carrierName: value, carrierId: selectedCarrier?.name === value ? carrier.carrierId : "" })} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) patchCarrier(supplier.id, carrier.id, { carrierId: item.id, carrierName: item.name, carrierOffice: item.addresses?.[0]?.label ?? "" }) }} placeholder="TBC or search carriers" disabled={!editable} width="full" className="min-w-0 flex-1 [&>div:first-child]:sr-only" /></div>
+                  return <div className="flex min-w-0 items-center gap-1.5"><span data-i18n-skip dir="ltr" aria-label={`${t("Carrier ID")} ${carrierSequence}`} className="inline-grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[11px] font-medium text-[var(--md-ink)]">{carrierSequence}</span><CompactCombobox label="Carrier" value={carrier.carrierName} options={carrierDirectory} recommendedOptions={relatedOptions("carrier")} recommendedOptionLimit={organisationRecentOptionLimit} recommendedLabel="Suggested carriers" allLabel="All organisations" onValueChange={(value) => patchCarrier(supplier.id, carrier.id, { carrierName: value, carrierId: selectedCarrier?.name === value ? carrier.carrierId : "" })} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) patchCarrier(supplier.id, carrier.id, { carrierId: item.id, carrierName: item.name, carrierOffice: item.addresses?.[0]?.label ?? "" }) }} placeholder="TBC or search carriers" disabled={!editable} width="full" className="min-w-0 flex-1 [&>div:first-child]:sr-only" /></div>
                 },
               },
               {
@@ -4218,7 +4803,7 @@ function QuoteDetailsPanelV2({
             return (
               <section key={supplier.id} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
                 <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_1.75rem] items-start gap-x-2 gap-y-1.5 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_1.75rem] xl:grid-cols-[minmax(16rem,2fr)_minmax(12rem,1fr)_minmax(14rem,1.2fr)_1.75rem]">
-                  <CompactCombobox label={`${t("Supplier")} ${supplierIndex + 1}`} value={supplier.supplierName} options={supplierDirectory} recommendedOptions={relatedOptions("supplier")} recommendedOptionLimit={organisationRecentOptionLimit} recommendedLabel="Suggested suppliers" allLabel="All organisations" onValueChange={(value) => patchSupplier(supplier.id, { supplierName: value, supplierId: selectedSupplier?.name === value ? supplier.supplierId : "" })} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) patchSupplier(supplier.id, { supplierId: item.id, supplierName: item.name, supplierOffice: item.addresses?.[0]?.label ?? "", contact: item.contacts?.[0]?.email ?? item.contacts?.[0]?.name ?? "" }) }} placeholder="Search suppliers or type manually" disabled={!editable} width="full" className="col-start-1" />
+                  <CompactCombobox label={`${t("Supplier")} ${supplierIndex + 1}`} value={supplier.supplierName} options={supplierDirectory} recommendedOptions={relatedOptions("supplier")} recommendedOptionLimit={organisationRecentOptionLimit} recommendedLabel="Suggested suppliers" allLabel="All organisations" onValueChange={(value) => patchSupplier(supplier.id, { supplierName: value, supplierId: selectedSupplier?.name === value ? supplier.supplierId : "" })} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) patchSupplier(supplier.id, { supplierId: item.id, supplierName: item.name, supplierOffice: item.addresses?.[0]?.label ?? "", contact: item.contacts?.[0]?.email ?? item.contacts?.[0]?.name ?? "" }) }} placeholder="Search suppliers or type manually" disabled={!editable} width="full" className="col-start-1" />
                   <CompactCombobox label="Supplier office" value={supplier.supplierOffice} options={(selectedSupplier?.addresses ?? []).map((address) => ({ id: address.id, value: address.label, label: address.label, description: address.address }))} onValueChange={(value) => patchSupplier(supplier.id, { supplierOffice: value })} placeholder="Select or type office" disabled={!editable} width="full" className="col-span-2 md:col-span-1" autoPopulated={matchesAutoPopulation(supplier.supplierOffice, selectedSupplier?.addresses?.[0]?.label)} autoPopulationDescription={selectedSupplier ? `Filled from ${selectedSupplier.name}. Edit this field to override it for this quote.` : undefined} />
                   <CompactCombobox label="Contact" value={supplier.contact} options={(selectedSupplier?.contacts ?? []).map((contact) => ({ id: contact.id, value: contact.email || contact.name, label: contact.name, description: contact.email ?? "" }))} onValueChange={(value) => patchSupplier(supplier.id, { contact: value })} placeholder="Contact or email" disabled={!editable} width="full" className="col-span-2 md:col-span-2 xl:col-span-1" autoPopulated={matchesAutoPopulation(supplier.contact, selectedSupplier?.contacts?.[0]?.email || selectedSupplier?.contacts?.[0]?.name)} autoPopulationDescription={selectedSupplier ? `Filled from ${selectedSupplier.name}. Edit this field to override it for this quote.` : undefined} />
                   <Button type="button" variant="ghost" size="icon-sm" disabled={!editable || supplierOptions.length === 1} title={supplierOptions.length === 1 ? t("At least one supplier is required") : undefined} onClick={() => persistSupplierOptions(supplierOptions.filter((item) => item.id !== supplier.id))} aria-label={t("Remove supplier")} className="col-start-2 row-start-1 mt-5 size-7 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-red)] md:col-start-3 xl:col-start-4"><Trash2 className="size-3.5" /></Button>
@@ -4261,30 +4846,64 @@ function QuoteDetailsPanelV2({
             <AmountCurrencyField label="Insurance value" value={{ amount: quote.insuranceValue ?? "", currency: quote.insuranceValueCurrency || quote.currency || "GBP" }} currencies={currencies} disabled={!editable} onChange={(value) => { onQuoteChange("insuranceValue", value.amount); onQuoteChange("insuranceValueCurrency", value.currency) }} width="medium" />
             <QuoteCompactInput label="Entries" value={quote.entries ?? ""} type="number" dir="ltr" width="code" disabled={!editable} onChange={(value) => onQuoteChange("entries", value)} />
             <QuoteCompactInput label="Lines" value={quote.invoiceLines ?? ""} type="number" dir="ltr" width="code" disabled={!editable} onChange={(value) => onQuoteChange("invoiceLines", value)} />
+            {!quote.cargoLines ? <>
             <CompactCombobox label="Commodity" value={quote.commodity ?? ""} options={(lookups?.commodities ?? []).map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.code }))} onValueChange={(value) => onQuoteChange("commodity", value)} placeholder="Search or type commodity" disabled={!editable} width="grow" />
             <QuoteCompactInput label="Packages / pieces" value={quote.packageQuantity ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("packageQuantity", value)} />
-            <QuoteCompactInput label="Package type" value={quote.packageType ?? ""} width="short" disabled={!editable} onChange={(value) => onQuoteChange("packageType", value)} />
+            <CompactCombobox
+              label="Package type"
+              value={quote.packageType ?? ""}
+              options={freightPackageTypeOptions}
+              recommendedOptions={commonFreightPackageTypeOptions}
+              recommendedLabel="Common package types"
+              allLabel="All package types"
+              emptyLabel="No matching package types"
+              placeholder="Select or type package type"
+              onValueChange={(value) => onQuoteChange("packageType", value)}
+              disabled={!editable}
+              width="short"
+            />
             <QuoteCompactInput label="Gross weight (kg)" value={quote.grossWeightKg ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("grossWeightKg", value)} />
             <QuoteCompactInput label="Volume (CBM)" value={quote.volumeCbm ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("volumeCbm", value)} />
-            <QuoteCompactInput label="Chargeable weight (kg)" value={quote.chargeableWeightKg ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("chargeableWeightKg", value)} />
+            {fieldPolicy.chargeableWeight ? <QuoteCompactInput label="Chargeable weight (kg)" value={quote.chargeableWeightKg ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("chargeableWeightKg", value)} /> : null}
+            </> : null}
             {originIsUs ? <QuoteCompactSelect label="FMC TID" value={quote.fmcTid ?? ""} options={["Not required", "Required", "Pending"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("fmcTid", value)} /> : null}
           </CompactFieldRow>
+          <QuoteCargoEditor lines={quote.cargoLines} editable={editable} chargeableWeight={fieldPolicy.chargeableWeight}
+            legacy={{ description: quote.commodity || "", commodity: quote.commodity || "", packageQuantity: quote.packageQuantity || "", packageType: quote.packageType || "", grossWeightKg: quote.grossWeightKg || "", volumeCbm: quote.volumeCbm || "", chargeableWeightKg: quote.chargeableWeightKg || "", isHazardous: characteristics.hazardous, isTemperatureControlled: characteristics.temperatureControlled }}
+            onChange={(cargoLines) => onQuotePatch({ cargoLines })} />
           <div>
-            <p className="mb-1.5 text-[10.5px] font-medium text-[var(--md-text)]">{t("Cargo characteristics")}</p>
-            <CargoCharacteristicsField value={characteristics} onChange={(value) => { onQuoteChange("cargoCharacteristics", cargoCharacteristicsToString(value)); onQuoteChange("knownCargo", value.hazardous ? "Hazardous" : "General merchandise") }} hazardousDetails={hazardousDetails} onHazardousDetailsChange={updateHazardousDetails} disabled={!editable} />
+            <p className="mb-1.5 text-[10.5px] font-medium text-[var(--md-text)]">{t(quote.cargoLines ? "Shipment handling (in addition to line flags)" : "Cargo characteristics")}</p>
+            <CargoCharacteristicsField value={characteristics} inherited={quoteCargoSafety(quote.cargoLines)} onChange={(value) => { onQuoteChange("cargoCharacteristics", cargoCharacteristicsToString(value)); onQuoteChange("knownCargo", value.hazardous ? "Hazardous" : "General merchandise") }} hazardousDetails={hazardousDetails} onHazardousDetailsChange={updateHazardousDetails} disabled={!editable} />
           </div>
         </div>
       </CompactSectionShell>
 
-      <div className="grid gap-2 xl:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1.28fr)] xl:items-start">
-        <CompactSectionShell title="Customs agents" meta="Choose origin and destination clearance separately">
-          <div className="grid gap-1.5">
-            <CompactCombobox label="Origin customs agent" value={quote.originCustomsAgentName ?? ""} options={organisationOptions.filter((option) => organisationHasRole(option.id, "agent"))} recommendedOptions={relatedOptions("agent")} recommendedOptionLimit={organisationRecentOptionLimit} onValueChange={(value) => { onQuoteChange("originCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.originCustomsAgentId); if (selected?.name !== value) onQuoteChange("originCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) { onQuoteChange("originCustomsAgentId", item.id); onQuoteChange("originCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
-            <CompactCombobox label="Destination customs agent" value={quote.destinationCustomsAgentName ?? ""} options={organisationOptions.filter((option) => organisationHasRole(option.id, "agent"))} recommendedOptions={relatedOptions("agent")} recommendedOptionLimit={organisationRecentOptionLimit} onValueChange={(value) => { onQuoteChange("destinationCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.destinationCustomsAgentId); if (selected?.name !== value) onQuoteChange("destinationCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisations.find((organisation) => organisation.id === option.id); if (item) { onQuoteChange("destinationCustomsAgentId", item.id); onQuoteChange("destinationCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
+      <CompactSectionShell title="Customs agents" meta="Choose origin and destination clearance separately">
+          <div className="grid gap-1.5 md:grid-cols-2">
+            <CompactCombobox label="Origin customs agent" value={quote.originCustomsAgentName ?? ""} options={organisationDirectories.agent.options} recommendedOptions={relatedOptions("agent")} recommendedOptionLimit={organisationRecentOptionLimit} onValueChange={(value) => { onQuoteChange("originCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.originCustomsAgentId); if (selected?.name !== value) onQuoteChange("originCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) { onQuoteChange("originCustomsAgentId", item.id); onQuoteChange("originCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
+            <CompactCombobox label="Destination customs agent" value={quote.destinationCustomsAgentName ?? ""} options={organisationDirectories.agent.options} recommendedOptions={relatedOptions("agent")} recommendedOptionLimit={organisationRecentOptionLimit} onValueChange={(value) => { onQuoteChange("destinationCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.destinationCustomsAgentId); if (selected?.name !== value) onQuoteChange("destinationCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) { onQuoteChange("destinationCustomsAgentId", item.id); onQuoteChange("destinationCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
+          </div>
+      </CompactSectionShell>
+
+      <div className="grid gap-2 xl:grid-cols-[minmax(20rem,0.82fr)_minmax(0,1.18fr)] xl:items-start">
+        <CompactSectionShell
+          title="Bill to / payer"
+          meta="This account supplies the quote terms"
+          action={(
+            <Button type="button" variant="ghost" size="sm" disabled={!editable || !quote.customer} onClick={() => useCustomerForParty("payer")} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]">
+              <Copy className="size-3" aria-hidden="true" />{t("Use customer")}
+            </Button>
+          )}
+        >
+          <div className="grid min-w-0 grid-cols-12 gap-x-2 gap-y-1.5">
+            <CompactCombobox label="Payer" value={quote.payerName ?? quote.customer} options={organisationDirectories.payer.options} allowCustom={false} onValueChange={(value) => { if (payerOrganisation?.name !== value) onQuoteChange("payerOrgId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("payer", option.id)} placeholder="Search customer accounts" allLabel="All customer accounts" emptyLabel="No matching payer account" disabled={!editable} width="full" className="col-span-12" />
+            <CompactCombobox label="Account code" value={quote.payerCode ?? quote.clientCode ?? ""} options={organisationDirectories.payer.codes} allowCustom={false} autoPopulated={matchesAutoPopulation(quote.payerCode, payerOrganisation?.code)} autoPopulationDescription={payerAutoPopulationDescription} onValueChange={(value) => { selectOrganisationByCode("payer", value) }} onOptionSelect={(option) => option.id && selectOrganisation("payer", option.id)} placeholder="Search account codes" allLabel="All payer account codes" emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-5 [&_input]:tracking-tight" />
+            <CompactCombobox label="Billing contact" value={quote.payerContact ?? quote.customerContact ?? ""} width="full" className="col-span-7" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.payerContact, payerSourceContact?.name)} autoPopulationDescription={payerAutoPopulationDescription} options={payerOperationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact("payer", option.id)} onValueChange={(value) => onQuoteChange("payerContact", value)} />
+            <CompactCombobox label="Billing address" value={quote.payerAddress ?? quote.customerAddress ?? ""} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.payerAddress, payerOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={payerAutoPopulationDescription} options={payerAddresses.map((item) => ({ id: item.id, value: item.address, label: item.label || item.address, description: item.address }))} onOptionSelect={(option) => option.id && selectAddress("payer", option.id)} onValueChange={(value) => onQuoteChange("payerAddress", value)} />
+            <QuoteCompactInput label="Billing email" value={quote.payerEmail ?? quote.customerEmail ?? ""} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.payerEmail, payerSourceContact?.email)} autoPopulationDescription={payerAutoPopulationDescription} onChange={(value) => onQuoteChange("payerEmail", value)} />
           </div>
         </CompactSectionShell>
-
-        <CompactSectionShell title="Customer terms" meta={quote.customerTermsSource ? `${t("Inherited from")} ${quote.customerTermsSource}` : "Stored on the customer record"} contentClassName="bg-[var(--md-surface-soft)]" action={<span className="flex items-center gap-1 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 py-1 text-[10.5px] font-medium text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]"><HugeiconsIcon icon={LockPasswordSolidRoundedIcon} className="size-3" aria-hidden="true" />{t("Locked to customer record")}</span>}>
+        <CompactSectionShell title="Customer terms" meta={quote.customerTermsSource ? `${t("Inherited from")} ${quote.customerTermsSource}` : "Stored on the payer account"} contentClassName="bg-[var(--md-surface-soft)]" action={<span className="flex items-center gap-1 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 py-1 text-[10.5px] font-medium text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]"><HugeiconsIcon icon={LockPasswordSolidRoundedIcon} className="size-3" aria-hidden="true" />{t("Locked to payer account")}</span>}>
           <div className="grid gap-2 md:grid-cols-2">
             <LockedQuoteTextarea label="Terms and conditions" value={quote.terms ?? ""} />
             <LockedQuoteTextarea label="Subject to rate / space" value={quote.subjectToTerms ?? ""} />
@@ -4294,6 +4913,13 @@ function QuoteDetailsPanelV2({
         </CompactSectionShell>
       </div>
 
+      <Dialog open={pendingOverallMode !== null} onOpenChange={(open) => { if (!open) setPendingOverallMode(null) }}>
+        <DialogContent onOpenAutoFocus={(event) => { event.preventDefault(); overallModeCancelRef.current?.focus() }} onCloseAutoFocus={(event) => { event.preventDefault(); (overallModeTriggerRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)") ?? overallModeTriggerRef.current)?.focus() }}>
+          <DialogHeader><DialogTitle>{t("Change overall Quote mode?")}</DialogTitle><DialogDescription>{t("Existing routing legs keep their own modes, carriers and dates. An incompatible shipment type will be cleared for you to choose again. Cargo and equipment are retained; review them for the new mode. Submitted versions, Bookings and documents will not change.")}</DialogDescription></DialogHeader>
+          <p className="text-[13px] font-medium" data-i18n-skip>{pendingOverallMode?.from} → {pendingOverallMode?.to || t("Not selected")}</p>
+          <DialogFooter><Button ref={overallModeCancelRef} variant="ghost" onClick={() => setPendingOverallMode(null)}>{t("Keep current mode")}</Button><Button disabled={!editable} onClick={confirmOverallMode}>{t("Change mode and review")}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={rateRequestOpen} onOpenChange={setRateRequestOpen}>
         <DialogContent dir={direction} className="rounded-[var(--md-radius-xl)] sm:max-w-[580px]">
           <DialogHeader className="text-start"><DialogTitle>{t("Prepare rate requests")}</DialogTitle><DialogDescription>{t("Review the supplier contacts and carrier options. This prepares drafts only; nothing is sent without approval.")}</DialogDescription></DialogHeader>
@@ -4540,8 +5166,10 @@ function quoteRecordFromRegister(quote: QuoteRegisterRecord): QuoteRecord {
     origin: quote.origin,
     destination: quote.destination,
     via: quote.routingVia,
-    startDate: quote.estimatedDeparture,
-    endDate: quote.estimatedArrival,
+    startDate: "",
+    endDate: "",
+    estimatedDeparture: quote.estimatedDeparture,
+    estimatedArrival: quote.estimatedArrival,
     validity: quote.validity,
     direction: quote.direction,
     serviceLevel: quote.serviceLevel,
@@ -4571,6 +5199,7 @@ function getInitialQuoteRecord(quoteId?: string) {
 function quoteLifecyclePresentation(lifecycle: string): { status: string; tone: StatusTone } {
   if (lifecycle === "declined" || lifecycle === "ghosted") return { status: "Lost", tone: "red" }
   if (lifecycle === "accepted") return { status: "Accepted", tone: "green" }
+  if (lifecycle === "changes_requested") return { status: "Changes requested", tone: "amber" }
   return { status: "Open", tone: "green" }
 }
 
@@ -4632,10 +5261,22 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
   const record = workspace.quote
   const facts = record.shipmentFacts ?? {}
   const fact = (key: string) => typeof facts[key] === "string" ? String(facts[key]) : ""
+  const estimatedDeparture = fact("estimatedDeparture")
+  const estimatedArrival = fact("estimatedArrival")
   const customer = lookups?.organisations.find((option) => option.id === record.customerId)
-  const customerTerms = customer?.quoteTerms
-  const hasCustomerTerms = Boolean(customerTerms && [customerTerms.terms, customerTerms.subjectTo, customerTerms.notes, customerTerms.deadline].some((value) => value?.trim()))
+  const payer = record.payer ?? {
+    orgId: record.customerId,
+    name: record.customerName,
+    address: fact("customerAddress"),
+    contact: record.contactName,
+    email: record.contactEmail,
+    code: fact("clientCode"),
+  }
+  const payerOrganisation = lookups?.organisations.find((option) => option.id === payer.orgId) ?? customer
+  const payerTerms = payerOrganisation?.quoteTerms
+  const hasPayerTerms = Boolean(payerTerms && [payerTerms.terms, payerTerms.subjectTo, payerTerms.notes, payerTerms.deadline].some((value) => value?.trim()))
   const contact = customer?.contacts.find((option) => option.id === record.contactId)
+  const payerContact = payerOrganisation?.contacts.find((option) => option.name === payer.contact)
   const shipperOrganisation = lookups?.organisations.find((option) => option.id === record.shipper?.orgId)
   const office = lookups?.offices.find((option) => option.id === record.officeId)
   const department = lookups?.departments.find((option) => option.id === record.departmentId)
@@ -4662,6 +5303,9 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     docsStatus: fact("docsStatus"),
     workflow: fact("workflow") || presentation.status,
     revisionReason: fact("revisionReason"),
+    copiedFromQuoteId: fact("copiedFromQuoteId"),
+    copiedFromQuoteReference: fact("copiedFromQuoteReference"),
+    copyReason: fact("copyReason") === "repeat_quote" ? "repeat_quote" : fact("copyReason") === "customer_changed" ? "customer_changed" : undefined,
     customer: record.customerName,
     customerId: record.customerId,
     clientCode: customer?.code ?? fact("clientCode"),
@@ -4669,6 +5313,12 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     contactId: record.contactId ?? "",
     customerContact: record.contactName ?? contact?.name ?? "",
     customerEmail: record.contactEmail ?? contact?.email ?? "",
+    payerOrgId: payer.orgId ? String(payer.orgId) : record.customerId,
+    payerCode: payer.code || payerOrganisation?.code || fact("payerCode") || fact("clientCode"),
+    payerName: payer.name || record.customerName,
+    payerAddress: payer.address ?? payerOrganisation?.addresses[0]?.address ?? fact("customerAddress"),
+    payerContact: payer.contact ?? payerContact?.name ?? record.contactName ?? "",
+    payerEmail: payer.email || payerContact?.email || fact("payerEmail") || record.contactEmail || "",
     shipperOrgId: record.shipper?.orgId ? String(record.shipper.orgId) : "",
     shipperCode: fact("shipperCode"),
     shipperName: record.shipper?.name ?? "",
@@ -4694,6 +5344,7 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     route: [record.loadingPoint, record.dischargePoint].filter(Boolean).join(" to "),
     mode: mode?.name ?? record.mode ?? "",
     container: fact("container"),
+    containerRequestsJson: Array.isArray(facts.containerRequests) ? JSON.stringify(facts.containerRequests) : "",
     incoterm: record.incoterm ?? "",
     incotermPlace: fact("namedPlace"),
     origin: record.loadingPoint ?? "",
@@ -4705,16 +5356,19 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     destinationTown: fact("destinationTown"),
     destinationUnlocode: fact("destinationUnlocode"),
     via: fact("routingVia"),
+    routingLegsJson: Array.isArray(facts.routingLegs) ? JSON.stringify(facts.routingLegs) : "",
     startDate: record.validFrom ?? "",
     endDate: record.validTo ?? "",
-    deadline: record.deadline?.trim() || customerTerms?.deadline?.trim() || "",
+    estimatedDeparture,
+    estimatedArrival,
+    deadline: record.deadline?.trim() || payerTerms?.deadline?.trim() || "",
     validity: record.validTo ?? "",
     direction: record.direction ? record.direction.charAt(0).toUpperCase() + record.direction.slice(1) : "",
     serviceLevel: record.serviceLevel ?? "",
     rateSource: record.rateSourceLabel ?? record.rateSourceType ?? "",
     hblMode: fact("hblMode"),
-    transitDays: fact("transitDays"),
-    transitUnit: fact("transitUnit") || "Days",
+    transitDays: quoteTransitDays(estimatedDeparture, estimatedArrival) || fact("transitDays"),
+    transitUnit: estimatedDeparture && estimatedArrival ? "Days" : fact("transitUnit") || "Days",
     frequency: fact("frequency"),
     frequencyInterval: fact("frequencyInterval") || "1",
     frequencyUnit: fact("frequencyUnit") || "Weeks",
@@ -4738,6 +5392,7 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     opsRep: fact("opsRep"),
     jobStatus: presentation.status,
     goodsValue: fact("goodsValue"),
+    cargoLines: readQuoteCargoLines(facts.cargoLines),
     goodsValueCurrency: fact("goodsValueCurrency") || record.currency || "GBP",
     insuranceValue: fact("insuranceValue"),
     insuranceValueCurrency: fact("insuranceValueCurrency") || record.currency || "GBP",
@@ -4761,15 +5416,17 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     grossWeightKg: fact("grossWeightKg"),
     volumeCbm: fact("volumeCbm"),
     chargeableWeightKg: fact("chargeableWeightKg"),
-    customsIncluded: fact("customsIncluded") || "No",
+    collectionRequired: fact("collectionRequired"),
+    deliveryRequired: fact("deliveryRequired"),
+    customsIncluded: fact("customsIncluded"),
     originCustomsAgentId: fact("originCustomsAgentId"),
     originCustomsAgentName: fact("originCustomsAgentName"),
     destinationCustomsAgentId: fact("destinationCustomsAgentId"),
     destinationCustomsAgentName: fact("destinationCustomsAgentName"),
-    subjectToTerms: fact("subjectToTerms") || customerTerms?.subjectTo?.trim() || "",
-    customerTermsSource: hasCustomerTerms ? record.customerName : fact("customerTermsSource"),
-    terms: customerTerms?.terms?.trim() || record.terms?.trim() || "",
-    customerNotes: record.customerNotes?.trim() || customerTerms?.notes?.trim() || "",
+    subjectToTerms: fact("subjectToTerms") || payerTerms?.subjectTo?.trim() || "",
+    customerTermsSource: hasPayerTerms ? payerOrganisation?.name ?? payer.name : fact("customerTermsSource"),
+    terms: record.terms?.trim() || payerTerms?.terms?.trim() || "",
+    customerNotes: record.customerNotes?.trim() || payerTerms?.notes?.trim() || "",
     internalNotes: record.internalNotes ?? "",
     fmcTid: fact("fmcTid"),
     margin: workspace.totals.marginPct === null ? "" : `${workspace.totals.marginPct.toFixed(2)}%`,
@@ -4806,11 +5463,130 @@ function quoteChargesFromWorkspace(workspace: QuoteWorkflowWorkspace): QuoteChar
   }))
 }
 
+function blankQuoteRevision(source: QuoteRecord): QuoteRecord {
+  return {
+    ...newQuoteDraft,
+    cargoLines: [newQuoteCargoLine()],
+    id: source.id,
+    localRef: source.localRef,
+    customer: source.customer,
+    customerId: source.customerId,
+    clientCode: source.clientCode,
+    customerAddress: source.customerAddress,
+    customerContact: source.customerContact,
+    customerEmail: source.customerEmail,
+    payerOrgId: source.payerOrgId,
+    payerCode: source.payerCode,
+    payerName: source.payerName,
+    payerAddress: source.payerAddress,
+    payerContact: source.payerContact,
+    payerEmail: source.payerEmail,
+    branch: source.branch,
+    officeId: source.officeId,
+    department: source.department,
+    departmentId: source.departmentId,
+    salesRep: source.salesRep,
+    salesOwnerId: source.salesOwnerId,
+    currency: source.currency,
+    terms: source.terms,
+    subjectToTerms: source.subjectToTerms,
+    customerTermsSource: source.customerTermsSource,
+    status: "Open",
+    statusTone: "green",
+  }
+}
+
+function newCustomerMasterQuote(
+  source: QuoteRecord,
+  customerPatch: Partial<QuoteRecord>,
+  sourceQuoteId: string,
+  sourceReference: string,
+): QuoteRecord {
+  return {
+    ...source,
+    ...customerPatch,
+    id: "NEW",
+    status: "Open",
+    statusTone: "green",
+    source: "NEW - New Shipper",
+    workflowStatus: "WRK - Working",
+    workflow: "Review",
+    docsStatus: "Draft",
+    localRef: "",
+    customerPO: "",
+    rateSource: "",
+    margin: "0.00%",
+    profit: 0,
+    cost: 0,
+    revenue: 0,
+    customerNotes: customerPatch.customerNotes ?? "",
+    internalNotes: "",
+    revisionReason: `Built from ${sourceReference} for a different customer.`,
+    copiedFromQuoteId: sourceQuoteId,
+    copiedFromQuoteReference: sourceReference,
+    copyReason: "customer_changed",
+    createdAt: undefined,
+  }
+}
+
+function newRepeatMasterQuote(
+  source: QuoteRecord,
+  sourceQuoteId: string,
+  sourceReference: string,
+): QuoteRecord {
+  const routingLegs = quoteRoutingLegs(source.routingLegsJson).map((leg) => ({
+    ...leg,
+    estimatedDeparture: "",
+    estimatedArrival: "",
+  }))
+  const supplierOptions = supplierOptionsFromQuote(source).map((supplier) => ({
+    ...supplier,
+    carriers: supplier.carriers.map((carrier) => ({
+      ...carrier,
+      reference: "",
+      rateSource: "Manual",
+      status: "draft" as const,
+    })),
+  }))
+
+  return {
+    ...source,
+    id: "NEW",
+    status: "Open",
+    statusTone: "green",
+    source: "REP - Repeat lane",
+    workflowStatus: "WRK - Working",
+    workflow: "Review",
+    docsStatus: "Draft",
+    localRef: "",
+    customerPO: "",
+    carrierReference: "",
+    startDate: "",
+    endDate: "",
+    estimatedDeparture: "",
+    estimatedArrival: "",
+    deadline: "",
+    routingLegsJson: quoteRoutingLegsValue(routingLegs),
+    supplierOptionsJson: JSON.stringify(supplierOptions),
+    rateSource: "",
+    margin: "0.00%",
+    profit: 0,
+    cost: 0,
+    revenue: 0,
+    internalNotes: "",
+    revisionReason: `Repeat quote built from ${sourceReference}.`,
+    copiedFromQuoteId: sourceQuoteId,
+    copiedFromQuoteReference: sourceReference,
+    copyReason: "repeat_quote",
+    createdAt: undefined,
+  }
+}
+
 function compactQuoteFacts(values: Record<string, unknown>) {
-  return Object.fromEntries(Object.entries(values).filter(([, value]) => {
+  return Object.fromEntries(Object.entries(values).filter(([key, value]) => {
     if (value === null || value === undefined) return false
     if (typeof value === "string") return Boolean(value.trim())
-    if (Array.isArray(value)) return value.length > 0
+    if (Array.isArray(value)) return key === "cargoLines" || value.length > 0
     return true
   }))
 }
@@ -4822,6 +5598,19 @@ function quoteDirectionForSave(quote: QuoteRecord) {
     .find((value) => supported.has(value)) ?? quote.direction ?? ""
 }
 
+function calculatedDirectionForQuote(quote: QuoteRecord, lookups: QuoteWorkflowSources | null | undefined) {
+  const office = lookups?.offices.find((option) => option.id === quote.officeId)
+    ?? lookups?.offices.find((option) => (option.code || option.name) === quote.branch)
+  return calculateQuoteFreightDirection({
+    operatingCountryCode: office?.countryCode,
+    originCountry: quote.originCountry,
+    originUnlocode: quote.originUnlocode || quote.origin,
+    destinationCountry: quote.destinationCountry,
+    destinationUnlocode: quote.destinationUnlocode || quote.destination,
+    countries: lookups?.countries,
+  })
+}
+
 const quoteUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function uuidOrNull(value?: string | null) {
@@ -4829,6 +5618,7 @@ function uuidOrNull(value?: string | null) {
 }
 
 function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: QuoteWorkflowSources | null): QuoteSavePayload {
+  if (quote.cargoLines) quote = { ...quote, ...quoteCargoSummary(quote.cargoLines), knownCargo: quoteCargoHandlingSummary(quote.cargoLines, quote.cargoCharacteristics || quote.knownCargo) }
   const mode = lookups?.modes.find((option) => option.name === quote.mode)?.code ?? quote.mode
   const shipmentTypeLabel = quote.shipmentType?.split(" - ", 1)[0] ?? ""
   const shipmentType = lookups?.shipmentTypes.find((option) => option.code === shipmentTypeLabel || option.name === quote.shipmentType)?.code ?? shipmentTypeLabel
@@ -4866,7 +5656,7 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
     officeId: quote.officeId ?? "",
     departmentId: quote.departmentId ?? "",
     salesOwnerId: quote.salesOwnerId ?? "",
-    direction: quoteDirectionForSave(quote),
+    direction: calculatedDirectionForQuote(quote, lookups) ?? quoteDirectionForSave(quote),
     mode,
     shipmentType,
     serviceLevel: quote.serviceLevel ?? "",
@@ -4897,8 +5687,13 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
       docsStatus: quote.docsStatus,
       workflow: quote.workflow,
       revisionReason: quote.revisionReason,
+      copiedFromQuoteId: quote.copiedFromQuoteId,
+      copiedFromQuoteReference: quote.copiedFromQuoteReference,
+      copyReason: quote.copyReason,
       clientCode: quote.clientCode,
       customerAddress: quote.customerAddress,
+      payerCode: quote.payerCode,
+      payerEmail: quote.payerEmail,
       shipperCode: quote.shipperCode,
       shipperEmail: quote.shipperEmail,
       shipperAddressOverride: quote.shipperAddressOverride === "Yes" ? "Yes" : "",
@@ -4920,6 +5715,9 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
       destinationTown: quote.destinationTown,
       destinationUnlocode: quote.destinationUnlocode,
       routingVia: quote.via,
+      routingLegs: quoteRoutingLegs(quote.routingLegsJson),
+      estimatedDeparture: quote.estimatedDeparture,
+      estimatedArrival: quote.estimatedArrival,
       hblMode: quote.hblMode,
       transitDays: quote.transitDays,
       transitUnit: quote.transitUnit,
@@ -4930,6 +5728,9 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
       frequencyCount: quote.frequencyCount,
       frequencyNotes: quote.frequencyNotes,
       container: quote.container,
+      containerRequests: quoteContainerRequests(quote.containerRequestsJson, quote.container)
+        .filter((request) => request.quantity || request.type.trim())
+        .map((request) => ({ id: request.id, quantity: Number(request.quantity) || null, type: request.type.trim() })),
       carrierOffice: quote.carrierOffice,
       supplierOffice: quote.supplierOffice,
       supplierOptionsJson: quote.supplierOptionsJson,
@@ -4938,6 +5739,7 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
       salesRep: quote.salesRep,
       opsRep: quote.opsRep,
       goodsValue: quote.goodsValue,
+      cargoLines: quote.cargoLines,
       goodsValueCurrency: quote.goodsValueCurrency,
       insuranceValue: quote.insuranceValue,
       insuranceValueCurrency: quote.insuranceValueCurrency,
@@ -4961,6 +5763,8 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
       grossWeightKg: quote.grossWeightKg,
       volumeCbm: quote.volumeCbm,
       chargeableWeightKg: quote.chargeableWeightKg,
+      collectionRequired: quote.collectionRequired,
+      deliveryRequired: quote.deliveryRequired,
       customsIncluded: quote.customsIncluded,
       originCustomsAgentId: quote.originCustomsAgentId,
       originCustomsAgentName: quote.originCustomsAgentName,
@@ -4979,6 +5783,14 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
     defaultMarkupPct: 15,
     markupOverrideReason: "",
     followUpAt: "",
+    payer: {
+      orgId: quote.payerOrgId || quote.customerId || "",
+      name: quote.payerName || quote.customer,
+      address: quote.payerAddress || quote.customerAddress || "",
+      contact: quote.payerContact || quote.customerContact || "",
+      email: quote.payerEmail || quote.customerEmail || "",
+      code: quote.payerCode || quote.clientCode || "",
+    },
     shipper: {
       orgId: quote.shipperOrgId ?? "",
       name: quote.shipperName ?? "",
@@ -5000,6 +5812,7 @@ function quoteAuditRecords(workspace: QuoteWorkflowWorkspace | null): QuoteAudit
   return workspace.events.map((event) => {
     const actor = event.cmp_Users
     const actorName = [actor?.User_Firstname, actor?.User_Lastname].filter(Boolean).join(" ") || "Multideck"
+    const declineReason = quoteCustomerDeclineReasons.find((reason) => reason.code === event.CusQuoteEvent_MetadataJSON?.declineReasonCode)?.label
     const eventType = event.CusQuoteEvent_TypeCode === "calculated"
       ? "pricing"
       : event.CusQuoteEvent_TypeCode === "sent"
@@ -5012,7 +5825,7 @@ function quoteAuditRecords(workspace: QuoteWorkflowWorkspace | null): QuoteAudit
       timestamp: event.CusQuoteEvent_OccurredAt,
       actor: actorName,
       action: event.CusQuoteEvent_Summary,
-      detail: event.CusQuoteEvent_MetadataJSON?.message || event.CusQuoteEvent_Summary,
+      detail: event.CusQuoteEvent_MetadataJSON?.message || (declineReason ? `Main reason: ${declineReason}` : event.CusQuoteEvent_Summary),
       eventType,
       field: "Quote",
       oldValue: "",
@@ -5031,10 +5844,32 @@ function formatDocumentSize(bytes: number) {
 }
 
 function quoteCustomerResponseDocuments(workspace: QuoteWorkflowWorkspace | null) {
+  if (!workspace) return []
+  const submittedDocuments = (workspace.documents ?? []).map((document) => {
+    const versionLabel = document.versionNumber > 1 ? `V${document.versionNumber}` : "Original quote"
+    return {
+      id: document.id,
+      fileName: document.fileName,
+      description: `${versionLabel} sent to ${document.recipientEmail}.`,
+      documentType: "Customer quotation",
+      uploadedAt: document.createdAt,
+      lastModifiedAt: document.createdAt,
+      source: "quote" as const,
+      relationship: { label: `Quote ${workspace.quote.reference}`, reference: workspace.quote.reference },
+      preview: {
+        kind: "pdf" as const,
+        mimeType: document.mimeType,
+        fileSize: formatDocumentSize(document.fileSizeBytes),
+        url: document.url || undefined,
+        reference: document.versionNumber > 1 ? `${workspace.quote.reference} · V${document.versionNumber}` : workspace.quote.reference,
+        accent: "teal" as const,
+      },
+    }
+  })
   const response = workspace?.customerResponse
   const attachment = response?.attachment
-  if (!response || !attachment) return []
-  return [{
+  if (!response || !attachment) return submittedDocuments
+  return [...submittedDocuments, {
     id: attachment.id,
     fileName: attachment.fileName,
     description: "Attachment supplied with the customer's quote change request.",
@@ -5060,6 +5895,7 @@ function QuoteCustomerResponseTooltip({ response }: { response: NonNullable<Quot
   const accepted = response.decision === "accepted"
   const declined = response.decision === "declined"
   const title = accepted ? "Customer accepted the quote" : declined ? "Customer declined the quote" : "Customer asked for changes"
+  const declineReason = quoteCustomerDeclineReasons.find((reason) => reason.code === response.declineReasonCode)?.label
   const meta = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(response.respondedAt))
   return (
     <Tooltip open={open}>
@@ -5092,6 +5928,7 @@ function QuoteCustomerResponseTooltip({ response }: { response: NonNullable<Quot
       >
         <p className="text-[12px] font-medium leading-5">{t(title)}</p>
         <time dateTime={response.respondedAt} className="mt-0.5 block text-[10.5px] leading-4 text-[var(--md-subtle)] tabular-nums">{meta}</time>
+        {declineReason ? <p className="mt-2 text-[12px] leading-[1.55] text-[var(--md-text)]"><span className="font-medium">{t("Main reason")}: </span>{t(declineReason)}</p> : null}
         {response.message ? <p className="mt-2 whitespace-pre-wrap break-words text-pretty text-[12px] leading-[1.55] text-[var(--md-text)]" data-i18n-skip dir="auto">{response.message}</p> : null}
         {response.attachment ? <p className="mt-2 flex items-center gap-1.5 text-[11px] text-[var(--md-subtle)]"><FileText className="size-3.5" strokeWidth={1.5} aria-hidden="true" />{t("Customer attachment available in Documents")}</p> : null}
       </TooltipContent>
@@ -5127,6 +5964,7 @@ export function QuoteDetailPage({
   const [draftQuote, setDraftQuote] = useState<QuoteRecord>(initialQuote)
   const [currentUserProfilePhotoUrl, setCurrentUserProfilePhotoUrl] = useState<string | null>(currentUser?.profilePhotoUrl ?? null)
   const [salesUserPhotoUrls, setSalesUserPhotoUrls] = useState<Map<string, string>>(() => new Map())
+  const [quoteEditors, setQuoteEditors] = useState<QuoteEditorPresence[]>([])
   const [savedCharges, setSavedCharges] = useState<QuoteCharge[]>(initialCharges)
   const [draftCharges, setDraftCharges] = useState<QuoteCharge[]>(initialCharges)
   const [quoteRefCopied, setQuoteRefCopied] = useState(false)
@@ -5161,6 +5999,14 @@ export function QuoteDetailPage({
   const [lossReason, setLossReason] = useState("")
   const [lossDetails, setLossDetails] = useState("")
   const [validationAttempted, setValidationAttempted] = useState(false)
+  const [viewedVersionId, setViewedVersionId] = useState<string | null>(null)
+  const [newVersionDialogOpen, setNewVersionDialogOpen] = useState(false)
+  const [creatingVersion, setCreatingVersion] = useState(false)
+  const [pendingCustomerChange, setPendingCustomerChange] = useState<PendingCustomerOrganisationChange | null>(null)
+  const [creatingCustomerQuote, setCreatingCustomerQuote] = useState(false)
+  const [repeatQuoteDialogOpen, setRepeatQuoteDialogOpen] = useState(false)
+  const [creatingRepeatQuote, setCreatingRepeatQuote] = useState(false)
+  const [quoteActionsOpen, setQuoteActionsOpen] = useState(false)
 
   useEffect(() => {
     if (!currentUser?.profilePhoto) {
@@ -5184,7 +6030,7 @@ export function QuoteDetailPage({
   const [intelligence, setIntelligence] = useState<QuoteIntelligenceSnapshot | null>(null)
   const [intelligenceUnavailable, setIntelligenceUnavailable] = useState(false)
   const [currentQuoteId, setCurrentQuoteId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(!isNewQuote)
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [transitioning, setTransitioning] = useState(false)
   const [workflowError, setWorkflowError] = useState("")
@@ -5192,6 +6038,11 @@ export function QuoteDetailPage({
   const saveFeedbackTimerRef = useRef<number | null>(null)
   const autosaveTimerRef = useRef<number | null>(null)
   const failedSaveFingerprintRef = useRef<string | null>(null)
+  const saveInFlightRef = useRef<symbol | null>(null)
+  const quoteRequestGenerationRef = useRef(0)
+  const openingQuoteRef = useRef<ReturnType<typeof openQuoteWorkflow> | null>(null)
+  const readinessRequestRef = useRef(0)
+  const intelligenceRequestRef = useRef(0)
   const issuePreviewTimerRef = useRef<number | null>(null)
   const issueBodyEditorRef = useRef<HTMLTextAreaElement | null>(null)
   const selectedIssueRecipient = useMemo(
@@ -5213,7 +6064,7 @@ export function QuoteDetailPage({
     }
 
     let cancelled = false
-    void supabase.auth.getSession()
+    void authSupabase!.auth.getSession()
       .then(({ data, error }) => {
         if (error) throw error
         if (!data.session) return []
@@ -5233,6 +6084,42 @@ export function QuoteDetailPage({
     return () => { cancelled = true }
   }, [lookups?.users])
 
+  useEffect(() => {
+    const reference = workspace?.quote.reference.trim().toLowerCase()
+    if (!currentQuoteId || !reference) {
+      setQuoteEditors([])
+      return
+    }
+
+    let active = true
+    let inFlight = false
+    const quoteRoute = `/quotes/${reference}`
+    const refreshEditors = () => {
+      if (document.visibilityState !== "visible" || inFlight) return
+      inFlight = true
+      void getQuoteEditorPresence(quoteRoute)
+        .then((editors) => { if (active) setQuoteEditors(editors) })
+        .catch(() => {
+          // Presence is supporting awareness only. A temporary outage must not
+          // interrupt quote editing or autosave.
+        })
+        .finally(() => { inFlight = false })
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshEditors()
+      else setQuoteEditors([])
+    }
+
+    refreshEditors()
+    const intervalId = window.setInterval(refreshEditors, 20_000)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+    }
+  }, [currentQuoteId, workspace?.quote.reference])
+
   useEffect(() => () => {
     if (quoteCopyResetTimerRef.current !== null) window.clearTimeout(quoteCopyResetTimerRef.current)
     if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current)
@@ -5243,10 +6130,23 @@ export function QuoteDetailPage({
   useEffect(() => {
     let cancelled = false
     let workspaceApplied = false
-    setLoading(!isNewQuote)
+    quoteRequestGenerationRef.current += 1
+    saveInFlightRef.current = null
+    failedSaveFingerprintRef.current = null
+    setSaving(false)
+    setCurrentQuoteId(null)
+    setLoading(true)
+    if (!isNewQuote) openingQuoteRef.current = null
     setIntelligence(null)
     setIntelligenceUnavailable(false)
     setWorkflowError("")
+    setViewedVersionId(null)
+    setNewVersionDialogOpen(false)
+    setPendingCustomerChange(null)
+    setCreatingCustomerQuote(false)
+    setRepeatQuoteDialogOpen(false)
+    setCreatingRepeatQuote(false)
+    setQuoteActionsOpen(false)
     void (async () => {
       try {
         // Lookup labels enrich the editor after the quote is already usable.
@@ -5254,7 +6154,9 @@ export function QuoteDetailPage({
         // critical quote request or alarm the operator if enrichment is down.
         const loadSources = () => getQuoteSources().catch(() => null)
         if (isNewQuote) {
-          const openedQuote = await openQuoteWorkflow()
+          // Strict Mode replays effects in development. Both passes must await
+          // the same creation, never allocate a second master Quote reference.
+          const openedQuote = await (openingQuoteRef.current ??= openQuoteWorkflow())
           const openedWorkspace = await getQuoteWorkflow(openedQuote.reference)
           if (!cancelled) {
             const openedQuoteRecord = quoteRecordFromWorkspace(openedWorkspace, null)
@@ -5324,6 +6226,9 @@ export function QuoteDetailPage({
     })()
     return () => {
       cancelled = true
+      quoteRequestGenerationRef.current += 1
+      intelligenceRequestRef.current += 1
+      readinessRequestRef.current += 1
     }
   }, [isNewQuote, quoteId])
 
@@ -5352,12 +6257,41 @@ export function QuoteDetailPage({
       active = false
       unsubscribe()
     }
-  }, [currentQuoteId, workspace?.quote.reference])
+  // The subscription belongs to the immutable quote ID. A save may return its
+  // internal reference alias; that must not restart the initial refresh.
+  }, [currentQuoteId])
 
-  const activeCharges = draftCharges
+  const currentVersion = workspace?.versions.find((version) => version.CusQuoteVersion_IsCurrent) ?? null
+  const currentVersionIsSubmitted = Boolean(currentVersion?.CusQuoteVersion_IsSubmitted)
+  const latestSubmittedVersion = useMemo(() => (workspace?.versions ?? []).reduce<QuoteWorkflowVersion | null>((latest, version) => {
+    if (!version.CusQuoteVersion_IsSubmitted) return latest
+    if (!latest || version.CusQuoteVersion_Number > latest.CusQuoteVersion_Number) return version
+    return latest
+  }, null), [workspace?.versions])
+  const latestSubmittedVersionLabel = latestSubmittedVersion
+    ? latestSubmittedVersion.CusQuoteVersion_Number === 1 ? "Original quote" : `V${latestSubmittedVersion.CusQuoteVersion_Number}`
+    : "No submitted version"
+  const viewedVersion = viewedVersionId
+    ? workspace?.versions.find((version) => version.CusQuoteVersion_ID === viewedVersionId) ?? null
+    : null
+  const presentedVersion = viewedVersion ?? currentVersion
+  const viewingSubmittedVersion = Boolean(presentedVersion?.CusQuoteVersion_IsSubmitted)
+  const viewedVersionWorkspace = useMemo(
+    () => workspace && presentedVersion?.CusQuoteVersion_IsSubmitted ? quoteWorkspaceFromVersion(workspace, presentedVersion) : null,
+    [presentedVersion, workspace],
+  )
+  const viewingHistoricalVersion = Boolean(viewedVersion && !viewedVersion.CusQuoteVersion_IsCurrent)
+  const workspaceEditable = !viewingHistoricalVersion && !currentVersionIsSubmitted
+  const presentedQuote = viewedVersionWorkspace
+    ? quoteRecordFromWorkspace(viewedVersionWorkspace, null)
+    : draftQuote
+  const activeCharges = viewedVersionWorkspace
+    ? quoteChargesFromWorkspace(viewedVersionWorkspace)
+    : draftCharges
   const activeTotals = useMemo(() => getChargeTotals(activeCharges), [activeCharges])
   const activeQuote = {
-    ...draftQuote,
+    ...presentedQuote,
+    ...(presentedQuote.cargoLines ? { ...quoteCargoSummary(presentedQuote.cargoLines), knownCargo: quoteCargoHandlingSummary(presentedQuote.cargoLines, presentedQuote.cargoCharacteristics || presentedQuote.knownCargo) } : {}),
     cost: workspace ? activeTotals.cost : draftQuote.cost,
     revenue: workspace ? activeTotals.revenue : draftQuote.revenue,
     profit: workspace ? activeTotals.profit : draftQuote.profit,
@@ -5375,7 +6309,8 @@ export function QuoteDetailPage({
   const isDirty = JSON.stringify(draftQuote) !== JSON.stringify(savedQuote) || JSON.stringify(draftCharges) !== JSON.stringify(savedCharges)
   const lifecycle = workspace?.quote.lifecycle ?? (currentQuoteId ? "draft" : "")
   const quoteIsLost = lifecycle === "declined" || lifecycle === "ghosted"
-  const quoteCanBeIssued = !quoteIsLost
+  const currentVersionHasFinalResponse = ["accepted", "declined", "changes_requested"].includes(String(currentVersion?.CusQuoteVersion_StatusCode || ""))
+  const quoteCanBeIssued = lifecycle !== "ghosted" && !currentVersionHasFinalResponse
   const quoteHasAcceptedHistory = lifecycle === "accepted" || Boolean(workspace?.events.some((event) => event.CusQuoteEvent_TypeCode === "customer_accepted"))
   const heading = variant === "ai" ? "AI spot quote command" : "Spot quote"
   const visualTabTravelDirection = shouldReduceMotion
@@ -5388,13 +6323,14 @@ export function QuoteDetailPage({
       return
     }
     let active = true
+    const request = ++readinessRequestRef.current
     setIssueReadinessLoading(true)
     void getQuoteIssueReadiness(currentQuoteId)
-      .then((readiness) => { if (active) setIssueReadiness(readiness) })
-      .catch(() => { if (active) setIssueReadiness(null) })
-      .finally(() => { if (active) setIssueReadinessLoading(false) })
+      .then((readiness) => { if (active && request === readinessRequestRef.current) setIssueReadiness(readiness) })
+      .catch(() => { if (active && request === readinessRequestRef.current) setIssueReadiness(null) })
+      .finally(() => { if (active && request === readinessRequestRef.current) setIssueReadinessLoading(false) })
     return () => { active = false }
-  }, [currentQuoteId, quoteCanBeIssued, savedQuote])
+  }, [currentQuoteId, quoteCanBeIssued])
 
   useEffect(() => {
     if (issuePreviewTimerRef.current !== null) window.clearTimeout(issuePreviewTimerRef.current)
@@ -5449,20 +6385,35 @@ export function QuoteDetailPage({
   }
 
   function updateDraftQuote(field: keyof QuoteRecord, value: string) {
+    updateDraftQuotePatch({ [field]: value })
+  }
+
+  function updateDraftQuotePatch(patch: Partial<QuoteRecord>) {
     setDraftQuote((current) => {
-      const next = { ...current, [field]: value }
-      if (field === "origin" || field === "destination") {
+      const next = { ...current, ...patch }
+      if (patch.cargoLines) Object.assign(next, quoteCargoSummary(patch.cargoLines))
+      if ("origin" in patch || "destination" in patch) {
         next.route = next.origin.trim() && next.destination.trim() ? `${next.origin.trim()} to ${next.destination.trim()}` : ""
+      }
+      const calculatedDirection = calculatedDirectionForQuote(next, lookups)
+      if (calculatedDirection) {
+        next.direction = calculatedDirection
+        next.quoteType = calculatedDirection
       }
       return next
     })
   }
 
   function createAndAssignCustomer(name: string, code: string) {
-    updateDraftQuote("customerId", "")
-    updateDraftQuote("contactId", "")
-    updateDraftQuote("customer", name)
-    updateDraftQuote("clientCode", code)
+    updateDraftQuotePatch({ customerId: "", contactId: "", customer: name, clientCode: code })
+  }
+
+  function requestCustomerOrganisationChange(change: PendingCustomerOrganisationChange) {
+    if (!currentQuoteId || !draftQuote.customerId || draftQuote.customerId === change.organisation.id) {
+      updateDraftQuotePatch(change.patch)
+      return
+    }
+    setPendingCustomerChange(change)
   }
 
   function updateDraftCharge(index: number, field: QuoteChargeEditableField, value: string) {
@@ -5595,23 +6546,116 @@ export function QuoteDetailPage({
     setDraftCharges(loadedCharges)
   }
 
+  async function createNewQuoteVersion(strategy: "copy" | "blank") {
+    if (!currentQuoteId || !workspace || !currentVersionIsSubmitted || creatingVersion || saving) return
+    if (viewingSubmittedVersion && !viewedVersionWorkspace) {
+      setWorkflowError("The selected version’s saved details are unavailable. Reload or select a readable submitted version before creating a revision.")
+      return
+    }
+    setCreatingVersion(true)
+    setWorkflowError("")
+    try {
+      const sourceQuote = presentedQuote
+      const sourceCharges = activeCharges
+      const nextQuote = strategy === "blank" ? blankQuoteRevision(sourceQuote) : {
+        ...sourceQuote,
+        status: "Open",
+        statusTone: "green" as StatusTone,
+      }
+      const nextCharges = strategy === "blank" ? [] : sourceCharges
+      const result = await saveQuoteWorkflow(currentQuoteId, quoteSavePayload(nextQuote, nextCharges, lookups))
+      const sources = lookups ?? await getQuoteSources()
+      const loadedWorkspace = await getQuoteWorkflow(result.reference, { fresh: true })
+      applyLoadedWorkspace(loadedWorkspace, sources)
+      setViewedVersionId(null)
+      setNewVersionDialogOpen(false)
+      setIssueNotice(`Working draft V${result.versionNumber ?? loadedWorkspace.versions.find((version) => version.CusQuoteVersion_IsCurrent)?.CusQuoteVersion_Number ?? ""} created.`)
+    } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "The new quote version could not be created.")
+    } finally {
+      setCreatingVersion(false)
+    }
+  }
+
+  async function createQuoteForDifferentCustomer() {
+    if (!pendingCustomerChange || !currentQuoteId || creatingCustomerQuote || saving) return
+    const sourceQuoteId = currentQuoteId
+    const sourceReference = workspace?.quote.reference || savedQuote.id
+    const sourceQuote = draftQuote
+    const sourceCharges = draftCharges
+    const customerChange = pendingCustomerChange
+    setCreatingCustomerQuote(true)
+    setWorkflowError("")
+    try {
+      const sources = lookups ?? await getQuoteSources()
+      if (isDirty) {
+        await saveQuoteWorkflow(sourceQuoteId, quoteSavePayload(sourceQuote, sourceCharges, sources))
+      }
+      const nextQuote = newCustomerMasterQuote(sourceQuote, customerChange.patch, sourceQuoteId, sourceReference)
+      const result = await saveQuoteWorkflow(null, quoteSavePayload(nextQuote, [], sources))
+      const loadedWorkspace = await getQuoteWorkflow(result.reference, { fresh: true })
+      setLookups(sources)
+      applyLoadedWorkspace(loadedWorkspace, sources)
+      setViewedVersionId(null)
+      setPendingCustomerChange(null)
+      setActiveTab("details")
+      setIssueNotice(`New quote ${result.reference} created for ${customerChange.organisation.name}. Pricing was cleared for customer-specific review.`)
+      navigate?.(`/quotes/${result.reference}`)
+    } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "The new customer quote could not be created.")
+    } finally {
+      setCreatingCustomerQuote(false)
+    }
+  }
+
+  async function createRepeatQuote() {
+    if (!currentQuoteId || creatingRepeatQuote || saving || isDirty) return
+    const sourceQuoteId = currentQuoteId
+    const sourceReference = workspace?.quote.reference || savedQuote.id
+    setCreatingRepeatQuote(true)
+    setWorkflowError("")
+    try {
+      const sources = lookups ?? await getQuoteSources()
+      const nextQuote = newRepeatMasterQuote(savedQuote, sourceQuoteId, sourceReference)
+      const result = await saveQuoteWorkflow(null, quoteSavePayload(nextQuote, [], sources))
+      const loadedWorkspace = await getQuoteWorkflow(result.reference, { fresh: true })
+      setLookups(sources)
+      applyLoadedWorkspace(loadedWorkspace, sources)
+      setViewedVersionId(null)
+      setRepeatQuoteDialogOpen(false)
+      setActiveTab("details")
+      setIssueNotice(`Repeat quote ${result.reference} created. Dates and pricing are ready for fresh review.`)
+      navigate?.(`/quotes/${result.reference}`)
+    } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "The repeat quote could not be created.")
+    } finally {
+      setCreatingRepeatQuote(false)
+    }
+  }
+
   async function saveChanges() {
-    if (saving) return
+    if (saveInFlightRef.current) return
     const quoteSnapshot = draftQuote
     const chargeSnapshot = draftCharges
     const snapshotFingerprint = JSON.stringify([quoteSnapshot, chargeSnapshot])
     if (failedSaveFingerprintRef.current === snapshotFingerprint) return
+    const request = Symbol("quote-save")
+    const generation = quoteRequestGenerationRef.current
+    const isCurrent = () => generation === quoteRequestGenerationRef.current && saveInFlightRef.current === request
+    saveInFlightRef.current = request
     setSaving(true)
     setWorkflowError("")
-    let saveTimeoutId: number | null = null
+    const saveTimeoutId = window.setTimeout(() => {
+      if (isCurrent()) setWorkflowError("Saving is taking longer than usual. Your edits are kept here while it finishes.")
+    }, 8000)
     try {
       const payload = quoteSavePayload(quoteSnapshot, chargeSnapshot, lookups)
-      const result = await Promise.race([
-        saveQuoteWorkflow(currentQuoteId, payload),
-        new Promise<never>((_, reject) => {
-          saveTimeoutId = window.setTimeout(() => reject(new Error("The quote could not be saved.")), 8000)
-        }),
-      ])
+      const result = await saveQuoteWorkflow(currentQuoteId, payload)
+      if (!isCurrent()) return
+      setWorkflowError("")
+      readinessRequestRef.current += 1
+      setIssueReadiness(result.readiness)
+      setIssueReadinessLoading(false)
       const savedPresentation = quoteLifecyclePresentation(result.lifecycle)
       const savedSnapshot = { ...quoteSnapshot, status: savedPresentation.status, statusTone: savedPresentation.tone }
       setCurrentQuoteId(result.quoteId)
@@ -5620,13 +6664,25 @@ export function QuoteDetailPage({
       setSavedCharges(chargeSnapshot)
       setDraftCharges((current) => JSON.stringify(current) === JSON.stringify(chargeSnapshot) ? chargeSnapshot : current)
       failedSaveFingerprintRef.current = null
-      setWorkspace((current) => current ? {
+      setWorkspace((current) => current && current.quote.id === result.quoteId ? {
         ...current,
         quote: { ...current.quote, id: result.quoteId, reference: result.reference, lifecycle: result.lifecycle },
+        versions: [result.version, ...current.versions.filter((version) => version.CusQuoteVersion_ID !== result.versionId).map((version) => ({ ...version, CusQuoteVersion_IsCurrent: false }))],
+        events: [...result.events, ...current.events.filter((event) => !result.events.some((saved) => saved.CusQuoteEvent_ID === event.CusQuoteEvent_ID))].slice(0, 100),
       } : current)
-      // The save endpoint creates an immutable version. Refresh only the
-      // existing workflow metadata so Audit/history is current without
-      // replacing the quote draft the operator may already be editing.
+      const intelligenceRequest = ++intelligenceRequestRef.current
+      void refreshQuoteIntelligence(result.reference, result.versionId)
+        .then((next) => {
+          if (generation !== quoteRequestGenerationRef.current || intelligenceRequest !== intelligenceRequestRef.current) return
+          setIntelligence(next)
+          setIntelligenceUnavailable(false)
+        })
+        .catch(() => {
+          if (generation === quoteRequestGenerationRef.current && intelligenceRequest === intelligenceRequestRef.current && !intelligence) setIntelligenceUnavailable(true)
+        })
+      // Refresh only the existing workflow metadata so the draft/submitted
+      // version state and Audit/history are current without replacing the
+      // quote draft the operator may already be editing.
       void getQuoteWorkflow(result.reference, { fresh: true })
         .then((fresh) => {
           setWorkspace((current) => current ? {
@@ -5635,12 +6691,9 @@ export function QuoteDetailPage({
             events: fresh.events,
             latestIssue: fresh.latestIssue,
             linkedBooking: fresh.linkedBooking,
+            documents: fresh.documents,
           } : current)
         })
-        .catch(() => undefined)
-      void refreshQuoteIntelligence(result.reference)
-        .then((next) => { setIntelligence(next); setIntelligenceUnavailable(false) })
-        .catch(() => { if (!intelligence) setIntelligenceUnavailable(true) })
       setValidationAttempted(false)
       setSaveFeedbackVisible(true)
       if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current)
@@ -5654,11 +6707,15 @@ export function QuoteDetailPage({
       // after every autosave. New quotes already navigate when they are opened;
       // edits must remain on the active route.
     } catch (error) {
+      if (!isCurrent()) return
       failedSaveFingerprintRef.current = snapshotFingerprint
       setWorkflowError(error instanceof Error ? error.message : "The quote could not be saved.")
     } finally {
-      if (saveTimeoutId !== null) window.clearTimeout(saveTimeoutId)
-      setSaving(false)
+      window.clearTimeout(saveTimeoutId)
+      if (isCurrent()) {
+        saveInFlightRef.current = null
+        setSaving(false)
+      }
     }
   }
 
@@ -5701,7 +6758,7 @@ export function QuoteDetailPage({
   }
 
   async function markQuoteWon() {
-    if (!currentQuoteId || transitioning || isDirty) return
+    if (!currentQuoteId || !latestSubmittedVersion || transitioning || isDirty) return
     setTransitioning(true)
     setWorkflowError("")
     try {
@@ -5916,19 +6973,31 @@ export function QuoteDetailPage({
     if (!currentQuoteId || !issueReadiness?.ready || !resolvedIssueRecipient || !issueMailboxId || !issueEmailSubject.trim() || !issueEmailBody.trim() || issuing || issueDraftLoading || issuePreviewLoading) return
     setIssuing(true)
     setWorkflowError("")
+    setIssueEmailError("")
     setIssueNotice("")
     let result: Awaited<ReturnType<typeof issueQuoteWorkflow>>
     try {
       result = await issueQuoteWorkflow(currentQuoteId, resolvedIssueRecipient, issueDeliveryMode, issueMailboxId, issueEmailSubject, issueEmailBody, issueExpiryPreset)
       if (!result.delivered) throw new Error("The email provider has not confirmed delivery. Nothing was marked as sent.")
     } catch (error) {
-      setWorkflowError(error instanceof Error ? error.message : "The quote could not be sent.")
+      const message = error instanceof Error ? error.message : "The quote could not be sent."
+      setIssueEmailError(message)
+      setWorkflowError(message)
+      toast.error(t("Quote was not sent"), { description: t(message) })
       setIssuing(false)
       return
     }
 
+    const sentMessage = `Quote ${result.reference} was sent to ${result.recipientEmail}.`
     setIssueDeliveryState("sent")
-    setIssueNotice(`Quote ${result.reference} was sent to ${result.recipientEmail}.`)
+    setIssueNotice(sentMessage)
+    toast.success(t("Quote sent"), {
+      description: t(`A PDF copy was saved in Documents and emailed to ${result.recipientEmail}.`),
+      action: {
+        label: t("View documents"),
+        onClick: () => setActiveTab("documents"),
+      },
+    })
     await new Promise((resolve) => window.setTimeout(resolve, shouldReduceMotion ? 250 : 900))
     setIssueDialogOpen(false)
     try {
@@ -5944,21 +7013,27 @@ export function QuoteDetailPage({
   }
 
   function renderActiveWorkspacePanel() {
+    if (viewingSubmittedVersion && !viewedVersionWorkspace && ["overview", "details", "charges"].includes(activeTab)) {
+      return <Surface><p role="alert">{t("This version’s saved details are unavailable. Check Documents or reload the Quote; current details have not been substituted.")}</p></Surface>
+    }
+    if (viewingSubmittedVersion && presentedVersion && ["details", "overview", "charges"].includes(activeTab)) {
+      return <QuoteSubmittedDetails key={`${presentedVersion.CusQuoteVersion_ID}:${activeTab}`} version={presentedVersion} reference={workspace?.quote.reference ?? ""} overview={activeTab === "overview"} chargesOnly={activeTab === "charges"} />
+    }
     if (activeTab === "overview") {
       const overview = variant === "ai"
-        ? <QuoteAiOverviewPanel quote={savedQuote} />
+        ? <QuoteAiOverviewPanel quote={activeQuote} />
         : variant === "cargowise"
-          ? <QuoteCargoWiseOverviewPanel quote={savedQuote} intelligence={intelligence} intelligenceUnavailable={intelligenceUnavailable} />
-          : <QuoteOverviewPanel quote={savedQuote} />
+          ? <QuoteCargoWiseOverviewPanel quote={activeQuote} intelligence={intelligence} intelligenceUnavailable={intelligenceUnavailable} />
+          : <QuoteOverviewPanel quote={activeQuote} />
       return overview
     }
 
     if (activeTab === "details") {
       if (variant === "cargowise") {
-        return <QuoteDetailsPanelV2 quote={activeQuote} editable requireCoreFields onQuoteChange={updateDraftQuote} validationAttempted={validationAttempted} lookups={lookups} />
+        return <QuoteDetailsPanelV2 quote={activeQuote} editable={workspaceEditable} requireCoreFields onQuotePatch={updateDraftQuotePatch} onQuoteChange={updateDraftQuote} onCustomerOrganisationChange={requestCustomerOrganisationChange} validationAttempted={validationAttempted} lookups={lookups} />
       }
 
-      return <QuoteSetupPanel quote={activeQuote} editable onQuoteChange={updateDraftQuote} onJobRoeChange={updateJobRoe} validationAttempted={validationAttempted} />
+      return <QuoteSetupPanel quote={activeQuote} editable={workspaceEditable} onQuoteChange={updateDraftQuote} onJobRoeChange={updateJobRoe} validationAttempted={validationAttempted} />
     }
 
     if (activeTab === "charges") {
@@ -5966,7 +7041,7 @@ export function QuoteDetailPage({
         <UnifiedQuoteChargesPanel
           quote={activeQuote}
           charges={activeCharges}
-          editable
+          editable={workspaceEditable}
           onRowsChange={setDraftCharges}
         />
       )
@@ -5994,11 +7069,31 @@ export function QuoteDetailPage({
           {workflowError ? (
             <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_8%,var(--md-surface))] px-3 py-2 text-[12px] font-medium text-[var(--md-red)] shadow-[var(--md-shadow-line)]">
               {t(workflowError)}
+              {failedSaveFingerprintRef.current && isDirty && !saving ? (
+                <Button type="button" variant="ghost" size="sm" onClick={() => { failedSaveFingerprintRef.current = null; void saveChanges() }}>
+                  {t("Retry save")}
+                </Button>
+              ) : null}
             </div>
           ) : null}
           {issueNotice ? (
             <div role="status" aria-live="polite" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-green)_9%,var(--md-surface))] px-3 py-2 text-[12px] font-medium text-[var(--md-green)] shadow-[var(--md-shadow-line)]">
               {t(issueNotice)}
+            </div>
+          ) : null}
+          {viewingHistoricalVersion && viewedVersion ? (
+            <div role="status" className="flex flex-wrap items-center gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-status-blue-bg)] px-3 py-2 text-[12px] text-[var(--md-status-blue-ink)] shadow-[var(--md-shadow-line)]">
+              <Clock3 className="size-4 shrink-0" strokeWidth={1.4} aria-hidden="true" />
+              <span className="min-w-0 flex-1">{t("You are viewing a submitted quote version. Its fields and charges are locked for audit history.")} <span className="font-medium" data-i18n-skip dir="ltr">{viewedVersion.CusQuoteVersion_Number === 1 ? t("Original quote") : `V${viewedVersion.CusQuoteVersion_Number}`}</span></span>
+              <Button type="button" variant="ghost" onClick={() => setViewedVersionId(null)} className="h-7 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 text-[11px] text-[var(--md-status-blue-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)]">
+                {t("Return to latest")}
+              </Button>
+              {currentVersionIsSubmitted ? (
+                <Button type="button" variant="ghost" onClick={() => setNewVersionDialogOpen(true)} className="h-7 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 text-[11px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent-a07)]">
+                  <Plus className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+                  {t("Use for new version")}
+                </Button>
+              ) : null}
             </div>
           ) : null}
           <Tabs value={activeTab} onValueChange={(value) => changeWorkspaceTab(value as QuoteWorkspaceTab)} className="min-w-0 max-w-full gap-2">
@@ -6039,6 +7134,63 @@ export function QuoteDetailPage({
                   <CopyStatusIcon copied={quoteRefCopied} iconClassName="size-3.5" className="shrink-0" />
                 </button>
                 <StatusPill kind="status" tone={activeQuote.statusTone} indicator={false} className="h-7 shrink-0 px-2 text-[11px]">{activeQuote.status}</StatusPill>
+                {currentVersion ? (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={saving || isDirty}
+                        aria-label={t("Choose quote version")}
+                        className="h-7 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 text-[11px] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)]"
+                      >
+                        <span data-i18n-skip dir="ltr">{presentedVersion?.CusQuoteVersion_Number === 1 ? t("Original") : `V${presentedVersion?.CusQuoteVersion_Number ?? currentVersion.CusQuoteVersion_Number}`}</span>
+                        <span className="text-[var(--md-subtle)]">·</span>
+                        <span>{t(viewingHistoricalVersion || currentVersionIsSubmitted ? "Submitted" : "Working draft")}</span>
+                        <ChevronDown className="size-3" strokeWidth={1.4} aria-hidden="true" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" sideOffset={6} className="w-[min(340px,calc(100vw-24px))] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1.5 shadow-[var(--md-shadow-lift)]">
+                      <div className="px-2 py-1.5">
+                        <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Quote versions")}</p>
+                        <p className="mt-0.5 text-[11px] leading-4 text-[var(--md-subtle)]">{t("Submitted versions are read-only. One working draft can remain in progress.")}</p>
+                      </div>
+                      <div className="mt-1 grid max-h-64 gap-1 overflow-y-auto md-scrollbar">
+                        {workspace?.versions.map((version) => {
+                          const selected = (viewedVersion?.CusQuoteVersion_ID ?? currentVersion.CusQuoteVersion_ID) === version.CusQuoteVersion_ID
+                          const versionDate = version.CusQuoteVersion_SubmittedAt || version.CusQuoteVersion_CreatedAt
+                          return (
+                            <button
+                              key={version.CusQuoteVersion_ID}
+                              type="button"
+                              aria-current={selected ? "true" : undefined}
+                              className={cn(
+                                "flex min-h-11 items-center gap-2 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-start outline-none transition-colors hover:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a14)]",
+                                selected && "bg-[var(--md-accent-a07)]",
+                              )}
+                              onClick={() => setViewedVersionId(version.CusQuoteVersion_IsCurrent ? null : version.CusQuoteVersion_ID)}
+                            >
+                              <span className={cn("grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] text-[11px] font-medium", version.CusQuoteVersion_IsSubmitted ? "bg-[var(--md-status-blue-bg)] text-[var(--md-status-blue-ink)]" : "bg-[var(--md-status-amber-bg)] text-[var(--md-status-amber-ink)]")} data-i18n-skip dir="ltr">
+                                {version.CusQuoteVersion_Number === 1 ? "1" : version.CusQuoteVersion_Number}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-[12px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{version.CusQuoteVersion_Number === 1 ? t("Original quote") : `${t("Version")} ${version.CusQuoteVersion_Number}`}</span>
+                                <span className="mt-0.5 block text-[10.5px] text-[var(--md-subtle)]">{t(version.CusQuoteVersion_IsSubmitted ? version.CusQuoteVersion_StatusCode.replaceAll("_", " ") : "Working draft")} · {new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(versionDate))}</span>
+                              </span>
+                              {selected ? <Check className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.6} aria-hidden="true" /> : null}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                ) : null}
+                {currentVersionIsSubmitted ? (
+                  <Button type="button" variant="ghost" disabled={saving || creatingVersion || (viewingSubmittedVersion && !viewedVersionWorkspace)} onClick={() => setNewVersionDialogOpen(true)} className="h-7 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 text-[11px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent-a07)]">
+                    <Plus className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+                    {t("New version")}
+                  </Button>
+                ) : null}
                 {shouldShowQuoteCustomerResponse(workspace?.customerResponse ?? null) && workspace?.customerResponse ? (
                   <QuoteCustomerResponseTooltip response={workspace.customerResponse} />
                 ) : null}
@@ -6055,6 +7207,7 @@ export function QuoteDetailPage({
               </div>
             </div>
           </div>
+          {quoteEditors.length ? <QuoteCoEditorWarning editors={quoteEditors} photoUrls={salesUserPhotoUrls} /> : null}
           <div className="md-quote-record-actions flex w-full min-w-0 flex-wrap items-center gap-1 md-scrollbar sm:ms-auto sm:w-auto sm:flex-nowrap">
             <LayoutGroup id={`quote-actions-${activeQuote.id}`}>
               <AnimatePresence initial={false} mode="popLayout">
@@ -6147,7 +7300,40 @@ export function QuoteDetailPage({
                   <Printer data-icon="inline-start" className="size-4" strokeWidth={1.4} />
                   {t("Print")}
                 </Button>
-                {quoteCanBeIssued ? (
+                <Popover open={quoteActionsOpen} onOpenChange={setQuoteActionsOpen}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          aria-label={t("More quote actions")}
+                          disabled={!currentQuoteId || saving || isDirty || creatingRepeatQuote}
+                          className="size-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-0 text-[var(--md-text)] shadow-[var(--md-shadow-line)]"
+                        >
+                          <MoreHorizontal className="size-4" strokeWidth={1.4} aria-hidden="true" />
+                        </Button>
+                      </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>{t("More quote actions")}</TooltipContent>
+                  </Tooltip>
+                  <PopoverContent align="end" sideOffset={6} className="w-[min(300px,calc(100vw-24px))] rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-1.5 shadow-[var(--md-shadow-lift)]">
+                    <button
+                      type="button"
+                      className="flex min-h-11 w-full items-start gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-start outline-none transition-colors hover:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a14)]"
+                      onClick={() => { setQuoteActionsOpen(false); setRepeatQuoteDialogOpen(true) }}
+                    >
+                      <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
+                        <Copy className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[12px] font-medium text-[var(--md-ink)]">{t("Use as a new repeat quote")}</span>
+                        <span className="mt-0.5 block text-[10.5px] leading-4 text-[var(--md-subtle)]">{t("Keep the operational setup under a new quote number, then review fresh dates and pricing.")}</span>
+                      </span>
+                    </button>
+                  </PopoverContent>
+                </Popover>
+                {quoteCanBeIssued && !viewingHistoricalVersion ? (
                   <>
                   <Button
                     type="button"
@@ -6221,11 +7407,11 @@ export function QuoteDetailPage({
                   </TabsList>
                 </Surface>
               </div>
-                {activeTab === "details" ? null : (
+                {activeTab === "details" || viewingSubmittedVersion ? null : (
                   <QuoteWorkspaceContext
                     activeTab={activeTab}
                     quote={activeQuote}
-                    editable
+                    editable={workspaceEditable}
                     onJobRoeBaseChange={updateJobRoeBase}
                     onAddJobRoe={addJobRoe}
                     onRemoveJobRoe={removeJobRoe}
@@ -6258,6 +7444,109 @@ export function QuoteDetailPage({
           </Tabs>
         </div>
       </main>
+      <Dialog open={repeatQuoteDialogOpen} onOpenChange={(open) => { if (!creatingRepeatQuote) setRepeatQuoteDialogOpen(open) }}>
+        <DialogContent className="rounded-[var(--md-radius-2xl)] sm:max-w-[540px]">
+          <DialogHeader className="text-start">
+            <div className="mb-1 grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]" aria-hidden="true">
+              <Copy className="size-4" strokeWidth={1.4} />
+            </div>
+            <DialogTitle>{t("Use this as a new repeat quote?")}</DialogTitle>
+            <DialogDescription>{t("This creates a separate master quote for the same customer. The current quote and its full history stay unchanged.")}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 text-[12px] leading-[1.55] text-[var(--md-text)]">
+            <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)]">
+              <p className="text-[10.5px] text-[var(--md-subtle)]">{t("Copied from")}</p>
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-medium text-[var(--md-ink)]">
+                <span data-i18n-skip dir="ltr">{workspace?.quote.reference || savedQuote.id}</span>
+                <span className="text-[var(--md-subtle)]" aria-hidden="true">·</span>
+                <span data-i18n-skip dir="auto">{savedQuote.customer}</span>
+              </p>
+            </div>
+            <p>{t("Multideck will carry across the customer, route, service, parties, cargo and supplier options. It will clear quote-specific references, validity, ETD, ETA, response deadline, carrier references and all charge lines.")}</p>
+            <p className="text-[var(--md-subtle)]">{t("This prevents an expired schedule or old price from being sent accidentally. Apply the latest customer tariff or supplier rates before submitting the new quote.")}</p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={creatingRepeatQuote} onClick={() => setRepeatQuoteDialogOpen(false)}>{t("Cancel")}</Button>
+            <Button type="button" disabled={creatingRepeatQuote} onClick={() => void createRepeatQuote()}>
+              {creatingRepeatQuote ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
+              {t(creatingRepeatQuote ? "Creating repeat quote…" : "Create repeat quote")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={Boolean(pendingCustomerChange)}
+        onOpenChange={(open) => { if (!open && !creatingCustomerQuote) setPendingCustomerChange(null) }}
+      >
+        <DialogContent className="rounded-[var(--md-radius-2xl)] sm:max-w-[540px]">
+          <DialogHeader className="text-start">
+            <div className="mb-1 grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_12%,transparent)] text-[var(--md-amber)]" aria-hidden="true">
+              <TriangleAlert className="size-4" strokeWidth={1.4} />
+            </div>
+            <DialogTitle>{t("Create a separate quote for this customer?")}</DialogTitle>
+            <DialogDescription>{t("A customer change must not overwrite this quote or mix two customers' commercial history.")}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 text-[12px] leading-[1.55] text-[var(--md-text)]">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)]">
+              <div className="min-w-0">
+                <p className="text-[10.5px] text-[var(--md-subtle)]">{t("Current quote")}</p>
+                <p className="truncate font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{draftQuote.customer}</p>
+              </div>
+              <span className="text-[var(--md-subtle)]" aria-hidden="true">→</span>
+              <div className="min-w-0 text-end">
+                <p className="text-[10.5px] text-[var(--md-subtle)]">{t("New quote")}</p>
+                <p className="truncate font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{pendingCustomerChange?.organisation.name}</p>
+              </div>
+            </div>
+            <p>{t("Multideck will copy the route, service, cargo and operational parties into a new master quote number. Customer references, notes and all prices will be cleared; the new customer's saved terms and contact details will be applied.")}</p>
+            <p className="text-[var(--md-subtle)]">{t("The current quote and every submitted version remain unchanged. Review or apply an eligible customer rate before sending the new quote.")}</p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={creatingCustomerQuote} onClick={() => setPendingCustomerChange(null)}>{t("Keep current quote")}</Button>
+            <Button type="button" disabled={creatingCustomerQuote} onClick={() => void createQuoteForDifferentCustomer()}>
+              {creatingCustomerQuote ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
+              {t(creatingCustomerQuote ? "Creating quote…" : "Create separate quote")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={newVersionDialogOpen} onOpenChange={(open) => { if (!creatingVersion) setNewVersionDialogOpen(open) }}>
+        <DialogContent className="rounded-[var(--md-radius-2xl)] sm:max-w-[560px]">
+          <DialogHeader className="text-start">
+            <DialogTitle>{t("Create a new quote version")}</DialogTitle>
+            <DialogDescription>{t("Choose how to start the next working draft. Nothing becomes part of the customer history until it is submitted.")}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              disabled={creatingVersion}
+              className="group rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-4 text-start shadow-[var(--md-shadow-line)] outline-none transition-[background,box-shadow,transform] duration-200 hover:bg-[var(--md-field-bg-hover)] hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.99] disabled:pointer-events-none disabled:opacity-55 motion-reduce:transition-none motion-reduce:active:scale-100"
+              onClick={() => void createNewQuoteVersion("copy")}
+            >
+              <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
+                {creatingVersion ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Copy className="size-4" strokeWidth={1.4} aria-hidden="true" />}
+              </span>
+              <span className="mt-3 block text-[13px] font-medium text-[var(--md-ink)]">{t("Copy this version")}</span>
+              <span className="mt-1 block text-[11.5px] leading-[1.55] text-[var(--md-subtle)]">{t("Carry its routing, cargo, charges and terms into the next editable draft.")}</span>
+            </button>
+            <button
+              type="button"
+              disabled={creatingVersion}
+              className="group rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-4 text-start shadow-[var(--md-shadow-line)] outline-none transition-[background,box-shadow,transform] duration-200 hover:bg-[var(--md-field-bg-hover)] hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.99] disabled:pointer-events-none disabled:opacity-55 motion-reduce:transition-none motion-reduce:active:scale-100"
+              onClick={() => void createNewQuoteVersion("blank")}
+            >
+              <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+                {creatingVersion ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <FileText className="size-4" strokeWidth={1.4} aria-hidden="true" />}
+              </span>
+              <span className="mt-3 block text-[13px] font-medium text-[var(--md-ink)]">{t("Start mostly blank")}</span>
+              <span className="mt-1 block text-[11.5px] leading-[1.55] text-[var(--md-subtle)]">{t("Keep the customer, owner and quote identity, then rebuild the operational and price details.")}</span>
+            </button>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={creatingVersion} onClick={() => setNewVersionDialogOpen(false)}>{t("Cancel")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={issueDialogOpen} onOpenChange={(open) => { if (!issuing && !issueRefining) setIssueDialogOpen(open) }}>
         <DialogContent
           dir={direction}
@@ -6491,7 +7780,7 @@ export function QuoteDetailPage({
               <div className="flex items-center gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2.5 shadow-[var(--md-shadow-line)]">
                 <span className="grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><FileText className="size-4" strokeWidth={1.4} aria-hidden="true" /></span>
                 <span className="min-w-0 text-start"><span className="block text-[12px] font-medium text-[var(--md-ink)]">{t("Quote PDF")}</span><span className="block text-[10.5px] leading-4 text-[var(--md-subtle)]">{t("Generated from this saved quote and attached automatically.")}</span></span>
-                <StatusPill kind="attribute" tone="green" className="ms-auto shrink-0">{t("Attached")}</StatusPill>
+                <StatusPill kind="attribute" tone="neutral" className="ms-auto shrink-0">{t("Ready to attach")}</StatusPill>
               </div>
 
               {issueEmailError ? <p role="alert" className="text-[12px] leading-5 text-[var(--md-red)]">{t(issueEmailError)}</p> : null}
@@ -6548,15 +7837,15 @@ export function QuoteDetailPage({
         <DialogContent className="rounded-[var(--md-radius-2xl)] sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>{t("Mark this quote won?")}</DialogTitle>
-            <DialogDescription>{t("This accepts the quote and creates its booking. If a booking already exists for this quote, Multideck will reuse it.")}</DialogDescription>
+            <DialogDescription>{t("This records customer acceptance against the latest submitted version and creates or updates its booking. An unsubmitted working draft is never applied.")}</DialogDescription>
           </DialogHeader>
           <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-status-green-bg)] px-3 py-3 text-start shadow-[var(--md-shadow-line)]">
-            <p className="text-[12px] font-medium text-[var(--md-status-green-ink)]">{t("The quote will remain in Quotes as Accepted.")}</p>
-            <p className="mt-1 text-[11px] leading-5 text-[var(--md-text)]">{t("The new booking will keep its operational status and show From quote as its source.")}</p>
+            <p className="text-[12px] font-medium text-[var(--md-status-green-ink)]">{t("Booking source")}: <span data-i18n-skip dir="ltr">{t(latestSubmittedVersionLabel)}</span></p>
+            <p className="mt-1 text-[11px] leading-5 text-[var(--md-text)]">{t("The quote remains Accepted. Any newer working draft stays editable and separate until it is submitted and accepted.")}</p>
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" disabled={transitioning} onClick={() => setWinDialogOpen(false)}>{t("Cancel")}</Button>
-            <Button type="button" disabled={transitioning} className="bg-[var(--md-status-green-bg)] text-[var(--md-status-green-ink)] hover:bg-[color-mix(in_srgb,var(--md-status-green-bg)_82%,var(--md-green))]" onClick={() => void markQuoteWon()}>
+            <Button type="button" disabled={transitioning || !latestSubmittedVersion} className="bg-[var(--md-status-green-bg)] text-[var(--md-status-green-ink)] hover:bg-[color-mix(in_srgb,var(--md-status-green-bg)_82%,var(--md-green))]" onClick={() => void markQuoteWon()}>
               {transitioning ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <CheckCircle2 className="size-4" />}
               {t(transitioning ? "Creating booking…" : "Mark won and create booking")}
             </Button>

@@ -6,7 +6,6 @@ import {
   Clock3,
   Command,
   LifeBuoy,
-  Megaphone,
   Palette,
   ShieldCheck,
   UserRound,
@@ -22,7 +21,6 @@ export type SettingsSectionId =
   | "shortcuts"
   | "dexter"
   | "integrations"
-  | "whats-new"
   | "docs"
   | "support"
 
@@ -61,7 +59,6 @@ export const settingsNavigationGroups: SettingsNavigationGroup[] = [
   {
     label: "Resources",
     items: [
-      { id: "whats-new", label: "What's new", description: "Recent product improvements", icon: Megaphone, badge: "3" },
       { id: "docs", label: "Docs", description: "Guides and keyboard shortcuts", icon: BookOpen },
       { id: "support", label: "Support", description: "Help and support tickets", icon: LifeBuoy },
     ],

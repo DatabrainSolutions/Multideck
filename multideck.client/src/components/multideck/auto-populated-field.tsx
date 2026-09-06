@@ -1,8 +1,6 @@
-import { useEffect, useRef, type ComponentProps, type Ref } from "react"
-import { Sparkles } from "@/components/icons/hugeicons"
+import { useLayoutEffect, useRef, type ComponentProps, type Ref } from "react"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 
@@ -11,9 +9,12 @@ export type AutoPopulationStateProps = {
   autoPopulationDescription?: string
 }
 
-const MAX_REVEAL_SEGMENTS = 12
+const MAX_REVEAL_SEGMENTS = 64
 const REVEAL_SEGMENT_DURATION_MS = 300
-const REVEAL_STAGGER_MS = 24
+const REVEAL_STAGGER_MS = 38
+const MIN_REVEAL_SPREAD_MS = REVEAL_STAGGER_MS * 8
+const MAX_REVEAL_SPREAD_MS = 780
+const revealSegmenter = new Intl.Segmenter("en", { granularity: "grapheme" })
 
 function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
   if (typeof ref === "function") ref(value)
@@ -32,9 +33,7 @@ function groupRevealSegments(segments: string[]) {
 }
 
 function getRevealSegments(value: string) {
-  const wordSegments = value.match(/\S+\s*/gu) ?? []
-  if (wordSegments.length > 1) return groupRevealSegments(wordSegments)
-  return groupRevealSegments(Array.from(value))
+  return groupRevealSegments(Array.from(revealSegmenter.segment(value), ({ segment }) => segment))
 }
 
 function createAutoPopulationReveal(element: HTMLElement, value: string) {
@@ -50,6 +49,9 @@ function createAutoPopulationReveal(element: HTMLElement, value: string) {
   reveal.style.paddingBlockEnd = computedStyle.paddingBlockEnd
   reveal.style.paddingInlineStart = computedStyle.paddingInlineStart
   reveal.style.paddingInlineEnd = computedStyle.paddingInlineEnd
+  reveal.style.borderWidth = computedStyle.borderWidth
+  reveal.style.borderStyle = "solid"
+  reveal.style.borderColor = "transparent"
   reveal.style.font = computedStyle.font
   reveal.style.letterSpacing = computedStyle.letterSpacing
   reveal.style.lineHeight = computedStyle.lineHeight
@@ -63,12 +65,26 @@ function createAutoPopulationReveal(element: HTMLElement, value: string) {
 
   const fragment = document.createDocumentFragment()
   const segments = getRevealSegments(value)
+  // Short location codes need the same perceptible wave as account codes;
+  // longer names and addresses retain their existing cadence and duration cap.
+  const steps = Math.max(0, segments.length - 1)
+  const spreadMs = steps ? Math.min(MAX_REVEAL_SPREAD_MS, Math.max(MIN_REVEAL_SPREAD_MS, steps * REVEAL_STAGGER_MS)) : 0
+  const staggerMs = spreadMs / Math.max(1, steps)
   segments.forEach((segment, index) => {
-    const token = document.createElement("span")
-    token.className = "md-auto-populated-reveal__token"
-    token.style.setProperty("--md-auto-populated-stagger", `${index * REVEAL_STAGGER_MS}ms`)
-    token.textContent = segment
-    fragment.append(token)
+    // A newline inside an inline-block token cannot break the surrounding line.
+    // Keep line separators in the text flow so multiline values never snap back.
+    for (const part of segment.split(/(\r\n|\r|\n)/)) {
+      if (!part) continue
+      if (/^[\r\n]+$/.test(part)) {
+        fragment.append(document.createTextNode(part))
+        continue
+      }
+      const token = document.createElement("span")
+      token.className = "md-auto-populated-reveal__token"
+      token.style.setProperty("--md-auto-populated-stagger", `${index * staggerMs}ms`)
+      token.textContent = part
+      fragment.append(token)
+    }
   })
   reveal.append(fragment)
   parent.append(reveal)
@@ -76,7 +92,7 @@ function createAutoPopulationReveal(element: HTMLElement, value: string) {
 
   const timeout = window.setTimeout(
     cleanup,
-    REVEAL_SEGMENT_DURATION_MS + Math.max(0, segments.length - 1) * REVEAL_STAGGER_MS + 40,
+    REVEAL_SEGMENT_DURATION_MS + spreadMs + 40,
   )
 
   function cleanup() {
@@ -95,7 +111,8 @@ export function useAutoPopulationMorph<T extends HTMLElement>(active: boolean, v
   const mountedRef = useRef(false)
   const textValue = String(value ?? "")
 
-  useEffect(() => {
+  // Hide the native text and install its reveal in the same paint as the new value.
+  useLayoutEffect(() => {
     const previous = previousRef.current
     previousRef.current = { active, value: textValue }
     cleanupRef.current?.()
@@ -123,62 +140,15 @@ export function useAutoPopulationMorph<T extends HTMLElement>(active: boolean, v
   }
 }
 
-export function AutoPopulationIndicator({
-  active,
-  description = "Filled from linked information. You can edit this value manually.",
-  inline = false,
-  className,
-}: {
-  active: boolean
-  description?: string
-  inline?: boolean
-  className?: string
-}) {
-  const { t } = useLanguage()
-  if (!active) return null
-
-  return (
-    <Tooltip delayDuration={220}>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={t("About this auto-populated value")}
-          onPointerDown={(event) => event.preventDefault()}
-          className={cn(
-            "md-auto-populated-indicator z-10 grid size-5 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-accent)] outline-none transition-[background-color,color,box-shadow,transform] hover:bg-[var(--md-accent-a12)] focus-visible:bg-[var(--md-accent-a12)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]",
-            inline ? "relative shrink-0" : "absolute end-1.5 top-1/2 -translate-y-1/2",
-            className,
-          )}
-        >
-          <Sparkles className="size-3.5" strokeWidth={1.65} aria-hidden="true" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent
-        side="top"
-        sideOffset={7}
-        className="max-w-[18rem] items-start gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-2.5 py-2 text-start text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]"
-      >
-        <span className="grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)]">
-          <Sparkles className="size-3.5" strokeWidth={1.65} aria-hidden="true" />
-        </span>
-        <span className="min-w-0">
-          <span className="block text-[11.5px] font-medium leading-4">{t("Auto-populated")}</span>
-          <span className="mt-0.5 block text-[10.5px] leading-4 text-[var(--md-text)]">{t(description)}</span>
-        </span>
-      </TooltipContent>
-    </Tooltip>
-  )
-}
-
 export function AutoPopulatedInput({
   autoPopulated = false,
-  autoPopulationDescription,
+  autoPopulationDescription = "Filled from linked information. You can edit this value manually.",
   className,
-  indicatorClassName,
   ref,
   value,
   ...props
-}: ComponentProps<typeof Input> & AutoPopulationStateProps & { indicatorClassName?: string }) {
+}: ComponentProps<typeof Input> & AutoPopulationStateProps) {
+  const { t } = useLanguage()
   const mergedRef = useAutoPopulationMorph<HTMLInputElement>(autoPopulated, value, ref)
 
   return (
@@ -188,21 +158,22 @@ export function AutoPopulatedInput({
         ref={mergedRef}
         value={value}
         data-auto-populated={autoPopulated || undefined}
-        className={cn("md-auto-populated-control", autoPopulated && "pe-8", className)}
+        aria-description={props["aria-description"] ?? (autoPopulated ? t(autoPopulationDescription) : undefined)}
+        className={cn("md-auto-populated-control", className)}
       />
-      <AutoPopulationIndicator active={autoPopulated} description={autoPopulationDescription} className={indicatorClassName} />
     </div>
   )
 }
 
 export function AutoPopulatedTextarea({
   autoPopulated = false,
-  autoPopulationDescription,
+  autoPopulationDescription = "Filled from linked information. You can edit this value manually.",
   className,
   ref,
   value,
   ...props
 }: ComponentProps<typeof Textarea> & AutoPopulationStateProps) {
+  const { t } = useLanguage()
   const mergedRef = useAutoPopulationMorph<HTMLTextAreaElement>(autoPopulated, value, ref)
 
   return (
@@ -212,9 +183,9 @@ export function AutoPopulatedTextarea({
         ref={mergedRef}
         value={value}
         data-auto-populated={autoPopulated || undefined}
-        className={cn("md-auto-populated-control", autoPopulated && "pe-8", className)}
+        aria-description={props["aria-description"] ?? (autoPopulated ? t(autoPopulationDescription) : undefined)}
+        className={cn("md-auto-populated-control", className)}
       />
-      <AutoPopulationIndicator active={autoPopulated} description={autoPopulationDescription} className="top-2 translate-y-0" />
     </div>
   )
 }

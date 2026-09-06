@@ -3,9 +3,10 @@ import { createPortal } from "react-dom"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Csv02Icon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns3, Eye, EyeOff, GripVertical, LoaderCircle, MoreHorizontal, MorphingIcon, Pin, PinOff, RotateCcw, SquareCheck, Trash2, X, type LucideIcon } from "@/components/icons/hugeicons"
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronUp, Columns3, Eye, EyeOff, GripVertical, LoaderCircle, MoreHorizontal, MorphingIcon, Pin, PinOff, RotateCcw, SquareCheck, Trash2, X, type LucideIcon } from "@/components/icons/hugeicons"
 
 import { TableCsvExportDialog } from "@/components/multideck/table-csv-export-dialog"
+import { Pagination } from "@/components/multideck/pagination"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -15,6 +16,8 @@ import { useLanguage } from "@/i18n/language-provider"
 import { discoverCsvRecordFields, type CsvExportField, type CsvExportSource, type DiscoverCsvFieldsOptions } from "@/lib/csv-export"
 import { useTablePinnedColumns } from "@/lib/table-preferences"
 import { cn, isInsideFloatingLayer } from "@/lib/utils"
+import { defaultPaginationPageSize, paginationRange } from "@/lib/pagination"
+import { sortExportRows, type TableExportScope } from "@/lib/table-export"
 import { TablePillKindContext } from "@/components/multideck/status-pill"
 
 export type DataTableColumn<Row> = {
@@ -57,6 +60,14 @@ export type DataTableExportConfig<Row> = DiscoverCsvFieldsOptions & {
   /** Loads full records only after export is requested, preserving lean register queries. */
   loadRecords?: (rows: readonly Row[]) => Promise<readonly unknown[]>
   fields?: readonly CsvExportField<Row>[]
+  /** Opt in only with an explicit complete-data loader for this record type. */
+  register?: {
+    loadAllRows: (signal: AbortSignal) => Promise<readonly Row[]>
+    dateLabel: string
+    dateValue: (row: Row) => string | Date | null | undefined
+    scopeDescription?: string
+    busy?: boolean
+  }
 }
 
 export type DataTableBulkDeleteConfig<Row> = {
@@ -127,13 +138,17 @@ type DataTableProps<Row> = {
   rowContextActions?: (row: Row) => readonly DataTableRowContextAction<Row>[]
   className?: string
   tableClassName?: string
+  /** Opt in only for complete local datasets, never an already paged server response or line editor. */
+  clientPagination?: boolean
   /** Server-owned paging keeps large registers bounded without changing the table interaction model. */
   pagination?: {
     offset: number
     limit: number
     total: number
     loading?: boolean
+    error?: boolean
     onOffsetChange: (offset: number) => void
+    onLimitChange: (limit: number) => void
   }
   /** When supplied, sorting is executed by the server instead of the current page only. */
   serverSorting?: {
@@ -228,10 +243,13 @@ export function DataTable<Row>({
   rowContextActions,
   className,
   tableClassName,
+  clientPagination = false,
   pagination,
   serverSorting,
 }: DataTableProps<Row>) {
   const { direction, t } = useLanguage()
+  const [localPage, setLocalPage] = useState(1)
+  const [localPageSize, setLocalPageSize] = useState(defaultPaginationPageSize)
   const reduceMotion = useReducedMotion()
   const columnIds = useMemo(() => columns.map((column) => column.id), [columns])
   const defaultHidden = useMemo(() => columns.filter((column) => column.defaultHidden).map((column) => column.id), [columns])
@@ -251,6 +269,11 @@ export function DataTable<Row>({
   const [exportSources, setExportSources] = useState<CsvExportSource<Row>[]>([])
   const [exportLoading, setExportLoading] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [exportScope, setExportScope] = useState<TableExportScope | null>(null)
+  const exportPageRows = useRef<readonly Row[]>([])
+  const exportTrigger = useRef<HTMLButtonElement | null>(null)
+  const exportReturnFocus = useRef<HTMLElement | null>(null)
+  const exportAbort = useRef<AbortController | null>(null)
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null)
@@ -425,25 +448,29 @@ export function DataTable<Row>({
     if (!sort) return rows
     const column = columns.find((candidate) => candidate.id === sort.id)
     if (!column?.sortValue) return rows
-    return [...rows].sort((left, right) => {
-      const leftValue = column.sortValue?.(left)
-      const rightValue = column.sortValue?.(right)
-      if (leftValue === rightValue) return 0
-      if (leftValue === null || leftValue === undefined) return 1
-      if (rightValue === null || rightValue === undefined) return -1
-      const comparison = typeof leftValue === "number" && typeof rightValue === "number"
-        ? leftValue - rightValue
-        : String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: "base" })
-      return sort.direction === "asc" ? comparison : -comparison
-    })
+    return sortExportRows(rows, column.sortValue, sort.direction)
   }, [columns, rows, serverSorting, sort])
+
+  const localRange = paginationRange(sortedRows.length, localPage, localPageSize)
+  const pageRows = clientPagination && !pagination
+    ? sortedRows.slice(localRange.offset, localRange.offset + localPageSize)
+    : sortedRows
+  const paging = pagination ?? (clientPagination ? {
+    offset: (localPage - 1) * localPageSize,
+    limit: localPageSize,
+    total: sortedRows.length,
+    loading: false,
+    error: false,
+    onOffsetChange: (offset: number) => setLocalPage(Math.floor(offset / localPageSize) + 1),
+    onLimitChange: setLocalPageSize,
+  } : undefined)
 
   const selectedRows = useMemo(
     () => sortedRows.filter((row) => selectionKeys.has(getRowKey(row))),
     [getRowKey, selectionKeys, sortedRows],
   )
   const selectedRowsCanDelete = Boolean(selectedRows.length && bulkDelete && selectedRows.every((row) => bulkDelete.canDelete?.(row) ?? true))
-  const allRowsSelected = sortedRows.length > 0 && selectedRows.length === sortedRows.length
+  const allRowsSelected = pageRows.length > 0 && pageRows.every((row) => selectionKeys.has(getRowKey(row)))
   const exportFields = useMemo<CsvExportField<Row>[]>(() => {
     const columnFields = columns
       .filter((column) => column.exportable !== false && column.kind !== "actions" && column.id !== "open")
@@ -498,28 +525,44 @@ export function DataTable<Row>({
   }
 
   function toggleAllRows() {
-    setSelectionKeys(allRowsSelected ? new Set() : new Set(sortedRows.map(getRowKey)))
+    setSelectionKeys((current) => {
+      const next = new Set(current)
+      pageRows.forEach((row) => { if (allRowsSelected) next.delete(getRowKey(row)); else next.add(getRowKey(row)) })
+      return next
+    })
   }
 
-  async function loadExportSources(rowsToExport: readonly Row[]) {
+  async function loadExportSources(rowsToExport: readonly Row[], scope?: TableExportScope) {
     const requestId = ++exportRequestId.current
-    setExportSources(rowsToExport.map((row) => ({ row, record: row })))
+    exportAbort.current?.abort()
+    const controller = new AbortController()
+    exportAbort.current = controller
+    setExportSources([])
     setExportError(null)
-    if (!exportConfig?.loadRecords) {
-      setExportLoading(false)
-      return
-    }
-
     setExportLoading(true)
     try {
-      const records = await exportConfig.loadRecords(rowsToExport)
-      if (records.length !== rowsToExport.length) throw new Error("The full record response was incomplete.")
+      const loadedRows = scope === "all" && exportConfig?.register
+        ? await exportConfig.register.loadAllRows(controller.signal)
+        : rowsToExport
+      const exportRows = scope === "all" && !serverSorting && sort
+        ? sortExportRows(loadedRows, columns.find((column) => column.id === sort.id)?.sortValue, sort.direction)
+        : loadedRows
+      controller.signal.throwIfAborted()
+      const records: unknown[] = []
+      // Bound full-detail requests, including large all-record exports.
+      for (let offset = 0; offset < exportRows.length; offset += 25) {
+        controller.signal.throwIfAborted()
+        const batch = exportRows.slice(offset, offset + 25)
+        const details = exportConfig?.loadRecords ? await exportConfig.loadRecords(batch) : batch
+        if (details.length !== batch.length || details.some((record) => record === null || record === undefined)) throw new Error("The full record response was incomplete.")
+        records.push(...details)
+      }
       if (requestId !== exportRequestId.current) return
-      setExportSources(rowsToExport.map((row, index) => ({ row, record: records[index] ?? row })))
+      setExportSources(exportRows.map((row, index) => ({ row, record: records[index] ?? row })))
     } catch (reason) {
       if (requestId !== exportRequestId.current) return
       console.error("Full table export records could not be loaded.", reason)
-      setExportError("Check your connection and try loading the selected records again.")
+      setExportError("No file was downloaded. Check your connection and try again. If records changed during export, reload the table first.")
     } finally {
       if (requestId === exportRequestId.current) setExportLoading(false)
     }
@@ -527,9 +570,22 @@ export function DataTable<Row>({
 
   function openExportDialog() {
     if (!selectedRows.length) return
+    exportReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setExportScope(null)
     setExportOpen(true)
+    exportPageRows.current = selectedRows
     void loadExportSources(selectedRows)
   }
+
+  function openRegisterExport() {
+    exportReturnFocus.current = exportTrigger.current
+    exportPageRows.current = [...pageRows]
+    setExportScope("page")
+    setExportOpen(true)
+    void loadExportSources(exportPageRows.current, "page")
+  }
+
+  useEffect(() => () => { exportRequestId.current += 1; exportAbort.current?.abort() }, [])
 
   async function confirmBulkDelete() {
     if (!bulkDelete || !selectedRowsCanDelete || bulkDeleting) return
@@ -628,6 +684,7 @@ export function DataTable<Row>({
 
   function toggleSort(column: DataTableColumn<Row>) {
     if (!column.sortValue) return
+    setLocalPage(1)
     const next = (() => {
       const current = serverSorting?.value ?? sort
       if (!current || current.id !== column.id) return { id: column.id, direction: "asc" }
@@ -704,7 +761,7 @@ export function DataTable<Row>({
     return column.kind === "number" ? "tabular-nums" : undefined
   }
 
-  const hasTrailingToolbar = Boolean(selectionMode || toolbarSearch || toolbarFilters || toolbarOptions || showColumnManager)
+  const hasTrailingToolbar = Boolean(selectionMode || toolbarSearch || toolbarFilters || toolbarOptions || showColumnManager || exportConfig?.register)
   const hasLeadingToolbar = Boolean(toolbarTabs)
   const contextRowActions = rowContextMenu ? rowContextActions?.(rowContextMenu.row) ?? [] : []
   const contextRowKey = rowContextMenu ? getRowKey(rowContextMenu.row) : null
@@ -784,13 +841,16 @@ export function DataTable<Row>({
             <PopoverContent
               align="end"
               sideOffset={6}
+              collisionPadding={12}
+              aria-label={t("Table controls")}
+              data-mobile="true"
               onInteractOutside={(event) => { if (isInsideFloatingLayer(event.target)) event.preventDefault() }}
-              className="w-[min(340px,calc(100vw-24px))] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-2 shadow-[var(--md-shadow-popover)]"
+              className="group/table-controls w-[min(360px,calc(100vw-24px))] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto overscroll-contain rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-2 shadow-[var(--md-shadow-popover)]"
             >
-              <div className="grid gap-2">
-                {toolbarSearch ? <div className="min-w-0 [&>*]:w-full [&_input]:!rounded-[var(--md-radius-lg)]">{toolbarSearch}</div> : null}
-                {toolbarFilters ? <div className="flex min-w-0 flex-wrap items-center gap-1.5 [&_button]:!rounded-[var(--md-radius-lg)]">{toolbarFilters}</div> : null}
-                {toolbarOptions ? <div className="flex min-w-0 flex-wrap items-center gap-1.5">{toolbarOptions}</div> : null}
+              <div className="grid min-w-0 gap-3">
+                {toolbarSearch ? <div data-table-mobile-search className="min-w-0 [&>*]:!w-full [&>*]:!min-w-0 [&>*]:!max-w-none [&_input]:min-h-11 [&_input]:!rounded-[var(--md-radius-md)]">{toolbarSearch}</div> : null}
+                {toolbarFilters ? <div data-table-mobile-filters className="flex min-w-0 flex-col gap-2 [&>*]:w-full [&_button]:min-h-11 [&_button]:!rounded-[var(--md-radius-md)] [&>button]:justify-start">{toolbarFilters}</div> : null}
+                {toolbarOptions ? <div data-table-mobile-options className="flex min-w-0 flex-wrap items-center gap-2 border-t border-[var(--md-line)] pt-2 [&>button]:min-h-11 [&>button]:w-full [&>button]:justify-start">{toolbarOptions}</div> : null}
               </div>
             </PopoverContent>
           </Popover> : (
@@ -800,6 +860,16 @@ export function DataTable<Row>({
               {toolbarOptions ? <div className="order-4 flex min-w-0 flex-wrap items-center justify-end gap-1.5">{toolbarOptions}</div> : null}
             </>
           )}
+          {exportConfig?.register ? <button
+            ref={exportTrigger}
+            type="button"
+            data-table-export-control
+            aria-label={t("Export records")}
+            title={t("Export records")}
+            disabled={exportConfig.register.busy || pagination?.loading || pagination?.error}
+            onClick={openRegisterExport}
+            className="order-5 grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-lg)] text-[var(--md-text)] outline-none transition-[background,color,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transform-none"
+          ><HugeiconsIcon icon={Csv02Icon} size={16} strokeWidth={1.4} aria-hidden="true" /></button> : null}
           {showColumnManager ? <div data-table-columns-control className="order-5 flex shrink-0">
           <Popover>
           <PopoverTrigger asChild>
@@ -887,7 +957,7 @@ export function DataTable<Row>({
                   className="grid h-full min-h-10 place-items-center"
                 >
                   <Checkbox
-                    checked={allRowsSelected ? true : selectedRows.length ? "indeterminate" : false}
+                    checked={allRowsSelected ? true : pageRows.some((row) => selectionKeys.has(getRowKey(row))) ? "indeterminate" : false}
                     onCheckedChange={toggleAllRows}
                     aria-label={t(allRowsSelected ? "Deselect all rows" : "Select all rows")}
                     className="size-[18px] rounded-[var(--md-radius-xs)]"
@@ -951,7 +1021,7 @@ export function DataTable<Row>({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sortedRows.length ? sortedRows.map((row) => {
+          {pageRows.length ? pageRows.map((row) => {
             const rowKey = getRowKey(row)
             const internallySelected = selectionKeys.has(rowKey)
             const isSelected = internallySelected || selectedRowKey === rowKey || selectedRowKeys?.has(rowKey) === true
@@ -1088,34 +1158,20 @@ export function DataTable<Row>({
           )}
         </TableBody>
       </Table>
-      {pagination ? (
-        <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-t border-[var(--md-line)] bg-[var(--md-surface-soft)] px-3 py-1.5">
-          <p className="text-[11.5px] text-[var(--md-text)]" aria-live="polite">
-            {t("Showing")} <span data-i18n-skip dir="ltr" className="font-medium tabular-nums text-[var(--md-ink)]">{pagination.total ? pagination.offset + 1 : 0}–{Math.min(pagination.offset + rows.length, pagination.total)}</span> {t("of")} <span data-i18n-skip dir="ltr" className="font-medium tabular-nums text-[var(--md-ink)]">{pagination.total}</span>
-          </p>
-          <div className="flex items-center gap-1" role="group" aria-label={t("Table pages")}>
-            <button
-              type="button"
-              disabled={pagination.loading || pagination.offset <= 0}
-              onClick={() => pagination.onOffsetChange(Math.max(0, pagination.offset - pagination.limit))}
-              className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] outline-none transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-30 motion-reduce:transform-none"
-              aria-label={t("Previous page")}
-              title={t("Previous page")}
-            >
-              <ChevronLeft className="size-3.5 rtl:rotate-180" strokeWidth={1.5} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              disabled={pagination.loading || pagination.offset + rows.length >= pagination.total}
-              onClick={() => pagination.onOffsetChange(pagination.offset + pagination.limit)}
-              className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] outline-none transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-30 motion-reduce:transform-none"
-              aria-label={t("Next page")}
-              title={t("Next page")}
-            >
-              <ChevronRight className="size-3.5 rtl:rotate-180" strokeWidth={1.5} aria-hidden="true" />
-            </button>
-          </div>
-        </div>
+      {paging ? (
+        <Pagination
+          page={Math.floor(paging.offset / paging.limit) + 1}
+          pageCount={Math.max(1, Math.ceil(paging.total / paging.limit))}
+          pageSize={paging.limit}
+          totalItems={paging.total}
+          itemCount={pageRows.length}
+          itemLabel="rows"
+          loading={paging.loading}
+          error={paging.error}
+          onPageChange={(page) => paging.onOffsetChange((page - 1) * paging.limit)}
+          onPageSizeChange={paging.onLimitChange}
+          className="rounded-none border-t border-[var(--md-line)] shadow-none"
+        />
       ) : null}
       </div>
       {typeof document !== "undefined" ? createPortal(
@@ -1308,6 +1364,7 @@ export function DataTable<Row>({
           setExportOpen(open)
           if (!open) {
             exportRequestId.current += 1
+            exportAbort.current?.abort()
             setExportLoading(false)
           }
         }}
@@ -1316,8 +1373,20 @@ export function DataTable<Row>({
         fileName={resolvedExportFileName}
         loading={exportLoading}
         error={exportError}
-        onRetry={() => void loadExportSources(exportSources.map((source) => source.row))}
+        register={exportScope && exportConfig?.register ? {
+          scope: exportScope,
+          onScopeChange: (scope) => { setExportScope(scope); void loadExportSources(exportPageRows.current, scope) },
+          dateLabel: exportConfig.register.dateLabel,
+          dateValue: exportConfig.register.dateValue,
+          scopeDescription: exportConfig.register.scopeDescription,
+          pageCount: exportPageRows.current.length,
+        } : undefined}
+        onRetry={() => void loadExportSources(exportPageRows.current, exportScope ?? undefined)}
         onDownloaded={exitSelectionMode}
+        restoreFocus={() => {
+          const target = exportReturnFocus.current?.isConnected ? exportReturnFocus.current : exportTrigger.current
+          target?.focus()
+        }}
       />
       <Dialog open={bulkDeleteOpen} onOpenChange={(open) => { if (!bulkDeleting) { setBulkDeleteOpen(open); if (!open) setBulkDeleteError(null) } }}>
         <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[440px]">

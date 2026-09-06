@@ -1,3 +1,5 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -16,7 +18,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadio
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useLanguage } from "@/i18n/language-provider"
 import { getAdminAudit, type AdminActiveUser, type AdminAuditResponse, type AdminAuditRow, type AdminAuditView } from "@/lib/admin-audit-api"
-import { draftQuoteReferenceRule, getQuoteBranding, getQuoteReferenceSettings, saveQuoteReferenceSettings, uploadQuoteBrandingLogo, type QuoteBranding, type QuoteReferenceSettings, type ReferenceRuleDraft, type ReferenceRuleTarget } from "@/lib/quote-workflow-api"
+import { draftQuoteReferenceRule, getQuoteBranding, getQuoteFollowUpSettings, getQuoteReferenceSettings, saveQuoteFollowUpSettings, saveQuoteReferenceSettings, uploadQuoteBrandingLogo, type QuoteBranding, type QuoteFollowUpSettings, type QuoteReferenceSettings, type ReferenceRuleDraft, type ReferenceRuleTarget } from "@/lib/quote-workflow-api"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { cn } from "@/lib/utils"
 
@@ -253,7 +255,7 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
   const [dateRange, setDateRange] = useState<MultideckDateRange>({ start: null, end: null })
   const [offset, setOffset] = useState(0)
   const [sort, setSort] = useState<{ id: "time"; direction: "asc" | "desc" }>({ id: "time", direction: "desc" })
-  const pageSize = 25
+  const [pageSize, setPageSize] = useState(defaultPaginationPageSize)
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setSearch(searchInput.trim()), 250)
@@ -265,30 +267,36 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
     setResult(null)
   }, [view])
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
+  const load = useCallback(async (signal?: AbortSignal, quiet = false) => {
+    if (!quiet) setLoading(true)
     setError(null)
     try {
-      setResult(await getAdminAudit(view, { search, category, dateRange, sort, limit: pageSize, offset }, signal))
+      const next = await getAdminAudit(view, { search, category, dateRange, sort, limit: pageSize, offset }, signal)
+      if (!signal?.aborted) setResult(next)
     } catch (loadError) {
       if (loadError instanceof Error && loadError.name === "AbortError") return
       setError(loadError instanceof Error ? loadError.message : "The audit log could not be loaded.")
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
-  }, [category, dateRange, offset, search, sort, view])
+  }, [category, dateRange, offset, pageSize, search, sort, view])
 
   useEffect(() => {
-    let controller = new AbortController()
-    void load(controller.signal)
-    const intervalId = window.setInterval(() => {
-      controller.abort()
-      controller = new AbortController()
-      void load(controller.signal)
-    }, auditRefreshIntervalMs)
+    const controller = new AbortController()
+    let refreshing = false
+    const refresh = async (quiet: boolean) => {
+      if (refreshing || controller.signal.aborted) return
+      refreshing = true
+      try { await load(controller.signal, quiet) } finally { refreshing = false }
+    }
+    void refresh(false)
+    const returned = () => { if (!document.hidden) void refresh(true) }
+    const intervalId = window.setInterval(returned, auditRefreshIntervalMs)
+    document.addEventListener("visibilitychange", returned)
     return () => {
       controller.abort()
       window.clearInterval(intervalId)
+      document.removeEventListener("visibilitychange", returned)
     }
   }, [load])
 
@@ -329,6 +337,11 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
         {header}
         <DataTable
           ariaLabel={title}
+          exportConfig={{ fileName: `admin-${view}`, register: {
+            dateLabel: "Event recorded date", dateValue: (row) => row.occurredAt,
+            busy: searchInput.trim() !== search,
+            loadAllRows: (signal) => collectExportPages((page) => getAdminAudit(view, { search, category, dateRange, sort, ...page }, signal), (row) => row.id, signal),
+          } }}
           columnsButtonLabel={t("Manage audit log columns")}
           toolbarSearch={<Input type="search" value={searchInput} onChange={(event) => { setSearchInput(event.target.value); setOffset(0) }} placeholder={t("Search audit log")} aria-label={t("Search audit log")} className="w-full sm:w-[220px]" />}
           toolbarFilters={<><MultideckDateRangePicker value={dateRange} onChange={(range) => { setDateRange(range); setOffset(0) }} placeholder="Date range" title="Audit date range" description="Show events recorded between these dates." footerLabel="Selected audit dates" align="end" allowClear maxDate={getDateKey(new Date())} active={Boolean(dateRange.start || dateRange.end)} triggerClassName="h-9 w-auto min-w-[148px] max-w-[220px]" /><Select value={category} onValueChange={(value) => { setCategory(value as AuditCategory); setOffset(0) }}><SelectTrigger aria-label={t("Filter audit source")} className="min-w-[150px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("All sources")}</SelectItem><SelectItem value="authentication">{t("Authentication")}</SelectItem><SelectItem value="application">{t("Application")}</SelectItem></SelectContent></Select></>}
@@ -341,7 +354,7 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
           rowClassName="h-[64px]"
           enableSelectionExport={false}
           serverSorting={{ value: sort, onChange: (next) => { setSort(next?.id === "time" ? { id: "time", direction: next.direction } : { id: "time", direction: "desc" }); setOffset(0) } }}
-          pagination={{ offset, limit: pageSize, total: result?.total ?? 0, loading, onOffsetChange: setOffset }}
+          pagination={{ offset, limit: pageSize, total: result?.total ?? 0, loading, onOffsetChange: setOffset, onLimitChange: setPageSize, error: Boolean(error) }}
           emptyState={<div className="py-5 text-center"><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No matching audit activity")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Change the search, date range or source filter to see more events.")}</p></div>}
         />
       </div>
@@ -363,6 +376,7 @@ function SystemPreferencesContent() {
   const [bookingPatterns, setBookingPatterns] = useState<QuoteReferenceSettings["bookingPatterns"]>([])
   const [customerPattern, setCustomerPattern] = useState("CUS{NUMBER:4}")
   const [customerNextNumber, setCustomerNextNumber] = useState(1)
+  const [followUpSettings, setFollowUpSettings] = useState<QuoteFollowUpSettings>({ enabled: true, defaultDelayDays: 3, sendTime: "09:00", timezone: "Europe/London" })
   const [unlockedCounters, setUnlockedCounters] = useState<Set<string>>(() => new Set())
   const [counterUnlock, setCounterUnlock] = useState<{ key: string; label: string } | null>(null)
   const [activeRuleKey, setActiveRuleKey] = useState<string | null>(null)
@@ -377,15 +391,24 @@ function SystemPreferencesContent() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    void Promise.all([getQuoteReferenceSettings(), getQuoteBranding()]).then(([settings, quoteBranding]) => {
-      setCompanyName(settings.companyName || "Multideck")
-      setQuotePattern(normaliseReferencePatternInput(settings.quotePattern).pattern)
-      setQuoteNextNumber(settings.quoteNextNumber ?? 1)
-      setBookingPatterns(settings.bookingPatterns.map((item) => ({ ...item, pattern: normaliseReferencePatternInput(item.pattern).pattern })))
-      setCustomerPattern(normaliseReferencePatternInput(settings.customerPattern || "CUS{NUMBER:4}").pattern)
-      setCustomerNextNumber(settings.customerNextNumber ?? 1)
-      setBranding(quoteBranding)
-    }).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "System preferences could not be loaded.")).finally(() => setLoading(false))
+    void Promise.allSettled([getQuoteReferenceSettings(), getQuoteBranding(), getQuoteFollowUpSettings()]).then(([referenceResult, brandingResult, followUpResult]) => {
+      if (referenceResult.status === "fulfilled") {
+        const settings = referenceResult.value
+        setCompanyName(settings.companyName || "Multideck")
+        setQuotePattern(normaliseReferencePatternInput(settings.quotePattern).pattern)
+        setQuoteNextNumber(settings.quoteNextNumber ?? 1)
+        setBookingPatterns(settings.bookingPatterns.map((item) => ({ ...item, pattern: normaliseReferencePatternInput(item.pattern).pattern })))
+        setCustomerPattern(normaliseReferencePatternInput(settings.customerPattern || "CUS{NUMBER:4}").pattern)
+        setCustomerNextNumber(settings.customerNextNumber ?? 1)
+      }
+      if (brandingResult.status === "fulfilled") setBranding(brandingResult.value)
+      if (followUpResult.status === "fulfilled") setFollowUpSettings(followUpResult.value)
+
+      const failed = [referenceResult, brandingResult, followUpResult].find((result) => result.status === "rejected")
+      if (failed?.status === "rejected") {
+        setError(failed.reason instanceof Error ? failed.reason.message : "Some system preferences could not be loaded.")
+      }
+    }).finally(() => setLoading(false))
   }, [])
 
   async function uploadLogo(file: File | null) {
@@ -412,26 +435,34 @@ function SystemPreferencesContent() {
       setError(validationError)
       return
     }
+    if (!Number.isInteger(followUpSettings.defaultDelayDays) || followUpSettings.defaultDelayDays < 1 || followUpSettings.defaultDelayDays > 30) {
+      setError("Quote follow-up timing must be between 1 and 30 days.")
+      return
+    }
     setSaving(true)
     setFeedback(null)
     setError(null)
     try {
-      const settings = await saveQuoteReferenceSettings({
-        companyName,
-        quotePattern: quotePattern.trim().toUpperCase(),
-        quoteNextNumber,
-        bookingPatterns: bookingPatterns.map((item) => ({ ...item, pattern: item.pattern.trim().toUpperCase() })),
-        customerPattern: customerPattern.trim().toUpperCase(),
-        customerNextNumber,
-      })
+      const [settings, savedFollowUp] = await Promise.all([
+        saveQuoteReferenceSettings({
+          companyName,
+          quotePattern: quotePattern.trim().toUpperCase(),
+          quoteNextNumber,
+          bookingPatterns: bookingPatterns.map((item) => ({ ...item, pattern: item.pattern.trim().toUpperCase() })),
+          customerPattern: customerPattern.trim().toUpperCase(),
+          customerNextNumber,
+        }),
+        saveQuoteFollowUpSettings(followUpSettings),
+      ])
       setCompanyName(settings.companyName || companyName)
       setQuotePattern(settings.quotePattern)
       setQuoteNextNumber(settings.quoteNextNumber ?? 1)
       setBookingPatterns(settings.bookingPatterns)
       setCustomerPattern(settings.customerPattern || customerPattern)
       setCustomerNextNumber(settings.customerNextNumber ?? 1)
+      setFollowUpSettings(savedFollowUp)
       setUnlockedCounters(new Set())
-      setFeedback("Reference rules saved.")
+      setFeedback("System preferences saved.")
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "System preferences could not be saved.")
     } finally {
@@ -739,7 +770,7 @@ function SystemPreferencesContent() {
     )
   }
 
-  const header = <SettingsPageHeader title={t("System Preferences")} description={t("Choose how Multideck names new records. Existing references stay unchanged.")} descriptionPlacement="under-title" />
+  const header = <SettingsPageHeader title={t("System Preferences")} description={t("Set company-wide quote follow-up and reference rules. Existing references stay unchanged.")} descriptionPlacement="under-title" />
   if (loading) return <div className="px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[760px]">{header}<p className="mt-8 text-[13px] text-[var(--md-text)]" role="status">{t("Loading system preferences…")}</p></div></div>
 
   return (
@@ -776,6 +807,41 @@ function SystemPreferencesContent() {
           </div>
           {brandingError ? <p className="mt-3 text-[12px] text-[var(--md-red)]" role="alert">{t(brandingError)}</p> : null}
           {brandingFeedback ? <p className="mt-3 text-[12px] text-[var(--md-green)]" role="status">{t(brandingFeedback)}</p> : null}
+        </section>
+        <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">
+          <div>
+            <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Quote follow-up")}</h2>
+            <p className="mt-1 max-w-[68ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("Send one polite reminder when a submitted quote is still waiting for a response. A customer-specific delay can override this policy, and customers who do not allow follow-ups are always excluded.")}</p>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="grid gap-1.5 text-[11px] font-medium text-[var(--md-text)]">
+              <span>{t("Automatic reminder")}</span>
+              <Select value={followUpSettings.enabled ? "enabled" : "disabled"} onValueChange={(value) => setFollowUpSettings((current) => ({ ...current, enabled: value === "enabled" }))}>
+                <SelectTrigger aria-label={t("Automatic reminder")}><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="enabled">{t("Enabled")}</SelectItem><SelectItem value="disabled">{t("Disabled")}</SelectItem></SelectContent>
+              </Select>
+            </label>
+            <label className="grid gap-1.5 text-[11px] font-medium text-[var(--md-text)]" htmlFor="quote-follow-up-days">
+              <span>{t("Wait after sending")}</span>
+              <span className="relative block">
+                <Input id="quote-follow-up-days" type="number" inputMode="numeric" min={1} max={30} value={followUpSettings.defaultDelayDays} onChange={(event) => setFollowUpSettings((current) => ({ ...current, defaultDelayDays: Math.max(1, Math.min(30, Number(event.target.value) || 1)) }))} className="pe-12" />
+                <span className="pointer-events-none absolute inset-y-0 end-3 flex items-center text-[11px] font-normal text-[var(--md-subtle)]">{t("days")}</span>
+              </span>
+            </label>
+            <label className="grid gap-1.5 text-[11px] font-medium text-[var(--md-text)]" htmlFor="quote-follow-up-time">
+              <span>{t("Send at")}</span>
+              <Input id="quote-follow-up-time" type="time" value={followUpSettings.sendTime} onChange={(event) => setFollowUpSettings((current) => ({ ...current, sendTime: event.target.value }))} />
+            </label>
+            <label className="grid gap-1.5 text-[11px] font-medium text-[var(--md-text)]">
+              <span>{t("Timezone")}</span>
+              <Select value={followUpSettings.timezone} onValueChange={(timezone) => setFollowUpSettings((current) => ({ ...current, timezone }))}>
+                <SelectTrigger aria-label={t("Quote follow-up timezone")}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {["Europe/London", "UTC", "Europe/Amsterdam", "America/New_York", "America/Chicago", "America/Los_Angeles", "Asia/Dubai", "Asia/Singapore", "Australia/Sydney"].map((timezone) => <SelectItem key={timezone} value={timezone}><span dir="ltr">{timezone}</span></SelectItem>)}
+                </SelectContent>
+              </Select>
+            </label>
+          </div>
         </section>
         <motion.section layout={!reduceMotion} className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">
           <div className="border-b border-[var(--md-hairline)] pb-4">

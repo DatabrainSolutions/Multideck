@@ -19,6 +19,7 @@ test("customer documents are counted and paged at Supabase", () => {
 test("the customer detail screen requests and navigates one document page", () => {
   assert.match(client, /listCustomerDocuments\(customerId: string, options:/)
   assert.match(client, /URLSearchParams\(\{ customerId, limit: String\(limit\), offset: String\(offset\) \}\)/)
-  assert.match(page, /listCustomerDocuments\(customerId, \{ limit: 20, offset: \(documentPage - 1\) \* 20 \}\)/)
+  assert.match(page, /listCustomerDocuments\(customerId, \{ limit: documentPageSize, offset: \(documentPage - 1\) \* documentPageSize \}\)/)
+  assert.match(page, /onLimitChange=\{setDocumentPageSize\}/)
   assert.match(page, /<Pagination[\s\S]*totalItems=\{total\}/)
 })

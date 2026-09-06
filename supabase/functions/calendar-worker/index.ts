@@ -3,6 +3,7 @@ import { zoomNumericReference, zoomStartTime } from "../_shared/calendar-zoom.ts
 import { adminClient, HttpError } from "../_shared/backend.ts"
 import { cleanText, meetingIcs, randomToken, sha256 } from "../_shared/calendar.ts"
 import { calendarProviderAccessToken } from "../_shared/calendar-provider-auth.ts"
+import { normaliseExternalEventChange, normaliseExternalEventResponse, pushExternalEventChange, pushExternalEventResponse } from "../_shared/calendar-provider-events.ts"
 import { linkBookingMeetingToCrm } from "../_shared/calendar-booking-crm.ts"
 import { readCalendarEmailTemplate, renderCalendarEmailTemplate, type CalendarEmailTemplateKind } from "../_shared/calendar-email-templates.ts"
 import { renderBrandedEmail } from "../_shared/email-template.ts"
@@ -64,6 +65,74 @@ function googleJoinUrl(payload: JsonObject) {
   return cleanText(payload.hangoutLink, 2_000) || cleanText(entryPoints.find((entry) => entry.entryPointType === "video")?.uri, 2_000)
 }
 
+type ProviderParticipant = {
+  id: string
+  name: string
+  email: string
+  role: "organiser" | "attendee" | "optional"
+  response: "needs_action" | "accepted" | "tentative" | "declined"
+  self: boolean
+}
+
+function providerResponseCode(value: unknown): ProviderParticipant["response"] {
+  const response = cleanText(value, 40)
+  if (response === "accepted" || response === "organizer") return "accepted"
+  if (response === "tentative" || response === "tentativelyAccepted") return "tentative"
+  if (response === "declined") return "declined"
+  return "needs_action"
+}
+
+/**
+ * Provider attendee data is retained only as bounded presentation metadata for
+ * the existing tenant-safe Calendar read. The connected owner's response is
+ * marked separately so invitations remain answerable when the event is private.
+ */
+function providerParticipants(payload: JsonObject, provider: "google" | "microsoft", connectionEmail: string) {
+  const byEmail = new Map<string, ProviderParticipant>()
+  const add = (candidate: ProviderParticipant) => {
+    const current = byEmail.get(candidate.email)
+    if (!current || candidate.role === "organiser") byEmail.set(candidate.email, candidate)
+  }
+
+  const organiser = object(payload.organizer)
+  const organiserAddress = provider === "microsoft" ? object(organiser.emailAddress) : organiser
+  const organiserEmail = cleanText(provider === "microsoft" ? organiserAddress.address : organiserAddress.email, 320).toLowerCase()
+  if (organiserEmail.includes("@")) add({
+    id: cleanText(organiser.id, 500) || organiserEmail,
+    name: cleanText(provider === "microsoft" ? organiserAddress.name : organiserAddress.displayName, 240) || organiserEmail.split("@")[0],
+    email: organiserEmail,
+    role: "organiser",
+    response: "accepted",
+    self: organiser.self === true || organiserEmail === connectionEmail,
+  })
+
+  for (const attendee of (Array.isArray(payload.attendees) ? payload.attendees.map(object) : []).slice(0, 100)) {
+    const emailAddress = provider === "microsoft" ? object(attendee.emailAddress) : attendee
+    const email = cleanText(provider === "microsoft" ? emailAddress.address : attendee.email, 320).toLowerCase()
+    if (!email.includes("@")) continue
+    const organiser = provider === "google" && attendee.organizer === true
+    const optional = provider === "microsoft" ? attendee.type === "optional" : attendee.optional === true
+    add({
+      id: cleanText(attendee.id, 500) || email,
+      name: cleanText(provider === "microsoft" ? emailAddress.name : attendee.displayName, 240) || email.split("@")[0],
+      email,
+      role: organiser ? "organiser" : optional ? "optional" : "attendee",
+      response: organiser ? "accepted" : providerResponseCode(provider === "google" ? attendee.responseStatus : object(attendee.status).response),
+      self: attendee.self === true || email === connectionEmail,
+    })
+  }
+
+  return [...byEmail.values()].slice(0, 100)
+}
+
+function providerOwnerResponse(payload: JsonObject, provider: "google" | "microsoft", participants: ProviderParticipant[]) {
+  const self = participants.find((participant) => participant.self)
+  const providerResponse = provider === "microsoft" ? cleanText(object(payload.responseStatus).response, 40) : ""
+  const isOrganiser = payload.isOrganizer === true || providerResponse === "organizer" || self?.role === "organiser"
+  const response = isOrganiser ? "accepted" : providerResponse ? providerResponseCode(providerResponse) : self?.response ?? null
+  return { isOrganiser, response }
+}
+
 function pause(milliseconds: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
 }
@@ -123,6 +192,11 @@ async function mirrorProviderEvent(admin: SupabaseClient, connection: Record<str
     return
   }
   const isPrivate = payload.visibility === "private" || payload.sensitivity === "private" || payload.sensitivity === "confidential"
+  const connectionEmail = cleanText(connection.CALConnection_Email, 320).toLowerCase()
+  const providerAttendees = providerParticipants(payload, provider, connectionEmail)
+  const ownerResponse = providerOwnerResponse(payload, provider, providerAttendees)
+  const participants = isPrivate ? [] : providerAttendees
+  const attendeeSyncAt = new Date().toISOString()
   const { error: eventError } = await admin.from("CAL_ProviderEvents").upsert({
     CALProviderEvent_CompanyID: connection.CALConnection_CompanyID,
     CALProviderEvent_OwnerUserID: connection.CALConnection_UserID,
@@ -135,22 +209,35 @@ async function mirrorProviderEvent(admin: SupabaseClient, connection: Record<str
     CALProviderEvent_EndAt: endAt,
     CALProviderEvent_IsPrivate: isPrivate,
     CALProviderEvent_IsCancelled: false,
+    CALProviderEvent_AttendeesJSON: participants,
+    CALProviderEvent_AttendeesSyncedAt: attendeeSyncAt,
+    CALProviderEvent_ResponseCode: ownerResponse.response,
+    CALProviderEvent_IsOrganiser: ownerResponse.isOrganiser,
+    CALProviderEvent_JoinURL: joinUrl || null,
     CALProviderEvent_Revision: cleanText(payload.etag ?? payload.changeKey, 500) || null,
-    CALProviderEvent_UpdatedAt: new Date().toISOString(),
+    CALProviderEvent_UpdatedAt: attendeeSyncAt,
   }, { onConflict: "CALProviderEvent_ConnectionID,CALProviderEvent_ProviderID" })
   if (eventError) throw eventError
 
-  const attendeeRows = Array.isArray(payload.attendees) ? payload.attendees.map(object) : []
-  for (const attendee of attendeeRows.slice(0, 100)) {
-    const address = provider === "google" ? cleanText(attendee.email, 320).toLowerCase() : cleanText(object(attendee.emailAddress).address, 320).toLowerCase()
-    const providerResponse = provider === "google" ? cleanText(attendee.responseStatus, 40) : cleanText(object(attendee.status).response, 40)
-    const responseCode = providerResponse === "accepted" || providerResponse === "organizer" ? "accepted"
-      : providerResponse === "tentative" || providerResponse === "tentativelyAccepted" ? "tentative"
-      : providerResponse === "declined" ? "declined" : "needs_action"
-    if (meetingId && address) {
-      const { error } = await admin.from("CAL_MeetingParticipants").update({ CALParticipant_ResponseCode: responseCode }).eq("CALParticipant_MeetingID", meetingId).ilike("CALParticipant_Email", address)
+  for (const participant of participants) {
+    if (meetingId && participant.role !== "organiser") {
+      const { error } = await admin.from("CAL_MeetingParticipants").update({ CALParticipant_ResponseCode: participant.response }).eq("CALParticipant_MeetingID", meetingId).ilike("CALParticipant_Email", participant.email)
       if (error) throw error
     }
+  }
+}
+
+const PROVIDER_MIRROR_BATCH_SIZE = 20
+
+/**
+ * Provider list endpoints can return thousands of recurring instances. Mirror
+ * a small bounded batch in parallel so a full cursor reset completes inside
+ * the worker window without flooding Postgres with an unbounded Promise.all.
+ */
+async function mirrorProviderEvents(admin: SupabaseClient, connection: Record<string, unknown>, events: JsonObject[], provider: "google" | "microsoft") {
+  for (let offset = 0; offset < events.length; offset += PROVIDER_MIRROR_BATCH_SIZE) {
+    const batch = events.slice(offset, offset + PROVIDER_MIRROR_BATCH_SIZE)
+    await Promise.all(batch.map((event) => mirrorProviderEvent(admin, connection, event, provider)))
   }
 }
 
@@ -173,7 +260,7 @@ async function syncGoogle(admin: SupabaseClient, connection: Record<string, unkn
     }
     if (!result.ok) throw new HttpError(result.status === 401 ? 409 : 502, "Google Calendar sync could not be completed.")
     const payload = await result.json() as JsonObject
-    for (const event of Array.isArray(payload.items) ? payload.items.map(object) : []) await mirrorProviderEvent(admin, connection, event, "google")
+    await mirrorProviderEvents(admin, connection, Array.isArray(payload.items) ? payload.items.map(object) : [], "google")
     const nextPage = cleanText(payload.nextPageToken, 2_000)
     nextSyncToken = cleanText(payload.nextSyncToken, 8_000) || nextSyncToken
     if (nextPage) parameters.set("pageToken", nextPage)
@@ -188,7 +275,7 @@ async function syncMicrosoft(admin: SupabaseClient, connection: Record<string, u
   if (!url) {
     const from = new Date(Date.now() - 90 * 86_400_000).toISOString()
     const until = new Date(Date.now() + 400 * 86_400_000).toISOString()
-    url = `https://graph.microsoft.com/v1.0/me/calendarView/delta?startDateTime=${encodeURIComponent(from)}&endDateTime=${encodeURIComponent(until)}&$select=id,subject,start,end,showAs,isCancelled,sensitivity,changeKey,iCalUId,onlineMeeting,location,attendees,transactionId`
+    url = `https://graph.microsoft.com/v1.0/me/calendarView/delta?startDateTime=${encodeURIComponent(from)}&endDateTime=${encodeURIComponent(until)}&$select=id,subject,start,end,showAs,isCancelled,sensitivity,changeKey,iCalUId,onlineMeeting,location,attendees,organizer,isOrganizer,responseStatus,responseRequested,transactionId`
   }
   let deltaLink = ""
   for (let page = 0; page < 10 && url; page += 1) {
@@ -199,7 +286,7 @@ async function syncMicrosoft(admin: SupabaseClient, connection: Record<string, u
     }
     if (!result.ok) throw new HttpError(result.status === 401 ? 409 : 502, "Microsoft Calendar sync could not be completed.")
     const payload = await result.json() as JsonObject
-    for (const event of Array.isArray(payload.value) ? payload.value.map(object) : []) await mirrorProviderEvent(admin, connection, event, "microsoft")
+    await mirrorProviderEvents(admin, connection, Array.isArray(payload.value) ? payload.value.map(object) : [], "microsoft")
     url = cleanText(payload["@odata.nextLink"], 20_000)
     deltaLink = cleanText(payload["@odata.deltaLink"], 20_000) || deltaLink
   }
@@ -777,8 +864,52 @@ async function enqueueParticipantEmails(admin: SupabaseClient, state: Awaited<Re
 
 type DeliveryResult = { providerId: string | null; cancelled?: boolean }
 
+/**
+ * Dexter approves an external-event change inside SQL, which cannot reach
+ * Google or Microsoft. The action queues this delivery; the worker writes the
+ * change to the provider and refreshes the mirror.
+ */
+async function processExternalEventDelivery(admin: SupabaseClient, delivery: Record<string, unknown>, cancel: boolean): Promise<DeliveryResult> {
+  const rendered = object(delivery.CALDelivery_RenderedJSON)
+  const providerEventId = cleanText(rendered.providerEventId, 60)
+  if (!providerEventId) throw new HttpError(409, "The delivery has no provider event.")
+  const { data: event, error } = await admin.from("CAL_ProviderEvents").select("*")
+    .eq("CALProviderEvent_ID", providerEventId).eq("CALProviderEvent_CompanyID", delivery.CALDelivery_CompanyID).maybeSingle()
+  if (error) throw error
+  if (!event) throw new HttpError(404, "The provider event no longer exists.")
+  if (event.CALProviderEvent_IsCancelled && !cancel) {
+    const { error: cancelError } = await admin.from("CAL_Deliveries").update({ CALDelivery_StatusCode: "cancelled", CALDelivery_LeaseUntil: null, CALDelivery_CompletedAt: new Date().toISOString(), CALDelivery_LastError: null }).eq("CALDelivery_ID", delivery.CALDelivery_ID)
+    if (cancelError) throw cancelError
+    return { providerId: null, cancelled: true }
+  }
+  const change = normaliseExternalEventChange(event, {
+    action: cancel ? "cancel" : "update",
+    title: rendered.title === undefined || rendered.title === null ? undefined : rendered.title,
+    startAt: rendered.startAt ?? undefined,
+    endAt: rendered.endAt ?? undefined,
+    timeZone: rendered.timeZone ?? undefined,
+  })
+  const { row } = await pushExternalEventChange(admin, event, change)
+  return { providerId: String(row.CALProviderEvent_ProviderID) }
+}
+
+async function processExternalEventResponseDelivery(admin: SupabaseClient, delivery: Record<string, unknown>): Promise<DeliveryResult> {
+  const rendered = object(delivery.CALDelivery_RenderedJSON)
+  const providerEventId = cleanText(rendered.providerEventId, 60)
+  if (!providerEventId) throw new HttpError(409, "The delivery has no provider event.")
+  const { data: event, error } = await admin.from("CAL_ProviderEvents").select("*")
+    .eq("CALProviderEvent_ID", providerEventId).eq("CALProviderEvent_CompanyID", delivery.CALDelivery_CompanyID).maybeSingle()
+  if (error) throw error
+  if (!event) throw new HttpError(404, "The provider event no longer exists.")
+  const nextResponse = normaliseExternalEventResponse(rendered.response)
+  const { row } = await pushExternalEventResponse(admin, event, nextResponse)
+  return { providerId: String(row.CALProviderEvent_ProviderID) }
+}
+
 async function processDelivery(admin: SupabaseClient, delivery: Record<string, unknown>): Promise<DeliveryResult> {
   const kind = String(delivery.CALDelivery_KindCode)
+  if (kind === "external_event_update" || kind === "external_event_cancel") return await processExternalEventDelivery(admin, delivery, kind === "external_event_cancel")
+  if (kind === "external_event_rsvp") return await processExternalEventResponseDelivery(admin, delivery)
   if (!delivery.CALDelivery_MeetingID) throw new HttpError(409, "The delivery has no meeting.")
   let state = await loadMeetingState(admin, String(delivery.CALDelivery_MeetingID))
   if (kind === "reminder") {

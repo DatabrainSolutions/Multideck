@@ -1,3 +1,6 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
+import { workspaceStorageKey } from "@/lib/workspace-environment"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
@@ -66,7 +69,6 @@ import {
 const fieldControlClass =
   "!h-10 !w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 !px-3 !text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] active:!scale-100 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
 
-const warehouseRegisterPageSize = 20
 
 export const warehouseDialogHeaderClass =
   "bg-[var(--md-surface-soft)] px-6 py-5 pe-14 text-start shadow-[var(--md-stroke-bottom)] [&_[data-slot=dialog-title]]:text-[17px] [&_[data-slot=dialog-title]]:leading-6"
@@ -161,7 +163,7 @@ function verticalScrollRegion(element: HTMLElement | null) {
   return null
 }
 
-const warehouseItemsReturnKey = "multideck:warehouse:items:return"
+const warehouseItemsReturnKey = workspaceStorageKey("multideck:warehouse:items:return")
 
 function readWarehouseItemsReturnState() {
   try {
@@ -532,6 +534,7 @@ export function WarehouseFacilitiesView() {
   const [facilities, setFacilities] = useState<WarehouseFacility[] | null>(null)
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
+  const [warehouseRegisterPageSize, setWarehouseRegisterPageSize] = useState(defaultPaginationPageSize)
   const [sort, setSort] = useState<WarehouseRegisterSort | null>({ id: "facility", direction: "asc" })
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -573,7 +576,7 @@ export function WarehouseFacilitiesView() {
         setTotal(0)
       }).finally(() => { if (active) setLoading(false) }), 250)
     return () => { active = false; window.clearTimeout(timer) }
-  }, [activeFilter, offset, search, sort])
+  }, [activeFilter, offset, warehouseRegisterPageSize, search, sort])
 
   useEffect(() => setOffset(0), [activeFilter, search, sort])
 
@@ -703,6 +706,10 @@ export function WarehouseFacilitiesView() {
         >
           <DataTable
             ariaLabel="Warehouse facilities"
+            exportConfig={{ fileName: "warehouse-facilities", register: {
+              dateLabel: "Facility created date", dateValue: (row) => row.createdAt,
+              loadAllRows: (signal) => collectExportPages((page) => listWarehouseFacilitiesPage({ search: search.trim() || undefined, includeInactive: activeFilter === "All", sort, ...page }), (row) => row.id, signal),
+            } }}
             columnsButtonLabel="Manage facility columns"
             storageKey="warehouse-facilities"
             rows={visibleRows}
@@ -718,7 +725,7 @@ export function WarehouseFacilitiesView() {
             )}
             toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search facilities" placeholder="Code, name, city" className="sm:min-w-[220px] sm:w-[220px]" />}
             serverSorting={{ value: sort, onChange: setSort }}
-            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset }}
+            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset, onLimitChange: setWarehouseRegisterPageSize, error: Boolean(loadError) }}
           />
         </motion.div>
       )}
@@ -741,7 +748,8 @@ export function WarehouseFacilitiesView() {
 
 type ItemFormState = {
   customerOrgId: string
-  facilityId: string
+  facilityIds: string[]
+  defaultFacilityId: string
   sku: string
   description: string
   commodityDescription: string
@@ -773,7 +781,8 @@ type ItemFormState = {
 function emptyItemForm(reference: WarehouseItemReference | null): ItemFormState {
   return {
     customerOrgId: reference?.customers[0]?.id ?? "",
-    facilityId: reference?.facilities[0]?.id ?? "",
+    facilityIds: reference?.facilities[0]?.id ? [reference.facilities[0].id] : [],
+    defaultFacilityId: reference?.facilities[0]?.id ?? "",
     sku: "",
     description: "",
     commodityDescription: "",
@@ -804,9 +813,12 @@ function emptyItemForm(reference: WarehouseItemReference | null): ItemFormState 
 }
 
 function itemToForm(item: WarehouseItem): ItemFormState {
+  const facilityIds = item.facilities?.filter((facility) => facility.isActive).map((facility) => facility.id)
+    ?? (item.facilityId ? [item.facilityId] : [])
   return {
     customerOrgId: item.customerOrgId,
-    facilityId: item.facilityId ?? "",
+    facilityIds,
+    defaultFacilityId: item.facilities?.find((facility) => facility.isDefault)?.id ?? item.facilityId ?? facilityIds[0] ?? "",
     sku: item.sku,
     description: item.description,
     commodityDescription: item.commodityDescription ?? "",
@@ -931,16 +943,20 @@ function ItemDialog({
   }
 
   async function handleSubmit() {
+    if (!form.facilityIds.length || !form.defaultFacilityId) {
+      setErrors({ FacilityIds: ["Choose at least one warehouse."], DefaultFacilityId: ["Choose the default warehouse."] })
+      return
+    }
     setSaving(true)
     setErrors({})
     try {
       const attributes = itemFormAttributes(form)
       if (isEditing && item) {
-        const input: UpdateWarehouseItemInput = { ...attributes, facilityId: form.facilityId, isActive: form.isActive }
+        const input: UpdateWarehouseItemInput = { ...attributes, facilityId: form.defaultFacilityId, facilityIds: form.facilityIds, defaultFacilityId: form.defaultFacilityId, isActive: form.isActive }
         await updateWarehouseItem(item.id, input)
         toast.success("Item updated", { description: attributes.sku })
       } else {
-        const input: CreateWarehouseItemInput = { ...attributes, customerOrgId: form.customerOrgId, facilityId: form.facilityId }
+        const input: CreateWarehouseItemInput = { ...attributes, customerOrgId: form.customerOrgId, facilityId: form.defaultFacilityId, facilityIds: form.facilityIds, defaultFacilityId: form.defaultFacilityId }
         await createWarehouseItem(input)
         toast.success("Item created", { description: attributes.sku })
       }
@@ -977,7 +993,7 @@ function ItemDialog({
   const customerName = reference?.customers.find((customer) => customer.id === form.customerOrgId)?.name ?? item?.customerOrgName ?? ""
 
   const itemSteps: WizardStep[] = [
-    { id: "identity", label: "The item", hint: "Who it belongs to, what it is called, and how customs sees it.", complete: Boolean(form.sku.trim() && form.description.trim() && form.customerOrgId) },
+    { id: "identity", label: "The item", hint: "Who it belongs to, where it can be stocked, and how customs sees it.", complete: Boolean(form.sku.trim() && form.description.trim() && form.customerOrgId && form.facilityIds.length && form.defaultFacilityId) },
     { id: "quantity", label: "Units", hint: "The unit it is counted in, and any larger units it arrives or ships in.", complete: Boolean(form.baseUomCode.trim()) },
     { id: "dimensions", label: "Size and weight", hint: "Used for capacity and load planning. All optional." },
     { id: "handling", label: "Handling", hint: "Anything the warehouse has to do differently for this SKU." },
@@ -988,7 +1004,7 @@ function ItemDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={isEditing ? "Edit item" : "New item"}
-      description="An item is a SKU stored for a customer in one of your facilities."
+      description="An item is a customer-owned SKU that can be stocked in one or more warehouses."
       steps={itemSteps}
       activeStepId={section}
       onStepChange={setSection}
@@ -1030,17 +1046,34 @@ function ItemDialog({
                 </div>
               )}
             </WarehouseFormField>
-            <WarehouseFormField label="Facility" required error={firstFieldError(errors, "FacilityId")}>
-              <Select value={form.facilityId} onValueChange={(value) => update("facilityId", value)}>
-                <SelectTrigger className={fieldControlClass}><SelectValue placeholder="Choose a facility" /></SelectTrigger>
+            <WarehouseFormField label="Default warehouse" required hint="Used first when creating warehouse work." error={firstFieldError(errors, "DefaultFacilityId") ?? firstFieldError(errors, "FacilityId")}>
+              <Select value={form.defaultFacilityId} onValueChange={(value) => { update("defaultFacilityId", value); if (!form.facilityIds.includes(value)) update("facilityIds", [...form.facilityIds, value]) }}>
+                <SelectTrigger className={fieldControlClass}><SelectValue placeholder="Choose a warehouse" /></SelectTrigger>
                 <SelectContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
-                  {reference?.facilities.map((facility) => (
+                  {reference?.facilities.filter((facility) => form.facilityIds.includes(facility.id)).map((facility) => (
                     <SelectItem key={facility.id} value={facility.id} className="text-[13px]">{facility.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </WarehouseFormField>
           </div>
+
+          <WarehouseFormField label="Warehouses" required hint="The SKU remains one item record; selecting another warehouse makes it available there too." error={firstFieldError(errors, "FacilityIds")}>
+            <div className="grid gap-2 rounded-[var(--md-radius-xl)] bg-white/36 p-3 shadow-[var(--md-shadow-line)] sm:grid-cols-2">
+              {reference?.facilities.map((facility) => {
+                const checked = form.facilityIds.includes(facility.id)
+                return <label key={facility.id} className="flex cursor-pointer items-center gap-2.5 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 py-2 text-[12.5px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
+                  <input type="checkbox" checked={checked} onChange={(event) => {
+                    const facilityIds = event.target.checked ? [...form.facilityIds, facility.id] : form.facilityIds.filter((id) => id !== facility.id)
+                    update("facilityIds", facilityIds)
+                    if (!facilityIds.includes(form.defaultFacilityId)) update("defaultFacilityId", facilityIds[0] ?? "")
+                  }} />
+                  <span className="min-w-0 truncate">{facility.name}</span>
+                  {form.defaultFacilityId === facility.id ? <span className="ms-auto text-[11px] text-[var(--md-subtle)]">Default</span> : null}
+                </label>
+              })}
+            </div>
+          </WarehouseFormField>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <WarehouseFormField label="SKU" htmlFor="item-sku" required error={firstFieldError(errors, "Sku")}>
@@ -1138,7 +1171,7 @@ function ItemDialog({
               {form.quantityBasisCode === "count" ? <WarehouseSwitchField label={t("Allow partial units")} hint={t("Use only when this counted product can be split into fractions.")} checked={form.allowsFractionalQuantity} onCheckedChange={(checked) => update("allowsFractionalQuantity", checked)} /> : null}
               <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/40 p-4 shadow-[var(--md-shadow-line)]">
                 <div className="flex items-center justify-between gap-3">
-                  <div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Packaging conversions")}</p><p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Define fixed packs such as one box equalling twelve base units. Pallets remain warehouse objects, not quantities.")}</p></div>
+                  <div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Packaging conversions")}</p><p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Define fixed packs such as one box equalling twelve base units. Pallets contain stock; they are not quantities.")}</p></div>
                   <Button type="button" variant="ghost" size="sm" onClick={() => update("uoms", [...form.uoms, { key: crypto.randomUUID(), code: "", quantityInBaseUom: "1", grossWeightKg: "" }])} className="rounded-[var(--md-radius-md)] bg-white/55 shadow-[var(--md-shadow-line)]"><Plus className="size-4" />{t("Add unit")}</Button>
                 </div>
                 {form.uoms.map((uom) => <div key={uom.key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_40px] gap-2">
@@ -1385,6 +1418,7 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
   const [items, setItems] = useState<WarehouseItem[] | null>(null)
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
+  const [warehouseRegisterPageSize, setWarehouseRegisterPageSize] = useState(defaultPaginationPageSize)
   const [sort, setSort] = useState<WarehouseRegisterSort | null>({ id: "sku", direction: "asc" })
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -1422,7 +1456,7 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
         setTotal(0)
       }).finally(() => { if (active) setLoading(false) }), 250)
     return () => { active = false; window.clearTimeout(timer) }
-  }, [activeFilter, facilityId, offset, search, sort])
+  }, [activeFilter, facilityId, offset, warehouseRegisterPageSize, search, sort])
 
   useEffect(() => setOffset(0), [activeFilter, facilityId, search, sort])
 
@@ -1520,12 +1554,17 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
     },
     {
       id: "facility",
-      label: "Facility",
+      label: "Warehouses",
       width: 190,
       minWidth: 150,
       resizable: true,
       sortValue: (item) => item.facilityName,
-      cell: (item) => <span className="text-[13px] text-[var(--md-ink)]">{item.facilityName ?? "—"}</span>,
+      cell: (item) => {
+        const active = item.facilities?.filter((facility) => facility.isActive) ?? []
+        const primary = active.find((facility) => facility.isDefault)?.name ?? item.facilityName
+        const additional = Math.max(0, active.length - 1)
+        return <div className="min-w-0"><span className="truncate text-[13px] text-[var(--md-ink)]">{primary ?? "—"}</span>{additional ? <p className="text-[11px] text-[var(--md-subtle)]">+{additional} {t(additional === 1 ? "warehouse" : "warehouses")}</p> : null}</div>
+      },
     },
     {
       id: "hs",
@@ -1641,6 +1680,10 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
         >
           <DataTable
             ariaLabel="Warehouse items"
+            exportConfig={{ fileName: "warehouse-items", register: {
+              dateLabel: "Item created date", dateValue: (row) => row.createdAt,
+              loadAllRows: (signal) => collectExportPages((page) => listWarehouseItemsPage({ facilityId: facilityId || undefined, search: search.trim() || undefined, includeInactive: activeFilter === "All", sort, ...page }), (row) => row.id, signal),
+            } }}
             columnsButtonLabel="Manage item columns"
             storageKey="warehouse-items"
             columns={columns}
@@ -1656,7 +1699,7 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
             toolbarFilters={toolbarFilters}
             toolbarOptions={canManage ? <button type="button" onClick={openImport} disabled={!canCreate} className={cn(registerButtonClass, "disabled:pointer-events-none disabled:opacity-45")}><Upload className="size-3.5" strokeWidth={1.4} aria-hidden="true" /><span className="hidden sm:inline">{t("Import")}</span></button> : null}
             serverSorting={{ value: sort, onChange: setSort }}
-            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset }}
+            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset, onLimitChange: setWarehouseRegisterPageSize, error: Boolean(loadError) }}
           />
         </motion.div>
       )}
@@ -2041,6 +2084,7 @@ export function WarehouseLocationsView() {
   const [locations, setLocations] = useState<WarehouseLocation[] | null>(null)
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
+  const [warehouseRegisterPageSize, setWarehouseRegisterPageSize] = useState(defaultPaginationPageSize)
   const [sort, setSort] = useState<WarehouseRegisterSort | null>({ id: "code", direction: "asc" })
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -2092,7 +2136,7 @@ export function WarehouseLocationsView() {
         setTotal(0)
       }).finally(() => { if (active) setLoading(false) }), 250)
     return () => { active = false; window.clearTimeout(timer) }
-  }, [selectedFacilityId, activeFilter, offset, search, sort])
+  }, [selectedFacilityId, activeFilter, offset, warehouseRegisterPageSize, search, sort])
 
   useEffect(() => setOffset(0), [selectedFacilityId, activeFilter, search, sort])
 
@@ -2233,6 +2277,10 @@ export function WarehouseLocationsView() {
         >
           <DataTable
             ariaLabel="Warehouse locations"
+            exportConfig={{ fileName: "warehouse-locations", register: {
+              dateLabel: "Location created date", dateValue: (row) => row.createdAt,
+              loadAllRows: (signal) => collectExportPages((page) => listWarehouseLocationsPage(selectedFacilityId, { search: search.trim() || undefined, includeInactive: activeFilter === "All", sort, ...page }), (row) => row.id, signal),
+            } }}
             columnsButtonLabel="Manage location columns"
             storageKey="warehouse-locations"
             columns={columns}
@@ -2259,7 +2307,7 @@ export function WarehouseLocationsView() {
               </>
             )}
             serverSorting={{ value: sort, onChange: setSort }}
-            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset }}
+            pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset, onLimitChange: setWarehouseRegisterPageSize, error: Boolean(loadError) }}
           />
         </motion.div>
       )}

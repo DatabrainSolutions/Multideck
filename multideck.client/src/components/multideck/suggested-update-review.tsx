@@ -280,7 +280,6 @@ export function SuggestedUpdateReview({
             <h1 id={`suggestion-title-${suggestion.id}`} className="mt-3 text-[21px] font-medium tracking-[-0.025em] text-[var(--md-ink)]">
               {suggestion.targetLabel ? <bdi data-i18n-skip dir="auto">{suggestion.targetLabel}</bdi> : t(matching.state === "ambiguous" ? "Review the possible booking matches" : "This document is not attached to a booking")}
             </h1>
-            <p className="mt-1.5 max-w-[62ch] text-[12.5px] leading-[1.55] text-[var(--md-text)]" dir="auto">{suggestion.summary}</p>
             <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11.5px] text-[var(--md-subtle)]">
               {suggestion.matchConfidence !== null ? <span>{Math.round(suggestion.matchConfidence * 100)}% {t("match confidence")}</span> : null}
               {suggestion.targetId ? <span>{t(matchMethodLabel(suggestion))}</span> : null}

@@ -20,7 +20,7 @@ test("Inbox account bootstrap is intent-driven and deduplicated", () => {
 })
 
 test("thread rows warm only for the active Inbox route", () => {
-  assert.match(workspace, /if \(!active \|\| accountState !== "ready" \|\| !mailboxId\) return/)
+  assert.match(workspace, /if \(!active \|\| accountState !== "ready" \|\| !mailboxId \|\| view === "suggested"\) return/)
   assert.match(shell, /InboxWorkspaceProvider cacheScope=\{currentUser\?\.id \?\? null\} active=\{isInboxRoute\}/)
   assert.match(sidebar, /void inboxWorkspace\?\.prepareAccounts\(\)[\s\S]{0,160}import\("@\/pages\/inbox-page"\)/)
   assert.match(page, /accountState === "idle" \|\| accountState === "loading"/)

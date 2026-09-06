@@ -1,3 +1,5 @@
+import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, Eye, FileCheck2, FileText, LoaderCircle, Plus, RefreshCw, Save, ScanText, Search, Send, Trash2, UserRound } from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
@@ -58,7 +60,6 @@ const defaultDeclarationFieldVisibility: DeclarationFieldVisibility = {
   optionalFields: false,
 }
 const declarationFieldVisibilityStorageKey = "multideck.customs.declaration-field-visibility"
-const customsRegisterPageSize = 50
 
 function customsExportCategory(path: readonly string[]) {
   const field = path[0] ?? ""
@@ -170,6 +171,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
   const [statusFilter, setStatusFilter] = useState("")
   const [destinationFilter, setDestinationFilter] = useState("")
   const [offset, setOffset] = useState(0)
+  const [customsRegisterPageSize, setCustomsRegisterPageSize] = useState(defaultPaginationPageSize)
   const [total, setTotal] = useState(0)
   const [availableTotal, setAvailableTotal] = useState(0)
   const [facets, setFacets] = useState<{ statuses: string[]; destinations: string[] }>({ statuses: [], destinations: [] })
@@ -246,7 +248,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
         if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
-  }, [debouncedSearch, destinationFilter, jobRelated, kind, offset, reloadToken, sort, statusFilter])
+  }, [customsRegisterPageSize, debouncedSearch, destinationFilter, jobRelated, kind, offset, reloadToken, sort, statusFilter])
 
   const columns = useMemo<DataTableColumn<CustomsDraftSummary>[]>(() => [
     {
@@ -419,7 +421,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
         onRowClick={(draft) => navigate(`/customs/${jobRelated ? "job-related" : "standalone"}/${kind}/${draft.id}`)}
         rowAriaLabel={(draft) => draft.reference}
         serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "lastSaved", direction: "desc" }); setOffset(0) } }}
-        pagination={{ offset, limit: customsRegisterPageSize, total, loading, onOffsetChange: setOffset }}
+        pagination={{ offset, limit: customsRegisterPageSize, total, loading, onOffsetChange: setOffset, onLimitChange: setCustomsRegisterPageSize, error: Boolean(loadError) }}
         rowContextActions={(draft) => [{
           id: "delete-draft",
           label: "Delete draft",
@@ -431,6 +433,13 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
         }]}
         exportConfig={{
           fileName: `customs-${kind}-declarations`,
+          register: {
+            dateLabel: "Declaration created date", dateValue: (draft) => draft.createdAt,
+            busy: search.trim() !== debouncedSearch,
+            loadAllRows: (signal) => collectExportPages((page) => listCustomsDeclarationDraftsPage(kind, jobRelated ? "job-related" : "standalone", {
+              search: debouncedSearch, status: statusFilter, destination: destinationFilter, sort, ...page,
+            }, signal), (draft) => draft.id, signal),
+          },
           recordCategory: "Declaration",
           categoryForPath: customsExportCategory,
           loadRecords: (selectedDrafts) => Promise.all(selectedDrafts.map(async (draft) => ({
@@ -743,7 +752,7 @@ function DeclarationAssigneePicker({ declarationId, t }: { declarationId?: strin
           type="button"
           variant="outline"
           size="sm"
-          className="h-9 max-w-[220px] gap-2 px-2.5"
+          className="h-9 max-w-[220px] gap-2 px-2.5 max-sm:h-11"
           disabled={!declarationId || assignmentLoading}
           aria-label={`${t("Assigned to")}: ${triggerLabel}`}
           title={assignmentError ? t(assignmentError) : t("Choose who is working on this declaration")}
@@ -1576,16 +1585,21 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
     <CustomsOrganisationDirectoryContext.Provider value={organisationDirectory}>
     <CustomsBoxVisibilityContext.Provider value={showCustomsBoxNumbers}>
     <div className="min-w-0 max-w-full space-y-4 overflow-x-clip" data-testid={`standalone-${kind}-editor`}>
-      <header className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-8">
-        <div className="flex min-w-0 flex-col items-start lg:flex-1">
+      <header className="grid min-w-0 gap-x-6 gap-y-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+        <div className="flex min-w-0 flex-col items-start">
           <button type="button" onClick={() => navigate(registerPath)} className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)] hover:text-[var(--md-accent)]">
             <ArrowLeft className="size-3.5 rtl:rotate-180" /> {t(scope === "job-related" ? "Back to job-related declarations" : "Back to standalone declarations")}
           </button>
-          <h1 className="mt-3 text-start text-[26px] font-medium tracking-[-0.035em] text-[var(--md-ink)]">{t(declarationId ? (kind === "import" ? "Edit import declaration" : "Edit export declaration") : (kind === "import" ? "New import declaration" : "New export declaration"))}</h1>
+          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+            <h1 className="text-start text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t(declarationId ? (kind === "import" ? "Edit import declaration" : "Edit export declaration") : (kind === "import" ? "New import declaration" : "New export declaration"))}</h1>
+            <span role="status" aria-label={`${t("Declaration status")}: ${t(titleCase(customsStatus))}`} className="inline-flex shrink-0">
+              <StatusPill kind="status" tone={customsStatusTone(customsStatus)} className="h-7 px-2.5 text-[11.5px] font-medium">{t(titleCase(customsStatus))}</StatusPill>
+            </span>
+          </div>
           <p className="mt-1 text-[13px] text-[var(--md-text)]">{t(viewMode === "tabs" ? "Complete one focused section at a time. Move between sections whenever you need." : "Scan and complete the declaration in one compact form, with goods lines kept in Items.")}</p>
         </div>
-        <div className="flex min-w-0 w-full max-w-full flex-col items-start gap-1.5 lg:w-auto lg:max-w-[70%] lg:shrink-0 lg:items-end">
-          <div className="flex min-h-4 max-w-full flex-wrap items-center justify-start gap-x-3 gap-y-1 text-start lg:justify-end lg:text-end">
+        <div className="flex min-w-0 flex-col items-start gap-1.5 lg:items-end">
+          <div className="flex max-w-full flex-wrap items-center gap-x-3 gap-y-1 text-start lg:justify-end">
             <span
               role={autosaveStatus === "error" ? "alert" : "status"}
               aria-live="polite"
@@ -1594,29 +1608,27 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
               {autosaveStatus === "saving" ? t("Saving automatically") : autosaveStatus === "error" ? t("Changes could not be saved") : null}
             </span>
             {autosaveStatus === "error" ? <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={() => { if (!declarationId) { initialDraftCreationRef.current = false; setDraftLoadAttempt((attempt) => attempt + 1); return } void queueAutosave(draft) }}><RefreshCw className="size-3.5" />{t("Retry save")}</Button> : null}
-            {iCustomsProviderReference ? <p className="max-w-full text-start text-[11px] text-[var(--md-subtle)] lg:text-end"><span className="font-medium text-[var(--md-text)]">{t("iCustoms correlation ID")}:</span> <span dir="ltr" className="break-all">{iCustomsProviderReference}</span></p> : null}
           </div>
-          <div className="flex min-w-0 max-w-full flex-wrap items-center justify-start gap-2 lg:justify-end" data-customs-header-actions>
-            <DeclarationAssigneePicker declarationId={declarationId} t={t} />
-            <span
-              role="status"
-              aria-label={`${t("Declaration status")}: ${t(titleCase(customsStatus))}`}
-              className="inline-flex shrink-0"
-            >
-              <StatusPill kind="status" tone={customsStatusTone(customsStatus)} className="h-7 px-2.5 text-[11.5px] font-medium">
-                {t(titleCase(customsStatus))}
-              </StatusPill>
-            </span>
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2" data-customs-header-actions>
+            {declarationPdfAvailable ? <Button type="button" variant="outline" size="sm" className="h-9 max-sm:h-11" disabled={pdfBusy} onClick={() => void openDeclarationPdf()}><FileText className="size-3.5" />{t(pdfBusy ? "Preparing declaration" : pdfLoadError ? "Retry declaration" : "View declaration")}</Button> : null}
+            <Button type="button" size="sm" className="h-9 max-sm:h-11" disabled={savingDraft || creatingInitialDraft} onClick={() => void saveDraft()}><Save className="size-3.5" />{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-col gap-3 border-t border-[var(--md-line)] pt-3 lg:col-span-2 xl:flex-row xl:items-center xl:justify-between" data-customs-header-context>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2">
+            <div className="flex shrink-0 items-center gap-2"><span className="text-[12px] text-[var(--md-subtle)]">{t("Assigned to")}</span><DeclarationAssigneePicker declarationId={declarationId} t={t} /></div>
+            {iCustomsProviderReference ? <p className="min-w-0 max-w-full text-start text-[12px] text-[var(--md-text)]"><span className="text-[var(--md-subtle)]">{t("iCustoms correlation ID")}:</span>{" "}<span dir="ltr" className="select-text break-all">{iCustomsProviderReference}</span></p> : null}
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2" role="group" aria-label={t("Display options")}>
             <SegmentedControl
               options={["tabs", "form"] as const}
               value={viewMode}
               onChange={setViewMode}
               ariaLabel={t("Declaration view")}
+              className="max-sm:[&>button]:h-9"
               renderOption={(option) => t(option === "tabs" ? "Tab view" : "Form view")}
             />
             <DeclarationFieldVisibilityPopover value={fieldVisibility} onChange={setFieldVisibility} t={t} />
-            {declarationPdfAvailable ? <Button type="button" variant="ghost" size="sm" className="h-9 bg-black px-3 text-white shadow-none hover:bg-black/80 hover:text-white" disabled={pdfBusy} onClick={() => void openDeclarationPdf()}><FileText className="size-3.5" />{t(pdfBusy ? "Preparing declaration" : pdfLoadError ? "Retry declaration" : "View declaration")}</Button> : null}
-            <Button type="button" variant="outline" size="sm" className="h-9" disabled={savingDraft || creatingInitialDraft} onClick={() => void saveDraft()}>{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
           </div>
         </div>
       </header>
@@ -3382,9 +3394,10 @@ function DeclarationFieldVisibilityPopover({ value, onChange, t }: {
         type="button"
         aria-label={t("Field visibility")}
         title={t("Field visibility")}
-        className="grid size-9 shrink-0 place-items-center rounded-full bg-transparent text-[var(--md-text)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] data-[state=open]:bg-[var(--md-hover)] data-[state=open]:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a28)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--md-page)] motion-reduce:active:scale-100 motion-reduce:transition-none"
+        className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--md-radius-lg)] px-2.5 text-[12px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] data-[state=open]:bg-[var(--md-hover)] data-[state=open]:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a28)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--md-page)] motion-reduce:active:scale-100 motion-reduce:transition-none max-sm:h-11"
       >
         <Eye className="size-4" strokeWidth={1.4} aria-hidden="true" />
+        <span>{t("Fields")}</span>
       </button>
     </PopoverTrigger>
     <PopoverContent

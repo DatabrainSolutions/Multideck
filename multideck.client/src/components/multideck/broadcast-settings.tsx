@@ -9,7 +9,7 @@ import { SettingsInput, SettingsPageHeader, SettingsPanel } from "@/components/m
 import { WizardDialog, WizardSaveNowButton, type WizardStep } from "@/components/multideck/wizard-dialog"
 import { useLanguage } from "@/i18n/language-provider"
 import { emailEditorElementToMarkdown, emailMarkdownToEditorHtml } from "@/lib/email-markdown-editor"
-import { supabase } from "@/lib/supabase"
+import { authSupabase, supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 import {
   draftBroadcastWithAI, getBroadcastState, listBroadcastUsersPage, previewBroadcastAudience, saveBroadcastDraft, sendBroadcast,
@@ -21,7 +21,7 @@ type BroadcastStep = "audience" | "compose" | "preview" | "confirm"
 
 async function accessToken() {
   if (!supabase) throw new Error("Supabase is not configured for this workspace.")
-  const { data, error } = await supabase.auth.getSession()
+  const { data, error } = await authSupabase!.auth.getSession()
   if (error || !data.session?.access_token) throw new Error("Sign in again before managing broadcasts.")
   return data.session.access_token
 }

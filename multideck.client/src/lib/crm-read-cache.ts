@@ -9,10 +9,41 @@ export type CrmReadOptions = {
 }
 
 const DEFAULT_FRESHNESS_MS = 60_000
+const MAX_COMPLETED_ENTRIES = 128
 const entries = new Map<string, CacheEntry<unknown>>()
+let projectScope = ""
+let authenticatedUserId: string | null | undefined
+let accessGeneration = 0
 
 function entryKey(scope: string, resource: string) {
-  return `${scope}:${resource}`
+  return `${projectScope}\u0000${scope}\u0000${resource}`
+}
+
+function staleReadError() {
+  return Object.assign(new Error("This read was invalidated. Load the current workspace data again."), { name: "AbortError" })
+}
+
+/** Called synchronously by Auth; a previous account's pending reads must never be delivered. */
+export function setCrmReadCacheScope(project: string, userId: string | null, accessChanged = false) {
+  if (!accessChanged && projectScope === project && authenticatedUserId === userId) return false
+  projectScope = project
+  authenticatedUserId = userId
+  accessGeneration += 1
+  clearCrmReadCache()
+  return true
+}
+
+/** Guard queued work against sign-out, account switches and access changes. */
+export function captureAuthenticatedScope(userId: string) {
+  const generation = accessGeneration
+  return () => {
+    if (generation !== accessGeneration || (authenticatedUserId !== undefined && userId !== authenticatedUserId)) throw staleReadError()
+  }
+}
+
+function pruneCompletedEntries() {
+  const completed = [...entries].filter(([, entry]) => !entry.inFlight)
+  for (const [key] of completed.slice(0, Math.max(0, completed.length - MAX_COMPLETED_ENTRIES))) entries.delete(key)
 }
 
 /**
@@ -26,11 +57,14 @@ export function readCachedCrmResource<T>(
   options: CrmReadOptions = {},
   freshnessMs = DEFAULT_FRESHNESS_MS,
 ) {
+  if (authenticatedUserId !== undefined && scope !== authenticatedUserId) return Promise.reject(staleReadError())
   const key = entryKey(scope, resource)
   const current = entries.get(key) as CacheEntry<T> | undefined
   const now = Date.now()
 
   if (!options.forceRefresh && current?.value !== undefined && now - current.updatedAt < freshnessMs) {
+    entries.delete(key)
+    entries.set(key, current)
     return Promise.resolve(current.value)
   }
 
@@ -38,12 +72,12 @@ export function readCachedCrmResource<T>(
 
   const inFlight = load()
     .then((value) => {
-      // An invalidation or newer read may have replaced this request while it
-      // was in flight. The caller can still use the response it requested, but
-      // it must not be allowed to repopulate the shared cache with stale data.
-      if ((entries.get(key) as CacheEntry<T> | undefined)?.inFlight === inFlight) {
-        entries.set(key, { value, updatedAt: Date.now() })
-      }
+      // Reject delivery as well as caching: otherwise a slow response can
+      // overwrite newer data or paint the previous account after sign-out.
+      if ((entries.get(key) as CacheEntry<T> | undefined)?.inFlight !== inFlight) throw staleReadError()
+      entries.delete(key)
+      entries.set(key, { value, updatedAt: Date.now() })
+      pruneCompletedEntries()
       return value
     })
     .catch((error) => {
@@ -66,12 +100,16 @@ export function readCachedCrmResource<T>(
   return inFlight
 }
 
-export function invalidateCrmResources(scope: string, resources: readonly string[]) {
+/** Invalidate shared reads without announcing an unrelated CRM mutation. */
+export function invalidateCachedCrmResources(scope: string | null, resources: readonly string[]) {
   for (const key of entries.keys()) {
-    if (key.startsWith(`${scope}:`) && resources.some((resource) => key.startsWith(`${scope}:${resource}`))) {
-      entries.delete(key)
-    }
+    const [project, user, resource] = key.split("\u0000")
+    if (project === projectScope && (scope === null || user === scope) && resources.some((prefix) => resource.startsWith(prefix))) entries.delete(key)
   }
+}
+
+export function invalidateCrmResources(scope: string, resources: readonly string[]) {
+  invalidateCachedCrmResources(scope, [...resources, "quote-sources"])
 
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("multideck:crm-changed", { detail: { scope, resources } }))

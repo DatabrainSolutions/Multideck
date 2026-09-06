@@ -1,3 +1,4 @@
+import { requireMainIdentityAdministration } from "../_shared/training-environment.ts"
 import { authenticate, body, corsHeaders, currentInternalUser, failure, HttpError, isTrustedMultideckOrigin, json, requirePermission, routeParts } from "../_shared/backend.ts"
 import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
 import { normaliseLocale, renderBrandedEmail } from "../_shared/email-template.ts"
@@ -396,6 +397,7 @@ Deno.serve(async (request) => {
   try {
     const { admin, user } = await authenticate(request)
     const current = await currentInternalUser(admin, user)
+    if (request.method !== "GET") await requireMainIdentityAdministration(admin)
     const parts = routeParts(request, "team")
     if (!parts.length && request.method === "GET") throw new HttpError(400, "Workspace user lists require bounded paging.")
     if (parts.length === 1 && parts[0] === "page" && request.method === "GET") { await requirePermission(admin, current.User_ID, "Users.Read"); return json(request, await listTeamPage(admin, current, request)) }

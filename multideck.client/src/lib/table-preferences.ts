@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { getApiWorkspacePreferences } from "@/lib/api"
-import { supabase } from "@/lib/supabase"
+import { getClientAuth, supabase } from "@/lib/supabase"
 import { updateWorkspaceBootstrapPreferences } from "@/lib/workspace-bootstrap"
 
 export type TablePinPreferences = Record<string, string[]>
@@ -59,7 +59,7 @@ function applyPreferences(next: TablePinPreferences) {
 }
 
 async function currentSession(client: SupabaseClient) {
-  const { data, error } = await client.auth.getSession()
+  const { data, error } = await getClientAuth(client).getSession()
   if (error) throw error
   return data.session
 }
@@ -74,7 +74,7 @@ function saveRemotePreferences(next: TablePinPreferences) {
     .then(async () => {
       if (loadedUserId !== userId) return false
 
-      const { data: sessionData, error: sessionError } = await client.auth.getSession()
+      const { data: sessionData, error: sessionError } = await getClientAuth(client).getSession()
       if (sessionError) throw sessionError
       if (sessionData.session?.user.id !== userId) return false
 
@@ -129,7 +129,7 @@ function watchAuth(client: SupabaseClient) {
   if (watchingAuth) return
   watchingAuth = true
 
-  client.auth.onAuthStateChange((_event, session) => {
+  getClientAuth(client).onAuthStateChange((_event, session) => {
     const userId = session?.user.id ?? null
     const settled = loadPromise ?? Promise.resolve()
 

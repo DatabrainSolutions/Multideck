@@ -235,7 +235,7 @@ export function AdvancedFilterPopover({
           )}
         >
           <SlidersHorizontal className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
-          <span className="hidden lg:inline">{t(label)}</span>
+          <span className="hidden lg:inline group-data-[mobile=true]/table-controls:inline">{t(label)}</span>
           {appliedCount ? (
             <motion.span
               key={appliedCount}
