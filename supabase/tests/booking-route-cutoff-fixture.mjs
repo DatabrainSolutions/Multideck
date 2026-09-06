@@ -11,7 +11,9 @@ begin
   perform set_config('test.actor',actor::text,false);
   -- The production approval endpoint is server-only; emulate that caller here,
   -- without removing the real role or approval guards.
-  perform set_config('request.jwt.claim.role','service_role',false);
+  -- Match current PostgREST instead of only the legacy per-claim setting.
+  perform set_config('request.jwt.claim.role','',false);
+  perform set_config('request.jwt.claims','{"role":"service_role"}',false);
   select "Company_ID" into company from public."cmp_Users" where "User_ID"=actor;
   select "User_ID" into other_actor from public."cmp_Users" where "Company_ID"<>company limit 1;
   select "Job_ID" into job from public."Job_Header" where "Job_BookingReference"='TEST1';
