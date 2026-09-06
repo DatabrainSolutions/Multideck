@@ -1,5 +1,6 @@
 import { isTrainingDatabase } from "../_shared/training-environment.ts"
 import { bookingAllocationActionRecord, bookingAllocationActionChanges } from "./booking-allocation-review.ts"
+import { bookingRouteActionReview } from "./booking-route-review.ts"
 import { ensureScreeningList } from "../_shared/screening-ingest.ts"
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
@@ -3274,12 +3275,14 @@ async function runStreamedAgent(
           toolOutput = { error: "That write action is not available in this workspace." }
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
+          const routeReview = action.code === "update_booking_route"
+            ? bookingRouteActionReview(currentRecordsById, actionArguments, locale) : null
           const currentRecord = action.code === "replace_booking_allocations"
             ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
             : action.code === "update_quote_cargo"
             ? quoteCargoActionRecord(currentRecordsById, actionArguments)
             : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
-          let reason = preparedActionDescription(
+          let reason = routeReview?.description ?? preparedActionDescription(
             locale,
             action.code,
             actionArguments,
@@ -3288,7 +3291,7 @@ async function runStreamedAgent(
             emailState,
           )
           const evidence = documentEvidence(latestDocumentExtraction)
-          let changes: JsonObject[] = actionChanges(
+          let changes: JsonObject[] = routeReview?.changes ?? actionChanges(
             locale,
             action.code,
             actionArguments,
@@ -3303,7 +3306,7 @@ async function runStreamedAgent(
               grantId: security.grantId,
               actionCode: action.code,
               arguments: actionArguments,
-              title: sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+              title: routeReview?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
               description: reason,
               changes,
               accessMode,
@@ -3322,7 +3325,7 @@ async function runStreamedAgent(
             : actionCopy(locale, "prepared", reason)
           const pendingAction = {
             id: prepared.id,
-            title: prepared.review?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+            title: prepared.review?.title ?? routeReview?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
             description: reason,
             changes,
             ...(evidence ? { sourceEvidence: evidence } : {}),
@@ -4863,12 +4866,14 @@ Deno.serve(async (request) => {
           toolOutput = { error: "That write action is not available in this workspace." }
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
+          const routeReview = action.code === "update_booking_route"
+            ? bookingRouteActionReview(currentRecordsById, actionArguments, locale) : null
           const currentRecord = action.code === "replace_booking_allocations"
             ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
             : action.code === "update_quote_cargo"
             ? quoteCargoActionRecord(currentRecordsById, actionArguments)
             : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
-          let reason = preparedActionDescription(
+          let reason = routeReview?.description ?? preparedActionDescription(
             locale,
             action.code,
             actionArguments,
@@ -4877,7 +4882,7 @@ Deno.serve(async (request) => {
             emailState,
           )
           const evidence = documentEvidence(latestDocumentExtraction)
-          let changes: JsonObject[] = actionChanges(locale, action.code, actionArguments, currentRecord)
+          let changes: JsonObject[] = routeReview?.changes ?? actionChanges(locale, action.code, actionArguments, currentRecord)
           let prepared: Awaited<ReturnType<typeof prepareServerAction>>
           try {
             prepared = await prepareServerAction(admin, actor, {
@@ -4887,7 +4892,7 @@ Deno.serve(async (request) => {
               grantId: security.grantId,
               actionCode: action.code,
               arguments: actionArguments,
-              title: sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+              title: routeReview?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
               description: reason,
               changes,
               accessMode,
@@ -4915,7 +4920,7 @@ Deno.serve(async (request) => {
             emailAttachments: emailState?.surfacedAttachments ?? [],
             pendingAction: {
               id: prepared.id,
-              title: prepared.review?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+              title: prepared.review?.title ?? routeReview?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
               description: reason,
               changes,
               ...(evidence ? { sourceEvidence: evidence } : {}),

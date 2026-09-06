@@ -5,6 +5,8 @@ import { stripTypeScriptTypes } from 'node:module'
 import { requiresExplicitActionApproval } from '../functions/agent-dexter/email-approval.mjs'
 const allocationReview = stripTypeScriptTypes(readFileSync(new URL('../functions/agent-dexter/booking-allocation-review.ts', import.meta.url), 'utf8'))
 const { bookingAllocationActionRecord, bookingAllocationActionChanges } = await import(`data:text/javascript;base64,${Buffer.from(allocationReview).toString('base64')}`)
+const routeReviewSource = stripTypeScriptTypes(readFileSync(new URL('../functions/agent-dexter/booking-route-review.ts', import.meta.url), 'utf8'))
+const { bookingRouteActionReview } = await import(`data:text/javascript;base64,${Buffer.from(routeReviewSource).toString('base64')}`)
 const source = readFileSync(new URL('../functions/agent-dexter/security.ts', import.meta.url), 'utf8')
 const executable = stripTypeScriptTypes(source).replace('"./email-approval.mjs"',
   JSON.stringify(new URL('../functions/agent-dexter/email-approval.mjs', import.meta.url).href)) + '\nexport { actionTargetIds }'
@@ -226,7 +228,7 @@ for (const streaming of [true, false]) {
   assert.ok(start >= branchStart.length && end > start, 'Actual mandatory approval response branch found')
   offset = end
   const executableBranch = stripTypeScriptTypes(`async function responseBranch(deps: any) {
-    const { argumentsWithDocumentEvidence, args, latestDocumentExtraction, currentRecordsById, cleanString, quoteCargoActionRecord, bookingAllocationActionRecord,
+    const { argumentsWithDocumentEvidence, args, latestDocumentExtraction, currentRecordsById, cleanString, quoteCargoActionRecord, bookingAllocationActionRecord, bookingRouteActionReview,
       preparedActionDescription, locale, action, emailState, documentEvidence, actionChanges, prepareServerAction,
       admin, actor, conversationId, security, sanitiseAnswer, actionDisplayName, accessMode, emit,
       extractedActionCopy, actionCopy, lane, route, PROMPT_VERSION, domainCodes, emailProviders,
@@ -234,6 +236,37 @@ for (const streaming of [true, false]) {
     ${agentSource.slice(start, end)}
   }`)
   const responseBranch = new Function(`${executableBranch}; return responseBranch`)()
+  test(`Routing field: ${streaming ? 'streamed' : 'persisted'} approval uses the exact leg, not action arguments or Booking header`, async () => {
+    const args = { target_id: crypto.randomUUID(), route_id: crypto.randomUUID(), expected_updated_at: '2026-09-06T10:00:00Z',
+      expected_route_updated_at: '2026-09-06T09:00:00Z', field: 'cargoCutoffAt', value: '2026-09-18T10:30:00+00:00', reason: 'Internal test' }
+    const record = { sourceTable: 'Job_Routing', recordId: args.route_id, bookingId: args.target_id, bookingReference: 'TEST1',
+      legNumber: 2, mode: 'sea', updatedAt: args.expected_updated_at, routeUpdatedAt: args.expected_route_updated_at, cargoCutoffAt: null }
+    const captured = [], events = []
+    const deps = { args, latestDocumentExtraction: null,
+      currentRecordsById: new Map([[args.target_id, { cargoCutoffAt: 'wrong header value' }], [args.route_id, record]]),
+      bookingRouteActionReview, cleanString: value => typeof value === 'string' ? value : '',
+      argumentsWithDocumentEvidence: value => value, preparedActionDescription: () => { throw new Error('Generic description must not be used') },
+      locale: 'en-GB', action: { code: 'update_booking_route', name: 'Edit routing leg field' }, emailState: null,
+      documentEvidence: () => null, actionChanges: () => { throw new Error('Technical argument list must not be used') },
+      prepareServerAction: async (_admin, _actor, input) => { captured.push(input); return { id: 'route-proposal' } },
+      admin: {}, actor: {}, conversationId: null, security: {}, sanitiseAnswer: value => value, actionDisplayName: () => 'Generic',
+      accessMode: 'full', emit: event => events.push(event), actionCopy: (_locale, _kind, reason) => reason,
+      lane: 'test', route: {}, PROMPT_VERSION: 'test', domainCodes: ['booking_routes'], emailProviders: [], reasoningSummaries: [], usage: {},
+      request: {}, json: (_request, value) => value, persistExchange: async result => result }
+    const response = await responseBranch(deps), result = streaming ? response : response.conversation
+    assert.equal(captured.length, 1)
+    assert.deepEqual(captured[0].arguments, args, 'Concurrency tokens and exact values remain in execution arguments')
+    assert.equal(result.pendingAction.title, 'Edit TEST1 · Leg 2 · Sea')
+    assert.deepEqual(result.pendingAction.changes, [{ field: 'Cargo cut-off', before: null,
+      after: '18 Sept 2026 at 10:30:00 UTC', value: '18 Sept 2026 at 10:30:00 UTC', beforeKnown: true, kind: 'added' }])
+    assert.deepEqual(captured[0].changes, result.pendingAction.changes)
+    assert.equal(captured[0].title, result.pendingAction.title)
+    assert.equal(captured[0].description, result.pendingAction.description)
+    assert.match(result.answer, /TEST1 · Leg 2 · Sea/)
+    if (streaming) assert.deepEqual(events.find(event => event.type === 'pending_action').pendingAction, result.pendingAction)
+    await assert.rejects(responseBranch({ ...deps, currentRecordsById: new Map([[args.route_id, { ...record, routeUpdatedAt: 'stale' }]]) }), /exact current/)
+    assert.equal(captured.length, 1, 'Stale read never becomes a prepared action')
+  })
   test(`Allocation plan: ${streaming ? 'streamed' : 'persisted'} approval shows every addition/removal using the exact read`, async () => {
     const old = { id: crypto.randomUUID(), cargoId: crypto.randomUUID(), containerId: crypto.randomUUID(), routeId: null, packageQuantity: '1.000001', grossWeightKg: null, volumeCbm: null, notes: 'Old' }
     const next = { ...old, id: crypto.randomUUID(), packageQuantity: '2.000001', notes: 'New' }
