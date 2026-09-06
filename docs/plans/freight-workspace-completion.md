@@ -8,6 +8,19 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 ## Delivery and evidence ledger
 
+6 September hosted Dexter approval/watch correction: the positive test exposed
+a legacy-only request-role check that rejected normal server approvals. Added
+and applied only migration `20260906171016`, preserving service-only execution
+and all existing scope/expiry guards. Fifteen local tests and the retained-schema
+structural rehearsal pass. The same still-valid hosted proposal then succeeded:
+exact cargo deadline, approval before execution, attributed audit, one watch
+event/notification. Documentation-only and paused edits did not alert; resumed
+clear alerted once. Deadlines restored to blank, accepted Quote unchanged,
+watch left paused with two retained test events. Wider hosted isolation and
+revision lifecycle/all-mode depth remain open. Raw watch field labels and a
+post-save missing Original badge are recorded follow-ups, not silently passed.
+See `docs/release/2026-09-06-dexter-approval-watch-evidence.md`.
+
 6 September Dexter routing review correction: real hosted read/prepare testing
 found the approval card listing technical arguments instead of the exact leg's
 business change. Corrected both response paths to use current, identity- and
