@@ -28,7 +28,7 @@ import { resolveDexterUploadedDocuments } from "../_shared/dexter-uploads.ts"
 import { adminClient } from "../_shared/backend.ts"
 import { beginGovernedModelFetch, governedModelFetch, settleModelEgress, type ModelGatewayContext } from "../_shared/model-gateway.ts"
 import { isClearlyOffTopicPrompt } from "./scope-guard.ts"
-import { requiresExplicitActionApproval } from "./email-approval.mjs"
+import { emailInstructionText, emailSendRequested, requiresExplicitActionApproval } from "./email-approval.mjs"
 import {
   authoriseTrustedRecordRecipients,
   bindSecurityRecords,
@@ -121,6 +121,7 @@ function cleanString(value: unknown, maximum: number) {
 }
 
 function isExplicitEmailWritingRequest(prompt: string, hasSelectedEmail: boolean) {
+  prompt = emailInstructionText(prompt)
   const text = prompt.toLowerCase()
   const writingVerb = /\b(draft|write|compose|prepare|reply|respond|answer|rewrite|reword|polish|edit|forward|send)\b/.test(text)
   // "Reply" and "response" are writing verbs, not proof that the operator
@@ -138,15 +139,8 @@ function isExplicitEmailWritingRequest(prompt: string, hasSelectedEmail: boolean
 }
 
 function requestedEmailAction(prompt: string): "create_draft" | "send" {
-  const text = prompt.toLowerCase()
-  // Full access may perform the external action immediately, so sending is
-  // selected only when the operator explicitly uses a send instruction.
-  return /\bsend\s+(?:an?\s+|the\s+|this\s+)?e-?mail\b/.test(text)
-    || /\b(send|email)\b[^\n.!?]{0,90}\b(now|today|straight away|immediately|it|this|the email|the message)\b/.test(text)
-    || /\b(send|email)\s+(?:it|this|the email|the message)\b/.test(text)
-    || /\bplease\s+send\b/.test(text)
-    ? "send"
-    : "create_draft"
+  // Selecting Send is distinct from final approval; every send still requires it.
+  return emailSendRequested(prompt) ? "send" : "create_draft"
 }
 
 function emailAddressesIn(value: string) {
@@ -2320,7 +2314,9 @@ async function securePreparedEmailAction(input: {
   draft: JsonObject
 }) {
   const actionCode = input.draft.requestedAction === "send" ? SEND_EMAIL_ACTION : CREATE_EMAIL_DRAFT_ACTION
-  if (!input.security.allowedActionCodes.includes(actionCode) ||
+  if (!isExplicitEmailWritingRequest(input.operatorPrompt, Boolean(input.draft.sourceMessageId)) ||
+      requestedEmailAction(input.operatorPrompt) !== input.draft.requestedAction ||
+      !input.security.allowedActionCodes.includes(actionCode) ||
       (input.accessMode === "full" && !operatorAuthorisesAction(input.operatorPrompt, actionCode))) {
     throw new Error("email_action_outside_operator_intent")
   }
@@ -2400,6 +2396,9 @@ async function prepareEmailDraft(
   }
   if (mode !== "new" && !source) {
     return { error: "The selected email could not be verified. Leave the response as a new draft or select the source email again." }
+  }
+  if (!isExplicitEmailWritingRequest(operatorPrompt, Boolean(source)) || requestedEmailAction(operatorPrompt) !== requestedAction) {
+    return { error: "That email action was not requested. Answer the operator's current request without preparing an email." }
   }
 
   const ownAddress = cleanString(source?.mailboxAddress, 320).toLowerCase()

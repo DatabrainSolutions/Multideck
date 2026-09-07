@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
-import { requiresExplicitActionApproval } from "./email-approval.mjs"
+import { emailInstructionText, emailSendRequested, requiresExplicitActionApproval } from "./email-approval.mjs"
 
 type JsonObject = Record<string, unknown>
 type Db = SupabaseClient<any, "public", any, any, any>
@@ -124,7 +124,6 @@ function normalisePrompt(prompt: string) {
 
 const ACTION_INTENTS: Record<string, RegExp> = {
   create_email_draft: /\b(draft|write|compose|prepare|reply|respond|forward)\b.{0,100}\b(e-?mail|message|reply|response)\b|\b(draft|write|compose|prepare)\b.{0,100}\bto\b.{0,100}@/,
-  send_email: /\bsend\b.{0,100}\b(e-?mail|message|reply|response|it|this)\b|\be-?mail\b.{0,80}\b(now|today|immediately|straight away)\b|\bplease send\b/,
   create_booking: /\b(create|add|start|make|open|new)\b.{0,80}\b(booking|shipment|job)\b|\bnew (booking|shipment|job)\b/,
   update_booking: /\b(update|edit|change|amend|correct|set|move)\b.{0,80}\b(booking|shipment|job|route)\b/,
   update_booking_cargo: /\b(update|edit|change|amend|correct|set|clear)\b.{0,80}\b(cargo|goods|packages?|weight|dimensions?|shipment)\b/,
@@ -171,12 +170,16 @@ const ACTION_INTENTS: Record<string, RegExp> = {
 }
 
 export function operatorAuthorisesAction(prompt: string, actionCode: string) {
+  if (actionCode === "send_email") return emailSendRequested(prompt)
+  if (actionCode === "create_email_draft") prompt = emailInstructionText(prompt)
   const pattern = ACTION_INTENTS[actionCode]
   return Boolean(pattern?.test(normalisePrompt(prompt)))
 }
 
 export function allowedActionsForPrompt(prompt: string, availableActionCodes: string[], accessMode: "approve" | "full") {
-  if (accessMode === "approve") return [...availableActionCodes]
+  if (accessMode === "approve") return availableActionCodes.filter(code =>
+    code === "send_email" ? operatorAuthorisesAction(prompt, code)
+      : code === "create_email_draft" ? /\b(draft|write|compose|prepare|reply|respond|answer|rewrite|reword|polish|edit|forward|thank|apologise|apologize|notify|contact|chase|follow[- ]up|get back to|make (?:it|this)|sound)\b/i.test(emailInstructionText(prompt)) : true)
   return availableActionCodes.filter((code) => operatorAuthorisesAction(prompt, code))
 }
 
