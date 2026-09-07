@@ -1,5 +1,12 @@
 # Freight workspace completion
 
+7 September milestone preflight: fresh development schema and populated legacy
+preservation rehearsal pass for the exact pending migration pair. Deployed
+Booking/Dexter source has no unexpected drift; the accepted Original is unchanged.
+The separate newer finance migration is retained. No milestone release yet; see
+[development preflight](../release/2026-09-07-milestone-development-preflight.md)
+for the controlled next step and precise evidence limits.
+
 Latest local checkpoint (7 September): the exact-leg milestone operator editor
 is connected, with 17 focused client tests and initial real-component Chrome
 verification. See [milestone operator evidence](../release/2026-09-07-milestone-operator-editor-evidence.md)
