@@ -26,6 +26,9 @@ export function CustomsReadinessReview({
   title = "Declaration readiness",
   totalChecks,
   children,
+  className,
+  progressLabel = "Customs readiness",
+  reviewContent,
 }: {
   completeChecks: number
   emptyDescription: string
@@ -39,6 +42,9 @@ export function CustomsReadinessReview({
   title?: string
   totalChecks: number
   children?: ReactNode
+  className?: string
+  progressLabel?: string
+  reviewContent?: ReactNode
 }) {
   const shouldReduceMotion = Boolean(useReducedMotion())
   const [openFixKey, setOpenFixKey] = useState<string | null>(null)
@@ -51,7 +57,7 @@ export function CustomsReadinessReview({
   }
 
   return (
-    <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
+    <Surface padding="lg" className={cn("rounded-[var(--md-radius-xl)]", className)}>
       {onBack ? (
         <Button type="button" variant="ghost" className="-ms-2 mb-4 h-8 rounded-[var(--md-radius-md)] px-2 text-[12px] font-medium text-[var(--md-text)]" onClick={onBack}>
           <ArrowLeft data-icon="inline-start" className="size-3.5 rtl:rotate-180" strokeWidth={1.5} />
@@ -66,7 +72,7 @@ export function CustomsReadinessReview({
           <p className="mt-1 text-[12px] text-[var(--md-text)]">{completeChecks}/{totalChecks} {t("readiness checks passed")}</p>
         </span>
         <div
-          aria-label={t("Customs readiness")}
+          aria-label={t(progressLabel)}
           aria-valuemax={100}
           aria-valuemin={0}
           aria-valuenow={percent}
@@ -78,7 +84,7 @@ export function CustomsReadinessReview({
         </div>
       </div>
 
-      {issues.length ? (
+      {reviewContent !== undefined ? reviewContent : issues.length ? (
         <div className="mt-5 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]">
           {issues.slice(0, 20).map((issue) => {
             const expanded = openFixKey === issue.key

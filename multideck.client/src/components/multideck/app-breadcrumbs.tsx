@@ -55,7 +55,7 @@ const staticLeafLabels: Record<string, string> = {
   "/finance/cash": "Cash & allocations",
   "/finance/cash/reconciliation": "Allocation & reconciliation",
   "/finance/administration": "Finance administration",
-  "/finance/systems": "Accounting systems",
+  "/finance/systems": "Integrations",
   "/finance/currencies": "Currencies & FX",
   "/finance/banks": "Bank accounts",
   "/finance/ledger": "Nominal accounts",
