@@ -1,5 +1,13 @@
 # Freight workspace completion
 
+7 September planned-schedule label correction (local, not released): the
+Booking route summary and date editors labelled planned values as ETD/ETA.
+They now explicitly identify planned dates/UTC and do not substitute an ETA
+for an absent planned arrival. Nineteen focused tests and build pass; two
+unrelated baseline contract failures are recorded, not hidden. Browser/release
+and Rail/mixed-leg journeys remain pending.
+[Evidence](../release/2026-09-07-planned-schedule-label-correction.md).
+
 7 September Air equipment checkpoint: hosted ULD creation and leg-scoped cargo
 allocation save/full reload pass. Over-allocation is rejected with field focus
 and no saved change. QA equipment/allocation are archived with audit retained;

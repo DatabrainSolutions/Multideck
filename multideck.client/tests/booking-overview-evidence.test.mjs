@@ -25,6 +25,10 @@ function component(name, end, language, resultName = name) {
     AiBrain: () => null, Database: () => null, ChartBar: () => null,
     toneToVar: () => 'currentColor', Progress: wrapper,
     BookingSectionHeading: ({ title }) => React.createElement('h2', null, title),
+    bookingLocationFlag: () => null, bookingModeKey: value => value.toLowerCase(),
+    Plane: () => null, Ship: () => null, Truck: () => null, Route: () => null,
+    ArrowDownToLine: () => null, ArrowUpFromLine: () => null,
+    ArrowRight: () => null, CalendarClock: () => null,
   }
   return new Function(...Object.keys(mocks), `${code};return ${resultName}`)(...Object.values(mocks))
 }
@@ -38,6 +42,22 @@ test('record availability distinguishes absent data from an empty or populated s
 })
 
 for (const language of ['en-GB', 'en-US']) {
+  test(`${language}: route summary identifies planned dates without substituting an ETA`, () => {
+    const View = component('BookingRouteSummary', 'BookingDetailHeader', language)
+    const booking = { mode: 'Rail', direction: 'Domestic', origin: 'Origin', destination: 'Destination',
+      departureDate: '2026-09-01', arrivalDate: '2026-09-02', eta: '2026-09-30' }
+    const render = routes => renderToStaticMarkup(React.createElement(View, { record: { booking, workspace: { routes } } }))
+    const html = render([{ plannedDepartureAt: '2026-09-07T23:30:00-02:00', plannedArrivalAt: '2026-09-09T12:00:00Z' }])
+    assert.match(html, /Planned departure/)
+    assert.match(html, /Planned arrival/)
+    assert.match(html, /08 Sept? 2026|Sep 08, 2026/)
+    assert.match(html, /09 Sept? 2026|Sep 09, 2026/)
+    assert.doesNotMatch(html, />ET[AD]</)
+    const missing = render([{ plannedDepartureAt: null, plannedArrivalAt: null }])
+    assert.doesNotMatch(missing, /2026/)
+    const noPlan = renderToStaticMarkup(React.createElement(View, { record: { booking: { ...booking, arrivalDate: '' } } }))
+    assert.doesNotMatch(noPlan, /30 Sept?|Sep 30/)
+  })
   test(`${language}: actual forecast view never turns status, carrier or dates into a probability`, () => {
     const View = component('BookingDexterForecastStatus', 'BookingOverviewSignals', language)
     for (const status of ['On track', 'Delayed', 'Exception', 'Completed']) {
