@@ -226,6 +226,7 @@ export const sidebarAreas: SidebarArea[] = [
         label: "Cash & banking",
         icon: Layers3,
         children: [
+          { label: "Bank accounts", icon: Building2, route: "/finance/banks" },
           { label: "Cashbook & allocations", icon: Layers3, route: "/finance/cash" },
           { label: "Allocation & reconciliation", icon: BadgeCheck, route: "/finance/cash/reconciliation" },
           { label: "Payment processing", value: "Planned", icon: CreditCard },

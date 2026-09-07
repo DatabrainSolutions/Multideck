@@ -38,6 +38,20 @@ test("the invoice header leads with bill-to identity and document fields without
   assert.ok(api.includes("billingAddress: null | {"), "The typed document workspace must carry its billing address.")
 })
 
+test("editable invoice and credit details remain loadable while accounting-period options roll out", () => {
+  for (const evidence of [
+    'admin.from("FIN_Periods").select("FINPeriod_ID,FINPeriod_LegalEntityID,FINPeriod_Code,FINPeriod_Name,FINPeriod_StartDate,FINPeriod_EndDate,FINPeriod_StatusCode,FINPeriod_BaseCurrencyCode")',
+    '.in("FINPeriod_LegalEntityID", ids)',
+    "result.accountingPeriods = periods.data ?? []",
+  ]) assert.ok(edge.includes(evidence), `Missing draft accounting-period evidence: ${evidence}`)
+
+  assert.ok(
+    page.includes("(options.accountingPeriods ?? []).filter"),
+    "Editable documents must tolerate an older draft-options response while the finance function is deployed.",
+  )
+  assert.ok(api.includes("accountingPeriods: Array<{"), "Draft options must expose accounting periods to the document editor.")
+})
+
 test("address projection remains read-only and does not create a second Dexter or watch workflow", () => {
   for (const evidence of [
     "Presentation-only projection of an address already available through the",
