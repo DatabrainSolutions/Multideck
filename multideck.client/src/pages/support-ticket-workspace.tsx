@@ -2,7 +2,7 @@ import { TicketAttachmentList, TicketAttachmentPicker } from "@/components/multi
 import { useTicketAttachmentDraft } from "@/lib/use-ticket-attachment-draft"
 import { uploadTicketFiles } from "@/lib/ticket-attachments"
 import { invoke } from "@/lib/support-ticket"
-import { useEffect, useRef, useState, type FormEvent } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ArrowLeft, RefreshCw, TicketCheck } from "@/components/icons/hugeicons"
 import { Surface } from "@/components/multideck/surface"
@@ -12,6 +12,7 @@ import { openSupportTicket, SUPPORT_TICKET_SUBMITTED_EVENT } from "@/components/
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/i18n/language-provider"
+import { mdMotion, reduceMotion } from "@/lib/motion"
 import { addSupportTicketComment, getSupportTicket, listSupportTickets, type SupportTicketConversation, type SupportTicketMessage, type SupportTicketSummary } from "@/lib/support-ticket"
 
 const statusLabels = { new: "Open", in_progress: "In progress", waiting_for_customer: "Waiting for you", resolved: "Resolved", closed: "Closed" }
@@ -43,6 +44,11 @@ export function SupportTicketWorkspace({ ticketId, navigate }: { ticketId: strin
   const sendLock = useRef(false)
   const [sent, setSent] = useState(false)
   const submission = useRef<{ body: string; files: File[]; key: string } | null>(null)
+  const messageScroll = useRef<HTMLDivElement>(null)
+  const messageContent = useRef<HTMLDivElement>(null)
+  const followLatest = useRef(true)
+  const prependPosition = useRef<{ height: number; top: number } | null>(null)
+  const animateMessageId = useRef<string | null>(null)
   const date = (value: string) => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
   const showStatus = (ticket: SupportTicketSummary) => {
     const finished = ticket.status === "resolved" || ticket.status === "closed"
@@ -54,6 +60,33 @@ export function SupportTicketWorkspace({ ticketId, navigate }: { ticketId: strin
       : statusLabels[ticket.status] || "Status unavailable"
     return <StatusPill tone={finished ? "green" : "amber"}>{t(label)}</StatusPill>
   }
+
+  // Position the first message page before paint; earlier replies retain the reading anchor.
+  useLayoutEffect(() => {
+    const scroll = messageScroll.current
+    if (!scroll || !conversation) return
+    if (prependPosition.current) {
+      scroll.scrollTop = prependPosition.current.top + scroll.scrollHeight - prependPosition.current.height
+      prependPosition.current = null
+    } else if (followLatest.current) {
+      scroll.scrollTop = scroll.scrollHeight
+    }
+  }, [conversation])
+
+  const hasConversation = Boolean(conversation)
+  useEffect(() => {
+    const scroll = messageScroll.current
+    const content = messageContent.current
+    if (!scroll || !content) return
+    // Attachments and composer resizing must keep the latest reply in view only
+    // while the reader is at the bottom, never while they are reading history.
+    const observer = new ResizeObserver(() => {
+      if (followLatest.current) scroll.scrollTop = scroll.scrollHeight
+    })
+    observer.observe(scroll)
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [hasConversation])
 
   useEffect(() => {
     if (ticketId || !tickets.length) return
@@ -97,6 +130,9 @@ export function SupportTicketWorkspace({ ticketId, navigate }: { ticketId: strin
       if (ticketId) {
         const result = await getSupportTicket(ticketId, cursor)
         if (result.nextCursor === cursor) throw new Error("Support pagination did not advance.")
+        const scroll = messageScroll.current
+        if (scroll) prependPosition.current = { height: scroll.scrollHeight, top: scroll.scrollTop }
+        followLatest.current = false
         setConversation((current) => current ? { ...current, messages: mergeMessages(current.messages, result.messages) } : result)
         setCursor(result.nextCursor)
       } else {
@@ -113,7 +149,8 @@ export function SupportTicketWorkspace({ ticketId, navigate }: { ticketId: strin
     event.preventDefault()
     if (!ticketId || sending || sendLock.current) return
     const body = draft.trim()
-    if ((!body && !attachments.files.length) || body.length > 12000) { setCommentError(t("Write a reply of up to 12,000 characters.")); return }
+    if (!body && !attachments.files.length) { setCommentError(t("Write a message or attach a file.")); return }
+    if (body.length > 12000) { setCommentError(t("Keep your reply within 12,000 characters.")); return }
     if (!submission.current || submission.current.body !== body || submission.current.files.length !== attachments.files.length || submission.current.files.some((file, index) => file !== attachments.files[index])) submission.current = { body, files: [...attachments.files], key: crypto.randomUUID() }
     sendLock.current = true
     setSending(true)
@@ -123,6 +160,8 @@ export function SupportTicketWorkspace({ ticketId, navigate }: { ticketId: strin
       const attachmentIds = await uploadTicketFiles(invoke, ticketId, attachments.files, attachments.cache, setUploadProgress)
       setUploadProgress("Sending reply…")
       const result = await addSupportTicketComment(ticketId, body, submission.current.key, attachmentIds)
+      followLatest.current = true
+      animateMessageId.current = result.message.id
       setConversation((current) => current ? { ...current, messages: mergeMessages(current.messages, [result.message]) } : current)
       setDraft("")
       attachments.clear()
@@ -133,9 +172,21 @@ export function SupportTicketWorkspace({ ticketId, navigate }: { ticketId: strin
     finally { sendLock.current = false; setSending(false); setUploadProgress("") }
   }
 
-  return <Surface padding="lg" className="mt-[var(--md-page-stack-gap)] min-w-0">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      {ticketId ? <Button variant="ghost" onClick={() => navigate("/settings?tab=support")} disabled={sending}><ArrowLeft className="size-4" aria-hidden="true" />{t("Your tickets")}</Button> : <h2 className="text-[16px] font-medium">{t("Your tickets")}</h2>}
+  const ticketDetails = conversation ? <>
+    <h2 data-i18n-skip className="text-[16px] font-medium leading-6 break-words">{conversation.ticket.title}</h2>
+    <dl className="mt-5 grid gap-4 text-[12px]">
+      <div className="flex items-center justify-between gap-3"><dt className="text-[var(--md-subtle)]">{t("Status")}</dt><dd>{showStatus(conversation.ticket)}</dd></div>
+      <div className="flex items-center justify-between gap-3"><dt className="text-[var(--md-subtle)]">{t("Type")}</dt><dd>{t(({ bug: "Bug", feature_request: "Feature request", question: "Question", account_billing: "Account & billing", security_concern: "Security concern" })[conversation.ticket.ticketType])}</dd></div>
+      <div><dt className="text-[var(--md-subtle)]">{t("Created")}</dt><dd className="mt-1"><time dateTime={conversation.ticket.createdAt}>{date(conversation.ticket.createdAt)}</time></dd></div>
+      <div><dt className="text-[var(--md-subtle)]">{t("Last updated")}</dt><dd className="mt-1"><time dateTime={conversation.ticket.updatedAt}>{date(conversation.ticket.updatedAt)}</time></dd></div>
+    </dl>
+    <div className="mt-6 border-t border-[var(--md-hairline)] pt-5"><h3 className="text-[12px] font-medium text-[var(--md-subtle)]">{t("Description")}</h3><p data-i18n-skip className="mt-2 whitespace-pre-wrap break-words text-[13px] leading-6 text-[var(--md-text)] [overflow-wrap:anywhere]">{conversation.ticket.description}</p></div>
+  </> : null
+  const Workspace = ticketId ? "section" : Surface
+
+  return <Workspace {...(!ticketId ? { padding: "lg" as const } : {})} className={ticketId ? "flex h-full min-h-0 min-w-0 flex-col" : "mx-auto mt-[var(--md-page-stack-gap)] max-w-[1180px] min-w-0"}>
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+      {ticketId ? <div className="flex min-w-0 items-center gap-3"><Button variant="ghost" onClick={() => navigate("/settings?tab=support")} disabled={sending}><ArrowLeft className="size-4" aria-hidden="true" />{t("Your tickets")}</Button><h1 className="text-[16px] font-medium">{conversation?.ticket.reference ?? t("Support")}</h1></div> : <h2 className="text-[16px] font-medium">{t("Your tickets")}</h2>}
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button variant="outline" disabled={loading || sending} onClick={() => setAttempt((value) => value + 1)}><RefreshCw className="size-4" aria-hidden="true" />{t("Refresh")}</Button>
         {!ticketId ? <Button type="button" onClick={openSupportTicket}><TicketCheck className="size-4" strokeWidth={1.4} aria-hidden="true" />{t("Submit a ticket")}</Button> : null}
@@ -144,22 +195,25 @@ export function SupportTicketWorkspace({ ticketId, navigate }: { ticketId: strin
     {error ? <p role="alert" className="mt-4 text-sm text-[var(--md-red)]">{error}</p> : null}
     {loading && !conversation ? <DotGridLoader label="Loading support details…" size="sm" className="my-5" /> : null}
     {!loading && !error && !ticketId ? <div className="mt-4 divide-y divide-[var(--md-hairline)]">
-      {tickets.length ? tickets.map((ticket) => <button key={ticket.id} type="button" onClick={() => navigate(`/settings?tab=support&ticket=${encodeURIComponent(ticket.id)}`)} className="flex w-full flex-wrap items-center justify-between gap-3 py-4 text-left outline-none hover:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]">
+      {tickets.length ? tickets.map((ticket) => <button key={ticket.id} type="button" onClick={() => navigate(`/settings?tab=support&ticket=${encodeURIComponent(ticket.id)}`)} className="flex w-full flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] px-3 py-4 text-left outline-none transition-colors duration-150 hover:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] motion-reduce:transition-none">
         <span className="min-w-0 flex-1"><span data-i18n-skip className="block text-sm font-medium break-words">{ticket.reference} · {ticket.title}</span><span className="mt-1 block text-xs text-[var(--md-subtle)]">{date(ticket.updatedAt)}</span></span>{showStatus(ticket)}
       </button>) : <p className="py-5 text-sm text-[var(--md-text)]">{t("You have no support tickets yet. Submit a ticket above or from the sidebar.")}</p>}
     </div> : null}
-    {ticketId && conversation ? <div className="mt-5">
-      <div className="flex flex-wrap items-center gap-3"><h2 className="text-lg font-medium">{conversation.ticket.reference}</h2>{showStatus(conversation.ticket)}</div>
-      <h3 data-i18n-skip className="mt-3 text-base font-medium break-words">{conversation.ticket.title}</h3>
-      <p data-i18n-skip className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--md-text)]">{conversation.ticket.description}</p>
-      <div className="mt-7 border-t border-[var(--md-hairline)] pt-5">
-      <h3 className="text-xs font-medium text-[var(--md-subtle)]">{t("Conversation")}</h3>
+    {ticketId && conversation ? <div className="mt-4 grid min-h-0 flex-1 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <section aria-label={t("Conversation")} className="flex min-h-0 min-w-0 flex-col">
+      <details className="mb-3 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-3 xl:hidden">
+        <summary className="cursor-pointer rounded-[var(--md-radius-md)] py-3 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]">{t("Ticket details")}</summary>
+        <div className="max-h-[30dvh] overflow-y-auto pb-4">{ticketDetails}</div>
+      </details>
+      <div ref={messageScroll} tabIndex={0} aria-label={t("Ticket messages")} onScroll={(event) => { const scroll = event.currentTarget; followLatest.current = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 48 }} className="md-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-[var(--md-radius-md)] px-1 outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]">
+      <div ref={messageContent} className="mx-auto max-w-[860px]">
       {cursor ? <div className="mt-4 flex justify-center"><Button variant="ghost" onClick={() => void loadMore()} disabled={loadingMore}>{t(loadingMore ? "Loading…" : "Load earlier replies")}</Button></div> : null}
       {!conversation.messages.length ? <p className="py-8 text-center text-sm text-[var(--md-subtle)]">{t("No replies yet. The support team will reply here and by email.")}</p> : <ol aria-label={t("Conversation")} className="flex flex-col gap-5 py-6">
         <AnimatePresence initial={false}>
         {conversation.messages.map((message) => {
           const support = message.authorType === "staff"
-          return <motion.li key={message.id} initial={reducedMotion ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }} className={`flex min-w-0 ${support ? "justify-start" : "justify-end"}`}>
+          // Only a newly confirmed reply moves; opening a ticket or loading history stays still.
+          return <motion.li key={message.id} initial={reducedMotion || message.id !== animateMessageId.current ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={reduceMotion(Boolean(reducedMotion), mdMotion.fast)} className={`flex min-w-0 ${support ? "justify-start" : "justify-end"}`}>
             <div className="min-w-0 max-w-[90%] sm:max-w-[75%]">
               <div className={`mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs ${support ? "" : "justify-end"}`}>
                 <span className="font-medium text-[var(--md-ink)]">{t(support ? "Support team" : "You")}</span>
@@ -176,11 +230,12 @@ export function SupportTicketWorkspace({ ticketId, navigate }: { ticketId: strin
         </AnimatePresence>
       </ol>}
       </div>
-      {conversation.ticket.status === "closed" ? <p className="mt-5 text-sm text-[var(--md-text)]">{t("This ticket is closed. Submit a new ticket if you need more help.")}</p> : <form onSubmit={sendComment} className="mt-4" onPaste={event => { if (!sending && event.clipboardData.files.length) { event.preventDefault(); attachments.add(Array.from(event.clipboardData.files)) } }} onDragOver={event => { if (event.dataTransfer.types.includes("Files")) event.preventDefault() }} onDrop={event => { event.preventDefault(); if (!sending) attachments.add(Array.from(event.dataTransfer.files)) }}>
+      </div>
+      {conversation.ticket.status === "closed" ? <p className="shrink-0 pt-4 text-sm text-[var(--md-text)]">{t("This ticket is closed. Submit a new ticket if you need more help.")}</p> : <form onSubmit={sendComment} className="mx-auto w-full max-w-[860px] shrink-0 pt-3 pb-[env(safe-area-inset-bottom)]" onPaste={event => { if (!sending && event.clipboardData.files.length) { event.preventDefault(); attachments.add(Array.from(event.clipboardData.files)) } }} onDragOver={event => { if (event.dataTransfer.types.includes("Files")) event.preventDefault() }} onDrop={event => { event.preventDefault(); if (!sending) attachments.add(Array.from(event.dataTransfer.files)) }}>
         <label htmlFor="support-reply" className="sr-only">{t("Reply to support")}</label>
-        <div className="overflow-hidden rounded-[26px] bg-[var(--md-surface-tint)] p-2 dark:bg-[var(--md-bg-strong)]">
-          {attachments.items.length ? <div className="p-2"><TicketAttachmentList items={attachments.items} onRemove={attachments.remove} disabled={sending} /></div> : null}
-          <Textarea id="support-reply" value={draft} maxLength={12000} readOnly={sending} placeholder={t("Write a message…")} invalidFeedbackMotion={false} onChange={(event) => { setDraft(event.target.value); setSent(false) }} aria-invalid={Boolean(commentError) || undefined} aria-describedby={commentError || sent ? "support-reply-feedback" : undefined} className="min-h-16 max-h-60 resize-none rounded-[18px] !border-transparent !bg-transparent px-3 py-2.5 !shadow-none !ring-0 focus-visible:!border-transparent" />
+        <div className="overflow-hidden rounded-[26px] bg-[var(--md-surface-tint)] p-2 shadow-[var(--md-shadow-line)] focus-within:ring-2 focus-within:ring-[var(--md-accent-a24)] dark:bg-[var(--md-bg-strong)]">
+          {attachments.items.length ? <div className="max-h-[20dvh] overflow-y-auto p-2"><TicketAttachmentList items={attachments.items} onRemove={attachments.remove} disabled={sending} /></div> : null}
+          <Textarea id="support-reply" value={draft} maxLength={12000} readOnly={sending} placeholder={t("Write a message…")} invalidFeedbackMotion={false} onChange={(event) => { setDraft(event.target.value); setSent(false); setCommentError(null) }} aria-invalid={Boolean(commentError) || undefined} aria-describedby={commentError || sent ? "support-reply-feedback" : undefined} className="min-h-16 max-h-[min(15dvh,240px)] resize-none rounded-[18px] !border-transparent !bg-transparent px-3 py-2.5 !shadow-none !ring-0 focus-visible:!border-transparent" />
           <div className="flex items-center justify-between">
             <TicketAttachmentPicker onAdd={attachments.add} disabled={sending} />
             {uploadProgress ? <span role="status" className="px-2 text-xs text-[var(--md-text)]">{t(uploadProgress)}</span> : null}
@@ -192,7 +247,9 @@ export function SupportTicketWorkspace({ ticketId, navigate }: { ticketId: strin
         {attachments.error ? <p role="alert" className="mt-2 px-3 text-xs text-[var(--md-red)]">{t(attachments.error)}</p> : null}
         <p id="support-reply-feedback" role={commentError ? "alert" : "status"} className={commentError ? "mt-2 px-3 text-xs text-[var(--md-red)]" : "sr-only"}>{commentError || (sent ? t("Your reply has been added to the ticket.") : "")}</p>
       </form>}
+      </section>
+      <aside aria-label={t("Ticket details")} className="md-scrollbar hidden min-h-0 overflow-y-auto border-s border-[var(--md-hairline)] ps-6 pt-3 xl:block">{ticketDetails}</aside>
     </div> : null}
     {!loading && cursor && !ticketId ? <Button variant="outline" className="mt-4" onClick={() => void loadMore()} disabled={loadingMore}>{t(loadingMore ? "Loading…" : "Load more tickets")}</Button> : null}
-  </Surface>
+  </Workspace>
 }
