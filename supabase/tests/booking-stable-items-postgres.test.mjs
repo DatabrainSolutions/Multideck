@@ -24,6 +24,7 @@ import { dangerousGoodsFixture } from './booking-dangerous-goods-fixture.mjs'
 import { dangerousGoodsDexterFixture } from './booking-dangerous-goods-dexter-fixture.mjs'
 import { roadOpenFixture } from './booking-road-open-fixture.mjs'
 import { openingDirectionFixture } from './booking-opening-direction-fixture.mjs'
+import { chargeableWeightFixture } from './booking-chargeable-weight-fixture.mjs'
 
 // Executes the actual save function against disposable PostgreSQL, never a tenant.
 // PG_TEST_BIN can point to a PostgreSQL bin directory in CI.
@@ -213,6 +214,7 @@ test('PostgreSQL: stable items, route milestones, approved Dexter cargo/containe
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], dangerousGoodsDexterFixture)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], roadOpenFixture)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], openingDirectionFixture)
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], chargeableWeightFixture)
     // Separate real connections compete for the same sequence and request key.
     // All children settle before database teardown, including on assertion failure.
     const openConcurrent = key => new Promise((resolve, reject) => {
