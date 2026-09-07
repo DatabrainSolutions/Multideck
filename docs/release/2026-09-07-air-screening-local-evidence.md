@@ -2,9 +2,28 @@
 
 Latest checkpoint: local operator editing, Dexter registry/read/approved writes
 and notification-only deterministic watches are implemented. Real PostgreSQL
-approval/replay and watch lifecycle tests pass. Remaining gates include browser
-UTC/responsive/keyboard checks, broader access/retirement cases, current-schema
+approval/replay and watch lifecycle tests pass. Isolated browser UTC roundtrip,
+responsive and focus checks now pass. Remaining gates include broader
+access/retirement cases, current-schema
 rehearsal and combined hosted release verification. No screening changes are live.
+
+### Browser preflight and UTC correction
+
+`supabase/tests/tools/verify-booking-security-evidence-browser.mjs` bundles the
+actual editor and gallery preview with explicit in-memory save/language fixtures
+and blocks all external requests. Chrome passes en-GB/en-US × reduced/normal
+motion at 320/768/1280 widths, 200% CSS zoom, focus loop/return, reachable Save,
+synthetic save/reopen, read-only controls and no console/page errors or external
+requests. The 320px screenshot `/tmp/multideck-screening-mobile.png` was inspected.
+Regional context is exercised with identity copy translation; this is not a test
+of the entire application translation provider or every keyboard interaction.
+
+The first browser save exposed a real fractional-second mismatch: the native
+input allowed fractions but the reused cut-off converter rejected them. Screening
+now uses its own strict UTC input conversion, retaining up to six fractional
+digits and leaving route cut-off behaviour unchanged. Nine editor tests pass,
+including exact microseconds/omission/clear and invalid-date checks; the browser
+also saves and reopens `2026-09-07T10:30:45.123` without losing its fraction.
 
 New migration `20260907140238_booking_cargo_security_evidence.sql` creates a
 private typed cargo evidence record, independent of AWB documents, Customs,

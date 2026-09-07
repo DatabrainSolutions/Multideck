@@ -24,6 +24,8 @@ test('screening requires supplied evidence and source without inventing clearanc
   assert.throws(() => securityEvidenceChanges({ ...draft(original), screeningMethod: 'x'.repeat(81) }, original), e => e.field === 'screeningMethod')
 })
 test('screening UTC entry validates dates and preserves clear semantics', () => {
+  assert.equal(draft(original).screenedAt, '2026-09-07T10:30:00.123456')
+  assert.deepEqual(securityEvidenceChanges({ ...draft(original), screenedAt: '2026-09-08T11:30:45.123456' }, original), { screenedAt: '2026-09-08T11:30:45.123456Z' })
   assert.deepEqual(securityEvidenceChanges({ ...draft(original), screenedAt: '2026-09-08T11:30' }, original), { screenedAt: '2026-09-08T11:30:00Z' })
   for (const time of ['bad', '2026-02-30T10:00', '2026-09-07']) {
     assert.throws(() => securityEvidenceChanges({ ...draft(original), screenedAt: time }, original), e => e.field === 'screenedAt')
