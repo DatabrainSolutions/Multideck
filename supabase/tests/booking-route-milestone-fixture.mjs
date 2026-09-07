@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 
 const migration = readFileSync(new URL('../migrations/20260906182852_booking_route_milestone_foundation.sql', import.meta.url), 'utf8')
+const conflictMigration = readFileSync(new URL('../migrations/20260907092126_booking_milestone_nonretryable_conflicts.sql', import.meta.url), 'utf8')
 
 // Uses real retained table shapes and the actual canonical workspace/save chain.
 // Auth and broad workspace fixtures remain those of the parent suite, not a
@@ -18,6 +19,7 @@ export function routeMilestoneFixture(table) {
       ('departed','Departed',1,true),('arrived','Arrived',2,true),('exception','Exception',3,true),
       ('customs_released','Customs released',4,true),('inactive','Inactive test',5,false);
     ${migration}
+    ${conflictMigration}
     create function booking_api.fixture_milestone_payload(job uuid, leg uuid, milestone uuid, changes jsonb)
     returns jsonb language sql as $$
       select jsonb_build_object('id',milestone,'routeId',leg,'expectedUpdatedAt',j."Job_UpdatedAt",
@@ -71,8 +73,25 @@ begin
       raise exception 'Workspace capability/dictionary/document boundary failed'; end if;
     -- Repeating the original request is stale, not another event or duplicate row.
     begin perform public.booking_workflow_save_route_milestone(actor,job,payload);
-      raise exception 'Stale create repeated'; exception when serialization_failure then null; end;
+      raise exception 'Stale create repeated'; exception when sqlstate 'PT409' then null; end;
   end loop;
+  -- All permanent snapshot conflicts must return PT409, not retryable 40001.
+  payload:=booking_api.fixture_milestone_payload(job,first_leg,first_id,'{"notes":"Must not be written"}');
+  select jsonb_agg(to_jsonb(m) order by "JobRouteMilestone_ID") into before_rows from public."Job_RouteMilestones" m;
+  select count(*) into before_audit from booking_api.events;
+  for bad in select value from jsonb_array_elements(jsonb_build_array(
+    '{"expectedUpdatedAt":"2000-01-01T00:00Z"}'::jsonb,
+    '{"expectedRouteUpdatedAt":"2000-01-01T00:00Z"}'::jsonb,
+    '{"expectedMilestoneUpdatedAt":"2000-01-01T00:00Z"}'::jsonb,
+    jsonb_build_object('id',gen_random_uuid(),'expectedMilestoneUpdatedAt',clock_timestamp())
+  )) loop
+    begin perform public.booking_workflow_save_route_milestone(actor,job,payload||bad);
+      raise exception 'Permanent milestone conflict accepted: %',bad;
+    exception when sqlstate 'PT409' then null; end;
+  end loop;
+  if before_rows is distinct from (select jsonb_agg(to_jsonb(m) order by "JobRouteMilestone_ID") from public."Job_RouteMilestones" m)
+    or before_audit<>(select count(*) from booking_api.events) then
+    raise exception 'Rejected milestone conflicts changed saved evidence or audit'; end if;
   select jsonb_agg(to_jsonb(r) order by "JobRoute_ID") into before_routes from public."Job_Routing" r;
   payload:=booking_api.fixture_milestone_payload(job,first_leg,first_id,'{"estimatedAt":null,"notes":"Dispatcher correction"}');
   perform public.booking_workflow_save_route_milestone(actor,job,payload);
@@ -102,7 +121,7 @@ begin
     jsonb_build_object('changes',jsonb_build_object('externalReference',repeat('x',181)))
   )) loop
     begin perform public.booking_workflow_save_route_milestone(actor,job,payload||bad);
-      raise exception 'Invalid milestone change accepted: %',bad; exception when invalid_parameter_value or serialization_failure then null; end;
+      raise exception 'Invalid milestone change accepted: %',bad; exception when invalid_parameter_value or sqlstate 'PT409' then null; end;
   end loop;
   begin perform public.booking_workflow_save_route_milestone(foreign_actor,job,payload);
     raise exception 'Wrong actor accepted'; exception when insufficient_privilege then null; end;
