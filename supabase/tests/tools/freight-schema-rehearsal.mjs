@@ -80,6 +80,7 @@ try{
     end loop;
   end $$;`)
   const milestoneFoundation = files.includes('20260906182852_booking_route_milestone_foundation.sql')
+  const milestoneParity = files.includes('20260907075838_dexter_booking_milestone_parity.sql')
   if(milestoneFoundation){
     stage='milestone structural assertions'
     sql(`do $$begin
@@ -99,10 +100,26 @@ try{
     sql(readFileSync(new URL('../fixtures/freight-chain-after.sql',import.meta.url),'utf8'))
     if(screeningFixture)sql(readFileSync(new URL('../fixtures/freight-screening-after.sql',import.meta.url),'utf8'))
   }
+  if(milestoneParity){
+    stage='milestone parity structural assertions'
+    sql(`do $$declare signature text;begin
+      foreach signature in array array['public.multideck_dexter_domain_booking_milestones(uuid,text,integer)',
+        'public.multideck_dexter_domain_booking_milestone_types(uuid,text,integer)',
+        'public.multideck_dexter_action_record_booking_milestone(uuid,uuid,jsonb)'] loop
+        if has_function_privilege('anon',signature,'execute') or has_function_privilege('authenticated',signature,'execute')
+          or not has_function_privilege('service_role',signature,'execute') then raise exception 'Milestone adapter exposed: %',signature;end if;
+      end loop;
+      if not exists(select 1 from public."sys_AIDexterActions" where "AIDexterAction_Code"='record_booking_milestone'
+        and "AIDexterAction_AlwaysRequiresApproval") then raise exception 'Milestone approval registry missing';end if;
+      if not exists(select 1 from pg_trigger where tgrelid='public."Job_RouteMilestones"'::regclass
+        and tgname='TR_Job_RouteMilestones_dexter_watch' and tgenabled='O') then raise exception 'Milestone watch trigger missing';end if;
+    end $$;`)
+  }
   console.log(JSON.stringify({status:fixtureMode?'populated_rehearsal_passed':'structural_rehearsal_passed',schemaSha256:createHash('sha256').update(schema).digest('hex'),applied,
     migrationHashes:files.map(file=>({file,sha256:createHash('sha256').update(readFileSync(new URL('migrations/'+file,root))).digest('hex')})),
     postChainChecks:['typed cargo tables','typed cargo RLS','finalization service boundary','allocation action service boundary','quote revision service boundary'],
     milestoneChecks:milestoneFoundation?['existing table RLS retained','service-only milestone save','private mutation helper','explicit-offset conversion and clear']:[],
+    milestoneParityChecks:milestoneParity?['service-only domain/action adapters','mandatory approval registry','enabled deterministic watch trigger']:[],
     populatedChecks:fixtureMode?['Quote version and header preservation','Booking cargo equipment route and membership preservation',
       'no invented financial values or allocations','exact typed projection with zero and unknown distinctions',
       'existing cargo registry conflict update','unrelated registry and watch signal preservation','submitted mutation and deletion denial','invalid draft cargo rejection']:[],

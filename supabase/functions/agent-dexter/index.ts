@@ -1,6 +1,7 @@
 import { isTrainingDatabase } from "../_shared/training-environment.ts"
 import { bookingAllocationActionRecord, bookingAllocationActionChanges } from "./booking-allocation-review.ts"
 import { bookingRouteActionReview } from "./booking-route-review.ts"
+import { bookingMilestoneActionReview } from "./booking-milestone-review.ts"
 import { ensureScreeningList } from "../_shared/screening-ingest.ts"
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
@@ -1410,7 +1411,7 @@ function watchTargetLabel(capability: string, record: JsonObject) {
         ? ["quoteNumber"]
         : capability === "phone_calls"
           ? ["callerName", "companyName", "phoneNumber"]
-        : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value", "quote_cargo", "booking_allocations"].includes(capability)
+        : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value", "quote_cargo", "booking_allocations", "booking_milestones"].includes(capability)
           ? ["targetLabel", "bookingReference", "description"]
       : capability === "bookings"
           ? ["bookingReference", "jobReference", "customerReference"]
@@ -1864,6 +1865,8 @@ You are Agent Dexter, a calm and capable freight-forwarding co-worker inside Mul
 ${training ? "This is the TRAINING workspace. All records, writes and watches belong only to this paired practice database. You cannot inspect or change Main from here. Accounts, sign-in methods and permissions are managed in Main. The authentication handoff is not a Dexter action or watch event." : "This is the main operational workspace."}
 Today is ${new Date().toISOString().slice(0, 10)} UTC.
 Prompt version: ${PROMPT_VERSION}.
+For a milestone reaching a specific status, use a booking_milestones watch with field status, operator eq and value planned, completed, exception or voided. This is a saved-status transition, not a timer. Use changed for other milestone field-change watches.
+Operational milestone recording is available only when record_booking_milestone is listed. Before creation, read the exact booking_routes leg and active booking_milestone_types choice; use null milestone_id and null expected_milestone_updated_at. For correction, read the exact booking_milestones record, its routeId, type, bookingUpdatedAt, routeUpdatedAt and updatedAt. Propose only changed fields as field/value pairs; Completed and its actualAt may be reviewed together. All milestone writes require explicit approval, even in Full access. Planned, estimated and actual times are independent, with a complete date, time and explicit timezone; never infer midnight, copy a route date or assume completion. Provider and Customs evidence cannot be edited here. A mode change does not relabel historical events; old-mode operator evidence can only be retained or voided. Voiding preserves source and dates. Milestone watches use booking_milestones with an exact saved milestone recordId and one listed field, operator changed, notify only. They react to persisted changes, not time passing or tracking feeds; record a planned milestone first if the user wants to follow its later completion. Limited domain results are not complete history. If absent, explain the unsupported capability rather than use generic Booking writes.
 
 # Active specialist
 ${specialistInstruction}
@@ -3276,7 +3279,8 @@ async function runStreamedAgent(
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
           const routeReview = action.code === "update_booking_route"
-            ? bookingRouteActionReview(currentRecordsById, actionArguments, locale) : null
+            ? bookingRouteActionReview(currentRecordsById, actionArguments, locale)
+            : action.code === "record_booking_milestone" ? bookingMilestoneActionReview(currentRecordsById, actionArguments, locale) : null
           const currentRecord = action.code === "replace_booking_allocations"
             ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
             : action.code === "update_quote_cargo"
@@ -4867,7 +4871,8 @@ Deno.serve(async (request) => {
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
           const routeReview = action.code === "update_booking_route"
-            ? bookingRouteActionReview(currentRecordsById, actionArguments, locale) : null
+            ? bookingRouteActionReview(currentRecordsById, actionArguments, locale)
+            : action.code === "record_booking_milestone" ? bookingMilestoneActionReview(currentRecordsById, actionArguments, locale) : null
           const currentRecord = action.code === "replace_booking_allocations"
             ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
             : action.code === "update_quote_cargo"

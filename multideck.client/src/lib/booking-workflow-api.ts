@@ -94,6 +94,41 @@ export type BookingCargoAllocationState = {
   legacyUnquantifiedLinks: { cargoId: string; containerId: string }[]
 }
 
+export type BookingMilestoneStatus = "planned" | "completed" | "exception" | "voided"
+
+export type BookingWorkflowMilestone = {
+  id: string
+  routeId: string
+  type: string
+  name: string
+  status: string
+  plannedAt: string | null
+  estimatedAt: string | null
+  actualAt: string | null
+  locationUnlocode: string | null
+  location: string | null
+  externalReference: string | null
+  notes: string | null
+  source: string | null
+  recordedMode: string | null
+  createdAt: string
+  createdBy: string | null
+  updatedAt: string
+  updatedBy: string | null
+  operatorEditable: boolean
+}
+
+export type BookingMilestoneSave = {
+  id: string
+  routeId: string
+  type?: string
+  expectedUpdatedAt: string
+  expectedRouteUpdatedAt: string
+  expectedMilestoneUpdatedAt: string | null
+  changes: Partial<Pick<BookingWorkflowMilestone, "plannedAt" | "estimatedAt" | "actualAt" | "locationUnlocode" | "location" | "externalReference" | "notes">> & { status?: BookingMilestoneStatus }
+  reason: string
+}
+
 export type BookingWorkflowRoute = {
   id?: string
   order?: number
@@ -128,6 +163,8 @@ export type BookingWorkflowRoute = {
   railService?: string | null
   isMainCarriage?: boolean
   routeData?: Record<string, unknown>
+  updatedAt?: string | null
+  milestones?: BookingWorkflowMilestone[]
 }
 
 export type BookingWorkflowDocument = {
@@ -189,6 +226,8 @@ export type BookingWorkflowEvent = {
 
 export type BookingWorkflowWorkspace = {
   routeCutoffsSupported?: boolean
+  routeMilestonesSupported?: boolean
+  milestoneTypes?: { code: string; name: string }[]
   booking: {
     jobId: string
     bookingReference: string
@@ -345,6 +384,10 @@ export function getBookingWorkflow(reference: string) {
 
 export function saveBookingWorkflow(jobId: string, booking: Record<string, unknown>) {
   return invoke<BookingWorkflowWorkspace>({ action: "save", jobId, booking }, "The booking could not be saved.")
+}
+
+export function saveBookingMilestone(jobId: string, milestone: BookingMilestoneSave) {
+  return invoke<BookingWorkflowWorkspace>({ action: "save-milestone", jobId, milestone }, "The routing milestone could not be saved.")
 }
 
 export function getBookingQuoteSyncReview(jobId: string) {

@@ -7,6 +7,8 @@ const allocationReview = stripTypeScriptTypes(readFileSync(new URL('../functions
 const { bookingAllocationActionRecord, bookingAllocationActionChanges } = await import(`data:text/javascript;base64,${Buffer.from(allocationReview).toString('base64')}`)
 const routeReviewSource = stripTypeScriptTypes(readFileSync(new URL('../functions/agent-dexter/booking-route-review.ts', import.meta.url), 'utf8'))
 const { bookingRouteActionReview } = await import(`data:text/javascript;base64,${Buffer.from(routeReviewSource).toString('base64')}`)
+const milestoneReviewSource = stripTypeScriptTypes(readFileSync(new URL('../functions/agent-dexter/booking-milestone-review.ts', import.meta.url), 'utf8'))
+const { bookingMilestoneActionReview } = await import(`data:text/javascript;base64,${Buffer.from(milestoneReviewSource).toString('base64')}`)
 const source = readFileSync(new URL('../functions/agent-dexter/security.ts', import.meta.url), 'utf8')
 const executable = stripTypeScriptTypes(source).replace('"./email-approval.mjs"',
   JSON.stringify(new URL('../functions/agent-dexter/email-approval.mjs', import.meta.url).href)) + '\nexport { actionTargetIds }'
@@ -89,6 +91,32 @@ test('Routing cut-offs: deadline edits are distinct from reads and VGM mass chan
   for (const prompt of ['Show the cargo cut-off', 'Read the VGM deadline', 'Set VGM to 18000 kg', 'Change the profit margin']) {
     assert.equal(operatorAuthorisesAction(prompt, 'update_booking_route'), false, prompt)
   }
+})
+
+test('Milestone proposal requires explicit operator intent and is prepared without execution', async () => {
+  const action = 'record_booking_milestone'
+  for (const prompt of ['Record a departed milestone', 'Correct the actual time of this milestone', 'Void the milestone']) {
+    assert.equal(operatorAuthorisesAction(prompt, action), true)
+  }
+  for (const prompt of ['Show milestone dates', 'Track this shipment', 'Read the arrival milestone']) {
+    assert.equal(operatorAuthorisesAction(prompt, action), false)
+  }
+  const writes = [], actor = { userId: crypto.randomUUID(), companyId: crypto.randomUUID(), authUserId: crypto.randomUUID() }
+  const job = crypto.randomUUID(), route = crypto.randomUUID(), milestone = crypto.randomUUID()
+  const admin = { from(table) {
+    const query = { select: () => query, eq: () => query, gt: () => query,
+      maybeSingle: async () => ({ data: { AIDexterIntent_AllowedActionsJSON: [action], AIDexterIntent_TargetConstraintsJSON: [], AIDexterIntent_AccessMode: 'full' } }),
+      insert: async row => { writes.push({ table, row }); return { error: null } } }
+    return query
+  } }
+  await prepareServerAction(admin, actor, { conversationId: null, clientSessionId: crypto.randomUUID(), intentPlanId: crypto.randomUUID(), grantId: crypto.randomUUID(),
+    actionCode: action, arguments: { target_id: job, route_id: route, milestone_id: milestone, changes: [{ field: 'notes', value: 'Correction' }] },
+    title: 'Correct milestone', description: 'Exact event', changes: [{ field: 'Notes', before: null, after: 'Correction' }], accessMode: 'full' })
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0].table, 'AI_DexterPreparedActions')
+  assert.equal(writes[0].row.AIDexterPrepared_Status, 'prepared')
+  assert.equal(writes[0].row.AIDexterPrepared_ApprovedAt, undefined)
+  assert.deepEqual(writes[0].row.AIDexterPrepared_TargetJSON.recordIds, [job, route, milestone])
 })
 
 test('Routing mode: explicit leg intent and mandatory approval in both access modes', () => {
@@ -228,7 +256,7 @@ for (const streaming of [true, false]) {
   assert.ok(start >= branchStart.length && end > start, 'Actual mandatory approval response branch found')
   offset = end
   const executableBranch = stripTypeScriptTypes(`async function responseBranch(deps: any) {
-    const { argumentsWithDocumentEvidence, args, latestDocumentExtraction, currentRecordsById, cleanString, quoteCargoActionRecord, bookingAllocationActionRecord, bookingRouteActionReview,
+    const { argumentsWithDocumentEvidence, args, latestDocumentExtraction, currentRecordsById, cleanString, quoteCargoActionRecord, bookingAllocationActionRecord, bookingRouteActionReview, bookingMilestoneActionReview,
       preparedActionDescription, locale, action, emailState, documentEvidence, actionChanges, prepareServerAction,
       admin, actor, conversationId, security, sanitiseAnswer, actionDisplayName, accessMode, emit,
       extractedActionCopy, actionCopy, lane, route, PROMPT_VERSION, domainCodes, emailProviders,
@@ -236,6 +264,35 @@ for (const streaming of [true, false]) {
     ${agentSource.slice(start, end)}
   }`)
   const responseBranch = new Function(`${executableBranch}; return responseBranch`)()
+  test(`Milestone: ${streaming ? 'streamed' : 'persisted'} approval is bound to the exact saved event`, async () => {
+    const args = { target_id: crypto.randomUUID(), route_id: crypto.randomUUID(), milestone_id: crypto.randomUUID(), type: 'departed',
+      expected_updated_at: '2026-09-07T08:00:00Z', expected_route_updated_at: '2026-09-07T07:00:00Z', expected_milestone_updated_at: '2026-09-07T06:00:00Z',
+      changes: [{ field: 'actualAt', value: '2026-09-01T10:00:00Z' }, { field: 'status', value: 'completed' }], reason: 'Dispatcher confirmed' }
+    const record = { sourceTable: 'Job_RouteMilestones', recordId: args.milestone_id, bookingId: args.target_id, routeId: args.route_id,
+      bookingReference: 'TEST1', legNumber: 2, mode: 'air', recordedMode: 'air', type: 'departed', name: 'Departed', source: 'operator', operatorEditable: true,
+      bookingUpdatedAt: args.expected_updated_at, routeUpdatedAt: args.expected_route_updated_at, updatedAt: args.expected_milestone_updated_at, status: 'planned', actualAt: null }
+    const captured = [], events = []
+    const deps = { args, latestDocumentExtraction: null, currentRecordsById: new Map([[args.milestone_id, record]]), bookingMilestoneActionReview,
+      cleanString: value => typeof value === 'string' ? value : '', argumentsWithDocumentEvidence: value => value,
+      preparedActionDescription: () => { throw new Error('Do not use a technical argument summary') },
+      locale: 'en-GB', action: { code: 'record_booking_milestone', name: 'Record routing milestone' }, emailState: null,
+      documentEvidence: () => null, actionChanges: () => { throw new Error('Do not guess before evidence') },
+      prepareServerAction: async (_admin, _actor, input) => { captured.push(input); return { id: 'milestone-proposal' } },
+      admin: {}, actor: {}, conversationId: null, security: {}, sanitiseAnswer: value => value, actionDisplayName: () => 'Generic',
+      accessMode: 'full', emit: event => events.push(event), actionCopy: (_locale, _kind, reason) => reason,
+      lane: 'test', route: {}, PROMPT_VERSION: 'test', domainCodes: ['booking_milestones'], emailProviders: [], reasoningSummaries: [], usage: {},
+      request: {}, json: (_request, value) => value, persistExchange: async result => result }
+    const response = await responseBranch(deps), result = streaming ? response : response.conversation
+    assert.equal(captured.length, 1)
+    assert.deepEqual(captured[0].arguments, args)
+    assert.equal(result.pendingAction.title, 'Correct TEST1 · Leg 2 · Air · Departed')
+    assert.deepEqual(result.pendingAction.changes, captured[0].changes)
+    assert.deepEqual(result.pendingAction.changes.map(change => change.field), ['Actual time', 'Status'])
+    assert.match(result.answer, /TEST1 · Leg 2 · Air · Departed/)
+    if (streaming) assert.deepEqual(events.find(event => event.type === 'pending_action').pendingAction, result.pendingAction)
+    await assert.rejects(responseBranch({ ...deps, currentRecordsById: new Map([[args.milestone_id, { ...record, updatedAt: 'old' }]]) }), /current timestamp/)
+    assert.equal(captured.length, 1)
+  })
   test(`Routing field: ${streaming ? 'streamed' : 'persisted'} approval uses the exact leg, not action arguments or Booking header`, async () => {
     const args = { target_id: crypto.randomUUID(), route_id: crypto.randomUUID(), expected_updated_at: '2026-09-06T10:00:00Z',
       expected_route_updated_at: '2026-09-06T09:00:00Z', field: 'cargoCutoffAt', value: '2026-09-18T10:30:00+00:00', reason: 'Internal test' }

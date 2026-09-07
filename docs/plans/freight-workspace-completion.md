@@ -8,6 +8,18 @@ Keep mutable autosaved drafts and immutable submitted Quote versions; master Quo
 
 ## Delivery and evidence ledger
 
+7 September milestone API/Dexter checkpoint: added scoped milestone/type reads,
+explicitly approved creation/correction, exact-source before/after reviews in
+both response paths, deterministic exact-event field/status watches and the
+authenticated Booking API path. Forty-five focused tests, both backend type
+checks, the client build and retained-schema rehearsal pass. Sea/Air/Road/Rail
+tests cover real approval/replay, notifications, matching/non-matching,
+pause/resume, completion conditions and current-permission denial. **Local only:**
+the exact-leg operator editor, browser/hosted verification and combined controlled
+release remain open. Do not deploy the foundation alone. The full objective,
+existing approvals and deferrals are unchanged. See
+`docs/release/2026-09-07-milestone-parity-evidence.md`.
+
 6 September milestone groundwork: implemented a local typed, exact-leg milestone
 save/read boundary with independent dates, stale/foreign-write rejection, source
 protection, recorded-mode preservation and attributed correction/void history.
