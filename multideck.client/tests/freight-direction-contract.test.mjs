@@ -12,6 +12,22 @@ const runtime = vm.createContext({})
 vm.runInContext(ts.transpileModule(directionSource.replace(/^export /gm, ""), {
   compilerOptions: { target: ts.ScriptTarget.ES2022 },
 }).outputText, runtime)
+const bookingAst = ts.createSourceFile("booking.tsx", bookingSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+const bookingCalculation = bookingAst.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "calculatedDirectionForBooking")
+assert.ok(bookingCalculation)
+vm.runInContext(ts.transpileModule(bookingCalculation.getText(bookingAst), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022 },
+}).outputText, runtime)
+
+test("actual Booking calculation leaves a blank draft direction operator-owned", () => {
+  const lookups = { offices: [{ id: "office", countryCode: "GB" }], countries: [{ code: "AD", name: "Andorra", alpha3: null }] }
+  for (const placeholder of [null, "", "—"]) {
+    const workspace = { booking: { officeId: "office", direction: "domestic", origin: placeholder, destination: placeholder }, routes: [] }
+    assert.equal(runtime.calculatedDirectionForBooking(workspace, lookups), null)
+    workspace.booking.editableDetails = { customerReference: "Internal verification" }
+    assert.equal(runtime.calculatedDirectionForBooking(workspace, lookups), null)
+  }
+})
 
 test("missing route countries never match an optional empty country alias", () => {
   const countries = [{ code: "AD", name: "Andorra", alpha3: null }, { code: "GB", name: "United Kingdom", alpha3: "GBR" }]
