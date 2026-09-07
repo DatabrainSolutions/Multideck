@@ -638,6 +638,9 @@ function CustomisableSidebarSection({
 function routePatternMatches(item: NavItem, route: string) {
   if (!item.route) return false
   if (item.route === "/") return route === "/"
+  if (item.route === "/finance/administration") {
+    return /^\/finance\/(administration|systems|currencies|banks|ledger|tax|documents|mappings|compliance|controls)(\/|$)/.test(route)
+  }
   if (item.route === "/customs/standalone/export") return /^\/customs\/standalone\/(export|import)(\/|$)/.test(route)
   if (item.route === "/customs/job-related/export") return /^\/customs\/job-related\/(export|import)(\/|$)/.test(route)
   if (item.route === "/bookings") {
