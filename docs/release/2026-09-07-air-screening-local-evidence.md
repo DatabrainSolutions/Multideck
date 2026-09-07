@@ -1,5 +1,11 @@
 # Air screening evidence — local foundation, not released
 
+Latest checkpoint: local operator editing, Dexter registry/read/approved writes
+and notification-only deterministic watches are implemented. Real PostgreSQL
+approval/replay and watch lifecycle tests pass. Remaining gates include browser
+UTC/responsive/keyboard checks, broader access/retirement cases, current-schema
+rehearsal and combined hosted release verification. No screening changes are live.
+
 New migration `20260907140238_booking_cargo_security_evidence.sql` creates a
 private typed cargo evidence record, independent of AWB documents, Customs,
 sanctions screening and clearance decisions. Supplied status/method/name/agent
@@ -74,6 +80,25 @@ save API, and is disabled while parent Booking changes are unsaved.
   `/tmp/multideck-screening-client-types.log`.
 
 ## Mandatory continuation/release gates
+
+### Deterministic watch checkpoint
+
+The pending parity migration registers the eight supplied/lifecycle fields,
+emits signals from the private evidence table and extends existing deterministic
+owner/change evaluation. Setup verifies one active accessible record, replaces
+model labels with saved labels, and rejects automatic actions or non-change
+conditions. Listing and RLS retain current Booking access requirements. Dexter
+setup instructions and source-label routing now include screening.
+
+Actual PostgreSQL lifecycle passes: matching change produces one owner event and
+notification with a Booking source link; unrelated notes and paused changes are
+silent; resume fires and repeated no-op save stays silent. Revoked owner signals
+do not notify, another user cannot read the event, revoked Booking access hides
+watches through listing/RLS, and unknown/voided targets and autonomous actions
+are rejected. No swallowed watch health error. Log:
+`/tmp/multideck-screening-watch-lifecycle.log`. This uses local identity fixtures,
+not hosted cross-tenant proof. Earlier incomplete-registry/watch notes below are
+historical checkpoints, superseded by this local implementation only.
 
 ### Dexter local adapter checkpoint
 

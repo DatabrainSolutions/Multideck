@@ -1410,7 +1410,7 @@ function watchTargetLabel(capability: string, record: JsonObject) {
         ? ["quoteNumber"]
         : capability === "phone_calls"
           ? ["callerName", "companyName", "phoneNumber"]
-        : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value", "quote_cargo", "booking_allocations", "booking_milestones", "booking_dangerous_goods"].includes(capability)
+        : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value", "quote_cargo", "booking_allocations", "booking_milestones", "booking_dangerous_goods", "booking_security_evidence"].includes(capability)
           ? ["targetLabel", "bookingReference", "description"]
       : capability === "bookings"
           ? ["bookingReference", "jobReference", "customerReference"]
@@ -3911,6 +3911,7 @@ Deno.serve(async (request) => {
         "For a named record, put its human identifier in targetSearch. For any record in the capability, leave targetSearch empty.",
         "For booking_milestones, preserve an explicitly supplied milestone UUID as targetId and leave targetSearch empty. Never replace an exact milestone ID with a combined Booking/leg/reference description. Without an exact ID, targetSearch must be an exact Booking reference or another identifier supported by that capability, not a sentence; ambiguous matches need clarification.",
         "For booking_dangerous_goods, preserve an explicitly supplied dangerous-goods record UUID as targetId and leave targetSearch empty. Without it use an exact Booking reference or cargo ID; multiple records require clarification. Use a listed field with operator changed, no autonomous action. This watches supplied evidence, not compliance or classification.",
+        "For booking_security_evidence, preserve an explicitly supplied screening evidence record UUID as targetId and leave targetSearch empty. Otherwise search an exact Booking reference or cargo ID; multiple records require clarification. Use one listed field with operator changed, notification only. Record status is recorded/voided, separate from supplied security status. This does not monitor clearance, agent verification or sanctions checks.",
         "Items in attachments are context the operator deliberately selected with @. Treat them as exact references, not loose text. When an attached record matches the chosen capability, preserve its exact ID and title; never substitute a similarly named record.",
         "Use changed only when any transition of the field is intended. For state conditions use eq, neq, or contains; use numeric comparisons only for numeric fields.",
         "For an email request with more than one clue, use field=searchText and operator=contains_all. Put only the essential literal terms in value, separated by spaces, such as the sender address and the word expected in the subject, body, or attachment name. Omit filler words such as email, from, with, attached, attachment, new, or please.",

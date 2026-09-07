@@ -1,8 +1,8 @@
 begin;
 set local lock_timeout='5s';
 
--- Private helpers for the screening capability. Do not release until registry,
--- mandatory prepared-action approval and deterministic watch wiring are complete.
+-- Screening capability, mandatory approved writes and deterministic watches.
+-- Release only after current-schema rehearsal and combined feature verification.
 create function public.multideck_dexter_domain_booking_security_evidence(p_company_id uuid,p_search text,p_take integer)
 returns jsonb language sql stable security definer set search_path='' as $$
   select coalesce(jsonb_agg(result order by reference,line_number,record_id),'[]'::jsonb) from (
@@ -92,4 +92,87 @@ revoke all on function public.multideck_dexter_domain_booking_security_evidence(
   public.multideck_dexter_action_record_booking_security_evidence(uuid,uuid,jsonb) from public,anon,authenticated;
 grant execute on function public.multideck_dexter_domain_booking_security_evidence(uuid,text,integer),
   public.multideck_dexter_action_record_booking_security_evidence(uuid,uuid,jsonb) to service_role;
+create function public._multideck_dexter_security_evidence_watch_change()
+returns trigger language plpgsql security definer set search_path='' as $$
+declare company uuid;reference text;job_id uuid;line_number integer;before_value jsonb;after_value jsonb;
+begin
+  select o."Company_ID",j."Job_BookingReference",j."Job_ID",c."JobCargo_LineNo" into company,reference,job_id,line_number
+    from public."Job_Cargo" c join public."Job_Header" j on j."Job_ID"=c."JobCargo_JobID" and not j."Job_IsDeleted"
+    join public."cmp_Offices" o on o."Office_ID"=coalesce(j."Job_OrgOfficeID",j."Job_OfficeID")
+    where c."JobCargo_ID"=new.cargo_id and not c."JobCargo_IsDeleted";
+  if company is null or not exists(select 1 from public."AI_DexterWatches" w where w."AIDexterWatch_CompanyID"=company
+    and w."AIDexterWatch_CapabilityCode"='booking_security_evidence' and w."AIDexterWatch_TargetID"=new.id
+    and w."AIDexterWatch_StatusCode"='active') then return new;end if;
+  before_value:=case when tg_op='INSERT' then '{}'::jsonb else booking_api.cargo_security_evidence_values(old) end;
+  after_value:=booking_api.cargo_security_evidence_values(new);
+  if before_value=after_value then return new;end if;
+  insert into public."AI_DexterWatchSignals"("AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable",
+    "AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON")
+    values(company,'booking_security_evidence','booking_api.cargo_security_evidence',new.id,before_value,
+      after_value||jsonb_build_object('bookingId',job_id,'bookingReference',reference,'lineNumber',line_number,'sourceUrl','/bookings/'||lower(reference)));
+  return new;
+end $$;
+create trigger cargo_security_evidence_dexter_watch after insert or update on booking_api.cargo_security_evidence
+  for each row execute function public._multideck_dexter_security_evidence_watch_change();
+
+insert into public."sys_AIDexterWatchCapabilities"("AIDexterWatchCapability_Code","AIDexterWatchCapability_Name","AIDexterWatchCapability_Description","AIDexterWatchCapability_FieldsJSON","AIDexterWatchCapability_RequiredPermissionsJSON") values
+  ('booking_security_evidence','Screening evidence changes','Notify on a saved field change on one exact active operator screening record. Not clearance or agent verification; no timers or autonomous writes.',
+    '["securityStatus","screeningMethod","screenedByName","agentReference","screenedAt","sourceReference","notes","recordStatus"]','["Bookings.Read"]');
+
+do $watch$
+declare definition text;marker text;
+begin
+  definition:=pg_get_functiondef('public._multideck_dexter_evaluate_watch_signal()'::regprocedure);
+  marker:='(''booking_dangerous_goods'',''booking_milestones'',''booking_allocations'',''booking_cargo'',''booking_containers'',''booking_routes'',''booking_shipment_value'')';
+  if (length(definition)-length(replace(definition,marker,'')))/length(marker)<>1 then raise exception 'Review screening watch owner guard';end if;
+  definition:=replace(definition,marker,replace(marker,'(''booking_dangerous_goods''','(''booking_security_evidence'',''booking_dangerous_goods'''));
+  marker:='(''booking_dangerous_goods'',''booking_milestones'',''booking_allocations'',''quote_cargo'',''booking_cargo'',''booking_containers'',''booking_routes'',''booking_shipment_value'')';
+  if (length(definition)-length(replace(definition,marker,'')))/length(marker)<>1 then raise exception 'Review screening change semantics';end if;
+  definition:=replace(definition,marker,replace(marker,'(''booking_dangerous_goods''','(''booking_security_evidence'',''booking_dangerous_goods'''));
+  marker:='insert into public."AI_DexterWatchEvents" (';
+  if (length(definition)-length(replace(definition,marker,'')))/length(marker)<>1 then raise exception 'Review screening notification routing';end if;
+  execute replace(definition,marker,$copy$
+    if watch."AIDexterWatch_CapabilityCode"='booking_security_evidence' then
+      v_event_body:=coalesce(new."AIDexterWatchSignal_NewJSON"->>'bookingReference','Booking')||' · Cargo '
+        ||coalesce(new."AIDexterWatchSignal_NewJSON"->>'lineNumber','?')||': screening evidence changed. Review the saved source; this is not clearance or agent verification.';
+      v_changed:=v_changed||jsonb_build_object('sourceUrl',new."AIDexterWatchSignal_NewJSON"->>'sourceUrl');
+    end if;
+    $copy$||marker);
+end $watch$;
+
+alter function public.multideck_dexter_create_watch(text,text,text,text,uuid,text,jsonb,jsonb) rename to _multideck_dexter_create_watch_before_screening_20260907;
+create function public.multideck_dexter_create_watch(p_capability text,p_title text,p_summary text,p_request text,p_target_id uuid,p_target_label text,p_rule jsonb,p_action jsonb default null)
+returns jsonb language plpgsql volatile security definer set search_path='' as $$
+declare context record;record jsonb;
+begin
+  select * into context from public._multideck_dexter_context();
+  if lower(btrim(p_capability))='booking_security_evidence' then
+    record:=public.multideck_dexter_domain_booking_security_evidence(context.company_id,p_target_id::text,1)->0;
+    if public.multideck_dexter_can_read_cargo_watch(context.company_id) is not true or p_target_id is null
+      or record->>'recordId' is distinct from p_target_id::text or record->>'operatorEditable' is distinct from 'true'
+      or record->>'recordStatus' is distinct from 'recorded' then
+      raise exception 'Choose an exact active screening evidence record in this workspace.' using errcode='42501';end if;
+    if p_action is not null or (p_rule->>'operator'='changed') is not true then
+      raise exception 'Watch a saved field change. Any edit needs fresh approval.' using errcode='22023';end if;
+    p_target_label:=record->>'targetLabel';
+  end if;
+  return public._multideck_dexter_create_watch_before_screening_20260907(p_capability,p_title,p_summary,p_request,p_target_id,p_target_label,p_rule,p_action);
+end $$;
+create policy "Screening watches require current Booking access" on public."AI_DexterWatches"
+as restrictive for select to authenticated using("AIDexterWatch_CapabilityCode"<>'booking_security_evidence' or public.multideck_dexter_can_read_cargo_watch("AIDexterWatch_CompanyID"));
+alter function public.multideck_dexter_list_watches() rename to _multideck_dexter_list_watches_before_screening_20260907;
+create function public.multideck_dexter_list_watches() returns jsonb language plpgsql stable security definer set search_path='' as $$
+declare context record;result jsonb;
+begin
+  select * into context from public._multideck_dexter_context();
+  select coalesce(jsonb_agg(item order by ordinal),'[]'::jsonb) into result
+    from jsonb_array_elements(public._multideck_dexter_list_watches_before_screening_20260907()) with ordinality rows(item,ordinal)
+    where item->>'capability'<>'booking_security_evidence' or public.multideck_dexter_can_read_cargo_watch(context.company_id);
+  return result;
+end $$;
+revoke all on function public._multideck_dexter_security_evidence_watch_change(),
+  public._multideck_dexter_create_watch_before_screening_20260907(text,text,text,text,uuid,text,jsonb,jsonb),
+  public._multideck_dexter_list_watches_before_screening_20260907() from public,anon,authenticated,service_role;
+revoke all on function public.multideck_dexter_create_watch(text,text,text,text,uuid,text,jsonb,jsonb),public.multideck_dexter_list_watches() from public,anon;
+grant execute on function public.multideck_dexter_create_watch(text,text,text,text,uuid,text,jsonb,jsonb),public.multideck_dexter_list_watches() to authenticated,service_role;
 commit;

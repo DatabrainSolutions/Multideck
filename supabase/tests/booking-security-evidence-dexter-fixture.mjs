@@ -64,4 +64,57 @@ begin
     or has_function_privilege('anon','public.multideck_dexter_domain_booking_security_evidence(uuid,text,integer)','EXECUTE') then
     raise exception 'Private adapter exposed';end if;
 end $screening_adapter$;
+do $screening_watch$
+declare actor uuid:='10000000-0000-4000-8000-000000000001';company uuid;job uuid;cargo uuid;record_id uuid;
+  watcher uuid;other_actor uuid;source jsonb;result jsonb;before_count integer;
+begin
+  select "Company_ID" into company from public."cmp_Users" where "User_ID"=actor;
+  select "User_ID" into other_actor from public."cmp_Users" where "Company_ID"<>company limit 1;
+  select e.id,e.cargo_id,c."JobCargo_JobID" into record_id,cargo,job from booking_api.cargo_security_evidence e
+    join public."Job_Cargo" c on c."JobCargo_ID"=e.cargo_id where e.record_status='recorded' order by e.created_at desc limit 1;
+  source:=public.multideck_dexter_query_domain('booking_security_evidence',record_id::text,1)#>'{data,0}';
+  result:=public.multideck_dexter_create_watch('booking_security_evidence','Screening method changes','Supplied changes','Watch supplied method',
+    record_id,'Wrong model label','{"field":"screeningMethod","operator":"changed"}');
+  watcher:=(result->>'id')::uuid;
+  if (select "AIDexterWatch_TargetLabel" from public."AI_DexterWatches" where "AIDexterWatch_ID"=watcher)<>source->>'targetLabel' then
+    raise exception 'Unverified screening label retained';end if;
+  perform public.booking_workflow_save_security_evidence(actor,job,booking_api.fixture_security_payload(job,cargo,record_id,'{"screeningMethod":"Changed supplied method"}'));
+  if (select count(*) from public."AI_DexterWatchEvents" where "AIDexterWatchEvent_WatchID"=watcher)<>1 then raise exception 'Screening change not singular';end if;
+  if not exists(select 1 from public."AI_DexterWatchEvents" where "AIDexterWatchEvent_WatchID"=watcher
+    and "AIDexterWatchEvent_ChangedJSON"->>'sourceUrl'=source->>'sourceUrl') then raise exception 'Screening Booking source link missing';end if;
+  if not exists(select 1 from public."Comm_Notifications" where "CommNotif_TargetID"=watcher and "CommNotif_UserID"=actor
+    and "CommNotif_Body" like '%not clearance or agent verification.%') then raise exception 'Screening owner notification missing';end if;
+  perform public.booking_workflow_save_security_evidence(actor,job,booking_api.fixture_security_payload(job,cargo,record_id,'{"notes":"Unrelated"}'));
+  update public."AI_DexterWatches" set "AIDexterWatch_StatusCode"='paused' where "AIDexterWatch_ID"=watcher;
+  perform public.booking_workflow_save_security_evidence(actor,job,booking_api.fixture_security_payload(job,cargo,record_id,'{"screeningMethod":"Paused change"}'));
+  if (select count(*) from public."AI_DexterWatchEvents" where "AIDexterWatchEvent_WatchID"=watcher)<>1 then raise exception 'Paused/unrelated screening change fired';end if;
+  update public."AI_DexterWatches" set "AIDexterWatch_StatusCode"='active' where "AIDexterWatch_ID"=watcher;
+  perform public.booking_workflow_save_security_evidence(actor,job,booking_api.fixture_security_payload(job,cargo,record_id,'{"screeningMethod":"Resumed"}'));
+  perform public.booking_workflow_save_security_evidence(actor,job,booking_api.fixture_security_payload(job,cargo,record_id,'{"screeningMethod":"Resumed"}'));
+  if (select count(*) from public."AI_DexterWatchEvents" where "AIDexterWatchEvent_WatchID"=watcher)<>2 then raise exception 'Resumed/no-op screening change incorrect';end if;
+  begin perform public.multideck_dexter_create_watch('booking_security_evidence','Write','Invalid','Write',record_id,'Record',
+    '{"field":"notes","operator":"changed"}','{}');raise exception 'Screening autonomous watch accepted';exception when invalid_parameter_value then null;end;
+  begin perform public.multideck_dexter_create_watch('booking_security_evidence','Wrong','Invalid','Wrong',gen_random_uuid(),'Record',
+    '{"field":"notes","operator":"changed"}');raise exception 'Unknown screening target accepted';exception when insufficient_privilege then null;end;
+  update public."cmp_Users" set "User_AccessStatus"='revoked' where "User_ID"=actor;
+  insert into public."AI_DexterWatchSignals"("AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable",
+    "AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON")
+    values(company,'booking_security_evidence','booking_api.cargo_security_evidence',record_id,'{"screeningMethod":"a"}','{"screeningMethod":"b"}');
+  if (select count(*) from public."AI_DexterWatchEvents" where "AIDexterWatchEvent_WatchID"=watcher)<>2 then raise exception 'Revoked screening owner notified';end if;
+  update public."cmp_Users" set "User_AccessStatus"='active' where "User_ID"=actor;
+  perform set_config('test.actor',other_actor::text,false);set local role authenticated;
+  if exists(select 1 from public."AI_DexterWatchEvents" where "AIDexterWatchEvent_WatchID"=watcher) then raise exception 'Other user read screening event';end if;
+  reset role;perform set_config('test.actor',actor::text,false);
+  perform set_config('test.booking_access','off',false);
+  if exists(select 1 from jsonb_array_elements(public.multideck_dexter_list_watches()) row where row->>'capability'='booking_security_evidence') then
+    raise exception 'Revoked Booking access leaked screening watch';end if;
+  set local role authenticated;
+  if exists(select 1 from public."AI_DexterWatches" where "AIDexterWatch_CapabilityCode"='booking_security_evidence') then raise exception 'Screening watch RLS leaked';end if;
+  reset role;perform set_config('test.booking_access','on',false);
+  perform public.booking_workflow_save_security_evidence(actor,job,booking_api.fixture_security_payload(job,cargo,record_id,'{"recordStatus":"voided"}'));
+  begin perform public.multideck_dexter_create_watch('booking_security_evidence','Voided','Invalid','Voided',record_id,'Record',
+    '{"field":"notes","operator":"changed"}');raise exception 'Voided screening target accepted';exception when insufficient_privilege then null;end;
+  if exists(select 1 from public."AI_DexterWatches" where "AIDexterWatch_ID"=watcher and "AIDexterWatch_HealthStatusCode"='error') then
+    raise exception 'Screening watch swallowed an error';end if;
+end $screening_watch$;
 `;
