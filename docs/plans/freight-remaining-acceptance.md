@@ -47,6 +47,14 @@ their older “pending” paragraphs must not override later evidence.
 
 ### Road: live board opens a prototype detail flow
 
+Development release and hosted blocker: [exact release / numbering failure](../release/2026-09-07-road-open-development-release.md).
+`fdbb9ba` is READY, Booking 44 / Dexter 166 match the release, but normal Road
+creation fails because the existing blank opener supplies no direction to the
+configured `J{DIRECTION:1}{NUMBER:7}` reference rule. No draft was created and
+all existing Job/Quote fingerprints are unchanged. Fix explicit creation
+direction through canonical numbering next; do not treat deployment as a
+successful Road workflow or replace the numbering rule to hide the failure.
+
 Preflight now recorded: [rendered Road opening and fresh-schema preservation](../release/2026-09-07-road-open-preflight.md)
 pass within the stated fixture limits. A real mobile error-row overflow was
 corrected. Next is remote drift reconciliation and coordinated development
