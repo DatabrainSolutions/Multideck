@@ -80,3 +80,29 @@ All four Air migrations remain local and withheld. No customer response or hoste
 data was changed. UI, subtotal/unknown/override semantics, full schema rehearsal,
 and hosted persistence/Dexter verification remain release gates; this is not
 evidence of a complete Air operational workflow.
+
+## Local cargo UI and exact subtotals
+
+The existing Booking cargo editor now edits `chargeableWeightKg` per selected
+line, retaining raw decimal strings through the existing draft callback. Its
+table shows line weights. A BigInt-based decimal subtotal avoids floating-point
+rounding, treats zero as known, and labels partial/invalid coverage explicitly.
+The accepted Quote value is separate and read-only; the existing shipment JSON
+override is labelled separately and no longer falls back to the Quote when blank.
+No automatic allocation, billable-weight calculation or AWB mutation is added.
+The UI/accessibility skills guided reuse of the existing labelled controls and
+semantic table/definition-list structure; no new visual component was introduced.
+
+Verification: three `booking-chargeable-weight.test.mjs` tests passed, covering
+exact totals, boundaries, missing/invalid coverage and the actual draft callback's
+preservation of Quote/source metadata and shipment overrides. `npm run build`
+passed (existing bundle-size warning). Isolated Chrome at localhost:3000, internal
+Air test booking JI0991132, confirmed the missing-weight state; an unsaved edit to
+1234.123456789 appeared exactly in the row and total; `bad` produced invalid-line
+coverage rather than a total; zero displayed as a complete recorded total. Tab
+left the input normally. The draft was discarded without saving to hosted data.
+
+Still open: full keyboard/mobile/visual checks, field-level validation and the
+existing shipment override's server validation/meaning across consumers. This
+summary is operational information, not a new canonical billable-weight result.
+Hosted save/reload remains withheld with the backend migration release.

@@ -83,6 +83,7 @@ import { Surface } from "./surface"
 import { AnimatedList } from "./animated-list"
 import { setLiveJobStarred, type LiveBooking } from "@/lib/application-data-api"
 import { bookingCargoOtherHandling, bookingCargoHandlingSummary, bookingCargoSafetyConflict } from "@/lib/booking-cargo-handling"
+import { bookingChargeableWeightSummary } from "@/lib/booking-chargeable-weight"
 import { analyseCargoAllocations, bookingCargoAllocationPayload } from "@/lib/booking-cargo-allocations"
 import { CargoAllocationEditor } from "./cargo-allocation-editor"
 import { BookingRouteMilestones } from "./booking-route-milestones"
@@ -2202,6 +2203,7 @@ function BookingCargoWiseField({
   editable = false,
   emptyValue = "—",
   inputType = "text",
+  inputMode,
   label,
   maxLength,
   onChange,
@@ -2217,6 +2219,7 @@ function BookingCargoWiseField({
   editable?: boolean
   emptyValue?: string
   inputType?: "text" | "date" | "time"
+  inputMode?: "decimal"
   label: string
   maxLength?: number
   onChange?: (value: string) => void
@@ -2268,6 +2271,7 @@ function BookingCargoWiseField({
             data-i18n-skip
             dir="auto"
             type={inputType}
+            inputMode={inputMode}
             step={inputType === "time" ? 1 : undefined}
             maxLength={maxLength}
             value={value}
@@ -3059,6 +3063,9 @@ function BookingRecordDetails({
   }))
   const modeKey = bookingModeKey(record.booking.mode)
   const fieldPolicy = freightFieldPolicy({ mode: record.booking.mode, shipmentType: detailValue("shipmentType", record.booking.shipmentType), direction: record.booking.direction, stage: "booking", legModes: workspace.routes.map((leg) => leg.mode), hasContainers: workspace.containers.length > 0, vehicleCargo: Boolean(record.booking.vin) })
+  const chargeableSummary = bookingChargeableWeightSummary(workspace.cargo)
+  const showChargeableWeight = fieldPolicy.chargeableWeight || workspace.cargo.some(line => line.chargeableWeightKg != null)
+    || recordText(editableDetails, "chargeableWeightKg") !== "" || recordText(facts, "chargeableWeightKg") !== ""
   const equipmentKinds = bookingEquipmentKindChoices({ mode: record.booking.mode, shipmentType: detailValue("shipmentType", record.booking.shipmentType), stage: "booking", legModes: workspace.routes.map((leg) => leg.mode), hasContainers: workspace.containers.some((item) => bookingEquipmentPresentation(item.equipmentKind).key === "container") })
   const shipmentTypeOptions: BookingFieldOption[] = (lookups?.shipmentTypes ?? [])
     .filter((option) => freightShipmentAllowed(modeKey, option.code))
@@ -3471,13 +3478,14 @@ function BookingRecordDetails({
             <table className="w-full text-left text-[12px]">
               <caption className="sr-only">{t("Select a cargo line to edit its goods details below")}</caption>
               <thead className="bg-[var(--md-surface-soft)] text-[var(--md-text)]"><tr>
-                {["Goods description", "Packages", "Gross weight (kg)", "Volume (CBM)", "Actions"].map((label) => <th key={label} scope="col" className="px-3 py-2 font-medium">{t(label)}</th>)}
+                {["Goods description", "Packages", "Gross weight (kg)", ...(showChargeableWeight ? ["Chargeable weight (kg)"] : []), "Volume (CBM)", "Actions"].map((label) => <th key={label} scope="col" className="px-3 py-2 font-medium">{t(label)}</th>)}
               </tr></thead>
               <tbody>{workspace.cargo.map((line, index) => (
                 <tr key={line.id || `draft-${index}`} className={cn(index === cargoIndex && "bg-[var(--md-surface-soft)]")}>
                   <td className="px-3 py-1.5"><Button variant="ghost" size="sm" aria-pressed={index === cargoIndex} onClick={() => setSelectedCargoIndex(index)} className="h-auto justify-start whitespace-normal text-left">{index + 1}. {line.description || t("New cargo line")}</Button></td>
                   <td className="px-3 py-1.5">{line.packageQuantity ?? line.pieces ?? "—"} {line.packageType}</td>
                   <td className="px-3 py-1.5">{line.grossWeightKg ?? "—"}</td>
+                  {showChargeableWeight ? <td data-i18n-skip className="px-3 py-1.5">{line.chargeableWeightKg == null || String(line.chargeableWeightKg).trim() === "" ? "—" : line.chargeableWeightKg}</td> : null}
                   <td className="px-3 py-1.5">{line.volumeCbm ?? "—"}</td>
                   <td className="px-3 py-1.5"><Button variant="ghost" size="icon" disabled={!editable} aria-label={t(`Remove cargo line ${index + 1}`)} onClick={() => setRemovingCargoIndex(index)}><Trash2 className="size-3.5" aria-hidden="true" /></Button></td>
                 </tr>
@@ -3485,6 +3493,20 @@ function BookingRecordDetails({
             </table>
           </div>
           {!workspace.cargo.length ? <p className="px-3 py-4 text-[12px] text-[var(--md-text)]">{t("No cargo lines yet. Add a line to describe the goods.")}</p> : null}
+          {showChargeableWeight ? <div className="grid gap-2 px-3 py-3 text-[12px] sm:grid-cols-2">
+            <div className="min-w-0">
+              <dl className="flex flex-wrap gap-x-2 gap-y-1">
+                <dt>{t(chargeableSummary.complete ? "Cargo chargeable total (kg)" : "Recorded cargo subtotal (kg)")}</dt>
+                <dd data-i18n-skip className="break-all font-medium">{chargeableSummary.subtotal ?? t("Not recorded")}</dd>
+              </dl>
+              {!chargeableSummary.complete ? <p className="mt-1 text-[var(--md-text)]">{t("Not a complete shipment total.")} {t("Missing lines")}: {chargeableSummary.missing}. {t("Invalid lines")}: {chargeableSummary.invalid}.</p> : null}
+              {recordText(facts, "chargeableWeightKg") !== "" ? <p className="mt-1 text-[var(--md-text)]">{t("Accepted Quote chargeable weight (kg)")}: <span data-i18n-skip>{recordText(facts, "chargeableWeightKg")}</span></p> : null}
+            </div>
+            <div className="min-w-0">
+              <BookingCargoWiseField label="Shipment override (kg)" inputMode="decimal" value={detailValue("chargeableWeightKg")} {...editDetail("chargeableWeightKg")} />
+              <p className="mt-1 text-[var(--md-text)]">{t("Separate Booking value; leave blank when no override is required. Does not allocate line weights or change the Quote or air waybill.")}</p>
+            </div>
+          </div> : null}
         </Surface>
         <Dialog open={removingCargoIndex !== null} onOpenChange={(open) => { if (!open) setRemovingCargoIndex(null) }}>
           <DialogContent><DialogHeader><DialogTitle>{t("Remove cargo line?")}</DialogTitle><DialogDescription>{t("This removes the line from the current booking when you save. Existing historical records are retained. Review any related equipment or customs allocations before saving.")}</DialogDescription></DialogHeader>
@@ -3510,7 +3532,7 @@ function BookingRecordDetails({
           <BookingCargoWiseField label="Width" value={cargoValue("width", value(facts, "width"))} {...editCargo(cargoIndex, "width")} />
           <BookingCargoWiseField label="Height" value={cargoValue("height", value(facts, "height"))} {...editCargo(cargoIndex, "height")} />
           <BookingCargoWiseField label="Dimension unit" value={cargoValue("lengthUnit", value(facts, "lengthUnit", "cm"))} options={["cm", "m", "in"]} allowCustom={false} {...editCargo(cargoIndex, "lengthUnit")} />
-          {fieldPolicy.chargeableWeight ? <BookingCargoWiseField label="Chargeable weight (kg)" value={recordText(editableDetails, "chargeableWeightKg") || value(facts, "chargeableWeightKg")} {...editDetail("chargeableWeightKg")} /> : null}
+          {showChargeableWeight ? <BookingCargoWiseField label="Line chargeable weight (kg)" inputMode="decimal" value={cargoValue("chargeableWeightKg")} {...editCargo(cargoIndex, "chargeableWeightKg")} /> : null}
           <BookingCargoWiseField label="Customs included" value={recordText(editableDetails, "customsIncluded") || value(facts, "customsIncluded")} options={bookingCustomsIncludedOptions} placeholder="Choose" allowCustom={false} {...editDetail("customsIncluded")} />
           {fieldPolicy.vin ? <BookingCargoWiseField label="VIN" value={cargoValue("vin", cargoDataValue("vin"))} {...editCargo(cargoIndex, "vin")} /> : null}
           {record.booking.customFields.length

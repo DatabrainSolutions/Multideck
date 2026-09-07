@@ -66,6 +66,8 @@ export type BookingWorkflowCargo = {
   packageQuantity?: string | number | null
   grossWeightKg?: string | number | null
   netWeightKg?: string | number | null
+  /** Per-line operational kg, independent of shipment override and AWB goods. */
+  chargeableWeightKg?: string | number | null
   volumeCbm?: string | number | null
   length?: string | number | null
   width?: string | number | null
