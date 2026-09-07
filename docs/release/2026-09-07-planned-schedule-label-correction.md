@@ -1,4 +1,37 @@
-# Planned schedule labels — local correction, not deployed
+# Planned schedule labels — development release verified
+
+## Development release checkpoint
+
+Read-only Chrome verification against the local client confirmed the actual
+Booking Details summary and Route & schedule form display Planned departure/
+arrival, with UTC on editable controls. Desktop screenshot inspection found
+the longer labels readable without overlap; the separate milestone explanation
+continues to distinguish planned, estimated and actual events. No Booking Save
+or other data mutation was performed during this label verification. This is
+not a new mobile certification.
+
+Fetched `origin/dev` had advanced to `5209c75` through teammate support and
+Finance/ERPNext changes. All ten incoming files were non-overlapping and merged
+normally, with no conflict or manual rewrite. Merged client build and 24 focused
+tests (including incoming client Finance contracts) passed. No Edge Function or
+migration was redeployed by this frontend release.
+
+Normal non-force push advanced dev to
+`2ef8927a7e5a242c6b920d2cbd129e8e27314be8`. Existing Git integration created
+`dpl_7dhroUCjJGyVGXhE3puTmBQnuVeb`,
+`multideck-app-69ac2pdlz-databrain-solutions.vercel.app`, observed BUILDING at
+this checkpoint. Await that deployment's exact-version READY/alias evidence,
+then verify hosted labels. No Vercel/team/environment setting changed.
+
+Final deployment observation: the same ID is READY at exact
+`2ef8927a7e5a242c6b920d2cbd129e8e27314be8`, assigned to `dev.multideck.app`,
+with null alias error. A fresh hosted Chrome tab on internal `JI0991132`
+confirmed Planned departure/arrival in the Details summary and Planned
+departure/arrival (UTC) in both service and routing-step date controls. The
+milestone panel still explicitly distinguishes planned, estimated and actual.
+No data was edited. This supersedes BUILDING/local-only checkpoints below;
+it closes this label correction's development release gate, not broader Rail
+or all-product schedule semantics.
 
 During Rail/mixed-leg review, `BookingRouteSummary` and the Route & service
 date controls were found displaying ETD/ETA labels while reading and writing

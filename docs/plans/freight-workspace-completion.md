@@ -1,5 +1,13 @@
 # Freight workspace completion
 
+7 September schedule-label release: teammate support/Finance commits through
+`5209c75` merged unchanged; combined client build and 24 focused tests pass.
+Normal dev push `2ef8927` is READY with the correct dev alias and no alias error.
+Fresh hosted Booking inspection confirms planned/UTC labels; no data edited.
+This supersedes the local-only note below. Rail/mixed-leg hosted journey remains
+open; live read-only inventory found no existing Rail legs.
+[Release evidence](../release/2026-09-07-planned-schedule-label-correction.md).
+
 7 September planned-schedule label correction (local, not released): the
 Booking route summary and date editors labelled planned values as ETD/ETA.
 They now explicitly identify planned dates/UTC and do not substitute an ETA
