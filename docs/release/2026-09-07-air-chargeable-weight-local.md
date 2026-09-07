@@ -42,3 +42,27 @@ Quote-line foreign key. An ambiguous fixture variable was qualified. No producti
 check was weakened to make these tests pass. Complete revision application,
 Dexter field capability, UI line/total semantics and hosted/current-schema
 validation remain open; do not release this migration chain yet.
+
+## Dexter chargeable-weight parity — local
+
+Pending `20260907125533_dexter_chargeable_weight_parity.sql` adds typed exact-text
+chargeable weight to the existing cargo domain and its deterministic watch
+projection, plus the existing approved action's field allowlist and registry.
+It adds no action endpoint or direct table access and retains required approval.
+The existing Edge label map already names chargeableWeightKg.
+
+The PostgreSQL suite passes executable prepared-action tests in approve and full
+modes: no unapproved mutation, approval executes exact decimal text, replay does
+not repeat the mutation, and the domain reads the exact typed result without
+financial fields. A changed-field watch fires for each distinct weight change,
+not for no-op or unrelated-description edits; paused edits do not fire, resumed
+clearing does. Foreign-actor and negative-value actions are rejected. These are
+disposable fixtures, not hosted Auth/permission certification.
+
+Next release-critical integration: `insert_accepted_quote_cargo` and
+`apply_quote_cargo_fields` perform direct cargo inserts/updates, not the ordinary
+canonical save. Their chargeable-weight JSON currently does not populate the new
+typed column. Extend these existing paths and test conversion, selective updates,
+clears and unchanged unselected/operator fields before any release. Merely
+changing the comparison reader is insufficient; both pending typed and Dexter
+migrations remain withheld until this and the UI/readiness gates are complete.
