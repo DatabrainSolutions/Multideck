@@ -1197,11 +1197,12 @@ async function documentWorkspace(admin: any, current: any, selectedLedger: Ledge
   const { data: offices, error: officeError } = await admin.from("cmp_Offices").select("Office_ID").eq("Company_ID", current.Company_ID)
   if (officeError) throw new HttpError(500, officeError.message)
   const officeIds = (offices ?? []).map((office: any) => office.Office_ID)
-  const [entities, parties, jobs, periods, banks, treatments, revisions, pendingRuns, demoConnections, activeConnections, suggestions, openDocuments] = await Promise.all([
+  const [entities, parties, jobs, periods, currencies, banks, treatments, revisions, pendingRuns, demoConnections, activeConnections, suggestions, openDocuments] = await Promise.all([
     admin.from("cmp_LegalEntities").select("LegalEntity_ID,LegalEntity_Name,LegalEntity_BaseCurrencyCodeSnapshot").eq("Company_ID", current.Company_ID).eq("LegalEntity_IsActive", true).order("LegalEntity_Name"),
     admin.from("Org_Master").select("Org_id,Org_Name,Org_AccCode").order("Org_Name").limit(500),
     officeIds.length ? admin.from("Job_Header").select("Job_ID,Job_Number,Job_Period,Job_Customer,Job_Supplier,Job_LegalEntityID,Job_Status").or(`Job_OfficeID.in.(${officeIds.join(",")}),Job_OrgOfficeID.in.(${officeIds.join(",")})`).eq("Job_IsDeleted", false).order("Job_UpdatedAt", { ascending: false }).limit(250) : { data: [], error: null },
     ids.length ? admin.from("FIN_Periods").select("FINPeriod_ID,FINPeriod_LegalEntityID,FINPeriod_Code,FINPeriod_Name,FINPeriod_StartDate,FINPeriod_EndDate,FINPeriod_StatusCode,FINPeriod_BaseCurrencyCode").in("FINPeriod_LegalEntityID", ids).order("FINPeriod_StartDate", { ascending: false }) : { data: [], error: null },
+    admin.from("sys_Currency").select("Currency_Code").not("Currency_Code", "is", null).order("Currency_Code"),
     ids.length ? admin.from("FIN_BankAccounts").select("FINBank_ID,FINBank_Code,FINBank_Name,FINBank_LegalEntityID,FINBank_CurrencyCode").in("FINBank_LegalEntityID", ids).eq("FINBank_IsActive", true).order("FINBank_Name") : { data: [], error: null },
     ids.length ? admin.from("FIN_TaxCodes").select("FINTax_ID,FINTax_LegalEntityID,FINTax_Code,FINTax_Name,FINTax_TransactionTypeCode,FINTax_RatePercent,FINTax_EffectiveFrom,FINTax_EffectiveTo,FINTax_ApprovedAt").in("FINTax_LegalEntityID", ids).eq("FINTax_IsActive", true).not("FINTax_ApprovedAt", "is", null).order("FINTax_Name") : { data: [], error: null },
     ids.length ? admin.from("FIN_AdministrationRevisions").select("FINAdminRevision_LegalEntityID,FINAdminRevision_ConfigJSON").in("FINAdminRevision_LegalEntityID", ids).eq("FINAdminRevision_StatusCode", "approved") : { data: [], error: null },
@@ -1211,7 +1212,7 @@ async function documentWorkspace(admin: any, current: any, selectedLedger: Ledge
     admin.from("FIN_LocalisationTaxTreatments").select("FINLocTaxTreatment_ID,FINLocTaxTreatment_Code,FINLocTaxTreatment_Name,FINLocTaxTreatment_TransactionType,FINLocTaxTreatment_RatePercent").eq("FINLocTaxTreatment_IsActive", true).order("FINLocTaxTreatment_Code"),
     ids.length ? admin.from("FIN_Documents").select("FINDoc_ID,FINDoc_Number,FINDoc_TypeCode,FINDoc_StatusCode,FINDoc_LegalEntityID,FINDoc_PartyOrgID,FINDoc_DocumentDate,FINDoc_DueDate,FINDoc_CurrencyCodeSnapshot,FINDoc_ExchangeRate,FINDoc_NetAmount,FINDoc_TaxAmount,FINDoc_GrossAmount,FINDoc_OutstandingAmount,FINDoc_SourceJobID,FINDoc_SourceKindCode,FINDoc_PostingStatusCode,FINDoc_ExportStatusCode,FINDoc_UpdatedAt").in("FINDoc_LegalEntityID", ids).eq("FINDoc_TypeCode", selectedLedger === "receivables" ? "sl_invoice" : "pl_invoice").in("FINDoc_StatusCode", ["approved", "submitted"]).gt("FINDoc_OutstandingAmount", 0).order("FINDoc_DueDate", { ascending: true, nullsFirst: false }).limit(1000) : { data: [], error: null },
   ])
-  for (const query of [entities, parties, jobs, periods, banks, treatments, revisions, pendingRuns, demoConnections, activeConnections, suggestions, openDocuments]) if (query.error) throw new HttpError(500, query.error.message)
+  for (const query of [entities, parties, jobs, periods, currencies, banks, treatments, revisions, pendingRuns, demoConnections, activeConnections, suggestions, openDocuments]) if (query.error) throw new HttpError(500, query.error.message)
   if (!(entities.data ?? []).length) throw new HttpError(409, "Set up the tenant company before creating finance records.")
   if ((entities.data ?? []).length !== 1) throw new HttpError(409, "This tenant must have exactly one active company before creating finance records.")
   const connectionIds = (activeConnections.data ?? []).map((connection: any) => connection.ACCIC_ID)
@@ -1245,6 +1246,10 @@ async function documentWorkspace(admin: any, current: any, selectedLedger: Ledge
   if (costingError) throw new HttpError(500, costingError.message)
   result.jobCostingLines = jobCostingLines ?? []
   result.accountingPeriods = periods.data ?? []
+  result.currencies = (currencies.data ?? []).flatMap((item: any) => {
+    const code = currency(item.Currency_Code)
+    return code ? [{ code }] : []
+  })
   result.bankAccounts = banks.data ?? []
   result.accountingConnections = activeConnections.data ?? []
   result.partyMappings = partyMappings ?? []

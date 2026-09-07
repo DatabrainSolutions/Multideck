@@ -109,28 +109,6 @@ export const calendarNavItem: NavItem = { label: "Calendar", icon: CalendarDays,
 
 export const sidebarAreas: SidebarArea[] = [
   {
-    id: "operations",
-    label: "Operations",
-    icon: Ship,
-    destinations: [
-      {
-        id: "bookings-jobs",
-        label: "Bookings & jobs",
-        icon: Ship,
-        children: [
-          { label: "Bookings overview", icon: LayoutDashboard, route: "/bookings" },
-          { label: "Road control", icon: Truck, route: "/road-control" },
-          { label: "Provisional booking", icon: Clock3, route: "/bookings/provisional" },
-        ],
-      },
-      { id: "transport-planning", label: "Transport planning", icon: Plane },
-      { id: "tracking-milestones", label: "Tracking & milestones", icon: Globe2 },
-      { id: "operational-documents", label: "Operational documents", icon: FileText },
-      { id: "exceptions-service-recovery", label: "Exceptions & service recovery", icon: TriangleAlert },
-      { id: "claims", label: "Claims", icon: ClipboardCheck },
-    ],
-  },
-  {
     id: "sales-crm",
     label: "Sales & CRM",
     icon: BriefcaseBusiness,
@@ -162,7 +140,7 @@ export const sidebarAreas: SidebarArea[] = [
   },
   {
     id: "rates-contracts",
-    label: "Rates & Contracts",
+    label: "Rates & contracts",
     icon: ReceiptText,
     destinations: [
       { id: "rate-management", label: "Rate management", icon: ReceiptText, route: "/rates" },
@@ -170,6 +148,39 @@ export const sidebarAreas: SidebarArea[] = [
       { id: "tariffs-charges", label: "Tariffs & charges", icon: SlidersHorizontal, route: "/rates/tariffs" },
       { id: "rate-imports", label: "Imports & review", icon: Upload, route: "/rates/imports" },
       { id: "rate-results", label: "Quote matching", icon: ChartLine, route: "/rates/results" },
+    ],
+  },
+  {
+    id: "operations",
+    label: "Operations",
+    icon: Ship,
+    destinations: [
+      {
+        id: "bookings-jobs",
+        label: "Bookings & jobs",
+        icon: Ship,
+        children: [
+          { label: "Bookings overview", icon: LayoutDashboard, route: "/bookings" },
+          { label: "Road control", icon: Truck, route: "/road-control" },
+          { label: "Provisional booking", icon: Clock3, route: "/bookings/provisional" },
+        ],
+      },
+      { id: "transport-planning", label: "Transport planning", icon: Plane },
+      { id: "tracking-milestones", label: "Tracking & milestones", icon: Globe2 },
+      { id: "operational-documents", label: "Operational documents", icon: FileText },
+      { id: "exceptions-service-recovery", label: "Exceptions & service recovery", icon: TriangleAlert },
+      { id: "claims", label: "Claims", icon: ClipboardCheck },
+    ],
+  },
+  {
+    id: "customs-compliance",
+    label: "Customs & compliance",
+    icon: BadgeCheck,
+    destinations: [
+      { id: "standalone-declarations", label: "Stand Alone Declarations", icon: ClipboardCheck, route: "/customs/standalone/export" },
+      { id: "job-related-declarations", label: "Job Related Declarations", icon: Ship, route: "/customs/job-related/export" },
+      { id: "classification-licences", label: "Classification & licences", icon: ScanText },
+      { id: "compliance-controls", label: "Compliance controls", icon: BadgeCheck, route: "/compliance/screening" },
     ],
   },
   {
@@ -267,19 +278,8 @@ export const sidebarAreas: SidebarArea[] = [
     ],
   },
   {
-    id: "customs-compliance",
-    label: "Customs & Compliance",
-    icon: BadgeCheck,
-    destinations: [
-      { id: "standalone-declarations", label: "Stand Alone Declarations", icon: ClipboardCheck, route: "/customs/standalone/export" },
-      { id: "job-related-declarations", label: "Job Related Declarations", icon: Ship, route: "/customs/job-related/export" },
-      { id: "classification-licences", label: "Classification & licences", icon: ScanText },
-      { id: "compliance-controls", label: "Compliance controls", icon: BadgeCheck, route: "/compliance/screening" },
-    ],
-  },
-  {
     id: "documents-service",
-    label: "Documents & Service",
+    label: "Documents",
     icon: FileText,
     destinations: [
       { id: "document-builder", label: "Documents", icon: FileText, route: "/documents" },

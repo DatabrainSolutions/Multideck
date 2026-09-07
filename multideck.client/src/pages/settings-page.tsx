@@ -5198,10 +5198,10 @@ function SupportHubTab({ navigate }: { navigate: (path: string) => void }) {
   }
   return (
     <>
-      <SettingsPageHeader
+      {!ticketId ? <div className="mx-auto max-w-[1180px]"><SettingsPageHeader
         eyebrow={t("Resources / Support")}
         title={t("Support")}
-      />
+      /></div> : null}
       <SupportTicketWorkspace key={ticketId ?? "ticket-list"} ticketId={ticketId} navigate={navigateSupport} />
     </>
   )
@@ -5312,13 +5312,14 @@ export function SettingsPage({
   }
 
   return (
-    <div data-settings-page="" className="md-settings-page relative min-h-full bg-[var(--md-bg)]">
+    <div data-settings-page="" className={cn("md-settings-page relative bg-[var(--md-bg)]", activeTab === "support" ? "flex h-full min-h-0 flex-col" : "min-h-full")}>
       <MobileSettingsTabs activeTab={activeItem.id} onChange={changeTab} onBack={() => navigate("/")} />
-      <div className="relative min-w-0 px-[var(--md-page-pad)] py-[var(--md-page-pad)]">
-        <div className="mx-auto max-w-[1180px] pb-[var(--md-page-bottom-pad)]">
+      <div className={cn("relative min-w-0 px-[var(--md-page-pad)] py-[var(--md-page-pad)]", activeTab === "support" && "min-h-0 flex-1")}>
+        <div className={cn("mx-auto", activeTab === "support" ? "h-full min-h-0" : "max-w-[1180px] pb-[var(--md-page-bottom-pad)]")}>
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.div
               key={activeItem.id}
+              className={activeTab === "support" ? "h-full min-h-0 overflow-y-auto" : undefined}
               initial={shouldReduceMotion ? false : { opacity: 0, y: 10, filter: "blur(4px)" }}
               animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
               exit={shouldReduceMotion ? undefined : { opacity: 0, y: -5, filter: "blur(2px)" }}

@@ -145,9 +145,7 @@ function statusTone(status: string): "teal" | "amber" | "red" | "neutral" {
 function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { type: FinanceDocumentType | null; options: FinanceDraftOptions | null; loading: boolean; onClose: () => void; onCreated: () => Promise<void> }) {
   const { language, t, direction: pageDirection } = useLanguage()
   const [submitting, setSubmitting] = useState(false)
-  const [sourceKind, setSourceKind] = useState<"manual" | "job">("manual")
   const [partyOrgId, setPartyOrgId] = useState("")
-  const [sourceJobId, setSourceJobId] = useState("")
   const [documentDate, setDocumentDate] = useState(today())
   const [dueDate, setDueDate] = useState(today())
   const [currencyCode, setCurrencyCode] = useState("")
@@ -166,8 +164,6 @@ function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { t
     setCurrencyCode((first?.FinanceDraftCurrencyCode ?? "").toUpperCase())
     setExchangeRate("1")
     setPartyOrgId("")
-    setSourceJobId("")
-    setSourceKind("manual")
     setDocumentDate(today())
     setDueDate(today())
     setLines([draftLine(firstTreatment, (first?.FinanceDraftCurrencyCode ?? "").toUpperCase())])
@@ -195,8 +191,6 @@ function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { t
 
   if (!type) return null
   const ledger: FinanceLedger = type === "sl_invoice" || type === "credit_note" ? "receivables" : "payables"
-  const availableJobs = (options?.jobs ?? []).filter((job) => (!tenantEntityId || !job.Job_LegalEntityID || job.Job_LegalEntityID === tenantEntityId) && Boolean(ledger === "receivables" ? job.Job_Customer : job.Job_Supplier))
-  const jobChargeOptions = (options?.jobCostingLines ?? []).filter((line) => line.Job_ID === sourceJobId).map((line) => ({ id: line.JobCostingLine_ID, lineNo: line.JobCostingLine_Number, chargeCode: null, description: line.JobCostingLine_Description, expectedAmount: Number(ledger === "receivables" ? line.JobCostingLine_RevenueAmountLocal : line.JobCostingLine_CostAmountLocal), nominalCode: null }))
   const baseCurrencyCode = (tenantEntity?.FinanceDraftCurrencyCode ?? "").toUpperCase()
   const currencyReady = /^[A-Z]{3}$/.test(baseCurrencyCode) && /^[A-Z]{3}$/.test(currencyCode)
   const needsExchangeRate = currencyReady && currencyCode !== baseCurrencyCode
@@ -222,8 +216,6 @@ function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { t
     setCurrencyCode((first?.FinanceDraftCurrencyCode ?? "").toUpperCase())
     setExchangeRate("1")
     setPartyOrgId("")
-    setSourceJobId("")
-    setSourceKind("manual")
     setDocumentDate(today())
     setDueDate(today())
     setLines([draftLine(firstTreatment, (first?.FinanceDraftCurrencyCode ?? "").toUpperCase())])
@@ -240,7 +232,7 @@ function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { t
           ...createFinanceDocumentLine(treatment),
           description: line.description,
           chargeCode: line.chargeCode,
-          lineType: sourceKind === "job" ? "service" : line.lineType,
+          lineType: line.lineType,
           quantity: line.quantity,
           currencyCode: line.currencyCode || currencyCode,
           unitAmount: line.unitAmount,
@@ -292,7 +284,7 @@ function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { t
       dueDate: dueDate || null,
       currencyCode,
       exchangeRate: needsExchangeRate ? Number(exchangeRate) : 1,
-      sourceJobId: sourceKind === "job" ? sourceJobId : null,
+      sourceJobId: null,
       lines: lines.map((line) => ({ description: line.description.trim(), chargeCode: line.chargeCode.trim() || "ADHOC", jobCostingLineId: line.jobCostingLineId, lineType: line.lineType, quantity: Number(line.quantity), unitAmount: Number(line.unitAmount), currencyCode: line.currencyCode || currencyCode, exchangeRate: Number(line.exchangeRate || 1), taxRatePercent: Number(line.taxRatePercent), taxCode: line.taxCode || null })),
     }
     setSubmitting(true)
@@ -308,11 +300,10 @@ function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { t
 
   return <><Dialog open onOpenChange={(open) => { if (!open && !submitting) onClose() }}><DialogContent className="max-h-[96vh] w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-[min(1440px,calc(100vw-2rem))]"><form onSubmit={submit}><DialogHeader><div className="flex flex-wrap items-start justify-between gap-3"><div><DialogTitle>{t(`New ${documentLabels[type].toLowerCase()}`)}</DialogTitle><DialogDescription className="mt-1">{t(type === "credit_note" || type === "debit_note" ? "Enter positive line values. Multideck records the approved credit with the correct ledger polarity." : "Prepare a controlled draft for finance review. Approval posts it to the Multideck ledger; any configured mirror follows separately.")}</DialogDescription></div><span className="rounded-full bg-[var(--md-surface-soft)] px-2.5 py-1 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("Draft")}</span></div></DialogHeader>{loading || !options ? <div className="grid min-h-56 place-items-center"><LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" /></div> : <div className="space-y-5 py-5">
     <div className="grid gap-4 md:grid-cols-3">
-      <div className="space-y-2"><FieldLabel htmlFor="finance-document-source">{t("Source")}</FieldLabel><Select value={sourceKind} onValueChange={(value: "manual" | "job") => { setSourceKind(value); if (value === "manual") setSourceJobId("") }}><SelectTrigger id="finance-document-source"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="manual">{t("Ad hoc or ancillary")}</SelectItem><SelectItem value="job">{t("Freight job")}</SelectItem></SelectContent></Select></div>
+      <div className="space-y-2"><FieldLabel htmlFor="finance-document-source">{t("Source")}</FieldLabel><Input id="finance-document-source" value={t("Ad hoc")} readOnly aria-readonly="true" /></div>
       <div className="space-y-2"><FieldLabel htmlFor="finance-document-date">{t("Document date")}</FieldLabel><Input id="finance-document-date" type="date" value={documentDate} onChange={(event) => { const value = event.target.value; const direction = ledger === "receivables" ? "sales" : "purchase"; const treatment = options.taxTreatments.find((item) => item.FINLocTaxTreatment_LegalEntityID === tenantEntityId && ["both", direction].includes(item.FINLocTaxTreatment_TransactionType) && item.FINLocTaxTreatment_EffectiveFrom <= value && (!item.FINLocTaxTreatment_EffectiveTo || item.FINLocTaxTreatment_EffectiveTo >= value)); setDocumentDate(value); setLines((current) => current.map((line) => ({ ...line, taxCode: treatment?.FINLocTaxTreatment_Code ?? "", taxRatePercent: String(treatment?.FINLocTaxTreatment_RatePercent ?? 0) }))) }} data-i18n-skip dir="ltr" required /></div>
       <div className="space-y-2"><FieldLabel htmlFor="finance-document-due">{t("Due date")}</FieldLabel><Input id="finance-document-due" type="date" value={dueDate} min={documentDate} onChange={(event) => setDueDate(event.target.value)} data-i18n-skip dir="ltr" /></div>
     </div>
-    {sourceKind === "job" ? <div className="space-y-2"><FieldLabel htmlFor="finance-document-job">{t("Job")}</FieldLabel><Select value={sourceJobId} onValueChange={(value) => { const job = availableJobs.find((item) => item.Job_ID === value); setSourceJobId(value); setLines((current) => current.map((line) => ({ ...line, jobCostingLineId: null }))); setPartyOrgId(ledger === "receivables" ? job?.Job_Customer ?? "" : job?.Job_Supplier ?? "") }}><SelectTrigger id="finance-document-job"><SelectValue placeholder={t("Choose job")} /></SelectTrigger><SelectContent>{availableJobs.map((job) => <SelectItem key={job.Job_ID} value={job.Job_ID}><span data-i18n-skip dir="ltr">{job.Job_Period}-{job.Job_Number}</span> · {t(job.Job_Status)}</SelectItem>)}</SelectContent></Select></div> : null}
     <div className={`grid gap-4 ${needsExchangeRate ? "md:grid-cols-[minmax(0,1fr)_140px_180px]" : "md:grid-cols-[minmax(0,1fr)_140px]"}`}><div className="space-y-2"><FieldLabel htmlFor="finance-document-party">{t(ledger === "receivables" ? "Customer" : "Supplier")}</FieldLabel><Select value={partyOrgId} onValueChange={setPartyOrgId}><SelectTrigger id="finance-document-party"><SelectValue placeholder={t(ledger === "receivables" ? "Choose customer" : "Choose supplier")} /></SelectTrigger><SelectContent>{options.parties.map((party) => <SelectItem key={party.Org_id} value={party.Org_id}>{party.Org_Name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><FieldLabel htmlFor="finance-document-currency">{t("Currency")}</FieldLabel><Input id="finance-document-currency" maxLength={3} value={currencyCode} onChange={(event) => { const value = event.target.value.toUpperCase(); setCurrencyCode(value); if (value === baseCurrencyCode) setExchangeRate("1") }} data-i18n-skip dir="ltr" required /></div>{needsExchangeRate ? <div className="space-y-2"><FieldLabel htmlFor="finance-document-exchange-rate">{t("Exchange rate to base currency")} <span data-i18n-skip dir="ltr">({baseCurrencyCode})</span></FieldLabel><Input id="finance-document-exchange-rate" type="number" min="0.0000000001" step="0.0000000001" value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} data-i18n-skip dir="ltr" required /></div> : null}</div>
     {providerCustomerMissing ? <Notice><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-medium"><span data-i18n-skip>{selectedParty?.Org_Name ?? t("This customer")}</span> {t("is not set up in")} <span data-i18n-skip>{providerName}</span></p><p className="mt-1">{t(providerWizardSupported ? "Set the customer up now, or keep this as a local draft and complete the accounts system setup later." : "This accounts system does not have an in-document customer setup wizard yet. Complete the mapping in Finance setup before review.")}</p></div>{providerWizardSupported ? <Button type="button" size="sm" variant="outline" onClick={() => setProviderWizardOpen(true)}>{t("Set up customer")}</Button> : null}</div></Notice> : null}
     {tenantEntity?.FinanceDraftCurrencyStatus === "pending_configuration" ? <Notice><div><p className="font-medium">{t("Currency review is awaiting approval")}</p><p className="mt-1">{t("A provisional currency came from an unapproved external-mirror review. You can save the draft, but an administrator must confirm the tenant company’s base currency in Finance setup before review.")}</p></div></Notice> : tenantEntity?.FinanceDraftCurrencyStatus === "missing" ? <Notice tone="danger"><div><p className="font-medium">{t("Draft currency is not available")}</p><p className="mt-1">{t("Set and approve the tenant company’s base currency in Finance setup before saving this draft.")}</p></div></Notice> : null}
@@ -321,8 +312,7 @@ function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { t
       lines={lines}
       onLinesChange={setLines}
       taxOptions={taxOptions}
-      jobChargeOptions={jobChargeOptions}
-      sourceKind={sourceKind}
+      sourceKind="manual"
       currencyCode={currencyCode}
       credit={type === "credit_note" || type === "debit_note"}
       disabled={submitting}
@@ -331,9 +321,9 @@ function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { t
       onExport={exportExcel}
       onPrint={printProforma}
     />
-  </div>}<DialogFooter><Button type="button" variant="outline" onClick={onClose} disabled={submitting}>{t("Cancel")}</Button><Button type="submit" disabled={loading || submitting || !tenantEntityId || !partyOrgId || !currencyReady || (sourceKind === "job" && !sourceJobId) || (needsExchangeRate && Number(exchangeRate) <= 0)}>{submitting ? <LoaderCircle className="animate-spin" /> : <ShieldCheck className="size-4" />}{t(taxPending || tenantEntity?.FinanceDraftCurrencyStatus !== "approved" ? "Save incomplete draft" : "Save draft")}</Button></DialogFooter></form></DialogContent></Dialog>
+  </div>}<DialogFooter><Button type="button" variant="outline" onClick={onClose} disabled={submitting}>{t("Cancel")}</Button><Button type="submit" disabled={loading || submitting || !tenantEntityId || !partyOrgId || !currencyReady || (needsExchangeRate && Number(exchangeRate) <= 0)}>{submitting ? <LoaderCircle className="animate-spin" /> : <ShieldCheck className="size-4" />}{t(taxPending || tenantEntity?.FinanceDraftCurrencyStatus !== "approved" ? "Save incomplete draft" : "Save draft")}</Button></DialogFooter></form></DialogContent></Dialog>
     <Dialog open={providerPromptOpen} onOpenChange={setProviderPromptOpen}><DialogContent className="sm:max-w-[520px]"><DialogHeader><DialogTitle>{t("Customer not set up in accounts")}</DialogTitle><DialogDescription><span data-i18n-skip>{selectedParty?.Org_Name ?? t("This customer")}</span> {t("is not set up in")} <span data-i18n-skip>{providerName}</span>. {t("Do you want to add them now?")}</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" onClick={() => setProviderPromptOpen(false)}>{t("Not now")}</Button><Button type="button" onClick={() => { setProviderPromptOpen(false); setProviderWizardOpen(true) }}>{t("Set up customer")}</Button></DialogFooter></DialogContent></Dialog>
-    <ProviderCustomerSetupWizard open={providerWizardOpen} connection={activeProviderConnection} organisation={selectedParty ?? null} onClose={() => setProviderWizardOpen(false)} onReady={() => { if (providerMappingKey) setReadyProviderKeys((current) => new Set(current).add(providerMappingKey)); setProviderWizardOpen(false) }} />
+    <ProviderCustomerSetupWizard open={providerWizardOpen} connection={activeProviderConnection} organisation={selectedParty ?? null} currencyOptions={[...new Set([baseCurrencyCode, ...(options?.currencies ?? []).map((item) => item.code)].filter(Boolean))]} onClose={() => setProviderWizardOpen(false)} onReady={() => { if (providerMappingKey) setReadyProviderKeys((current) => new Set(current).add(providerMappingKey)); setProviderWizardOpen(false) }} />
   </>
 }
 
