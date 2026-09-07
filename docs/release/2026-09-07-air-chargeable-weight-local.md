@@ -18,3 +18,27 @@ projection boundary, revision application, visible line/aggregate semantics,
 Dexter read/approved-write/watch parity, current-schema preservation and hosted
 Air verification remain required in this body of work. No AWB, screening,
 Customs/iCustoms or live data changes have been made.
+
+## Typed cargo foundation
+
+Pending `20260907125119_booking_typed_chargeable_weight.sql` adds unconstrained-
+scale numeric `JobCargo_ChargeableWeightKg` with the existing Quote weight bound.
+Validated legacy per-line JSON is converted without rewriting its source value;
+invalid legacy data aborts for review. No shipment total is distributed to lines.
+The migration extends the existing stable-identity insertion/upsert with strict
+single-match source guards, preserving existing permission, locking and audit
+logic. Omitted weight retains the stored typed value; explicit null clears it.
+
+`cargo_decimal_values` supplies exact typed text to the existing workspace
+projection. `current_source_cargo_lines` uses the typed operational value for
+Quote revision comparison. The PostgreSQL suite passes with populated legacy
+conversion, high-precision values, omission/clear checks, invalid-write rollback,
+unchanged Quote versions and a deliberately stale compatibility JSON value that
+cannot override the typed value in revision comparison.
+
+Fixture setup initially lacked the real comparison function and its source-line
+columns; the fixture now loads their original function/DDL including the actual
+Quote-line foreign key. An ambiguous fixture variable was qualified. No production
+check was weakened to make these tests pass. Complete revision application,
+Dexter field capability, UI line/total semantics and hosted/current-schema
+validation remain open; do not release this migration chain yet.

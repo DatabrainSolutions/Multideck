@@ -1,5 +1,22 @@
 import { readFileSync } from 'node:fs'
-export const chargeableWeightFixture = readFileSync(new URL('../migrations/20260907124841_booking_chargeable_weight_validation.sql', import.meta.url), 'utf8') + `
+import assert from 'node:assert/strict'
+const migration = name => readFileSync(new URL('../migrations/'+name, import.meta.url), 'utf8')
+const comparison = migration('20260905125327_quote_cargo_revision_comparison.sql')
+const projectionStart = comparison.indexOf('create function booking_api.current_source_cargo_lines(')
+const projectionEnd = comparison.indexOf('$$;', projectionStart) + 3
+assert.ok(projectionStart >= 0 && projectionEnd > projectionStart)
+const handover = migration('20260905123929_quote_booking_cargo_handover.sql')
+const handoverStart = handover.indexOf('alter table public."Job_Cargo"')
+const handoverEnd = handover.indexOf('create function quote_api.cargo_booking_missing')
+assert.ok(handoverStart >= 0 && handoverEnd > handoverStart)
+export const chargeableWeightFixture = migration('20260907124841_booking_chargeable_weight_validation.sql') + `
+update public."Job_Cargo" set "JobCargo_CargoJSON"=jsonb_set("JobCargo_CargoJSON",'{chargeableWeightKg}','"12.34567890"')
+where "JobCargo_JobID"=(select "Job_ID" from public."Job_Header" where "Job_BookingReference"='TEST1') and not "JobCargo_IsDeleted";
+` + handover.slice(handoverStart,handoverEnd) + comparison.slice(projectionStart, projectionEnd) + migration('20260907125119_booking_typed_chargeable_weight.sql') + `
+do $$begin
+  if exists(select 1 from public."Job_Cargo" where "JobCargo_CargoJSON"->>'chargeableWeightKg'='12.34567890'
+    and "JobCargo_ChargeableWeightKg" is distinct from 12.34567890::numeric) then raise exception 'Legacy exact weight not migrated';end if;
+end $$;
 do $test$
 declare actor uuid:='10000000-0000-4000-8000-000000000001';job uuid;line_id uuid;
   source jsonb; observed jsonb; bad jsonb; before_rows jsonb; events bigint; candidate jsonb; quote_before jsonb;
@@ -13,12 +30,25 @@ begin
       where "JobCargo_JobID"=job and not "JobCargo_IsDeleted";
     if observed->>'chargeableWeightKg' is distinct from replace(candidate#>>'{}',',','')
       or jsonb_typeof(observed->'chargeableWeightKg')<>'string' then raise exception 'Chargeable decimal lost: %',observed;end if;
+    if (select booking_api.cargo_decimal_values(c)->>'chargeableWeightKg' from public."Job_Cargo" c where "JobCargo_ID"=line_id)
+      is distinct from observed->>'chargeableWeightKg' then raise exception 'Typed read differs from saved chargeable weight';end if;
     -- Omitting the field in an ordinary update must preserve its exact value.
     perform public.booking_workflow_save(actor,job,jsonb_build_object('cargo',jsonb_build_array(
       jsonb_build_object('id',line_id,'description','Unrelated edit'))));
     if (select "JobCargo_CargoJSON"->>'chargeableWeightKg' from public."Job_Cargo" where "JobCargo_ID"=line_id)
       is distinct from observed->>'chargeableWeightKg' then raise exception 'Omission cleared chargeable weight';end if;
+    if (select "JobCargo_ChargeableWeightKg"::text from public."Job_Cargo" where "JobCargo_ID"=line_id)
+      is distinct from observed->>'chargeableWeightKg' then raise exception 'Omission cleared typed weight';end if;
   end loop;
+  -- Real Quote-line foreign key and comparison projection: stale compatibility
+  -- JSON must not override the typed operational value.
+  update public."Job_Cargo" c set "JobCargo_SourceQuoteVersionID"=q.version_id,"JobCargo_SourceQuoteLineID"=q.source_line_id,
+    "JobCargo_CargoJSON"=jsonb_set(c."JobCargo_CargoJSON",'{chargeableWeightKg}','"999"')
+  from (select v.version_id,v.line_id as source_line_id from quote_api.version_cargo_lines v limit 1) q where c."JobCargo_ID"=line_id;
+  if not exists(select 1 from public."Job_Cargo" where "JobCargo_ID"=line_id and "JobCargo_SourceQuoteLineID" is not null)
+    then raise exception 'Quote lineage fixture missing';end if;
+  if booking_api.current_source_cargo_lines(job)#>>'{0,chargeableWeightKg}'<>'1234.56789'
+    then raise exception 'Revision comparison used stale JSON';end if;
   select jsonb_agg(to_jsonb(c) order by "JobCargo_ID") into before_rows from public."Job_Cargo" c;
   select count(*) into events from booking_api.events;
   for bad in select value from jsonb_array_elements('[true,{},[],"-1","NaN","Infinity","1e2","1,2","1000000000000"]') loop
@@ -41,6 +71,8 @@ begin
       jsonb_build_object('id',line_id,'description','Explicit clear','chargeableWeightKg',candidate))));
     if (select "JobCargo_CargoJSON"->'chargeableWeightKg' from public."Job_Cargo" where "JobCargo_ID"=line_id)
       is distinct from 'null'::jsonb then raise exception 'Explicit clear lost';end if;
+    if (select "JobCargo_ChargeableWeightKg" from public."Job_Cargo" where "JobCargo_ID"=line_id) is not null
+      then raise exception 'Explicit clear retained typed weight';end if;
   end loop;
   if has_function_privilege('anon','booking_api.normalise_cargo_numbers(jsonb)','execute')
     or has_function_privilege('authenticated','booking_api.normalise_cargo_numbers(jsonb)','execute')
