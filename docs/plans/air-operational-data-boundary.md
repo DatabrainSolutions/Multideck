@@ -54,5 +54,24 @@ or safe to modify based only on existing table names.
    clear, stale update, partial totals, permission denial and hosted persistence.
 
 This closes the preliminary ownership trace, not the Air implementation gate.
+
+## Development data preflight
+
+Live aggregate-only inventory on 7 September found zero shipment-level weight
+keys and two cargo weight keys, both explicit JSON null. There are zero AWB
+headers and zero AWB screening records in this development project. Therefore
+this target has no populated legacy weight conflict to resolve; this is not a
+claim about other tenant projects. A read-only categorized inventory is retained
+at `supabase/tests/booking-chargeable-weight-inventory.sql` for each release target.
+
+The canonical cargo writer already merges submitted line JSON into the existing
+row on conflict, so omitted chargeable weight is preserved and explicit null is
+retained. However, `booking_api.normalise_cargo_numbers` does not currently include
+chargeableWeightKg. Typed implementation must extend that shared validation path
+and retain exact string transport, rather than adding UI-only numeric checks or
+rounding into the existing gross-weight scale. Existing Quote per-line storage
+is unconstrained-scale numeric with a non-negative upper bound; do not silently
+reduce its precision during conversion.
+
 The Road-column decision and all existing Quote revision/preview approvals are
 still outstanding; tracking, Customs/iCustoms and PDF-logo work remain excluded.
