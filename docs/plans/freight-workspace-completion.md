@@ -1,5 +1,14 @@
 # Freight workspace completion
 
+7 September screening Dexter/watch checkpoint: hosted Approve-mode proposal,
+deny-without-write, corrected exact-reason proposal, approved save, audit and
+read-back pass. One exact security-status watch ignored notes-only and paused
+changes, fired once per matching active/resumed change, and is now paused with
+two alerts. Both QA screening records are voided; Quote versions unchanged.
+The initial proposal appended instructions to its reason and was denied; broad
+reason fidelity is not claimed fixed. Full-access/replay/stale/denial and wider
+Air depth remain open. [Evidence](../release/2026-09-07-screening-approval-watch-evidence.md).
+
 7 September screening hosted checkpoint (supersedes the foundation note below):
 client `7947c01` and the scoped Booking/Dexter backend release are deployed to
 development. The internal Air cargo editor passed create, full reload,

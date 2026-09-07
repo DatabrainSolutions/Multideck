@@ -111,8 +111,11 @@ approval/watch checks pass within scope. See [multi-line evidence](../release/20
 and [approval/watch evidence](../release/2026-09-07-air-weight-approval-watch-evidence.md).
 Screening now has deployed operator/Dexter/watch implementation, with hosted
 operator create/reload/correct/clear/void/read-only history verified on retained
-internal cargo. Hosted Dexter approval/watch, fractional time, stale recovery
-and access denial remain open; see [screening release evidence](../release/2026-09-07-air-screening-development-release.md).
+internal cargo. Hosted Approve-mode read/write/denial and exact-field watch
+matching/nonmatching/pause/resume also pass; test watch paused and evidence voided.
+Full-access/replay, fractional time, stale recovery and access denial remain
+open; see [screening release evidence](../release/2026-09-07-air-screening-development-release.md)
+and [approval/watch evidence](../release/2026-09-07-screening-approval-watch-evidence.md).
 AWB lifecycle, ULD/allocation/flight hosted journeys and
 remaining isolation tests are still open. A generic Booking-source label shown
 inside the selected cargo section also needs clearer scope; it is not line provenance.
