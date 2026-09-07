@@ -33,7 +33,7 @@ function fixture(initialMode = "road", storageFailure = false) {
       getItem: key => { if (storageFailure) throw new Error("Storage unavailable"); return storage.get(key) ?? null },
       setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key),
     } },
-    openBookingWorkflow: (key, mode) => new Promise((resolve, reject) => requests.push({ key, mode, resolve, reject })),
+    openBookingWorkflow: (key, mode, direction) => new Promise((resolve, reject) => requests.push({ key, mode, direction, resolve, reject })),
   })
   vm.runInContext(compiled, context)
   const render = () => { stateIndex = 0; refIndex = 0; return context.BookingOpenPage({ initialMode, navigate: value => destinations.push(value) }) }
@@ -45,9 +45,45 @@ function findButton(tree, label) {
   for (const child of tree.children ?? []) { const result = findButton(child, label); if (result) return result }
   return null
 }
+function findElement(tree, type) {
+  if (!tree || typeof tree !== "object") return null
+  if (tree.type === type) return tree
+  for (const child of tree.children ?? []) { const result = findElement(child, type); if (result) return result }
+  return null
+}
+function chooseDirection(f, direction = "domestic") {
+  findElement(f.render(), "select").props.onChange({ target: { value: direction } })
+  findElement(f.render(), "form").props.onSubmit({ preventDefault() {} })
+  return f
+}
+
+test("opening waits for explicit direction and submission, without allocating a retry key", async () => {
+  for (const mode of [null, "road"]) {
+    const f = fixture(mode)
+    const tree = f.render()
+    assert.equal(findElement(tree, "select").props.required, true)
+    assert.equal(findElement(tree, "select").props.value, "")
+    f.commit(); await flush()
+    findElement(tree, "form").props.onSubmit({ preventDefault() {} })
+    f.render(); f.commit(); await flush()
+    assert.equal(f.requests.length, 0)
+    assert.equal(f.storage.size, 0)
+    findButton(f.render(), "Cancel").props.onClick()
+    assert.deepEqual(f.destinations, [mode === "road" ? "/road-control" : "/bookings"])
+  }
+})
+
+test("all four explicit directions reach the opener unchanged", async () => {
+  for (const direction of ["import", "export", "domestic", "cross_trade"]) {
+    const f = chooseDirection(fixture(), direction)
+    f.render(); f.commit(); await flush()
+    assert.equal(f.requests.length, 1)
+    assert.equal(f.requests[0].direction, direction)
+  }
+})
 
 test("Strict Mode effect replay makes one Road request and one live navigation", async () => {
-  const f = fixture()
+  const f = chooseDirection(fixture())
   f.render(); f.commit()()
   f.render(); f.commit()
   await flush()
@@ -61,7 +97,7 @@ test("Strict Mode effect replay makes one Road request and one live navigation",
 })
 
 test("leaving creation suppresses late navigation and retains the retry key", async () => {
-  const f = fixture()
+  const f = chooseDirection(fixture())
   f.render(); const cleanup = f.commit()
   await flush(); cleanup()
   f.requests[0].resolve({ bookingReference: "JD00001" })
@@ -71,7 +107,7 @@ test("leaving creation suppresses late navigation and retains the retry key", as
 })
 
 test("failed Road opening keeps its idempotency key for explicit retry", async () => {
-  const f = fixture()
+  const f = chooseDirection(fixture(), "cross_trade")
   f.render(); f.commit(); await flush()
   f.requests[0].reject(new Error("Denied or unavailable")); await flush()
   assert.equal(f.states[0], "Denied or unavailable")
@@ -82,12 +118,13 @@ test("failed Road opening keeps its idempotency key for explicit retry", async (
   f.render(); f.commit(); await flush()
   assert.equal(f.requests.length, 2)
   assert.equal(f.requests[0].key, f.requests[1].key)
+  assert.equal(f.requests[1].direction, "cross_trade")
   f.requests[1].resolve({ bookingReference: "JD00001" }); await flush()
   assert.deepEqual(f.destinations, ["/bookings/jd00001"])
 })
 
 test("storage failure is recoverable and makes no backend request", async () => {
-  const f = fixture("road", true)
+  const f = chooseDirection(fixture("road", true))
   f.render(); f.commit(); await flush()
   assert.equal(f.states[0], "Storage unavailable")
   assert.equal(f.requests.length, 0)
@@ -95,7 +132,7 @@ test("storage failure is recoverable and makes no backend request", async () => 
 })
 
 test("generic Booking opening retains its separate request scope", async () => {
-  const f = fixture(null)
+  const f = chooseDirection(fixture(null), "export")
   f.render(); f.commit(); await flush()
   assert.equal(f.requests.length, 1)
   assert.ok([...f.storage.keys()][0].endsWith("open-request"))
@@ -111,9 +148,9 @@ test("the real API chooses only the explicit Road opener or unchanged generic op
   const context = vm.createContext({ invoke: body => requests.push(body) })
   vm.runInContext(ts.transpileModule(fn.getText(file).replace(/^export /, ""), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context)
   context.openBookingWorkflow("generic-key")
-  context.openBookingWorkflow("road-key", "road")
-  assert.deepEqual(requests.map(body => [body.action, body.idempotencyKey, body.sequenceKey]), [
-    ["open", "generic-key", "default"], ["open-road", "road-key", "default"],
+  context.openBookingWorkflow("road-key", "road", "import")
+  assert.deepEqual(requests.map(body => [body.action, body.idempotencyKey, body.sequenceKey, body.direction]), [
+    ["open", "generic-key", "default", undefined], ["open-road", "road-key", "default", "import"],
   ])
 })
 

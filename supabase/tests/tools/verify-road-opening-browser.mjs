@@ -25,7 +25,7 @@ const built=await build({stdin:{contents:`
     ? `export const workspaceStorageKey=key=>'isolated:'+key;`
     :path==='language'?`export function useLanguage(){return {language:new URLSearchParams(location.search).get('language')||'en-GB',t:value=>value}}`
     :`window.qa={requests:[],destinations:[],resolve:null};
-      export function openBookingWorkflow(key,mode){window.qa.requests.push({key,mode});
+      export function openBookingWorkflow(key,mode,direction){window.qa.requests.push({key,mode,direction});
         const scenario=new URLSearchParams(location.search).get('case');
         if(scenario==='retry'&&window.qa.requests.length===1)return Promise.reject(Error('Synthetic permission or service failure'));
         if(scenario==='delayed')return new Promise(resolve=>window.qa.resolve=()=>resolve({bookingReference:'JD-QA-ONLY'}));
@@ -65,6 +65,19 @@ try{
     await page.getByText('Fixture left',{exact:true}).waitFor()
     assert.deepEqual(await page.evaluate(()=>window.qa.destinations),['/road-control'])
     await page.goto(url+'?case=retry&language='+language)
+    await page.getByRole('combobox',{name:'Direction',exact:true}).waitFor()
+    assert.equal(await page.evaluate(()=>window.qa.requests.length),0)
+    await page.getByRole('button',{name:'Open booking',exact:true}).click()
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'booking-opening-direction')
+    assert.equal(await page.evaluate(()=>window.qa.requests.length),0)
+    for(const width of [320,768,1280]){
+      await page.setViewportSize({width,height:900})
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth),width)
+    }
+    assert.deepEqual(await page.getByRole('combobox').locator('option').evaluateAll(options=>options.map(option=>option.value)),['','import','export','domestic','cross_trade'])
+    await page.getByRole('combobox',{name:'Direction',exact:true}).selectOption('cross_trade')
+    assert.equal(await page.evaluate(()=>window.qa.requests.length),0)
+    await page.getByRole('button',{name:'Open booking',exact:true}).focus();await page.keyboard.press('Enter')
     await page.getByRole('alert').waitFor()
     assert.equal(await page.getByRole('alert').textContent(),'Synthetic permission or service failure')
     await page.setViewportSize({width:320,height:900})
@@ -75,7 +88,10 @@ try{
     const retry=await page.evaluate(()=>window.qa)
     assert.equal(retry.requests.length,2);assert.equal(retry.requests[0].key,retry.requests[1].key)
     assert.equal(retry.requests[1].mode,'road');assert.deepEqual(retry.destinations,['/bookings/jd-qa-only'])
+    assert.deepEqual(retry.requests.map(request=>request.direction),['cross_trade','cross_trade'])
     await page.goto(url+'?case=delayed&language='+language)
+    await page.getByRole('combobox',{name:'Direction',exact:true}).selectOption('import')
+    await page.getByRole('button',{name:'Open booking',exact:true}).click()
     await page.getByText('Opening a new booking...',{exact:true}).waitFor()
     await page.getByRole('button',{name:'Leave fixture',exact:true}).click()
     await page.getByText('Fixture left',{exact:true}).waitFor()
@@ -83,7 +99,7 @@ try{
     assert.deepEqual(await page.evaluate(()=>window.qa.destinations),[])
     assert.equal(await page.evaluate(()=>window.qa.requests.length),1)
     assert.deepEqual(errors,[]);assert.deepEqual(external,[])
-    console.log(language+': actual pages, keyboard retry/recovery, reflow, Strict Mode and cancelled navigation passed; no tenant requests')
+    console.log(language+': actual pages, required explicit direction, keyboard retry/recovery, reflow, Strict Mode and cancelled navigation passed; no tenant requests')
     await context.close()
   }
 }finally{await browser?.close();await new Promise(resolve=>server.close(resolve))}

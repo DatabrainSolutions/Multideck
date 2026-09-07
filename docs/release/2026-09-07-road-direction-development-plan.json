@@ -1,0 +1,8 @@
+{
+  "migrations": [
+    {
+      "file": "20260907121414_booking_explicit_open_direction.sql",
+      "sha256": "42dbe99f37f65dcf4501d4e5a34933c0e11ad81a7dfe003f03e123776e8b5a42"
+    }
+  ]
+}

@@ -41,6 +41,12 @@ export function parseSequenceKey(value: unknown) {
   return candidate
 }
 
+export function parseOpeningDirection(value: unknown) {
+  if (value === undefined || value === null) return null
+  if (value === "import" || value === "export" || value === "domestic" || value === "cross_trade") return value
+  throw new BookingWorkflowError(400, "Choose a valid Booking direction.")
+}
+
 export function parsePayload(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new BookingWorkflowError(400, "Booking details are required.")

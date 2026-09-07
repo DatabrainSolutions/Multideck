@@ -1,5 +1,5 @@
 import { authenticateRequest, corsHeaders, jsonResponse } from "../_shared/document-functions.ts"
-import { BookingWorkflowError, parseAction, parseModeChangeConfirmation, parsePayload, parseQuoteSyncFields, parseQuoteReviewToken, parseReference, parseSequenceKey, parseUuid, toClientError } from "./core.ts"
+import { BookingWorkflowError, parseAction, parseOpeningDirection, parseModeChangeConfirmation, parsePayload, parseQuoteSyncFields, parseQuoteReviewToken, parseReference, parseSequenceKey, parseUuid, toClientError } from "./core.ts"
 
 const documentBucket = "multideck-documents"
 const maximumBookingDocumentBytes = 20 * 1024 * 1024
@@ -122,6 +122,7 @@ Deno.serve(async (request) => {
         caller_auth_user_id: userId,
         requested_idempotency_key: parseUuid(body.idempotencyKey, "Booking request"),
         requested_sequence_key: parseSequenceKey(body.sequenceKey),
+        requested_direction: parseOpeningDirection(body.direction),
       })
       if (error || !data) throw error ?? new Error("Booking opening returned no result")
       return jsonResponse(request, data)

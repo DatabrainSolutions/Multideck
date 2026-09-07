@@ -3,7 +3,8 @@ import { test } from 'node:test'
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { cargoDexterFixture, cargoProjection, cargoDexterMigration, cargoDexterAssertions } from './booking-cargo-dexter-fixture.mjs'
 import { mutateBookingCargo } from './booking-cargo-client-fixture.mjs'
 import { cargoDecimalAssertions } from './booking-cargo-decimal-fixture.mjs'
@@ -22,6 +23,7 @@ import { milestoneDexterMigration, milestoneDexterAssertions } from './booking-m
 import { dangerousGoodsFixture } from './booking-dangerous-goods-fixture.mjs'
 import { dangerousGoodsDexterFixture } from './booking-dangerous-goods-dexter-fixture.mjs'
 import { roadOpenFixture } from './booking-road-open-fixture.mjs'
+import { openingDirectionFixture } from './booking-opening-direction-fixture.mjs'
 
 // Executes the actual save function against disposable PostgreSQL, never a tenant.
 // PG_TEST_BIN can point to a PostgreSQL bin directory in CI.
@@ -40,7 +42,7 @@ function table(name) {
   return baseline.slice(start, baseline.indexOf('\n);', start) + 3)
 }
 
-test('PostgreSQL: stable items, route milestones, approved Dexter cargo/container/route lifecycle, watches and isolation', { skip: !available }, () => {
+test('PostgreSQL: stable items, route milestones, approved Dexter cargo/container/route lifecycle, watches and isolation', { skip: !available }, async () => {
   const directory = mkdtempSync(join(tmpdir(), 'multideck-stable-items-'))
   const data = join(directory, 'data')
   let started = false
@@ -210,6 +212,38 @@ test('PostgreSQL: stable items, route milestones, approved Dexter cargo/containe
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], dangerousGoodsFixture)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], dangerousGoodsDexterFixture)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], roadOpenFixture)
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], openingDirectionFixture)
+    // Separate real connections compete for the same sequence and request key.
+    // All children settle before database teardown, including on assertion failure.
+    const openConcurrent = key => new Promise((resolve, reject) => {
+      const child = spawn(join(bin, 'psql'), ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-Atq', '-v', 'ON_ERROR_STOP=1'], { timeout: 15_000 })
+      let output = '', errors = ''
+      child.stdout.on('data', value => { output += value })
+      child.stderr.on('data', value => { errors += value })
+      child.on('error', reject)
+      child.on('close', code => {
+        if (code !== 0) return reject(new Error(`Concurrent opening: ${errors}`))
+        try { resolve(JSON.parse(output.trim())) } catch (error) { reject(error) }
+      })
+      child.stdin.end(`set statement_timeout='10s';
+        select public.booking_workflow_open_road('10000000-0000-4000-8000-000000000001','${key}','default','domestic');`)
+    })
+    const sharedKey = randomUUID(), uniqueKeys = Array.from({ length: 4 }, () => randomUUID())
+    const keys = [...Array(4).fill(sharedKey), ...uniqueKeys]
+    const results = await Promise.allSettled(keys.map(openConcurrent))
+    for (const result of results) assert.equal(result.status, 'fulfilled', result.reason?.message)
+    const opened = results.map(result => result.value), repeated = opened.slice(0, 4)
+    assert.equal(new Set(repeated.map(result => result.jobId)).size, 1, 'Same key created duplicate drafts')
+    assert.equal(repeated.filter(result => result.reused === false).length, 1, 'Exactly one request creates the shared draft')
+    assert.equal(new Set(opened.map(result => result.bookingReference)).size, 5, 'Independent requests must receive distinct references')
+    const requestList = [sharedKey, ...uniqueKeys].map(key => `'${key}'::uuid`).join(',')
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], `
+      do $$begin
+        if (select count(*) from public."Job_Header" where "Job_CreateIdempotencyKey" in (${requestList}))<>5
+          or (select count(*) from booking_api.events e join public."Job_Header" j on j."Job_ID"=e.job_id
+            where j."Job_CreateIdempotencyKey" in (${requestList}) and e.event_type in ('created','saved'))<>10
+          then raise exception 'Concurrent drafts or canonical audit duplicated';end if;
+      end $$;`)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
     rmSync(directory, { recursive: true, force: true })
