@@ -28,8 +28,20 @@ node supabase/tests/tools/freight-schema-rehearsal.mjs /tmp/multideck-screening-
 ```
 
 Log: `/tmp/multideck-screening-schema-rehearsal.log`.
-This is structural rehearsal only. Populated preservation checks against this
-fresh schema remain open, as do final remote drift/security checks and combined
-hosted operator/approval/watch verification. Separate local lifecycle fixtures
+The subsequent populated rehearsal also passes using this same schema and pinned
+migrations (`--populated`). Synthetic Quote versions/headers, Booking headers,
+cargo, equipment, routes, memberships, DG, milestones and watch signals remain
+exactly unchanged. Existing registry rows and all unrelated application function
+definitions/ACLs are preserved; the new screening table stays empty. The only
+initial function-diff failure was the intended workspace wrapper: the fixture
+incorrectly listed `(uuid,uuid)` rather than its real `(uuid,text)` signature.
+The diagnostic check was corrected after inspecting the migration; no product
+code or migration was changed to satisfy it.
+
+Populated log: `/tmp/multideck-screening-populated.log`. Fixtures retain real
+application constraints/triggers and use synthetic rows only. This establishes
+preservation for those records, not exhaustive hosted tenant behaviour.
+Final remote drift/security checks and combined hosted operator/approval/watch
+verification remain open. Separate local lifecycle fixtures
 are not presented as hosted proof. No deployment or business-record write was
 performed; existing exclusions and approval holds remain unchanged.
