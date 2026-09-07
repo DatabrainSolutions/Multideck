@@ -1,5 +1,14 @@
 # Freight workspace completion
 
+7 September Air weight release: all six reviewed migrations and Dexter version
+168 are deployed to development; exact source, unchanged Booking/Quote hashes,
+preserved function ACLs and unchanged security advisors are verified. Teammate
+Finance `fbadac6` is merged unchanged; client `54d6da2` passed build and 45 focused
+checks and is pushed to dev. Vercel `dpl_6VmMa56DW2bjsiQSkCDvVc7734BJ` is QUEUED,
+not READY. Continue that deployment, then hosted Air save/reload/restore and
+approval/watch verification. See [release evidence](../release/2026-09-07-air-weight-development-release.md).
+All existing approval gates, exclusions and the full all-mode goal remain.
+
 7 September consolidated acceptance review: use
 [remaining acceptance](freight-remaining-acceptance.md) for the current gap map
 across all eight original clashes. Original hosted Quote issue/acceptance and
