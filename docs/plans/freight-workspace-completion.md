@@ -1,5 +1,19 @@
 # Freight workspace completion
 
+7 September hosted milestone approval/watch checkpoint: the exact reviewed
+synthetic Sea milestone stayed uncreated until normal approval, then saved with
+attributed audit and appeared in a fresh Booking load. An exact-ID estimated-time
+watch produced exactly three matching events/notifications; unrelated changes,
+paused changes, no-op and retirement did not alert. Temporary estimate/notes are
+cleared, milestone voided/read-only and watch paused, with history retained.
+Route, Quote and older milestone fingerprints are unchanged. Two setup defects
+remain: ordinary chat falsely calls watching disconnected, and the watch compiler
+can replace an explicit milestone ID with an unresolvable descriptive search.
+Correct those without widening permissions or changing Customs paths next.
+See [hosted lifecycle evidence](../release/2026-09-07-milestone-approval-watch-evidence.md).
+Development `c3b258a` is READY; full all-mode/denial/revision acceptance and all
+existing approval requirements remain open. No 95% claim.
+
 7 September Dexter email-intent release: `b78a71b` corrects the verified negated
 read-only request routing defect. Dexter 162 is ACTIVE with JWT retained and
 all 20 downloaded files matching; other functions and shared setup unchanged.

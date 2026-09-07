@@ -70,6 +70,12 @@ At hosted testing, existing Vercel deployment
 `dev.multideck.app` alias and no alias error. It calls the newly verified backend.
 No new client build is being substituted for backend or hosted evidence.
 
+The subsequent normal Git push of source plus evidence to `origin/dev` was
+verified at `c3b258a14105e17fa39d838117939197627dc585`. Its existing Vercel Git
+deployment `dpl_559kGzUEWBmyJ8xtHXuXor3kShFq` reached READY, with the approved
+development alias and no alias error (about 117 seconds building). The hostname
+still serves `/assets/app-DdoXZh8s.js`, as expected for unchanged frontend source.
+
 ## Hosted read-only retest and persistence
 
 Signed-in Chrome repeated the exact failed request in a new Approve-mode
@@ -103,7 +109,9 @@ using a different ordering):
 ## Remaining gates
 
 The read-only email-routing failure is closed by hosted persistence evidence.
-Hosted milestone approved-write/watch lifecycle, broader hosted denial and
+The subsequent [milestone approval/watch test](2026-09-07-milestone-approval-watch-evidence.md)
+proves creation approval and the exact-ID watch lifecycle, while exposing two
+watch-setup usability defects. Broader hosted denial and
 revoked-user coverage, Air/Road/Rail/multimodal depth and the full eight-clash
 acceptance matrix remain unfinished. JQ20022 V2 send/accept/selective apply and
 feature-preview environment repair retain their approvals. Customs/iCustoms is
