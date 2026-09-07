@@ -1,0 +1,8 @@
+{
+  "migrations": [
+    {
+      "file": "20260907114906_booking_road_draft_atomic_open.sql",
+      "sha256": "be04fab1b73f606251ee83f7fad17fed65cb791d5d982068dc3404b4a688c1f2"
+    }
+  ]
+}

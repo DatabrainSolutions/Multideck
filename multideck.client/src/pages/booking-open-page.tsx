@@ -47,7 +47,7 @@ export function BookingOpenPage({ navigate, initialMode }: { navigate: (path: st
         <Surface padding="lg" className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] text-center">
           <h1 className="text-[20px] font-medium">{t("Booking could not be opened")}</h1>
           <p role="alert" className="mt-2 text-[13px] leading-6 text-[var(--md-text)]">{error}</p>
-          <div className="mt-5 flex justify-center gap-2">
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
             <Button variant="ghost" onClick={() => navigate(initialMode === "road" ? "/road-control" : "/bookings")}>{t(initialMode === "road" ? "Return to Road control" : "Return to bookings")}</Button>
             <Button onClick={retry}>{t("Try again")}</Button>
           </div>

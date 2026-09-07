@@ -22,6 +22,7 @@ const plan=releasePlanPath?JSON.parse(readFileSync(releasePlanPath,'utf8')):null
 const migrations=plan?.migrations??manifest.pendingFreightMigrations
 assert.ok(Array.isArray(migrations)&&migrations.length>0,'Migration plan must not be empty')
 const files=migrations.map(item=>item.file)
+const roadOpenFixture=fixtureMode&&files.length===1&&files[0]==='20260907114906_booking_road_draft_atomic_open.sql'
 const screeningFixture=fixtureMode&&files.includes('20260906082224_screening_active_source_freshness.sql')
 const milestoneFixture=fixtureMode&&files.length===2&&files.includes('20260906182852_booking_route_milestone_foundation.sql')&&files.includes('20260907075838_dexter_booking_milestone_parity.sql')
 const dangerousGoodsFixture=fixtureMode&&files.length===2&&files.includes('20260907102754_booking_cargo_dangerous_goods_evidence.sql')&&files.includes('20260907103421_dexter_booking_dangerous_goods_parity.sql')
@@ -60,6 +61,7 @@ try{
   if(fixtureMode){
     stage='synthetic populated fixtures'
     sql(readFileSync(new URL('../fixtures/freight-chain-before.sql',import.meta.url),'utf8'))
+    if(roadOpenFixture)sql(readFileSync(new URL('../fixtures/freight-road-open-before.sql',import.meta.url),'utf8'))
     if(milestoneFixture||dangerousGoodsFixture)sql(readFileSync(new URL('../fixtures/freight-milestone-before.sql',import.meta.url),'utf8'))
     if(dangerousGoodsFixture)sql(readFileSync(new URL('../fixtures/freight-dangerous-goods-before.sql',import.meta.url),'utf8'))
     if(screeningFixture)sql(readFileSync(new URL('../fixtures/freight-screening-before.sql',import.meta.url),'utf8'))
@@ -101,7 +103,7 @@ try{
   }
   if(fixtureMode){
     stage='populated preservation assertions'
-    sql(readFileSync(new URL(dangerousGoodsFixture?'../fixtures/freight-dangerous-goods-after.sql':milestoneFixture?'../fixtures/freight-milestone-after.sql':'../fixtures/freight-chain-after.sql',import.meta.url),'utf8'))
+    sql(readFileSync(new URL(roadOpenFixture?'../fixtures/freight-road-open-after.sql':dangerousGoodsFixture?'../fixtures/freight-dangerous-goods-after.sql':milestoneFixture?'../fixtures/freight-milestone-after.sql':'../fixtures/freight-chain-after.sql',import.meta.url),'utf8'))
     if(screeningFixture)sql(readFileSync(new URL('../fixtures/freight-screening-after.sql',import.meta.url),'utf8'))
   }
   if(milestoneParity){
@@ -124,14 +126,16 @@ try{
     postChainChecks:['typed cargo tables','typed cargo RLS','finalization service boundary','allocation action service boundary','quote revision service boundary'],
     milestoneChecks:milestoneFoundation?['existing table RLS retained','service-only milestone save','private mutation helper','explicit-offset conversion and clear']:[],
     milestoneParityChecks:milestoneParity?['service-only domain/action adapters','mandatory approval registry','enabled deterministic watch trigger']:[],
-    populatedChecks:dangerousGoodsFixture?['all existing Quote Booking and milestone fields preserved exactly','complete legacy dangerous-goods values preserved',
+    roadOpenFixtureHashes:roadOpenFixture?['before','after'].map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-road-open-'+name+'.sql',import.meta.url))).digest('hex')})):[],
+    populatedChecks:roadOpenFixture?['exact full-row Quote Booking cargo equipment route membership and registry preservation',
+      'existing DG and milestone rows unchanged','existing canonical open/save bodies and ACL unchanged','new Road wrapper service-only and empty search path']:dangerousGoodsFixture?['all existing Quote Booking and milestone fields preserved exactly','complete legacy dangerous-goods values preserved',
       'legacy evidence read-only without invented attribution','new unknown flags remain null','direct table access denied and adapters service-only',
       'mandatory Dexter approval and enabled deterministic watch trigger','unrelated registries finance function and watch signals unchanged']:milestoneFixture?['all existing Quote and Booking fields preserved exactly','legacy milestone fields and precision preserved',
       'legacy operator provider and unknown evidence read-only','no invented recorded mode or operator attribution',
       'unrelated registries and watch signals unchanged']:fixtureMode?['Quote version and header preservation','Booking cargo equipment route and membership preservation',
       'no invented financial values or allocations','exact typed projection with zero and unknown distinctions',
       'existing cargo registry conflict update','unrelated registry and watch signal preservation','submitted mutation and deletion denial','invalid draft cargo rejection']:[],
-    fixtureHashes:fixtureMode?((milestoneFixture||dangerousGoodsFixture)?['before']:['before','after']).map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-chain-'+name+'.sql',import.meta.url))).digest('hex')})):[],
+    fixtureHashes:fixtureMode?((milestoneFixture||dangerousGoodsFixture||roadOpenFixture)?['before']:['before','after']).map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-chain-'+name+'.sql',import.meta.url))).digest('hex')})):[],
     milestoneFixtureHashes:(milestoneFixture||dangerousGoodsFixture)?(dangerousGoodsFixture?['before']:['before','after']).map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-milestone-'+name+'.sql',import.meta.url))).digest('hex')})):[],
     dangerousGoodsFixtureHashes:dangerousGoodsFixture?['before','after'].map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-dangerous-goods-'+name+'.sql',import.meta.url))).digest('hex')})):[],
     screeningChecks:screeningFixture?['existing source and snapshot preservation','entry preservation','unrelated source preservation',

@@ -47,6 +47,12 @@ their older “pending” paragraphs must not override later evidence.
 
 ### Road: live board opens a prototype detail flow
 
+Preflight now recorded: [rendered Road opening and fresh-schema preservation](../release/2026-09-07-road-open-preflight.md)
+pass within the stated fixture limits. A real mobile error-row overflow was
+corrected. Next is remote drift reconciliation and coordinated development
+release, followed by hosted synthetic persistence/denial verification. This
+does not close the Kanban transition or deeper Road operational gates.
+
 Further local implementation: [Road draft opening and legacy-link recovery](../release/2026-09-07-road-draft-open-local.md)
 replace the non-persisting creation page with atomic canonical open/save and
 truthful old-link recovery. Local database, client and type/build checks pass;
