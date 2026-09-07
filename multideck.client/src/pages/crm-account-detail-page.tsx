@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
-import { AiBrain, ArrowLeft, ArrowRight, Check, Clock, Health, Mail, Phone, Plus, RefreshCw, Trash2, X, type LucideIcon } from "@/components/icons/hugeicons"
+import { ArrowLeft, ArrowRight, Check, Clock, Health, Mail, MessageSquareText, Phone, Plus, RefreshCw, Trash2, WhatsappBrand, X, type LucideIcon } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
+import { LifecycleNotes } from "@/components/multideck/lifecycle-notes"
 import { AccountDetailTabs, AccountOperationsPanel, type AccountDetailTab } from "@/components/multideck/account-operations-workspace"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
 import { ProgressRing } from "@/components/multideck/dashboard-radials"
@@ -28,7 +29,13 @@ import { CustomerWarehouseAccess } from "@/pages/customer-detail-page"
 
 type CustomField = { id: string; label: string; value: string }
 type AccountDraft = UpdateAccountInput & { customFields: CustomField[] }
-type CommunicationPreferenceKey = "follow_up" | "thank_you" | "whatsapp" | "limited_contact"
+type CommunicationPreferenceKey = "whatsapp" | "sms" | "phone" | "email"
+const communicationChannels: Array<{ key: CommunicationPreferenceKey; label: string; icon: LucideIcon }> = [
+  { key: "whatsapp", label: "WhatsApp", icon: WhatsappBrand },
+  { key: "sms", label: "SMS", icon: MessageSquareText },
+  { key: "phone", label: "Phone", icon: Phone },
+  { key: "email", label: "Mail", icon: Mail },
+]
 
 /** Activities and emails are the same thing to an operator: what happened, and when. */
 type Moment = {
@@ -39,8 +46,6 @@ type Moment = {
   email: { threadId: string; direction: "inbound" | "outbound" } | null
 }
 
-/** The gaps people actually mean when they say "leave it a bit". */
-const gapPresets = [4, 12, 24, 48, 168]
 const companyTypesBatchDelayMs = 450
 
 function sameIds(left: string[] | null, right: string[]) {
@@ -300,32 +305,37 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
   const currentCompanyTypes = reference ? reference.organisationTypes.filter((type) => currentTypeIds.includes(type.id)) : currentAccount.types.map((name) => ({ id: name, name }))
   const address = currentAccount.address
   const engagement = currentAccount.engagement
-  const currentGap = engagement?.minHoursBetweenNonUrgentMessages ?? 24
-  const preferredCommunication = preferredPreferenceDraft ?? preferredCommunicationKey(currentAccount.metadata.preferredCommunicationPreference) ?? "follow_up"
-  const gapOptions = (gapPresets.includes(currentGap) ? gapPresets : [...gapPresets, currentGap].sort((a, b) => a - b)).map((hours) => ({ value: String(hours), label: formatGap(hours, t) }))
+  const savedChannelPreferences = objectRecord(currentAccount.metadata.communicationChannels)
+  const savedPreferredChannel = preferredCommunicationKey(engagement?.preferredChannel) ?? preferredCommunicationKey(currentAccount.metadata.preferredCommunicationPreference)
+  const channelPreferences = Object.fromEntries(communicationChannels.map(({ key }) => [key,
+    key === "whatsapp" ? engagement?.allowWhatsApp === true : savedChannelPreferences[key] === true || (savedChannelPreferences[key] === undefined && savedPreferredChannel === key),
+  ]))
+  const preferredCommunication = preferredPreferenceDraft ?? savedPreferredChannel
   const enter = (index: number) => (shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.04) })
 
   async function selectPreferredCommunication(next: CommunicationPreferenceKey) {
     if (next === preferredCommunication || preferredPreferenceSaving) return
     setPreferredPreferenceDraft(next)
     setPreferredPreferenceSaving(true)
-    const enablePreferred = next === "follow_up" ? { allowFollowupMessages: true } : next === "thank_you" ? { allowThankYouMessages: true } : next === "whatsapp" ? { allowWhatsApp: true } : { doNotOverContact: true }
     try {
       await patch({
         metadata: {
           ...currentAccount.metadata,
           preferredCommunicationPreference: next,
+          communicationChannels: { ...channelPreferences, [next]: true },
         },
         engagement: {
           ...defaultEngagement,
           ...engagement,
-          ...enablePreferred,
+          preferredChannel: next,
+          ...(next === "whatsapp" ? { allowWhatsApp: true } : {}),
         },
       })
     } catch (cause) {
       setPreferredPreferenceDraft(null)
       toast.error(cause instanceof Error ? cause.message : t("That preference could not be saved."))
     } finally {
+      setPreferredPreferenceDraft(null)
       setPreferredPreferenceSaving(false)
     }
   }
@@ -543,17 +553,6 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                 </div>
               </Zone>
 
-              {reference ? (
-                <OrganisationFoundationPanel
-                  account={currentAccount}
-                  reference={reference}
-                  onChange={(updated) => {
-                    accountRef.current = updated
-                    setAccount(updated)
-                  }}
-                />
-              ) : null}
-
               <Zone title={t("Quote defaults")}>
                 <p className="mb-3 max-w-3xl text-[12px] leading-5 text-[var(--md-text)]">
                   {t("These terms, notes and the default response deadline are copied into quotes and managed on this company record. A follow-up delay overrides the company policy for this customer only.")}
@@ -609,140 +608,48 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                 </InlineFieldGroup>
               </Zone>
 
-              <Zone title={t("How we contact them")}>
-                <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)]">
-                  <div className="min-w-0">
-                    <h3 className="mb-3 text-[11.5px] font-medium text-[var(--md-text)]">{t("Communication preferences")}</h3>
-                    <div className="overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]" role="radiogroup" aria-label={t("Preferred communication preference")}>
+              <div className="grid items-stretch gap-[var(--md-page-stack-gap)] lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
+                <div className="grid min-w-0 content-start gap-[var(--md-page-stack-gap)]">
+                <Zone title={t("Communication preferences")}>
+                    <div className="overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]" role="radiogroup" aria-label={t("Preferred communication channel")}>
                       <div className="grid grid-cols-[minmax(0,1fr)_52px_42px] items-center gap-2 px-3 pb-1.5 pt-2.5 text-[10.5px] text-[var(--md-subtle)]">
-                        <span>{t("Preference")}</span>
+                        <span>{t("Channel")}</span>
                         <span className="text-center">{t("Preferred")}</span>
                         <span className="text-center">{t("Allowed")}</span>
                       </div>
-                      <PreferenceToggleRow
-                        label="Send follow-up messages"
-                        checked={engagement?.allowFollowupMessages !== false}
-                        preferred={preferredCommunication === "follow_up"}
-                        preferenceDisabled={preferredPreferenceSaving}
-                        onPrefer={() => selectPreferredCommunication("follow_up")}
-                        onSave={(allowFollowupMessages) =>
-                          patch({
-                            engagement: {
-                              ...defaultEngagement,
-                              ...engagement,
-                              allowFollowupMessages,
-                            },
-                          })
-                        }
-                      />
-                      <PreferenceToggleRow
-                        label="Send thank-you messages"
-                        checked={engagement?.allowThankYouMessages !== false}
-                        preferred={preferredCommunication === "thank_you"}
-                        preferenceDisabled={preferredPreferenceSaving}
-                        onPrefer={() => selectPreferredCommunication("thank_you")}
-                        onSave={(allowThankYouMessages) =>
-                          patch({
-                            engagement: {
-                              ...defaultEngagement,
-                              ...engagement,
-                              allowThankYouMessages,
-                            },
-                          })
-                        }
-                      />
-                      <PreferenceToggleRow
-                        label="Use WhatsApp"
-                        checked={engagement?.allowWhatsApp === true}
-                        preferred={preferredCommunication === "whatsapp"}
-                        preferenceDisabled={preferredPreferenceSaving}
-                        onPrefer={() => selectPreferredCommunication("whatsapp")}
-                        onSave={(allowWhatsApp) =>
-                          patch({
-                            engagement: {
-                              ...defaultEngagement,
-                              ...engagement,
-                              allowWhatsApp,
-                            },
-                          })
-                        }
-                      />
-                      <PreferenceToggleRow
-                        label="Limit total contact"
-                        checked={engagement?.doNotOverContact === true}
-                        preferred={preferredCommunication === "limited_contact"}
-                        preferenceDisabled={preferredPreferenceSaving}
-                        onPrefer={() => selectPreferredCommunication("limited_contact")}
-                        onSave={(doNotOverContact) =>
-                          patch({
-                            engagement: {
-                              ...defaultEngagement,
-                              ...engagement,
-                              doNotOverContact,
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                    <InlineFieldGroup stacked directEdit>
-                      <div className="mt-4 grid gap-x-3 gap-y-3">
-                        <InlineSelectField
-                          label="Minimum gap between non-urgent messages"
-                          value={String(currentGap)}
-                          options={gapOptions}
-                          onSave={(value) =>
-                            patch({
+                      {communicationChannels.map((channel) => (
+                        <PreferenceToggleRow
+                          key={channel.key}
+                          label={channel.label}
+                          icon={channel.icon}
+                          checked={channelPreferences[channel.key] === true}
+                          preferred={preferredCommunication === channel.key}
+                          preferenceDisabled={preferredPreferenceSaving}
+                          onPrefer={() => selectPreferredCommunication(channel.key)}
+                          onSave={async (allowed) => {
+                            await patch({
+                              metadata: {
+                                ...currentAccount.metadata,
+                                communicationChannels: { ...channelPreferences, [channel.key]: allowed },
+                                ...(!allowed && preferredCommunication === channel.key ? { preferredCommunicationPreference: null } : {}),
+                              },
                               engagement: {
                                 ...defaultEngagement,
                                 ...engagement,
-                                minHoursBetweenNonUrgentMessages: Number(value) || 0,
+                                ...(channel.key === "whatsapp" ? { allowWhatsApp: allowed } : {}),
+                                ...(!allowed && preferredCommunication === channel.key ? { preferredChannel: null } : {}),
                               },
                             })
-                          }
+                            setPreferredPreferenceDraft(null)
+                          }}
                         />
-                        <InlineField
-                          label="Notes"
-                          kind="textarea"
-                          align="start"
-                          colSpan="full"
-                          placeholder="Anything a colleague should know before they get in touch"
-                          value={engagement?.notes ?? ""}
-                          onSave={(notes) =>
-                            patch({
-                              engagement: {
-                                ...defaultEngagement,
-                                ...engagement,
-                                notes: notes || null,
-                              },
-                            })
-                          }
-                        />
-                      </div>
-                    </InlineFieldGroup>
-                  </div>
-                  {/* Consent belongs beside the contact rules it governs. A change
-                  still asks for evidence and records who made it. */}
-                  <div className="min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)]">
-                    <h3 className="text-[11.5px] font-medium text-[var(--md-text)]">{t("Consent and data")}</h3>
-                    <div className="mt-3 overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
-                      <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_32px] items-center gap-3 px-3 py-2.5">
-                        <div className="min-w-0">
-                          <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Marketing")}</p>
-                          {currentAccount.marketingConsentSource ? (
-                            <p className="mt-0.5 truncate text-[10.5px] text-[var(--md-subtle)]">
-                              {t("Based on")} {humanize(currentAccount.marketingConsentSource)}
-                            </p>
-                          ) : null}
-                        </div>
-                        <StateCircle checked={currentAccount.marketingOptIn} role="checkbox" label={t("Change marketing consent")} onClick={() => setConsentOpen(true)} />
-                      </div>
-                      <PreferenceToggleRow icon={AiBrain} label="AI training" checked={currentAccount.trainingAllowed} onSave={(trainingAllowed) => patch({ trainingAllowed })} />
+                      ))}
                     </div>
-                    <p className="mt-3 text-[11.5px] leading-4 text-[var(--md-subtle)]">{t("A contact's own opt-out always wins, whatever this says.")}</p>
+                  <div className="mt-3 grid min-h-11 grid-cols-[minmax(0,1fr)_42px] items-center gap-2 border-t border-[var(--md-line)] px-3 pt-3">
+                    <span className="text-[13px] font-medium text-[var(--md-ink)]">{t("Marketing consent")}</span>
+                    <Switch checked={currentAccount.marketingOptIn} onCheckedChange={() => setConsentOpen(true)} aria-label={t("Change marketing consent")} className="justify-self-center" />
                   </div>
-                </div>
-              </Zone>
-
+                </Zone>
               <Panel
                 title={t("Contacts")}
                 meta={String(currentAccount.contacts.length)}
@@ -754,11 +661,11 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                 }
               >
                 {currentAccount.contacts.length ? (
-                  <div className="grid gap-2 px-4 pb-4 sm:grid-cols-2 sm:px-5 sm:pb-5">
+                  <div className="grid gap-2 px-4 pb-4 sm:px-5 sm:pb-5">
                     {currentAccount.contacts.map((contact, index) => (
-                      <motion.button key={contact.id} type="button" initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={enter(index)} onClick={() => navigate(`/crm/contacts/${contact.id}`)} className="group flex min-w-0 items-center gap-2.5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-2.5 py-2 text-start shadow-[var(--md-shadow-line)] outline-none transition-colors duration-150 hover:bg-[var(--md-surface-tint)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]">
-                        <CustomerAvatar initials={contact.initials} tone="blue" />
-                        <span className="min-w-0 flex-1">
+                      <motion.button key={contact.id} type="button" initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={enter(index)} onClick={() => navigate(`/crm/contacts/${contact.id}`)} className={cn("group flex min-h-11 w-fit max-w-full min-w-0 items-center gap-2 rounded-full bg-[var(--md-surface-soft)] py-1.5 ps-1.5 pe-3 text-start shadow-[var(--md-shadow-line)] outline-none transition-[background-color,scale] duration-150 ease-out hover:bg-[var(--md-surface-tint)] active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:scale-100", index % 2 === 1 && "ms-5 max-w-[calc(100%-1.25rem)]")}>
+                        <CustomerAvatar initials={contact.initials} tone="blue" size="sm" className="rounded-full" />
+                        <span className="min-w-0">
                           <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]" dir="auto" data-i18n-skip>
                             {contact.name}
                           </span>
@@ -774,6 +681,11 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                   <Empty text={t("Add the people you deal with at this account.")} />
                 )}
               </Panel>
+                </div>
+                <div className="relative min-h-[400px] min-w-0 lg:min-h-0">
+                  <LifecycleNotes subjectType="company" subjectId={currentAccount.id} title="Company notes" compact className="absolute inset-0" />
+                </div>
+              </div>
 
               <PhoneCallLinkedRecordSection recordType="company" recordId={currentAccount.id} navigate={navigate} />
 
@@ -818,6 +730,12 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
 
               <CustomerWarehouseAccess customerId={currentAccount.id} />
             </>
+          ) : activeTab === "setup" ? (
+            reference ? <OrganisationFoundationPanel
+              account={currentAccount}
+              reference={reference}
+              onChange={(updated) => { accountRef.current = updated; setAccount(updated) }}
+            /> : null
           ) : (
             <AccountOperationsPanel
               account={currentAccount}
@@ -942,8 +860,8 @@ function PreferenceToggleRow({ label, checked, onSave, preferred, onPrefer, pref
         {Icon ? <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" /> : null}
         <span>{t(label)}</span>
       </span>
-      {hasPreference ? <StateCircle checked={Boolean(preferred)} disabled={preferenceDisabled} label={`${t("Set as preferred")}: ${t(label)}`} onClick={onPrefer} /> : null}
-      <Switch checked={shown} disabled={saving} onCheckedChange={(next) => void toggle(next)} aria-label={t(label)} className="justify-self-center" />
+      {hasPreference ? <StateCircle checked={Boolean(preferred)} disabled={saving || preferenceDisabled} label={`${t("Set as preferred")}: ${t(label)}`} onClick={onPrefer} /> : null}
+      <Switch checked={shown} disabled={saving || preferenceDisabled} onCheckedChange={(next) => void toggle(next)} aria-label={t(label)} className="justify-self-center" />
     </div>
   )
 }
@@ -1284,21 +1202,12 @@ function shipmentPresentation(status: string | null, openExceptionCount: number,
   return { tone: "neutral" as const, label: statusLabel }
 }
 
-/** Hours said the way a person would say them. */
-function formatGap(hours: number, t: (value: string) => string) {
-  if (hours % 168 === 0) {
-    const weeks = hours / 168
-    return `${weeks} ${t(weeks === 1 ? "week" : "weeks")}`
-  }
-  if (hours % 24 === 0) {
-    const days = hours / 24
-    return `${days} ${t(days === 1 ? "day" : "days")}`
-  }
-  return `${hours} ${t(hours === 1 ? "hour" : "hours")}`
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
 function preferredCommunicationKey(value: unknown): CommunicationPreferenceKey | null {
-  return value === "follow_up" || value === "thank_you" || value === "whatsapp" || value === "limited_contact" ? value : null
+  return value === "whatsapp" || value === "sms" || value === "phone" || value === "email" ? value : null
 }
 
 function formatDate(value: string, locale: string) {

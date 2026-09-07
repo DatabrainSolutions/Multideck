@@ -9,10 +9,8 @@ import {
   LockKeyhole,
   Plus,
   QrCode,
-  ScanText,
   Trash2,
   TriangleAlert,
-  UsersRound,
 } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -409,28 +407,12 @@ export function ContactCardsPage({ navigate, currentUser }: { navigate: (path: s
     <div className="md-page md-page-stack">
       <header className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,560px)] lg:items-start">
         <div className="min-w-0">
-          <p className="text-[12px] font-medium uppercase tracking-normal text-[var(--md-subtle)]">{t("CRM")}</p>
-          <h1 className="mt-2 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Contact cards")}</h1>
+          <h1 className="text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Contact cards")}</h1>
         </div>
         <p className="max-w-[68ch] text-[13px] leading-5 text-[var(--md-text)] lg:justify-self-end lg:pt-5 lg:text-end">
           {t("A shareable QR card for each person. Someone scans it, shares their details, and gets your contact details back. The lead lands in the CRM with the card's source.")}
         </p>
       </header>
-
-      {status !== "error" && summary.total > 0 ? (
-        <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-          <CardMetricTile icon={IdCard} label={t("Live cards")} value={summary.live.toLocaleString()} detail={`${summary.total.toLocaleString()} ${t("total")}`} />
-          <CardMetricTile icon={ScanText} label={t("Scans")} value={summary.scans.toLocaleString()} detail={t("Across all cards")} />
-          <CardMetricTile icon={UsersRound} label={t("Contacts shared")} value={summary.exchanges.toLocaleString()} detail={`${summary.leads.toLocaleString()} ${t("new leads")}`} tone="teal" />
-          <CardMetricTile
-            icon={TriangleAlert}
-            label={t("Needs attention")}
-            value={summary.needsAttention.toLocaleString()}
-            detail={summary.needsAttention > 0 ? t("Automations with failures") : t("All automations healthy")}
-            tone={summary.needsAttention > 0 ? "amber" : "neutral"}
-          />
-        </div>
-      ) : null}
 
       <div className="min-w-0">
         {status === "loading" && cards.length === 0 ? (

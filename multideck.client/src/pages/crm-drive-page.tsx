@@ -645,7 +645,7 @@ export function CrmDrivePage({ currentUser }: { currentUser: AuthUserSummary | n
     <div className="md-page md-page-stack">
       <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t("Drive")}</h1>
-        {canWriteDrive ? <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-self-end">
+        {canWriteDrive ? <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 lg:justify-self-end">
           <Button
             variant="ghost"
             className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,transform] duration-160 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-field-bg-hover)] active:scale-[0.98]"
@@ -728,6 +728,7 @@ export function CrmDrivePage({ currentUser }: { currentUser: AuthUserSummary | n
             ) : isEmpty ? (
               <DriveEmptyState
                 title={folderId ? t("This folder is empty") : t("Nothing in Drive yet")}
+                animated
                 hint={t(canWriteDrive ? `Drag files in, or create a folder first. Maximum ${driveMaxFileLabel} per file.` : "No files or folders are available here.")}
                 action={canWriteDrive ? (
                   <div className="flex flex-wrap items-center justify-center gap-2">

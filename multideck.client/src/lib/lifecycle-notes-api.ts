@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase"
 
-export type LifecycleNoteSubjectType = "quote" | "booking" | "customs"
+export type LifecycleNoteSubjectType = "quote" | "booking" | "customs" | "company"
 export type LifecycleNoteMentionType = "user" | "department"
 
 export type LifecycleNoteMention = {

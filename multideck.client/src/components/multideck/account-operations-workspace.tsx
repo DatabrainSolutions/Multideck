@@ -34,6 +34,7 @@ import {
 
 export type AccountDetailTab =
   | "overview"
+  | "setup"
   | "contacts"
   | "addresses"
   | "financial"
@@ -189,6 +190,7 @@ export function AccountDetailTabs({
   );
   const tabs = [
     { id: "overview", label: t("Overview") },
+    { id: "setup", label: t("Setup") },
     {
       id: "addresses",
       label: t("Addresses"),
@@ -242,7 +244,7 @@ export function AccountOperationsPanel({
   onChange,
 }: {
   account: ApiCustomerDetail;
-  activeTab: Exclude<AccountDetailTab, "overview">;
+  activeTab: Exclude<AccountDetailTab, "overview" | "setup">;
   canManageFinancial: boolean;
   canManageBankDetails: boolean;
   currencyOptions: Array<{ code: string; name: string }>;

@@ -326,7 +326,7 @@ function getRoute() {
   // Home lives at the workspace root. `/home` is the address people type, so it
   // resolves to the same screen rather than a second identity for it.
   if (window.location.pathname === "/home" || window.location.pathname === "/home/") return "/"
-  if (window.location.pathname === "/finance/setup") return "/admin/finance"
+  if (window.location.pathname === "/finance/setup" || window.location.pathname === "/admin/finance") return "/finance/administration"
   const legacyBookingRoute = getLegacyBookingRoute(window.location.pathname)
   if (legacyBookingRoute) return legacyBookingRoute
   const legacyCrmRoute = getLegacyCrmRoute(window.location.pathname)
@@ -710,7 +710,7 @@ export default function App() {
   // Old and prototype-only CRM bookmarks are rewritten in place, so the address
   // bar only shows routes that operators can genuinely use.
   useEffect(() => {
-    if (window.location.pathname === "/finance/setup" || getLegacyCrmRoute(window.location.pathname) || getUnavailableCrmRoute(window.location.pathname)) {
+    if (window.location.pathname === "/finance/setup" || window.location.pathname === "/admin/finance" || getLegacyCrmRoute(window.location.pathname) || getUnavailableCrmRoute(window.location.pathname)) {
       window.history.replaceState(window.history.state, "", route)
     }
   }, [route])
@@ -839,8 +839,7 @@ export default function App() {
                       onCoverPhotoChange={handleCoverPhotoChange}
                     />
                   ) : null}
-                  {route === "/admin/finance" ? <FinancePage route="/finance/setup" navigate={navigate} currentUser={currentUser} /> : null}
-                  {route.startsWith("/admin") && route !== "/admin/finance" ? <AdminPage route={route as AdminRoute} currentUser={currentUser} /> : null}
+                  {route.startsWith("/admin") ? <AdminPage route={route as AdminRoute} currentUser={currentUser} /> : null}
                   {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} navigate={navigate} /> : null}
                   {route === "/bookings" ? <BookingsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isBookingDetailRoute(route) ? <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-1) ?? "md-22455"} currentUser={currentUser} /> : null}

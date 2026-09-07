@@ -583,7 +583,7 @@ export function FinancePage({ route, navigate, currentUser }: { route: FinanceRo
   if (route === "/finance/setup") return <FinanceAdministrationPage navigate={navigate} />
   if (route in financeSetupTabByRoute) {
     const administrationRoute = route as FinanceAdministrationRoute
-    return <FinanceAdministrationPage navigate={navigate} initialTab={financeSetupTabByRoute[administrationRoute]} syncFinanceRoute />
+    return <FinanceAdministrationPage navigate={navigate} initialTab={financeSetupTabByRoute[administrationRoute]} />
   }
   return <LedgerPage route={route as FinanceLedgerRoute} navigate={navigate} currentUser={currentUser} />
 }
