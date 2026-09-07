@@ -1,0 +1,12 @@
+{
+  "migrations": [
+    {
+      "file": "20260907102754_booking_cargo_dangerous_goods_evidence.sql",
+      "sha256": "4b1bf9660d69ae54d2ba97fc59ff05505cd9c95a29489fb94fac32685335f156"
+    },
+    {
+      "file": "20260907103421_dexter_booking_dangerous_goods_parity.sql",
+      "sha256": "df15df5c53958e5a238b4afc46e1ac1196558f9405c8b69827727c7dd4c5c0e8"
+    }
+  ]
+}

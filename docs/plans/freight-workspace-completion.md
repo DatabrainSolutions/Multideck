@@ -1,5 +1,14 @@
 # Freight workspace completion
 
+7 September dangerous-goods preflight: the exact pending migration pair passes
+a fresh-development-schema populated rehearsal, preserving existing Quote,
+Booking, milestone and legacy DG evidence. Browser focus, 320/768/1280 reflow,
+200% zoom, regional contexts and reduced-motion checks pass using the actual
+editor in an isolated fixture. No application code or live state changed.
+See [preflight evidence](../release/2026-09-07-dangerous-goods-preflight-evidence.md).
+Next is remote source/security drift preflight and the combined controlled
+development release, followed by hosted persistence/approval/watch checks.
+
 7 September dangerous-goods local implementation: the existing per-cargo table
 now has a pending typed evidence boundary, connected Booking editor/API and
 approval-safe Dexter/read/watch parity. Legacy values stay read-only, unknown
