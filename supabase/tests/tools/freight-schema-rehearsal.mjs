@@ -90,6 +90,28 @@ try{
     end loop;
   end $$;`)
   const milestoneFoundation = files.includes('20260906182852_booking_route_milestone_foundation.sql')
+  const securityEvidenceParity = files.includes('20260907142751_dexter_booking_security_evidence_parity.sql')
+  if(securityEvidenceParity){
+    stage='screening structural assertions'
+    sql(`do $$declare signature text;begin
+      if not (select relrowsecurity from pg_class where oid='booking_api.cargo_security_evidence'::regclass)
+        then raise exception 'Screening RLS missing';end if;
+      if has_table_privilege('authenticated','booking_api.cargo_security_evidence','SELECT')
+        or has_table_privilege('service_role','booking_api.cargo_security_evidence','UPDATE')
+        or has_function_privilege('service_role','booking_api.save_cargo_security_evidence(uuid,uuid,jsonb)','EXECUTE') then
+        raise exception 'Private screening boundary exposed';end if;
+      foreach signature in array array['public.booking_workflow_save_security_evidence(uuid,uuid,jsonb)',
+        'public.multideck_dexter_domain_booking_security_evidence(uuid,text,integer)',
+        'public.multideck_dexter_action_record_booking_security_evidence(uuid,uuid,jsonb)'] loop
+        if has_function_privilege('anon',signature,'EXECUTE') or has_function_privilege('authenticated',signature,'EXECUTE')
+          or not has_function_privilege('service_role',signature,'EXECUTE') then raise exception 'Screening adapter boundary: %',signature;end if;
+      end loop;
+      if not exists(select 1 from public."sys_AIDexterActions" where "AIDexterAction_Code"='record_booking_security_evidence'
+        and "AIDexterAction_AlwaysRequiresApproval") then raise exception 'Screening approval registry missing';end if;
+      if not exists(select 1 from pg_trigger where tgrelid='booking_api.cargo_security_evidence'::regclass
+        and tgname='cargo_security_evidence_dexter_watch' and tgenabled='O') then raise exception 'Screening signal trigger missing';end if;
+    end $$;`)
+  }
   const milestoneParity = files.includes('20260907075838_dexter_booking_milestone_parity.sql')
   if(milestoneFoundation){
     stage='milestone structural assertions'
@@ -153,6 +175,7 @@ try{
     screeningChecks:screeningFixture?['existing source and snapshot preservation','entry preservation','unrelated source preservation',
       'no invented feed provenance or freshness','service-only refresh boundary']:[],
     screeningFixtureHashes:screeningFixture?['before','after'].map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-screening-'+name+'.sql',import.meta.url))).digest('hex')})):[],
+    securityEvidenceChecks:securityEvidenceParity?['private evidence RLS and table/helper ACL','service-only save/read/action adapters','mandatory approval registry','enabled deterministic signal trigger']:[],
     hostedLifecycleVerified:false}))
 }catch(error){
   console.error(JSON.stringify({status:'stopped',stage,applied,error:error.message}))
