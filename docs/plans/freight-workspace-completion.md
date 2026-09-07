@@ -1,5 +1,19 @@
 # Freight workspace completion
 
+7 September Dexter email-intent release: `b78a71b` corrects the verified negated
+read-only request routing defect. Dexter 162 is ACTIVE with JWT retained and
+all 20 downloaded files matching; other functions and shared setup unchanged.
+Fifty focused tests and full backend type checking pass. One unchanged
+writing-profile Settings-copy contract still fails and is recorded separately.
+Hosted Chrome repeats the exact milestone request as normal sourced chat,
+retained on fresh load, with zero new prepared actions/watches and unchanged
+Booking/route/Quote/milestone/audit fingerprints. The earlier erroneous email
+remains unsent diagnostic evidence. See
+[email-intent evidence](../release/2026-09-07-dexter-email-intent-evidence.md).
+Next gate is hosted milestone approved-write/watch lifecycle, alongside broader
+denial/all-mode acceptance. Full scope, approval requirements and exclusions
+remain unchanged; 95% is not established.
+
 7 September hosted milestone release: exact `a9f8e62` client is READY; matching
 schema/Dexter/Booking functions are deployed. Synthetic Sea milestone create,
 independent estimated-time correction, fresh load, attributed history and
