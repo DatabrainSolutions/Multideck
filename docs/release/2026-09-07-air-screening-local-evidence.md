@@ -119,6 +119,27 @@ The migration is explicitly incomplete and must remain unreleased until domain/
 action/watch registration, prepared-executor guard and deterministic watch
 signals/evaluation plus their lifecycle tests are added.
 
+### Prepared screening action checkpoint
+
+The still-unreleased parity migration now registers the permission-scoped domain
+and allowlisted action, marks it always-approval, and extends the real prepared
+executor's mandatory guard with a fail-closed single-anchor check. Dexter prompt
+guidance distinguishes source evidence from clearance and allows watch claims
+only when a watch capability is listed. Full-access intent routing now recognises
+explicit screening evidence edits and denies tested read-only, negative, quoted
+and sanctions/clearance requests.
+
+Real PostgreSQL query-domain and prepared approve/execute/replay coverage passes:
+creation in Approve mode and correction in Full access remain unapplied until
+approval; replay does not duplicate audit. Existing malformed/stale/foreign
+adapter cases and exact-source assertions continue to pass. The first run was
+correctly denied by server_only because the fixture lacked its server role;
+the fixture was corrected, not the guard. Final log:
+`/tmp/multideck-screening-prepared-actions.log`. One targeted Deno intent test
+and full Dexter type checking pass. This does not establish hosted approval,
+complete security lifecycle, or watch support; deterministic screening watch
+registration/signals/evaluation and tests remain required before release.
+
 Do not deploy this foundation alone. Complete operator source-evidence editing
 and read-only states, exact-source Dexter read/review/mandatory-approved writes,
 deterministic matching/non-matching/pause/resume watch support, retirement and

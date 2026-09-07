@@ -69,6 +69,25 @@ exception when invalid_text_representation then
   raise exception 'Choose valid Booking, cargo and screening evidence identities.' using errcode='22023';
 end $$;
 
+insert into public."sys_AIDexterDataDomains"("AIDexterDomain_Code","AIDexterDomain_Name","AIDexterDomain_Description","AIDexterDomain_QueryFunction","AIDexterDomain_RequiredPermissionsJSON","AIDexterDomain_DataCategoriesJSON") values
+  ('booking_security_evidence','Booking screening evidence','Supplied cargo screening status, method, source and retained history. Search exact Booking reference or Booking/cargo/evidence UUID. Unknown stays not recorded; this is not clearance, agent verification or an air waybill. Limited results are not complete history.',
+    'multideck_dexter_domain_booking_security_evidence','["Bookings.Read"]','["operational"]');
+insert into public."sys_AIDexterActions"("AIDexterAction_Code","AIDexterAction_DomainCode","AIDexterAction_Name","AIDexterAction_Description","AIDexterAction_Function","AIDexterAction_ParametersJSON","AIDexterAction_RequiredPermissionsJSON","AIDexterAction_IntentFamily","AIDexterAction_AlwaysRequiresApproval") values
+  ('record_booking_security_evidence','booking_security_evidence','Record or correct screening evidence',
+    'Always requires explicit approval, including Full access. Read exact booking_cargo before creation; use null record_id and expected_record_updated_at. Read exact booking_security_evidence and all current timestamps before correction. Preserve supplied text verbatim. Supply a source plus status, method or screening time. Use ISO time with explicit timezone, never infer one. Null clears optional fields. Void alone; retained records are read-only. This never certifies cargo, verifies an agent or changes Quotes or issued documents.',
+    'multideck_dexter_action_record_booking_security_evidence',
+    '{"type":"object","properties":{"target_id":{"type":"string"},"cargo_id":{"type":"string"},"record_id":{"type":["string","null"]},"expected_updated_at":{"type":"string"},"expected_cargo_updated_at":{"type":"string"},"expected_record_updated_at":{"type":["string","null"]},"changes":{"type":"array","minItems":1,"maxItems":8,"items":{"type":"object","properties":{"field":{"type":"string","enum":["securityStatus","screeningMethod","screenedByName","agentReference","screenedAt","sourceReference","notes","recordStatus"]},"value":{"type":["string","null"]}},"required":["field","value"],"additionalProperties":false}},"reason":{"type":"string"}},"required":["target_id","cargo_id","record_id","expected_updated_at","expected_cargo_updated_at","expected_record_updated_at","changes","reason"],"additionalProperties":false}',
+    '["Bookings.Read","Bookings.Write"]','record_booking_security_evidence',true);
+
+do $approval$
+declare definition text;anchor text:='''record_booking_dangerous_goods''';
+begin
+  definition:=pg_get_functiondef('public.multideck_dexter_execute_prepared_action(uuid,uuid,uuid,uuid)'::regprocedure);
+  if (length(definition)-length(replace(definition,anchor,'')))/length(anchor)<>1 then
+    raise exception 'Review screening mandatory approval guard';end if;
+  execute replace(definition,anchor,anchor||',''record_booking_security_evidence''');
+end $approval$;
+
 revoke all on function public.multideck_dexter_domain_booking_security_evidence(uuid,text,integer),
   public.multideck_dexter_action_record_booking_security_evidence(uuid,uuid,jsonb) from public,anon,authenticated;
 grant execute on function public.multideck_dexter_domain_booking_security_evidence(uuid,text,integer),

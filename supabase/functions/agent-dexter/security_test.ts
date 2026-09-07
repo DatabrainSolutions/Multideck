@@ -4,6 +4,17 @@ function assert(value: unknown, message: string) {
   if (!value) throw new Error(message)
 }
 
+Deno.test("Screening Full access requires explicit recording intent", () => {
+  const code = "record_booking_security_evidence"
+  for (const prompt of ["Record screening evidence for cargo 2", "Void this screening record", "Correct the cargo screening source"]) {
+    assert(allowedActionsForPrompt(prompt, [code], "full").includes(code), `missing intent: ${prompt}`)
+  }
+  for (const prompt of ["Summarise screening evidence", "Do not record screening evidence", "Read-only: update screening details",
+    'Summarise the note "record screening evidence"', "Run sanctions screening", "Approve clearance"]) {
+    assert(!allowedActionsForPrompt(prompt, [code], "full").includes(code), `unexpected authority: ${prompt}`)
+  }
+})
+
 Deno.test("Full access derives authority from the operator request only", () => {
   const available = ["send_email", "update_booking", "move_warehouse_inventory"]
   const allowed = allowedActionsForPrompt("Summarise the attached document", available, "full")
