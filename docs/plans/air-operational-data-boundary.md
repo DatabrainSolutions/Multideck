@@ -1,5 +1,18 @@
 # Air operational data boundary — traced 7 September 2026
 
+## Current checkpoint — supersedes the historical weight gaps below
+
+Typed Booking cargo weight, exact validation and selective Quote handover are
+implemented and released. The separate shipment override no longer uses a Quote
+display fallback. Hosted operator save/reload/clear, two-line exact totals and
+override approval/watch lifecycle are verified within their recorded scope:
+[release](../release/2026-09-07-air-weight-development-release.md),
+[multi-line](../release/2026-09-07-air-multiline-hosted-evidence.md),
+[approval/watch](../release/2026-09-07-air-weight-approval-watch-evidence.md).
+Screening evidence independent of AWB issuance remains an implementation gap.
+The ownership trace below is historical, not a claim that the old JSON weight
+writer and display limitations remain current.
+
 Read-only follow-up to the remaining freight acceptance map. No issued AWB,
 Booking, Quote, screening status or access policy was changed.
 

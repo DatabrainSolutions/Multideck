@@ -104,6 +104,15 @@ Road-specific controls while eliminating the parallel in-memory writer.
 
 ### Air: reuse the existing document model deliberately
 
+Current weight checkpoint supersedes the historical weight paragraph below:
+typed per-line storage, separate shipment override and source comparison are
+released; hosted two-line exact totals, save/reload/clear and override
+approval/watch checks pass within scope. See [multi-line evidence](../release/2026-09-07-air-multiline-hosted-evidence.md)
+and [approval/watch evidence](../release/2026-09-07-air-weight-approval-watch-evidence.md).
+Operational screening, AWB lifecycle, ULD/allocation/flight hosted journeys and
+remaining isolation tests are still open. A generic Booking-source label shown
+inside the selected cargo section also needs clearer scope; it is not line provenance.
+
 The baseline contains `AWB_Header` linked by `AWB_JobID`, typed
 `AWB_GoodsItems.AWBG_ChargeableWeight`, routing legs, versions, audit and
 `AWB_SecurityScreening` linked to an AWB and optional goods item. Screening
