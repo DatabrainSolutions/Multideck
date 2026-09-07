@@ -1,0 +1,28 @@
+{
+  "migrations": [
+    {
+      "file": "20260907124841_booking_chargeable_weight_validation.sql",
+      "sha256": "5fc798d145ef25733a852658cc52bf1e961edb867aaba97cd3675658dbdfdc1a"
+    },
+    {
+      "file": "20260907125119_booking_typed_chargeable_weight.sql",
+      "sha256": "3154bfe3c476a5959c61965a17e690a7b02a17bf83cccf4275e1bd507fb9fa5b"
+    },
+    {
+      "file": "20260907125533_dexter_chargeable_weight_parity.sql",
+      "sha256": "72737e6d75c6d997863572e64f50c0295610013452b4d68d7facc387a59b1fc4"
+    },
+    {
+      "file": "20260907125826_quote_booking_typed_chargeable_handover.sql",
+      "sha256": "8556f439b31a2b53fd787abe576a79d8745911bed356693bedaf2ef915873a2a"
+    },
+    {
+      "file": "20260907131127_booking_shipment_weight_override_validation.sql",
+      "sha256": "94397f5bf46843ce4c53dde608cdde8b7df09075dc1e23727e25be0ba5533e27"
+    },
+    {
+      "file": "20260907131646_dexter_shipment_weight_override_parity.sql",
+      "sha256": "a0730279c1332f3d6eb2b0a032913124f5263b1a58cb68093c26b33ae9907117"
+    }
+  ]
+}

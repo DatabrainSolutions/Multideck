@@ -22,6 +22,7 @@ const plan=releasePlanPath?JSON.parse(readFileSync(releasePlanPath,'utf8')):null
 const migrations=plan?.migrations??manifest.pendingFreightMigrations
 assert.ok(Array.isArray(migrations)&&migrations.length>0,'Migration plan must not be empty')
 const files=migrations.map(item=>item.file)
+const airWeightFixture=fixtureMode&&files.includes('20260907125119_booking_typed_chargeable_weight.sql')
 const roadOpenFixture=fixtureMode&&files.length===1&&files[0]==='20260907114906_booking_road_draft_atomic_open.sql'
 const openingDirectionFixture=fixtureMode&&files.length===1&&files[0]==='20260907121414_booking_explicit_open_direction.sql'
 const screeningFixture=fixtureMode&&files.includes('20260906082224_screening_active_source_freshness.sql')
@@ -62,6 +63,7 @@ try{
   if(fixtureMode){
     stage='synthetic populated fixtures'
     sql(readFileSync(new URL('../fixtures/freight-chain-before.sql',import.meta.url),'utf8'))
+    if(airWeightFixture)sql(readFileSync(new URL('../fixtures/freight-air-weight-before.sql',import.meta.url),'utf8'))
     if(roadOpenFixture)sql(readFileSync(new URL('../fixtures/freight-road-open-before.sql',import.meta.url),'utf8'))
     if(openingDirectionFixture)sql(readFileSync(new URL('../fixtures/freight-opening-direction-before.sql',import.meta.url),'utf8'))
     if(milestoneFixture||dangerousGoodsFixture)sql(readFileSync(new URL('../fixtures/freight-milestone-before.sql',import.meta.url),'utf8'))
@@ -105,7 +107,7 @@ try{
   }
   if(fixtureMode){
     stage='populated preservation assertions'
-    sql(readFileSync(new URL(roadOpenFixture||openingDirectionFixture?'../fixtures/freight-road-open-after.sql':dangerousGoodsFixture?'../fixtures/freight-dangerous-goods-after.sql':milestoneFixture?'../fixtures/freight-milestone-after.sql':'../fixtures/freight-chain-after.sql',import.meta.url),'utf8'))
+    sql(readFileSync(new URL(airWeightFixture?'../fixtures/freight-air-weight-after.sql':roadOpenFixture||openingDirectionFixture?'../fixtures/freight-road-open-after.sql':dangerousGoodsFixture?'../fixtures/freight-dangerous-goods-after.sql':milestoneFixture?'../fixtures/freight-milestone-after.sql':'../fixtures/freight-chain-after.sql',import.meta.url),'utf8'))
     if(openingDirectionFixture)sql(readFileSync(new URL('../fixtures/freight-opening-direction-after.sql',import.meta.url),'utf8'))
     if(screeningFixture)sql(readFileSync(new URL('../fixtures/freight-screening-after.sql',import.meta.url),'utf8'))
   }
@@ -131,7 +133,10 @@ try{
     milestoneParityChecks:milestoneParity?['service-only domain/action adapters','mandatory approval registry','enabled deterministic watch trigger']:[],
     roadOpenFixtureHashes:roadOpenFixture?['before','after'].map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-road-open-'+name+'.sql',import.meta.url))).digest('hex')})):[],
     openingDirectionFixtureHashes:openingDirectionFixture?['freight-opening-direction-before','freight-opening-direction-after','freight-road-open-after'].map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/'+name+'.sql',import.meta.url))).digest('hex')})):[],
-    populatedChecks:openingDirectionFixture?['exact full-row Quote Booking cargo equipment route membership and registry preservation',
+    airWeightFixtureHashes:airWeightFixture?['before','after'].map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-air-weight-'+name+'.sql',import.meta.url))).digest('hex')})):[],
+    populatedChecks:airWeightFixture?['exact Quote Booking equipment route membership and signal preservation','legacy cargo JSON/columns unchanged',
+      'typed backfill precision, zero and unknown distinctions','all existing function grants unchanged','unrelated application function definitions unchanged',
+      'override adapter service-only with mandatory approval','existing monetary watch fields retained']:openingDirectionFixture?['exact full-row Quote Booking cargo equipment route membership and registry preservation',
       'all pre-existing application function definitions and ACL unchanged except intended private opener body',
       'compatibility opener ACL retained','populated numbering sequence and reservation rows unchanged',
       'new direction adapters service-only with empty search path','new private opener inaccessible to browser and service roles']:roadOpenFixture?['exact full-row Quote Booking cargo equipment route membership and registry preservation',
@@ -142,7 +147,7 @@ try{
       'unrelated registries and watch signals unchanged']:fixtureMode?['Quote version and header preservation','Booking cargo equipment route and membership preservation',
       'no invented financial values or allocations','exact typed projection with zero and unknown distinctions',
       'existing cargo registry conflict update','unrelated registry and watch signal preservation','submitted mutation and deletion denial','invalid draft cargo rejection']:[],
-    fixtureHashes:fixtureMode?((milestoneFixture||dangerousGoodsFixture||roadOpenFixture||openingDirectionFixture)?['before']:['before','after']).map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-chain-'+name+'.sql',import.meta.url))).digest('hex')})):[],
+    fixtureHashes:fixtureMode?((airWeightFixture||milestoneFixture||dangerousGoodsFixture||roadOpenFixture||openingDirectionFixture)?['before']:['before','after']).map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-chain-'+name+'.sql',import.meta.url))).digest('hex')})):[],
     milestoneFixtureHashes:(milestoneFixture||dangerousGoodsFixture)?(dangerousGoodsFixture?['before']:['before','after']).map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-milestone-'+name+'.sql',import.meta.url))).digest('hex')})):[],
     dangerousGoodsFixtureHashes:dangerousGoodsFixture?['before','after'].map(name=>({name,sha256:createHash('sha256').update(readFileSync(new URL('../fixtures/freight-dangerous-goods-'+name+'.sql',import.meta.url))).digest('hex')})):[],
     screeningChecks:screeningFixture?['existing source and snapshot preservation','entry preservation','unrelated source preservation',

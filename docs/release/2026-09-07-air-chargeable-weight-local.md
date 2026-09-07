@@ -160,3 +160,34 @@ This closes the local shipment-override parity gap, not hosted certification.
 All six Air migrations and the Edge update remain undeployed. Next release gates:
 fresh full-schema rehearsal, remaining visual/mobile checks, then controlled
 deployment and hosted persistence/permission/Dexter evidence.
+
+## Fresh deployed-schema compatibility rehearsal
+
+Schema-only export on 2026-09-07: 7,959,312 bytes, SHA-256
+`9cc902d283d5ea5b3c6af7061309d8bfe02f8890886ed41f9509e3e04a7da8f0`.
+Source project: `aqtwypsuijxlnvtxpuxe`; export path:
+`/tmp/multideck-air-preflight.GHr9Qx/development-schema.sql`.
+No business rows, credentials or managed Auth/Storage contents were copied.
+The live ledger now includes `20260907123952_preserve_undirected_booking_references`,
+which is absent from this checkout and must be retained during release-history
+reconciliation. The fresh schema includes it; no hosted migration was applied.
+
+All six hash-pinned migrations in `2026-09-07-air-weight-migration-plan.json`
+passed the populated PostgreSQL 17 rehearsal. Synthetic existing cargo exercised
+high-precision text, explicit null and zero. Full old cargo columns/JSON, Quotes,
+Booking headers, equipment, routes, memberships and watch signals were unchanged.
+All pre-existing function ACLs and every function body outside the explicit
+Air-change allowlist were unchanged. The new override action is service-only,
+mandatory approval is retained and monetary watch fields remain available.
+
+The first preservation assertion used search-path-dependent function signatures;
+the fixture now takes and compares schema-qualified signatures consistently.
+No migration or preservation requirement was weakened to pass the rehearsal.
+Registry rows are explicitly synthetic surrounding fixtures, not a copy of live
+registry configuration. Managed Auth/Storage remain empty declared fixtures.
+
+Reproduce with `node supabase/tests/tools/freight-schema-rehearsal.mjs
+/absolute/schema.sql --populated
+--release-plan=/Users/leewright/repo/Multideck/docs/release/2026-09-07-air-weight-migration-plan.json`.
+This proves fresh-schema compatibility and populated preservation, not live
+permission denial, real data backfill eligibility or hosted save/reload.
