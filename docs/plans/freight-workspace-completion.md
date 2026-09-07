@@ -1,5 +1,21 @@
 # Freight workspace completion
 
+7 September hosted milestone release: exact `a9f8e62` client is READY; matching
+schema/Dexter/Booking functions are deployed. Synthetic Sea milestone create,
+independent estimated-time correction, fresh load, attributed history and
+void/read-only retirement are verified. A real stale-save hang was found and
+fixed in `6e52f45` using non-retryable milestone conflict codes; the hosted
+repeat now returns a clear recoverable conflict with entries preserved. No
+Quote or route changes, new advisor identities or shared setup changes. Incoming
+teammate finance/navigation work is preserved in merge `32c2233`, now READY on
+the approved development alias. Read-only Dexter testing exposed negation-blind
+email-intent routing: correct milestone values appeared in an unwanted prepared
+email. Nothing was sent; fixing that guard is the next priority before further
+hosted Dexter/watch tests. See
+[release evidence](../release/2026-09-07-milestone-development-release.md).
+Hosted milestone Dexter/watch and wider denial/all-mode acceptance remain open;
+no 95% claim and no change to approvals or exclusions.
+
 7 September milestone preflight: fresh development schema and populated legacy
 preservation rehearsal pass for the exact pending migration pair. Deployed
 Booking/Dexter source has no unexpected drift; the accepted Original is unchanged.
