@@ -26,6 +26,7 @@ export function routeDexterFixture(table) {
     ${sqlFunction('booking_api.save_booking_route_legs')}
     revoke all on function booking_api.save_booking_route_legs(uuid,uuid,jsonb) from public,anon,authenticated;
     ${read('20260905183528_booking_route_mode_reference_history')}
+    ${read('20260907153932_booking_route_free_text_location_validation')}
     create function booking_api.fixture_read_routes(target uuid) returns jsonb language plpgsql stable as $$
       declare job_row record;routes_value jsonb;
       begin select * into strict job_row from public."Job_Header" where "Job_ID"=target;
@@ -53,15 +54,51 @@ begin
   select "Job_ID" into other_job from public."Job_Header" where "Job_BookingReference"='TEST2';
   perform set_config('test.actor',actor::text,false);
   update public."Job_Header" set "Job_TransportModeSummary"='multimodal',"Job_SourceSnapshotJSON"='{"acceptedQuote":"original evidence"}' where "Job_ID"=job;
-  source:='{"routes":[{"mode":"road","origin":"Depot","destination":"Port","trailerNumber":"TR-1","masterTransportReference":"CMR-1"},
+  source:='{"routes":[{"mode":"road","origin":"Depot","originUnlocode":"","destination":"Port","destinationUnlocode":"","trailerNumber":"TR-1","masterTransportReference":"CMR-1"},
     {"mode":"sea","origin":"Port","destination":"Hub","vessel":"Vessel A","voyageNumber":"V1","masterTransportReference":"MBL-1","houseTransportReference":"HBL-1","plannedDepartureAt":"2026-09-18T12:00:00Z","plannedArrivalAt":"2026-09-20T12:00:00Z"},
     {"mode":"air","origin":"Hub","destination":"Airport","flightNumber":"FL-1","vessel":"Retained old vessel"},
-    {"mode":"rail","origin":"Airport","destination":"Inland","railService":"RAIL-1"}]}';
+    {"mode":"rail","origin":"Airport","originUnlocode":"  ","destination":"Inland","destinationUnlocode":"  ","railService":"RAIL-1"}]}';
   perform public.booking_workflow_save(actor,job,source);
   select "JobRoute_ID" into sea from public."Job_Routing" where "Job_ID"=job and "JobRoute_ModeCode"='sea';
   select "JobRoute_ID" into air from public."Job_Routing" where "Job_ID"=job and "JobRoute_ModeCode"='air';
   select "JobRoute_ID" into road from public."Job_Routing" where "Job_ID"=job and "JobRoute_ModeCode"='road';
   select "JobRoute_ID" into rail from public."Job_Routing" where "Job_ID"=job and "JobRoute_ModeCode"='rail';
+  if not exists(select 1 from public."Job_Routing" where "JobRoute_ID"=road
+      and "JobRoute_OriginNameSnapshot"='Depot' and "JobRoute_DestinationNameSnapshot"='Port'
+      and "JobRoute_OriginUNLocode" is null and "JobRoute_DestinationUNLocode" is null)
+    or not exists(select 1 from public."Job_Routing" where "JobRoute_ID"=rail
+      and "JobRoute_OriginNameSnapshot"='Airport' and "JobRoute_DestinationNameSnapshot"='Inland'
+      and "JobRoute_OriginUNLocode" is null and "JobRoute_DestinationUNLocode" is null
+      and "JobRoute_RailService"='RAIL-1') then raise exception 'Free-text route locations did not persist'; end if;
+  select jsonb_agg(to_jsonb(r) order by "JobRoute_ID") into before_rows from public."Job_Routing" r;
+  select count(*) into before_audit from booking_api.events;
+  for bad in select value from jsonb_array_elements('[
+    {"origin":"  ","originUnlocode":"","destination":"Depot"},
+    {"origin":"Depot","destination":"","destinationUnlocode":"  "},
+    {"origin":null,"originUnlocode":null,"destination":"Depot"},
+    {"origin":"Depot"}]'::jsonb) loop
+    begin
+      perform public.booking_workflow_save(actor,job,jsonb_build_object('routes',jsonb_build_array(bad)));
+      raise exception 'Missing route location accepted: %',bad;
+    exception when invalid_parameter_value then null; end;
+  end loop;
+  if before_rows is distinct from (select jsonb_agg(to_jsonb(r) order by "JobRoute_ID") from public."Job_Routing" r)
+    or before_audit<>(select count(*) from booking_api.events) then raise exception 'Invalid location mutated routes/audit'; end if;
+  -- Existing-leg edits must support code-only locations, then clearing those
+  -- codes back to free text, without replacing the leg's stable identity.
+  perform public.booking_workflow_save(actor,job,jsonb_build_object('routes',jsonb_build_array(
+    (source->'routes'->0)||jsonb_build_object('id',road,'origin','','destination','',
+      'originUnlocode','gbfxt','destinationUnlocode','nlrtm'))));
+  if not exists(select 1 from public."Job_Routing" where "JobRoute_ID"=road
+      and "JobRoute_OriginUNLocode"='GBFXT' and "JobRoute_DestinationUNLocode"='NLRTM'
+      and "JobRoute_OriginNameSnapshot" is null and "JobRoute_DestinationNameSnapshot" is null)
+    then raise exception 'Code-only route save regressed'; end if;
+  perform public.booking_workflow_save(actor,job,jsonb_build_object('routes',jsonb_build_array(
+    (source->'routes'->0)||jsonb_build_object('id',road))));
+  if not exists(select 1 from public."Job_Routing" where "JobRoute_ID"=road
+      and "JobRoute_OriginNameSnapshot"='Depot' and "JobRoute_DestinationNameSnapshot"='Port'
+      and "JobRoute_OriginUNLocode" is null and "JobRoute_DestinationUNLocode" is null)
+    then raise exception 'Existing route could not clear codes back to free text'; end if;
   insert into public."Job_Routing"("Job_ID","JobRoute_OrderNo","JobRoute_ModeCode","JobRoute_OriginNameSnapshot","JobRoute_DestinationNameSnapshot")
     values(other_job,1,'sea','Other A','Other B') returning "JobRoute_ID" into foreign_route;
   update public."Job_Routing" set "JobRoute_ActualDepartureAt"='2026-09-18T13:00:00Z',"JobRoute_RouteJSON"='{"supplierCost":900,"private":"keep"}' where "JobRoute_ID"=sea;

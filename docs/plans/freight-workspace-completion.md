@@ -1,5 +1,22 @@
 # Freight workspace completion
 
+7 September user-requested stop/save point: the route validator migration is now
+deployed to development; Rail JD0991136 Save, SQL persistence and full reload
+pass. Quote fingerprint and function privileges are unchanged; no new security
+advisor findings. Overview/Details summary free-text places and Overview planned
+arrival labelling remain incorrect, and mixed-leg/deeper verification remains
+open. User requested a pause to conserve usage: stop implementation here until
+resumed. Overall estimate remains approximately 75%, low confidence, not 95%.
+[Released checkpoint and resume instructions](../release/2026-09-07-route-free-text-save-evidence.md).
+
+7 September route-save correction (local only): Rail testing exposed a shared
+validator rejecting supplied place names when their code aliases were blank.
+Actual PostgreSQL regression fails before the new migration and passes after it,
+including existing route/Dexter lifecycle coverage. Development still has the
+old validator; schema rehearsal, scoped migration release and hosted save/reload
+on retained synthetic JD0991136 remain next. No existing approvals are changed.
+[Evidence](../release/2026-09-07-route-free-text-save-evidence.md).
+
 7 September schedule-label release: teammate support/Finance commits through
 `5209c75` merged unchanged; combined client build and 24 focused tests pass.
 Normal dev push `2ef8927` is READY with the correct dev alias and no alias error.
