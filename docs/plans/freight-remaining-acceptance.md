@@ -109,7 +109,11 @@ typed per-line storage, separate shipment override and source comparison are
 released; hosted two-line exact totals, save/reload/clear and override
 approval/watch checks pass within scope. See [multi-line evidence](../release/2026-09-07-air-multiline-hosted-evidence.md)
 and [approval/watch evidence](../release/2026-09-07-air-weight-approval-watch-evidence.md).
-Operational screening, AWB lifecycle, ULD/allocation/flight hosted journeys and
+Screening now has deployed operator/Dexter/watch implementation, with hosted
+operator create/reload/correct/clear/void/read-only history verified on retained
+internal cargo. Hosted Dexter approval/watch, fractional time, stale recovery
+and access denial remain open; see [screening release evidence](../release/2026-09-07-air-screening-development-release.md).
+AWB lifecycle, ULD/allocation/flight hosted journeys and
 remaining isolation tests are still open. A generic Booking-source label shown
 inside the selected cargo section also needs clearer scope; it is not line provenance.
 

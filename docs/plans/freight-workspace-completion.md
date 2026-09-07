@@ -1,5 +1,15 @@
 # Freight workspace completion
 
+7 September screening hosted checkpoint (supersedes the foundation note below):
+client `7947c01` and the scoped Booking/Dexter backend release are deployed to
+development. The internal Air cargo editor passed create, full reload,
+correction, optional-field clearing, void and full reload to read-only history.
+The synthetic evidence is voided and retained; all 38 Quote versions retain
+their pre-test full-row fingerprint. Hosted Dexter approval/watch, fractional
+time, stale recovery and access-denial checks remain open, as does wider Air
+depth. [Exact evidence and limits](../release/2026-09-07-air-screening-development-release.md).
+All existing approvals and exclusions remain in force; no 95% claim.
+
 7 September screening implementation: private typed cargo-source evidence,
 permission/stale-safe canonical save/read, audited correction/void and Booking
 Edge/client contracts now pass local PostgreSQL and transport/type checks.
