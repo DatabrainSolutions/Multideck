@@ -85,6 +85,7 @@ import { setLiveJobStarred, type LiveBooking } from "@/lib/application-data-api"
 import { bookingCargoOtherHandling, bookingCargoHandlingSummary, bookingCargoSafetyConflict } from "@/lib/booking-cargo-handling"
 import { analyseCargoAllocations, bookingCargoAllocationPayload } from "@/lib/booking-cargo-allocations"
 import { CargoAllocationEditor } from "./cargo-allocation-editor"
+import { BookingRouteMilestones } from "./booking-route-milestones"
 import { getQuoteSources, type QuoteOrganisationOption, type QuoteWorkflowSources } from "@/lib/quote-workflow-api"
 import { loadUnlocodeDirectory, unlocodeKind, type UnlocodeDirectoryRecord } from "@/lib/unlocode-directory"
 import {
@@ -2918,6 +2919,7 @@ function BookingContainerDetails({
 }
 
 function BookingRecordDetails({
+  renderMilestones,
   allocationEditor,
   allocationValidationAttempt = 0,
   currentUser,
@@ -2943,6 +2945,7 @@ function BookingRecordDetails({
   record,
   workspace,
 }: {
+  renderMilestones?: (route: BookingWorkflowRoute) => ReactNode
   allocationEditor?: ReactNode
   allocationValidationAttempt?: number
   currentUser?: AuthUserSummary | null
@@ -3407,6 +3410,7 @@ function BookingRecordDetails({
                     </div>
                     <p className="mt-2 text-[12px] leading-relaxed text-[var(--md-text)]">{t("References belong to this routing step. A mode change requires review; saved previous references remain in the job audit history.")}</p>
                   </details> : null}
+                  {renderMilestones?.(leg)}
                 </div>
               )
             })}
@@ -4468,6 +4472,7 @@ function BookingQuoteSyncReviewPanel({
 }
 
 function BookingDetailTabPage({
+  renderMilestones,
   allocationEditor,
   allocationValidationAttempt,
   editable,
@@ -4500,6 +4505,7 @@ function BookingDetailTabPage({
   record,
   workspace,
 }: {
+  renderMilestones?: (route: BookingWorkflowRoute) => ReactNode
   allocationEditor?: ReactNode
   allocationValidationAttempt?: number
   editable: boolean
@@ -4532,7 +4538,7 @@ function BookingDetailTabPage({
   record: BookingDetailRecord
   workspace: BookingWorkflowWorkspace
 }) {
-  if (activeTab === "Details") return <BookingRecordDetails allocationEditor={allocationEditor} allocationValidationAttempt={allocationValidationAttempt} currentUser={currentUser} editable={editable} locationDirectory={locationDirectory} lookups={bookingLookups} onCargoChange={onCargoChange} onCargoAdd={onCargoAdd} onCargoRemove={onCargoRemove} onBookingChange={onBookingChange} onContainerAdd={onContainerAdd} onContainerChange={onContainerChange} onContainerRemove={onContainerRemove} onDetailChange={onDetailChange} onPartyChange={onPartyChange} onOrganisationSelect={onOrganisationSelect} onLocationSelect={onLocationSelect} onRouteAdd={onRouteAdd} onRouteChange={onRouteChange} onRouteLocationSelect={onRouteLocationSelect} onRouteOrganisationSelect={onRouteOrganisationSelect} onRouteRemove={onRouteRemove} record={record} workspace={workspace} />
+  if (activeTab === "Details") return <BookingRecordDetails renderMilestones={renderMilestones} allocationEditor={allocationEditor} allocationValidationAttempt={allocationValidationAttempt} currentUser={currentUser} editable={editable} locationDirectory={locationDirectory} lookups={bookingLookups} onCargoChange={onCargoChange} onCargoAdd={onCargoAdd} onCargoRemove={onCargoRemove} onBookingChange={onBookingChange} onContainerAdd={onContainerAdd} onContainerChange={onContainerChange} onContainerRemove={onContainerRemove} onDetailChange={onDetailChange} onPartyChange={onPartyChange} onOrganisationSelect={onOrganisationSelect} onLocationSelect={onLocationSelect} onRouteAdd={onRouteAdd} onRouteChange={onRouteChange} onRouteLocationSelect={onRouteLocationSelect} onRouteOrganisationSelect={onRouteOrganisationSelect} onRouteRemove={onRouteRemove} record={record} workspace={workspace} />
   if (activeTab === "Documents") return <BookingDocumentsWorkspace record={record} />
   if (activeTab === "Customs") return <BookingCustomsWorkspace customsError={customsError} navigate={navigate} onWorkspaceSaved={onWorkspaceSaved} onViewChange={onCustomsViewChange} readiness={customsReadiness} record={record} view={customsView} />
   if (activeTab === "Finance") return <BookingFinanceWorkspace record={record} />
@@ -5410,6 +5416,22 @@ export function BookingDetailWorkspace({
           data-booking-tab-panel
         >
           <BookingDetailTabPage
+            renderMilestones={route => <BookingRouteMilestones
+              bookingId={loadedRecord.workspace!.booking.jobId}
+              bookingReference={loadedRecord.workspace!.booking.bookingReference}
+              bookingUpdatedAt={loadedRecord.workspace!.booking.updatedAt}
+              route={route}
+              types={loadedRecord.workspace!.milestoneTypes}
+              events={loadedRecord.workspace!.events}
+              editable={!savingDetails && !applyingQuoteSync}
+              disabledReason={detailsDirty ? "Save or discard Booking changes before recording a milestone." : undefined}
+              onSaved={workspace => {
+                const nextRecord = bookingWorkspaceRecord(workspace)
+                setRecord(nextRecord)
+                setDraftBooking(nextRecord.booking)
+                setDraftWorkspace(workspace)
+              }}
+            />}
             editable={!savingDetails && !applyingQuoteSync}
             allocationValidationAttempt={allocationValidationAttempt}
             allocationEditor={draftWorkspace && (draftWorkspace.cargoAllocationState || draftWorkspace.containers.length) ? <CargoAllocationEditor

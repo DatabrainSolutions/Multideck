@@ -1,5 +1,11 @@
 # Freight workspace completion
 
+Latest local checkpoint (7 September): the exact-leg milestone operator editor
+is connected, with 17 focused client tests and initial real-component Chrome
+verification. See [milestone operator evidence](../release/2026-09-07-milestone-operator-editor-evidence.md)
+for precise scope and remaining release/browser gates. The earlier hosted
+Job-ref gate is closed; milestone release and full 95% acceptance are not.
+
 User objective: `.codex/attachments/38716b06-3475-4178-8ace-87a663210c27/goal-objective.md` in the user's Codex directory. The full scope is all eight clashes plus operational depth across Sea, Air, Road and Rail, with a target of at least 95% supported by evidence. Percentages will not substitute for acceptance criteria.
 
 ## Invariants
