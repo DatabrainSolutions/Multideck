@@ -28,6 +28,13 @@ const handover = read('20260905123929_quote_booking_cargo_handover.sql')
 const bookingSave = read('20260905110317_booking_stable_cargo_equipment_identity.sql')
 const cargoRevision = read('20260905125327_quote_cargo_revision_comparison.sql')
 const cargoPersistence = read('20260905130449_quote_cargo_revision_persistence.sql')
+const typedChargeable = read('20260907125119_booking_typed_chargeable_weight.sql')
+const typedChargeableHandover = read('20260907125826_quote_booking_typed_chargeable_handover.sql')
+// Surrounding typed foundation is tested with the canonical save suite. Here
+// install its actual column and comparison sections around the real handover.
+const chargeableColumn = typedChargeable.slice(typedChargeable.indexOf('alter table'), typedChargeable.indexOf('-- Validate'))
+const chargeableComparison = typedChargeable.slice(typedChargeable.indexOf('do $$declare definition text; source_text'), typedChargeable.lastIndexOf('commit;'))
+assert.ok(chargeableColumn.includes('check (') && chargeableComparison.endsWith('end $$;\n'))
 const cargoWatch = read('20260905112211_dexter_booking_cargo_parity.sql')
 function sqlFunction(source, name) {
   const start = source.indexOf(`create or replace function ${name}(`)
@@ -153,6 +160,9 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
       ${bookingSave}
       ${cargoRevision}
       ${cargoPersistence}
+      ${chargeableColumn}
+      ${chargeableComparison}
+      ${typedChargeableHandover}
       create table public."AI_DexterWatches" ("AIDexterWatch_CompanyID" uuid,"AIDexterWatch_CapabilityCode" text,"AIDexterWatch_StatusCode" text,"AIDexterWatch_TargetID" uuid);
       create table public."AI_DexterWatchSignals" ("AIDexterWatchSignal_CompanyID" uuid,"AIDexterWatchSignal_CapabilityCode" text,
         "AIDexterWatchSignal_SourceTable" text,"AIDexterWatchSignal_SourceID" uuid,"AIDexterWatchSignal_OldJSON" jsonb,"AIDexterWatchSignal_NewJSON" jsonb);
@@ -315,8 +325,9 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
         -- New revision: one conflicting description, one safe weight change,
         -- one removal and one addition. Operational-only cargo is not a target.
         insert into public."Job_Cargo" ("JobCargo_ID","JobCargo_JobID","JobCargo_LineNo","JobCargo_Description") values(manual_cargo,job,3,'Operator-added cargo');
-        proposed_lines:=jsonb_build_array(jsonb_set(jsonb_set(lines->0,'{description}','"New customer description"'),'{grossWeightKg}','1250'),
-          jsonb_build_object('id',new_line_id,'description','New customer goods','packageQuantity',1,'packageType','Cartons','grossWeightKg',20));
+        if (select "JobCargo_ChargeableWeightKg" from public."Job_Cargo" where "JobCargo_ID"=saved_cargo) is distinct from 1300.123 then raise exception 'Initial handover lost typed chargeable precision'; end if;
+        proposed_lines:=jsonb_build_array(jsonb_set(jsonb_set(jsonb_set(lines->0,'{description}','"New customer description"'),'{grossWeightKg}','1250'),'{chargeableWeightKg}','1400.123456789'),
+          jsonb_build_object('id',new_line_id,'description','New customer goods','packageQuantity',1,'packageType','Cartons','grossWeightKg',20,'chargeableWeightKg',21.123456789));
         insert into public."CusQuote_Versions" ("CusQuoteVersion_ID","CusQuoteHeader_ID","CusQuoteVersion_SnapshotJSON","CusQuoteVersion_IsSubmitted","CusQuoteVersion_Number","CusQuoteVersion_IsCurrent")
           values(revision,q,jsonb_set(original_snapshot,'{quote,shipmentFacts,cargoLines}',proposed_lines),true,2,false);
         observed_lines:=booking_api.current_source_cargo_lines(job);
@@ -325,7 +336,7 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
         if booking_api.cargo_revision_differences(lines,observed_lines,jsonb_build_array(lines->1,lines->0))<>'[]'::jsonb then raise exception 'Reordering compared wrong cargo'; end if;
         differences:=booking_api.cargo_revision_differences(lines,observed_lines,proposed_lines);
         description_key:='cargo:'||c1||':description'; weight_key:='cargo:'||c1||':grossWeightKg';
-        if jsonb_array_length(differences)<>4 then raise exception 'Incorrect per-field cargo differences: %',differences; end if;
+        if jsonb_array_length(differences)<>5 then raise exception 'Incorrect per-field cargo differences: %',differences; end if;
         if not exists(select 1 from jsonb_array_elements(differences) d where d->>'key'=description_key and (d->>'conflict')::boolean and d->>'bookingValue'='Operator correction') then raise exception 'Operator conflict lost'; end if;
         if not exists(select 1 from jsonb_array_elements(differences) d where d->>'key'=weight_key and not (d->>'conflict')::boolean) then raise exception 'Safe weight update incorrectly conflicts'; end if;
         if not exists(select 1 from jsonb_array_elements(differences) d where d->>'operation'='remove' and (d->>'requiresConfirmation')::boolean) then raise exception 'Removal needs review'; end if;
@@ -388,7 +399,8 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
         if (select count(*) from public."AI_DexterWatchSignals")<>before_signals+1
           or not exists(select 1 from public."AI_DexterWatchSignals" where "AIDexterWatchSignal_SourceID"=saved_cargo and "AIDexterWatchSignal_CompanyID"=company
             and "AIDexterWatchSignal_NewJSON"->>'grossWeightKg'='1250.00') then raise exception 'Applied cargo change did not reach the existing event adapter'; end if;
-        if (result->>'remainingFields')::integer<>3 or (select "JobCargo_GrossKilos" from public."Job_Cargo" where "JobCargo_ID"=saved_cargo)<>1250
+        if (select "JobCargo_ChargeableWeightKg" from public."Job_Cargo" where "JobCargo_ID"=saved_cargo) is distinct from 1300.123 then raise exception 'Unselected chargeable weight changed'; end if;
+        if (result->>'remainingFields')::integer<>4 or (select "JobCargo_GrossKilos" from public."Job_Cargo" where "JobCargo_ID"=saved_cargo)<>1250
           or (select "JobCargo_Description" from public."Job_Cargo" where "JobCargo_ID"=saved_cargo)<>'Operator correction'
           or (select "Job_SourceQuoteVersionID" from public."Job_Header" where "Job_ID"=job)<>v then raise exception 'Partial application lost unselected state or prematurely advanced Quote'; end if;
         if not exists(select 1 from booking_api.events where metadata->>'reviewId'=review_id::text and metadata->'appliedFields'=jsonb_build_array(weight_key)
@@ -407,7 +419,9 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
         update public."Job_Cargo" set "JobCargo_Description"='Further operational correction' where "JobCargo_ID"=saved_cargo;
         begin perform booking_api.apply_quote_cargo_fields(actor,job,review_id,jsonb_build_array(description_key),observed_lines); raise exception 'Stale description written'; exception when serialization_failure then null; end;
         observed_lines:=booking_api.current_source_cargo_lines(job);
-        result:=booking_api.apply_quote_cargo_fields(actor,job,review_id,jsonb_build_array(description_key,'cargo:'||c2||':line','cargo:'||new_line_id||':line'),observed_lines);
+        result:=booking_api.apply_quote_cargo_fields(actor,job,review_id,jsonb_build_array(description_key,'cargo:'||c1||':chargeableWeightKg','cargo:'||c2||':line','cargo:'||new_line_id||':line'),observed_lines);
+        if (select "JobCargo_ChargeableWeightKg" from public."Job_Cargo" where "JobCargo_ID"=saved_cargo) is distinct from 1400.123456789
+          or (select "JobCargo_ChargeableWeightKg" from public."Job_Cargo" where "JobCargo_JobID"=job and "JobCargo_SourceQuoteLineID"=new_line_id) is distinct from 21.123456789 then raise exception 'Selective update or insertion lost chargeable precision'; end if;
         if (result->>'remainingFields')::integer<>0 or (select "Job_SourceQuoteVersionID" from public."Job_Header" where "Job_ID"=job)<>revision
           or (select "Job_QuoteSyncStatus" from public."Job_Header" where "Job_ID"=job)<>'in_sync'
           or (select status_code from booking_api.quote_sync_reviews r where r.review_id=(result->>'reviewId')::uuid)<>'applied' then raise exception 'Completed cargo review did not advance applied version'; end if;
@@ -419,6 +433,31 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
         if not exists(select 1 from public."Job_Cargo" where "JobCargo_JobID"=job and "JobCargo_SourceQuoteLineID"=new_line_id and "JobCargo_SourceQuoteVersionID"=revision and not "JobCargo_IsDeleted") then raise exception 'Selected addition missing'; end if;
         if not exists(select 1 from public."Job_Cargo" where "JobCargo_ID"=manual_cargo and "JobCargo_Description"='Operator-added cargo' and not "JobCargo_IsDeleted") then raise exception 'Operational cargo lost'; end if;
         if (select "CusQuoteVersion_SnapshotJSON" from public."CusQuote_Versions" where "CusQuoteVersion_ID"=v)<>original_snapshot then raise exception 'Persistence overwrote old Quote'; end if;
+        -- A later accepted revision may explicitly clear the weight. Preserve
+        -- the submitted snapshots and reject approval based on stale weight.
+        declare clear_version uuid:=gen_random_uuid(); clear_review uuid:=gen_random_uuid();
+          clear_lines jsonb:=jsonb_set(proposed_lines,'{0,chargeableWeightKg}','null');
+          selected jsonb:=jsonb_build_array('cargo:'||c1||':chargeableWeightKg');
+          saved_snapshots jsonb;
+        begin
+          insert into public."CusQuote_Versions" ("CusQuoteVersion_ID","CusQuoteHeader_ID","CusQuoteVersion_SnapshotJSON","CusQuoteVersion_IsSubmitted","CusQuoteVersion_Number","CusQuoteVersion_StatusCode")
+            values(clear_version,q,jsonb_set(original_snapshot,'{quote,shipmentFacts,cargoLines}',clear_lines),true,4,'accepted');
+          select jsonb_object_agg("CusQuoteVersion_ID"::text,"CusQuoteVersion_SnapshotJSON") into saved_snapshots
+            from public."CusQuote_Versions" where "CusQuoteHeader_ID"=q and "CusQuoteVersion_IsSubmitted";
+          observed_lines:=booking_api.current_source_cargo_lines(job);
+          insert into booking_api.quote_sync_reviews(review_id,company_id,job_id,quote_id,applied_version_id,proposed_version_id,differences)
+            values(clear_review,company,job,q,revision,clear_version,booking_api.cargo_revision_differences(proposed_lines,observed_lines,clear_lines));
+          update public."Job_Header" set "Job_PendingQuoteVersionID"=clear_version,"Job_QuoteSyncStatus"='out_of_sync' where "Job_ID"=job;
+          update public."Job_Cargo" set "JobCargo_ChargeableWeightKg"=1500.987654321 where "JobCargo_ID"=saved_cargo;
+          begin perform booking_api.apply_quote_cargo_fields(actor,job,clear_review,selected,observed_lines);
+            raise exception 'Stale chargeable weight approval accepted'; exception when serialization_failure then null; end;
+          observed_lines:=booking_api.current_source_cargo_lines(job);
+          result:=booking_api.apply_quote_cargo_fields(actor,job,clear_review,selected,observed_lines);
+          if exists(select 1 from public."Job_Cargo" where "JobCargo_ID"=saved_cargo and
+            ("JobCargo_ChargeableWeightKg" is not null or "JobCargo_CargoJSON"->'chargeableWeightKg' is distinct from 'null'::jsonb)) then raise exception 'Explicit chargeable clear failed'; end if;
+          if (select jsonb_object_agg("CusQuoteVersion_ID"::text,"CusQuoteVersion_SnapshotJSON") from public."CusQuote_Versions"
+            where "CusQuoteHeader_ID"=q and "CusQuoteVersion_IsSubmitted") is distinct from saved_snapshots then raise exception 'Weight application changed submitted history'; end if;
+        end;
         if has_function_privilege('service_role','booking_api.apply_quote_cargo_fields(uuid,uuid,uuid,jsonb,jsonb)','EXECUTE') then raise exception 'Unwired apply helper exposed'; end if;
         if has_function_privilege('service_role','booking_api.insert_accepted_quote_cargo(uuid,uuid,uuid)','EXECUTE')
           or has_function_privilege('authenticated','quote_api.cargo_booking_missing(jsonb)','EXECUTE') then raise exception 'Internal cargo insertion exposed'; end if;

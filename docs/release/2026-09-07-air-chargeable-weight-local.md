@@ -59,10 +59,24 @@ not for no-op or unrelated-description edits; paused edits do not fire, resumed
 clearing does. Foreign-actor and negative-value actions are rejected. These are
 disposable fixtures, not hosted Auth/permission certification.
 
-Next release-critical integration: `insert_accepted_quote_cargo` and
-`apply_quote_cargo_fields` perform direct cargo inserts/updates, not the ordinary
-canonical save. Their chargeable-weight JSON currently does not populate the new
-typed column. Extend these existing paths and test conversion, selective updates,
-clears and unchanged unselected/operator fields before any release. Merely
-changing the comparison reader is insufficient; both pending typed and Dexter
-migrations remain withheld until this and the UI/readiness gates are complete.
+The direct Quote writers are now integrated locally by pending migration
+`20260907125826_quote_booking_typed_chargeable_handover.sql`. Initial conversion
+copies typed Quote chargeable weight; selective revision application writes the
+typed Booking value only for selected fields, including explicit null, and copies
+it when inserting a selected new cargo line. Exact-single-match guards preserve
+the existing function bodies, permissions, approval checks, locks and audit.
+
+Verification: `node --test supabase/tests/quote-cargo-readiness-postgres.test.mjs
+supabase/tests/booking-stable-items-postgres.test.mjs` passed both PostgreSQL 17
+suites. Added executable assertions cover initial conversion precision, unchanged
+unselected weight, exact selected updates and new-line weights, stale weight
+approval rejection, explicit typed/JSON clearing and unchanged submitted snapshots.
+Existing cross-workspace, replay, provenance, removal/history and event-adapter
+assertions still pass. The handover harness loads the actual typed-column and
+comparison sections from the preceding migration; the separate stable-items suite
+exercises the full canonical typed-save migration and Dexter lifecycle.
+
+All four Air migrations remain local and withheld. No customer response or hosted
+data was changed. UI, subtotal/unknown/override semantics, full schema rehearsal,
+and hosted persistence/Dexter verification remain release gates; this is not
+evidence of a complete Air operational workflow.
