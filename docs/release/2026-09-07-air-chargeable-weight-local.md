@@ -211,3 +211,30 @@ Post-merge checks passed: 35 client/Edge approval tests, both PostgreSQL freight
 regression suites, Deno check for agent-dexter, and the production client build.
 This is a local merge only, not a push or Air deployment. Mobile verification
 remains open; earlier isolated Chrome tabs are no longer present.
+
+## Local mobile and keyboard weight surface
+
+`node supabase/tests/tools/booking-weight-browser.mjs` passes eight Chromium
+cases: widths 320, 390, 768 and 1280, in en-GB and en-US. The harness extracts
+the real cargo table/summary JSX, weight control, draft callback, Save guard and
+focus effects. Surrounding state and the final validation receipt are synthetic;
+external requests are blocked. It does not substitute for hosted persistence or
+the complete application shell on a phone.
+
+Verified: unknown weight stays incomplete; exact summed decimals; invalid line
+and override inputs focus their respective aria-linked errors and do not reach
+the local validation receipt; valid input proceeds; Tab leaves the input;
+read-only mode has no editable inputs; page width does not overflow; narrow table
+scrolling works via keyboard. No page JavaScript errors were observed. The table
+is now an explicitly labelled/focusable scroll region, and decimal weight inputs
+use 16px text below the small breakpoint to avoid mobile input zoom. Existing
+desktop density and team copy remain unchanged. Production build passes.
+
+Screenshots inspected at 320px (read-only and editing); latest artifacts:
+`/var/folders/04/gmvqjprd4v787c8s72rprxk80000gn/T/multideck-air-mobile-lYiXtV/`.
+Machine-readable run output: `/tmp/multideck-air-mobile-results.json`.
+
+Fresh read-only hosted inventory: 21 cargo weight keys absent, 2 explicit null,
+and all 78 shipment override keys absent. No existing non-null weight values
+need backfill conversion at this observation. Recheck before deployment if data
+changes. The Air release and hosted lifecycle/permission checks remain pending.

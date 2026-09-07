@@ -2280,7 +2280,7 @@ function BookingCargoWiseField({
             maxLength={maxLength}
             value={value}
             onChange={(event) => onChange(event.target.value)}
-            className="h-8 min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-[11px] font-medium shadow-[var(--md-shadow-line)]"
+            className={cn("h-8 min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 font-medium shadow-[var(--md-shadow-line)]", inputMode === "decimal" ? "text-[16px] sm:text-[11px]" : "text-[11px]")}
           />
         )
       ) : (
@@ -3493,7 +3493,7 @@ function BookingRecordDetails({
               <p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Current Booking total. Changing it does not redistribute cargo-line values.")}</p>
             </div>
           ) : null}
-          <div className="overflow-x-auto">
+          <div role="region" aria-label={t("Cargo line comparison")} tabIndex={0} className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]">
             <table className="w-full text-left text-[12px]">
               <caption className="sr-only">{t("Select a cargo line to edit its goods details below")}</caption>
               <thead className="bg-[var(--md-surface-soft)] text-[var(--md-text)]"><tr>
