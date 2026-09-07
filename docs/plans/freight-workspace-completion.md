@@ -1,5 +1,22 @@
 # Freight workspace completion
 
+7 September milestone watch-setup correction: `5b70f31` / Dexter 163 preserves
+explicit milestone identity, verifies every target using the operator's existing
+domain read, and derives labels from saved evidence. Ordinary chat now truthfully
+hands off to Watchers. Exact `5b70f31` is verified on origin/dev and READY on the
+approved development alias. Fifty-one focused checks/type checking pass; hosted
+descriptive setup, saved label/handoff, pause and retired-target denial are
+verified. Test milestone is voided, watch paused, no alerts or external actions;
+Quote/route/older milestone fingerprints unchanged. An in-place follow-up
+composer issue remains unclassified; fresh setup worked. See
+[setup evidence](../release/2026-09-07-milestone-watch-setup-evidence.md).
+Next independent operational-depth slice is typed per-cargo dangerous-goods
+records: the database foundation exists but current Booking only exposes its
+Hazardous flag. Preserve exact identities/history, unknown versus confirmed data,
+mode relevance, approval-safe Dexter and deterministic watch parity. This is
+recording supplied evidence, not automated classification or compliance sign-off.
+Full all-mode/denial/revision gates and every existing approval remain open.
+
 7 September hosted milestone approval/watch checkpoint: the exact reviewed
 synthetic Sea milestone stayed uncreated until normal approval, then saved with
 attributed audit and appeared in a fresh Booking load. An exact-ID estimated-time
@@ -252,11 +269,11 @@ deferred. [Evidence and limits](../release/2026-09-06-quote-route-clear-evidence
 | Quote model | Structured cargo/equipment retained through snapshots, PDFs and Booking updates | Round-trip and immutable historical-version tests | Typed version cargo, editor/payload round-trip, PDF projection, readiness, initial and selective revised cargo handover tested locally; public response lifecycle, legacy mapping and full live verification pending |
 | Typed operational data | Route, equipment and cargo fields use existing typed structures | API/database round-trip, permissions and audit checks | Shipment goods value separated and tested locally; wider operational fields and live round-trips pending |
 | Submitted Quotes | Readable immutable summary with revision action | Version switching and customer/internal visibility tests | Implemented locally, including saved charges and missing-snapshot protection; focused render/state and isolated browser checks passed; hosted lifecycle pending |
-| Sea | FCL/LCL, containers, seals, VGM, cut-offs, documents, milestones across directions | Representative import/export/cross-trade flows | Container operations and optional first LCL container entry locally verified; cut-offs, document/milestone and full direction flows pending |
+| Sea | FCL/LCL, containers, seals, VGM, cut-offs, documents, milestones across directions | Representative import/export/cross-trade flows | Hosted synthetic Sea cut-off and milestone operator/approval/watch paths verified; container operations locally verified; broader LCL, document and direction flows remain pending |
 | Air | AWB, flight legs, ULD, dimensions, chargeable weight, screening, milestones | Representative Air flow without Sea-only fields | ULD editor/kind persistence and per-leg references locally verified; screening, milestones and full Air lifecycle pending |
 | Road | Stops, vehicle/trailer/driver, appointments, CMR/POD | Domestic and cross-border flows | Vehicle/trailer equipment and per-leg references locally verified; driver, appointments, CMR/POD and full domestic/cross-border flow pending |
 | Rail and multimodal | Rail references/equipment and per-leg mixed-mode policy | Rail and mixed-mode save/reload flows | Wagon/equipment editor, mixed-mode choices and per-leg references locally verified; deeper rail scheduling, equipment policy and complete lifecycle pending |
-| Dexter | Read, approved writes and event-driven Watching parity for changed backend capabilities | Matching/non-matching/pause/resume and permission tests | Exact Booking cargo/container/route/shipment-value and current-version Quote cargo reads/approved edits/watches tested locally; reviewed leg-mode changes and upload-assisted edits connected locally; broader operations and hosted parity pending |
+| Dexter | Read, approved writes and event-driven Watching parity for changed backend capabilities | Matching/non-matching/pause/resume and permission tests | Typed cargo/equipment/route/value/Quote/allocation/milestone parity tested locally; hosted Sea cut-off and milestone approval/watch plus exact-target setup verified; broader operations, hosted isolation and other-mode parity remain pending |
 | End-to-end | Quote draft/send/respond/PDF/Booking/revision/notification lifecycle | Real browser/API/database evidence, controlled test recipients only | Pending |
 | Release | Reviewed commits, live schema/function parity, deployment smoke tests | Exact commit and deployed artefact evidence; migration reconciliation | Development backend and matching client deployed with exact identities and bounded smoke evidence; full hosted mutation lifecycle and production readiness not certified |
 
