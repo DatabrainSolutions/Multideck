@@ -34,3 +34,19 @@ version/READY/alias verification, then internal hosted save/reload/correction/
 void and approved Dexter/watch checks. No hosted screening lifecycle or 95%
 completion is claimed. Quote revision approvals, configuration holds and all
 recorded exclusions remain intact.
+
+## Exact client release and backend-source checkpoint
+
+Normal non-force push advanced dev from `54d6da2` to
+`7947c01e2b43abfd6baa32fe0931528e8029b14b`. Its existing Vercel deployment is
+`dpl_5jhERcB7Ve6LmoTimBCS62nQaV64`, URL
+`multideck-app-38vba4cnw-databrain-solutions.vercel.app`.
+Latest inspection is BUILDING, not READY; the development alias is not yet
+confirmed. Build logs show prebuild context checks followed by TypeScript and
+Vite, currently transforming. No replacement deployment or setting change.
+
+Downloaded Booking/Dexter sources in
+`/tmp/multideck-screening-source.LM2PGy` contain 28 files, all byte-for-byte equal
+to the checkout. This closes the downloaded-source comparison, not hosted UI
+or action lifecycle. Continue the same deployment ID, then exact-version
+hosted verification on the internal Air Booking.
