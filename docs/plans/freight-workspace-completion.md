@@ -1,5 +1,13 @@
 # Freight workspace completion
 
+7 September Air hosted roundtrip: exact client `54d6da2` is READY on
+`dev.multideck.app`. Internal `JI0991132` saved separate exact-decimal cargo and
+shipment override weights, reloaded both, then cleared/restored unknown values
+and reloaded again. Invalid text is rejected with field focus. All 38 Quote
+versions are unchanged; two ordinary saves remain audited. This closes the
+one-line operator weight gate, not hosted multi-line/Dexter/watch/denial or full
+Air depth. [Evidence and remaining limits](../release/2026-09-07-air-weight-development-release.md).
+
 7 September Air weight release: all six reviewed migrations and Dexter version
 168 are deployed to development; exact source, unchanged Booking/Quote hashes,
 preserved function ACLs and unchanged security advisors are verified. Teammate

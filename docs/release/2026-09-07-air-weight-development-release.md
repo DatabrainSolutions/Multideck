@@ -60,3 +60,37 @@ and granted to service_role. This is not hosted actor/approval lifecycle proof.
 No Vercel/team/environment/domain setup changed. Customs/iCustoms, tracking,
 PDF-logo work and the held JQ20022 revision send/accept/selective-apply approvals
 remain untouched. This release does not complete the all-mode goal.
+
+## Client READY and hosted operator roundtrip passed
+
+The pending client statements above are superseded: deployment
+`dpl_6VmMa56DW2bjsiQSkCDvVc7734BJ` reached READY for exact
+`54d6da2f078dd56dd45da6ac798cd32f87718230`, with `dev.multideck.app`
+assigned and alias error null. No replacement deployment or setup change.
+
+An isolated signed-in Chrome tab (`1772488016`) reloaded the released client,
+then opened the existing internal Air Booking `JI0991132` through the register.
+Job ID `78313622-1542-4aec-bbb2-c300a7ef5d57`; existing cargo ID
+`6a21c245-ba08-4123-9d7f-608ebc441fe9`. Both weights began unknown/null.
+
+- Entering `bad` and clicking Save displayed the non-negative-decimal error
+  and returned focus to the line field, retaining the unsaved draft.
+- Correcting the line to `1234.123456789` and entering separate shipment override
+  `1500.987654321`, then normal Save, persisted both exact strings independently.
+  Read-only SQL confirmed typed cargo weight and header override separately.
+- Reloading the page and reopening Cargo & equipment showed both exact values,
+  with the cargo total equal to the line value, not the shipment override.
+- Clearing both and saving restored null/unknown in SQL. A second fresh reload
+  showed blank fields, `Not recorded`, one missing line, zero invalid lines and
+  no unsaved Save/Discard controls. Unknown did not become zero.
+- The Booking event table retains one original creation and two saved events.
+  All 38 Quote versions retain fingerprint `48f5e0efb6d918d4019edbf8d9e47a28`
+  using the full-row JSON serialization above. No Quote was changed.
+
+This proves the one-line hosted operator roundtrip, exact decimal preservation,
+override separation, validation presentation and explicit clear for this
+internal Air record. It does not prove hosted multi-line totals, zero input,
+Dexter approve/replay/watch lifecycle, cross-scope denial, AWB/screening,
+full Air operational depth or the broader all-mode goal. Local matrices remain
+separate evidence. No email, document issue, customer response, Customs action
+or held revised-Quote approval was exercised.
