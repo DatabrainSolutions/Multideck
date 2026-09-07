@@ -1,5 +1,13 @@
 # Freight workspace completion
 
+7 September Air Dexter/watch checkpoint: hosted Approve-mode exact override
+proposal remained unapplied until approval, then saved and audited. An exact
+notification-only watch fired once per matching change, ignored cargo-only
+editing and paused changes, and resumed correctly. Zero and unknown remained
+distinct. Both test weights are restored to null; watch paused with three
+retained events; Quote versions unchanged. [Evidence and scoped limits](../release/2026-09-07-air-weight-approval-watch-evidence.md).
+Hosted replay/Full-access/isolation and wider all-mode depth remain open.
+
 7 September Air hosted roundtrip: exact client `54d6da2` is READY on
 `dev.multideck.app`. Internal `JI0991132` saved separate exact-decimal cargo and
 shipment override weights, reloaded both, then cleared/restored unknown values
