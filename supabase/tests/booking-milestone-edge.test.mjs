@@ -26,8 +26,12 @@ test('Operator milestone route binds the authenticated actor and returns the com
 
 test('Stale milestone response is a recoverable conflict; other errors and missing data are not success', async () => {
   const body = { jobId: job, milestone: {} }
-  const stale = { rpc: async () => ({ error: { code: '40001', message: 'Stale exact milestone' } }) }
-  await assert.rejects(executeBranch(stale, actor, body, core), error => error.status === 409 && /milestone changed/.test(error.clientMessage))
+  for (const code of ['PT409', '40001']) {
+    let calls = 0
+    const stale = { rpc: async () => { calls++; return { error: { code, message: 'Stale exact milestone' } } } }
+    await assert.rejects(executeBranch(stale, actor, body, core), error => error.status === 409 && /milestone changed/.test(error.clientMessage))
+    assert.equal(calls, 1, 'A stale operator snapshot is returned, not retried by the Edge branch')
+  }
   for (const error of [{ code: '42501' }, { code: '22023' }]) {
     await assert.rejects(executeBranch({ rpc: async () => ({ error }) }, actor, body, core), result => result === error)
   }

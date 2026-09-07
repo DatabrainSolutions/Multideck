@@ -1,5 +1,98 @@
 # Freight workspace completion
 
+7 September dangerous-goods development release: exact `0e38c1b` is READY on
+the approved development alias; both migrations and matching Booking/Dexter
+functions are deployed. Hosted operator create, fresh load, correction,
+unknown/No/clear, recoverable stale rejection and void/read-only history pass.
+The synthetic record is voided with temporary values cleared. Existing cargo,
+routes, milestones and Quotes retain exact fingerprints; no security-advisor
+identities were added or removed. See
+[release evidence](../release/2026-09-07-dangerous-goods-development-release.md).
+Next is hosted DG Dexter approved-write/watch lifecycle and remaining denials,
+then broader all-mode/revision acceptance. Every approval and exclusion remains.
+
+7 September dangerous-goods preflight: the exact pending migration pair passes
+a fresh-development-schema populated rehearsal, preserving existing Quote,
+Booking, milestone and legacy DG evidence. Browser focus, 320/768/1280 reflow,
+200% zoom, regional contexts and reduced-motion checks pass using the actual
+editor in an isolated fixture. No application code or live state changed.
+See [preflight evidence](../release/2026-09-07-dangerous-goods-preflight-evidence.md).
+Next is remote source/security drift preflight and the combined controlled
+development release, followed by hosted persistence/approval/watch checks.
+
+7 September dangerous-goods local implementation: the existing per-cargo table
+now has a pending typed evidence boundary, connected Booking editor/API and
+approval-safe Dexter/read/watch parity. Legacy values stay read-only, unknown
+flags remain distinct from No, and corrections/voids retain attributed history.
+Local PostgreSQL lifecycle and focused client/backend checks pass; Chrome
+component create, recoverable failure, discard and void are verified. Nothing
+from this slice is deployed. Next is current-schema/populated migration rehearsal,
+remaining responsive checks and a controlled combined release, followed by hosted
+persistence and approval/watch verification. See
+[DG local evidence](../release/2026-09-07-dangerous-goods-local-evidence.md).
+The full all-mode objective, approval gates and exclusions remain unchanged.
+
+7 September milestone watch-setup correction: `5b70f31` / Dexter 163 preserves
+explicit milestone identity, verifies every target using the operator's existing
+domain read, and derives labels from saved evidence. Ordinary chat now truthfully
+hands off to Watchers. Exact `5b70f31` is verified on origin/dev and READY on the
+approved development alias. Fifty-one focused checks/type checking pass; hosted
+descriptive setup, saved label/handoff, pause and retired-target denial are
+verified. Test milestone is voided, watch paused, no alerts or external actions;
+Quote/route/older milestone fingerprints unchanged. An in-place follow-up
+composer issue remains unclassified; fresh setup worked. See
+[setup evidence](../release/2026-09-07-milestone-watch-setup-evidence.md).
+Next independent operational-depth slice is typed per-cargo dangerous-goods
+records: the database foundation exists but current Booking only exposes its
+Hazardous flag. Preserve exact identities/history, unknown versus confirmed data,
+mode relevance, approval-safe Dexter and deterministic watch parity. This is
+recording supplied evidence, not automated classification or compliance sign-off.
+Full all-mode/denial/revision gates and every existing approval remain open.
+
+7 September hosted milestone approval/watch checkpoint: the exact reviewed
+synthetic Sea milestone stayed uncreated until normal approval, then saved with
+attributed audit and appeared in a fresh Booking load. An exact-ID estimated-time
+watch produced exactly three matching events/notifications; unrelated changes,
+paused changes, no-op and retirement did not alert. Temporary estimate/notes are
+cleared, milestone voided/read-only and watch paused, with history retained.
+Route, Quote and older milestone fingerprints are unchanged. Two setup defects
+remain: ordinary chat falsely calls watching disconnected, and the watch compiler
+can replace an explicit milestone ID with an unresolvable descriptive search.
+Correct those without widening permissions or changing Customs paths next.
+See [hosted lifecycle evidence](../release/2026-09-07-milestone-approval-watch-evidence.md).
+Development `c3b258a` is READY; full all-mode/denial/revision acceptance and all
+existing approval requirements remain open. No 95% claim.
+
+7 September Dexter email-intent release: `b78a71b` corrects the verified negated
+read-only request routing defect. Dexter 162 is ACTIVE with JWT retained and
+all 20 downloaded files matching; other functions and shared setup unchanged.
+Fifty focused tests and full backend type checking pass. One unchanged
+writing-profile Settings-copy contract still fails and is recorded separately.
+Hosted Chrome repeats the exact milestone request as normal sourced chat,
+retained on fresh load, with zero new prepared actions/watches and unchanged
+Booking/route/Quote/milestone/audit fingerprints. The earlier erroneous email
+remains unsent diagnostic evidence. See
+[email-intent evidence](../release/2026-09-07-dexter-email-intent-evidence.md).
+Next gate is hosted milestone approved-write/watch lifecycle, alongside broader
+denial/all-mode acceptance. Full scope, approval requirements and exclusions
+remain unchanged; 95% is not established.
+
+7 September hosted milestone release: exact `a9f8e62` client is READY; matching
+schema/Dexter/Booking functions are deployed. Synthetic Sea milestone create,
+independent estimated-time correction, fresh load, attributed history and
+void/read-only retirement are verified. A real stale-save hang was found and
+fixed in `6e52f45` using non-retryable milestone conflict codes; the hosted
+repeat now returns a clear recoverable conflict with entries preserved. No
+Quote or route changes, new advisor identities or shared setup changes. Incoming
+teammate finance/navigation work is preserved in merge `32c2233`, now READY on
+the approved development alias. Read-only Dexter testing exposed negation-blind
+email-intent routing: correct milestone values appeared in an unwanted prepared
+email. Nothing was sent; fixing that guard is the next priority before further
+hosted Dexter/watch tests. See
+[release evidence](../release/2026-09-07-milestone-development-release.md).
+Hosted milestone Dexter/watch and wider denial/all-mode acceptance remain open;
+no 95% claim and no change to approvals or exclusions.
+
 7 September milestone preflight: fresh development schema and populated legacy
 preservation rehearsal pass for the exact pending migration pair. Deployed
 Booking/Dexter source has no unexpected drift; the accepted Original is unchanged.
@@ -208,11 +301,11 @@ deferred. [Evidence and limits](../release/2026-09-06-quote-route-clear-evidence
 | Quote model | Structured cargo/equipment retained through snapshots, PDFs and Booking updates | Round-trip and immutable historical-version tests | Typed version cargo, editor/payload round-trip, PDF projection, readiness, initial and selective revised cargo handover tested locally; public response lifecycle, legacy mapping and full live verification pending |
 | Typed operational data | Route, equipment and cargo fields use existing typed structures | API/database round-trip, permissions and audit checks | Shipment goods value separated and tested locally; wider operational fields and live round-trips pending |
 | Submitted Quotes | Readable immutable summary with revision action | Version switching and customer/internal visibility tests | Implemented locally, including saved charges and missing-snapshot protection; focused render/state and isolated browser checks passed; hosted lifecycle pending |
-| Sea | FCL/LCL, containers, seals, VGM, cut-offs, documents, milestones across directions | Representative import/export/cross-trade flows | Container operations and optional first LCL container entry locally verified; cut-offs, document/milestone and full direction flows pending |
+| Sea | FCL/LCL, containers, seals, VGM, cut-offs, documents, milestones across directions | Representative import/export/cross-trade flows | Hosted synthetic Sea cut-off and milestone operator/approval/watch paths verified; container operations locally verified; broader LCL, document and direction flows remain pending |
 | Air | AWB, flight legs, ULD, dimensions, chargeable weight, screening, milestones | Representative Air flow without Sea-only fields | ULD editor/kind persistence and per-leg references locally verified; screening, milestones and full Air lifecycle pending |
 | Road | Stops, vehicle/trailer/driver, appointments, CMR/POD | Domestic and cross-border flows | Vehicle/trailer equipment and per-leg references locally verified; driver, appointments, CMR/POD and full domestic/cross-border flow pending |
 | Rail and multimodal | Rail references/equipment and per-leg mixed-mode policy | Rail and mixed-mode save/reload flows | Wagon/equipment editor, mixed-mode choices and per-leg references locally verified; deeper rail scheduling, equipment policy and complete lifecycle pending |
-| Dexter | Read, approved writes and event-driven Watching parity for changed backend capabilities | Matching/non-matching/pause/resume and permission tests | Exact Booking cargo/container/route/shipment-value and current-version Quote cargo reads/approved edits/watches tested locally; reviewed leg-mode changes and upload-assisted edits connected locally; broader operations and hosted parity pending |
+| Dexter | Read, approved writes and event-driven Watching parity for changed backend capabilities | Matching/non-matching/pause/resume and permission tests | Typed cargo/equipment/route/value/Quote/allocation/milestone parity tested locally; hosted Sea cut-off and milestone approval/watch plus exact-target setup verified; broader operations, hosted isolation and other-mode parity remain pending |
 | End-to-end | Quote draft/send/respond/PDF/Booking/revision/notification lifecycle | Real browser/API/database evidence, controlled test recipients only | Pending |
 | Release | Reviewed commits, live schema/function parity, deployment smoke tests | Exact commit and deployed artefact evidence; migration reconciliation | Development backend and matching client deployed with exact identities and bounded smoke evidence; full hosted mutation lifecycle and production readiness not certified |
 

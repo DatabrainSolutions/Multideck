@@ -3,6 +3,7 @@ import ticketAttachmentsSource from "@/components/multideck/ticket-attachments.t
 import quoteCargoEditorSource from "@/components/multideck/quote-details/quote-cargo-editor.tsx?raw"
 import cargoAllocationEditorSource from "@/components/multideck/cargo-allocation-editor.tsx?raw"
 import bookingRouteMilestonesSource from "@/components/multideck/booking-route-milestones.tsx?raw"
+import bookingDangerousGoodsSource from "@/components/multideck/booking-dangerous-goods.tsx?raw"
 import paginationSource from "@/components/multideck/pagination.tsx?raw"
 import lifecycleNotesSource from "@/components/multideck/lifecycle-notes.tsx?raw"
 import screeningComponentsSource from "@/components/multideck/screening-components.tsx?raw"
@@ -256,6 +257,16 @@ export const galleryComponents = [
     foundOn: [{ label: "Booking details", route: "/bookings/je0991133" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=cargo-allocation-editor" }],
     componentCode: cargoAllocationEditorSource,
     usageCode: `<CargoAllocationEditor\n  cargo={workspace.cargo}\n  equipment={workspace.containers}\n  routes={workspace.routes}\n  allocations={workspace.cargoAllocationState?.allocations}\n  legacyLinks={workspace.cargoAllocationState?.legacyUnquantifiedLinks}\n  editable={canEdit && !saving}\n  validationAttempt={validationAttempt}\n  onChange={updateDraftAllocations}\n/>`,
+  },
+  {
+    id: "booking-dangerous-goods",
+    name: "Booking Dangerous Goods",
+    category: "Forms",
+    description: "Record supplied dangerous-goods evidence for one saved cargo line, with explicit unknown flags and retained source history.",
+    details: "Use inside Booking cargo details. Legacy and voided evidence is read-only. This is not a classification or transport approval. Keep the parent draft clean before direct saving and replace it only with the complete returned workspace. Marine pollutant entry is maritime-relevant; existing supplied values remain visible after mode changes.",
+    foundOn: [{ label: "Booking details", route: "/bookings/je0991134" }, { label: "Components", route: "/components?component=booking-dangerous-goods" }],
+    componentCode: bookingDangerousGoodsSource,
+    usageCode: `<BookingDangerousGoodsEditor\n  bookingId={workspace.booking.jobId}\n  bookingReference={workspace.booking.bookingReference}\n  bookingUpdatedAt={workspace.booking.updatedAt}\n  cargo={selectedCargo}\n  maritime={hasSeaLeg}\n  events={workspace.events}\n  editable={canEdit && !saving}\n  disabledReason={dirty ? "Save or discard Booking changes first." : undefined}\n  onSaved={replaceCleanWorkspace}\n/>`,
   },
   {
     id: "booking-route-milestones",

@@ -13,6 +13,7 @@ import { Iphone } from "@/components/ui/iphone"
 import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
 import { CargoAllocationEditor } from "@/components/multideck/cargo-allocation-editor"
 import { BookingRouteMilestones } from "@/components/multideck/booking-route-milestones"
+import { BookingDangerousGoodsEditor } from "@/components/multideck/booking-dangerous-goods"
 import type { BookingWorkflowMilestone, BookingWorkflowWorkspace } from "@/lib/booking-workflow-api"
 import type { BookingCargoAllocation } from "@/lib/booking-workflow-api"
 import { newQuoteCargoLine } from "@/lib/quote-cargo"
@@ -329,7 +330,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "booking-route-milestones", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "booking-route-milestones", "booking-dangerous-goods", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
@@ -1586,6 +1587,34 @@ const previewPhoneCallProviders = [
   { provider: "3cx" as const, label: "3CX employee calls", detail: "3CX call-detail and transcript collector", state: "not_configured" as const, lastAttemptAt: null, lastSucceededAt: null, lastFailedAt: null, consecutiveFailures: 0, errorCode: null },
 ]
 
+export function BookingDangerousGoodsPreview() {
+  const stamp = "2026-09-07T09:00:00Z"
+  const [editable, setEditable] = useState(true), [failSave, setFailSave] = useState(false)
+  const [workspace, setWorkspace] = useState<BookingWorkflowWorkspace>(() => ({
+    booking: { jobId: "00000000-0000-4000-8000-000000000001", bookingReference: "DEMO-BOOKING", jobReference: "DEMO-JOB", jobNumber: 1, status: "Active", officeId: "preview", createdAt: stamp, updatedAt: stamp },
+    dangerousGoodsSupported: true, routes: [], parties: [], containers: [], documents: [], declarations: [], charges: [], events: [],
+    cargo: [{ id: "00000000-0000-4000-8000-000000000002", lineNumber: 1, description: "Synthetic cargo", updatedAt: stamp, dangerousGoods: [] }],
+  }))
+  return <div className="grid w-full min-w-0 gap-4">
+    <p className="text-xs text-[var(--md-text)]">Interactive synthetic preview only. Entries stay on this page; no Booking or network writes.</p>
+    <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setEditable(!editable)}>{editable ? "Preview read-only" : "Return to editing"}</Button><Button variant="outline" onClick={() => setFailSave(!failSave)}>{failSave ? "Return to successful saves" : "Preview save failure"}</Button></div>
+    <BookingDangerousGoodsEditor bookingId={workspace.booking.jobId} bookingReference={workspace.booking.bookingReference}
+      bookingUpdatedAt={workspace.booking.updatedAt} cargo={workspace.cargo[0]} maritime events={workspace.events} editable={editable} onSaved={setWorkspace}
+      save={async payload => {
+        if (failSave) throw new Error("Preview save failed. Your entries are retained.")
+        const now = new Date().toISOString(), cargo = workspace.cargo[0]
+        const original = cargo.dangerousGoods?.find(item => item.id === payload.id)
+        const item = { ...(original ?? { id: payload.id, cargoId: cargo.id!, unNumber: null, properShippingName: null, class: null, packingGroup: null,
+          flashPoint: null, marinePollutant: null, limitedQuantity: null, emergencyContact: null, notes: null, sourceReference: null,
+          source: "operator" as const, status: "recorded" as const, createdAt: now, createdBy: "preview" }),
+          ...payload.changes, updatedAt: now, updatedBy: "preview", operatorEditable: payload.changes.status !== "voided" }
+        return { ...workspace, booking: { ...workspace.booking, updatedAt: now }, cargo: [{ ...cargo, dangerousGoods: [...cargo.dangerousGoods!.filter(saved => saved.id !== item.id), item] }],
+          events: [{ id: crypto.randomUUID(), type: "cargo_dangerous_goods_recorded", summary: "Synthetic evidence recorded", actor: "Preview operator", occurredAt: now,
+            metadata: { dangerousGoodsId: item.id, reason: payload.reason, before: original ?? null, after: item } }, ...workspace.events] }
+      }} />
+  </div>
+}
+
 export function BookingRouteMilestonesPreview() {
   const stamp = "2026-09-07T09:00:00Z"
   const [editable, setEditable] = useState(true)
@@ -2203,6 +2232,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "quote-cargo-editor" ? <QuoteCargoEditorPreview /> : null}
       {id === "cargo-allocation-editor" ? <CargoAllocationEditorPreview /> : null}
       {id === "booking-route-milestones" ? <BookingRouteMilestonesPreview /> : null}
+      {id === "booking-dangerous-goods" ? <BookingDangerousGoodsPreview /> : null}
 
       {id === "status-pill" ? (
         <div className="grid w-full max-w-[640px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">

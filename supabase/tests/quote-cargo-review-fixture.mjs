@@ -44,6 +44,7 @@ export function quoteCargoReviewFixture(read, sqlFunction) {
       c1 uuid:=gen_random_uuid(); c2 uuid:=gen_random_uuid(); review_id uuid:=gen_random_uuid(); job uuid; cargo_id uuid;
       snapshot jsonb; proposed jsonb; lines jsonb; review jsonb; result jsonb; original_booking jsonb; token text; keys jsonb;
       weight_key text; description_key text; before_events integer; before_signals integer; before_routes jsonb;
+      dangerous_goods_before jsonb;
     begin
       insert into public."cmp_Users" values(actor,actor,company,'active'),(foreign_actor,foreign_actor,gen_random_uuid(),'active');
       insert into public."cmp_Offices" values(office,company);
@@ -61,6 +62,16 @@ export function quoteCargoReviewFixture(read, sqlFunction) {
         "Job_EditableDetailsJSON"='{"termsAndConditions":"Original terms","ownerName":"Keep operator"}' where "Job_ID"=job;
       insert into public."Org_Master" ("Org_id") select "Job_Customer" from public."Job_Header" where "Job_ID"=job;
       select "JobCargo_ID" into cargo_id from public."Job_Cargo" where "JobCargo_JobID"=job and "JobCargo_SourceQuoteLineID"=c1;
+      -- Operational child evidence must survive the real public selective-apply
+      -- chain, including a confirmed Sea-to-Air mode change. Never reinterpret
+      -- or copy it into the immutable customer Quote.
+      insert into public."Job_CargoDangerousGoods" (
+        "JobCargoDG_JobCargoID","JobCargoDG_UNNumber","JobCargoDG_ProperShippingName",
+        "JobCargoDG_MarinePollutant","JobCargoDG_Notes") values
+        (cargo_id,'1234','Synthetic source text',true,'Retain original maritime evidence after mode change'),
+        (cargo_id,null,null,false,'Legacy default is not proof of an operator confirmation');
+      select jsonb_agg(to_jsonb(d) order by "JobCargoDG_ID") into dangerous_goods_before
+        from public."Job_CargoDangerousGoods" d;
       weight_key:='cargo:'||c1||':grossWeightKg';description_key:='cargo:'||c1||':description';
       proposed:=jsonb_set(jsonb_set(jsonb_set(snapshot,'{quote,shipmentFacts,cargoLines,0,grossWeightKg}','125'),
         '{quote,shipmentFacts,cargoLines,0,description}','"Revised machinery"'),'{quote,customerNotes}','"Revised note"');
@@ -124,6 +135,8 @@ export function quoteCargoReviewFixture(read, sqlFunction) {
         raise exception 'Unselected operator details changed'; end if;
       if (select booking_snapshot from booking_api.quote_sync_reviews r where r.review_id=(result->>'reviewId')::uuid)<>original_booking
         or (select "CusQuoteVersion_SnapshotJSON" from public."CusQuote_Versions" where "CusQuoteVersion_ID"=v1)<>snapshot then raise exception 'Original evidence overwritten'; end if;
+      if dangerous_goods_before is distinct from (select jsonb_agg(to_jsonb(d) order by "JobCargoDG_ID") from public."Job_CargoDangerousGoods" d)
+        then raise exception 'Selective Quote apply or confirmed mode change rewrote operational dangerous-goods records'; end if;
       if has_function_privilege('anon','public.booking_workflow_apply_quote_sync_v2(uuid,uuid,uuid,jsonb,text,boolean)','EXECUTE')
         or has_function_privilege('authenticated','public.booking_workflow_quote_sync_review_v2(uuid,uuid)','EXECUTE')
         or has_function_privilege('service_role','booking_api.refreshed_cargo_review(uuid)','EXECUTE') then raise exception 'Private boundary exposed'; end if;

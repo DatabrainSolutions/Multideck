@@ -19,6 +19,40 @@ export type BookingWorkflowParty = {
   rawSnapshot?: Record<string, unknown>
 }
 
+/** Supplied operational evidence; never a classification or compliance approval. */
+export type BookingDangerousGoods = {
+  id: string
+  cargoId: string
+  unNumber: string | null
+  properShippingName: string | null
+  class: string | null
+  packingGroup: string | null
+  flashPoint: string | null
+  marinePollutant: boolean | null
+  limitedQuantity: boolean | null
+  emergencyContact: string | null
+  notes: string | null
+  sourceReference: string | null
+  source: "legacy" | "operator"
+  status: "recorded" | "voided"
+  createdAt: string
+  createdBy: string | null
+  updatedAt: string
+  updatedBy: string | null
+  operatorEditable: boolean
+}
+
+export type BookingDangerousGoodsSave = {
+  id: string
+  cargoId: string
+  expectedUpdatedAt: string
+  expectedCargoUpdatedAt: string
+  expectedRecordUpdatedAt: string | null
+  reason: string
+  changes: Partial<Pick<BookingDangerousGoods, "unNumber" | "properShippingName" | "class" | "packingGroup" |
+    "flashPoint" | "marinePollutant" | "limitedQuantity" | "emergencyContact" | "notes" | "sourceReference" | "status">>
+}
+
 export type BookingWorkflowCargo = {
   /** Vehicle carried as cargo, never the transporting truck's registration. */
   vin?: string | null
@@ -44,6 +78,8 @@ export type BookingWorkflowCargo = {
   isHazardous?: boolean
   isTemperatureControlled?: boolean
   cargoData?: Record<string, unknown>
+  updatedAt?: string | null
+  dangerousGoods?: BookingDangerousGoods[]
 }
 
 export type BookingWorkflowContainer = {
@@ -225,6 +261,7 @@ export type BookingWorkflowEvent = {
 }
 
 export type BookingWorkflowWorkspace = {
+  dangerousGoodsSupported?: boolean
   routeCutoffsSupported?: boolean
   routeMilestonesSupported?: boolean
   milestoneTypes?: { code: string; name: string }[]
@@ -388,6 +425,10 @@ export function saveBookingWorkflow(jobId: string, booking: Record<string, unkno
 
 export function saveBookingMilestone(jobId: string, milestone: BookingMilestoneSave) {
   return invoke<BookingWorkflowWorkspace>({ action: "save-milestone", jobId, milestone }, "The routing milestone could not be saved.")
+}
+
+export function saveBookingDangerousGoods(jobId: string, dangerousGoods: BookingDangerousGoodsSave) {
+  return invoke<BookingWorkflowWorkspace>({ action: "save-dangerous-goods", jobId, dangerousGoods }, "The dangerous-goods evidence could not be saved.")
 }
 
 export function getBookingQuoteSyncReview(jobId: string) {

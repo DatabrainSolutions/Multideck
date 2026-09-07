@@ -103,7 +103,7 @@ begin
     '{"changes":[{"field":"source","value":"provider"}]}','{"changes":[{"field":"actualAt","value":"2026-09-01"}]}',
     '{"changes":[]}','{"milestone_id":"bad"}','{"extra":true}','{"type":"customs_released"}',jsonb_build_object('target_id',other_job))) loop
     begin perform public.multideck_dexter_action_record_booking_milestone(company,actor,proposal||bad);
-      raise exception 'Invalid milestone proposal accepted: %',bad;exception when invalid_parameter_value or serialization_failure or insufficient_privilege then null;end;
+      raise exception 'Invalid milestone proposal accepted: %',bad;exception when invalid_parameter_value or sqlstate 'PT409' or insufficient_privilege then null;end;
   end loop;
   begin perform public.multideck_dexter_action_record_booking_milestone(company,other_actor,proposal);
     raise exception 'Foreign actor executed milestone';exception when insufficient_privilege then null;end;

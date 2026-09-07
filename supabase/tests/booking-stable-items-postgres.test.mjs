@@ -19,6 +19,8 @@ import { routeCutoffMigration, routeCutoffAssertions } from './booking-route-cut
 import { saveWorkspaceResponseAssertions } from './booking-save-workspace-fixture.mjs'
 import { routeMilestoneFixture, routeMilestoneAssertions } from './booking-route-milestone-fixture.mjs'
 import { milestoneDexterMigration, milestoneDexterAssertions } from './booking-milestone-dexter-fixture.mjs'
+import { dangerousGoodsFixture } from './booking-dangerous-goods-fixture.mjs'
+import { dangerousGoodsDexterFixture } from './booking-dangerous-goods-dexter-fixture.mjs'
 
 // Executes the actual save function against disposable PostgreSQL, never a tenant.
 // PG_TEST_BIN can point to a PostgreSQL bin directory in CI.
@@ -86,7 +88,7 @@ test('PostgreSQL: stable items, route milestones, approved Dexter cargo/containe
         job uuid := gen_random_uuid(); other_job uuid := gen_random_uuid();
         c1 uuid := gen_random_uuid(); c2 uuid := gen_random_uuid(); other_cargo uuid := gen_random_uuid();
         e1 uuid := gen_random_uuid(); other_equipment uuid := gen_random_uuid();
-        saved jsonb; before_events integer; before_state jsonb; after_state jsonb;
+        saved jsonb; before_events integer; before_state jsonb; after_state jsonb; dangerous_goods_before jsonb;
       begin
         if has_function_privilege('anon','booking_api.save_booking(uuid,uuid,jsonb)','EXECUTE')
           or has_function_privilege('authenticated','booking_api.save_booking(uuid,uuid,jsonb)','EXECUTE') then
@@ -103,6 +105,17 @@ test('PostgreSQL: stable items, route milestones, approved Dexter cargo/containe
         insert into public."Job_Containers" ("JobContainers_ID","Job_ID","JobContainer_Number","JobContainer_VGMKilos")
           values(e1,job,'TEST123',12345),(other_equipment,other_job,'OTHER456',45678);
         insert into public."Job_CargoDangerousGoods" ("JobCargoDG_JobCargoID","JobCargoDG_UNNumber") values(c1,'1234');
+        -- More than one retained record per cargo line, including supplied text
+        -- and both legacy boolean values. These are synthetic evidence, not a
+        -- valid classification or a dangerous-goods compliance declaration.
+        insert into public."Job_CargoDangerousGoods" (
+          "JobCargoDG_JobCargoID","JobCargoDG_ProperShippingName","JobCargoDG_Class",
+          "JobCargoDG_FlashPoint","JobCargoDG_MarinePollutant","JobCargoDG_LimitedQuantity",
+          "JobCargoDG_EmergencyContact","JobCargoDG_Notes")
+          values(c1,'Synthetic retained evidence','Unverified','As supplied: 23 °C',true,true,
+            'Synthetic contact; do not call','Original supplied context');
+        select jsonb_agg(to_jsonb(d) order by "JobCargoDG_ID") into dangerous_goods_before
+          from public."Job_CargoDangerousGoods" d;
         insert into public."Job_ContainerSeals" ("JobContainerSeal_JobContainerID","JobContainerSeal_Number") values(e1,'SEAL1');
         saved := jsonb_build_object('cargo',jsonb_build_array(
           jsonb_build_object('id',c2,'description','Second edited','grossWeightKg',20),
@@ -114,7 +127,7 @@ test('PostgreSQL: stable items, route milestones, approved Dexter cargo/containe
         if (select "JobCargo_LineNo" from public."Job_Cargo" where "JobCargo_ID"=c1) <> 2 then raise exception 'Reordering failed'; end if;
         if (select "JobCargo_Length" from public."Job_Cargo" where "JobCargo_ID"=c1) <> 22 then raise exception 'Unedited typed value lost'; end if;
         if (select "JobCargo_CargoJSON"->>'unexposed' from public."Job_Cargo" where "JobCargo_ID"=c1) <> 'retained' then raise exception 'JSON compatibility lost'; end if;
-        if (select count(*) from public."Job_CargoDangerousGoods" dg join public."Job_Cargo" c on c."JobCargo_ID"=dg."JobCargoDG_JobCargoID" where not c."JobCargo_IsDeleted") <> 1 then raise exception 'DG relationship detached'; end if;
+        if (select count(*) from public."Job_CargoDangerousGoods" dg join public."Job_Cargo" c on c."JobCargo_ID"=dg."JobCargoDG_JobCargoID" where not c."JobCargo_IsDeleted") <> 2 then raise exception 'DG relationship detached'; end if;
         if (select count(*) from public."Job_ContainerSeals" s join public."Job_Containers" e on e."JobContainers_ID"=s."JobContainerSeal_JobContainerID" where not e."JobContainer_IsDeleted") <> 1 then raise exception 'Seal detached'; end if;
         if (select "JobContainer_VGMKilos" from public."Job_Containers" where "JobContainers_ID"=e1) <> 12345 then raise exception 'VGM lost'; end if;
         perform booking_api.save_booking(actor,job,jsonb_set(saved,'{cargo,1,isHazardous}','true'));
@@ -126,6 +139,8 @@ test('PostgreSQL: stable items, route milestones, approved Dexter cargo/containe
           or (select "JobCargo_CargoJSON"->>'knownCargo' from public."Job_Cargo" where "JobCargo_ID"=c1) <> 'Temperature controlled; Fragile'
           then raise exception 'Client safety edit did not persist exactly'; end if;
         if not exists(select 1 from public."Job_CargoDangerousGoods" where "JobCargoDG_JobCargoID"=c1 and "JobCargoDG_UNNumber"='1234') then raise exception 'Safety edit lost DG evidence'; end if;
+        if dangerous_goods_before is distinct from (select jsonb_agg(to_jsonb(d) order by "JobCargoDG_ID") from public."Job_CargoDangerousGoods" d)
+          then raise exception 'Ordinary saves or hazard flag edit rewrote dangerous-goods evidence'; end if;
         select count(*) into before_events from booking_api.events;
         select jsonb_agg(to_jsonb(c) order by "JobCargo_ID") into before_state from public."Job_Cargo" c;
         begin
@@ -159,6 +174,8 @@ test('PostgreSQL: stable items, route milestones, approved Dexter cargo/containe
           raise exception 'Archived cargo resurrected';
         exception when insufficient_privilege then null; end;
         if not exists(select 1 from booking_api.events where actor_user_id=actor and metadata->'fields' ? 'cargo') then raise exception 'Save audit missing'; end if;
+        if dangerous_goods_before is distinct from (select jsonb_agg(to_jsonb(d) order by "JobCargoDG_ID") from public."Job_CargoDangerousGoods" d)
+          then raise exception 'Rejected writes or cargo retirement rewrote dangerous-goods history'; end if;
       end $test$;
     `
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], sql)
@@ -189,6 +206,8 @@ test('PostgreSQL: stable items, route milestones, approved Dexter cargo/containe
       routeMilestoneFixture(table) + routeMilestoneAssertions)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
       milestoneDexterMigration + milestoneDexterAssertions)
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], dangerousGoodsFixture)
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], dangerousGoodsDexterFixture)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
     rmSync(directory, { recursive: true, force: true })

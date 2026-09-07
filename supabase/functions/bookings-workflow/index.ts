@@ -149,10 +149,22 @@ Deno.serve(async (request) => {
         requested_job_id: parseUuid(body.jobId, "Booking"),
         payload: parsePayload(body.milestone),
       })
-      if (error?.code === "40001") {
+      if (error?.code === "PT409" || error?.code === "40001") {
         throw new BookingWorkflowError(409, "The Booking, routing leg or milestone changed. Reload it and review your changes before saving.", error.message)
       }
       if (error || !data) throw error ?? new Error("Milestone save returned no result")
+      return jsonResponse(request, data)
+    }
+    if (action === "save-dangerous-goods") {
+      const { data, error } = await admin.rpc("booking_workflow_save_dangerous_goods", {
+        caller_auth_user_id: userId,
+        requested_job_id: parseUuid(body.jobId, "Booking"),
+        payload: parsePayload(body.dangerousGoods),
+      })
+      if (error?.code === "PT409" || error?.code === "40001") {
+        throw new BookingWorkflowError(409, "The Booking, cargo or dangerous-goods record changed. Reload it and review your changes before saving.", error.message)
+      }
+      if (error || !data) throw error ?? new Error("Dangerous-goods save returned no result")
       return jsonResponse(request, data)
     }
     if (action === "quote-sync-review") {
