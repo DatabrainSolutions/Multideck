@@ -4,6 +4,7 @@ import quoteCargoEditorSource from "@/components/multideck/quote-details/quote-c
 import cargoAllocationEditorSource from "@/components/multideck/cargo-allocation-editor.tsx?raw"
 import bookingRouteMilestonesSource from "@/components/multideck/booking-route-milestones.tsx?raw"
 import bookingDangerousGoodsSource from "@/components/multideck/booking-dangerous-goods.tsx?raw"
+import bookingSecurityEvidenceSource from "@/components/multideck/booking-security-evidence.tsx?raw"
 import paginationSource from "@/components/multideck/pagination.tsx?raw"
 import lifecycleNotesSource from "@/components/multideck/lifecycle-notes.tsx?raw"
 import screeningComponentsSource from "@/components/multideck/screening-components.tsx?raw"
@@ -267,6 +268,16 @@ export const galleryComponents = [
     foundOn: [{ label: "Booking details", route: "/bookings/je0991134" }, { label: "Components", route: "/components?component=booking-dangerous-goods" }],
     componentCode: bookingDangerousGoodsSource,
     usageCode: `<BookingDangerousGoodsEditor\n  bookingId={workspace.booking.jobId}\n  bookingReference={workspace.booking.bookingReference}\n  bookingUpdatedAt={workspace.booking.updatedAt}\n  cargo={selectedCargo}\n  maritime={hasSeaLeg}\n  events={workspace.events}\n  editable={canEdit && !saving}\n  disabledReason={dirty ? "Save or discard Booking changes first." : undefined}\n  onSaved={replaceCleanWorkspace}\n/>`,
+  },
+  {
+    id: "booking-security-evidence",
+    name: "Cargo Screening Evidence",
+    category: "Forms",
+    description: "Record supplied screening details for an exact cargo line without inferring clearance or issuing an AWB.",
+    details: "Air and mixed-Air cargo editor with exact source text, UTC event time, reasoned corrections and read-only voided history. Keep parent edits clean before saving. Unknown data stays unknown; this does not verify an agent or certify cargo.",
+    foundOn: [{ label: "Air Booking details", route: "/bookings/ji0991132" }, { label: "Components", route: "/components?component=booking-security-evidence" }],
+    componentCode: bookingSecurityEvidenceSource,
+    usageCode: `<BookingSecurityEvidenceEditor\n  bookingId={workspace.booking.jobId}\n  bookingReference={workspace.booking.bookingReference}\n  bookingUpdatedAt={workspace.booking.updatedAt}\n  cargo={selectedCargo}\n  events={workspace.events}\n  editable={canEdit && !saving}\n  disabledReason={dirty ? "Save or discard Booking changes first." : undefined}\n  onSaved={replaceCleanWorkspace}\n/>`,
   },
   {
     id: "booking-route-milestones",

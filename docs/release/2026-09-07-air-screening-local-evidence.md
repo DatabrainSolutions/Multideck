@@ -22,7 +22,38 @@ and retain existing document categories. Existing AWB tables are not changed.
 Booking Edge dispatch and client types/invocation are wired locally. The exact
 new action is allowlisted; server-verified actor overrides any caller-supplied
 identity, malformed request shapes fail before RPC, and stale writes return 409.
-No operator UI or Dexter action/watch is exposed yet.
+An operator editor and component-gallery preview are now wired in the local
+worktree; neither is released. Dexter action/watch support remains unfinished.
+
+## Local operator preview checkpoint
+
+The client production build passed (`/tmp/multideck-screening-ui-build.log`),
+with the existing large-bundle warning. Thirteen focused editor/Edge tests pass,
+covering exact supplied text, UTC date validation, omission/clear semantics,
+stale identities/timestamps, duplicate submissions and failure retention.
+
+Chrome verification at
+`http://localhost:3000/components?component=booking-security-evidence` exercised
+the actual editor with an injected, in-memory synthetic save function:
+
+- Empty submission focuses Reason; after adding a reason, missing Source
+  receives focus and an explanatory error.
+- Supplied status, method and source with leading/trailing spaces survive save
+  and reopening the correction form verbatim.
+- A simulated save failure retains Notes and Reason. Cancel requests discard
+  confirmation, initially focuses Keep editing, and confirmed discard restores
+  focus to the saved record's correction button.
+- Voiding requires a reason, retains supplied values and removes the correction
+  button. Expanded details show unknown fields as Not recorded and retain
+  attributed create/void history with the recorded reasons.
+
+These checks made no Booking/API writes and do not prove hosted persistence,
+backend access isolation, responsive layout or complete keyboard behaviour.
+The UTC field's browser entry path, responsive checks, visual review and
+Dexter parity remain open. The lifecycle selector and history now explicitly say
+Record status, distinct from Security status as supplied. The editor is connected
+to Air/mixed-Air cargo and retained evidence on other modes, uses the canonical
+save API, and is disabled while parent Booking changes are unsaved.
 
 ## Executed checks
 

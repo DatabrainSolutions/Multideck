@@ -88,6 +88,7 @@ import { analyseCargoAllocations, bookingCargoAllocationPayload } from "@/lib/bo
 import { CargoAllocationEditor } from "./cargo-allocation-editor"
 import { BookingRouteMilestones } from "./booking-route-milestones"
 import { BookingDangerousGoodsEditor } from "./booking-dangerous-goods"
+import { BookingSecurityEvidenceEditor } from "./booking-security-evidence"
 import { getQuoteSources, type QuoteOrganisationOption, type QuoteWorkflowSources } from "@/lib/quote-workflow-api"
 import { loadUnlocodeDirectory, unlocodeKind, type UnlocodeDirectoryRecord } from "@/lib/unlocode-directory"
 import {
@@ -2930,6 +2931,7 @@ function BookingContainerDetails({
 
 function BookingRecordDetails({
   renderDangerousGoods,
+  renderSecurityEvidence,
   renderMilestones,
   allocationEditor,
   allocationValidationAttempt = 0,
@@ -2958,6 +2960,7 @@ function BookingRecordDetails({
   workspace,
 }: {
   renderDangerousGoods?: (cargo: BookingWorkflowCargo) => ReactNode
+  renderSecurityEvidence?: (cargo: BookingWorkflowCargo) => ReactNode
   renderMilestones?: (route: BookingWorkflowRoute) => ReactNode
   allocationEditor?: ReactNode
   allocationValidationAttempt?: number
@@ -3566,6 +3569,7 @@ function BookingRecordDetails({
             : <BookingCargoWiseField label="Custom fields" value={detailValue("customFields", t("No additional fields recorded"))} span {...editDetail("customFields")} />}
         </BookingCargoWiseGroup>
         {cargo ? renderDangerousGoods?.(cargo) : null}
+        {cargo ? renderSecurityEvidence?.(cargo) : null}
       {equipmentKinds.length > 0 || workspace.containers.length > 0 ? (
         <BookingContainerDetails
           containers={workspace.containers}
@@ -4518,6 +4522,7 @@ function BookingQuoteSyncReviewPanel({
 
 function BookingDetailTabPage({
   renderDangerousGoods,
+  renderSecurityEvidence,
   renderMilestones,
   allocationEditor,
   allocationValidationAttempt,
@@ -4553,6 +4558,7 @@ function BookingDetailTabPage({
   workspace,
 }: {
   renderDangerousGoods?: (cargo: BookingWorkflowCargo) => ReactNode
+  renderSecurityEvidence?: (cargo: BookingWorkflowCargo) => ReactNode
   renderMilestones?: (route: BookingWorkflowRoute) => ReactNode
   allocationEditor?: ReactNode
   allocationValidationAttempt?: number
@@ -4587,7 +4593,7 @@ function BookingDetailTabPage({
   record: BookingDetailRecord
   workspace: BookingWorkflowWorkspace
 }) {
-  if (activeTab === "Details") return <BookingRecordDetails weightValidation={weightValidation} renderDangerousGoods={renderDangerousGoods} renderMilestones={renderMilestones} allocationEditor={allocationEditor} allocationValidationAttempt={allocationValidationAttempt} currentUser={currentUser} editable={editable} locationDirectory={locationDirectory} lookups={bookingLookups} onCargoChange={onCargoChange} onCargoAdd={onCargoAdd} onCargoRemove={onCargoRemove} onBookingChange={onBookingChange} onContainerAdd={onContainerAdd} onContainerChange={onContainerChange} onContainerRemove={onContainerRemove} onDetailChange={onDetailChange} onPartyChange={onPartyChange} onOrganisationSelect={onOrganisationSelect} onLocationSelect={onLocationSelect} onRouteAdd={onRouteAdd} onRouteChange={onRouteChange} onRouteLocationSelect={onRouteLocationSelect} onRouteOrganisationSelect={onRouteOrganisationSelect} onRouteRemove={onRouteRemove} record={record} workspace={workspace} />
+  if (activeTab === "Details") return <BookingRecordDetails weightValidation={weightValidation} renderDangerousGoods={renderDangerousGoods} renderSecurityEvidence={renderSecurityEvidence} renderMilestones={renderMilestones} allocationEditor={allocationEditor} allocationValidationAttempt={allocationValidationAttempt} currentUser={currentUser} editable={editable} locationDirectory={locationDirectory} lookups={bookingLookups} onCargoChange={onCargoChange} onCargoAdd={onCargoAdd} onCargoRemove={onCargoRemove} onBookingChange={onBookingChange} onContainerAdd={onContainerAdd} onContainerChange={onContainerChange} onContainerRemove={onContainerRemove} onDetailChange={onDetailChange} onPartyChange={onPartyChange} onOrganisationSelect={onOrganisationSelect} onLocationSelect={onLocationSelect} onRouteAdd={onRouteAdd} onRouteChange={onRouteChange} onRouteLocationSelect={onRouteLocationSelect} onRouteOrganisationSelect={onRouteOrganisationSelect} onRouteRemove={onRouteRemove} record={record} workspace={workspace} />
   if (activeTab === "Documents") return <BookingDocumentsWorkspace record={record} />
   if (activeTab === "Customs") return <BookingCustomsWorkspace customsError={customsError} navigate={navigate} onWorkspaceSaved={onWorkspaceSaved} onViewChange={onCustomsViewChange} readiness={customsReadiness} record={record} view={customsView} />
   if (activeTab === "Finance") return <BookingFinanceWorkspace record={record} />
@@ -5472,6 +5478,25 @@ export function BookingDetailWorkspace({
           data-booking-tab-panel
         >
           <BookingDetailTabPage
+            renderSecurityEvidence={cargo => (
+              freightFieldPolicy({ mode: loadedRecord.booking.mode, stage: "booking", legModes: loadedRecord.workspace!.routes.map(route => route.mode) }).air
+              || Boolean(cargo.securityEvidence?.length)
+            ) ? <BookingSecurityEvidenceEditor
+              key={cargo.id ?? "unsaved-security-cargo"}
+              bookingId={loadedRecord.workspace!.booking.jobId}
+              bookingReference={loadedRecord.workspace!.booking.bookingReference}
+              bookingUpdatedAt={loadedRecord.workspace!.booking.updatedAt}
+              cargo={cargo}
+              events={loadedRecord.workspace!.events}
+              editable={!savingDetails && !applyingQuoteSync}
+              disabledReason={detailsDirty ? "Save or discard Booking changes before recording screening evidence." : undefined}
+              onSaved={workspace => {
+                const nextRecord = bookingWorkspaceRecord(workspace)
+                setRecord(nextRecord)
+                setDraftBooking(nextRecord.booking)
+                setDraftWorkspace(workspace)
+              }}
+            /> : null}
             renderDangerousGoods={cargo => <BookingDangerousGoodsEditor
               key={cargo.id ?? "unsaved-cargo"}
               bookingId={loadedRecord.workspace!.booking.jobId}
