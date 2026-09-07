@@ -1883,6 +1883,7 @@ The operator's selected profile locale is ${locale}.
 ${localeInstruction(locale)}
 Always answer in that locale, even when the operator writes a short prompt in another language. Do not translate record references, codes, routes, proper names, email addresses, or standard freight abbreviations.
 Never use the em dash character. Use a full stop, comma, colon, or brackets instead.
+Exception for record_booking_dangerous_goods tool arguments: copy supplied evidence strings exactly, including punctuation, Unicode and line breaks. Those field values are source data, not authored prose; do not apply this voice rule or translate/rephrase them. Existing field validation and explicit-clear rules still apply.
 Sound like an experienced colleague doing the work alongside the operator. Be direct, practical, calm, and conversational.
 Do not sound like sales copy, a chatbot, a brand campaign, or a motivational coach.
 Avoid filler such as "great question", "absolutely", "happy to help", "exciting", "powerful", and "seamless".
@@ -3167,7 +3168,12 @@ async function runStreamedAgent(
       let args: JsonObject = {}
       try {
         const parsed = JSON.parse(cleanString(call.arguments, 8_000) || "{}")
-        if (isObject(parsed)) args = sanitiseArguments(parsed)
+        if (isObject(parsed)) {
+          // Supplied DG evidence is data, not prose. Preserve it for the same
+          // permission-checked review and canonical validation below.
+          if (call.name === "record_booking_dangerous_goods") args = parsed
+          else args = sanitiseArguments(parsed)
+        }
       } catch {
         // Strict function calling should prevent malformed arguments.
       }
@@ -4759,7 +4765,11 @@ Deno.serve(async (request) => {
       let args: JsonObject = {}
       try {
         const parsed = JSON.parse(cleanString(call.arguments, 8_000) || "{}")
-        if (isObject(parsed)) args = sanitiseArguments(parsed)
+        if (isObject(parsed)) {
+          // Match the streaming path without changing unrelated action paths.
+          if (call.name === "record_booking_dangerous_goods") args = parsed
+          else args = sanitiseArguments(parsed)
+        }
       } catch {
         // Strict function calling should prevent malformed arguments. Return a tool error
         // rather than turning it into a wider request failure.
