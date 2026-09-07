@@ -47,6 +47,13 @@ their older “pending” paragraphs must not override later evidence.
 
 ### Road: live board opens a prototype detail flow
 
+Local follow-up: [canonical Booking navigation correction](../release/2026-09-07-road-booking-navigation-local.md)
+connects both board views and preserves full reference identities. Local tests
+and build pass; not yet deployed/browser-verified. Creation and legacy deep
+links still need correction. Kanban stage moves were also confirmed to mutate
+local state only and are not saved operational progress. The initial diagnosis
+below is retained to explain the correction, not to claim it remains unchanged.
+
 `multideck.client/src/pages/road-control-page.tsx` loads bounded backend rows but
 its card and board actions navigate to `/road-control/${job.id.toLowerCase()}`.
 `App.tsx` renders `DomesticRoadBookingPage` for this route. That page resolves
