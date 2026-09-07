@@ -1,5 +1,12 @@
 # Freight workspace completion
 
+7 September Air equipment checkpoint: hosted ULD creation and leg-scoped cargo
+allocation save/full reload pass. Over-allocation is rejected with field focus
+and no saved change. QA equipment/allocation are archived with audit retained;
+original cargo/route projection and Quote fingerprints match. Multi-ULD,
+successive-leg, flight and wider mode/security gates remain open.
+[Evidence](../release/2026-09-07-air-uld-allocation-hosted-evidence.md).
+
 7 September screening Dexter/watch checkpoint: hosted Approve-mode proposal,
 deny-without-write, corrected exact-reason proposal, approved save, audit and
 read-back pass. One exact security-status watch ignored notes-only and paused

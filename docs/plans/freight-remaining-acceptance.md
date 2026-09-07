@@ -116,7 +116,10 @@ matching/nonmatching/pause/resume also pass; test watch paused and evidence void
 Full-access/replay, fractional time, stale recovery and access denial remain
 open; see [screening release evidence](../release/2026-09-07-air-screening-development-release.md)
 and [approval/watch evidence](../release/2026-09-07-screening-approval-watch-evidence.md).
-AWB lifecycle, ULD/allocation/flight hosted journeys and
+One hosted Air ULD and leg-scoped allocation journey now passes create/save/full
+reload, over-allocation rejection and archival restoration; see
+[ULD/allocation evidence](../release/2026-09-07-air-uld-allocation-hosted-evidence.md).
+AWB lifecycle, multi-ULD/successive-leg allocation, flight hosted journeys and
 remaining isolation tests are still open. A generic Booking-source label shown
 inside the selected cargo section also needs clearer scope; it is not line provenance.
 
