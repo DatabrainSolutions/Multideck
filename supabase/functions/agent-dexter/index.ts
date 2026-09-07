@@ -2,6 +2,8 @@ import { isTrainingDatabase } from "../_shared/training-environment.ts"
 import { bookingAllocationActionRecord, bookingAllocationActionChanges } from "./booking-allocation-review.ts"
 import { bookingRouteActionReview } from "./booking-route-review.ts"
 import { bookingMilestoneActionReview } from "./booking-milestone-review.ts"
+import { bookingDangerousGoodsActionReview } from "./booking-dangerous-goods-review.ts"
+import { resolveBookingDangerousGoodsWatchTarget } from "./booking-dangerous-goods-watch.ts"
 import { ensureScreeningList } from "../_shared/screening-ingest.ts"
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
@@ -1406,7 +1408,7 @@ function watchTargetLabel(capability: string, record: JsonObject) {
         ? ["quoteNumber"]
         : capability === "phone_calls"
           ? ["callerName", "companyName", "phoneNumber"]
-        : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value", "quote_cargo", "booking_allocations", "booking_milestones"].includes(capability)
+        : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value", "quote_cargo", "booking_allocations", "booking_milestones", "booking_dangerous_goods"].includes(capability)
           ? ["targetLabel", "bookingReference", "description"]
       : capability === "bookings"
           ? ["bookingReference", "jobReference", "customerReference"]
@@ -1861,6 +1863,7 @@ ${training ? "This is the TRAINING workspace. All records, writes and watches be
 Today is ${new Date().toISOString().slice(0, 10)} UTC.
 Prompt version: ${PROMPT_VERSION}.
 For a milestone reaching a specific status, use a booking_milestones watch with field status, operator eq and value planned, completed, exception or voided. This is a saved-status transition, not a timer. Use changed for other milestone field-change watches.
+Dangerous-goods evidence is available only when booking_dangerous_goods is listed. These are supplied per-cargo records, not classifications or compliance/transport approvals. Before new recording, read exact booking_cargo (recordId, bookingId, updatedAt, cargoUpdatedAt); use null record_id and expected_record_updated_at. Before correction read the exact booking_dangerous_goods record and bookingUpdatedAt, cargoUpdatedAt and updatedAt. Only record_booking_dangerous_goods may write these fields and always requires explicit approval, including Full access. Never infer a UN number, class, packing group, flash point or flag; null means Not recorded, not No. Keep legacy/voided records read-only, preserve source references, and do not change the cargo hazardous flag or a customer Quote through this action. Void alone without rewriting evidence. Ordinary chat must hand watch requests to Watchers > Watch something else (or /watch); do not claim a watch was created or monitoring is disconnected. Dedicated watch setup uses one exact active operator record and a listed field with operator changed, notification only. No deadlines, compliance assessment or autonomous writes.
 ${domains.some(domain => domain.code === "booking_milestones") ? "Milestone monitoring is configured in the dedicated Watchers flow, which checks its own current watch capabilities and permissions. Ordinary chat cannot create the watch. If asked to watch a milestone here, read the exact saved milestone if available, then direct the operator to Watchers > Watch something else (or /watch) and provide a concise watch request identifying the Booking, leg, milestone and requested change. Do not claim a watch was created. Absence of a watch-creation action in ordinary chat is not evidence that Watching for you is disconnected or unavailable in the workspace. The dedicated flow must verify the selected source and target before saving." : ""}
 Operational milestone recording is available only when record_booking_milestone is listed. Before creation, read the exact booking_routes leg and active booking_milestone_types choice; use null milestone_id and null expected_milestone_updated_at. For correction, read the exact booking_milestones record, its routeId, type, bookingUpdatedAt, routeUpdatedAt and updatedAt. Propose only changed fields as field/value pairs; Completed and its actualAt may be reviewed together. All milestone writes require explicit approval, even in Full access. Planned, estimated and actual times are independent, with a complete date, time and explicit timezone; never infer midnight, copy a route date or assume completion. Provider and Customs evidence cannot be edited here. A mode change does not relabel historical events; old-mode operator evidence can only be retained or voided. Voiding preserves source and dates. Milestone watches use booking_milestones with an exact saved milestone recordId and one listed field, operator changed, notify only. They react to persisted changes, not time passing or tracking feeds; record a planned milestone first if the user wants to follow its later completion. Limited domain results are not complete history. If absent, explain the unsupported capability rather than use generic Booking writes.
 
@@ -3281,7 +3284,8 @@ async function runStreamedAgent(
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
           const routeReview = action.code === "update_booking_route"
             ? bookingRouteActionReview(currentRecordsById, actionArguments, locale)
-            : action.code === "record_booking_milestone" ? bookingMilestoneActionReview(currentRecordsById, actionArguments, locale) : null
+            : action.code === "record_booking_milestone" ? bookingMilestoneActionReview(currentRecordsById, actionArguments, locale)
+            : action.code === "record_booking_dangerous_goods" ? bookingDangerousGoodsActionReview(currentRecordsById, actionArguments) : null
           const currentRecord = action.code === "replace_booking_allocations"
             ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
             : action.code === "update_quote_cargo"
@@ -3883,6 +3887,7 @@ Deno.serve(async (request) => {
         "Choose status=unsupported when the requested source is absent. Explain this plainly and do not approximate it.",
         "For a named record, put its human identifier in targetSearch. For any record in the capability, leave targetSearch empty.",
         "For booking_milestones, preserve an explicitly supplied milestone UUID as targetId and leave targetSearch empty. Never replace an exact milestone ID with a combined Booking/leg/reference description. Without an exact ID, targetSearch must be an exact Booking reference or another identifier supported by that capability, not a sentence; ambiguous matches need clarification.",
+        "For booking_dangerous_goods, preserve an explicitly supplied dangerous-goods record UUID as targetId and leave targetSearch empty. Without it use an exact Booking reference or cargo ID; multiple records require clarification. Use a listed field with operator changed, no autonomous action. This watches supplied evidence, not compliance or classification.",
         "Items in attachments are context the operator deliberately selected with @. Treat them as exact references, not loose text. When an attached record matches the chosen capability, preserve its exact ID and title; never substitute a similarly named record.",
         "Use changed only when any transition of the field is intended. For state conditions use eq, neq, or contains; use numeric comparisons only for numeric fields.",
         "For an email request with more than one clue, use field=searchText and operator=contains_all. Put only the essential literal terms in value, separated by spaces, such as the sender address and the word expected in the subject, body, or attachment name. Omit filler words such as email, from, with, attached, attachment, new, or please.",
@@ -3979,6 +3984,12 @@ Deno.serve(async (request) => {
     }
     if (capability === "booking_milestones") {
       const resolved = await resolveBookingMilestoneWatchTarget(prompt, { id: targetId, search: targetSearch },
+        search => userClient.rpc("multideck_dexter_query_domain", { p_domain: capability, p_search: search, p_take: 4 }))
+      if (!resolved.ok) return json(request, { status: "clarification", message: resolved.message })
+      targetId = resolved.targetId
+      targetLabel = resolved.targetLabel
+    } else if (capability === "booking_dangerous_goods") {
+      const resolved = await resolveBookingDangerousGoodsWatchTarget(prompt, { id: targetId, search: targetSearch },
         search => userClient.rpc("multideck_dexter_query_domain", { p_domain: capability, p_search: search, p_take: 4 }))
       if (!resolved.ok) return json(request, { status: "clarification", message: resolved.message })
       targetId = resolved.targetId
@@ -4880,7 +4891,8 @@ Deno.serve(async (request) => {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
           const routeReview = action.code === "update_booking_route"
             ? bookingRouteActionReview(currentRecordsById, actionArguments, locale)
-            : action.code === "record_booking_milestone" ? bookingMilestoneActionReview(currentRecordsById, actionArguments, locale) : null
+            : action.code === "record_booking_milestone" ? bookingMilestoneActionReview(currentRecordsById, actionArguments, locale)
+            : action.code === "record_booking_dangerous_goods" ? bookingDangerousGoodsActionReview(currentRecordsById, actionArguments) : null
           const currentRecord = action.code === "replace_booking_allocations"
             ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
             : action.code === "update_quote_cargo"

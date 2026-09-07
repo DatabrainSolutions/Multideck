@@ -1,5 +1,17 @@
 # Freight workspace completion
 
+7 September dangerous-goods local implementation: the existing per-cargo table
+now has a pending typed evidence boundary, connected Booking editor/API and
+approval-safe Dexter/read/watch parity. Legacy values stay read-only, unknown
+flags remain distinct from No, and corrections/voids retain attributed history.
+Local PostgreSQL lifecycle and focused client/backend checks pass; Chrome
+component create, recoverable failure, discard and void are verified. Nothing
+from this slice is deployed. Next is current-schema/populated migration rehearsal,
+remaining responsive checks and a controlled combined release, followed by hosted
+persistence and approval/watch verification. See
+[DG local evidence](../release/2026-09-07-dangerous-goods-local-evidence.md).
+The full all-mode objective, approval gates and exclusions remain unchanged.
+
 7 September milestone watch-setup correction: `5b70f31` / Dexter 163 preserves
 explicit milestone identity, verifies every target using the operator's existing
 domain read, and derives labels from saved evidence. Ordinary chat now truthfully
