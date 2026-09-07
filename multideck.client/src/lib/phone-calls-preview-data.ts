@@ -130,7 +130,7 @@ const alexDetail: PhoneCallDetail = {
   lead: null,
   matchCandidates: [
     { id: "preview-company-global-retail", recordType: "company", name: "Global Retail Group", secondaryLabel: "Company · phone and name match", confidence: "high", reasons: ["Phone match", "Name match"] },
-    { id: "preview-lead-global-rfq", recordType: "lead", name: "Global Retail Group — May RFQ", secondaryLabel: "Lead · company name match", confidence: "medium", reasons: ["Company match", "Similar request"] },
+    { id: "preview-lead-global-rfq", recordType: "lead", name: "Global Retail Group – May RFQ", secondaryLabel: "Lead · company name match", confidence: "medium", reasons: ["Company match", "Similar request"] },
   ],
   transcriptSegments: [
     { id: "preview-segment-1", source: "elevenlabs", sourceLabel: "ElevenLabs", speakerLabel: "Receptionist", speakerRole: "receptionist", startedAt: "2026-08-22T09:21:03Z", offsetMs: 0, text: "Hi, thanks for calling Demo Freight Company. How can I help today?", state: "complete" },
@@ -139,8 +139,8 @@ const alexDetail: PhoneCallDetail = {
     { id: "preview-segment-4", source: "3cx", sourceLabel: "3CX", speakerLabel: "Handler transcript", speakerRole: "employee", startedAt: null, sourceSequence: 1, globalSequence: 4, timingProvenance: "source_boundary_only", speakerProvenance: "unknown", offsetMs: null, text: "Hi Alex, it’s Chris. I have your revised quote request here.", state: "complete" },
   ],
   suggestedActions: [
-    { id: "preview-action-quote", type: "todo", title: "Alex asked for a revised quote — add this to the To Do list?", reason: "Alex requested the revised quote during the receptionist portion of the call.", confidence: "high", draft: { title: "Prepare revised 40ft quote for Global Retail Group.", scheduledDate: "2026-08-22", leadId: null }, status: "pending", error: null, todoTaskId: null, todoTaskStatus: null, todoCompletedAt: null, reviewedAt: null },
-    { id: "preview-action-lead", type: "lead_link", title: "Attach this call to lead “Global Retail Group — May RFQ”?", reason: "The company and request are similar, but need review.", confidence: "medium", draft: { title: null, leadId: "preview-lead-global-rfq", leadLabel: "Global Retail Group — May RFQ" }, status: "pending", error: null, todoTaskId: null, todoTaskStatus: null, todoCompletedAt: null, reviewedAt: null },
+    { id: "preview-action-quote", type: "todo", title: "Alex asked for a revised quote – add this to the To Do list?", reason: "Alex requested the revised quote during the receptionist portion of the call.", confidence: "high", draft: { title: "Prepare revised 40ft quote for Global Retail Group.", scheduledDate: "2026-08-22", leadId: null }, status: "pending", error: null, todoTaskId: null, todoTaskStatus: null, todoCompletedAt: null, reviewedAt: null },
+    { id: "preview-action-lead", type: "lead_link", title: "Attach this call to lead “Global Retail Group – May RFQ”?", reason: "The company and request are similar, but need review.", confidence: "medium", draft: { title: null, leadId: "preview-lead-global-rfq", leadLabel: "Global Retail Group – May RFQ" }, status: "pending", error: null, todoTaskId: null, todoTaskStatus: null, todoCompletedAt: null, reviewedAt: null },
   ],
   transfer: { offeredAt: "2026-08-22T09:21:41Z", acceptedAt: "2026-08-22T09:22:31Z", completedAt: "2026-08-22T09:22:35Z", status: "accepted" },
   providerReferences: [

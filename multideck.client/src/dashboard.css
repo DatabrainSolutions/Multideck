@@ -337,7 +337,7 @@
     color: var(--md-text);
   }
 
-  /* A nine-hour ladder. Past hours read solid, the rest recede — the same
+  /* A nine-hour ladder. Past hours read solid, the rest recede – the same
      information as the ring, at a glance, without another number. */
   .md-day-dial-ticks {
     display: flex;
@@ -370,7 +370,7 @@
   /* ── KPI strip ───────────────────────────────────────────────────────── */
 
   /* Four metrics in a single row. Each cell carries the label, the figure, what
-     changed, and the shape of the trend — nothing else. */
+     changed, and the shape of the trend – nothing else. */
   .md-kpi-strip {
     display: grid;
     gap: var(--md-gap-sm);
@@ -406,7 +406,7 @@
   /* Seven is prime, so there is no clean halfway split. Two, then four, then the
      full row: four-plus-three reads as one band, where three-plus-three-plus-one
      leaves an orphan. The middle step comes early because a compact cell only
-     needs about 150px — holding two columns to 780px would stack the band four
+     needs about 150px – holding two columns to 780px would stack the band four
      rows deep on a laptop. */
   @container md-dash (min-width: 460px) {
     .md-kpi-strip[data-columns="7"] {
@@ -747,7 +747,7 @@
 
   /* The working row is the exception: the queue and coverage are both lists, so
      matching their heights reads as one shelf rather than two ragged cards. The
-     row sets the height and each body flexes inside it — otherwise whichever
+     row sets the height and each body flexes inside it – otherwise whichever
      list is shorter hits its own cap first and leaves a band of empty surface
      under it. */
   @container md-dash (min-width: 1000px) {
@@ -1010,7 +1010,7 @@
      Every region's working window on one shared 24-hour track in the viewer's
      own time, with a single "now" line across all of them. The rail this
      replaced gave each city a ticking analogue face, a progress track and a
-     pulsing dot — eight animations to answer one question. */
+     pulsing dot – eight animations to answer one question. */
 
   .md-coverage-panel {
     display: flex;
@@ -2795,7 +2795,7 @@
 
   /* ── The shared row ──────────────────────────────────────────────────── */
 
-  /* Panel radius 14 less the list's 4px inset gives the row 10 — concentric,
+  /* Panel radius 14 less the list's 4px inset gives the row 10 – concentric,
      so the row never looks pinched inside its panel. */
   .md-crm-list {
     display: flex;
@@ -2808,7 +2808,7 @@
     contain: layout paint;
   }
 
-  /* Three fixed rails — glyph, body, and a right-hand block of a set width — so
+  /* Three fixed rails – glyph, body, and a right-hand block of a set width – so
      pills, values and ages line up down the panel instead of stopping wherever
      each row's text happens to end. Ragged right edges are most of what makes a
      list of records look thrown together. */
@@ -3355,7 +3355,7 @@
   }
 
   /* Sized to the real panels, so the swap to loaded content changes opacity
-     only — no reflow, no scroll jump. */
+     only – no reflow, no scroll jump. */
   .md-crm-skeleton-block {
     display: block;
     border-radius: var(--md-radius-xl);
@@ -3434,7 +3434,7 @@
     transform: none;
   }
 
-  /* The arrow and the reason edge still respond to hover — only their travel
+  /* The arrow and the reason edge still respond to hover – only their travel
      is removed, so the row keeps its static cue. */
   .md-crm-row[data-openable="true"]:hover .md-crm-row-arrow,
   .md-crm-row[data-openable="true"]:has(.md-crm-row-open-target:focus-visible) .md-crm-row-arrow {

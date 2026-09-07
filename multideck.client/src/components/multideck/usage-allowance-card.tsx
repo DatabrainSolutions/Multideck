@@ -255,7 +255,7 @@ export function UsageAllowanceCard({
     ? category.unit === "percent"
       ? formatAmount(category.usedPercent, "percent", language)
       : formatAmount(category.used, category.unit, language)
-    : "—"
+    : "–"
   const primaryDetail = connected
     ? category.unit === "percent"
       ? t("of included usage")

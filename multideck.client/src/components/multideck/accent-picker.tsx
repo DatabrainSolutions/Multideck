@@ -42,8 +42,8 @@ type AccentCardProps = {
 
 /**
  * One card per accent, each rendered in its own colours rather than the live ones.
- * The card shows the two places the accent actually lands in the shell — the
- * selected nav item's ink and the Dexter button's shader — because those are what
+ * The card shows the two places the accent actually lands in the shell – the
+ * selected nav item's ink and the Dexter button's shader – because those are what
  * an operator is really choosing between. A row of swatches cannot show either.
  *
  * Memoised, with the handlers taking an index so the parent can hold stable

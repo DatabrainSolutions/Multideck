@@ -5,9 +5,9 @@ import { cn } from "@/lib/utils"
 import { CheckIcon, ChevronRightIcon } from "@/components/icons/hugeicons"
 
 /**
- * Right-click menu. It shares the dropdown's surface, option rows, and motion —
+ * Right-click menu. It shares the dropdown's surface, option rows, and motion –
  * `md-dropdown-content` and `md-dropdown-option` carry the enter blur-and-scale
- * and the option cascade — so a menu opened by pointer reads the same as one
+ * and the option cascade – so a menu opened by pointer reads the same as one
  * opened from a trigger.
  */
 

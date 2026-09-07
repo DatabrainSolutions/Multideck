@@ -437,7 +437,8 @@ test("the operator UI covers both ledgers, cash, job and manual sources", () => 
     "text-end",
     "dir=\"ltr\"",
   ])
-  includesEvery(financeLineEditorSource, ["Line type", "Ancillary", "Draft subtotal", "text-end", "dir=\"ltr\""])
+  includesEvery(financeLineEditorSource, ["Charge code", "Description", "Qty", "Rate", "Tax", "Line amount", "Draft subtotal", "text-end", "dir=\"ltr\""])
+  assert.doesNotMatch(financeLineEditorSource, /t\("Line type"\)|t\("Ancillary"\)/)
   assert.doesNotMatch(appSource, /font-mono|ui-monospace|SF Mono/)
   includesEvery(apiSource, ["createFinanceDraft", "createFinanceCashDraft", "approveFinanceDocument", "approveFinanceCash"])
   includesEvery(appRouterSource, ["/finance/receivables", "/finance/payables", "/finance/cash", "/admin/finance"])
@@ -445,7 +446,7 @@ test("the operator UI covers both ledgers, cash, job and manual sources", () => 
   includesEvery(topBarSource, ["FinanceTopBarAction", "Finance.Receivables.Draft", "Finance.Payables.Cash"])
 })
 
-test("manual invoices and credits use the reusable Sage-style document editor", () => {
+test("manual invoices and credits use the reusable freight invoice charge editor", () => {
   includesEvery(financeLineEditorSource, [
     "Add row",
     "Insert row",
@@ -457,7 +458,13 @@ test("manual invoices and credits use the reusable Sage-style document editor", 
     "Clear form",
     "financeDocumentLineTotals",
     "crypto?.randomUUID",
+    'data-provider-field="item_code"',
+    'data-provider-field="description"',
+    'data-provider-field="qty"',
+    'data-provider-field="rate"',
+    'data-provider-field="item_tax_template"',
   ])
+  includesEvery(providerSource, ["item_code", "description: line.description", "qty:", "rate:", "item_tax_template", "income_account"])
   includesEvery(appSource, [
     "FinanceDocumentLineEditor",
     "Save draft",
@@ -466,7 +473,8 @@ test("manual invoices and credits use the reusable Sage-style document editor", 
     "downloadFinanceDocumentWorkbook",
     "printFinanceProforma",
   ])
-  includesEvery(financeExcelSource, ["MAX_FILE_BYTES", "MAX_EXPANDED_BYTES", "MAX_IMPORT_LINES", "Document lines", "autoFilter", "state=\"frozen\"", "E${row}*F${row}"])
+  includesEvery(financeExcelSource, ["MAX_FILE_BYTES", "MAX_EXPANDED_BYTES", "MAX_IMPORT_LINES", "Document lines", "autoFilter", "state=\"frozen\"", "D${row}*E${row}"])
+  assert.doesNotMatch(financeExcelSource, /const headers = \[[^\]]*"Line type"/)
   includesEvery(financeProformaSource, ["PROFORMA", "Not a tax document", "window.open", "document.close"])
   assert.doesNotMatch(financeLineEditorSource, /font-mono|ui-monospace|SF Mono/)
 })

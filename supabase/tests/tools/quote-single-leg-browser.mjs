@@ -34,7 +34,7 @@ const built = await build({stdin:{contents:`
     const organisationsById=new Map([['carrier-1',{name:'Air carrier'}]]);const relatedOptions=()=>[];
     const onQuotePatch=(patch)=>setQuote(current=>({...current,...patch}));
     ${cut('  function updateLocation(prefix:', '  function updateRecurrence(')}
-    return <main className="p-4"><h1 className="mb-4 text-[18px]">Routing QA — synthetic data</h1>
+    return <main className="p-4"><h1 className="mb-4 text-[18px]">Routing QA – synthetic data</h1>
       <div className="mb-4 flex flex-wrap gap-2"><Button disabled={!editable||routingLegs.length>=30} onClick={addRoutingLeg}>Add routing leg</Button><Button onClick={()=>setEditable(v=>!v)}>{editable?'View read-only':'Edit draft'}</Button><Button onClick={()=>setQuote(current=>({...current,routingLegsJson:quoteRoutingLegsValue(quoteRoutingLegs(current.routingLegsJson))}))}>Save/reopen fixture</Button></div>
       <p className="mb-4">Overall mode: {quote.mode} · Destination: {quote.destination||'TBC'} · ETA: {quote.estimatedArrival||'TBC'}</p>
       ${routing}

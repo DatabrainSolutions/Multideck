@@ -14,8 +14,8 @@ export type BreakdownSlice = {
  * A split of a total, drawn as bars. Rings and funnels were tried here first and
  * both were the wrong shape for a side column: each carries a fixed aspect, so
  * in a row beside a tall table they stretched and left a large empty band under
- * the drawing. A bar list has no aspect to hold — it is exactly as tall as the
- * number of categories — and comparing lengths on a shared baseline is easier
+ * the drawing. A bar list has no aspect to hold – it is exactly as tall as the
+ * number of categories – and comparing lengths on a shared baseline is easier
  * than comparing arc angles anyway.
  *
  * `segmented` puts the whole total on one bar, for a split that reads as parts

@@ -281,7 +281,7 @@ export function SidebarArrangeCanvas({
   )
 
   function announceMove(id: string, position: number) {
-    setAnnouncement(`${t(itemsById.get(id)?.label ?? id)} — ${t("position")} ${position + 1}`)
+    setAnnouncement(`${t(itemsById.get(id)?.label ?? id)} – ${t("position")} ${position + 1}`)
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLUListElement>) {

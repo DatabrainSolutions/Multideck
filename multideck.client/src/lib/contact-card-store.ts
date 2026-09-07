@@ -617,7 +617,7 @@ export async function createCard(input: {
     publicSubheading: `Share your details and ${input.fullName.split(" ")[0] || "we"} will follow up.`,
     submitLabel: "Continue",
     thanksHeading: "You're connected",
-    thanksBody: `Thanks — ${input.fullName.split(" ")[0] || "we"} will be in touch soon.`,
+    thanksBody: `Thanks – ${input.fullName.split(" ")[0] || "we"} will be in touch soon.`,
     phoneField: "optional",
     showPhone: Boolean(input.phone),
     showWebsite: true,
@@ -869,7 +869,7 @@ export async function submitExchange(cardId: string, scanId: string | null, inpu
   const card = state.cards.find((item) => item.id === cardId) ?? [...publicCardCache.values()].find((item) => item.id === cardId)
   if (!card) throw new Error("This contact card is not active.")
   if (preview) {
-    const exchange: CardExchange = { id: crypto.randomUUID(), ...input, at: new Date().toISOString(), outcome: "created", automationOutcome: "none", automationDetail: "Preview submission — nothing was saved." }
+    const exchange: CardExchange = { id: crypto.randomUUID(), ...input, at: new Date().toISOString(), outcome: "created", automationOutcome: "none", automationDetail: "Preview submission – nothing was saved." }
     return { outcome: exchange.outcome, exchange }
   }
   const result = await callRpc<{ outcome: CardExchange["outcome"]; automationOutcome: "succeeded" | "failed" | "skipped" | "running" }>("multideck_contact_card_submit_exchange", { p_slug: card.slug, p_scan_id: scanId, p_input: input })

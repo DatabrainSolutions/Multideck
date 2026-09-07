@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { AlertCircle, ArrowLeft, FileText, History, LoaderCircle, RefreshCw, Save, Send, ShieldCheck } from "@/components/icons/hugeicons"
+import { AlertCircle, ArrowLeft, FileText, History, LoaderCircle, Mail, MapPin, Phone, RefreshCw, Save, Send, ShieldCheck } from "@/components/icons/hugeicons"
 import {
   createFinanceDocumentLine,
   FinanceDocumentLineEditor,
@@ -41,6 +41,48 @@ const documentLabels: Record<FinanceDocumentType, string> = {
   debit_note: "Supplier credit note",
 }
 
+const documentDetailLabels: Record<FinanceDocumentType, string> = {
+  sl_invoice: "Invoice details",
+  credit_note: "Credit note details",
+  pl_invoice: "Purchase invoice details",
+  debit_note: "Supplier credit note details",
+}
+
+const documentNumberLabels: Record<FinanceDocumentType, string> = {
+  sl_invoice: "Invoice number",
+  credit_note: "Credit note number",
+  pl_invoice: "Invoice number",
+  debit_note: "Credit note number",
+}
+
+const documentDateLabels: Record<FinanceDocumentType, string> = {
+  sl_invoice: "Invoice date",
+  credit_note: "Credit note date",
+  pl_invoice: "Invoice date",
+  debit_note: "Credit note date",
+}
+
+const documentEditableDescriptions: Record<FinanceDocumentType, string> = {
+  sl_invoice: "Customer and invoice details remain editable until this draft enters finance review.",
+  credit_note: "Customer and credit note details remain editable until this draft enters finance review.",
+  pl_invoice: "Supplier and invoice details remain editable until this draft enters finance review.",
+  debit_note: "Supplier and credit note details remain editable until this draft enters finance review.",
+}
+
+const documentLockedDescriptions: Record<FinanceDocumentType, string> = {
+  sl_invoice: "Invoice details are locked at the current lifecycle stage.",
+  credit_note: "Credit note details are locked at the current lifecycle stage.",
+  pl_invoice: "Purchase invoice details are locked at the current lifecycle stage.",
+  debit_note: "Supplier credit note details are locked at the current lifecycle stage.",
+}
+
+const documentInformationLabels: Record<FinanceDocumentType, string> = {
+  sl_invoice: "Invoice information",
+  credit_note: "Credit note information",
+  pl_invoice: "Purchase invoice information",
+  debit_note: "Supplier credit note information",
+}
+
 function FieldLabel({ htmlFor, children }: { htmlFor: string; children: ReactNode }) {
   return <label htmlFor={htmlFor} className="text-[12px] font-medium text-[var(--md-text)]">{children}</label>
 }
@@ -58,7 +100,7 @@ function providerLabel(code: string | undefined) {
   return code?.replaceAll("_", " ") || "Accounting provider"
 }
 
-function lineFromRecord(line: FinanceDocumentDetail["lines"][number]): FinanceDocumentLine {
+function lineFromRecord(line: FinanceDocumentDetail["lines"][number], documentCurrency: string): FinanceDocumentLine {
   return {
     ...createFinanceDocumentLine({ code: line.FINDocLine_TaxCodeSnapshot ?? "", ratePercent: Number(line.FINDocLine_TaxRatePercent) }),
     id: line.FINDocLine_ID,
@@ -67,7 +109,9 @@ function lineFromRecord(line: FinanceDocumentDetail["lines"][number]): FinanceDo
     jobCostingLineId: line.FINDocLine_JobCostingLineID,
     lineType: line.FINDocLine_LineTypeCode === "ancillary" ? "ancillary" : "service",
     quantity: String(line.FINDocLine_Quantity),
-    unitAmount: String(line.FINDocLine_UnitAmount),
+    unitAmount: String(line.FINDocLine_SourceUnitAmount ?? line.FINDocLine_UnitAmount),
+    currencyCode: line.FINDocLine_SourceCurrencyCodeSnapshot ?? documentCurrency,
+    exchangeRate: String(line.FINDocLine_ROEToDocumentCurrency ?? 1),
     taxCode: line.FINDocLine_TaxCodeSnapshot ?? "",
     taxRatePercent: String(line.FINDocLine_TaxRatePercent),
   }
@@ -103,6 +147,7 @@ export function FinanceDocumentPage({
   const [dueDate, setDueDate] = useState("")
   const [currencyCode, setCurrencyCode] = useState("")
   const [exchangeRate, setExchangeRate] = useState("1")
+  const [accountingPeriodId, setAccountingPeriodId] = useState("")
   const [lines, setLines] = useState<FinanceDocumentLine[]>([])
 
   const load = useCallback(async (quiet = false) => {
@@ -133,7 +178,8 @@ export function FinanceDocumentPage({
     setDueDate(source.document.FINDoc_DueDate ?? "")
     setCurrencyCode(source.document.FINDoc_CurrencyCodeSnapshot)
     setExchangeRate(String(source.document.FINDoc_ExchangeRate || 1))
-    setLines(source.lines.map(lineFromRecord))
+    setAccountingPeriodId(source.document.FINDoc_PeriodID ?? "")
+    setLines(source.lines.map((line) => lineFromRecord(line, source.document.FINDoc_CurrencyCodeSnapshot)))
   }, [])
 
   useEffect(() => {
@@ -150,9 +196,22 @@ export function FinanceDocumentPage({
   const baseCurrency = (selectedEntity?.FinanceDraftCurrencyCode ?? selectedEntity?.LegalEntity_BaseCurrencyCodeSnapshot ?? currencyCode).toUpperCase()
   const needsExchangeRate = Boolean(currencyCode && baseCurrency && currencyCode !== baseCurrency)
   const selectedParty = options?.parties.find((party) => party.Org_id === partyOrgId)
+  const partyChanged = Boolean(document?.FINDoc_PartyOrgID && partyOrgId !== document.FINDoc_PartyOrgID)
+  const displayedBillingAddress = partyChanged ? null : detail?.billingAddress ?? null
+  const billingAddressLines = displayedBillingAddress ? [
+    displayedBillingAddress.name && displayedBillingAddress.name !== (selectedParty?.Org_Name ?? document?.partyName) ? displayedBillingAddress.name : null,
+    displayedBillingAddress.line1,
+    displayedBillingAddress.line2,
+    displayedBillingAddress.townCity,
+    displayedBillingAddress.countyState,
+    displayedBillingAddress.postZipCode,
+    displayedBillingAddress.countryName ?? displayedBillingAddress.countryCode,
+  ].filter((value): value is string => Boolean(value?.trim())) : []
   const availableJobs = (options?.jobs ?? []).filter((job) => (!job.Job_LegalEntityID || job.Job_LegalEntityID === document?.FINDoc_LegalEntityID) && Boolean(ledger === "receivables" ? job.Job_Customer : job.Job_Supplier))
-  const jobChargeOptions = (options?.jobCostingLines ?? []).filter((line) => line.Job_ID === sourceJobId).map((line) => ({ id: line.JobCostingLine_ID, lineNo: line.JobCostingLine_Number, chargeCode: null, description: line.JobCostingLine_Description, expectedAmount: Number(ledger === "receivables" ? line.JobCostingLine_RevenueAmountLocal : line.JobCostingLine_CostAmountLocal), nominalCode: null }))
+  const jobChargeOptions = (options?.jobCostingLines ?? []).filter((line) => line.Job_ID === sourceJobId).map((line) => ({ id: line.JobCostingLine_ID, lineNo: line.JobCostingLine_Number, chargeCode: line.RATECharge_Code, description: line.JobCostingLine_Description, expectedAmount: Number(ledger === "receivables" ? line.JobCostingLine_RevenueAmountLocal : line.JobCostingLine_CostAmountLocal), nominalCode: null }))
   const transactionDirection = ledger === "receivables" ? "sales" : "purchase"
+  const chargeOptions = (options?.chargeCodes ?? []).filter((charge) => ["both", transactionDirection].includes(charge.RATECharge_DefaultApplicabilityCode)).map((charge) => ({ id: charge.RATECharge_ID, code: charge.RATECharge_Code, name: charge.RATECharge_Name, description: charge.RATECharge_Description, defaultTaxCode: charge.RATECharge_DefaultTaxCode }))
+  const currencyOptions = [...new Set([currencyCode, baseCurrency, ...(options?.currencies ?? []).map((item) => item.code)].filter(Boolean))]
   const approvedTreatments = useMemo(() => (options?.taxTreatments ?? []).filter((treatment) => treatment.FINLocTaxTreatment_LegalEntityID === document?.FINDoc_LegalEntityID && ["both", transactionDirection].includes(treatment.FINLocTaxTreatment_TransactionType) && treatment.FINLocTaxTreatment_EffectiveFrom <= documentDate && (!treatment.FINLocTaxTreatment_EffectiveTo || treatment.FINLocTaxTreatment_EffectiveTo >= documentDate)), [document?.FINDoc_LegalEntityID, documentDate, options?.taxTreatments, transactionDirection])
   const taxOptions = useMemo<FinanceDocumentTaxOption[]>(() => {
     const result = new Map<string, FinanceDocumentTaxOption>()
@@ -173,6 +232,7 @@ export function FinanceDocumentPage({
     dueDate: dueDate || null,
     currencyCode,
     exchangeRate: needsExchangeRate ? Number(exchangeRate) : 1,
+    accountingPeriodId: accountingPeriodId || null,
     sourceJobId: sourceKind === "job" ? sourceJobId : null,
     lines: lines.map((line) => ({
       description: line.description.trim(),
@@ -181,6 +241,8 @@ export function FinanceDocumentPage({
       lineType: line.lineType,
       quantity: Number(line.quantity),
       unitAmount: Number(line.unitAmount),
+      currencyCode: line.currencyCode || currencyCode,
+      exchangeRate: (line.currencyCode || currencyCode) === currencyCode ? 1 : Number(line.exchangeRate),
       taxRatePercent: Number(line.taxRatePercent),
       taxCode: line.taxCode || null,
     })),
@@ -229,6 +291,8 @@ export function FinanceDocumentPage({
           lineType: sourceKind === "job" ? "service" : line.lineType,
           quantity: line.quantity,
           unitAmount: line.unitAmount,
+          currencyCode: line.currencyCode || currencyCode,
+          exchangeRate: line.exchangeRate || ((line.currencyCode || currencyCode) === currencyCode ? "1" : ""),
           taxCode: treatment?.code ?? "",
           taxRatePercent: String(treatment?.approved ? treatment.ratePercent : 0),
         }
@@ -311,21 +375,41 @@ export function FinanceDocumentPage({
 
         {posted ? <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-teal),transparent_92%)] p-4 text-[13px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"><span>{t("This document is posted to the Multideck ledger and is immutable. Export and print tools remain available.")}</span>{detail.externalReference ? safeExternalUrl ? <a href={safeExternalUrl} target="_blank" rel="noreferrer" className="font-medium text-[var(--md-accent)] hover:underline">{t("Open external mirror")}</a> : <span data-i18n-skip dir="ltr">{detail.externalReference.ACCIER_ExternalNumber ?? detail.externalReference.ACCIER_ExternalID}</span> : null}</div> : null}
 
-        <SettingsPanel title={t("Document details")} description={t(editable ? "Draft fields remain editable until the document enters finance review." : "These fields are read-only at the current lifecycle stage.")}>
-          <div className="grid gap-4 py-1 md:grid-cols-3">
-            <div className="space-y-2"><FieldLabel htmlFor="finance-detail-source">{t("Source")}</FieldLabel><Select value={sourceKind} disabled={!editable} onValueChange={(value: "manual" | "job") => { setSourceKind(value); if (value === "manual") setSourceJobId("") }}><SelectTrigger id="finance-detail-source"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="manual">{t("Ad hoc or ancillary")}</SelectItem><SelectItem value="job">{t("Freight job")}</SelectItem></SelectContent></Select></div>
-            <div className="space-y-2"><FieldLabel htmlFor="finance-detail-date">{t("Document date")}</FieldLabel><Input id="finance-detail-date" type="date" value={documentDate} onChange={(event) => setDocumentDate(event.target.value)} disabled={!editable} data-i18n-skip dir="ltr" /></div>
-            <div className="space-y-2"><FieldLabel htmlFor="finance-detail-due">{t("Due date")}</FieldLabel><Input id="finance-detail-due" type="date" value={dueDate} min={documentDate} onChange={(event) => setDueDate(event.target.value)} disabled={!editable} data-i18n-skip dir="ltr" /></div>
-          </div>
-          {sourceKind === "job" ? <div className="mt-4 space-y-2"><FieldLabel htmlFor="finance-detail-job">{t("Job")}</FieldLabel>{options ? <Select value={sourceJobId} disabled={!editable} onValueChange={(value) => { const job = availableJobs.find((item) => item.Job_ID === value); setSourceJobId(value); setLines((current) => current.map((line) => ({ ...line, jobCostingLineId: null }))); setPartyOrgId(ledger === "receivables" ? job?.Job_Customer ?? "" : job?.Job_Supplier ?? "") }}><SelectTrigger id="finance-detail-job"><SelectValue placeholder={t("Choose job")} /></SelectTrigger><SelectContent>{availableJobs.map((job) => <SelectItem key={job.Job_ID} value={job.Job_ID}><span data-i18n-skip dir="ltr">{job.Job_Period}-{job.Job_Number}</span> · {t(job.Job_Status)}</SelectItem>)}</SelectContent></Select> : <Input id="finance-detail-job" value={document.jobReference ?? t("No job")} disabled />}</div> : null}
-          <div className={`mt-4 grid gap-4 ${needsExchangeRate ? "md:grid-cols-[minmax(0,1fr)_140px_180px]" : "md:grid-cols-[minmax(0,1fr)_140px]"}`}>
-            <div className="space-y-2"><FieldLabel htmlFor="finance-detail-party">{t(ledger === "receivables" ? "Customer" : "Supplier")}</FieldLabel>{options ? <Select value={partyOrgId} disabled={!editable || sourceKind === "job"} onValueChange={setPartyOrgId}><SelectTrigger id="finance-detail-party"><SelectValue /></SelectTrigger><SelectContent>{options.parties.map((party) => <SelectItem key={party.Org_id} value={party.Org_id}>{party.Org_Name}</SelectItem>)}</SelectContent></Select> : <Input id="finance-detail-party" value={document.partyName} disabled />}</div>
-            <div className="space-y-2"><FieldLabel htmlFor="finance-detail-currency">{t("Currency")}</FieldLabel><Input id="finance-detail-currency" maxLength={3} value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value.toUpperCase())} disabled={!editable} data-i18n-skip dir="ltr" /></div>
-            {needsExchangeRate ? <div className="space-y-2"><FieldLabel htmlFor="finance-detail-rate">{t("Exchange rate to base currency")} <span data-i18n-skip dir="ltr">({baseCurrency})</span></FieldLabel><Input id="finance-detail-rate" type="number" min="0.0000000001" step="0.0000000001" value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} disabled={!editable} data-i18n-skip dir="ltr" /></div> : null}
+        <SettingsPanel title={t(documentDetailLabels[type])} description={t(editable ? documentEditableDescriptions[type] : documentLockedDescriptions[type])}>
+          <div className="grid lg:grid-cols-[minmax(260px,0.82fr)_minmax(0,2.18fr)]">
+            <section aria-labelledby="finance-detail-party-heading" className="px-4 py-3.5 lg:border-e lg:border-[var(--md-line)]">
+              <div className="flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)]">
+                <MapPin className="size-3.5 text-[var(--md-accent)]" aria-hidden="true" />
+                <h2 id="finance-detail-party-heading">{t(ledger === "receivables" ? "Bill to" : "Supplier")}</h2>
+              </div>
+              <div className="mt-2">
+                {editable && options ? <Select value={partyOrgId} disabled={sourceKind === "job"} onValueChange={setPartyOrgId}><SelectTrigger id="finance-detail-party" aria-label={t(ledger === "receivables" ? "Customer" : "Supplier")} className="w-full text-[14px] font-medium"><SelectValue /></SelectTrigger><SelectContent>{options.parties.map((party) => <SelectItem key={party.Org_id} value={party.Org_id}>{party.Org_Name}</SelectItem>)}</SelectContent></Select> : <p className="text-[16px] font-medium leading-6 text-[var(--md-ink)]" dir="auto">{selectedParty?.Org_Name ?? document.partyName}</p>}
+                {(selectedParty?.Org_AccCode ?? document.partyAccountCode) ? <p className="mt-1 text-[11.5px] text-[var(--md-subtle)]"><span>{t("Account")}</span> <span data-i18n-skip dir="ltr">{selectedParty?.Org_AccCode ?? document.partyAccountCode}</span></p> : null}
+              </div>
+              <address className="mt-3 not-italic text-[12px] leading-[18px] text-[var(--md-text)]">
+                {billingAddressLines.length ? billingAddressLines.map((line, index) => <span key={`${index}-${line}`} className="block" dir="auto">{line}</span>) : <span className="text-[var(--md-subtle)]">{t(partyChanged ? "Save the draft to load the selected account's billing address." : "No billing address is saved for this account.")}</span>}
+              </address>
+              {displayedBillingAddress?.email || displayedBillingAddress?.phone ? <div className="mt-3 grid gap-1.5 text-[11.5px]">
+                {displayedBillingAddress.email ? <a className="inline-flex min-w-0 items-center gap-2 text-[var(--md-text)] hover:text-[var(--md-accent)]" href={`mailto:${displayedBillingAddress.email}`}><Mail className="size-3.5 shrink-0" aria-hidden="true" /><span className="truncate" dir="auto">{displayedBillingAddress.email}</span></a> : null}
+                {displayedBillingAddress.phone ? <a className="inline-flex min-w-0 items-center gap-2 text-[var(--md-text)] hover:text-[var(--md-accent)]" href={`tel:${displayedBillingAddress.phone}`}><Phone className="size-3.5 shrink-0" aria-hidden="true" /><span dir="auto">{displayedBillingAddress.phone}</span></a> : null}
+              </div> : null}
+            </section>
+
+            <section aria-label={t(documentInformationLabels[type])} className="px-4 py-3.5">
+              <div className="grid gap-x-3 gap-y-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="space-y-1"><FieldLabel htmlFor="finance-detail-number">{t(documentNumberLabels[type])}</FieldLabel><Input id="finance-detail-number" className="h-8" value={document.FINDoc_Number ?? t("Assigned automatically")} disabled data-i18n-skip={document.FINDoc_Number ? "" : undefined} dir="ltr" /></div>
+                <div className="space-y-1"><FieldLabel htmlFor="finance-detail-date">{t(documentDateLabels[type])}</FieldLabel><Input id="finance-detail-date" className="h-8" type="date" value={documentDate} onChange={(event) => setDocumentDate(event.target.value)} disabled={!editable} data-i18n-skip dir="ltr" /></div>
+                <div className="space-y-1"><FieldLabel htmlFor="finance-detail-due">{t("Due date")}</FieldLabel><Input id="finance-detail-due" className="h-8" type="date" value={dueDate} min={documentDate} onChange={(event) => setDueDate(event.target.value)} disabled={!editable} data-i18n-skip dir="ltr" /></div>
+                <div className="space-y-1"><FieldLabel htmlFor="finance-detail-period">{t("Accounting period")}</FieldLabel>{editable && options ? <Select value={accountingPeriodId || "automatic"} onValueChange={(value) => setAccountingPeriodId(value === "automatic" ? "" : value)}><SelectTrigger id="finance-detail-period" className="h-8"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="automatic">{t("Automatic from invoice date")}</SelectItem>{options.accountingPeriods.filter((period) => period.FINPeriod_LegalEntityID === document.FINDoc_LegalEntityID && period.FINPeriod_StatusCode === "open").map((period) => <SelectItem key={period.FINPeriod_ID} value={period.FINPeriod_ID}><span data-i18n-skip dir="ltr">{period.FINPeriod_Code}</span> · {period.FINPeriod_Name}</SelectItem>)}</SelectContent></Select> : <Input id="finance-detail-period" className="h-8" value={detail.accountingPeriod ? `${detail.accountingPeriod.FINPeriod_Code} · ${detail.accountingPeriod.FINPeriod_Name}` : t("Automatic from invoice date")} disabled />}</div>
+                <div className="space-y-1"><FieldLabel htmlFor="finance-detail-currency">{t("Invoice currency")}</FieldLabel><Input id="finance-detail-currency" className="h-8" maxLength={3} value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value.toUpperCase())} disabled={!editable} data-i18n-skip dir="ltr" /></div>
+                {needsExchangeRate ? <div className="space-y-1"><FieldLabel htmlFor="finance-detail-rate">{t("Invoice ROE to base")} <span data-i18n-skip dir="ltr">({baseCurrency})</span></FieldLabel><Input id="finance-detail-rate" className="h-8" type="number" min="0.0000000001" step="0.0000000001" value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} disabled={!editable} data-i18n-skip dir="ltr" /></div> : null}
+                {editable || sourceKind === "job" ? <div className="space-y-1 xl:col-span-2"><FieldLabel htmlFor="finance-detail-job">{t("Job reference (optional)")}</FieldLabel>{editable && options ? <Select value={sourceKind === "job" && sourceJobId ? sourceJobId : "not-linked"} onValueChange={(value) => { if (value === "not-linked") { setSourceKind("manual"); setSourceJobId(""); setLines((current) => current.map((line) => ({ ...line, jobCostingLineId: null }))); return } const job = availableJobs.find((item) => item.Job_ID === value); setSourceKind("job"); setSourceJobId(value); setLines((current) => current.map((line) => ({ ...line, jobCostingLineId: null }))); setPartyOrgId(ledger === "receivables" ? job?.Job_Customer ?? "" : job?.Job_Supplier ?? "") }}><SelectTrigger id="finance-detail-job" className="h-8"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="not-linked">{t("Not linked to a job")}</SelectItem>{availableJobs.map((job) => <SelectItem key={job.Job_ID} value={job.Job_ID}><span data-i18n-skip dir="ltr">{job.Job_Period}-{job.Job_Number}</span> · {t(job.Job_Status)}</SelectItem>)}</SelectContent></Select> : <Input id="finance-detail-job" className="h-8" value={document.jobReference ?? t("Not linked to a job")} disabled />}</div> : null}
+              </div>
+            </section>
           </div>
         </SettingsPanel>
 
-        <FinanceDocumentLineEditor lines={lines} onLinesChange={setLines} taxOptions={taxOptions} jobChargeOptions={jobChargeOptions} sourceKind={sourceKind} currencyCode={currencyCode} credit={isCredit} disabled={Boolean(pendingAction)} readOnly={!editable} onClear={() => { resetForm(detail); toast.success(t("Unsaved changes cleared")) }} onImport={importExcel} onExport={exportExcel} onPrint={printProforma} />
+        <FinanceDocumentLineEditor lines={lines} onLinesChange={setLines} taxOptions={taxOptions} chargeOptions={chargeOptions} currencyOptions={currencyOptions} jobChargeOptions={jobChargeOptions} sourceKind={sourceKind} currencyCode={currencyCode} credit={isCredit} disabled={Boolean(pendingAction)} readOnly={!editable} onClear={() => { resetForm(detail); toast.success(t("Unsaved changes cleared")) }} onImport={importExcel} onExport={exportExcel} onPrint={printProforma} />
 
         <SettingsPanel title={t("Document history")} description={t("Approval, rejection and recovery changes are retained as lifecycle evidence.")}>
           <div className="divide-y divide-[var(--md-line)]">

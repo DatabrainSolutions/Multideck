@@ -275,29 +275,24 @@ async function providerCustomerConnection(admin: any, current: any, connectionId
   return data
 }
 
-async function providerPartyOrganisation(admin: any, orgId: string, partyType: ProviderPartyType = "customer") {
+async function preferredPartyBillingAddress(admin: any, orgId: string | null) {
+  if (!orgId) return null
   if (!isUuid(orgId)) throw new HttpError(404, "Organisation not found.")
-  const [organisationResult, profileResult, addressResult] = await Promise.all([
-    admin.from("Org_Master").select("Org_id,Org_Name,Org_AccCode,Org_BaseCurrency,Org_CRMRelationshipStatusCode").eq("Org_id", orgId).maybeSingle(),
-    admin.from("CRM_AccountOperationalProfiles").select("CRMAccountOps_InvoicePreferencesJSON").eq("CRMAccountOps_OrgID", orgId).maybeSingle(),
-    admin.from("Org_Addresses").select("OrgAdd_ID,Org_NameOverride,OrgAdd_Line1,OrgAdd_Line2,OrgAdd_TownCity,OrgAdd_CountyState,OrgAdd_PostZipCode,OrgAdd_Country,OrgAdd_MainEmail,OrgAdd_MainPhone").eq("Org_ID", orgId).eq("OrgAdd_IsActive", true).order("OrgAdd_UpdatedAt", { ascending: false }),
-  ])
-  if (organisationResult.error || profileResult.error || addressResult.error) throw new HttpError(500, organisationResult.error?.message ?? profileResult.error?.message ?? addressResult.error?.message)
-  const organisation = organisationResult.data
-  if (!organisation) throw new HttpError(404, "Organisation not found.")
-  if (clean(organisation.Org_CRMRelationshipStatusCode, 60).toLowerCase() === "blocked") throw new HttpError(409, "This organisation is blocked. Restore its relationship status before adding it to an accounting system.")
-  const preferences = profileResult.data?.CRMAccountOps_InvoicePreferencesJSON && typeof profileResult.data.CRMAccountOps_InvoicePreferencesJSON === "object" ? profileResult.data.CRMAccountOps_InvoicePreferencesJSON : {}
-  const accountingStatusCode = clean(preferences[partyType === "customer" ? "customerAccountingStatusCode" : "supplierAccountingStatusCode"], 20)
-  if (accountingStatusCode === "blocked") throw new HttpError(409, `This organisation's ${partyType} accounting status is blocked.`)
+  const { data: addresses, error: addressError } = await admin.from("Org_Addresses")
+    .select("OrgAdd_ID,Org_NameOverride,OrgAdd_Line1,OrgAdd_Line2,OrgAdd_TownCity,OrgAdd_CountyState,OrgAdd_PostZipCode,OrgAdd_Country,OrgAdd_MainEmail,OrgAdd_MainPhone")
+    .eq("Org_ID", orgId)
+    .eq("OrgAdd_IsActive", true)
+    .order("OrgAdd_UpdatedAt", { ascending: false })
+    .limit(100)
+  if (addressError) throw new HttpError(500, addressError.message)
+  if (!addresses?.length) return null
 
-  const addresses = addressResult.data ?? []
   const addressIds = addresses.map((address: any) => address.OrgAdd_ID)
-  const [linksResult, typesResult, currencyResult] = await Promise.all([
-    addressIds.length ? admin.from("Org_AddressTypes").select("OrgAdd_ID,OrgAddType_Type,OrgAddType_IsDefault").in("OrgAdd_ID", addressIds) : { data: [], error: null },
+  const [linksResult, typesResult] = await Promise.all([
+    admin.from("Org_AddressTypes").select("OrgAdd_ID,OrgAddType_Type,OrgAddType_IsDefault").in("OrgAdd_ID", addressIds),
     admin.from("sys_AddressTypes").select("sys_AddressType_ID,sys_AddressType_Code").eq("sys_AddressType_IsActive", true),
-    organisation.Org_BaseCurrency ? admin.from("sys_Currency").select("Currency_Code").eq("Currency_ID", organisation.Org_BaseCurrency).maybeSingle() : { data: null, error: null },
   ])
-  if (linksResult.error || typesResult.error || currencyResult.error) throw new HttpError(500, linksResult.error?.message ?? typesResult.error?.message ?? currencyResult.error?.message)
+  if (linksResult.error || typesResult.error) throw new HttpError(500, linksResult.error?.message ?? typesResult.error?.message)
   const typeCodes = new Map((typesResult.data ?? []).map((type: any) => [String(type.sys_AddressType_ID), type.sys_AddressType_Code]))
   const addressScore = new Map<string, number>()
   for (const link of linksResult.data ?? []) {
@@ -305,30 +300,54 @@ async function providerPartyOrganisation(admin: any, orgId: string, partyType: P
     const score = (code === "billing" ? 30 : code === "main" ? 20 : code === "postal" ? 10 : 0) + (link.OrgAddType_IsDefault ? 5 : 0)
     addressScore.set(link.OrgAdd_ID, Math.max(addressScore.get(link.OrgAdd_ID) ?? 0, score))
   }
-  const address = [...addresses].sort((left: any, right: any) => (addressScore.get(right.OrgAdd_ID) ?? 0) - (addressScore.get(left.OrgAdd_ID) ?? 0))[0] ?? null
-  const countryCode = clean(address?.OrgAdd_Country, 2).toUpperCase() || null
-  const { data: country, error: countryError } = countryCode ? await admin.from("RefCountry").select("RN_Desc").eq("RN_Code", countryCode).maybeSingle() : { data: null, error: null }
+  const address = [...addresses].sort((left: any, right: any) => (addressScore.get(right.OrgAdd_ID) ?? 0) - (addressScore.get(left.OrgAdd_ID) ?? 0))[0]
+  const countryCode = clean(address.OrgAdd_Country, 2).toUpperCase() || null
+  const { data: country, error: countryError } = countryCode
+    ? await admin.from("RefCountry").select("RN_Desc").eq("RN_Code", countryCode).maybeSingle()
+    : { data: null, error: null }
   if (countryError) throw new HttpError(500, countryError.message)
+  return {
+    id: address.OrgAdd_ID,
+    name: address.Org_NameOverride ?? null,
+    line1: address.OrgAdd_Line1 ?? null,
+    line2: address.OrgAdd_Line2 ?? null,
+    townCity: address.OrgAdd_TownCity ?? null,
+    countyState: address.OrgAdd_CountyState ?? null,
+    postZipCode: address.OrgAdd_PostZipCode ?? null,
+    countryCode,
+    countryName: country?.RN_Desc ?? null,
+    email: address.OrgAdd_MainEmail ?? null,
+    phone: address.OrgAdd_MainPhone ?? null,
+  }
+}
+
+async function providerPartyOrganisation(admin: any, orgId: string, partyType: ProviderPartyType = "customer") {
+  if (!isUuid(orgId)) throw new HttpError(404, "Organisation not found.")
+  const [organisationResult, profileResult, billingAddress] = await Promise.all([
+    admin.from("Org_Master").select("Org_id,Org_Name,Org_AccCode,Org_BaseCurrency,Org_CRMRelationshipStatusCode").eq("Org_id", orgId).maybeSingle(),
+    admin.from("CRM_AccountOperationalProfiles").select("CRMAccountOps_InvoicePreferencesJSON").eq("CRMAccountOps_OrgID", orgId).maybeSingle(),
+    preferredPartyBillingAddress(admin, orgId),
+  ])
+  if (organisationResult.error || profileResult.error) throw new HttpError(500, organisationResult.error?.message ?? profileResult.error?.message)
+  const organisation = organisationResult.data
+  if (!organisation) throw new HttpError(404, "Organisation not found.")
+  if (clean(organisation.Org_CRMRelationshipStatusCode, 60).toLowerCase() === "blocked") throw new HttpError(409, "This organisation is blocked. Restore its relationship status before adding it to an accounting system.")
+  const preferences = profileResult.data?.CRMAccountOps_InvoicePreferencesJSON && typeof profileResult.data.CRMAccountOps_InvoicePreferencesJSON === "object" ? profileResult.data.CRMAccountOps_InvoicePreferencesJSON : {}
+  const accountingStatusCode = clean(preferences[partyType === "customer" ? "customerAccountingStatusCode" : "supplierAccountingStatusCode"], 20)
+  if (accountingStatusCode === "blocked") throw new HttpError(409, `This organisation's ${partyType} accounting status is blocked.`)
+
+  const { data: currencyRow, error: currencyError } = organisation.Org_BaseCurrency
+    ? await admin.from("sys_Currency").select("Currency_Code").eq("Currency_ID", organisation.Org_BaseCurrency).maybeSingle()
+    : { data: null, error: null }
+  if (currencyError) throw new HttpError(500, currencyError.message)
   return {
     organisation: {
       id: organisation.Org_id,
       name: organisation.Org_Name,
       accountCode: organisation.Org_AccCode,
-      currencyCode: currency(currencyResult.data?.Currency_Code),
+      currencyCode: currency(currencyRow?.Currency_Code),
     },
-    billingAddress: address ? {
-      id: address.OrgAdd_ID,
-      name: address.Org_NameOverride ?? null,
-      line1: address.OrgAdd_Line1 ?? null,
-      line2: address.OrgAdd_Line2 ?? null,
-      townCity: address.OrgAdd_TownCity ?? null,
-      countyState: address.OrgAdd_CountyState ?? null,
-      postZipCode: address.OrgAdd_PostZipCode ?? null,
-      countryCode,
-      countryName: country?.RN_Desc ?? null,
-      email: address.OrgAdd_MainEmail ?? null,
-      phone: address.OrgAdd_MainPhone ?? null,
-    } : null,
+    billingAddress,
   }
 }
 
@@ -1247,7 +1266,7 @@ async function documentDetail(admin: any, current: any, id: string) {
   await requirePermission(admin, current.User_ID, viewPermission(typeLedger(document.FINDoc_TypeCode)))
   const [
     linesResult, partyResult, entityResult, jobResult, queueResult,
-    historyResult, externalResult, issueResult, connectionResult,
+    historyResult, externalResult, issueResult, connectionResult, billingAddress,
   ] = await Promise.all([
     admin.from("FIN_DocumentLines")
       .select("FINDocLine_ID,FINDocLine_LineNo,FINDocLine_LineTypeCode,FINDocLine_ChargeCodeSnapshot,FINDocLine_Description,FINDocLine_Quantity,FINDocLine_UnitAmount,FINDocLine_NetAmount,FINDocLine_TaxCodeID,FINDocLine_TaxCodeSnapshot,FINDocLine_TaxRatePercent,FINDocLine_TaxAmount,FINDocLine_GrossAmount")
@@ -1278,6 +1297,7 @@ async function documentDetail(admin: any, current: any, id: string) {
       .select("ACCIC_ID,ACCIC_ProviderCode,ACCIC_Name,ACCIC_StatusCode,ACCIC_ExternalTenantName")
       .eq("ACCIC_LegalEntityID", document.FINDoc_LegalEntityID).eq("ACCIC_StatusCode", "active")
       .order("ACCIC_UpdatedAt", { ascending: false }).limit(1).maybeSingle(),
+    preferredPartyBillingAddress(admin, document.FINDoc_PartyOrgID),
   ])
   for (const query of [linesResult, partyResult, entityResult, jobResult, queueResult, historyResult, externalResult, issueResult, connectionResult]) {
     if (query.error) throw new HttpError(500, query.error.message)
@@ -1310,6 +1330,10 @@ async function documentDetail(admin: any, current: any, id: string) {
     externalReference: externalResult.data ?? null,
     reconciliationIssues: issueResult.data ?? [],
     provider: connectionResult.data ?? null,
+    // Presentation-only projection of an address already available through the
+    // tenant-scoped CRM account domain. It does not add a finance write or event:
+    // FIN_Documents and Org_Master remain Dexter's evidence/watch boundaries.
+    billingAddress,
   }
 }
 

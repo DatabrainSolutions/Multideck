@@ -12,7 +12,7 @@ export type DashboardCustomDateRange = { start: string | null; end: string | nul
  * supporting line are required: a surface that has no comparable previous period
  * or no stored history should leave `change` and `series` off rather than invent
  * them. `icon` marks the domain the metric belongs to when a strip mixes
- * subjects — leads, deals and money in one row, for example.
+ * subjects – leads, deals and money in one row, for example.
  */
 export type DashboardKpi = {
   label: string
@@ -24,7 +24,7 @@ export type DashboardKpi = {
   icon?: LucideIcon
   /**
    * Movement across the selected period, derived from the metric's own series.
-   * Left off when there is no earlier reading to compare against — a tile with
+   * Left off when there is no earlier reading to compare against – a tile with
    * one data point must not draw an arrow.
    */
   delta?: DashboardDelta
@@ -40,7 +40,7 @@ export type DashboardDelta = {
 
 /**
  * Movement from the first reading in the window to the current one. Percent
- * where there is a non-zero base to divide by, absolute where there is not —
+ * where there is a non-zero base to divide by, absolute where there is not –
  * "+3 from 0" is a real statement, "+∞%" is not.
  */
 function seriesDelta(series: number[] | undefined, caption: string): DashboardDelta | undefined {
@@ -281,7 +281,7 @@ function bookingDueAt(booking: LiveBooking) {
 }
 
 /**
- * The operating cutoff the rest of the product already works to — the same
+ * The operating cutoff the rest of the product already works to – the same
  * 17:00 the world-clock queues are measured against. A quote that is ready to
  * send is due by it, so "ready" cannot quietly mean "whenever".
  */
@@ -298,9 +298,9 @@ export type DashboardPriorityBucket = "overdue" | "soon" | "today" | "later"
 
 /**
  * One thing the operator has to do, from whichever register it came from. The
- * dashboard used to carry three lists over the same records — every booking as
+ * dashboard used to carry three lists over the same records – every booking as
  * "your jobs", the exception subset as "today's actions", and every booking
- * again as "live bookings" — so the same delay was read three times before it
+ * again as "live bookings" – so the same delay was read three times before it
  * was worked once. This is the single ranked queue those collapse into.
  */
 export type DashboardPriorityItem = {

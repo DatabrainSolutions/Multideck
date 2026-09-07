@@ -3,7 +3,7 @@
  *
  * Everything here is derived from figures Dexter actually records for this
  * company: how many actions ran, how much workspace context each one read, and
- * how much it wrote back. Time saved is not a flat guess per action — it scales
+ * how much it wrote back. Time saved is not a flat guess per action – it scales
  * with the size of the work in the recorded tokens, so a one-line lookup and a
  * full customs draft are not valued the same.
  *
@@ -93,7 +93,7 @@ export type DexterAllowance = {
   used: number
   remaining: number
   usedPercent: number
-  /** Where an evenly spread period would sit right now — the pace marker. */
+  /** Where an evenly spread period would sit right now – the pace marker. */
   pacePercent: number
   totalDays: number
   elapsedDays: number

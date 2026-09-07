@@ -30,7 +30,7 @@ const toneClasses: Record<ResponseTone, string> = {
 }
 
 function formatDate(value: string | null | undefined, locale?: string) {
-  if (!value) return "—"
+  if (!value) return "–"
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(date)
 }
@@ -50,9 +50,9 @@ function quoteResponseSummary(view: Extract<QuoteResponseView, { state: "active"
     } catch {
       return `${currency} ${amount.toFixed(2)}`
     }
-  }).join(" · ") || "—"
+  }).join(" · ") || "–"
   return {
-    route: [quote.loadingPoint, quote.dischargePoint].filter(Boolean).join(" → ") || "—",
+    route: [quote.loadingPoint, quote.dischargePoint].filter(Boolean).join(" → ") || "–",
     price,
     validUntil: formatDate(quote.validTo, locale),
   }

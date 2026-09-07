@@ -27,7 +27,7 @@ const WIPE_TRANSITION_MS = 300
 const EXPAND_TRANSITION_MS = 220
 /** Let the box finish growing before the copied word arrives, so it is never clipped mid-swap. */
 const EXPAND_LEAD_MS = 110
-/** The leaving value gets out of the way quickly — the pop belongs to whatever is arriving. */
+/** The leaving value gets out of the way quickly – the pop belongs to whatever is arriving. */
 const POP_OUT_MS = 120
 /** Scale carries the overshoot, so it runs longer than the fade that lands the word. */
 const POP_SCALE_MS = 250
@@ -37,7 +37,7 @@ const POP_IN_DELAY_MS = 40
 /** Short enough that the box is already at full width by the time the copied word starts arriving. */
 const POP_EXPAND_TRANSITION_MS = 120
 const POP_EXPAND_LEAD_MS = 50
-/** Overshoots past 1 — that bounce at the end of the curve is what makes the word feel alive. */
+/** Overshoots past 1 – that bounce at the end of the curve is what makes the word feel alive. */
 const POP_OVERSHOOT = "cubic-bezier(0.34, 1.56, 0.64, 1)"
 /** Past this length a value reads as a block, so it wipes in one piece instead of per character. */
 const SLOT_CHARACTER_LIMIT = 48
@@ -102,7 +102,7 @@ function readLineRects(element: Element) {
 /**
  * Centre of the first rendered line, relative to its own layer. Scoped to the original layer so the
  * absolutely positioned copied layer, whose box spans the whole value, cannot be mistaken for a
- * line — that mistake is what made an earlier version of this oscillate.
+ * line – that mistake is what made an earlier version of this oscillate.
  */
 function readFirstLineOffset(layer: Element) {
   // Descend first: a value built from stacked blocks reports only its wrapper, whose centre sits
@@ -141,7 +141,7 @@ function readFirstLineHeight(element: Element) {
 }
 
 /**
- * Font size of the value's own first text, which is the size "Copied" stands in for — the layer only
+ * Font size of the value's own first text, which is the size "Copied" stands in for – the layer only
  * inherits whatever the surrounding block sets, and values routinely size their own text. Read from
  * the text node's parent rather than by descending elements, so an icon or wrapper in front of the
  * text cannot answer for it.
@@ -158,7 +158,7 @@ function readValueFontSize(layer: Element) {
 }
 
 /**
- * Layout width, which is what the box has to hold open — `getBoundingClientRect` reports the *painted*
+ * Layout width, which is what the box has to hold open – `getBoundingClientRect` reports the *painted*
  * box, so a layer mid-pop measures at its scaled-down size and the box grows too little to fit
  * "Copied". `offsetWidth` ignores transforms; it rounds, so pad the sub-pixel back on.
  */

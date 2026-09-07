@@ -280,7 +280,7 @@ function downloadBlob(blob: Blob, fileName: string) {
 }
 
 function formatBytes(value: number | null) {
-  if (value === null) return "—"
+  if (value === null) return "–"
   if (value < 1024) return `${value} B`
   if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
@@ -1717,7 +1717,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   const generatedDocumentColumns = useMemo<DataTableColumn<GeneratedDocumentSummary>[]>(() => [
     { id: "document", label: "Document", kind: "long-text", width: 280, minWidth: 210, resizable: true, sortValue: (document) => document.fileName, cellTitle: (document) => document.fileName, cell: (document) => <div className="min-w-0"><p className="truncate text-[11.5px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{document.fileName}</p><p className="mt-0.5 text-[10px] text-[var(--md-subtle)]"><span>{t(document.templateName)}</span> · <span data-i18n-skip>{formatBytes(document.fileSizeBytes)}</span></p></div> },
     { id: "job", label: "Job", kind: "text", width: 140, sortValue: (document) => document.targetReference, cell: (document) => <span className="text-[11px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{document.targetReference}</span> },
-    { id: "customer", label: "Customer", kind: "long-text", width: 190, resizable: true, sortValue: (document) => document.customerName ?? "", cellTitle: (document) => document.customerName ?? undefined, cell: (document) => <span className="block truncate text-[11px] text-[var(--md-text)]" data-i18n-skip dir="auto">{document.customerName ?? "—"}</span> },
+    { id: "customer", label: "Customer", kind: "long-text", width: 190, resizable: true, sortValue: (document) => document.customerName ?? "", cellTitle: (document) => document.customerName ?? undefined, cell: (document) => <span className="block truncate text-[11px] text-[var(--md-text)]" data-i18n-skip dir="auto">{document.customerName ?? "–"}</span> },
     { id: "created", label: "Created", kind: "date", width: 150, sortValue: (document) => document.createdAt, cell: (document) => <span className="tabular-nums text-[10.5px] text-[var(--md-text)]" data-i18n-skip>{dateFormatter.format(new Date(document.createdAt))}</span> },
     { id: "status", label: "Status", kind: "status", width: 112, sortValue: (document) => document.status, cell: (document) => <StatusPill kind="status" tone={statusTone[document.status]} className="capitalize">{t(document.status)}</StatusPill> },
     { id: "actions", label: "Actions", kind: "actions", width: 64, canHide: false, canPin: false, cell: (document) => <Tooltip><TooltipTrigger asChild><Button type="button" variant="ghost" size="icon-sm" disabled={document.status !== "ready" || downloadingId === document.id} onClick={(event) => { event.stopPropagation(); void download(document) }} aria-label={t("Download document")} className="opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100">{downloadingId === document.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}</Button></TooltipTrigger><TooltipContent>{t("Download document")}</TooltipContent></Tooltip> },

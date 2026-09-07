@@ -1238,7 +1238,7 @@ export function CrmLeadDetailPanel({
                 {!ownerAction ? (
                   <Avatar aria-label={lead.ownerName} className="size-8 shrink-0">
                     {ownerPhotoUrl ? <AvatarImage src={ownerPhotoUrl} alt="" /> : null}
-                    <AvatarFallback className="bg-[var(--md-accent-a11)] text-[11px] font-medium text-[var(--md-accent)]">{lead.ownerInitials ?? "—"}</AvatarFallback>
+                    <AvatarFallback className="bg-[var(--md-accent-a11)] text-[11px] font-medium text-[var(--md-accent)]">{lead.ownerInitials ?? "–"}</AvatarFallback>
                   </Avatar>
                 ) : null}
                 <CopyableField label={t("Owner")} value={lead.ownerName} className="-my-1 min-w-0">

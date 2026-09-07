@@ -56,8 +56,8 @@ const namedKeys = [
 const namedKeyLookup = new Map(namedKeys.map((key) => [key.toLowerCase(), key]))
 
 /**
- * Keys the browser or operating system claims. A binding may still use them —
- * an operator who wants ⌘W is entitled to it — but the editor warns first, which
+ * Keys the browser or operating system claims. A binding may still use them –
+ * an operator who wants ⌘W is entitled to it – but the editor warns first, which
  * is cheaper than debugging a shortcut that closes the tab.
  *
  * ⌘D is absent on purpose: Multideck claims it for the Dexter summon and cancels

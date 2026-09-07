@@ -220,6 +220,35 @@ async function customerRows(admin: any, companyId: string, search?: string | nul
   }).filter((item: Row) => !term || [item.name, item.location, item.industry, item.ownerName, item.relationshipStatus].some((value) => value?.toLowerCase().includes(term)))
 }
 
+type CustomerFinanceSnapshot = {
+  rows: Map<string, Row>
+  financeReady: boolean
+  baseCurrencyCode: string | null
+  summary: Row
+}
+
+async function customerAccountFinancials(admin: any, current: Row, requestedIds: string[], includeAccountingSync: boolean): Promise<CustomerFinanceSnapshot> {
+  const accountIds = [...new Set(requestedIds)].slice(0, 100)
+  const { data, error } = await admin.rpc("multideck_finance_customer_account_snapshot", {
+    p_company_id: current.Company_ID,
+    p_account_ids: accountIds,
+    p_include_accounting_sync: includeAccountingSync,
+  })
+  if (error) throw new HttpError(error.code === "22023" ? 400 : 500, error.message)
+
+  const payload = objectValue(data)
+  const snapshotRows = Array.isArray(payload.rows) ? payload.rows.map(objectValue) : []
+  return {
+    rows: new Map(snapshotRows.flatMap((row) => {
+      const organisationId = normalize(row.organisationId)
+      return organisationId ? [[organisationId, row] as [string, Row]] : []
+    })),
+    financeReady: payload.financeReady === true,
+    baseCurrencyCode: normalize(payload.baseCurrencyCode)?.toUpperCase() ?? null,
+    summary: objectValue(payload.summary),
+  }
+}
+
 async function contactRows(admin: any, companyId: string, search?: string | null, accountId?: string | null, contactId?: string | null, includeDetailSource = false, scopedContactIdsOverride?: string[], actorUserId?: string, maxRows?: number) {
   let exactAccountId = accountId ?? null
   if (contactId && actorUserId) {
@@ -961,8 +990,24 @@ Deno.serve(async (request) => {
         const payload = objectValue(data)
         const ids = Array.isArray(payload.ids) ? payload.ids.filter((value): value is string => typeof value === "string") : []
         const rows = await customerRows(admin, current.Company_ID, null, null, false, ids, undefined, "any")
+        const financialAccess = organisationType === "customer" && permissions.includes("Finance.Receivables.View")
+        const accountingSyncAccess = financialAccess && permissions.includes("Finance.Integration.Manage")
+        const financials = financialAccess
+          ? await customerAccountFinancials(admin, current, ids, accountingSyncAccess)
+          : null
         const rowMap = new Map(rows.map((row: Row) => [row.id, row]))
-        return json(request, { ...payload, rows: ids.flatMap((id) => rowMap.get(id) ? [rowMap.get(id)] : []) })
+        return json(request, {
+          ...payload,
+          financialAccess,
+          accountingSyncAccess,
+          financeReady: financials?.financeReady ?? false,
+          financeCurrencyCode: financials?.baseCurrencyCode ?? null,
+          financialSummary: financials?.summary ?? null,
+          rows: ids.flatMap((id) => {
+            const row = rowMap.get(id)
+            return row ? [{ ...row, ...(financials?.rows.has(id) ? { financial: financials.rows.get(id) } : {}) }] : []
+          }),
+        })
       }
       throw new HttpError(400, "Organisation lists require bounded paging.")
     }

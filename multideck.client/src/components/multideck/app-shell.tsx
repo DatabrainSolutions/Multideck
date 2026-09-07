@@ -231,7 +231,7 @@ export function AppShell({
   // Routes that own the whole viewport: they scroll their own panes, so the shell
   // must not add page padding, a top bar, or a second scroll axis around them.
   // Home is one of them because its prompt has to sit at exactly the height the
-  // Dexter conversation's does — any page padding between them would show up as
+  // Dexter conversation's does – any page padding between them would show up as
   // a jump the moment a conversation starts.
   const isFullHeightRoute = isHomeRoute || isAgentRoute || isInboxRoute || isDocumentsRoute
   const isChromeTightRoute = route.startsWith("/quotes/") || isBookingDetailRoute || route === "/bookings/provisional"

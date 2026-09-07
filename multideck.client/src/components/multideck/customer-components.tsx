@@ -738,7 +738,7 @@ export function DexterPulsePanel() {
         <h2 className="text-[15px] font-medium text-[var(--md-ink)]">Dexter · customer pulse</h2>
       </div>
       <p className="mt-[var(--md-page-stack-gap)] text-[15px] leading-7 text-[var(--md-ink)]">
-        Healthy and growing. Sandra mentioned in last week's email that volumes for AW26 may run 20% above forecast — worth touching base on capacity before September. One open hold; everything else on track.
+        Healthy and growing. Sandra mentioned in last week's email that volumes for AW26 may run 20% above forecast – worth touching base on capacity before September. One open hold; everything else on track.
       </p>
       <div className="mt-[var(--md-page-stack-gap)] flex flex-wrap gap-[var(--md-gap-sm)]">
         <Button variant="ghost" className="h-9 rounded-[var(--md-radius-md)] bg-white/35 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">

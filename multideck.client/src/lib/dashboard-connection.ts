@@ -17,7 +17,7 @@ export function createDashboardConnectionState(
 
 /**
  * Confirms the operator's Supabase session is still accepted by the protected
- * API. The dashboard surfaces this because every panel on it reads live data —
+ * API. The dashboard surfaces this because every panel on it reads live data –
  * an expired session should be obvious before someone acts on a stale number.
  */
 export async function checkDashboardConnection(): Promise<DashboardConnectionState> {

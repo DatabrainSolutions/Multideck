@@ -36,7 +36,7 @@ test("advanced filter semantics preserve empty, negative, exact, prefix, contain
   assert.match(migration, /v_group_match = 'all'/)
   assert.match(migration, /v_query_match = 'any'/)
   assert.match(migration, /cardinality\(v_days\) = 0/)
-  assert.match(migration, /btrim\(value\) <> '—'/)
+  assert.match(migration, new RegExp(`btrim\\(value\\) <> '${"\\u2014"}'`))
 })
 
 test("only authenticated roles can execute the bounded register functions", () => {

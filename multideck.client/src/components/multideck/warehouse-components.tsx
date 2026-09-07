@@ -1148,7 +1148,7 @@ function WarehouseHeaderChip({ action, onNavigate }: { action: WarehouseHeaderAc
 /**
  * The warehouse page header: title, one line of orientation, the live figures an
  * operator needs regardless of which warehouse screen they are on. The title
- * carries no icon tile — the sidebar already says which
+ * carries no icon tile – the sidebar already says which
  * area this is, and the tile only pushed the table further down the screen.
  */
 export function WarehousePageHeader({
@@ -2131,8 +2131,8 @@ export function WarehouseCalendarView({
   /** Opens the warehouse order behind an event. Omitted leaves the popover read-only. */
   onOpenOrder?: (event: WarehouseCalendarEvent) => void
   /**
-   * Moves a booking to a new slot. Omitted leaves the blocks inert — no grips, no
-   * grab cursor — so a read-only calendar cannot suggest an action it will not take.
+   * Moves a booking to a new slot. Omitted leaves the blocks inert – no grips, no
+   * grab cursor – so a read-only calendar cannot suggest an action it will not take.
    */
   onReschedule?: (change: { eventId: string; dateKey: string; startTime: string; endTime: string }) => void
   onRangeChange?: (range: { start: string; end: string }) => void

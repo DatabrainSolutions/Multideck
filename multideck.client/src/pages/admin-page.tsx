@@ -163,7 +163,7 @@ function formatTimestamp(value: string) {
 }
 
 function formatAuditValue(value: unknown) {
-  if (value === null || value === undefined || value === "") return "—"
+  if (value === null || value === undefined || value === "") return "–"
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value)
   try {
     const text = JSON.stringify(value)
@@ -174,7 +174,7 @@ function formatAuditValue(value: unknown) {
 }
 
 function humanise(value: string | null | undefined) {
-  if (!value) return "—"
+  if (!value) return "–"
   return value.replace(/^public\./, "").replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
@@ -306,7 +306,7 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
     { id: "activity", label: t("Activity"), kind: "long-text", width: 240, cell: (row) => <div className="min-w-0"><p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{t(row.title)}</p><p className="truncate text-[12px] text-[var(--md-text)]">{humanise(row.source)}</p></div> },
     { id: "record", label: t("Record"), kind: "long-text", width: 230, cellTitle: recordLabel, cell: (row) => <span className="block truncate text-[13px] text-[var(--md-text)]">{recordLabel(row)}</span> },
     { id: "category", label: t("Source"), kind: "status", width: 135, cell: (row) => <StatusPill kind="status" tone={row.category === "authentication" ? "purple" : "blue"}>{t(row.category === "authentication" ? "Authentication" : "Application")}</StatusPill> },
-    { id: "ip", label: t("IP address"), kind: "text", width: 150, cell: (row) => <bdi className="text-[12px] text-[var(--md-text)]">{row.ipAddress || "—"}</bdi> },
+    { id: "ip", label: t("IP address"), kind: "text", width: 150, cell: (row) => <bdi className="text-[12px] text-[var(--md-text)]">{row.ipAddress || "–"}</bdi> },
     { id: "outcome", label: t("Outcome"), kind: "status", width: 115, cell: (row) => <StatusPill kind="status" tone={row.outcome.toLowerCase().includes("fail") ? "red" : "green"}>{t(humanise(row.outcome))}</StatusPill> },
   ], [t])
 
@@ -316,8 +316,8 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
     { id: "field", label: t("Field"), kind: "attribute", width: 160, cell: (row) => <span className="text-[12px] text-[var(--md-ink)]">{humanise(row.fieldName)}</span> },
     { id: "before", label: t("Before"), kind: "long-text", width: 210, cellTitle: (row) => formatAuditValue(row.oldValue), cell: (row) => <span className="block truncate text-[12px] text-[var(--md-text)]">{formatAuditValue(row.oldValue)}</span> },
     { id: "after", label: t("After"), kind: "long-text", width: 210, cellTitle: (row) => formatAuditValue(row.newValue), cell: (row) => <span className="block truncate text-[12px] text-[var(--md-ink)]">{formatAuditValue(row.newValue)}</span> },
-    { id: "ip", label: t("IP address"), kind: "text", width: 145, cell: (row) => <bdi className="text-[12px] text-[var(--md-text)]">{row.ipAddress || "—"}</bdi> },
-    { id: "reference", label: t("Reference"), kind: "text", width: 180, defaultHidden: true, cell: (row) => <span className="block truncate text-[12px] text-[var(--md-text)]">{row.correlationId || row.requestId || "—"}</span> },
+    { id: "ip", label: t("IP address"), kind: "text", width: 145, cell: (row) => <bdi className="text-[12px] text-[var(--md-text)]">{row.ipAddress || "–"}</bdi> },
+    { id: "reference", label: t("Reference"), kind: "text", width: 180, defaultHidden: true, cell: (row) => <span className="block truncate text-[12px] text-[var(--md-text)]">{row.correlationId || row.requestId || "–"}</span> },
   ], [activityColumns, t])
 
   const title = view === "detailed" ? t("Detailed log") : t("Active log")

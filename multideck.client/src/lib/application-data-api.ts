@@ -627,7 +627,7 @@ export async function createLiveRoadJob(input: CreateLiveRoadJobInput) {
     Carrier: "Not assigned",
     Status: "Needs planning",
     Tone: "amber",
-    Margin_Display: "—",
+    Margin_Display: "–",
   })
   if (error) throw error
 }

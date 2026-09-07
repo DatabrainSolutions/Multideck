@@ -3726,7 +3726,7 @@ const mailProviderLogos: Record<MailProvider, string> = {
 /**
  * The live state of the mail connections behind the Inbox workspace.
  *
- * This replaced a prototype that hard-coded "Gmail — Connected" for every
+ * This replaced a prototype that hard-coded "Gmail – Connected" for every
  * workspace, which is the worst thing an integrations screen can do: it told
  * operators mail was flowing when nothing was connected at all. Everything here
  * comes from the authenticated tenant `inbox-api` Edge Function, and a provider

@@ -9,7 +9,7 @@ import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
-import { RegisterFacetSelect, RegisterRevalidatingMark, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
+import { RegisterFacetSelect, RegisterRefreshButton, RegisterRevalidatingMark, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { WizardDialog, type WizardStep } from "@/components/multideck/wizard-dialog"
@@ -33,11 +33,13 @@ const accountScopes = ["All", "Mine"] as const
 type AccountScope = typeof accountScopes[number]
 const emptyAccountSummary: AccountRegisterPage["summary"] = { accounts: 0, contacts: 0, needsAttention: 0, marketingOptedIn: 0, unassigned: 0, healthy: 0 }
 const emptyAccountFacets: AccountRegisterPage["facets"] = { relationships: [], owners: [], hasUnassigned: false }
+const emptyFinancialSummary: NonNullable<AccountRegisterPage["financialSummary"]> = { balanceDue: null, overdueAmount: null, openInvoiceCount: 0, overdueInvoiceCount: 0, overdueCustomerCount: 0, creditAttentionCount: 0, onHoldCount: 0, accountingAttentionCount: null }
 type OrganisationRegisterType = "company" | ProviderPartyType
 
 export function CrmAccountsPage({ navigate, currentUser, organisationType = "company" }: { navigate: (path: string) => void; currentUser?: AuthUserSummary | null; organisationType?: OrganisationRegisterType }) {
   const { language, t } = useLanguage()
-  const title = organisationType === "customer" ? "Customers" : organisationType === "supplier" ? "Suppliers" : "Companies"
+  const customerAccounts = organisationType === "customer"
+  const title = customerAccounts ? "Customer accounts" : organisationType === "supplier" ? "Suppliers" : "Companies"
   const singular = organisationType === "customer" ? "customer" : organisationType === "supplier" ? "supplier" : "company"
   const routeBase = organisationType === "customer" ? "/customers" : organisationType === "supplier" ? "/suppliers" : "/crm/accounts"
   const [accounts, setAccounts] = useState<ApiCustomer[]>([])
@@ -64,6 +66,11 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
   const [total, setTotal] = useState(0)
   const [summary, setSummary] = useState(emptyAccountSummary)
   const [facets, setFacets] = useState(emptyAccountFacets)
+  const [financialAccess, setFinancialAccess] = useState(false)
+  const [accountingSyncAccess, setAccountingSyncAccess] = useState(false)
+  const [financeReady, setFinanceReady] = useState(false)
+  const [financeCurrencyCode, setFinanceCurrencyCode] = useState<string | null>(null)
+  const [financialSummary, setFinancialSummary] = useState(emptyFinancialSummary)
   const [sort, setSort] = useState<RegisterSort | null>({ id: "account", direction: "asc" })
   const [syncOpen, setSyncOpen] = useState(false)
   const [syncState, setSyncState] = useState<"idle" | "loading" | "ready" | "error" | "syncing">("idle")
@@ -104,6 +111,11 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
         setTotal(data.total)
         setSummary(data.summary)
         setFacets(data.facets)
+        setFinancialAccess(data.financialAccess === true)
+        setAccountingSyncAccess(data.accountingSyncAccess === true)
+        setFinanceReady(data.financeReady === true)
+        setFinanceCurrencyCode(data.financeCurrencyCode ?? null)
+        setFinancialSummary(data.financialSummary ?? emptyFinancialSummary)
         setState("ready")
       })
       .catch((error) => { console.error("Accounts could not be loaded.", error); if (active) setState("error") })
@@ -130,6 +142,13 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
   }, [organisationType, reference, referenceReloadToken])
 
   useEffect(() => subscribeTopBarAction(topBarActionEvents.createCrmAccount, openCreate), [])
+
+  useEffect(() => {
+    if (organisationType === "company" || !canManageAccounting) return
+    if (new URLSearchParams(window.location.search).get("sync") !== "accounting") return
+    setLatestSync(null)
+    setSyncOpen(true)
+  }, [canManageAccounting, organisationType])
 
   useEffect(() => {
     if (!syncOpen || organisationType === "company") return
@@ -188,42 +207,98 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
     offset: 0,
   }, { forceRefresh: true }).then((page) => page.total), [accountScope, currentOwnerId, debouncedQuery, organisationType, ownerFilter, relationshipFilter, sort])
 
-  const accountColumns = useMemo<DataTableColumn<ApiCustomer>[]>(() => [
-    {
-      id: "account", label: singular[0].toUpperCase() + singular.slice(1), width: 280, minWidth: 220, maxWidth: 410, canHide: false, resizable: true,
-      sortValue: (account) => account.name,
-      cell: (account) => <div className="grid min-h-11 min-w-0 content-center"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{account.name}</span><span className="mt-0.5 block truncate text-[12px] text-[var(--md-text)]">{[account.industry, account.location].filter(Boolean).join(" · ") || t("No location recorded")}</span></div>,
-    },
-    {
-      id: "company-types", label: "Company types", kind: "status", width: 210, minWidth: 160, maxWidth: 280, resizable: true,
-      cellTitle: (account) => account.types.join(", "),
-      cell: (account) => account.types.length ? (
-        <div className="flex min-w-0 flex-wrap gap-1">
-          {account.types.slice(0, 2).map((type) => <StatusPill key={type} tone="neutral">{t(type)}</StatusPill>)}
-          {account.types.length > 2 ? <StatusPill tone="neutral">+{account.types.length - 2}</StatusPill> : null}
-        </div>
-      ) : <span className="text-[12px] text-[var(--md-subtle)]">{t("Not recorded")}</span>,
-    },
-    {
-      id: "temperature", label: "Temperature", kind: "status", width: 128, minWidth: 112, maxWidth: 160, resizable: true,
-      cellTitle: (account) => {
-        const signal = account.engagementSignal ?? fallbackEngagementSignal(account.id, account.lastContactAt)
-        return signal.calculatedFromSources
-          ? `${signal.temperature} · ${signal.activityCount30d} ${t("activities")} · ${signal.emailCount30d} ${t("emails in 30 days")}`
-          : `${signal.temperature} · ${t("Based on the last recorded engagement")}`
+  const accountColumns = useMemo<DataTableColumn<ApiCustomer>[]>(() => {
+    const openColumn: DataTableColumn<ApiCustomer> = { id: "open", label: "Open", headerContent: <span className="sr-only">{t("Open")}</span>, width: 52, minWidth: 52, maxWidth: 52, canHide: false, canPin: false, exportable: false, cell: () => <ArrowRight className="size-4 text-[var(--md-subtle)] transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transition-none" strokeWidth={1.4} /> }
+
+    if (customerAccounts) {
+      const financialColumns: DataTableColumn<ApiCustomer>[] = [
+        {
+          id: "account", label: "Customer", width: 265, minWidth: 220, maxWidth: 380, canHide: false, resizable: true,
+          sortValue: (account) => account.name,
+          exportValue: (account) => account.name,
+          cell: (account) => <div className="grid min-h-11 min-w-0 content-center"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{account.name}</span><span className="mt-0.5 block truncate text-[12px] text-[var(--md-text)]">{[account.accountCode ? `${t("Account")} ${account.accountCode}` : null, account.location].filter(Boolean).join(" · ") || t("No account code or location")}</span></div>,
+        },
+        {
+          id: "balance-due", label: "Balance due", kind: "number", align: "end", width: 145, minWidth: 125, resizable: true,
+          exportValue: (account) => account.financial?.balanceDue,
+          cell: (account) => <FinancialAmount value={account.financial?.balanceDue} currency={account.financial?.baseCurrencyCode} language={language} unavailableLabel={t(financialCellFallback(financialAccess, account.financial?.financeReady))} />,
+        },
+        {
+          id: "overdue", label: "Overdue", kind: "number", align: "end", width: 180, minWidth: 155, resizable: true,
+          exportValue: (account) => account.financial?.overdueAmount,
+          cell: (account) => {
+            const financial = account.financial
+            return <div className="grid justify-items-end"><FinancialAmount value={financial?.overdueAmount} currency={financial?.baseCurrencyCode} language={language} unavailableLabel={t(financialCellFallback(financialAccess, financial?.financeReady))} tone={Number(financial?.overdueAmount ?? 0) > 0 ? "danger" : "default"} /><span className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{financial?.overdueInvoiceCount ? `${financial.overdueInvoiceCount} ${t(financial.overdueInvoiceCount === 1 ? "invoice" : "invoices")} · ${t("oldest")} ${formatAccountDate(financial.oldestOverdueDate, language)}` : financialAccess && financial?.financeReady ? t("Nothing overdue") : ""}</span></div>
+          },
+        },
+        {
+          id: "credit", label: "Credit limit", kind: "number", align: "end", width: 185, minWidth: 160, resizable: true,
+          exportValue: (account) => account.financial?.creditLimit,
+          cell: (account) => {
+            const financial = account.financial
+            if (!financialAccess) return <span className="text-[12px] text-[var(--md-subtle)]">{t("Restricted")}</span>
+            if (financial?.creditLimit == null || !financial.creditCurrencyCode) return <span className="text-[12px] text-[var(--md-subtle)]">{t("Not set")}</span>
+            return <div className="grid justify-items-end"><span className="text-[13px] tabular-nums text-[var(--md-ink)]" data-i18n-skip dir="ltr">{formatAccountMoney(financial.creditLimit, financial.creditCurrencyCode, language)}</span><span className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{financial.availableCredit == null ? t("Availability not comparable") : `${formatAccountMoney(financial.availableCredit, financial.creditCurrencyCode, language)} ${t("available")}`}</span></div>
+          },
+        },
+        {
+          id: "payment-terms", label: "Payment terms", width: 145, minWidth: 125, resizable: true,
+          exportValue: (account) => account.financial?.paymentTermsCode ?? account.financial?.paymentTermDays,
+          cell: (account) => {
+            const financial = account.financial
+            if (!financialAccess) return <span className="text-[12px] text-[var(--md-subtle)]">{t("Restricted")}</span>
+            if (!financial?.paymentTermsCode && financial?.paymentTermDays == null) return <span className="text-[12px] text-[var(--md-subtle)]">{t("Not set")}</span>
+            return <div><span className="text-[13px] text-[var(--md-ink)]">{financial.paymentTermsCode || `${financial.paymentTermDays} ${t("days")}`}</span>{financial.paymentTermEndOfMonth ? <span className="mt-0.5 block text-[11px] text-[var(--md-subtle)]">{t("End of month")}</span> : null}</div>
+          },
+        },
+        {
+          id: "account-status", label: "Account status", kind: "status", width: 135, minWidth: 120, resizable: true,
+          exportValue: (account) => account.financial?.accountStatus,
+          cell: (account) => !financialAccess ? <span className="text-[12px] text-[var(--md-subtle)]">{t("Restricted")}</span> : account.financial ? <StatusPill tone={account.financial.accountStatus === "blocked" ? "red" : account.financial.accountStatus === "on_hold" ? "amber" : "green"}>{t(account.financial.accountStatus === "blocked" ? "Blocked" : account.financial.accountStatus === "on_hold" ? "Credit hold" : "Active")}</StatusPill> : <span className="text-[12px] text-[var(--md-subtle)]">—</span>,
+        },
+      ]
+      if (accountingSyncAccess) financialColumns.push({
+        id: "accounting-sync", label: "Accounting", kind: "status", width: 140, minWidth: 125, resizable: true,
+        exportValue: (account) => account.financial?.accountingSyncStatus,
+        cell: (account) => {
+          const status = account.financial?.accountingSyncStatus
+          const label = status === "synced" ? "Synced" : status === "partial" ? "Partly synced" : status === "failed" ? "Sync failed" : status === "not_connected" ? "Not connected" : "Needs sync"
+          return status ? <StatusPill tone={status === "synced" ? "teal" : status === "failed" ? "red" : status === "partial" ? "amber" : "neutral"}>{t(label)}</StatusPill> : <span className="text-[12px] text-[var(--md-subtle)]">—</span>
+        },
+      })
+      financialColumns.push(
+        { id: "owner", label: "Owner", width: 160, minWidth: 130, resizable: true, defaultHidden: true, sortValue: (account) => account.ownerName, cell: (account) => account.ownerName || t("Unassigned") },
+        { id: "relationship", label: "Relationship", kind: "status", width: 160, minWidth: 130, resizable: true, defaultHidden: true, sortValue: (account) => account.relationshipStatus || account.status, cell: (account) => <StatusPill tone="neutral">{humanize(account.relationshipStatus || account.status)}</StatusPill> },
+        { id: "contacts", label: "Contacts", kind: "number", width: 100, minWidth: 88, defaultHidden: true, sortValue: (account) => account.contactCount, cell: (account) => account.contactCount },
+        openColumn,
+      )
+      return financialColumns
+    }
+
+    return [
+      {
+        id: "account", label: singular[0].toUpperCase() + singular.slice(1), width: 280, minWidth: 220, maxWidth: 410, canHide: false, resizable: true,
+        sortValue: (account) => account.name,
+        cell: (account) => <div className="grid min-h-11 min-w-0 content-center"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{account.name}</span><span className="mt-0.5 block truncate text-[12px] text-[var(--md-text)]">{[account.industry, account.location].filter(Boolean).join(" · ") || t("No location recorded")}</span></div>,
       },
-      cell: (account) => {
-        const signal = account.engagementSignal ?? fallbackEngagementSignal(account.id, account.lastContactAt)
-        return <StatusPill tone={engagementTemperatureTone(signal.temperature)}>{t(signal.temperature)}</StatusPill>
+      {
+        id: "company-types", label: "Company types", kind: "status", width: 210, minWidth: 160, maxWidth: 280, resizable: true,
+        cellTitle: (account) => account.types.join(", "),
+        cell: (account) => account.types.length ? <div className="flex min-w-0 flex-wrap gap-1">{account.types.slice(0, 2).map((type) => <StatusPill key={type} tone="neutral">{t(type)}</StatusPill>)}{account.types.length > 2 ? <StatusPill tone="neutral">+{account.types.length - 2}</StatusPill> : null}</div> : <span className="text-[12px] text-[var(--md-subtle)]">{t("Not recorded")}</span>,
       },
-    },
-    { id: "relationship", label: "Relationship", kind: "status", width: 160, minWidth: 130, resizable: true, sortValue: (account) => account.relationshipStatus || account.status, cell: (account) => <StatusPill tone={account.healthScore != null && account.healthScore < 50 ? "amber" : "neutral"}>{humanize(account.relationshipStatus || account.status)}</StatusPill> },
-    { id: "owner", label: "Owner", width: 160, minWidth: 130, resizable: true, sortValue: (account) => account.ownerName, cellClassName: "text-[13px] text-[var(--md-text)]", cell: (account) => account.ownerName || t("Unassigned") },
-    { id: "last-contact", label: "Last contact", width: 130, minWidth: 110, resizable: true, sortValue: (account) => account.lastContactAt ? new Date(account.lastContactAt).getTime() : null, cellClassName: "text-[13px] tabular-nums text-[var(--md-text)]", cell: (account) => relativeDate(account.lastContactAt, t) },
-    { id: "contacts", label: "Contacts", width: 100, minWidth: 88, sortValue: (account) => account.contactCount, cellClassName: "text-[13px] tabular-nums text-[var(--md-ink)]", cell: (account) => account.contactCount },
-    { id: "marketing", label: "Marketing", kind: "status", width: 120, minWidth: 110, sortValue: (account) => account.marketingOptIn ? 1 : 0, cell: (account) => <StatusPill tone={account.marketingOptIn ? "green" : "red"}>{t(account.marketingOptIn ? "Opted in" : "Opted out")}</StatusPill> },
-    { id: "open", label: "Open", headerContent: <span className="sr-only">{t("Open")}</span>, width: 52, minWidth: 52, maxWidth: 52, canHide: false, canPin: false, cell: () => <ArrowRight className="size-4 text-[var(--md-subtle)] transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transition-none" strokeWidth={1.4} /> },
-  ], [singular, t])
+      {
+        id: "temperature", label: "Temperature", kind: "status", width: 128, minWidth: 112, maxWidth: 160, resizable: true,
+        cellTitle: (account) => { const signal = account.engagementSignal ?? fallbackEngagementSignal(account.id, account.lastContactAt); return signal.calculatedFromSources ? `${signal.temperature} · ${signal.activityCount30d} ${t("activities")} · ${signal.emailCount30d} ${t("emails in 30 days")}` : `${signal.temperature} · ${t("Based on the last recorded engagement")}` },
+        cell: (account) => { const signal = account.engagementSignal ?? fallbackEngagementSignal(account.id, account.lastContactAt); return <StatusPill tone={engagementTemperatureTone(signal.temperature)}>{t(signal.temperature)}</StatusPill> },
+      },
+      { id: "relationship", label: "Relationship", kind: "status", width: 160, minWidth: 130, resizable: true, sortValue: (account) => account.relationshipStatus || account.status, cell: (account) => <StatusPill tone={account.healthScore != null && account.healthScore < 50 ? "amber" : "neutral"}>{humanize(account.relationshipStatus || account.status)}</StatusPill> },
+      { id: "owner", label: "Owner", width: 160, minWidth: 130, resizable: true, sortValue: (account) => account.ownerName, cellClassName: "text-[13px] text-[var(--md-text)]", cell: (account) => account.ownerName || t("Unassigned") },
+      { id: "last-contact", label: "Last contact", width: 130, minWidth: 110, resizable: true, sortValue: (account) => account.lastContactAt ? new Date(account.lastContactAt).getTime() : null, cellClassName: "text-[13px] tabular-nums text-[var(--md-text)]", cell: (account) => relativeDate(account.lastContactAt, t) },
+      { id: "contacts", label: "Contacts", width: 100, minWidth: 88, sortValue: (account) => account.contactCount, cellClassName: "text-[13px] tabular-nums text-[var(--md-ink)]", cell: (account) => account.contactCount },
+      { id: "marketing", label: "Marketing", kind: "status", width: 120, minWidth: 110, sortValue: (account) => account.marketingOptIn ? 1 : 0, cell: (account) => <StatusPill tone={account.marketingOptIn ? "green" : "red"}>{t(account.marketingOptIn ? "Opted in" : "Opted out")}</StatusPill> },
+      openColumn,
+    ]
+  }, [accountingSyncAccess, customerAccounts, financialAccess, language, singular, t])
 
   function clearAccountFilters() {
     setQuery("")
@@ -294,11 +369,27 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
   ]
   const countryCodeIsValid = !draft.countryCode || /^[A-Z]{2}$/.test(draft.countryCode)
   const displayedSync = latestSync ?? syncOverview?.runs[0] ?? null
+  const restrictedFinancialDetail = t("Receivables permission required")
+  const summaryCards: Array<[string, string | number, string]> = customerAccounts ? [
+    [t("Open balance"), financialAccess && financeReady ? formatAccountMoney(financialSummary.balanceDue, financeCurrencyCode, language, true) : "—", financialAccess ? t("approved customer documents") : restrictedFinancialDetail],
+    [t("Overdue"), financialAccess && financeReady ? formatAccountMoney(financialSummary.overdueAmount, financeCurrencyCode, language, true) : "—", financialAccess ? `${financialSummary.overdueInvoiceCount} ${t(financialSummary.overdueInvoiceCount === 1 ? "invoice" : "invoices")}` : restrictedFinancialDetail],
+    [t("Open invoices"), financialAccess ? financialSummary.openInvoiceCount : "—", financialAccess ? t("with an amount still due") : restrictedFinancialDetail],
+    [t("Overdue customers"), financialAccess ? financialSummary.overdueCustomerCount : "—", financialAccess ? t("need collection attention") : restrictedFinancialDetail],
+    [t("Over credit limit"), financialAccess ? financialSummary.creditAttentionCount : "—", financialAccess ? t("accounts beyond their limit") : restrictedFinancialDetail],
+    [t("On hold"), financialAccess ? financialSummary.onHoldCount : "—", financialAccess ? t("credit-controlled accounts") : restrictedFinancialDetail],
+  ] : [
+    [t(`Total ${title.toLowerCase()}`), summary.accounts, t(`all ${singular} records`)],
+    [t("Contacts"), contactTotal, t("recorded contacts")],
+    [t("Needs attention"), needsAttention, t("need attention now")],
+    [t("Marketing opted in"), marketingOptIns, t("with marketing consent")],
+    [t("Unassigned"), unassignedAccounts, t("without an assigned owner")],
+    [t(`Healthy ${title.toLowerCase()}`), healthyAccounts, t("health score 70 or above")],
+  ]
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t(title)} className="md-page md-page-stack-compact">
       <header className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t(title)}</h1><p className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Organisations")}</p></div><p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t(organisationType === "company" ? "Every company, its contacts and all operational roles kept in one place." : organisationType === "customer" ? "Customer accounts, contacts and accounting-system status in one place." : "Supplier accounts, contacts and accounting-system status in one place.")}</p></div>
+        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t(title)}</h1><p className="text-[11px] font-medium text-[var(--md-subtle)]">{t(customerAccounts ? "Accounts receivable" : "Organisations")}</p></div><p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t(organisationType === "company" ? "Every company, its contacts and all operational roles kept in one place." : customerAccounts ? "Balances, overdue invoices, credit limits, payment terms and accounting status in one place." : "Supplier accounts, contacts and accounting-system status in one place.")}</p></div>
         <div className="flex flex-wrap gap-2">
           {organisationType !== "company" && canManageAccounting ? <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-lg)]" onClick={() => { setLatestSync(null); setSyncOpen(true) }}><RefreshCw className="size-4" strokeWidth={1.4} />{t("Sync with accounting system")}</Button> : null}
           <DexterActionPill onClick={() => setDexterOpen(true)} label={t("Ask Dexter")} />
@@ -306,18 +397,11 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
       </header>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-        {[
-          [t(`Total ${title.toLowerCase()}`), summary.accounts, t(`all ${singular} records`)],
-          [t("Contacts"), contactTotal, t("recorded contacts")],
-          [t("Needs attention"), needsAttention, t("need attention now")],
-          [t("Marketing opted in"), marketingOptIns, t("with marketing consent")],
-          [t("Unassigned"), unassignedAccounts, t("without an assigned owner")],
-          [t(`Healthy ${title.toLowerCase()}`), healthyAccounts, t("health score 70 or above")],
-        ].map(([label, value, detail]) => (
+        {summaryCards.map(([label, value, detail]) => (
           <Surface key={String(label)} padding="none" className="h-[44px] min-w-0 rounded-[var(--md-radius-lg)] px-3 py-1.5">
             <div className="flex h-full min-w-0 items-center gap-2.5">
               <p className="shrink-0 text-[19px] font-medium leading-none tabular-nums text-[var(--md-ink)]" data-i18n-skip dir="ltr">
-                {new Intl.NumberFormat(language).format(Number(value))}
+                {typeof value === "number" ? new Intl.NumberFormat(language).format(value) : value}
               </p>
               <div className="min-w-0">
                 <p className="truncate text-[10.5px] font-medium leading-[13px] text-[var(--md-text)]">{label}</p>
@@ -329,26 +413,31 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
       </div>
 
       <DataTable
-        key={`crm-${organisationType}-organisations-v1`}
-        ariaLabel={`${title} directory`}
-        columnsButtonLabel={`Manage ${singular} columns`}
-        storageKey={`crm-${organisationType}-organisations-v1`}
+        key={customerAccounts ? "customer-accounts-receivable-v2" : `crm-${organisationType}-organisations-v1`}
+        ariaLabel={customerAccounts ? "Customer accounts receivable register" : `${title} directory`}
+        columnsButtonLabel={customerAccounts ? "Manage customer account columns" : `Manage ${singular} columns`}
+        storageKey={customerAccounts ? "customer-accounts-receivable-v2" : `crm-${organisationType}-organisations-v1`}
         columns={accountColumns}
         rows={accounts}
         getRowKey={(account) => account.id}
-        exportConfig={{
+        rowAriaLabel={(account) => customerAccounts ? `${account.name}, ${financialAccess && account.financial?.balanceDue != null ? `${formatAccountMoney(account.financial.balanceDue, account.financial.baseCurrencyCode, language)} balance due` : "customer account"}` : account.name}
+        exportConfig={customerAccounts ? {
+          fileName: "customer-accounts-receivable",
+          recordCategory: "Customer account details",
+          register: {
+            dateLabel: "Oldest overdue date",
+            dateValue: (account) => account.financial?.oldestOverdueDate,
+            busy: query.trim() !== debouncedQuery,
+            loadAllRows: (signal) => collectExportPages((page) => listAccountsPage({ organisationType: "customer", search: debouncedQuery, marketingScope: "all", sort, ...page }, { forceRefresh: true }), (account) => account.id, signal),
+          },
+        } : {
           fileName: `crm-${title.toLowerCase()}`,
           recordCategory: `${singular[0].toUpperCase() + singular.slice(1)} details`,
           register: {
             dateLabel: "Last contact date",
             dateValue: (account) => account.lastContactAt,
             busy: query.trim() !== debouncedQuery,
-            loadAllRows: (signal) => collectExportPages((page) => listAccountsPage({
-              organisationType, search: debouncedQuery, marketingScope: "all",
-              relationship: relationshipFilter,
-              owner: accountScope === "Mine" ? currentOwnerId ?? "__no_current_user__" : ownerFilter,
-              filterQuery: filterQueryIsEmpty(advancedFilter) ? null : advancedFilter, sort, ...page,
-            }, { forceRefresh: true }), (account) => account.id, signal),
+            loadAllRows: (signal) => collectExportPages((page) => listAccountsPage({ organisationType, search: debouncedQuery, marketingScope: "all", relationship: relationshipFilter, owner: accountScope === "Mine" ? currentOwnerId ?? "__no_current_user__" : ownerFilter, filterQuery: filterQueryIsEmpty(advancedFilter) ? null : advancedFilter, sort, ...page }, { forceRefresh: true }), (account) => account.id, signal),
           },
           loadRecords: (selectedAccounts) => Promise.all(selectedAccounts.map((account) => getCustomer(account.id))),
         }}
@@ -357,9 +446,9 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
         serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "account", direction: "asc" }); setOffset(0) } }}
         pagination={{ offset, limit: accountPageSize, total, loading: state === "loading", onOffsetChange: setOffset, onLimitChange: setAccountPageSize, error: state === "error" }}
         compactToolbar
-        toolbarTabs={<RegisterViewSwitch options={accountScopes} value={accountScope} onChange={setAccountScope} counts={{ All: accountScope === "All" ? summary.accounts : undefined, Mine: accountScope === "Mine" ? summary.accounts : undefined }} ariaLabel={`${singular[0].toUpperCase() + singular.slice(1)} ownership filter`} compact />}
+        toolbarTabs={customerAccounts ? undefined : <RegisterViewSwitch options={accountScopes} value={accountScope} onChange={setAccountScope} counts={{ All: accountScope === "All" ? summary.accounts : undefined, Mine: accountScope === "Mine" ? summary.accounts : undefined }} ariaLabel={`${singular[0].toUpperCase() + singular.slice(1)} ownership filter`} compact />}
         toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label={`Search ${title.toLowerCase()}`} placeholder={`Search ${title.toLowerCase()}…`} className="sm:w-[180px]" />}
-        toolbarFilters={<>
+        toolbarFilters={customerAccounts ? undefined : <>
           <RegisterFacetSelect label="Relationship status" allLabel="All relationships" value={relationshipFilter} options={relationshipOptions} onChange={setRelationshipFilter} className="w-[132px]" />
           <RegisterFacetSelect label="Owner" allLabel="All owners" value={ownerFilter} options={ownerOptions} onChange={setOwnerFilter} className="w-[126px]" />
           <AdvancedFilterPopover
@@ -372,12 +461,13 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
             countMatches={countAdvancedMatches}
           />
         </>}
-        toolbarOptions={<RegisterRevalidatingMark active={state === "loading" && accounts.length > 0} />}
+        toolbarOptions={<><RegisterRevalidatingMark active={state === "loading" && accounts.length > 0} />{customerAccounts ? <RegisterRefreshButton pending={state === "loading"} onRefresh={() => setReloadToken((value) => value + 1)} /> : null}</>}
+        contentBeforeTable={customerAccounts && state !== "loading" && !financialAccess ? <div role="note" className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 text-[12px] leading-5 text-[var(--md-text)]">{t("Receivables permission is required to view balances, overdue invoices and credit controls.")}</div> : customerAccounts && state !== "loading" && financialAccess && !financeReady ? <div role="note" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_9%,var(--md-surface))] px-4 py-3 text-[12px] leading-5 text-[var(--md-text)]">{t("Complete the tenant base-currency setup in Finance before customer balances and available credit are compared.")}</div> : undefined}
         emptyState={state === "loading"
           ? <RecordState icon={<DotGridLoader size="sm" decorative />} title={t(`Loading ${title.toLowerCase()}…`)} />
           : state === "error"
             ? <RecordState icon={<RefreshCw className="size-5" />} title={t(`${title} could not be loaded.`)} detail={t("Check your connection and try again.")} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} />
-            : <RecordState icon={<Building2 className="size-5" />} title={accountFiltersActive ? t(`No ${title.toLowerCase()} match these filters.`) : t(`No ${title.toLowerCase()} yet.`)} detail={accountFiltersActive ? t("Clear a filter or try another name, location, owner or relationship status.") : t(`Create the first ${singular} to keep its contacts and operational roles together.`)} action={accountFiltersActive ? <Button variant="outline" onClick={clearAccountFilters}>{t("Clear filters")}</Button> : <Button onClick={openCreate}>{t(`New ${singular}`)}</Button>} />}
+            : customerAccounts ? <RecordState icon={<Building2 className="size-5" />} title={query ? t("No customer accounts match this search.") : t("No customer accounts yet.")} detail={query ? t("Clear the search or try another customer name or account code.") : t("Create the first customer before setting credit terms or raising an invoice.")} action={query ? <Button variant="outline" onClick={() => setQuery("")}>{t("Clear search")}</Button> : <Button onClick={openCreate}>{t("New customer")}</Button>} /> : <RecordState icon={<Building2 className="size-5" />} title={accountFiltersActive ? t(`No ${title.toLowerCase()} match these filters.`) : t(`No ${title.toLowerCase()} yet.`)} detail={accountFiltersActive ? t("Clear a filter or try another name, location, owner or relationship status.") : t(`Create the first ${singular} to keep its contacts and operational roles together.`)} action={accountFiltersActive ? <Button variant="outline" onClick={clearAccountFilters}>{t("Clear filters")}</Button> : <Button onClick={openCreate}>{t(`New ${singular}`)}</Button>} />}
       />
 
       {organisationType !== "company" ? (
@@ -483,6 +573,33 @@ function RecordState({ icon, title, detail, action }: { icon: ReactNode; title: 
   return <div className="grid min-h-[260px] place-items-center border-t border-[var(--md-line)] px-6 py-10 text-center"><div className="max-w-sm"><span className="mx-auto grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">{icon}</span><p className="mt-4 text-[14px] font-medium text-[var(--md-ink)]">{title}</p>{detail ? <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{detail}</p> : null}{action ? <div className="mt-4">{action}</div> : null}</div></div>
 }
 
+function FinancialAmount({ value, currency, language, unavailableLabel, tone = "default" }: { value: number | null | undefined; currency: string | null | undefined; language: string; unavailableLabel: string; tone?: "default" | "danger" }) {
+  if (value == null || !currency || !/^[A-Z]{3}$/.test(currency)) return <span className="text-[12px] text-[var(--md-subtle)]">{unavailableLabel}</span>
+  return <span className={`text-[13px] font-medium tabular-nums ${tone === "danger" ? "text-[var(--md-red)]" : "text-[var(--md-ink)]"}`} data-i18n-skip dir="ltr">{formatAccountMoney(value, currency, language)}</span>
+}
+
+function financialCellFallback(access: boolean, ready: boolean | undefined) {
+  if (!access) return "Restricted"
+  return ready === false ? "Finance setup required" : "Not available"
+}
+
+function formatAccountMoney(value: number | null | undefined, currency: string | null | undefined, language: string, compact = false) {
+  if (value == null || !currency || !/^[A-Z]{3}$/.test(currency)) return "—"
+  return new Intl.NumberFormat(language, {
+    style: "currency",
+    currency,
+    notation: compact ? "compact" : "standard",
+    maximumFractionDigits: compact ? 1 : 2,
+    minimumFractionDigits: compact ? 0 : 2,
+  }).format(value)
+}
+
+function formatAccountDate(value: string | null | undefined, language: string) {
+  if (!value) return "—"
+  const date = new Date(`${value}T00:00:00`)
+  return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(language, { day: "numeric", month: "short", year: "numeric" }).format(date)
+}
+
 function SyncMetric({ label, value, tone = "neutral" }: { label: string; value: number; tone?: "neutral" | "teal" | "red" }) {
   return <div><p className="text-[10.5px] font-medium text-[var(--md-subtle)]">{label}</p><p className={tone === "teal" ? "mt-1 text-[20px] font-medium tabular-nums text-[var(--md-accent)]" : tone === "red" ? "mt-1 text-[20px] font-medium tabular-nums text-[var(--md-red)]" : "mt-1 text-[20px] font-medium tabular-nums text-[var(--md-ink)]"}>{value}</p></div>
 }
@@ -492,7 +609,7 @@ function Field({ label, value, onChange, required, type = "text", hint, error, m
   return <label className="grid gap-1.5 text-start text-[13px] font-medium text-[var(--md-ink)]"><span>{label}{required ? " *" : ""}</span><Input aria-describedby={hint || error ? descriptionId : undefined} aria-invalid={Boolean(error)} dir={dir ?? (type === "email" ? "ltr" : "auto")} type={type} required={required} maxLength={maxLength} value={value} onChange={(event) => onChange(event.target.value)} className="h-10 rounded-[var(--md-radius-md)] bg-white/68 text-[16px] shadow-[var(--md-shadow-line)] sm:text-[14px]" />{error ? <span id={descriptionId} className="text-[12px] font-normal text-[var(--md-red)]">{error}</span> : hint ? <span id={descriptionId} className="text-[12px] font-normal text-[var(--md-text)]">{hint}</span> : null}</label>
 }
 
-function humanize(value: string | null | undefined) { return value ? value.replace(/[_-]+/g, " ").replace(/^./, (letter) => letter.toUpperCase()) : "—" }
+function humanize(value: string | null | undefined) { return value ? value.replace(/[_-]+/g, " ").replace(/^./, (letter) => letter.toUpperCase()) : "–" }
 function relativeDate(value: string | null, t: (value: string) => string) {
   if (!value) return t("Never")
   const days = Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000)

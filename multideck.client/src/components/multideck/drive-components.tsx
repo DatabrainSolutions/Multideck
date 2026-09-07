@@ -70,7 +70,7 @@ import { cn } from "@/lib/utils"
  * A folder's colour is one of the ten accent presets, so both theme members come
  * from the palette the product has already contrast-checked. Handing CSS the pair
  * rather than one resolved value keeps the theme switch free of a JavaScript
- * round trip — and therefore free of a wrong-colour frame.
+ * round trip – and therefore free of a wrong-colour frame.
  */
 export function driveToneStyle(colour: DriveFolderColour): CSSProperties {
   const preset = getAccentPreset(colour)
@@ -178,7 +178,7 @@ export function DriveGridItem({
 /**
  * Renaming happens where the name already is. The field inherits the label's
  * typography and box, so the swap is a change of affordance rather than a change
- * of layout — nothing shifts, and the tile never has to be left.
+ * of layout – nothing shifts, and the tile never has to be left.
  */
 function DriveInlineName({
   value,
@@ -268,7 +268,7 @@ function DriveInlineName({
 /**
  * Paints in two passes over one box.
  *
- * The seed — a ~1 KB WebP carried on the file row — is there on the first frame,
+ * The seed – a ~1 KB WebP carried on the file row – is there on the first frame,
  * so a folder is never a grid of empty rectangles. The stored thumbnail fades in
  * over it once it has decoded, and the seed is never removed, so there is no
  * moment where the box has nothing in it.

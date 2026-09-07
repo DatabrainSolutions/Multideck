@@ -7,7 +7,7 @@ import { mdMotion } from "@/lib/motion"
  * A single character cell. Digits roll: the outgoing glyph lifts away while the
  * incoming one arrives from below, so a ticking clock never blinks or reflows.
  * The cell is sized in `em` and `ch` so the slot is reserved up front, which
- * keeps the animation purely compositor work — no layout on any frame.
+ * keeps the animation purely compositor work – no layout on any frame.
  */
 const DigitCell = memo(function DigitCell({ char, roll }: { char: string; roll: boolean }) {
   if (!roll) {
@@ -72,7 +72,7 @@ const valuePattern = /^(\D*?)(-?[\d.,]+)(.*)$/
 /**
  * Counts a metric up to its new figure, keeping any prefix or suffix intact.
  * The tween is written straight into the text node, so a grid full of tiles
- * ramping at once costs zero React renders — only one style-free DOM write per
+ * ramping at once costs zero React renders – only one style-free DOM write per
  * frame per tile.
  */
 export const CountUpValue = memo(function CountUpValue({

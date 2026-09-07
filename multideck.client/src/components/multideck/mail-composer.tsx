@@ -597,7 +597,7 @@ export function MailComposer({
         setAttachError(t("A message can carry ten files. Send the rest separately."))
       } else if (reason === "file_too_large" || reason === "total_too_large") {
         setAttachError(
-          `${rejected.join(", ")} — ${t("too large to attach. The limit is")} ${formatBytes(attachmentLimits.maxFileBytes, language)} ${t("per file and")} ${formatBytes(attachmentLimits.maxTotalBytes, language)} ${t("in total.")}`,
+          `${rejected.join(", ")} – ${t("too large to attach. The limit is")} ${formatBytes(attachmentLimits.maxFileBytes, language)} ${t("per file and")} ${formatBytes(attachmentLimits.maxTotalBytes, language)} ${t("in total.")}`,
         )
       }
     },

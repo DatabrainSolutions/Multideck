@@ -87,7 +87,7 @@ function initialData(lead: ApiLeadDetail, options: ApiDealConversionOptions): Wi
       : lead.conversionProbability
 
   return {
-    name: `${lead.companyName} — ${lead.serviceInterest || "new opportunity"}`,
+    name: `${lead.companyName} – ${lead.serviceInterest || "new opportunity"}`,
     opportunityTypeCode: options.opportunityTypes[0]?.code ?? "",
     primaryContactId: lead.company.organisationId
       ? lead.contacts.find((contact) => contact.isPrimary)?.id ?? ""

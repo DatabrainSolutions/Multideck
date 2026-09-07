@@ -26,7 +26,7 @@ export type ChartScale = {
 /**
  * A domain with a little headroom above the data, sized so that every gridline
  * lands on a round number. The span is always an exact multiple of the step, so
- * the axis reads "0, 4, 8, 12" rather than "0, 3.8, 7.5, 11.3" — which is the
+ * the axis reads "0, 4, 8, 12" rather than "0, 3.8, 7.5, 11.3" – which is the
  * difference between a chart you can read and one you have to squint at.
  */
 export function getChartScale(values: number[], zeroBased = true, divisions = 4): ChartScale {

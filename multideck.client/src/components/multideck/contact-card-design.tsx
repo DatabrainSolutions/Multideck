@@ -84,7 +84,7 @@ const ACCENT_PRESETS = [
 /**
  * The whole-look starting points.
  *
- * A style sets the arrangement, the header, the theme and the corners —
+ * A style sets the arrangement, the header, the theme and the corners –
  * everything that decides the shape of the page. It deliberately does *not*
  * touch the accent, the logo or the code: those are the owner's brand, and
  * having a style quietly overwrite them is the fastest way to lose trust in the
@@ -292,7 +292,7 @@ function useScaleToWidth(design: number) {
  * Every visual choice on this tab is picked by looking at one of these, so they
  * carry the real thing: the resolved theme, the layout table's own type sizes
  * and spacing, the owner's heading, their name, their logo. Nothing here is a
- * grey placeholder bar — a chooser made of wireframes tells you where things
+ * grey placeholder bar – a chooser made of wireframes tells you where things
  * sit but never whether the result looks good.
  *
  * The page is longer than the frame on purpose: it is cropped at the bottom the
@@ -522,7 +522,7 @@ export function CardMiniature({
  *
  * The whole card scaled to a thumbnail renders a 12px radius as three pixels,
  * which makes soft and sharp look identical. This shows the two shapes that
- * really change — a field and the button under it — at their true size.
+ * really change – a field and the button under it – at their true size.
  */
 function CornerSample({ branding, content }: { branding: CardBranding; content: CardMiniatureContent }) {
   const theme = resolveCardTheme(branding)
@@ -656,7 +656,7 @@ function TileGroup({ label, className, children }: { label: string; className?: 
 /**
  * One tile in a visual chooser: a picture of the outcome, its name, and a tick.
  *
- * The picture keeps a constant frame whether or not it is selected — a tile that
+ * The picture keeps a constant frame whether or not it is selected – a tile that
  * changes what it shows when picked cannot be compared with its neighbours.
  */
 function OptionTile({
@@ -791,7 +791,7 @@ function ColourField({
           dir="ltr"
           spellCheck={false}
           value={draft}
-          aria-label={`${label} — hex`}
+          aria-label={`${label} – hex`}
           onFocus={() => setFocused(true)}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={(event) => {
@@ -1536,7 +1536,7 @@ export function CardDesignPanel({ card, profilePhotoUrl }: { card: ContactCard; 
 /**
  * The code, on its own surface.
  *
- * A code is judged on one question — does a camera read it — so this tab keeps
+ * A code is judged on one question – does a camera read it – so this tab keeps
  * the live symbol, its version and its export beside every control, and puts the
  * settings that only matter in print behind a disclosure.
  */

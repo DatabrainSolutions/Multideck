@@ -2292,24 +2292,24 @@ function StepContent({
   const cargoColumns = useMemo<DataTableColumn<CargoLine>[]>(() => [
     { id: "commodity", label: "Commodity", width: 230, minWidth: 180, kind: "long-text", cellTitle: (line) => line.commodity, cell: (line) => <span className="block truncate font-medium" title={line.commodity}>{line.commodity}</span> },
     { id: "outer", label: "Outer", width: 126, minWidth: 108, kind: "attribute", cell: (line) => <span>{line.outerPackages} {line.outerPackageType}</span> },
-    { id: "inner", label: "Inner", width: 220, minWidth: 180, kind: "attribute", cell: (line) => <span>{line.innerPackages ? `${line.innerPackages} ${line.innerPackageType} per ${perOuterPackageLabel(line.outerPackageType)}` : "—"}</span> },
-    { id: "grossWeight", label: "Gross kg", width: 100, minWidth: 88, kind: "number", cell: (line) => line.grossWeight || "—" },
-    { id: "netWeight", label: "Net kg", width: 100, minWidth: 88, kind: "number", cell: (line) => line.netWeight || "—" },
-    { id: "volume", label: "CBM", width: 90, minWidth: 78, kind: "number", cell: (line) => line.volume || "—" },
-    { id: "dimensions", label: "Dimensions", width: 180, minWidth: 140, kind: "long-text", cellTitle: (line) => formatCargoDimensions(line), cell: (line) => <span className="block truncate text-[var(--md-text)]">{formatCargoDimensions(line) || "—"}</span> },
+    { id: "inner", label: "Inner", width: 220, minWidth: 180, kind: "attribute", cell: (line) => <span>{line.innerPackages ? `${line.innerPackages} ${line.innerPackageType} per ${perOuterPackageLabel(line.outerPackageType)}` : "–"}</span> },
+    { id: "grossWeight", label: "Gross kg", width: 100, minWidth: 88, kind: "number", cell: (line) => line.grossWeight || "–" },
+    { id: "netWeight", label: "Net kg", width: 100, minWidth: 88, kind: "number", cell: (line) => line.netWeight || "–" },
+    { id: "volume", label: "CBM", width: 90, minWidth: 78, kind: "number", cell: (line) => line.volume || "–" },
+    { id: "dimensions", label: "Dimensions", width: 180, minWidth: 140, kind: "long-text", cellTitle: (line) => formatCargoDimensions(line), cell: (line) => <span className="block truncate text-[var(--md-text)]">{formatCargoDimensions(line) || "–"}</span> },
     { id: "actions", label: "Actions", width: 52, minWidth: 52, kind: "actions", canHide: false, canPin: false, cell: (line) => <button type="button" aria-label={`Remove cargo line ${line.commodity}`} className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.08)]" onClick={() => removeCargoLine(line.id)}><Trash2 className="size-4" strokeWidth={1.6} /></button> },
   ], [data.cargoLines])
 
   const transportColumns = useMemo<DataTableColumn<TransportLeg>[]>(() => [
     { id: "leg", label: "Leg", width: 110, minWidth: 96, kind: "attribute", cell: (leg) => <span className="font-medium">{data.transportLegs.findIndex((candidate) => candidate.id === leg.id) + 1}. {leg.mode}</span> },
-    { id: "type", label: "Type", width: 120, minWidth: 96, kind: "attribute", cell: (leg) => leg.legType || "—" },
-    { id: "from", label: "From", width: 170, minWidth: 140, kind: "identity", cell: (leg) => <span><strong className="font-medium">{leg.fromCode || "—"}</strong><span className="block text-[12px] text-[var(--md-text)]">{leg.fromName}{leg.fromCountry ? `, ${leg.fromCountry}` : ""}</span></span> },
-    { id: "to", label: "To", width: 170, minWidth: 140, kind: "identity", cell: (leg) => <span><strong className="font-medium">{leg.toCode || "—"}</strong><span className="block text-[12px] text-[var(--md-text)]">{leg.toName}{leg.toCountry ? `, ${leg.toCountry}` : ""}</span></span> },
-    { id: "carrier", label: "Carrier / line", width: 140, minWidth: 112, kind: "text", cell: (leg) => leg.carrier || "—" },
-    { id: "reference", label: "Reference", width: 130, minWidth: 104, kind: "text", cell: (leg) => leg.reference || "—" },
-    { id: "etd", label: "ETD", width: 108, minWidth: 96, kind: "date", cell: (leg) => leg.etd || "—" },
-    { id: "eta", label: "ETA", width: 108, minWidth: 96, kind: "date", cell: (leg) => leg.eta || "—" },
-    { id: "notes", label: "Notes", width: 220, minWidth: 160, kind: "long-text", cellTitle: (leg) => leg.notes || undefined, cell: (leg) => <span className="line-clamp-2 whitespace-normal">{leg.notes || "—"}</span> },
+    { id: "type", label: "Type", width: 120, minWidth: 96, kind: "attribute", cell: (leg) => leg.legType || "–" },
+    { id: "from", label: "From", width: 170, minWidth: 140, kind: "identity", cell: (leg) => <span><strong className="font-medium">{leg.fromCode || "–"}</strong><span className="block text-[12px] text-[var(--md-text)]">{leg.fromName}{leg.fromCountry ? `, ${leg.fromCountry}` : ""}</span></span> },
+    { id: "to", label: "To", width: 170, minWidth: 140, kind: "identity", cell: (leg) => <span><strong className="font-medium">{leg.toCode || "–"}</strong><span className="block text-[12px] text-[var(--md-text)]">{leg.toName}{leg.toCountry ? `, ${leg.toCountry}` : ""}</span></span> },
+    { id: "carrier", label: "Carrier / line", width: 140, minWidth: 112, kind: "text", cell: (leg) => leg.carrier || "–" },
+    { id: "reference", label: "Reference", width: 130, minWidth: 104, kind: "text", cell: (leg) => leg.reference || "–" },
+    { id: "etd", label: "ETD", width: 108, minWidth: 96, kind: "date", cell: (leg) => leg.etd || "–" },
+    { id: "eta", label: "ETA", width: 108, minWidth: 96, kind: "date", cell: (leg) => leg.eta || "–" },
+    { id: "notes", label: "Notes", width: 220, minWidth: 160, kind: "long-text", cellTitle: (leg) => leg.notes || undefined, cell: (leg) => <span className="line-clamp-2 whitespace-normal">{leg.notes || "–"}</span> },
     { id: "actions", label: "Actions", width: 52, minWidth: 52, kind: "actions", canHide: false, canPin: false, cell: (leg) => { const index = data.transportLegs.findIndex((candidate) => candidate.id === leg.id); return <button type="button" aria-label={`Remove route leg ${index + 1}`} className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.08)]" onClick={() => removeTransportLeg(leg.id)}><Trash2 className="size-4" strokeWidth={1.6} /></button> } },
   ], [data.transportLegs])
 

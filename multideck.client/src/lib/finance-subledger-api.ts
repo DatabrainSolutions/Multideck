@@ -156,6 +156,7 @@ export type FinanceDocument = {
 export type FinanceDocumentDetail = {
   document: FinanceDocument & {
     FINDoc_AccountingDate: string
+    FINDoc_PeriodID: string | null
     FINDoc_PostedAt: string | null
     FINDoc_PostedBy: string | null
     FINDoc_IsLocked: boolean
@@ -171,6 +172,9 @@ export type FinanceDocumentDetail = {
     FINDocLine_Description: string
     FINDocLine_Quantity: number
     FINDocLine_UnitAmount: number
+    FINDocLine_SourceCurrencyCodeSnapshot: string | null
+    FINDocLine_SourceUnitAmount: number | null
+    FINDocLine_ROEToDocumentCurrency: number | null
     FINDocLine_NetAmount: number
     FINDocLine_TaxCodeID: string | null
     FINDocLine_TaxCodeSnapshot: string | null
@@ -222,6 +226,27 @@ export type FinanceDocumentDetail = {
     ACCIC_Name: string
     ACCIC_StatusCode: string
     ACCIC_ExternalTenantName: string | null
+  }
+  billingAddress: null | {
+    id: string
+    name: string | null
+    line1: string | null
+    line2: string | null
+    townCity: string | null
+    countyState: string | null
+    postZipCode: string | null
+    countryCode: string | null
+    countryName: string | null
+    email: string | null
+    phone: string | null
+  }
+  accountingPeriod: null | {
+    FINPeriod_ID: string
+    FINPeriod_Code: string
+    FINPeriod_Name: string
+    FINPeriod_StartDate: string
+    FINPeriod_EndDate: string
+    FINPeriod_StatusCode: string
   }
 }
 
@@ -276,10 +301,11 @@ export type FinanceDraftInput = {
   dueDate?: string | null
   currencyCode: string
   exchangeRate: number
+  accountingPeriodId?: string | null
   sourceJobId?: string | null
   idempotencyKey?: string
   sourceExtractionId?: string
-  lines: Array<{ description: string; quantity: number; unitAmount: number; taxRatePercent: number; taxCode?: string | null; chargeCode?: string | null; jobCostingLineId?: string | null; lineType: "service" | "ancillary" }>
+  lines: Array<{ description: string; quantity: number; unitAmount: number; currencyCode: string; exchangeRate: number; taxRatePercent: number; taxCode?: string | null; chargeCode?: string | null; jobCostingLineId?: string | null; lineType: "service" | "ancillary" }>
 }
 
 export type FinanceCashInput = {
@@ -308,7 +334,10 @@ export type FinanceDraftOptions = {
   accountingConnections: Array<{ ACCIC_ID: string; ACCIC_ProviderCode: AccountingProviderCode; ACCIC_LegalEntityID: string; ACCIC_ExternalTenantName: string | null; ACCIC_StatusCode: string }>
   partyMappings: Array<{ ACCIPM_ID: string; ACCIPM_ConnectionID: string; ACCIPM_OrgID: string; ACCIPM_PartyType: "customer" | "supplier" | "both"; ACCIPM_ProviderPartyID: string; ACCIPM_ProviderPartyCode: string | null; ACCIPM_ProviderPartyName: string | null; ACCIPM_LastSyncedAt: string | null; ACCIPM_IsActive: boolean }>
   jobs: Array<{ Job_ID: string; Job_Number: number; Job_Period: string; Job_Customer: string; Job_Supplier: string | null; Job_LegalEntityID: string | null; Job_Status: string }>
-  jobCostingLines: Array<{ JobCostingLine_ID: string; Job_ID: string; JobCostingLine_Number: number; JobCostingLine_ChargeCodeID: string | null; JobCostingLine_Description: string; JobCostingLine_CostAmountLocal: number; JobCostingLine_RevenueAmountLocal: number; JobCostingLine_CostNominalAccountID: string | null; JobCostingLine_RevenueNominalAccountID: string | null }>
+  jobCostingLines: Array<{ JobCostingLine_ID: string; Job_ID: string; JobCostingLine_Number: number; JobCostingLine_ChargeCodeID: string | null; RATECharge_Code: string | null; JobCostingLine_Description: string; JobCostingLine_CostAmountLocal: number; JobCostingLine_RevenueAmountLocal: number; JobCostingLine_CostNominalAccountID: string | null; JobCostingLine_RevenueNominalAccountID: string | null }>
+  chargeCodes: Array<{ RATECharge_ID: string; RATECharge_Code: string; RATECharge_Name: string; RATECharge_Description: string | null; RATECharge_DefaultApplicabilityCode: string; RATECharge_DefaultTaxCode: string | null }>
+  currencies: Array<{ code: string }>
+  accountingPeriods: Array<{ FINPeriod_ID: string; FINPeriod_LegalEntityID: string; FINPeriod_Code: string; FINPeriod_Name: string; FINPeriod_StartDate: string; FINPeriod_EndDate: string; FINPeriod_StatusCode: string; FINPeriod_BaseCurrencyCode: string }>
   bankAccounts: Array<{ FINBank_ID: string; FINBank_Code: string; FINBank_Name: string; FINBank_LegalEntityID: string; FINBank_CurrencyCode: string }>
   taxTreatments: Array<{
     FINLocTaxTreatment_ID: string

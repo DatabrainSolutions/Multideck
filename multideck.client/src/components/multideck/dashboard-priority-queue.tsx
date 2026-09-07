@@ -43,7 +43,7 @@ function formatGap(minutes: number) {
 
 /**
  * One piece of work. The urgency rule on the leading edge is the panel's whole
- * visual language for priority — an earlier draft gave every row its own
+ * visual language for priority – an earlier draft gave every row its own
  * countdown ring, which meant five small gauges competing before a single word
  * had been read.
  */

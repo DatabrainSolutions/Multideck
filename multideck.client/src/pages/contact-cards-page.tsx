@@ -663,7 +663,7 @@ export function ContactCardDetailPage({ cardId, navigate, currentUser }: { cardI
       sortValue: (exchange) => exchange.company,
       cell: (exchange) => (
         <span className="block truncate text-[12.5px] text-[var(--md-text)]" data-i18n-skip dir="auto">
-          {exchange.company || "—"}
+          {exchange.company || "–"}
         </span>
       ),
     },

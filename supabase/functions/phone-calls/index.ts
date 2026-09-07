@@ -3760,7 +3760,7 @@ async function overview(admin: SupabaseClient, actor: Actor, url: URL) {
           ? `${
             Math.round(100 * answered.length / confirmedOutcomeLegs.length)
           }%`
-          : "—",
+          : "–",
         comparison: null,
         detail: hasConfirmedCalls
           ? `${answered.length} calls`
@@ -3773,7 +3773,7 @@ async function overview(admin: SupabaseClient, actor: Actor, url: URL) {
         label: "Missed · declined · voicemail",
         value: hasConfirmedCalls
           ? `${missed.length} · ${declined.length} · ${voicemail.length}`
-          : "—",
+          : "–",
         comparison: null,
         detail: hasConfirmedCalls
           ? "Provider-confirmed outcomes"
@@ -3786,7 +3786,7 @@ async function overview(admin: SupabaseClient, actor: Actor, url: URL) {
         label: "Transfer acceptance",
         value: transferRequested
           ? `${Math.round(100 * transferAccepted / transferRequested)}%`
-          : "—",
+          : "–",
         comparison: null,
         detail: transferRequested
           ? `${transferAccepted} of ${transferRequested} offered`
@@ -3801,7 +3801,7 @@ async function overview(admin: SupabaseClient, actor: Actor, url: URL) {
           ? `${averageAnswerSeconds}s · ${
             compactDuration(averageHandlingSeconds)
           }`
-          : "—",
+          : "–",
         comparison: null,
         detail: answered.length
           ? "Start to answer · answer to end"
@@ -3814,7 +3814,7 @@ async function overview(admin: SupabaseClient, actor: Actor, url: URL) {
         label: "Follow-up completion",
         value: approvedFollowups
           ? `${Math.round(100 * completedFollowups / approvedFollowups)}%`
-          : "—",
+          : "–",
         comparison: null,
         detail: approvedFollowups
           ? `${completedFollowups} of ${approvedFollowups} approved follow-ups completed`

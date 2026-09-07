@@ -975,7 +975,7 @@ export function UnifiedQuoteChargesWorkspace({
         <StatusPill tone="teal" indicator={<Calculator className="size-3" strokeWidth={1.45} aria-hidden="true" />} className="h-6 whitespace-nowrap px-2 text-[10.5px]">
           {t("Calculator used")}
         </StatusPill>
-      ) : <span className="text-[var(--md-subtle)]">—</span>,
+      ) : <span className="text-[var(--md-subtle)]">–</span>,
     },
     {
       id: "costRoe",
@@ -1155,10 +1155,10 @@ export function UnifiedQuoteChargesWorkspace({
                 <div className="flex h-8 items-center justify-end px-2 text-[12px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip dir="ltr">{decimalText(selectedMargin, language, 1)}%</div>
               </DetailField>
               <DetailField label="Supplier">
-                <div data-i18n-skip dir="auto" className="flex h-8 min-w-0 items-center truncate text-[11px] text-[var(--md-ink)]">{selectedSupplier ? `${selectedSupplier.code} · ${selectedSupplier.name}` : "—"}</div>
+                <div data-i18n-skip dir="auto" className="flex h-8 min-w-0 items-center truncate text-[11px] text-[var(--md-ink)]">{selectedSupplier ? `${selectedSupplier.code} · ${selectedSupplier.name}` : "–"}</div>
               </DetailField>
               <DetailField label="Customer">
-                <div data-i18n-skip dir="auto" className="flex h-8 min-w-0 items-center truncate text-[11px] text-[var(--md-ink)]">{selectedCustomer ? `${selectedCustomer.code} · ${selectedCustomer.name}` : "—"}</div>
+                <div data-i18n-skip dir="auto" className="flex h-8 min-w-0 items-center truncate text-[11px] text-[var(--md-ink)]">{selectedCustomer ? `${selectedCustomer.code} · ${selectedCustomer.name}` : "–"}</div>
               </DetailField>
               <DetailField label="Base cost">
                 <div dir="ltr" className={cn("flex h-8 items-center justify-end font-medium", selectedRow.costRateAvailable ? "text-[12px] tabular-nums text-[var(--md-ink)]" : "text-[10px] text-[var(--md-red)]")}>

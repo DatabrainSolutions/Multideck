@@ -59,7 +59,7 @@ export function rememberOpenDexterConversation(conversationId: string | null) {
 }
 
 /**
- * Hands a conversation started elsewhere — the summon overlay — to the Dexter
+ * Hands a conversation started elsewhere – the summon overlay – to the Dexter
  * workspace. Written to session storage rather than dispatched as an event
  * because the page that has to receive it is still being loaded and mounted.
  */

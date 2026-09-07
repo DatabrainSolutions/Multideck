@@ -7,7 +7,7 @@ import { mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
 /**
  * One module of the deck that sits along the foot of Home.
  *
- * `block` gives the module a recessed grey panel — the deck reads as a band
+ * `block` gives the module a recessed grey panel – the deck reads as a band
  * sitting behind the prompt rather than four cards floating in front of it.
  * `bare` keeps only the heading, for a column whose entries are their own
  * containers and should sit directly on the page.
@@ -93,7 +93,7 @@ export function HomeDeckRow({
 
 /**
  * A standalone entry that is its own container. Used where the column reads
- * better as separate objects than as a list inside one panel — a clock per
+ * better as separate objects than as a list inside one panel – a clock per
  * region, each sitting on the page in its own right.
  */
 export function HomeDeckTile({
@@ -143,7 +143,7 @@ export function HomeDeckEmpty({ children }: { children: ReactNode }) {
   )
 }
 
-/** The module's own quiet control — "Open list", "Show all", a scope switch. */
+/** The module's own quiet control – "Open list", "Show all", a scope switch. */
 export function HomeDeckAction({
   children,
   onClick,

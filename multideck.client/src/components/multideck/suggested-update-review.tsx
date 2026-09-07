@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils"
 type MatchState = "matched" | "ambiguous" | "no_match"
 
 function valueLabel(field: InboxSuggestedUpdateField, value: unknown, language: string) {
-  if (value === null || value === undefined || value === "") return "—"
+  if (value === null || value === undefined || value === "") return "–"
   if (field.code === "planned_arrival_at" && typeof value === "string") {
     const date = new Date(value)
     if (Number.isFinite(date.getTime())) return new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(date)

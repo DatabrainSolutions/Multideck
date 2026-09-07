@@ -395,7 +395,7 @@ export type UpdateLeadInput = Partial<{
 
 /**
  * Writes only the keys given, so one inline field saves on its own without the
- * client having to send — and risk overwriting — every neighbouring value.
+ * client having to send – and risk overwriting – every neighbouring value.
  */
 export async function updateLead(leadId: string, input: UpdateLeadInput, expectedVersion: number) {
   const lead = await callCrmMutation<ApiLead>(

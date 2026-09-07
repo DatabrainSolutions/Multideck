@@ -31,7 +31,7 @@ type CoverageRow = {
 /**
  * Coverage as a shape rather than eight clock readings. Every region's working
  * window is drawn on one shared 24-hour track in the *viewer's* time, with a
- * single "now" line across all of them — so the answer to "can Shanghai still
+ * single "now" line across all of them – so the answer to "can Shanghai still
  * pick this up, and how long have I got" is a glance rather than arithmetic.
  */
 export function DashboardCoveragePanel({

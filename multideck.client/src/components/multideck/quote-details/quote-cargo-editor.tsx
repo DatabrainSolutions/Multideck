@@ -67,7 +67,7 @@ export function QuoteCargoEditor({ lines, legacy, editable, chargeableWeight = t
           <ol aria-label={t('Choose a cargo line')} className="grid max-h-80 content-start gap-1 overflow-y-auto">
             {lines.map((line, index) => <li key={line.id} className="min-w-0"><button type="button" aria-pressed={line.id === selected?.id} onClick={() => setSelectedId(line.id)} className={cn('w-full rounded-[var(--md-radius-md)] px-3 py-2 text-start text-[12px] leading-5 focus-visible:outline-2 focus-visible:outline-[var(--md-accent)]', line.id === selected?.id ? 'bg-[var(--md-accent-a12)] text-[var(--md-ink)]' : 'bg-[var(--md-surface-soft)] text-[var(--md-text)]')}>
               <span>{t('Line')} {index + 1}</span><span data-i18n-skip dir="auto" className="block truncate">{line.description || t('Description not recorded')}</span>
-              <span data-i18n-skip className="block">{[line.packageQuantity, line.packageType].filter(Boolean).join(' · ') || '—'}</span>
+              <span data-i18n-skip className="block">{[line.packageQuantity, line.packageType].filter(Boolean).join(' · ') || '–'}</span>
               {line.isHazardous || line.isTemperatureControlled ? <span className="block font-medium">{[line.isHazardous ? t('Hazardous') : '', line.isTemperatureControlled ? t('Temperature controlled') : ''].filter(Boolean).join(' · ')}</span> : null}
             </button></li>)}
           </ol>
@@ -78,12 +78,12 @@ export function QuoteCargoEditor({ lines, legacy, editable, chargeableWeight = t
                 const numeric = (quoteCargoNumberFields as readonly string[]).includes(key)
                 return editable ? <CompactFieldShell key={key} label={label} htmlFor={`${id}-${key}`} width="full" className={key === 'description' ? 'sm:col-span-2 xl:col-span-3' : ''}>
                   {key === 'description' ? <Textarea ref={element => { if (element && focusNewLine.current === selected.id) { focusNewLine.current = null; element.focus() } }} id={`${id}-${key}`} value={selected[key]} rows={2} data-i18n-skip dir="auto" onChange={event => patch({ description: event.target.value })} className="min-w-0 resize-y text-base sm:text-[13px]" /> : <Input id={`${id}-${key}`} value={selected[key]} inputMode={numeric ? 'decimal' : undefined} data-i18n-skip dir={numeric ? 'ltr' : 'auto'} onChange={event => patch({ [key]: event.target.value })} className="h-9 min-w-0 text-base sm:text-[13px]" />}
-                </CompactFieldShell> : <dl key={key} className={cn('min-w-0 text-[12px] leading-5', key === 'description' && 'sm:col-span-2 xl:col-span-3')}><dt className="text-[var(--md-text)]">{t(label)}</dt><dd data-i18n-skip dir="auto" className="break-words whitespace-pre-wrap text-[var(--md-ink)]">{selected[key] || '—'}</dd></dl>
+                </CompactFieldShell> : <dl key={key} className={cn('min-w-0 text-[12px] leading-5', key === 'description' && 'sm:col-span-2 xl:col-span-3')}><dt className="text-[var(--md-text)]">{t(label)}</dt><dd data-i18n-skip dir="auto" className="break-words whitespace-pre-wrap text-[var(--md-ink)]">{selected[key] || '–'}</dd></dl>
               })}
               {editable ? <>
                 <CompactCombobox label="Package type" value={selected.packageType} options={freightPackageTypeOptions} onValueChange={value => patch({ packageType: value })} width="full" />
                 <CompactCombobox label="Dimension unit" value={selected.lengthUnit} options={['cm', 'm', 'in'].map(value => ({ value, label: value }))} allowCustom={false} onValueChange={value => { if (value) patch({ lengthUnit: value }) }} width="full" />
-              </> : <><dl className="text-[12px] leading-5"><dt>{t('Package type')}</dt><dd data-i18n-skip>{selected.packageType || '—'}</dd></dl><dl className="text-[12px] leading-5"><dt>{t('Dimension unit')}</dt><dd data-i18n-skip>{selected.lengthUnit}</dd></dl></>}
+              </> : <><dl className="text-[12px] leading-5"><dt>{t('Package type')}</dt><dd data-i18n-skip>{selected.packageType || '–'}</dd></dl><dl className="text-[12px] leading-5"><dt>{t('Dimension unit')}</dt><dd data-i18n-skip>{selected.lengthUnit}</dd></dl></>}
             </div>
             <div className="flex flex-wrap gap-4">{(['isHazardous', 'isTemperatureControlled'] as const).map((key, index) => <label key={key} className="flex min-h-8 items-center gap-2 text-[12px]">{editable ? <Checkbox checked={selected[key]} onCheckedChange={checked => patch({ [key]: checked === true })} /> : <span>{t(selected[key] ? 'Yes' : 'No')} ·</span>}{t(index === 0 ? 'Hazardous' : 'Temperature controlled')}</label>)}</div>
           </div> : null}

@@ -191,3 +191,23 @@ Reproduce with `node supabase/tests/tools/freight-schema-rehearsal.mjs
 --release-plan=/Users/leewright/repo/Multideck/docs/release/2026-09-07-air-weight-migration-plan.json`.
 This proves fresh-schema compatibility and populated preservation, not live
 permission denial, real data backfill eligibility or hosted save/reload.
+
+## Shared development branch reconciliation
+
+Fetched `origin/dev` at `a274304be78885cf54568f1dc4a80022064e97ae`.
+Vercel lists its deployment
+`multideck-app-btq1nmzd5-databrain-solutions.vercel.app` as READY. No deployment
+configuration or alias was changed. The team branch contains Finance work, copy
+updates and the deployed undirected-reference migration; these are now merged
+into the freight branch instead of being overwritten by a later freight push.
+
+The only textual merge conflict was the cargo table: keep the team's en-dash
+empty-value convention and the new chargeable-weight column. All Finance,
+Customs/iCustoms, baseline and reference files match the fetched team branch;
+they were not manually edited for this integration. The deployed reference
+migration is now present locally and must still be preserved in release history.
+
+Post-merge checks passed: 35 client/Edge approval tests, both PostgreSQL freight
+regression suites, Deno check for agent-dexter, and the production client build.
+This is a local merge only, not a push or Air deployment. Mobile verification
+remains open; earlier isolated Chrome tabs are no longer present.

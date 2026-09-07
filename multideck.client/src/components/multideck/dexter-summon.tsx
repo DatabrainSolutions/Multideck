@@ -136,8 +136,8 @@ function SummonHud({ label, visible }: { label: string; visible: boolean }) {
  * the pointer, and the keyboard route resolves what is focused. When neither
  * names something, the screen dims and the same ring becomes an area picker.
  *
- * Everything that moves per frame — the ring, the dimming cut-out, the prompt's
- * position — is driven by motion values rather than React state, so following a
+ * Everything that moves per frame – the ring, the dimming cut-out, the prompt's
+ * position – is driven by motion values rather than React state, so following a
  * scroll costs no renders.
  */
 export function DexterSummon({ navigate }: { navigate: (path: string) => void }) {
@@ -213,7 +213,7 @@ export function DexterSummon({ navigate }: { navigate: (path: string) => void })
   /**
    * `prompt` is separate from the ring's own `immediate` on purpose. The ring may
    * travel between candidates, but the prompt is mounted fresh at each anchor, so
-   * springing its position would send it flying in from wherever it last sat —
+   * springing its position would send it flying in from wherever it last sat –
    * usually the corner of the screen. It jumps into place and animates its own
    * scale and blur instead.
    */
@@ -265,7 +265,7 @@ export function DexterSummon({ navigate }: { navigate: (path: string) => void })
 
       const next = readSummonRect(element, ringPadding)
       // The first anchor arrives under the pointer, so it jumps. A hand-off from
-      // the picker, or a re-aim while the box is already open, travels — the
+      // the picker, or a re-aim while the box is already open, travels – the
       // operator's eye is on the ring and the movement is the explanation.
       applyRect(next, options.immediate ?? !openedRef.current, wasAnchored ? "ease" : "jump")
       openedRef.current = true

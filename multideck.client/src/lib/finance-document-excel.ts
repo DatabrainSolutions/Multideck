@@ -32,19 +32,20 @@ function safeFileName(value: string) {
 
 export function buildFinanceDocumentWorkbook({ title, documentType, currencyCode, lines }: WorkbookInput) {
   const now = new Date().toISOString()
-  const headers = ["Line no.", "Charge code", "Description", "Line type", "Quantity", "Unit amount", "Tax treatment", "Tax rate %", "Net amount", "Tax amount", "Gross amount"]
+  const headers = ["Line no.", "Charge code", "Description", "Quantity", "Currency", "Rate", "ROE", "Tax treatment", "Tax rate %", "Invoice amount", "Tax amount", "Gross amount"]
   const dataRows = lines.map((line, index) => {
     const row = index + 5
     const quantity = Number(line.quantity) || 0
     const unitAmount = Number(line.unitAmount) || 0
+    const exchangeRate = Number(line.exchangeRate) || 0
     const taxRate = Number(line.taxRatePercent) || 0
-    const net = quantity * unitAmount
+    const net = quantity * unitAmount * exchangeRate
     const tax = net * taxRate / 100
-    return `<row r="${row}">${numberCell(`A${row}`, index + 1, 4)}${inlineCell(`B${row}`, line.chargeCode)}${inlineCell(`C${row}`, line.description)}${inlineCell(`D${row}`, line.lineType)}${numberCell(`E${row}`, quantity)}${numberCell(`F${row}`, unitAmount)}${inlineCell(`G${row}`, line.taxCode)}${numberCell(`H${row}`, taxRate)}${numberCell(`I${row}`, net, 5, `E${row}*F${row}`)}${numberCell(`J${row}`, tax, 5, `I${row}*H${row}/100`)}${numberCell(`K${row}`, net + tax, 5, `I${row}+J${row}`)}</row>`
+    return `<row r="${row}">${numberCell(`A${row}`, index + 1, 4)}${inlineCell(`B${row}`, line.chargeCode)}${inlineCell(`C${row}`, line.description)}${numberCell(`D${row}`, quantity)}${inlineCell(`E${row}`, line.currencyCode || currencyCode)}${numberCell(`F${row}`, unitAmount)}${numberCell(`G${row}`, exchangeRate)}${inlineCell(`H${row}`, line.taxCode)}${numberCell(`I${row}`, taxRate)}${numberCell(`J${row}`, net, 5, `D${row}*F${row}*G${row}`)}${numberCell(`K${row}`, tax, 5, `J${row}*I${row}/100`)}${numberCell(`L${row}`, net + tax, 5, `J${row}+K${row}`)}</row>`
   }).join("")
   const lastRow = Math.max(5, lines.length + 4)
   const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="10" customWidth="1"/><col min="2" max="2" width="16" customWidth="1"/><col min="3" max="3" width="42" customWidth="1"/><col min="4" max="4" width="16" customWidth="1"/><col min="5" max="5" width="12" customWidth="1"/><col min="6" max="6" width="16" customWidth="1"/><col min="7" max="7" width="20" customWidth="1"/><col min="8" max="8" width="13" customWidth="1"/><col min="9" max="11" width="17" customWidth="1"/></cols><sheetData><row r="1" ht="28" customHeight="1">${inlineCell("A1", title, 1)}</row><row r="2" ht="22" customHeight="1">${inlineCell("A2", `${documentType} · ${currencyCode} · Edit input columns only; calculated amount columns are replaced when imported.`, 2)}</row><row r="4" ht="24" customHeight="1">${headers.map((header, index) => inlineCell(`${String.fromCharCode(65 + index)}4`, header, 3)).join("")}</row>${dataRows}</sheetData><autoFilter ref="A4:K${lastRow}"/><mergeCells count="2"><mergeCell ref="A1:K1"/><mergeCell ref="A2:K2"/></mergeCells><pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.2" footer="0.2"/><pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="10" customWidth="1"/><col min="2" max="2" width="16" customWidth="1"/><col min="3" max="3" width="42" customWidth="1"/><col min="4" max="4" width="12" customWidth="1"/><col min="5" max="5" width="12" customWidth="1"/><col min="6" max="7" width="14" customWidth="1"/><col min="8" max="8" width="20" customWidth="1"/><col min="9" max="9" width="13" customWidth="1"/><col min="10" max="12" width="17" customWidth="1"/></cols><sheetData><row r="1" ht="28" customHeight="1">${inlineCell("A1", title, 1)}</row><row r="2" ht="22" customHeight="1">${inlineCell("A2", `${documentType} · ${currencyCode} · Edit input columns only; calculated amount columns are replaced when imported.`, 2)}</row><row r="4" ht="24" customHeight="1">${headers.map((header, index) => inlineCell(`${String.fromCharCode(65 + index)}4`, header, 3)).join("")}</row>${dataRows}</sheetData><autoFilter ref="A4:L${lastRow}"/><mergeCells count="2"><mergeCell ref="A1:L1"/><mergeCell ref="A2:L2"/></mergeCells><pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.2" footer="0.2"/><pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`
 
   const files: Record<string, Uint8Array> = {
     "[Content_Types].xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`),
@@ -156,7 +157,9 @@ export async function parseFinanceDocumentWorkbook(file: File): Promise<Imported
     description: ["description", "item description", "name"],
     lineType: ["line type", "type"],
     quantity: ["quantity", "qty"],
-    unitAmount: ["unit amount", "unit price", "price", "base price"],
+    currencyCode: ["currency", "line currency", "currency code"],
+    unitAmount: ["rate", "unit amount", "unit price", "price", "base price"],
+    exchangeRate: ["roe", "exchange rate", "rate of exchange"],
     taxCode: ["tax treatment", "tax code", "vat code", "tax"],
     taxRatePercent: ["tax rate %", "tax rate", "vat rate %", "vat %"],
   } as const
@@ -188,7 +191,9 @@ export async function parseFinanceDocumentWorkbook(file: File): Promise<Imported
       description,
       lineType: lineTypeValue === "ancillary" ? "ancillary" : "service",
       quantity: String(quantity),
+      currencyCode: read("currencyCode").toUpperCase(),
       unitAmount: String(unitAmount),
+      exchangeRate: read("exchangeRate") || "1",
       taxCode: read("taxCode").toUpperCase(),
       taxRatePercent: read("taxRatePercent") || undefined,
     })

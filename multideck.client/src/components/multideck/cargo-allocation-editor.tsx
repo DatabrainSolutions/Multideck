@@ -37,7 +37,7 @@ export function CargoAllocationEditor({ cargo, equipment, routes, allocations, l
   }, [validationAttempt])
   const cargoOptions = cargo.flatMap((item, index) => item.id ? [{ value: item.id, label: `${t('Cargo')} ${index + 1} · ${item.description || t('No description')}` }] : [])
   const equipmentOptions = equipment.flatMap((item, index) => item.id ? [{ value: item.id, label: `${t('Equipment')} ${index + 1} · ${[item.number, item.type].filter(Boolean).join(' · ') || t('Not numbered')}` }] : [])
-  const routeOptions = [{ value: 'whole-journey', label: t('Whole journey') }, ...routes.flatMap((item, index) => item.id ? [{ value: item.id, label: `${t('Leg')} ${index + 1} · ${item.mode || ''} · ${item.originUnlocode || item.origin || '—'} → ${item.destinationUnlocode || item.destination || '—'}` }] : [])]
+  const routeOptions = [{ value: 'whole-journey', label: t('Whole journey') }, ...routes.flatMap((item, index) => item.id ? [{ value: item.id, label: `${t('Leg')} ${index + 1} · ${item.mode || ''} · ${item.originUnlocode || item.origin || '–'} → ${item.destinationUnlocode || item.destination || '–'}` }] : [])]
   const labelFor = (options: { value: string; label: string }[], value: string | null) => options.find(option => option.value === value)?.label || t('Removed or not selected')
   const patch = (id: string, change: Partial<BookingCargoAllocation>) => {
     if (!editable || !allocations) return
@@ -83,7 +83,7 @@ export function CargoAllocationEditor({ cargo, equipment, routes, allocations, l
                   ref={element => { if (field === 'cargoId' && element && pendingFocus.current === line.id) { pendingFocus.current = null;element.focus() } }}>
                   <SelectValue placeholder={t('Choose')} />
                 </SelectTrigger>
-                <SelectContent>{value && !options.some(option => option.value === value) ? <SelectItem value={value}>{t('Removed — choose another')}</SelectItem> : null}
+                <SelectContent>{value && !options.some(option => option.value === value) ? <SelectItem value={value}>{t('Removed – choose another')}</SelectItem> : null}
                   {options.map(option => <SelectItem key={option.value} value={option.value}><span data-i18n-skip className="whitespace-normal break-words">{option.label}</span></SelectItem>)}
                 </SelectContent>
               </Select> : <p data-i18n-skip className="break-words text-[13px] leading-relaxed">{labelFor(options, value)}</p>}

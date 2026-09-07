@@ -389,7 +389,7 @@ export function deriveCombinedTranscriptInsights(
   }
   const scopePrefix = transcriptStatus === "complete"
     ? ""
-    : "Partial summary — ";
+    : "Partial summary – ";
   const userFacingSpeaker = (segment: CombinedTranscriptEvidenceSegment) =>
     segment.speakerType === "receptionist"
       ? "Agent"
@@ -417,7 +417,7 @@ export function deriveCombinedTranscriptInsights(
       sourceKey: "combined_transcript:revised_quote",
       title: `${
         callerName || "Caller"
-      } asked for a revised quote — add this to the to-do list?`,
+      } asked for a revised quote – add this to the to-do list?`,
       reason:
         "The combined transcript contains an explicit request to revise a quote.",
       confidence: 0.86,
@@ -434,7 +434,7 @@ export function deriveCombinedTranscriptInsights(
       sourceKey: "combined_transcript:follow_up",
       title: `Follow up with ${
         callerName || "the caller"
-      } — add this to the to-do list?`,
+      } – add this to the to-do list?`,
       reason:
         "The combined transcript contains an explicit request for follow-up.",
       confidence: 0.84,

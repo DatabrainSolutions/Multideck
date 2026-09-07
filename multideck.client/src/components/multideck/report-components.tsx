@@ -703,14 +703,14 @@ export const monthlyReviewPages: ReportPage[] = [
     title: "Marlow Apparel Ltd",
     subtitle: "May 2026 · prepared June 1, 2026",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for Marlow Apparel Ltd",
+    footer: "Confidential – prepared for Marlow Apparel Ltd",
     pageNumber: 1,
     blocks: [
       {
         id: "summary",
         type: "summary",
         title: "Summary",
-        body: "A strong month: 38 bookings moved, on-time performance rose to 94.2%, and spend came in 3% under April. Two of three exceptions were resolved within a day. Watch AW26 volumes — early bookings suggest a 20% step up from September.",
+        body: "A strong month: 38 bookings moved, on-time performance rose to 94.2%, and spend came in 3% under April. Two of three exceptions were resolved within a day. Watch AW26 volumes – early bookings suggest a 20% step up from September.",
         tone: "teal",
       },
     ],
@@ -720,7 +720,7 @@ export const monthlyReviewPages: ReportPage[] = [
     label: "KPIs",
     title: "KPI overview",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for Marlow Apparel Ltd",
+    footer: "Confidential – prepared for Marlow Apparel Ltd",
     pageNumber: 2,
     blocks: [
       {
@@ -748,7 +748,7 @@ export const monthlyReviewPages: ReportPage[] = [
     label: "Bookings",
     title: "Booking movement",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for Marlow Apparel Ltd",
+    footer: "Confidential – prepared for Marlow Apparel Ltd",
     pageNumber: 3,
     blocks: [
       {
@@ -769,7 +769,7 @@ export const monthlyReviewPages: ReportPage[] = [
     label: "Exceptions",
     title: "Exceptions",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for Marlow Apparel Ltd",
+    footer: "Confidential – prepared for Marlow Apparel Ltd",
     pageNumber: 4,
     blocks: [
       {
@@ -789,7 +789,7 @@ export const monthlyReviewPages: ReportPage[] = [
     label: "Spend",
     title: "Spend summary",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for Marlow Apparel Ltd",
+    footer: "Confidential – prepared for Marlow Apparel Ltd",
     pageNumber: 5,
     blocks: [
       {
@@ -805,7 +805,7 @@ export const monthlyReviewPages: ReportPage[] = [
     label: "Appendix",
     title: "Appendix",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for Marlow Apparel Ltd",
+    footer: "Confidential – prepared for Marlow Apparel Ltd",
     pageNumber: 6,
     blocks: [
       {
@@ -831,14 +831,14 @@ export const monthlyTemplatePages: ReportPage[] = [
     title: "{Customer name}",
     subtitle: "{Period} · prepared {Run date}",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for {Customer name}",
+    footer: "Confidential – prepared for {Customer name}",
     pageNumber: 1,
     blocks: [
       {
         id: "written-summary",
         type: "summary",
         title: "Written summary",
-        body: "Dexter writes 3–4 sentences here on each run — volumes, on-time trend, exceptions worth a conversation, and what's coming next month.",
+        body: "Dexter writes 3–4 sentences here on each run – volumes, on-time trend, exceptions worth a conversation, and what's coming next month.",
         tone: "teal",
       },
     ],
@@ -848,7 +848,7 @@ export const monthlyTemplatePages: ReportPage[] = [
     label: "KPIs",
     title: "KPI overview",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for {Customer name}",
+    footer: "Confidential – prepared for {Customer name}",
     pageNumber: 2,
     blocks: [
       {

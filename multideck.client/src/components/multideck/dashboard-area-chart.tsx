@@ -226,7 +226,7 @@ export function DashboardAreaChart({
   /**
    * The crosshair snaps to the nearest data point rather than tracking the
    * cursor, so a pointer sweep produces at most one update per point instead of
-   * one per pixel — and the spring between points reads as magnetic.
+   * one per pixel – and the spring between points reads as magnetic.
    */
   const handlePointerMove = useCallback(
     (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -289,7 +289,7 @@ export function DashboardAreaChart({
             height={box.height}
             role="img"
             tabIndex={0}
-            aria-label={`${valueLabel ?? t("Trend")} — ${points.map((point) => `${point.label} ${format(point.value)}`).join(", ")}`}
+            aria-label={`${valueLabel ?? t("Trend")} – ${points.map((point) => `${point.label} ${format(point.value)}`).join(", ")}`}
             onPointerMove={handlePointerMove}
             onPointerLeave={() => setActiveIndex(null)}
             onFocus={() => {

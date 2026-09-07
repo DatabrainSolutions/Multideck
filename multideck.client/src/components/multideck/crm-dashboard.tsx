@@ -172,7 +172,7 @@ function stageShade(index: number, total: number) {
  * graph and the centre is the answer: an operator should be able to read the
  * total and the shape of it in the same glance.
  *
- * The arc is a value breakdown, not progress towards a target — the CRM
+ * The arc is a value breakdown, not progress towards a target – the CRM
  * snapshot carries no quota, so nothing here implies one.
  */
 export function CrmOpportunityValue({
@@ -343,7 +343,7 @@ const bucketTone: Record<CrmQueueBucket, StatusTone> = {
   never_contacted: "neutral",
 }
 
-/** Untranslated keys — each call site runs them through the language layer. */
+/** Untranslated keys – each call site runs them through the language layer. */
 const bucketLabel: Record<CrmQueueBucket, string> = {
   reply_due: "Reply waiting",
   awaiting_reply: "Awaiting reply",
@@ -393,7 +393,7 @@ function QueueFilterChips({
             onClick={() => onSelect(chip.key)}
           >
             {/* One indicator for the whole row. Motion interpolates it between
-                chips, so switching filters slides rather than blinks — and a
+                chips, so switching filters slides rather than blinks – and a
                 change mid-flight retargets instead of restarting. */}
             {selected ? (
               <motion.span
@@ -433,7 +433,7 @@ const QueueRow = memo(function QueueRow({
     <Row
       index={index}
       accent={toneToVar(tone)}
-      ariaLabel={`${name} — ${opportunity.subject}`}
+      ariaLabel={`${name} – ${opportunity.subject}`}
       onOpen={openable ? () => onOpen(opportunity) : undefined}
       glyph={<span className="md-crm-avatar" aria-hidden="true">{initialsOf(name)}</span>}
       title={
@@ -517,7 +517,7 @@ export function CrmFollowUpQueue({
           </div>
           {/* The list holds the height of the unfiltered queue. Without it a
               filter down to two rows collapses the panel and shunts everything
-              below it up the page — the filter would move more of the screen
+              below it up the page – the filter would move more of the screen
               than it changes. Measured rather than assumed, because a row
               offering a Create action is taller than one that is not. */}
           <div ref={listRef} className="md-crm-list" style={reserve ? { minHeight: reserve } : undefined}>
@@ -848,7 +848,7 @@ export function CrmQuietLeads({
               side={
                 <>
                   <span className="md-crm-row-value" data-i18n-skip dir="ltr">
-                    {lead.opportunityValue ? formatValue(lead.opportunityValue, lead.currencyCode) : "—"}
+                    {lead.opportunityValue ? formatValue(lead.opportunityValue, lead.currencyCode) : "–"}
                   </span>
                   <span className="md-crm-row-age">
                     {lead.neverContacted
@@ -911,7 +911,7 @@ export function CrmDashboardSkeleton() {
 /* ── Page entrance ───────────────────────────────────────────────────────── */
 
 /**
- * One settling group rather than a dozen independent fades — the same cadence
+ * One settling group rather than a dozen independent fades – the same cadence
  * the operations dashboard arrives on, so the two screens feel like one product.
  */
 export function CrmBand({

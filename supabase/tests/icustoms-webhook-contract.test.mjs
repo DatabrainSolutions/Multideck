@@ -74,7 +74,7 @@ test("operator notifications and Dexter fields are event-driven", async () => {
   const migration = await read("../migrations/20260821125644_icustoms_webhook_documents.sql");
   assert.match(source, /CUST_AssignedUserID/);
   assert.match(source, /Auth_User_ID/);
-  assert.match(source, /Declaration accepted — document ready/);
+  assert.match(source, /Declaration accepted – document ready/);
   assert.match(source, /Declaration document ready/);
   assert.match(source, /\?tab=review/);
   assert.match(migration, /documentAvailable/);

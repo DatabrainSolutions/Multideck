@@ -312,7 +312,7 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
               // Straight to the order's own page, with the calendar as the place
               // its back button returns to.
               // The block stays where it was dropped while the write is in flight,
-              // and goes back to where it came from if the write is refused — the
+              // and goes back to where it came from if the write is refused – the
               // grid never argues with the pointer mid-drag.
               onReschedule={isCustomer ? undefined : rescheduleEvent}
               onOpenOrder={navigate && ((event) => {

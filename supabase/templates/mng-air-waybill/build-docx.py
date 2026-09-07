@@ -141,7 +141,7 @@ def main(output_path: str) -> None:
 
     properties = document.core_properties
     properties.title = "MNG Air Waybill Carbone Template"
-    properties.subject = f"Fixed-layout two-page MNG Airlines Air Waybill — {COPY_LABEL}"
+    properties.subject = f"Fixed-layout two-page MNG Airlines Air Waybill – {COPY_LABEL}"
     properties.author = "Multideck"
     document.save(output_path)
 

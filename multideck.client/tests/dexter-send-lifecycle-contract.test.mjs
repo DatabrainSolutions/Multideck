@@ -26,7 +26,7 @@ test("request ownership, cancellation, timeout and explicit recovery remain boun
   assert.match(pageSource, /onDismissError=\{\(\) => \{/u)
   assert.match(apiSource, /const DEXTER_STREAM_TIMEOUT_MS = 120_000/u)
   assert.match(apiSource, /response\.status === 401[\s\S]*supabase\.auth\.refreshSession\(\)/u)
-  assert.match(apiSource, /Your message is safe — retry when you are ready\./u)
+  assert.match(apiSource, /Your message is safe – retry when you are ready\./u)
   assert.match(apiSource, /error instanceof TypeError/u)
 })
 

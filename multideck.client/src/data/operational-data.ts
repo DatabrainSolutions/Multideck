@@ -420,7 +420,7 @@ export const warehouseOrderFilters = ["All orders · 6", "Inbound · 2", "Outbou
 export const warehouseStockFilters = ["All stock · 642", "Low stock · 8", "Allocated · 184", "Quarantine · 3"] as const
 
 /**
- * The warehouse header band. Seven figures, each answering a different question —
+ * The warehouse header band. Seven figures, each answering a different question –
  * the live set in `lib/warehouse.ts` uses the same labels, so the mock and the
  * real dashboard read as one screen.
  */
@@ -784,7 +784,7 @@ export type BookingDirection = "Import" | "Export" | "Domestic" | "Cross trade"
 export type BookingShipmentType = "FCL" | "LCL" | "Breakbulk" | "RoRo" | "Dry bulk" | "Liquid bulk" | "Project cargo" | "General cargo" | "ULD" | "Air consolidation" | "Back-to-back" | "Express / courier" | "Charter" | "FTL" | "LTL" | "Groupage" | "Pallet network" | "Dedicated vehicle" | "Parcel / express" | "Multiple"
 
 export const bookings = [
-  { id: "MD-22682", customer: "Demo Freight Company", route: "Leicester → Bristol", carrier: "Unassigned", container: "Pallet network", mode: "ROAD" as BookingMode, value: "£1,240", eta: "Awaiting date", time: "—", status: "Exception" as BookingStatus, progress: 8, owner: "EM", tone: "amber" as StatusTone, invoice: "", jobRef: "RD-10682", customerRef: "DFC-PO-48216", supplierRef: "", origin: "Leicester, United Kingdom", destination: "Bristol, United Kingdom", vessel: "", departureDate: "2026-07-23", arrivalDate: "2026-07-24", vin: "", customFields: [{ label: "Planning blocker", value: "Collection date missing" }, { label: "Road service", value: "Pallet network" }] },
+  { id: "MD-22682", customer: "Demo Freight Company", route: "Leicester → Bristol", carrier: "Unassigned", container: "Pallet network", mode: "ROAD" as BookingMode, value: "£1,240", eta: "Awaiting date", time: "–", status: "Exception" as BookingStatus, progress: 8, owner: "EM", tone: "amber" as StatusTone, invoice: "", jobRef: "RD-10682", customerRef: "DFC-PO-48216", supplierRef: "", origin: "Leicester, United Kingdom", destination: "Bristol, United Kingdom", vessel: "", departureDate: "2026-07-23", arrivalDate: "2026-07-24", vin: "", customFields: [{ label: "Planning blocker", value: "Collection date missing" }, { label: "Road service", value: "Pallet network" }] },
   { id: "MD-22683", customer: "Demo Freight Company", route: "Dartford → Manchester", carrier: "Unassigned", container: "LTL", mode: "ROAD" as BookingMode, value: "£1,680", eta: "Jul 23", time: "10:00", status: "Exception" as BookingStatus, progress: 12, owner: "EM", tone: "amber" as StatusTone, invoice: "", jobRef: "RD-10683", customerRef: "DFC-PO-48228", supplierRef: "", origin: "Dartford, United Kingdom", destination: "Manchester, United Kingdom", vessel: "", departureDate: "2026-07-23", arrivalDate: "2026-07-24", vin: "", customFields: [{ label: "Planning blocker", value: "Pallet height not supplied" }, { label: "Road service", value: "LTL" }] },
   { id: "MD-22676", customer: "Demo Freight Company", route: "Birmingham → Glasgow", carrier: "Pending selection", container: "Dedicated 7.5t", mode: "ROAD" as BookingMode, value: "£1,980", eta: "Today", time: "14:00", status: "On track" as BookingStatus, progress: 24, owner: "EM", tone: "teal" as StatusTone, invoice: "", jobRef: "RD-10676", customerRef: "DFC-PO-48191", supplierRef: "", origin: "Birmingham, United Kingdom", destination: "Glasgow, United Kingdom", vessel: "", departureDate: "2026-07-22", arrivalDate: "2026-07-23", vin: "", customFields: [{ label: "Planning state", value: "Carrier shortlist ready" }, { label: "Estimated margin", value: "18.4%" }] },
   { id: "MD-22679", customer: "Demo Freight Company", route: "Coventry → Leeds", carrier: "Pending selection", container: "Next-day pallet", mode: "ROAD" as BookingMode, value: "£1,560", eta: "Jul 23", time: "09:00", status: "On track" as BookingStatus, progress: 24, owner: "EM", tone: "teal" as StatusTone, invoice: "", jobRef: "RD-10679", customerRef: "DFC-PO-48203", supplierRef: "", origin: "Coventry, United Kingdom", destination: "Leeds, United Kingdom", vessel: "", departureDate: "2026-07-23", arrivalDate: "2026-07-24", vin: "", customFields: [{ label: "Planning state", value: "Carrier shortlist ready" }, { label: "Estimated margin", value: "22.1%" }] },
@@ -892,7 +892,7 @@ export const bookingMilestones = [
   { label: "In transit", detail: "now", state: "current" },
   { label: "Destination", detail: "Jun 09", state: "pending" },
   { label: "Customs", detail: "pending", state: "pending" },
-  { label: "Delivered", detail: "—", state: "pending" },
+  { label: "Delivered", detail: "–", state: "pending" },
 ]
 
 export const bookingCargo = [
@@ -914,7 +914,7 @@ export const bookingDocuments = [
 ]
 
 export const bookingTimeline = [
-  { time: "09:42 · AI", text: "Customs hold raised — see exception above.", tone: "red" as StatusTone },
+  { time: "09:42 · AI", text: "Customs hold raised – see exception above.", tone: "red" as StatusTone },
   { time: "08:30 · Wei Chen", text: "Submitted CDS entry to HMRC on parallel booking MD-22481.", tone: "blue" as StatusTone },
   { time: "07:14 · AI", text: "BoL parsed · 18 fields extracted · 96% avg confidence.", tone: "green" as StatusTone },
   { time: "May 25 18:02 · EVERGREEN", text: "Vessel departed Shanghai · ETA pinned to model.", tone: "neutral" as StatusTone },
@@ -994,7 +994,7 @@ export const reportTemplates: ReportTemplate[] = [
 export const generatedReports: GeneratedReport[] = [
   {
     id: "rpt-marlow-may-review",
-    title: "Marlow Apparel — May review",
+    title: "Marlow Apparel – May review",
     subtitle: "Monthly client review · 2.4 MB",
     scope: "Marlow Apparel Ltd",
     period: "May 2026",
@@ -1003,7 +1003,7 @@ export const generatedReports: GeneratedReport[] = [
   },
   {
     id: "rpt-carrier-q2",
-    title: "Carrier performance — Q2 to date",
+    title: "Carrier performance – Q2 to date",
     subtitle: "Carrier performance · 1.1 MB",
     scope: "All carriers",
     period: "Apr – Jun 2026",
@@ -1012,7 +1012,7 @@ export const generatedReports: GeneratedReport[] = [
   },
   {
     id: "rpt-bauhaus-may-review",
-    title: "Bauhaus Importe — May review",
+    title: "Bauhaus Importe – May review",
     subtitle: "Monthly client review · 1.9 MB",
     scope: "Bauhaus Importe GmbH",
     period: "May 2026",
@@ -1021,7 +1021,7 @@ export const generatedReports: GeneratedReport[] = [
   },
   {
     id: "rpt-customs-audit-may",
-    title: "Customs audit — May",
+    title: "Customs audit – May",
     subtitle: "Customs & compliance · 4.2 MB",
     scope: "EU + UK lanes",
     period: "May 2026",
@@ -1030,8 +1030,8 @@ export const generatedReports: GeneratedReport[] = [
   },
   {
     id: "rpt-spend-week-24",
-    title: "Spend summary — week 24",
-    subtitle: "Spend summary · —",
+    title: "Spend summary – week 24",
+    subtitle: "Spend summary · –",
     scope: "All customers",
     period: "Jun 08 – 14",
     created: "Generating now",
@@ -1039,8 +1039,8 @@ export const generatedReports: GeneratedReport[] = [
   },
   {
     id: "rpt-northwind-june-review",
-    title: "Northwind GmbH — June review",
-    subtitle: "Monthly client review · —",
+    title: "Northwind GmbH – June review",
+    subtitle: "Monthly client review · –",
     scope: "Northwind GmbH",
     period: "Jun 2026",
     created: "Scheduled · Jul 01",

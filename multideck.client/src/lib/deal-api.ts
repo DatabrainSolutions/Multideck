@@ -305,7 +305,7 @@ export type UpdateDealInput = Partial<{
 
 /**
  * Writes only the keys given. One inline field can save on its own without the
- * client having to send — and risk overwriting — every neighbouring value.
+ * client having to send – and risk overwriting – every neighbouring value.
  */
 export async function updateDeal(dealId: string, input: UpdateDealInput, expectedVersion: number) {
   const deal = await callCrmMutation<ApiDeal>(

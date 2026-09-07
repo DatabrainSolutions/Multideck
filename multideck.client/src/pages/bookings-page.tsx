@@ -115,7 +115,7 @@ function bookingDirectionTone(direction: string) {
 }
 
 function formatOperationalDate(value: string, language: string) {
-  if (!value) return "—"
+  if (!value) return "–"
   const date = new Date(`${value}T00:00:00Z`)
   if (Number.isNaN(date.getTime())) return value
   return new Intl.DateTimeFormat(language, { day: "2-digit", month: "short", timeZone: "UTC" }).format(date)
@@ -356,7 +356,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
       minWidth: 138,
       maxWidth: 240,
       resizable: true,
-      cell: (booking) => <p className="truncate text-[12px] font-medium text-[var(--md-ink)]" title={booking.origin} data-i18n-skip dir="auto">{booking.origin || "—"}</p>,
+      cell: (booking) => <p className="truncate text-[12px] font-medium text-[var(--md-ink)]" title={booking.origin} data-i18n-skip dir="auto">{booking.origin || "–"}</p>,
     },
     {
       id: "destination",
@@ -365,7 +365,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
       minWidth: 138,
       maxWidth: 240,
       resizable: true,
-      cell: (booking) => <p className="truncate text-[12px] font-medium text-[var(--md-ink)]" title={booking.destination} data-i18n-skip dir="auto">{booking.destination || "—"}</p>,
+      cell: (booking) => <p className="truncate text-[12px] font-medium text-[var(--md-ink)]" title={booking.destination} data-i18n-skip dir="auto">{booking.destination || "–"}</p>,
     },
     {
       id: "schedule",
@@ -415,7 +415,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
       sortValue: (booking) => booking.updatedAt,
       cell: (booking) => (
         <div className="flex items-center gap-2.5">
-          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--md-accent-a12)] text-[12px] font-medium text-[var(--md-accent)]">{booking.owner || "—"}</span>
+          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--md-accent-a12)] text-[12px] font-medium text-[var(--md-accent)]">{booking.owner || "–"}</span>
           <div className="min-w-0">
             <p className="text-[11px] font-medium text-[var(--md-ink)]">{t("Updated")}</p>
             <p className="mt-0.5 truncate text-[10px] tabular-nums text-[var(--md-text)]" title={formatLastActivity(booking.updatedAt, language)}>{t(formatLastActivity(booking.updatedAt, language))}</p>
@@ -450,7 +450,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
       resizable: true,
       defaultHidden: true,
       sortValue: (booking) => Number(booking.value.replace(/[^0-9.-]/g, "")),
-      cell: (booking) => <span className="text-[13px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{booking.value || "—"}</span>,
+      cell: (booking) => <span className="text-[13px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{booking.value || "–"}</span>,
     },
     {
       id: "customerReference",
@@ -460,7 +460,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
       resizable: true,
       defaultHidden: true,
       sortValue: (booking) => booking.customerRef,
-      cell: (booking) => <span className="text-[12px] text-[var(--md-ink)]" dir="auto">{booking.customerRef || "—"}</span>,
+      cell: (booking) => <span className="text-[12px] text-[var(--md-ink)]" dir="auto">{booking.customerRef || "–"}</span>,
     },
     {
       id: "supplierReference",
@@ -470,7 +470,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
       resizable: true,
       defaultHidden: true,
       sortValue: (booking) => booking.supplierRef,
-      cell: (booking) => <span className="text-[12px] text-[var(--md-ink)]" dir="auto">{booking.supplierRef || "—"}</span>,
+      cell: (booking) => <span className="text-[12px] text-[var(--md-ink)]" dir="auto">{booking.supplierRef || "–"}</span>,
     },
     {
       id: "invoice",

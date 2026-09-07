@@ -452,7 +452,7 @@ function DetailedAuditTable({ records }: { records: readonly QuoteAuditRecord[] 
         <span className="block min-w-0">
           <span className="block truncate font-medium text-[var(--md-ink)]">{t(record.actor)}</span>
           <span className="mt-0.5 block truncate text-[10px] text-[var(--md-subtle)]" dir="auto">
-            {record.sender ? record.sender : record.actorRole ? t(record.actorRole) : "—"}
+            {record.sender ? record.sender : record.actorRole ? t(record.actorRole) : "–"}
           </span>
         </span>
       ),
@@ -547,8 +547,8 @@ function DetailedAuditTable({ records }: { records: readonly QuoteAuditRecord[] 
                 {([
                   ["Field", selectedRecord.field],
                   ["Actor", selectedRecord.actor],
-                  ["Role", selectedRecord.actorRole ?? "—"],
-                  ["Sender", selectedRecord.sender ?? "—"],
+                  ["Role", selectedRecord.actorRole ?? "–"],
+                  ["Sender", selectedRecord.sender ?? "–"],
                   ["Source", selectedRecord.source],
                 ] as const).map(([label, value]) => (
                   <div key={label} className="grid grid-cols-[112px_minmax(0,1fr)] gap-3 py-3">

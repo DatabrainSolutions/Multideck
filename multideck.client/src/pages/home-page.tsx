@@ -92,7 +92,7 @@ function formatWait(milliseconds: number) {
 /**
  * How close a region is to going quiet. Red is "say it now or it waits until
  * tomorrow", amber is the hour's notice before that, grey is everything with
- * time left in it — including regions that are already closed, because there is
+ * time left in it – including regions that are already closed, because there is
  * nothing urgent about a day that has not started.
  */
 type ClockOffUrgency = "imminent" | "soon" | "steady"
@@ -218,7 +218,7 @@ export function HomePage({
   const openTasks = useMemo(() => todoTasks.filter((task) => task.status === "open"), [todoTasks])
 
   /** The operator's own priority work, which is what the prompts are built
-      from — separate to the To Do list, which they write themselves. */
+      from – separate to the To Do list, which they write themselves. */
   const priorityItems = useMemo<DashboardPriorityItem[]>(
     () => overview?.priorityMineItems?.length ? overview.priorityMineItems : overview?.priorityItems ?? [],
     [overview],
@@ -313,7 +313,7 @@ export function HomePage({
         title: t("Pick up {reference} for {customer}")
           .replace("{reference}", leadItem.reference)
           .replace("{customer}", leadItem.customer),
-        prompt: t("Review {reference} for {customer} — {task}. Tell me the next action and draft it.")
+        prompt: t("Review {reference} for {customer} – {task}. Tell me the next action and draft it.")
           .replace("{reference}", leadItem.reference)
           .replace("{customer}", leadItem.customer)
           .replace("{task}", t(leadItem.task)),
@@ -610,7 +610,7 @@ export function HomePage({
           />
 
           {/* Sending is the only thing that clears the deck, and `popLayout`
-              takes it out of the flow the instant it starts leaving — so the
+              takes it out of the flow the instant it starts leaving – so the
               modules stagger away while the composer travels down the page,
               rather than after it. */}
           <AnimatePresence mode="popLayout" initial={false}>

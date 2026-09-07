@@ -71,7 +71,7 @@ function ThinkingDots() {
 
 /**
  * The summon composer: the Dexter prompt box with everything an answer-in-place
- * does not need taken out. No role picker, no attachments, no model choice — the
+ * does not need taken out. No role picker, no attachments, no model choice – the
  * summon is always Fast, and its context is the thing it is pinned to.
  */
 export function DexterSummonPrompt({
@@ -125,7 +125,7 @@ export function DexterSummonPrompt({
 
   useLayoutEffect(() => {
     // Synchronous on purpose. Deferring to a frame reads better by a hair, but a
-    // throttled frame — a background tab, a slow first paint — would leave the box
+    // throttled frame – a background tab, a slow first paint – would leave the box
     // open with nowhere to type, and being able to type is the whole point.
     textareaRef.current?.focus({ preventScroll: true })
   }, [])

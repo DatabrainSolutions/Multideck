@@ -517,7 +517,7 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
                   </div>
                 </section>
                 <section>
-                  <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Booking hand-off — optional until acceptance")}</h2>
+                  <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Booking hand-off – optional until acceptance")}</h2>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <Field label="Shipper"><Input value={record.shipper?.name ?? ""} onChange={(event) => updateRecord("shipper", { ...(record.shipper ?? {}), name: event.target.value })} disabled={readOnly} className={inputClass()} /></Field>
                     <Field label="Consignee"><Input value={record.consignee?.name ?? ""} onChange={(event) => updateRecord("consignee", { ...(record.consignee ?? {}), name: event.target.value })} disabled={readOnly} className={inputClass()} /></Field>

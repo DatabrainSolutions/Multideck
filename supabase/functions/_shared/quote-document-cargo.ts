@@ -67,12 +67,12 @@ export function quoteDocumentCargo(facts: Record<string, unknown>): QuoteDocumen
         text(cargo.countryOfOrigin) ? `Origin ${text(cargo.countryOfOrigin)}` : "",
         ...flags,
       ].filter(Boolean).join(" · "),
-      packages: [quantity, text(cargo.packageType)].filter(Boolean).join(" · ") || "—",
-      weights: [gross ? `Gross ${gross} kg` : "", net ? `Net ${net} kg` : "", chargeable ? `Chargeable ${chargeable} kg` : ""].filter(Boolean).join(" · ") || "—",
+      packages: [quantity, text(cargo.packageType)].filter(Boolean).join(" · ") || "–",
+      weights: [gross ? `Gross ${gross} kg` : "", net ? `Net ${net} kg` : "", chargeable ? `Chargeable ${chargeable} kg` : ""].filter(Boolean).join(" · ") || "–",
       measurements: [
-        dimensions.some(Boolean) ? `${dimensions.map((dimension) => dimension || "—").join(" × ")} ${unit} (L × W × H)` : "",
+        dimensions.some(Boolean) ? `${dimensions.map((dimension) => dimension || "–").join(" × ")} ${unit} (L × W × H)` : "",
         volume ? `${volume} CBM` : "",
-      ].filter(Boolean).join(" · ") || "—",
+      ].filter(Boolean).join(" · ") || "–",
     }
   })
 }

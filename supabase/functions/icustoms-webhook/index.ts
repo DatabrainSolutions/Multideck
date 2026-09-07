@@ -366,7 +366,7 @@ async function storeDocument(
 function notificationCopy(status: string, statusChanged: boolean, documentCreated: boolean) {
   if (status === "accepted" && statusChanged && documentCreated) {
     return {
-      title: "Declaration accepted — document ready",
+      title: "Declaration accepted – document ready",
       body: "iCustoms accepted the declaration and returned its declaration document.",
       key: "customs.declaration_accepted_document_ready",
       priority: "normal",

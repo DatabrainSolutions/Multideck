@@ -162,7 +162,7 @@ export function ScreeningPage() {
       label: "Rescreen due",
       kind: "date",
       minWidth: 130,
-      cell: (check) => <bdi>{formatDate(check.rescreenDueAt, language) || "—"}</bdi>,
+      cell: (check) => <bdi>{formatDate(check.rescreenDueAt, language) || "–"}</bdi>,
       sortValue: (check) => check.rescreenDueAt ? new Date(check.rescreenDueAt).getTime() : 0,
     },
   ], [language, t])
@@ -328,7 +328,7 @@ export function ScreeningPage() {
             <Metric label="Manual clear" value={controlReport.report.manualClear.toLocaleString(language)} tone="green" />
             <Metric label="Review required" value={controlReport.report.reviewRequired.toLocaleString(language)} tone="amber" />
             <Metric label="Sanctioned" value={controlReport.report.sanctioned.toLocaleString(language)} tone="red" />
-            <Metric label="Next rescreen due" value={formatDate(controlReport.report.nextRescreenDueAt, language) || "—"} />
+            <Metric label="Next rescreen due" value={formatDate(controlReport.report.nextRescreenDueAt, language) || "–"} />
           </div>
         ) : null}
       </section>

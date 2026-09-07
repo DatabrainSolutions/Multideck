@@ -33,8 +33,8 @@ export function ProgressiveBlur({
   height?: number
   /**
    * Inset from the pinned edge, in px. The dense end of the ramp belongs against
-   * whatever the veil hands content over to — a floating composer's top edge, not
-   * the viewport's bottom — otherwise most of the ramp is spent behind something
+   * whatever the veil hands content over to – a floating composer's top edge, not
+   * the viewport's bottom – otherwise most of the ramp is spent behind something
    * opaque and content slides under it still sharp.
    */
   offset?: number

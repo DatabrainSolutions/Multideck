@@ -725,7 +725,7 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                 ) : (
                   <Empty text={t("No activity has been recorded and no recent emails are linked to this account or its contacts.")} />
                 )}
-                {!currentAccount.recentEmails.available ? <p className="border-t border-[var(--md-line)] px-4 py-2.5 text-[11.5px] leading-4 text-[var(--md-subtle)] sm:px-5">{t("Conversations are missing from this history — you need email access to include them.")}</p> : currentAccount.recentEmails.items.length === 0 && moments.length ? <p className="border-t border-[var(--md-line)] px-4 py-2.5 text-[11.5px] leading-4 text-[var(--md-subtle)] sm:px-5">{t("No recent emails are linked to this account or its contacts.")}</p> : null}
+                {!currentAccount.recentEmails.available ? <p className="border-t border-[var(--md-line)] px-4 py-2.5 text-[11.5px] leading-4 text-[var(--md-subtle)] sm:px-5">{t("Conversations are missing from this history – you need email access to include them.")}</p> : currentAccount.recentEmails.items.length === 0 && moments.length ? <p className="border-t border-[var(--md-line)] px-4 py-2.5 text-[11.5px] leading-4 text-[var(--md-subtle)] sm:px-5">{t("No recent emails are linked to this account or its contacts.")}</p> : null}
               </Panel>
 
               <CustomerWarehouseAccess customerId={currentAccount.id} />
@@ -796,7 +796,7 @@ function StatCell({ label, value, note, noteTone }: { label: string; value: stri
  * health and churn are derived signals rather than operator-authored facts.
  *
  * Eighty-two out of a hundred is not something anyone judges quickly as a number.
- * The ring says whether it is a good eighty-two — which for churn risk is the
+ * The ring says whether it is a good eighty-two – which for churn risk is the
  * opposite of what it means for health.
  */
 function ScoreCell({ label, score, tone, explanation }: { label: string; score: number | null; tone: "health" | "risk"; explanation: AccountScoreExplanation | null }) {
@@ -811,7 +811,7 @@ function ScoreCell({ label, score, tone, explanation }: { label: string; score: 
             {tone === "health" ? <Health className="size-3" strokeWidth={1.4} aria-hidden="true" /> : null}
             {label}
           </span>
-          <span className="mt-1 block text-[18px] font-medium leading-6 tabular-nums text-[var(--md-ink)]">{score == null ? "—" : `${Math.round(score)}%`}</span>
+          <span className="mt-1 block text-[18px] font-medium leading-6 tabular-nums text-[var(--md-ink)]">{score == null ? "–" : `${Math.round(score)}%`}</span>
         </span>
       </ScoreExplanationPopover>
     </div>

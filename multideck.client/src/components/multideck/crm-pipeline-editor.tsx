@@ -1179,7 +1179,7 @@ export function CrmPipelineEditor({
       if (from === to) return
 
       updatePipeline((pipeline) => ({ ...pipeline, stages: moveItem(pipeline.stages, from, to) }))
-      setAnnouncement(`${t(stagesRef.current[from]?.name ?? "")} — ${t("position")} ${to + 1}`)
+      setAnnouncement(`${t(stagesRef.current[from]?.name ?? "")} – ${t("position")} ${to + 1}`)
     })
   }
 
@@ -1198,7 +1198,7 @@ export function CrmPipelineEditor({
 
     updatePipeline((pipeline) => ({ ...pipeline, stages: moveItem(pipeline.stages, from, to) }))
     setSelectedStageId(id)
-    setAnnouncement(`${t(stagesRef.current[from].name)} — ${t("position")} ${to + 1}`)
+    setAnnouncement(`${t(stagesRef.current[from].name)} – ${t("position")} ${to + 1}`)
   }
 
   function insertStage(index: number) {
@@ -1226,7 +1226,7 @@ export function CrmPipelineEditor({
     })
     setSelectedStageId(id)
     setRenamingStageId(id)
-    setAnnouncement(`${t("Stage added")} — ${t("position")} ${index + 1}`)
+    setAnnouncement(`${t("Stage added")} – ${t("position")} ${index + 1}`)
   }
 
   useEffect(() => {
@@ -1439,7 +1439,7 @@ export function CrmPipelineEditor({
 
     const next = moveItem(drafts, from, to)
     setDrafts(next)
-    setAnnouncement(`${t(drafts[from].name)} — ${t("position")} ${to + 1}`)
+    setAnnouncement(`${t(drafts[from].name)} – ${t("position")} ${to + 1}`)
 
     const serverIds = next.map((pipeline) => pipeline.serverId)
     // The workspace order has to name every saved pipeline, so it can only be written once the

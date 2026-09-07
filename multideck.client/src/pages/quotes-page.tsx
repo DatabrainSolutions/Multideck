@@ -1280,7 +1280,7 @@ function QuoteField({
             invalid && "ring-1 ring-[var(--md-red)]",
           )}
         >
-          {stringValue || "—"}
+          {stringValue || "–"}
         </div>
       )}
       {invalid ? <p className="mt-1 text-[10px] text-[var(--md-red)]">{t("Required field")}</p> : null}
@@ -1453,9 +1453,9 @@ function QuoteOverviewSignals({
   const needleAngle = -90 + ((successScore ?? 0) / 100) * 180
   const quoteMetadata = [
     { label: "Quote owner", value: salesRepresentativeValue(quote.salesRep) },
-    { label: "Created", value: quote.createdAt ?? "—" },
+    { label: "Created", value: quote.createdAt ?? "–" },
     { label: "Operations owner", value: quote.opsRep?.trim() || "Unassigned" },
-    { label: "Valid until", value: quote.validity || "—" },
+    { label: "Valid until", value: quote.validity || "–" },
   ]
   const temperatureEvidence = intelligence?.metrics.aiTemperature
   const temperatureEvidenceDetail = intelligence && temperatureEvidence
@@ -1553,7 +1553,7 @@ function ClientPricingIntelligence({ intelligence, unavailable = false }: { inte
             {unavailable ? (
               <div className="relative flex h-full flex-col justify-between text-white">
                 <p className="text-[9.5px] font-medium uppercase tracking-[0.02em] text-white/65">{t(label)}</p>
-                <p className="text-[24px] font-medium">—</p>
+                <p className="text-[24px] font-medium">–</p>
                 <p className="text-[9.5px] text-white/72">{t("Try again after the next quote update")}</p>
               </div>
             ) : (
@@ -1671,10 +1671,10 @@ function RecentQuotesSummary({ quote, intelligence, unavailable = false }: { quo
     { id: "date", label: "Date", width: 76, minWidth: 68, kind: "date", cell: (row) => <span data-i18n-skip dir="ltr" className="font-medium text-[var(--md-subtle)]">{dateFormatter.format(new Date(row.date))}</span> },
     { id: "lane", label: "Origin → destination", width: 116, minWidth: 106, kind: "identity", cellTitle: (row) => row.lane, cell: (row) => <span data-i18n-skip dir="ltr" className="block truncate font-medium text-[var(--md-ink)]">{row.lane}</span> },
     { id: "mode", label: "Mode", width: 68, minWidth: 62, kind: "attribute", cell: (row) => <StatusPill kind="attribute" tone="blue" className="h-4 px-1.5 text-[9px]">{t(row.mode)}</StatusPill> },
-    { id: "revenue", label: "Revenue", width: 78, minWidth: 72, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr">{row.revenue === null ? "—" : money(row.revenue, currency)}</span> },
-    { id: "cost", label: "Cost", width: 72, minWidth: 68, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr" className="text-[var(--md-text)]">{row.cost === null ? "—" : money(row.cost, currency)}</span> },
-    { id: "profit", label: "Profit", width: 74, minWidth: 68, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr" className="font-medium text-[var(--md-ink)]">{row.profit === null ? "—" : money(row.profit, currency)}</span> },
-    { id: "margin", label: "Profit %", width: 66, minWidth: 62, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr">{row.marginPct === null ? "—" : `${row.marginPct}%`}</span> },
+    { id: "revenue", label: "Revenue", width: 78, minWidth: 72, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr">{row.revenue === null ? "–" : money(row.revenue, currency)}</span> },
+    { id: "cost", label: "Cost", width: 72, minWidth: 68, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr" className="text-[var(--md-text)]">{row.cost === null ? "–" : money(row.cost, currency)}</span> },
+    { id: "profit", label: "Profit", width: 74, minWidth: 68, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr" className="font-medium text-[var(--md-ink)]">{row.profit === null ? "–" : money(row.profit, currency)}</span> },
+    { id: "margin", label: "Profit %", width: 66, minWidth: 62, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr">{row.marginPct === null ? "–" : `${row.marginPct}%`}</span> },
     { id: "status", label: "Status", width: 84, minWidth: 76, kind: "status", cell: (row) => <StatusPill kind="status" tone={row.status === "Won" ? "green" : row.status === "Lost" ? "red" : "amber"} className="h-4 px-1.5 text-[9px]">{t(row.status)}</StatusPill> },
   ], [currency, dateFormatter, t])
 
@@ -1828,7 +1828,7 @@ function EditableChargeCell({
 
   return (
     <span data-i18n-skip dir={numeric ? "ltr" : "auto"} className={cn("block truncate text-[11px]", numeric && "text-right tabular-nums", className)}>
-      {value || "—"}
+      {value || "–"}
     </span>
   )
 }
@@ -2350,7 +2350,7 @@ function UnifiedQuoteChargesPanel({
             baseCurrency: quote.currency,
             costRoe: demoRate,
             sellRoe: demoRate,
-            provider: "Demo reference set — not live",
+            provider: "Demo reference set – not live",
             source: "reference",
             status: "stale",
           }
@@ -2662,7 +2662,7 @@ function CargoWiseField({
               : "min-h-7 px-1.5 py-1 leading-5"
             : "min-h-8 px-2 py-1.5 leading-5",
           fitValue && "w-fit max-w-full",
-        )}>{value || "—"}</span>}
+        )}>{value || "–"}</span>}
         {action}
       </div>
     </div>
@@ -2742,7 +2742,7 @@ function CargoWiseLookupField({
           compact ? "min-h-7 px-1.5 py-1 leading-5" : "min-h-8 px-2 py-1.5 leading-5",
           invalid && "ring-1 ring-[var(--md-red)]",
         )}>
-          {value || "—"}
+          {value || "–"}
         </span>
       )}
       <Button
@@ -2997,7 +2997,7 @@ function QuoteCargoWiseOverviewPanel({ quote, intelligence, intelligenceUnavaila
             <CargoWiseField label="Cost" value={displayMoney(quote.cost)} compact compactLabel="tight" />
             <CargoWiseField label="Rev." value={displayMoney(quote.revenue)} compact compactLabel="tight" />
             <CargoWiseField label="Profit" value={displayMoney(quote.profit)} compact compactLabel="tight" />
-            <CargoWiseField label="Margin" value={quote.margin || "—"} compact compactLabel="tight" />
+            <CargoWiseField label="Margin" value={quote.margin || "–"} compact compactLabel="tight" />
             <CargoWiseField label="Status" value={quote.jobStatus ?? quote.status} span compact compactLabel="tight" />
           </div>
         </CargoWiseGroup>
@@ -5137,10 +5137,10 @@ function QuoteWorkspaceContext({
 
   const contextByTab: Record<Exclude<QuoteWorkspaceTab, "charges">, { items: Array<[string, string]> }> = {
     overview: {
-      items: [["Customer", quote.customer], ["Route", `${formatLocation(quote.origin, "—")} → ${formatLocation(quote.destination, "—")}`], ["Margin", quote.margin], ["Status", quote.jobStatus ?? quote.status]],
+      items: [["Customer", quote.customer], ["Route", `${formatLocation(quote.origin, "–")} → ${formatLocation(quote.destination, "–")}`], ["Margin", quote.margin], ["Status", quote.jobStatus ?? quote.status]],
     },
     details: {
-      items: [["Customer ref", quote.localRef ?? "—"], ["Branch / Dept", [quote.branch, quote.department].filter(Boolean).join(" / ") || (quote.id === "NEW" ? "" : "— / —")], ["Sales rep", salesRepresentativeValue(quote.salesRep, true) || "Select"], ["Priority", quote.priority ?? "Standard"]],
+      items: [["Customer ref", quote.localRef ?? "–"], ["Branch / Dept", [quote.branch, quote.department].filter(Boolean).join(" / ") || (quote.id === "NEW" ? "" : "– / –")], ["Sales rep", salesRepresentativeValue(quote.salesRep, true) || "Select"], ["Priority", quote.priority ?? "Standard"]],
     },
     documents: {
       items: [["Quote", quote.id], ["Customer", quote.customer], ["Document status", quote.docsStatus ?? "Draft"], ["Workflow", quote.workflow ?? "Review"]],
@@ -5149,7 +5149,7 @@ function QuoteWorkspaceContext({
       items: [["Quote", quote.id], ["Customer", quote.customer], ["Lifecycle", quote.workflowStatus ?? quote.status], ["Carries to", "Booking and Customs"]],
     },
     audit: {
-      items: [["Quote", quote.id], ["Status", quote.workflowStatus ?? quote.status], ["Owner", salesRepresentativeValue(quote.salesRep)], ["Valid from", quote.startDate ?? "—"]],
+      items: [["Quote", quote.id], ["Status", quote.workflowStatus ?? quote.status], ["Owner", salesRepresentativeValue(quote.salesRep)], ["Valid from", quote.startDate ?? "–"]],
     },
   }
   const context = contextByTab[activeTab]

@@ -637,7 +637,7 @@ export default function App() {
     const { data } = authSupabase!.auth.onAuthStateChange((event, session) => {
       // When token refresh fails (stale session), clear storage and redirect to sign-in
       if ((event as string) === "TOKEN_REFRESH_FAILED") {
-        console.warn("Token refresh failed — clearing stale session.")
+        console.warn("Token refresh failed – clearing stale session.")
         void clearStaleSession()
         applySession(null)
         return

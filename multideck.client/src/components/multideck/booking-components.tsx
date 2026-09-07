@@ -1286,7 +1286,7 @@ function BookingRouteSummary({ record }: { record: BookingDetailRecord }) {
   const firstRoute = routes[0]
   const lastRoute = routes.at(-1)
   const formatDate = (value: string | null | undefined) => {
-    if (!value) return "—"
+    if (!value) return "–"
     const date = new Date(value.length === 10 ? `${value}T12:00:00Z` : value)
     return Number.isNaN(date.getTime())
       ? value
@@ -1314,7 +1314,7 @@ function BookingRouteSummary({ record }: { record: BookingDetailRecord }) {
             {originFlag ? <span className="shrink-0 text-[20px] leading-none" aria-hidden="true">{originFlag}</span> : null}
             <div className="min-w-0">
               <p className="text-[9.5px] font-medium text-[var(--md-subtle)]">{t("Origin")}</p>
-              <p className="truncate text-[12.5px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{record.booking.origin || "—"}</p>
+              <p className="truncate text-[12.5px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{record.booking.origin || "–"}</p>
             </div>
           </div>
           <ArrowRight className="size-3.5 shrink-0 text-[var(--md-subtle)] rtl:rotate-180" strokeWidth={1.35} aria-hidden="true" />
@@ -1322,7 +1322,7 @@ function BookingRouteSummary({ record }: { record: BookingDetailRecord }) {
             {destinationFlag ? <span className="shrink-0 text-[20px] leading-none" aria-hidden="true">{destinationFlag}</span> : null}
             <div className="min-w-0">
               <p className="text-[9.5px] font-medium text-[var(--md-subtle)]">{t("Destination")}</p>
-              <p className="truncate text-[12.5px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{record.booking.destination || "—"}</p>
+              <p className="truncate text-[12.5px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{record.booking.destination || "–"}</p>
             </div>
           </div>
         </div>
@@ -1330,7 +1330,7 @@ function BookingRouteSummary({ record }: { record: BookingDetailRecord }) {
           <ModeIcon className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.35} aria-hidden="true" />
           <div className="min-w-0">
             <p className="text-[9.5px] font-medium text-[var(--md-subtle)]">{t("Mode")}</p>
-            <p className="truncate text-[11.5px] font-medium text-[var(--md-ink)]" data-i18n-skip>{record.booking.mode || "—"}</p>
+            <p className="truncate text-[11.5px] font-medium text-[var(--md-ink)]" data-i18n-skip>{record.booking.mode || "–"}</p>
             {legCount > 1 ? <p className="text-[9.5px] text-[var(--md-subtle)]">{legCount} {t("routing steps")}</p> : null}
           </div>
         </div>
@@ -1338,7 +1338,7 @@ function BookingRouteSummary({ record }: { record: BookingDetailRecord }) {
           <DirectionIcon className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.35} aria-hidden="true" />
           <div className="min-w-0">
             <p className="text-[9.5px] font-medium text-[var(--md-subtle)]">{t("Direction")}</p>
-            <p className="mt-0.5 truncate text-[11.5px] font-medium text-[var(--md-ink)]">{t(record.booking.direction || "—")}</p>
+            <p className="mt-0.5 truncate text-[11.5px] font-medium text-[var(--md-ink)]">{t(record.booking.direction || "–")}</p>
           </div>
         </div>
         <div className="flex min-h-11 items-center gap-2 rounded-[var(--md-radius-lg)] px-2.5 py-1.5 hover:bg-[var(--md-surface-soft)]">
@@ -1501,7 +1501,7 @@ function BookingDetailHeader({
             {record.workspace?.booking.sourceQuoteId ? (
               <StatusPill kind="attribute" tone="teal" className="h-7 shrink-0 gap-1 px-2.5 text-[11px]">
                 <span>{t("From quote")}</span>
-                <span data-i18n-skip dir="ltr" className="font-medium">{bookingQuoteReference(record.workspace) || "—"}</span>
+                <span data-i18n-skip dir="ltr" className="font-medium">{bookingQuoteReference(record.workspace) || "–"}</span>
                 {Number.isFinite(appliedQuoteVersion) && appliedQuoteVersion > 0 ? (
                   <>
                     <span aria-hidden="true">·</span>
@@ -2143,7 +2143,7 @@ function getMovementSteps(record: BookingDetailRecord) {
   return labels.map((label, index) => ({
     label,
     state: index < currentIndex ? "done" : index === currentIndex ? "current" : "pending",
-    detail: index === 0 ? record.booking.departureDate : index === labels.length - 2 ? record.booking.arrivalDate : index === currentIndex ? `${record.booking.progress}%` : "—",
+    detail: index === 0 ? record.booking.departureDate : index === labels.length - 2 ? record.booking.arrivalDate : index === currentIndex ? `${record.booking.progress}%` : "–",
   }))
 }
 
@@ -2167,7 +2167,7 @@ function BookingFactRows({ rows }: { rows: readonly (readonly [string, string])[
       {rows.map(([label, value]) => (
         <div key={label} className="grid gap-1 py-3 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] first:shadow-none sm:grid-cols-[minmax(120px,0.8fr)_minmax(0,1.2fr)] sm:items-start">
           <p className="text-[12px] text-[var(--md-text)]">{t(label)}</p>
-          <p data-i18n-skip dir="auto" className="break-words text-[13px] font-medium text-[var(--md-ink)] sm:text-end">{value || "—"}</p>
+          <p data-i18n-skip dir="auto" className="break-words text-[13px] font-medium text-[var(--md-ink)] sm:text-end">{value || "–"}</p>
         </div>
       ))}
     </div>
@@ -2201,7 +2201,7 @@ function bookingFieldOptions(options: readonly (string | BookingFieldOption)[], 
 function BookingCargoWiseField({
   allowCustom = true,
   editable = false,
-  emptyValue = "—",
+  emptyValue = "–",
   inputType = "text",
   inputMode,
   error,
@@ -2443,7 +2443,7 @@ function BookingCargoWiseAmountField({
         </div>
       ) : (
         <span data-i18n-skip dir="ltr" className="min-h-8 min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 py-1.5 text-[11px] font-medium leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
-          {[currency, amount].filter(Boolean).join(" ") || "—"}
+          {[currency, amount].filter(Boolean).join(" ") || "–"}
         </span>
       )}
     </div>
@@ -2508,9 +2508,9 @@ function BookingOverviewSignals({ record, tabs }: { record: BookingDetailRecord;
   })
   const bookingMetadata = [
     { label: "Booking owner", value: record.booking.owner || t("Unassigned") },
-    { label: "Current location", value: record.booking.currentLocation || "—" },
-    { label: "Departure", value: record.booking.departureDate || "—" },
-    { label: "ETA", value: record.booking.eta || "—" },
+    { label: "Current location", value: record.booking.currentLocation || "–" },
+    { label: "Departure", value: record.booking.departureDate || "–" },
+    { label: "ETA", value: record.booking.eta || "–" },
   ]
 
   return (
@@ -2635,7 +2635,7 @@ function BookingAvailabilityInspector({ record }: { record: BookingDetailRecord 
 
 function bookingSignalAvailable(value: string | number | null | undefined) {
   const normalizedValue = String(value ?? "").trim()
-  return Boolean(normalizedValue && !/^(?:—|-|0|pending|not raised|not supplied|not available)$/i.test(normalizedValue))
+  return Boolean(normalizedValue && !/^(?:–|-|0|pending|not raised|not supplied|not available)$/i.test(normalizedValue))
 }
 
 function BookingOperationalCoverage({ record }: { record: BookingDetailRecord }) {
@@ -3502,10 +3502,10 @@ function BookingRecordDetails({
               <tbody>{workspace.cargo.map((line, index) => (
                 <tr key={line.id || `draft-${index}`} className={cn(index === cargoIndex && "bg-[var(--md-surface-soft)]")}>
                   <td className="px-3 py-1.5"><Button variant="ghost" size="sm" aria-pressed={index === cargoIndex} onClick={() => setSelectedCargoIndex(index)} className="h-auto justify-start whitespace-normal text-left">{index + 1}. {line.description || t("New cargo line")}</Button></td>
-                  <td className="px-3 py-1.5">{line.packageQuantity ?? line.pieces ?? "—"} {line.packageType}</td>
-                  <td className="px-3 py-1.5">{line.grossWeightKg ?? "—"}</td>
-                  {showChargeableWeight ? <td data-i18n-skip className="px-3 py-1.5">{line.chargeableWeightKg == null || String(line.chargeableWeightKg).trim() === "" ? "—" : line.chargeableWeightKg}</td> : null}
-                  <td className="px-3 py-1.5">{line.volumeCbm ?? "—"}</td>
+                  <td className="px-3 py-1.5">{line.packageQuantity ?? line.pieces ?? "–"} {line.packageType}</td>
+                  <td className="px-3 py-1.5">{line.grossWeightKg ?? "–"}</td>
+                  {showChargeableWeight ? <td data-i18n-skip className="px-3 py-1.5">{line.chargeableWeightKg == null || String(line.chargeableWeightKg).trim() === "" ? "–" : line.chargeableWeightKg}</td> : null}
+                  <td className="px-3 py-1.5">{line.volumeCbm ?? "–"}</td>
                   <td className="px-3 py-1.5"><Button variant="ghost" size="icon" disabled={!editable} aria-label={t(`Remove cargo line ${index + 1}`)} onClick={() => setRemovingCargoIndex(index)}><Trash2 className="size-3.5" aria-hidden="true" /></Button></td>
                 </tr>
               ))}</tbody>
@@ -3652,7 +3652,7 @@ function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) 
       },
     ]
     const formatDate = (value: string | null | undefined) => {
-      if (!value) return "—"
+      if (!value) return "–"
       const date = new Date(value)
       return Number.isNaN(date.getTime())
         ? value
@@ -4172,7 +4172,7 @@ function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
                         <dl className="mt-2 grid gap-2 text-[12px]">
                           {routeSharedReferenceFields.map((field) => <div key={field} className="min-w-0">
                             <dt className="text-[var(--md-subtle)]">{t(labels.find((item) => item.field === field)?.label ?? (field === "carrierBookingReference" ? "Carrier booking reference" : field === "transportMeansName" ? "Transport service" : field === "masterTransportReference" ? "Master transport reference" : "House transport reference"))}</dt>
-                            <dd className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]" data-i18n-skip>{recordText(references, field) || "—"}</dd>
+                            <dd className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]" data-i18n-skip>{recordText(references, field) || "–"}</dd>
                           </div>)}
                         </dl>
                       </div>
@@ -4225,7 +4225,7 @@ function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
 }
 
 function bookingQuoteSyncValue(value: unknown, language: string) {
-  if (value === null || value === undefined || value === "") return "—"
+  if (value === null || value === undefined || value === "") return "–"
   if (typeof value === "boolean") return value ? "Yes" : "No"
   if (typeof value === "number") return new Intl.NumberFormat(language, { maximumFractionDigits: 20 }).format(value)
   if (typeof value === "string") {
@@ -4385,7 +4385,7 @@ function BookingQuoteSyncReviewPanel({
                       (controlsDisabled || Boolean(difference.blockedReason)) && "cursor-not-allowed",
                     )}
                   >
-                    <Checkbox checked={selected && !difference.blockedReason} disabled={Boolean(difference.blockedReason)} onCheckedChange={(checked) => onToggle(difference.key, checked === true)} aria-label={`${selected ? t("Exclude") : t("Include")} ${t(difference.label)}${difference.cargoDescription ? ` — ${difference.cargoDescription}` : ""}`} aria-describedby={[difference.blockedReason ? `${headingId}-blocked-${index}` : "", difference.reviewNote ? `${headingId}-note-${index}` : ""].filter(Boolean).join(" ") || undefined} />
+                    <Checkbox checked={selected && !difference.blockedReason} disabled={Boolean(difference.blockedReason)} onCheckedChange={(checked) => onToggle(difference.key, checked === true)} aria-label={`${selected ? t("Exclude") : t("Include")} ${t(difference.label)}${difference.cargoDescription ? ` – ${difference.cargoDescription}` : ""}`} aria-describedby={[difference.blockedReason ? `${headingId}-blocked-${index}` : "", difference.reviewNote ? `${headingId}-note-${index}` : ""].filter(Boolean).join(" ") || undefined} />
                     <span className="min-w-0">
                       <span className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-[var(--md-ink)]">
                         {t(difference.label)}
@@ -4440,7 +4440,7 @@ function BookingQuoteSyncReviewPanel({
                   {difference.key.startsWith("cargo:") && difference.key.endsWith(":line") ? (
                     <details className="px-3 pb-3 sm:px-4">
                       <summary className="cursor-pointer rounded-[var(--md-radius-sm)] py-1 text-[12px] font-medium text-[var(--md-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]">
-                        {t("Inspect all cargo details")}<span className="sr-only"> — {difference.cargoDescription || t(difference.label)}</span>
+                        {t("Inspect all cargo details")}<span className="sr-only"> – {difference.cargoDescription || t(difference.label)}</span>
                       </summary>
                       <div className="mt-3 grid gap-4">
                         {cargoDetailFields.map(([field, label]) => (

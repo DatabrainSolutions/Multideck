@@ -166,7 +166,7 @@ export function HomeDexterLauncher({
   /**
    * Sending is one movement, not a page change. The composer drops to the
    * position it will hold in the conversation, and only once it is there does
-   * the workspace take over — so the prompt the operator wrote is still under
+   * the workspace take over – so the prompt the operator wrote is still under
    * their cursor when the thread opens.
    */
   const handOver = useCallback((prompt: string, specialistId: DexterSpecialistId = selectedSpecialistId) => {
@@ -192,8 +192,8 @@ export function HomeDexterLauncher({
 
     handoverPendingRef.current = true
     onDockedChange(true)
-    // A layout animation that never runs — an interrupted transition, a hidden
-    // tab — must not strand the prompt on Home.
+    // A layout animation that never runs – an interrupted transition, a hidden
+    // tab – must not strand the prompt on Home.
     window.setTimeout(openWorkspace, dockTravelMs + 80)
   }, [
     accessMode,

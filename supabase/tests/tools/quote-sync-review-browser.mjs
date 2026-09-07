@@ -37,12 +37,12 @@ const built = await build({
     const cargoKey='cargo:00000000-0000-4000-8000-000000000001:grossWeightKg';
     const initial={reviewId:'synthetic-review',reviewToken:'a'.repeat(64),jobId:'synthetic-booking',quoteId:'synthetic-quote',quoteReference:'QA-QUOTE',
       appliedVersionNumber:1,proposedVersionNumber:2,status:'pending',appliedFields:[],differences:[
-      {key:cargoKey,label:'Gross weight (kg)',cargoDescription:'Machinery crates — long goods description preserved for operational review',section:'Cargo',bookingValue:110,newQuoteValue:125,previousQuoteValue:100,conflict:true,requiresConfirmation:true,recommendation:'review'},
+      {key:cargoKey,label:'Gross weight (kg)',cargoDescription:'Machinery crates – long goods description preserved for operational review',section:'Cargo',bookingValue:110,newQuoteValue:125,previousQuoteValue:100,conflict:true,requiresConfirmation:true,recommendation:'review'},
       {key:'mode',label:'Mode',section:'Job data',bookingValue:'Sea',newQuoteValue:'Air',conflict:false,requiresConfirmation:true,recommendation:'review',warningCode:'mode_change'},
       {key:'cargo',label:'Shipment goods value',section:'Goods',bookingValue:6000,newQuoteValue:6500,blockedReason:'Shipment goods value and cargo allocations need a separate review before applying this change.',requiresConfirmation:true,recommendation:'review'},
       {key:'shipmentGoodsValue',label:'Shipment goods value',section:'Goods',bookingValue:{amount:6000.125,currency:'GBP'},newQuoteValue:{amount:6500.5555,currency:'EUR'},previousQuoteValue:{amount:6000,currency:'GBP'},conflict:true,requiresConfirmation:true,recommendation:'review',reviewNote:'Changes the shipment total only. Existing cargo-line values and currencies are retained; review their allocations separately.'},
       {key:'cargo:00000000-0000-4000-8000-000000000002:line',label:'Add cargo line',section:'Cargo',cargoDescription:'Replacement machine with accessories',previousQuoteValue:null,bookingValue:null,
-        newQuoteValue:{description:'Replacement machine with accessories — packing information that must remain fully readable before approval.',commodity:'Machinery',packageQuantity:2,packageType:'Crates',grossWeightKg:250,netWeightKg:220,volumeCbm:1.234567,chargeableWeightKg:null,length:120,width:80,height:90,lengthUnit:'cm',hsCode:'847989',countryOfOrigin:'GB',isHazardous:false,isTemperatureControlled:false,internalNotes:'QA_INTERNAL_MUST_NOT_RENDER'},conflict:false,requiresConfirmation:true,recommendation:'review'}]};
+        newQuoteValue:{description:'Replacement machine with accessories – packing information that must remain fully readable before approval.',commodity:'Machinery',packageQuantity:2,packageType:'Crates',grossWeightKg:250,netWeightKg:220,volumeCbm:1.234567,chargeableWeightKg:null,length:120,width:80,height:90,lengthUnit:'cm',hsCode:'847989',countryOfOrigin:'GB',isHazardous:false,isTemperatureControlled:false,internalNotes:'QA_INTERNAL_MUST_NOT_RENDER'},conflict:false,requiresConfirmation:true,recommendation:'review'}]};
     const routingScenario=new URLSearchParams(location.search).get('routing');
     if(routingScenario){
       const route={mode:'Sea',origin:'GBFXT',originUnlocode:'GBFXT',destination:'USNYC',destinationUnlocode:'USNYC',plannedDepartureAt:'2026-09-18',plannedArrivalAt:'2026-10-01',carrierName:'Carrier with a long operational name that must wrap in the narrow comparison',serviceLevel:'Standard'};
@@ -58,7 +58,7 @@ const built = await build({
         if(review.reviewToken===initial.reviewToken){setError('The Booking or quote review changed. Refresh the review and check your selections before applying.');return;}
         setReceipt({fields,confirmed,reviewToken:review.reviewToken});setReview({...review,status:'partially_applied',appliedFields:fields});setSelected(new Set());
       },350);}
-      return <main className="p-4"><h1 className="mb-4 text-[18px]">Quote review QA — synthetic data, no live writes</h1>
+      return <main className="p-4"><h1 className="mb-4 text-[18px]">Quote review QA – synthetic data, no live writes</h1>
         ${moneyEditor}
         <output id="value-receipt" className="mb-4 block break-words text-[12px]">{JSON.stringify(workspace)}</output>
         <BookingQuoteSyncReviewPanel busy={busy} refreshing={refreshing} detailsDirty={false} expanded error={error} review={review} selectedFields={selected}

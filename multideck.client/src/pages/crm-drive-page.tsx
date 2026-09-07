@@ -902,10 +902,10 @@ export function CrmDrivePage({ currentUser }: { currentUser: AuthUserSummary | n
             <DialogDescription className="text-[13px] leading-5 text-[var(--md-text)]">
               {removal?.kind === "folder"
                 ? removal.stats.fileCount > 0 || removal.stats.folderCount > 0
-                  ? `${removal.folder.name} — ${t("everything inside it is deleted too, and this cannot be undone.")}`
-                  : `${removal.folder.name} — ${t("this cannot be undone.")}`
+                  ? `${removal.folder.name} – ${t("everything inside it is deleted too, and this cannot be undone.")}`
+                  : `${removal.folder.name} – ${t("this cannot be undone.")}`
                 : removal
-                  ? `${removal.file.name} — ${t("this cannot be undone.")}`
+                  ? `${removal.file.name} – ${t("this cannot be undone.")}`
                   : ""}
             </DialogDescription>
           </DialogHeader>

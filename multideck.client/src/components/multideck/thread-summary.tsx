@@ -11,8 +11,8 @@ import { cn } from "@/lib/utils"
 /**
  * Dexter's read of the selected thread, above the message trail.
  *
- * The summary answers one question — what is this thread about and what is still
- * open — and never speaks for the operator. The wording stays hedged and
+ * The summary answers one question – what is this thread about and what is still
+ * open – and never speaks for the operator. The wording stays hedged and
  * attributed, and every claim the API gives message ids for is linked back to the
  * message it came from, so the summary is a shortcut into the thread rather than
  * a replacement for it.

@@ -47,7 +47,7 @@ try {
     await first.getByRole('combobox', { name: 'Routing scope' }).click()
     await page.getByRole('option', { name: 'Whole journey', exact: true }).click()
     await first.locator('summary').focus();await page.keyboard.press('Enter')
-    await first.getByRole('textbox', { name: 'Allocation notes 1' }).fill('Packing list reviewed — keep customer wording.')
+    await first.getByRole('textbox', { name: 'Allocation notes 1' }).fill('Packing list reviewed – keep customer wording.')
     for (const width of [320, 768, 1280]) {
       await page.setViewportSize({ width, height: 900 })
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width, `overflow at ${width}`)
@@ -57,9 +57,9 @@ try {
     await page.evaluate(() => { document.body.style.zoom = '1' })
     await page.getByRole('button', { name: 'Preview read-only' }).click()
     assert.equal(await page.locator('fieldset input, fieldset button, fieldset textarea').count(), 0)
-    assert.equal(await first.getByText('Packing list reviewed — keep customer wording.', { exact: true }).count(), 1)
+    assert.equal(await first.getByText('Packing list reviewed – keep customer wording.', { exact: true }).count(), 1)
     await page.getByRole('button', { name: 'Return to editing' }).click()
-    assert.equal(await first.getByRole('textbox', { name: 'Allocation notes 1' }).inputValue(), 'Packing list reviewed — keep customer wording.')
+    assert.equal(await first.getByRole('textbox', { name: 'Allocation notes 1' }).inputValue(), 'Packing list reviewed – keep customer wording.')
     console.log(`${language}: exact fills, validation focus, add/remove/cancel, routing scope, notes, read-only and responsive checks passed`)
   }
   assert.deepEqual(errors, [])

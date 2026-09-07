@@ -46,7 +46,7 @@ export function crmDealDetailId(route: string) {
  *
  * It replaces a drawer that could only show four facts and change none of them.
  * Everything the pipeline knows about the deal is here, and every field writes on
- * its own — the stage is the one exception, because moving a deal has side effects
+ * its own – the stage is the one exception, because moving a deal has side effects
  * the board owns.
  */
 export function CrmDealDetailPage({ dealId, navigate }: { dealId: string; navigate: (path: string) => void }) {
@@ -234,10 +234,10 @@ export function CrmDealDetailPage({ dealId, navigate }: { dealId: string; naviga
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: t("Expected value"), value: money(currentDeal.expectedValueAmount, currentDeal.currencyCode) || "—" },
-          { label: t("Expected margin"), value: money(currentDeal.expectedMarginAmount, currentDeal.currencyCode) || "—" },
-          { label: t("Probability"), value: currentDeal.probabilityPct == null ? "—" : `${Math.round(currentDeal.probabilityPct)}%` },
-          { label: t("Expected close"), value: currentDeal.expectedCloseDate ? formatDate(currentDeal.expectedCloseDate, language) : "—" },
+          { label: t("Expected value"), value: money(currentDeal.expectedValueAmount, currentDeal.currencyCode) || "–" },
+          { label: t("Expected margin"), value: money(currentDeal.expectedMarginAmount, currentDeal.currencyCode) || "–" },
+          { label: t("Probability"), value: currentDeal.probabilityPct == null ? "–" : `${Math.round(currentDeal.probabilityPct)}%` },
+          { label: t("Expected close"), value: currentDeal.expectedCloseDate ? formatDate(currentDeal.expectedCloseDate, language) : "–" },
         ].map((metric, index) => (
           <motion.div
             key={metric.label}

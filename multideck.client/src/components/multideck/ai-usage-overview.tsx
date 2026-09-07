@@ -48,8 +48,8 @@ function compactTokens(value: number) {
 
 /**
  * A bar that fills from the leading edge. The fill is absolutely positioned so
- * the width tween is contained to that one element — nothing around it
- * re-lays-out per frame — and `inset-inline-start` keeps it correct in RTL.
+ * the width tween is contained to that one element – nothing around it
+ * re-lays-out per frame – and `inset-inline-start` keeps it correct in RTL.
  */
 const Meter = memo(function Meter({
   percent,
@@ -222,7 +222,7 @@ function ValueHero({
             <span className="font-medium text-[var(--md-ai-hero-ink)]" data-i18n-skip>USD {moneyDigits(value.valueUsd)}</span>{" "}
             {t("of desk time across")}{" "}
             <span className="font-medium text-[var(--md-ai-hero-ink)]" data-i18n-skip>{groupNumber(actions)}</span>{" "}
-            {t("actions — an average of")}{" "}
+            {t("actions – an average of")}{" "}
             <span className="font-medium text-[var(--md-ai-hero-ink)]" data-i18n-skip>{groupNumber(value.minutesPerAction, value.minutesPerAction < 10 ? 1 : 0)}</span>{" "}
             {t("minutes each, measured from the tokens those actions actually used.")}
           </p>
@@ -233,7 +233,7 @@ function ValueHero({
               as a claim, where the unit price reads as a fact. */}
           <div className="mt-5 flex flex-wrap items-center gap-2">
             <span className="md-ai-hero-chip md-ai-hero-chip--bright" data-i18n-skip>
-              {value.costPerHourUsd === null || !hasCostData ? "—" : `USD ${moneyDigits(value.costPerHourUsd)}`}
+              {value.costPerHourUsd === null || !hasCostData ? "–" : `USD ${moneyDigits(value.costPerHourUsd)}`}
               <span className="md-ai-hero-chip__label">{t("per hour returned")}</span>
             </span>
             <span className="md-ai-hero-chip" data-i18n-skip>
@@ -258,7 +258,7 @@ function ValueHero({
             />
             <LedgerRow
               label="Estimated API cost"
-              amount={hasCostData ? `USD ${moneyDigits(costUsd)}` : "—"}
+              amount={hasCostData ? `USD ${moneyDigits(costUsd)}` : "–"}
               percent={(costUsd / ceiling) * 100}
               tone="cost"
               delay={0.06}
@@ -526,7 +526,7 @@ function EngineBreakdown({ engines, hasCostData }: { engines: EngineRow[]; hasCo
               <span className="truncate text-[11.5px] font-normal text-[var(--md-subtle)]" data-i18n-skip>{engine.providerModel}</span>
             </p>
             <p className="shrink-0 text-[13px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>
-              {hasCostData ? `USD ${moneyDigits(engine.costUsd)}` : "—"}
+              {hasCostData ? `USD ${moneyDigits(engine.costUsd)}` : "–"}
             </p>
           </div>
           <Meter
@@ -774,7 +774,7 @@ export function AiUsageOverview({
           description="Derived from this month's recorded tokens at standard uncached rates. An internal estimate, not an invoice."
           action={
             <span className="md-ai-field-figure" dir="ltr" data-i18n-skip>
-              {hasCostData ? `USD ${moneyDigits(costUsd)}` : "—"}
+              {hasCostData ? `USD ${moneyDigits(costUsd)}` : "–"}
             </span>
           }
         >
@@ -788,7 +788,7 @@ export function AiUsageOverview({
             />
             <Figure
               label="Cost per action"
-              value={hasCostData ? `USD ${moneyDigits(costUsd / Math.max(1, actions))}` : "—"}
+              value={hasCostData ? `USD ${moneyDigits(costUsd / Math.max(1, actions))}` : "–"}
               detail="At standard uncached rates"
             />
           </div>
@@ -803,10 +803,10 @@ function CostTable({ engines, hasCostData }: { engines: EngineRow[]; hasCostData
   const columns = useMemo<DataTableColumn<EngineRow>[]>(() => [
     { id: "engine", label: "Engine", kind: "long-text", width: 150, cellTitle: (engine) => `${t(engine.engine)} · ${engine.providerModel}`, cell: (engine) => <div className="min-w-0"><p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{t(engine.engine)}</p><p className="mt-0.5 truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip>{engine.providerModel}</p></div> },
     { id: "thinking", label: "Thinking mode", kind: "attribute", width: 120, cell: (engine) => <StatusPill kind="attribute" tone="blue">{t(engine.reasoningEffort)}</StatusPill> },
-    { id: "input", label: "Input", kind: "number", width: 100, sortValue: (engine) => engine.inputTokens, cell: (engine) => <span dir="ltr" data-i18n-skip>{hasCostData ? compactTokens(engine.inputTokens) : "—"}</span> },
-    { id: "output", label: "Output", kind: "number", width: 100, sortValue: (engine) => engine.outputTokens, cell: (engine) => <span dir="ltr" data-i18n-skip>{hasCostData ? compactTokens(engine.outputTokens) : "—"}</span> },
+    { id: "input", label: "Input", kind: "number", width: 100, sortValue: (engine) => engine.inputTokens, cell: (engine) => <span dir="ltr" data-i18n-skip>{hasCostData ? compactTokens(engine.inputTokens) : "–"}</span> },
+    { id: "output", label: "Output", kind: "number", width: 100, sortValue: (engine) => engine.outputTokens, cell: (engine) => <span dir="ltr" data-i18n-skip>{hasCostData ? compactTokens(engine.outputTokens) : "–"}</span> },
     { id: "rates", label: "Rates per 1M", kind: "number", width: 132, cell: (engine) => { const price = dexterModelPrices[engine.id as keyof typeof dexterModelPrices]; return <span className="text-[11.5px] text-[var(--md-subtle)]" dir="ltr" data-i18n-skip>${price.inputPerMillionUsd.toFixed(2)} / ${price.outputPerMillionUsd.toFixed(2)}</span> } },
-    { id: "cost", label: "Estimated cost", kind: "number", width: 128, sortValue: (engine) => engine.costUsd, cell: (engine) => <span className="font-medium text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{hasCostData ? `USD ${moneyDigits(engine.costUsd)}` : "—"}</span> },
+    { id: "cost", label: "Estimated cost", kind: "number", width: 128, sortValue: (engine) => engine.costUsd, cell: (engine) => <span className="font-medium text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{hasCostData ? `USD ${moneyDigits(engine.costUsd)}` : "–"}</span> },
   ], [hasCostData, t])
 
   return <DataTable ariaLabel="Development cost estimate" columns={columns} rows={engines} getRowKey={(engine) => engine.id} minimumWidth={730} showToolbar={false} showColumnManager={false} className="rounded-none shadow-none" tableClassName="text-[12px]" />

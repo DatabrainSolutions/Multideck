@@ -468,7 +468,7 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
     } catch (cause) { setError(errorMessage(cause)) } finally { setSaving(false) }
   }
 
-  // Exactly the conditions the old footer button used — the wizard changes where
+  // Exactly the conditions the old footer button used – the wizard changes where
   // the operator is standing, not what the server will accept.
   const submitBlocked = hasOutboundStockIssue || !form.facilityId || !form.customerOrgId || !form.sourceReference.trim() || form.lines.some((line) => !line.itemId || Number(line.quantity) <= 0)
 
@@ -728,10 +728,10 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
     { id: "lines", label: "Lines", width: 92, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.lines.length, cell: (order) => <span dir="ltr" className="tabular-nums">{order.lines.length}</span> },
     { id: "progress", label: typeFilter === "outbound" ? "Dispatched" : "Received", width: 132, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => orderProgress(order) ?? -1, cell: (order) => {
       const value = orderProgress(order)
-      return value === null ? <span className="text-[12px] text-[var(--md-subtle)]">—</span> : <span dir="ltr" className={cn("tabular-nums text-[12px]", value >= 1 ? "font-medium text-[var(--md-green)]" : value > 0 ? "text-[var(--md-amber)]" : "text-[var(--md-text)]")}>{percent.format(value)}</span>
+      return value === null ? <span className="text-[12px] text-[var(--md-subtle)]">–</span> : <span dir="ltr" className={cn("tabular-nums text-[12px]", value >= 1 ? "font-medium text-[var(--md-green)]" : value > 0 ? "text-[var(--md-amber)]" : "text-[var(--md-text)]")}>{percent.format(value)}</span>
     } },
-    { id: "requested", label: "Requested", width: 152, resizable: true, sortValue: (order) => order.requestedDate, cell: (order) => <span className="whitespace-nowrap text-[12px] text-[var(--md-text)]">{order.requestedDate ? dateOnly.format(new Date(`${order.requestedDate}T00:00:00`)) : "—"}</span> },
-    { id: "appointment", label: "Slot", width: 176, resizable: true, sortValue: (order) => order.appointmentStartAt, cell: (order) => <span className="whitespace-nowrap text-[12px] text-[var(--md-text)]">{order.appointmentStartAt ? dateTime.format(new Date(order.appointmentStartAt)) : "—"}</span> },
+    { id: "requested", label: "Requested", width: 152, resizable: true, sortValue: (order) => order.requestedDate, cell: (order) => <span className="whitespace-nowrap text-[12px] text-[var(--md-text)]">{order.requestedDate ? dateOnly.format(new Date(`${order.requestedDate}T00:00:00`)) : "–"}</span> },
+    { id: "appointment", label: "Slot", width: 176, resizable: true, sortValue: (order) => order.appointmentStartAt, cell: (order) => <span className="whitespace-nowrap text-[12px] text-[var(--md-text)]">{order.appointmentStartAt ? dateTime.format(new Date(order.appointmentStartAt)) : "–"}</span> },
     { id: "status", label: "Status", kind: "status", width: 152, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.statusName ?? order.statusCode, cell: (order) => <StatusPill tone={toneForStatus(order.statusCode)}>{t(order.statusName ?? order.statusCode)}</StatusPill> },
   ], [typeFilter, dateOnly, dateTime, percent, t])
 

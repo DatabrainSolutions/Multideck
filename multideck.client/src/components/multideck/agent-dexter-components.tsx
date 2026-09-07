@@ -125,7 +125,7 @@ export type DexterHistoryItem = {
 export type DexterMonitor = {
   id?: string
   title: string
-  /** The rule in plain words. Reference only — the card shows `detail` instead. */
+  /** The rule in plain words. Reference only – the card shows `detail` instead. */
   body: string
   /** The humanised change, or the health message when the source is struggling. */
   detail: string
@@ -237,7 +237,7 @@ export function DexterSpecialistChip({
 }
 
 /**
- * A label that swaps in place. One spring on the whole word — a per-character
+ * A label that swaps in place. One spring on the whole word – a per-character
  * stagger reads as a machine dealing out letters, which is the wrong register
  * for confirming a choice the operator just made.
  */
@@ -476,8 +476,8 @@ export function DexterRoleMenu({
 }
 
 /**
- * The engine picker. Vendor model names stay behind a job description — Fast,
- * Smart, Worker — with the provider mark and a capability meter carrying the
+ * The engine picker. Vendor model names stay behind a job description – Fast,
+ * Smart, Worker – with the provider mark and a capability meter carrying the
  * detail, so the choice is about the work rather than a version string.
  */
 export function DexterModelMenu({
@@ -1145,7 +1145,7 @@ export function DexterMentionInput({
                         role="option"
                         aria-selected={!item.disabled && active}
                         aria-disabled={item.disabled || undefined}
-                        aria-label={`${item.command} — ${t(item.label)}. ${t(item.description)}`}
+                        aria-label={`${item.command} – ${t(item.label)}. ${t(item.description)}`}
                         className={cn(
                           "relative grid min-h-8 w-full grid-cols-[24px_minmax(0,1fr)] items-center gap-2 rounded-[var(--md-radius-md)] px-2 py-1 text-start outline-none",
                           item.disabled && "opacity-55",
@@ -1756,7 +1756,7 @@ export function DexterAttachmentPalette({
 /**
  * The recent-conversation rail. One line per thread, because the titles are the
  * prompts the operator typed and a two-line preview of their own words earns
- * nothing — so the column can be narrow and the whole day fits without scrolling.
+ * nothing – so the column can be narrow and the whole day fits without scrolling.
  */
 export function DexterHistoryList({
   items,
@@ -1886,7 +1886,7 @@ function dexterWatchStamp(value: string | null | undefined, language: string, t:
  *
  * Read top to bottom it answers the three questions in the order an operator
  * asks them: is anything up, what happened, and which watch said so. The change
- * is the loud line — the watch's own name drops to the quiet line beneath it,
+ * is the loud line – the watch's own name drops to the quiet line beneath it,
  * because by the time you are reading a card you already know you set it.
  */
 export function DexterMonitorCard({
@@ -2113,7 +2113,7 @@ function useWatchRailWidths(detailOpen: boolean, collapsed: boolean) {
  *
  * Width is the only thing that animates. The list is pinned to the surface's
  * right edge and the detail sits immediately to its left, both absolutely
- * positioned, so the reveal is the container's own clip travelling left — the
+ * positioned, so the reveal is the container's own clip travelling left – the
  * cards never move, nothing reflows behind it, and there is no edge between the
  * two halves to give the join away.
  *
@@ -2301,7 +2301,7 @@ export function DexterMonitorDetailSheet({
               <span className="min-w-0">{monitor.title}</span>
             </h2>
             {/* Pills only. The old header also carried a sentence about how the
-                watch runs, which is reference, not status — it now lives with the
+                watch runs, which is reference, not status – it now lives with the
                 rest of the watch's definition further down. */}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <StatusPill tone={status === "active" ? "green" : "neutral"}>{t(status === "active" ? "Active" : "Paused")}</StatusPill>

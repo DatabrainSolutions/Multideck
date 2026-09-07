@@ -28,13 +28,13 @@ export function printFinanceProforma(input: ProformaInput) {
   const { translate: t } = input
   const formatter = new Intl.NumberFormat(input.language, /^[A-Z]{3}$/.test(input.currencyCode) ? { style: "currency", currency: input.currencyCode } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const dateFormatter = new Intl.DateTimeFormat(input.language, { dateStyle: "medium" })
-  const formatDate = (value?: string | null) => value ? dateFormatter.format(new Date(`${value}T00:00:00`)) : "—"
+  const formatDate = (value?: string | null) => value ? dateFormatter.format(new Date(`${value}T00:00:00`)) : "–"
   const polarity = input.credit ? -1 : 1
   const totals = financeDocumentLineTotals(input.lines)
   const lineRows = input.lines.map((line, index) => {
     const net = (Number(line.quantity) || 0) * (Number(line.unitAmount) || 0) * polarity
     const tax = net * (Number(line.taxRatePercent) || 0) / 100
-    return `<tr><td>${index + 1}</td><td>${html(line.chargeCode)}</td><td class="description">${html(line.description || "—")}</td><td class="number">${html(line.quantity)}</td><td class="number">${html(formatter.format(Number(line.unitAmount) || 0))}</td><td>${html(line.taxCode || t("Pending"))}</td><td class="number">${html(formatter.format(net))}</td><td class="number">${input.taxPending ? html(t("Pending")) : html(formatter.format(tax))}</td></tr>`
+    return `<tr><td>${index + 1}</td><td>${html(line.chargeCode)}</td><td class="description">${html(line.description || "–")}</td><td class="number">${html(line.quantity)}</td><td class="number">${html(formatter.format(Number(line.unitAmount) || 0))}</td><td>${html(line.taxCode || t("Pending"))}</td><td class="number">${html(formatter.format(net))}</td><td class="number">${input.taxPending ? html(t("Pending")) : html(formatter.format(tax))}</td></tr>`
   }).join("")
 
   printWindow.document.open()
