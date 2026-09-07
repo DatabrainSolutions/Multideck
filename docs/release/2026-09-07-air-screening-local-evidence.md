@@ -75,6 +75,30 @@ save API, and is disabled while parent Booking changes are unsaved.
 
 ## Mandatory continuation/release gates
 
+### Dexter local adapter checkpoint
+
+The screening review and watch-target adapters now exist and are connected to
+both Dexter response paths and dedicated watch setup. Review uses request-local
+permission-checked records, exact Booking/cargo/evidence timestamps, allowlisted
+fields and known before values. Supplied text and reasons remain verbatim through
+both argument parsers and the review. Watch setup uses the signed-in domain read
+and rejects ambiguous, substituted, inaccessible and voided targets.
+
+Fourteen screening/DG review-parser-target tests pass; Dexter Deno type checking
+passes with `--node-modules-dir=none`. Tests use explicit domain-read fixtures,
+not live access or database execution. These adapters do not yet expose a usable
+screening capability: database domain/action registry, approved executor,
+deterministic watch signal/evaluation, prompt metadata and lifecycle coverage
+remain required before release.
+
+Tracing the shared approval guard found `record_booking_dangerous_goods` absent
+from its mandatory list despite the existing prompt promising approval even in
+Full access. The local guard now includes both DG and screening recording, with
+an executed regression test for approve/full modes. This correction is not yet
+deployed; previous hosted Approve-mode evidence does not establish Full-access
+safety. Verify the prepared-action execution boundary and hosted Full-access
+proposal before closing that gate. No live action was attempted in this check.
+
 Do not deploy this foundation alone. Complete operator source-evidence editing
 and read-only states, exact-source Dexter read/review/mandatory-approved writes,
 deterministic matching/non-matching/pause/resume watch support, retirement and

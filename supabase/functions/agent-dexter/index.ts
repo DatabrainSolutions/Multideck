@@ -4,6 +4,8 @@ import { bookingRouteActionReview } from "./booking-route-review.ts"
 import { bookingMilestoneActionReview } from "./booking-milestone-review.ts"
 import { bookingDangerousGoodsActionReview } from "./booking-dangerous-goods-review.ts"
 import { resolveBookingDangerousGoodsWatchTarget } from "./booking-dangerous-goods-watch.ts"
+import { bookingSecurityEvidenceActionReview } from "./booking-security-evidence-review.ts"
+import { resolveBookingSecurityEvidenceWatchTarget } from "./booking-security-evidence-watch.ts"
 import { ensureScreeningList } from "../_shared/screening-ingest.ts"
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
@@ -3184,7 +3186,7 @@ async function runStreamedAgent(
         if (isObject(parsed)) {
           // Supplied DG evidence is data, not prose. Preserve it for the same
           // permission-checked review and canonical validation below.
-          if (call.name === "record_booking_dangerous_goods") args = parsed
+          if (call.name === "record_booking_dangerous_goods" || call.name === "record_booking_security_evidence") args = parsed
           else args = sanitiseArguments(parsed)
         }
       } catch {
@@ -3304,7 +3306,8 @@ async function runStreamedAgent(
           const routeReview = action.code === "update_booking_route"
             ? bookingRouteActionReview(currentRecordsById, actionArguments, locale)
             : action.code === "record_booking_milestone" ? bookingMilestoneActionReview(currentRecordsById, actionArguments, locale)
-            : action.code === "record_booking_dangerous_goods" ? bookingDangerousGoodsActionReview(currentRecordsById, actionArguments) : null
+            : action.code === "record_booking_dangerous_goods" ? bookingDangerousGoodsActionReview(currentRecordsById, actionArguments)
+            : action.code === "record_booking_security_evidence" ? bookingSecurityEvidenceActionReview(currentRecordsById, actionArguments) : null
           const currentRecord = action.code === "replace_booking_allocations"
             ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
             : action.code === "update_quote_cargo"
@@ -4009,6 +4012,12 @@ Deno.serve(async (request) => {
       targetLabel = resolved.targetLabel
     } else if (capability === "booking_dangerous_goods") {
       const resolved = await resolveBookingDangerousGoodsWatchTarget(prompt, { id: targetId, search: targetSearch },
+        search => userClient.rpc("multideck_dexter_query_domain", { p_domain: capability, p_search: search, p_take: 4 }))
+      if (!resolved.ok) return json(request, { status: "clarification", message: resolved.message })
+      targetId = resolved.targetId
+      targetLabel = resolved.targetLabel
+    } else if (capability === "booking_security_evidence") {
+      const resolved = await resolveBookingSecurityEvidenceWatchTarget(prompt, { id: targetId, search: targetSearch },
         search => userClient.rpc("multideck_dexter_query_domain", { p_domain: capability, p_search: search, p_take: 4 }))
       if (!resolved.ok) return json(request, { status: "clarification", message: resolved.message })
       targetId = resolved.targetId
@@ -4780,7 +4789,7 @@ Deno.serve(async (request) => {
         const parsed = JSON.parse(cleanString(call.arguments, 8_000) || "{}")
         if (isObject(parsed)) {
           // Match the streaming path without changing unrelated action paths.
-          if (call.name === "record_booking_dangerous_goods") args = parsed
+          if (call.name === "record_booking_dangerous_goods" || call.name === "record_booking_security_evidence") args = parsed
           else args = sanitiseArguments(parsed)
         }
       } catch {
@@ -4915,7 +4924,8 @@ Deno.serve(async (request) => {
           const routeReview = action.code === "update_booking_route"
             ? bookingRouteActionReview(currentRecordsById, actionArguments, locale)
             : action.code === "record_booking_milestone" ? bookingMilestoneActionReview(currentRecordsById, actionArguments, locale)
-            : action.code === "record_booking_dangerous_goods" ? bookingDangerousGoodsActionReview(currentRecordsById, actionArguments) : null
+            : action.code === "record_booking_dangerous_goods" ? bookingDangerousGoodsActionReview(currentRecordsById, actionArguments)
+            : action.code === "record_booking_security_evidence" ? bookingSecurityEvidenceActionReview(currentRecordsById, actionArguments) : null
           const currentRecord = action.code === "replace_booking_allocations"
             ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
             : action.code === "update_quote_cargo"

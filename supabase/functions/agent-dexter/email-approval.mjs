@@ -44,5 +44,7 @@ export function requiresExplicitActionApproval(actionCode, accessMode) {
     "update_quote_cargo",
     "replace_booking_allocations",
     "record_booking_milestone",
+    "record_booking_dangerous_goods",
+    "record_booking_security_evidence",
   ].includes(actionCode)
 }
