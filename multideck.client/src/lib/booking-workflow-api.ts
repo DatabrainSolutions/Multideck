@@ -407,9 +407,9 @@ async function invokeNullable<T>(body: Record<string, unknown>, fallback: string
   return data
 }
 
-export function openBookingWorkflow(idempotencyKey: string) {
+export function openBookingWorkflow(idempotencyKey: string, initialMode?: "road") {
   return invoke<{ jobId: string; bookingReference: string; route: string; reused: boolean }>({
-    action: "open",
+    action: initialMode === "road" ? "open-road" : "open",
     idempotencyKey,
     sequenceKey: "default",
   }, "The new booking could not be opened.")

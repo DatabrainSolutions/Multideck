@@ -47,6 +47,12 @@ their older “pending” paragraphs must not override later evidence.
 
 ### Road: live board opens a prototype detail flow
 
+Further local implementation: [Road draft opening and legacy-link recovery](../release/2026-09-07-road-draft-open-local.md)
+replace the non-persisting creation page with atomic canonical open/save and
+truthful old-link recovery. Local database, client and type/build checks pass;
+current-schema, rendered-browser and hosted release gates remain. Kanban stage
+persistence and deeper operations are not completed by that correction.
+
 Local follow-up: [canonical Booking navigation correction](../release/2026-09-07-road-booking-navigation-local.md)
 connects both board views and preserves full reference identities. Local tests
 and build pass; not yet deployed/browser-verified. Creation and legacy deep

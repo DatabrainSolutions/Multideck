@@ -6,9 +6,7 @@ import { Surface } from "@/components/multideck/surface"
 import { useLanguage } from "@/i18n/language-provider"
 import { openBookingWorkflow } from "@/lib/booking-workflow-api"
 
-const requestStorageKey = workspaceStorageKey("multideck.booking.open-request")
-
-function requestKey() {
+function requestKey(requestStorageKey: string) {
   const saved = window.sessionStorage.getItem(requestStorageKey)
   if (saved) return saved
   const next = crypto.randomUUID()
@@ -16,26 +14,30 @@ function requestKey() {
   return next
 }
 
-export function BookingOpenPage({ navigate }: { navigate: (path: string) => void }) {
+export function BookingOpenPage({ navigate, initialMode }: { navigate: (path: string) => void; initialMode?: "road" }) {
   const { t } = useLanguage()
-  const started = useRef(false)
+  const pending = useRef<ReturnType<typeof openBookingWorkflow> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
-    if (started.current) return
-    started.current = true
+    let cancelled = false
+    const requestStorageKey = workspaceStorageKey(`multideck.booking.open-request${initialMode === "road" ? ".road" : ""}`)
     setError(null)
-    void openBookingWorkflow(requestKey()).then((result) => {
+    pending.current ??= Promise.resolve().then(() => openBookingWorkflow(requestKey(requestStorageKey), initialMode))
+    void pending.current.then((result) => {
+      if (cancelled) return
       window.sessionStorage.removeItem(requestStorageKey)
       navigate(result.route || `/bookings/${result.bookingReference.toLowerCase()}`)
     }).catch((reason) => {
+      if (cancelled) return
       setError(reason instanceof Error ? reason.message : t("The new booking could not be opened."))
     })
-  }, [attempt, navigate, t])
+    return () => { cancelled = true }
+  }, [attempt, initialMode, navigate, t])
 
   function retry() {
-    started.current = false
+    pending.current = null
     setAttempt((current) => current + 1)
   }
 
@@ -44,9 +46,9 @@ export function BookingOpenPage({ navigate }: { navigate: (path: string) => void
       {error ? (
         <Surface padding="lg" className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] text-center">
           <h1 className="text-[20px] font-medium">{t("Booking could not be opened")}</h1>
-          <p className="mt-2 text-[13px] leading-6 text-[var(--md-text)]">{error}</p>
+          <p role="alert" className="mt-2 text-[13px] leading-6 text-[var(--md-text)]">{error}</p>
           <div className="mt-5 flex justify-center gap-2">
-            <Button variant="ghost" onClick={() => navigate("/bookings")}>{t("Return to bookings")}</Button>
+            <Button variant="ghost" onClick={() => navigate(initialMode === "road" ? "/road-control" : "/bookings")}>{t(initialMode === "road" ? "Return to Road control" : "Return to bookings")}</Button>
             <Button onClick={retry}>{t("Try again")}</Button>
           </div>
         </Surface>

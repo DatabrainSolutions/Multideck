@@ -3,6 +3,8 @@ import { parseAction, parseModeChangeConfirmation, parsePayload, parseQuoteSyncF
 
 Deno.test("booking workflow accepts only its explicit operations", () => {
   assertEquals(parseAction("open"), "open")
+  assertEquals(parseAction("open-road"), "open-road")
+  assertThrows(() => parseAction("open-air"))
   assertEquals(parseAction("send-to-customs"), "send-to-customs")
   assertThrows(() => parseAction("delete"))
 })

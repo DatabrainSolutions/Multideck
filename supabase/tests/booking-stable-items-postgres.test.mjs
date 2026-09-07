@@ -21,6 +21,7 @@ import { routeMilestoneFixture, routeMilestoneAssertions } from './booking-route
 import { milestoneDexterMigration, milestoneDexterAssertions } from './booking-milestone-dexter-fixture.mjs'
 import { dangerousGoodsFixture } from './booking-dangerous-goods-fixture.mjs'
 import { dangerousGoodsDexterFixture } from './booking-dangerous-goods-dexter-fixture.mjs'
+import { roadOpenFixture } from './booking-road-open-fixture.mjs'
 
 // Executes the actual save function against disposable PostgreSQL, never a tenant.
 // PG_TEST_BIN can point to a PostgreSQL bin directory in CI.
@@ -208,6 +209,7 @@ test('PostgreSQL: stable items, route milestones, approved Dexter cargo/containe
       milestoneDexterMigration + milestoneDexterAssertions)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], dangerousGoodsFixture)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], dangerousGoodsDexterFixture)
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], roadOpenFixture)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
     rmSync(directory, { recursive: true, force: true })
