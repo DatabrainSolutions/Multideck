@@ -1,5 +1,16 @@
 # Freight workspace completion
 
+7 September dangerous-goods development release: exact `0e38c1b` is READY on
+the approved development alias; both migrations and matching Booking/Dexter
+functions are deployed. Hosted operator create, fresh load, correction,
+unknown/No/clear, recoverable stale rejection and void/read-only history pass.
+The synthetic record is voided with temporary values cleared. Existing cargo,
+routes, milestones and Quotes retain exact fingerprints; no security-advisor
+identities were added or removed. See
+[release evidence](../release/2026-09-07-dangerous-goods-development-release.md).
+Next is hosted DG Dexter approved-write/watch lifecycle and remaining denials,
+then broader all-mode/revision acceptance. Every approval and exclusion remains.
+
 7 September dangerous-goods preflight: the exact pending migration pair passes
 a fresh-development-schema populated rehearsal, preserving existing Quote,
 Booking, milestone and legacy DG evidence. Browser focus, 320/768/1280 reflow,
