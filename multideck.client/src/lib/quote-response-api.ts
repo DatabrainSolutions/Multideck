@@ -11,32 +11,14 @@ export type QuoteCustomerDeclineReasonCode =
   | "other"
 
 export type CustomerQuotePayload = {
-  customerName?: string
-  contactName?: string
-  collectionAddress?: string
   loadingPoint?: string
   dischargePoint?: string
-  deliveryAddress?: string
-  direction?: string
-  mode?: string
-  shipmentType?: string
-  serviceLevel?: string
-  incoterm?: string
-  validFrom?: string
   validTo?: string
-  deadline?: string
   currency?: string
-  shipmentFacts?: Record<string, unknown>
-  customerNotes?: string
-  terms?: string
   charges?: Array<{
-    id?: string
-    description?: string
     sellCurrency?: string
-    sellAmount?: number
-    sellLocal?: number
-    quantity?: number
-    customerNotes?: string
+    sellAmount?: number | string
+    sellLocal?: number | string
     showToCustomer?: boolean
   }>
 }
@@ -47,8 +29,6 @@ export type QuoteResponseView = (
   | {
       state: "active"
       expiresAt: string | null
-      recipientName?: string | null
-      recipientEmail: string
       document: {
         url: string
         fileName: string
@@ -59,12 +39,7 @@ export type QuoteResponseView = (
         id: string
         reference: string
         versionNumber: number
-        customerName?: string | null
-        contactName?: string | null
         snapshot: {
-          reference?: string
-          lifecycle?: string
-          savedAt?: string
           quote?: CustomerQuotePayload
         }
       }

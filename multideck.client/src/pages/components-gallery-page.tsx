@@ -12,6 +12,8 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Iphone } from "@/components/ui/iphone"
 import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
 import { CargoAllocationEditor } from "@/components/multideck/cargo-allocation-editor"
+import { BookingRouteMilestones } from "@/components/multideck/booking-route-milestones"
+import type { BookingWorkflowMilestone, BookingWorkflowWorkspace } from "@/lib/booking-workflow-api"
 import type { BookingCargoAllocation } from "@/lib/booking-workflow-api"
 import { newQuoteCargoLine } from "@/lib/quote-cargo"
 import {
@@ -327,7 +329,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "booking-route-milestones", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
@@ -1584,6 +1586,40 @@ const previewPhoneCallProviders = [
   { provider: "3cx" as const, label: "3CX employee calls", detail: "3CX call-detail and transcript collector", state: "not_configured" as const, lastAttemptAt: null, lastSucceededAt: null, lastFailedAt: null, consecutiveFailures: 0, errorCode: null },
 ]
 
+export function BookingRouteMilestonesPreview() {
+  const stamp = "2026-09-07T09:00:00Z"
+  const [editable, setEditable] = useState(true)
+  const [failSave, setFailSave] = useState(false)
+  const [workspace, setWorkspace] = useState<BookingWorkflowWorkspace>(() => ({
+    booking: { jobId: "00000000-0000-4000-8000-000000000001", bookingReference: "DEMO-BOOKING", jobReference: "DEMO-JOB", jobNumber: 1, status: "Active", officeId: "preview", createdAt: stamp, updatedAt: stamp },
+    routeMilestonesSupported: true,
+    milestoneTypes: [{ code: "departed", name: "Departed" }, { code: "arrived", name: "Arrived" }],
+    routes: [{ id: "00000000-0000-4000-8000-000000000002", order: 1, mode: "Sea", updatedAt: stamp, milestones: [] }],
+    parties: [], cargo: [], containers: [], documents: [], declarations: [], charges: [], events: [],
+  }))
+  return <div className="grid w-full min-w-0 gap-4">
+    <p className="text-xs text-[var(--md-text)]">Interactive component preview. Synthetic entries stay in this page; no Booking or network writes.</p>
+    <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setEditable(!editable)}>{editable ? "Preview read-only" : "Return to editing"}</Button><Button variant="outline" onClick={() => setFailSave(!failSave)}>{failSave ? "Return to successful saves" : "Preview save failure"}</Button></div>
+    <BookingRouteMilestones bookingId={workspace.booking.jobId} bookingReference={workspace.booking.bookingReference} bookingUpdatedAt={workspace.booking.updatedAt}
+      route={workspace.routes[0]} types={workspace.milestoneTypes} events={workspace.events} editable={editable} onSaved={setWorkspace}
+      save={async payload => {
+        if (failSave) throw new Error("Preview save failed. Your entries have been kept; close the editor to change the preview mode.")
+        const now = new Date().toISOString()
+        const route = workspace.routes[0]
+        const original = route.milestones?.find(item => item.id === payload.id)
+        const item: BookingWorkflowMilestone = {
+          id: payload.id, routeId: payload.routeId, type: payload.type!, name: workspace.milestoneTypes!.find(type => type.code === payload.type)!.name,
+          status: "planned", plannedAt: null, estimatedAt: null, actualAt: null, location: null, locationUnlocode: null, externalReference: null, notes: null,
+          source: "operator", recordedMode: "Sea", createdAt: now, updatedAt: now, createdBy: "Preview operator", updatedBy: "Preview operator", operatorEditable: true,
+          ...original, ...payload.changes,
+        }
+        item.updatedAt = now; item.operatorEditable = item.status !== "voided"
+        return { ...workspace, booking: { ...workspace.booking, updatedAt: now }, routes: [{ ...route, milestones: [...route.milestones!.filter(saved => saved.id !== item.id), item] }],
+          events: [{ id: crypto.randomUUID(), type: "route_milestone_recorded", summary: `${item.name} recorded`, actor: "Preview operator", occurredAt: now, metadata: { milestoneId: item.id, reason: payload.reason, before: original ?? {}, after: item } }, ...workspace.events] }
+      }} />
+  </div>
+}
+
 function CargoAllocationEditorPreview() {
   const cargoId = "00000000-0000-4000-8000-000000000001"
   const firstEquipment = "00000000-0000-4000-8000-000000000002"
@@ -2166,6 +2202,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "quote-detail-controls" ? <QuoteDetailControlsPreview /> : null}
       {id === "quote-cargo-editor" ? <QuoteCargoEditorPreview /> : null}
       {id === "cargo-allocation-editor" ? <CargoAllocationEditorPreview /> : null}
+      {id === "booking-route-milestones" ? <BookingRouteMilestonesPreview /> : null}
 
       {id === "status-pill" ? (
         <div className="grid w-full max-w-[640px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">

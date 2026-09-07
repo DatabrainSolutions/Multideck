@@ -7,6 +7,7 @@ import { stripTypeScriptTypes } from 'node:module'
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const load = (source) => import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(source)).toString('base64')}`)
 const { quoteDocumentCargo, quoteDocumentCargoTotals, quoteDocumentHandling } = await load(read('../functions/_shared/quote-document-cargo.ts'))
+const { isTenantBrandConfigured, TENANT_BRAND_ASSETS_BUCKET } = await load(read('../functions/_shared/tenant-branding.ts'))
 const renderer = read('../functions/_shared/quote-pdf.ts')
 const { renderQuotePdfHtml, quotePdfName } = await load(renderer.slice(renderer.indexOf('export type QuotePdfDataset')))
 const workflow = read('../functions/quotes-workflow/index.ts')
@@ -15,9 +16,10 @@ const datasetSource = workflow.slice(workflow.indexOf('function printable('), wo
 assert.ok(datasetSource.includes('async function quotePdfDataset('))
 // Run the production dataset builder and formatting functions. Only private
 // company branding/storage reads are fixture boundaries; no email or DB write.
-const buildDataset = new Function('workspaceBrand', 'quoteDocumentCargo', 'quoteDocumentCargoTotals', 'QuoteWorkflowError', 'templateSourcesBucket', 'quoteDocumentHandling',
-  stripTypeScriptTypes(helpers + datasetSource) + '\nreturn quotePdfDataset;')(
-  async () => null, quoteDocumentCargo, quoteDocumentCargoTotals, Error, 'test-template-sources', quoteDocumentHandling)
+const datasetFactory = new Function('workspaceBrand', 'quoteDocumentCargo', 'quoteDocumentCargoTotals', 'QuoteWorkflowError', 'templateSourcesBucket', 'quoteDocumentHandling', 'isTenantBrandConfigured', 'TENANT_BRAND_ASSETS_BUCKET',
+  stripTypeScriptTypes(helpers + datasetSource) + '\nreturn quotePdfDataset;')
+const builderWithBrand = (brand) => datasetFactory(async () => brand, quoteDocumentCargo, quoteDocumentCargoTotals, Error, 'test-template-sources', quoteDocumentHandling, isTenantBrandConfigured, TENANT_BRAND_ASSETS_BUCKET)
+const buildDataset = builderWithBrand(null)
 const admin = { from(table) {
   assert.equal(table, 'cmp_Company', 'Document must not fetch live payer/commercial records')
   const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: { Company_Name: 'Test freight company' }, error: null }) }
@@ -50,6 +52,62 @@ const quote = {
   ],
 }
 const version = { CusQuoteVersion_Number: 1, CusQuoteVersion_CreatedAt: '2026-09-04T12:00:00Z', CusQuoteVersion_SnapshotJSON: { quote } }
+
+test('new PDFs use the saved Admin logo and embed its exact bytes without an expiring URL', async () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><path d="M0 0h20v10H0z" fill="#316FAB"/></svg>'
+  const brand = { Brand_LogoFilePath: 'old.png', Brand_TemplateSettingsJSON: {
+    logoMimeType: 'image/png', tenantBranding: { version: 1, configured: true, logoPath: 'current.svg', logoMimeType: 'image/svg+xml' },
+  } }
+  const downloads = []
+  const brandedAdmin = { ...admin, storage: { from(bucket) { return { download: async (path) => {
+    downloads.push({ bucket, path })
+    return { data: new Blob([svg], { type: 'image/svg+xml' }), error: null }
+  } } } } }
+  const before = structuredClone(version)
+  const data = await builderWithBrand(brand)(brandedAdmin, context, version)
+  assert.deepEqual(downloads, [{ bucket: 'tenant-brand-assets', path: 'current.svg' }])
+  assert.equal(data.company.logoDataUri, `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`)
+  assert.ok(renderQuotePdfHtml(data).includes(`src="${data.company.logoDataUri}"`))
+  assert.deepEqual(version, before, 'Issued version evidence must not be rewritten')
+})
+
+test('removed or reset Admin logos never resurrect an older upload', async () => {
+  for (const tenantBranding of [
+    { version: 1, configured: true, logoPath: null },
+    { version: 1, configured: false, logoPath: 'stale.svg' },
+    { version: 1, configured: false },
+  ]) {
+    const brand = { Brand_LogoFilePath: 'old.png', Brand_TemplateSettingsJSON: { tenantBranding } }
+    const data = await builderWithBrand(brand)(admin, context, version)
+    assert.equal(data.company.logoDataUri, '')
+  }
+})
+
+test('legacy-only tenants retain their existing private document logo', async () => {
+  const bytes = Uint8Array.from([137,80,78,71,13,10,26,10])
+  const downloads = []
+  const legacyAdmin = { ...admin, storage: { from(bucket) { return { download: async (path) => {
+    downloads.push({ bucket, path })
+    return { data: new Blob([bytes], { type: 'image/png' }), error: null }
+  } } } } }
+  const brand = { Brand_LogoFilePath: 'old.png', Brand_TemplateSettingsJSON: { logoMimeType: 'image/png' } }
+  const data = await builderWithBrand(brand)(legacyAdmin, context, version)
+  assert.deepEqual(downloads, [{ bucket: 'test-template-sources', path: 'old.png' }])
+  assert.equal(data.company.logoDataUri, `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`)
+})
+
+test('an unreadable current logo stops preparation rather than silently using another brand', async () => {
+  const downloads = []
+  const failedAdmin = { ...admin, storage: { from(bucket) { return { download: async (path) => {
+    downloads.push({ bucket, path })
+    return { data: null, error: { message: 'Unavailable' } }
+  } } } } }
+  const brand = { Brand_LogoFilePath: 'old.png', Brand_TemplateSettingsJSON: {
+    tenantBranding: { version: 1, configured: true, logoPath: 'current.svg', logoMimeType: 'image/svg+xml' },
+  } }
+  await assert.rejects(builderWithBrand(brand)(failedAdmin, context, version))
+  assert.deepEqual(downloads, [{ bucket: 'tenant-brand-assets', path: 'current.svg' }])
+})
 
 test('PDF dataset retains saved terms, parties, routes and all cargo despite later master changes', async () => {
   const before = structuredClone(version)

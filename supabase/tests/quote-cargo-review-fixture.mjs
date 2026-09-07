@@ -36,6 +36,7 @@ export function quoteCargoReviewFixture(read, sqlFunction) {
       rename to booking_workflow_apply_quote_sync_before_container_allocation_20260904;
     ${sqlFunction(containers,'public.booking_workflow_apply_quote_sync')}
     ${read('20260905132442_quote_cargo_review_integration.sql')}
+    ${read('20260906113622_quote_sync_explicit_detail_clears.sql')}
 
     do $review_test$
     declare actor uuid:=gen_random_uuid(); company uuid:=gen_random_uuid(); office uuid:=gen_random_uuid();
@@ -50,18 +51,21 @@ export function quoteCargoReviewFixture(read, sqlFunction) {
         values(q,office,'accepted',v1,actor);
       lines:=jsonb_build_array(jsonb_build_object('id',c1,'description','Machinery','grossWeightKg',100,'packageQuantity',2,'packageType','Crates'),
         jsonb_build_object('id',c2,'description','Spares','grossWeightKg',50,'packageQuantity',1,'packageType','Cartons'));
-      snapshot:=jsonb_build_object('quote',jsonb_build_object('mode','Sea','direction','Export','customerNotes','Original note',
+      snapshot:=jsonb_build_object('quote',jsonb_build_object('mode','Sea','direction','Export','customerNotes','Original note','terms','Original terms',
         'shipmentFacts',jsonb_build_object('cargoLines',lines,'goodsValue','6000','goodsValueCurrency','GBP')));
       insert into public."CusQuote_Versions" ("CusQuoteVersion_ID","CusQuoteHeader_ID","CusQuoteVersion_Number","CusQuoteVersion_SnapshotJSON","CusQuoteVersion_IsSubmitted","CusQuoteVersion_StatusCode")
         values(v1,q,1,snapshot,true,'accepted');
       select "CusQuoteVersion_SnapshotJSON" into snapshot from public."CusQuote_Versions" where "CusQuoteVersion_ID"=v1;
       result:=booking_api.convert_accepted_quote_before_sync_review_20260904(q,actor,null);job:=(result->>'jobId')::uuid;
+      update public."Job_Header" set "Job_TermsConditions"='Original terms',
+        "Job_EditableDetailsJSON"='{"termsAndConditions":"Original terms","ownerName":"Keep operator"}' where "Job_ID"=job;
       insert into public."Org_Master" ("Org_id") select "Job_Customer" from public."Job_Header" where "Job_ID"=job;
       select "JobCargo_ID" into cargo_id from public."Job_Cargo" where "JobCargo_JobID"=job and "JobCargo_SourceQuoteLineID"=c1;
       weight_key:='cargo:'||c1||':grossWeightKg';description_key:='cargo:'||c1||':description';
       proposed:=jsonb_set(jsonb_set(jsonb_set(snapshot,'{quote,shipmentFacts,cargoLines,0,grossWeightKg}','125'),
         '{quote,shipmentFacts,cargoLines,0,description}','"Revised machinery"'),'{quote,customerNotes}','"Revised note"');
       proposed:=jsonb_set(proposed,'{quote,mode}','"Air"');
+      proposed:=jsonb_set(proposed,'{quote,terms}','null');
       insert into public."CusQuote_Versions" ("CusQuoteVersion_ID","CusQuoteHeader_ID","CusQuoteVersion_Number","CusQuoteVersion_SnapshotJSON","CusQuoteVersion_IsSubmitted","CusQuoteVersion_StatusCode")
         values(v2,q,2,proposed,true,'accepted');
       original_booking:=booking_api.current_quote_sync_projection(job);
@@ -73,7 +77,7 @@ export function quoteCargoReviewFixture(read, sqlFunction) {
       if review->>'quoteReference'<>'JQTEST' or (review->>'proposedVersionNumber')::int<>2 or (review->>'appliedVersionNumber')::int<>1
         or length(token)<>64 then raise exception 'Review labels/version/token missing'; end if;
       if public.booking_workflow_quote_sync_review_v2(actor,job)->>'reviewToken'<>token then raise exception 'Unchanged review token unstable'; end if;
-      if jsonb_array_length(review->'differences')<>4 or review->'differences' @> '[{"key":"cargo"}]' then raise exception 'Structured cargo still uses flat replacement review'; end if;
+      if jsonb_array_length(review->'differences')<>5 or review->'differences' @> '[{"key":"cargo"}]' then raise exception 'Structured cargo still uses flat replacement review'; end if;
       if public.booking_workflow_quote_sync_review_v2(foreign_actor,job) is not null then raise exception 'Foreign review leaked'; end if;
       begin perform public.booking_workflow_apply_quote_sync_v2(foreign_actor,job,review_id,jsonb_build_array(weight_key),token);raise exception 'Foreign apply allowed';exception when insufficient_privilege then null;end;
       begin perform public.booking_workflow_apply_quote_sync_v2(actor,job,review_id,jsonb_build_array(weight_key,'mode'),token);raise exception 'Mode confirmation bypassed';exception when invalid_parameter_value then null;end;
@@ -106,13 +110,18 @@ export function quoteCargoReviewFixture(read, sqlFunction) {
       if not (result->>'reused')::boolean or (select "JobCargo_GrossKilos" from public."Job_Cargo" where "JobCargo_ID"=cargo_id)<>130
         or (select count(*) from booking_api.events)<>before_events then raise exception 'Mixed retry overwrote subsequent edit'; end if;
       review:=public.booking_workflow_quote_sync_review_v2(actor,job);token:=review->>'reviewToken';
-      if jsonb_array_length(review->'differences')<>4 or jsonb_array_length(review->'appliedFields')<>2 then raise exception 'Partial review lost decision receipts'; end if;
-      result:=public.booking_workflow_apply_quote_sync_v2(actor,job,review_id,jsonb_build_array(description_key,'mode'),token,true);
+      if jsonb_array_length(review->'differences')<>5 or jsonb_array_length(review->'appliedFields')<>2 then raise exception 'Partial review lost decision receipts'; end if;
+      result:=public.booking_workflow_apply_quote_sync_v2(actor,job,review_id,jsonb_build_array(description_key,'mode','terms'),token,true);
       if result->>'status'<>'applied' or (select "Job_TransportModeSummary" from public."Job_Header" where "Job_ID"=job)<>'air'
         or (select "Job_SourceQuoteVersionID" from public."Job_Header" where "Job_ID"=job)<>v2
         or (select "JobCargo_GrossKilos" from public."Job_Cargo" where "JobCargo_ID"=cargo_id)<>130
         or (select "JobCargo_Description" from public."Job_Cargo" where "JobCargo_ID"=cargo_id)<>'Revised machinery' then raise exception 'Final confirmed mixed application failed'; end if;
       if public.booking_workflow_quote_sync_review_v2(actor,job) is not null then raise exception 'Completed review still pending'; end if;
+      if booking_api.current_quote_sync_projection(job)->>'terms' is not null
+        or (select "Job_EditableDetailsJSON"->>'termsAndConditions' from public."Job_Header" where "Job_ID"=job) is not null then
+        raise exception 'Cleared accepted terms reappeared from legacy details'; end if;
+      if (select "Job_EditableDetailsJSON"->>'ownerName' from public."Job_Header" where "Job_ID"=job)<>'Keep operator' then
+        raise exception 'Unselected operator details changed'; end if;
       if (select booking_snapshot from booking_api.quote_sync_reviews r where r.review_id=(result->>'reviewId')::uuid)<>original_booking
         or (select "CusQuoteVersion_SnapshotJSON" from public."CusQuote_Versions" where "CusQuoteVersion_ID"=v1)<>snapshot then raise exception 'Original evidence overwritten'; end if;
       if has_function_privilege('anon','public.booking_workflow_apply_quote_sync_v2(uuid,uuid,uuid,jsonb,text,boolean)','EXECUTE')

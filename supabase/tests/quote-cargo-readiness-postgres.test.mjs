@@ -5,11 +5,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { quoteCargoReviewFixture } from './quote-cargo-review-fixture.mjs'
+import { quoteDetailClearAssertions } from './quote-detail-clear-fixture.mjs'
+import { quoteRouteClearAssertions } from './quote-route-clear-fixture.mjs'
 import { bookingShipmentValueFixture } from './booking-shipment-value-fixture.mjs'
 import { quoteRoutingModeReviewFixture } from './quote-routing-mode-review-fixture.mjs'
 import { quoteSingleLegRoutingFixture } from './quote-single-leg-routing-fixture.mjs'
 import { quoteOverallModeFixture } from './quote-overall-mode-fixture.mjs'
 import { bookingContainerOperationsFixture } from './booking-container-operations-fixture.mjs'
+import { quoteDeliveryRecipientFixture } from './quote-delivery-recipient-fixture.mjs'
 
 const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
 const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
@@ -421,6 +424,7 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
           or has_function_privilege('authenticated','quote_api.cargo_booking_missing(jsonb)','EXECUTE') then raise exception 'Internal cargo insertion exposed'; end if;
       end $handover_test$;
       ${quoteCargoReviewFixture(read, sqlFunction)}
+      ${quoteDetailClearAssertions}
       ${bookingShipmentValueFixture(read)}
       ${quoteRoutingModeReviewFixture(read, sqlFunction)}
       ${quoteSingleLegRoutingFixture(read)}
@@ -428,7 +432,10 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
       ${quoteRoutingModeReviewFixture(read, sqlFunction, false)}
       ${read('20260905195412_quote_overall_mode_route_authority.sql')}
       ${quoteOverallModeFixture()}
+      ${read('20260906122039_quote_sync_selected_route_clears.sql')}
+      ${quoteRouteClearAssertions}
       ${bookingContainerOperationsFixture(read)}
+      ${quoteDeliveryRecipientFixture(read)}
     `)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])

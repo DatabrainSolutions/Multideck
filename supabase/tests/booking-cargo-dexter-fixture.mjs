@@ -53,7 +53,9 @@ export function cargoDexterFixture(table) {
     create trigger evaluate_watch after insert on public."AI_DexterWatchSignals"
       for each row execute function public._multideck_dexter_evaluate_watch_signal();
     create schema private;
-    create function auth.role() returns text language sql stable as $$select current_setting('request.jwt.claim.role',true)$$;
+    create function auth.role() returns text language sql stable as $$
+      select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),
+        nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'role')$$;
     create function public._multideck_dexter_can_manage(uuid) returns boolean language sql stable as $$select booking_api.has_permission($1,'Bookings.Write')$$;
     create table public."AI_Conversations"("AICNV_ID" uuid primary key,"AICNV_CompanyID" uuid,"AICNV_OwnerUserID" uuid,"AICNV_Channel" text,"AICNV_EndedAt" timestamptz);
     ${table('AI_DexterActionAudit')}
@@ -64,6 +66,7 @@ export function cargoDexterFixture(table) {
     revoke all on function public.multideck_dexter_execute_prepared_action(uuid,uuid,uuid,uuid) from public,anon,authenticated;
     grant execute on function public.multideck_dexter_execute_prepared_action(uuid,uuid,uuid,uuid) to service_role;
     ${functionSql(migration('20260830230000_security_scan_high_risk_hardening'), 'public.multideck_dexter_approve_prepared_action')}
+    ${migration('20260906171016_dexter_approval_request_role_compatibility')}
     ${functionSql(migration('20260831001000_security_scan_mandatory_approval_registry_fallback'), 'private.multideck_dexter_guard_mandatory_approval')}
     create trigger mandatory_approval before update on public."AI_DexterPreparedActions"
       for each row execute function private.multideck_dexter_guard_mandatory_approval();

@@ -3,6 +3,7 @@ import "@/quotes-transfer.css"
 import { freightFieldPolicy, freightModeKey, freightShipmentAllowed } from "@/lib/freight-field-policy"
 import { freightPackageTypeOptions } from "@/lib/freight-package-types"
 import { quoteWorkspaceFromVersion } from "@/lib/quote-version-presentation"
+import { quoteWorkspaceRoute } from "@/lib/quote-workspace-readiness"
 import { QuoteSubmittedDetails } from "@/components/multideck/quote-details/quote-submitted-details"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react"
@@ -7082,7 +7083,7 @@ export function QuoteDetailPage({
   if (loading) {
     return (
       <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={`${t("Quote")} ${activeQuote.id}`} className="min-w-0 max-w-full overflow-x-clip">
-        <main className="md-quote-workspace min-h-full min-w-0 max-w-full overflow-x-clip bg-[var(--md-analytics-bg)] px-3 py-3 sm:px-5 sm:py-4">
+        <main data-quote-workspace-route={quoteWorkspaceRoute(`/quotes/${quoteId ?? ""}`) ?? undefined} data-quote-workspace-state="loading" className="md-quote-workspace min-h-full min-w-0 max-w-full overflow-x-clip bg-[var(--md-analytics-bg)] px-3 py-3 sm:px-5 sm:py-4">
           <QuoteWorkspaceSkeleton />
         </main>
       </DexterDockedPage>
@@ -7091,7 +7092,9 @@ export function QuoteDetailPage({
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={`${t("Quote")} ${activeQuote.id}`} className="min-w-0 max-w-full overflow-x-clip">
-      <main className="md-quote-workspace min-h-full min-w-0 max-w-full overflow-x-clip bg-[var(--md-analytics-bg)] px-3 py-3 sm:px-5 sm:py-4">
+      <main data-quote-workspace-route={quoteWorkspaceRoute(`/quotes/${quoteId ?? ""}`) ?? undefined}
+        data-quote-workspace-state={currentQuoteId && workspace?.quote.reference.toUpperCase() === quoteId?.toUpperCase() ? "ready" : workflowError ? "error" : "loading"}
+        className="md-quote-workspace min-h-full min-w-0 max-w-full overflow-x-clip bg-[var(--md-analytics-bg)] px-3 py-3 sm:px-5 sm:py-4">
         <div className="grid w-full min-w-0 max-w-full gap-2">
           {workflowError ? (
             <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_8%,var(--md-surface))] px-3 py-2 text-[12px] font-medium text-[var(--md-red)] shadow-[var(--md-shadow-line)]">

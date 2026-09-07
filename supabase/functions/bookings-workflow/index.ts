@@ -143,6 +143,18 @@ Deno.serve(async (request) => {
       if (error || !data) throw error ?? new Error("Customs readiness returned no result")
       return jsonResponse(request, data)
     }
+    if (action === "save-milestone") {
+      const { data, error } = await admin.rpc("booking_workflow_save_route_milestone", {
+        caller_auth_user_id: userId,
+        requested_job_id: parseUuid(body.jobId, "Booking"),
+        payload: parsePayload(body.milestone),
+      })
+      if (error?.code === "40001") {
+        throw new BookingWorkflowError(409, "The Booking, routing leg or milestone changed. Reload it and review your changes before saving.", error.message)
+      }
+      if (error || !data) throw error ?? new Error("Milestone save returned no result")
+      return jsonResponse(request, data)
+    }
     if (action === "quote-sync-review") {
       const { data, error } = await admin.rpc("booking_workflow_quote_sync_review_v2", {
         caller_auth_user_id: userId,

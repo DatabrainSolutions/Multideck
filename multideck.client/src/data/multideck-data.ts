@@ -2,6 +2,7 @@ import toggleGroupSource from "@/components/ui/toggle-group.tsx?raw"
 import ticketAttachmentsSource from "@/components/multideck/ticket-attachments.tsx?raw"
 import quoteCargoEditorSource from "@/components/multideck/quote-details/quote-cargo-editor.tsx?raw"
 import cargoAllocationEditorSource from "@/components/multideck/cargo-allocation-editor.tsx?raw"
+import bookingRouteMilestonesSource from "@/components/multideck/booking-route-milestones.tsx?raw"
 import paginationSource from "@/components/multideck/pagination.tsx?raw"
 import lifecycleNotesSource from "@/components/multideck/lifecycle-notes.tsx?raw"
 import screeningComponentsSource from "@/components/multideck/screening-components.tsx?raw"
@@ -255,6 +256,16 @@ export const galleryComponents = [
     foundOn: [{ label: "Booking details", route: "/bookings/je0991133" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=cargo-allocation-editor" }],
     componentCode: cargoAllocationEditorSource,
     usageCode: `<CargoAllocationEditor\n  cargo={workspace.cargo}\n  equipment={workspace.containers}\n  routes={workspace.routes}\n  allocations={workspace.cargoAllocationState?.allocations}\n  legacyLinks={workspace.cargoAllocationState?.legacyUnquantifiedLinks}\n  editable={canEdit && !saving}\n  validationAttempt={validationAttempt}\n  onChange={updateDraftAllocations}\n/>`,
+  },
+  {
+    id: "booking-route-milestones",
+    name: "Booking Route Milestones",
+    category: "Forms",
+    description: "Record and correct operational events against one saved routing step, with independent planned, estimated and actual times.",
+    details: "Use within Booking routing. Source, previous-mode evidence and recent correction history remain visible. The parent must block direct milestone saving while its Booking draft is dirty and accept the complete saved workspace. Backend permissions and exact record timestamps remain authoritative. This is not a tracking feed.",
+    foundOn: [{ label: "Booking details", route: "/bookings/je0991134" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=booking-route-milestones" }],
+    componentCode: bookingRouteMilestonesSource,
+    usageCode: `<BookingRouteMilestones\n  bookingId={workspace.booking.jobId}\n  bookingReference={workspace.booking.bookingReference}\n  bookingUpdatedAt={workspace.booking.updatedAt}\n  route={route}\n  types={workspace.milestoneTypes}\n  events={workspace.events}\n  editable={canEdit && !saving}\n  disabledReason={dirty ? "Save or discard Booking changes before recording a milestone." : undefined}\n  onSaved={replaceCleanWorkspace}\n/>`,
   },
   {
     id: "inline-fields",

@@ -21,7 +21,7 @@ import {
 import { readQuoteIntelligence, refreshQuoteIntelligence } from "../quote-intelligence/runtime.ts"
 import { renderBrandedEmail } from "../_shared/email-template.ts"
 import { governedModelFetch } from "../_shared/model-gateway.ts"
-import { readConfiguredTenantBrand, type TenantBrand } from "../_shared/tenant-branding.ts"
+import { isTenantBrandConfigured, readConfiguredTenantBrand, TENANT_BRAND_ASSETS_BUCKET, type TenantBrand } from "../_shared/tenant-branding.ts"
 import { generateQuotePdf, removeGeneratedQuotePdf, type GeneratedQuotePdf, type QuotePdfDataset } from "../_shared/quote-pdf.ts"
 import { quoteDocumentCargo, quoteDocumentCargoTotals, quoteDocumentHandling } from "../_shared/quote-document-cargo.ts"
 import { sendMail as sendConnectedMailbox, type Actor as InboxActor } from "../inbox-api/runtime.ts"
@@ -500,11 +500,19 @@ async function quotePdfDataset(
   if (legalResult.error) throw legalResult.error
   const legal = legalResult.data
   let logoDataUri = ""
-  if (brand?.Brand_LogoFilePath) {
-    const { data: logo, error: logoError } = await admin.storage.from(templateSourcesBucket).download(brand.Brand_LogoFilePath)
+  const settings = isObject(brand?.Brand_TemplateSettingsJSON) ? brand.Brand_TemplateSettingsJSON : {}
+  const tenantSettings = isObject(settings.tenantBranding) ? settings.tenantBranding : {}
+  // A saved/reset Admin brand is authoritative. In particular, removing its
+  // logo must not resurrect the older System Preferences upload in a new PDF.
+  const usesTenantBrand = tenantSettings.version === 1
+  const logoPath = usesTenantBrand
+    ? isTenantBrandConfigured(tenantSettings) ? printable(tenantSettings.logoPath, "") : ""
+    : printable(brand?.Brand_LogoFilePath, "")
+  if (logoPath) {
+    const { data: logo, error: logoError } = await admin.storage.from(usesTenantBrand ? TENANT_BRAND_ASSETS_BUCKET : templateSourcesBucket).download(logoPath)
     if (logoError || !logo) throw new QuoteWorkflowError(502, "The company logo could not be added to the quote PDF. Check it in Admin settings.", "Workspace logo download failed")
-    const settings = isObject(brand.Brand_TemplateSettingsJSON) ? brand.Brand_TemplateSettingsJSON : {}
-    const mimeType = typeof settings.logoMimeType === "string" ? settings.logoMimeType : logo.type || "image/png"
+    const logoSettings = usesTenantBrand ? tenantSettings : settings
+    const mimeType = typeof logoSettings.logoMimeType === "string" ? logoSettings.logoMimeType : logo.type || "image/png"
     logoDataUri = bytesToDataUri(new Uint8Array(await logo.arrayBuffer()), mimeType)
   }
 

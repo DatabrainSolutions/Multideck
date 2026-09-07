@@ -20,3 +20,11 @@ No backend capability, permissions, schema or Dexter approval/watch contract cha
 `node build-deployment.mjs` passed; existing large-bundle warnings remain. `git diff --check` passed. Remote dev was re-fetched with no new upstream commits before release.
 
 Hosted verification is pending in this checkpoint. This does not certify the full Quote-to-Booking lifecycle or all-mode completion.
+
+## Hosted result
+
+Commit `4e73f9ebbaa41e8c2e9e1c6dbc02fa8868a90ffb` fast-forwarded to `origin/dev`. Vercel `dpl_9q9QMz4vN5nWSaifmghU2fi7mbUC` is READY, with `/assets/app-Ba97hA3H.js` matching both the immutable deployment and `https://dev.multideck.app`. No team configuration changed.
+
+Authenticated browser and scoped database checks on JQ20022 prove: the original unlinked Hellmann label remains recorded evidence; an explicit clear saves a null supplier; a newly added line selects no supplier; selecting authorised Demo Organisation 045 saves its UUID `51f00000-0000-4000-8000-000000000002`; both lines and synthetic GBP amounts reload correctly. Test charges are labelled not-a-shipment. Historical customer Quotes and Bookings were not edited.
+
+The user explicitly approved a labelled test email to lee@databrain.solutions from lee.wright@jenkar.com and secure-link acceptance into a test Booking. No send or acceptance has yet occurred: the next readiness boundary exposed a saved-contact-email requirement conflicting with the supported manual recipient. N/A scope was verified using keyboard selection and the database; an automated pointer-selection attempt did not commit, so no speculative persistence fix was made for that observation.

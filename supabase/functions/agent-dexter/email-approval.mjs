@@ -10,5 +10,6 @@ export function requiresExplicitActionApproval(actionCode, accessMode) {
     "update_booking_shipment_value",
     "update_quote_cargo",
     "replace_booking_allocations",
+    "record_booking_milestone",
   ].includes(actionCode)
 }

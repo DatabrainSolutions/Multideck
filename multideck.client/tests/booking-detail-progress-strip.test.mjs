@@ -21,7 +21,7 @@ test("booking overview uses the quote-style five-section progress strip", () => 
 
 test("booking tabs, progress and metadata form the left stack beside a full-height forecast", () => {
   const header = source.slice(source.indexOf("function BookingDetailHeader"), source.indexOf("function BookingJobContext"))
-  const forecast = source.slice(source.indexOf("function BookingDexterArrivalConfidence"), source.indexOf("function BookingOverviewSignals"))
+  const forecast = source.slice(source.indexOf("function BookingDexterForecastStatus"), source.indexOf("function BookingOverviewSignals"))
 
   assert.match(header, /<BookingOverviewSignals record=\{record\} tabs=\{bookingTabs\} \/>/u)
   assert.match(header, /w-max min-w-full/u)
@@ -29,15 +29,9 @@ test("booking tabs, progress and metadata form the left stack beside a full-heig
   assert.match(forecast, /relative h-full min-h-0 overflow-hidden/u)
 })
 
-test("Dexter forecast retains its adaptive shader beneath a minimal curved green area graph", () => {
-  const forecast = source.slice(source.indexOf("function chartPointPath"), source.indexOf("function BookingOverviewSignals"))
-
-  assert.match(forecast, /SpectralBloomShader tone="brand" shape="composer"/u)
-  assert.match(forecast, /var\(--md-accent-lift-warm\)/u)
-  assert.match(forecast, /var\(--md-status-green-ink\)/u)
-  assert.match(forecast, /return `\$\{path\} C/u)
-  assert.match(forecast, /On-time probability by journey time/u)
-  assert.match(forecast, /Confidence \(%\)/u)
-  assert.match(forecast, /Scheduled journey/u)
-  assert.match(forecast, /departureTime \+ \(\(arrivalTime - departureTime\)/u)
+test("Dexter does not invent probability or historical chart points from booking status", () => {
+  const forecast = source.slice(source.indexOf("function BookingDexterForecastStatus"), source.indexOf("function BookingOverviewSignals"))
+  assert.match(forecast, /Forecast unavailable/u)
+  assert.doesNotMatch(forecast, /statusBase|confidenceSeries|arrivalConfidence|<svg|<motion/u)
+  assert.doesNotMatch(source, /function chartPointPath/u)
 })

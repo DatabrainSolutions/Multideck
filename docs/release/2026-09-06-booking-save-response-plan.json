@@ -1,0 +1,17 @@
+{
+  "purpose": "Local structural rehearsal against the retained pre-cutoff development schema; not a deployment manifest",
+  "migrations": [
+    {
+      "file": "20260906143817_booking_route_cutoff_foundation.sql",
+      "sha256": "773217cada34dc58c9ce5561080d76bae6db933d7f5b8043c8cb4f3fbaabedfb"
+    },
+    {
+      "file": "20260906171016_dexter_approval_request_role_compatibility.sql",
+      "sha256": "89a68d6474d32742320e662d396e55fe34a5ec9e44c712166196f9ba3de24eff"
+    },
+    {
+      "file": "20260906174532_booking_save_complete_workspace_response.sql",
+      "sha256": "48022a0750d39aa6c3dc31458fa97b1dd80396214741bf03c3b7b8f6e8dcb133"
+    }
+  ]
+}

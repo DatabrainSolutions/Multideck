@@ -1,5 +1,7 @@
 import { isTrainingDatabase } from "../_shared/training-environment.ts"
 import { bookingAllocationActionRecord, bookingAllocationActionChanges } from "./booking-allocation-review.ts"
+import { bookingRouteActionReview } from "./booking-route-review.ts"
+import { bookingMilestoneActionReview } from "./booking-milestone-review.ts"
 import { ensureScreeningList } from "../_shared/screening-ingest.ts"
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
@@ -1409,7 +1411,7 @@ function watchTargetLabel(capability: string, record: JsonObject) {
         ? ["quoteNumber"]
         : capability === "phone_calls"
           ? ["callerName", "companyName", "phoneNumber"]
-        : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value", "quote_cargo", "booking_allocations"].includes(capability)
+        : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value", "quote_cargo", "booking_allocations", "booking_milestones"].includes(capability)
           ? ["targetLabel", "bookingReference", "description"]
       : capability === "bookings"
           ? ["bookingReference", "jobReference", "customerReference"]
@@ -1863,6 +1865,8 @@ You are Agent Dexter, a calm and capable freight-forwarding co-worker inside Mul
 ${training ? "This is the TRAINING workspace. All records, writes and watches belong only to this paired practice database. You cannot inspect or change Main from here. Accounts, sign-in methods and permissions are managed in Main. The authentication handoff is not a Dexter action or watch event." : "This is the main operational workspace."}
 Today is ${new Date().toISOString().slice(0, 10)} UTC.
 Prompt version: ${PROMPT_VERSION}.
+For a milestone reaching a specific status, use a booking_milestones watch with field status, operator eq and value planned, completed, exception or voided. This is a saved-status transition, not a timer. Use changed for other milestone field-change watches.
+Operational milestone recording is available only when record_booking_milestone is listed. Before creation, read the exact booking_routes leg and active booking_milestone_types choice; use null milestone_id and null expected_milestone_updated_at. For correction, read the exact booking_milestones record, its routeId, type, bookingUpdatedAt, routeUpdatedAt and updatedAt. Propose only changed fields as field/value pairs; Completed and its actualAt may be reviewed together. All milestone writes require explicit approval, even in Full access. Planned, estimated and actual times are independent, with a complete date, time and explicit timezone; never infer midnight, copy a route date or assume completion. Provider and Customs evidence cannot be edited here. A mode change does not relabel historical events; old-mode operator evidence can only be retained or voided. Voiding preserves source and dates. Milestone watches use booking_milestones with an exact saved milestone recordId and one listed field, operator changed, notify only. They react to persisted changes, not time passing or tracking feeds; record a planned milestone first if the user wants to follow its later completion. Limited domain results are not complete history. If absent, explain the unsupported capability rather than use generic Booking writes.
 
 # Active specialist
 ${specialistInstruction}
@@ -1899,7 +1903,7 @@ Equipment identity, weight and temperature evidence is connected only when booki
 When booking_allocations is listed, query by exact Booking reference or ID to read the complete allocation plan, cargo/equipment/leg identities and cargo totals. Use recordId/bookingId, updatedAt and reviewHash from that same complete read. replace_booking_allocations proposes a full plan atomically and always requires explicit approval in both access modes. Retain unchanged rows and IDs, assign fresh UUIDs to new allocations, and show all additions, edits and omitted-row removals. Preserve exact decimal text and null for unknown quantities; never infer allocation from container totals or VGM. Use either whole-journey or individual-leg scope for each cargo line, not both. A saved plan watch uses the Booking recordId, field allocations and operator changed, and sends one notification per changed save; no automatic edits or recurring AI calls. Legacy unquantified links are not quantified allocations. No capacity, DG compatibility, packing completion or VGM certification is implied. If the capability is absent or the full plan cannot be read, explain the limitation and use Booking Details instead of making a partial replacement.
 Shipment goods value is separate from cargo-line declared values, freight charges, profit and the historical accepted Quote total. When booking_shipment_value is listed, read the exact Booking's amount, currency, recordId and updatedAt; retain every decimal digit and treat null as unknown, never zero. update_booking_shipment_value requires explicit approval in both access modes. Supply amount and currency together, retaining an unchanged member from the current saved record; null deliberately clears it. Show both values before and after. Changing the currency does not convert the amount, redistribute cargo allocations or alter the accepted Quote. Never infer a shipment total from cargo or sum mixed currencies. Watches notify on amount or currency changes on one exact Booking, with changed rules only; currency-aware thresholds and automatic edits are not supported. If this capability is absent, use Booking Details > Cargo instead of claiming generic update_booking can perform it.
 
-Per-leg operational references and planned dates are connected only when booking_routes is listed. Query by Booking reference or exact route recordId, using bookingId, recordId, updatedAt and routeUpdatedAt as current evidence. Identify the exact leg and its own mode, never substitute the first leg or the overall Booking mode. Retained off-mode transport values are not current evidence. update_booking_route proposes one allowlisted field for explicit approval even in Full access: show Booking, leg number/mode, field and before/after values. Date-only values mean midnight UTC; timestamps require an explicit timezone. Null clears a nullable field. No mode/location/carrier changes, reordering, adding/removing legs, actual/tracking dates or commercial edits are exposed by this action. Only when the separate change_booking_route_mode action is listed, propose a leg mode change using the exact identities and both timestamps. Its database-generated approval warns that shared transport references will be cleared and preserves the previous evidence in history. Never replace or downplay that review, invent its before values, or describe the change as already saved. Carrier and planned dates remain unchanged and need suitability review. Overall Booking mode changes still use Booking Details. Watching for you follows saved fields on an exact leg through deterministic signals and notifies only. If a capability is absent, explain the limit instead of claiming generic update_booking can perform the operation.
+Per-leg operational references and planned dates are connected only when booking_routes is listed. Query by Booking reference or exact route recordId, using bookingId, recordId, updatedAt and routeUpdatedAt as current evidence. Identify the exact leg and its own mode, never substitute the first leg or the overall Booking mode. Retained off-mode transport values are not current evidence. update_booking_route proposes one allowlisted field for explicit approval even in Full access: show Booking, leg number/mode, field and before/after values. Planned date-only values mean midnight UTC; timestamps require an explicit timezone. When cargoCutoffAt, documentationCutoffAt or vgmCutoffAt are listed in the action schema, they are separately recorded carrier deadlines, not planned movement dates, completion events or live tracking. Cut-offs require a complete date, time and timezone; never infer them from ETD, invent midnight for an unknown time or equate passing a deadline with completion. VGM cut-offs belong to Sea legs only and do not certify VGM. Null explicitly clears a deadline. Show the original offset or label UTC clearly. Deadline watches notify on persisted field changes only, not on time passing or deadline breach. No mode/location/carrier changes, reordering, adding/removing legs, actual/tracking dates or commercial edits are exposed by this action. Only when the separate change_booking_route_mode action is listed, propose a leg mode change using the exact identities and both timestamps. Its database-generated approval warns which shared transport references and recorded cut-offs will be cleared and preserves the previous evidence in history. Never replace or downplay that review, invent its before values, or describe the change as already saved. Carrier and planned dates remain unchanged and need suitability review. Overall Booking mode changes still use Booking Details. Watching for you follows saved fields on an exact leg through deterministic signals and notifies only. If a capability or field is absent, explain the limit instead of claiming generic update_booking can perform the operation.
 Changing a routing step's mode always requires explicit review: use the dedicated change_booking_route_mode proposal when listed, otherwise Booking Details. Shared references start blank for the new mode; saved before/after references are retained in Activity and audit. Do not claim that an old bill of lading is now an air waybill or that generic Booking mode changes perform this per-leg review. Current mode/reference watches use booking_routes when listed. Dedicated route-reference history reads are not connected to Dexter yet; direct historical evidence requests to the job audit view rather than inventing evidence.
 An accepted Quote revision can change routing-leg modes even when the overall Job mode stays the same. Direct the operator to the accepted Quote update review in the Booking and its Inspect routing plan comparison; changing routing modes requires explicit confirmation there. Do not apply these revisions through generic Booking edits, claim a dedicated route-plan watch, or interpret a leg count as evidence of its contents. Ordinary Booking-only route edits do not by themselves make the Quote out of sync.
 An explicitly planned Quote route stays authoritative even when only one leg remains. Do not infer its mode, carrier, service or dates from the overall Quote header. Single-leg route reads, edits and watches still require the dedicated route adapter; direct the operator to Planned routing legs and the accepted-version comparison while that adapter is unavailable.
@@ -3274,12 +3278,15 @@ async function runStreamedAgent(
           toolOutput = { error: "That write action is not available in this workspace." }
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
+          const routeReview = action.code === "update_booking_route"
+            ? bookingRouteActionReview(currentRecordsById, actionArguments, locale)
+            : action.code === "record_booking_milestone" ? bookingMilestoneActionReview(currentRecordsById, actionArguments, locale) : null
           const currentRecord = action.code === "replace_booking_allocations"
             ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
             : action.code === "update_quote_cargo"
             ? quoteCargoActionRecord(currentRecordsById, actionArguments)
             : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
-          let reason = preparedActionDescription(
+          let reason = routeReview?.description ?? preparedActionDescription(
             locale,
             action.code,
             actionArguments,
@@ -3288,7 +3295,7 @@ async function runStreamedAgent(
             emailState,
           )
           const evidence = documentEvidence(latestDocumentExtraction)
-          let changes: JsonObject[] = actionChanges(
+          let changes: JsonObject[] = routeReview?.changes ?? actionChanges(
             locale,
             action.code,
             actionArguments,
@@ -3303,7 +3310,7 @@ async function runStreamedAgent(
               grantId: security.grantId,
               actionCode: action.code,
               arguments: actionArguments,
-              title: sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+              title: routeReview?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
               description: reason,
               changes,
               accessMode,
@@ -3322,7 +3329,7 @@ async function runStreamedAgent(
             : actionCopy(locale, "prepared", reason)
           const pendingAction = {
             id: prepared.id,
-            title: prepared.review?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+            title: prepared.review?.title ?? routeReview?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
             description: reason,
             changes,
             ...(evidence ? { sourceEvidence: evidence } : {}),
@@ -4863,12 +4870,15 @@ Deno.serve(async (request) => {
           toolOutput = { error: "That write action is not available in this workspace." }
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
+          const routeReview = action.code === "update_booking_route"
+            ? bookingRouteActionReview(currentRecordsById, actionArguments, locale)
+            : action.code === "record_booking_milestone" ? bookingMilestoneActionReview(currentRecordsById, actionArguments, locale) : null
           const currentRecord = action.code === "replace_booking_allocations"
             ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
             : action.code === "update_quote_cargo"
             ? quoteCargoActionRecord(currentRecordsById, actionArguments)
             : currentRecordsById.get(cleanString(actionArguments.target_id, 80))
-          let reason = preparedActionDescription(
+          let reason = routeReview?.description ?? preparedActionDescription(
             locale,
             action.code,
             actionArguments,
@@ -4877,7 +4887,7 @@ Deno.serve(async (request) => {
             emailState,
           )
           const evidence = documentEvidence(latestDocumentExtraction)
-          let changes: JsonObject[] = actionChanges(locale, action.code, actionArguments, currentRecord)
+          let changes: JsonObject[] = routeReview?.changes ?? actionChanges(locale, action.code, actionArguments, currentRecord)
           let prepared: Awaited<ReturnType<typeof prepareServerAction>>
           try {
             prepared = await prepareServerAction(admin, actor, {
@@ -4887,7 +4897,7 @@ Deno.serve(async (request) => {
               grantId: security.grantId,
               actionCode: action.code,
               arguments: actionArguments,
-              title: sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+              title: routeReview?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
               description: reason,
               changes,
               accessMode,
@@ -4915,7 +4925,7 @@ Deno.serve(async (request) => {
             emailAttachments: emailState?.surfacedAttachments ?? [],
             pendingAction: {
               id: prepared.id,
-              title: prepared.review?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+              title: prepared.review?.title ?? routeReview?.title ?? sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
               description: reason,
               changes,
               ...(evidence ? { sourceEvidence: evidence } : {}),

@@ -4,7 +4,7 @@ import { readFileSync,mkdtempSync,rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import {mutateBookingRoute} from './booking-route-client-fixture.mjs'
+import {mutateBookingRoute,changeRouteCutoff,routeCutoffInputValue} from './booking-route-client-fixture.mjs'
 import {routeSaveFixture,routeSaveMigration,routeSaveAssertions} from './booking-route-save-fixture.mjs'
 import {routeModeAssertions} from './booking-route-mode-fixture.mjs'
 import {changeRouteScheduleDate,changeRouteScheduleTime} from '../../multideck.client/src/lib/booking-route-schedule.ts'
@@ -15,6 +15,19 @@ const initial={booking:{mode:'multimodal',sourceQuoteVersionId:'accepted-version
   {mode:'air',origin:'Transhipment',destination:'Airport',flightNumber:'BA123'},
   {mode:'rail',origin:'Airport',destination:'Depot',railService:'Rail 45'},
 ]}
+test('cut-off inputs require complete UTC values, preserve precision and never fork into legacy JSON',()=>{
+  const precise='2026-09-17T10:30:45.123456+02:00'
+  assert.equal(routeCutoffInputValue(precise),'2026-09-17T08:30:45')
+  assert.equal(changeRouteCutoff(precise,'2026-09-17T08:30:45'),precise)
+  assert.equal(changeRouteCutoff(null,'2026-09-18T10:00'),'2026-09-18T10:00:00Z')
+  for(const invalid of ['2026-09-18','2026-02-30T10:00','2026-09-18T24:00','2026-09-18T10:00Z'])assert.throws(()=>changeRouteCutoff(null,invalid))
+  const changed=mutateBookingRoute(initial,1,'cargoCutoffAt',precise)
+  assert.equal(changed.routes[1].cargoCutoffAt,precise)
+  assert.equal(changed.routes[1].routeData?.cargoCutoffAt,undefined)
+  assert.deepEqual(changed.booking,initial.booking)
+  assert.equal(mutateBookingRoute(changed,1,'mode','air').routes[1].cargoCutoffAt,'')
+  assert.equal(mutateBookingRoute(initial,1,'mode','air').routes[1].cargoCutoffAt,undefined)
+})
 let edited=structuredClone(initial)
 edited=mutateBookingRoute(edited,0,'plannedPickupAt',changeRouteScheduleTime('2026-09-18','08:45'))
 edited=mutateBookingRoute(edited,1,'plannedDepartureAt',changeRouteScheduleDate('2026-09-18T00:30:45.123456+05:30','2026-09-20'))

@@ -15,6 +15,10 @@ import { shipmentValueDexterFixture, shipmentValueDexterAssertions } from './boo
 import { quoteCargoDexterFixture, quoteCargoDexterAssertions } from './quote-cargo-dexter-fixture.mjs'
 import { allocationDexterMigration, allocationDexterAssertions } from './booking-allocation-dexter-fixture.mjs'
 import { equipmentKindMigration, equipmentKindAssertions } from './booking-equipment-kind-fixture.mjs'
+import { routeCutoffMigration, routeCutoffAssertions } from './booking-route-cutoff-fixture.mjs'
+import { saveWorkspaceResponseAssertions } from './booking-save-workspace-fixture.mjs'
+import { routeMilestoneFixture, routeMilestoneAssertions } from './booking-route-milestone-fixture.mjs'
+import { milestoneDexterMigration, milestoneDexterAssertions } from './booking-milestone-dexter-fixture.mjs'
 
 // Executes the actual save function against disposable PostgreSQL, never a tenant.
 // PG_TEST_BIN can point to a PostgreSQL bin directory in CI.
@@ -33,7 +37,7 @@ function table(name) {
   return baseline.slice(start, baseline.indexOf('\n);', start) + 3)
 }
 
-test('PostgreSQL: stable items, approved Dexter cargo/container/route lifecycle, watches and isolation', { skip: !available }, () => {
+test('PostgreSQL: stable items, route milestones, approved Dexter cargo/container/route lifecycle, watches and isolation', { skip: !available }, () => {
   const directory = mkdtempSync(join(tmpdir(), 'multideck-stable-items-'))
   const data = join(directory, 'data')
   let started = false
@@ -177,6 +181,14 @@ test('PostgreSQL: stable items, approved Dexter cargo/container/route lifecycle,
       quoteCargoDexterFixture + quoteCargoDexterAssertions)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
       allocationDexterMigration + allocationDexterAssertions)
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
+      routeCutoffMigration + routeCutoffAssertions)
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
+      saveWorkspaceResponseAssertions)
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
+      routeMilestoneFixture(table) + routeMilestoneAssertions)
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
+      milestoneDexterMigration + milestoneDexterAssertions)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
     rmSync(directory, { recursive: true, force: true })

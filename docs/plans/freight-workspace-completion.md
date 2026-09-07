@@ -1,5 +1,18 @@
 # Freight workspace completion
 
+7 September milestone preflight: fresh development schema and populated legacy
+preservation rehearsal pass for the exact pending migration pair. Deployed
+Booking/Dexter source has no unexpected drift; the accepted Original is unchanged.
+The separate newer finance migration is retained. No milestone release yet; see
+[development preflight](../release/2026-09-07-milestone-development-preflight.md)
+for the controlled next step and precise evidence limits.
+
+Latest local checkpoint (7 September): the exact-leg milestone operator editor
+is connected, with 17 focused client tests and initial real-component Chrome
+verification. See [milestone operator evidence](../release/2026-09-07-milestone-operator-editor-evidence.md)
+for precise scope and remaining release/browser gates. The earlier hosted
+Job-ref gate is closed; milestone release and full 95% acceptance are not.
+
 User objective: `.codex/attachments/38716b06-3475-4178-8ace-87a663210c27/goal-objective.md` in the user's Codex directory. The full scope is all eight clashes plus operational depth across Sea, Air, Road and Rail, with a target of at least 95% supported by evidence. Percentages will not substitute for acceptance criteria.
 
 ## Invariants
@@ -7,6 +20,178 @@ User objective: `.codex/attachments/38716b06-3475-4178-8ace-87a663210c27/goal-ob
 Keep mutable autosaved drafts and immutable submitted Quote versions; master Quote references and Booking references; manual and secure-link acceptance; latest-link validity; selective accepted-version Booking updates; mode-change confirmation; Booking-only changes never modifying Quotes; PDF and operational audit history; branch-relative directions; separate planned, estimated and actual dates. Tracking connection remains deferred until Multideck Live/Sinay is ready. AI actions require approval and use existing permissions.
 
 ## Delivery and evidence ledger
+
+7 September milestone API/Dexter checkpoint: added scoped milestone/type reads,
+explicitly approved creation/correction, exact-source before/after reviews in
+both response paths, deterministic exact-event field/status watches and the
+authenticated Booking API path. Forty-five focused tests, both backend type
+checks, the client build and retained-schema rehearsal pass. Sea/Air/Road/Rail
+tests cover real approval/replay, notifications, matching/non-matching,
+pause/resume, completion conditions and current-permission denial. **Local only:**
+the exact-leg operator editor, browser/hosted verification and combined controlled
+release remain open. Do not deploy the foundation alone. The full objective,
+existing approvals and deferrals are unchanged. See
+`docs/release/2026-09-07-milestone-parity-evidence.md`.
+
+6 September milestone groundwork: implemented a local typed, exact-leg milestone
+save/read boundary with independent dates, stale/foreign-write rejection, source
+protection, recorded-mode preservation and attributed correction/void history.
+The broad real-PostgreSQL suite passes new Sea/Air/Road/Rail assertions and the
+existing freight/approval/watch regressions; retained-schema structural rehearsal
+also passes. Fresh remote/deployment reads still confirm `314ffc2` and the accepted
+Original fingerprint is unchanged. **Not released or a completed milestone feature:**
+operator UI/Edge action and dedicated Dexter read/approved-write/watch parity are
+the next body of work and mandatory release gates. Do not deploy the foundation
+alone. Existing revision/preview approvals and broader depth/isolation gates
+remain open. See `docs/release/2026-09-06-route-milestone-foundation-evidence.md`.
+
+6 September continuation: fresh Git fetch confirms clean `314ffc2` with zero
+divergence from origin/dev; its exact Vercel Git deployment is READY and the
+approved development hostname loads the signed-in Booking. Hosted Job ref
+edit/save/reload succeeded and was restored through an explicit clear, which
+returns the default JOB-49 on Save and reload. Accepted Original version hash,
+badge and PDF listing remain intact. Two callback regressions and the complete
+client build pass. Existing preview-environment repair scope, V2 send/accept/
+selective-apply approval and wider all-mode/isolation gates remain open.
+See `docs/release/2026-09-06-booking-save-response-evidence.md` for precise
+restoration semantics and evidence limits. Goal continues in task
+`01a077ed-3ff5-7bb0-ae56-17d1376b4a49` from
+`01a0331f-1a15-7291-ae6c-56f29927ef4c`; its scope and recorded decisions persist.
+
+Next independent all-mode slice: operator-recorded route milestones. Read-only
+development inspection confirms `Job_RouteMilestones` exists with separate
+planned, estimated and actual timestamps, source/reference fields and 14 active
+dictionary entries; there are currently zero records. Current Booking API types,
+Edge workflow and migration sources have no milestone adapter. This is a verified
+integration gap, not an implemented feature. Reuse the typed foundation through
+the canonical Booking permission/audit boundary, with exact-leg editor/read,
+approved Dexter actions and deterministic watches together. Preserve source and
+history, reject stale/foreign changes, and verify representative Sea/Air/Road/Rail
+flows. Keep tracking ingestion deferred and exclude Customs release entry or
+changes from this slice. Deeper DG, Air screening, Road appointments/driver,
+Rail scheduling, per-leg readiness and the remaining hosted revision/isolation
+gates retain their full place in the objective.
+
+6 September Booking-save correction: applied migration `20260906174532` so all
+save branches return the same complete workspace as Open. Local PostgreSQL
+response/version/isolation checks, 34 related contracts and retained-schema
+rehearsal pass. Hosted Save retains the Original badge and accepted PDF group.
+That test exposed a separate missing Job-ref input-to-save mapping; corrected
+locally with two executed callback regressions. Client release and hosted
+Job-ref persistence/restore remain pending at this checkpoint. No Quote version
+or acceptance rule changed. See
+`docs/release/2026-09-06-booking-save-response-evidence.md`.
+
+6 September hosted Dexter approval/watch correction: the positive test exposed
+a legacy-only request-role check that rejected normal server approvals. Added
+and applied only migration `20260906171016`, preserving service-only execution
+and all existing scope/expiry guards. Fifteen local tests and the retained-schema
+structural rehearsal pass. The same still-valid hosted proposal then succeeded:
+exact cargo deadline, approval before execution, attributed audit, one watch
+event/notification. Documentation-only and paused edits did not alert; resumed
+clear alerted once. Deadlines restored to blank, accepted Quote unchanged,
+watch left paused with two retained test events. Wider hosted isolation and
+revision lifecycle/all-mode depth remain open. Raw watch field labels and a
+post-save missing Original badge are recorded follow-ups, not silently passed.
+See `docs/release/2026-09-06-dexter-approval-watch-evidence.md`.
+
+6 September Dexter routing review correction: real hosted read/prepare testing
+found the approval card listing technical arguments instead of the exact leg's
+business change. Corrected both response paths to use current, identity- and
+timestamp-matched route evidence, readable Booking/leg/mode context and one
+before/after field with explicit timezone. Forty-two focused checks and full
+Dexter type checking pass. Released Dexter 160 with JWT retained and all 19
+downloaded source files matching; every other function unchanged. Chrome
+confirms the corrected card persists after reload. Both synthetic proposals
+were denied, zero actions executed, and the route fingerprint remains unchanged.
+Hosted positive approved-write/watch, revised Quote acceptance/partial apply and
+wider operational depth remain open; no 95% claim. See
+`docs/release/2026-09-06-dexter-route-review-evidence.md`.
+
+6 September routing cut-off development release: published `3757407` to
+`origin/dev` by verified fast-forward; Vercel deployment
+`dpl_DmkCToSYE8nmNmHoZK5hfWB4ESmD` READY and approved hostname serves the new
+asset. Applied only migration `20260906143817` after fresh actual-schema
+rehearsal and exact one-migration dry run. Released only Dexter 159, JWT
+preserved, all 18 downloaded files matching reviewed source. No team setup
+changes or new security-advisor findings. Before/after fingerprints preserved
+45 existing routes and 38 Quote versions. Hosted synthetic JE0991134 testing
+proved deadline set/save/reload, mode-warning cancellation, native clear/save/
+reload, and attributed before/after audit. Deadlines restored to blank; Sea
+mode and Quote history unchanged. Browser helper blank-fill discrepancy was
+isolated without an application patch. The previous precaution-help reply was
+not implementation progress; this release is verified progress. Hosted
+Dexter/watch and accepted-revision lifecycle plus wider all-mode depth remain
+unfinished; do not infer 95% completion. See
+`docs/release/2026-09-06-route-cutoff-development-release.md`.
+
+6 September routing cut-off checkpoint: implemented typed cargo/documentation
+deadlines and Sea-only VGM deadlines per leg, a compact capability-gated editor,
+explicit mode-reset warnings and before/after audit. No ETD-derived defaults or
+tracking connection. Existing route save/permissions remain authoritative;
+older clients preserve omitted deadline keys. Dexter reads, approval-safe
+edits, mode-review evidence and deterministic field-change watches are updated
+together. Thirty-eight unique focused tests, isolated Chrome en-GB/en-US
+deadline checks, prior schedule regressions, build and final type check passed.
+**Local only, not deployed**; hosted persistence/audit/watch proof and controlled
+development release remain next. No email, acceptance, Customs or tenant-record
+write occurred. [Evidence and release steps](../release/2026-09-06-route-cutoff-local-evidence.md).
+
+6 September notification/overview development release: fast-forwarded six
+commits to origin/dev (`f235088`); exact Vercel Git deployment is READY and the
+approved hostname serves the matching asset. Hosted read-only checks confirm
+the real Quote readiness marker, retained original acceptance/Booking link,
+honest unavailable forecast and saved Quote document listing. Twenty-seven
+focused release checks pass; team/project configuration is unchanged. No
+Edge Function, logo, email, acceptance, Customs or tenant-record write occurred.
+Fresh revision and hosted queue delivery remain open, along with broader
+all-mode depth. [Release evidence](../release/2026-09-06-notification-overview-development-release.md).
+
+6 September notification queue checkpoint: local corrections hold the next
+popup until the requested Quote workspace is ready, prevent late events from
+replacing the popup currently being read, and clear queue state on account
+changes. Ten focused tests, the client build and isolated Chrome timing,
+failure/retry, keyboard, account and responsive checks pass. Existing bell,
+preferences and persistence APIs are unchanged. Hosted delivery/readiness and
+source deployment remain pending; no email or tenant record was changed.
+[Evidence and explicit harness limits](../release/2026-09-06-quote-response-queue-evidence.md).
+
+6 September development clear-fix release: applied exactly the detail/route
+clear migrations following fresh full-schema rehearsal and isolated CLI dry
+run. Live function text matches the intended changes; protected metadata and
+all other checked definitions across 1,012 application functions are unchanged.
+Both exact migration identities are present, service-only execution remains
+enforced and advisors have zero added/removed findings. No hosted Booking record,
+Customs declaration, email or PDF was changed. Fresh revised-Quote browser
+readback and origin/dev source publication remain pending; requested permission
+for one labelled JQ20022 V2 email and selected updates to test JE0991134.
+[Release evidence](../release/2026-09-06-quote-route-clear-evidence.md).
+
+6 September selected-route revision checkpoint: reproduced and corrected a
+cleared accepted ETD that remained on the Booking route, plus the corresponding
+selected ETA/carrier/service/address clear path and stale location-code fallback.
+The 25-case route matrix checks selected versus retained fields, actual-date and
+operational evidence preservation, submitted snapshots, audit and retries.
+The focused 13-test run and a populated rehearsal of the retained application
+schema with 31 freight migrations pass. Both detail/route clear migrations are
+local only; fresh hosted parity, release and browser readback remain pending.
+Customs/iCustoms is potentially live and excluded from mutation; Quote/Booking
+data is internal testing. Calculator integration, logo work and tracking remain
+deferred. [Evidence and limits](../release/2026-09-06-quote-route-clear-evidence.md).
+
+6 September accepted-revision checkpoint: a new executable regression proved that selecting cleared terms could leave the old wording in Booking compatibility details even after the review completed. The local migration now preserves explicit clears for selected detail fields and leaves unselected fields alone. Twelve null/empty/whitespace cases cover four fields through the canonical database apply/read chain; the combined 13-test run passes. No hosted migration or data write was performed. Full-schema rehearsal, hosted readback and the existing dedicated Dexter accepted-revision adapter gap remain release gates. [Evidence and limits](../release/2026-09-06-quote-revision-clear-evidence.md).
+
+6 September scope clarification: the user explicitly reconfirmed the **broader freight goal**. PDF logo work is deferred unless it directly blocks Quote sending or Booking creation; do not resume renderer investigation or deploy the prior local logo-source correction as part of cosmetic work. Tracking integration remains deferred separately.
+
+6 September Booking evidence checkpoint: removed the fabricated arrival-confidence percentage/curve, which had been derived from fixed status/progress offsets rather than forecast evidence. The existing forecast area now states unavailable. Overview and Details document availability read the actual workspace list; empty and unavailable data remain distinct. Customs/charge-list presence is labelled saved data, not operational or financial approval. The neighbouring field-presence score now explicitly describes information coverage. Seventeen focused tests pass (including actual component rendering in both English variants); local browser read verifies the populated document state and forecast, with no page overflow at 390px. No operational data, Quote history, PDF, email or backend capability changed. Client-only correction; hosted deployment remains pending. [Evidence checkpoint](../release/2026-09-06-booking-overview-evidence.md).
+
+6 September PDF investigation checkpoint: direct synthetic Carbone calls reproduce broken images even in a minimal one-image HTML document; HTML output retains the correct image bytes. The failure is isolated beyond the Quote layout, but its exact server-side cause is not proven. A separate local correction now selects the saved Admin logo, respects reset/removal and retains legacy-only compatibility; 21 tests and Deno type checks pass. It is **not deployed** pending a successful fresh PDF render. Original issued evidence remains intact; approved server-access context was requested. [Investigation and release gate](../release/2026-09-06-quote-pdf-image-investigation.md).
+
+6 September public-response security checkpoint: found and corrected an internal-snapshot exposure in the customer JSON response. Development Edge version 42 and the exact service-only RPC migration now allowlist public summary fields, exclude internal costs/suppliers/margins, preserve token/origin checks and restore saved tenant branding without exposing private schemas. Seventeen focused tests and the client build pass; live grants and unchanged advisor findings are verified. The accepted customer link now shows Jenkar branding. Fresh active hosted response verification, other-tenant review and the broken PDF logo remain open. [Evidence and release limits](../release/2026-09-06-quote-public-response-boundary.md).
+
+6 September hosted issue/acceptance checkpoint: the explicitly approved labelled JQ20022 test email was sent once and received with its version-bound PDF. Secure-link acceptance created synthetic Booking JE0991134, preserving both cargo lines, two separate active container types, unknown allocation quantities and blank transport dates. Quote/Booking Documents and the existing acceptance notification/deep link passed; reload retained one response/one Booking. PDF logo rendering and public-response branding failed visual expectations and remain open; queue timing and revision/partial-apply lifecycle remain unverified. [Full evidence and limits](../release/2026-09-06-quote-issued-acceptance-roundtrip.md). No real shipment or financial action occurred; the broad goal remains active.
+
+6 September send-boundary checkpoint: real supplier selection now replaces hard-coded demo charge parties; explicit clear/new-row/selected UUID and amount persistence are verified on synthetic JQ20022 after development release `4e73f9e`. Found and corrected saved-contact email blocking the supported one-send recipient; the exact development migration is applied with unchanged Quote/version hashes, existing recipient validation and no new advisor findings. [Party evidence](../release/2026-09-06-quote-charge-party-roundtrip.md), [recipient readiness evidence](../release/2026-09-06-quote-recipient-readiness.md). The user approved a labelled test email and test Booking; send/response/document/Booking lifecycle remains unverified at this checkpoint.
 
 6 September hosted draft checkpoint: synthetic `JQ20022` retains two cargo lines and a single mutable version through autosaves/reloads. Found and fixed a customer enquiry-reference/master-reference mismatch; current value and explicit blank now round-trip on development. Integrated team changes through `e698be2`, repaired the merged Dexter finance dispatch declaration, and released `45d3fe9` with exact function-source and READY frontend evidence. Follow-up `e167329` is READY and hosted Overview verifies honest Unassigned ownership. The same test draft saves/reloads two distinct FCL requests and a UK-to-Netherlands Export route; cancelling Sea-to-Air review preserves them. [Round-trip evidence](../release/2026-09-06-quote-customer-reference-roundtrip.md). No email, submission, acceptance or Booking mutation was performed in this checkpoint.
 
