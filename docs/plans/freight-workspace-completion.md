@@ -1,5 +1,12 @@
 # Freight workspace completion
 
+7 September screening implementation: private typed cargo-source evidence,
+permission/stale-safe canonical save/read, audited correction/void and Booking
+Edge/client contracts now pass local PostgreSQL and transport/type checks.
+This is an unreleased foundation, not completed screening or clearance.
+Operator UI and Dexter approved-write/watch parity must be completed together
+before deployment. [Scope, checks and mandatory gates](../release/2026-09-07-air-screening-local-evidence.md).
+
 7 September Air Dexter/watch checkpoint: hosted Approve-mode exact override
 proposal remained unapplied until approval, then saved and audited. An exact
 notification-only watch fired once per matching change, ignored cargo-only
