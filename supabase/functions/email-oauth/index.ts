@@ -351,7 +351,7 @@ async function completeAuthorization(request: Request, allowedOrigins: Set<strin
     const { data, error } = await adminClient.rpc("comm_complete_email_oauth_connection", {
       p_oauth_state_id: stateRow.oauth_state_id,
       p_provider_type_code: provider === "gmail" ? "google_workspace" : "microsoft_365",
-      p_connection_name: `${provider === "gmail" ? "Gmail" : "Outlook"} — ${identity.mailboxAddress}`,
+      p_connection_name: `${provider === "gmail" ? "Gmail" : "Outlook"} – ${identity.mailboxAddress}`,
       p_secret_ref: tokenSecretRef,
       p_provider_tenant_id: identity.providerTenantId,
       p_provider_account_id: identity.providerAccountId,

@@ -98,7 +98,7 @@ export function FactCard({ title, children, className }: { title?: string; child
 }
 
 /**
- * Label beside value, hairline separated rather than boxed — six stacked boxes
+ * Label beside value, hairline separated rather than boxed – six stacked boxes
  * read as six objects when they are one list. Renders nothing when the value is
  * empty, so a sparse record simply has a shorter list instead of a column of
  * dashes. Set `code` for SKUs, references and measurements: they stay

@@ -189,8 +189,8 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
       resizable: true,
       sortValue: (quote) => quote[id] as string | number | null,
       cell: options.cell ?? ((quote) => options.ltr
-        ? ltrValue(String(quote[id] ?? "—"), "text-[12px] font-medium text-[var(--md-ink)]")
-        : <span className="text-[12px] text-[var(--md-text)]">{t(String(quote[id] ?? "—"))}</span>),
+        ? ltrValue(String(quote[id] ?? "–"), "text-[12px] font-medium text-[var(--md-ink)]")
+        : <span className="text-[12px] text-[var(--md-text)]">{t(String(quote[id] ?? "–"))}</span>),
     })
 
     const dateColumn = (id: "estimatedDeparture" | "estimatedArrival", label: string, defaultHidden = false) => textColumn(id, label, 142, {

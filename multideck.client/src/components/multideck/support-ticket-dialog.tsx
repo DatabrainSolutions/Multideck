@@ -30,7 +30,7 @@ const impactLabels: Record<SupportTicketImpact, string> = { blocked: "I’m bloc
 const impactTones: Record<SupportTicketImpact, { background: string; ink: string; indicator: string }> = {
   blocked: { background: "--md-status-red-bg", ink: "--md-status-red-ink", indicator: "--md-red" },
   slowed_down: { background: "--md-status-amber-bg", ink: "--md-status-amber-ink", indicator: "--md-amber" },
-  no_immediate_blocker: { background: "--md-status-green-bg", ink: "--md-status-green-ink", indicator: "--md-green" },
+  no_immediate_blocker: { background: "--md-status-green-bg", ink: "--md-status-green-ink", indicator: "--md-status-green-ink" },
 }
 const ticketTypes = Object.keys(typeLabels) as SupportTicketType[]
 const impactOptions: SupportTicketImpact[] = ["no_immediate_blocker", "slowed_down", "blocked"]

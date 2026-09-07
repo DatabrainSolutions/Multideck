@@ -1,5 +1,5 @@
 /* The bundler can hoist an imported `@layer components` block above Tailwind's
-   own layer statement, which registers `components` first and therefore lowest —
+   own layer statement, which registers `components` first and therefore lowest –
    below `base`, so the preflight reset silently wins over any padding declared
    in it. Declaring a dedicated layer up front pins the dashboard's styles above
    `base` and `utilities` without disturbing the existing layer order. */
@@ -293,9 +293,9 @@
   --radius-2xl: var(--md-radius-2xl);
 }
 
-/* The accent is one hue the whole product reads from. Every green surface — solid
+/* The accent is one hue the whole product reads from. Every green surface – solid
    fills, alpha washes, focus rings, selected rows, brand shadows and the Dexter
-   shader ramps — derives from the eight colours below, which `lib/accent-theme.ts`
+   shader ramps – derives from the eight colours below, which `lib/accent-theme.ts`
    rewrites when the operator picks a different accent in Settings.
 
    Registering them as `<color>` is what makes the swap watchable: a transition on
@@ -557,7 +557,7 @@
   --md-motion-panel: 300ms cubic-bezier(0.16, 1, 0.3, 1);
 
   /* The summon dim. Light enough that the operator can still read the page they
-     are picking from — it marks focus, it does not replace the screen. */
+     are picking from – it marks focus, it does not replace the screen. */
   --md-summon-scrim: rgba(11, 20, 19, 0.16);
 
   --background: var(--md-bg);
@@ -1550,7 +1550,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   transition-duration: 300ms;
 }
 
-/* The prompt box itself brightens its ring while the caret is in the field —
+/* The prompt box itself brightens its ring while the caret is in the field –
    the only cue that Enter is armed. */
 .md-composer {
   transition: box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -1662,7 +1662,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
    side of the band every layer has already masked itself out, so the ramp has no
    step in it and no hard line where it ends.
 
-   Radii and mask depths are the whole design here — they are tuned as a set. The
+   Radii and mask depths are the whole design here – they are tuned as a set. The
    masks are written against a direction variable so one set of rules serves both
    edges; `to bottom` starts the gradient at the top edge, `to top` at the bottom
    one, which is the edge the veil is pinned to in each case.
@@ -1720,7 +1720,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   -webkit-mask-image: linear-gradient(var(--md-progressive-blur-dir), #000 0, #000 10%, transparent 42%);
 }
 
-/* The fade itself. `page` lands on the app background — text passing under the
+/* The fade itself. `page` lands on the app background – text passing under the
    band goes to nothing rather than to a blurred smear. `rail` leaves the colour
    to the caller, for a band over a surface that is not the page. */
 .md-progressive-blur[data-tone="page"] .md-progressive-blur__tint {
@@ -1751,14 +1751,14 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 /* ── Dexter watch rail ───────────────────────────────────────────────────────
    The monitor cards float on the page rather than sitting in a panel: no rail
    background, no dividers, just a lifted surface each. Deliberately no
-   `backdrop-filter` — the cards sit on flat page background where frosting buys
+   `backdrop-filter` – the cards sit on flat page background where frosting buys
    nothing, and they scroll, so a per-card backdrop pass would re-rasterise on
    every frame for no visible gain. The veil above them does the blurring. */
 .md-watch-card {
   position: relative;
   overflow: hidden;
   /* Near-opaque on purpose. These cards sit over a blurred wash, and at the old
-     86% the body text picked up whatever was drifting behind the rail — the
+     86% the body text picked up whatever was drifting behind the rail – the
      glass belongs around the cards, not through the words. */
   background-color: color-mix(in srgb, var(--md-surface) 96%, transparent);
   box-shadow:
@@ -1856,7 +1856,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 }
 
 /* The open card holds the lift rather than dropping back when the pointer moves
-   on to the detail pane it just opened — the pane has to be attributable to a
+   on to the detail pane it just opened – the pane has to be attributable to a
    row, and it is the only thing marking which. */
 .md-watch-card[data-active="true"] {
   translate: 0 -2px;
@@ -1982,7 +1982,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 
 /* The current row's marker grows out of the leading edge rather than appearing at
    full height, so moving between rows reads as one mark travelling instead of two
-   blinking. `scaleY` only — nothing here reflows the title beside it. */
+   blinking. `scaleY` only – nothing here reflows the title beside it. */
 .md-history-row__rail {
   background: var(--md-accent);
   transform: scaleY(0);
@@ -2125,7 +2125,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 }
 
 /* Movement means news. Every card used to breathe, which made the whole rail
-   read as one loading state and told the eye nothing about where to land — only
+   read as one loading state and told the eye nothing about where to land – only
    an unopened watch pulses now, offset per card so two never beat in unison. */
 .md-watch-card[data-unread="true"] .md-watch-dot::after {
   animation: md-watch-dot-breathe 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
@@ -2262,7 +2262,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 
 /* `max-width` rather than a fixed width: the label's own text decides how far the
    reveal travels, so a longer translation is never clipped mid-word. Only this
-   button's own box is affected — the header around it does not reflow. */
+   button's own box is affected – the header around it does not reflow. */
 .md-dexter-header-action__label {
   display: block;
   max-width: 0;
@@ -5590,7 +5590,7 @@ html.md-summon-picking {
 /* --------------------------------------------------------------------------
    Settings → AI usage
    The tab answers two questions: what did Dexter give back, and what is left.
-   The hero is deliberately dark in both themes — it carries a photographic
+   The hero is deliberately dark in both themes – it carries a photographic
    field image, and committing to one ink colour is what keeps the figures on
    top legible without a heavier scrim.
    -------------------------------------------------------------------------- */
@@ -5628,7 +5628,7 @@ html.md-summon-picking {
   object-fit: cover;
   /* The field is used for its movement, not its hue. Blending it as luminosity
      over the accent-derived base means the streaks survive while the colour
-     follows whichever accent the workspace has chosen — so the hero never
+     follows whichever accent the workspace has chosen – so the hero never
      fights a plum or indigo theme. */
   mix-blend-mode: luminosity;
   opacity: 0.78;
@@ -5936,7 +5936,7 @@ html.md-summon-picking {
 }
 
 /* An amber projection reads as a warning without recolouring what has already
-   been spent — the used segment stays the accent it always was. */
+   been spent – the used segment stays the accent it always was. */
 .md-ai-allowance-meter[data-pace="watch"] .md-ai-allowance-meter__projection {
   background:
     repeating-linear-gradient(
@@ -5973,7 +5973,7 @@ html.md-summon-picking {
    Folder colour reuses the ten accent presets, so a folder can never land on a
    tone the product has not already checked for contrast in both themes. Both
    members of the pair are written onto the element and CSS picks the one for the
-   current theme — that keeps the choice out of JavaScript, and means switching
+   current theme – that keeps the choice out of JavaScript, and means switching
    theme cannot flash the wrong colour for a frame. */
 .md-drive-tone {
   --md-drive-ink: var(--md-drive-ink-light);
@@ -6001,7 +6001,7 @@ html.md-summon-picking {
 
 /* Two thin sheets sit behind the top edge, so the tile reads as something that
    holds files rather than as another card. On hover they fan a couple of pixels
-   further out — the cheapest possible hint that there is something inside. */
+   further out – the cheapest possible hint that there is something inside. */
 .md-drive-folder {
   position: relative;
   display: block;
@@ -6159,7 +6159,7 @@ html.md-summon-picking {
 /* The seed is the ~1 KB preview carried on the row itself. It paints on the first
    frame, blurred and slightly overscaled so its low resolution reads as depth of
    field rather than as a broken image, and it stays underneath the real
-   thumbnail for good — there is nothing to remove, so nothing can flicker. */
+   thumbnail for good – there is nothing to remove, so nothing can flicker. */
 .md-drive-thumb__seed {
   filter: blur(9px) saturate(1.06);
   transform: scale(1.1);
@@ -6206,7 +6206,7 @@ html.md-summon-picking {
   color: color-mix(in srgb, var(--md-ink) 48%, transparent);
 }
 
-/* A pending tile starts with no picture at all — the preview is still being
+/* A pending tile starts with no picture at all – the preview is still being
    rendered from the file. When the seed does land it eases in rather than
    appearing, which is the one place in the grid where an image arrives into a box
    that is already on screen. */

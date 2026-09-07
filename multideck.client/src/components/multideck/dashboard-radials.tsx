@@ -8,7 +8,7 @@ import { toneToVar } from "./status-pill"
 /**
  * All the radials here animate `strokeDashoffset` on a `pathLength={1}` circle.
  * That means one attribute, no path rebuilding, and geometry that is independent
- * of the radius — so the same maths drives a 22px ring and a 96px dial.
+ * of the radius – so the same maths drives a 22px ring and a 96px dial.
  */
 function arcLength(ratio: number) {
   return Math.min(Math.max(ratio, 0), 1)

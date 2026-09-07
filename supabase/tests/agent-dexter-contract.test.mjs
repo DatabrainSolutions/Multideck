@@ -789,7 +789,7 @@ test("Dexter follows the signed-in operator's locale and freight voice", () => {
   assert.match(edgeFunction, /Sound like an experienced colleague doing the work alongside the operator/)
   assert.match(edgeFunction, /Treat ETD, ETA, ATD, ATA/)
   assert.match(edgeFunction, /Never use the em dash character/)
-  assert.match(edgeFunction, /\.replace\(\/\\s\*—\\s\*\/g, ": "\)/)
+  assert.match(edgeFunction, /\.replace\(\/\\s\*–\\s\*\/g, ": "\)/)
   assert.match(edgeFunction, /args = sanitiseArguments\(parsed\)/)
   assert.match(edgeFunction, /sanitiseArguments\(parsed\)/)
   assert.match(edgeFunction, /preparedActionId = cleanString\(body\.preparedActionId/)

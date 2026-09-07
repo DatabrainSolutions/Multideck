@@ -129,7 +129,7 @@ function SequenceHud() {
  * behaviour cannot drift apart.
  *
  * Mounted once by the app shell. Route-local shortcuts belong to their own screens
- * — this is the shell's set: moving around, opening things, and reshaping the
+ * – this is the shell's set: moving around, opening things, and reshaping the
  * chrome.
  */
 export function AppShortcuts({ navigate }: { navigate: (path: string) => void }) {

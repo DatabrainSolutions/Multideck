@@ -42,7 +42,7 @@ export const ModelProviderGlyph = memo(function ModelProviderGlyph({
  *
  * Each bar is a fixed track with a fill layered over it, and only the fill's
  * opacity and scale animate. A colour swap between two custom properties cannot
- * be interpolated — it would land as the snap this is here to avoid — and
+ * be interpolated – it would land as the snap this is here to avoid – and
  * opacity and transform are the two things a compositor can carry on its own.
  */
 export const ModelStrengthMeter = memo(function ModelStrengthMeter({

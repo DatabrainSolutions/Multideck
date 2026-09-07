@@ -375,7 +375,7 @@ Deno.test("labels combined insights partial and excludes failed transcript evide
     "Alex",
   );
 
-  assert(insights.summary?.startsWith("Partial summary —"));
+  assert(insights.summary?.startsWith("Partial summary –"));
   assertEquals(insights.summary?.includes("failed fragment"), false);
   assertEquals(insights.suggestions[0].evidenceProviders, ["elevenlabs"]);
 });

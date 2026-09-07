@@ -1109,7 +1109,7 @@ export function confirmWarehouseTask(taskId: string, input: { quantity: number; 
 }
 
 /**
- * Moves an order's booked slot. Only the appointment window changes — the date the
+ * Moves an order's booked slot. Only the appointment window changes – the date the
  * customer originally asked for is left alone, because the warehouse moving a slot
  * must not rewrite the request it was booked against.
  */
@@ -1268,10 +1268,10 @@ function timeKey(date: Date) {
 
 function formatOrderValue(order: WarehouseOperationalOrder, locale: string) {
   const valuedLines = order.lines.filter((line) => line.goodsValue !== null && line.currencyCode)
-  if (!valuedLines.length) return "—"
+  if (!valuedLines.length) return "–"
 
   const currencies = new Set(valuedLines.map((line) => line.currencyCode!))
-  if (currencies.size !== 1) return "—"
+  if (currencies.size !== 1) return "–"
 
   const currency = valuedLines[0].currencyCode!
   const value = valuedLines.reduce((total, line) => total + (line.goodsValue ?? 0), 0)
@@ -1319,7 +1319,7 @@ function dashboardMovement(movement: WarehouseInventoryMovement, locale: string)
     product: `${movement.sku} · ${movement.itemDescription}`,
     reference: movement.reference ?? movement.typeName ?? titleCaseCode(movement.typeCode),
     quantity: `${number.format(movement.quantity)} ${movement.uomCode}`,
-    dock: (isInbound ? movement.toLocationCode : movement.fromLocationCode) ?? "—",
+    dock: (isInbound ? movement.toLocationCode : movement.fromLocationCode) ?? "–",
     time: new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(createdAt),
     status: movement.typeName ?? titleCaseCode(movement.typeCode),
     tone: isInbound ? "teal" : "blue",

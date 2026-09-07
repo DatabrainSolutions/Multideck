@@ -148,7 +148,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
         <Metric label={t("Contacts")} value={String(contactListing?.summary.contacts ?? customer.contactCount)} />
         <Metric label={t("Active shipments")} value={String(customer.activeShipments.length)} />
         <Metric label={t("Open exceptions")} value={String(customer.activeShipments.reduce((total, shipment) => total + shipment.openExceptionCount, 0))} />
-        <Metric label={t("Account health")} value={customer.healthScore == null ? "—" : `${Math.round(customer.healthScore)}%`} icon={<Health className="size-3.5" strokeWidth={1.4} aria-hidden="true" />} />
+        <Metric label={t("Account health")} value={customer.healthScore == null ? "–" : `${Math.round(customer.healthScore)}%`} icon={<Health className="size-3.5" strokeWidth={1.4} aria-hidden="true" />} />
       </div>
 
       {customer.summary ? <Surface className="rounded-[var(--md-radius-xl)]" padding="lg"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Account summary")}</h2><p className="mt-3 text-[14px] leading-6 text-[var(--md-text)]">{customer.summary}</p></Surface> : null}

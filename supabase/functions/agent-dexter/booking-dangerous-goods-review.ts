@@ -63,7 +63,7 @@ export function bookingDangerousGoodsActionReview(records: Map<string, RecordVal
   }
   const target = `${record.bookingReference} · Cargo ${record.lineNumber} · Dangerous-goods evidence`
   return { title: `${isNew ? 'Record' : next.status === 'voided' ? 'Void' : 'Correct'} ${target}`,
-    description: `Review supplied evidence only—not classification, completeness or transport approval. Unknown is not No. `
+    description: `Review supplied evidence only–not classification, completeness or transport approval. Unknown is not No. `
       + `Only the listed fields change; the cargo hazardous flag and customer Quotes stay unchanged. History is retained. Reason: ${args.reason.trim().slice(0, 500)}`,
     changes }
 }

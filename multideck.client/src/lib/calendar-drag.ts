@@ -44,7 +44,7 @@ function snap(minutes: number) {
  * block back where it started.
  *
  * Pointer events rather than HTML drag-and-drop: the same choice the Kanban board
- * made, and for the same reasons — it works under touch, it gives exact
+ * made, and for the same reasons – it works under touch, it gives exact
  * coordinates, and it cannot start a ghost-image drag of the page.
  */
 export function useCalendarEventDrag({

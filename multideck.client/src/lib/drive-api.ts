@@ -509,8 +509,8 @@ export type DriveUploadInput = {
 }
 
 /**
- * Streams the original through XHR so the tile can show honest progress — the
- * client library does not report it — then stores the small preview and the row.
+ * Streams the original through XHR so the tile can show honest progress – the
+ * client library does not report it – then stores the small preview and the row.
  * A failure at any step takes the already-written objects back out with it.
  */
 export async function uploadDriveFile(input: DriveUploadInput): Promise<DriveFile> {
@@ -729,7 +729,7 @@ export function driveKindOf(file: { name: string; mimeType: string }): DriveFile
   return driveFileKind(file.mimeType, file.name)
 }
 
-/** "New folder", then "New folder 2" — the same shape a drive uses. */
+/** "New folder", then "New folder 2" – the same shape a drive uses. */
 export function nextUntitledFolderName(siblings: readonly { name: string }[], base = "New folder") {
   const taken = new Set(siblings.map((sibling) => sibling.name.trim().toLowerCase()))
   if (!taken.has(base.toLowerCase())) return base

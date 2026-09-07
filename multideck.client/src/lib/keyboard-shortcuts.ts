@@ -326,7 +326,7 @@ export function customisedShortcutCount() {
 
 /**
  * Shortcut ids that share a binding with the given one. A duplicate is not
- * blocked — an operator may be mid-swap between two shortcuts — but it is shown,
+ * blocked – an operator may be mid-swap between two shortcuts – but it is shown,
  * because a silently shadowed shortcut looks like a bug in the app.
  */
 export function findShortcutConflicts(id: string, binding: ShortcutBinding | null): string[] {
@@ -508,7 +508,7 @@ export function subscribeToPendingSequence(listener: (pending: PendingSequence |
  * also trigger the app underneath.
  *
  * `except` keeps named shortcuts live through the suspension. The summon uses it
- * so an operator can re-aim it at something else without dismissing it first —
+ * so an operator can re-aim it at something else without dismissing it first –
  * the gesture that opened the prompt should still work while it is open.
  */
 export function suspendShortcuts(except: string[] = []) {
@@ -556,7 +556,7 @@ function invalidateEntries() {
 
 /**
  * Bindings that both exist and have somebody listening, cached between changes.
- * A keystroke should not rebuild this list — the table only moves when a handler
+ * A keystroke should not rebuild this list – the table only moves when a handler
  * mounts or an operator edits a binding.
  */
 function activeBindingEntries(): ActiveEntry[] {

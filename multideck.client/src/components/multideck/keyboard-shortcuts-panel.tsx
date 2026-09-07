@@ -41,7 +41,7 @@ import { cn } from "@/lib/utils"
 /**
  * How long a bare first key waits to see whether a second one follows. Under this
  * window "G" then "B" reads as one sequence; over it, "G" was the whole binding.
- * A first key that already carries a modifier commits immediately — nobody types
+ * A first key that already carries a modifier commits immediately – nobody types
  * ⌘K expecting a second step.
  */
 const sequenceCaptureWindow = 820

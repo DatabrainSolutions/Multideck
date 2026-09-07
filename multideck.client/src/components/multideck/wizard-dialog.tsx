@@ -22,7 +22,7 @@ export type WizardStep = {
  * A record being created or edited, one group of fields at a time, with the whole
  * shape of the job visible from the first screen.
  *
- * Every step is reachable at any moment — the rail is a map, not a gate. These
+ * Every step is reachable at any moment – the rail is a map, not a gate. These
  * forms validate on submit against the server's own rules, so blocking step two
  * until step one is perfect would invent a constraint the backend does not have
  * and trap an operator who filled things out of order.

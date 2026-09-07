@@ -31,10 +31,10 @@ type CustomerScope = (typeof customerScopeTabs)[number]
 function customerTableRow(customer: ApiCustomer, index: number): CustomerRecord {
   return {
     id: customer.id, lastContactAt: customer.lastContactAt, initials: customer.initials,
-    name: customer.name, location: customer.location ?? "—", industry: customer.industry,
-    contacts: customer.contactCount, active: "—", activeTone: "neutral",
-    bookings30d: Array.from({ length: 12 }, () => 0), sparkTone: "teal", billedYtd: "—",
-    onTime: "—", onTimeTone: "neutral", status: customer.status, owner: customer.ownerName ?? "",
+    name: customer.name, location: customer.location ?? "–", industry: customer.industry,
+    contacts: customer.contactCount, active: "–", activeTone: "neutral",
+    bookings30d: Array.from({ length: 12 }, () => 0), sparkTone: "teal", billedYtd: "–",
+    onTime: "–", onTimeTone: "neutral", status: customer.status, owner: customer.ownerName ?? "",
     avatarTone: (["teal", "blue", "olive", "cream"] as const)[index % 4],
   }
 }

@@ -2,7 +2,7 @@
  * Small colour helpers for card branding.
  *
  * A card owner can pick any accent they like. These functions exist so the
- * public page can decide what that colour is safe to be used *for* — a brand
+ * public page can decide what that colour is safe to be used *for* – a brand
  * colour that fails contrast is allowed to tint a band, but never to sit behind
  * button text.
  */
@@ -63,7 +63,7 @@ export function bestInkContrast(background: string) {
  * Whether an accent can carry button-sized text at 4.5:1.
  *
  * Because the ink flips between white and near-black, this is true for almost
- * every colour — the worst case sits around 4.58:1 at the crossover. It is kept
+ * every colour – the worst case sits around 4.58:1 at the crossover. It is kept
  * as an explicit gate rather than assumed, so a future palette change cannot
  * quietly ship unreadable buttons.
  */

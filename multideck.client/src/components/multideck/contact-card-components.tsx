@@ -123,8 +123,8 @@ export function useQrCode(value: string, branding: CardBranding) {
 }
 
 /**
- * The code itself, rendered inline as three paths — modules, eye rings, eye
- * cores — so the whole symbol stays one small piece of DOM even at card size.
+ * The code itself, rendered inline as three paths – modules, eye rings, eye
+ * cores – so the whole symbol stays one small piece of DOM even at card size.
  * The quiet zone is always preserved: a cropped code is a code that will not
  * scan, however good it looks.
  */
@@ -541,7 +541,7 @@ export function SaveIndicator({ cardId, className }: { cardId: string; className
                 className="rounded-[var(--md-radius-xs)] font-medium underline decoration-current/35 underline-offset-2 outline-none hover:decoration-current focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)]"
                 onClick={() => void retryCardSave(cardId).catch(() => undefined)}
               >
-                {t("Not saved — try again")}
+                {t("Not saved – try again")}
               </button>
             ) : t(SAVE_LABEL[active])}
           </motion.span>

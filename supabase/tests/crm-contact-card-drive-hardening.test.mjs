@@ -45,7 +45,7 @@ test("contact-card create and delete success wait for confirmed persistence", ()
   assert.match(store, /export async function setCardStatus[\s\S]*await persistCard\(next\)[\s\S]*status: previous\.status/)
   assert.match(page, /await setCardStatus\(cardId, nextStatus\)[\s\S]*toast\.success/)
   assert.match(store, /export async function retryCardSave/)
-  assert.match(components, /retryCardSave\(cardId\)[\s\S]*Not saved — try again/)
+  assert.match(components, /retryCardSave\(cardId\)[\s\S]*Not saved – try again/)
 })
 
 test("contact-card writes are ordered per card and deletion waits for earlier saves", () => {

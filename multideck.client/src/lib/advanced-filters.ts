@@ -171,7 +171,7 @@ function matchesDateCondition(values: string[], condition: FilterCondition) {
 
 function matchesCondition<Row>(row: Row, condition: FilterCondition, getValue: FilterValueGetter<Row>) {
   const values = toValueList(row, condition.field, getValue)
-  const filled = values.filter((value) => value.trim() && value.trim() !== "—")
+  const filled = values.filter((value) => value.trim() && value.trim() !== "–")
 
   if (condition.operator === "is-empty") return filled.length === 0
   if (condition.operator === "is-not-empty") return filled.length > 0

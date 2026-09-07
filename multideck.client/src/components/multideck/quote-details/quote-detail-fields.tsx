@@ -947,7 +947,7 @@ export function LocationFields({
           <span className="font-normal text-[10px] text-[var(--md-subtle)]">
             {directoryStatus === "loading" ? t("Loading official UN/LOCODE directory…") : null}
             {directoryStatus === "ready" && directoryCount ? <><span data-i18n-skip>{directoryCount.toLocaleString()}</span> {t("official locations")}</> : null}
-            {directoryStatus === "error" ? t("Official directory unavailable — manual entry still works") : null}
+            {directoryStatus === "error" ? t("Official directory unavailable – manual entry still works") : null}
           </span>
         ) : null}
       </legend>

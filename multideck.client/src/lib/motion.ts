@@ -39,7 +39,7 @@ export function staggerRamp(index: number, base = 0.048, decay = 3.2) {
 }
 
 /**
- * A shared element travelling between two layouts — a register row rising into a
+ * A shared element travelling between two layouts – a register row rising into a
  * detail header and back down again. Long enough to follow across the screen,
  * short enough that opening a record still feels immediate.
  */

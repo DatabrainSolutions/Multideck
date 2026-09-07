@@ -24,7 +24,7 @@ export type PublicBranding = {
  * Multideck's palette on operator screens and in the gallery.
  *
  * And a public page is not the visitor's application. It is Multideck teal on
- * white, or the tenant's own palette where one is saved — never the visitor's
+ * white, or the tenant's own palette where one is saved – never the visitor's
  * system or app theme. Every value is therefore declared even with no brand,
  * and `colorScheme` is pinned, so a visitor in dark mode still sees the page
  * the organiser published.

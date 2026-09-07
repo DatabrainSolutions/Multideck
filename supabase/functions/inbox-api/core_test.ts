@@ -189,7 +189,7 @@ Deno.test("email previews decode safe named and numeric HTML entities", () => {
 })
 
 Deno.test("double-decoded UTF-8 mail headers are repaired without changing normal text", () => {
-  assertEquals(repairMojibake("Live test Ã¢Â€Â” complete"), "Live test — complete")
+  assertEquals(repairMojibake("Live test Ã¢Â€Â” complete"), "Live test \u2014 complete")
   assertEquals(repairMojibake("Normal English subject"), "Normal English subject")
 })
 
@@ -207,13 +207,13 @@ Deno.test("RFC2822 subjects encode non-ASCII text as UTF-8 encoded words", () =>
   const raw = buildRfc2822({
     from: { address: "me@example.com", displayName: "Harry" },
     to: [{ address: "you@example.com", displayName: null }], cc: [], bcc: [],
-    subject: "Live test — complete", bodyText: "Body",
+    subject: "Live test \u2014 complete", bodyText: "Body",
   })
   const padding = "=".repeat((4 - raw.length % 4) % 4)
   const binary = atob(raw.replace(/-/g, "+").replace(/_/g, "/") + padding)
   const decoded = new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)))
   assertMatch(decoded, /Subject: =\?UTF-8\?B\?.+\?=/)
-  assert(!decoded.includes("Subject: Live test — complete"))
+  assert(!decoded.includes("Subject: Live test \u2014 complete"))
 })
 
 Deno.test("outbound MIME preserves a stable per-message identity and complete reply references", () => {

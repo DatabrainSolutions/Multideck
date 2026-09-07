@@ -2,7 +2,7 @@
  * Turning a point on the screen into something Dexter can reason about.
  *
  * The summon gesture lands on a DOM node, but an operator does not mean "this
- * div" — they mean the field they were filling, the chart they were reading, or
+ * div" – they mean the field they were filling, the chart they were reading, or
  * the row they were checking. These helpers do that promotion, then flatten the
  * result into a short brief so the request stays cheap on the Fast model.
  *
@@ -296,7 +296,7 @@ export function describeSummonTarget(element: HTMLElement): SummonTarget {
 /**
  * Promotes a hit-tested node to the thing worth asking about.
  *
- * Fields win outright — pointing at the text inside an input means the input. For
+ * Fields win outright – pointing at the text inside an input means the input. For
  * everything else the smallest sensible enclosing block wins, so double-clicking
  * a chart gives the chart rather than the dashboard around it.
  */

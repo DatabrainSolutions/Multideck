@@ -209,7 +209,7 @@ export function SideDrawer({
  * visible behind it, so the row that was picked and the next one are both still
  * on screen while the operator works.
  *
- * The layout is fixed on purpose — the record's own facts first, then whatever
+ * The layout is fixed on purpose – the record's own facts first, then whatever
  * the caller adds, then an action bar that sticks to the bottom of the scroll
  * area so a long form never hides the button that commits it.
  */

@@ -4,8 +4,8 @@
  * pagination, caching, selection and outbound payloads.
  *
  * This module deliberately imports nothing. It holds no fetch, no storage and no
- * browser globals, so every rule below — which cursor is next, which thread
- * survives a mailbox switch, what a Reply all is allowed to say — can be tested
+ * browser globals, so every rule below – which cursor is next, which thread
+ * survives a mailbox switch, what a Reply all is allowed to say – can be tested
  * directly and reasoned about without a running app. `inbox-api.ts` adds the
  * transport on top and re-exports all of it.
  */

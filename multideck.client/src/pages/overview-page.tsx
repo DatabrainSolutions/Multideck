@@ -342,7 +342,7 @@ export function OverviewPage({ navigate }: { navigate: (path: string) => void })
               transition={shouldReduceMotion ? { duration: 0 } : mdMotion.enter}
             >
               {/* The working row. The queue leads, but it no longer runs the
-                  full width alone — coverage sits beside it, so the first band
+                  full width alone – coverage sits beside it, so the first band
                   answers "what is waiting" and "who is awake" together. */}
               <Band index={0} shouldReduceMotion={shouldReduceMotion} className="md-dashboard-band md-dash-row md-dash-row-work">
                 <DashboardPriorityQueue

@@ -35,7 +35,7 @@ function Code({ children }: { children: ReactNode }) {
 
 /**
  * A page section. The same shell the order page uses, on the same ramp, so an
- * item and an order open the same way — a register row leading to a record should
+ * item and an order open the same way – a register row leading to a record should
  * not feel like two different products depending on which register it was.
  */
 function ItemSection({ index, title, meta, children }: { index: number; title: string; meta?: string; children: ReactNode }) {
@@ -76,8 +76,8 @@ function ItemFact({ label, value, code }: { label: string; value: string | null 
 
 /**
  * A warehouse item on its own screen, opened and left the same way an order is.
- * A SKU carries more than a register row can hold — a unit ladder, a box size, a
- * temperature range, what has to be captured every time it is received — and all
+ * A SKU carries more than a register row can hold – a unit ladder, a box size, a
+ * temperature range, what has to be captured every time it is received – and all
  * of it is worth a URL a colleague can be sent.
  */
 export function WarehouseItemDetailView({
@@ -252,7 +252,7 @@ export function WarehouseItemDetailView({
                 <ItemFact label="Temperature" value={temperature} code />
               </dl>
               {!handling.length && !captureOnReceipt && !temperature ? (
-                <p className="text-[12px] text-[var(--md-text)]">{t("Nothing special — handle as ordinary stock.")}</p>
+                <p className="text-[12px] text-[var(--md-text)]">{t("Nothing special – handle as ordinary stock.")}</p>
               ) : null}
             </ItemSection>
           ) : null}

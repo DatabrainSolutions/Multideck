@@ -1,8 +1,8 @@
 /**
  * The three engines a Dexter request can run on. The product deliberately hides
- * vendor model names behind a job description — an operator picking a lane cares
+ * vendor model names behind a job description – an operator picking a lane cares
  * about "how long will this take and how hard will it think", not a version
- * string — while the provider glyph keeps the underlying model honest.
+ * string – while the provider glyph keeps the underlying model honest.
  *
  * `strength` is the filled-bar count out of `modelStrengthBars`, so the meter is
  * a single source of truth rather than a hand-drawn set of bars per row.

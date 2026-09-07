@@ -157,7 +157,7 @@ function CardHeader({
  * The person, as one mark.
  *
  * Photo if there is one, then the company logo, then initials on the accent.
- * Size, corner and halo come from the layout preset — the same mark reads as a
+ * Size, corner and halo come from the layout preset – the same mark reads as a
  * hero portrait in Spotlight and as a dense tile in Compact.
  */
 function IdentityMark({
@@ -336,7 +336,7 @@ export function ContactCardSocialLinks({
  *
  * 16px is the load-bearing number: anything smaller makes iOS Safari zoom on
  * focus and throw the layout away mid-form. The 52px target and the autocomplete
- * hints matter as much — platform autofill is what turns this from a 40-second
+ * hints matter as much – platform autofill is what turns this from a 40-second
  * form into a 10-second one.
  */
 function PublicField({
@@ -895,7 +895,7 @@ export function PublicCardExchange({
 /**
  * The one moment of motion in the public flow: the form leaves on an
  * accelerating curve, the exchange arrives on a decelerating one. Asymmetric on
- * purpose — nothing should feel like it snapped back.
+ * purpose – nothing should feel like it snapped back.
  */
 export function PublicCardPhases({ phase, form, exchange }: { phase: "form" | "done"; form: ReactNode; exchange: ReactNode }) {
   const shouldReduceMotion = useReducedMotion()

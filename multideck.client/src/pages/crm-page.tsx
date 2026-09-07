@@ -235,7 +235,7 @@ function apiDealToBoardDeal(deal: ApiDeal, tone: StatusTone, language: string, t
     ).format(deal.expectedValueAmount)
   const owner = deal.ownerName
     ? deal.ownerName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()
-    : "—"
+    : "–"
   const margin = deal.expectedMarginAmount === null
     ? translate("Not recorded")
     : getDealValueFormatter(deal.currencyCode || "GBP", false, language).format(deal.expectedMarginAmount)
@@ -474,7 +474,7 @@ const crmEmailCampaigns = [
   },
   {
     id: "peak-season-advisory",
-    name: "Peak season advisory — book by Jul 15",
+    name: "Peak season advisory – book by Jul 15",
     subject: "Peak season advisory: book capacity by Jul 15",
     preheader: "Recommended booking windows for active customers.",
     type: "Advisory",
@@ -482,11 +482,11 @@ const crmEmailCampaigns = [
     status: "Scheduled",
     tone: "blue" as StatusTone,
     when: "Jun 13, 08:00",
-    open: "—",
-    click: "—",
+    open: "–",
+    click: "–",
     uploads: "advisory-hero.html",
     edited: "Final copy ready",
-    stats: { delivered: "scheduled", openRate: "—", clickRate: "—", unsubscribed: "—" },
+    stats: { delivered: "scheduled", openRate: "–", clickRate: "–", unsubscribed: "–" },
     engaged: [
       ["Elena Moreno", "Northwind Forwarding", "Internal approval ready"],
       ["Wei Chen", "Pacific Goods Co", "Preview recipient"],
@@ -503,11 +503,11 @@ const crmEmailCampaigns = [
     status: "Draft",
     tone: "neutral" as StatusTone,
     when: "edited 2h ago",
-    open: "—",
-    click: "—",
+    open: "–",
+    click: "–",
     uploads: "personal-rate-lines.csv",
     edited: "Needs subject line",
-    stats: { delivered: "draft", openRate: "—", clickRate: "—", unsubscribed: "—" },
+    stats: { delivered: "draft", openRate: "–", clickRate: "–", unsubscribed: "–" },
     engaged: [
       ["Priya Shah", "Ridgeway Textiles", "Likely to re-engage"],
       ["Amelia Stone", "Harbour Homeware", "Opened May rates"],
@@ -670,7 +670,7 @@ const emailMarketingAutomations = [
     audience: "Affected active customers",
     status: "Draft",
     tone: "neutral" as StatusTone,
-    entered: "—",
+    entered: "–",
     performance: "Not started",
     lastRun: "Edited yesterday",
   },
@@ -1231,7 +1231,7 @@ export function CrmOverviewPage() {
 
   /**
    * Six numbers, each with a real destination. There is no previous period in
-   * the CRM snapshot, so no cell claims a delta it cannot evidence — the
+   * the CRM snapshot, so no cell claims a delta it cannot evidence – the
    * supporting line carries a second real fact instead.
    */
   const kpis = useMemo<DashboardKpi[]>(() => {
@@ -1308,7 +1308,7 @@ export function CrmOverviewPage() {
               <KpiStrip kpis={kpis} columns={6} onSelect={openKpi} />
             </CrmBand>
 
-            {/* What the pipeline is worth, beside the work that is waiting —
+            {/* What the pipeline is worth, beside the work that is waiting –
                 the pair a salesperson actually operates from. */}
             <CrmBand index={1} className="md-crm-lead">
               <CrmOpportunityValue
@@ -1328,7 +1328,7 @@ export function CrmOverviewPage() {
             </CrmBand>
 
             {/* Money quietly at risk, where the leads are, and what has just
-                happened — the three supporting reads. */}
+                happened – the three supporting reads. */}
             <CrmBand index={2} className="md-crm-trio">
               <CrmQuietLeads
                 leads={data.followUps}
@@ -2124,7 +2124,7 @@ export function CrmLeadDetailPage({
 
       <PhoneCallLinkedRecordSection recordType="lead" recordId={lead.id} navigate={navigate} />
 
-      {/* The panel above reads the lead. This is where it is changed — the same
+      {/* The panel above reads the lead. This is where it is changed – the same
           inline fields the account, contact and deal records use, so one record
           does not behave differently from the next. */}
       <div className="grid gap-[var(--md-page-stack-gap)] xl:grid-cols-2">
@@ -2182,7 +2182,7 @@ export function CrmListsPage({ navigate }: { navigate: (path: string) => void })
         title="Lists"
         summary={
           <>
-            Smart lists update themselves from CRM data — build a rule once and every campaign that uses the list stays current.
+            Smart lists update themselves from CRM data – build a rule once and every campaign that uses the list stays current.
           </>
         }
         onSpeakToDexter={() => setDexterOpen(true)}

@@ -73,7 +73,7 @@ type PhoneCallsView = "Overview" | "Calls"
 type LoadState = "loading" | "ready" | "error"
 
 function formatDuration(seconds: number | null) {
-  if (seconds === null || !Number.isFinite(seconds)) return "—"
+  if (seconds === null || !Number.isFinite(seconds)) return "–"
   const minutes = Math.floor(seconds / 60)
   return `${String(minutes).padStart(2, "0")}:${String(Math.max(0, seconds % 60)).padStart(2, "0")}`
 }
@@ -203,7 +203,7 @@ function usePhoneCallColumns(navigate: (path: string) => void) {
     {
       id: "company", label: t("Company match"), kind: "long-text", width: 210, minWidth: 170, resizable: true,
       sortValue: (call) => call.company?.name || call.matchStatus,
-      cell: (call) => <div className="min-w-0"><p className="truncate text-[12px] font-medium text-[var(--md-ink)]" dir="auto">{call.company?.name || "—"}</p><div className="mt-1"><PhoneCallMatchPill status={call.matchStatus} /></div></div>,
+      cell: (call) => <div className="min-w-0"><p className="truncate text-[12px] font-medium text-[var(--md-ink)]" dir="auto">{call.company?.name || "–"}</p><div className="mt-1"><PhoneCallMatchPill status={call.matchStatus} /></div></div>,
     },
     { id: "direction", label: t("Direction"), kind: "attribute", width: 116, sortValue: (call) => call.direction, cell: (call) => <span className="inline-flex items-center gap-1.5 text-[11.5px] text-[var(--md-text)]"><ArrowRight className={cn("size-3 text-[var(--md-accent)]", call.direction === "inbound" && "rotate-180")} />{t(call.direction === "inbound" ? "Inbound" : "Outbound")}</span> },
     { id: "outcome", label: t("Outcome"), kind: "status", width: 130, sortValue: (call) => call.outcome, cell: (call) => <PhoneCallOutcomePill outcome={call.outcome} /> },
@@ -617,7 +617,7 @@ function CrmPhoneCallDetailPage({ callId, navigate, canReview }: { callId: strin
     try {
       if (call.preview) {
         const next = { ...call, summary: summary.trim() || null, summarySource: summary.trim() ? "user_approved" as const : "none" as const, meetingNotes: meetingNotes.trim() || null, editVersion: call.editVersion + 1 }
-        setCall(next); setSummary(next.summary || ""); setMeetingNotes(next.meetingNotes || ""); setEditingField(null); toast.info(t("Preview only — changes were not saved"))
+        setCall(next); setSummary(next.summary || ""); setMeetingNotes(next.meetingNotes || ""); setEditingField(null); toast.info(t("Preview only – changes were not saved"))
         return
       }
       const next = await updatePhoneCallNotes(call.id, { summary: summary.trim() || null, meetingNotes: meetingNotes.trim() || null, editVersion: call.editVersion })
@@ -644,7 +644,7 @@ function CrmPhoneCallDetailPage({ callId, navigate, canReview }: { callId: strin
           lead: candidate.recordType === "lead" ? { id: candidate.id, name: candidate.name } : call.lead,
           matchCandidates: [],
         }
-        setCall(next); toast.info(t("Preview only — changes were not saved"))
+        setCall(next); toast.info(t("Preview only – changes were not saved"))
         return
       }
       const next = await reviewPhoneCallMatch(call.id, { contactId: candidate.recordType === "contact" ? candidate.id : null, companyId: candidate.recordType === "company" ? candidate.id : null, leadId: candidate.recordType === "lead" ? candidate.id : null, resolution: "link", editVersion: call.editVersion })
@@ -663,7 +663,7 @@ function CrmPhoneCallDetailPage({ callId, navigate, canReview }: { callId: strin
     try {
       if (call.preview) {
         setCall({ ...call, editVersion: call.editVersion + 1, matchStatus: "unmatched", company: null, contact: null, lead: null, matchCandidates: [] })
-        toast.info(t("Preview only — changes were not saved"))
+        toast.info(t("Preview only – changes were not saved"))
         return
       }
       const next = await reviewPhoneCallMatch(call.id, { resolution, editVersion: call.editVersion })
@@ -687,7 +687,7 @@ function CrmPhoneCallDetailPage({ callId, navigate, canReview }: { callId: strin
           followUpStatus: decision === "approve" ? "approved" : call.followUpStatus,
           suggestedActions: call.suggestedActions.map((item) => item.id === action.id ? { ...item, status: decision === "approve" ? "approved" : "dismissed", draft: editedDraft ? { ...item.draft, ...editedDraft } : item.draft } : item),
         })
-        toast.info(t("Preview only — changes were not saved"))
+        toast.info(t("Preview only – changes were not saved"))
         return
       }
       const next = await reviewPhoneCallAction(call.id, action.id, { decision, editedDraft, editVersion: call.editVersion })

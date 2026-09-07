@@ -293,7 +293,7 @@ function OrderFact({ label, value, code }: { label: string; value: string | null
 /**
  * A warehouse order on its own screen rather than inside a dialog. An operator
  * receiving a delivery is reading a paper docket, counting pallets and typing
- * quantities at the same time — that work needs the whole window, a URL a
+ * quantities at the same time – that work needs the whole window, a URL a
  * supervisor can be sent, and a back button to the queue it came from.
  */
 export function WarehouseOrderDetailView({

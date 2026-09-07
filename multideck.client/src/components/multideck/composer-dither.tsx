@@ -32,7 +32,7 @@ function DitherFallback({ baseColor, waveColor }: { baseColor: string; waveColor
  * The canvas is deliberately taller than the band and overhangs downward. The
  * shell clips it to its own rounded top corners and the prompt panel covers the
  * overhang, so the pattern reads as part of the box's shape rather than a strip
- * pasted across it — which is why this component must not clip its own overflow.
+ * pasted across it – which is why this component must not clip its own overflow.
  *
  * Both interactions live inside the shader, so pointer movement costs no React
  * renders. All this wrapper contributes is the hover flag, which only gates the
@@ -64,7 +64,7 @@ export function ComposerDither({
     : typeof document !== "undefined" && document.documentElement.classList.contains("dark")
   // The unlit half of the ramp matches the shell, so only the pattern reads. The
   // lit half has to cross the shell to be seen at all, and the scatter is sparse
-  // — a stop that merely differs is not enough, it has to travel: a mid accent
+  // – a stop that merely differs is not enough, it has to travel: a mid accent
   // against the light surface, a pale one against the dark.
   const baseColor = isDark ? "#131618" : "#edf0ef"
   const waveColor = isDark ? brand.lift : brand.glowCore

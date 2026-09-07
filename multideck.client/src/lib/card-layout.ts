@@ -2,7 +2,7 @@
  * The four layout presets, written down as whole arrangements.
  *
  * A preset is not a page width. It decides where the person's mark sits, how
- * loud the heading is, how the fields are drawn, and how tight the rhythm is —
+ * loud the heading is, how the fields are drawn, and how tight the rhythm is –
  * so the four options read as four templates rather than four margins. The
  * public page, the live preview and the picker thumbnails all resolve from this
  * one table, so a preset can never look one way in the chooser and another way

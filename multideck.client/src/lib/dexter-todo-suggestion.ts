@@ -59,17 +59,17 @@ function priorityFrom(text: string): TodoPriority | null {
 
 function actionableAssistantLine(content: string) {
   const lines = content.split("\n").map((line) => line.trim()).filter(Boolean)
-  const labelled = lines.find((line) => /^(?:#{1,4}\s*)?(?:next action|recommended next (?:action|step)|follow[- ]?up|action item)\s*[:—-]/i.test(line))
+  const labelled = lines.find((line) => /^(?:#{1,4}\s*)?(?:next action|recommended next (?:action|step)|follow[- ]?up|action item)\s*[:–-]/i.test(line))
   if (labelled) return labelled
   return lines.find((line) => /^[-*]\s+/.test(line) && /\b(follow up|review|send|call|check|confirm|chase|prepare|book|schedule|complete|update)\b/i.test(line)) ?? ""
 }
 
 function cleanTitle(value: string) {
   const cleaned = value
-    .replace(/^\s*(?:please\s+)?(?:remind me to|add(?: this)? to (?:my )?(?:to[- ]?do|task list)|add (?:a )?(?:to[- ]?do|task)(?: to)?|i need to|we need to|action item[:—-]?)\s*/i, "")
+    .replace(/^\s*(?:please\s+)?(?:remind me to|add(?: this)? to (?:my )?(?:to[- ]?do|task list)|add (?:a )?(?:to[- ]?do|task)(?: to)?|i need to|we need to|action item[:–-]?)\s*/i, "")
     .replace(/\s+(?:to|on) (?:my )?(?:to[- ]?do|task list)\s*$/i, "")
     .replace(/^[-*#\s]+/, "")
-    .replace(/^(?:next action|recommended next (?:action|step)|follow[- ]?up|action item)\s*[:—-]\s*/i, "")
+    .replace(/^(?:next action|recommended next (?:action|step)|follow[- ]?up|action item)\s*[:–-]\s*/i, "")
     .replace(/\s+/g, " ")
     .trim()
   return cleaned.slice(0, 240)

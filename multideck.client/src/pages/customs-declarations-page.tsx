@@ -890,7 +890,7 @@ function shouldCheckLocalWebhookState(state: ICustomsWorkspaceState | null) {
 }
 
 function formatDraftAmount(amount: number | null, currency: string | null) {
-  if (amount === null) return "—"
+  if (amount === null) return "–"
   if (!currency) return amount.toLocaleString(undefined, { maximumFractionDigits: 2 })
   try {
     return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount)
@@ -2965,7 +2965,7 @@ function CustomsReferenceCombobox({ label, value, onChange, options, placeholder
 
 function ItemTableSelect({ label, value, onChange, options, invalid }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<CustomsReferenceOptionTuple>; invalid?: boolean }) {
   const referenceState = useContext(CustomsReferenceDataContext)
-  return <CustomsReferenceCombobox label={label} value={value} onChange={onChange} options={options} placeholder="—" disabled={referenceState.loading || Boolean(referenceState.error) || !options.length} invalid={invalid} variant="table" />
+  return <CustomsReferenceCombobox label={label} value={value} onChange={onChange} options={options} placeholder="–" disabled={referenceState.loading || Boolean(referenceState.error) || !options.length} invalid={invalid} variant="table" />
 }
 
 function mandatoryItemGaps(item: ExportDeclarationItem, declarationDirection: DeclarationKind = "export"): Array<keyof ExportDeclarationItem> {
@@ -3697,7 +3697,7 @@ function TextAreaField({ label, value, onChange, dataElement, customsBox, requir
 
 function SelectField({ label, value, onChange, options, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<CustomsReferenceOptionTuple>; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string }) {
   const referenceState = useContext(CustomsReferenceDataContext)
-  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><CustomsReferenceCombobox label={label} value={value} onChange={onChange} options={options} placeholder={options.find(([optionValue]) => !optionValue)?.[1] ?? "—"} disabled={referenceState.loading || Boolean(referenceState.error) || options.filter(([optionValue]) => optionValue).length === 0} invalid={invalid} /></FieldShell>
+  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><CustomsReferenceCombobox label={label} value={value} onChange={onChange} options={options} placeholder={options.find(([optionValue]) => !optionValue)?.[1] ?? "–"} disabled={referenceState.loading || Boolean(referenceState.error) || options.filter(([optionValue]) => optionValue).length === 0} invalid={invalid} /></FieldShell>
 }
 
 function Summary({ label, value, valueDirection }: { label: string; value: string; valueDirection?: "ltr" | "rtl" }) {

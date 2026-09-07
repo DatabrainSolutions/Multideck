@@ -258,7 +258,7 @@ function HeaderAction({
 }
 
 /**
- * Name and role, and nothing else — no bar, no border, no status chip. The band
+ * Name and role, and nothing else – no bar, no border, no status chip. The band
  * behind it is the caller's progressive blur veil, so a reply scrolling past
  * loses its contrast and dissolves under the title rather than running into a
  * hard edge.
@@ -594,7 +594,7 @@ function DexterTableValue({
   kind: "text" | "status" | "action"
   value: string
 }) {
-  if (!value) return <bdi>—</bdi>
+  if (!value) return <bdi>–</bdi>
   if (kind === "status") {
     return (
       <StatusPill tone="neutral" className="max-w-full">
@@ -716,11 +716,11 @@ function DexterMarkdownTable({
             key={`${row[0] || "record"}-${rowIndex}`}
             className="md-dexter-markdown__record"
             role="listitem"
-            aria-label={`${headers[0]}: ${row[0] || "—"}`}
+            aria-label={`${headers[0]}: ${row[0] || "–"}`}
           >
             <div className="md-dexter-markdown__record-primary">
               <span>{headers[0]}</span>
-              <strong><bdi>{row[0] || "—"}</bdi></strong>
+              <strong><bdi>{row[0] || "–"}</bdi></strong>
             </div>
             <dl>
               {columns.slice(1).map((column, columnIndex) => {
@@ -1885,8 +1885,8 @@ export function AgentDexterPage({
     [attachedContextItems, branchMessages, composerValue],
   )
   const isWorking = isSending || isLoadingConversation || isAccessModeChanging
-  // The watcher rail is not modal — it sits over the thread and stays usable
-  // alongside it — so opening a watcher must not dim what is behind it.
+  // The watcher rail is not modal – it sits over the thread and stays usable
+  // alongside it – so opening a watcher must not dim what is behind it.
   const hasFocusOverlay = showAttachments
   const recommendedAttachmentIds =
     selectedSpecialistId === "customer" || selectedSpecialistId === "analytics"
@@ -3157,8 +3157,8 @@ export function AgentDexterPage({
               <motion.div
                 layoutId="dexter-composer"
                 // Only the stage change may move this box. Without the gate, every
-                // unrelated re-render — collapsing the watch rail, which retimes the
-                // column widths in CSS — makes Motion measure a box mid-transition and
+                // unrelated re-render – collapsing the watch rail, which retimes the
+                // column widths in CSS – makes Motion measure a box mid-transition and
                 // spring the composer across the page to a position it never had.
                 layoutDependency={stage}
                 className="relative z-30"
@@ -3302,7 +3302,7 @@ export function AgentDexterPage({
             <WatchModeAurora active={dexterMode === "watch"} />
             {/* The veils are mounted here, as siblings of the scroller: `backdrop-filter`
           samples what is painted below it in its own backdrop root, and any
-          animated ancestor — a transform, an opacity under 1 — would start a new
+          animated ancestor – a transform, an opacity under 1 – would start a new
           root and leave them blind. */}
             {/* The conversation deliberately continues behind the watcher rail.
           The rail is contextual glass rather than a layout column, so opening it

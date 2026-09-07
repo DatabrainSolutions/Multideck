@@ -64,7 +64,7 @@ export function BookingDangerousGoodsEditor(props: Props) {
       <h4 ref={heading} tabIndex={-1} id={`${id}-heading`} className="font-medium">{t('Dangerous-goods evidence')}</h4>
       <Button type="button" variant="ghost" className="min-h-10 px-2 text-xs" disabled={!canEdit} onClick={event => open(event.currentTarget)}>{t('Record dangerous goods')}</Button>
     </div>
-    <p className="text-xs leading-5 text-[var(--md-text)]">{t('Supplied details for this cargo line—not classification, completeness or transport approval. Unknown is not No. The cargo hazardous flag is managed separately.')}</p>
+    <p className="text-xs leading-5 text-[var(--md-text)]">{t('Supplied details for this cargo line–not classification, completeness or transport approval. Unknown is not No. The cargo hazardous flag is managed separately.')}</p>
     {props.disabledReason ? <p className="text-xs text-[var(--md-text)]">{t(props.disabledReason)}</p> : null}
     {!available ? <p>{t('Save the cargo line and reload its evidence before editing.')}</p>
       : !props.cargo.dangerousGoods!.length ? <p className="text-[var(--md-text)]">{t('No dangerous-goods details recorded for this line.')}</p>

@@ -1536,13 +1536,13 @@ const previewPhoneCallMatch = {
   matchStatus: "review" as const,
   matchCandidates: [
     { id: "company-global-retail", recordType: "company" as const, name: "Global Retail Group", secondaryLabel: "Company · phone and name match", confidence: "high" as const, reasons: ["Phone match", "Name match"] },
-    { id: "lead-global-rfq", recordType: "lead" as const, name: "Global Retail Group — May RFQ", secondaryLabel: "Lead · company name match", confidence: "medium" as const, reasons: ["Company match"] },
+    { id: "lead-global-rfq", recordType: "lead" as const, name: "Global Retail Group – May RFQ", secondaryLabel: "Lead · company name match", confidence: "medium" as const, reasons: ["Company match"] },
   ],
 }
 
 const previewPhoneCallActions = [
-  { id: "action-quote", type: "todo" as const, title: "Alex asked for a revised quote — add this to the To Do list?", reason: "Alex requested the revised quote during the receptionist portion of the call.", confidence: "high" as const, draft: { title: "Prepare revised 40ft quote for Global Retail Group.", scheduledDate: "2026-08-22", leadId: null, leadLabel: null }, status: "pending" as const, error: null, todoTaskId: null, todoTaskStatus: null, todoCompletedAt: null, reviewedAt: null },
-  { id: "action-lead", type: "lead_link" as const, title: "Attach this call to lead “Global Retail Group — May RFQ”?", reason: "The company and request are similar, but need review.", confidence: "medium" as const, draft: { title: null, scheduledDate: null, leadId: "lead-global-rfq", leadLabel: "Global Retail Group — May RFQ" }, status: "pending" as const, error: null, todoTaskId: null, todoTaskStatus: null, todoCompletedAt: null, reviewedAt: null },
+  { id: "action-quote", type: "todo" as const, title: "Alex asked for a revised quote – add this to the To Do list?", reason: "Alex requested the revised quote during the receptionist portion of the call.", confidence: "high" as const, draft: { title: "Prepare revised 40ft quote for Global Retail Group.", scheduledDate: "2026-08-22", leadId: null, leadLabel: null }, status: "pending" as const, error: null, todoTaskId: null, todoTaskStatus: null, todoCompletedAt: null, reviewedAt: null },
+  { id: "action-lead", type: "lead_link" as const, title: "Attach this call to lead “Global Retail Group – May RFQ”?", reason: "The company and request are similar, but need review.", confidence: "medium" as const, draft: { title: null, scheduledDate: null, leadId: "lead-global-rfq", leadLabel: "Global Retail Group – May RFQ" }, status: "pending" as const, error: null, todoTaskId: null, todoTaskStatus: null, todoCompletedAt: null, reviewedAt: null },
 ]
 
 const previewPhoneCallMetrics = [

@@ -448,10 +448,10 @@ function Contacts({ account }: { account: ApiCustomerDetail }) {
                     {contact.jobTitle || contact.role || t("Contact")}
                   </td>
                   <td className="px-3 py-2.5 text-[var(--md-text)]" dir="ltr">
-                    {contact.email || "—"}
+                    {contact.email || "–"}
                   </td>
                   <td className="px-3 py-2.5 text-[var(--md-text)]" dir="ltr">
-                    {contact.phone || "—"}
+                    {contact.phone || "–"}
                   </td>
                   <td className="px-3 py-2.5 text-[var(--md-text)]">
                     {contact.consentMarketing
@@ -1377,7 +1377,7 @@ function Financial({
                         </p>
                         <p className="mt-0.5 text-[10.5px] text-[var(--md-subtle)]">
                           <span data-i18n-skip dir="ltr">
-                            {bank.currencyCode || "—"}
+                            {bank.currencyCode || "–"}
                           </span>
                           {bank.isDefault ? ` · ${t("Default")}` : ""}
                         </p>

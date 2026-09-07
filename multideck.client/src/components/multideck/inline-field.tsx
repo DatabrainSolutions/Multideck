@@ -54,7 +54,7 @@ function FieldStatus({ state, editing, showEditHint = true }: { state: SaveState
 
   // The glyphs are stacked in one cell and swap in sync rather than in turn. With
   // `mode="wait"` an outgoing glyph that never finishes leaving blocks the next one
-  // from arriving — which left a refused save showing the saving dot for ever.
+  // from arriving – which left a refused save showing the saving dot for ever.
   return (
     <span className="relative grid size-4 shrink-0 place-items-center" aria-hidden={state === "idle" ? true : undefined}>
       <AnimatePresence initial={false}>
@@ -100,7 +100,7 @@ const InlineFieldContext = createContext<InlineFieldSettings>({ directEdit: fals
 /**
  * A record field that reads as text and edits in place.
  *
- * At rest there is no field chrome at all — a detail view should look like a
+ * At rest there is no field chrome at all – a detail view should look like a
  * record, not a form. The control only appears once the operator asks for it, and
  * it is laid out to the same metrics as the text it replaces, so nothing shifts.
  *
@@ -156,7 +156,7 @@ export function InlineField({
   const directEdit = directEditProp ?? settings.directEdit
   const stacked = stackedProp ?? settings.stacked
 
-  // A value changed elsewhere — a save on another field, a refetch — replaces the
+  // A value changed elsewhere – a save on another field, a refetch – replaces the
   // draft only while the operator is not part-way through typing into it.
   useEffect(() => {
     const previousValue = storedValueRef.current
@@ -277,7 +277,7 @@ export function InlineField({
                 dir={isLtr ? "ltr" : "auto"}
                 className={cn(valueClass, "flex min-h-8 w-full min-w-0 items-center rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 py-1.5 shadow-[var(--md-shadow-line)]", alignEnd && "justify-end text-end", isNumeric && "tabular-nums")}
               >
-                {displayValue || "—"}
+                {displayValue || "–"}
               </span>
             ) : <button
               type="button"
@@ -293,7 +293,7 @@ export function InlineField({
                 kind === "textarea" ? "whitespace-pre-wrap" : "truncate",
               )}
             >
-              {displayValue || (locked ? "—" : t("Add"))}
+              {displayValue || (locked ? "–" : t("Add"))}
             </button>
           )}
           <FieldStatus state={state} editing={editing} showEditHint={!directEdit} />
@@ -318,7 +318,7 @@ export function InlineField({
 /**
  * A short fact as an editable chip.
  *
- * A tier, a segment, a trade lane — one or two words each. Given a labelled input
+ * A tier, a segment, a trade lane – one or two words each. Given a labelled input
  * box apiece they fill a column and read as a form; as chips they wrap across the
  * width of the page and read as what they are, a handful of tags on a record. The
  * chip and the input it becomes share a height and a radius, so nothing jumps.
@@ -390,7 +390,7 @@ export function InlineTagField({
   const display = value.trim()
   // The same surface, height and radius as every other field on the record. Only
   // the width differs: a tag is as wide as its own value, not as wide as a column.
-  // An empty one is the same box with a quiet placeholder, never an outline — two
+  // An empty one is the same box with a quiet placeholder, never an outline – two
   // treatments for one kind of field is the thing that reads as a mess.
   const chipClass = "inline-flex h-8 max-w-full items-center gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] ps-2 pe-1.5 text-[13px] font-medium leading-none shadow-[var(--md-shadow-line)]"
 
@@ -438,7 +438,7 @@ export function InlineTagField({
             )}
           >
             <span id={`${fieldId}-value`} className="min-w-0 flex-1 truncate" data-i18n-skip={display ? true : undefined}>
-              {display ? `${display}${suffix ? (suffix === "%" ? suffix : ` ${suffix}`) : ""}` : locked ? "—" : t("Add")}
+              {display ? `${display}${suffix ? (suffix === "%" ? suffix : ` ${suffix}`) : ""}` : locked ? "–" : t("Add")}
             </span>
             <FieldStatus state={state} editing={false} showEditHint={!locked} />
           </button>
@@ -656,7 +656,7 @@ export function InlineSelectField({
       <div className="grid min-w-0 gap-1">
         <div className={cn("flex min-w-0 items-center gap-2", stacked ? "justify-between" : "justify-end")}>
           {readOnly ? (
-            <span className={cn(valueClass, "truncate")}>{current ? t(current.label) : "—"}</span>
+            <span className={cn(valueClass, "truncate")}>{current ? t(current.label) : "–"}</span>
           ) : (
             <Select value={value} onValueChange={(next) => void choose(next)}>
               <SelectTrigger
@@ -753,7 +753,7 @@ export function InlineSwitchField({
 /**
  * Sets the shape for a run of fields rather than repeating it on each one.
  *
- * Renders nothing itself — it only decides whether the fields inside read as rows
+ * Renders nothing itself – it only decides whether the fields inside read as rows
  * (label beside value) or stack their labels above always-visible controls, which
  * is what a field needs once it is sharing a page-width grid with others.
  */
@@ -762,7 +762,7 @@ export function InlineFieldGroup({ stacked = false, directEdit = false, children
 }
 
 /**
- * A card of inline fields. Hairlines between rows rather than a box around each —
+ * A card of inline fields. Hairlines between rows rather than a box around each –
  * a record is one list, not a stack of objects.
  */
 export function InlineFieldCard({ title, meta, action, children, directEdit = false }: { title: string; meta?: string; action?: ReactNode; children: ReactNode; directEdit?: boolean }) {

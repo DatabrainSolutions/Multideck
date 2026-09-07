@@ -24,7 +24,7 @@ test('Both actual response parsers preserve DG supplied strings before review an
   const helpers = index.slice(index.indexOf('function sanitiseArgumentValue('), index.indexOf('function actionCopy('))
   const blocks = [...index.matchAll(/let args: JsonObject = \{\}[\s\S]*?(?=\n      let toolOutput: unknown)/g)]
   assert.equal(blocks.length, 2)
-  const supplied = '  Source — unchanged – café : : 原文  '
+  const supplied = '  Source – unchanged – café : : 原文  '
   for (const [path, match] of blocks.entries()) {
     const parse = new Function(stripTypeScriptTypes(`
       function parse(call) {
@@ -35,14 +35,14 @@ test('Both actual response parsers preserve DG supplied strings before review an
       return args;
       }
     `, {mode:'transform'})+'; return parse;')()
-    const proposed = args([{field:'sourceReference',value:supplied},{field:'notes',value:'Line one\nLine two — retained'}])
+    const proposed = args([{field:'sourceReference',value:supplied},{field:'notes',value:'Line one\nLine two – retained'}])
     const parsed = parse({name:'record_booking_dangerous_goods',arguments:JSON.stringify(proposed)})
     assert.deepEqual(parsed,proposed,`response path ${path}: no prose punctuation rewrite in evidence`)
     const reviewed = review(records(),parsed)
     assert.equal(reviewed.changes[0].after,supplied.trim())
-    assert.equal(reviewed.changes[1].after,'Line one\nLine two — retained')
+    assert.equal(reviewed.changes[1].after,'Line one\nLine two – retained')
     // This scoped correction must not silently alter Customs or other tool paths.
-    assert.deepEqual(parse({name:'unrelated_existing_action',arguments:'{"value":"a — b"}'}),{value:'a: b'})
+    assert.deepEqual(parse({name:'unrelated_existing_action',arguments:'{"value":"a – b"}'}),{value:'a: b'})
   }
 })
 
@@ -50,7 +50,7 @@ test('DG review distinguishes unknown, No, Yes and explicit clear without claimi
   const result = review(records(), args([{ field: 'marinePollutant', value: false }, { field: 'limitedQuantity', value: null }]))
   assert.deepEqual(result.changes.map(({ before, after }) => [before, after]), [[null, 'No'], ['No', null]])
   assert.match(result.title, /QA-TEST · Cargo 2/)
-  assert.match(result.description, /not classification|not.*classification|—not classification/)
+  assert.match(result.description, /not classification|not.*classification|–not classification/)
   assert.match(result.description, /cargo hazardous flag and customer Quotes stay unchanged/)
   assert.equal(review(records(), args([{ field: 'limitedQuantity', value: true }])).changes[0].after, 'Yes')
 })

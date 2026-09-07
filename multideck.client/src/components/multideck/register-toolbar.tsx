@@ -32,7 +32,7 @@ export function RegisterToolbarDivider() {
 
 /**
  * The register's primary slice. The selected pill travels between segments on a
- * spring, and the count rides on the active segment only — a number under every
+ * spring, and the count rides on the active segment only – a number under every
  * label reads as four competing figures rather than one answer.
  */
 export function RegisterViewSwitch<T extends string>({

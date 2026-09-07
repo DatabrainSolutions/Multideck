@@ -1548,7 +1548,7 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
       cell: (item) => (
         <div className="min-w-0">
           <p className="truncate text-[14px] font-medium text-[var(--md-ink)]" dir="auto">{item.description}</p>
-          <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{item.customerOrgName ?? "—"}</p>
+          <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{item.customerOrgName ?? "–"}</p>
         </div>
       ),
     },
@@ -1563,7 +1563,7 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
         const active = item.facilities?.filter((facility) => facility.isActive) ?? []
         const primary = active.find((facility) => facility.isDefault)?.name ?? item.facilityName
         const additional = Math.max(0, active.length - 1)
-        return <div className="min-w-0"><span className="truncate text-[13px] text-[var(--md-ink)]">{primary ?? "—"}</span>{additional ? <p className="text-[11px] text-[var(--md-subtle)]">+{additional} {t(additional === 1 ? "warehouse" : "warehouses")}</p> : null}</div>
+        return <div className="min-w-0"><span className="truncate text-[13px] text-[var(--md-ink)]">{primary ?? "–"}</span>{additional ? <p className="text-[11px] text-[var(--md-subtle)]">+{additional} {t(additional === 1 ? "warehouse" : "warehouses")}</p> : null}</div>
       },
     },
     {
@@ -1573,7 +1573,7 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
       minWidth: 112,
       resizable: true,
       sortValue: (item) => item.hsCode,
-      cell: (item) => item.hsCode ? <CodeText className="text-[var(--md-text)]">{item.hsCode}</CodeText> : <span className="text-[12px] text-[var(--md-subtle)]">—</span>,
+      cell: (item) => item.hsCode ? <CodeText className="text-[var(--md-text)]">{item.hsCode}</CodeText> : <span className="text-[12px] text-[var(--md-subtle)]">–</span>,
     },
     {
       id: "uom",
@@ -1594,7 +1594,7 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
       cellClassName: "text-end",
       sortValue: (item) => item.grossWeightKg,
       cell: (item) => (
-        <span className="tabular-nums text-[var(--md-ink)]">{item.grossWeightKg === null ? "—" : numberFormat.format(item.grossWeightKg)}</span>
+        <span className="tabular-nums text-[var(--md-ink)]">{item.grossWeightKg === null ? "–" : numberFormat.format(item.grossWeightKg)}</span>
       ),
     },
     {
@@ -1828,7 +1828,7 @@ function locationFormToInput(form: LocationFormState): WarehouseLocationInput {
 
 function locationPosition(location: WarehouseLocation): string {
   const parts = [location.aisle, location.bay, location.level, location.position].filter(Boolean)
-  return parts.length ? parts.join(" / ") : "—"
+  return parts.length ? parts.join(" / ") : "–"
 }
 
 function LocationDialog({

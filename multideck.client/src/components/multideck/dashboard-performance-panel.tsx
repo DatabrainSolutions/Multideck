@@ -9,7 +9,7 @@ import { Surface } from "./surface"
 
 /**
  * The chart the metric row above drives. One large plot with room to read it,
- * rather than a half-width panel squeezed beside a list — the curve is the only
+ * rather than a half-width panel squeezed beside a list – the curve is the only
  * thing on this surface, so it gets the width.
  */
 export function DashboardPerformancePanel({

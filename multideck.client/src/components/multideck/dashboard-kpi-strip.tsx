@@ -65,7 +65,7 @@ const KpiCell = memo(function KpiCell({
         <span className="md-kpi-cell-figure">
           <CountUpValue value={kpi.value} className="md-kpi-cell-value" />
           {/* Which way the metric moved, as its own chip beside the figure.
-              Drawn only from a real earlier reading — a tile with nothing to
+              Drawn only from a real earlier reading – a tile with nothing to
               compare against shows the figure alone rather than an arrow that
               means nothing. */}
           {kpi.delta && !compact ? (
@@ -101,7 +101,7 @@ const KpiCell = memo(function KpiCell({
       {/* A rule rather than a ring: it marks the selected metric without adding
           another box to the row. Given a `markerId` it becomes one rule that
           travels between cells, so changing metric reads as a single object
-          moving rather than two independent fades — and it can be retargeted
+          moving rather than two independent fades – and it can be retargeted
           mid-flight without snapping. */}
       {markerId ? (
         selected ? (

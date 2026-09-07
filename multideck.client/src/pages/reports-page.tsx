@@ -77,7 +77,7 @@ const reportHistory: ReportHistoryRow[] = [
   { id: "rpt-1048", name: "Weekly operations pack", type: "Operations summary", requestedAt: "13 Aug 2026, 09:12 BST", format: "PDF", scope: "Internal operations", status: "Ready" },
   { id: "rpt-1047", name: "Customer exception review", type: "Exception report", requestedAt: "13 Aug 2026, 08:45 BST", format: "XLSX", scope: "Marlow Foods", status: "Processing" },
   { id: "rpt-1046", name: "Monthly margin review", type: "Finance report", requestedAt: "12 Aug 2026, 16:20 BST", format: "CSV", scope: "Finance team", status: "Failed" },
-  { id: "rpt-1045", name: "Bookings archive — July 2026", type: "Booking export", requestedAt: "1 Aug 2026, 07:00 BST", format: "ZIP", scope: "All offices", status: "Expired" },
+  { id: "rpt-1045", name: "Bookings archive – July 2026", type: "Booking export", requestedAt: "1 Aug 2026, 07:00 BST", format: "ZIP", scope: "All offices", status: "Expired" },
   { id: "rpt-1044", name: "On-time delivery scorecard", type: "Performance report", requestedAt: "31 Jul 2026, 17:35 BST", format: "PDF", scope: "Client services", status: "Ready" },
 ]
 
@@ -374,8 +374,8 @@ type ScheduledReportRow = {
 const scheduledReports: ScheduledReportRow[] = [
   { id: "sch-104", report: "Weekly operations pack", recipients: "Operations team · 8 recipients", audience: "Internal team", cadence: "Every Monday", nextDelivery: "17 Aug 2026", time: "09:00", timezone: "Europe/London", status: "Active" },
   { id: "sch-103", report: "Monthly client review", recipients: "Client services · 5 recipients", audience: "Internal team", cadence: "Monthly on the 1st", nextDelivery: "1 Sep 2026", time: "08:30", timezone: "Europe/London", status: "Active" },
-  { id: "sch-102", report: "Shipment margin review", recipients: "Finance team · 4 recipients", audience: "Internal team", cadence: "First working day", nextDelivery: "—", time: "07:30", timezone: "Europe/London", status: "Paused" },
-  { id: "sch-101", report: "Customer exception review", recipients: "ops@marlowfoods.com", audience: "Named recipient", cadence: "Every weekday", nextDelivery: "—", time: "16:00", timezone: "Europe/London", status: "Draft" },
+  { id: "sch-102", report: "Shipment margin review", recipients: "Finance team · 4 recipients", audience: "Internal team", cadence: "First working day", nextDelivery: "–", time: "07:30", timezone: "Europe/London", status: "Paused" },
+  { id: "sch-101", report: "Customer exception review", recipients: "ops@marlowfoods.com", audience: "Named recipient", cadence: "Every weekday", nextDelivery: "–", time: "16:00", timezone: "Europe/London", status: "Draft" },
 ]
 
 const scheduledStatusTone: Record<ScheduledReportStatus, "green" | "amber" | "neutral"> = {

@@ -37,8 +37,8 @@ export type ModeSeries = {
  * gallery surface: their canvas paints a fixed white fill and their header
  * collapses to one word per line once the column narrows, which is exactly the
  * shape this panel is. Reusing the shared projection helpers instead keeps this
- * a sibling of the trend chart beside it — same grid, same axis type, same
- * theming — at a fraction of the weight.
+ * a sibling of the trend chart beside it – same grid, same axis type, same
+ * theming – at a fraction of the weight.
  */
 export function DashboardModeChart({
   title,

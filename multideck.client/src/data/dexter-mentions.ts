@@ -264,8 +264,8 @@ export function dexterMentionSnapshot(mention: DexterMentionItem): DexterMention
 }
 
 /**
- * Prefer the live record when the destination has already loaded it — its meta
- * is fresher and it carries availability — and fall back to the snapshot so a
+ * Prefer the live record when the destination has already loaded it – its meta
+ * is fresher and it carries availability – and fall back to the snapshot so a
  * mention is never silently dropped from a prompt in flight.
  */
 export function restoreDexterMentionItems(

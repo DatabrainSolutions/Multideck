@@ -56,7 +56,7 @@ export async function loadDexterMentionSources(): Promise<DexterMentionSources> 
 /**
  * The same picker on Home and in the Dexter workspace. Home passes `enabled`
  * so the five register reads only happen once the operator actually touches the
- * composer — the launcher should not pay for them on every page load.
+ * composer – the launcher should not pay for them on every page load.
  */
 export function useDexterMentionSources(enabled = true): DexterMentionSources {
   const [sources, setSources] = useState<DexterMentionSources>({

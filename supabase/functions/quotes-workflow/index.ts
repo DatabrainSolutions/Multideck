@@ -374,7 +374,7 @@ async function uploadWorkspaceLogo(
   return await brandingResponse(admin, operator.companyId)
 }
 
-function printable(value: unknown, fallback = "—") {
+function printable(value: unknown, fallback = "–") {
   if (typeof value === "string" && value.trim()) return value.trim()
   if (typeof value === "number" && Number.isFinite(value)) return String(value)
   return fallback
@@ -383,12 +383,12 @@ function printable(value: unknown, fallback = "—") {
 function customerIncotermLabel(value: unknown, namedPlace: unknown) {
   const incoterm = printable(value, "")
   if (incoterm.toUpperCase() === "N/A") return "Not supplied / not applicable"
-  return [incoterm, printable(namedPlace, "")].filter(Boolean).join(" · ") || "—"
+  return [incoterm, printable(namedPlace, "")].filter(Boolean).join(" · ") || "–"
 }
 
 function dateLabel(value: unknown) {
   const date = new Date(typeof value === "string" ? value : Date.now())
-  return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Europe/London" }).format(date)
+  return Number.isNaN(date.getTime()) ? "–" : new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Europe/London" }).format(date)
 }
 
 function plannedDateLabel(value: unknown) {
@@ -530,7 +530,7 @@ async function quotePdfDataset(
       reference: context.reference,
       version: printable(version.CusQuoteVersion_Number, "1"),
       issuedDate: dateLabel(version.CusQuoteVersion_CreatedAt || snapshot.savedAt),
-      validUntil: typeof quote.validTo === "string" && quote.validTo.trim() ? dateLabel(quote.validTo) : "—",
+      validUntil: typeof quote.validTo === "string" && quote.validTo.trim() ? dateLabel(quote.validTo) : "–",
       customerName: printable(quote.customerName, "Customer"),
       contactName: printable(quote.contactName, ""),
       customerEmail: printable(quote.contactEmail, ""),
@@ -550,16 +550,16 @@ async function quotePdfDataset(
     routes,
     cargo,
     shipment: [
-      { label: "Mode / service", value: [printable(quote.mode, ""), printable(quote.serviceLevel, "")].filter(Boolean).join(" · ") || "—" },
+      { label: "Mode / service", value: [printable(quote.mode, ""), printable(quote.serviceLevel, "")].filter(Boolean).join(" · ") || "–" },
       {
         label: "Shipment / container",
         value: [
           printable(quote.shipmentType, ""),
           printable(facts.container, ""),
-        ].filter(Boolean).join(" · ") || "—",
+        ].filter(Boolean).join(" · ") || "–",
       },
-      { label: "Pieces / weight", value: [cargoTotals.packageQuantity, cargoTotals.grossWeightKg ? `${cargoTotals.grossWeightKg} kg` : ""].filter(Boolean).join(" · ") || "—" },
-      { label: "Volume / incoterm", value: [cargoTotals.volumeCbm ? `${cargoTotals.volumeCbm} CBM` : "", customerIncotermLabel(quote.incoterm, facts.namedPlace)].filter((value) => value && value !== "—").join(" · ") || "—" },
+      { label: "Pieces / weight", value: [cargoTotals.packageQuantity, cargoTotals.grossWeightKg ? `${cargoTotals.grossWeightKg} kg` : ""].filter(Boolean).join(" · ") || "–" },
+      { label: "Volume / incoterm", value: [cargoTotals.volumeCbm ? `${cargoTotals.volumeCbm} CBM` : "", customerIncotermLabel(quote.incoterm, facts.namedPlace)].filter((value) => value && value !== "–").join(" · ") || "–" },
       { label: "Shipment handling", value: quoteDocumentHandling(facts) },
     ],
     charges: charges.map(({ currency: _currency, rawAmount: _rawAmount, ...charge }) => charge),

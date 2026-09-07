@@ -50,8 +50,8 @@ function Bloom(props: BloomCanvasProps) {
 /**
  * The live bloom: subscribes to the accent store so it follows an accent change.
  *
- * Kept separate from `Bloom` on purpose. A caller that supplies its own `stops` —
- * the accent picker's ten previews — must not subscribe, or every one of them
+ * Kept separate from `Bloom` on purpose. A caller that supplies its own `stops` –
+ * the accent picker's ten previews – must not subscribe, or every one of them
  * would re-render on all ~28 frames of a cross-fade to redraw colours that never
  * changed. Hooks cannot be called conditionally, so the split is the fix.
  */

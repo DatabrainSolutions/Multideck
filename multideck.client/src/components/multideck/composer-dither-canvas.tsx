@@ -7,8 +7,8 @@ import * as THREE from "three"
  * The dithered wave behind the Dexter composer's header.
  *
  * A hand-written shader rather than a shader-library graph because the two
- * interactions the band needs — a swell that follows the cursor, and a ring that
- * leaves the role pill when the role changes — are a few lines of GLSL each and
+ * interactions the band needs – a swell that follows the cursor, and a ring that
+ * leaves the role pill when the role changes – are a few lines of GLSL each and
  * cost nothing per frame. Driving them from React state would mean re-rendering
  * a canvas sixty times a second to move a single float.
  *
@@ -16,8 +16,8 @@ import * as THREE from "three"
  * dither as a post-processing effect over a render target, which meant an extra
  * full-screen target every frame, a resample of the pattern it had just drawn,
  * and two more dependencies in the bundle. Generating the field per dither cell
- * instead gives the identical result — the cell grid is exactly what the post
- * pass was quantising to — with one draw and no target.
+ * instead gives the identical result – the cell grid is exactly what the post
+ * pass was quantising to – with one draw and no target.
  */
 
 /**
@@ -31,7 +31,7 @@ export type ComposerPointer = { x: number; y: number; inside: boolean }
 export type ComposerDitherCanvasProps = {
   /** Unlit half of the ramp. Matches the shell so only the pattern reads. */
   baseColor: string
-  /** Lit half of the ramp — an accent-derived stop. */
+  /** Lit half of the ramp – an accent-derived stop. */
   waveColor: string
   /** Raised while the pointer is inside the band. */
   hovered?: boolean
@@ -190,7 +190,7 @@ void main() {
   f = clamp((f - waveBias) / max(1.0 - waveBias, 0.001), 0.0, 1.0);
 
   // Colour is applied after quantisation, so an unlit cell lands exactly on the
-  // shell colour instead of being dithered towards it — otherwise the band's
+  // shell colour instead of being dithered towards it – otherwise the band's
   // empty areas speckle against a surface they are meant to be identical to.
   int bx = int(mod(cellIndex.x, 8.0));
   int by = int(mod(cellIndex.y, 8.0));
@@ -241,7 +241,7 @@ function DitheredWaves({
 
   // Seeded from the first measurement rather than left to the resize effect. The
   // Canvas only mounts children once it has measured, so the real size is
-  // already known here — and a wrong resolution on frame one is visible, because
+  // already known here – and a wrong resolution on frame one is visible, because
   // a throttled tab may not draw a second frame for some time.
   const uniforms = useRef({
     time: new THREE.Uniform(0),

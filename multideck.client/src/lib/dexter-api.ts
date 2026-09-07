@@ -861,7 +861,7 @@ export async function streamDexterMessage(
   } catch (error) {
     if (signal?.aborted) throw new DOMException("The Dexter request was cancelled.", "AbortError")
     if (timedOut) {
-      throw new DexterApiError("Dexter took too long to answer. Your message is safe — retry when you are ready.")
+      throw new DexterApiError("Dexter took too long to answer. Your message is safe – retry when you are ready.")
     }
     throw dexterConnectionError(error)
   } finally {

@@ -14,9 +14,9 @@ import { updateWorkspaceBootstrapPreferences } from "@/lib/workspace-bootstrap"
 import { watchCompanyAppearanceReset } from "@/lib/company-appearance-sync"
 
 /**
- * The product reads its accent from one place. Every accent surface in the app —
+ * The product reads its accent from one place. Every accent surface in the app –
  * solid fills, alpha washes, focus rings, selected rows, the brand shadows and
- * the Dexter shader ramps — derives from the base colours emitted here, so
+ * the Dexter shader ramps – derives from the base colours emitted here, so
  * swapping the accent is a single stylesheet write rather than a sweep through
  * hundreds of declarations.
  *
@@ -90,8 +90,8 @@ function oklchToRgb({ l, c, h }: Oklch): Rgb {
 }
 
 /**
- * Oklab can describe colours sRGB cannot show. Rather than clipping channels —
- * which shifts hue and flattens the colour — walk the chroma down until the
+ * Oklab can describe colours sRGB cannot show. Rather than clipping channels –
+ * which shifts hue and flattens the colour – walk the chroma down until the
  * colour fits, keeping lightness and hue exactly where the recipe asked for them.
  */
 function oklchToHex(target: Oklch): string {
@@ -241,7 +241,7 @@ const darkRecipes = {
  *
  * The hue offsets matter as much as the lightness steps. A ramp that only varies
  * lightness renders as a flat wash, so the shader's stops rotate a little
- * counter-clockwise as they darken — that spread is what gives the pill its
+ * counter-clockwise as they darken – that spread is what gives the pill its
  * depth, and it is why these are recipes rather than tints.
  */
 const brandRecipes = {
@@ -420,7 +420,7 @@ export function buildAccentRamp(id: AccentPreferenceId): AccentRamp {
 /* ------------------------------------------------------------------- application */
 
 export const accentShiftDurationMs = 460
-/** Eases in gently, covers the middle quickly, then settles — no visible step. */
+/** Eases in gently, covers the middle quickly, then settles – no visible step. */
 export const accentShiftEase = [0.32, 0.06, 0.2, 1] as [number, number, number, number]
 
 const storageKey = "multideck.accentPreset"
@@ -553,7 +553,7 @@ function moveBrandRamp(target: AccentBrandRamp, shouldAnimate: boolean) {
 
 /**
  * Paints the preset. The cross-fade is opt-in per call because the first paint
- * and any restore-from-storage must land instantly — animating those would show
+ * and any restore-from-storage must land instantly – animating those would show
  * the default teal for half a second before the real accent arrived.
  */
 export function applyAccentPreset(id: AccentPreferenceId, { animate: shouldAnimate = false } = {}) {
