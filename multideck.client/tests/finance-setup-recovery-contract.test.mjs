@@ -30,3 +30,9 @@ test("account recovery deep links open the existing provider sync workflow", () 
   assert.match(accounts, /Create or link every Multideck/)
   assert.match(accounts, /Sync all accounts/)
 })
+
+test("authorised finance administrators save settings without a second approval ceremony", () => {
+  assert.match(financeSetup, /saveFinanceAdministration\(selectedEntityId, draft\)/)
+  assert.match(financeSetup, /Saving settings…" : "Save settings"/)
+  assert.doesNotMatch(financeSetup, /finance-approval-reason|Confirm finance approval|Review & approve/)
+})

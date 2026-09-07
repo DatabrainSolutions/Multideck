@@ -4,6 +4,8 @@ import { bookingRouteActionReview } from "./booking-route-review.ts"
 import { bookingMilestoneActionReview } from "./booking-milestone-review.ts"
 import { bookingDangerousGoodsActionReview } from "./booking-dangerous-goods-review.ts"
 import { resolveBookingDangerousGoodsWatchTarget } from "./booking-dangerous-goods-watch.ts"
+import { bookingSecurityEvidenceActionReview } from "./booking-security-evidence-review.ts"
+import { resolveBookingSecurityEvidenceWatchTarget } from "./booking-security-evidence-watch.ts"
 import { ensureScreeningList } from "../_shared/screening-ingest.ts"
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
@@ -1408,7 +1410,7 @@ function watchTargetLabel(capability: string, record: JsonObject) {
         ? ["quoteNumber"]
         : capability === "phone_calls"
           ? ["callerName", "companyName", "phoneNumber"]
-        : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value", "quote_cargo", "booking_allocations", "booking_milestones", "booking_dangerous_goods"].includes(capability)
+        : ["booking_cargo", "booking_containers", "booking_routes", "booking_shipment_value", "quote_cargo", "booking_allocations", "booking_milestones", "booking_dangerous_goods", "booking_security_evidence"].includes(capability)
           ? ["targetLabel", "bookingReference", "description"]
       : capability === "bookings"
           ? ["bookingReference", "jobReference", "customerReference"]
@@ -1883,13 +1885,15 @@ The operator's selected profile locale is ${locale}.
 ${localeInstruction(locale)}
 Always answer in that locale, even when the operator writes a short prompt in another language. Do not translate record references, codes, routes, proper names, email addresses, or standard freight abbreviations.
 Never use the em dash character. Use a full stop, comma, colon, or brackets instead.
-Exception for record_booking_dangerous_goods tool arguments: copy supplied evidence strings exactly, including punctuation, Unicode and line breaks. Those field values are source data, not authored prose; do not apply this voice rule or translate/rephrase them. Existing field validation and explicit-clear rules still apply.
+Screening evidence is available only when booking_security_evidence is listed. It records supplied cargo facts, not sanctions checks, clearance, regulated-agent verification or AWB issuance. Read exact booking_cargo before creation, or exact booking_security_evidence before correction, retaining Booking/cargo/record timestamps. Use record_booking_security_evidence with mandatory explicit approval even in Full access. Require a source plus supplied status, method or screening time. Never infer missing details or a timezone. Record status (recorded/voided) is separate from supplied security status. Void alone and retain history; never change Quotes or issued documents. Only offer watches when the corresponding watch capability is listed, using ordinary Watchers setup, never claim monitoring from chat.
+Exception for record_booking_dangerous_goods and record_booking_security_evidence tool arguments: copy supplied evidence strings exactly, including punctuation, Unicode and line breaks. Those field values are source data, not authored prose; do not apply this voice rule or translate/rephrase them. Existing field validation and explicit-clear rules still apply.
 Sound like an experienced colleague doing the work alongside the operator. Be direct, practical, calm, and conversational.
 Do not sound like sales copy, a chatbot, a brand campaign, or a motivational coach.
 Avoid filler such as "great question", "absolutely", "happy to help", "exciting", "powerful", and "seamless".
 Do not repeat the operator's question unless clarification is necessary.
 
 # Evidence and uncertainty contract
+Shipment chargeable weight overrides are separate from per-line cargo weights, monetary goods values and air waybill weights. When booking_shipment_value returns chargeableWeightOverrideKg, read the exact Booking and updatedAt before proposing update_booking_weight_override. Show the current override and proposed kg value explicitly; null clears only this override. Always request approval in both access modes. Do not derive, distribute or infer an override from cargo totals or modify an AWB. The existing shipment-values watch can notify on chargeableWeightOverrideKg changes only, without thresholds or automatic edits. If this field/action is unavailable, direct the operator to Booking Details > Cargo rather than claiming generic Booking edits support it.
 Never invent or guess facts. This includes names, people, companies, roles, relationships, contact details, record references, quantities, dates, times, locations, routes, statuses, prices, totals, percentages, documents, events, actions, or outcomes.
 A factual claim may come only from the operator's current message, operator-attached context, conversation history, a successful workspace data-tool result, or stable general knowledge. Do not treat an example, placeholder, suggested value, or your own prior unsupported statement as fact.
 Do not assume that a likely value is the real value. Do not fill a gap with a plausible name, number, status, owner, deadline, reason, or result to make an answer feel complete.
@@ -2610,13 +2614,21 @@ function actionChanges(locale: DexterLocale, actionCode: string, argumentsValue:
   }
   if (actionCode === "update_booking_shipment_value") {
     return ["amount", "currency"].map((field) => {
-      const beforeKnown = Boolean(currentRecord?.valueScope === "shipment_goods" && Object.hasOwn(currentRecord, field))
+      const beforeKnown = Boolean(["shipment_goods", "shipment_operational_values"].includes(String(currentRecord?.valueScope)) && currentRecord && Object.hasOwn(currentRecord, field))
       const before = beforeKnown ? displayActionValue(currentRecord?.[field]) : null
       const raw = typeof argumentsValue[field] === "string" ? argumentsValue[field].trim() : null
       const after = raw ? (field === "currency" ? raw.toUpperCase() : raw) : null
       return { field: field === "amount" ? "Shipment goods amount" : "Shipment goods currency", before, after, value: after,
         beforeKnown, kind: after === null ? "removed" : beforeKnown && before === null ? "added" : "changed" }
     })
+  }
+  if (actionCode === "update_booking_weight_override") {
+    const beforeKnown = Boolean(currentRecord?.valueScope === "shipment_operational_values" && Object.hasOwn(currentRecord, "chargeableWeightOverrideKg"))
+    const before = beforeKnown ? displayActionValue(currentRecord?.chargeableWeightOverrideKg) : null
+    const raw = typeof argumentsValue.weightKg === "string" ? argumentsValue.weightKg.trim() : null
+    const after = raw || null
+    return [{ field: "Shipment chargeable weight override (kg)", before, after, value: after, beforeKnown,
+      kind: after === null ? "removed" : beforeKnown && before === null ? "added" : "changed" }]
   }
   if (actionCode === CREATE_PURCHASE_ORDER_ACTION) {
     return purchaseOrderActionChanges(locale, argumentsValue)
@@ -2751,6 +2763,9 @@ function preparedActionDescription(
   if (actionCode === "update_booking_shipment_value") {
     const reference = cleanString(currentRecord?.bookingReference, 80) || "the selected Booking"
     return `Review shipment goods value for ${reference}. This changes the shipment total only: no currency conversion is performed, cargo-line allocations and the accepted Quote stay unchanged. ${fallback}`
+  }
+  if (actionCode === "update_booking_weight_override") {
+    return `Review the shipment chargeable weight override in kg. Cargo-line weights, monetary values, the accepted Quote and air waybill stay unchanged. Clearing removes only the override. ${fallback}`
   }
   if (actionCode === CREATE_SUPPORT_TICKET_ACTION) {
     return sanitiseAnswer(supportTicketCopy(locale, "prepared", cleanString(args.title, 180)))
@@ -3172,7 +3187,7 @@ async function runStreamedAgent(
         if (isObject(parsed)) {
           // Supplied DG evidence is data, not prose. Preserve it for the same
           // permission-checked review and canonical validation below.
-          if (call.name === "record_booking_dangerous_goods") args = parsed
+          if (call.name === "record_booking_dangerous_goods" || call.name === "record_booking_security_evidence") args = parsed
           else args = sanitiseArguments(parsed)
         }
       } catch {
@@ -3292,7 +3307,8 @@ async function runStreamedAgent(
           const routeReview = action.code === "update_booking_route"
             ? bookingRouteActionReview(currentRecordsById, actionArguments, locale)
             : action.code === "record_booking_milestone" ? bookingMilestoneActionReview(currentRecordsById, actionArguments, locale)
-            : action.code === "record_booking_dangerous_goods" ? bookingDangerousGoodsActionReview(currentRecordsById, actionArguments) : null
+            : action.code === "record_booking_dangerous_goods" ? bookingDangerousGoodsActionReview(currentRecordsById, actionArguments)
+            : action.code === "record_booking_security_evidence" ? bookingSecurityEvidenceActionReview(currentRecordsById, actionArguments) : null
           const currentRecord = action.code === "replace_booking_allocations"
             ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
             : action.code === "update_quote_cargo"
@@ -3895,6 +3911,7 @@ Deno.serve(async (request) => {
         "For a named record, put its human identifier in targetSearch. For any record in the capability, leave targetSearch empty.",
         "For booking_milestones, preserve an explicitly supplied milestone UUID as targetId and leave targetSearch empty. Never replace an exact milestone ID with a combined Booking/leg/reference description. Without an exact ID, targetSearch must be an exact Booking reference or another identifier supported by that capability, not a sentence; ambiguous matches need clarification.",
         "For booking_dangerous_goods, preserve an explicitly supplied dangerous-goods record UUID as targetId and leave targetSearch empty. Without it use an exact Booking reference or cargo ID; multiple records require clarification. Use a listed field with operator changed, no autonomous action. This watches supplied evidence, not compliance or classification.",
+        "For booking_security_evidence, preserve an explicitly supplied screening evidence record UUID as targetId and leave targetSearch empty. Otherwise search an exact Booking reference or cargo ID; multiple records require clarification. Use one listed field with operator changed, notification only. Record status is recorded/voided, separate from supplied security status. This does not monitor clearance, agent verification or sanctions checks.",
         "Items in attachments are context the operator deliberately selected with @. Treat them as exact references, not loose text. When an attached record matches the chosen capability, preserve its exact ID and title; never substitute a similarly named record.",
         "Use changed only when any transition of the field is intended. For state conditions use eq, neq, or contains; use numeric comparisons only for numeric fields.",
         "For an email request with more than one clue, use field=searchText and operator=contains_all. Put only the essential literal terms in value, separated by spaces, such as the sender address and the word expected in the subject, body, or attachment name. Omit filler words such as email, from, with, attached, attachment, new, or please.",
@@ -3997,6 +4014,12 @@ Deno.serve(async (request) => {
       targetLabel = resolved.targetLabel
     } else if (capability === "booking_dangerous_goods") {
       const resolved = await resolveBookingDangerousGoodsWatchTarget(prompt, { id: targetId, search: targetSearch },
+        search => userClient.rpc("multideck_dexter_query_domain", { p_domain: capability, p_search: search, p_take: 4 }))
+      if (!resolved.ok) return json(request, { status: "clarification", message: resolved.message })
+      targetId = resolved.targetId
+      targetLabel = resolved.targetLabel
+    } else if (capability === "booking_security_evidence") {
+      const resolved = await resolveBookingSecurityEvidenceWatchTarget(prompt, { id: targetId, search: targetSearch },
         search => userClient.rpc("multideck_dexter_query_domain", { p_domain: capability, p_search: search, p_take: 4 }))
       if (!resolved.ok) return json(request, { status: "clarification", message: resolved.message })
       targetId = resolved.targetId
@@ -4768,7 +4791,7 @@ Deno.serve(async (request) => {
         const parsed = JSON.parse(cleanString(call.arguments, 8_000) || "{}")
         if (isObject(parsed)) {
           // Match the streaming path without changing unrelated action paths.
-          if (call.name === "record_booking_dangerous_goods") args = parsed
+          if (call.name === "record_booking_dangerous_goods" || call.name === "record_booking_security_evidence") args = parsed
           else args = sanitiseArguments(parsed)
         }
       } catch {
@@ -4903,7 +4926,8 @@ Deno.serve(async (request) => {
           const routeReview = action.code === "update_booking_route"
             ? bookingRouteActionReview(currentRecordsById, actionArguments, locale)
             : action.code === "record_booking_milestone" ? bookingMilestoneActionReview(currentRecordsById, actionArguments, locale)
-            : action.code === "record_booking_dangerous_goods" ? bookingDangerousGoodsActionReview(currentRecordsById, actionArguments) : null
+            : action.code === "record_booking_dangerous_goods" ? bookingDangerousGoodsActionReview(currentRecordsById, actionArguments)
+            : action.code === "record_booking_security_evidence" ? bookingSecurityEvidenceActionReview(currentRecordsById, actionArguments) : null
           const currentRecord = action.code === "replace_booking_allocations"
             ? bookingAllocationActionRecord(currentRecordsById, actionArguments)
             : action.code === "update_quote_cargo"

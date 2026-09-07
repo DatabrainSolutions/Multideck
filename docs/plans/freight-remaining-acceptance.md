@@ -47,6 +47,15 @@ their older “pending” paragraphs must not override later evidence.
 
 ### Road: live board opens a prototype detail flow
 
+Latest evidence supersedes the historical blockers below: [direction release and
+hosted save/reload](../release/2026-09-07-road-direction-development-release.md).
+`74ea52e` is READY. Synthetic `JD0991135` was created through the canonical Road
+opener, then edited/saved and reopened in a fresh page with Road/Domestic intact.
+Blank country aliases no longer invent Cross trade. Original 77 Job headers and
+38 Quote versions retain exact pre-test fingerprints. Basic creation/save/reload
+is closed; cross-border depth, Kanban stage persistence and broader Road gates
+remain open. No previous Quote approval or deferred item is released by this.
+
 Development release and hosted blocker: [exact release / numbering failure](../release/2026-09-07-road-open-development-release.md).
 `fdbb9ba` is READY, Booking 44 / Dexter 166 match the release, but normal Road
 creation fails because the existing blank opener supplies no direction to the
@@ -94,6 +103,15 @@ backend reads or treat sample audit/documents as real records. Retain useful
 Road-specific controls while eliminating the parallel in-memory writer.
 
 ### Air: reuse the existing document model deliberately
+
+Current weight checkpoint supersedes the historical weight paragraph below:
+typed per-line storage, separate shipment override and source comparison are
+released; hosted two-line exact totals, save/reload/clear and override
+approval/watch checks pass within scope. See [multi-line evidence](../release/2026-09-07-air-multiline-hosted-evidence.md)
+and [approval/watch evidence](../release/2026-09-07-air-weight-approval-watch-evidence.md).
+Operational screening, AWB lifecycle, ULD/allocation/flight hosted journeys and
+remaining isolation tests are still open. A generic Booking-source label shown
+inside the selected cargo section also needs clearer scope; it is not line provenance.
 
 The baseline contains `AWB_Header` linked by `AWB_JobID`, typed
 `AWB_GoodsItems.AWBG_ChargeableWeight`, routing legs, versions, audit and

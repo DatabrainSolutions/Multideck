@@ -20,6 +20,7 @@ const providerPartyBulkSync = read("../migrations/20260902113000_provider_party_
 const functionSource = read("../functions/finance-subledger/index.ts")
 const customerFunctionSource = read("../functions/customers/index.ts")
 const providerSource = read("../functions/_shared/accounting-providers.ts")
+const erpNextSource = read("../functions/_shared/erpnext.ts")
 const hyperExtSource = read("../functions/_shared/hyperext.ts")
 const webhookSource = read("../functions/erpnext-webhook/index.ts")
 const dexterSource = read("../functions/agent-dexter/index.ts")
@@ -413,13 +414,12 @@ test("finance drafts derive their company from the signed-in tenant", () => {
   ])
 })
 
-test("the operator UI covers both ledgers, cash, job and manual sources", () => {
+test("the operator UI covers both ledgers, cash and manual ad hoc sources", () => {
   includesEvery(appSource, [
     "Sales ledger",
     "Purchase ledger",
     "Cashbook & allocations",
-    "Ad hoc or ancillary",
-    "Freight job",
+    "Ad hoc",
     "Customer credit note",
     "Supplier credit note",
     "Customer receipt",
@@ -437,7 +437,8 @@ test("the operator UI covers both ledgers, cash, job and manual sources", () => 
     "text-end",
     "dir=\"ltr\"",
   ])
-  includesEvery(financeLineEditorSource, ["Charge code", "Description", "Qty", "Rate", "Tax", "Line amount", "Draft subtotal", "text-end", "dir=\"ltr\""])
+  assert.doesNotMatch(appSource, /Ad hoc or ancillary|Freight job|setSourceKind|setSourceJobId/)
+  includesEvery(financeLineEditorSource, ["Charge code", "Description", "Qty", "Rate", "Tax", "Invoice amount", "Net", "text-end", "dir=\"ltr\""])
   assert.doesNotMatch(financeLineEditorSource, /t\("Line type"\)|t\("Ancillary"\)/)
   assert.doesNotMatch(appSource, /font-mono|ui-monospace|SF Mono/)
   includesEvery(apiSource, ["createFinanceDraft", "createFinanceCashDraft", "approveFinanceDocument", "approveFinanceCash"])
@@ -517,6 +518,19 @@ test("missing customers can be linked or created in ERPNext and Sage 50 through 
     "odbcStatusOk",
   ])
   assert.doesNotMatch(providerCustomerWizardSource, /HYPEREXT_SAGE50_AUTH_TOKEN|AuthToken/)
+})
+
+test("ERPNext failures retain actionable server detail without logging credentials or request bodies", () => {
+  includesEvery(erpNextSource, [
+    "_server_messages",
+    "erpNextErrorMessage",
+    "ERPNext denied this operation. The connected API user does not have the required document permission.",
+    'console.error("[erpnext] request rejected"',
+    'path: path.split("?")[0]',
+  ])
+  assert.ok(erpNextSource.indexOf("const detailed = serverMessages") < erpNextSource.indexOf("if (detailed) return detailed"))
+  assert.doesNotMatch(erpNextSource, /console\.error\([^]*Authorization|console\.error\([^]*credentials\(\)|console\.error\([^]*input\.body/)
+  assert.ok(providerCustomerWizardSource.includes("ERPNext denied customer creation. Give the connected API user Create permission for Customer records in ERPNext, then retry."))
 })
 
 test("the Finance menu exposes working modules and names future accounting scope honestly", () => {
@@ -617,13 +631,14 @@ test("the comprehensive administrator UI covers every accounting configuration a
     "Documents",
     "Mappings",
     "Controls & audit",
-    "Save approved settings",
+    "Save settings",
     "localAdviceConfirmed",
     "accountNumberLast4",
     "freight-forwarder-v1",
     "A legal entity can operate several bank accounts in several currencies.",
   ])
   assert.doesNotMatch(financeSetupSource, /font-mono|ui-monospace|SF Mono/)
+  assert.doesNotMatch(financeSetupSource, /finance-approval-reason|Confirm finance approval|Review & approve/)
 })
 
 test("administration saves only through the protected permissioned Edge boundary", () => {

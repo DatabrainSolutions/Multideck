@@ -23,6 +23,7 @@ type ProviderCustomerSetupWizardProps = {
   open: boolean
   connection: ProviderConnection | null
   organisation: Organisation | null
+  currencyOptions: string[]
   onClose: () => void
   onReady: (mapping: FinanceDraftOptions["partyMappings"][number]) => void
 }
@@ -44,12 +45,20 @@ function AddressSummary({ context }: { context: ProviderCustomerContext }) {
           {address.email ? <p className="mt-1" data-i18n-skip dir="ltr">{address.email}</p> : null}
           {address.phone ? <p data-i18n-skip dir="ltr">{address.phone}</p> : null}
         </div>
-      ) : <p className="mt-2 text-[12px] text-[var(--md-red)]">{t("No active billing address is recorded. Add one in CRM before creating the accounting customer if the provider requires it.")}</p>}
+      ) : <p className="mt-2 text-[12px] text-[var(--md-red)]">{t("No active billing address is recorded. Add one in CRM before creating the accounting customer if the accounts system requires it.")}</p>}
     </div>
   )
 }
 
-export function ProviderCustomerSetupWizard({ open, connection, organisation, onClose, onReady }: ProviderCustomerSetupWizardProps) {
+function customerCreationError(cause: unknown, isErpNext: boolean, fallback: string) {
+  const message = cause instanceof Error ? cause.message.trim() : ""
+  if (isErpNext && (/^PermissionError$/i.test(message) || /ERPNext denied this operation/i.test(message))) {
+    return "ERPNext denied customer creation. Give the connected API user Create permission for Customer records in ERPNext, then retry."
+  }
+  return message || fallback
+}
+
+export function ProviderCustomerSetupWizard({ open, connection, organisation, currencyOptions, onClose, onReady }: ProviderCustomerSetupWizardProps) {
   const { t } = useLanguage()
   const [context, setContext] = useState<ProviderCustomerContext | null>(null)
   const [loading, setLoading] = useState(false)
@@ -96,6 +105,11 @@ export function ProviderCustomerSetupWizard({ open, connection, organisation, on
   }, [connection, open, organisation, t])
 
   const isErpNext = context?.provider.code === "erpnext"
+  const availableCurrencies = useMemo(() => [...new Set([
+    ...currencyOptions,
+    context?.organisation.currencyCode,
+    currencyCode,
+  ].map((value) => value?.trim().toUpperCase()).filter((value): value is string => Boolean(value && /^[A-Z]{3}$/.test(value))))].sort(), [context?.organisation.currencyCode, currencyCode, currencyOptions])
   const selectedExisting = useMemo(() => context?.erpNext?.customers.find((customer) => customer.name === existingCustomerId) ?? null, [context, existingCustomerId])
   const canContinueDetails = isErpNext ? Boolean(customerGroup && territory && currencyCode) : Boolean(accountReference && currencyCode && context?.sage50?.ready)
 
@@ -133,10 +147,10 @@ export function ProviderCustomerSetupWizard({ open, connection, organisation, on
       if (result.warning) toast.warning(t(result.warning))
       onReady(result.mapping)
       onClose()
-    } catch (cause) { setError(cause instanceof Error ? cause.message : t("The accounting customer could not be created.")) } finally { setSubmitting(false) }
+    } catch (cause) { setError(customerCreationError(cause, isErpNext, t("The accounting customer could not be created."))) } finally { setSubmitting(false) }
   }
 
-  const steps = isErpNext ? ["Match", "Provider details", "Review"] : ["Provider details", "Review"]
+  const steps = isErpNext ? ["Match", "Accounts system details", "Review"] : ["Accounts system details", "Review"]
   const currentStep = isErpNext ? stage === "match" ? 0 : stage === "details" ? 1 : 2 : stage === "details" ? 0 : 1
 
   return (
@@ -144,7 +158,7 @@ export function ProviderCustomerSetupWizard({ open, connection, organisation, on
       <DialogContent className="max-h-[94vh] overflow-y-auto sm:max-w-[760px]">
         <DialogHeader>
           <DialogTitle>{t(`Set up customer in ${context?.provider.name ?? (connection?.ACCIC_ProviderCode === "sage_50" ? "Sage 50 Desktop" : "ERPNext")}`)}</DialogTitle>
-          <DialogDescription>{t("Review the Multideck customer, choose the accounting-specific defaults, then create or link one exact provider record.")}</DialogDescription>
+          <DialogDescription>{t("Review the Multideck customer, choose the accounting-specific defaults, then create or link one exact accounts system record.")}</DialogDescription>
         </DialogHeader>
 
         {loading ? <div className="grid min-h-72 place-items-center"><LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" /></div> : error && !context ? <div role="alert" className="my-5 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red),transparent_90%)] p-4 text-[13px] leading-5 text-[var(--md-red)]">{t(error)}</div> : context ? (
@@ -175,7 +189,7 @@ export function ProviderCustomerSetupWizard({ open, connection, organisation, on
                     <div className="space-y-2"><Label htmlFor="provider-customer-type">{t("Customer type")}</Label><Select value={customerType} onValueChange={(value: "Company" | "Individual") => setCustomerType(value)}><SelectTrigger id="provider-customer-type"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Company">{t("Company")}</SelectItem><SelectItem value="Individual">{t("Individual")}</SelectItem></SelectContent></Select></div>
                     <div className="space-y-2"><Label htmlFor="provider-customer-group">{t("Customer group")}</Label><Select value={customerGroup} onValueChange={setCustomerGroup}><SelectTrigger id="provider-customer-group"><SelectValue placeholder={t("Choose customer group")} /></SelectTrigger><SelectContent>{context.erpNext.customerGroups.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></div>
                     <div className="space-y-2"><Label htmlFor="provider-territory">{t("Territory")}</Label><Select value={territory} onValueChange={setTerritory}><SelectTrigger id="provider-territory"><SelectValue placeholder={t("Choose territory")} /></SelectTrigger><SelectContent>{context.erpNext.territories.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></div>
-                    <div className="space-y-2"><Label htmlFor="provider-currency">{t("Billing currency")}</Label><Input id="provider-currency" maxLength={3} value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value.toUpperCase())} data-i18n-skip dir="ltr" /></div>
+                    <div className="space-y-2"><Label htmlFor="provider-currency">{t("Billing currency")}</Label><Select value={currencyCode || undefined} onValueChange={setCurrencyCode}><SelectTrigger id="provider-currency" data-i18n-skip dir="ltr"><SelectValue placeholder={t("Choose currency")} /></SelectTrigger><SelectContent>{availableCurrencies.map((code) => <SelectItem key={code} value={code}><span data-i18n-skip dir="ltr">{code}</span></SelectItem>)}</SelectContent></Select></div>
                     <div className="space-y-2 sm:col-span-2"><Label htmlFor="provider-payment-terms">{t("Payment terms")}</Label><Select value={paymentTerms || "none"} onValueChange={(value) => setPaymentTerms(value === "none" ? "" : value)}><SelectTrigger id="provider-payment-terms"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">{t("Use ERPNext default")}</SelectItem>{context.erpNext.paymentTerms.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></div>
                   </div>
                 ) : context.sage50 ? (
@@ -183,7 +197,7 @@ export function ProviderCustomerSetupWizard({ open, connection, organisation, on
                     {!context.sage50.ready ? <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red),transparent_90%)] p-4 text-[13px] leading-5 text-[var(--md-red)]"><p className="font-medium">{t("HyperExt is not ready")}</p><p className="mt-1">{t(context.sage50.error || "Check the Sage 50 desktop company, SDO, ODBC and tenant connector configuration.")}</p></div> : <div className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-accent),transparent_91%)] p-4 text-[12px] text-[var(--md-text)]"><p className="font-medium text-[var(--md-ink)]">{t("HyperExt connected")}</p><p className="mt-1"><span data-i18n-skip dir="ltr">{context.sage50.status?.companyName}</span> · Sage <span data-i18n-skip dir="ltr">{context.sage50.status?.sageVersion}</span> · API <span data-i18n-skip dir="ltr">{context.sage50.status?.apiVersion}</span></p></div>}
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2"><Label htmlFor="sage-account-reference">{t("Sage account reference")}</Label><Input id="sage-account-reference" maxLength={8} value={accountReference} onChange={(event) => setAccountReference(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} data-i18n-skip dir="ltr" /><p className="text-[11px] text-[var(--md-subtle)]">{t("Up to eight letters or numbers. This becomes the permanent Sage customer key.")}</p></div>
-                      <div className="space-y-2"><Label htmlFor="sage-currency">{t("Currency")}</Label><Input id="sage-currency" maxLength={3} value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value.toUpperCase())} data-i18n-skip dir="ltr" /></div>
+                      <div className="space-y-2"><Label htmlFor="sage-currency">{t("Currency")}</Label><Select value={currencyCode || undefined} onValueChange={setCurrencyCode}><SelectTrigger id="sage-currency" data-i18n-skip dir="ltr"><SelectValue placeholder={t("Choose currency")} /></SelectTrigger><SelectContent>{availableCurrencies.map((code) => <SelectItem key={code} value={code}><span data-i18n-skip dir="ltr">{code}</span></SelectItem>)}</SelectContent></Select></div>
                       <div className="space-y-2"><Label htmlFor="sage-vat-number">{t("VAT number")}</Label><Input id="sage-vat-number" value={vatNumber} onChange={(event) => setVatNumber(event.target.value)} data-i18n-skip dir="ltr" /></div>
                       <div className="space-y-2"><Label htmlFor="sage-payment-days">{t("Payment due days")}</Label><Input id="sage-payment-days" type="number" min="0" step="1" value={paymentDueDays} onChange={(event) => setPaymentDueDays(event.target.value)} data-i18n-skip dir="ltr" /></div>
                       <div className="space-y-2"><Label htmlFor="sage-credit-limit">{t("Credit limit")}</Label><Input id="sage-credit-limit" type="number" min="0" step="0.01" value={creditLimit} onChange={(event) => setCreditLimit(event.target.value)} data-i18n-skip dir="ltr" /></div>

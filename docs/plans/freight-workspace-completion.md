@@ -1,5 +1,37 @@
 # Freight workspace completion
 
+7 September screening implementation: private typed cargo-source evidence,
+permission/stale-safe canonical save/read, audited correction/void and Booking
+Edge/client contracts now pass local PostgreSQL and transport/type checks.
+This is an unreleased foundation, not completed screening or clearance.
+Operator UI and Dexter approved-write/watch parity must be completed together
+before deployment. [Scope, checks and mandatory gates](../release/2026-09-07-air-screening-local-evidence.md).
+
+7 September Air Dexter/watch checkpoint: hosted Approve-mode exact override
+proposal remained unapplied until approval, then saved and audited. An exact
+notification-only watch fired once per matching change, ignored cargo-only
+editing and paused changes, and resumed correctly. Zero and unknown remained
+distinct. Both test weights are restored to null; watch paused with three
+retained events; Quote versions unchanged. [Evidence and scoped limits](../release/2026-09-07-air-weight-approval-watch-evidence.md).
+Hosted replay/Full-access/isolation and wider all-mode depth remain open.
+
+7 September Air hosted roundtrip: exact client `54d6da2` is READY on
+`dev.multideck.app`. Internal `JI0991132` saved separate exact-decimal cargo and
+shipment override weights, reloaded both, then cleared/restored unknown values
+and reloaded again. Invalid text is rejected with field focus. All 38 Quote
+versions are unchanged; two ordinary saves remain audited. This closes the
+one-line operator weight gate, not hosted multi-line/Dexter/watch/denial or full
+Air depth. [Evidence and remaining limits](../release/2026-09-07-air-weight-development-release.md).
+
+7 September Air weight release: all six reviewed migrations and Dexter version
+168 are deployed to development; exact source, unchanged Booking/Quote hashes,
+preserved function ACLs and unchanged security advisors are verified. Teammate
+Finance `fbadac6` is merged unchanged; client `54d6da2` passed build and 45 focused
+checks and is pushed to dev. Vercel `dpl_6VmMa56DW2bjsiQSkCDvVc7734BJ` is QUEUED,
+not READY. Continue that deployment, then hosted Air save/reload/restore and
+approval/watch verification. See [release evidence](../release/2026-09-07-air-weight-development-release.md).
+All existing approval gates, exclusions and the full all-mode goal remain.
+
 7 September consolidated acceptance review: use
 [remaining acceptance](freight-remaining-acceptance.md) for the current gap map
 across all eight original clashes. Original hosted Quote issue/acceptance and

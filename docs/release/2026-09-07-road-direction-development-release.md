@@ -53,5 +53,31 @@ cover omitted/null/blank locations, one missing endpoint, a valid country alias,
 and all four real route directions. Thirteen direction/opening tests pass.
 This follow-up is not yet released; do not save the draft using the old page.
 
+## Follow-up released; hosted save/reload passed
+
+The preceding pending statement is superseded by release
+`74ea52e2baacfdc8109492300909fbbd677c07dc`, containing the empty-country guard
+and actual Booking-calculation regression. Fourteen focused tests and the client
+TypeScript/Vite build passed; log `/tmp/multideck-direction-followup-build.log`.
+No incoming dev commits before the normal push. No backend redeployment needed.
+
+Deployment `dpl_9wtxmLYd2x6qdL4owLNCrz22j5nD` is READY for that exact commit,
+with `dev.multideck.app` assigned and no alias error. Immutable URL:
+`multideck-app-eswnx0mfw-databrain-solutions.vercel.app`.
+
+Fresh Chrome tab `1772488000` reopened the existing `JD0991135` draft. Editing
+Customer ref no longer invents Cross trade; Direction stays editable/Domestic.
+Normal Save persisted `INTERNAL ROAD DIRECTION QA 2026-09-07`. Independent SQL
+confirms the editable-details customerReference value, Domestic, Road, draft and
+exactly one creation event. A separate fresh tab `1772488003` confirms the marker
+and Domestic direction survive reload, with no unsaved Save/Discard controls.
+The labelled internal draft is retained; no customer or transport instruction
+was created. This closes the basic Road creation/edit/save/reload gate, not the
+cross-border, scheduling, Kanban persistence, document or hosted denial gates.
+
+Post-test fingerprints of the original 77 Job headers (excluding only the new
+synthetic Job ID) and all 38 Quote versions exactly match the before-release
+values above. Existing records were not changed by this verification.
+
 Prior Job-ref gate remains closed; original Quote revision send/accept/apply
 approvals remain held. Customs/iCustoms, tracking and PDF-logo work unchanged.

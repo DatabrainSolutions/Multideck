@@ -147,6 +147,16 @@ const rowKey = (row: DraftRow) => row.id || row._key
 const activeRows = (rows: Array<Record<string, unknown>>) =>
   rows.filter((row) => row.isActive !== false)
 
+const documentNumberExample = (row: DraftRow) => {
+  const nextNumber = Math.max(1, Math.trunc(number(row.nextNumber, 1)))
+  const numberDigits = Math.max(
+    1,
+    Math.min(12, Math.trunc(number(row.paddingLength, 6))),
+  )
+
+  return `${text(row.prefix)}${String(nextNumber).padStart(numberDigits, "0")}${text(row.suffix)}`
+}
+
 const universalTaxTreatments = [
   ["domestic-standard", "Domestic standard", "domestic_standard", "both"],
   ["reduced-rate", "Reduced rate", "reduced_rate", "both"],
@@ -962,14 +972,10 @@ export function FinanceSetupPage({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [reason, setReason] = useState("")
-  const [confirmed, setConfirmed] = useState(false)
-  const [reviewOpen, setReviewOpen] = useState(false)
   const [pendingChange, setPendingChange] = useState<
     { type: "refresh" | "discard" } | { type: "entity"; id: string } | null
   >(null)
   const saveInFlight = useRef(false)
-  const reviewButton = useRef<HTMLButtonElement>(null)
   const [companies, setCompanies] = useState<
     Array<{
       name: string
@@ -1045,6 +1051,7 @@ export function FinanceSetupPage({
     void load()
   }, [load])
   const tab = initialTab
+  const bankAccountsSurface = tab === "banks"
   useEffect(() => {
     document.title = `${t(financeSetupTitleByTab[tab])} · Finance · Multideck`
   }, [tab, t])
@@ -1140,8 +1147,6 @@ export function FinanceSetupPage({
     setSelectedEntityId(legalEntityId)
     setDraft(nextDraft)
     baseline.current = JSON.stringify(nextDraft)
-    setReason("")
-    setConfirmed(false)
     const entity = setup.legalEntities.find(
       (item) => item.LegalEntity_ID === legalEntityId,
     )
@@ -1160,29 +1165,20 @@ export function FinanceSetupPage({
       !draft ||
       !selectedEntityId ||
       saveInFlight.current ||
-      !confirmed ||
-      reason.trim().length < 4 ||
       !setup?.compatibility.current
     )
       return
     saveInFlight.current = true
     setSaving(true)
     try {
-      const result = await saveFinanceAdministration(
-        selectedEntityId,
-        draft,
-        reason,
-      )
+      const result = await saveFinanceAdministration(selectedEntityId, draft)
       toast.success(
         t(
           result.ready
-            ? "Finance settings approved and ready."
-            : "Finance settings approved with readiness items remaining.",
+            ? "Finance settings saved and ready."
+            : "Finance settings saved with readiness items remaining.",
         ),
       )
-      setReviewOpen(false)
-      setReason("")
-      setConfirmed(false)
       await load(selectedEntityId)
     } catch (cause) {
       toast.error(
@@ -1232,13 +1228,13 @@ export function FinanceSetupPage({
     setProviderBusy(queueId)
     try {
       await processFinanceIntegrationQueue(queueId)
-      toast.success(t("Provider delivery completed."))
+      toast.success(t("Accounts system delivery completed."))
       await load(selectedEntityId)
     } catch (cause) {
       toast.error(
         cause instanceof Error
           ? cause.message
-          : t("Provider delivery could not be completed."),
+          : t("Accounts system delivery could not be completed."),
       )
       await load(selectedEntityId)
     } finally {
@@ -1279,11 +1275,6 @@ export function FinanceSetupPage({
       id: "currencies",
       label: t("Currencies & FX"),
       value: String(draft ? activeRows(draft.currencies).length : 0),
-    },
-    {
-      id: "banks",
-      label: t("Bank accounts"),
-      value: String(draft ? activeRows(draft.banks).length : 0),
     },
     {
       id: "ledger",
@@ -1331,7 +1322,7 @@ export function FinanceSetupPage({
   return (
     <div className="@container/finance min-w-0">
       <SettingsPageHeader
-        title={t("Finance administration")}
+        title={t(bankAccountsSurface ? "Bank accounts" : "Finance administration")}
         descriptionPlacement="under-title"
         icon={Landmark}
         actions={
@@ -1339,9 +1330,11 @@ export function FinanceSetupPage({
             <Button
               type="button"
               variant="outline"
-              onClick={() => navigate("/finance/receivables")}
+              onClick={() =>
+                navigate(bankAccountsSurface ? "/finance/cash" : "/finance/receivables")
+              }
             >
-              {t("Open sales ledger")}
+              {t(bankAccountsSurface ? "Open cashbook" : "Open sales ledger")}
             </Button>
             <Button
               type="button"
@@ -1437,14 +1430,16 @@ export function FinanceSetupPage({
             </div>
           </div>
         </div>
-        <TabsRail
-          className="gap-4 [&>button]:h-11 [&>button]:text-[13px]"
-          tabs={tabs}
-          activeTab={tab}
-          onChange={(value) =>
-            navigate(financeSetupRouteByTab[value as FinanceSetupTab])
-          }
-        />
+        {!bankAccountsSurface ? (
+          <TabsRail
+            className="gap-4 [&>button]:h-11 [&>button]:text-[13px]"
+            tabs={tabs}
+            activeTab={tab}
+            onChange={(value) =>
+              navigate(financeSetupRouteByTab[value as FinanceSetupTab])
+            }
+          />
+        ) : null}
 
         {tab === "overview" ? (
           <OverviewTab
@@ -1597,11 +1592,14 @@ export function FinanceSetupPage({
             <Button
               type="button"
               disabled={!dirty || saving || !setup.compatibility.current}
-              ref={reviewButton}
-              onClick={() => setReviewOpen(true)}
+              onClick={() => void save()}
             >
-              <ShieldCheck className="size-4" />
-              {t("Review & approve")}
+              {saving ? (
+                <LoaderCircle className="animate-spin" />
+              ) : (
+                <Save className="size-4" />
+              )}
+              {t(saving ? "Saving settings…" : "Save settings")}
             </Button>
           </div>
         </div>
@@ -1616,7 +1614,7 @@ export function FinanceSetupPage({
               <DialogTitle>{t("Discard unsaved changes?")}</DialogTitle>
               <DialogDescription>
                 {t(
-                  "Your changes have not been approved. Discarding returns these settings to the last loaded revision.",
+                  "Your changes have not been saved. Discarding returns these settings to the last loaded revision.",
                 )}
               </DialogDescription>
             </DialogHeader>
@@ -1634,8 +1632,6 @@ export function FinanceSetupPage({
                 onClick={() => {
                   const action = pendingChange
                   setPendingChange(null)
-                  setReason("")
-                  setConfirmed(false)
                   if (action?.type === "refresh") void load(selectedEntityId)
                   else
                     selectEntity(
@@ -1644,95 +1640,6 @@ export function FinanceSetupPage({
                 }}
               >
                 {t("Discard changes")}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-        <Dialog
-          open={reviewOpen}
-          onOpenChange={(open) => {
-            if (!saving) setReviewOpen(open)
-          }}
-        >
-          <DialogContent
-            className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg motion-reduce:animate-none"
-            showCloseButton={!saving}
-            onCloseAutoFocus={(event) => {
-              event.preventDefault()
-              reviewButton.current?.focus()
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle>{t("Approve finance settings")}</DialogTitle>
-              <DialogDescription>
-                {t(
-                  "Saving creates a permanent approved revision and an audit event for this legal entity.",
-                )}
-              </DialogDescription>
-            </DialogHeader>
-            <p
-              className="text-[13px] font-medium text-[var(--md-ink)]"
-              data-i18n-skip
-            >
-              {selectedEntity?.LegalEntity_Name}
-            </p>
-            <Field
-              id="finance-approval-reason"
-              label={t("Approval reason")}
-              value={reason}
-              onChange={setReason}
-              placeholder={t(
-                "Initial finance setup or reviewed change reference",
-              )}
-              disabled={saving}
-            />
-            <p
-              id="finance-approval-help"
-              className="text-[12px] text-[var(--md-subtle)]"
-            >
-              {t("Enter at least 4 characters and confirm the review to save.")}
-            </p>
-            <label className="flex cursor-pointer items-start gap-3 text-[13px] leading-5 text-[var(--md-text)]">
-              <Switch
-                className="mt-0.5"
-                checked={confirmed}
-                onCheckedChange={setConfirmed}
-                disabled={saving}
-                aria-label={t("Confirm finance approval")}
-              />
-              <span>
-                {t(
-                  "I confirm these settings were reviewed by an authorised finance administrator.",
-                )}
-              </span>
-            </label>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={saving}
-                onClick={() => setReviewOpen(false)}
-              >
-                {t("Continue editing")}
-              </Button>
-              <Button
-                type="button"
-                aria-describedby="finance-approval-help"
-                disabled={
-                  !dirty ||
-                  !confirmed ||
-                  reason.trim().length < 4 ||
-                  saving ||
-                  !setup.compatibility.current
-                }
-                onClick={() => void save()}
-              >
-                {saving ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : (
-                  <Save className="size-4" />
-                )}
-                {t(saving ? "Saving settings…" : "Save approved settings")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1898,7 +1805,7 @@ function OverviewTab({
         <div className="mt-auto pt-3 text-[11px] leading-4 text-[var(--md-subtle)]">
           {latestRevision ? (
             <>
-              {t("Last approved revision")}{" "}
+              {t("Last saved revision")}{" "}
               {latestRevision.FINAdminRevision_Number} ·{" "}
               {new Intl.DateTimeFormat(language, {
                 dateStyle: "medium",
@@ -1906,7 +1813,7 @@ function OverviewTab({
               }).format(new Date(latestRevision.FINAdminRevision_ApprovedAt))}
             </>
           ) : (
-            t("No approved finance revision yet.")
+            t("No saved finance revision yet.")
           )}
         </div>
       </CustomsReadinessReview>
@@ -2002,13 +1909,13 @@ function SystemsTab({
       <SettingsPanel
         title={t("Prepare external mirror")}
         description={t(
-          "A finance review checks the external company and base currency before mirroring is activated. No provider records are overwritten.",
+          "A finance review checks the external company and base currency before mirroring is activated. No accounts system records are overwritten.",
         )}
       >
         <div className="grid gap-4 px-5 py-4 md:grid-cols-2 xl:grid-cols-4">
           <SelectField
             id="finance-provider"
-            label={t("Provider")}
+            label={t("Accounts system")}
             value={form.providerCode}
             onChange={(providerCode) =>
               setForm((current) => ({
@@ -2092,7 +1999,7 @@ function SystemsTab({
         <SettingsPanel
           title={t("Connection review history")}
           description={t(
-            "Every provider preflight and approval is retained with its date and time.",
+            "Every accounts system preflight and approval is retained with its date and time.",
           )}
         >
           <div className="divide-y divide-[var(--md-line)]">
@@ -2807,7 +2714,7 @@ function LedgerTab({
     <FinancePanel
       title={t("Chart of accounts")}
       description={t(
-        "Provider accounts are never renamed or deleted automatically. Control accounts do not allow manual posting.",
+        "Accounts system records are never renamed or deleted automatically. Control accounts do not allow manual posting.",
       )}
       action={
         <div className="flex flex-wrap gap-2">
@@ -2944,7 +2851,7 @@ function LedgerTab({
               />
               <Field
                 id={`nominal-map-${rowKey(row)}`}
-                label={t("Provider mapping hint")}
+                label={t("Accounts system mapping hint")}
                 value={text(row.externalMappingHint)}
                 onChange={(externalMappingHint) =>
                   patchRow("nominalAccounts", row, { externalMappingHint })
@@ -3168,7 +3075,7 @@ function TaxTab({
       <FinancePanel
         title={t("Tax treatments")}
         description={t(
-          "Operators can select approved treatments only; they cannot enter rates or provider templates.",
+          "Operators can select approved treatments only; they cannot enter rates or accounts system templates.",
         )}
         action={
           <Button
@@ -3459,7 +3366,9 @@ function DocumentsTab({
       </FinancePanel>
       <FinancePanel
         title={t("Document numbering")}
-        description={t("Each legal entity has its own numbering sequences.")}
+        description={t(
+          "Controls the references assigned automatically when finance documents are created.",
+        )}
         action={
           <Button
             type="button"
@@ -3467,8 +3376,8 @@ function DocumentsTab({
             variant="outline"
             onClick={() =>
               addRow("numberSequences", {
-                code: "",
-                name: "",
+                code: `finance-sequence:${key()}`,
+                name: "New sequence",
                 documentTypeCode: "sl_invoice",
                 prefix: "",
                 suffix: "",
@@ -3490,19 +3399,17 @@ function DocumentsTab({
               key={rowKey(row)}
               persisted={Boolean(row.id)}
               title={text(row.name, t("New sequence"))}
-              meta={text(row.code)}
               active={row.isActive !== false}
               onRemove={() => removeRow("numberSequences", row)}
             >
               <div className="grid gap-3 @min-[420px]/panel:grid-cols-2 @min-[760px]/panel:grid-cols-4">
                 <Field
-                  id={`sequence-code-${rowKey(row)}`}
-                  label={t("Code")}
-                  value={text(row.code)}
-                  onChange={(code) =>
-                    patchRow("numberSequences", row, { code })
+                  id={`sequence-name-${rowKey(row)}`}
+                  label={t("Sequence name")}
+                  value={text(row.name)}
+                  onChange={(name) =>
+                    patchRow("numberSequences", row, { name })
                   }
-                  ltr
                 />
                 <SelectField
                   id={`sequence-type-${rowKey(row)}`}
@@ -3548,7 +3455,7 @@ function DocumentsTab({
                 />
                 <Field
                   id={`sequence-padding-${rowKey(row)}`}
-                  label={t("Padding")}
+                  label={t("Number digits")}
                   value={number(row.paddingLength, 6)}
                   type="number"
                   onChange={(paddingLength) =>
@@ -3571,6 +3478,17 @@ function DocumentsTab({
                     { value: "monthly", label: t("Monthly") },
                   ]}
                 />
+                <div className="min-w-0 space-y-1">
+                  <p className="text-[12px] font-medium text-[var(--md-text)]">
+                    {t("Next document")}
+                  </p>
+                  <div
+                    className="flex min-h-9 items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] px-3 text-[13px] font-medium tabular-nums text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
+                    data-i18n-skip
+                  >
+                    {documentNumberExample(row)}
+                  </div>
+                </div>
               </div>
             </RowShell>
           ))}
@@ -3614,7 +3532,7 @@ function MappingsTab({
       <MappingPanel
         title={t("Control-account mappings")}
         description={t(
-          "Receivables, payables, bank and tax controls → provider GL accounts.",
+          "Receivables, payables, bank and tax controls → accounts system GL accounts.",
         )}
         collection="accountMappings"
         rows={draft.accountMappings as DraftRow[]}
@@ -3657,7 +3575,7 @@ function MappingsTab({
             />
             <Field
               id={`map-account-code-${rowKey(row)}`}
-              label={t("Provider account code")}
+              label={t("Accounts system account code")}
               value={text(row.providerAccountCode)}
               onChange={(providerAccountCode) =>
                 patchRow("accountMappings", row, {
@@ -3670,7 +3588,7 @@ function MappingsTab({
             />
             <Field
               id={`map-account-name-${rowKey(row)}`}
-              label={t("Provider account name")}
+              label={t("Accounts system account name")}
               value={text(row.providerAccountName)}
               onChange={(providerAccountName) =>
                 patchRow("accountMappings", row, { providerAccountName })
@@ -3692,7 +3610,7 @@ function MappingsTab({
       <MappingPanel
         title={t("Charge-code mappings")}
         description={t(
-          "Freight charge codes → provider items and income or cost accounts.",
+          "Freight charge codes → accounts system items and income or cost accounts.",
         )}
         collection="chargeMappings"
         rows={draft.chargeMappings as DraftRow[]}
@@ -3735,7 +3653,7 @@ function MappingsTab({
             />
             <Field
               id={`charge-item-${rowKey(row)}`}
-              label={t("Provider item code")}
+              label={t("Accounts system item code")}
               value={text(row.providerItemCode)}
               onChange={(providerItemCode) =>
                 patchRow("chargeMappings", row, { providerItemCode })
@@ -3744,7 +3662,7 @@ function MappingsTab({
             />
             <Field
               id={`charge-item-name-${rowKey(row)}`}
-              label={t("Provider item name")}
+              label={t("Accounts system item name")}
               value={text(row.providerItemName)}
               onChange={(providerItemName) =>
                 patchRow("chargeMappings", row, { providerItemName })
@@ -3752,7 +3670,7 @@ function MappingsTab({
             />
             <Field
               id={`charge-account-${rowKey(row)}`}
-              label={t("Provider account ID")}
+              label={t("Accounts system account ID")}
               value={text(row.providerAccountId)}
               onChange={(providerAccountId) =>
                 patchRow("chargeMappings", row, { providerAccountId })
@@ -3766,7 +3684,7 @@ function MappingsTab({
       <MappingPanel
         title={t("Tax mappings")}
         description={t(
-          "Approved tax treatments → provider tax codes for sales or purchases.",
+          "Approved tax treatments → accounts system tax codes for sales or purchases.",
         )}
         collection="taxMappings"
         rows={draft.taxMappings as DraftRow[]}
@@ -3814,7 +3732,7 @@ function MappingsTab({
             />
             <Field
               id={`taxmap-provider-${rowKey(row)}`}
-              label={t("Provider tax code")}
+              label={t("Accounts system tax code")}
               value={text(row.providerTaxCode)}
               onChange={(providerTaxCode) =>
                 patchRow("taxMappings", row, { providerTaxCode })
@@ -3823,7 +3741,7 @@ function MappingsTab({
             />
             <Field
               id={`taxmap-name-${rowKey(row)}`}
-              label={t("Provider tax name")}
+              label={t("Accounts system tax name")}
               value={text(row.providerTaxName)}
               onChange={(providerTaxName) =>
                 patchRow("taxMappings", row, { providerTaxName })
@@ -3831,7 +3749,7 @@ function MappingsTab({
             />
             <Field
               id={`taxmap-rate-${rowKey(row)}`}
-              label={t("Provider rate %")}
+              label={t("Accounts system rate %")}
               value={text(row.taxRatePercent)}
               type="number"
               onChange={(taxRatePercent) =>
@@ -4285,9 +4203,9 @@ function ControlsTab({
         </FinancePanel>
       </div>
       <FinancePanel
-        title={t("Approved revision history")}
+        title={t("Settings history")}
         description={t(
-          "Earlier revisions remain available after later approvals.",
+          "Earlier revisions remain available after later saves.",
         )}
       >
         <div className="divide-y divide-[var(--md-line)]">
@@ -4302,8 +4220,7 @@ function ControlsTab({
                     {t("Revision")} {revision.FINAdminRevision_Number}
                   </p>
                   <p className="mt-1 text-[12px] text-[var(--md-subtle)]">
-                    {revision.FINAdminRevision_Reason ||
-                      t("No approval reason recorded")}{" "}
+                    {revision.FINAdminRevision_Reason || t("Settings saved")}{" "}
                     ·{" "}
                     {new Intl.DateTimeFormat(language, {
                       dateStyle: "medium",
@@ -4318,13 +4235,17 @@ function ControlsTab({
                       : "neutral"
                   }
                 >
-                  {t(revision.FINAdminRevision_StatusCode)}
+                  {t(
+                    revision.FINAdminRevision_StatusCode === "approved"
+                      ? "Saved"
+                      : revision.FINAdminRevision_StatusCode,
+                  )}
                 </StatusPill>
               </div>
             ))
           ) : (
             <div className="px-4 py-5 text-center text-[12px] text-[var(--md-subtle)]">
-              {t("No approved revisions yet.")}
+              {t("No saved revisions yet.")}
             </div>
           )}
         </div>

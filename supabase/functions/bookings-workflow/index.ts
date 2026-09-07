@@ -168,6 +168,18 @@ Deno.serve(async (request) => {
       if (error || !data) throw error ?? new Error("Dangerous-goods save returned no result")
       return jsonResponse(request, data)
     }
+    if (action === "save-security-evidence") {
+      const { data, error } = await admin.rpc("booking_workflow_save_security_evidence", {
+        caller_auth_user_id: userId,
+        requested_job_id: parseUuid(body.jobId, "Booking"),
+        payload: parsePayload(body.securityEvidence),
+      })
+      if (error?.code === "PT409" || error?.code === "40001") {
+        throw new BookingWorkflowError(409, "The Booking, cargo or screening evidence changed. Reload it and review your changes before saving.", error.message)
+      }
+      if (error || !data) throw error ?? new Error("Screening evidence save returned no result")
+      return jsonResponse(request, data)
+    }
     if (action === "quote-sync-review") {
       const { data, error } = await admin.rpc("booking_workflow_quote_sync_review_v2", {
         caller_auth_user_id: userId,

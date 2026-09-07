@@ -225,6 +225,22 @@ test('Shipment value approval shows exact amount/currency, explicit clearing, an
     assert.ok(unrelated.every(item => item.beforeKnown === false && item.before === null))
   }
 })
+test('Shipment override requires explicit intent/approval and shows exact kg, not money or cargo values', () => {
+  const action = 'update_booking_weight_override'
+  for (const mode of ['approve', 'full']) assert.equal(requiresExplicitActionApproval(action, mode), true)
+  assert.equal(operatorAuthorisesAction('Set shipment weight override to 12 kg', action), true)
+  assert.equal(operatorAuthorisesAction('Show shipment weight override', action), false)
+  assert.equal(operatorAuthorisesAction('Update cargo line weight', action), false)
+  for (const locale of ['en-GB','en-US']) {
+    const current = { valueScope:'shipment_operational_values',chargeableWeightOverrideKg:'12.123456789',amount:'9000',currency:'GBP' }
+    const preview = valuePreview(locale,action,{weightKg:'13.123456789'},current)[0]
+    assert.deepEqual([preview.before,preview.after,preview.beforeKnown],['12.123456789','13.123456789',true])
+    assert.match(preview.field,/override \(kg\)/)
+    assert.equal(valuePreview(locale,action,{weightKg:null},current)[0].kind,'removed')
+    assert.equal(valuePreview(locale,action,{weightKg:'1'},{chargeableWeightKg:'88'})[0].beforeKnown,false)
+    assert.equal(valuePreview(locale,'update_booking_shipment_value',{amount:'9001',currency:'GBP'},current)[0].before,'9000')
+  }
+})
 const sourceFunctions = ['isObject', 'cleanString', 'isUuid', 'documentEvidence', 'argumentsWithDocumentEvidence'].map(name => {
   const start = agentSource.indexOf(`function ${name}(`)
   assert.ok(start >= 0)
