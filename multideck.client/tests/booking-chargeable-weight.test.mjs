@@ -39,3 +39,27 @@ test('real cargo edit callback retains raw decimals and clears without changing 
     assert.equal(editor.state().sourceQuote.reference, 'JQ TEST')
   }
 })
+
+test('actual Save guard stops invalid line and override inputs and selects the failing field', async () => {
+  const component = readFileSync(new URL('../src/components/multideck/booking-components.tsx', import.meta.url), 'utf8')
+  const start = component.indexOf('  async function saveDetails()')
+  const end = component.indexOf('    const allocationIssue', start)
+  assert.ok(start >= 0 && end > start)
+  const guard = transformSync(component.slice(start, end) + '\nreturn "validated";\n}', { loader: 'tsx' }).code
+  const create = new Function('bookingChargeableWeightError', 'draftWorkspace', `
+    const draftBooking = {}, detailsDirty = true, savingDetails = false, loadedRecord = {workspace:{}};
+    const asRecord = value => value || {};
+    const recordText = (record,key) => record[key] == null ? '' : String(record[key]);
+    let validation; const setWeightValidation = update => validation = update(validation);
+    ${guard}
+    return {saveDetails, validation:()=>validation};`)
+  for (const [weight, override, index] of [['bad', '', 0], ['1', '-2', null]]) {
+    const editor = create(module.exports.bookingChargeableWeightError, { cargo: [{ description: 'Test', chargeableWeightKg: weight }], booking: { editableDetails: { chargeableWeightKg: override } } })
+    assert.equal(await editor.saveDetails(), undefined)
+    assert.deepEqual(editor.validation(), { attempt: 1, index })
+    await editor.saveDetails()
+    assert.equal(editor.validation().attempt, 2)
+  }
+  const valid = create(module.exports.bookingChargeableWeightError, { cargo: [{ description: 'Test', chargeableWeightKg: '0' }], booking: { editableDetails: { chargeableWeightKg: '' } } })
+  assert.equal(await valid.saveDetails(), 'validated')
+})

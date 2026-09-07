@@ -1,5 +1,10 @@
 import type { BookingWorkflowCargo } from './booking-workflow-api'
 
+export function bookingChargeableWeightError(value: BookingWorkflowCargo['chargeableWeightKg']) {
+  return bookingChargeableWeightSummary([{ chargeableWeightKg: value }]).invalid
+    ? 'Enter a non-negative decimal up to 999999999999, or leave blank when unknown.' : ''
+}
+
 /** Exact operational line subtotal. Missing/invalid lines never count as zero. */
 export function bookingChargeableWeightSummary(lines: readonly BookingWorkflowCargo[]) {
   let missing = 0

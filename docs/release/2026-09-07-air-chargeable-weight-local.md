@@ -106,3 +106,29 @@ Still open: full keyboard/mobile/visual checks, field-level validation and the
 existing shipment override's server validation/meaning across consumers. This
 summary is operational information, not a new canonical billable-weight result.
 Hosted save/reload remains withheld with the backend migration release.
+
+## Validation follow-through
+
+Pending migration `20260907131127_booking_shipment_weight_override_validation.sql`
+validates the existing shipment override inside `save_booking_detail_fields`,
+after its permission/tenant/row-lock checks. It reuses the cargo decimal validator
+without allocating weights or adding a parallel save action. Blank becomes JSON
+null; omission preserves the previous override. Existing helper grants remain.
+The stable-items PostgreSQL suite now replaces its declared detail-stage stub
+with the actual production function for this fixture. Public-save checks passed
+for exact grouped decimal input, omission, clear, invalid values and atomic
+rollback, unchanged cargo/Quote records, and unchanged private browser access.
+
+The client Save guard now selects the invalid cargo line (or shipment override),
+opens Cargo & equipment, focuses the field and links its inline error using
+aria-invalid/aria-describedby. Four client tests and the production build passed.
+Fresh isolated Chrome on local JI0991132 confirmed Save leaves `bad` line input
+unsaved and focuses its error; a separate `-2` shipment override test focused its
+own error. All test drafts were discarded; no hosted Save was submitted.
+
+Dexter's new approved cargo action/watch remains explicitly per-line. This
+validation patch adds no shipment-override action or permission. A shipment
+override must not be interpreted as a cargo-line edit or distributed by Dexter;
+shipment-level read/write/watch semantics remain a separate open parity gate
+before the Air release. Mobile/full keyboard, fresh-schema rehearsal and hosted
+verification remain open. There are now five pending Air migrations, none applied.
