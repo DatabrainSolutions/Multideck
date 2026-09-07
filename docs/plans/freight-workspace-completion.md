@@ -1,5 +1,18 @@
 # Freight workspace completion
 
+7 September hosted DG Dexter/watch checkpoint: caught and corrected an existing
+prose formatter rewriting supplied DG punctuation. Exact `e186908` is READY;
+Dexter 165 preserves source strings in both response paths. The flawed proposal
+was denied; a fresh exact-text proposal stayed unapplied until normal approval.
+Hosted exact-record watch setup, matching once, unrelated/no-op silence,
+pause/resume, clear and retired-target denial pass. Synthetic evidence is voided,
+temporary values cleared, watch paused with two retained alerts. See
+[source fidelity](../release/2026-09-07-dangerous-goods-source-fidelity.md) and
+[approval/watch evidence](../release/2026-09-07-dangerous-goods-approval-watch-evidence.md).
+Next is a consolidated remaining-acceptance review across the original eight
+clashes and all-mode depth, prioritising unproven operational and isolation
+gates without repeating valid evidence. No 95% claim; approvals/exclusions stay.
+
 7 September dangerous-goods development release: exact `0e38c1b` is READY on
 the approved development alias; both migrations and matching Booking/Dexter
 functions are deployed. Hosted operator create, fresh load, correction,
