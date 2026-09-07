@@ -44,7 +44,7 @@ function AddressSummary({ context }: { context: ProviderCustomerContext }) {
           {address.email ? <p className="mt-1" data-i18n-skip dir="ltr">{address.email}</p> : null}
           {address.phone ? <p data-i18n-skip dir="ltr">{address.phone}</p> : null}
         </div>
-      ) : <p className="mt-2 text-[12px] text-[var(--md-red)]">{t("No active billing address is recorded. Add one in CRM before creating the accounting customer if the provider requires it.")}</p>}
+      ) : <p className="mt-2 text-[12px] text-[var(--md-red)]">{t("No active billing address is recorded. Add one in CRM before creating the accounting customer if the accounts system requires it.")}</p>}
     </div>
   )
 }
@@ -136,7 +136,7 @@ export function ProviderCustomerSetupWizard({ open, connection, organisation, on
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("The accounting customer could not be created.")) } finally { setSubmitting(false) }
   }
 
-  const steps = isErpNext ? ["Match", "Provider details", "Review"] : ["Provider details", "Review"]
+  const steps = isErpNext ? ["Match", "Accounts system details", "Review"] : ["Accounts system details", "Review"]
   const currentStep = isErpNext ? stage === "match" ? 0 : stage === "details" ? 1 : 2 : stage === "details" ? 0 : 1
 
   return (
@@ -144,7 +144,7 @@ export function ProviderCustomerSetupWizard({ open, connection, organisation, on
       <DialogContent className="max-h-[94vh] overflow-y-auto sm:max-w-[760px]">
         <DialogHeader>
           <DialogTitle>{t(`Set up customer in ${context?.provider.name ?? (connection?.ACCIC_ProviderCode === "sage_50" ? "Sage 50 Desktop" : "ERPNext")}`)}</DialogTitle>
-          <DialogDescription>{t("Review the Multideck customer, choose the accounting-specific defaults, then create or link one exact provider record.")}</DialogDescription>
+          <DialogDescription>{t("Review the Multideck customer, choose the accounting-specific defaults, then create or link one exact accounts system record.")}</DialogDescription>
         </DialogHeader>
 
         {loading ? <div className="grid min-h-72 place-items-center"><LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" /></div> : error && !context ? <div role="alert" className="my-5 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red),transparent_90%)] p-4 text-[13px] leading-5 text-[var(--md-red)]">{t(error)}</div> : context ? (

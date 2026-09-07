@@ -61,7 +61,7 @@ const staticLeafLabels: Record<string, string> = {
   "/finance/ledger": "Nominal accounts",
   "/finance/tax": "Tax & VAT",
   "/finance/documents": "Document numbering & terms",
-  "/finance/mappings": "Charge & provider mappings",
+  "/finance/mappings": "Accounts system mappings",
   "/finance/compliance": "Compliance obligations",
   "/finance/controls": "Posting controls & audit",
   "/finance/reports": "Financial reports",

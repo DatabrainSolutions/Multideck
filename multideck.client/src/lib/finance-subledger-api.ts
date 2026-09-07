@@ -533,7 +533,7 @@ export function getErpNextCompanies() { return call<{ companies: Array<{ name: s
 export function createFinanceConfigurationRun(input: FinanceConfigurationInput) { return post<{ FINConfigRun_ID: string; FINConfigRun_StatusCode: string; FINConfigRun_PreviewJSON: FinanceConfigurationPreview }>("/configuration-runs", input) }
 export function approveFinanceConfigurationRun(id: string) { return post<{ runId: string; status: string; connectionId: string }>(`/configuration-runs/${encodeURIComponent(id)}/approve`) }
 export function processFinanceIntegrationQueue(id: string) { return post<{ id: string; status: string; provider: AccountingProviderCode; externalObjectType: string; externalId: string; externalNumber: string | null; externalUrl: string | null }>(`/integration-queue/${encodeURIComponent(id)}/process`) }
-export function saveFinanceAdministration(legalEntityId: string, settings: FinanceAdministrationDraft, reason: string) { return put<{ legalEntityId: string; revision: number; ready: boolean; missing: string[] }>(`/administration/${encodeURIComponent(legalEntityId)}`, { settings, reason }) }
+export function saveFinanceAdministration(legalEntityId: string, settings: FinanceAdministrationDraft, reason?: string) { return put<{ legalEntityId: string; revision: number; ready: boolean; missing: string[] }>(`/administration/${encodeURIComponent(legalEntityId)}`, reason ? { settings, reason } : { settings }) }
 export async function getFinanceDocuments(ledger: FinanceLedger) {
   const documents = await readFinanceRegisterPages((offset, limit) => call<unknown>(`/documents?ledger=${ledger}&offset=${offset}&limit=${limit}`), "documents")
   return { documents: documents.map(normaliseFinanceDocument) }

@@ -617,13 +617,14 @@ test("the comprehensive administrator UI covers every accounting configuration a
     "Documents",
     "Mappings",
     "Controls & audit",
-    "Save approved settings",
+    "Save settings",
     "localAdviceConfirmed",
     "accountNumberLast4",
     "freight-forwarder-v1",
     "A legal entity can operate several bank accounts in several currencies.",
   ])
   assert.doesNotMatch(financeSetupSource, /font-mono|ui-monospace|SF Mono/)
+  assert.doesNotMatch(financeSetupSource, /finance-approval-reason|Confirm finance approval|Review & approve/)
 })
 
 test("administration saves only through the protected permissioned Edge boundary", () => {
