@@ -29,6 +29,7 @@ import { shipmentWeightFixture } from './booking-shipment-weight-fixture.mjs'
 import { weightOverrideDexterFixture } from './booking-weight-override-dexter-fixture.mjs'
 import { chargeableDexterFixture } from './booking-chargeable-dexter-fixture.mjs'
 import { securityEvidenceFixture } from './booking-security-evidence-fixture.mjs'
+import { securityEvidenceDexterFixture } from './booking-security-evidence-dexter-fixture.mjs'
 
 // Executes the actual save function against disposable PostgreSQL, never a tenant.
 // PG_TEST_BIN can point to a PostgreSQL bin directory in CI.
@@ -223,6 +224,7 @@ test('PostgreSQL: stable items, route milestones, approved Dexter cargo/containe
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], shipmentWeightFixture)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], weightOverrideDexterFixture)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], securityEvidenceFixture)
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], securityEvidenceDexterFixture)
     // Separate real connections compete for the same sequence and request key.
     // All children settle before database teardown, including on assertion failure.
     const openConcurrent = key => new Promise((resolve, reject) => {

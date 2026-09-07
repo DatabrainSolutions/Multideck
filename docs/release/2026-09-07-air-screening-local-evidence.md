@@ -99,6 +99,26 @@ deployed; previous hosted Approve-mode evidence does not establish Full-access
 safety. Verify the prepared-action execution boundary and hosted Full-access
 proposal before closing that gate. No live action was attempted in this check.
 
+Follow-up execution-boundary check: the existing DG database migration already
+adds DG to the prepared-action executor's mandatory-approval guard. The actual
+local PostgreSQL approve/execute/replay fixture passes in approve/full modes:
+unapproved calls leave records/audit unchanged, approved calls write, and replay
+does not duplicate audit. Thus the Edge omission is a routing/review gap, not
+evidence that unapproved DG writes succeeded. Log:
+`/tmp/multideck-screening-approval-boundary.log`. Hosted Full-access verification
+remains open.
+
+Pending migration `20260907142751_dexter_booking_security_evidence_parity.sql`
+now contains the private screening domain read and canonical-writer adapter.
+The appended real PostgreSQL fixture passes exact source/reason retention,
+unknown values, correction, malformed/duplicate fields, stale timestamp,
+wrong-company denial, rollback, attributed audit, unchanged Quotes and private
+helper execute permissions. Log: `/tmp/multideck-screening-dexter-adapter.log`.
+This is direct adapter coverage, not a prepared screening action or watch test.
+The migration is explicitly incomplete and must remain unreleased until domain/
+action/watch registration, prepared-executor guard and deterministic watch
+signals/evaluation plus their lifecycle tests are added.
+
 Do not deploy this foundation alone. Complete operator source-evidence editing
 and read-only states, exact-source Dexter read/review/mandatory-approved writes,
 deterministic matching/non-matching/pause/resume watch support, retirement and
