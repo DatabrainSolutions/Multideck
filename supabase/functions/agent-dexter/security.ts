@@ -130,6 +130,7 @@ const ACTION_INTENTS: Record<string, RegExp> = {
   update_booking_container: /\b(update|edit|change|amend|correct|set|clear|record)\b.{0,80}\b(containers?|ulds?|vehicles?|trailers?|wagons?|equipment|vgm|tare|reefer|verified gross mass)\b/,
   update_booking_route: /\b(update|edit|change|amend|correct|set|clear|record)\b.{0,80}\b(rout(?:e|ing)|legs?|vessel|voyage|flight|trailer|rail|waybill|bill of lading|departure|arrival|pickup|delivery|cut[ -]?offs?|(?:documentation|cargo|vgm) deadline)\b/,
   record_booking_milestone: /\b(record|add|create|edit|update|change|correct|clear|set|mark|void)\b.{0,80}\b(milestones?|operational events?)\b/,
+  record_booking_security_evidence: /\b(record|add|create|edit|update|change|correct|clear|set|void)\b.{0,80}\b(screening evidence|screening details|screening record|cargo screening)\b/,
   change_booking_route_mode: /\b(change|switch|set|correct|update)\b.{0,80}\b(rout(?:e|ing)|legs?)\b.{0,80}\b(mode|sea|air|road|rail|courier|multimodal)\b/,
   update_booking_shipment_value: /\b(update|edit|change|correct|set|clear|record)\b.{0,80}\b(shipment goods value|shipment value|goods value|value of (?:the )?goods)\b/,
   update_booking_weight_override: /\b(update|edit|change|correct|set|clear|record)\b.{0,80}\b(shipment weight override|chargeable weight override|shipment override)\b/,
@@ -171,6 +172,11 @@ const ACTION_INTENTS: Record<string, RegExp> = {
 }
 
 export function operatorAuthorisesAction(prompt: string, actionCode: string) {
+  if (actionCode === "record_booking_security_evidence") {
+    // Supplied/quoted text and negative clauses are not operator write intent.
+    prompt = prompt.replace(/```[\s\S]*?```|`[^`]*`|"[^"]*"|“[^”]*”/g, " ")
+    if (/\b(do not|don't|never|without|avoid|must not|should not|read.only)\b/i.test(prompt)) return false
+  }
   if (actionCode === "send_email") return emailSendRequested(prompt)
   if (actionCode === "create_email_draft") prompt = emailInstructionText(prompt)
   const pattern = ACTION_INTENTS[actionCode]

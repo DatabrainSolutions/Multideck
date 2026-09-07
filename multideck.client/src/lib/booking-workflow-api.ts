@@ -53,6 +53,36 @@ export type BookingDangerousGoodsSave = {
     "flashPoint" | "marinePollutant" | "limitedQuantity" | "emergencyContact" | "notes" | "sourceReference" | "status">>
 }
 
+export type BookingSecurityEvidence = {
+  id: string
+  cargoId: string
+  recordStatus: "recorded" | "voided"
+  securityStatus: string | null
+  screeningMethod: string | null
+  screenedByName: string | null
+  agentReference: string | null
+  screenedAt: string | null
+  sourceReference: string
+  notes: string | null
+  source: "operator"
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
+  operatorEditable: boolean
+}
+
+export type BookingSecurityEvidenceSave = {
+  id: string
+  cargoId: string
+  expectedUpdatedAt: string
+  expectedCargoUpdatedAt: string
+  expectedRecordUpdatedAt: string | null
+  reason: string
+  changes: Partial<Pick<BookingSecurityEvidence, "recordStatus" | "securityStatus" | "screeningMethod" |
+    "screenedByName" | "agentReference" | "screenedAt" | "sourceReference" | "notes">>
+}
+
 export type BookingWorkflowCargo = {
   /** Vehicle carried as cargo, never the transporting truck's registration. */
   vin?: string | null
@@ -82,6 +112,7 @@ export type BookingWorkflowCargo = {
   cargoData?: Record<string, unknown>
   updatedAt?: string | null
   dangerousGoods?: BookingDangerousGoods[]
+  securityEvidence?: BookingSecurityEvidence[]
 }
 
 export type BookingWorkflowContainer = {
@@ -264,6 +295,7 @@ export type BookingWorkflowEvent = {
 
 export type BookingWorkflowWorkspace = {
   dangerousGoodsSupported?: boolean
+  securityEvidenceSupported?: boolean
   routeCutoffsSupported?: boolean
   routeMilestonesSupported?: boolean
   milestoneTypes?: { code: string; name: string }[]
@@ -434,6 +466,10 @@ export function saveBookingMilestone(jobId: string, milestone: BookingMilestoneS
 
 export function saveBookingDangerousGoods(jobId: string, dangerousGoods: BookingDangerousGoodsSave) {
   return invoke<BookingWorkflowWorkspace>({ action: "save-dangerous-goods", jobId, dangerousGoods }, "The dangerous-goods evidence could not be saved.")
+}
+
+export function saveBookingSecurityEvidence(jobId: string, securityEvidence: BookingSecurityEvidenceSave) {
+  return invoke<BookingWorkflowWorkspace>({ action: "save-security-evidence", jobId, securityEvidence }, "The screening evidence could not be saved.")
 }
 
 export function getBookingQuoteSyncReview(jobId: string) {
