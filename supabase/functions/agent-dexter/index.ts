@@ -1890,6 +1890,7 @@ Avoid filler such as "great question", "absolutely", "happy to help", "exciting"
 Do not repeat the operator's question unless clarification is necessary.
 
 # Evidence and uncertainty contract
+Shipment chargeable weight overrides are separate from per-line cargo weights, monetary goods values and air waybill weights. When booking_shipment_value returns chargeableWeightOverrideKg, read the exact Booking and updatedAt before proposing update_booking_weight_override. Show the current override and proposed kg value explicitly; null clears only this override. Always request approval in both access modes. Do not derive, distribute or infer an override from cargo totals or modify an AWB. The existing shipment-values watch can notify on chargeableWeightOverrideKg changes only, without thresholds or automatic edits. If this field/action is unavailable, direct the operator to Booking Details > Cargo rather than claiming generic Booking edits support it.
 Never invent or guess facts. This includes names, people, companies, roles, relationships, contact details, record references, quantities, dates, times, locations, routes, statuses, prices, totals, percentages, documents, events, actions, or outcomes.
 A factual claim may come only from the operator's current message, operator-attached context, conversation history, a successful workspace data-tool result, or stable general knowledge. Do not treat an example, placeholder, suggested value, or your own prior unsupported statement as fact.
 Do not assume that a likely value is the real value. Do not fill a gap with a plausible name, number, status, owner, deadline, reason, or result to make an answer feel complete.
@@ -2610,13 +2611,21 @@ function actionChanges(locale: DexterLocale, actionCode: string, argumentsValue:
   }
   if (actionCode === "update_booking_shipment_value") {
     return ["amount", "currency"].map((field) => {
-      const beforeKnown = Boolean(currentRecord?.valueScope === "shipment_goods" && Object.hasOwn(currentRecord, field))
+      const beforeKnown = Boolean(["shipment_goods", "shipment_operational_values"].includes(String(currentRecord?.valueScope)) && currentRecord && Object.hasOwn(currentRecord, field))
       const before = beforeKnown ? displayActionValue(currentRecord?.[field]) : null
       const raw = typeof argumentsValue[field] === "string" ? argumentsValue[field].trim() : null
       const after = raw ? (field === "currency" ? raw.toUpperCase() : raw) : null
       return { field: field === "amount" ? "Shipment goods amount" : "Shipment goods currency", before, after, value: after,
         beforeKnown, kind: after === null ? "removed" : beforeKnown && before === null ? "added" : "changed" }
     })
+  }
+  if (actionCode === "update_booking_weight_override") {
+    const beforeKnown = Boolean(currentRecord?.valueScope === "shipment_operational_values" && Object.hasOwn(currentRecord, "chargeableWeightOverrideKg"))
+    const before = beforeKnown ? displayActionValue(currentRecord?.chargeableWeightOverrideKg) : null
+    const raw = typeof argumentsValue.weightKg === "string" ? argumentsValue.weightKg.trim() : null
+    const after = raw || null
+    return [{ field: "Shipment chargeable weight override (kg)", before, after, value: after, beforeKnown,
+      kind: after === null ? "removed" : beforeKnown && before === null ? "added" : "changed" }]
   }
   if (actionCode === CREATE_PURCHASE_ORDER_ACTION) {
     return purchaseOrderActionChanges(locale, argumentsValue)
@@ -2751,6 +2760,9 @@ function preparedActionDescription(
   if (actionCode === "update_booking_shipment_value") {
     const reference = cleanString(currentRecord?.bookingReference, 80) || "the selected Booking"
     return `Review shipment goods value for ${reference}. This changes the shipment total only: no currency conversion is performed, cargo-line allocations and the accepted Quote stay unchanged. ${fallback}`
+  }
+  if (actionCode === "update_booking_weight_override") {
+    return `Review the shipment chargeable weight override in kg. Cargo-line weights, monetary values, the accepted Quote and air waybill stay unchanged. Clearing removes only the override. ${fallback}`
   }
   if (actionCode === CREATE_SUPPORT_TICKET_ACTION) {
     return sanitiseAnswer(supportTicketCopy(locale, "prepared", cleanString(args.title, 180)))

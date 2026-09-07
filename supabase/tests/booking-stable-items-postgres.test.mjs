@@ -26,6 +26,7 @@ import { roadOpenFixture } from './booking-road-open-fixture.mjs'
 import { openingDirectionFixture } from './booking-opening-direction-fixture.mjs'
 import { chargeableWeightFixture } from './booking-chargeable-weight-fixture.mjs'
 import { shipmentWeightFixture } from './booking-shipment-weight-fixture.mjs'
+import { weightOverrideDexterFixture } from './booking-weight-override-dexter-fixture.mjs'
 import { chargeableDexterFixture } from './booking-chargeable-dexter-fixture.mjs'
 
 // Executes the actual save function against disposable PostgreSQL, never a tenant.
@@ -219,6 +220,7 @@ test('PostgreSQL: stable items, route milestones, approved Dexter cargo/containe
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], chargeableWeightFixture)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], chargeableDexterFixture)
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], shipmentWeightFixture)
+    run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], weightOverrideDexterFixture)
     // Separate real connections compete for the same sequence and request key.
     // All children settle before database teardown, including on assertion failure.
     const openConcurrent = key => new Promise((resolve, reject) => {

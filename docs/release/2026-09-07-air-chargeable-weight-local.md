@@ -132,3 +132,31 @@ override must not be interpreted as a cargo-line edit or distributed by Dexter;
 shipment-level read/write/watch semantics remain a separate open parity gate
 before the Air release. Mobile/full keyboard, fresh-schema rehearsal and hosted
 verification remain open. There are now five pending Air migrations, none applied.
+
+## Shipment override Dexter parity — local
+
+Pending `20260907131646_dexter_shipment_weight_override_parity.sql` extends the
+existing shipment-values domain/watch projection with the distinctly named
+`chargeableWeightOverrideKg`. Existing monetary fields and actions are retained;
+the domain scope now identifies shipment operational values. The proposal renderer
+recognises both old and new scope labels so monetary before-values remain visible.
+
+The dedicated `update_booking_weight_override` action requires exact Booking ID,
+current timestamp, explicit decimal text/null and a reason. It uses ordinary
+Booking save, validates through the shared normalizer, and records before/after kg
+in audit. The database and Edge guards require approval in approve and full modes.
+Dexter's intent gate, proposal changes/description and guidance distinguish this
+override from cargo-line weights, money, Quote history and AWB documents.
+
+Verification passed: actual PostgreSQL prepared-action lifecycle in both modes,
+no unapproved mutation, exact domain reads, replay without duplicate writes,
+changed-only notifications, no-op/unrelated changes, pause/resume/clear,
+foreign-actor and stale/invalid-write rejection, unchanged cargo/Quote records,
+and private action access. Existing shipment-watch target/permission restrictions
+are reused. The 31 Edge approval/intent tests pass, including both English variants
+and preserved monetary previews; Deno check passes with no dependency/lock changes.
+
+This closes the local shipment-override parity gap, not hosted certification.
+All six Air migrations and the Edge update remain undeployed. Next release gates:
+fresh full-schema rehearsal, remaining visual/mobile checks, then controlled
+deployment and hosted persistence/permission/Dexter evidence.
