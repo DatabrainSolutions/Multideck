@@ -19,6 +19,7 @@ export function countryCodeFromFreightLocation(
   if (/^[A-Z]{2}[A-Z0-9]{3}$/.test(normalizedUnlocode)) return normalizedUnlocode.slice(0, 2)
 
   const normalizedValue = normalizedCountryText(value)
+  if (!normalizedValue) return null
   if (/^[A-Z]{2}$/.test(normalizedValue)) return normalizedValue
   const country = countries.find((option) => (
     normalizedCountryText(option.name) === normalizedValue
@@ -58,4 +59,3 @@ export function calculateQuoteFreightDirection(input: {
     destinationCountryCode: countryCodeFromFreightLocation(input.destinationCountry, input.destinationUnlocode, countries),
   })
 }
-

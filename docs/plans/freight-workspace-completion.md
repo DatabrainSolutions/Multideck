@@ -1,5 +1,29 @@
 # Freight workspace completion
 
+7 September consolidated acceptance review: use
+[remaining acceptance](freight-remaining-acceptance.md) for the current gap map
+across all eight original clashes. Original hosted Quote issue/acceptance and
+Job-ref restoration are closed within their recorded scope; revised-version
+acceptance remains approval-gated. Source tracing found that the live Road
+board opens a sample-backed detail page, making connected Road workflow the
+next implementation priority. Existing AWB screening/weight and warehouse
+appointment tables require ownership review, not parallel Booking fields.
+The workstream table below is a historical checkpoint, not current completion
+status. No application or live state changed in this audit.
+
+7 September hosted DG Dexter/watch checkpoint: caught and corrected an existing
+prose formatter rewriting supplied DG punctuation. Exact `e186908` is READY;
+Dexter 165 preserves source strings in both response paths. The flawed proposal
+was denied; a fresh exact-text proposal stayed unapplied until normal approval.
+Hosted exact-record watch setup, matching once, unrelated/no-op silence,
+pause/resume, clear and retired-target denial pass. Synthetic evidence is voided,
+temporary values cleared, watch paused with two retained alerts. See
+[source fidelity](../release/2026-09-07-dangerous-goods-source-fidelity.md) and
+[approval/watch evidence](../release/2026-09-07-dangerous-goods-approval-watch-evidence.md).
+Next is a consolidated remaining-acceptance review across the original eight
+clashes and all-mode depth, prioritising unproven operational and isolation
+gates without repeating valid evidence. No 95% claim; approvals/exclusions stay.
+
 7 September dangerous-goods development release: exact `0e38c1b` is READY on
 the approved development alias; both migrations and matching Booking/Dexter
 functions are deployed. Hosted operator create, fresh load, correction,
@@ -292,7 +316,9 @@ deferred. [Evidence and limits](../release/2026-09-06-quote-route-clear-evidence
 
 6 September release checkpoint: reconciled the live canonical UKSL source and importer improvements without reactivating the retired source. All 29 freight migrations plus the active-source freshness migration and six coordinated functions are now deployed to development. Verified exact migration identities, all 47 deployed source-file instances, unchanged existing record fingerprints and negative access boundaries. The full populated current-schema rehearsal and 80 focused checks pass. [Release evidence](../release/2026-09-06-freight-active-source-release.md). The matching client deployment, positive hosted lifecycle and all-mode operational depth remain unfinished; this is not end-to-end completion.
 
-| Workstream | Required outcome | Evidence gate | State |
+### Historical workstream checkpoint — superseded by the remaining-acceptance map
+
+| Workstream | Required outcome | Evidence gate | Historical state |
 | --- | --- | --- | --- |
 | Deployment | Explain failure, restore affected deployment without altering team setup | Vercel failure logs, successful matching build and route smoke test | Cause confirmed; matching dac9909 released through existing dev configuration, READY and approved-host read checks passed; old feature-branch ERROR records remain historical |
 | Shared policy | Consistent mode/direction/service/stage choices, field visibility and validation | Behaviour tests across supported combinations and browser checks | In progress |

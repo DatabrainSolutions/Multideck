@@ -1,4 +1,4 @@
-export type BookingWorkflowAction = "open" | "workspace" | "save" | "save-milestone" | "save-dangerous-goods" | "customs-readiness" | "send-to-customs" | "quote-sync-review" | "apply-quote-sync"
+export type BookingWorkflowAction = "open" | "open-road" | "workspace" | "save" | "save-milestone" | "save-dangerous-goods" | "customs-readiness" | "send-to-customs" | "quote-sync-review" | "apply-quote-sync"
 
 export class BookingWorkflowError extends Error {
   constructor(public readonly status: number, public readonly clientMessage: string, public readonly auditMessage = clientMessage) {
@@ -7,7 +7,7 @@ export class BookingWorkflowError extends Error {
 }
 
 export function parseAction(value: unknown): BookingWorkflowAction {
-  if (value === "open" || value === "workspace" || value === "save" || value === "save-milestone" || value === "save-dangerous-goods" || value === "customs-readiness" || value === "send-to-customs" || value === "quote-sync-review" || value === "apply-quote-sync") return value
+  if (value === "open" || value === "open-road" || value === "workspace" || value === "save" || value === "save-milestone" || value === "save-dangerous-goods" || value === "customs-readiness" || value === "send-to-customs" || value === "quote-sync-review" || value === "apply-quote-sync") return value
   throw new BookingWorkflowError(400, "Choose a supported booking action.")
 }
 
@@ -39,6 +39,12 @@ export function parseSequenceKey(value: unknown) {
   const candidate = typeof value === "string" && value.trim() ? value.trim().toLowerCase() : "default"
   if (!/^[a-z0-9_-]{1,40}$/.test(candidate)) throw new BookingWorkflowError(400, "Choose a valid booking reference sequence.")
   return candidate
+}
+
+export function parseOpeningDirection(value: unknown) {
+  if (value === undefined || value === null) return null
+  if (value === "import" || value === "export" || value === "domestic" || value === "cross_trade") return value
+  throw new BookingWorkflowError(400, "Choose a valid Booking direction.")
 }
 
 export function parsePayload(value: unknown) {

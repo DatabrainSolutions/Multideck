@@ -407,11 +407,14 @@ async function invokeNullable<T>(body: Record<string, unknown>, fallback: string
   return data
 }
 
-export function openBookingWorkflow(idempotencyKey: string) {
+export type BookingOpeningDirection = "import" | "export" | "domestic" | "cross_trade"
+
+export function openBookingWorkflow(idempotencyKey: string, initialMode?: "road", direction?: BookingOpeningDirection) {
   return invoke<{ jobId: string; bookingReference: string; route: string; reused: boolean }>({
-    action: "open",
+    action: initialMode === "road" ? "open-road" : "open",
     idempotencyKey,
     sequenceKey: "default",
+    direction,
   }, "The new booking could not be opened.")
 }
 

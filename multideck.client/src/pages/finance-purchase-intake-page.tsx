@@ -82,7 +82,9 @@ function fromExtraction(fileName: string, extraction: FinancePurchaseExtractionR
       jobCostingLineId: null,
       lineType: "service" as const,
       quantity: String(line.quantity || 1),
+      currencyCode: extraction.currencyCode || legalEntity?.FinanceDraftCurrencyCode || "",
       unitAmount: String(line.unitPrice || (line.lineTotal / (line.quantity || 1))),
+      exchangeRate: "1",
       taxRatePercent: String(line.taxRate),
       taxCode: tax?.FINLocTaxTreatment_Code ?? "",
     }
@@ -211,7 +213,7 @@ export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate:
           idempotencyKey: item.id,
           sourceExtractionId: item.id,
           lines: item.lines.map((line) => ({
-            description: line.description, quantity: Number(line.quantity), unitAmount: Number(line.unitAmount),
+            description: line.description, quantity: Number(line.quantity), unitAmount: Number(line.unitAmount), currencyCode: line.currencyCode || item.currencyCode, exchangeRate: Number(line.exchangeRate || 1),
             taxRatePercent: Number(line.taxRatePercent), taxCode: line.taxCode, chargeCode: line.chargeCode || null, lineType: line.lineType,
           })),
         })

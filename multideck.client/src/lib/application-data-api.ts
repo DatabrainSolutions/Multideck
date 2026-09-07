@@ -465,7 +465,7 @@ function roadStage(progress: unknown): RoadJobStageId {
 
 function toDomesticRoadJob(row: Record<string, unknown>): DomesticRoadJob {
   return {
-    id: `RD-${String(row.Booking_Reference).replace(/\D/g, "").slice(-5)}`,
+    id: String(row.Booking_Reference ?? ""),
     bookingId: String(row.Booking_Reference ?? ""),
     owner: String(row.Owner_Code ?? ""),
     office: "Development",

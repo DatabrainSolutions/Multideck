@@ -15,6 +15,7 @@ import type { AuthUserSummary } from "@/lib/auth-user"
 import { getSavedView, saveView } from "@/lib/view-preferences"
 import { listRoadControlPage, type RoadControlCounts } from "@/lib/application-data-api"
 import { useStarredJobs } from "@/lib/starred-jobs"
+import { getBookingDetailPath } from "@/components/multideck/booking-components"
 
 const roadScopeOptions = ["My Jobs", "All Jobs", "Starred Jobs"] as const
 type RoadScope = (typeof roadScopeOptions)[number]
@@ -156,7 +157,7 @@ export function RoadControlPage({ navigate, currentUser }: { navigate: (path: st
           <Button type="button" variant="ghost" size="sm" className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px] text-[var(--md-text)]" onClick={() => toast.success(t("Filters opened"))}><SlidersHorizontal className="size-3.5" strokeWidth={1.4} />{t("Filters")}</Button>
         </div>
         <div className="grid gap-2.5">
-          {jobs.map((job) => <DomesticRoadJobCard key={job.id} job={job} favourite={favouriteIds.has(job.bookingId)} onToggleFavourite={() => toggleFavourite(job.bookingId)} onOpenBooking={() => navigate(`/road-control/${job.id.toLowerCase()}`)} />)}
+          {jobs.map((job) => <DomesticRoadJobCard key={job.id} job={job} favourite={favouriteIds.has(job.bookingId)} onToggleFavourite={() => toggleFavourite(job.bookingId)} onOpenBooking={() => navigate(getBookingDetailPath(job.bookingId))} />)}
           {jobs.length === 0 ? (
             <Surface className="rounded-[var(--md-radius-xl)] py-8 text-center">
               <p className="text-[13px] font-medium text-[var(--md-ink)]">{t(scope === "Starred Jobs" ? "No starred jobs in this stage" : "No jobs in this stage")}</p>
@@ -165,7 +166,7 @@ export function RoadControlPage({ navigate, currentUser }: { navigate: (path: st
           ) : null}
         </div>
       </section> : <>
-        <DomesticRoadKanbanBoard jobs={roadJobs} favouriteIds={favouriteIds} onMoveJob={moveRoadJob} onToggleFavourite={(job) => toggleFavourite(job.bookingId)} onOpenBooking={(job) => navigate(`/road-control/${job.id.toLowerCase()}`)} />
+        <DomesticRoadKanbanBoard jobs={roadJobs} favouriteIds={favouriteIds} onMoveJob={moveRoadJob} onToggleFavourite={(job) => toggleFavourite(job.bookingId)} onOpenBooking={(job) => navigate(getBookingDetailPath(job.bookingId))} />
         {kanbanIsCapped ? <p className="text-center text-[12px] text-[var(--md-subtle)]">{t("Showing the 20 most recently updated jobs in each stage.")}</p> : null}
       </>) : null}
 

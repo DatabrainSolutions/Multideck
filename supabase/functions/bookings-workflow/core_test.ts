@@ -1,8 +1,21 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1"
-import { parseAction, parseModeChangeConfirmation, parsePayload, parseQuoteSyncFields, parseQuoteReviewToken, parseReference, parseSequenceKey, parseUuid, toClientError } from "./core.ts"
+import { parseAction, parseOpeningDirection, parseModeChangeConfirmation, parsePayload, parseQuoteSyncFields, parseQuoteReviewToken, parseReference, parseSequenceKey, parseUuid, toClientError } from "./core.ts"
+
+Deno.test("opening direction accepts only explicit canonical values or legacy omission", () => {
+  assertEquals(parseOpeningDirection(undefined), null)
+  assertEquals(parseOpeningDirection(null), null)
+  for (const direction of ["import", "export", "domestic", "cross_trade"]) {
+    assertEquals(parseOpeningDirection(direction), direction)
+  }
+  for (const invalid of ["", "unknown", "Import", "cross-trade", " domestic ", 1, true, {}, []]) {
+    assertThrows(() => parseOpeningDirection(invalid))
+  }
+})
 
 Deno.test("booking workflow accepts only its explicit operations", () => {
   assertEquals(parseAction("open"), "open")
+  assertEquals(parseAction("open-road"), "open-road")
+  assertThrows(() => parseAction("open-air"))
   assertEquals(parseAction("send-to-customs"), "send-to-customs")
   assertThrows(() => parseAction("delete"))
 })

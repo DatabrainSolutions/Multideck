@@ -26,7 +26,22 @@ both actual response parsers through the source review. Its first harness run
 needed a function wrapper for TypeScript parsing; the corrected harness then
 failed on the real data rewrite before the fix and passed afterwards.
 
-Deployment and a fresh exact-text hosted proposal/approval remain required.
-Hosted DG watch lifecycle and wider freight acceptance remain open. No approved
-test record or watch exists from this attempt; do not approve/retry the denied
-action. All earlier approval requirements and exclusions remain intact.
+## Release and hosted repeat
+
+Source `e1869086bc36b563a9afaeb52abba2902dd13049` is verified on origin/dev.
+Only Dexter changed: version 165, ACTIVE, JWT retained, bundle SHA-256
+`53666e403b252a0e1d5cc7e564fd8ea77270cf6f4c6d5cb77ed4758080ba3be5`.
+All 23 downloaded files match the checkout; other function metadata is unchanged.
+Git deployment `dpl_EagcbfGi96JD8PdnyipSPE1W1aGY` is READY for that exact SHA
+on the approved dev alias, without alias error or shared setup changes. The
+frontend source is unchanged; no redundant client test/build is claimed here.
+
+Fresh conversation `e73ddcf5-0209-422b-a818-4988c72a37d7` proposed the original
+em-dash source text exactly in both visible review and stored arguments. Action
+`11fefea8-54f5-4ebd-9bca-f106fd6e1552` remained prepared/unapproved while the DG
+row count stayed one. Normal approval succeeded and created exact supplied
+evidence `aecd5dc4-3058-4c0d-ab1a-6d2d1acd4d60` with operator attribution,
+unknown flags and unchanged punctuation. See the
+[approval/watch evidence](2026-09-07-dangerous-goods-approval-watch-evidence.md).
+The earlier denied action stays declined and is not retried. Wider freight
+acceptance, earlier approval requirements and exclusions remain intact.

@@ -1,5 +1,5 @@
 import { authenticateRequest, corsHeaders, jsonResponse } from "../_shared/document-functions.ts"
-import { BookingWorkflowError, parseAction, parseModeChangeConfirmation, parsePayload, parseQuoteSyncFields, parseQuoteReviewToken, parseReference, parseSequenceKey, parseUuid, toClientError } from "./core.ts"
+import { BookingWorkflowError, parseAction, parseOpeningDirection, parseModeChangeConfirmation, parsePayload, parseQuoteSyncFields, parseQuoteReviewToken, parseReference, parseSequenceKey, parseUuid, toClientError } from "./core.ts"
 
 const documentBucket = "multideck-documents"
 const maximumBookingDocumentBytes = 20 * 1024 * 1024
@@ -117,11 +117,12 @@ Deno.serve(async (request) => {
     const body = await request.json() as Record<string, unknown>
     const action = parseAction(body.action)
 
-    if (action === "open") {
-      const { data, error } = await admin.rpc("booking_workflow_open", {
+    if (action === "open" || action === "open-road") {
+      const { data, error } = await admin.rpc(action === "open-road" ? "booking_workflow_open_road" : "booking_workflow_open", {
         caller_auth_user_id: userId,
         requested_idempotency_key: parseUuid(body.idempotencyKey, "Booking request"),
         requested_sequence_key: parseSequenceKey(body.sequenceKey),
+        requested_direction: parseOpeningDirection(body.direction),
       })
       if (error || !data) throw error ?? new Error("Booking opening returned no result")
       return jsonResponse(request, data)
