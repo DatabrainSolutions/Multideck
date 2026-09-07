@@ -45,3 +45,29 @@ Final remote drift/security checks and combined hosted operator/approval/watch
 verification remain open. Separate local lifecycle fixtures
 are not presented as hosted proof. No deployment or business-record write was
 performed; existing exclusions and approval holds remain unchanged.
+
+## Release staging checkpoint
+
+Fresh Git fetch: origin/dev remains `54d6da2`; no incoming commits and no local
+worktree changes before this evidence update. Live Dexter remains v168 / bundle
+`80ea68c2e45d6ff5cd778123cb70ae3a98617b22ee61c2f2bb76d435530f0b85`;
+Booking remains v45 / bundle
+`0801f9b54d3e00f1a8566cf92677ab99f9e10ba5406ddd2bd8ea00d20afd6bec`.
+Both are ACTIVE with JWT verification. Finance-subledger is now v38 and is
+explicitly outside this release; do not overwrite or prune it.
+
+Current security baseline: 1,555 findings (1,314 INFO, 241 WARN), retained as
+identities in `/tmp/multideck-screening-advisor-identities-before.json` for the
+post-release comparison. Existing findings are not certified safe; see
+[advisor guidance](https://supabase.com/docs/guides/database/database-linter).
+Full Edge metadata baseline: `/tmp/multideck-screening-edge-before.json`.
+
+Final client build and 27 focused editor/Edge/review/DG checks pass, with the
+existing bundle-size warning. Logs: `/tmp/multideck-screening-final-build.log`
+and `/tmp/multideck-screening-final-tests.log`.
+
+The existing isolated directory `/tmp/multideck-air-release.XuRBfD` now stages
+the two exact hash-pinned screening migrations. A dry run selected only those
+two files, with empty seeds/roles and no unrelated migrations. An extra trailing
+newline introduced while staging was removed and hashes rechecked against the
+plan. No apply, function deployment or Git push has occurred at this checkpoint.
