@@ -6,6 +6,60 @@ type ErpNextRequest = {
   timeoutMs?: number
 }
 
+type ErpNextErrorPayload = {
+  message?: unknown
+  exc_type?: unknown
+  _server_messages?: unknown
+}
+
+function plainMessage(value: unknown) {
+  if (typeof value !== "string") return null
+  const message = value
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim()
+  return message || null
+}
+
+function serverMessages(value: unknown) {
+  if (typeof value !== "string") return []
+  try {
+    const decoded = JSON.parse(value)
+    if (!Array.isArray(decoded)) return []
+    return decoded.flatMap((item) => {
+      let candidate: unknown = item
+      if (typeof item === "string") {
+        try { candidate = JSON.parse(item) } catch { candidate = item }
+      }
+      if (candidate && typeof candidate === "object" && "message" in candidate) {
+        const message = plainMessage((candidate as { message?: unknown }).message)
+        return message ? [message] : []
+      }
+      const message = plainMessage(candidate)
+      return message ? [message] : []
+    })
+  } catch {
+    return []
+  }
+}
+
+export function erpNextErrorMessage(payload: unknown) {
+  const error = payload && typeof payload === "object" ? payload as ErpNextErrorPayload : {}
+  const exceptionType = plainMessage(error.exc_type)
+  const detailed = serverMessages(error._server_messages)[0]
+  const direct = plainMessage(error.message)
+  const usefulDirect = direct && direct !== exceptionType && direct !== "PermissionError" ? direct : null
+  if (detailed) return detailed
+  if (usefulDirect) return usefulDirect
+  if (exceptionType === "PermissionError" || direct === "PermissionError") {
+    return "ERPNext denied this operation. The connected API user does not have the required document permission."
+  }
+  return exceptionType ?? direct ?? "ERPNext rejected this request."
+}
+
 function origin() {
   const value = Deno.env.get("ERPNEXT_BASE_URL")?.trim()
   if (!value) throw new HttpError(503, "ERPNext is not configured for this workspace.")
@@ -37,9 +91,14 @@ export async function erpNextRequest<T>(path: string, input: ErpNextRequest = {}
   })
   const payload = await response.json().catch(() => null)
   if (!response.ok) {
-    const message = typeof payload?.exc_type === "string"
-      ? payload.exc_type
-      : typeof payload?.message === "string" ? payload.message : "ERPNext rejected this request."
+    const message = erpNextErrorMessage(payload)
+    console.error("[erpnext] request rejected", {
+      method: input.method ?? "GET",
+      path: path.split("?")[0],
+      status: response.status,
+      exceptionType: typeof payload?.exc_type === "string" ? payload.exc_type : null,
+      message,
+    })
     throw new HttpError(response.status === 401 || response.status === 403 ? 502 : 422, message.slice(0, 500))
   }
   return payload as T
