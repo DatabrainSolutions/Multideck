@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { Building2, Clock, MapPin, Plus, RefreshCw, Trash2 } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { StatusPill } from "@/components/multideck/status-pill"
@@ -130,11 +130,6 @@ export function OrganisationFoundationPanel({
   }, [related.targetOrganisationId, relatedOpen])
 
   const primaryOffice = account.officeAssignments.find((item) => item.isPrimary)
-  const defaultCapabilities = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const item of account.addresses) for (const capability of item.capabilities) if (capability.isDefault) map.set(capability.code, item.name || item.line1 || item.townCity || t("Address"))
-    return map
-  }, [account.addresses, t])
 
   function openAddress(next?: OrganisationAddress) {
     setEditingAddress(next ?? null)
@@ -193,10 +188,9 @@ export function OrganisationFoundationPanel({
 
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]" aria-labelledby={`company-foundation-${account.id}`}>
-      <header className="flex flex-wrap items-start justify-between gap-3 px-4 py-3.5 shadow-[var(--md-stroke-bottom)] sm:px-5">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 shadow-[var(--md-stroke-bottom)] sm:px-5">
         <div>
           <h2 id={`company-foundation-${account.id}`} className="text-[13px] font-medium text-[var(--md-ink)]">{t("Company setup")}</h2>
-          <p className="mt-0.5 text-[11.5px] leading-4 text-[var(--md-subtle)]">{t("Codes, responsible offices, operational addresses and defaults used across Multideck.")}</p>
         </div>
         <Button variant="outline" className="h-8" onClick={() => { setSetup(foundationDraft(account)); setError(null); setSetupOpen(true) }}>{t("Edit setup")}</Button>
       </header>
@@ -212,7 +206,6 @@ export function OrganisationFoundationPanel({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 id={`company-addresses-${account.id}`} className="text-[12.5px] font-medium text-[var(--md-ink)]">{t("Operational addresses")}</h3>
-            <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("One address can serve several purposes; each purpose can have one default.")}</p>
           </div>
           <Button variant="ghost" className="h-8" onClick={() => openAddress()}><Plus className="size-3.5" />{t("Add address")}</Button>
         </div>
@@ -237,14 +230,12 @@ export function OrganisationFoundationPanel({
             ))}
           </div>
         ) : <EmptyFoundation icon={MapPin} text={t("Add the company's main, office, postal, pickup, delivery or billing addresses.")} />}
-        {defaultCapabilities.size ? <p className="mt-3 text-[10.5px] text-[var(--md-subtle)]">{t("Current defaults")}: {[...defaultCapabilities.entries()].map(([code, name]) => `${t(account.addressCapabilities.find((capability) => capability.code === code)?.name ?? code)} — ${name}`).join(" · ")}</p> : null}
       </section>
 
       <section className="border-t border-[var(--md-line)] px-4 py-4 sm:px-5" aria-labelledby={`related-defaults-${account.id}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 id={`related-defaults-${account.id}`} className="text-[12.5px] font-medium text-[var(--md-ink)]">{t("Related-party defaults")}</h3>
-            <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Choose the right agent or partner automatically from destination evidence.")}</p>
           </div>
           <Button variant="ghost" className="h-8" onClick={() => openRelated()}><Plus className="size-3.5" />{t("Add default")}</Button>
         </div>
@@ -258,7 +249,7 @@ export function OrganisationFoundationPanel({
               </button>
             ))}
           </div>
-        ) : <EmptyFoundation icon={Building2} text={t("No related-party defaults are configured for this company yet.")} />}
+        ) : <EmptyFoundation icon={Building2} text={t("No related-party defaults")} />}
       </section>
 
       <Dialog open={setupOpen} onOpenChange={(open) => { if (!saving) setSetupOpen(open); if (!open) setError(null) }}>

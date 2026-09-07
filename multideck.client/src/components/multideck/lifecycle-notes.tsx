@@ -286,11 +286,15 @@ export function LifecycleNotes({
   subjectId,
   className,
   previewState,
+  compact = false,
+  title,
 }: {
   subjectType: LifecycleNoteSubjectType
   subjectId: string | null
   className?: string
   previewState?: LifecycleNotesPreviewState
+  compact?: boolean
+  title?: string
 }) {
   const { language, t } = useLanguage()
   const listId = useId()
@@ -507,7 +511,7 @@ export function LifecycleNotes({
         ? "It will stay with the quote through booking and Customs."
         : subjectType === "booking"
           ? "It will stay with the booking and its Customs declaration."
-          : "It has been added to this Customs declaration.") })
+          : subjectType === "company" ? "It has been added to this company." : "It has been added to this Customs declaration.") })
       scheduleScroll(() => {
         const thread = threadRef.current
         if (thread) thread.scrollTop = thread.scrollHeight
@@ -582,7 +586,8 @@ export function LifecycleNotes({
   }
 
   return (
-    <Surface padding="none" className={cn("min-w-0 overflow-visible rounded-[var(--md-radius-xl)]", className)}>
+    <Surface padding="none" className={cn("min-w-0 overflow-visible rounded-[var(--md-radius-xl)]", compact && "flex h-full min-h-0 flex-col", className)}>
+      {title ? <h2 className="shrink-0 px-4 pt-4 text-[13px] font-medium leading-4 text-[var(--md-ink)] sm:px-5 sm:pt-5">{t(title)}</h2> : null}
       {!normalizedSubjectId ? (
         <div className="grid min-h-48 place-items-center px-5 py-8 text-center">
           <div className="max-w-md">
@@ -605,7 +610,7 @@ export function LifecycleNotes({
             ref={threadRef}
             tabIndex={notes.length ? 0 : undefined}
             aria-label={notes.length ? t("Operational note conversation") : undefined}
-            className="max-h-[min(58svh,38rem)] overflow-y-auto overscroll-contain px-4 py-4 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)] sm:px-5 sm:py-5 md-scrollbar"
+            className={cn("max-h-[min(58svh,38rem)] overflow-y-auto px-4 py-4 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)] sm:px-5 sm:py-5 md-scrollbar", compact ? "min-h-0 flex-1 max-h-none overscroll-auto sm:py-3" : "overscroll-contain")}
           >
             {notes.length ? (
               <>
@@ -656,17 +661,17 @@ export function LifecycleNotes({
           </div>
 
           {canWrite ? (
-            <form className="px-4 pb-4 sm:px-5 sm:pb-5" aria-label={t("Write a note")} aria-busy={saving} onSubmit={(event) => { event.preventDefault(); void saveNote() }}>
+            <form className="shrink-0 px-4 pb-4 sm:px-5 sm:pb-5" aria-label={t("Write a note")} aria-busy={saving} onSubmit={(event) => { event.preventDefault(); void saveNote() }}>
               <div className="md-lifecycle-note-composer relative rounded-[var(--md-radius-lg)] border border-[var(--md-line)] bg-[var(--md-surface)] transition-[border-color,box-shadow] duration-150 ease-out focus-within:border-[var(--md-accent)] focus-within:ring-2 focus-within:ring-[var(--md-accent-a14)] motion-reduce:transition-none">
                 <div className="px-3 pb-3 pt-3 sm:px-4">
-                <p className="mb-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Add a note")}</p>
+                {!compact ? <p className="mb-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Add a note")}</p> : null}
                 <DexterMentionInput
                   value={draft}
                   items={mentionItems}
                   selectedMentions={selectedMentionItems}
                   placeholder="What does your team need to know?"
-                  minHeight={56}
-                  maxHeight={160}
+                  minHeight={compact ? 32 : 56}
+                  maxHeight={compact ? 64 : 160}
                   className="text-[13px] leading-5"
                   ariaLabel="Add a note"
                   sendShortcut="mod-enter"
@@ -692,7 +697,7 @@ export function LifecycleNotes({
                 <div className="mt-3 flex flex-wrap items-end gap-3">
                   <div className="min-w-0 flex-1">
                     <p id={`${listId}-help`} className="text-[11px] leading-4 text-[var(--md-subtle)]">{t("Type @ to notify a person or department by email.")}</p>
-                    <p className="mt-1 hidden text-[11px] leading-4 text-[var(--md-subtle)] sm:block">{t("Ctrl / ⌘ + Enter to add")}</p>
+                    {!compact ? <p className="mt-1 hidden text-[11px] leading-4 text-[var(--md-subtle)] sm:block">{t("Ctrl / ⌘ + Enter to add")}</p> : null}
                     {targetError ? <p role="alert" className="mt-1 text-[11px] leading-4 text-[var(--md-red)]">{t("Tags are temporarily unavailable. Your note is safe and can still be added without a tag.")}</p> : null}
                     {saveError ? <p id={`${listId}-error`} role="alert" data-i18n-skip dir="auto" className="mt-1 text-[11px] text-[var(--md-red)]">{saveError}</p> : null}
                   </div>

@@ -1209,6 +1209,7 @@ foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM cont
     details: "Use when context must survive a freight workflow handoff. A compact composer keeps the next action clear; only a newly added note animates, with reduced-motion support. Notes are permission-checked and labelled when carried from an earlier stage. Authors can edit or soft-delete their own notes without removing timeline evidence. Type @ to notify active tenant people and departments by email.",
     foundOn: [
       { label: "Quote notes", route: "/quotes/Q-19158" },
+      { label: "Company notes", route: "/crm/accounts" },
       { label: "Booking notes", route: "/bookings/md-22455" },
       { label: "Job-related Customs notes", route: "/customs/job-related/export" },
       { label: "Standalone Customs notes", route: "/customs/standalone/export" },

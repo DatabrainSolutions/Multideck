@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { DotLottieReact } from "@lottiefiles/dotlottie-react"
+import driveEmptyAnimation from "@/assets/drive-empty-animation.json"
+import { buildAccentRamp, mixHexOklab, useAccentPresetId } from "@/lib/accent-theme"
+import { useTheme } from "@/lib/theme-provider"
 import {
   Archive,
   Check,
@@ -1022,14 +1026,49 @@ export function DriveFilePreviewDialog({
 
 /* --------------------------------------------------------------- empty states */
 
+function DriveEmptyAnimation() {
+  const reducedMotion = useReducedMotion()
+  const { resolvedTheme } = useTheme()
+  const accentId = useAccentPresetId()
+  const data = useMemo(() => {
+    const ramp = buildAccentRamp(accentId)
+    const dark = resolvedTheme === "dark"
+    const accent = dark ? ramp.dark.accent : ramp.light.accent
+    const background = dark ? "#242a29" : "#ffffff"
+    const palette: Record<string, string> = {
+      "0.247,0.251,0.251,1": dark ? "#d8dfdd" : "#3f4040",
+      "1,1,1,1": dark ? "#343d3b" : "#ffffff",
+      "0.012,0.855,0.776,1": mixHexOklab(accent, "#ffffff", 0.22),
+      "0,0.525,0.522,1": accent,
+      "0.776,0.878,0.875,1": mixHexOklab(accent, background, 0.78),
+      "0.682,0.8,0.792,1": mixHexOklab(accent, background, 0.62),
+      "0.616,0.729,0.718,1": mixHexOklab(accent, background, 0.46),
+      "0.584,0.549,0.2,1": mixHexOklab(accent, "#000000", 0.25),
+    }
+    // Replace only authored fill/stroke colours; preserve geometry and opacity.
+    return JSON.stringify(driveEmptyAnimation, (_key, value) => {
+      if ((value?.ty === "fl" || value?.ty === "st") && Array.isArray(value.c?.k)) {
+        const hex = palette[value.c.k.join(",")]
+        if (hex) return { ...value, c: { ...value.c, k: [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16) / 255).concat(value.c.k[3] ?? 1) } }
+      }
+      return value
+    })
+  }, [accentId, resolvedTheme])
+  return <div className="pointer-events-none size-48 sm:size-56" aria-hidden="true">
+    <DotLottieReact data={data} autoplay={!reducedMotion} loop={!reducedMotion} className="size-full" />
+  </div>
+}
+
 export function DriveEmptyState({
   title,
   hint,
   action,
+  animated = false,
 }: {
   title: string
   hint: string
   action?: ReactNode
+  animated?: boolean
 }) {
   return (
     <motion.div
@@ -1038,9 +1077,9 @@ export function DriveEmptyState({
       transition={mdMotion.enter}
       className="grid justify-items-center gap-3 rounded-[var(--md-radius-xl)] px-6 py-14 text-center"
     >
-      <span className="grid size-11 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
+      {animated ? <DriveEmptyAnimation /> : <span className="grid size-11 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
         <Folder className="size-5" strokeWidth={1.2} />
-      </span>
+      </span>}
       <p className="text-[14px] font-medium text-[var(--md-ink)]">{title}</p>
       <p className="max-w-[380px] text-[12px] leading-5 text-[var(--md-text)]">{hint}</p>
       {action ? <div className="mt-1">{action}</div> : null}

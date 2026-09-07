@@ -25,6 +25,19 @@ import { toast } from "sonner"
 export type FinanceSetupTab = "overview" | "systems" | "currencies" | "banks" | "ledger" | "tax" | "documents" | "mappings" | "compliance" | "controls"
 type DraftRow = Record<string, unknown> & { _key: string; id?: string; isActive?: boolean }
 
+const financeSetupTitleByTab: Record<FinanceSetupTab, string> = {
+  overview: "Finance administration",
+  systems: "Accounting systems",
+  currencies: "Currencies & FX",
+  banks: "Bank accounts",
+  ledger: "General ledger",
+  tax: "Tax",
+  documents: "Documents",
+  mappings: "Mappings",
+  compliance: "Compliance",
+  controls: "Controls & audit",
+}
+
 const financeSetupRouteByTab: Record<FinanceSetupTab, string> = {
   overview: "/finance/administration",
   systems: "/finance/systems",
@@ -193,12 +206,11 @@ function completeness(setup: FinanceSetup, draft: FinanceAdministrationDraft, le
   ]
 }
 
-export function FinanceSetupPage({ navigate, initialTab = "overview", syncFinanceRoute = false }: { navigate: (path: string) => void; initialTab?: FinanceSetupTab; syncFinanceRoute?: boolean }) {
+export function FinanceSetupPage({ navigate, initialTab = "overview" }: { navigate: (path: string) => void; initialTab?: FinanceSetupTab }) {
   const { t } = useLanguage()
   const [setup, setSetup] = useState<FinanceSetup | null>(null)
   const [draft, setDraft] = useState<FinanceAdministrationDraft | null>(null)
   const [selectedEntityId, setSelectedEntityId] = useState("")
-  const [tab, setTab] = useState<FinanceSetupTab>(initialTab)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -227,7 +239,8 @@ export function FinanceSetupPage({ navigate, initialTab = "overview", syncFinanc
   }, [])
 
   useEffect(() => { void load() }, [load])
-  useEffect(() => { setTab(initialTab) }, [initialTab])
+  const tab = initialTab
+  useEffect(() => { document.title = `${t(financeSetupTitleByTab[tab])} · Finance · Multideck` }, [tab, t])
 
   const setOrganisation = (patch: Partial<FinanceAdministrationDraft["organisation"]>) => setDraft((current) => current ? { ...current, organisation: { ...current.organisation, ...patch } } : current)
   const setControls = (patch: Record<string, string | number | boolean | null>) => setDraft((current) => current ? { ...current, controls: { ...current.controls, ...patch } } : current)
@@ -292,7 +305,7 @@ export function FinanceSetupPage({ navigate, initialTab = "overview", syncFinanc
         <div className="grid grid-cols-2 gap-3 text-[12px] sm:grid-cols-4"><div><p className="text-[var(--md-subtle)]">{t("Base currency")}</p><p className="mt-1 font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{draft.organisation.baseCurrencyCode}</p></div><div><p className="text-[var(--md-subtle)]">{t("Country")}</p><p className="mt-1 font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{draft.organisation.countryCode}</p></div><div><p className="text-[var(--md-subtle)]">{t("External mirror")}</p><p className="mt-1 font-medium text-[var(--md-ink)]">{activeConnection ? setup.providers.find((item) => item.code === activeConnection.ACCIC_ProviderCode)?.name : t("Not connected")}</p></div><div><p className="text-[var(--md-subtle)]">{t("Readiness")}</p><p className="mt-1 font-medium text-[var(--md-ink)]">{readyCount}/{checks.length}</p></div></div>
         <StatusPill tone={readyCount === checks.length ? "teal" : "amber"}>{t(readyCount === checks.length ? "Ready" : "Needs setup")}</StatusPill>
       </div>
-      <TabsRail tabs={tabs} activeTab={tab} onChange={(value) => { const nextTab = value as FinanceSetupTab; setTab(nextTab); if (syncFinanceRoute) navigate(financeSetupRouteByTab[nextTab]) }} />
+      <TabsRail tabs={tabs} activeTab={tab} onChange={(value) => navigate(financeSetupRouteByTab[value as FinanceSetupTab])} />
 
       {tab === "overview" ? <OverviewTab setup={setup} draft={draft} entityName={selectedEntity?.LegalEntity_Name || ""} checks={checks} latestRevision={latestRevision} setOrganisation={setOrganisation} t={t} /> : null}
       {tab === "systems" ? <SystemsTab setup={setup} selectedEntityId={selectedEntityId} connections={entityConnections} companies={companies} form={providerForm} setForm={setProviderForm} busy={providerBusy} prepare={prepareProvider} approve={approveProvider} retry={retryDelivery} t={t} /> : null}
