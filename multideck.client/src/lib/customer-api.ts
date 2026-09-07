@@ -29,6 +29,28 @@ export type ApiCustomer = {
   scopeCode: "standard" | "national" | "global"
   isPotential: boolean
   engagementSignal?: CrmEngagementSignal
+  financial?: CustomerAccountFinancial
+}
+
+export type CustomerAccountFinancial = {
+  financeReady: boolean
+  baseCurrencyCode: string | null
+  balanceDue: number | null
+  overdueAmount: number | null
+  openInvoiceCount: number
+  overdueInvoiceCount: number
+  oldestOverdueDate: string | null
+  creditLimit: number | null
+  creditCurrencyCode: string | null
+  availableCredit: number | null
+  paymentTermsCode: string | null
+  paymentTermDays: number | null
+  paymentTermDueDay: number | null
+  paymentTermEndOfMonth: boolean
+  accountStatus: "active" | "on_hold" | "blocked"
+  creditHold: boolean
+  accountingSyncStatus?: "synced" | "partial" | "failed" | "not_synced" | "not_connected"
+  accountingLastSyncedAt?: string | null
 }
 
 export type CreateCustomerInput = {
@@ -452,6 +474,20 @@ export type RegisterSort = { id: string; direction: "asc" | "desc" }
 export type AccountRegisterPage = {
   rows: ApiCustomer[]
   total: number
+  financialAccess?: boolean
+  accountingSyncAccess?: boolean
+  financeReady?: boolean
+  financeCurrencyCode?: string | null
+  financialSummary?: {
+    balanceDue: number | null
+    overdueAmount: number | null
+    openInvoiceCount: number
+    overdueInvoiceCount: number
+    overdueCustomerCount: number
+    creditAttentionCount: number
+    onHoldCount: number
+    accountingAttentionCount: number | null
+  } | null
   summary: {
     accounts: number
     contacts: number
@@ -548,11 +584,9 @@ export async function listAccountsPage(
     limit: input.limit,
     offset: input.offset,
   })
-  return readCachedCrmResource(
-    session.user.id,
-    `accounts:page:${query}`,
-    async () => {
+  const loadPage = async () => {
       const page = await customerRequest<AccountRegisterPage>(query, session.access_token)
+      if (input.organisationType === "customer") return page
       try {
         const signals = await getCrmEngagementSignals({
           accountIds: page.rows.map((account) => account.id),
@@ -574,9 +608,12 @@ export async function listAccountsPage(
           })),
         }
       }
-    },
-    options,
-  )
+    }
+  // Receivables and credit exposure can change independently of CRM edits. The
+  // accounts register therefore reads through to the tenant service every time;
+  // the CRM company and supplier views retain their short-lived read cache.
+  if (input.organisationType === "customer") return loadPage()
+  return readCachedCrmResource(session.user.id, `accounts:page:${query}`, loadPage, options)
 }
 
 export async function listContactsPage(

@@ -1240,6 +1240,7 @@ export function FinanceSetupPage({
           ? cause.message
           : t("Provider delivery could not be completed."),
       )
+      await load(selectedEntityId)
     } finally {
       setProviderBusy(null)
     }
@@ -1468,6 +1469,7 @@ export function FinanceSetupPage({
             prepare={prepareProvider}
             approve={approveProvider}
             retry={retryDelivery}
+            navigate={navigate}
             t={t}
           />
         ) : null}
@@ -1923,6 +1925,7 @@ function SystemsTab({
   prepare,
   approve,
   retry,
+  navigate,
   t,
 }: {
   setup: FinanceSetup
@@ -1940,6 +1943,7 @@ function SystemsTab({
   prepare: () => Promise<void>
   approve: (id: string) => Promise<void>
   retry: (id: string) => Promise<void>
+  navigate: (path: string) => void
   t: (value: string) => string
 }) {
   const selectedProvider = setup.providers.find(
@@ -1948,6 +1952,14 @@ function SystemsTab({
   const runs = setup.runs.filter(
     (item) => item.FINConfigRun_LegalEntityID === selectedEntityId,
   )
+  const dateTime = (value: string) =>
+    new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium", timeStyle: "short",
+    }).format(new Date(value))
+  const accountRecovery = (typeCode: string) =>
+    ["sl_invoice", "credit_note", "customer_receipt"].includes(typeCode)
+      ? { label: "Create or sync customer", route: "/customers?sync=accounting" }
+      : { label: "Create or sync supplier", route: "/suppliers?sync=accounting" }
   return (
     <div className="space-y-[var(--md-page-stack-gap)]">
       <SettingsPanel title={t("Accounting")}>
@@ -2079,7 +2091,9 @@ function SystemsTab({
       {runs.length ? (
         <SettingsPanel
           title={t("Connection review history")}
-          description={t("Every provider preflight and approval is retained.")}
+          description={t(
+            "Every provider preflight and approval is retained with its date and time.",
+          )}
         >
           <div className="divide-y divide-[var(--md-line)]">
             {runs.map((run) => (
@@ -2095,6 +2109,20 @@ function SystemsTab({
                   <p className="mt-1 text-[12px] text-[var(--md-subtle)]">
                     {run.FINConfigRun_ProviderCode} ·{" "}
                     <span>{t("External accounting company")}</span>
+                  </p>
+                  <p className="mt-1 text-[11px] text-[var(--md-subtle)]">
+                    <span>{t("Requested")}</span> ·{" "}
+                    <time dateTime={run.FINConfigRun_RequestedAt}>
+                      {dateTime(run.FINConfigRun_RequestedAt)}
+                    </time>
+                    {run.FINConfigRun_CompletedAt ? (
+                      <>
+                        {" "}· <span>{t("Completed")}</span> ·{" "}
+                        <time dateTime={run.FINConfigRun_CompletedAt}>
+                          {dateTime(run.FINConfigRun_CompletedAt)}
+                        </time>
+                      </>
+                    ) : null}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -2139,44 +2167,100 @@ function SystemsTab({
         <SettingsPanel
           title={t("Mirror delivery attention")}
           description={t(
-            "Retry only after the named mapping or provider issue is corrected.",
+            "Correct the named account or mapping issue, then retry the same controlled delivery.",
           )}
         >
           <div className="divide-y divide-[var(--md-line)]">
-            {setup.integrationQueue.map((item) => (
-              <div
-                key={item.FINIntQ_ID}
-                className="flex flex-wrap items-center justify-between gap-3 px-5 py-4"
-              >
-                <div>
-                  <p
-                    className="text-[13px] font-medium text-[var(--md-ink)]"
-                    data-i18n-skip
-                  >
-                    {item.localNumber}
-                  </p>
-                  <p className="mt-1 max-w-3xl text-[12px] text-[var(--md-subtle)]">
-                    {t(item.FINIntQ_LastError || "Mirror delivery is waiting.")}
-                  </p>
-                </div>
-                {item.retryAvailable ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={busy !== null}
-                    onClick={() => void retry(item.FINIntQ_ID)}
-                  >
-                    {busy === item.FINIntQ_ID ? (
-                      <LoaderCircle className="animate-spin" />
+            {setup.integrationQueue.map((item) => {
+              const recovery = accountRecovery(item.typeCode)
+              const mappingIssue = /customer|supplier|mapping/i.test(
+                item.FINIntQ_LastError || "",
+              )
+              return (
+                <div
+                  key={item.FINIntQ_ID}
+                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-4"
+                >
+                  <div>
+                    <p
+                      className="text-[13px] font-medium text-[var(--md-ink)]"
+                      data-i18n-skip
+                    >
+                      {item.localNumber}
+                    </p>
+                    <p className="mt-1 max-w-3xl text-[12px] text-[var(--md-subtle)]">
+                      {t(item.FINIntQ_LastError || "Mirror delivery is waiting.")}
+                    </p>
+                    <p className="mt-1 text-[11px] text-[var(--md-subtle)]">
+                      {item.FINIntQ_LastAttemptAt ? (
+                        <>
+                          <span>{t("Last attempted")}</span> ·{" "}
+                          <time dateTime={item.FINIntQ_LastAttemptAt}>
+                            {dateTime(item.FINIntQ_LastAttemptAt)}
+                          </time>
+                        </>
+                      ) : (
+                        <>
+                          <span>{t("Queued")}</span> ·{" "}
+                          <time dateTime={item.FINIntQ_CreatedAt}>
+                            {dateTime(item.FINIntQ_CreatedAt)}
+                          </time>
+                        </>
+                      )}{" "}
+                      · <span data-i18n-skip dir="ltr">{item.FINIntQ_AttemptCount}</span>{" "}
+                      {t(item.FINIntQ_AttemptCount === 1 ? "attempt" : "attempts")}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {mappingIssue ? (
+                      <>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => navigate(recovery.route)}
+                        >
+                          <Plus className="size-4" />
+                          {t(recovery.label)}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => navigate("/finance/mappings")}
+                        >
+                          {t("Review mappings")}
+                        </Button>
+                      </>
                     ) : (
-                      <RefreshCw className="size-4" />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => navigate("/finance/systems")}
+                      >
+                        {t("Review system setup")}
+                      </Button>
                     )}
-                    {t("Retry")}
-                  </Button>
-                ) : null}
-              </div>
-            ))}
+                    {item.retryAvailable ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={busy !== null}
+                        onClick={() => void retry(item.FINIntQ_ID)}
+                      >
+                        {busy === item.FINIntQ_ID ? (
+                          <LoaderCircle className="animate-spin" />
+                        ) : (
+                          <RefreshCw className="size-4" />
+                        )}
+                        {t("Retry")}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </SettingsPanel>
       ) : null}

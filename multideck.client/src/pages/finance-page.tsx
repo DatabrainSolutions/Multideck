@@ -122,7 +122,7 @@ const financeSetupTabByRoute: Record<FinanceAdministrationRoute, FinanceSetupTab
 }
 
 const today = () => new Date().toISOString().slice(0, 10)
-const draftLine = (treatment?: FinanceDraftOptions["taxTreatments"][number]) => createFinanceDocumentLine(treatment ? { code: treatment.FINLocTaxTreatment_Code, ratePercent: Number(treatment.FINLocTaxTreatment_RatePercent) } : undefined)
+const draftLine = (treatment?: FinanceDraftOptions["taxTreatments"][number], currencyCode = "") => createFinanceDocumentLine(treatment ? { code: treatment.FINLocTaxTreatment_Code, ratePercent: Number(treatment.FINLocTaxTreatment_RatePercent) } : undefined, currencyCode)
 const documentLabels: Record<FinanceDocumentType, string> = { sl_invoice: "Sales invoice", credit_note: "Customer credit note", pl_invoice: "Purchase invoice", debit_note: "Supplier credit note" }
 const cashLabels: Record<FinanceCashType, string> = { customer_receipt: "Customer receipt", supplier_payment: "Supplier payment" }
 const financeRecordLabel = (type: FinanceDocumentType | FinanceCashType) => type in documentLabels ? documentLabels[type as FinanceDocumentType] : cashLabels[type as FinanceCashType]
@@ -170,7 +170,7 @@ function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { t
     setSourceKind("manual")
     setDocumentDate(today())
     setDueDate(today())
-    setLines([draftLine(firstTreatment)])
+    setLines([draftLine(firstTreatment, (first?.FinanceDraftCurrencyCode ?? "").toUpperCase())])
   }, [options, type])
 
   const draftIsReceivables = type === "sl_invoice" || type === "credit_note"
@@ -226,7 +226,7 @@ function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { t
     setSourceKind("manual")
     setDocumentDate(today())
     setDueDate(today())
-    setLines([draftLine(firstTreatment)])
+    setLines([draftLine(firstTreatment, (first?.FinanceDraftCurrencyCode ?? "").toUpperCase())])
     toast.success(t("The form has been cleared."))
   }
 
@@ -242,7 +242,9 @@ function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { t
           chargeCode: line.chargeCode,
           lineType: sourceKind === "job" ? "service" : line.lineType,
           quantity: line.quantity,
+          currencyCode: line.currencyCode || currencyCode,
           unitAmount: line.unitAmount,
+          exchangeRate: line.exchangeRate || "1",
           taxCode: treatment?.code ?? "",
           taxRatePercent: String(treatment?.approved ? treatment.ratePercent : 0),
         }
@@ -291,7 +293,7 @@ function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { t
       currencyCode,
       exchangeRate: needsExchangeRate ? Number(exchangeRate) : 1,
       sourceJobId: sourceKind === "job" ? sourceJobId : null,
-      lines: lines.map((line) => ({ description: line.description.trim(), chargeCode: line.chargeCode.trim() || "ADHOC", jobCostingLineId: line.jobCostingLineId, lineType: line.lineType, quantity: Number(line.quantity), unitAmount: Number(line.unitAmount), taxRatePercent: Number(line.taxRatePercent), taxCode: line.taxCode || null })),
+      lines: lines.map((line) => ({ description: line.description.trim(), chargeCode: line.chargeCode.trim() || "ADHOC", jobCostingLineId: line.jobCostingLineId, lineType: line.lineType, quantity: Number(line.quantity), unitAmount: Number(line.unitAmount), currencyCode: line.currencyCode || currencyCode, exchangeRate: Number(line.exchangeRate || 1), taxRatePercent: Number(line.taxRatePercent), taxCode: line.taxCode || null })),
     }
     setSubmitting(true)
     try {

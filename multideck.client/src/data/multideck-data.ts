@@ -1785,8 +1785,8 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "finance-document-line-editor",
     name: "Finance Document Line Editor",
     category: "Operations",
-    description: "A spreadsheet-like invoice and credit-note line editor with exact job-charge allocation, controlled tax, automatic totals and Sage-style row commands.",
-    details: "Use inside manual sales and purchase document workflows. Job documents can link every invoice row to the exact costing charge so actuals reclassify that line's WIP or accrual without moving gross profit. Operators can also add, insert, copy or remove rows, import and export Excel, print a proforma and clear the form.",
+    description: "A freight invoice and credit-note charge grid with exact job allocation, accounting-item mapping, controlled tax, automatic totals and fast row commands.",
+    details: "Use inside manual sales and purchase document workflows. The operator-facing fields stay focused on charge code, description, quantity, rate, tax and line amount; provider item, nominal-account and tax-template mappings are applied at posting. Job documents can link each row to the exact costing charge so actuals reclassify that line's WIP or accrual without moving gross profit.",
     foundOn: [{ label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Components", route: "/components?component=finance-document-line-editor" }],
     componentCode: `export function FinanceDocumentLineEditor({ lines, onLinesChange, taxOptions, sourceKind, currencyCode, credit, disabled, onClear, onImport, onExport, onPrint }) {
   const [selectedLineId, setSelectedLineId] = useState(lines[0]?.id ?? "")
@@ -1804,7 +1804,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
       onClear={onClear}
       disabled={disabled}
     />
-    <DocumentLinesTable lines={lines} taxOptions={taxOptions} sourceKind={sourceKind} currencyCode={currencyCode} credit={credit} onSelect={setSelectedLineId} onChange={onLinesChange} />
+    <FreightInvoiceChargesTable lines={lines} taxOptions={taxOptions} sourceKind={sourceKind} currencyCode={currencyCode} credit={credit} columns={["chargeCode", "description", "quantity", "rate", "tax", "amount"]} onSelect={setSelectedLineId} onChange={onLinesChange} />
     <DocumentTotals totals={totals} currencyCode={currencyCode} credit={credit} />
   </section>
 }`,
