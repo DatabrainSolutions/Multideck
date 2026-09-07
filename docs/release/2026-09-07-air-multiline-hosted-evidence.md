@@ -39,3 +39,13 @@ new manual QA line is selected. Source inspection shows this is a Booking-level
 custom field derived from `booking.sourceQuoteId`, not cargo provenance. Do not
 claim the new line came from the Quote. Clarify the label/placement when fixing
 the remaining source-presentation gaps; no source data was rewritten here.
+
+Local follow-up: the existing field now displays `Booking source`, making its
+shipment-level scope explicit even while a manually added cargo line is selected.
+Only the display label changes: the existing `customField:Source` storage key,
+value and edit callback remain unchanged, preserving any operator-entered value.
+No cargo provenance is inferred, no saved field is renamed and no backend or
+Dexter capability changes. Existing controls/styles and English rendering are
+retained. Four cargo-weight regressions and the TypeScript/Vite client build
+pass (`/tmp/multideck-booking-source-build.log`, existing bundle-size warning).
+This copy correction is not yet released or hosted-verified.

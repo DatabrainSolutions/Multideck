@@ -3558,7 +3558,7 @@ function BookingRecordDetails({
             ? record.booking.customFields.map((field, index) => (
                 <BookingCargoWiseField
                   key={`${field.label}-${index}`}
-                  label={field.label}
+                  label={field.label === "Source" ? "Booking source" : field.label}
                   value={detailValue(`customField:${field.label}`, field.value)}
                   {...editDetail(`customField:${field.label}`)}
                 />
