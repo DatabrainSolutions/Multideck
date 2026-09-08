@@ -1,5 +1,16 @@
 # Freight workspace completion
 
+8 September local mixed-leg UI verification on saved synthetic JD0991136:
+adding a second draft step carries the Rail destination into its origin; changing
+that new step to Road requires the mode-change confirmation. Confirming exposes
+vehicle registration while the original leg retains its Rail service. Discard
+removes the unsaved second step and restores original dates/service, with Save
+absent. No Save was invoked and no hosted persistence claim is made for mixed
+legs. Several browser click calls timed out after dispatch; subsequent state
+checks confirmed each action before proceeding, avoiding duplicate clicks.
+This closes this local draft/confirmation/discard check only; saved mixed-leg
+equipment/allocation and hosted verification remain outstanding.
+
 8 September resumed by user: work continues on `codex/freight-workspace-foundation`.
 New release rule: commit and push the feature branch; obtain explicit user
 approval before merging/pushing to `dev`, or applying migrations/other backend
