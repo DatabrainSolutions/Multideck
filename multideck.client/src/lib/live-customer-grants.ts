@@ -1,0 +1,49 @@
+import { getSupabaseSession } from "@/lib/supabase";
+const publicUrl=import.meta.env.VITE_SUPABASE_URL?.trim().replace(/\/$/,"")??"";
+const supabaseFunctionsUrl=publicUrl?`${publicUrl}/functions/v1`:"";
+const supabasePublicApiKey=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim()||import.meta.env.VITE_SUPABASE_ANON_KEY?.trim()||"";
+export type LiveCustomerGrant = {
+  id: string;
+  connection_id: string;
+  subject_id: string;
+  facility_ids: string[];
+  enabled: boolean;
+  products_enabled: boolean;
+  orders_enabled: boolean;
+  purchase_orders_enabled: boolean;
+  version: number;
+};
+async function request<T>(
+  customerId: string,
+  input?: Record<string, unknown>,
+): Promise<T> {
+  const session = await getSupabaseSession();
+  if (!session?.access_token) {
+    throw new Error("Sign in to manage customer grants.");
+  }
+  const response = await fetch(
+    `${supabaseFunctionsUrl}/live-grant-admin/${
+      encodeURIComponent(customerId)
+    }`,
+    {
+      method: input ? "POST" : "GET",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: supabasePublicApiKey,
+        "Content-Type": "application/json",
+      },
+      body: input ? JSON.stringify(input) : undefined,
+    },
+  );
+  const value = await response.json();
+  if (!response.ok) {
+    throw new Error(value?.detail || "Customer grants are unavailable.");
+  }
+  return value;
+}
+export const listLiveCustomerGrants = (customerId: string) =>
+  request<LiveCustomerGrant[]>(customerId);
+export const saveLiveCustomerGrant = (
+  customerId: string,
+  input: Record<string, unknown>,
+) => request<LiveCustomerGrant>(customerId, input);

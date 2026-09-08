@@ -416,3 +416,6 @@ enabled = true
 # Verifies dedicated Live signatures and App-owned customer grants in the handler.
 [functions.live-company-gateway]
 verify_jwt = false
+
+[functions.live-grant-admin]
+verify_jwt = false
