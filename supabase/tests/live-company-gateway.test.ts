@@ -20,7 +20,7 @@ Deno.test("App gateway verifies signed company requests before the service-only 
   globalThis.fetch = async (request, options) => {
     calls++;
     const body = JSON.parse(String(options?.body));
-    assert(String(request) === url + "/rest/v1/rpc/" + (body.p_operation === "warehouse.order.submit" ? "live_gateway_mutate" : "live_gateway_read")); assert(body.p_subject_id === "subject-1");
+    assert(String(request) === url + "/rest/v1/rpc/" + (body.p_operation === "warehouse.order.submit" ? "live_gateway_mutate" : "live_gateway_query")); assert(body.p_subject_id === "subject-1");
     if (seen.has(body.p_nonce)) return Response.json({ code: "23505" }, { status: 409 });
     seen.add(body.p_nonce); return Response.json({ assignments: [] });
   };

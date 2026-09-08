@@ -98,3 +98,43 @@ rename rejection, inbound order, issued PO, duplicate-line denial, cross-subject
 and cross-warehouse denial, permission revocation, audit immutability and browser
 RPC denial. HTTP tests check signed mutation dispatch. No hosted configuration,
 customer permission, deployment or Live screen routing is enabled by this batch.
+
+## Grant administration and routed portal batch
+
+App customer records now include **Multideck Live access**. The dedicated
+`live-grant-admin/{organisationId}` Edge endpoint verifies the caller with this
+App project's Auth, resolves active internal warehouse/user permissions, checks
+assigned facilities, and refuses writes in Training. It fails closed if the
+internal actor or Training configuration prerequisites are unavailable. Its
+`verify_jwt=false` setting delegates authentication to this explicit Auth check;
+it does not accept an unsigned or cross-project identity.
+
+Apply migrations `20260908040000_live_company_order_reads.sql` and
+`20260908043000_live_grant_administration.sql` after the preceding gateway/WMS
+migrations. Configure a dedicated key in `LIVE_GATEWAY_KEYS` before enabling a
+grant. In the customer's App record, enter the connection reference from Live,
+Live user reference, key identifier, explicit facilities and separate product,
+general order and purchase order permissions. Grants default disabled. Saving
+creates the matching connection/key records if absent, and never re-enables a
+previously revoked key. Grant identity cannot be reassigned; edits require the
+current version and generate immutable before/after audit. Disabling a grant
+still works when its integration key was removed or revoked.
+
+Live's **Company customer access** section verifies an App grant before enabling
+its local assignment. It binds a registered connection, existing full-customer
+membership, exact Auth subject and App grant reference. Central warehouse mode
+routes stock, products, orders, order details and supported writes through the
+signed gateway. Browser selections only narrow verified private assignments.
+Grant management is never exposed through the customer integration key.
+
+Local evidence: actual SQL for grant edits/revocation and order projections;
+HTTP checks for App Auth/permissions/Training denials; Live signed routing and
+revoked/foreign access denials; customer screen company switching; browser grant
+and order forms using synthetic APIs. The App grant administration and central
+customer Dexter chat/watch exception remains explicit: these access controls are
+not a Dexter capability. Existing operational adapters are reused, but hosted
+Dexter event lifecycle and two-company deployment acceptance remain unverified.
+
+No migrations, Edge secrets, customer grants or deployments were applied to a
+hosted project. App main still requires its missing warehouse permission/WMS and
+Training schema prerequisites before this integration can run there.
