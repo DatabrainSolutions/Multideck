@@ -9,8 +9,22 @@ Booking summary correction is implemented locally: saved first/last route
 locations populate summaries, Overview explicitly labels planned dates, and
 readiness/required-delivery/predicted-delivery values do not become planned dates.
 Eleven focused projection/render tests pass, including both English variants;
-full client build passes. Browser verification remains pending. No development
-client or backend release has been performed for this correction.
+full client build passes. Chrome verification against the local client and saved
+synthetic JD0991136 passes for Overview and Details locations and planned labels;
+the Details screenshot confirms readable layout. No Booking data was edited.
+Responsive/failure-state verification and hosted preview verification remain open.
+No development client or backend release has been performed for this correction.
+
+Feature branch code commit `f9c62fe545a724c6b4da93ea1a64124f72c46e14` is pushed.
+Its automatic preview `dpl_7L7NpwAwFQrPVpYY8K4gJSHeRm2y` failed the deployment
+configuration guard: `MULTIDECK_SURFACE`, `VITE_MULTIDECK_TENANT_SLUG`, and
+`VITE_SUPABASE_PROJECT_REF` are missing for this branch. Do not weaken the guard
+or copy another tenant configuration. User decision is required before repairing
+branch-specific preview settings; dev merge/deployment remains separately held.
+Recommended next release step is approval to inspect and prepare exact preview
+configuration for this branch, verify its intended backend/hostname, then obtain
+approval for the concrete settings change. A preview frontend alone does not
+isolate database writes. Remaining independent local freight work can continue.
 
 7 September user-requested stop/save point: the route validator migration is now
 deployed to development; Rail JD0991136 Save, SQL persistence and full reload
