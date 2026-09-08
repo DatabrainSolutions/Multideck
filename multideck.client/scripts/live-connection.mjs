@@ -10,7 +10,7 @@ export function createLiveDescriptor(env) {
   }
   return { version: 1, appOrigin: `https://${host}`, workspace: { slug }, projectRef: ref,
     gateway: { url: `https://${ref}.supabase.co/functions/v1/live-company-gateway`, protocol: 'multideck-live-v1',
-      operations: ['warehouse.context', 'warehouse.stock', 'warehouse.products'] } }
+      operations: ['warehouse.context', 'warehouse.stock', 'warehouse.products', 'warehouse.product.create', 'warehouse.product.rename', 'warehouse.order.submit'] } }
 }
 export function liveConnectionPlugin(env) {
   const descriptor = createLiveDescriptor(env)

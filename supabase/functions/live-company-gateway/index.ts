@@ -41,8 +41,8 @@ export async function handler(request: Request): Promise<Response> {
     if (!body || body.version !== 1 || !identifier.test(body.connectionId ?? "") || !identifier.test(body.subjectId ?? "") ||
       !identifier.test(body.grantId ?? "") || !body.input || typeof body.input !== "object" || Array.isArray(body.input) ||
       Object.keys(body).some(k => !["version", "connectionId", "subjectId", "grantId", "operation", "input"].includes(k))) return reply(400, { error: "Invalid gateway envelope." });
-    if (!["warehouse.context", "warehouse.stock", "warehouse.products"].includes(body.operation)) return reply(501, { error: "This gateway operation is not enabled." });
-    const response = await fetch(`${audience}/rest/v1/rpc/live_gateway_read`, {
+    if (!["warehouse.context", "warehouse.stock", "warehouse.products", "warehouse.product.create", "warehouse.product.rename", "warehouse.order.submit"].includes(body.operation)) return reply(501, { error: "This gateway operation is not enabled." });
+    const response = await fetch(`${audience}/rest/v1/rpc/${["warehouse.product.create", "warehouse.product.rename", "warehouse.order.submit"].includes(body.operation) ? "live_gateway_mutate" : "live_gateway_read"}`, {
       method: "POST", redirect: "error", signal: AbortSignal.timeout(20_000),
       headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ p_key_id: keyId, p_connection_id: body.connectionId, p_subject_id: body.subjectId,
@@ -50,7 +50,7 @@ export async function handler(request: Request): Promise<Response> {
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      const status = error.code === "42501" ? 403 : error.code === "23505" ? 409 : ["22023", "22P02", "22003"].includes(error.code) ? 400 : 503;
+      const status = error.code === "42501" ? 403 : ["23505", "40001"].includes(error.code) ? 409 : ["22023", "22P02", "22003"].includes(error.code) ? 400 : 503;
       return reply(status, { error: status === 403 ? "Customer grant denied." : status === 409 ? "Request already used." : "Gateway request unavailable." });
     }
     return reply(200, await response.json());

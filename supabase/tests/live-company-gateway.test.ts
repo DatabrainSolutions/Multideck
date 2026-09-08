@@ -18,8 +18,9 @@ Deno.test("App gateway verifies signed company requests before the service-only 
   Deno.env.set("LIVE_GATEWAY_KEYS", JSON.stringify({ "test-key": secret }));
   const original = globalThis.fetch; const seen = new Set<string>(); let calls = 0;
   globalThis.fetch = async (request, options) => {
-    assert(String(request) === url + "/rest/v1/rpc/live_gateway_read"); calls++;
-    const body = JSON.parse(String(options?.body)); assert(body.p_subject_id === "subject-1");
+    calls++;
+    const body = JSON.parse(String(options?.body));
+    assert(String(request) === url + "/rest/v1/rpc/" + (body.p_operation === "warehouse.order.submit" ? "live_gateway_mutate" : "live_gateway_read")); assert(body.p_subject_id === "subject-1");
     if (seen.has(body.p_nonce)) return Response.json({ code: "23505" }, { status: 409 });
     seen.add(body.p_nonce); return Response.json({ assignments: [] });
   };
@@ -31,7 +32,8 @@ Deno.test("App gateway verifies signed company requests before the service-only 
     assert((await handler(await signed(envelope, "https://tsrqponmlkjihgfedcba.supabase.co"))).status === 401);
     const tampered = await signed(envelope); const headers = new Headers(tampered.headers);
     assert((await handler(new Request(tampered.url, { method: "POST", headers, body: JSON.stringify({ ...envelope, subjectId: "subject-2" }) }))).status === 401);
-    assert((await handler(await signed({ ...envelope, operation: "warehouse.order.submit" }))).status === 501);
-    assert(calls === 2);
+    assert((await handler(await signed({ ...envelope, operation: "warehouse.order.submit" }))).status === 200);
+    assert((await handler(await signed({ ...envelope, operation: "warehouse.stock.dispatch" }))).status === 501);
+    assert(calls === 3);
   } finally { globalThis.fetch = original; }
 });
