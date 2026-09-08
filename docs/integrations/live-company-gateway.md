@@ -12,7 +12,8 @@ integration credential. This implements the product-owner clarification of
   address and implemented operations. It contains no key or customer records.
 - `https://{project}.supabase.co/functions/v1/live-company-gateway`: signed,
   server-to-server POST endpoint for `warehouse.context`, `warehouse.stock`
-  and `warehouse.products`. Other operations return 501 until implemented.
+  `warehouse.products`, `warehouse.product.create`, `warehouse.product.rename`
+  and `warehouse.order.submit`. Other operations return 501 until implemented.
 
 Central Live must fetch the descriptor from an approved company App URL, check
 the returned origin against that URL and pin the project/gateway before saving
@@ -21,7 +22,8 @@ the connection. An App website URL is not itself a Supabase RPC address.
 ## Configuration and identity
 
 After applying the warehouse prerequisites and migration
-`20260908030000_live_company_gateway.sql`, provision reviewed records in
+`20260908030000_live_company_gateway.sql` and
+`20260908033000_live_company_mutations.sql`, provision reviewed records in
 `private_live_gateway.connections`, `keys` and `customer_grants`. All are disabled
 by default and inaccessible to browser roles. The grant binds a central Live
 subject and connection to one App organisation and an explicit warehouse set;
@@ -66,11 +68,33 @@ hosted cross-company acceptance.
 
 Remaining: audited key/grant administration, the central Live connection screen
 and descriptor registration, routing current Live screens through these grants,
-order reads/writes and product writes through App's existing lifecycle, and
+order reads and hosted verification of product/order writes, and
 hosted two-company/revocation verification. The existing co-located Live API
 must not be described as already using this remote gateway.
 
 Dexter exception: integration secret/grant administration and central customer
 chat/watch are not exposed through Dexter. Existing operator stock/product
-domains and deterministic watches continue unchanged. This read-only gateway
-does not enable physical operations or add a new operational event.
+domains and deterministic watches continue unchanged. Gateway writes reuse the App item triggers and order/PO lifecycle, preserving
+operator Dexter records and deterministic operational events. Central Live chat
+and watches remain explicitly unsupported; the gateway does not expose Dexter
+or physical release, picking, receiving or dispatch. The hosted Dexter lifecycle
+is not verified by the local synthetic database test.
+
+## Remote mutation batch
+
+Product creation/renaming and inbound/outbound/PO submission require their own
+App grant flags, all disabled by default. Requests carry a stable `requestId`
+inside `input`, separately from the signed transport nonce. Retries recheck
+current access and return the original result only for the exact same payload,
+grant and operational organisation. Product rename requires `updatedAt`.
+Order input contains `facilityId`, `requestId`, `kind` and `payload` (reference,
+requestedDate, instructions, supplierName, currency and item lines). The gateway
+uses the App's real order creation and PO issue routines; it does not move stock.
+An immutable private journal records external subject, company, organisation,
+request, operation, before value and result within the same transaction.
+
+Local database tests execute actual mutation SQL: create, retry, rename, stale
+rename rejection, inbound order, issued PO, duplicate-line denial, cross-subject
+and cross-warehouse denial, permission revocation, audit immutability and browser
+RPC denial. HTTP tests check signed mutation dispatch. No hosted configuration,
+customer permission, deployment or Live screen routing is enabled by this batch.
