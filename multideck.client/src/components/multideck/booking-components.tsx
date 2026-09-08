@@ -332,9 +332,11 @@ function bookingWorkspaceRecord(workspace: BookingWorkflowWorkspace): BookingDet
       ? "Delayed"
       : "On track"
   const statusTone: StatusTone = lifecycle === "draft" ? "neutral" : displayStatus === "Exception" ? "red" : displayStatus === "Delayed" ? "amber" : "green"
-  const routeLabel = [booking.origin, booking.destination].filter(Boolean).join(" → ")
-  const departureAt = route?.plannedDepartureAt ?? booking.readyDate ?? ""
-  const arrivalAt = lastRoute?.plannedArrivalAt ?? booking.predictedDeliveryAt ?? booking.requiredDeliveryDate ?? ""
+  const origin = route ? route.originUnlocode?.trim() || route.origin?.trim() || "" : booking.origin ?? ""
+  const destination = lastRoute ? lastRoute.destinationUnlocode?.trim() || lastRoute.destination?.trim() || "" : booking.destination ?? ""
+  const routeLabel = [origin, destination].filter(Boolean).join(" → ")
+  const departureAt = route?.plannedDepartureAt ?? ""
+  const arrivalAt = lastRoute?.plannedArrivalAt ?? ""
   return {
     id: booking.bookingReference,
     workspace,
@@ -358,8 +360,8 @@ function bookingWorkspaceRecord(workspace: BookingWorkflowWorkspace): BookingDet
       jobRef: recordText(editableDetails, "jobReference") || booking.jobReference,
       customerRef: recordText(editableDetails, "customerReference") || recordText(quote, "customerReference") || recordText(facts, "customerReference"),
       supplierRef: recordText(editableDetails, "supplierReference") || recordText(facts, "supplierReference") || (route?.carrierBookingReference ?? ""),
-      origin: booking.origin ?? "",
-      destination: booking.destination ?? "",
+      origin,
+      destination,
       vessel: route?.vessel ?? route?.flightNumber ?? route?.transportMeansName ?? "",
       departureDate: departureAt ? String(departureAt).slice(0, 10) : "",
       arrivalDate: arrivalAt ? String(arrivalAt).slice(0, 10) : "",
@@ -2510,8 +2512,8 @@ function BookingOverviewSignals({ record, tabs }: { record: BookingDetailRecord;
   const bookingMetadata = [
     { label: "Booking owner", value: record.booking.owner || t("Unassigned") },
     { label: "Current location", value: record.booking.currentLocation || "–" },
-    { label: "Departure", value: record.booking.departureDate || "–" },
-    { label: "ETA", value: record.booking.eta || "–" },
+    { label: "Planned departure", value: record.booking.departureDate || "–" },
+    { label: "Planned arrival", value: record.booking.arrivalDate || "–" },
   ]
 
   return (
@@ -2724,8 +2726,8 @@ function BookingDecisionOverview({ record }: { record: BookingDetailRecord }) {
             <BookingCargoWiseField label="Direction" value={record.booking.direction} />
             <BookingCargoWiseField label="Origin" value={record.booking.origin} />
             <BookingCargoWiseField label="Destination" value={record.booking.destination} />
-            <BookingCargoWiseField label="Departure" value={record.booking.departureDate} />
-            <BookingCargoWiseField label="ETA" value={record.booking.eta} />
+            <BookingCargoWiseField label="Planned departure" value={record.booking.departureDate} />
+            <BookingCargoWiseField label="Planned arrival" value={record.booking.arrivalDate} />
             <BookingCargoWiseField label="Current location" value={record.booking.currentLocation} />
           </div>
         </BookingCargoWiseGroup>

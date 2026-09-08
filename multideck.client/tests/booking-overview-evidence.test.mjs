@@ -10,6 +10,38 @@ const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
 const source = readFileSync(new URL('../src/components/multideck/booking-components.tsx', import.meta.url), 'utf8')
 
+test('workspace summary uses saved journey endpoints and only explicit planned dates', () => {
+  const start = source.indexOf('function bookingWorkspaceRecord(')
+  const code = transformSync(source.slice(start, source.indexOf('\nconst statusTone:', start)), { loader: 'ts' }).code
+  const mocks = {
+    asRecord: value => value ?? {}, bookingQuoteHandoff: () => ({ quote: {}, facts: {} }),
+    bookingParty: () => null, recordText: (record, key) => record[key] ?? '',
+    bookingWorkspaceMode: value => value, bookingWorkspaceDirection: value => value,
+  }
+  const project = new Function(...Object.keys(mocks), `${code};return bookingWorkspaceRecord`)(...Object.values(mocks))
+  const workspace = { booking: { bookingReference: 'INTERNAL-QA', origin: 'Stale header origin', destination: 'Stale header destination',
+    readyDate: '2026-09-01', requiredDeliveryDate: '2026-09-30', predictedDeliveryAt: '2026-09-29' },
+    routes: [{ origin: 'Rail origin', originUnlocode: '', destination: 'Interchange', plannedDepartureAt: '2026-09-21T00:00:00Z' },
+      { origin: 'Interchange', destination: 'Road destination', destinationUnlocode: ' ', plannedArrivalAt: '2026-09-22T00:00:00Z' }],
+    containers: [], cargo: [], documents: [] }
+  const before = JSON.stringify(workspace)
+  const saved = project(workspace).booking
+  assert.equal(saved.origin, 'Rail origin')
+  assert.equal(saved.destination, 'Road destination')
+  assert.equal(saved.route, 'Rail origin → Road destination')
+  assert.equal(saved.departureDate, '2026-09-21')
+  assert.equal(saved.arrivalDate, '2026-09-22')
+  assert.equal(JSON.stringify(workspace), before)
+  const missing = project({ ...workspace, routes: [{ origin: '', destination: '', plannedArrivalAt: null }] }).booking
+  assert.equal(missing.origin, '')
+  assert.equal(missing.destination, '')
+  assert.equal(missing.departureDate, '')
+  assert.equal(missing.arrivalDate, '')
+  const noRoutes = project({ ...workspace, routes: [] }).booking
+  assert.equal(noRoutes.origin, 'Stale header origin')
+  assert.equal(noRoutes.arrivalDate, '')
+})
+
 function component(name, end, language, resultName = name) {
   const start = source.indexOf(`function ${name}(`)
   assert.ok(start >= 0)

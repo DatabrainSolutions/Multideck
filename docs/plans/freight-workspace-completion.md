@@ -1,5 +1,17 @@
 # Freight workspace completion
 
+8 September resumed by user: work continues on `codex/freight-workspace-foundation`.
+New release rule: commit and push the feature branch; obtain explicit user
+approval before merging/pushing to `dev`, or applying migrations/other backend
+deployments to development. Prepare reviewable changes and verification first.
+
+Booking summary correction is implemented locally: saved first/last route
+locations populate summaries, Overview explicitly labels planned dates, and
+readiness/required-delivery/predicted-delivery values do not become planned dates.
+Eleven focused projection/render tests pass, including both English variants;
+full client build passes. Browser verification remains pending. No development
+client or backend release has been performed for this correction.
+
 7 September user-requested stop/save point: the route validator migration is now
 deployed to development; Rail JD0991136 Save, SQL persistence and full reload
 pass. Quote fingerprint and function privileges are unchanged; no new security
