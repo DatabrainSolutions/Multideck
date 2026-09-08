@@ -349,7 +349,9 @@ function bookingWorkspaceRecord(workspace: BookingWorkflowWorkspace): BookingDet
       container: containerSummary,
       mode: bookingWorkspaceMode(booking.mode),
       value: booking.freightChargeAmount == null ? "" : `${booking.freightChargeCurrency ?? ""} ${booking.freightChargeAmount}`.trim(),
-      eta: arrivalAt ? String(arrivalAt).slice(0, 10) : "",
+      // Estimates remain attached to their recorded milestones; a route plan
+      // is not evidence of an estimated arrival for this summary.
+      eta: "",
       time: "",
       currentLocation: booking.currentLocation ?? "",
       status: displayStatus,
@@ -2132,7 +2134,9 @@ function getBookingNextAction(record: BookingDetailRecord) {
   if (record.booking.progress === 100) return { title: "Complete financial close", detail: "Confirm final costs, proof of delivery, and customer billing before closing the record.", tone: "green" as StatusTone }
   if (record.booking.status === "Delayed") return { title: "Prepare a revised ETA update", detail: "Confirm the latest carrier timing before sharing the movement change with the customer.", tone: "amber" as StatusTone }
   if (record.booking.status === "Exception") return { title: "Review the open blocker", detail: getBookingBlocker(record)?.value ?? "Open the operational workflow and assign the next action.", tone: "red" as StatusTone }
-  return { title: "Monitor the next movement", detail: `Keep ${record.booking.eta} under watch while the shipment remains at ${record.booking.currentLocation}.`, tone: "teal" as StatusTone }
+  return { title: "Monitor the next movement", detail: record.booking.eta
+    ? `Review the estimated arrival ${record.booking.eta} while the shipment remains at ${record.booking.currentLocation}.`
+    : "Review the recorded route and milestones for the next movement.", tone: "teal" as StatusTone }
 }
 
 function getMovementSteps(record: BookingDetailRecord) {
@@ -2651,7 +2655,7 @@ function BookingOperationalCoverage({ record }: { record: BookingDetailRecord })
     },
     {
       label: "Schedule",
-      signals: [bookingSignalAvailable(record.booking.departureDate), bookingSignalAvailable(record.booking.eta)],
+      signals: [bookingSignalAvailable(record.booking.departureDate), bookingSignalAvailable(record.booking.arrivalDate)],
     },
     {
       label: "Commercial references",

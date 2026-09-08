@@ -21,10 +21,18 @@ configuration guard: `MULTIDECK_SURFACE`, `VITE_MULTIDECK_TENANT_SLUG`, and
 `VITE_SUPABASE_PROJECT_REF` are missing for this branch. Do not weaken the guard
 or copy another tenant configuration. User decision is required before repairing
 branch-specific preview settings; dev merge/deployment remains separately held.
-Recommended next release step is approval to inspect and prepare exact preview
-configuration for this branch, verify its intended backend/hostname, then obtain
+Recommended next release step is read-only inspection and preparation of preview
+configuration for this branch, verification of its intended backend/hostname, then
 approval for the concrete settings change. A preview frontend alone does not
 isolate database writes. Remaining independent local freight work can continue.
+
+8 September follow-up: removed the residual planned-arrival alias in the display
+record's `eta` field. Estimates remain on recorded milestones; the summary does
+not infer an estimate from a plan. Schedule coverage now reads planned arrival
+directly, and next-action copy handles an absent estimate. Eleven focused tests
+pass. Preview settings and dev/database release approvals remain outstanding.
+Read-only Vercel CLI inspection could not proceed without authentication; its
+automatic login attempt was cancelled. No settings were changed.
 
 7 September user-requested stop/save point: the route validator migration is now
 deployed to development; Rail JD0991136 Save, SQL persistence and full reload

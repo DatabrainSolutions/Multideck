@@ -31,6 +31,7 @@ test('workspace summary uses saved journey endpoints and only explicit planned d
   assert.equal(saved.route, 'Rail origin → Road destination')
   assert.equal(saved.departureDate, '2026-09-21')
   assert.equal(saved.arrivalDate, '2026-09-22')
+  assert.equal(saved.eta, '', 'A planned date must not become an estimate')
   assert.equal(JSON.stringify(workspace), before)
   const missing = project({ ...workspace, routes: [{ origin: '', destination: '', plannedArrivalAt: null }] }).booking
   assert.equal(missing.origin, '')
