@@ -321,13 +321,10 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
   ], [activityColumns, t])
 
   const title = view === "detailed" ? t("Detailed log") : t("Active log")
-  const description = view === "detailed"
-    ? t("Inspect field changes, authentication detail and the evidence behind each recorded event.")
-    : t("See sign-ins, sign-outs and operator actions in the workspace.")
 
   useEffect(() => { document.title = `${title} · Admin · Multideck` }, [title])
 
-  const header = <SettingsPageHeader title={title} description={description} descriptionPlacement="under-title" actions={view === "activity" ? <ActiveUsers users={result?.activeUsers ?? []} currentUser={currentUser} /> : undefined} />
+  const header = <SettingsPageHeader title={title} descriptionPlacement="under-title" actions={view === "activity" ? <ActiveUsers users={result?.activeUsers ?? []} currentUser={currentUser} /> : undefined} />
   if (loading && !result) return <div className="px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[1440px]">{header}<p className="mt-8 text-[13px] text-[var(--md-text)]" role="status">{t("Loading audit log…")}</p></div></div>
   if (error && !result) return <div className="px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[1440px]">{header}<div className="mt-6 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 text-[13px] shadow-[var(--md-shadow-soft)]" role="alert"><p className="font-medium text-[var(--md-red)]">{t("The audit log could not be loaded.")}</p><p className="mt-1 text-[var(--md-text)]">{error}</p></div></div></div>
 
@@ -770,7 +767,7 @@ function SystemPreferencesContent() {
     )
   }
 
-  const header = <SettingsPageHeader title={t("System Preferences")} description={t("Set company-wide quote follow-up and reference rules. Existing references stay unchanged.")} descriptionPlacement="under-title" />
+  const header = <SettingsPageHeader title={t("System Preferences")} description={t("These settings apply company-wide. Existing references stay unchanged.")} descriptionPlacement="under-title" />
   if (loading) return <div className="px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[760px]">{header}<p className="mt-8 text-[13px] text-[var(--md-text)]" role="status">{t("Loading system preferences…")}</p></div></div>
 
   return (
@@ -781,7 +778,7 @@ function SystemPreferencesContent() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Quote documents")}</h2>
-              <p className="mt-1 max-w-[62ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("Upload the company logo used on customer quote PDFs. The original stays private inside this workspace.")}</p>
+              <p className="mt-1 max-w-[62ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("Used on customer quote PDFs. The original stays private in this workspace.")}</p>
             </div>
             <Button type="button" variant="outline" disabled={uploadingLogo} onClick={() => logoInputRef.current?.click()}>
               {uploadingLogo ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <ImageUp className="size-4" aria-hidden="true" />}
@@ -802,7 +799,7 @@ function SystemPreferencesContent() {
             </span>
             <div className="min-w-0">
               <p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{branding?.displayName || companyName}</p>
-              <p className="mt-1 text-[11px] leading-4 text-[var(--md-subtle)]">{t("Shown on generated quote PDFs · PNG, JPEG or WebP · Up to 5 MB")}</p>
+              <p className="mt-1 text-[11px] leading-4 text-[var(--md-subtle)]">{t("PNG, JPEG or WebP · Up to 5 MB")}</p>
             </div>
           </div>
           {brandingError ? <p className="mt-3 text-[12px] text-[var(--md-red)]" role="alert">{t(brandingError)}</p> : null}
@@ -811,7 +808,7 @@ function SystemPreferencesContent() {
         <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">
           <div>
             <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Quote follow-up")}</h2>
-            <p className="mt-1 max-w-[68ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("Send one polite reminder when a submitted quote is still waiting for a response. A customer-specific delay can override this policy, and customers who do not allow follow-ups are always excluded.")}</p>
+            <p className="mt-1 max-w-[68ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("Send one reminder for unanswered quotes. Customer-specific delays override this setting; customers who disallow follow-ups are excluded.")}</p>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label className="grid gap-1.5 text-[11px] font-medium text-[var(--md-text)]">

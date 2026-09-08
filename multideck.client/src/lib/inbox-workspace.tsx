@@ -168,6 +168,20 @@ export function InboxWorkspaceProvider({
   mailboxesRef.current = mailboxes
   accountScopeRef.current = cacheScope
 
+  // The shell stays mounted when a notification opens an Inbox deep link.
+  useEffect(() => {
+    const readNavigation = () => {
+      if (window.location.pathname !== "/inbox") return
+      const selection = readInitialSelection()
+      setView(selection.view)
+      if (selection.provider) setProvider(selection.provider)
+      if (selection.mailboxId) setMailboxId(selection.mailboxId)
+      setFolderId(selection.folderId)
+    }
+    window.addEventListener("popstate", readNavigation)
+    return () => window.removeEventListener("popstate", readNavigation)
+  }, [])
+
   useEffect(() => {
     threadCacheRef.current = threadCache
   }, [threadCache])

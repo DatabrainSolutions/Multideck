@@ -17,6 +17,8 @@ import {
   type ContactCardPipelineOption,
 } from "@/data/contact-card-data"
 import { getSupabaseSession, supabase, supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
+import { contactCardChannel, escapeVCard, publicCardUrl, vCardDocument } from "@/lib/contact-card-links"
+import type { CardVisit } from "@/lib/contact-card-visit"
 
 export type StoreStatus = "loading" | "ready" | "error"
 export type SaveStatus = "idle" | "saving" | "saved" | "error"
@@ -350,7 +352,8 @@ async function callRpc<T>(name: string, args?: Record<string, unknown>) {
   const session = await getSupabaseSession()
   const isPublic = name.startsWith("multideck_public_") || name.includes("record_scan") || name.includes("mark_started") || name.includes("submit_exchange")
   if (!isPublic && !session) throw new Error("Sign in again to manage QR contact cards.")
-  const { data, error } = await supabase.rpc(name, args)
+  const request = supabase.rpc(name, args)
+  const { data, error } = await (isPublic ? request.abortSignal(AbortSignal.timeout(20_000)) : request)
   if (error) throw error
   return data as T
 }
@@ -794,6 +797,7 @@ async function loadPublishedCardOwnerProfile(slug: string, preview = false): Pro
   const session = preview ? await getSupabaseSession() : null
   const response = await fetch(`${supabaseFunctionsUrl}/contact-card-profile?slug=${encodeURIComponent(slug)}${preview ? "&preview=true" : ""}`, {
     headers: { apikey: supabasePublicApiKey, ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+    signal: AbortSignal.timeout(15_000),
   })
   if (response.status === 404) return null
   if (!response.ok) throw new Error("The card owner's profile could not be loaded.")
@@ -824,20 +828,18 @@ function applyOwnerAndTenantBrand(card: ContactCard, profile: PublishedCardOwner
 }
 
 export async function loadPublicCard(slug: string, preview = false): Promise<ContactCard | null> {
-  const local = findCardBySlug(slug)
-  if (local) {
-    const ownerProfile = local.status === "published" || preview ? await loadPublishedCardOwnerProfile(slug, preview).catch(() => null) : null
-    return applyOwnerAndTenantBrand(local, ownerProfile)
-  }
+  // Publication and field visibility must be checked on every public open.
+  // Workspace records include private fields and are never a public response.
   const row = await callRpc<Record<string, unknown> | null>(
     preview ? "multideck_contact_card_preview" : "multideck_public_contact_card",
     { p_slug: slug },
   )
-  if (!row) return null
+  if (!row) { publicCardCache.delete(slug); return null }
   const card = mapPublicCard(row)
-  const ownerProfile = card.status === "published" || preview ? await loadPublishedCardOwnerProfile(slug, preview).catch(() => null) : null
+  const ownerProfile = card.status === "published" || preview ? await loadPublishedCardOwnerProfile(slug, preview) : null
+  if (!ownerProfile) { publicCardCache.delete(slug); return null }
   const resolvedCard = applyOwnerAndTenantBrand(card, ownerProfile)
-  if (!preview) publicCardCache.set(slug, resolvedCard)
+  publicCardCache.set(slug, resolvedCard)
   return resolvedCard
 }
 
@@ -845,21 +847,26 @@ function scanShape(): Pick<CardScan, "device" | "browser" | "channel" | "country
   const agent = navigator.userAgent
   const device: CardScan["device"] = /iPad|Tablet/i.test(agent) ? "tablet" : /Mobi|Android|iPhone/i.test(agent) ? "mobile" : "desktop"
   const browser = /Edg\//.test(agent) ? "Edge" : /Chrome\//.test(agent) ? "Chrome" : /Safari\//.test(agent) ? "Safari" : /Firefox\//.test(agent) ? "Firefox" : "Other"
-  return { device, browser, channel: "direct-scan", country: "", region: "" }
+  return { device, browser, channel: contactCardChannel(window.location.search), country: "", region: "" }
 }
 
-export async function recordScan(cardId: string, preview: boolean) {
+export async function recordScan(cardId: string, preview: boolean, visit: CardVisit) {
   if (preview) return null
   const card = state.cards.find((item) => item.id === cardId) ?? [...publicCardCache.values()].find((item) => item.id === cardId)
   if (!card) return null
   const shape = scanShape()
-  return callRpc<string | null>("multideck_contact_card_record_scan", {
-    p_slug: card.slug, p_device: shape.device, p_browser: shape.browser, p_channel: shape.channel, p_country: shape.country, p_region: shape.region,
+  return callRpc<string | null>("multideck_contact_card_record_scan_v2", {
+    p_slug: card.slug, p_device: shape.device, p_browser: shape.browser, p_channel: shape.channel,
+    p_request_id: visit.requestId, p_session_id: visit.sessionId,
   })
 }
 
-export function recordFormStarted(_cardId: string, scanId: string | null) {
-  if (scanId) void callRpc<void>("multideck_contact_card_mark_started", { p_scan_id: scanId })
+export async function recordFormStarted(_cardId: string, scanId: string | null) {
+  if (!scanId) return false
+  try {
+    await callRpc<void>("multideck_contact_card_mark_started", { p_scan_id: scanId })
+    return true
+  } catch { return false }
 }
 
 export type ExchangeInput = { firstName: string; lastName: string; email: string; company: string; phone: string; marketingConsent: boolean }
@@ -879,13 +886,14 @@ export async function submitExchange(cardId: string, scanId: string | null, inpu
 }
 
 export function cardPublicPath(card: ContactCard) { return `/card/${card.slug}` }
-export function cardPublicUrl(card: ContactCard) { return `${typeof window === "undefined" ? "https://app.multideck.solutions" : window.location.origin}${cardPublicPath(card)}` }
-function escapeVCard(value: string) { return value.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\\n/g, "\\n") }
+export function cardPublicUrl(card: ContactCard, source: "qr" | "link" = "link") {
+  return publicCardUrl(window.location.origin, card.slug, source)
+}
 export function buildVCard(card: ContactCard) {
   const [firstName, ...rest] = card.person.fullName.split(" ")
   const lines = ["BEGIN:VCARD", "VERSION:3.0", `N:${escapeVCard(rest.join(" "))};${escapeVCard(firstName)};;;`, `FN:${escapeVCard(card.person.fullName)}`, `ORG:${escapeVCard(card.person.company)}`, `TITLE:${escapeVCard(card.person.role)}`, `EMAIL;TYPE=INTERNET,WORK:${escapeVCard(card.person.email)}`]
   if (card.showPhone && card.person.phone) lines.push(`TEL;TYPE=CELL,WORK:${escapeVCard(card.person.phone)}`)
-  if (card.showWebsite && card.person.website) lines.push(`URL:https://${escapeVCard(card.person.website)}`)
+  if (card.showWebsite && card.person.website) lines.push(`URL:${escapeVCard(/^https?:\/\//i.test(card.person.website) ? card.person.website : `https://${card.person.website}`)}`)
   for (const link of card.person.socialLinks.filter((item) => item.enabled && item.value.trim() && !["email", "website"].includes(item.kind))) {
     const value = link.value.trim()
     const url = /^https?:\/\//i.test(value)
@@ -900,7 +908,7 @@ export function buildVCard(card: ContactCard) {
     lines.push(`X-SOCIALPROFILE;TYPE=${link.kind.toUpperCase()}:${escapeVCard(url)}`)
   }
   lines.push("END:VCARD")
-  return lines.join("\\r\\n")
+  return vCardDocument(lines)
 }
 export function downloadFile(filename: string, contents: string | Blob, mimeType = "text/plain") {
   const blob = contents instanceof Blob ? contents : new Blob([contents], { type: `${mimeType};charset=utf-8` })

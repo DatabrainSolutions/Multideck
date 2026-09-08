@@ -65,6 +65,7 @@ export function InboxSuggestedUpdatesWorkspace({ mailboxes }: { mailboxes: Mailb
   const loadVersion = useRef(0)
   const dismissInFlight = useRef(false)
   const reviewTabRef = useRef<HTMLButtonElement>(null)
+  const requestedSuggestion = useRef(new URLSearchParams(window.location.search).get("suggestion"))
 
   const load = useCallback(async (quiet = false) => {
     const version = ++loadVersion.current
@@ -81,6 +82,16 @@ export function InboxSuggestedUpdatesWorkspace({ mailboxes }: { mailboxes: Mailb
       setSelectedId((current) => current && nextSuggestions.some((item) => item.id === current)
         ? current
         : nextSuggestions.find((item) => item.status === "ready" || item.status === "needs_match")?.id ?? nextSuggestions[0]?.id ?? null)
+      if (requestedSuggestion.current) {
+        const requested = nextSuggestions.find((item) => item.id === requestedSuggestion.current)
+        if (requested) {
+          setFilter(requested.status === "ready" || requested.status === "needs_match" ? "review" : "history")
+          setSelectedId(requested.id)
+        } else {
+          toast.error(t("This suggested update is no longer available."))
+        }
+        requestedSuggestion.current = null
+      }
       setState("ready")
     } catch (failure) {
       if (version !== loadVersion.current) return
@@ -94,6 +105,15 @@ export function InboxSuggestedUpdatesWorkspace({ mailboxes }: { mailboxes: Mailb
     const refreshOnFocus = () => void load(true)
     window.addEventListener("focus", refreshOnFocus)
     return () => window.removeEventListener("focus", refreshOnFocus)
+  }, [load])
+
+  useEffect(() => {
+    const openRequestedSuggestion = () => {
+      requestedSuggestion.current = new URLSearchParams(window.location.search).get("suggestion")
+      if (requestedSuggestion.current) void load()
+    }
+    window.addEventListener("popstate", openRequestedSuggestion)
+    return () => window.removeEventListener("popstate", openRequestedSuggestion)
   }, [load])
 
   const visibleSuggestions = useMemo(() => suggestions.filter((suggestion) => filter === "review"

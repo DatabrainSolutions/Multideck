@@ -185,7 +185,7 @@ export function TopBar({
   const isFinance = route.startsWith("/finance/")
   const isStandaloneExportRegister = route === "/customs/standalone/export"
   const isStandaloneImportRegister = route === "/customs/standalone/import"
-  const isReports = route === "/reports"
+  const isReports = route === "/reports" || route === "/reports/history"
   const isScheduledReports = route === "/reports/scheduled"
   const isReportingRoute = isReports || isScheduledReports
   const isOperationalJobScreen = route === "/" || route.startsWith("/bookings") || route.startsWith("/quotes") || isRoadRoute || isWarehouse

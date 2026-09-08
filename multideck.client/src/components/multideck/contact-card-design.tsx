@@ -47,6 +47,7 @@ import {
 import { resolveCardTheme } from "@/lib/card-theme"
 import { CARD_LAYOUT_SPECS, markCoverOffset, resolveCardLayout } from "@/lib/card-layout"
 import { cardPublicPath, cardPublicUrl, readLogoFile, updateBranding, MAX_LOGO_BYTES } from "@/lib/contact-card-store"
+import { localCardUrl } from "@/lib/contact-card-links"
 import {
   CARD_SOCIAL_LABELS,
   defaultBranding,
@@ -1547,7 +1548,8 @@ export function CardQrPanel({ card }: { card: ContactCard }) {
   const { apply, undo, depth } = useBrandingHistory(card)
 
   const url = cardPublicUrl(card)
-  const { matrix } = useQrCode(url, branding)
+  const qrUrl = cardPublicUrl(card, "qr")
+  const { matrix, style } = useQrCode(qrUrl, branding)
   const qrContrast = useMemo(() => qrContrastRatio(branding.qrDark, branding.qrLight), [branding.qrDark, branding.qrLight])
   const matchedAccentInk = useMemo(() => scannableInk(branding.accent, branding.qrLight), [branding.accent, branding.qrLight])
   const codeMatchesAccent = branding.qrDark.toLowerCase() === matchedAccentInk.toLowerCase()
@@ -1573,7 +1575,7 @@ export function CardQrPanel({ card }: { card: ContactCard }) {
         <Surface padding="md" className="p-5">
           <SectionHeader
             title={t("Code look")}
-            meta={t("Pattern and colour together, as a camera sees them. Anything that would stop a scan is corrected for you.")}
+            meta={t("Test the final printed code with your phone before sharing it.")}
             metaPlacement="stacked"
             action={<HistoryActions depth={depth} onUndo={undo} onReset={resetCode} />}
           />
@@ -1583,7 +1585,7 @@ export function CardQrPanel({ card }: { card: ContactCard }) {
         </Surface>
 
         <Surface padding="md" className="p-5">
-          <SectionHeader title={t("Pattern")} meta={t("The cells and the three corner markers a scanner locks on to.")} metaPlacement="stacked" />
+          <SectionHeader title={t("Pattern")} />
           <div className="mt-4 grid gap-5 sm:grid-cols-2">
             <div>
               <p className="mb-2 text-[13px] font-medium text-[var(--md-ink)]">{t("Modules")}</p>
@@ -1649,7 +1651,7 @@ export function CardQrPanel({ card }: { card: ContactCard }) {
                 </div>
                 {qrContrast < 3 ? (
                   <Advisory tone="warn">
-                    {t("These colours are too close for reliable scanning. The preview and downloads will use a safe black-and-white code until contrast improves.")}
+                    {t("Use a dark code on a light background. These colours are not scan-safe, so previews and downloads use black and white.")}
                   </Advisory>
                 ) : null}
               </div>
@@ -1731,9 +1733,9 @@ export function CardQrPanel({ card }: { card: ContactCard }) {
           {/* The plate stays the chosen light colour so the quiet zone reads. */}
           <div
             className="mx-auto w-full max-w-[260px] rounded-[var(--md-radius-xl)] p-3.5 shadow-[var(--md-shadow-line)]"
-            style={{ backgroundColor: branding.qrLight }}
+            style={{ backgroundColor: style.light }}
           >
-            <QrCodeImage value={url} branding={branding} label={`${t("QR code for")} ${card.label}`} />
+            <QrCodeImage value={qrUrl} branding={branding} label={`${t("QR code for")} ${card.label}`} />
           </div>
 
           <div className="min-w-0">
@@ -1746,6 +1748,8 @@ export function CardQrPanel({ card }: { card: ContactCard }) {
           </div>
 
           <CardQrDownloads card={card} className="grid-cols-2" />
+          {localCardUrl(url) ? <Advisory tone="warn">{t("Local test code — it will not open on another device. Download the final code from your workspace's published domain.")}</Advisory> : null}
+          {card.status !== "published" ? <p role="note" className="text-[12px] leading-5 text-[var(--md-subtle)]">{t("Publish this card before sharing its code or link.")}</p> : null}
 
           <p className="text-[12px] leading-5 text-[var(--md-subtle)]">
             {t("Print at 30mm or larger and keep the light margin around the code. A cropped code will not scan.")}

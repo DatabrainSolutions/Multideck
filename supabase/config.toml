@@ -584,3 +584,6 @@ verify_jwt = false
 # Validates the main bearer and active company profile in the handler.
 [functions.training-session]
 verify_jwt = false
+
+[functions.report-export]
+verify_jwt = true

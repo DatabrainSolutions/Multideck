@@ -214,7 +214,7 @@ function ValueHero({
           </p>
           {actions === 0 ? (
             <p className="mt-3 max-w-[48ch] text-pretty text-[13px] leading-[1.5] text-[var(--md-ai-hero-text)]">
-              {t("Nothing recorded for this period yet. Time returned is measured from the tokens each Dexter action uses, so this fills in as the workspace puts Dexter to work.")}
+              {t("No activity recorded yet. Time saved is estimated from the tokens used by Dexter.")}
             </p>
           ) : (
           <p className="mt-3 max-w-[48ch] text-pretty text-[13px] leading-[1.5] text-[var(--md-ai-hero-text)]">
@@ -458,7 +458,7 @@ function UsageAllowances({ usage, isLoading }: { usage: DexterUsage | null; isLo
         <div>
           <h2 id="usage-allowances-heading" className="text-[16px] font-medium tracking-[-0.012em] text-[var(--md-ink)]">{t("Monthly usage")}</h2>
           <p className="mt-1 max-w-[66ch] text-pretty text-[12.5px] leading-5 text-[var(--md-text)]">
-            {t("Included allowances reflect the full allowance for everyone on this plan")}{periodEnd ? <> · {t("Resets")} <span data-i18n-skip>{periodEnd}</span></> : null}
+            {t("Allowances cover everyone on this plan")}{periodEnd ? <> · {t("Resets")} <span data-i18n-skip>{periodEnd}</span></> : null}
           </p>
         </div>
         {usage?.planCode ? <p className="text-[11.5px] font-medium text-[var(--md-subtle)]" data-i18n-skip>Multideck {usage.planCode}</p> : null}
@@ -683,9 +683,6 @@ export function AiUsageOverview({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-[16px] font-medium tracking-[-0.012em] text-[var(--md-ink)]">{t("AI activity")}</h2>
-          <p className="mt-1 max-w-[66ch] text-pretty text-[12.5px] leading-5 text-[var(--md-text)]">
-            {t("Understand how Dexter is being used and the desk time it returns.")}
-          </p>
         </div>
         <Button type="button" variant="outline" className="h-9 self-start rounded-[var(--md-radius-lg)] px-3.5 text-[12.5px] font-medium sm:self-auto" onClick={onViewHistory}>
           {t("View AI history")}

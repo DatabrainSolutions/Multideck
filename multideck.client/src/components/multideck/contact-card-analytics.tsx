@@ -46,11 +46,10 @@ function Funnel({ card, muted }: { card: ContactCard; muted: boolean }) {
   const totals = cardTotals(card)
 
   const steps = [
-    { label: t("Scans"), value: totals.scans, hint: t("The card was opened from the code.") },
-    { label: t("Unique visits"), value: totals.uniqueScans, hint: t("Repeat opens inside 30 minutes count once.") },
+    { label: t("Visits"), value: totals.scans, hint: t("The public card was opened from a code or link.") },
     { label: t("Started"), value: totals.started, hint: t("Typed into at least one field.") },
     { label: t("Shared details"), value: totals.exchanges, hint: t("Completed the exchange.") },
-    { label: t("Leads created"), value: totals.leadsCreated, hint: t("New CRM records, excluding matched duplicates.") },
+    { label: t("Leads created"), value: totals.leadsCreated, hint: t("New CRM records for operator review.") },
   ]
 
   const peak = Math.max(...steps.map((step) => step.value), 1)
@@ -119,7 +118,7 @@ function BreakdownList({ rows, emptyLabel }: { rows: BreakdownRow[]; emptyLabel:
 /* -------------------------------------------------------------------------- */
 
 const TIMELINE_CONFIG = {
-  scans: { label: "Scans", color: "var(--md-blue)" },
+  scans: { label: "Visits", color: "var(--md-blue)" },
   exchanges: { label: "Shared details", color: "var(--md-accent)" },
 }
 
@@ -130,7 +129,7 @@ function Timeline({ card, granularity }: { card: ContactCard; granularity: "hour
   type TimelinePoint = (typeof points)[number]
   const tableColumns = useMemo<DataTableColumn<TimelinePoint>[]>(() => [
     { id: "period", label: "Period", kind: "date", width: 180, cell: (point) => <span>{point.label}</span> },
-    { id: "scans", label: "Scans", kind: "number", width: 100, sortValue: (point) => point.scans, cell: (point) => point.scans },
+    { id: "scans", label: "Visits", kind: "number", width: 100, sortValue: (point) => point.scans, cell: (point) => point.scans },
     { id: "exchanges", label: "Shared details", kind: "number", width: 120, sortValue: (point) => point.exchanges, cell: (point) => point.exchanges },
   ], [])
 
@@ -163,7 +162,7 @@ function Timeline({ card, granularity }: { card: ContactCard; granularity: "hour
         <div className="flex flex-wrap items-center gap-4">
           <span className="inline-flex items-center gap-2 text-[12px] text-[var(--md-text)]">
             <span aria-hidden="true" className="h-2 w-4 rounded-full" style={{ backgroundColor: "var(--md-blue)", opacity: 0.35 }} />
-            {t("Scans")}
+            {t("Visits")}
           </span>
           <span className="inline-flex items-center gap-2 text-[12px] text-[var(--md-text)]">
             <span aria-hidden="true" className="h-0.5 w-4 rounded-full" style={{ backgroundColor: "var(--md-accent)" }} />
@@ -183,7 +182,7 @@ function Timeline({ card, granularity }: { card: ContactCard; granularity: "hour
       </div>
 
       {showTable ? (
-        <DataTable ariaLabel="Scans and shared details over time" columns={tableColumns} rows={points} getRowKey={(point) => point.iso} minimumWidth={400} showToolbar={false} showColumnManager={false} className="mt-3 max-h-[260px] rounded-[var(--md-radius-md)] shadow-none md-scrollbar" tableClassName="text-[12.5px]" />
+        <DataTable ariaLabel="Visits and shared details over time" columns={tableColumns} rows={points} getRowKey={(point) => point.iso} minimumWidth={400} showToolbar={false} showColumnManager={false} className="mt-3 max-h-[260px] rounded-[var(--md-radius-md)] shadow-none md-scrollbar" tableClassName="text-[12.5px]" />
       ) : null}
     </div>
   )
@@ -212,12 +211,13 @@ function CountingNote() {
       {open ? (
         <dl className="mt-2 grid gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] p-3.5 text-[12.5px] leading-5 sm:grid-cols-2">
           {[
-            ["Scan", "The public card was opened from the code."],
-            ["Unique visit", "Repeat opens from the same device inside 30 minutes count once."],
+            ["Visit", "The public card opened from a code or link. Previews are excluded."],
+            ["Session", "Repeat visits in the same browser tab count together until 30 minutes of inactivity. These are not unique people. Older visits without a session ID count separately."],
             ["Started", "The visitor typed into at least one field."],
             ["Shared details", "A validated submission was written successfully."],
-            ["Leads created", "New CRM records. Matched duplicates are counted separately."],
-            ["Conversion", "Shared details divided by unique visits."],
+            ["Leads created", "A new lead per submission, without changing existing contacts. Retrying the same submission does not create another lead."],
+            ["Conversion", "Sessions with a successful submission divided by all sessions."],
+            ["Channel", "The source tagged in the link. Older codes without a source cannot be distinguished from other links."],
           ].map(([term, definition]) => (
             <div key={term}>
               <dt className="font-medium text-[var(--md-ink)]">{t(term)}</dt>
@@ -242,11 +242,11 @@ export function CardAnalyticsPanel({ card, status }: { card: ContactCard; status
     return (
       <div className="grid gap-[var(--md-page-stack-gap)]">
         <Surface padding="md" className="p-5">
-          <SectionHeader title={t("From scan to lead")} />
+          <SectionHeader title={t("From visit to lead")} />
           <PanelSkeleton className="mt-4" rows={5} />
         </Surface>
         <Surface padding="md" className="p-5">
-          <SectionHeader title={t("Scans and exchanges over time")} />
+          <SectionHeader title={t("Visits and exchanges over time")} />
           <div className="mt-4 h-[240px] animate-pulse rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)]" aria-hidden="true" />
         </Surface>
       </div>
@@ -265,10 +265,10 @@ export function CardAnalyticsPanel({ card, status }: { card: ContactCard; status
     <div className="grid gap-[var(--md-page-stack-gap)]">
       <Surface padding="md" className="p-5">
         <SectionHeader
-          title={t("From scan to lead")}
+          title={t("From visit to lead")}
           meta={
             hasScans
-              ? `${formatPercent(totals.conversion)} ${t("of unique visits ended in a shared contact.")}`
+              ? `${formatPercent(totals.conversion)} ${t("of sessions shared their details.")}`
               : t("Nothing has been counted yet.")
           }
         />
@@ -284,8 +284,8 @@ export function CardAnalyticsPanel({ card, status }: { card: ContactCard; status
               <PanelMessage
                 className="mt-4"
                 icon={QrCode}
-                title={t("No scans yet")}
-                body={t("Share the code and the first scans will appear here within seconds.")}
+                title={t("No visits yet")}
+                body={card.status === "published" ? t("Share the code or link, then refresh to see visits.") : t("Publish this card before sharing it. Preview visits are not counted.")}
               />
             </>
           )}
@@ -297,8 +297,7 @@ export function CardAnalyticsPanel({ card, status }: { card: ContactCard; status
 
       <Surface padding="md" className="p-5">
         <SectionHeader
-          title={t("Scans and exchanges over time")}
-          meta={t("Scans are the area, shared details are the line.")}
+          title={t("Visits and exchanges over time")}
           action={
             <SegmentedControl
               options={["hour", "day"] as const}
@@ -314,7 +313,7 @@ export function CardAnalyticsPanel({ card, status }: { card: ContactCard; status
           {hasScans ? (
             <Timeline card={card} granularity={granularity} />
           ) : (
-            <PanelMessage title={t("No timeline yet")} body={t("This appears once the card has been scanned at least once.")} />
+            <PanelMessage title={t("No timeline yet")} body={t("The timeline appears after the first public visit.")} />
           )}
         </div>
       </Surface>
@@ -323,21 +322,21 @@ export function CardAnalyticsPanel({ card, status }: { card: ContactCard; status
         <Surface padding="md" className="p-5">
           <SectionHeader title={t("Device")} />
           <div className="mt-4">
-            <BreakdownList rows={deviceBreakdown(card)} emptyLabel={t("No scans yet.")} />
+            <BreakdownList rows={deviceBreakdown(card)} emptyLabel={t("No visits yet.")} />
           </div>
         </Surface>
 
         <Surface padding="md" className="p-5">
-          <SectionHeader title={t("Browser")} meta={t("In-app browsers break autofill and contact downloads.")} />
+          <SectionHeader title={t("Browser")} />
           <div className="mt-4">
-            <BreakdownList rows={browserBreakdown(card)} emptyLabel={t("No scans yet.")} />
+            <BreakdownList rows={browserBreakdown(card)} emptyLabel={t("No visits yet.")} />
           </div>
         </Surface>
 
         <Surface padding="md" className="p-5">
           <SectionHeader title={t("Channel")} meta={t("How the card was reached.")} />
           <div className="mt-4">
-            <BreakdownList rows={channelBreakdown(card)} emptyLabel={t("No scans yet.")} />
+            <BreakdownList rows={channelBreakdown(card)} emptyLabel={t("No visits yet.")} />
           </div>
         </Surface>
       </div>
@@ -346,14 +345,14 @@ export function CardAnalyticsPanel({ card, status }: { card: ContactCard; status
         <Surface padding="md" className="p-5">
           <SectionHeader title={t("Approximate location")} meta={t("Country and region only.")} />
           <div className="mt-4">
-            <BreakdownList rows={location.rows} emptyLabel={t("No scans yet.")} />
+            <BreakdownList rows={location.rows} emptyLabel={t("No visits yet.")} />
           </div>
 
           <div className="mt-4 flex items-start gap-2.5 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] p-3">
             <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} />
             <div className="text-[12px] leading-5 text-[var(--md-text)]">
               <p>
-                {t("Approximate, from network location. Precise location is never requested and IP addresses are not stored.")}
+                {t("Location is not collected for new visits. Any historical locations shown are approximate; small groups are hidden.")}
               </p>
               {location.suppressedRegions > 0 ? (
                 <p className="mt-1.5 text-[var(--md-subtle)]">

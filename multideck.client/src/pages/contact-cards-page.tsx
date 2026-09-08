@@ -365,7 +365,7 @@ export function ContactCardsPage({ navigate, currentUser }: { navigate: (path: s
     },
     {
       id: "scans",
-      label: t("Scans"),
+      label: t("Visits"),
       width: 88,
       headerClassName: "text-right",
       cellClassName: "text-right",
@@ -789,9 +789,9 @@ export function ContactCardDetailPage({ cardId, navigate, currentUser }: { cardI
             <div className="grid items-start gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-[var(--md-page-section-gap)]">
               <div className="grid content-start gap-[var(--md-page-stack-gap)] xl:order-1">
                 <div className="grid content-start gap-2 sm:grid-cols-2 2xl:grid-cols-4">
-                  <CardMetricTile label={t("Scans")} value={totals.scans.toLocaleString()} detail={`${totals.uniqueScans.toLocaleString()} ${t("unique")}`} />
+                  <CardMetricTile label={t("Visits")} value={totals.scans.toLocaleString()} detail={`${totals.uniqueScans.toLocaleString()} ${t("sessions")}`} />
                   <CardMetricTile label={t("Contacts shared")} value={totals.exchanges.toLocaleString()} tone="teal" detail={t("Completed exchanges")} />
-                  <CardMetricTile label={t("Conversion")} value={formatPercent(totals.conversion)} detail={t("Of unique visits")} />
+                  <CardMetricTile label={t("Conversion")} value={formatPercent(totals.conversion)} detail={t("Of sessions")} />
                   <CardMetricTile
                     label={t("New leads")}
                     value={totals.leadsCreated.toLocaleString()}

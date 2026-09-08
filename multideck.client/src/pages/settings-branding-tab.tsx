@@ -719,7 +719,7 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
               <IdCard className="size-4 text-[var(--md-accent)]" aria-hidden="true" />
               {t("Contact card preview")}
             </p>
-            <p className="mt-1 text-[11px] leading-4 text-[var(--md-text)]">{t("New cards inherit the workspace brand. A card with a deliberate custom style keeps its override.")}</p>
+            <p className="mt-1 text-[11px] leading-4 text-[var(--md-text)]">{t("New cards use this brand. Custom card styles keep their overrides.")}</p>
             <div className="mt-3 flex-1"><ContactBrandPreview brand={draft} logoUrl={logoPreview} /></div>
           </div>
           <div className="flex min-w-0 flex-col">
@@ -727,7 +727,7 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
               <Mail className="size-4 text-[var(--md-accent)]" aria-hidden="true" />
               {t("Email preview")}
             </p>
-            <p className="mt-1 text-[11px] leading-4 text-[var(--md-text)]">{t("Operational notification only. Invitations and password emails do not use this template.")}</p>
+            <p className="mt-1 text-[11px] leading-4 text-[var(--md-text)]">{t("Invitations and password emails stay Multideck-branded.")}</p>
             <div className="mt-3 flex-1"><EmailBrandPreview brand={draft} logoUrl={logoPreview} /></div>
           </div>
         </div>
@@ -853,7 +853,7 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
       </section>
 
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
-        <SettingsPanel title={t("Identity")} description={t("The customer-facing company name and web address.")}>
+        <SettingsPanel title={t("Identity")}>
           <SettingsFieldRow label={t("Display name")} labelFor="brand-display-name">
             <SettingsInput id="brand-display-name" value={draft.displayName} disabled={!canManage} maxLength={240} onChange={(event) => update({ displayName: event.target.value })} />
           </SettingsFieldRow>
@@ -862,8 +862,8 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
           </SettingsFieldRow>
         </SettingsPanel>
 
-        <SettingsPanel title={t("Operational emails")} description={t("Used for booking, shipment and workspace update notifications. Auth and security emails stay Multideck-branded.")}>
-          <SettingsFieldRow label={t("Email sign-off")} description={t("One short factual line beneath operational updates.")} align="start" labelFor="brand-email-signoff">
+        <SettingsPanel title={t("Operational emails")} description={t("Booking, shipment and workspace updates. Auth and security emails stay Multideck-branded.")}>
+          <SettingsFieldRow label={t("Email sign-off")} description={t("Shown beneath operational updates.")} align="start" labelFor="brand-email-signoff">
             <SettingsTextarea id="brand-email-signoff" value={draft.emailSignOff} disabled={!canManage} maxLength={500} placeholder={t("Your company · Freight handled with care")} onChange={(event) => update({ emailSignOff: event.target.value })} />
           </SettingsFieldRow>
         </SettingsPanel>

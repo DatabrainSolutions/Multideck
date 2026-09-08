@@ -54,8 +54,6 @@ const NavigationLabPage = lazy(() => import("@/pages/navigation-lab-page").then(
 const QuoteDetailPage = lazy(() => import("@/pages/quotes-page").then((module) => ({ default: module.QuoteDetailPage })))
 const QuotesRegisterPage = lazy(() => import("@/pages/quotes-register-page").then((module) => ({ default: module.QuotesRegisterPage })))
 const RatesPage = lazy(() => import("@/pages/rates-page").then((module) => ({ default: module.RatesPage })))
-const ReportTemplateBuilderPage = lazy(() => import("@/pages/report-template-builder-page").then((module) => ({ default: module.ReportTemplateBuilderPage })))
-const ReportViewerPage = lazy(() => import("@/pages/report-viewer-page").then((module) => ({ default: module.ReportViewerPage })))
 const SettingsPage = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.SettingsPage })))
 const AdminPage = lazy(() => import("@/pages/admin-page").then((module) => ({ default: module.AdminPage })))
 const WarehousePage = lazy(() => import("@/pages/warehouse-page").then((module) => ({ default: module.WarehousePage })))
@@ -157,6 +155,8 @@ const validRoutes = new Set([
   "/rates/results",
   "/reports",
   "/reports/scheduled",
+  "/reports/new",
+  "/reports/history",
   "/reports/templates/monthly-client-review",
   "/finance/receivables",
   "/finance/receivables/approvals",
@@ -333,7 +333,7 @@ function getRoute() {
   if (legacyCrmRoute) return legacyCrmRoute
   const unavailableCrmRoute = getUnavailableCrmRoute(window.location.pathname)
   if (unavailableCrmRoute) return unavailableCrmRoute
-  if (window.location.pathname.startsWith("/reports/rpt-")) return window.location.pathname
+  if (window.location.pathname.startsWith("/reports/rpt-") || /^\/reports\/edit\/[0-9a-f-]{36}$/.test(window.location.pathname)) return window.location.pathname
   if (isBookingDetailRoute(window.location.pathname)) return window.location.pathname
   if (isRoadJobDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCustomsDeclarationEditRoute(window.location.pathname)) return window.location.pathname
@@ -776,14 +776,6 @@ export default function App() {
               <Suspense fallback={<RouteFallback fullScreen />}>
                 <AuthFlowPage navigate={navigate} />
               </Suspense>
-            ) : route.startsWith("/reports/rpt-") ? (
-              <Suspense fallback={<RouteFallback fullScreen />}>
-                <ReportViewerPage navigate={navigate} reportId={route.split("/").at(-1) ?? "rpt-marlow-may-review"} />
-              </Suspense>
-            ) : route === "/reports/templates/monthly-client-review" ? (
-              <Suspense fallback={<RouteFallback fullScreen />}>
-                <ReportTemplateBuilderPage navigate={navigate} />
-              </Suspense>
             ) : (
               <AppShell route={route} navigate={navigate} currentUser={currentUser}>
                 <Suspense fallback={<RouteFallback />}>
@@ -827,8 +819,8 @@ export default function App() {
                   {route !== "/quotes/new" && isQuoteDetailRoute(route) ? <QuoteDetailPage key={route} variant="cargowise" quoteId={route.split("/").at(-1)} navigate={navigate} currentUser={currentUser} /> : null}
                   {route.startsWith("/rates") ? <RatesPage route={route as "/rates" | "/rates/contracts" | "/rates/tariffs" | "/rates/imports" | "/rates/results"} navigate={navigate} /> : null}
                   {route.startsWith("/finance/") ? <FinancePage route={route as FinanceRoute} navigate={navigate} currentUser={currentUser} /> : null}
-                  {route === "/reports" || route === "/reports/scheduled"
-                    ? <ReportsPage route={route} />
+                  {route === "/reports" || route.startsWith("/reports/")
+                    ? <ReportsPage route={route} navigate={navigate} />
                     : null}
                   {route === "/settings" ? (
                     <SettingsPage

@@ -20,6 +20,8 @@ import {
   submitExchange,
 } from "@/lib/contact-card-store"
 import type { ContactCard } from "@/data/contact-card-data"
+import { browserCardVisit, createCardVisit } from "@/lib/contact-card-visit"
+import { contactCardSubmissionError } from "@/lib/contact-card-errors"
 
 type LoadState = "loading" | "ready" | "missing" | "error"
 
@@ -61,15 +63,24 @@ function PublicNotice({ title, body }: { title: string; body: string }) {
 }
 
 export function ContactCardPublicPage({ slug }: { slug: string }) {
+  const preview = new URLSearchParams(window.location.search).get("preview") === "1"
+  return <ContactCardPublicJourney key={`${slug}:${preview}`} slug={slug} preview={preview} />
+}
+
+function ContactCardPublicJourney({ slug, preview }: { slug: string; preview: boolean }) {
   const { t } = useLanguage()
-  const preview = useMemo(() => new URLSearchParams(window.location.search).get("preview") === "1", [])
+  const [visit] = useState(() => preview ? createCardVisit(slug, null) : browserCardVisit(slug))
+  const requestVisitRef = useRef(visit)
 
   const [loadState, setLoadState] = useState<LoadState>("loading")
   const [card, setCard] = useState<ContactCard | null>(null)
   const [phase, setPhase] = useState<"form" | "done">("form")
   const [values, setValues] = useState<PublicFormValues>(EMPTY_PUBLIC_FORM)
   const [submitted, setSubmitted] = useState(false)
+  const [validationAttempt, setValidationAttempt] = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  const [pendingConfirmation, setPendingConfirmation] = useState(false)
+  const pendingInputRef = useRef<PublicFormValues | null>(null)
   const [slow, setSlow] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [downloaded, setDownloaded] = useState(false)
@@ -77,6 +88,7 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
   const scanIdRef = useRef<string | null>(null)
   const scanPromiseRef = useRef<Promise<string | null> | null>(null)
   const startedRef = useRef(false)
+  const submittingRef = useRef(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
 
@@ -92,7 +104,7 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
         }
         setCard(found)
         setLoadState("ready")
-        const scanPromise = recordScan(found.id, preview || found.status !== "published").catch(() => null)
+        const scanPromise = recordScan(found.id, preview || found.status !== "published", visit).catch(() => null)
         scanPromiseRef.current = scanPromise
         void scanPromise.then((scanId) => {
           if (!cancelled) scanIdRef.current = scanId
@@ -105,15 +117,7 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
     return () => {
       cancelled = true
     }
-  }, [preview, slug])
-
-  useEffect(() => {
-    if (phase !== "done") return
-    // Tell screen-reader users the transaction completed, rather than leaving
-    // them at the top of a page that silently changed underneath them.
-    const frame = window.requestAnimationFrame(() => headingRef.current?.focus())
-    return () => window.cancelAnimationFrame(frame)
-  }, [phase])
+  }, [preview, slug, visit])
 
   const errors = useMemo<PublicFormErrors>(() => {
     if (!submitted || !card) return {}
@@ -128,13 +132,17 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
     return next
   }, [card, submitted, t, values])
 
+  useEffect(() => {
+    if (validationAttempt > 0) formRef.current?.querySelector<HTMLInputElement>("[aria-invalid='true']")?.focus()
+  }, [validationAttempt])
+
   function change<K extends keyof PublicFormValues>(key: K, value: PublicFormValues[K]) {
     setValues((current) => ({ ...current, [key]: value }))
     if (!startedRef.current && card) {
       startedRef.current = true
-      const currentScanId = scanIdRef.current
-      if (currentScanId) recordFormStarted(card.id, currentScanId)
-      else void scanPromiseRef.current?.then((scanId) => recordFormStarted(card.id, scanId))
+      void Promise.resolve(scanIdRef.current ?? scanPromiseRef.current)
+        .then((scanId) => recordFormStarted(card.id, scanId))
+        .then((recorded) => { startedRef.current = recorded })
     }
   }
 
@@ -150,30 +158,45 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
-    if (!card || submitting) return
+    if (!card || submittingRef.current) return
 
     setSubmitted(true)
     setSubmitError(null)
 
     if (isInvalid(values, card)) {
       // Send focus to the first problem rather than scrolling independently of it.
-      window.requestAnimationFrame(() => {
-        formRef.current?.querySelector<HTMLInputElement>("[aria-invalid='true']")?.focus()
-      })
+      setValidationAttempt((attempt) => attempt + 1)
       return
     }
 
+    submittingRef.current = true
     setSubmitting(true)
     const slowTimer = window.setTimeout(() => setSlow(true), 5000)
+    let submissionAttempted = false
 
     try {
-      const scanId = scanIdRef.current ?? await scanPromiseRef.current
-      await submitExchange(card.id, scanId, values, preview || card.status !== "published")
+      let scanId = scanIdRef.current ?? await scanPromiseRef.current
+      // A failed initial telemetry request must not strand a completed form.
+      // Once obtained, retain this scan for every retry of the submission.
+      if (!scanId && !preview) scanId = await recordScan(card.id, false, requestVisitRef.current)
+      scanIdRef.current = scanId
+      pendingInputRef.current ??= { ...values }
+      submissionAttempted = true
+      await submitExchange(card.id, scanId, pendingInputRef.current, preview || card.status !== "published")
       // Only now does the exchange exist. Nothing is promised before this point.
       setPhase("done")
-    } catch {
-      setSubmitError(t("Unable to send your details. Check your connection and try again."))
+    } catch (error) {
+      const failure = contactCardSubmissionError(error, submissionAttempted)
+      setSubmitError(t(failure.message))
+      setPendingConfirmation(failure.pending)
+      if (!failure.pending) pendingInputRef.current = null
+      if (failure.renew) {
+        scanIdRef.current = null
+        scanPromiseRef.current = null
+        requestVisitRef.current = { ...visit, requestId: crypto.randomUUID() }
+      }
     } finally {
+      submittingRef.current = false
       window.clearTimeout(slowTimer)
       setSlow(false)
       setSubmitting(false)
@@ -189,7 +212,7 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
   if (loadState === "loading") {
     return (
       <div className="min-h-dvh">
-        <PublicCardShell card={null} preview={preview}>
+        <PublicCardShell className="min-h-dvh" card={null} preview={preview}>
           <LoadingSkeleton />
         </PublicCardShell>
       </div>
@@ -199,8 +222,9 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
   if (loadState === "error") {
     return (
       <div className="min-h-dvh">
-        <PublicCardShell card={null} preview={preview}>
+        <PublicCardShell className="min-h-dvh" card={null} preview={preview}>
           <PublicNotice title={t("This didn't load")} body={t("Check your connection and reload the page.")} />
+          <button type="button" onClick={() => window.location.reload()} className="mt-5 rounded-[var(--card-radius-field)] bg-[var(--card-action-bg)] px-5 py-3 text-[var(--card-action-ink)] transition-transform duration-150 active:scale-[0.96] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 motion-reduce:transition-none motion-reduce:active:scale-100">{t("Try again")}</button>
         </PublicCardShell>
       </div>
     )
@@ -209,7 +233,7 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
   if (loadState === "missing" || !card) {
     return (
       <div className="min-h-dvh">
-        <PublicCardShell card={null} preview={preview}>
+        <PublicCardShell className="min-h-dvh" card={null} preview={preview}>
           <PublicNotice title={t("This code isn't active")} body={t("It may have expired or been replaced. Ask for a new one.")} />
         </PublicCardShell>
       </div>
@@ -219,7 +243,7 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
   if (card.status !== "published" && !preview) {
     return (
       <div className="min-h-dvh">
-        <PublicCardShell card={card} preview={preview}>
+        <PublicCardShell className="min-h-dvh" card={card} preview={preview}>
           <PublicNotice title={t("This code isn't active")} body={t("The card is not being shared at the moment. Ask for a new one.")} />
         </PublicCardShell>
       </div>
@@ -228,7 +252,7 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
 
   return (
     <div className="min-h-dvh">
-      <PublicCardShell card={card} preview={preview}>
+      <PublicCardShell className="min-h-dvh" card={card} preview={preview}>
         <PublicCardPhases
           phase={phase}
           form={
@@ -237,6 +261,7 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
               values={values}
               errors={errors}
               submitting={submitting}
+              pendingConfirmation={pendingConfirmation}
               slow={slow}
               submitError={submitError}
               onChange={change}
