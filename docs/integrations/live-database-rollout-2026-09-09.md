@@ -40,3 +40,29 @@ Only these reviewed changes were applied; no blanket push of pending migrations 
 ## Remaining connection setup
 
 This was a database rollout only. Deploy/reconcile the App gateway and grant-admin Edge Functions and central Live API, configure dedicated integration/encryption keys, enable App discovery and verify the deployed frontend versions. Resolve the portal's existing hostname/deployment configuration for central `multideck.live`, then configure reviewed customer grants and run signed end-to-end acceptance. Do not claim the websites are connected solely because these migrations are applied.
+
+
+## Edge and website activation, 9 September 2026
+
+The owner subsequently requested the complete deployment for manual testing.
+
+- App project `aqtwypsuijxlnvtxpuxe`: deployed `live-company-gateway` and `live-grant-admin`; configured dedicated server-only `LIVE_GATEWAY_KEYS`.
+- Portal project `eofqgeffjbbjgadkzkrk`: deployed `live-portal`; configured `LIVE_CONNECTION_WRAPPING_KEY`, `LIVE_WAREHOUSE_MODE=central`, and the exact central origin in CORS. Existing provider secrets and membership records were retained.
+- Dev discovery is enabled only for the existing `dev` preview branch. `https://dev.multideck.app/.well-known/multideck-live.json` returns HTTP 200 and the verified Dev project reference.
+- App deployment `dpl_AZgJxCcqgNAuVFvo6T1vDdn7HXwm`, source `c7af748`, is ready at `dev.multideck.app`. Other App domains were not promoted to this release.
+- Live deployment `dpl_FhK13aAjAPGtHX8bM1hACWJ6esKW`, source `194ef07`, is ready at `multideck.live`. The old demo hostname redirects there with HTTP 307. The central root hostname now shows normal sign-in rather than the legacy workspace chooser.
+- Supabase Auth Site URL is `https://multideck.live`; the exact root, `/auth`, setup-password and reset-password callbacks are allowed. Existing callbacks remain intact.
+- Registered **Multideck Dev**, connection `204c8ff8-5034-4bef-b8a0-4e95bc58d3c1`, key identifier `dev-live-20260909`, through the audited connection function after validating public discovery. The integration secret is encrypted in the portal registry and is not documented or committed.
+- The portal retains its existing internal workspace hostname `jenkar.multideck.live` for membership resolution. This is a server configuration binding to the existing identity store; it does not select the operational company. Company warehouse requests now resolve explicit App grants.
+
+Earlier Git-triggered Live deployments were blocked by Vercel because the commit author was not a team member. These releases were explicitly deployed through the owner's authenticated Vercel account. No paid team member was added and commit authorship was not changed. Future Git pushes alone should not be treated as proof of deployment until that author/team configuration is resolved.
+
+Availability confirmed: central `/auth` HTTP 200 with asset `index-lmYlxDcq.js`, demo redirect to the same page, Dev discovery HTTP 200, App grant and portal routes return sign-in-required responses, and the gateway rejects unsigned access. The Live client build passed; Edge checks and 40 tests passed before the owner clarified they would perform manual workflow testing. No further customer workflow tests were run, no operational records were created, and no customer grants were enabled.
+
+### Manual customer assignment
+
+1. In Live Admin, choose the existing customer user and full customer profile. Copy that user's Live reference. The **Company connections** screen already contains **Multideck Dev**; no secret entry is needed.
+2. In Dev App, open the intended customer's **Multideck Live access** section. Use connection reference `204c8ff8-5034-4bef-b8a0-4e95bc58d3c1`, that Live user reference and key identifier `dev-live-20260909`. Select the permitted warehouses and product/general-order/purchase-order actions, enable the grant, provide a reason, and save. Copy its grant reference.
+3. In Live Admin → **Company customer access**, select **Multideck Dev**, the same user and customer profile, paste the App grant reference, enable it, and save. The customer can then sign in at `https://multideck.live/warehouse`.
+
+Customer identity, operational customer and warehouse choices are deliberately left for the owner, who chose to test manually. Admin membership alone is not customer warehouse access.
