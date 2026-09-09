@@ -1,5 +1,39 @@
 # Freight workspace completion
 
+7 September planned-schedule label correction (local, not released): the
+Booking route summary and date editors labelled planned values as ETD/ETA.
+They now explicitly identify planned dates/UTC and do not substitute an ETA
+for an absent planned arrival. Nineteen focused tests and build pass; two
+unrelated baseline contract failures are recorded, not hidden. Browser/release
+and Rail/mixed-leg journeys remain pending.
+[Evidence](../release/2026-09-07-planned-schedule-label-correction.md).
+
+7 September Air equipment checkpoint: hosted ULD creation and leg-scoped cargo
+allocation save/full reload pass. Over-allocation is rejected with field focus
+and no saved change. QA equipment/allocation are archived with audit retained;
+original cargo/route projection and Quote fingerprints match. Multi-ULD,
+successive-leg, flight and wider mode/security gates remain open.
+[Evidence](../release/2026-09-07-air-uld-allocation-hosted-evidence.md).
+
+7 September screening Dexter/watch checkpoint: hosted Approve-mode proposal,
+deny-without-write, corrected exact-reason proposal, approved save, audit and
+read-back pass. One exact security-status watch ignored notes-only and paused
+changes, fired once per matching active/resumed change, and is now paused with
+two alerts. Both QA screening records are voided; Quote versions unchanged.
+The initial proposal appended instructions to its reason and was denied; broad
+reason fidelity is not claimed fixed. Full-access/replay/stale/denial and wider
+Air depth remain open. [Evidence](../release/2026-09-07-screening-approval-watch-evidence.md).
+
+7 September screening hosted checkpoint (supersedes the foundation note below):
+client `7947c01` and the scoped Booking/Dexter backend release are deployed to
+development. The internal Air cargo editor passed create, full reload,
+correction, optional-field clearing, void and full reload to read-only history.
+The synthetic evidence is voided and retained; all 38 Quote versions retain
+their pre-test full-row fingerprint. Hosted Dexter approval/watch, fractional
+time, stale recovery and access-denial checks remain open, as does wider Air
+depth. [Exact evidence and limits](../release/2026-09-07-air-screening-development-release.md).
+All existing approvals and exclusions remain in force; no 95% claim.
+
 7 September screening implementation: private typed cargo-source evidence,
 permission/stale-safe canonical save/read, audited correction/void and Booking
 Edge/client contracts now pass local PostgreSQL and transport/type checks.

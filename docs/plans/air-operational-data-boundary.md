@@ -9,7 +9,12 @@ override approval/watch lifecycle are verified within their recorded scope:
 [release](../release/2026-09-07-air-weight-development-release.md),
 [multi-line](../release/2026-09-07-air-multiline-hosted-evidence.md),
 [approval/watch](../release/2026-09-07-air-weight-approval-watch-evidence.md).
-Screening evidence independent of AWB issuance remains an implementation gap.
+Screening evidence independent of AWB issuance is now deployed with hosted
+operator lifecycle and scoped Dexter approval/watch verification:
+[screening evidence](../release/2026-09-07-screening-approval-watch-evidence.md).
+One ULD/leg-allocation hosted roundtrip is also verified:
+[equipment evidence](../release/2026-09-07-air-uld-allocation-hosted-evidence.md).
+Full Air/AWB and remaining security/approval gates are not complete.
 The ownership trace below is historical, not a claim that the old JSON weight
 writer and display limitations remain current.
 

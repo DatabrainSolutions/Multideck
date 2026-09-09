@@ -587,3 +587,10 @@ verify_jwt = false
 
 [functions.report-export]
 verify_jwt = true
+
+# Verifies dedicated Live HMAC signatures and App-owned customer grants in the handler.
+[functions.live-company-gateway]
+verify_jwt = false
+
+[functions.live-grant-admin]
+verify_jwt = false
