@@ -21,9 +21,9 @@ const qrSource = await readFile(
 
 test("contact-card design removes the header selector and keeps QR controls progressive", () => {
   assert.doesNotMatch(designSource, /<ControlRow label=\{t\("Header"\)\}/)
-  assert.match(designSource, /QR appearance/)
-  assert.match(designSource, /Fine tune appearance/)
-  assert.match(designSource, /aria-expanded=\{qrFineTuneOpen\}/)
+  assert.match(designSource, /Code look/)
+  assert.match(designSource, /Printing and reliability/)
+  assert.match(designSource, /open=\{advancedOpen\}/)
   assert.match(designSource, /Reliability/)
   assert.match(designSource, /Quiet zone/)
 })

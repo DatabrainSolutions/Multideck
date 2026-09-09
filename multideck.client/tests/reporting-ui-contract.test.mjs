@@ -19,53 +19,27 @@ test("Reporting replaces Insights and AI with exactly two destinations", () => {
   assert.doesNotMatch(navigation, /Insights & AI|AI workspace|AI Workspaces|Data quality & observability/u)
 })
 
-test("both Reporting routes resolve through the shared front-end page", () => {
-  for (const route of ["/reports", "/reports/scheduled"]) {
-    assert.match(app, new RegExp(`"${route.replaceAll("/", "\\/")}"`))
-  }
-  assert.doesNotMatch(app, /"\/reports\/exports"/u)
-  assert.match(app, /<ReportsPage route=\{route\}/u)
-  assert.match(reportsPage, /if \(route === "\/reports\/scheduled"\) return <ScheduledReports/u)
+test("Reporting routes share the connected workspace", () => {
+  assert.match(app, /<ReportsPage route=\{route\} navigate=\{navigate\}/u)
+  assert.match(app, /reports[\s\S]*edit/u)
+  assert.match(reportsPage, /<ReportingWorkspace route=\{route\} navigate=\{navigate\}/u)
 })
 
-test("Reports is a direct history table with honest UI-only download states", () => {
-  assert.match(reportsPage, /<ReportingPageHeader title="Reports" \/>[\s\S]*ariaLabel="Report history"/u)
-  assert.doesNotMatch(reportsPage, /Front-end preview|Reporting preview status/u)
-  assert.match(reportsPage, /ariaLabel="Report history"/u)
-  assert.match(reportsPage, /Ready[\s\S]*Processing[\s\S]*Failed[\s\S]*Expired/u)
-  assert.match(reportsPage, /Download feedback is being demonstrated only\. Nothing was generated or downloaded\./u)
-  assert.doesNotMatch(reportsPage, /No file was generated or downloaded/u)
-  assert.match(reportsPage, /reportUnavailableReason/u)
-  assert.doesNotMatch(reportsPage, /Example history while reporting is disconnected/u)
-})
-
-test("download feedback follows the exact stable and repeat-safe sequence", () => {
-  assert.match(reportsPage, /type DownloadPhase = "idle" \| "downloading" \| "downloaded"/u)
-  assert.match(reportsPage, /phase === "downloading" \? "Downloading…" : phase === "downloaded" \? "Downloaded" : "Download"/u)
-  assert.match(reportsPage, /phase === "downloading" \? LoaderCircle : phase === "downloaded" \? Check : Download/u)
-  assert.match(reportsPage, /w-\[126px\]/u)
-  assert.match(reportsPage, /if \(downloadTimers\.current\.has\(row\.id\)\) return/u)
-  assert.match(reportsPage, /downloadTimers\.current\.forEach/u)
-  assert.match(reportsPage, /useReducedMotion\(\)/u)
-  assert.match(reportsPage, /aria-busy=\{phase === "downloading"\}/u)
-  assert.match(reportsPage, /role="status" aria-live="polite"/u)
-})
-
-test("Scheduled reports lands on a table and opens the shared staged wizard", () => {
-  assert.match(reportsPage, /ariaLabel="Scheduled reports"/u)
-  assert.doesNotMatch(reportsPage, /Schedule history/u)
-  assert.doesNotMatch(reportsPage, /Example schedules|delivery is disconnected|4 example schedules/u)
-  assert.match(reportsPage, /\{scheduleHeader\}[\s\S]*ariaLabel="Scheduled reports"/u)
-  assert.match(reportsPage, /Review recurring delivery plans and their next run\. Changes are not saved yet\./u)
-  assert.match(reportsPage, /Recipients or audience[\s\S]*Cadence[\s\S]*Next delivery[\s\S]*Delivery time[\s\S]*Status/u)
-  for (const stateCopy of ["Loading scheduled reports…", "No scheduled reports yet", "Scheduled reports unavailable"]) {
-    assert.match(reportsPage, new RegExp(stateCopy))
-  }
-  assert.match(reportsPage, /<WizardDialog/u)
-  assert.match(reportsPage, /title="Set up scheduled report"/u)
-  assert.match(reportsPage, /steps=\{steps\}[\s\S]*activeStepId=\{step\}/u)
-  assert.match(reportsPage, /Nothing was scheduled or sent/u)
-  assert.doesNotMatch(reportsPage, /fetch\(|axios|supabase|application-data-api|listLiveReports/u)
+test("Report workspace uses real saves, previews, schedules and snapshots", async () => {
+  const workspace = await readFile(new URL("../src/components/multideck/reporting-workspace.tsx", import.meta.url), "utf8")
+  const api = await readFile(new URL("../src/lib/reporting-api.ts", import.meta.url), "utf8")
+  assert.match(api, /supabase\.rpc\("reporting_workspace"/u)
+  assert.match(workspace, /"preview", \{ definition:/u)
+  assert.match(workspace, /"save",/u)
+  assert.match(workspace, /"run",/u)
+  assert.match(workspace, /"schedule",/u)
+  assert.match(workspace, /sequence === request.current/u)
+  assert.match(workspace, /version: undefined/u)
+  assert.match(workspace, /useDocumentPeriod/u)
+  assert.match(workspace, /useDocumentCustomer/u)
+  assert.doesNotMatch(workspace, /monthlyTemplatePages|generatedReports|reportHistory\s*=|Nothing was scheduled or sent/u)
+  assert.match(api, /if \(!response.ok\)/u)
+  assert.match(api, /URL\.revokeObjectURL/u)
 })
 
 test("Reporting headings stay outside the reusable table-control toolbar", () => {

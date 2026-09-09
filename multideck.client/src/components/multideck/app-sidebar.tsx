@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, typ
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AiBrain, AiEditing, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, PencilEdit01, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Star, Tags, TicketCheck, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
+import { ContextMenu as ContextMenuPrimitive, DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { SidebarArrangeCanvas, type SidebarArrangeItem } from "@/components/multideck/sidebar-arrange"
@@ -38,6 +38,8 @@ import { MailProviderMark, mailProviderLabels } from "@/components/multideck/mai
 import { useOptionalInboxWorkspace, type InboxNavigationView } from "@/lib/inbox-workspace"
 import { defaultCoverPhotoUrl } from "@/lib/default-cover-photo"
 import type { MailboxFolder } from "@/lib/inbox-api"
+import { workspaceNotificationDestination } from "@/lib/notification-destination"
+import { toast } from "sonner"
 import { useWorkspaceNotifications } from "@/lib/use-workspace-notifications"
 import { openSupportTicket } from "@/components/multideck/support-ticket-dialog"
 import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
@@ -103,26 +105,30 @@ const notificationsReveal = {
 const notificationItemExit = { opacity: 0, x: -8, transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] } }
 
 function notificationTime(value: string) {
-  const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 60_000))
+  const parsed = Date.parse(value)
+  if (!Number.isFinite(parsed)) return ""
+  const minutes = Math.max(0, Math.floor((Date.now() - parsed) / 60_000))
   if (minutes < 1) return "now"
   if (minutes < 60) return `${minutes} min`
   if (minutes < 1_440) return `${Math.floor(minutes / 60)} hr`
   return `${Math.floor(minutes / 1_440)} d`
 }
 
-function NotificationBell() {
+function NotificationBell({ onNavigate }: { onNavigate?: () => void }) {
+  const [open, setOpen] = useState(false)
   const { direction, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
-  const { notifications, updateNotificationStatus, dismissNotification, markAllRead, clearNotifications } = useWorkspaceNotifications()
-  const unreadCount = notifications.filter((notification) => notification.status === "unread").length
+  const { notifications, unreadCount, total, loading, loaded, error, pending, hasMore, loadMore, refresh, updateNotificationStatus, dismissNotification, markAllRead, clearNotifications } = useWorkspaceNotifications()
 
   function openNotificationSettings() {
+    setOpen(false)
+    onNavigate?.()
     window.history.pushState({}, "", "/settings?tab=notifications")
     window.dispatchEvent(new PopStateEvent("popstate"))
   }
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={(value) => { setOpen(value); if (value) void refresh() }}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -149,39 +155,42 @@ function NotificationBell() {
         </button>
       </PopoverTrigger>
       <PopoverContent
-        side={direction === "rtl" ? "left" : "right"}
-        align="start"
+        side={onNavigate ? "bottom" : direction === "rtl" ? "left" : "right"}
+        align={onNavigate ? "end" : "start"}
         alignOffset={10}
-        sideOffset={18}
+        sideOffset={onNavigate ? 8 : 18}
         collisionPadding={18}
-        className="w-[312px] gap-0 overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]"
+        className="w-[380px] max-w-[calc(100vw-36px)] max-h-[min(calc(100dvh-36px),var(--radix-popover-content-available-height))] flex flex-col gap-0 overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]"
       >
-        <div className="flex items-center justify-between gap-4 px-4 py-3">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="min-w-0">
             <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Notifications")}</p>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">{unreadCount ? `${unreadCount} ${t(unreadCount === 1 ? "unread notification" : "unread notifications")}` : t("You're all caught up")}</p>
+            <p className="mt-1 text-[12px] text-[var(--md-text)]">{unreadCount ? `${unreadCount} ${t(unreadCount === 1 ? "unread notification" : "unread notifications")}` : error ? t("Notifications need refreshing") : !loaded ? t("Loading notifications…") : t("You're all caught up")}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            <button type="button" disabled={unreadCount === 0} onClick={markAllRead} className="h-7 rounded-full bg-[var(--md-surface-tint)] px-2.5 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] disabled:opacity-40 disabled:active:scale-100">
+            <button type="button" disabled={pending || !loaded || unreadCount === 0} onClick={() => void markAllRead()} className="h-7 rounded-full bg-[var(--md-surface-tint)] px-2.5 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] disabled:opacity-40 disabled:active:scale-100">
               {t("Mark all as read")}
             </button>
-            <button type="button" disabled={notifications.length === 0} onClick={clearNotifications} className="h-7 rounded-full px-2.5 text-[11px] font-medium text-[var(--md-subtle)] transition-[background,color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] disabled:opacity-40 disabled:active:scale-100">
+            <button type="button" disabled={pending || !loaded || total === 0} onClick={() => void clearNotifications()} className="h-7 rounded-full px-2.5 text-[11px] font-medium text-[var(--md-subtle)] transition-[background,color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] disabled:opacity-40 disabled:active:scale-100">
               {t("Clear")}
             </button>
           </div>
         </div>
         <motion.div
-          className="divide-y divide-[rgba(11,20,19,0.07)] shadow-[inset_0_1px_0_rgba(11,20,19,0.06)]"
+          className="min-h-0 overflow-y-auto divide-y divide-[rgba(11,20,19,0.07)] shadow-[inset_0_1px_0_rgba(11,20,19,0.06)]"
           variants={shouldReduceMotion ? undefined : notificationsReveal}
           initial={shouldReduceMotion ? undefined : "hidden"}
           animate={shouldReduceMotion ? undefined : "show"}
         >
-          {notifications.length === 0 ? <p className="px-4 py-5 text-[13px] text-[var(--md-text)]">{t("No notifications yet")}</p> : null}
+          {error ? <div role="alert" className="px-4 py-3 text-[12px] text-[var(--md-text)]">{t(error)} <button type="button" disabled={loading} onClick={() => void refresh()} className="underline">{t("Retry")}</button></div> : null}
+          {!loaded && !error ? <p role="status" className="px-4 py-5 text-[13px] text-[var(--md-text)]">{t("Loading notifications…")}</p> : null}
+          {loaded && !error && notifications.length === 0 ? <p className="px-4 py-5 text-[13px] text-[var(--md-text)]">{t("No notifications yet")}</p> : null}
           <AnimatePresence initial={false} mode="popLayout">
           {notifications.map((notification) => (
             <motion.div
               key={notification.id}
               layout
+              className="flex items-center"
               initial={shouldReduceMotion ? false : { opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={shouldReduceMotion ? { opacity: 0 } : notificationItemExit}
@@ -191,40 +200,58 @@ function NotificationBell() {
                 <ContextMenuPrimitive.Trigger asChild>
               <motion.button
                 type="button"
-                className="group grid w-full grid-cols-[6px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-3 text-start transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)]"
+                disabled={pending}
+                title={notification.body}
+                className="group grid min-w-0 flex-1 grid-cols-[6px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-3 text-start transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)]"
                 onClick={() => {
-                  const url = typeof notification.metadata.action_url === "string"
-                    ? notification.metadata.action_url
-                    : typeof notification.metadata.url === "string" ? notification.metadata.url : ""
-                  if (notification.status === "unread") updateNotificationStatus(notification.id, "read")
-                  if (url.startsWith("/")) {
-                    window.history.pushState({}, "", url)
-                    window.dispatchEvent(new PopStateEvent("popstate"))
+                  const url = workspaceNotificationDestination(notification, window.location.origin)
+                  if (!url) {
+                    toast.info(notification.title, { description: notification.body, duration: 10_000 })
+                    if (notification.status === "unread") void updateNotificationStatus(notification.id, "read")
+                    return
                   }
+                  if (notification.status === "unread") void updateNotificationStatus(notification.id, "read")
+                  setOpen(false)
+                  onNavigate?.()
+                  window.history.pushState({}, "", url)
+                  window.dispatchEvent(new PopStateEvent("popstate"))
                 }}
               >
                 <span aria-hidden="true" className={cn("mt-[7px] size-1.5 rounded-full transition-opacity duration-150", notification.status === "unread" ? "bg-[var(--md-accent)] opacity-100" : "opacity-0")} />
                 <span className="min-w-0">
-                  <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{t(notification.title)}</span>
-                  <span className="mt-0.5 block truncate text-[12px] leading-5 text-[var(--md-text)]">{t(notification.body)}</span>
+                  <span className="block text-[13px] font-medium text-[var(--md-ink)]">{notification.title}</span>
+                  <span className="sr-only">{notification.status === "unread" ? t("Unread") : t("Read")}</span>
+                  <span className="mt-0.5 block line-clamp-2 text-[12px] leading-5 text-[var(--md-text)]">{notification.body}</span>
                 </span>
                 <span className="pt-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{notificationTime(notification.createdAt)}</span>
               </motion.button>
                 </ContextMenuPrimitive.Trigger>
                 <ContextMenuPrimitive.Portal>
                   <ContextMenuPrimitive.Content collisionPadding={14} className="z-50 min-w-[168px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
-                    <ContextMenuPrimitive.Item className="h-9 cursor-default select-none rounded-[var(--md-radius-lg)] px-3 text-[13px] leading-9 text-[var(--md-text)] outline-none data-[highlighted]:bg-[var(--md-hover)] data-[highlighted]:text-[var(--md-ink)]" onSelect={() => updateNotificationStatus(notification.id, notification.status === "unread" ? "read" : "unread")}>
+                    <ContextMenuPrimitive.Item className="h-9 cursor-default select-none rounded-[var(--md-radius-lg)] px-3 text-[13px] leading-9 text-[var(--md-text)] outline-none data-[highlighted]:bg-[var(--md-hover)] data-[highlighted]:text-[var(--md-ink)]" disabled={pending} onSelect={() => updateNotificationStatus(notification.id, notification.status === "unread" ? "read" : "unread")}>
                       {t(notification.status === "unread" ? "Mark as read" : "Mark as unread")}
                     </ContextMenuPrimitive.Item>
-                    <ContextMenuPrimitive.Item className="h-9 cursor-default select-none rounded-[var(--md-radius-lg)] px-3 text-[13px] leading-9 text-[var(--md-danger)] outline-none data-[highlighted]:bg-[rgba(194,91,65,0.08)]" onSelect={() => dismissNotification(notification.id)}>
+                    <ContextMenuPrimitive.Item className="h-9 cursor-default select-none rounded-[var(--md-radius-lg)] px-3 text-[13px] leading-9 text-[var(--md-danger)] outline-none data-[highlighted]:bg-[rgba(194,91,65,0.08)]" disabled={pending} onSelect={() => dismissNotification(notification.id)}>
                       {t("Clear notification")}
                     </ContextMenuPrimitive.Item>
                   </ContextMenuPrimitive.Content>
                 </ContextMenuPrimitive.Portal>
               </ContextMenuPrimitive.Root>
+              <DropdownMenuPrimitive.Root>
+                <DropdownMenuPrimitive.Trigger asChild>
+                  <button type="button" disabled={pending} aria-label={`${t("Notification actions")}: ${notification.title}`} className="me-2 grid size-9 shrink-0 place-items-center rounded-full text-[var(--md-subtle)] hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]"><ChevronDown className="size-3.5" /></button>
+                </DropdownMenuPrimitive.Trigger>
+                <DropdownMenuPrimitive.Portal>
+                  <DropdownMenuPrimitive.Content align="end" collisionPadding={14} className="z-50 min-w-[168px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-lift)]">
+                    <DropdownMenuPrimitive.Item disabled={pending} onSelect={() => void updateNotificationStatus(notification.id, notification.status === "unread" ? "read" : "unread")} className="cursor-default rounded-[var(--md-radius-lg)] px-3 py-2 text-[13px] text-[var(--md-text)] outline-none data-[highlighted]:bg-[var(--md-hover)]">{t(notification.status === "unread" ? "Mark as read" : "Mark as unread")}</DropdownMenuPrimitive.Item>
+                    <DropdownMenuPrimitive.Item disabled={pending} onSelect={() => void dismissNotification(notification.id)} className="cursor-default rounded-[var(--md-radius-lg)] px-3 py-2 text-[13px] text-[var(--md-text)] outline-none data-[highlighted]:bg-[var(--md-hover)]">{t("Clear notification")}</DropdownMenuPrimitive.Item>
+                  </DropdownMenuPrimitive.Content>
+                </DropdownMenuPrimitive.Portal>
+              </DropdownMenuPrimitive.Root>
             </motion.div>
           ))}
           </AnimatePresence>
+          {hasMore ? <button type="button" disabled={loading || pending} onClick={() => void loadMore()} className="w-full px-4 py-3 text-[12px] text-[var(--md-accent)]">{t(loading ? "Loading…" : "Load older notifications")}</button> : null}
         </motion.div>
         <div className="px-3 py-3">
           <Button
@@ -1576,7 +1603,8 @@ export function AppSidebar({
             />
           )
         )}
-        {collapsed ? null : onRequestClose ? (
+        {!collapsed ? <NotificationBell onNavigate={onRequestClose} /> : null}
+        {!collapsed && onRequestClose ? (
           <Button
             type="button"
             variant="ghost"
@@ -1588,7 +1616,7 @@ export function AppSidebar({
           >
             <X className="size-4" strokeWidth={1.3} />
           </Button>
-        ) : <NotificationBell />}
+        ) : null}
         {onCollapsedChange ? (
           <Button
             type="button"
@@ -1605,6 +1633,8 @@ export function AppSidebar({
           </Button>
         ) : null}
       </div>
+
+      {collapsed ? <div className="relative z-10 mt-2 flex justify-center"><NotificationBell /></div> : null}
 
       {isTrainingWorkspace ? (
         <div className="relative z-10 mt-3 flex justify-center" role="status" aria-label="Training workspace">

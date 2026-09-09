@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties, type ReactNode, type RefObject } from "react"
+import { useEffect, useMemo, type CSSProperties, type ReactNode, type RefObject } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ArrowUpRight, Check, Eye, Globe, LoaderCircle, Mail, Phone, TriangleAlert, UserRoundPlus } from "@/components/icons/hugeicons"
 import { CopyableField } from "@/components/multideck/copyable-field"
@@ -557,6 +557,7 @@ export function PublicCardForm({
   values,
   errors,
   submitting,
+  pendingConfirmation = false,
   slow,
   submitError,
   onChange,
@@ -568,6 +569,7 @@ export function PublicCardForm({
   values: PublicFormValues
   errors: PublicFormErrors
   submitting: boolean
+  pendingConfirmation?: boolean
   slow: boolean
   submitError: string | null
   onChange: <K extends keyof PublicFormValues>(key: K, value: PublicFormValues[K]) => void
@@ -596,7 +598,7 @@ export function PublicCardForm({
           spec.formOnSurface && "rounded-[var(--card-radius-panel)] bg-[var(--card-surface)] p-[18px] shadow-[var(--card-shadow)]",
         )}
       >
-        <fieldset disabled={submitting} className="grid border-0 p-0" style={{ gap: spec.field.gap }}>
+        <fieldset disabled={submitting || pendingConfirmation} className="grid border-0 p-0" style={{ gap: spec.field.gap }}>
           {/* Container-driven, not viewport-driven: the pair splits when the column
               is wide enough for it, which is what the preview frame needs too. */}
           <div className="grid" style={{ gap: spec.field.gap, gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
@@ -607,6 +609,7 @@ export function PublicCardForm({
               onChange={(value) => onChange("firstName", value)}
               error={errors.firstName}
               autoComplete="given-name"
+              maxLength={120}
               autoCapitalize="words"
               enterKeyHint="next"
               interactive={interactive}
@@ -619,6 +622,7 @@ export function PublicCardForm({
               onChange={(value) => onChange("lastName", value)}
               error={errors.lastName}
               autoComplete="family-name"
+              maxLength={120}
               autoCapitalize="words"
               enterKeyHint="next"
               interactive={interactive}
@@ -635,6 +639,7 @@ export function PublicCardForm({
             onChange={(value) => onChange("email", value)}
             error={errors.email}
             autoComplete="email"
+            maxLength={254}
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
@@ -649,6 +654,7 @@ export function PublicCardForm({
             onChange={(value) => onChange("company", value)}
             error={errors.company}
             autoComplete="organization"
+            maxLength={255}
             autoCapitalize="words"
             enterKeyHint={card.phoneField === "hidden" ? "send" : "next"}
             interactive={interactive}
@@ -666,6 +672,7 @@ export function PublicCardForm({
               onChange={(value) => onChange("phone", value)}
               error={errors.phone}
               autoComplete="tel"
+              maxLength={80}
               enterKeyHint="send"
               interactive={interactive}
               spec={spec}
@@ -679,7 +686,7 @@ export function PublicCardForm({
               <input
                 type="checkbox"
                 checked={values.marketingConsent}
-                disabled={submitting}
+                disabled={submitting || pendingConfirmation}
                 tabIndex={interactive ? undefined : -1}
                 onChange={(event) => onChange("marketingConsent", event.target.checked)}
                 className="mt-0.5 size-[18px] shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--card-focus-ring)]"
@@ -726,17 +733,18 @@ export function PublicCardForm({
             "group/submit mt-6 inline-flex h-[54px] w-full items-center justify-center rounded-[var(--card-radius-field)] text-[15px] font-medium",
             "bg-[var(--card-action-bg)] text-[var(--card-action-ink)]",
             "transition-[transform,background-color,box-shadow] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-            "hover:bg-[var(--card-action-hover)] active:scale-[0.988]",
+            "hover:bg-[var(--card-action-hover)] active:scale-[0.96]",
             "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--card-focus-ring)]",
             "disabled:cursor-progress motion-reduce:transition-none motion-reduce:active:scale-100",
           )}
         >
           {/* Both states share one grid cell so the button never changes width. */}
           <span className="grid place-items-center">
-            <span className={cn("col-start-1 row-start-1 transition-opacity duration-[140ms] motion-reduce:transition-none", submitting && "opacity-0")}>
-              {card.submitLabel}
+            <span aria-hidden={submitting} className={cn("col-start-1 row-start-1 transition-opacity duration-[140ms] motion-reduce:transition-none", submitting && "opacity-0")}>
+              {pendingConfirmation ? t("Try again") : card.submitLabel}
             </span>
             <span
+              aria-hidden={!submitting}
               className={cn(
                 "col-start-1 row-start-1 inline-flex items-center gap-2 transition-opacity duration-[140ms] motion-reduce:transition-none",
                 !submitting && "opacity-0",
@@ -801,6 +809,12 @@ export function PublicCardExchange({
   const spec = resolveCardLayout(card.branding.layout)
   const loudHeading = spec.heading.size >= 27
 
+  useEffect(() => {
+    // This component mounts after the form's exit animation. Focusing in the
+    // parent phase effect ran too early, before the success heading existed.
+    if (interactive) headingRef?.current?.focus()
+  }, [headingRef, interactive])
+
   return (
     <div>
       <div className={cn("flex flex-col", spec.centred && "items-center")} style={{ gap: spec.introGap }}>
@@ -856,7 +870,7 @@ export function PublicCardExchange({
           type="button"
           onClick={onAddToContacts}
           tabIndex={interactive ? undefined : -1}
-          className="inline-flex h-[54px] w-full items-center justify-center gap-2 rounded-[var(--card-radius-field)] bg-[var(--card-action-bg)] text-[15px] font-medium text-[var(--card-action-ink)] transition-[transform,background-color] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--card-action-hover)] active:scale-[0.988] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--card-focus-ring)] motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="inline-flex h-[54px] w-full items-center justify-center gap-2 rounded-[var(--card-radius-field)] bg-[var(--card-action-bg)] text-[15px] font-medium text-[var(--card-action-ink)] transition-[transform,background-color] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--card-action-hover)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--card-focus-ring)] motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           <UserRoundPlus className="size-4" strokeWidth={1.6} />
           {t("Add to contacts")}
@@ -865,7 +879,7 @@ export function PublicCardExchange({
         <a
           href={`mailto:${card.person.email}`}
           tabIndex={interactive ? undefined : -1}
-          className="inline-flex h-[54px] w-full items-center justify-center gap-2 rounded-[var(--card-radius-field)] bg-[var(--card-surface)] text-[15px] font-medium text-[var(--card-ink)] shadow-[inset_0_0_0_1px_var(--card-hairline)] transition-[transform,background-color] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.988] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--card-focus-ring)] motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="inline-flex h-[54px] w-full items-center justify-center gap-2 rounded-[var(--card-radius-field)] bg-[var(--card-surface)] text-[15px] font-medium text-[var(--card-ink)] shadow-[inset_0_0_0_1px_var(--card-hairline)] transition-[transform,background-color] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--card-focus-ring)] motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           <Mail className="size-4" strokeWidth={1.6} />
           {t("Email")} {card.person.fullName.split(" ")[0]}

@@ -34,8 +34,8 @@ test("personal, shared, mailbox and folder unread counts remain available", () =
 })
 
 test("notification bell is still driven by unread state and keeps its controls", () => {
-  assert.match(sidebar, /notifications\.filter\(\(notification\) => notification\.status === "unread"\)\.length/u)
+  assert.match(sidebar, /notifications, unreadCount, total, loading, loaded, error, pending/u)
   assert.match(sidebar, /\{unreadCount > 0 \? <motion\.span/u)
-  assert.match(sidebar, /disabled=\{unreadCount === 0\} onClick=\{markAllRead\}/u)
+  assert.match(sidebar, /disabled=\{pending \|\| !loaded \|\| unreadCount === 0\}/u)
   assert.match(sidebar, /aria-label=\{t\("Open notifications"\)\}/u)
 })

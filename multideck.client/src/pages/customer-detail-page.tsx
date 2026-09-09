@@ -1,3 +1,4 @@
+import {CustomerLiveGrantWorkspace} from "./customer-live-grants-page"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { useEffect, useState, type ReactNode } from "react"
 import { Download, FileText, Health, LoaderCircle, Mail, Plus, RefreshCw, ShieldCheck, Trash2 } from "@/components/icons/hugeicons"
@@ -154,6 +155,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
       {customer.summary ? <Surface className="rounded-[var(--md-radius-xl)]" padding="lg"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Account summary")}</h2><p className="mt-3 text-[14px] leading-6 text-[var(--md-text)]">{customer.summary}</p></Surface> : null}
 
       <CustomerWarehouseAccess customerId={customer.id} />
+      <CustomerLiveGrantWorkspace key={customer.id} customerId={customer.id} />
       <CustomerScreening customerId={customer.id} customerName={customer.name} />
 
       <div className="md-panel-grid xl:grid-cols-[minmax(0,1fr)_380px]">

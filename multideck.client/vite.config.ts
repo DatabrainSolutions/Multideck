@@ -3,6 +3,7 @@ import fs from "node:fs/promises"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { defineConfig, loadEnv, type Plugin } from "vite"
+import { liveConnectionPlugin } from "./scripts/live-connection.mjs"
 
 const appRoutes = new Set(["/app", "/app/", "/auth", "/auth/", "/components", "/components/", "/customers", "/customers/", "/customers/marlow-apparel", "/customers/marlow-apparel/", "/inbox", "/inbox/", "/documents", "/documents/", "/customs/standalone/export", "/customs/standalone/export/new", "/customs/standalone/import", "/customs/job-related/export", "/customs/job-related/import", "/compliance/screening", "/compliance/screening/"])
 const mobileConfigurationPath = "/.well-known/multideck-mobile.json"
@@ -87,6 +88,7 @@ export default defineConfig(({ mode }) => {
       "import.meta.env.TRAINING_SUPABASE_ANON_KEY": JSON.stringify(environment.TRAINING_SUPABASE_ANON_KEY ?? ""),
     },
     plugins: [
+      liveConnectionPlugin(environment),
       multideckMobileConfiguration(environment),
       {
         name: "multideck-local-app-routes",

@@ -441,6 +441,7 @@ function penaltyScore(modules: boolean[][], size: number) {
 export type QrMatrix = {
   size: number
   modules: boolean[][]
+  reserved: boolean[][]
   version: number
   level: EccLevel
 }
@@ -457,7 +458,7 @@ export function encodeQr(text: string, level: EccLevel = "M"): QrMatrix | null {
 
   const bits = encodeCodewords(bytes, version, level)
 
-  let best: { modules: boolean[][]; score: number } | null = null
+  let best: { modules: boolean[][]; reserved: boolean[][]; score: number } | null = null
 
   for (let mask = 0; mask < MASKS.length; mask += 1) {
     const grid = createGrid(version)
@@ -476,11 +477,11 @@ export function encodeQr(text: string, level: EccLevel = "M"): QrMatrix | null {
     drawFormatInformation(grid, mask, level)
 
     const score = penaltyScore(grid.modules, grid.size)
-    if (!best || score < best.score) best = { modules: grid.modules, score }
+    if (!best || score < best.score) best = { modules: grid.modules, reserved: grid.reserved, score }
   }
 
   if (!best) return null
-  return { size: version * 4 + 17, modules: best.modules, version, level }
+  return { size: version * 4 + 17, modules: best.modules, reserved: best.reserved, version, level }
 }
 
 /**
@@ -542,11 +543,13 @@ function isEyeModule(row: number, column: number, size: number) {
  * knockout lands on the grid rather than slicing modules in half.
  */
 export function qrLogoBounds(matrix: QrMatrix, logoArea: number) {
-  if (logoArea <= 0) return null
+  if (logoArea <= 0 || !Number.isFinite(logoArea) || matrix.level !== "H") return null
 
-  const span = Math.max(1, Math.round(matrix.size * logoArea))
+  // Round down within the tested coverage ceiling. Rounding a nominal 30%
+  // logo upward cleared 36% of a version-2 symbol and broke decoding.
+  const span = Math.max(1, Math.floor(matrix.size * Math.min(logoArea, 0.24)))
   // An odd span centres exactly, which reads better against the symmetric grid.
-  const oddSpan = span % 2 === 0 ? span + 1 : span
+  const oddSpan = span % 2 === 0 ? span - 1 : span
   const start = Math.floor((matrix.size - oddSpan) / 2)
   return { start, end: start + oddSpan, span: oddSpan }
 }
@@ -595,7 +598,8 @@ export function qrGeometry(matrix: QrMatrix, style: QrStyle = DEFAULT_QR_STYLE) 
     for (let column = 0; column < size; column += 1) {
       if (!dark(row, column)) continue
 
-      if (style.moduleStyle === "square") {
+      // Timing, alignment and format marks are scanner landmarks, not decoration.
+      if (style.moduleStyle === "square" || matrix.reserved[row][column]) {
         segments.push(`M${column} ${row}h1v1h-1z`)
         continue
       }
@@ -604,7 +608,7 @@ export function qrGeometry(matrix: QrMatrix, style: QrStyle = DEFAULT_QR_STYLE) 
         // Two arcs are cheaper than a <circle> per module and keep it one path.
         const cx = column + 0.5
         const cy = row + 0.5
-        const r = 0.42
+        const r = 0.5
         segments.push(`M${cx - r} ${cy}a${r} ${r} 0 1 0 ${r * 2} 0a${r} ${r} 0 1 0 ${-r * 2} 0Z`)
         continue
       }
@@ -709,19 +713,20 @@ export function qrSvgDocument(
   const render = qrRender(matrix, style)
   const { extent } = render
   const bounds = render.logoBounds
+  const xml = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[char]!)
 
   const logo =
     bounds && logoDataUrl
-      ? `<image href="${logoDataUrl}" x="${render.quietZone + bounds.start + 0.5}" y="${render.quietZone + bounds.start + 0.5}" width="${bounds.span - 1}" height="${bounds.span - 1}" preserveAspectRatio="xMidYMid meet"/>`
+      ? `<image href="${xml(logoDataUrl)}" x="${render.quietZone + bounds.start + 0.5}" y="${render.quietZone + bounds.start + 0.5}" width="${bounds.span - 1}" height="${bounds.span - 1}" preserveAspectRatio="xMidYMid meet"/>`
       : ""
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${extent} ${extent}" width="${extent * 8}" height="${extent * 8}">`,
-    `<rect width="${extent}" height="${extent}" fill="${style.light}"/>`,
+    `<rect width="${extent}" height="${extent}" fill="${xml(style.light)}"/>`,
     `<g transform="translate(${render.quietZone} ${render.quietZone})">`,
-    `<path d="${render.modulesPath}" fill="${style.dark}"/>`,
-    `<path d="${render.eyeRing}" fill="${style.dark}" fill-rule="evenodd"/>`,
-    `<path d="${render.eyeCore}" fill="${style.dark}"/>`,
+    `<path d="${render.modulesPath}" fill="${xml(style.dark)}"/>`,
+    `<path d="${render.eyeRing}" fill="${xml(style.dark)}" fill-rule="evenodd"/>`,
+    `<path d="${render.eyeCore}" fill="${xml(style.dark)}"/>`,
     `</g>`,
     logo,
     `</svg>`,

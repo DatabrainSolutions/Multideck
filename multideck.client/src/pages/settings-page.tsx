@@ -3371,7 +3371,6 @@ export function AdminUsersContent() {
       <SettingsPageHeader
         eyebrow={t("Admin / Users")}
         title={t("Users")}
-        description={t("Invite people, assign reusable roles and manage workspace access in one place.")}
         descriptionPlacement="under-title"
         actions={(
           <div className="flex items-center gap-2">
@@ -3423,7 +3422,7 @@ export function AdminUsersContent() {
                   <div className="grid min-h-40 place-items-center px-6 text-center">
                     <div>
                       <p className="text-[13px] font-medium text-[var(--md-ink)]">{loading ? t("Loading users…") : t("No users found")}</p>
-                      <p className="mt-1 text-[12px] text-[var(--md-text)]">{loading ? t("Checking the live workspace roster.") : t("Invite a user or clear the search to continue.")}</p>
+                      {!loading ? <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Invite a user or clear the search to continue.")}</p> : null}
                     </div>
                   </div>
                 )}
@@ -3463,7 +3462,7 @@ export function AdminUsersContent() {
                   </article>
                 )
               })}
-              {!visibleUsers.length ? <div className="grid min-h-40 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-6 text-center shadow-[var(--md-shadow-soft)]"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{loading ? t("Loading users…") : t("No users found")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{loading ? t("Checking the live workspace roster.") : t("Invite a user or clear the search to continue.")}</p></div></div> : null}
+              {!visibleUsers.length ? <div className="grid min-h-40 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-6 text-center shadow-[var(--md-shadow-soft)]"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{loading ? t("Loading users…") : t("No users found")}</p>{!loading ? <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Invite a user or clear the search to continue.")}</p> : null}</div></div> : null}
               {totalUsers > 0 ? (
                 <Pagination
                   page={Math.floor(userOffset / userPageSize) + 1}
@@ -3498,7 +3497,7 @@ export function AdminUsersContent() {
               <motion.div key="invite-details" className={accessDialogPanelClassName} custom={-accessPanelDistance} variants={accessDialogPanelVariants} initial={shouldReduceMotion ? false : "enter"} animate="visible" exit={shouldReduceMotion ? undefined : "exit"} transition={accessPanelTransition}>
                 <DialogHeader className="text-start">
                   <DialogTitle>{t("Invite a user")}</DialogTitle>
-                  <DialogDescription>{t("They’ll receive a branded Multideck invitation and create their password before entering this workspace.")}</DialogDescription>
+                  <DialogDescription>{t("They’ll receive an invitation to set a password and join this workspace.")}</DialogDescription>
                 </DialogHeader>
                 <form className="mt-5 grid gap-5" onSubmit={sendInvitation}>
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -3617,7 +3616,7 @@ export function AdminUsersContent() {
               </motion.div>
             ) : (
               <motion.div key="edit-details" className={accessDialogPanelClassName} custom={-accessPanelDistance} variants={accessDialogPanelVariants} initial={shouldReduceMotion ? false : "enter"} animate="visible" exit={shouldReduceMotion ? undefined : "exit"} transition={accessPanelTransition}>
-          <DialogHeader className="text-start"><DialogTitle className="text-balance">{t("Edit user")}</DialogTitle><DialogDescription className="text-pretty">{t("Update their profile, office, departments and workspace role. Their email address stays tied to their sign-in account.")}</DialogDescription></DialogHeader>
+          <DialogHeader className="text-start"><DialogTitle className="text-balance">{t("Edit user")}</DialogTitle><DialogDescription className="text-pretty">{t("Their email address remains tied to their sign-in account.")}</DialogDescription></DialogHeader>
           <form className="mt-5 grid gap-5" onSubmit={saveUser}>
             {editingUserRole?.isLegacyCustom ? <div className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,var(--md-surface))] px-3.5 py-3 text-[12px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("This user has an older one-user Custom role. Choose a saved role to replace it.")}</div> : null}
             <div className="grid gap-4 sm:grid-cols-2">
@@ -3643,7 +3642,7 @@ export function AdminUsersContent() {
             {selectedEditRole ? <div className="flex items-start justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3.5 py-3 shadow-[var(--md-shadow-line)]"><div className="min-w-0"><p className="text-[13px] font-medium text-[var(--md-ink)]">{selectedEditRole.name}</p><p className="mt-1 text-[11.5px] leading-5 text-[var(--md-text)]">{t(selectedEditRole.description || "Reusable workspace role.")}</p></div><StatusPill tone={selectedEditRole.isSystem ? "blue" : "teal"}>{t(selectedEditRole.isSystem ? "Predefined" : "Saved role")}</StatusPill></div> : null}
             <fieldset className="grid gap-3">
               <legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("Departments")}</legend>
-              <p className="text-pretty text-[11.5px] leading-5 text-[var(--md-text)]">{t("Assign one or more departments. Create a new department here if it is missing.")}</p>
+              <p className="text-pretty text-[11.5px] leading-5 text-[var(--md-text)]">{t("Select one or more departments.")}</p>
               {(team?.departments ?? []).length ? (
                 <div className="grid gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 sm:grid-cols-2">
                   {(team?.departments ?? []).map((department) => {
@@ -4487,7 +4486,6 @@ export function AdminBillingContent() {
       <SettingsPageHeader
         eyebrow="Workspace / Billing"
         title="Billing"
-        description="Keep the plan, seats, payment method, and invoice history understandable without mixing them into operational usage."
         actions={compactAction("Download invoices", () => toast.success("Invoices prepared"))}
       />
       <div className="mt-[var(--md-page-stack-gap)] grid gap-3 sm:grid-cols-3">
@@ -4510,7 +4508,7 @@ export function AdminBillingContent() {
       </div>
       <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-[var(--md-page-stack-gap)]">
-          <SettingsPanel title="Plan and seats" description="Northwind Forwarding is on the annual Operations plan.">
+          <SettingsPanel title="Plan and seats">
             <SettingsFieldRow label="Seats">
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                 <div>
@@ -4532,7 +4530,7 @@ export function AdminBillingContent() {
               </div>
             </SettingsFieldRow>
           </SettingsPanel>
-          <SettingsPanel title="Invoices" description="Paid invoices remain available for finance review and export.">
+          <SettingsPanel title="Invoices">
             {invoices.map(([number, date, amount, status]) => (
               <div key={number} className="grid gap-2 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_110px_110px_auto] sm:items-center">
                 <div className="min-w-0">
@@ -4598,7 +4596,6 @@ function AiUsageOverviewScreen({
         icon={ChartAnalysis}
         eyebrow="Workspace / Usage"
         title="Usage"
-        description="See what this workspace has used, what is included, and any extra usage for the current month."
         actions={compactAction("Export usage", () => toast.success("Usage export prepared"))}
       />
       <AiUsageOverview
@@ -4685,7 +4682,7 @@ function AiUsageHistoryScreen({
         icon={History}
         eyebrow="Workspace / Usage / AI history"
         title="AI usage history"
-        description="Every Dexter response recorded this month, with the tokens each one used."
+        description="Dexter responses recorded this month."
         actions={compactAction("Back to Usage", onBack)}
       />
       <section className="md-ai-usage md-ai-panel mt-[var(--md-page-stack-gap)] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">

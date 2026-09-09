@@ -2439,7 +2439,7 @@ function BanksTab({
     <FinancePanel
       title={t("Bank accounts")}
       description={t(
-        "Use multiple accounts and currencies. Enter only the last four characters of bank identifiers.",
+        "Enter only the last four characters of bank identifiers.",
       )}
       action={
         <Button
@@ -3285,7 +3285,6 @@ function DocumentsTab({
       </FinancePanel>
       <FinancePanel
         title={t("Payment terms")}
-        description={t("Customer and supplier due dates.")}
         action={
           <Button
             type="button"
@@ -3367,7 +3366,7 @@ function DocumentsTab({
       <FinancePanel
         title={t("Document numbering")}
         description={t(
-          "Controls the references assigned automatically when finance documents are created.",
+          "Assigned automatically to new finance documents.",
         )}
         action={
           <Button
@@ -3918,7 +3917,6 @@ function ComplianceTab({
       </FinancePanel>
       <FinancePanel
         title={t("Compliance obligations")}
-        description={t("Filing channels, registration and readiness.")}
       >
         <div className="divide-y divide-[var(--md-line)]">
           {obligations.length ? (

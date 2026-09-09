@@ -1,3 +1,4 @@
+import { reportActionChanges } from "./report-review.ts"
 import { isTrainingDatabase } from "../_shared/training-environment.ts"
 import { bookingAllocationActionRecord, bookingAllocationActionChanges } from "./booking-allocation-review.ts"
 import { bookingRouteActionReview } from "./booking-route-review.ts"
@@ -1402,6 +1403,7 @@ function watchCandidates(capability: string, value: unknown): JsonObject[] {
 }
 
 function watchTargetLabel(capability: string, record: JsonObject) {
+  if (capability === "reports") return cleanString(record.name, 240) || "Saved report"
   const keys = capability === "leads"
     ? ["companyName", "contactName"]
     : capability === "deals"
@@ -1451,6 +1453,7 @@ function addRecordCitation(
 }
 
 function addDomainCitations(domain: string, value: unknown) {
+  if (domain === "reports" && isObject(value) && Array.isArray(value.data)) return { ...value, data: value.data.map(record => isObject(record) ? addRecordCitation(record, cleanString(record.name, 160) || "Saved report", cleanString(record.sourceUrl, 300) || "/reports", "Saved report definition and latest personal run status") : record) }
   if (!isObject(value) || (!isObject(value.data) && !Array.isArray(value.data))) return value
 
   const data = value.data
@@ -1916,10 +1919,13 @@ When quote_cargo is listed, it reads exact lines of the current Quote version, i
 Individual booking cargo lines are connected only when the booking_cargo domain is listed. Query it by exact booking reference or cargo ID and use its recordId, bookingId and updatedAt as evidence. The update_booking_cargo action proposes one allowlisted field on one existing line and always requires explicit operator approval, including in Full access. Show the booking reference, cargo line, field and before/after values. Never substitute the first cargo line or reuse an old updatedAt after another change. Null clears a nullable field; measurements use a text number and safety flags use the explicit text true or false. Prices, margins, supplier charges, adding/removing lines, dangerous-goods detail and equipment allocation are not supported by this action; use Booking Details for those operations. Watching for you can follow persisted booking_cargo field changes by the exact cargo recordId, using deterministic database signals without recurring AI calls.
 The legacy quotes-domain customerReference is the master Quote reference, not the customer's editable enquiry reference. Customer enquiry-reference reads, edits and watches are not yet exposed through that domain; say so and direct the operator to Customer ref in Quote Details. Never claim the master reference is the customer's enquiry reference, rename the master to change it, or promise a watch on that unsupported field. Existing Quote lifecycle and cargo watches are unchanged.
 Work fluently across air, sea, road, rail, customs, warehousing, quotations, bookings, milestones, exceptions, customer updates, and commercial handovers when those domains are connected.
+Reporting is connected through report_sources and reports. Read report_sources to learn the allowed fields and complete query shape before preparing save_report. Read reports to edit an exact owned report with its current version, or create a private copy. Always obtain approval for saving, even in full-access mode. Show the data source, columns, date basis, period, measure, currency, comparison and visibility in plain language. Never infer sales from shipment goods values or combine currencies. last2months means the last two complete calendar months; compare previous compares that total with the preceding two months. For growth from one month to the next, use lastmonth and compare previous. New report definitions are version 1; table/chart reports contain query; document reports contain period, optional customer and ordered blocks with unique ids, kind, title, text or query, useDocumentPeriod and useDocumentCustomer. Saving does not generate or send files. Open /reports/edit/{recordId} for preview, document layout review, exports and schedule/archive changes; those actions are not available through the report action adapter. The reports domain exposes definitions and personal run status only, so do not claim it contains report results. Watching for you supports one owned report: version changed or lastRunId changed. Report-value thresholds, external email delivery and automatic report actions are unsupported; explain that clearly. No recurring model calls are used.
+
 Use freight terminology accurately and only when it helps. Distinguish planned, estimated, actual, confirmed, and inferred information.
 Treat ETD, ETA, ATD, ATA, cut-offs, free time, Incoterms, chargeable weight, demurrage, detention, customs status, carrier acceptance, space, rates, surcharges, and contract terms as materially different facts.
 Never infer a rate, contract term, customs decision, carrier commitment, available space, free-time allowance, or arrival date from incomplete evidence.
 Rates and contracts are connected for tenant-safe reading and deterministic watches. Commercial changes are not an allowlisted Dexter action: direct the operator to Rates & Contracts for the reviewed, versioned workflow instead of claiming you changed pricing.
+Contact-card visit/session analytics and QR scan verification are not connected to Dexter chat or Watching for you. Direct the operator to the card's Analytics and QR code tabs; do not invent counts, claim a scan worked, promise a scan/session watch, or call public visit/submission endpoints to simulate activity. Anonymous telemetry is not an operator write capability. The contact-card lead-note compiler only prepares a reviewable draft. Each distinct successful public submission creates a separate lead for review; retrying that same submission does not create another lead or rerun automation. Existing permissioned CRM lead reads and watches remain separate from contact-card telemetry.
 ${supportTicketCopy(locale, "prompt")}
 Quote intelligence is cached evidence, not a live model opinion. When a quote record includes quoteIntelligence, explain its cohort, evidence count, algorithm version and freshness; distinguish the deterministic result from any bounded Luna adjustment. Never invent a missing metric, treat a low-sample outcome rate as certain, or imply that opening a quote caused an AI call.
 Quote delivery evidence may show Standard or Simple email mode, the recipient, attached quote PDF, customer decision, and a linked booking. Standard emails include the secure customer response link; Simple emails are plain, PDF-only messages without customer response controls, so their outcome must be recorded with the allowlisted Mark quote won or Mark quote lost actions after operator approval. Sending a quote email is not a chat action: direct the operator to the quote's Send quote dialog so they can choose the mailbox, review or override the recipient, inspect the exact message and approve the external send.
@@ -2594,6 +2600,7 @@ function quoteCargoActionRecord(records: Map<string, JsonObject>, args: JsonObje
 }
 
 function actionChanges(locale: DexterLocale, actionCode: string, argumentsValue: JsonObject, currentRecord?: JsonObject) {
+  if (actionCode === "save_report") return reportActionChanges(argumentsValue)
   if (actionCode === "replace_booking_allocations") return bookingAllocationActionChanges(argumentsValue, currentRecord)
   if (actionCode === "update_quote_cargo") {
     const labels: Record<string, string> = { description: "Goods description", commodity: "Commodity", packageQuantity: "Packages / pieces",
@@ -2754,6 +2761,7 @@ function preparedActionDescription(
   currentRecord?: JsonObject,
   emailState?: DexterEmailToolState | null,
 ) {
+  if (actionCode === "save_report") return `Review the settings for “${cleanString(args.name, 160)}”. This saves an editable report; generate a dated snapshot in Reports when you want to download it.`
   if (actionCode === "replace_booking_allocations") {
     return `Review the complete cargo allocation plan for ${cleanString(currentRecord?.bookingReference, 80) || "the selected Booking"}. Every addition, change and removal is shown. Omitted allocations are retired with history retained. Cargo totals, equipment totals, VGM and the accepted Quote remain unchanged. ${fallback}`
   }
@@ -3753,7 +3761,7 @@ Deno.serve(async (request) => {
       reasoning: { effort: "medium" },
       instructions: [
         "You compile one contact-card lead-note request into a small, reviewable draft.",
-        "Every valid submission creates a separate CRM lead and maps the name, email, company and phone automatically. Never ask the user to map those fields.",
+        "Each distinct valid submission creates a separate CRM lead and maps the name, email, company and phone automatically. A retry of the same submission does not create another lead or rerun automation. Never ask the user to map those fields.",
         "Return exactly one add-to-crm action with recordType=lead and duplicateHandling=create.",
         "The action config may contain customNotes, which is the exact operator-authored text to add to the lead's internal Notes section after a submission.",
         "Do not invent custom notes. Leave customNotes empty unless the request supplies the note text or asks you to draft text that the operator can review.",
@@ -4458,7 +4466,9 @@ Deno.serve(async (request) => {
     }
 
     const result: DexterAgentResult = {
-      answer: actionCopy(locale, "completed", actionDisplayName(locale, action.code, action.name)),
+      answer: action.code === "save_report" && isObject(data) && isObject(data.result) && isUuid(cleanString(data.result.recordId, 80))
+        ? `Your report is saved. [Open the report editor](/reports/edit/${cleanString(data.result.recordId, 80)}) to preview it, make changes or generate a download.`
+        : actionCopy(locale, "completed", actionDisplayName(locale, action.code, action.name)),
       model: lane,
       providerModel: route.model,
       reasoningEffort: route.effort,
@@ -4617,6 +4627,7 @@ Deno.serve(async (request) => {
     name: action.code,
     description: action.code === CREATE_SUPPORT_TICKET_ACTION
       ? `${action.description} ${supportTicketCopy(locale, "tool")}`
+      : action.code === "save_report" ? action.description
       : `${action.description} Use only after reading the target record and use its recordId as target_id.`,
     strict: true,
     parameters: action.parameters,

@@ -43,6 +43,14 @@ export function contrastRatio(a: Rgb, b: Rgb) {
   return (lighter + 0.05) / (darker + 0.05)
 }
 
+/** QR foregrounds must be darker than their background. Invalid or inverted
+ * colours return zero so callers use their safe dark-on-light fallback. */
+export function qrContrastRatio(dark: string, light: string) {
+  const darkRgb = parseHex(dark)
+  const lightRgb = parseHex(light)
+  return darkRgb && lightRgb && luminance(darkRgb) < luminance(lightRgb) ? contrastRatio(darkRgb, lightRgb) : 0
+}
+
 const WHITE: Rgb = { r: 255, g: 255, b: 255 }
 const BLACK: Rgb = { r: 11, g: 20, b: 19 }
 

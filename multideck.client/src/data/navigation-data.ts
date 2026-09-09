@@ -77,17 +77,18 @@ export const warehouseNavigation: SidebarDestination[] = [
   { id: "warehouse-goods-out", label: "Goods out", icon: PackageMinus, route: "/warehouse/goods-out" },
   { id: "warehouse-orders", label: "Warehouse orders", icon: ClipboardCheck, route: "/warehouse/orders" },
   { id: "warehouse-purchase-orders", label: "Expected receipts", icon: ReceiptText, route: "/warehouse/purchase-orders" },
-  {
-    id: "warehouse-setup",
-    label: "Setup",
-    icon: Settings2,
-    children: [
-      { label: "Facilities", icon: Building2, route: "/warehouse/facilities" },
-      { label: "Locations", icon: MapPin, route: "/warehouse/locations" },
-      { label: "Items", icon: Package, route: "/warehouse/items" },
-    ],
-  },
 ]
+
+export const warehouseSetupNavigation: SidebarDestination = {
+  id: "warehouse-setup",
+  label: "Warehouse",
+  icon: Forklift,
+  children: [
+    { label: "Facilities", icon: Building2, route: "/warehouse/facilities" },
+    { label: "Locations", icon: MapPin, route: "/warehouse/locations" },
+    { label: "Items", icon: Package, route: "/warehouse/items" },
+  ],
+}
 
 export const customerWarehouseNavigation: SidebarDestination[] = [
   { id: "warehouse-inventory", label: "Inventory", icon: Boxes, route: "/warehouse/inventory" },
@@ -303,6 +304,7 @@ export const sidebarAreas: SidebarArea[] = [
     icon: Settings2,
     destinations: [
       { id: "admin-finance", label: "Finance", icon: SlidersHorizontal, route: "/finance/administration" },
+      warehouseSetupNavigation,
       { id: "admin-users", label: "Users", icon: Users, route: "/admin/users" },
       { id: "admin-usage", label: "Usage", icon: ChartAnalysis, route: "/admin/usage" },
       { id: "admin-broadcast", label: "Broadcast", icon: Megaphone, route: "/admin/broadcast" },

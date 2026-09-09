@@ -7,10 +7,10 @@ This document is the canonical boundary for Multideck App, Multideck Live, and M
 | Product | Repository | Vercel project | Production hostname | Local port | Data responsibility |
 |---|---|---|---|---:|---|
 | Multideck App | `DatabrainSolutions/Multideck` | `multideck-app-{tenant}` | `{tenant}.multideck.app` | 3000 | Operator system and sole operational source of truth |
-| Multideck Live | `DatabrainSolutions/Multideck.Live` | `multideck-live-{tenant}` | `{tenant}.multideck.live` plus approved custom domains | 3001 | Customer-safe portal over the tenant operational project |
+| Multideck Live | `DatabrainSolutions/Multideck.Live` | central Live deployment | `multideck.live` | 3001 | Customer identities and registered company connections; operational data stays in App |
 | Multideck Cloud | `DatabrainSolutions/Multideck.Cloud` | `multideck-cloud` | `multideck.cloud` | 3002 | Internal control plane; no freight records |
 
-Every tenant has one operational Supabase project. Its App and Live deployments use different authorised interfaces over that same project. There are no tenant source forks.
+Every business has one operational Supabase project. The product owner confirmed on 8 September 2026 that one central `multideck.live` serves all businesses through registered App URL/integration-key connections. Live owns portal identities and routing metadata; App owns customer grants and operational authorisation. A central Live identity is never treated as a local App Auth identity. There are no tenant source forks.
 
 `multideck.mobile` is an Android-first native client of Multideck App, not a fourth product or a
 control plane. An operator supplies a workspace slug and the mobile client discovers that tenant's
@@ -21,7 +21,7 @@ Supabase project. Switching workspaces signs out and discards the previous tenan
 
 ```text
 Operator browser -> App Vercel -> tenant Supabase public/App APIs
-Customer browser -> Live Vercel -> tenant Supabase live_api projections
+Customer browser -> central Live Auth/API -> registered company App gateway -> tenant Supabase WMS
 Staff browser -> Cloud Vercel -> Cloud Supabase -> Vercel/Supabase management APIs
 ```
 
@@ -37,7 +37,7 @@ Vercel builds must provide:
 
 - `MULTIDECK_SURFACE=app|live|cloud`.
 - App/Live: `VITE_MULTIDECK_TENANT_SLUG`, `VITE_SUPABASE_PROJECT_REF`, `VITE_SUPABASE_URL`, publishable key, and the exact tenant hostname.
-- App/Live Vercel project name: `multideck-{surface}-{slug}`.
+- Legacy tenant App/Live Vercel project name: `multideck-{surface}-{slug}`.
 - Cloud Vercel project name: `multideck-cloud`.
 
 The build guard verifies the static surface, Vercel project name, slug syntax, and agreement between the configured Supabase URL and project reference. Deployment configuration identifies a tenant; hostname and editable JWT user metadata do not.
@@ -126,3 +126,6 @@ Jenkar's Cloud `supabase_project_ref` remains null until the legal/company ident
 - Provisioning tests cover retry, duplicate requests and partial failure without touching live provider resources.
 - Domain tests cover pending/incorrect DNS, verified TLS, preferred promotion and safe removal.
 - Client builds, Edge type checks, transactional migration validation and Supabase security/performance advisors pass before staging.
+
+
+The central Live connection protocol and transition are specified in [the App gateway guide](../integrations/live-company-gateway.md). Legacy per-tenant Live build/deployment rules above apply to existing deployments until the central Live release replaces them. Never route a central customer by unverified URL, JWT metadata or customer-supplied organisation ID.

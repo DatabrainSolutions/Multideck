@@ -123,6 +123,7 @@ function normalisePrompt(prompt: string) {
 }
 
 const ACTION_INTENTS: Record<string, RegExp> = {
+  save_report: /\b(create|build|save|make|edit|update|copy|prepare)\b.{0,120}\breports?\b/,
   create_email_draft: /\b(draft|write|compose|prepare|reply|respond|forward)\b.{0,100}\b(e-?mail|message|reply|response)\b|\b(draft|write|compose|prepare)\b.{0,100}\bto\b.{0,100}@/,
   create_booking: /\b(create|add|start|make|open|new)\b.{0,80}\b(booking|shipment|job)\b|\bnew (booking|shipment|job)\b/,
   update_booking: /\b(update|edit|change|amend|correct|set|move)\b.{0,80}\b(booking|shipment|job|route)\b/,
@@ -177,6 +178,7 @@ export function operatorAuthorisesAction(prompt: string, actionCode: string) {
     prompt = prompt.replace(/```[\s\S]*?```|`[^`]*`|"[^"]*"|“[^”]*”/g, " ")
     if (/\b(do not|don't|never|without|avoid|must not|should not|read.only)\b/i.test(prompt)) return false
   }
+  if (actionCode === "save_report") prompt = emailInstructionText(prompt)
   if (actionCode === "send_email") return emailSendRequested(prompt)
   if (actionCode === "create_email_draft") prompt = emailInstructionText(prompt)
   const pattern = ACTION_INTENTS[actionCode]

@@ -16,7 +16,7 @@ import { WarehousePurchaseOrderCreateView, WarehousePurchaseOrderDetailView, War
 import { Surface } from "@/components/multideck/surface"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { customerWarehouseNavigation, warehouseNavigation } from "@/data/navigation-data"
+import { customerWarehouseNavigation, warehouseNavigation, warehouseSetupNavigation } from "@/data/navigation-data"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion } from "@/lib/motion"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
@@ -50,7 +50,7 @@ function initialWarehouseCalendarRange() {
   return { start: localDateKey(start), end: localDateKey(end) }
 }
 
-const warehouseRouteItems = [...warehouseNavigation, ...customerWarehouseNavigation].flatMap((item) => item.children ?? [item])
+const warehouseRouteItems = [...warehouseNavigation, warehouseSetupNavigation, ...customerWarehouseNavigation].flatMap((item) => item.children ?? [item])
 
 const warehouseSectionDescriptions: Record<WarehouseSection, string | null> = {
   Dashboard: null,

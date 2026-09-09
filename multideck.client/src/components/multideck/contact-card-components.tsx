@@ -9,7 +9,8 @@ import { StatusPill } from "@/components/multideck/status-pill"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion } from "@/lib/motion"
-import { contrastRatio, parseHex, readableInk } from "@/lib/color"
+import { qrContrastRatio, readableInk } from "@/lib/color"
+export { qrContrastRatio } from "@/lib/color"
 import { encodeQr, qrPngDataUrl, qrRender, qrSvgDocument, type EccLevel, type QrStyle } from "@/lib/qr-code"
 import {
   cardPublicPath,
@@ -23,6 +24,7 @@ import {
 import type { CardAutomation, CardBranding, ContactCard, ContactCardStatus } from "@/data/contact-card-data"
 import type { StatusTone } from "@/data/operational-data"
 import { cn } from "@/lib/utils"
+import { localCardUrl } from "@/lib/contact-card-links"
 
 /* -------------------------------------------------------------------------- */
 /* Status                                                                      */
@@ -89,16 +91,9 @@ export function AutomationHealthChip({ automation }: { automation: CardAutomatio
 /* -------------------------------------------------------------------------- */
 
 /** Share of the symbol width cleared for a logo. Safe at level H. */
-export const QR_LOGO_AREA = 0.24
+export const QR_LOGO_AREA = 0.20
 
-const QR_LOGO_AREAS = { small: 0.16, medium: QR_LOGO_AREA, large: 0.3 } as const
-
-/** QR readers need a strong dark/light separation; low-contrast choices fall back safely. */
-export function qrContrastRatio(dark: string, light: string) {
-  const darkRgb = parseHex(dark)
-  const lightRgb = parseHex(light)
-  return darkRgb && lightRgb ? contrastRatio(darkRgb, lightRgb) : 21
-}
+const QR_LOGO_AREAS = { small: 0.16, medium: QR_LOGO_AREA, large: 0.24 } as const
 
 /** Style and error-correction level are decided together: a logo needs level H. */
 export function qrStyleForCard(branding: CardBranding): QrStyle {
@@ -151,7 +146,7 @@ export function QrCodeImage({
   }
 
   const logo = render.logoBounds
-  const inset = 0.6
+  const inset = 0.5
 
   return (
     <svg
@@ -189,7 +184,7 @@ export function QrCodeImage({
  */
 export function CardQrDownloads({ card, className }: { card: ContactCard; className?: string }) {
   const { t } = useLanguage()
-  const { matrix, style } = useQrCode(cardPublicUrl(card), card.branding)
+  const { matrix, style } = useQrCode(cardPublicUrl(card, "qr"), card.branding)
   const [downloading, setDownloading] = useState<"png" | "svg" | null>(null)
 
   async function downloadPng() {
@@ -211,13 +206,27 @@ export function CardQrDownloads({ card, className }: { card: ContactCard; classN
     }
   }
 
-  function downloadSvg() {
+  async function downloadSvg() {
     if (!matrix) return
     setDownloading("svg")
-    window.setTimeout(() => {
-      downloadFile(`${card.slug}-qr.svg`, qrSvgDocument(matrix, style, card.branding.logoDataUrl), "image/svg+xml")
+    try {
+      let logoDataUrl: string | null = null
+      if (style.logoArea > 0 && card.branding.logoDataUrl) {
+        const logo = await loadImage(card.branding.logoDataUrl)
+        const canvas = document.createElement("canvas")
+        canvas.width = logo.naturalWidth
+        canvas.height = logo.naturalHeight
+        const context = canvas.getContext("2d")
+        if (!context) throw new Error("The logo could not be exported.")
+        context.drawImage(logo, 0, 0)
+        logoDataUrl = canvas.toDataURL("image/png")
+      }
+      downloadFile(`${card.slug}-qr.svg`, qrSvgDocument(matrix, style, logoDataUrl), "image/svg+xml")
+    } catch {
+      toast.error(t("The SVG could not be generated. Try again."))
+    } finally {
       setDownloading(null)
-    }, 60)
+    }
   }
 
   return (
@@ -267,7 +276,8 @@ export function CardCodePanel({
 }) {
   const { t } = useLanguage()
   const url = cardPublicUrl(card)
-  const { matrix, style } = useQrCode(url, card.branding)
+  const qrUrl = cardPublicUrl(card, "qr")
+  const { matrix, style } = useQrCode(qrUrl, card.branding)
 
   return (
     <Surface padding="md" className={cn("flex flex-col gap-5 p-5", className)}>
@@ -281,7 +291,7 @@ export function CardCodePanel({
         className="mx-auto w-full max-w-[248px] rounded-[var(--md-radius-xl)] p-3 shadow-[var(--md-shadow-line)]"
         style={{ backgroundColor: style.light }}
       >
-        <QrCodeImage value={url} branding={card.branding} label={`${t("QR code for")} ${card.label}`} />
+        <QrCodeImage value={qrUrl} branding={card.branding} label={`${t("QR code for")} ${card.label}`} />
       </div>
 
       <div className="min-w-0">
@@ -294,6 +304,8 @@ export function CardCodePanel({
       </div>
 
       <CardQrDownloads card={card} className="sm:grid-cols-2" />
+      {localCardUrl(url) ? <p role="note" className="text-[12px] leading-5 text-[var(--md-amber)]">{t("Local test code — it will not open on another device. Download the final code from your workspace's published domain.")}</p> : null}
+      {card.status !== "published" ? <p role="note" className="text-[12px] leading-5 text-[var(--md-subtle)]">{t("Publish this card before sharing its code or link.")}</p> : null}
 
       <Button
         variant="ghost"
@@ -301,7 +313,7 @@ export function CardCodePanel({
         onClick={() => window.open(`${cardPublicPath(card)}?preview=1`, "_blank", "noopener")}
       >
         <ExternalLink data-icon="inline-start" strokeWidth={1.4} />
-        {t("Open the public card")}
+        {t("Preview card")}
       </Button>
 
       {compact ? null : (
@@ -317,8 +329,14 @@ export function CardCodePanel({
 export function loadImage(source: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error("unreadable"))
+    const timer = window.setTimeout(() => {
+      image.onload = null
+      image.onerror = null
+      reject(new Error("The image took too long to load."))
+    }, 15_000)
+    image.crossOrigin = "anonymous"
+    image.onload = () => { window.clearTimeout(timer); resolve(image) }
+    image.onerror = () => { window.clearTimeout(timer); reject(new Error("unreadable")) }
     image.src = source
   })
 }

@@ -404,7 +404,7 @@ function FacilityDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={isEditing ? "Edit facility" : "New facility"}
-      description="A facility is a physical warehouse where customer stock is received and stored."
+      description="A physical warehouse for customer stock."
       steps={facilitySteps}
       activeStepId={section}
       onStepChange={setSection}
@@ -448,7 +448,7 @@ function FacilityDialog({
                 </SelectContent>
               </Select>
             </WarehouseFormField>
-            <WarehouseFormField label="Office" hint="Links the facility to a company office. Defaults to your primary office." error={firstFieldError(errors, "OfficeId")}>
+            <WarehouseFormField label="Office" hint="Defaults to your primary office." error={firstFieldError(errors, "OfficeId")}>
               <Select value={form.officeId} onValueChange={(value) => update("officeId", value)}>
                 <SelectTrigger className={fieldControlClass}><SelectValue placeholder="Default office" /></SelectTrigger>
                 <SelectContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
@@ -1004,7 +1004,7 @@ function ItemDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={isEditing ? "Edit item" : "New item"}
-      description="An item is a customer-owned SKU that can be stocked in one or more warehouses."
+      description="A customer-owned SKU available in one or more warehouses."
       steps={itemSteps}
       activeStepId={section}
       onStepChange={setSection}
@@ -1058,7 +1058,7 @@ function ItemDialog({
             </WarehouseFormField>
           </div>
 
-          <WarehouseFormField label="Warehouses" required hint="The SKU remains one item record; selecting another warehouse makes it available there too." error={firstFieldError(errors, "FacilityIds")}>
+          <WarehouseFormField label="Warehouses" required hint="One SKU record shared across the selected warehouses." error={firstFieldError(errors, "FacilityIds")}>
             <div className="grid gap-2 rounded-[var(--md-radius-xl)] bg-white/36 p-3 shadow-[var(--md-shadow-line)] sm:grid-cols-2">
               {reference?.facilities.map((facility) => {
                 const checked = form.facilityIds.includes(facility.id)
@@ -1941,7 +1941,7 @@ function LocationDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={isEditing ? "Edit location" : "New location"}
-      description="A location is the bin, rack or position stock physically sits in."
+      description="A bin, rack or stock position within a facility."
       steps={locationSteps}
       activeStepId={section}
       onStepChange={setSection}
@@ -1970,7 +1970,7 @@ function LocationDialog({
             <WarehouseFormField label="Location code" htmlFor="location-code" required error={firstFieldError(errors, "Code")} hint="Unique within the facility, e.g. A01-04-02.">
               <Input id="location-code" dir="ltr" value={form.code} onChange={(event) => update("code", event.target.value)} className={fieldControlClass} placeholder="A01-04-02" />
             </WarehouseFormField>
-            <WarehouseFormField label="Zone" hint="Choose a zone from the facility catalogue." error={firstFieldError(errors, "ZoneTypeCode")}>
+            <WarehouseFormField label="Zone" error={firstFieldError(errors, "ZoneTypeCode")}>
               <Select value={form.zoneTypeCode} onValueChange={(value) => update("zoneTypeCode", value)}>
                 <SelectTrigger className={fieldControlClass}><SelectValue placeholder="No zone selected" /></SelectTrigger>
                 <SelectContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
@@ -2006,7 +2006,7 @@ function LocationDialog({
             </WarehouseFormField>
           </div>
 
-          <WarehouseFormField label="Barcode" htmlFor="location-barcode" hint="Optional scannable barcode for this location." error={firstFieldError(errors, "Barcode")}>
+          <WarehouseFormField label="Barcode" htmlFor="location-barcode" hint="Optional." error={firstFieldError(errors, "Barcode")}>
             <Input id="location-barcode" dir="ltr" value={form.barcode} onChange={(event) => update("barcode", event.target.value)} className={fieldControlClass} />
           </WarehouseFormField>
 

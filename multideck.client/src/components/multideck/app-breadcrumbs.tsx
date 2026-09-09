@@ -287,6 +287,10 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
     ]
   }
 
+  if (route === "/reports/new" || route === "/reports/history" || route.startsWith("/reports/edit/")) {
+    return [{ label: "Home", route: "/" }, { label: "Reports", route: "/reports" }, { label: route === "/reports/new" ? "New report" : route === "/reports/history" ? "Run history" : "Report editor" }]
+  }
+
   const reportMatch = route.match(/^\/reports\/([^/]+)$/)
   if (reportMatch) {
     return [

@@ -1,0 +1,142 @@
+# Connecting App to central Multideck Live
+
+**Hosted database update, 9 September 2026:** the App and portal database changes are now applied, including the missing App prerequisites. See [rollout evidence and remaining setup](live-database-rollout-2026-09-09.md). Historical batch notes below describe their state before this rollout. Edge functions, private keys, Dev discovery and central Live hosting are now deployed; the Dev connection is registered. Customer grants are selected by the owner for manual testing.
+
+Each company keeps its App domain and dedicated operational Supabase project.
+Central `multideck.live` connects using that App's descriptor and a dedicated
+integration credential. This implements the product-owner clarification of
+8 September 2026; a separate Live deployment per company is no longer the target.
+
+## Endpoints implemented in this batch
+
+- `https://{company}.multideck.app/.well-known/multideck-live.json`: public,
+  opt-in descriptor with App origin, workspace slug, project reference, gateway
+  address and implemented operations. It contains no key or customer records.
+- `https://{project}.supabase.co/functions/v1/live-company-gateway`: signed,
+  server-to-server POST endpoint for `warehouse.context`, `warehouse.stock`
+  `warehouse.products`, `warehouse.product.create`, `warehouse.product.rename`
+  and `warehouse.order.submit`. Other operations return 501 until implemented.
+
+Central Live must fetch the descriptor from an approved company App URL, check
+the returned origin against that URL and pin the project/gateway before saving
+the connection. An App website URL is not itself a Supabase RPC address.
+
+## Configuration and identity
+
+After applying the warehouse prerequisites and migration
+`20260908030000_live_company_gateway.sql` and
+`20260908033000_live_company_mutations.sql`, provision reviewed records in
+`private_live_gateway.connections`, `keys` and `customer_grants`. All are disabled
+by default and inaccessible to browser roles. The grant binds a central Live
+subject and connection to one App organisation and an explicit warehouse set;
+effective warehouses also require current App customer/facility access.
+
+The connection and grant IDs must match central Live's private membership
+records. Do not create App Auth users or reuse unrelated tenant user IDs to
+make the mapping pass. Dedicated integration secrets must be independently
+generated with at least 256 bits of entropy, stored centrally in encrypted
+server-side storage and on this App as the `LIVE_GATEWAY_KEYS` Edge secret:
+an object mapping a key ID to its secret. No secret belongs in a VITE variable.
+The database key record independently supports enable/disable and expiry.
+Rotation adds a new key ID and revokes the old one after a controlled transition.
+
+Deploy the Edge Function with the checked-in `verify_jwt = false` configuration:
+the handler verifies its dedicated HMAC protocol, not a cross-project Supabase
+JWT. Configure App public build variables `VITE_LIVE_GATEWAY_ENABLED=true`,
+`VITE_MULTIDECK_TENANT_SLUG`, `VITE_MULTIDECK_TENANT_HOST`,
+`VITE_SUPABASE_PROJECT_REF` and `VITE_SUPABASE_URL`. Discovery fails the build if
+hostname, slug and backend disagree. Enable discovery only after the gateway is
+configured and verified. No deployment/configuration is performed by this commit.
+
+## Authentication and replay protection
+
+The version-1 envelope and HMAC bytes match central Live's company-gateway
+transport. The signature binds POST, project audience, fixed gateway path, key
+ID, Unix timestamp, nonce and exact body SHA-256. Requests expire after two
+minutes. Body streaming is capped at 64 KiB. The database atomically checks the
+active key, connection, grant and subject, consumes the nonce and reads scoped
+data. Successful read request records retain source key, subject, grant, operation
+and time; duplicate nonces return conflict. Secrets and raw upstream diagnostics
+are never returned. Grant/key edits take effect on the next request.
+
+## Evidence and remaining work
+
+Local tests cover public descriptor identity/secret exclusion, HMAC verification,
+wrong-project signatures, altered subjects, unsupported writes and replay routing.
+The Live SQL test executes an exact copy of the App migration on a synthetic
+WMS fixture: scoped reads succeed, wrong connection/key/subject/facility and
+revoked keys fail, and repeated nonces conflict. These are local checks, not
+hosted cross-company acceptance.
+
+Remaining: audited key/grant administration, the central Live connection screen
+and descriptor registration, routing current Live screens through these grants,
+order reads and hosted verification of product/order writes, and
+hosted two-company/revocation verification. The existing co-located Live API
+must not be described as already using this remote gateway.
+
+Dexter exception: integration secret/grant administration and central customer
+chat/watch are not exposed through Dexter. Existing operator stock/product
+domains and deterministic watches continue unchanged. Gateway writes reuse the App item triggers and order/PO lifecycle, preserving
+operator Dexter records and deterministic operational events. Central Live chat
+and watches remain explicitly unsupported; the gateway does not expose Dexter
+or physical release, picking, receiving or dispatch. The hosted Dexter lifecycle
+is not verified by the local synthetic database test.
+
+## Remote mutation batch
+
+Product creation/renaming and inbound/outbound/PO submission require their own
+App grant flags, all disabled by default. Requests carry a stable `requestId`
+inside `input`, separately from the signed transport nonce. Retries recheck
+current access and return the original result only for the exact same payload,
+grant and operational organisation. Product rename requires `updatedAt`.
+Order input contains `facilityId`, `requestId`, `kind` and `payload` (reference,
+requestedDate, instructions, supplierName, currency and item lines). The gateway
+uses the App's real order creation and PO issue routines; it does not move stock.
+An immutable private journal records external subject, company, organisation,
+request, operation, before value and result within the same transaction.
+
+Local database tests execute actual mutation SQL: create, retry, rename, stale
+rename rejection, inbound order, issued PO, duplicate-line denial, cross-subject
+and cross-warehouse denial, permission revocation, audit immutability and browser
+RPC denial. HTTP tests check signed mutation dispatch. No hosted configuration,
+customer permission, deployment or Live screen routing is enabled by this batch.
+
+## Grant administration and routed portal batch
+
+App customer records now include **Multideck Live access**. The dedicated
+`live-grant-admin/{organisationId}` Edge endpoint verifies the caller with this
+App project's Auth, resolves active internal warehouse/user permissions, checks
+assigned facilities, and refuses writes in Training. It fails closed if the
+internal actor or Training configuration prerequisites are unavailable. Its
+`verify_jwt=false` setting delegates authentication to this explicit Auth check;
+it does not accept an unsigned or cross-project identity.
+
+Apply migrations `20260908040000_live_company_order_reads.sql` and
+`20260908043000_live_grant_administration.sql` after the preceding gateway/WMS
+migrations. Configure a dedicated key in `LIVE_GATEWAY_KEYS` before enabling a
+grant. In the customer's App record, enter the connection reference from Live,
+Live user reference, key identifier, explicit facilities and separate product,
+general order and purchase order permissions. Grants default disabled. Saving
+creates the matching connection/key records if absent, and never re-enables a
+previously revoked key. Grant identity cannot be reassigned; edits require the
+current version and generate immutable before/after audit. Disabling a grant
+still works when its integration key was removed or revoked.
+
+Live's **Company customer access** section verifies an App grant before enabling
+its local assignment. It binds a registered connection, existing full-customer
+membership, exact Auth subject and App grant reference. Central warehouse mode
+routes stock, products, orders, order details and supported writes through the
+signed gateway. Browser selections only narrow verified private assignments.
+Grant management is never exposed through the customer integration key.
+
+Local evidence: actual SQL for grant edits/revocation and order projections;
+HTTP checks for App Auth/permissions/Training denials; Live signed routing and
+revoked/foreign access denials; customer screen company switching; browser grant
+and order forms using synthetic APIs. The App grant administration and central
+customer Dexter chat/watch exception remains explicit: these access controls are
+not a Dexter capability. Existing operational adapters are reused, but hosted
+Dexter event lifecycle and two-company deployment acceptance remain unverified.
+
+No migrations, Edge secrets, customer grants or deployments were applied to a
+hosted project. App main still requires its missing warehouse permission/WMS and
+Training schema prerequisites before this integration can run there.

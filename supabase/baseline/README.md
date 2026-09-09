@@ -49,3 +49,25 @@ same change.
 Supabase-managed Auth and Storage schemas are not part of this dump. Configure Auth as invite-only,
 apply the reviewed Storage bucket policies, deploy every Edge Function, set tenant-specific secrets,
 and run the cross-tenant denial checklist before considering a tenant live.
+
+## Reports provisioning
+
+The current snapshot predates the Reports workspace. Apply the later migrations in
+chronological order, including `20260907220000_reporting_workspace.sql`,
+`20260907223500_reporting_dexter.sql`, `20260907225000_reporting_scope_and_preview.sql`,
+`20260907231000_reporting_restore_and_links.sql` and
+`20260907233000_reporting_action_schema.sql`. They install a private
+`report_api` schema, authorised RPCs, durable snapshots and schedules, and Dexter
+read/save/watch capabilities. Do not copy these into the public-only snapshot:
+new tenants also need the preceding finance, booking, CRM and Dexter migrations.
+
+Deploy `report-export` and the matching `agent-dexter` function. PDF exports reuse
+the tenant's existing HTTPS Carbone configuration and credentials. CSV and XLSX
+exports do not depend on Carbone. Enable `pg_cron` before applying the reporting
+migration; verify the `multideck-report-snapshots` job exists and runs successfully.
+Schedules create private run-history snapshots, without email delivery.
+
+Run `supabase/tests/reporting-workspace-db.test.mjs` and
+`supabase/tests/reporting-export.test.mjs`, then verify the authenticated builder,
+exports and a scheduled snapshot against the intended tenant project. See
+`docs/verification/reporting-workspace-2026-09-07.md` for evidence and limits.
