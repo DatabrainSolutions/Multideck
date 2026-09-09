@@ -114,11 +114,17 @@ test('the real page uses snapshot-only panels for every submitted content tab an
   const state=selectVersion(makeWorkspace([version]),null,{terms:'CURRENT DRAFT'},[],null)
   for(const tab of ['overview','details','charges']) {
     const html=renderSelectedPanel(state,tab)
-    assert.match(html,/Submitted version/)
+    assert.match(html,tab==='overview' ? /data-shared-quote-overview/ : /Submitted version/)
     assert.doesNotMatch(html,/Draft panel|CURRENT DRAFT|<input|<select|<textarea/)
   }
   assert.match(renderSelectedPanel(state,'details'),/Snapshot cargo/)
   assert.match(renderSelectedPanel(state,'charges'),/Snapshot charge/)
+  for(const variant of ['cargowise','ai','standard']) {
+    const html=renderSelectedPanel(state,'overview',variant)
+    assert.match(html,/data-shared-quote-overview/)
+    assert.match(html,/Snapshot cargo/)
+    assert.doesNotMatch(html,/CURRENT DRAFT|CURRENT INTELLIGENCE|CURRENT CUSTOMER/)
+  }
   version.CusQuoteVersion_SnapshotJSON=null
   const unreadable=selectVersion(makeWorkspace([version]),null,{terms:'CURRENT DRAFT'},[],null)
   for(const tab of ['overview','details','charges']) {

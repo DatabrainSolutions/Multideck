@@ -82,6 +82,7 @@ export type AuditWorkspaceProps = {
   records?: readonly QuoteAuditRecord[]
   title?: string
   description?: string
+  summaryDescription?: string
   defaultView?: QuoteAuditView
   view?: QuoteAuditView
   onViewChange?: (view: QuoteAuditView) => void
@@ -584,6 +585,7 @@ export function AuditWorkspace({
   records = QUOTE_AUDIT_SAMPLE_DATA,
   title = "Quote audit",
   description = "Review the operational summary or inspect every recorded change.",
+  summaryDescription = "A clear operational history of changes, decisions, and current actions.",
   defaultView = "summary",
   view,
   onViewChange,
@@ -757,7 +759,7 @@ export function AuditWorkspace({
         <AuditTimeline
           events={summaryEvents}
           title={t("Audit summary")}
-          description={t("A clear operational history of changes, decisions, and current actions.")}
+          description={t(summaryDescription)}
         />
       ) : (
         <DetailedAuditTable records={detailedRecords} />

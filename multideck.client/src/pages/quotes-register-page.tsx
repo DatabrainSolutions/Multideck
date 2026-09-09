@@ -269,9 +269,6 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
             <p className="font-medium text-[var(--md-text)]">
               {t("Quote register")} · <span data-i18n-skip dir="ltr">{new Intl.NumberFormat(language).format(quoteTotal)}</span> {t("quotes")}
             </p>
-            <p className="text-[var(--md-subtle)]">
-              {t("Search, review and open every customer quote from one place.")}
-            </p>
           </div>
         </div>
       </header>

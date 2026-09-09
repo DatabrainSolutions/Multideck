@@ -284,7 +284,7 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
       appliedMarkupPct: markup,
       defaultMarkupPct: markup,
     })))
-    toast.success(t("Default markup applied"), { description: t("Every sell line remains editable.") })
+    toast.success(t("Default markup applied"))
   }
 
   function payload(): QuoteSavePayload {
@@ -420,7 +420,6 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
                 <h1 className="truncate text-[24px] font-medium text-[var(--md-ink)]">{isNew ? t("New quote") : record.reference}</h1>
                 <StatusPill tone={lifecycleTone(record.lifecycle)}>{t(record.lifecycle.replaceAll("_", " "))}</StatusPill>
               </div>
-              <p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("One commercial record from request through accepted booking.")}</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
@@ -455,7 +454,7 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
               <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
                 <section>
                   <h2 className="text-[16px] font-medium text-[var(--md-ink)]">{t("Request and movement")}</h2>
-                  <p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Capture only what is needed to price the movement. Booking-only details can follow after acceptance.")}</p>
+                  <p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Booking details can follow after acceptance.")}</p>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     <Field label="Lead or account">
                       <Select value={record.sourceId ? `${record.sourceType}:${record.sourceId}` : undefined} onValueChange={selectSource} disabled={!isNew || readOnly}>
@@ -533,7 +532,7 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
               <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <h2 className="text-[16px] font-medium text-[var(--md-ink)]">{t("Commercial calculation")}</h2>
-                  <p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("The default markup is a starting point. Every sell line remains editable and overrides are retained.")}</p>
+                  <p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Sell lines are editable; markup overrides are retained.")}</p>
                 </div>
                 <div className="flex flex-wrap items-end gap-2">
                   <Field label="Default markup %"><Input type="number" dir="ltr" value={record.defaultMarkupPct} onChange={(event) => updateRecord("defaultMarkupPct", Number(event.target.value))} disabled={readOnly} className="h-9 w-28 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-end shadow-[var(--md-shadow-line)]" /></Field>
@@ -558,7 +557,7 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
           <TabsContent value="documents" className="mt-3">
             <Surface padding="none" className="rounded-[var(--md-radius-xl)] p-4 sm:p-5">
               <div className="flex items-start justify-between gap-3">
-                <div><h2 className="text-[16px] font-medium text-[var(--md-ink)]">{t("Issued quote versions")}</h2><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Each generated customer document keeps the exact calculation and route snapshot used at issue.")}</p></div>
+                <div><h2 className="text-[16px] font-medium text-[var(--md-ink)]">{t("Issued quote versions")}</h2><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Each version keeps its calculation and route at issue.")}</p></div>
               </div>
               <div className="mt-4 divide-y divide-[color-mix(in_srgb,var(--md-ink)_7%,transparent)]">
                 {workspace?.versions.length ? workspace.versions.map((version) => (

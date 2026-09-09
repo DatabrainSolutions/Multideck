@@ -165,7 +165,7 @@ test("every send-blocking Incoterm and Sea FCL container field is visible in quo
   assert.match(details, /\{isSeaContainerised \? \([\s\S]{0,500}aria-label=\{t\("Container requests"\)\}/u)
   assert.match(details, /containerRequests\.map\(\(request, index\)/u)
   assert.match(details, /label=\{index === 0 \? "Qty"[\s\S]{0,900}label=\{index === 0 \? "Container type"/u)
-  assert.match(details, /xl:grid-cols-\[minmax\(7rem,0\.5fr\)[\s\S]{0,220}minmax\(10rem,0\.8fr\)_2rem_auto\]/u)
+  assert.match(details, /xl:grid-cols-\[minmax\(7rem,0\.5fr\)[\s\S]{0,220}minmax\(10rem,0\.8fr\)_2rem_7\.5rem\]/u)
   assert.match(details, /onClick=\{addContainerRequest\}[\s\S]{0,250}Add container/u)
   assert.match(details, /onClick=\{\(\) => removeContainerRequest\(index\)\}/u)
   assert.match(page, /function quoteContainerSummary\(requests: QuoteContainerRequest\[\]\)/u)

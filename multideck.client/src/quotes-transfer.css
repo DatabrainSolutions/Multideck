@@ -33,7 +33,7 @@
 
   @container quote-workspace (min-width: 720px) {
     .md-quote-record-header {
-      flex-flow: row nowrap;
+      flex-flow: row wrap;
       align-items: center;
       justify-content: space-between;
     }
@@ -41,6 +41,14 @@
     .md-quote-record-identity,
     .md-quote-record-actions {
       width: auto;
+      max-width: 100%;
+    }
+
+    .md-quote-record-identity {
+      flex: 1 1 auto;
+    }
+
+    .md-quote-record-actions {
       flex-shrink: 0;
     }
 

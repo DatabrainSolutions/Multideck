@@ -60,11 +60,15 @@ export async function attemptRevisionWithUnavailableSnapshot() {
 // Exercise the page's real submitted-panel gate as well as its state selector.
 const panelStart=source.indexOf('  function renderActiveWorkspacePanel() {')
 const panelBodyStart=source.indexOf('\n',panelStart)
-const panelEnd=source.indexOf('    if (activeTab === "overview")',panelBodyStart)
+const overviewStart=source.indexOf('    if (activeTab === "overview")',panelBodyStart)
+const panelEnd=source.indexOf('    if (activeTab === "details")',overviewStart)
 assert.ok(panelStart>=0 && panelEnd>panelBodyStart)
 const panelModule={exports:{}}
-const panelCode=transformSync(`export function renderSelectedPanel(state,activeTab){
+const panelCode=transformSync(`export function renderSelectedPanel(state,activeTab,variant='cargowise'){
  const {viewingSubmittedVersion,viewedVersionWorkspace,presentedVersion,presentedQuote}=state;
+ const activeQuote=presentedQuote;
+ const intelligence={summary:'CURRENT INTELLIGENCE'};
+ const intelligenceUnavailable=true;
  const workspace={quote:{reference:'JQ20020'}};
  ${source.slice(panelBodyStart,panelEnd)}
  return 'Draft panel';
@@ -80,9 +84,17 @@ const lockedDetails = props => {
  assert.equal(props.onQuotePatch({customer:'MUTATION'}),undefined)
  return React.createElement('section',null,'Submitted version ',JSON.stringify(props.quote))
 }
-new Function('require','module','exports','QuoteSubmittedDetails','QuoteDetailsPanelV2','Surface','t',panelCode)(
- require,panelModule,panelModule.exports,QuoteSubmittedDetails,lockedDetails,props=>React.createElement('section',props),value=>value)
-export const renderSelectedPanel=(state,tab)=>renderToStaticMarkup(panelModule.exports.renderSelectedPanel(state,tab))
+const sharedOverview = props => {
+ if ('intelligence' in props) {
+  assert.equal(props.intelligence,null)
+  assert.equal(props.intelligenceUnavailable,false)
+  assert.equal(props.savedVersion,true)
+ }
+ return React.createElement('section',{'data-shared-quote-overview':true},'Quote overview ',JSON.stringify(props.quote))
+}
+new Function('require','module','exports','QuoteSubmittedDetails','QuoteDetailsPanelV2','QuoteCargoWiseOverviewPanel','QuoteAiOverviewPanel','QuoteOverviewPanel','Surface','t',panelCode)(
+ require,panelModule,panelModule.exports,QuoteSubmittedDetails,lockedDetails,sharedOverview,sharedOverview,sharedOverview,props=>React.createElement('section',props),value=>value)
+export const renderSelectedPanel=(state,tab,variant)=>renderToStaticMarkup(panelModule.exports.renderSelectedPanel(state,tab,variant))
 
 export const makeVersion = (number, quote = {}) => ({ CusQuoteVersion_ID:`version-${number}`,CusQuoteVersion_Number:number,
   CusQuoteVersion_StatusCode:'sent',CusQuoteVersion_IsSubmitted:true,CusQuoteVersion_IsCurrent:number===2,

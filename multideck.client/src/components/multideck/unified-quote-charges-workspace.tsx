@@ -1108,7 +1108,6 @@ export function UnifiedQuoteChargesWorkspace({
           <div className="mx-auto grid max-w-sm justify-items-center gap-2 px-4">
             <CircleGauge className="size-5 text-[var(--md-subtle)]" strokeWidth={1.25} aria-hidden="true" />
             <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("No charge lines yet")}</p>
-            <p className="text-[10.5px] leading-4 text-[var(--md-text)]">{t("Add the first cost and sell line for this quote.")}</p>
             {!readOnly ? <Button type="button" variant="outline" size="sm" onClick={addRow}><Plus data-icon="inline-start" />{t("Add charge")}</Button> : null}
           </div>
         )}
@@ -1141,7 +1140,6 @@ export function UnifiedQuoteChargesWorkspace({
       <Surface padding="none" className="rounded-[var(--md-radius-2xl)] p-3">
           <SectionHeader
             title={t("Selected line details")}
-            meta={selectedRow ? t("Edit the line and review its base-currency result.") : t("Select a charge line to inspect it.")}
           />
           {selectedRow ? (
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -1178,7 +1176,7 @@ export function UnifiedQuoteChargesWorkspace({
             </div>
           ) : (
             <div className="mt-3 grid min-h-28 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-4 text-center shadow-[var(--md-shadow-line)]">
-              <p className="text-[11px] text-[var(--md-text)]">{t("Choose a row above to see supplier, customer, margin and base values.")}</p>
+              <p className="text-[11px] text-[var(--md-text)]">{t("Select a charge to view its details.")}</p>
             </div>
           )}
       </Surface>

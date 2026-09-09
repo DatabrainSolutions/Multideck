@@ -11,6 +11,7 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import {
+  ArrowLeft,
   AiEditing,
   AiBeautify,
   BrainCircuit,
@@ -49,6 +50,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from "@/components/ui/avatar"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -1438,18 +1440,20 @@ function QuoteOverviewSignals({
   quote,
   intelligence,
   intelligenceUnavailable = false,
+  savedVersion = false,
   compact = false,
 }: {
   quote: QuoteRecord
   intelligence: QuoteIntelligenceSnapshot | null
   intelligenceUnavailable?: boolean
+  savedVersion?: boolean
   compact?: boolean
 }) {
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const temperature = intelligence?.metrics.aiTemperature.value ?? null
   const successScore = temperature?.score ?? null
-  const temperatureState = temperature?.label ?? (intelligenceUnavailable ? "Unavailable" : "Building baseline")
+  const temperatureState = temperature?.label ?? (savedVersion ? "Not recorded" : intelligenceUnavailable ? "Unavailable" : "Building baseline")
   const temperatureTone: StatusTone = temperature?.label === "Hot" ? "red" : temperature?.label === "Warm" ? "amber" : temperature?.label === "Cold" ? "blue" : "neutral"
   const needleAngle = -90 + ((successScore ?? 0) / 100) * 180
   const quoteMetadata = [
@@ -1461,7 +1465,7 @@ function QuoteOverviewSignals({
   const temperatureEvidence = intelligence?.metrics.aiTemperature
   const temperatureEvidenceDetail = intelligence && temperatureEvidence
     ? `${t(quoteIntelligenceCohortLabel(temperatureEvidence.cohort))} · ${temperatureEvidence.evidenceCount} ${t("evidence records")} · ${intelligence.algorithmVersion} · ${t("Refreshed")} ${intelligence.calculatedAt ? new Date(intelligence.calculatedAt).toLocaleString() : t("Not yet")}`
-    : t(intelligenceUnavailable ? "Intelligence temporarily unavailable" : "Building baseline")
+    : t(savedVersion ? "Not recorded in this version" : intelligenceUnavailable ? "Intelligence temporarily unavailable" : "Building baseline")
 
   return (
     <div className={cn("md-quote-signals grid min-w-0 gap-2", compact ? "md-quote-signals--compact" : "md-quote-signals--standard")}>
@@ -1487,7 +1491,7 @@ function QuoteOverviewSignals({
           <div className="min-w-0">
             <p className="flex items-center gap-1 text-[11px] font-medium uppercase leading-3 tracking-[0.02em] text-white/68"><Radar className="size-3 text-white/85" strokeWidth={1.5} />{t("AI temperature")}</p>
             <p className="mt-0.5 text-[13px] font-medium text-white">
-              {successScore === null ? t(intelligenceUnavailable ? "Intelligence temporarily unavailable" : "Building baseline") : `${successScore}% ${t("commercial momentum")}`}
+              {successScore === null ? t(savedVersion ? "Not recorded in this version" : intelligenceUnavailable ? "Intelligence temporarily unavailable" : "Building baseline") : `${successScore}% ${t("commercial momentum")}`}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -1543,19 +1547,19 @@ function QuoteOverviewSignals({
   )
 }
 
-function ClientPricingIntelligence({ intelligence, unavailable = false }: { intelligence: QuoteIntelligenceSnapshot | null; unavailable?: boolean }) {
+function ClientPricingIntelligence({ intelligence, unavailable = false, savedVersion = false }: { intelligence: QuoteIntelligenceSnapshot | null; unavailable?: boolean; savedVersion?: boolean }) {
   const { t, language } = useLanguage()
   if (!intelligence) {
     const labels = ["Historical win rate", "Won price band", "Suggested pitch", "AI win likelihood", "Price confidence", "Margin headroom"]
     return (
-      <div className="grid h-full gap-1.5 sm:grid-cols-3" aria-label={t(unavailable ? "Intelligence temporarily unavailable" : "Loading quote intelligence")} aria-busy={!unavailable} aria-live="polite">
+      <div className="grid h-full gap-1.5 sm:grid-cols-3" aria-label={t(savedVersion ? "Intelligence not recorded in this version" : unavailable ? "Intelligence temporarily unavailable" : "Loading quote intelligence")} aria-busy={!unavailable && !savedVersion} aria-live="polite">
         {labels.map((label, index) => (
           <div key={index} className="relative min-h-[96px] overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-accent-abyss-deep)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12)]">
-            {unavailable ? (
+            {unavailable || savedVersion ? (
               <div className="relative flex h-full flex-col justify-between text-white">
                 <p className="text-[9.5px] font-medium uppercase tracking-[0.02em] text-white/65">{t(label)}</p>
                 <p className="text-[24px] font-medium">–</p>
-                <p className="text-[9.5px] text-white/72">{t("Try again after the next quote update")}</p>
+                <p className="text-[9.5px] text-white/72">{t(savedVersion ? "Not recorded in this version" : "Try again after the next quote update")}</p>
               </div>
             ) : (
               <>
@@ -1662,7 +1666,7 @@ function ClientPricingIntelligence({ intelligence, unavailable = false }: { inte
   )
 }
 
-function RecentQuotesSummary({ quote, intelligence, unavailable = false }: { quote: QuoteRecord; intelligence: QuoteIntelligenceSnapshot | null; unavailable?: boolean }) {
+function RecentQuotesSummary({ quote, intelligence, unavailable = false, savedVersion = false }: { quote: QuoteRecord; intelligence: QuoteIntelligenceSnapshot | null; unavailable?: boolean; savedVersion?: boolean }) {
   const { t, language } = useLanguage()
   const rows = intelligence?.recentQuotes ?? []
   const currency = intelligence?.currency || quote.currency || "GBP"
@@ -1685,7 +1689,7 @@ function RecentQuotesSummary({ quote, intelligence, unavailable = false }: { quo
         <div className="min-w-0">
           <p className="text-[11px] font-medium text-[var(--md-ink)]">{t("Last five quotes")}</p>
           <p className="truncate text-[9.5px] text-[var(--md-subtle)]">
-            {intelligence ? t(quoteIntelligenceCohortLabel(intelligence.metrics.historicalWinRate.cohort)) : t(unavailable ? "Intelligence temporarily unavailable" : "Loading real quote history")}
+            {intelligence ? t(quoteIntelligenceCohortLabel(intelligence.metrics.historicalWinRate.cohort)) : t(savedVersion ? "Saved quote version" : unavailable ? "Intelligence temporarily unavailable" : "Loading real quote history")}
           </p>
         </div>
         {intelligence ? <StatusPill tone={intelligence.state === "ready" ? "green" : "amber"}>{t(snapshotLabel)}</StatusPill> : null}
@@ -1694,7 +1698,7 @@ function RecentQuotesSummary({ quote, intelligence, unavailable = false }: { quo
         <DataTable ariaLabel="Recent quotes" columns={columns} rows={rows} getRowKey={(row) => row.id} minimumWidth={630} showToolbar={false} showColumnManager={false} className="h-[calc(100%-2.5rem)] rounded-none bg-white shadow-none dark:bg-[var(--md-surface)]" tableClassName="text-[9.5px]" />
       ) : (
         <div className="grid min-h-36 place-items-center px-4 text-center">
-          <div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t(unavailable ? "Intelligence temporarily unavailable" : "No comparable quotes yet")}</p><p className="mt-1 text-[10.5px] text-[var(--md-text)]">{t(unavailable ? "The saved quote is still available. Intelligence will retry after the next meaningful update." : "Real quote outcomes will appear here as the workspace builds history.")}</p></div>
+          <div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t(savedVersion ? "History was not recorded in this version" : unavailable ? "Intelligence temporarily unavailable" : "No comparable quotes yet")}</p><p className="mt-1 text-[10.5px] text-[var(--md-text)]">{t(savedVersion ? "This overview shows the information saved when the quote was submitted." : unavailable ? "Your quote is saved. Intelligence will retry after the next quote update." : "Comparable quotes will appear as history builds.")}</p></div>
         </div>
       )}
     </Surface>
@@ -1743,7 +1747,7 @@ function QuoteSetupPanel({
 
       <div className="grid gap-2 xl:grid-cols-[1fr_1fr_300px]">
         <Surface padding="xs" className="rounded-[var(--md-radius-md)]">
-          <SectionHeader title="Routing and service" meta="Operational fields carried forward from the spot quote." />
+          <SectionHeader title="Routing and service" />
           <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
             <QuoteMultiSelectField label="Transport" value={quote.mode} editable={editable} invalid={validationAttempted && !quote.mode.trim()} onChange={(value) => onQuoteChange("mode", value)} />
             <QuoteField label="Container" value={quote.container} editable={editable} onChange={(value) => onQuoteChange("container", value)} />
@@ -1759,7 +1763,7 @@ function QuoteSetupPanel({
         </Surface>
 
         <Surface padding="xs" className="rounded-[var(--md-radius-md)]">
-          <SectionHeader title="Goods and references" meta="Shipment definition used to protect the quote terms." />
+          <SectionHeader title="Goods and references" />
           <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
             <QuoteField label="Customer" value={quote.customer} editable={editable} onChange={(value) => onQuoteChange("customer", value)} />
             <QuoteField label="Quote type" value={quote.quoteType ?? "Local client"} editable={editable} onChange={(value) => onQuoteChange("quoteType", value)} />
@@ -1776,7 +1780,7 @@ function QuoteSetupPanel({
         </Surface>
 
         <Surface padding="xs" className="rounded-[var(--md-radius-md)]">
-          <SectionHeader title="Carrier options" meta="Shortlist before rate confirmation." />
+          <SectionHeader title="Carrier options" />
           <div className="mt-2 divide-y divide-[rgba(90,103,100,0.12)]">
             {carriers.map((carrier) => (
               <div key={carrier.code} className="grid grid-cols-[44px_minmax(0,1fr)_44px] gap-2 py-2 first:pt-0 last:pb-0">
@@ -2172,7 +2176,7 @@ function QuoteChargesPanel({
 
       <div className="grid gap-2 xl:grid-cols-2">
         <Surface padding="sm" className="rounded-[var(--md-radius-xl)]">
-          <SectionHeader title={t("Selected charge · Cost")} meta={t("Supplier-side values for the highlighted line.")} />
+          <SectionHeader title={t("Selected charge · Cost")} />
           <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
             <QuoteField label="Charge code" value="ECCLR" />
             <QuoteField label="Department" value="CES - Clearance Export Sea" />
@@ -2181,7 +2185,7 @@ function QuoteChargesPanel({
           </div>
         </Surface>
         <Surface padding="sm" className="rounded-[var(--md-radius-xl)]">
-          <SectionHeader title={t("Selected charge · Revenue")} meta={t("Customer-side values and commercial check.")} />
+          <SectionHeader title={t("Selected charge · Revenue")} />
           <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
             <QuoteField label="Charge type" value="MJA" />
             <QuoteField label="Chargeable" value="0.000 M3" />
@@ -2463,7 +2467,7 @@ function QuoteOverviewPanel({ quote }: { quote: QuoteRecord }) {
 
       <div className="grid gap-1.5 xl:grid-cols-[1.1fr_1fr_0.85fr]">
         <Surface padding="xs" className="rounded-[var(--md-radius-md)]">
-          <SectionHeader title={<span className="inline-flex items-center gap-1.5"><ChartAnalysis className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />{t("AI quote command")}</span>} meta="Fast read on commercial readiness." />
+          <SectionHeader title={<span className="inline-flex items-center gap-1.5"><ChartAnalysis className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />{t("AI quote command")}</span>} />
           <div className="mt-2 grid gap-1.5">
             <InsightRow icon={BrainCircuit} title="Recommended next action" detail="Select carrier or confirm freight cost before approval." tone="amber" />
             <InsightRow icon={Gauge} title="Margin guardrail" detail={`Profit ratio ${profitRatio.toFixed(1)} percent against 15 percent target.`} tone={profitRatio >= 15 ? "green" : "amber"} />
@@ -2473,7 +2477,7 @@ function QuoteOverviewPanel({ quote }: { quote: QuoteRecord }) {
         </Surface>
 
         <Surface padding="xs" className="rounded-[var(--md-radius-md)]">
-          <SectionHeader title="Route and service" meta="Operational shape of the spot quote." />
+          <SectionHeader title="Route and service" />
           <div className="mt-2 grid gap-1.5">
             <DenseFact label="Origin" value={formatLocation(quote.origin, "Bristol")} detail="United Kingdom" />
             <DenseFact label="Via" value={`${quote.via} - Singapore`} detail="Transhipment" />
@@ -2484,7 +2488,7 @@ function QuoteOverviewPanel({ quote }: { quote: QuoteRecord }) {
         </Surface>
 
         <Surface padding="xs" className="rounded-[var(--md-radius-md)]">
-          <SectionHeader title="Commercial summary" meta="Totals only. Line detail lives in Quote charges." />
+          <SectionHeader title="Commercial summary" />
           <div className="mt-2 grid gap-1.5">
             <DenseFact label="Cost total" value={money(quote.cost)} detail="Estimated local cost" />
             <DenseFact label="Revenue" value={money(quote.revenue)} detail="Customer sell total" tone="green" />
@@ -2495,7 +2499,7 @@ function QuoteOverviewPanel({ quote }: { quote: QuoteRecord }) {
 
       <div className="grid gap-1.5 xl:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
         <Surface padding="xs" className="rounded-[var(--md-radius-md)]">
-          <SectionHeader title="Control data" meta="Audit and conversion fields." />
+          <SectionHeader title="Control data" />
           <div className="mt-2 grid gap-1.5">
             <DenseFact label="Type" value={quote.quoteType ?? "Local client"} detail={quote.source} />
             <DenseFact label="Status" value={quote.jobStatus ?? quote.status} detail={quote.revisionReason} />
@@ -2506,7 +2510,7 @@ function QuoteOverviewPanel({ quote }: { quote: QuoteRecord }) {
         </Surface>
 
         <Surface padding="xs" className="rounded-[var(--md-radius-md)]">
-          <SectionHeader title="Conversion checklist" meta="What needs to be true before booking." />
+          <SectionHeader title="Conversion checklist" />
           <div className="mt-2 grid gap-1.5 lg:grid-cols-2">
             {[
               [CheckCircle2, "Client and consignor", "HarbourWorks confirmed", "green"],
@@ -2559,7 +2563,7 @@ function QuoteAiOverviewPanel({ quote }: { quote: QuoteRecord }) {
         </Surface>
 
         <Surface padding="xs" className="rounded-[var(--md-radius-md)]">
-          <SectionHeader title="Commercial totals" meta="Overview only." />
+          <SectionHeader title="Commercial totals" />
           <div className="mt-2 grid gap-1.5">
             <DenseFact label="Cost" value={money(quote.cost)} detail="Estimated local cost" />
             <DenseFact label="Revenue" value={money(quote.revenue)} detail="Customer sell total" tone="green" />
@@ -2570,7 +2574,7 @@ function QuoteAiOverviewPanel({ quote }: { quote: QuoteRecord }) {
 
       <div className="grid gap-1.5 xl:grid-cols-[0.95fr_1.05fr_1fr]">
         <Surface padding="xs" className="rounded-[var(--md-radius-md)]">
-          <SectionHeader title={<span className="inline-flex items-center gap-1.5"><BrainCircuit className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />{t("AI checks")}</span>} meta="Signal, not a price build-up." />
+          <SectionHeader title={<span className="inline-flex items-center gap-1.5"><BrainCircuit className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />{t("AI checks")}</span>} />
           <div className="mt-2 grid gap-1.5">
             <InsightRow icon={Gauge} title="Margin guardrail" detail={`Profit ratio ${profitRatio.toFixed(1)} percent against 15 percent target.`} tone={profitRatio >= 15 ? "green" : "amber"} />
             <InsightRow icon={TriangleAlert} title="Issue blockers" detail="Consignee, carrier, and creditor are incomplete." tone="amber" />
@@ -2579,7 +2583,7 @@ function QuoteAiOverviewPanel({ quote }: { quote: QuoteRecord }) {
         </Surface>
 
         <Surface padding="xs" className="rounded-[var(--md-radius-md)]">
-          <SectionHeader title="Operational snapshot" meta="Freight context for staff review." />
+          <SectionHeader title="Operational snapshot" />
           <div className="mt-2 grid gap-1.5 md:grid-cols-2">
             <DenseFact label="Origin" value={formatLocation(quote.origin, "Bristol")} detail="United Kingdom" />
             <DenseFact label="Destination" value={formatLocation(quote.destination, "Kobe")} detail="Japan" />
@@ -2589,7 +2593,7 @@ function QuoteAiOverviewPanel({ quote }: { quote: QuoteRecord }) {
         </Surface>
 
         <Surface padding="xs" className="rounded-[var(--md-radius-md)]">
-          <SectionHeader title="Work queue" meta="Human actions before booking." />
+          <SectionHeader title="Work queue" />
           <div className="mt-2 grid gap-1.5">
             <InsightRow icon={ListChecks} title="Confirm carrier" detail="No carrier selected on the quote." tone="amber" />
             <InsightRow icon={ListChecks} title="Add consignee" detail="Customer issue should be blocked until set." tone="amber" />
@@ -2957,7 +2961,7 @@ function CargoWiseGroup({
   )
 }
 
-function QuoteCargoWiseOverviewPanel({ quote, intelligence, intelligenceUnavailable = false }: { quote: QuoteRecord; intelligence: QuoteIntelligenceSnapshot | null; intelligenceUnavailable?: boolean }) {
+function QuoteCargoWiseOverviewPanel({ quote, intelligence, intelligenceUnavailable = false, savedVersion = false }: { quote: QuoteRecord; intelligence: QuoteIntelligenceSnapshot | null; intelligenceUnavailable?: boolean; savedVersion?: boolean }) {
   const { t } = useLanguage()
   const currency = quote.currency || ""
   const displayMoney = (value: number) => currency ? money(value, currency) : value.toFixed(2)
@@ -2965,7 +2969,7 @@ function QuoteCargoWiseOverviewPanel({ quote, intelligence, intelligenceUnavaila
 
   return (
     <div className="md-quote-cargowise-overview grid gap-2">
-      <QuoteOverviewSignals quote={quote} intelligence={intelligence} intelligenceUnavailable={intelligenceUnavailable} compact />
+      <QuoteOverviewSignals quote={quote} intelligence={intelligence} intelligenceUnavailable={intelligenceUnavailable} savedVersion={savedVersion} compact />
 
       <div className="md-quote-cargowise-primary-grid grid min-w-0 gap-2">
         <CargoWiseGroup title="Quote header" compact>
@@ -3005,9 +3009,8 @@ function QuoteCargoWiseOverviewPanel({ quote, intelligence, intelligenceUnavaila
       </div>
 
       <div className="md-quote-cargowise-intelligence-grid grid min-w-0 gap-2">
-        <span className="sr-only">{t("Pricing and win-rate insights will appear here when this quote has real customer and rate history.")}</span>
-        <ClientPricingIntelligence intelligence={intelligence} unavailable={intelligenceUnavailable} />
-        <RecentQuotesSummary quote={quote} intelligence={intelligence} unavailable={intelligenceUnavailable} />
+        <ClientPricingIntelligence intelligence={intelligence} unavailable={intelligenceUnavailable} savedVersion={savedVersion} />
+        <RecentQuotesSummary quote={quote} intelligence={intelligence} unavailable={intelligenceUnavailable} savedVersion={savedVersion} />
       </div>
     </div>
   )
@@ -4583,24 +4586,31 @@ function QuoteDetailsPanelV2({
   )
   const incotermNamedPlaceLabel = incotermDefinition?.namedLocationLabel ?? "Named place"
   return (
-    <div dir={direction} className="@container/quote-details grid items-start gap-2">
+    <div dir={direction} data-quote-readonly={!editable || undefined} className={cn(
+      "@container/quote-details grid items-start gap-2",
+      !editable && "[&_input:disabled]:text-[var(--md-ink)] [&_input:disabled]:opacity-100 [&_textarea:disabled]:text-[var(--md-ink)] [&_textarea:disabled]:opacity-100 [&_[data-slot=select-trigger]:disabled]:text-[var(--md-ink)] [&_[data-slot=select-trigger]:disabled]:opacity-100 [&_button[aria-haspopup=dialog]:disabled]:text-[var(--md-ink)] [&_button[aria-haspopup=dialog]:disabled]:opacity-100",
+    )}>
       <div role="status" className={fieldPolicy.routingModeMismatch ? "text-[12px] leading-5 text-[var(--md-text)]" : "sr-only"}>
         {fieldPolicy.routingModeMismatch ? <p>{t("Mode review")}: {t("No planned routing leg uses the overall mode.")} {t("Check Mode in Job data and the planned routing legs. Nothing is changed automatically.")}</p> : null}
       </div>
-      <CompactSectionShell title="Job data" meta="Core quote controls">
-        <CompactFieldRow>
-          <QuoteCompactSelect label="Source" value={quote.source ?? ""} options={["NEW - New Shipper", "REN - Renewal", "REP - Repeat lane", "TND - Tender"]} width="medium" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.source?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("source", value)} />
-          <div ref={overallModeTriggerRef} tabIndex={-1}><QuoteCompactSelect label="Mode" value={quote.mode} options={modes} width="short" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.mode.trim()} disabled={!editable} dataOptions onChange={requestOverallMode} /></div>
-          <QuoteCompactSelect label="Shipment type" value={shipmentTypeValue(quote.mode, quote.shipmentType, shipmentTypeChoicesForMode(quote.mode, shipmentTypes))} options={shipmentTypeChoicesForMode(quote.mode, shipmentTypes)} width="medium" disabled={!editable} dataOptions onChange={(value) => onQuoteChange("shipmentType", value)} />
-          {fieldPolicy.hblMode ? <QuoteCompactSelect label="HBL mode" value={quote.hblMode ?? ""} options={["CY/CFS", "CY/CY", "CFS/CFS", "Door/Door"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("hblMode", value)} /> : null}
-          <QuoteCompactSelect label={calculatedDirection ? "Direction (auto)" : "Direction"} value={calculatedDirection ?? quote.direction ?? ""} options={["Export", "Import", "Domestic", "Cross trade"]} width="short" disabled={!editable || Boolean(calculatedDirection)} onChange={(value) => onQuoteChange("direction", value)} />
-          <QuoteCompactSelect label="Department" value={quote.department ?? ""} options={lookups?.departments.map((item) => item.name) ?? []} width="short" disabled={!editable} dataOptions onChange={(value) => { const item = lookups?.departments.find((department) => department.name === value); onQuoteChange("department", value); onQuoteChange("departmentId", item?.id ?? "") }} />
-          <QuoteCompactSelect label="Branch" value={quote.branch ?? ""} options={lookups?.offices.map((item) => ({ value: item.code || item.name, label: item.code || item.name })) ?? []} width="code" disabled={!editable} dataOptions onChange={(value) => { const item = lookups?.offices.find((office) => (office.code || office.name) === value); onQuoteChange("branch", value); onQuoteChange("officeId", item?.id ?? "") }} />
-          <QuoteCompactSelect label="Priority" value={quote.priority ?? ""} options={["Low", "Standard", "High", "Tender"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("priority", value)} />
-          <QuoteCompactDatePicker label="Valid from" value={quote.startDate ?? ""} disabled={!editable} onChange={(value) => onQuoteChange("startDate", value)} />
-          <QuoteCompactDatePicker label="Valid to" value={quote.endDate ?? ""} minDate={quote.startDate || undefined} disabled={!editable} onChange={(value) => onQuoteChange("endDate", value)} />
-          <QuoteCompactSelect label="Currency" value={quote.currency} options={currencies} width="code" disabled={!editable} dataOptions required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.currency} onChange={(value) => onQuoteChange("currency", value)} />
-        </CompactFieldRow>
+      <CompactSectionShell title="Job data">
+        <div className="grid gap-2">
+          <div className={cn("grid min-w-0 gap-2 @min-[28rem]/quote-details:grid-cols-2", fieldPolicy.hblMode ? "@min-[52rem]/quote-details:grid-cols-[1.3fr_0.8fr_1.3fr_0.8fr_1fr]" : "@min-[52rem]/quote-details:grid-cols-[1.3fr_0.8fr_1.3fr_1fr]")}>
+            <QuoteCompactSelect label="Source" value={quote.source ?? ""} options={["NEW - New Shipper", "REN - Renewal", "REP - Repeat lane", "TND - Tender"]} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.source?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("source", value)} />
+            <div ref={overallModeTriggerRef} tabIndex={-1} className="min-w-0"><QuoteCompactSelect label="Mode" value={quote.mode} options={modes} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.mode.trim()} disabled={!editable} dataOptions onChange={requestOverallMode} /></div>
+            <QuoteCompactSelect label="Shipment type" value={shipmentTypeValue(quote.mode, quote.shipmentType, shipmentTypeChoicesForMode(quote.mode, shipmentTypes))} options={shipmentTypeChoicesForMode(quote.mode, shipmentTypes)} width="full" disabled={!editable} dataOptions onChange={(value) => onQuoteChange("shipmentType", value)} />
+            {fieldPolicy.hblMode ? <QuoteCompactSelect label="HBL mode" value={quote.hblMode ?? ""} options={["CY/CFS", "CY/CY", "CFS/CFS", "Door/Door"]} width="full" disabled={!editable} onChange={(value) => onQuoteChange("hblMode", value)} /> : null}
+            <QuoteCompactSelect label={calculatedDirection ? "Direction (auto)" : "Direction"} value={calculatedDirection ?? quote.direction ?? ""} options={["Export", "Import", "Domestic", "Cross trade"]} width="full" disabled={!editable || Boolean(calculatedDirection)} onChange={(value) => onQuoteChange("direction", value)} />
+          </div>
+          <div className="grid min-w-0 gap-2 @min-[28rem]/quote-details:grid-cols-2 @min-[40rem]/quote-details:grid-cols-3 @min-[65rem]/quote-details:grid-cols-6">
+            <QuoteCompactSelect label="Department" value={quote.department ?? ""} options={lookups?.departments.map((item) => item.name) ?? []} width="full" disabled={!editable} dataOptions onChange={(value) => { const item = lookups?.departments.find((department) => department.name === value); onQuoteChange("department", value); onQuoteChange("departmentId", item?.id ?? "") }} />
+            <QuoteCompactSelect label="Branch" value={quote.branch ?? ""} options={lookups?.offices.map((item) => ({ value: item.code || item.name, label: item.code || item.name })) ?? []} width="full" disabled={!editable} dataOptions onChange={(value) => { const item = lookups?.offices.find((office) => (office.code || office.name) === value); onQuoteChange("branch", value); onQuoteChange("officeId", item?.id ?? "") }} />
+            <QuoteCompactSelect label="Priority" value={quote.priority ?? ""} options={["Low", "Standard", "High", "Tender"]} width="full" disabled={!editable} onChange={(value) => onQuoteChange("priority", value)} />
+            <QuoteCompactDatePicker label="Valid from" value={quote.startDate ?? ""} width="full" disabled={!editable} onChange={(value) => onQuoteChange("startDate", value)} />
+            <QuoteCompactDatePicker label="Valid to" value={quote.endDate ?? ""} width="full" minDate={quote.startDate || undefined} disabled={!editable} onChange={(value) => onQuoteChange("endDate", value)} />
+            <QuoteCompactSelect label="Currency" value={quote.currency} options={currencies} width="full" disabled={!editable} dataOptions required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.currency} onChange={(value) => onQuoteChange("currency", value)} />
+          </div>
+        </div>
       </CompactSectionShell>
 
       <div className="grid items-stretch gap-2 @min-[40rem]/quote-details:grid-cols-2 @min-[80rem]/quote-details:grid-cols-4">
@@ -4622,7 +4632,7 @@ function QuoteDetailsPanelV2({
 
       <CompactSectionShell
         title="Route & service"
-        meta={routingLegs.length > 0 ? `${routingLegs.length} planned ${routingLegs.length === 1 ? "leg" : "legs"}` : "Linked country, place and UN/LOCODE fields"}
+        meta={routingLegs.length > 0 ? `${routingLegs.length} planned ${routingLegs.length === 1 ? "leg" : "legs"}` : undefined}
         action={(
           <Button type="button" variant="ghost" size="sm" disabled={!editable || routingLegs.length >= 30} onClick={addRoutingLeg} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]">
             <Plus className="size-3" aria-hidden="true" />{t("Add routing leg")}
@@ -4635,7 +4645,7 @@ function QuoteDetailsPanelV2({
               {containerRequests.map((request, index) => {
                 const rowInvalid = requireCoreFields && validationAttempted && (!request.quantity || !request.type.trim())
                 return (
-                  <div key={request.id} className="grid min-w-0 items-start gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(7rem,0.5fr)_minmax(11rem,1.15fr)_minmax(5rem,0.35fr)_minmax(10rem,0.8fr)_2rem_auto]">
+                  <div key={request.id} className="grid min-w-0 items-start gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(7rem,0.5fr)_minmax(11rem,1.15fr)_minmax(5rem,0.35fr)_minmax(10rem,0.8fr)_2rem_7.5rem]">
                     {index === 0 ? (
                       <>
                         <QuoteCompactSelect label="Incoterms / scope" value={quote.incoterm} options={incotermOptions} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.incoterm.trim()} disabled={!editable} onChange={(value) => onQuoteChange("incoterm", value)} />
@@ -4741,7 +4751,6 @@ function QuoteDetailsPanelV2({
 
       <CompactSectionShell
         title="Supplier & carrier options"
-        meta="Multiple carrier services can sit beneath each supplier"
         action={<div className="flex gap-1"><Button type="button" variant="ghost" size="sm" disabled={!editable} onClick={() => persistSupplierOptions([...supplierOptions, blankSupplierOption()])} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]"><Plus className="size-3" />{t("Add supplier")}</Button><Button type="button" size="sm" disabled={!editable || !supplierOptions.some((supplier) => supplier.supplierName.trim())} onClick={() => setRateRequestOpen(true)} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]"><Send className="size-3" />{t("Prepare rate requests")}</Button></div>}
       >
         <div className="grid gap-1.5">
@@ -4870,16 +4879,17 @@ function QuoteDetailsPanelV2({
         </div>
       </CompactSectionShell>
 
-      <CompactSectionShell title="Goods" meta="Values, quantities and cargo characteristics">
-        <div className="grid gap-2">
-          <CompactFieldRow>
-            <AmountCurrencyField label="Goods value" value={{ amount: quote.goodsValue ?? "", currency: quote.goodsValueCurrency || quote.currency || "GBP" }} currencies={currencies} disabled={!editable} onChange={(value) => { onQuoteChange("goodsValue", value.amount); onQuoteChange("goodsValueCurrency", value.currency) }} width="medium" />
-            <AmountCurrencyField label="Insurance value" value={{ amount: quote.insuranceValue ?? "", currency: quote.insuranceValueCurrency || quote.currency || "GBP" }} currencies={currencies} disabled={!editable} onChange={(value) => { onQuoteChange("insuranceValue", value.amount); onQuoteChange("insuranceValueCurrency", value.currency) }} width="medium" />
-            <QuoteCompactInput label="Entries" value={quote.entries ?? ""} type="number" dir="ltr" width="code" disabled={!editable} onChange={(value) => onQuoteChange("entries", value)} />
-            <QuoteCompactInput label="Lines" value={quote.invoiceLines ?? ""} type="number" dir="ltr" width="code" disabled={!editable} onChange={(value) => onQuoteChange("invoiceLines", value)} />
-            {!quote.cargoLines ? <>
-            <CompactCombobox label="Commodity" value={quote.commodity ?? ""} options={(lookups?.commodities ?? []).map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.code }))} onValueChange={(value) => onQuoteChange("commodity", value)} placeholder="Search or type commodity" disabled={!editable} width="grow" />
-            <QuoteCompactInput label="Packages / pieces" value={quote.packageQuantity ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("packageQuantity", value)} />
+      <CompactSectionShell title="Goods">
+        <div className="grid min-w-0 gap-4">
+          {!quote.cargoLines ? (
+            <div className="grid min-w-0 gap-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h4 className="text-[13px] font-medium text-[var(--md-ink)]">{t("Shipment totals")}</h4>
+                <span className="text-[11px] text-[var(--md-subtle)]">{t("Individual cargo lines have not been recorded")}</span>
+              </div>
+              <div className={cn("grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2", fieldPolicy.chargeableWeight ? "@min-[60rem]/quote-details:grid-cols-7" : "@min-[60rem]/quote-details:grid-cols-6")}>
+            <CompactCombobox label="Commodity" value={quote.commodity ?? ""} options={(lookups?.commodities ?? []).map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.code }))} onValueChange={(value) => onQuoteChange("commodity", value)} placeholder="Search or type commodity" disabled={!editable} width="full" className="sm:col-span-2" />
+            <QuoteCompactInput label="Packages / pieces" value={quote.packageQuantity ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("packageQuantity", value)} />
             <CompactCombobox
               label="Package type"
               value={quote.packageType ?? ""}
@@ -4891,17 +4901,27 @@ function QuoteDetailsPanelV2({
               placeholder="Select or type package type"
               onValueChange={(value) => onQuoteChange("packageType", value)}
               disabled={!editable}
-              width="short"
+              width="full"
             />
-            <QuoteCompactInput label="Gross weight (kg)" value={quote.grossWeightKg ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("grossWeightKg", value)} />
-            <QuoteCompactInput label="Volume (CBM)" value={quote.volumeCbm ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("volumeCbm", value)} />
-            {fieldPolicy.chargeableWeight ? <QuoteCompactInput label="Chargeable weight (kg)" value={quote.chargeableWeightKg ?? ""} type="number" dir="ltr" width="short" disabled={!editable} onChange={(value) => onQuoteChange("chargeableWeightKg", value)} /> : null}
-            </> : null}
-            {originIsUs ? <QuoteCompactSelect label="FMC TID" value={quote.fmcTid ?? ""} options={["Not required", "Required", "Pending"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("fmcTid", value)} /> : null}
-          </CompactFieldRow>
+            <QuoteCompactInput label="Gross weight (kg)" value={quote.grossWeightKg ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("grossWeightKg", value)} />
+            <QuoteCompactInput label="Volume (CBM)" value={quote.volumeCbm ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("volumeCbm", value)} />
+            {fieldPolicy.chargeableWeight ? <QuoteCompactInput label="Chargeable weight (kg)" value={quote.chargeableWeightKg ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("chargeableWeightKg", value)} /> : null}
+              </div>
+            </div>
+          ) : null}
           <QuoteCargoEditor lines={quote.cargoLines} editable={editable} chargeableWeight={fieldPolicy.chargeableWeight}
             legacy={{ description: quote.commodity || "", commodity: quote.commodity || "", packageQuantity: quote.packageQuantity || "", packageType: quote.packageType || "", grossWeightKg: quote.grossWeightKg || "", volumeCbm: quote.volumeCbm || "", chargeableWeightKg: quote.chargeableWeightKg || "", isHazardous: characteristics.hazardous, isTemperatureControlled: characteristics.temperatureControlled }}
             onChange={(cargoLines) => onQuotePatch({ cargoLines })} />
+          <div className="grid gap-2 pt-3 shadow-[var(--md-stroke-top)]">
+            <h4 className="text-[12px] font-medium text-[var(--md-text)]">{t("Shipment values & customs")}</h4>
+            <div className="grid min-w-0 gap-2 sm:grid-cols-2 @min-[60rem]/quote-details:grid-cols-[minmax(0,1.5fr)_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
+            <AmountCurrencyField label="Goods value" value={{ amount: quote.goodsValue ?? "", currency: quote.goodsValueCurrency || quote.currency || "GBP" }} currencies={currencies} disabled={!editable} onChange={(value) => { onQuoteChange("goodsValue", value.amount); onQuoteChange("goodsValueCurrency", value.currency) }} width="full" />
+            <AmountCurrencyField label="Insurance value" value={{ amount: quote.insuranceValue ?? "", currency: quote.insuranceValueCurrency || quote.currency || "GBP" }} currencies={currencies} disabled={!editable} onChange={(value) => { onQuoteChange("insuranceValue", value.amount); onQuoteChange("insuranceValueCurrency", value.currency) }} width="full" />
+            <QuoteCompactInput label="Entries" value={quote.entries ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("entries", value)} />
+            <QuoteCompactInput label="Invoice lines" value={quote.invoiceLines ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("invoiceLines", value)} />
+            </div>
+            {originIsUs ? <QuoteCompactSelect label="FMC TID" value={quote.fmcTid ?? ""} options={["Not required", "Required", "Pending"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("fmcTid", value)} /> : null}
+          </div>
           {!quote.cargoLines ? <div>
             <p className="mb-1.5 text-[10.5px] font-medium text-[var(--md-text)]">{t(quote.cargoLines ? "Shipment handling (in addition to line flags)" : "Cargo characteristics")}</p>
             <CargoCharacteristicsField value={characteristics} inherited={quoteCargoSafety(quote.cargoLines)} onChange={(value) => { onQuoteChange("cargoCharacteristics", cargoCharacteristicsToString(value)); onQuoteChange("knownCargo", value.hazardous ? "Hazardous" : "General merchandise") }} hazardousDetails={hazardousDetails} onHazardousDetailsChange={updateHazardousDetails} disabled={!editable} />
@@ -4910,7 +4930,7 @@ function QuoteDetailsPanelV2({
         </div>
       </CompactSectionShell>
 
-      <CompactSectionShell title="Customs agents" meta="Choose origin and destination clearance separately">
+      <CompactSectionShell title="Customs agents">
           <div className="grid gap-1.5 md:grid-cols-2">
             <CompactCombobox label="Origin customs agent" value={quote.originCustomsAgentName ?? ""} options={organisationDirectories.agent.options} recommendedOptions={relatedOptions("agent")} recommendedOptionLimit={organisationRecentOptionLimit} onValueChange={(value) => { onQuoteChange("originCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.originCustomsAgentId); if (selected?.name !== value) onQuoteChange("originCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) { onQuoteChange("originCustomsAgentId", item.id); onQuoteChange("originCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
             <CompactCombobox label="Destination customs agent" value={quote.destinationCustomsAgentName ?? ""} options={organisationDirectories.agent.options} recommendedOptions={relatedOptions("agent")} recommendedOptionLimit={organisationRecentOptionLimit} onValueChange={(value) => { onQuoteChange("destinationCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.destinationCustomsAgentId); if (selected?.name !== value) onQuoteChange("destinationCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) { onQuoteChange("destinationCustomsAgentId", item.id); onQuoteChange("destinationCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
@@ -5985,7 +6005,7 @@ export function QuoteDetailPage({
   navigate?: (path: string) => void
   currentUser?: AuthUserSummary | null
 }) {
-  const { t, direction } = useLanguage()
+  const { t, direction, language } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const initialQuote = getInitialQuoteRecord(quoteId)
   const isNewQuote = quoteId?.toUpperCase() === "NEW"
@@ -7073,17 +7093,17 @@ export function QuoteDetailPage({
     if (viewingSubmittedVersion && !viewedVersionWorkspace && ["overview", "details", "charges"].includes(activeTab)) {
       return <Surface><p role="alert">{t("This version’s saved details are unavailable. Check Documents or reload the Quote; current details have not been substituted.")}</p></Surface>
     }
-    if (viewingSubmittedVersion && presentedVersion && ["details", "overview", "charges"].includes(activeTab)) {
+    if (viewingSubmittedVersion && presentedVersion && ["details", "charges"].includes(activeTab)) {
       if (activeTab === "details") {
         return <QuoteDetailsPanelV2 key={presentedVersion.CusQuoteVersion_ID} quote={presentedQuote} editable={false} requireCoreFields={false} validationAttempted={false} lookups={null} onQuoteChange={() => {}} onQuotePatch={() => {}} />
       }
-      return <QuoteSubmittedDetails key={`${presentedVersion.CusQuoteVersion_ID}:${activeTab}`} version={presentedVersion} reference={workspace?.quote.reference ?? ""} overview={activeTab === "overview"} chargesOnly={activeTab === "charges"} />
+      return <QuoteSubmittedDetails key={`${presentedVersion.CusQuoteVersion_ID}:${activeTab}`} version={presentedVersion} reference={workspace?.quote.reference ?? ""} chargesOnly />
     }
     if (activeTab === "overview") {
       const overview = variant === "ai"
         ? <QuoteAiOverviewPanel quote={activeQuote} />
         : variant === "cargowise"
-          ? <QuoteCargoWiseOverviewPanel quote={activeQuote} intelligence={intelligence} intelligenceUnavailable={intelligenceUnavailable} />
+          ? <QuoteCargoWiseOverviewPanel quote={activeQuote} intelligence={viewingSubmittedVersion ? null : intelligence} intelligenceUnavailable={!viewingSubmittedVersion && intelligenceUnavailable} savedVersion={viewingSubmittedVersion} />
           : <QuoteOverviewPanel quote={activeQuote} />
       return overview
     }
@@ -7108,9 +7128,9 @@ export function QuoteDetailPage({
       )
     }
 
-    if (activeTab === "documents") return <DocumentWorkspace documents={quoteCustomerResponseDocuments(workspace)} />
+    if (activeTab === "documents") return <DocumentWorkspace documents={quoteCustomerResponseDocuments(workspace)} description="" />
     if (activeTab === "notes") return <LifecycleNotes subjectType="quote" subjectId={currentQuoteId} />
-    return <AuditWorkspace records={quoteAuditRecords(workspace)} />
+    return <AuditWorkspace records={quoteAuditRecords(workspace)} description="" summaryDescription="" />
   }
 
   if (loading) {
@@ -7151,17 +7171,11 @@ export function QuoteDetailPage({
               <Button type="button" variant="ghost" onClick={() => setViewedVersionId(null)} className="h-7 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 text-[11px] text-[var(--md-status-blue-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)]">
                 {t("Return to latest")}
               </Button>
-              {currentVersionIsSubmitted ? (
-                <Button type="button" variant="ghost" onClick={() => setNewVersionDialogOpen(true)} className="h-7 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 text-[11px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent-a07)]">
-                  <Plus className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
-                  {t("Use for new version")}
-                </Button>
-              ) : null}
             </div>
           ) : null}
           <Tabs value={activeTab} onValueChange={(value) => changeWorkspaceTab(value as QuoteWorkspaceTab)} className="min-w-0 max-w-full gap-2">
             <div className="relative">
-              <div className={cn("md-quote-workspace-header grid min-w-0 items-stretch gap-2", activeTab === "details" && "md-quote-workspace-header--details")}>
+              <div className={cn("md-quote-workspace-header grid min-w-0 items-stretch gap-2", (activeTab === "details" || viewingSubmittedVersion) && "md-quote-workspace-header--details")}>
                 <div className="grid min-w-0 grid-rows-[auto_auto] gap-1.5">
                 <section
                   className={cn(
@@ -7171,7 +7185,11 @@ export function QuoteDetailPage({
                 >
           <div className="md-quote-record-identity flex min-w-0 items-center gap-1.5">
             <div className="min-w-0">
-              <div className="flex flex-nowrap items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button type="button" variant="ghost" size="sm" onClick={() => navigate?.("/quotes")} className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-1.5 text-[11px] text-[var(--md-subtle)]" aria-label={t("Back to quotes")}>
+                  <ArrowLeft className="size-3.5" aria-hidden="true" />
+                  {t("Quotes")}
+                </Button>
                 <h1 className="flex shrink-0 items-center gap-1.5 text-[14px] font-medium leading-5 text-[var(--md-ink)]">
                   {variant === "ai" ? <ChartAnalysis className="size-4 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" /> : null}
                   <span>{t(heading)}</span>
@@ -7198,61 +7216,59 @@ export function QuoteDetailPage({
                 </button>
                 <StatusPill kind="status" tone={activeQuote.statusTone} indicator={false} className="h-7 shrink-0 px-2 text-[11px]">{activeQuote.status}</StatusPill>
                 {currentVersion ? (
-                  <Popover>
-                    <PopoverTrigger asChild>
+                  <DropdownMenu modal={false}>
+                    <DropdownMenuTrigger asChild>
                       <Button
                         type="button"
                         variant="ghost"
                         disabled={saving || isDirty}
                         aria-label={t("Choose quote version")}
-                        className="h-7 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 text-[11px] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)]"
+                        className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-2 text-[11px] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)]"
                       >
                         <span data-i18n-skip dir="ltr">{presentedVersion?.CusQuoteVersion_Number === 1 ? t("Original") : `V${presentedVersion?.CusQuoteVersion_Number ?? currentVersion.CusQuoteVersion_Number}`}</span>
                         <span className="text-[var(--md-subtle)]">·</span>
                         <span>{t(viewingHistoricalVersion || currentVersionIsSubmitted ? "Submitted" : "Working draft")}</span>
                         <ChevronDown className="size-3" strokeWidth={1.4} aria-hidden="true" />
                       </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" sideOffset={6} className="w-[min(340px,calc(100vw-24px))] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1.5 shadow-[var(--md-shadow-lift)]">
-                      <div className="px-2 py-1.5">
-                        <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Quote versions")}</p>
-                        <p className="mt-0.5 text-[11px] leading-4 text-[var(--md-subtle)]">{t("Submitted versions are read-only. One working draft can remain in progress.")}</p>
-                      </div>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent onCloseAutoFocus={(event) => { if (newVersionDialogOpen) event.preventDefault() }} align="start" sideOffset={6} className="w-[min(340px,calc(100vw-24px))] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1.5 shadow-[var(--md-shadow-lift)]">
+                      <DropdownMenuItem
+                        disabled={saving || creatingVersion || (viewingSubmittedVersion && !viewedVersionWorkspace)}
+                        onSelect={() => setNewVersionDialogOpen(true)}
+                        className="text-[var(--md-accent)]"
+                      >
+                        <Plus className="size-3.5" aria-hidden="true" />
+                        {t("New version")}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <div className="mt-1 grid max-h-64 gap-1 overflow-y-auto md-scrollbar">
                         {workspace?.versions.map((version) => {
                           const selected = (viewedVersion?.CusQuoteVersion_ID ?? currentVersion.CusQuoteVersion_ID) === version.CusQuoteVersion_ID
                           const versionDate = version.CusQuoteVersion_SubmittedAt || version.CusQuoteVersion_CreatedAt
                           return (
-                            <button
+                            <DropdownMenuItem
                               key={version.CusQuoteVersion_ID}
-                              type="button"
                               aria-current={selected ? "true" : undefined}
                               className={cn(
                                 "flex min-h-11 items-center gap-2 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-start outline-none transition-colors hover:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a14)]",
                                 selected && "bg-[var(--md-accent-a07)]",
                               )}
-                              onClick={() => setViewedVersionId(version.CusQuoteVersion_IsCurrent ? null : version.CusQuoteVersion_ID)}
+                              onSelect={() => setViewedVersionId(version.CusQuoteVersion_IsCurrent ? null : version.CusQuoteVersion_ID)}
                             >
                               <span className={cn("grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] text-[11px] font-medium", version.CusQuoteVersion_IsSubmitted ? "bg-[var(--md-status-blue-bg)] text-[var(--md-status-blue-ink)]" : "bg-[var(--md-status-amber-bg)] text-[var(--md-status-amber-ink)]")} data-i18n-skip dir="ltr">
                                 {version.CusQuoteVersion_Number === 1 ? "1" : version.CusQuoteVersion_Number}
                               </span>
                               <span className="min-w-0 flex-1">
                                 <span className="block text-[12px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{version.CusQuoteVersion_Number === 1 ? t("Original quote") : `${t("Version")} ${version.CusQuoteVersion_Number}`}</span>
-                                <span className="mt-0.5 block text-[10.5px] text-[var(--md-subtle)]">{t(version.CusQuoteVersion_IsSubmitted ? version.CusQuoteVersion_StatusCode.replaceAll("_", " ") : "Working draft")} · {new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(versionDate))}</span>
+                                <span className="mt-0.5 block text-[10.5px] text-[var(--md-subtle)]">{t(version.CusQuoteVersion_IsSubmitted ? version.CusQuoteVersion_StatusCode.replaceAll("_", " ") : "Working draft")} · {new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(new Date(versionDate))}</span>
                               </span>
                               {selected ? <Check className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.6} aria-hidden="true" /> : null}
-                            </button>
+                            </DropdownMenuItem>
                           )
                         })}
                       </div>
-                    </PopoverContent>
-                  </Popover>
-                ) : null}
-                {currentVersionIsSubmitted ? (
-                  <Button type="button" variant="ghost" disabled={saving || creatingVersion || (viewingSubmittedVersion && !viewedVersionWorkspace)} onClick={() => setNewVersionDialogOpen(true)} className="h-7 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 text-[11px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent-a07)]">
-                    <Plus className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
-                    {t("New version")}
-                  </Button>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 ) : null}
                 {shouldShowQuoteCustomerResponse(workspace?.customerResponse ?? null) && workspace?.customerResponse ? (
                   <QuoteCustomerResponseTooltip response={workspace.customerResponse} />
@@ -7261,7 +7277,7 @@ export function QuoteDetailPage({
                   <Button
                     type="button"
                     variant="ghost"
-                    className="h-7 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 text-[11px] text-[var(--md-status-green-ink)] shadow-[var(--md-shadow-line)]"
+                    className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-2 text-[11px] text-[var(--md-status-green-ink)] shadow-[var(--md-shadow-line)]"
                     onClick={() => navigate?.(`/bookings/${workspace.linkedBooking?.bookingReference.toLowerCase()}`)}
                   >
                     {t("Booking")} <span data-i18n-skip dir="ltr">{workspace.linkedBooking.bookingReference}</span>
@@ -7594,10 +7610,10 @@ export function QuoteDetailPage({
       <Dialog open={newVersionDialogOpen} onOpenChange={(open) => { if (!creatingVersion) setNewVersionDialogOpen(open) }}>
         <DialogContent className="rounded-[var(--md-radius-2xl)] sm:max-w-[560px]">
           <DialogHeader className="text-start">
-            <DialogTitle>{t("Create a new quote version")}</DialogTitle>
-            <DialogDescription>{t("Choose how to start the next working draft. Nothing becomes part of the customer history until it is submitted.")}</DialogDescription>
+            <DialogTitle>{t(currentVersionIsSubmitted ? "Create a new quote version" : "A working draft already exists")}</DialogTitle>
+            <DialogDescription>{t(currentVersionIsSubmitted ? "Choose how to start the next working draft. Nothing becomes part of the customer history until it is submitted." : "This quote already has an editable working draft. Continue that draft and submit it before creating another version. Your existing details are preserved.")}</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-2 sm:grid-cols-2">
+          {currentVersionIsSubmitted ? <div className="grid gap-2 sm:grid-cols-2">
             <button
               type="button"
               disabled={creatingVersion}
@@ -7622,9 +7638,10 @@ export function QuoteDetailPage({
               <span className="mt-3 block text-[13px] font-medium text-[var(--md-ink)]">{t("Start mostly blank")}</span>
               <span className="mt-1 block text-[11.5px] leading-[1.55] text-[var(--md-subtle)]">{t("Keep the customer, owner and quote identity, then rebuild the operational and price details.")}</span>
             </button>
-          </div>
+          </div> : null}
           <DialogFooter>
             <Button type="button" variant="ghost" disabled={creatingVersion} onClick={() => setNewVersionDialogOpen(false)}>{t("Cancel")}</Button>
+            {!currentVersionIsSubmitted ? <Button type="button" onClick={() => { setViewedVersionId(null); setNewVersionDialogOpen(false) }}>{t("Continue working draft")}</Button> : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -7834,7 +7851,7 @@ export function QuoteDetailPage({
                   onOpenChange={(open) => open ? openIssueRefinement(null) : closeIssueRefinement()}
                   onValueChange={setIssueRefinementInstruction}
                   onSubmit={() => void performIssueRefinement(issueRefinementInstruction, null)}
-                /> : <p className="text-[10.5px] leading-4 text-[var(--md-subtle)]">{t("Simple emails stay short and unbranded. Edit the wording directly before sending.")}</p>}
+                /> : <p className="text-[10.5px] leading-4 text-[var(--md-subtle)]">{t("Simple emails are unbranded.")}</p>}
               </div>
 
               {issueDeliveryMode === "standard" ? <fieldset className="grid gap-2">
@@ -7876,7 +7893,6 @@ export function QuoteDetailPage({
               <div className="mb-2 flex items-center justify-between gap-3">
                 <div>
                   <h2 id="quote-email-preview-heading" className="text-[13px] font-medium text-[var(--md-ink)]">{t("Live email preview")}</h2>
-                  <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t(issueDeliveryMode === "standard" ? "This is the branded email the customer will receive." : "This is the plain email the customer will receive.")}</p>
                 </div>
                 {issuePreviewLoading ? <span role="status" className="text-[11px] text-[var(--md-accent)]">{t("Updating preview…")}</span> : null}
               </div>

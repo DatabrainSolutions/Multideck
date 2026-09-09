@@ -606,7 +606,7 @@ export function DocumentWorkspace({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h2 id={titleId} className="text-[16px] font-medium text-[var(--md-ink)]">{t(title)}</h2>
-          <p className="mt-1 max-w-[660px] text-[12px] leading-5 text-[var(--md-text)]">{t(description)}</p>
+          {description ? <p className="mt-1 max-w-[660px] text-[12px] leading-5 text-[var(--md-text)]">{t(description)}</p> : null}
         </div>
 
         <div

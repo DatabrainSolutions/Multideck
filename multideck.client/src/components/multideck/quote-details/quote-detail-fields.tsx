@@ -1072,7 +1072,7 @@ export function HazardousDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir={direction} className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-lift)] sm:max-w-[640px]">
+      <DialogContent dir={direction} className="max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-lift)] sm:max-w-[640px] sm:p-6">
         <DialogHeader className="pe-8 text-start">
           <DialogTitle className="text-[15px] font-medium">{t("Hazardous cargo details")}</DialogTitle>
           <DialogDescription className="text-[12px] leading-5 text-[var(--md-text)]">{t("These details will be included in supplier and carrier quote requests.")}</DialogDescription>
@@ -1104,7 +1104,7 @@ export function HazardousDetailsDialog({
         <CompactFieldShell label="Handling and declaration notes" width="full">
           <Textarea value={draft.notes} onChange={(event) => patch("notes", event.target.value)} placeholder={t("Add packaging, flash point, segregation or document notes")} className="min-h-20 rounded-[var(--md-radius-lg)] text-[12px]" />
         </CompactFieldShell>
-        <DialogFooter className="rounded-b-[var(--md-radius-xl)]">
+        <DialogFooter className="m-0 flex-wrap rounded-[var(--md-radius-lg)] p-3">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t("Cancel")}</Button>
           <Button type="button" onClick={() => { onChange(draft); onOpenChange(false) }}>{t("Save hazardous details")}</Button>
         </DialogFooter>

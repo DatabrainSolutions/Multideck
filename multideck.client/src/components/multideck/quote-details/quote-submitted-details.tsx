@@ -120,11 +120,11 @@ export function QuoteSubmittedDetails({
         </h2>
         <p className="max-w-prose text-[13px] leading-relaxed text-[var(--md-text)]">
           {t(
-            "These are the details saved with this version. Missing information stays marked as not recorded; current organisation details and terms are not substituted. Use the version menu to compare versions, or New version to revise.",
+            "Saved details only; missing values are not filled from current records. Choose New version to revise.",
           )}
         </p>
         <p className="text-[12px] text-[var(--md-text)]">
-          {t("Internal record. Charge lines are in Quote charges; the customer’s issued PDF is in Documents.")}
+          {t("The customer’s issued PDF is in Documents.")}
         </p>
         {fields([
           ["Submitted at", version.CusQuoteVersion_SubmittedAt ?? version.CusQuoteVersion_IssuedAt],
@@ -136,7 +136,7 @@ export function QuoteSubmittedDetails({
           <h3 className="text-[14px] font-medium">{t("Saved charge lines")}</h3>
           <p className="max-w-prose text-[13px] leading-relaxed text-[var(--md-text)]">
             {t(
-              "Amounts and exchange rates are from this submitted version, not today’s rate table. Costs and internal notes are for operators only; use Documents for the customer’s issued PDF.",
+              "Amounts and exchange rates are fixed at submission. Costs and internal notes are for operators only.",
             )}
           </p>
           {charges === null ? (
