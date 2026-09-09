@@ -1,5 +1,7 @@
 # Connecting App to central Multideck Live
 
+**Hosted database update, 9 September 2026:** the App and portal database changes are now applied, including the missing App prerequisites. See [rollout evidence and remaining setup](live-database-rollout-2026-09-09.md). Historical batch notes below describe their state before this rollout. Edge/key/domain setup is still separate.
+
 Each company keeps its App domain and dedicated operational Supabase project.
 Central `multideck.live` connects using that App's descriptor and a dedicated
 integration credential. This implements the product-owner clarification of
