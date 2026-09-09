@@ -59,6 +59,9 @@ jobs:
         run: dotnet build --configuration Release --no-restore
         working-directory: multideck.server
 
+      - name: Run server tests
+        run: dotnet test multideck.server.tests/multideck.server.tests.csproj --configuration Release
+
       - name: dotnet publish
         run: dotnet publish --configuration Release --no-build --output "${{ env.DOTNET_ROOT }}/myapp"
         working-directory: multideck.server

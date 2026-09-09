@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Master Air Waybill</title>
+  <style>
+    @page { size: A4; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; width: 210mm; }
+    body { background: #fff; color: #111; font-family: Arial, Helvetica, sans-serif; }
+    .page { position: relative; width: 210mm; height: 297mm; overflow: hidden; page-break-after: always; break-after: page; }
+    .page:last-child { page-break-after: auto; break-after: auto; }
+    .page-background { position: absolute; inset: 0; width: 210mm; height: 297mm; object-fit: fill; }
+    .copy-start, .terms-start { position: absolute; left: 0; top: 0; margin: 0; color: #fff; font-size: .1pt; line-height: .1pt; }
+    .field { position: absolute; z-index: 2; margin: 0; overflow: hidden; color: #222; font-family: Arial, Helvetica, sans-serif; font-size: 7.5pt; line-height: 1.16; overflow-wrap: anywhere; }
+    .field.compact { font-size: 6.7pt; line-height: 1.12; }
+    .field.center { text-align: center; }
+    .field.right { text-align: right; }
+    .reference { font-size: 8.3pt; font-weight: 700; letter-spacing: .2pt; white-space: nowrap; }
+    .address { font-size: 7.4pt; line-height: 1.17; }
+    .reference-prefix { left: 20.1mm; top: 6mm; width: 9.9mm; height: 4.6mm; }
+    .reference-origin { left: 30.7mm; top: 6mm; width: 9.5mm; height: 4.6mm; }
+    .reference-suffix { left: 41.3mm; top: 6mm; width: 24.7mm; height: 4.6mm; }
+    .top-reference-right { left: 175mm; top: 6mm; width: 28.9mm; height: 4.6mm; text-align: right; font-size: 7pt; }
+    .issuer { left: 135.1mm; top: 12.7mm; width: 66.3mm; height: 18.4mm; }
+    .shipper { left: 15.9mm; top: 18.3mm; width: 77.3mm; height: 24mm; }
+    .consignee { left: 15.9mm; top: 43mm; width: 77.3mm; height: 24mm; }
+    .issuing-agent { left: 17.3mm; top: 65.6mm; width: 72.3mm; height: 15.9mm; }
+    .accounting { left: 108.3mm; top: 66.7mm; width: 65.3mm; height: 16.9mm; }
+    .departure { left: 17.6mm; top: 89.6mm; width: 77.6mm; height: 6mm; }
+    .route-to-one { left: 17.3mm; top: 98.1mm; width: 9.5mm; height: 4.9mm; }
+    .route-carrier-one { left: 27.5mm; top: 98.1mm; width: 40.9mm; height: 4.9mm; }
+    .route-flight { left: 81.1mm; top: 98.1mm; width: 16.6mm; height: 4.9mm; }
+    .currency { left: 108.5mm; top: 98.3mm; width: 11mm; height: 5mm; }
+    .destination { left: 18mm; top: 106.5mm; width: 43mm; height: 4.9mm; }
+    .flight-one { left: 62.8mm; top: 106.5mm; width: 22.9mm; height: 4.9mm; }
+    .flight-two { left: 86.1mm; top: 106.5mm; width: 22.9mm; height: 4.9mm; }
+    .handling { left: 18mm; top: 113.2mm; width: 129.8mm; height: 16.9mm; }
+    .sci { left: 179.2mm; top: 123.1mm; width: 15.9mm; height: 4.9mm; }
+    .cargo-data { position: absolute; z-index: 2; left: 15.5mm; top: 137.9mm; width: 187mm; border-collapse: collapse; table-layout: fixed; color: #222; font-family: Arial, Helvetica, sans-serif; font-size: 6pt; line-height: 1.14; }
+    .cargo-data td { height: 7.5mm; padding: .6mm .35mm; border: 0; vertical-align: top; overflow: hidden; }
+    .cargo-data .center { text-align: center; }
+    .cargo-data .right { text-align: right; }
+    .cargo-data .loop-end td { height: 0; padding: 0; font-size: .1pt; line-height: .1pt; color: #fff; }
+    .total-pieces { left: 15.5mm; top: 188.4mm; width: 9.9mm; height: 4.9mm; }
+    .total-weight { left: 26.1mm; top: 188.4mm; width: 16.9mm; height: 4.9mm; font-size: 6pt; }
+    .total-chargeable { left: 75.5mm; top: 188.4mm; width: 16.9mm; height: 4.9mm; font-size: 6pt; }
+    .total-volume { left: 152mm; top: 188.4mm; width: 50.4mm; height: 4.9mm; }
+    .charges-description { left: 91.7mm; top: 199.3mm; width: 62.8mm; height: 16.9mm; }
+    .shipper-signature-name { left: 92.1mm; top: 232.8mm; width: 104.4mm; height: 13.4mm; }
+    .issue-detail { left: 91.7mm; top: 257.2mm; width: 75.1mm; height: 6.4mm; }
+    .issuer-signature { left: 160.2mm; top: 258.2mm; width: 42.3mm; height: 5.3mm; text-align: center; }
+    .copy-label { position: absolute; z-index: 2; left: 55mm; top: 273.8mm; width: 100mm; margin: 0; color: #f00; font: 10pt Arial, Helvetica, sans-serif; text-align: center; white-space: nowrap; }
+    .barcode { position: absolute; z-index: 2; left: 169.5mm; top: 270.3mm; width: 37mm; height: 12mm; object-fit: fill; }
+  </style>
+</head>
+<body>
+  <section class="page face-page">
+    <p class="copy-start">[[MAWB_COPY_START]]</p>
+    <img class="page-background" src="assets/mawb-face-form.png" alt="">
+
+    <p class="field reference reference-prefix">{d.routing[isMainCarriage=true].masterTransportReference:substr(0,3)}</p>
+    <p class="field reference center reference-origin">{d.routing[isMainCarriage=true].origin.unlocode:substr(2,5)}</p>
+    <p class="field reference reference-suffix">{d.routing[isMainCarriage=true].masterTransportReference:substr(4,12)}</p>
+    <p class="field reference top-reference-right">{d.routing[isMainCarriage=true].masterTransportReference:ellipsis(18)}</p>
+    <p class="field issuer">MNG AIRLINES<br>YESILKOY CAD.NO 9 FLORYA<br>ISTANBUL</p>
+
+    <p class="field address shipper">{d.shipper.name:ellipsis(48)}<br>{d.shipper.address.line1:ellipsis(52)}<br>{d.shipper.address.line2:ellipsis(52)}<br>{d.shipper.address.city:ellipsis(28)} {d.shipper.address.countyOrState:ellipsis(20)}<br>{d.shipper.address.postalCode:ellipsis(16)} {d.shipper.address.countryCode:ellipsis(3)}</p>
+    <p class="field address consignee">{d.consignee.name:ellipsis(48)}<br>{d.consignee.address.line1:ellipsis(52)}<br>{d.consignee.address.line2:ellipsis(52)}<br>{d.consignee.address.city:ellipsis(28)} {d.consignee.address.countyOrState:ellipsis(20)}<br>{d.consignee.address.postalCode:ellipsis(16)} {d.consignee.address.countryCode:ellipsis(3)}</p>
+    <p class="field issuing-agent">{d.job.legalEntityName}<br>{d.job.origin.name}</p>
+    <p class="field accounting">SHP REF: {d.job.period}-{d.job.number}<br>AGT REF: {d.routing[isMainCarriage=true].houseTransportReference}<br>BOOKING: {d.routing[isMainCarriage=true].carrierBookingReference}</p>
+
+    <p class="field departure">{d.routing[isMainCarriage=true].origin.name}</p>
+    <p class="field center route-to-one">{d.routing[isMainCarriage=true].destination.unlocode:substr(2,5)}</p>
+    <p class="field route-carrier-one">MNG AIRLINES</p>
+    <p class="field route-flight">{d.routing[isMainCarriage=true].flightNumber}</p>
+    <p class="field center currency"></p>
+    <p class="field destination">{d.routing[isMainCarriage=true].destination.name}</p>
+    <p class="field center flight-one">{d.routing[isMainCarriage=true].flightNumber}</p>
+    <p class="field center flight-two">{d.routing[isMainCarriage=true].plannedDepartureAt:formatD(DD/MM/YYYY)}</p>
+    <p class="field handling">SPX &nbsp; JOB {d.job.period}-{d.job.number}<br>{d.cargo[].marksAndNumbers:aggStr(' · ')}</p>
+    <p class="field center sci">X</p>
+
+    <table class="cargo-data">
+      <colgroup>
+        <col style="width: 9.9mm"><col style="width: 18mm"><col style="width: 4.3mm"><col style="width: 6.3mm"><col style="width: 19.8mm"><col style="width: 18.7mm"><col style="width: 24mm"><col style="width: 35mm"><col style="width: 51mm">
+      </colgroup>
+      <tr>
+        <td class="center">{d.cargo[].packageQuantity:aggSum}</td>
+        <td class="right">{d.cargo[].grossWeight:aggSum:formatN(2)}</td>
+        <td class="center">{d.cargo[0].weightUnit:substr(0,1)}</td>
+        <td></td>
+        <td>{d.cargo[].hsCode:aggStr(' · '):ellipsis(12)}</td>
+        <td class="right">{d.cargo[].grossWeight:aggSum:formatN(2)}</td>
+        <td></td>
+        <td></td>
+        <td>{d.cargo[].commodity:aggStr(' · '):ellipsis(30)}<br>{d.cargo[].description:aggStr(' · '):ellipsis(30)}<br>{d.cargo[].marksAndNumbers:aggStr(' · '):ellipsis(30)}</td>
+      </tr>
+    </table>
+
+    <p class="field center total-pieces">{d.cargo[].packageQuantity:aggSum}</p>
+    <p class="field right total-weight">{d.cargo[].grossWeight:aggSum:formatN(2)}</p>
+    <p class="field right total-chargeable">{d.cargo[].grossWeight:aggSum:formatN(2)}</p>
+    <p class="field total-volume">{d.cargo[].volume:aggSum:formatN(3)} {d.cargo[0].volumeUnit}</p>
+    <p class="field charges-description">{d.cargo[].description:aggStr(' · ')}</p>
+    <p class="field shipper-signature-name">{d.job.legalEntityName:ellipsis(42)}<br>AS AGENTS FOR THE CARRIER MNG AIRLINES</p>
+    <p class="field issue-detail">{d.routing[isMainCarriage=true].plannedDepartureAt:formatD(DD/MM/YYYY)} &nbsp; {d.routing[isMainCarriage=true].origin.name}</p>
+    <p class="field issuer-signature">{d.job.legalEntityName}</p>
+    <p class="copy-label">[[MAWB_COPY_LABEL]]</p>
+    <img class="barcode" src="assets/barcode-placeholder.png" alt="{d.routing[isMainCarriage=true].masterTransportReference:barcode(code128,includetext:false,width:105,height:28)}">
+  </section>
+
+  <section class="page terms-page">
+    <p class="terms-start">[[MAWB_TERMS_START]]</p>
+    <img class="page-background" src="assets/mawb-conditions.png" alt="Conditions of contract">
+  </section>
+</body>
+</html>

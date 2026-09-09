@@ -5,7 +5,7 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { XIcon } from "lucide-react"
+import { XIcon } from "@/components/icons/hugeicons"
 
 function Dialog({
   ...props
@@ -51,13 +51,17 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  closeLabel = "Close",
+  overlayClassName,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  closeLabel?: string
+  overlayClassName?: string
 }) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
@@ -75,7 +79,7 @@ function DialogContent({
               size="icon-sm"
             >
               <XIcon className="transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:rotate-90" />
-              <span className="sr-only">Close</span>
+              <span className="sr-only">{closeLabel}</span>
             </Button>
           </DialogPrimitive.Close>
         )}

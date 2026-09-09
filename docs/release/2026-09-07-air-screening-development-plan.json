@@ -1,0 +1,8 @@
+{
+  "projectId": "aqtwypsuijxlnvtxpuxe",
+  "status": "local preflight only; hosted release not yet verified",
+  "migrations": [
+    { "file": "20260907140238_booking_cargo_security_evidence.sql", "sha256": "920aff075b5281482e156dfb92a767392e77fba8a22de537f7a7c9e9c823b625" },
+    { "file": "20260907142751_dexter_booking_security_evidence_parity.sql", "sha256": "2f3f4958b35b3d86a1a77e78c41d903b649846faf65a03d1db27c3c06ab74b9b" }
+  ]
+}

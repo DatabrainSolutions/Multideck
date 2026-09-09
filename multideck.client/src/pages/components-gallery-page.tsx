@@ -1,14 +1,66 @@
-import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, Bell, Check, ChevronDown, Clipboard, Cloud, Component, Download, FileText, Folder, Image, KeyRound, Mail, Search, Ship, Sparkles, UserRound } from "lucide-react"
+import { defaultPaginationPageSize } from "@/lib/pagination"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { motion, useReducedMotion } from "motion/react"
+import { useTheme } from "@/lib/theme-provider"
+import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, PackageCheck, Pen01, Pencil, Pin, Search, Settings2, Ship, Star, Trash2, UserRound, Zap } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
+import toastErrorIcon from "@/assets/toasts/toast-error.png"
+import toastGeneralIcon from "@/assets/toasts/toast-general.png"
+import toastSuccessIcon from "@/assets/toasts/toast-success.png"
 import { Button } from "@/components/ui/button"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Iphone } from "@/components/ui/iphone"
+import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
+import { CargoAllocationEditor } from "@/components/multideck/cargo-allocation-editor"
+import { BookingRouteMilestones } from "@/components/multideck/booking-route-milestones"
+import { BookingDangerousGoodsEditor } from "@/components/multideck/booking-dangerous-goods"
+import { BookingSecurityEvidenceEditor } from "@/components/multideck/booking-security-evidence"
+import type { BookingWorkflowMilestone, BookingWorkflowWorkspace } from "@/lib/booking-workflow-api"
+import type { BookingCargoAllocation } from "@/lib/booking-workflow-api"
+import { newQuoteCargoLine } from "@/lib/quote-cargo"
+import {
+  Context,
+  ContextContent,
+  ContextContentHeader,
+  ContextTrigger,
+} from "@/components/ai-elements/context"
+import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from "@/components/ai-elements/reasoning"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
+import {
+  RegisterFacetSelect,
+  RegisterRefreshButton,
+  RegisterSearchField,
+  RegisterToolbarActions,
+  RegisterToolbarDivider,
+  RegisterViewSwitch,
+  registerButtonClass,
+} from "@/components/multideck/register-toolbar"
 import { Input } from "@/components/ui/input"
+import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { DriveFileTile, DriveFolderTile } from "@/components/multideck/drive-components"
+import { accentShiftDurationMs, useAccentPresetId } from "@/lib/accent-theme"
+import type { DriveFile, DriveFolder, DriveFolderStats } from "@/lib/drive-api"
 import { cn } from "@/lib/utils"
-import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteBookingIds, liveBookings, marlowContacts, marlowMetrics, metricCards, quoteAuditEvents, reportTemplates, bookingFilters, bookingMetrics, bookings, warehouseOrders, warehouseProducts, warehouseStockRows } from "@/data/multideck-data"
+import type { ApiLead, ApiLeadDetail } from "@/lib/lead-api"
+import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmLeadFieldSettings, crmPipelineSettings, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteBookingIds, liveBookings, marlowContacts, marlowMetrics, metricCards, quoteAuditEvents, reportTemplates, bookingFilters, bookingMetrics, bookings, warehouseOrders, warehouseProducts, warehouseStockRows } from "@/data/multideck-data"
 import { AnimatedList } from "@/components/multideck/animated-list"
+import { AccentPicker } from "@/components/multideck/accent-picker"
+import { AppBreadcrumbs } from "@/components/multideck/app-breadcrumbs"
 import { CommandInput } from "@/components/multideck/command-input"
 import { SidebarNavItem } from "@/components/multideck/app-sidebar"
 import { MetricCard } from "@/components/multideck/metric-card"
@@ -31,16 +83,70 @@ import {
   LaneMixPanel,
   PrimaryContactsPanel,
 } from "@/components/multideck/customer-components"
-import { CrmActivityTimeline, CrmAssetFolderCard, CrmAssetRow, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
-import { FilterChips, SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
+import { CrmActivityTimeline, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
+import { CopyableField } from "@/components/multideck/copyable-field"
+import { AutoPopulatedInput, AutoPopulatedTextarea, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
+import { TagEntryField } from "@/components/multideck/tag-entry-field"
+import { CardMiniature, CardStylePresetPicker, ContactCardLayoutPicker, ContactCardSocialLinksEditor, QrStylePicker } from "@/components/multideck/contact-card-design"
+import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
+import { OrganisationFoundationPanel } from "@/components/multideck/organisation-foundation-panel"
+import {
+  AmountCurrencyField,
+  CargoCharacteristicsField,
+  CompactCombobox,
+  CompactFieldRow,
+  CompactSectionShell,
+  IncotermField,
+  LocationFields,
+  NumberUnitField,
+  RecurrenceBuilder,
+} from "@/components/multideck/quote-details/quote-detail-fields"
+import {
+  EMPTY_CARGO_CHARACTERISTICS,
+  EMPTY_HAZARDOUS_DETAILS,
+  EMPTY_LOCATION,
+  EMPTY_RECURRENCE,
+  type AmountCurrencyValue,
+  type CargoCharacteristics,
+  type HazardousDetails,
+  type IncotermCode,
+  type LocationValue,
+  type NumberUnitValue,
+  type RecurrenceValue,
+} from "@/components/multideck/quote-details/quote-detail-model"
+import { AutomationRunHistory } from "@/components/multideck/contact-card-automation"
+import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
+import { CrmPipelineEditor } from "@/components/multideck/crm-pipeline-editor"
+import { ChoiceControl, FilterChips, SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
+import { EmailMessageRenderer } from "@/components/multideck/email-message-renderer"
+import { EmailDeliveryStatus } from "@/components/multideck/email-delivery-status"
+import { InboxThreadRow } from "@/components/multideck/inbox-thread-row"
+import { MailComposer, type ComposerState } from "@/components/multideck/mail-composer"
+import { ThreadSummary } from "@/components/multideck/thread-summary"
+import type { InboxThreadListItem, Mailbox, ThreadSummaryState } from "@/lib/inbox-api"
+import type { ApiCustomerDetail, CustomerReference } from "@/lib/customer-api"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
-import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
+import { StatusPill, TablePillKindContext, toneToVar } from "@/components/multideck/status-pill"
+import { UsageAllowanceCard, type UsageAllowanceCategory } from "@/components/multideck/usage-allowance-card"
+import { TodoActionStateIcon, TodoCompletionControl, TodoPriorityPicker, TodoPriorityPill } from "@/components/multideck/todo-components"
+import { ScreeningListFreshness, ScreeningMatchList, ScreeningMatchRow, ScreeningOutcomePill, ScreeningResultSummary } from "@/components/multideck/screening-components"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
 import { AuthIdentityManager, AuthProviderSelector } from "@/components/multideck/auth-provider-selector"
-import { BookingAdvancedSearch, BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingViewModes, bookingViewOptions, type BookingSearchCriterion, type BookingViewMode } from "@/components/multideck/booking-components"
+import { DashboardPriorityQueue } from "@/components/multideck/dashboard-priority-queue"
+import { DashboardPerformancePanel } from "@/components/multideck/dashboard-performance-panel"
+import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
+import { DashboardCoveragePanel } from "@/components/multideck/dashboard-coverage-panel"
+import { DashboardBreakdownPanel } from "@/components/multideck/dashboard-breakdown-panel"
+import type { DashboardKpi, DashboardPriorityItem, DashboardTrendPoint } from "@/lib/dashboard-live-data"
+import { BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingSearchFieldOptions, bookingViewModes, bookingViewOptions, type BookingViewMode } from "@/components/multideck/booking-components"
+import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
 import { DomesticJobStageRail, DomesticRoadJobCard, DomesticRoadKanbanBoard, domesticRoadJobs, roadJobStageStatus, roadJobStages } from "@/components/multideck/domestic-road-components"
 import { WarehouseKanbanBoardPreview, WarehouseOrdersTable, WarehouseProductsTable, WarehouseStockTable } from "@/components/multideck/warehouse-components"
 import { WarehouseFormField } from "@/components/multideck/warehouse-management-components"
+import { WarehouseExceptionSummary, WarehouseObjectSummary, WarehouseQuantityUomField } from "@/components/multideck/warehouse-inventory-workspace"
+import { PurchaseOrderLineEditor } from "@/components/multideck/warehouse-purchase-orders-workspace"
+import type { WarehousePurchaseOrderLine, WarehousePurchaseOrderReference } from "@/lib/warehouse"
+import type { WarehouseHandlingUnit, WarehouseInventoryException } from "@/lib/warehouse"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   DexterAttachmentPalette,
@@ -49,14 +155,38 @@ import {
   DexterHistoryList,
   DexterMonitorCard,
   DexterMonitorDetailSheet,
+  DexterModelMenu,
+  DexterMentionInput,
   DexterPromptComposer,
   DexterRiskTable,
-  DexterSpecialistMenu,
+  DexterRoleMenu,
   DexterSpecialistPicker,
   defaultDexterAttachments,
   defaultDexterSpecialists,
+  type DexterAccessMode,
+  type DexterMentionItem,
   type DexterSpecialistId,
 } from "@/components/multideck/agent-dexter-components"
+import { HomeDexterLauncher } from "@/components/multideck/home-dexter-launcher"
+import { HomePromptRail, type HomePromptSuggestion } from "@/components/multideck/home-prompt-rail"
+import {
+  HomeDeckAction,
+  HomeDeckPanel,
+  HomeDeckRow,
+  HomeDeckTile,
+  homeDeckRowButtonClass,
+} from "@/components/multideck/home-deck-panel"
+import { DexterActionApproval } from "@/components/multideck/dexter-action-approval"
+import { DexterInlineCitation } from "@/components/multideck/dexter-inline-citation"
+import { ScoreExplanationPopover } from "@/components/multideck/score-explanation-popover"
+import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
+import { DexterEmailComposeCard } from "@/components/multideck/dexter-email-compose-card"
+import { AiPromptMorph } from "@/components/multideck/ai-prompt-morph"
+import { WatchModeAurora } from "@/components/multideck/aurora-background"
+import { defaultDexterModelId, type DexterModelId } from "@/data/dexter-models"
+import { defaultDexterMentionItems } from "@/data/dexter-mentions"
+import { defaultBranding } from "@/data/contact-card-data"
+import type { AutomationRun, CardBranding, CardLayout, CardSocialLink } from "@/data/contact-card-data"
 import {
   AreaChartCard,
   BarChartCard,
@@ -88,35 +218,83 @@ import {
   SettingsIntegrationRow,
   SettingsOptionCard,
   SettingsPanel,
+  SettingsProgressRing,
   SettingsRail,
   SettingsSummaryCard,
   type SettingsTabGroup,
 } from "@/components/multideck/settings-components"
 import { Table, TableBody } from "@/components/ui/table"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
-import { AIEdgeGlow } from "@/components/multideck/ai-edge-glow"
+import { PublicBrandIdentity } from "@/components/multideck/public-brand-identity"
 import { DashboardCustomisePanel } from "@/components/multideck/dashboard-customise-panel"
-import { MultideckDateRangePicker, type MultideckDateRange } from "@/components/multideck/date-picker"
+import { MultideckDatePicker, MultideckDateRangePicker, MultideckDateTimePicker, type MultideckDateRange } from "@/components/multideck/date-picker"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
+import { SidebarItemMenu } from "@/components/multideck/sidebar-item-menu"
+import { SidebarArrangeCanvas, type SidebarArrangeItem } from "@/components/multideck/sidebar-arrange"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
+import { DexterSummonPrompt } from "@/components/multideck/dexter-summon-prompt"
+import { ShortcutKeys } from "@/components/multideck/keyboard-shortcut-keys"
+import { KeyboardShortcutsPanel } from "@/components/multideck/keyboard-shortcuts-panel"
+import { DictationStatusPill, type DictationStatusPhase } from "@/components/multideck/dictation-status-pill"
+import { chord, multiKeyChord, pointerGesture, sequence } from "@/lib/keyboard-shortcut-binding"
+import type { SummonTarget } from "@/lib/dexter-summon-context"
 import { DexterCompanionSidebar } from "@/components/multideck/dexter-companion-sidebar"
 import { PageSettingsMenu } from "@/components/multideck/page-settings-menu"
 import { AuditTimeline } from "@/components/multideck/audit-timeline"
 import { AuditWorkspace, QUOTE_AUDIT_SAMPLE_DATA } from "@/components/multideck/audit-workspace"
+import { LifecycleNotes, type LifecycleNotesPreviewState } from "@/components/multideck/lifecycle-notes"
+import {
+  PhoneCallAnalysisLauncher,
+  PhoneCallAttentionList,
+  PhoneCallCoverage,
+  PhoneCallIdentityMatchReview,
+  PhoneCallLinkedRecordPreview,
+  PhoneCallMatchPill,
+  PhoneCallMetricStrip,
+  PhoneCallOutcomePill,
+  PhoneCallProviderHealth,
+  PhoneCallReasonList,
+  PhoneCallSourceBoundaryPreview,
+  PhoneCallSuggestedActions,
+  PhoneCallTranscriptPill,
+  PhoneCallVolumeChart,
+} from "@/components/multideck/phone-call-components"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { AvailabilityPicker } from "@/components/multideck/availability-picker"
+import { VerificationCodeInput } from "@/components/multideck/verification-code-input"
+import { CalendarDayRibbon, CalendarView } from "@/components/multideck/calendar-view"
+import { MeetingColourPicker } from "@/components/multideck/meeting-colour-picker"
+import { MeetingAttendeePicker } from "@/components/multideck/meeting-attendee-picker"
+import { BookingHostPicker, BookingLinkKindPicker, BookingQuestionBuilder, defaultBookingQuestions } from "@/components/multideck/booking-link-builder"
+import { MeetingAttendeeList, MeetingResponseSummary } from "@/components/multideck/meeting-attendee-status"
+import { MeetingProviderSelect } from "@/components/multideck/meeting-provider-select"
+import { MeetingTimePicker } from "@/components/multideck/meeting-time-picker"
+import { WorkingHoursEditor, defaultWorkingHours, type WorkingHours } from "@/components/multideck/working-hours-editor"
+import type { BookingHostCandidate, BookingLinkKind, BookingQuestion, CalendarEvent, CalendarProvider, CalendarRibbon, MeetingColour, MeetingParticipant, MeetingPersonSuggestion } from "@/lib/calendar-api"
+import { CustomsReadinessReview } from "@/components/multideck/customs-readiness-review"
 import { UnifiedQuoteChargesWorkspace, type UnifiedQuoteChargeRow } from "@/components/multideck/unified-quote-charges-workspace"
-import { QuoteSearchBuilder, type QuoteSearchQuery } from "@/components/multideck/quote-search-builder"
+import { quoteMatchesSearch, quoteSearchFieldOptions, type QuoteSearchQuery } from "@/lib/quote-filters"
+import { matchesFilterQuery, type FilterFieldOption, type FilterQuery } from "@/lib/advanced-filters"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
-import { DocumentViewer, PaperTrayStack } from "@/components/multideck/paper-tray"
+import { DocumentEvidenceViewer } from "@/components/multideck/document-evidence-viewer"
+import { SuggestedUpdateReview } from "@/components/multideck/suggested-update-review"
+import { PdfDocumentViewerDialog } from "@/components/multideck/pdf-document-viewer-dialog"
+import { DocumentExtractionProgress } from "@/components/multideck/document-extraction-progress"
 import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/components/multideck/document-workspace"
-import { createInitialPaperTrays } from "@/data/paper-tray-data"
+import { InlineField, InlineFieldCard, InlineSelectField } from "@/components/multideck/inline-field"
+import { SideDrawer } from "@/components/multideck/side-drawer"
+import { WizardDialog } from "@/components/multideck/wizard-dialog"
+import { ScreenshotCaptureEditor, SupportTicketAttachmentPreview } from "@/components/multideck/support-ticket-dialog"
+import { TicketAttachmentsPreview } from "@/components/multideck/ticket-attachments-preview"
+import { ImageLightbox } from "@/components/multideck/image-lightbox"
+import { useLanguage } from "@/i18n/language-provider"
 
 type GalleryIconKey = keyof typeof galleryIcons
 
 const sectionLinks = ["Introduction", "Components", "Usage", "Theming", "Tokens"]
 const rightRail = ["Purpose", "Preview", "Code", "Usage", "Token dependency"]
 const galleryTabTriggerClass =
-  "relative h-10 rounded-none border-0 bg-transparent px-0 pr-8 text-[14px] font-medium text-[var(--md-text)] shadow-none after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-[calc(100%-2rem)] after:rounded-full after:bg-[var(--md-ink)] after:opacity-0 focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-none data-active:border-transparent data-active:bg-transparent data-active:shadow-none data-active:after:opacity-100 data-[state=active]:border-transparent data-[state=active]:bg-transparent data-[state=active]:text-[var(--md-ink)] data-[state=active]:shadow-none data-[state=active]:after:opacity-100"
+  "relative h-10 rounded-none border-0 bg-transparent px-0 pr-8 text-[14px] font-medium text-[var(--md-text)] shadow-none after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-[calc(100%-2rem)] after:rounded-full after:bg-[var(--md-accent)] after:opacity-0 focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-none data-active:border-transparent data-active:bg-transparent data-active:text-[var(--md-accent)] data-active:shadow-none data-active:after:opacity-100 data-[state=active]:border-transparent data-[state=active]:bg-transparent data-[state=active]:text-[var(--md-accent)] data-[state=active]:shadow-none data-[state=active]:after:opacity-100"
 type GalleryComponent = (typeof galleryComponents)[number]
 type GallerySidebarGroup = {
   label: string
@@ -128,17 +306,17 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Design system",
     helper: "Tokens, type, surfaces",
-    ids: ["colours", "typography", "surface"],
+    ids: ["colours", "hugeicons-system", "typography", "surface"],
   },
   {
     label: "Chart components",
     helper: "Graphs, KPI boxes, report visuals",
-    ids: ["metric-card", "line-chart", "area-chart", "bar-chart", "stacked-bar-chart", "donut-chart", "funnel-chart", "heatmap-chart", "radial-goal-chart", "scatter-chart", "mixed-chart"],
+    ids: ["metric-card", "performance-panel", "breakdown-panel", "line-chart", "area-chart", "bar-chart", "stacked-bar-chart", "donut-chart", "funnel-chart", "heatmap-chart", "radial-goal-chart", "scatter-chart", "mixed-chart"],
   },
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "sidebar", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "filter-chips", "tabs", "multi-select-menu", "pagination", "settings-controls", "settings-option-card"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "booking-link-kind-picker", "booking-host-picker", "booking-question-builder", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "toggle-group", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
   },
   {
     label: "Auth components",
@@ -153,45 +331,214 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "booking-route-milestones", "booking-dangerous-goods", "booking-security-evidence", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
-    helper: "Leads, contacts, deals, activity, marketing, settings",
-    ids: ["crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-asset-folder-card", "crm-asset-row", "crm-lead-detail-panel", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
+    helper: "Calls, leads, contacts, deals, activity, Drive, settings",
+    ids: ["phone-call-metric-strip", "phone-call-analysis-launcher", "phone-call-provider-health", "phone-call-volume-chart", "phone-call-attention-list", "phone-call-reason-list", "phone-call-coverage", "phone-call-status", "unified-phone-call-transcript", "phone-call-linked-record", "phone-call-identity-match-review", "phone-call-suggested-actions", "crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "drive-folder-tile", "drive-file-tile", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "contact-create-dialog", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder", "organisation-foundation-panel", "marketing-opt-in-control", "score-explanation-popover"],
   },
   {
     label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["dashboard-customise-panel", "dexter-action-pill", "dexter-companion-sidebar", "dexter-prompt-composer", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+  },
+  {
+    label: "Home",
+    helper: "The launcher, its prompts, and the deck beneath it",
+    ids: ["home-dexter-launcher", "home-prompt-rail", "home-deck-panel"],
+  },
+  {
+    label: "Support",
+    helper: "Ticket evidence and review",
+    ids: ["ticket-screenshot-editor", "ticket-attachment-preview"],
   },
   {
     label: "Feedback",
     helper: "Status and notifications",
-    ids: ["status-pill", "ai-edge-glow", "toast"],
+    ids: ["status-pill", "dictation-status-pill", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "toast"],
   },
   {
     label: "Settings",
     helper: "Configuration surfaces",
-    ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card"],
+    ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card", "usage-allowance-card", "settings-progress-ring", "keyboard-shortcuts-panel"],
+  },
+  {
+    label: "Inbox",
+    helper: "Mail, threads, and delivery evidence",
+    ids: ["inbox-thread-row", "email-message-renderer", "thread-summary", "mail-composer"],
+  },
+  {
+    label: "Contact cards",
+    helper: "Identity, QR, and automation controls",
+    ids: ["iphone-device-frame", "card-miniature", "contact-card-style-picker", "contact-card-layout-picker", "contact-card-qr-style-picker", "contact-card-social-links-editor", "automation-run-history"],
   },
 ]
 
-const previewPaperTrays = createInitialPaperTrays()
+const previewHomeSuggestions: HomePromptSuggestion[] = [
+  { id: "triage", title: "Work through what is due before cutoff", prompt: "Take my queue for today in deadline order and tell me exactly what to do on each one.", meta: "4 due", icon: Zap, specialistId: "ops" },
+  { id: "quotes", title: "Send the quotes that are ready", prompt: "Show me every quote that is ready to send, check each one, and draft the covering email.", meta: "2 ready", icon: PackageCheck, specialistId: "sales" },
+  { id: "risk", title: "Review the bookings most at risk", prompt: "Show me the bookings most at risk right now and what I should do next on each.", icon: BarChart3, specialistId: "analytics" },
+]
+
+function createGalleryTicketScreenshot() {
+  const canvas = document.createElement("canvas")
+  canvas.width = 1200
+  canvas.height = 720
+  const context = canvas.getContext("2d")
+  if (!context) return new File([], "multideck-dashboard.png", { type: "image/png" })
+
+  const roundedRect = (x: number, y: number, width: number, height: number, radius: number, fill: string) => {
+    context.beginPath()
+    context.roundRect(x, y, width, height, radius)
+    context.fillStyle = fill
+    context.fill()
+  }
+  context.fillStyle = "#eef1f0"
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  roundedRect(36, 34, 236, 652, 22, "#102825")
+  roundedRect(304, 34, 860, 84, 22, "#ffffff")
+  roundedRect(304, 148, 528, 538, 22, "#ffffff")
+  roundedRect(862, 148, 302, 260, 22, "#dceae7")
+  roundedRect(862, 438, 302, 248, 22, "#ffffff")
+  roundedRect(332, 178, 240, 18, 9, "#0a7068")
+  roundedRect(332, 216, 438, 10, 5, "#ccd4d1")
+  roundedRect(332, 244, 390, 10, 5, "#d8dedc")
+  roundedRect(332, 292, 472, 156, 16, "#f3f5f4")
+  roundedRect(332, 478, 206, 160, 16, "#e6edeb")
+  roundedRect(566, 478, 238, 160, 16, "#f3f5f4")
+
+  const encoded = canvas.toDataURL("image/png").split(",")[1] ?? ""
+  const binary = window.atob(encoded)
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+  return new File([bytes], "multideck-dashboard.png", { type: "image/png", lastModified: 1_775_000_000_000 })
+}
+
+function galleryLightboxImage(label: string, background: string, accent: string) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 900"><rect width="900" height="900" rx="72" fill="${background}"/><path d="M84 612C242 486 324 558 448 430C562 312 676 318 816 188V816H84Z" fill="${accent}" opacity=".2"/><circle cx="654" cy="246" r="92" fill="${accent}" opacity=".48"/><rect x="84" y="84" width="732" height="732" rx="46" fill="none" stroke="${accent}" stroke-opacity=".5" stroke-width="8"/><text x="110" y="752" fill="${accent}" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="92" font-weight="600">${label}</text></svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+
+const galleryLightboxItems = [
+  { id: "gallery-image-sea", src: galleryLightboxImage("SEA", "#dceae7", "#0a7068"), alt: "Sea freight preview" },
+  { id: "gallery-image-road", src: galleryLightboxImage("ROAD", "#eee8dc", "#9a651d"), alt: "Road freight preview" },
+  { id: "gallery-image-air", src: galleryLightboxImage("AIR", "#e2e8ef", "#42698d"), alt: "Air freight preview" },
+]
+
+const previewLifecycleNotes: LifecycleNotesPreviewState = {
+  canWrite: true,
+  currentUserId: "preview-user-maya",
+  targets: [
+    { type: "user", id: "preview-user-maya", label: "Maya Stone", detail: "Customs coordinator" },
+    { type: "department", id: "preview-department-customs", label: "Customs", detail: "Department" },
+    { type: "department", id: "preview-department-operations", label: "Operations", detail: "Department" },
+  ],
+  notes: [
+    {
+      id: "preview-booking-note",
+      subjectType: "booking",
+      subjectId: "preview-booking",
+      body: "Original invoice is in the document workspace. @Customs please check the preference statement before submission.",
+      author: { id: "preview-user-theo", name: "Theo Grant" },
+      mentions: [{ type: "department", id: "preview-department-customs", label: "Customs" }],
+      createdAt: "2026-08-25T10:26:00.000Z",
+    },
+    {
+      id: "preview-quote-note",
+      subjectType: "quote",
+      subjectId: "preview-quote",
+      body: "Customer approved the sea option and asked us to keep the Friday delivery window. @Operations",
+      author: { id: "preview-user-maya", name: "Maya Stone" },
+      mentions: [{ type: "department", id: "preview-department-operations", label: "Operations" }],
+      createdAt: "2026-08-25T09:42:00.000Z",
+    },
+  ],
+}
+
+const previewHomeJobs = [
+  { id: "MD-22455", customer: "Northwind GmbH" },
+  { id: "MD-22479", customer: "Marlow Apparel" },
+  { id: "MD-22414", customer: "Aldridge & Sons" },
+]
+
+const previewHomeClocks = [
+  { city: "Shanghai", gap: "closes in 20m", dot: "bg-[var(--md-red)]", tint: "bg-[color-mix(in_srgb,var(--md-red)_14%,var(--md-deck-surface))]" },
+  { city: "Dubai", gap: "closes in 55m", dot: "bg-[var(--md-amber)]", tint: "bg-[color-mix(in_srgb,var(--md-amber)_14%,var(--md-deck-surface))]" },
+  { city: "London", gap: "closes in 3h", dot: "bg-[var(--md-line-strong)]", tint: "" },
+  { city: "New York", gap: "closes in 7h", dot: "bg-[var(--md-line-strong)]", tint: "" },
+]
+
+/** Deadlines are stamped relative to load so the buckets always demonstrate. */
+const previewNow = Date.now()
+const previewPriorityItems: DashboardPriorityItem[] = [
+  { id: "p1", kind: "exception", reference: "MD-22479", task: "Resolve tracking exception", customer: "Halo Retail Group", context: "Ningbo → Rotterdam", status: "Exception", owner: "Amelia Rowe", dueAt: previewNow - 78 * 60_000, dueKind: "action", tone: "red", bookingId: "MD-22479" },
+  { id: "p2", kind: "exception", reference: "MD-22466", task: "Review revised delivery plan", customer: "Northwind Foods", context: "Frankfurt → JFK", status: "Delayed", owner: "Amelia Rowe", dueAt: previewNow + 42 * 60_000, dueKind: "action", tone: "amber", bookingId: "MD-22466" },
+  { id: "p3", kind: "quote-send", reference: "Q-1043", task: "Send priced quote", customer: "Marlow Apparel", context: "GBFXT → USLAX", status: "Ready to send", owner: "Amelia Rowe", dueAt: previewNow + 105 * 60_000, dueKind: "cutoff", tone: "green", quoteReference: "Q-1043" },
+  { id: "p4", kind: "quote-progress", reference: "Q-1051", task: "Progress carrier pricing", customer: "Bright Harbour Ltd", context: "SGSIN → NLRTM", status: "In progress", owner: "Tomas Berg", dueAt: previewNow + 5 * 60 * 60_000, dueKind: "cutoff", tone: "blue", quoteReference: "Q-1051" },
+  { id: "p5", kind: "quote-progress", reference: "Q-1058", task: "Progress customer approval", customer: "Aster Components", context: "CNSHA → GBSOU", status: "Awaiting customer", owner: "Tomas Berg", dueAt: previewNow + 3 * 24 * 60 * 60_000, dueKind: "departure", tone: "neutral", quoteReference: "Q-1058" },
+]
+
+const previewPerformanceKpis: DashboardKpi[] = [
+  { label: "Active jobs", value: "24", change: "3 need action", detail: "3 need action", tone: "amber", series: [18, 19, 21, 20, 22, 23, 22, 24, 23, 24], delta: { direction: "up", text: "+33%", caption: "vs start of period" } },
+  { label: "Booking exceptions", value: "3", change: "21 on track", detail: "21 on track", tone: "red", series: [5, 5, 4, 4, 4, 3, 3, 4, 3, 3], delta: { direction: "down", text: "-40%", caption: "vs start of period" } },
+  { label: "Open quotes", value: "11", change: "4 ready", detail: "4 ready to send", tone: "green", series: [9, 10, 10, 12, 11, 11, 12, 11, 11, 11], delta: { direction: "up", text: "+22%", caption: "vs start of period" } },
+  { label: "Ready quotes", value: "4", change: "15 total", detail: "15 quotes in period", tone: "teal", series: [2, 3, 3, 3, 4, 4, 5, 4, 4, 4], delta: { direction: "up", text: "+100%", caption: "vs start of period" } },
+]
+
+const previewPerformanceTrends: Record<string, DashboardTrendPoint[]> = Object.fromEntries(
+  previewPerformanceKpis.map((kpi) => [
+    kpi.label,
+    (kpi.series ?? []).map((value, index) => ({ period: `W${index + 1}`, value })),
+  ]),
+)
+
+const previewBookingDateFields = new Set(["date", "departure", "arrival"])
+
+const previewBookingFilterFields: readonly FilterFieldOption[] = bookingSearchFieldOptions.map((option) => (
+  previewBookingDateFields.has(option.value)
+    ? { value: option.value, label: option.label, kind: "date" as const }
+    : { value: option.value, label: option.label, placeholder: option.placeholder }
+))
+
+function previewBookingFilterValue(booking: (typeof bookings)[number], field: string) {
+  const customFields = booking.customFields.flatMap((entry) => [entry.label, entry.value])
+  if (field === "date") return [booking.departureDate, booking.arrivalDate]
+  if (field === "departure") return booking.departureDate
+  if (field === "arrival") return booking.arrivalDate
+  if (field === "invoice") return booking.invoice
+  if (field === "jobRef") return booking.jobRef
+  if (field === "customerRef") return booking.customerRef
+  if (field === "supplierRef") return booking.supplierRef
+  if (field === "destination") return [booking.destination, booking.route]
+  if (field === "origin") return [booking.origin, booking.route]
+  if (field === "vessel") return [booking.vessel, booking.carrier]
+  if (field === "vin") return booking.vin
+  if (field === "customFields") return customFields
+  return [booking.id, booking.customer, booking.route, booking.carrier, booking.container, booking.invoice, booking.jobRef, booking.customerRef, booking.supplierRef, booking.origin, booking.destination, booking.vessel, booking.vin, ...customFields]
+}
 
 type PreviewChargeRow = {
   id: string
+  createdAt?: string
   description: string
   supplier: string
+  scope: string
+  status: "Approved" | "Review" | "Blocked"
   cost: number
   sell: number
 }
 
 const previewChargeRows: PreviewChargeRow[] = [
-  { id: "FRT", description: "International freight", supplier: "Bluewave Ocean", cost: 840, sell: 980 },
-  { id: "OCART", description: "Pickup transport", supplier: "Severn Road Logistics", cost: 610, sell: 630 },
-  { id: "DTHC", description: "Destination handling", supplier: "Kobe Gateway Agency", cost: 304, sell: 360 },
+  { id: "FRT", description: "International freight", supplier: "Bluewave Ocean", scope: "Ocean", status: "Approved", cost: 840, sell: 980 },
+  { id: "OCART", description: "Pickup transport", supplier: "Severn Road Logistics", scope: "Road", status: "Review", cost: 610, sell: 630 },
+  { id: "DTHC", description: "Destination handling", supplier: "Kobe Gateway Agency", scope: "Destination", status: "Blocked", cost: 304, sell: 360 },
 ]
+
+const previewPaginatedChargeRows: PreviewChargeRow[] = Array.from({ length: 57 }, (_, index) => ({
+  ...previewChargeRows[index % previewChargeRows.length],
+  id: `CH-${String(index + 1).padStart(3, "0")}`,
+  createdAt: new Date(Date.UTC(2026, 7, 1 + index)).toISOString(),
+}))
 
 const previewUnifiedChargeRowsSeed: UnifiedQuoteChargeRow[] = [
   { id: "preview-frt", code: "FRT", description: "International freight", supplierId: "supplier-bluewave", customerId: "customer-harbourworks", cost: 840, costCurrency: "USD", sell: 980, sellCurrency: "USD", costRoe: 1.25, sellRoe: 1.25, costRoeSource: "rate", sellRoeSource: "rate" },
@@ -200,87 +547,201 @@ const previewUnifiedChargeRowsSeed: UnifiedQuoteChargeRow[] = [
 ]
 
 const previewChargeColumns: DataTableColumn<PreviewChargeRow>[] = [
-  { id: "code", label: "Code", width: 100, defaultPinned: true, cell: (row) => <span dir="ltr">{row.id}</span>, sortValue: (row) => row.id },
-  { id: "description", label: "Description", width: 220, cell: (row) => row.description, sortValue: (row) => row.description },
-  { id: "supplier", label: "Supplier", width: 210, cell: (row) => row.supplier, sortValue: (row) => row.supplier },
-  { id: "cost", label: "Cost", width: 110, cell: (row) => `£${row.cost.toFixed(2)}`, sortValue: (row) => row.cost },
-  { id: "sell", label: "Sell", width: 110, cell: (row) => `£${row.sell.toFixed(2)}`, sortValue: (row) => row.sell },
+  { id: "code", label: "Code", width: 100, cell: (row) => <span dir="ltr">{row.id}</span>, sortValue: (row) => row.id },
+  { id: "description", label: "Description", kind: "long-text", width: 220, cell: (row) => row.description, sortValue: (row) => row.description },
+  { id: "supplier", label: "Supplier", kind: "identity", width: 210, cell: (row) => row.supplier, sortValue: (row) => row.supplier },
+  { id: "scope", label: "Scope", kind: "attribute", width: 130, cell: (row) => <StatusPill tone={row.scope === "Ocean" ? "blue" : row.scope === "Road" ? "amber" : "teal"}>{row.scope}</StatusPill> },
+  { id: "status", label: "Status", kind: "status", width: 126, cell: (row) => <StatusPill tone={row.status === "Approved" ? "green" : row.status === "Review" ? "amber" : "red"}>{row.status}</StatusPill> },
+  { id: "cost", label: "Cost", kind: "number", width: 110, cell: (row) => `£${row.cost.toFixed(2)}`, sortValue: (row) => row.cost },
+  { id: "sell", label: "Sell", kind: "number", width: 110, cell: (row) => `£${row.sell.toFixed(2)}`, sortValue: (row) => row.sell },
 ]
 
-const previewMarketingFolders = [
-  {
-    id: "brand-logos",
-    name: "Brand logos",
-    description: "Primary marks, partner lockups, favicon exports, and approved logo variations.",
-    itemCount: 9,
-    size: "48 MB",
-    updated: "Updated today",
-    owner: "Elena",
-    tone: "green" as const,
-    icon: Folder,
-  },
-  {
-    id: "graphics",
-    name: "Graphics",
-    description: "Lane visuals, customer education graphics, hero images, and social-ready artwork.",
-    itemCount: 14,
-    size: "312 MB",
-    updated: "Updated Tue",
-    owner: "Will",
-    tone: "green" as const,
-    icon: Image,
-  },
-  {
-    id: "sales-collateral",
-    name: "Sales collateral",
-    description: "One-pagers, trade-lane explainers, customer report inserts, and proposal assets.",
-    itemCount: 11,
-    size: "186 MB",
-    updated: "Updated Jun 7",
-    owner: "Mina",
-    tone: "green" as const,
-    icon: FileText,
-  },
+/* Stands in for a real preview seed: the same kind of ~1 KB inline image a stored
+   file carries, so the tile can demonstrate its instant first paint offline. Two
+   flat rects rather than a gradient, because a gradient needs a fragment reference
+   and a data URI is the wrong place to be escaping one. */
+function previewSeed(base: string, accent: string) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 6"><rect width="8" height="6" fill="${base}"/><rect x="3" y="2" width="6" height="5" fill="${accent}" opacity="0.7"/></svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+
+const previewDriveTimestamp = "2026-08-05T09:12:00.000Z"
+
+const previewDriveFolders: DriveFolder[] = [
+  { id: "preview-brand", parentId: null, name: "Brand", colour: "teal", icon: "palette", createdAt: previewDriveTimestamp, updatedAt: previewDriveTimestamp },
+  { id: "preview-graphics", parentId: null, name: "Graphics", colour: "violet", icon: "image", createdAt: previewDriveTimestamp, updatedAt: previewDriveTimestamp },
+  { id: "preview-decks", parentId: null, name: "Customer decks", colour: "ember", icon: "presentation", createdAt: previewDriveTimestamp, updatedAt: previewDriveTimestamp },
 ]
 
-const previewMarketingAssets = [
+const previewDriveFolderStats = new Map<string, DriveFolderStats>([
+  ["preview-brand", { folderCount: 2, fileCount: 9, byteTotal: 48 * 1024 * 1024, lastActivityAt: previewDriveTimestamp }],
+  ["preview-graphics", { folderCount: 0, fileCount: 14, byteTotal: 312 * 1024 * 1024, lastActivityAt: previewDriveTimestamp }],
+  ["preview-decks", { folderCount: 0, fileCount: 0, byteTotal: 0, lastActivityAt: null }],
+])
+
+const previewDriveFiles: DriveFile[] = [
   {
-    id: "md-primary-logo-svg",
-    folderId: "brand-logos",
+    id: "preview-logo",
+    folderId: "preview-brand",
     name: "multideck-primary-logo.svg",
-    type: "SVG",
-    size: "124 KB",
-    updated: "Today",
-    owner: "Elena",
-    usage: "Approved primary logo for light surfaces",
-    tone: "green" as const,
-    icon: FileText,
+    mimeType: "image/svg+xml",
+    sizeBytes: 126_976,
+    storagePath: "preview/files/logo.svg",
+    thumbnailPath: null,
+    previewSeed: previewSeed("#e6efed", "#bcd6d1"),
+    previewWidth: 1200,
+    previewHeight: 400,
+    createdAt: previewDriveTimestamp,
+    updatedAt: previewDriveTimestamp,
   },
   {
-    id: "peak-season-hero",
-    folderId: "graphics",
+    id: "preview-hero",
+    folderId: "preview-graphics",
     name: "peak-season-capacity-hero.png",
-    type: "PNG",
-    size: "18.6 MB",
-    updated: "Tue",
-    owner: "Will",
-    usage: "Hero graphic for peak-season advisory",
-    tone: "green" as const,
-    icon: Image,
+    mimeType: "image/png",
+    sizeBytes: 19_508_428,
+    storagePath: "preview/files/hero.png",
+    thumbnailPath: null,
+    previewSeed: previewSeed("#2f5f7d", "#9dc0d4"),
+    previewWidth: 2400,
+    previewHeight: 1350,
+    createdAt: previewDriveTimestamp,
+    updatedAt: previewDriveTimestamp,
   },
   {
-    id: "monthly-rates-html",
-    folderId: "email-templates",
-    name: "monthly-rates-newsletter.html",
-    type: "HTML",
-    size: "86 KB",
-    updated: "Jun 10",
-    owner: "Jamie",
-    usage: "Reusable rates newsletter shell",
-    tone: "green" as const,
-    icon: Mail,
+    id: "preview-review",
+    folderId: "preview-decks",
+    name: "quarterly-review.pdf",
+    mimeType: "application/pdf",
+    sizeBytes: 3_251_200,
+    storagePath: "preview/files/review.pdf",
+    thumbnailPath: null,
+    previewSeed: previewSeed("#f6f6f4", "#dedbd2"),
+    previewWidth: 1240,
+    previewHeight: 1754,
+    createdAt: previewDriveTimestamp,
+    updatedAt: previewDriveTimestamp,
+  },
+  {
+    id: "preview-tariff",
+    folderId: "preview-decks",
+    name: "2026-tariff-schedule.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    sizeBytes: 88_064,
+    storagePath: "preview/files/tariff.xlsx",
+    thumbnailPath: null,
+    previewSeed: null,
+    previewWidth: null,
+    previewHeight: null,
+    createdAt: previewDriveTimestamp,
+    updatedAt: previewDriveTimestamp,
   },
 ]
+
+const previewCrmLeads: ApiLead[] = [
+  {
+    id: "lead-northstar",
+    editVersion: 1,
+    companyName: "Northstar Components",
+    initials: "NC",
+    primaryContactName: "Amelia Hart",
+    primaryContactEmail: "amelia@northstar.example",
+    countryCode: "GB",
+    sourceCode: "REFERRAL",
+    sourceName: "Customer referral",
+    ownerId: "owner-elena",
+    ownerName: "Elena Moreno",
+    ownerInitials: "EM",
+    statusCode: "QUALIFYING",
+    statusName: "Qualifying",
+    isOpen: true,
+    isConverted: false,
+    isDisqualified: false,
+    ratingCode: "WARM",
+    ratingName: "Warm",
+    qualificationScore: 72,
+    qualificationCriteriaMet: 3,
+    conversionProbability: 64,
+    lastActivityAt: "2026-07-28T14:30:00Z",
+    lastActivitySubject: "Discovery call completed",
+    nextFollowUpAt: "2026-07-30T09:00:00Z",
+    createdAt: "2026-07-08T10:00:00Z",
+    valueAmount: 92000,
+    valueCurrencyCode: "GBP",
+    valueContext: "UK–Benelux road tender · Discovery",
+    tradeLane: "UK–Benelux",
+    serviceInterest: "Road freight",
+    openOpportunityCount: 1,
+  },
+  {
+    id: "lead-atlas",
+    editVersion: 1,
+    companyName: "Atlas Retail Supply",
+    initials: "AR",
+    primaryContactName: "Ravi Shah",
+    primaryContactEmail: "ravi@atlasretail.example",
+    countryCode: "NL",
+    sourceCode: "INBOUND",
+    sourceName: "Website enquiry",
+    ownerId: null,
+    ownerName: null,
+    ownerInitials: null,
+    statusCode: "NEW",
+    statusName: "New",
+    isOpen: true,
+    isConverted: false,
+    isDisqualified: false,
+    ratingCode: "UNRATED",
+    ratingName: "Unrated",
+    qualificationScore: null,
+    qualificationCriteriaMet: 0,
+    conversionProbability: null,
+    lastActivityAt: null,
+    lastActivitySubject: null,
+    nextFollowUpAt: null,
+    createdAt: "2026-07-27T08:10:00Z",
+    valueAmount: null,
+    valueCurrencyCode: null,
+    valueContext: "Ocean FCL enquiry",
+    tradeLane: "Shanghai–Rotterdam",
+    serviceInterest: "Ocean FCL",
+    openOpportunityCount: 0,
+  },
+]
+
+const previewCrmLeadDetails: ApiLeadDetail[] = previewCrmLeads.map((lead, index) => ({
+  ...lead,
+  company: index === 0
+    ? {
+        organisationId: "org-northstar",
+        email: "hello@northstar.example",
+        website: "https://northstar.example",
+        phone: "+44 121 555 0142",
+        address: "Foundry House, Birmingham B4 6QE, United Kingdom",
+      }
+    : {
+        organisationId: null,
+        email: null,
+        website: null,
+        phone: null,
+        address: null,
+      },
+  contacts: index === 0
+    ? [
+        { id: "contact-amelia", name: "Amelia Hart", initials: "AH", roleCode: "primary_contact", email: "amelia@northstar.example", phone: "+44 121 555 0188", isPrimary: true, lastContactAt: "2026-07-28T14:30:00Z" },
+        { id: "contact-james", name: "James Harrison", initials: "JH", roleCode: "procurement_director", email: "james@northstar.example", phone: null, isPrimary: false, lastContactAt: "2026-07-25T10:00:00Z" },
+        { id: "contact-maya", name: "Maya Chen", initials: "MC", roleCode: "logistics_manager", email: "maya@northstar.example", phone: null, isPrimary: false, lastContactAt: "2026-07-21T09:00:00Z" },
+      ]
+    : [
+        { id: "contact-ravi", name: "Ravi Shah", initials: "RS", roleCode: "primary_contact", email: "ravi@atlasretail.example", phone: null, isPrimary: true, lastContactAt: null },
+      ],
+  activities: index === 0
+    ? [
+        { id: "activity-discovery", typeCode: "call", subject: "Discovery call completed", summary: "Confirmed weekly import profile and decision process.", activityAt: "2026-07-28T14:30:00Z" },
+        { id: "activity-follow-up", typeCode: "email", subject: "Service overview shared", summary: "Road tender scope and next-step options sent.", activityAt: "2026-07-24T09:15:00Z" },
+      ]
+    : [],
+}))
 
 function groupGalleryComponents(filtered: GalleryComponent[]) {
   const byId = new Map(filtered.map((component) => [component.id, component]))
@@ -325,22 +786,75 @@ const introNotes = [
     body: "Start with the live preview, read the purpose, then use the code and usage tabs when a screen needs the same pattern. Compose these pieces before inventing a new one.",
   },
 ]
+/* The value beside each swatch is read back off the page rather than written down
+   here: the accent tokens are operator-chosen now, and the neutrals already
+   differed between light and dark, so a literal in this list could only ever be
+   right for one of the four combinations. */
 const colourTokens = [
-  ["Ink", "--md-ink", "#0b1413"],
-  ["Text", "--md-text", "#4f5b58"],
-  ["Subtle", "--md-subtle", "#687570"],
-  ["Background", "--md-bg", "#f3f4f4"],
-  ["Strong bg", "--md-bg-strong", "#eef1f0"],
-  ["Surface", "--md-surface", "#ffffff"],
-  ["Tint", "--md-surface-tint", "#eef1f0"],
-  ["Field", "--md-field-bg", "#e5e9e7"],
-  ["Selected", "--md-selected-bg", "#c8dcd6"],
-  ["Accent", "--md-accent", "#0a7068"],
-  ["Green", "--md-green", "#0a7068"],
-  ["Amber", "--md-amber", "#dd8a2b"],
-  ["Red", "--md-red", "#d14e4e"],
-  ["Blue", "--md-blue", "#4a7d9c"],
+  ["Ink", "--md-ink"],
+  ["Text", "--md-text"],
+  ["Subtle", "--md-subtle"],
+  ["Background", "--md-bg"],
+  ["Strong bg", "--md-bg-strong"],
+  ["Surface", "--md-surface"],
+  ["Tint", "--md-surface-tint"],
+  ["Field", "--md-field-bg"],
+  ["Selected", "--md-selected-bg"],
+  ["Accent", "--md-accent"],
+  ["Green", "--md-green"],
+  ["Amber", "--md-amber"],
+  ["Red", "--md-red"],
+  ["Blue", "--md-blue"],
+  ["AI cyan", "--md-ai-cyan"],
+  ["AI magenta", "--md-ai-magenta"],
+  ["AI gold", "--md-ai-gold"],
+  ["AI orange", "--md-ai-orange"],
 ]
+
+function rgbToHex(value: string) {
+  const channels = value.match(/[\d.]+/g)
+  if (!channels || channels.length < 3) return value
+
+  return `#${channels
+    .slice(0, 3)
+    .map((channel) => Math.round(Number(channel)).toString(16).padStart(2, "0"))
+    .join("")}`
+}
+
+function ColourTokenSwatch({ label, token }: { label: string; token: string }) {
+  const accentPresetId = useAccentPresetId()
+  const { resolvedTheme } = useTheme()
+  const swatchRef = useRef<HTMLDivElement>(null)
+  const [resolved, setResolved] = useState("")
+
+  useEffect(() => {
+    const element = swatchRef.current
+    if (!element) return
+
+    const read = () => setResolved(rgbToHex(window.getComputedStyle(element).backgroundColor))
+
+    read()
+    // Read again once the accent cross-fade has landed, so the caption reports the
+    // colour that settled rather than one sampled mid-transition.
+    const timer = window.setTimeout(read, accentShiftDurationMs + 80)
+    return () => window.clearTimeout(timer)
+  }, [accentPresetId, resolvedTheme])
+
+  return (
+    <div className="rounded-[var(--md-radius-lg)] bg-white/60 p-2 shadow-[var(--md-shadow-line)]">
+      <div
+        ref={swatchRef}
+        className="h-20 rounded-[var(--md-radius-md)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.42)]"
+        style={{ background: `var(${token})` }}
+      />
+      <div className="mt-3 px-1 pb-1">
+        <p className="text-[13px] font-medium text-[var(--md-ink)]">{label}</p>
+        <p className="mt-1 text-[11px] text-[var(--md-text)]">{token}</p>
+        <p className="mt-1 text-[11px] text-[var(--md-subtle)]">{resolved}</p>
+      </div>
+    </div>
+  )
+}
 const typographyRows = [
   ["24px / Medium", "Main page headings", "Northwind operations"],
   ["18px / Medium", "Subheads and important summaries", "Two bookings need attention"],
@@ -361,7 +875,7 @@ const settingsPreviewGroups: SettingsTabGroup[] = [
     label: "Workspace",
     items: [
       { id: "notifications", label: "Notifications", badge: "3", icon: Bell },
-      { id: "agent-dexter", label: "Agent Dexter", icon: Sparkles },
+      { id: "agent-dexter", label: "Agent Dexter", icon: AiBrain },
     ],
   },
 ]
@@ -469,7 +983,7 @@ function CodeBlock({ code }: { code: string }) {
     <div className="relative overflow-hidden rounded-[var(--md-radius-lg)] bg-[#07100f] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]">
       <pre
         className={cn(
-          "overflow-auto p-[var(--md-page-stack-gap)] font-mono text-[12px] leading-6 text-[#d8e2df] md-scrollbar transition-[max-height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "overflow-auto p-[var(--md-page-stack-gap)] text-[12px] leading-6 text-[#d8e2df] md-scrollbar transition-[max-height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
           canExpand && "pb-16",
           canExpand ? (expanded ? "max-h-[1100px]" : "max-h-[320px]") : "max-h-none",
         )}
@@ -511,11 +1025,817 @@ function FoundOnLinks({ links }: { links: (typeof galleryComponents)[number]["fo
   )
 }
 
+const previewSidebarRows: SidebarArrangeItem[] = [
+  { id: "overview", label: "Overview", icon: galleryIcons.sidebar },
+  { id: "bookings", label: "Bookings", icon: Ship },
+  { id: "documents", label: "Documents", icon: FileText },
+  { id: "customers", label: "Customers", icon: UserRound },
+]
+
+const previewSidebarOrder = previewSidebarRows.map((row) => row.id)
+
+/* ------------------------------------------------------------------------- *
+ * Inbox preview data. Small, self-contained samples so each mail component can
+ * be inspected here without a connected Gmail or Outlook account.
+ * ------------------------------------------------------------------------- */
+
+const previewInboxSummary: ThreadSummaryState = {
+  status: "ready",
+  text: "Marlow Apparel is waiting on the dual-use licence reference for MD-22455 before the broker will release the declaration. Claire has asked twice and flagged that the Felixstowe free-time window closes on 2 August.",
+  keyPoints: [],
+  sourceMessageIds: ["msg-1", "msg-2"],
+  model: "gpt-5.6-luna",
+  updatedAt: "2026-07-31T09:37:00Z",
+  error: null,
+}
+
+const previewInboxThreads: InboxThreadListItem[] = [
+  {
+    id: "preview-thread-1",
+    mailboxId: "preview-mbx",
+    provider: "gmail",
+    subject: "MD-22455 customs hold \u2014 licence confirmation still outstanding",
+    preview: "Hi Harry, the broker has come back asking for the dual-use licence reference before they will release the declaration.",
+    participants: [{ address: "claire.osei@marlowapparel.co.uk", displayName: "Claire Osei" }],
+    lastMessageAt: "2026-07-31T09:23:00Z",
+    unreadCount: 2,
+    messageCount: 4,
+    hasAttachments: true,
+    starred: true,
+    archived: false,
+    summary: previewInboxSummary,
+  },
+  {
+    id: "preview-thread-2",
+    mailboxId: "preview-mbx",
+    provider: "gmail",
+    subject: "Re: Felixstowe berthing window moved \u2014 revised ETA for MSC ANTONIA",
+    preview: "The berth has slipped to the 03:40 window on Saturday. Attaching the revised proforma so you can update the customer.",
+    participants: [{ address: "operations@mscagency.example", displayName: "MSC Agency Operations" }],
+    lastMessageAt: "2026-07-30T16:05:00Z",
+    unreadCount: 0,
+    messageCount: 2,
+    hasAttachments: true,
+    starred: false,
+    archived: false,
+    summary: { status: "none", text: null, keyPoints: [], sourceMessageIds: [], model: null, updatedAt: null, error: null },
+  },
+]
+
+function previewMailbox(overrides: Partial<Mailbox> & Pick<Mailbox, "id" | "displayName" | "address">): Mailbox {
+  return {
+    connectionId: "preview-conn",
+    provider: "gmail",
+    kind: "personal",
+    unreadCount: 0,
+    isDefault: false,
+    inboundEnabled: true,
+    outboundEnabled: true,
+    status: "connected",
+    lastSyncedAt: "2026-07-31T09:38:00Z",
+    indexStatus: "ready",
+    indexedCount: 2_480,
+    estimatedTotal: 2_480,
+    indexPercent: 100,
+    coreCoverageStart: "2025-07-31T09:38:00Z",
+    wasteCoverageStart: "2026-07-01T09:38:00Z",
+    coreRetentionMonths: 12,
+    wasteRetentionDays: 30,
+    error: null,
+    ...overrides,
+  }
+}
+
+const previewMailboxes: Mailbox[] = [
+  previewMailbox({ id: "preview-mbx", displayName: "Harry Phillips", address: "harry.phillips@northwind-forwarding.com", unreadCount: 12, isDefault: true }),
+  previewMailbox({ id: "preview-ops", displayName: "Operations desk", address: "ops@northwind-forwarding.com", kind: "shared", unreadCount: 4 }),
+  previewMailbox({ id: "preview-customs", displayName: "Customs & compliance", address: "customs@northwind-forwarding.com", kind: "group", outboundEnabled: false }),
+  previewMailbox({ id: "preview-finance", displayName: "Finance & receivables", address: "finance@northwind-forwarding.com", provider: "outlook", kind: "shared", unreadCount: 7, isDefault: true, status: "reauthorization_required", error: "Microsoft revoked the mail token." }),
+]
+
+/**
+ * Everything real mail throws at the renderer: a remote image, so the blocked
+ * state is visible; an inline signature logo, which must arrive without a frame
+ * around it; a layout table, which must not be drawn as a grid; a table that
+ * asked for borders, which must keep them; and emoji, which must come through
+ * in colour.
+ */
+const previewEmailSignatureLogo = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiI+PGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iMTUiIGZpbGw9IiMyZjZmNjMiLz48L3N2Zz4="
+const previewEmailHtml = `<div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td width="40"><img src="${previewEmailSignatureLogo}" alt="" width="32" height="32" /></td>
+      <td><strong>Northgate brokers</strong><br />Customs desk</td>
+    </tr>
+  </table>
+  <p>Hi Harry,</p>
+  <p>The broker has come back asking for the <strong>dual-use licence reference</strong> before they will release the declaration for MD-22455. 🎉</p>
+  <p><img src="https://images.example.com/tracking-pixel.png" alt="Remote tracking image" width="360" height="90" /></p>
+  <p>Free time at Felixstowe ends on <strong>2 August</strong>, after which demurrage starts at GBP 145 per day. ⚠️</p>
+  <table border="1" cellpadding="0" cellspacing="0">
+    <tr><th>Container</th><th>Free time ends</th></tr>
+    <tr><td>MSKU 442 118 9</td><td>2 August</td></tr>
+  </table>
+  <p>Best regards,<br />Claire Osei ✅</p>
+</div>`
+
+
+// A stand-in scanned page for the gallery. Real documents are white regardless of theme,
+// so this placeholder keeps paper colours rather than surface tokens.
+const previewDocumentPageMarkup = [
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1130">',
+  '<rect width="800" height="1130" fill="#ffffff"/>',
+  '<rect x="56" y="56" width="196" height="20" rx="4" fill="#c9d2d0"/>',
+  '<rect x="56" y="92" width="120" height="10" rx="3" fill="#e2e7e6"/>',
+  '<rect x="560" y="56" width="184" height="10" rx="3" fill="#e2e7e6"/>',
+  '<rect x="560" y="76" width="140" height="10" rx="3" fill="#e2e7e6"/>',
+  '<rect x="56" y="320" width="688" height="1" fill="#d8dedd"/>',
+  '<rect x="56" y="336" width="96" height="9" rx="3" fill="#c9d2d0"/>',
+  '<rect x="200" y="336" width="180" height="9" rx="3" fill="#c9d2d0"/>',
+  '<rect x="620" y="336" width="124" height="9" rx="3" fill="#c9d2d0"/>',
+  ...[380, 420, 460].flatMap((y) => [
+    `<rect x="56" y="${y}" width="80" height="9" rx="3" fill="#e2e7e6"/>`,
+    `<rect x="200" y="${y}" width="248" height="9" rx="3" fill="#e2e7e6"/>`,
+    `<rect x="620" y="${y}" width="124" height="9" rx="3" fill="#e2e7e6"/>`,
+  ]),
+  '<rect x="560" y="560" width="184" height="12" rx="3" fill="#c9d2d0"/>',
+  "</svg>",
+].join("")
+
+const previewDocumentPageUrl = `data:image/svg+xml;utf8,${encodeURIComponent(previewDocumentPageMarkup)}`
+
+function createGalleryDeclarationPdf() {
+  const pageOne = [
+    "BT /F1 17 Tf 56 780 Td (CDS export declaration) Tj ET",
+    "BT /F1 9 Tf 56 754 Td (MRN 26GB 0000 0000 0000 00) Tj ET",
+    "0.82 G 56 730 m 539 730 l S",
+    "BT /F1 10 Tf 56 690 Td (Declaration details) Tj ET",
+    "0.9 G 56 668 m 539 668 l S 56 632 m 539 632 l S 56 596 m 539 596 l S",
+    "BT /F1 9 Tf 68 646 Td (Exporter) Tj ET BT /F1 9 Tf 240 646 Td (Jenkar Shipping Ltd) Tj ET",
+    "BT /F1 9 Tf 68 610 Td (Destination) Tj ET BT /F1 9 Tf 240 610 Td (United Kingdom) Tj ET",
+    "BT /F1 9 Tf 68 574 Td (Items) Tj ET BT /F1 9 Tf 240 574 Td (2) Tj ET",
+  ].join("\n")
+  const pageTwo = [
+    "BT /F1 17 Tf 56 780 Td (Goods items) Tj ET",
+    "0.82 G 56 750 m 539 750 l S",
+    "BT /F1 10 Tf 56 714 Td (Item 1) Tj ET",
+    "BT /F1 9 Tf 68 684 Td (Commodity code) Tj ET BT /F1 9 Tf 240 684 Td (8471 30 00 00) Tj ET",
+    "BT /F1 9 Tf 68 656 Td (Description) Tj ET BT /F1 9 Tf 240 656 Td (Portable computers) Tj ET",
+    "0.9 G 56 624 m 539 624 l S",
+    "BT /F1 10 Tf 56 588 Td (Item 2) Tj ET",
+    "BT /F1 9 Tf 68 558 Td (Commodity code) Tj ET BT /F1 9 Tf 240 558 Td (8528 52 10 00) Tj ET",
+    "BT /F1 9 Tf 68 530 Td (Description) Tj ET BT /F1 9 Tf 240 530 Td (Computer monitors) Tj ET",
+  ].join("\n")
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${pageOne.length} >>\nstream\n${pageOne}\nendstream`,
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 7 0 R >>",
+    `<< /Length ${pageTwo.length} >>\nstream\n${pageTwo}\nendstream`,
+  ]
+  let pdf = "%PDF-1.4\n"
+  const offsets = [0]
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length)
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`
+  })
+  const xref = pdf.length
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  pdf += offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("")
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`
+  return new Blob([pdf], { type: "application/pdf" })
+}
+
+const previewExtractionStages = [
+  { id: "reading", label: "Reading the document", detail: "Opening the PDF and collecting its text and layout.", ceiling: 24, expectedMs: 1_400 },
+  { id: "extracting", label: "Finding the item lines", detail: "Picking out goods rows, quantities, values and codes.", ceiling: 88, expectedMs: 9_000 },
+  { id: "organising", label: "Preparing the review", detail: "Grouping by commodity code and locating each line on the page.", ceiling: 99, expectedMs: 1_200 },
+]
+
+const previewEvidenceBoxes = [
+  { id: "line-1", page: 1, box: { x: 0.07, y: 0.336, width: 0.86, height: 0.02 }, label: "Line 1" },
+  { id: "line-2", page: 1, box: { x: 0.07, y: 0.371, width: 0.86, height: 0.02 }, label: "Line 2" },
+  { id: "line-3", page: 1, box: { x: 0.07, y: 0.407, width: 0.86, height: 0.02 }, label: "Line 3", approximate: true, tone: "amber" as const },
+]
+
+function DocumentEvidenceViewerPreview() {
+  const [activeBoxId, setActiveBoxId] = useState("line-2")
+
+  return (
+    <DocumentEvidenceViewer
+      className="h-[420px]"
+      pages={[{ page: 1, width: 800, height: 1130, url: previewDocumentPageUrl }]}
+      boxes={previewEvidenceBoxes}
+      activeBoxId={activeBoxId}
+      onSelectBox={setActiveBoxId}
+      title="Your invoice"
+      meta={<StatusPill>3 of 3 located</StatusPill>}
+      empty="The document preview is still being prepared."
+    />
+  )
+}
+
+const previewSuggestedUpdate = {
+  id: "suggestion-preview",
+  status: "ready",
+  documentType: "booking_confirmation",
+  targetType: "booking",
+  targetId: "booking-preview",
+  targetLabel: "B-990001",
+  matchMethod: "booking_reference",
+  matchConfidence: 0.99,
+  sourceFileName: "Northstar-booking-confirmation-B-990001.pdf",
+  sourceSubject: "Updated booking confirmation · B-990001",
+  sourceMessageId: "message-preview",
+  sourceMailboxId: "mailbox-preview",
+  sourceThreadId: "thread-preview",
+  sourceAttachmentId: "attachment-preview",
+  summary: "The carrier has moved arrival by two days and supplied the final vessel, voyage and destination terminal.",
+  extracted: {},
+  evidence: {},
+  fields: [
+    { id: "arrival", code: "planned_arrival_at", label: "Planned arrival", currentValue: "2026-09-12T08:00:00Z", proposedValue: "2026-09-14T10:30:00Z", confidence: 0.99, selectedByDefault: true, appliedAt: null, evidence: {} },
+    { id: "vessel", code: "vessel", label: "Vessel", currentValue: null, proposedValue: "MV Sakura Meridian", confidence: 0.98, selectedByDefault: true, appliedAt: null, evidence: {} },
+    { id: "voyage", code: "voyage_number", label: "Voyage", currentValue: null, proposedValue: "SM482E", confidence: 0.98, selectedByDefault: true, appliedAt: null, evidence: {} },
+    { id: "terminal", code: "destination_terminal", label: "Destination terminal", currentValue: null, proposedValue: "Trinity Terminal", confidence: 0.96, selectedByDefault: true, appliedAt: null, evidence: {} },
+    { id: "weight", code: "gross_weight_kg", label: "Gross weight", currentValue: 1240, proposedValue: 1260, confidence: 0.92, selectedByDefault: false, appliedAt: null, evidence: {} },
+  ],
+  createdAt: "2026-08-26T12:00:00Z",
+  updatedAt: "2026-08-26T12:00:00Z",
+  appliedAt: null,
+  dismissedAt: null,
+  jobDocumentId: null,
+} satisfies import("@/lib/inbox-api").InboxSuggestedUpdate
+
+function SuggestedUpdateReviewPreview() {
+  const previewModes = ["Needs review", "Applied", "No match", "Ambiguous"] as const
+  const [mode, setMode] = useState<(typeof previewModes)[number]>("Needs review")
+  const [selectedFieldIds, setSelectedFieldIds] = useState(new Set(previewSuggestedUpdate.fields.filter((field) => field.selectedByDefault).map((field) => field.id)))
+  const suggestion: import("@/lib/inbox-api").InboxSuggestedUpdate = mode === "Applied"
+    ? {
+      ...previewSuggestedUpdate,
+      status: "applied",
+      appliedAt: "2026-08-26T12:08:00Z",
+      fields: previewSuggestedUpdate.fields.map((field, index) => ({ ...field, appliedAt: index < 3 ? "2026-08-26T12:08:00Z" : null })),
+    }
+    : mode === "No match"
+      ? {
+        ...previewSuggestedUpdate,
+        status: "needs_match",
+        targetType: null,
+        targetId: null,
+        targetLabel: null,
+        matchMethod: null,
+        matchConfidence: null,
+        summary: "The sender was recognised, but the document did not include enough shipment evidence to attach it safely.",
+        evidence: { matching: { matchState: "no_match", sender: { address: "ops@northstar-lines.com", domain: "northstar-lines.com", resolution: "unique_sender_domain" }, candidates: [] } },
+        fields: [],
+      }
+      : mode === "Ambiguous"
+        ? {
+          ...previewSuggestedUpdate,
+          status: "needs_match",
+          targetType: null,
+          targetId: null,
+          targetLabel: null,
+          matchMethod: null,
+          matchConfidence: null,
+          summary: "Two active Northstar bookings share the same route and arrival window, so neither was selected automatically.",
+          evidence: { matching: { matchState: "ambiguous", sender: { address: "ops@northstar-lines.com", domain: "northstar-lines.com", resolution: "unique_sender_domain" }, candidates: [{ id: "booking-a", label: "B-990001", score: 0.89 }, { id: "booking-b", label: "B-990014", score: 0.87 }] } },
+          fields: [],
+        }
+        : previewSuggestedUpdate
+
+  return (
+    <div className="grid w-full max-w-[1040px] gap-3">
+      <div className="flex justify-center">
+        <SegmentedControl options={previewModes} value={mode} onChange={setMode} ariaLabel="Suggested update state" />
+      </div>
+      <div className="h-[680px] overflow-hidden rounded-[var(--md-radius-xl)] shadow-[var(--md-shadow-line)]">
+        <SuggestedUpdateReview
+          suggestion={suggestion}
+          selectedFieldIds={selectedFieldIds}
+          onToggleField={(fieldId, selected) => setSelectedFieldIds((current) => { const next = new Set(current); if (selected) next.add(fieldId); else next.delete(fieldId); return next })}
+          onApply={() => toast.success("Would apply selected changes")}
+          onAttachToBooking={() => toast.success("Would add the document to the selected booking")}
+          onDismiss={() => toast.info("Would dismiss suggestion")}
+          onOpenSource={() => toast.info("Would open source email")}
+        />
+      </div>
+    </div>
+  )
+}
+
+function PdfDocumentViewerDialogPreview() {
+  const [open, setOpen] = useState(false)
+  const previewPdf = useMemo(createGalleryDeclarationPdf, [])
+  return <div className="grid min-h-[240px] w-full max-w-[720px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-8 shadow-[var(--md-shadow-line)]">
+    <div className="text-center"><FileText className="mx-auto size-7 text-[var(--md-accent)]" /><h3 className="mt-3 text-[15px] font-medium text-[var(--md-ink)]">Accepted declaration PDF</h3><p className="mt-1 text-[12px] text-[var(--md-text)]">Open the focused reader to inspect its zoom and download controls.</p><Button type="button" variant="ghost" className="mt-4 bg-black text-white shadow-none hover:bg-black/80 hover:text-white" onClick={() => setOpen(true)}>Open PDF viewer</Button></div>
+    <PdfDocumentViewerDialog open={open} onOpenChange={setOpen} blob={previewPdf} title="CDS export declaration" fileName="CDS-Export-MRN.pdf" meta="MRN 26GB 0000 0000 0000 00" onDownload={async () => undefined} />
+  </div>
+}
+
+const previewAutomationRuns: AutomationRun[] = [
+  {
+    id: "gallery-run-failed",
+    exchangeId: "exchange-gallery-1",
+    leadId: null,
+    status: "failed",
+    startedAt: "2026-08-03T10:42:18.000Z",
+    completedAt: "2026-08-03T10:42:18.684Z",
+    durationMs: 684,
+    recordsAffected: 1,
+    trigger: "Contact details shared",
+    errorSummary: "The deal stage no longer exists in the selected pipeline.",
+    recovery: "Choose a current stage in the Add to CRM step, publish the change, then rerun the failed steps.",
+    input: { name: "Nadia Perera", email: "nadia@halcyontextiles.com", company: "Halcyon Textiles" },
+    rerunOf: null,
+    isTest: false,
+    steps: [
+      { id: "gallery-step-1", actionId: "add-lead", kind: "add-to-crm", label: "Add lead to CRM", status: "succeeded", detail: "Created lead and kept the submitted details.", startedAt: "2026-08-03T10:42:18.000Z", durationMs: 416 },
+      { id: "gallery-step-2", actionId: "add-deal", kind: "add-to-crm", label: "Create deal", status: "failed", detail: "Stage ‘Qualified’ was not found.", startedAt: "2026-08-03T10:42:18.416Z", durationMs: 268 },
+    ],
+  },
+  {
+    id: "gallery-run-success",
+    exchangeId: "exchange-gallery-2",
+    leadId: "lead-gallery-2",
+    status: "succeeded",
+    startedAt: "2026-08-03T09:18:04.000Z",
+    completedAt: "2026-08-03T09:18:04.521Z",
+    durationMs: 521,
+    recordsAffected: 2,
+    trigger: "Contact details shared",
+    errorSummary: null,
+    recovery: null,
+    input: { name: "Owen Hughes", email: "owen@northgate.example", company: "Northgate" },
+    rerunOf: null,
+    isTest: false,
+    steps: [
+      { id: "gallery-step-3", actionId: "add-lead", kind: "add-to-crm", label: "Add lead to CRM", status: "succeeded", detail: "Matched the existing lead and refreshed its details.", startedAt: "2026-08-03T09:18:04.000Z", durationMs: 521 },
+    ],
+  },
+]
+
+const galleryRegisterViews = ["Stock", "Movements", "Exceptions"] as const
+
+const previewWarehouseObject: WarehouseHandlingUnit = {
+  id: "gallery-pallet", facilityId: "gallery-facility", parentHandlingUnitId: null,
+  typeCode: "pallet", typeName: "Pallet", code: "PLT-000184", sscc: null,
+  externalReference: "ASN-4419", customerOrgId: "gallery-customer", customerName: "Marlow Apparel",
+  locationId: "gallery-location", locationCode: "A-03-02", inventoryStatusCode: "available",
+  inventoryStatusName: "Available", customsStatusCode: "free_circulation", lifecycleStatusCode: "open",
+  consumedIntoHandlingUnitId: null, grossWeightKg: 486.5, netWeightKg: 452, volumeCbm: 1.28,
+  sealed: false, updatedAt: "2026-08-04T09:30:00Z",
+  contents: [
+    { balanceId: "gallery-balance-1", itemId: "gallery-item-1", sku: "INK-BLK-25", description: "Black industrial ink", quantity: 387.5, uomCode: "KG", statusCode: "available", customsStatusCode: "free_circulation", lotNumber: "LOT-442", batchNumber: null },
+    { balanceId: "gallery-balance-2", itemId: "gallery-item-2", sku: "CAP-38MM", description: "38 mm closure caps", quantity: 2_400, uomCode: "EA", statusCode: "available", customsStatusCode: "free_circulation", lotNumber: null, batchNumber: null },
+  ],
+  events: [],
+}
+
+const previewWarehouseException: WarehouseInventoryException = {
+  id: "gallery-exception", facilityId: "gallery-facility", typeCode: "location_empty", statusCode: "open", severityCode: "high",
+  balanceId: "gallery-balance-1", title: "Expected stock missing from B-01-04",
+  description: "The bin was scanned and physically confirmed empty. Stock is held as unlocated while the count is investigated.",
+  expectedLocationId: "gallery-location", expectedLocationCode: "B-01-04", actualLocationId: null, actualLocationCode: null,
+  movementGroupId: "gallery-movement", raisedAt: "2026-08-04T10:15:00Z", resolvedAt: null, metadata: {},
+}
+
+const previewPurchaseOrderReference: WarehousePurchaseOrderReference = {
+  facilities: [{ id: "gallery-facility", code: "FXT-DC1", name: "Felixstowe DC" }],
+  organisations: [{ id: "gallery-customer", name: "Marlow Apparel Ltd" }],
+  currencies: ["GBP", "EUR", "USD"],
+  items: [
+    { id: "gallery-item-rsj", customerOrgId: "gallery-customer", facilityId: "gallery-facility", sku: "MAR-RSJ-118", description: "Rain shell jacket", uomCode: "EA", quantityBasisCode: "count", allowsFractionalQuantity: false },
+    { id: "gallery-item-act", customerOrgId: "gallery-customer", facilityId: "gallery-facility", sku: "MAR-ACT-044", description: "Thermal activewear carton", uomCode: "CTN", quantityBasisCode: "count", allowsFractionalQuantity: false },
+  ],
+}
+
+const previewOrganisationReference: CustomerReference = {
+  organisationTypes: [
+    { id: "gallery-type-customer", name: "Customer" },
+    { id: "gallery-type-supplier", name: "Supplier" },
+  ],
+  owners: [],
+  relationshipStatuses: [],
+  currencies: [{ code: "GBP", name: "Pound sterling" }],
+  legalEntities: [],
+  paymentTerms: [],
+  taxTreatments: [],
+  offices: [
+    { id: "gallery-office-fxt", name: "Felixstowe", code: "FXT", countryCode: "GB", timeZone: "Europe/London" },
+    { id: "gallery-office-lhr", name: "London Heathrow", code: "LHR", countryCode: "GB", timeZone: "Europe/London" },
+  ],
+}
+
+const previewOrganisationSeed: ApiCustomerDetail = {
+  id: "gallery-company-northstar",
+  name: "Northstar Components",
+  initials: "NC",
+  location: "Manchester, GB",
+  industry: "Industrial components",
+  contactCount: 3,
+  status: "Premium",
+  relationshipStatus: "active",
+  tier: "Premium",
+  segment: "Enterprise",
+  ownerId: null,
+  ownerName: null,
+  healthScore: 86,
+  lastContactAt: "2026-08-19T09:30:00Z",
+  nextActionDueAt: null,
+  marketingOptIn: true,
+  marketingConsentSource: "contract",
+  marketingConsentUpdatedAt: "2026-04-14T10:00:00Z",
+  types: ["Customer", "Supplier"],
+  editVersion: 4,
+  accountCode: "NOR-104-NAT",
+  scopeCode: "national",
+  isPotential: false,
+  customerSince: "2024-04-14",
+  vertical: "Manufacturing",
+  primaryMode: "Road",
+  primaryTradeLane: "UK domestic",
+  growthState: "Growing",
+  churnRiskScore: 12,
+  lifetimeValue: 284000,
+  currencyCode: "GBP",
+  summary: "National components company with time-critical plant deliveries.",
+  strategic: true,
+  trainingAllowed: false,
+  metadata: {},
+  address: { id: "gallery-address-main", line1: "Unit 14, Northgate Logistics Park", line2: null, townCity: "Manchester", countyState: "Greater Manchester", postZipCode: "M17 8QP", countryCode: "GB", mainEmail: "ops@northstar.example", mainPhone: "+44 161 555 0198" },
+  engagement: null,
+  contacts: [],
+  activeShipments: [],
+  activities: [],
+  recentEmails: { available: true, items: [] },
+  officeAssignments: [
+    { officeId: "gallery-office-fxt", name: "Felixstowe", code: "FXT", countryCode: "GB", timeZone: "Europe/London", isPrimary: true },
+    { officeId: "gallery-office-lhr", name: "London Heathrow", code: "LHR", countryCode: "GB", timeZone: "Europe/London", isPrimary: false },
+  ],
+  addressCapabilities: [
+    { id: 1, code: "main", name: "Main" },
+    { id: 2, code: "office", name: "Office" },
+    { id: 3, code: "postal", name: "Postal" },
+    { id: 4, code: "pickup", name: "Pickup" },
+    { id: 5, code: "delivery", name: "Delivery" },
+    { id: 6, code: "billing", name: "Billing" },
+  ],
+  addresses: [{
+    id: "gallery-address-main",
+    name: "Manchester operations",
+    line1: "Unit 14, Northgate Logistics Park",
+    line2: null,
+    townCity: "Manchester",
+    countyState: "Greater Manchester",
+    postZipCode: "M17 8QP",
+    countryCode: "GB",
+    unlocode: "GBMAN",
+    email: "ops@northstar.example",
+    phone: "+44 161 555 0198",
+    timeZone: "Europe/London",
+    capabilities: [
+      { code: "main", name: "Main", isDefault: true },
+      { code: "pickup", name: "Pickup", isDefault: true },
+      { code: "delivery", name: "Delivery", isDefault: true },
+    ],
+    weeklyHours: [1, 2, 3, 4, 5].map((dayOfWeek) => ({ id: `gallery-hours-${dayOfWeek}`, dayOfWeek, opensAt: "08:00", closesAt: "17:30", sortOrder: 0 })),
+    openingOverrides: [{ id: "gallery-override", date: "2026-08-31", isClosed: true, opensAt: null, closesAt: null, note: "Bank holiday" }],
+  }],
+  relatedPartyDefaults: [{
+    id: "gallery-related-default",
+    partyRoleCode: "delivery_agent",
+    destinationCountryCode: "NL",
+    destinationUnlocode: "NLRTM",
+    destinationPostcode: null,
+    targetOrganisationId: "gallery-company-northgate",
+    targetOrganisationName: "Northgate Benelux",
+    targetOrganisationCode: "NOR-220-GLB",
+    targetAddressId: null,
+    targetContactId: null,
+    targetContactName: null,
+    priority: 100,
+    effectiveFrom: "2026-01-01",
+    effectiveTo: null,
+    isActive: true,
+  }],
+}
+
+const previewPhoneCallMatch = {
+  callerName: "Alex Thompson",
+  callerPhone: "+44 7712 345678",
+  capturedCallerName: "Alex Thompson",
+  capturedCompanyName: "Global Retail",
+  callReason: "A revised quote for a Hamburg shipment",
+  company: null,
+  contact: null,
+  lead: null,
+  matchStatus: "review" as const,
+  matchCandidates: [
+    { id: "company-global-retail", recordType: "company" as const, name: "Global Retail Group", secondaryLabel: "Company · phone and name match", confidence: "high" as const, reasons: ["Phone match", "Name match"] },
+    { id: "lead-global-rfq", recordType: "lead" as const, name: "Global Retail Group – May RFQ", secondaryLabel: "Lead · company name match", confidence: "medium" as const, reasons: ["Company match"] },
+  ],
+}
+
+const previewPhoneCallActions = [
+  { id: "action-quote", type: "todo" as const, title: "Alex asked for a revised quote – add this to the To Do list?", reason: "Alex requested the revised quote during the receptionist portion of the call.", confidence: "high" as const, draft: { title: "Prepare revised 40ft quote for Global Retail Group.", scheduledDate: "2026-08-22", leadId: null, leadLabel: null }, status: "pending" as const, error: null, todoTaskId: null, todoTaskStatus: null, todoCompletedAt: null, reviewedAt: null },
+  { id: "action-lead", type: "lead_link" as const, title: "Attach this call to lead “Global Retail Group – May RFQ”?", reason: "The company and request are similar, but need review.", confidence: "medium" as const, draft: { title: null, scheduledDate: null, leadId: "lead-global-rfq", leadLabel: "Global Retail Group – May RFQ" }, status: "pending" as const, error: null, todoTaskId: null, todoTaskStatus: null, todoCompletedAt: null, reviewedAt: null },
+]
+
+const previewPhoneCallMetrics = [
+  { id: "volume", label: "Calls", value: "184", comparison: "+12% vs prior period", detail: "112 inbound · 72 outbound", tone: "neutral" as const, evidence: { kind: "derived" as const, source: "multideck" as const, observedAt: null } },
+  { id: "answer-rate", label: "Answer rate", value: "86%", comparison: "+4 points", detail: "158 answered", tone: "green" as const, evidence: { kind: "provider_confirmed" as const, source: "3cx" as const, observedAt: null } },
+  { id: "missed", label: "Missed", value: "14", comparison: "−3 calls", detail: "7 need follow-up", tone: "red" as const, evidence: { kind: "provider_confirmed" as const, source: "3cx" as const, observedAt: null } },
+  { id: "transfer", label: "Transfer acceptance", value: "78%", comparison: "+6 points", detail: "Receptionist to team", tone: "blue" as const, evidence: { kind: "provider_confirmed" as const, source: "twilio" as const, observedAt: null } },
+  { id: "handling", label: "Avg. handling", value: "04:18", comparison: null, detail: "Answered calls", tone: "neutral" as const, evidence: { kind: "derived" as const, source: "multideck" as const, observedAt: null } },
+  { id: "followup", label: "Follow-up completion", value: "63%", comparison: "+9 points", detail: "12 of 19 approved follow-ups completed", tone: "teal" as const, evidence: { kind: "derived" as const, source: "multideck" as const, observedAt: null } },
+]
+
+const previewPhoneCallVolume = [
+  { period: "Mon", inboundAnswered: 18, inboundMissed: 3, outboundAnswered: 8, outboundMissed: 1, answerRate: 86 },
+  { period: "Tue", inboundAnswered: 22, inboundMissed: 2, outboundAnswered: 11, outboundMissed: 2, answerRate: 90 },
+  { period: "Wed", inboundAnswered: 19, inboundMissed: 5, outboundAnswered: 9, outboundMissed: 1, answerRate: 79 },
+  { period: "Thu", inboundAnswered: 25, inboundMissed: 2, outboundAnswered: 12, outboundMissed: 1, answerRate: 92 },
+  { period: "Fri", inboundAnswered: 21, inboundMissed: 4, outboundAnswered: 10, outboundMissed: 2, answerRate: 84 },
+]
+
+const previewPhoneCallAttention = [
+  { id: "attention-1", callId: "call-1", title: "Alex asked for a revised quote", occurredAt: "2026-08-22T09:21:03Z", stateLabel: "Suggested action", tone: "amber" as const },
+  { id: "attention-2", callId: "call-2", title: "Unknown caller needs identity review", occurredAt: "2026-08-22T08:42:00Z", stateLabel: "Unmatched caller", tone: "red" as const },
+]
+
+const previewPhoneCallReasons = [
+  { id: "quote", label: "Quote request", count: 34, share: 32, evidence: { kind: "derived" as const, source: "multideck" as const, observedAt: null } },
+  { id: "tracking", label: "Shipment tracking", count: 26, share: 25, evidence: { kind: "derived" as const, source: "multideck" as const, observedAt: null } },
+  { id: "documents", label: "Documents", count: 18, share: 17, evidence: { kind: "derived" as const, source: "multideck" as const, observedAt: null } },
+]
+
+const previewPhoneCallCoverage = [
+  { id: "company" as const, label: "Company", count: 132, share: 72 },
+  { id: "contact" as const, label: "Contact", count: 118, share: 64 },
+  { id: "lead" as const, label: "Lead", count: 84, share: 46 },
+  { id: "needs_review" as const, label: "Needs review", count: 31, share: 17 },
+  { id: "unmatched" as const, label: "Unmatched", count: 21, share: 11 },
+]
+
+const previewPhoneCallProviders = [
+  { provider: "elevenlabs" as const, label: "ElevenLabs receptionist", detail: "Exact-agent conversation reconciliation", state: "healthy" as const, lastAttemptAt: "2026-08-22T10:00:00Z", lastSucceededAt: "2026-08-22T10:00:00Z", lastFailedAt: null, consecutiveFailures: 0, errorCode: null },
+  { provider: "twilio" as const, label: "Twilio screening", detail: "Screening and transfer Sync polling", state: "healthy" as const, lastAttemptAt: "2026-08-22T10:00:00Z", lastSucceededAt: "2026-08-22T10:00:00Z", lastFailedAt: null, consecutiveFailures: 0, errorCode: null },
+  { provider: "3cx" as const, label: "3CX employee calls", detail: "3CX call-detail and transcript collector", state: "not_configured" as const, lastAttemptAt: null, lastSucceededAt: null, lastFailedAt: null, consecutiveFailures: 0, errorCode: null },
+]
+
+export function BookingSecurityEvidencePreview() {
+  const stamp = "2026-09-07T09:00:00Z"
+  const [editable, setEditable] = useState(true), [failSave, setFailSave] = useState(false)
+  const [workspace, setWorkspace] = useState<BookingWorkflowWorkspace>(() => ({
+    booking: { jobId: "00000000-0000-4000-8000-000000000001", bookingReference: "DEMO-BOOKING", jobReference: "DEMO-JOB", jobNumber: 1, status: "Active", officeId: "preview", createdAt: stamp, updatedAt: stamp },
+    securityEvidenceSupported: true, routes: [], parties: [], containers: [], documents: [], declarations: [], charges: [], events: [],
+    cargo: [{ id: "00000000-0000-4000-8000-000000000002", lineNumber: 1, description: "Synthetic cargo", updatedAt: stamp, securityEvidence: [] }],
+  }))
+  return <div className="grid w-full min-w-0 gap-4">
+    <p className="text-xs text-[var(--md-text)]">Interactive synthetic preview only. Entries stay on this page; no Booking or network writes.</p>
+    <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setEditable(!editable)}>{editable ? "Preview read-only" : "Return to editing"}</Button><Button variant="outline" onClick={() => setFailSave(!failSave)}>{failSave ? "Return to successful saves" : "Preview save failure"}</Button></div>
+    <BookingSecurityEvidenceEditor bookingId={workspace.booking.jobId} bookingReference={workspace.booking.bookingReference}
+      bookingUpdatedAt={workspace.booking.updatedAt} cargo={workspace.cargo[0]} events={workspace.events} editable={editable} onSaved={setWorkspace}
+      save={async payload => {
+        if (failSave) throw new Error("Preview save failed. Your entries are retained.")
+        const now = new Date().toISOString(), cargo = workspace.cargo[0]
+        const original = cargo.securityEvidence?.find(item => item.id === payload.id)
+        const item = { ...(original ?? { id: payload.id, cargoId: cargo.id!, securityStatus: null, screeningMethod: null, screenedByName: null, agentReference: null, screenedAt: null, sourceReference: "", notes: null,
+          source: "operator" as const, recordStatus: "recorded" as const, createdAt: now, createdBy: "preview" }),
+          ...payload.changes, updatedAt: now, updatedBy: "preview", operatorEditable: payload.changes.recordStatus !== "voided" }
+        return { ...workspace, booking: { ...workspace.booking, updatedAt: now }, cargo: [{ ...cargo, securityEvidence: [...cargo.securityEvidence!.filter(saved => saved.id !== item.id), item] }],
+          events: [{ id: crypto.randomUUID(), type: "cargo_security_evidence_recorded", summary: "Synthetic evidence recorded", actor: "Preview operator", occurredAt: now,
+            metadata: { evidenceId: item.id, reason: payload.reason, before: original ?? null, after: item } }, ...workspace.events] }
+      }} />
+  </div>
+}
+
+export function BookingDangerousGoodsPreview() {
+  const stamp = "2026-09-07T09:00:00Z"
+  const [editable, setEditable] = useState(true), [failSave, setFailSave] = useState(false)
+  const [workspace, setWorkspace] = useState<BookingWorkflowWorkspace>(() => ({
+    booking: { jobId: "00000000-0000-4000-8000-000000000001", bookingReference: "DEMO-BOOKING", jobReference: "DEMO-JOB", jobNumber: 1, status: "Active", officeId: "preview", createdAt: stamp, updatedAt: stamp },
+    dangerousGoodsSupported: true, routes: [], parties: [], containers: [], documents: [], declarations: [], charges: [], events: [],
+    cargo: [{ id: "00000000-0000-4000-8000-000000000002", lineNumber: 1, description: "Synthetic cargo", updatedAt: stamp, dangerousGoods: [] }],
+  }))
+  return <div className="grid w-full min-w-0 gap-4">
+    <p className="text-xs text-[var(--md-text)]">Interactive synthetic preview only. Entries stay on this page; no Booking or network writes.</p>
+    <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setEditable(!editable)}>{editable ? "Preview read-only" : "Return to editing"}</Button><Button variant="outline" onClick={() => setFailSave(!failSave)}>{failSave ? "Return to successful saves" : "Preview save failure"}</Button></div>
+    <BookingDangerousGoodsEditor bookingId={workspace.booking.jobId} bookingReference={workspace.booking.bookingReference}
+      bookingUpdatedAt={workspace.booking.updatedAt} cargo={workspace.cargo[0]} maritime events={workspace.events} editable={editable} onSaved={setWorkspace}
+      save={async payload => {
+        if (failSave) throw new Error("Preview save failed. Your entries are retained.")
+        const now = new Date().toISOString(), cargo = workspace.cargo[0]
+        const original = cargo.dangerousGoods?.find(item => item.id === payload.id)
+        const item = { ...(original ?? { id: payload.id, cargoId: cargo.id!, unNumber: null, properShippingName: null, class: null, packingGroup: null,
+          flashPoint: null, marinePollutant: null, limitedQuantity: null, emergencyContact: null, notes: null, sourceReference: null,
+          source: "operator" as const, status: "recorded" as const, createdAt: now, createdBy: "preview" }),
+          ...payload.changes, updatedAt: now, updatedBy: "preview", operatorEditable: payload.changes.status !== "voided" }
+        return { ...workspace, booking: { ...workspace.booking, updatedAt: now }, cargo: [{ ...cargo, dangerousGoods: [...cargo.dangerousGoods!.filter(saved => saved.id !== item.id), item] }],
+          events: [{ id: crypto.randomUUID(), type: "cargo_dangerous_goods_recorded", summary: "Synthetic evidence recorded", actor: "Preview operator", occurredAt: now,
+            metadata: { dangerousGoodsId: item.id, reason: payload.reason, before: original ?? null, after: item } }, ...workspace.events] }
+      }} />
+  </div>
+}
+
+export function BookingRouteMilestonesPreview() {
+  const stamp = "2026-09-07T09:00:00Z"
+  const [editable, setEditable] = useState(true)
+  const [failSave, setFailSave] = useState(false)
+  const [workspace, setWorkspace] = useState<BookingWorkflowWorkspace>(() => ({
+    booking: { jobId: "00000000-0000-4000-8000-000000000001", bookingReference: "DEMO-BOOKING", jobReference: "DEMO-JOB", jobNumber: 1, status: "Active", officeId: "preview", createdAt: stamp, updatedAt: stamp },
+    routeMilestonesSupported: true,
+    milestoneTypes: [{ code: "departed", name: "Departed" }, { code: "arrived", name: "Arrived" }],
+    routes: [{ id: "00000000-0000-4000-8000-000000000002", order: 1, mode: "Sea", updatedAt: stamp, milestones: [] }],
+    parties: [], cargo: [], containers: [], documents: [], declarations: [], charges: [], events: [],
+  }))
+  return <div className="grid w-full min-w-0 gap-4">
+    <p className="text-xs text-[var(--md-text)]">Interactive component preview. Synthetic entries stay in this page; no Booking or network writes.</p>
+    <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setEditable(!editable)}>{editable ? "Preview read-only" : "Return to editing"}</Button><Button variant="outline" onClick={() => setFailSave(!failSave)}>{failSave ? "Return to successful saves" : "Preview save failure"}</Button></div>
+    <BookingRouteMilestones bookingId={workspace.booking.jobId} bookingReference={workspace.booking.bookingReference} bookingUpdatedAt={workspace.booking.updatedAt}
+      route={workspace.routes[0]} types={workspace.milestoneTypes} events={workspace.events} editable={editable} onSaved={setWorkspace}
+      save={async payload => {
+        if (failSave) throw new Error("Preview save failed. Your entries have been kept; close the editor to change the preview mode.")
+        const now = new Date().toISOString()
+        const route = workspace.routes[0]
+        const original = route.milestones?.find(item => item.id === payload.id)
+        const item: BookingWorkflowMilestone = {
+          id: payload.id, routeId: payload.routeId, type: payload.type!, name: workspace.milestoneTypes!.find(type => type.code === payload.type)!.name,
+          status: "planned", plannedAt: null, estimatedAt: null, actualAt: null, location: null, locationUnlocode: null, externalReference: null, notes: null,
+          source: "operator", recordedMode: "Sea", createdAt: now, updatedAt: now, createdBy: "Preview operator", updatedBy: "Preview operator", operatorEditable: true,
+          ...original, ...payload.changes,
+        }
+        item.updatedAt = now; item.operatorEditable = item.status !== "voided"
+        return { ...workspace, booking: { ...workspace.booking, updatedAt: now }, routes: [{ ...route, milestones: [...route.milestones!.filter(saved => saved.id !== item.id), item] }],
+          events: [{ id: crypto.randomUUID(), type: "route_milestone_recorded", summary: `${item.name} recorded`, actor: "Preview operator", occurredAt: now, metadata: { milestoneId: item.id, reason: payload.reason, before: original ?? {}, after: item } }, ...workspace.events] }
+      }} />
+  </div>
+}
+
+function CargoAllocationEditorPreview() {
+  const cargoId = "00000000-0000-4000-8000-000000000001"
+  const firstEquipment = "00000000-0000-4000-8000-000000000002"
+  const secondEquipment = "00000000-0000-4000-8000-000000000003"
+  const [editable, setEditable] = useState(true)
+  const [validationAttempt, setValidationAttempt] = useState(0)
+  const [allocations, setAllocations] = useState<BookingCargoAllocation[]>(() => [
+    { id: "00000000-0000-4000-8000-000000000004", cargoId, containerId: firstEquipment, routeId: null, packageQuantity: "6", grossWeightKg: "600.25", volumeCbm: "8.125", notes: null, archived: false },
+    { id: "00000000-0000-4000-8000-000000000005", cargoId, containerId: secondEquipment, routeId: null, packageQuantity: null, grossWeightKg: null, volumeCbm: null, notes: null, archived: false },
+  ])
+  return <div className="grid w-full gap-4">
+    <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setEditable(!editable)}>{editable ? "Preview read-only" : "Return to editing"}</Button><Button variant="outline" onClick={() => setValidationAttempt(attempt => attempt + 1)}>Check allocations</Button></div>
+    <CargoAllocationEditor cargo={[{ id: cargoId, description: "Machine parts", packageQuantity: "10", grossWeightKg: "1000.5", volumeCbm: "14.25" }]}
+      equipment={[{ id: firstEquipment, type: "40GP" }, { id: secondEquipment, type: "20GP" }]}
+      routes={[{ id: "00000000-0000-4000-8000-000000000006", mode: "Sea", originUnlocode: "GBFXT", destinationUnlocode: "USNYC" }]}
+      allocations={allocations} editable={editable} validationAttempt={validationAttempt} onChange={setAllocations} />
+  </div>
+}
+
+function QuoteCargoEditorPreview() {
+  const [lines, setLines] = useState(() => [{ ...newQuoteCargoLine(), description: "Machine parts", packageQuantity: "2", packageType: "Crates", grossWeightKg: "120.5" }, { ...newQuoteCargoLine(), description: "Spare seals", packageQuantity: "4", packageType: "Cartons", grossWeightKg: "18" }])
+  const [editable, setEditable] = useState(true)
+  return <div className="grid w-full gap-4"><Button variant="outline" onClick={() => setEditable(!editable)}>{editable ? "Preview submitted version" : "Return to draft"}</Button><QuoteCargoEditor lines={lines} editable={editable} onChange={setLines} /></div>
+}
+
+function QuoteDetailControlsPreview() {
+  const [company, setCompany] = useState("Brook Taverner Ltd")
+  const [incoterm, setIncoterm] = useState<IncotermCode | "">("FCA")
+  const [namedPlace, setNamedPlace] = useState("Antwerp")
+  const [location, setLocation] = useState<LocationValue>({ ...EMPTY_LOCATION, countryCode: "BE", countryName: "Belgium", place: "Antwerp", unlocode: "BEANR" })
+  const [transit, setTransit] = useState<NumberUnitValue>({ value: "10", unit: "Days" })
+  const [recurrence, setRecurrence] = useState<RecurrenceValue>({ ...EMPTY_RECURRENCE, mode: "interval", interval: "2", unit: "week" })
+  const [amount, setAmount] = useState<AmountCurrencyValue>({ amount: "18000", currency: "EUR" })
+  const [characteristics, setCharacteristics] = useState<CargoCharacteristics>(EMPTY_CARGO_CHARACTERISTICS)
+  const [inheritedSafety, setInheritedSafety] = useState(false)
+  const [hazardous, setHazardous] = useState<HazardousDetails>(EMPTY_HAZARDOUS_DETAILS)
+  const organisationOptions = [
+    { id: "brook", value: "Brook Taverner Ltd", label: "Brook Taverner Ltd", description: "BROOKTAV · Customer" },
+    { id: "med", value: "Mediterranean Spice Trading", label: "Mediterranean Spice Trading", description: "MEDIT0001 · Supplier" },
+    { id: "pacific", value: "Pacific Goods Co", label: "Pacific Goods Co", description: "PACIF001 · Customer" },
+  ]
+  const locations = [
+    { id: "beanr", countryCode: "BE", countryName: "Belgium", place: "Antwerp", unlocode: "BEANR", kind: "port" as const, recommended: true },
+    { id: "gbfxt", countryCode: "GB", countryName: "United Kingdom", place: "Felixstowe", unlocode: "GBFXT", kind: "port" as const },
+    { id: "cnsha", countryCode: "CN", countryName: "China", place: "Shanghai", unlocode: "CNSHA", kind: "port" as const },
+  ]
+  const locationCountries = locations.map(({ countryCode, countryName }) => ({ code: countryCode, name: countryName }))
+
+  return (
+    <CompactSectionShell title="Quote detail controls" meta="Content-shaped fields with linked freight data" className="w-full max-w-[980px]">
+      <div className="grid gap-4">
+        <CompactFieldRow>
+          <CompactCombobox label="Shipper" value={company} options={organisationOptions} recommendedOptions={[organisationOptions[0]]} recommendedLabel="Current, recent & related" allLabel="All organisations" onValueChange={setCompany} width="grow" />
+          <NumberUnitField label="Transit time" value={transit} units={[{ value: "Hours", label: "Hours" }, { value: "Days", label: "Days" }, { value: "Weeks", label: "Weeks" }]} onChange={setTransit} />
+          <AmountCurrencyField label="Goods value" value={amount} currencies={["GBP", "EUR", "USD"]} onChange={setAmount} />
+        </CompactFieldRow>
+        <IncotermField value={incoterm} onValueChange={setIncoterm} namedLocation={namedPlace} onNamedLocationChange={setNamedPlace} />
+        <LocationFields label="Origin" value={location} options={locations} countries={locationCountries} onChange={setLocation} />
+        <RecurrenceBuilder value={recurrence} onChange={setRecurrence} />
+        <Button variant="outline" aria-pressed={inheritedSafety} onClick={() => setInheritedSafety(value => !value)}>Preview flags from cargo lines</Button>
+        <CargoCharacteristicsField value={characteristics} inherited={{ hazardous: inheritedSafety, temperatureControlled: inheritedSafety }} onChange={setCharacteristics} hazardousDetails={hazardous} onHazardousDetailsChange={setHazardous} />
+      </div>
+    </CompactSectionShell>
+  )
+}
+
+const previewMeetingPeople: MeetingPersonSuggestion[] = [
+  { id: "team:priya", kind: "team", name: "Priya Shah", email: "priya@multideck.app", detail: "Operations lead", recordId: "priya", external: false },
+  { id: "team:tom", kind: "team", name: "Tom Ellis", email: "tom@multideck.app", detail: "Customs", recordId: "tom", external: false },
+  { id: "contact:sam", kind: "contact", name: "Sam Okafor", email: "sam@harbourline.example", detail: "Harbourline Imports", recordId: "sam", external: true },
+  { id: "lead:jordan", kind: "lead", name: "Jordan Reyes", email: "jordan@atlasfreight.example", detail: "Lead · Atlas Freight", recordId: "jordan", external: true },
+]
+
+const previewMeetingRoster: MeetingParticipant[] = [
+  { id: "r1", name: "Harry Phillips", email: "harry@databrain.co.uk", role: "organiser", response: "accepted", external: false },
+  { id: "r2", name: "Alex Morgan", email: "alex@northstar.example", response: "accepted", external: true },
+  { id: "r3", name: "Priya Shah", email: "priya@multideck.app", response: "tentative", external: false },
+  { id: "r4", name: "Sam Okafor", email: "sam@harbourline.example", response: "needs_action", external: true },
+  { id: "r5", name: "Jordan Reyes", email: "jordan@atlasfreight.example", response: "declined", external: true },
+]
+
+const previewBookingHosts: BookingHostCandidate[] = [
+  { userId: "h-self", name: "Harry Phillips", email: "harry@databrain.co.uk", detail: "Founder", self: true, connectedProviders: ["google"] },
+  { userId: "h-priya", name: "Priya Shah", email: "priya@multideck.app", detail: "Operations lead", self: false, connectedProviders: ["google", "microsoft"] },
+  { userId: "h-tom", name: "Tom Ellis", email: "tom@multideck.app", detail: "Customs", self: false, connectedProviders: [] },
+  { userId: "h-mei", name: "Mei Lin", email: "mei@multideck.app", detail: "Sales", self: false, connectedProviders: ["zoom"] },
+]
+const loadPreviewBookingHosts = () => Promise.resolve({ hosts: previewBookingHosts })
+const previewBookingQuestions: BookingQuestion[] = [
+  ...defaultBookingQuestions.filter((question) => question.id !== "phone").map((question) => ({ ...question, required: question.id === "company" })),
+  { id: "q-lane", label: "Which lane are you shipping?", type: "select", required: true, options: ["Sea freight", "Air freight", "Road"] },
+]
+
 function ComponentPreview({ id }: { id: string }) {
+  const { language, t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const [previewBookingKind, setPreviewBookingKind] = useState<BookingLinkKind>("round_robin")
+  const [previewBookingHostIds, setPreviewBookingHostIds] = useState<string[]>(["h-priya", "h-tom"])
+  const [previewBookingForm, setPreviewBookingForm] = useState<BookingQuestion[]>(previewBookingQuestions)
+  const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
+  const [previewSidebarFavouriteIds, setPreviewSidebarFavouriteIds] = useState<string[]>([])
+  const [previewTodoChecked, setPreviewTodoChecked] = useState(false)
+  const [previewAvailabilitySlot, setPreviewAvailabilitySlot] = useState<string | null>(null)
+  const [previewVerificationCode, setPreviewVerificationCode] = useState("48")
+  const [previewMeetingAttendees, setPreviewMeetingAttendees] = useState<MeetingParticipant[]>([{ name: "Alex Morgan", email: "alex@northstar.example", external: true }])
+  const [previewMeetingProvider, setPreviewMeetingProvider] = useState<CalendarProvider>("microsoft_teams")
+  const [previewMeetingColour, setPreviewMeetingColour] = useState<MeetingColour>("teal")
+  const [previewWorkingHours, setPreviewWorkingHours] = useState<WorkingHours>(defaultWorkingHours)
+  const [previewMeetingTime, setPreviewMeetingTime] = useState(() => { const start = new Date(); start.setDate(start.getDate() + 1); start.setHours(10, 0, 0, 0); return { startAt: start.toISOString(), endAt: new Date(start.getTime() + 30 * 60_000).toISOString() } })
+  const [previewMeetingZone, setPreviewMeetingZone] = useState("Europe/London")
+  const [previewDictationPhase, setPreviewDictationPhase] = useState<DictationStatusPhase>("transcribing")
+  const [previewArrangeOrder, setPreviewArrangeOrder] = useState<string[]>(previewSidebarOrder)
+  const [previewArrangePinned, setPreviewArrangePinned] = useState<string[]>([])
   const [previewPage, setPreviewPage] = useState(1)
-  const [previewPageSize, setPreviewPageSize] = useState(20)
+  const [previewPageSize, setPreviewPageSize] = useState(defaultPaginationPageSize)
   const [previewBookingFilter, setPreviewBookingFilter] = useState<string>(bookingFilters[0])
+  const [previewTableView, setPreviewTableView] = useState<"All" | "Profitable">("All")
+  const [previewTableSearch, setPreviewTableSearch] = useState("")
+  const [previewTableStatus, setPreviewTableStatus] = useState("")
   const [previewBookingView, setPreviewBookingView] = useState<BookingViewMode>("Table")
+  const [previewChoiceMode, setPreviewChoiceMode] = useState("OCEAN")
+  const [previewInboxThreadId, setPreviewInboxThreadId] = useState("preview-thread-1")
+  const [previewInboxStarred, setPreviewInboxStarred] = useState<Set<string>>(new Set(["preview-thread-1"]))
+  const [previewSummaryState, setPreviewSummaryState] = useState<ThreadSummaryState>(previewInboxSummary)
+  const [previewComposer, setPreviewComposer] = useState<ComposerState>({
+    mode: "reply_all",
+    threadId: "preview-thread-1",
+    sourceMessageId: "msg-2",
+    subject: "",
+    bodyText: "Licence reference is GB/DU/2026/44189, valid to 31 December 2026. Passing it to the broker now.",
+    to: [],
+    cc: [{ address: "broker@northgate.example", displayName: "Northgate brokers" }],
+    bcc: [],
+    showCc: true,
+    showBcc: false,
+    attachments: [],
+    trackOpens: true,
+    presentation: "open",
+  })
+  const [previewCheckbox, setPreviewCheckbox] = useState(true)
+  const [previewWarehouseQuantity, setPreviewWarehouseQuantity] = useState("12.5")
+  const [galleryRegisterView, setGalleryRegisterView] = useState<(typeof galleryRegisterViews)[number]>("Stock")
+  const [galleryRegisterCondition, setGalleryRegisterCondition] = useState("")
+  const [galleryRegisterSearch, setGalleryRegisterSearch] = useState("")
+  const [galleryRegisterPending, setGalleryRegisterPending] = useState(false)
+  const [previewPurchaseOrderLines, setPreviewPurchaseOrderLines] = useState<WarehousePurchaseOrderLine[]>([
+    { itemId: "gallery-item-rsj", sku: "MAR-RSJ-118", supplierItemCode: "YH-1440", description: "Rain shell jacket · navy · mixed sizes", quantity: 780, uomCode: "EA", unitPrice: 18.4, taxRate: 0, requestedDeliveryDate: "2026-08-18" },
+  ])
+  const [previewContactLayout, setPreviewContactLayout] = useState<CardLayout>("editorial")
+  const [previewCardBranding, setPreviewCardBranding] = useState<CardBranding>(() => ({ ...defaultBranding("#3f5f8a"), layout: "spotlight", headerStyle: "cover" }))
+  const [previewMarketingOptIn, setPreviewMarketingOptIn] = useState(true)
+  const [previewSocialLinks, setPreviewSocialLinks] = useState<CardSocialLink[]>([
+    { id: "gallery-linkedin", kind: "linkedin", value: "linkedin.com/in/maya-stone", enabled: true },
+    { id: "gallery-facebook", kind: "facebook", value: "facebook.com/maya.stone", enabled: true },
+    { id: "gallery-instagram", kind: "instagram", value: "@maya.moves.freight", enabled: true },
+    { id: "gallery-whatsapp", kind: "whatsapp", value: "+44 7700 900000", enabled: true },
+    { id: "gallery-email", kind: "email", value: "maya@multideck.app", enabled: true },
+    { id: "gallery-website", kind: "website", value: "multideck.app", enabled: true },
+  ])
   const [previewCustomerView, setPreviewCustomerView] = useState<CustomerViewMode>("List")
   const [previewSelectedIds, setPreviewSelectedIds] = useState<Set<string>>(new Set(["marlow-apparel"]))
   const [previewCustomerTab, setPreviewCustomerTab] = useState("Overview")
@@ -524,22 +1844,58 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewSettingsTab, setPreviewSettingsTab] = useState("profile")
   const [previewSettingsChoice, setPreviewSettingsChoice] = useState("Always ask")
   const [previewSettingsOption, setPreviewSettingsOption] = useState("Suggest")
-  const [previewScreenGlow, setPreviewScreenGlow] = useState(false)
+  const [previewInlineCompany, setPreviewInlineCompany] = useState("Marlow Apparel")
+  const [previewInlineType, setPreviewInlineType] = useState("Customer")
+  const [previewSideDrawerOpen, setPreviewSideDrawerOpen] = useState(false)
+  const [previewWizardOpen, setPreviewWizardOpen] = useState(false)
+  const [previewWizardStep, setPreviewWizardStep] = useState("details")
+  const [previewTicketScreenshot, setPreviewTicketScreenshot] = useState(createGalleryTicketScreenshot)
+  const [previewTicketAttachmentVisible, setPreviewTicketAttachmentVisible] = useState(true)
+  const [summonPreviewQuestion, setSummonPreviewQuestion] = useState("Is this account safe to book again?")
+  const [summonPreviewAnswer, setSummonPreviewAnswer] = useState("")
+  // The prompt only reads the kind and the label off its target, so the preview
+  // stands one up rather than hit-testing a real node on the gallery page.
+  const summonPreviewTarget = useMemo<SummonTarget>(
+    () => ({
+      element: document.createElement("div"),
+      kind: "row",
+      label: "Marlow Freight · MD-22455",
+      value: null,
+      text: "",
+    }),
+    [],
+  )
   const [previewReportPageId, setPreviewReportPageId] = useState(monthlyReviewPages[0].id)
   const [previewReportControlPage, setPreviewReportControlPage] = useState(1)
   const [previewWidgetQuery, setPreviewWidgetQuery] = useState("")
   const [previewWidgetId, setPreviewWidgetId] = useState(reportWidgets[0].id)
   const [previewDataEditorOpen, setPreviewDataEditorOpen] = useState(false)
-  const [previewBookingSelectedIds, setPreviewBookingSelectedIds] = useState<Set<string>>(new Set(["MD-22455"]))
   const [previewFavouriteBookingIds, setPreviewFavouriteBookingIds] = useState<Set<string>>(() => new Set(initialFavouriteBookingIds))
   const [previewRoadFavouriteBookingIds, setPreviewRoadFavouriteBookingIds] = useState<Set<string>>(() => new Set(["MD-22676"]))
   const [previewRoadJobs, setPreviewRoadJobs] = useState(() => [...domesticRoadJobs])
   const [previewDateRange, setPreviewDateRange] = useState<MultideckDateRange>({ start: "2026-05-25", end: "2026-06-04" })
-  const [previewBookingSearchCriteria, setPreviewBookingSearchCriteria] = useState<BookingSearchCriterion[]>([
-    { id: "preview-booking-search-invoice", field: "invoice", groupId: "preview-search-main", value: "INV-MAR", valueTo: "" },
-    { id: "preview-booking-search-destination", connector: "and", field: "destination", groupId: "preview-search-main", value: "Felixstowe", valueTo: "" },
-    { id: "preview-booking-search-vin", field: "vin", groupConnector: "or", groupId: "preview-search-vin", value: "WVW", valueTo: "" },
-  ])
+  const [previewSingleDate, setPreviewSingleDate] = useState<string | null>("2026-06-04")
+  const [previewDateTime, setPreviewDateTime] = useState("2026-06-04T09:30")
+  const [previewDateComparisonEnabled, setPreviewDateComparisonEnabled] = useState(false)
+  const [previewDateComparisonRange, setPreviewDateComparisonRange] = useState<MultideckDateRange>({ start: "2026-05-14", end: "2026-05-24" })
+  const [previewBookingSearch, setPreviewBookingSearch] = useState<FilterQuery>({
+    match: "any",
+    groups: [
+      {
+        id: "preview-search-main",
+        match: "all",
+        conditions: [
+          { id: "preview-booking-search-invoice", field: "invoice", operator: "contains", value: "INV-MAR" },
+          { id: "preview-booking-search-destination", field: "destination", operator: "contains", value: "Felixstowe" },
+        ],
+      },
+      {
+        id: "preview-search-vin",
+        match: "all",
+        conditions: [{ id: "preview-booking-search-vin", field: "vin", operator: "starts-with", value: "WVW" }],
+      },
+    ],
+  })
   const [previewQuoteSearch, setPreviewQuoteSearch] = useState<QuoteSearchQuery>({
     match: "all",
     groups: [{
@@ -552,97 +1908,37 @@ function ComponentPreview({ id }: { id: string }) {
     }],
   })
   const [previewContactEmail, setPreviewContactEmail] = useState(marlowContacts[0].email)
+  const [previewAiPromptOpen, setPreviewAiPromptOpen] = useState(false)
+  const [previewAiPrompt, setPreviewAiPrompt] = useState("")
   const [previewDexterPrompt, setPreviewDexterPrompt] = useState("Prep Marlow's QBR and attach the latest open booking context.")
+  const [previewDexterMentions, setPreviewDexterMentions] = useState<DexterMentionItem[]>([])
   const [previewDexterSpecialistId, setPreviewDexterSpecialistId] = useState<DexterSpecialistId>("auto")
+  const [previewDexterModelId, setPreviewDexterModelId] = useState<DexterModelId>(defaultDexterModelId)
+  const [previewDexterAccessMode, setPreviewDexterAccessMode] = useState<DexterAccessMode>("approve")
   const [previewDexterAttachmentQuery, setPreviewDexterAttachmentQuery] = useState("")
   const [previewDexterAttachmentIds, setPreviewDexterAttachmentIds] = useState<Set<string>>(new Set(["marlow", "md-22414"]))
   const [previewCrmDealId, setPreviewCrmDealId] = useState(crmPipelineStages[0].deals[0].id)
-  const [previewCrmLeadId, setPreviewCrmLeadId] = useState(customers[0].id)
+  const [previewCrmLeadId, setPreviewCrmLeadId] = useState(previewCrmLeads[0].id)
   const [previewCrmContactEmail, setPreviewCrmContactEmail] = useState(crmContacts[0].email)
-  const [previewMarketingFolderId, setPreviewMarketingFolderId] = useState(previewMarketingFolders[0].id)
-  const [previewPaperDocumentId, setPreviewPaperDocumentId] = useState<string | null>(null)
+  const [previewContactCreateOpen, setPreviewContactCreateOpen] = useState(false)
+  const [previewOrganisation, setPreviewOrganisation] = useState<ApiCustomerDetail>(previewOrganisationSeed)
+  const [previewDriveRenamingId, setPreviewDriveRenamingId] = useState<string | null>(null)
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
+  const [previewCalendarLayers, setPreviewCalendarLayers] = useState(["Operational dates", "Personal events"])
+  const previewAutoPopulationSource = "1 Harbour Exchange Square, London, E14 9GE, GB"
+  const previewAutoPopulationCodeSource = "GBLON"
+  const previewAutoPopulationNotesSource = "Collect from the loading bay.\nCall the office on arrival."
+  const [previewAutoPopulationValue, setPreviewAutoPopulationValue] = useState("")
+  const [previewAutoPopulationCode, setPreviewAutoPopulationCode] = useState("")
+  const [previewAutoPopulationNotes, setPreviewAutoPopulationNotes] = useState("")
+  const [previewDictionaryTerms, setPreviewDictionaryTerms] = useState(["Multideck", "Jenkar", "UN/LOCODE", "Incoterms"])
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
   const previewNow = useLiveNow()
-  const previewPaperDocument = previewPaperTrays.flatMap((tray) => tray.documents).find((document) => document.id === previewPaperDocumentId) ?? null
-  const previewPaperDocumentTrayId = previewPaperTrays.find((tray) => tray.documents.some((document) => document.id === previewPaperDocumentId))?.id ?? null
-  const previewBookingSearchCount = useMemo(() => {
-    function matchesCriterion(booking: (typeof bookings)[number], criterion: BookingSearchCriterion) {
-      const query = criterion.value.trim().toLowerCase()
-      const queryTo = criterion.valueTo?.trim()
-      if (!query && !queryTo) return true
-      if (criterion.field === "date") {
-        return [booking.departureDate, booking.arrivalDate].some((date) => date >= (criterion.value || queryTo || "") && date <= (queryTo || criterion.value || "9999-12-31"))
-      }
-      if (criterion.field === "departure") return booking.departureDate >= (criterion.value || queryTo || "") && booking.departureDate <= (queryTo || criterion.value || "9999-12-31")
-      if (criterion.field === "arrival") return booking.arrivalDate >= (criterion.value || queryTo || "") && booking.arrivalDate <= (queryTo || criterion.value || "9999-12-31")
-
-      const customFields = booking.customFields.flatMap((field) => [field.label, field.value, `${field.label} ${field.value}`])
-      const valuesByField: Record<Exclude<BookingSearchCriterion["field"], "date" | "departure" | "arrival">, string[]> = {
-        any: [booking.id, booking.customer, booking.route, booking.carrier, booking.container, booking.invoice, booking.jobRef, booking.customerRef, booking.supplierRef, booking.origin, booking.destination, booking.vessel, booking.vin, ...customFields],
-        invoice: [booking.invoice],
-        jobRef: [booking.jobRef],
-        customerRef: [booking.customerRef],
-        supplierRef: [booking.supplierRef],
-        destination: [booking.destination, booking.route],
-        origin: [booking.origin, booking.route],
-        vessel: [booking.vessel, booking.carrier],
-        vin: [booking.vin],
-        customFields,
-      }
-
-      return valuesByField[criterion.field].some((value) => value.toLowerCase().includes(query))
-    }
-
-    const groups = previewBookingSearchCriteria.reduce<Array<{ id: string; connector: "and" | "or"; criteria: BookingSearchCriterion[] }>>((currentGroups, criterion, index) => {
-      if (!criterion.value.trim() && !criterion.valueTo?.trim()) return currentGroups
-      const groupId = criterion.groupId ?? "preview-search-main"
-      const existingGroup = currentGroups.find((group) => group.id === groupId)
-      if (existingGroup) {
-        existingGroup.criteria.push(criterion)
-        return currentGroups
-      }
-
-      currentGroups.push({
-        id: groupId,
-        connector: criterion.groupConnector ?? (index === 0 ? "and" : "or"),
-        criteria: [criterion],
-      })
-      return currentGroups
-    }, [])
-
-    return bookings.filter((booking) => {
-      if (!groups.length) return true
-      return groups.reduce<boolean>((searchMatches, group, groupIndex) => {
-        const groupMatches = group.criteria.reduce<boolean>((matches, criterion, criterionIndex) => {
-          const criterionMatches = matchesCriterion(booking, criterion)
-          if (criterionIndex === 0) return criterionMatches
-          return (criterion.connector ?? "and") === "or" ? matches || criterionMatches : matches && criterionMatches
-        }, true)
-
-        if (groupIndex === 0) return groupMatches
-        return group.connector === "or" ? searchMatches || groupMatches : searchMatches && groupMatches
-      }, true)
-    }).length
-  }, [previewBookingSearchCriteria])
-  useEffect(() => {
-    if (!previewScreenGlow) return undefined
-
-    const timeoutId = window.setTimeout(() => setPreviewScreenGlow(false), 4200)
-    return () => window.clearTimeout(timeoutId)
-  }, [previewScreenGlow])
-
+  const countPreviewBookingMatches = useCallback((query: FilterQuery) => (
+    bookings.filter((booking) => matchesFilterQuery(booking, query, previewBookingFilterValue)).length
+  ), [])
   function togglePreviewCustomer(id: string) {
     setPreviewSelectedIds((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  function togglePreviewBooking(id: string) {
-    setPreviewBookingSelectedIds((current) => {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -668,32 +1964,256 @@ function ComponentPreview({ id }: { id: string }) {
     })
   }
 
-  const previewDexterSpecialist = defaultDexterSpecialists.find((specialist) => specialist.id === previewDexterSpecialistId) ?? defaultDexterSpecialists[0]
   const previewDexterAttachments = defaultDexterAttachments.filter((attachment) => previewDexterAttachmentIds.has(attachment.id))
-  const previewCrmLead = customers.find((customer) => customer.id === previewCrmLeadId) ?? customers[0]
+  const previewCrmLead = previewCrmLeadDetails.find((lead) => lead.id === previewCrmLeadId) ?? previewCrmLeadDetails[0]
+  const previewCalendarSeed = useMemo(() => {
+    const at = (days: number, hour: number, minute = 0) => { const date = new Date(); date.setHours(hour, minute, 0, 0); date.setDate(date.getDate() + days); return date.toISOString() }
+    const events: CalendarEvent[] = [
+      { id: "preview-contained-base", title: "Weekly setup", startAt: at(1, 10), endAt: at(1, 11), status: "confirmed", provider: "google_meet", colour: "teal", canEdit: true },
+      { id: "preview-contained", title: "Scorecard", startAt: at(1, 10, 15), endAt: at(1, 10, 45), status: "confirmed", provider: "calendar", colour: "neutral", canEdit: false },
+      { id: "preview-continuing-base", title: "Security sweep", startAt: at(2, 14), endAt: at(2, 15), status: "confirmed", provider: "multideck", colour: "teal", canEdit: true },
+      { id: "preview-continuing", title: "Training session", startAt: at(2, 14, 30), endAt: at(2, 15, 15), status: "confirmed", provider: "microsoft_teams", colour: "amber", canEdit: true },
+      { id: "preview-busy", title: "Busy", startAt: at(3, 16), endAt: at(3, 16, 30), status: "confirmed", provider: "calendar", colour: "blue", canEdit: false, private: true },
+    ]
+    const ribbons: CalendarRibbon[] = [{ id: "preview-delivery", kind: "delivery", title: "MD-22479 delivers", at: at(1, 8), route: "/bookings/MD-22479", tone: "green" }]
+    const slots = [at(1, 9), at(1, 11), at(2, 10, 30), at(2, 15, 30)]
+    return { events, ribbons, slots }
+  }, [])
 
   return (
     <div className="grid min-h-[430px] min-w-0 place-items-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-[var(--md-gap-xl)]">
-      {previewScreenGlow ? (
-        <div className="pointer-events-none fixed inset-0 z-[9999]" aria-hidden>
-          <AIEdgeGlow active variant="screen" className="h-screen w-screen rounded-none" />
+      {id === "conversation-attachments" ? <TicketAttachmentsPreview /> : null}
+      {id === "inline-fields" ? (
+        <div className="w-full max-w-[620px]">
+          <InlineFieldCard title="Account facts" meta="Select a value to edit it">
+            <InlineField label="Account name" value={previewInlineCompany} required onSave={setPreviewInlineCompany} />
+            <InlineSelectField
+              label="Relationship"
+              value={previewInlineType}
+              options={[
+                { value: "Customer", label: "Customer" },
+                { value: "Prospect", label: "Prospect" },
+                { value: "Partner", label: "Partner" },
+              ]}
+              onSave={setPreviewInlineType}
+            />
+          </InlineFieldCard>
+        </div>
+      ) : null}
+
+      {id === "auto-populated-field" ? (
+        <div className="grid w-full max-w-[520px] gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
+          <label htmlFor="gallery-auto-populated-address" className="text-[12px] font-medium text-[var(--md-ink)]">Customer address</label>
+          <AutoPopulatedInput
+            id="gallery-auto-populated-address"
+            value={previewAutoPopulationValue}
+            onChange={(event) => setPreviewAutoPopulationValue(event.target.value)}
+            autoPopulated={matchesAutoPopulation(previewAutoPopulationValue, previewAutoPopulationSource)}
+            autoPopulationDescription="Filled from the selected customer. Edit this field to override it for this quote."
+          />
+          <label htmlFor="gallery-auto-populated-code" className="text-[12px] font-medium text-[var(--md-ink)]">UN/LOCODE</label>
+          <AutoPopulatedInput
+            id="gallery-auto-populated-code"
+            value={previewAutoPopulationCode}
+            onChange={(event) => setPreviewAutoPopulationCode(event.target.value)}
+            autoPopulated={matchesAutoPopulation(previewAutoPopulationCode, previewAutoPopulationCodeSource)}
+            autoPopulationDescription="Filled from the selected location. Edit this field to override it."
+          />
+          <label htmlFor="gallery-auto-populated-notes" className="text-[12px] font-medium text-[var(--md-ink)]">Collection notes</label>
+          <AutoPopulatedTextarea
+            id="gallery-auto-populated-notes"
+            value={previewAutoPopulationNotes}
+            onChange={(event) => setPreviewAutoPopulationNotes(event.target.value)}
+            autoPopulated={matchesAutoPopulation(previewAutoPopulationNotes, previewAutoPopulationNotesSource)}
+            autoPopulationDescription="Filled from the collection address. Edit this field to override it."
+          />
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[11px] leading-4 text-[var(--md-subtle)]">Fill the fields to preview the letter stagger. Edit any value to override it.</p>
+            <Button type="button" variant="ghost" size="sm" className="h-7 rounded-[var(--md-radius-md)] px-2 text-[11px]" onClick={() => {
+              setPreviewAutoPopulationValue(previewAutoPopulationSource)
+              setPreviewAutoPopulationCode(previewAutoPopulationCodeSource)
+              setPreviewAutoPopulationNotes(previewAutoPopulationNotesSource)
+            }}>Fill from linked records</Button>
+          </div>
+        </div>
+      ) : null}
+
+      {id === "tag-entry-field" ? (
+        <div className="w-full max-w-[680px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)] dark:bg-white/[0.035]">
+          <TagEntryField
+            terms={previewDictionaryTerms}
+            onTermsChange={setPreviewDictionaryTerms}
+            inputLabel={t("Add dictionary terms")}
+            placeholder={t("Add a word or phrase")}
+            addLabel={t("Add term")}
+            removeLabel={(term) => `${t("Remove")} ${term}`}
+            duplicateMessage={t("That term is already in the dictionary.")}
+            limitMessage={t("The dictionary can contain up to 100 terms.")}
+          />
+          <p className="mt-2 text-[11.5px] text-[var(--md-subtle)]">{t("Press Enter or use commas to add several terms.")}</p>
+        </div>
+      ) : null}
+
+      {id === "ticket-screenshot-editor" ? (
+        <div className="w-full max-w-[960px]">
+          <ScreenshotCaptureEditor
+            file={previewTicketScreenshot}
+            onChange={setPreviewTicketScreenshot}
+            onCancel={() => setPreviewTicketScreenshot(createGalleryTicketScreenshot())}
+          />
+        </div>
+      ) : null}
+
+      {id === "image-lightbox" ? (
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
+          <ImageLightbox items={galleryLightboxItems}>
+            {(imageLightbox) => <div className="flex flex-wrap items-start gap-3" role="list" aria-label={t("Image previews")}>
+              {galleryLightboxItems.map((image) => (
+                <div key={image.id} role="listitem">
+                  <motion.button
+                    ref={(node) => imageLightbox.registerTrigger(image.id, node)}
+                    type="button"
+                    layoutId={imageLightbox.layoutIdFor(image.id)}
+                    aria-label={`${t("Open image preview")}: ${image.alt}`}
+                    whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+                    transition={shouldReduceMotion ? { duration: 0 } : { layout: { type: "spring", duration: 0.28, bounce: 0 }, scale: { duration: 0.12 } }}
+                    onClick={() => imageLightbox.open(image.id)}
+                    className="size-20 overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] outline-none ring-offset-2 ring-offset-[var(--md-surface-soft)] hover:ring-1 hover:ring-[var(--md-accent-a20)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]"
+                  >
+                    <img src={image.src} alt="" className="size-full rounded-[var(--md-radius-lg)] object-cover" />
+                  </motion.button>
+                </div>
+              ))}
+            </div>}
+          </ImageLightbox>
+        </div>
+      ) : null}
+
+      {id === "ticket-attachment-preview" ? (
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
+          {previewTicketAttachmentVisible ? (
+            <SupportTicketAttachmentPreview
+              file={previewTicketScreenshot}
+              onOpen={() => toast.success("Image preview opened")}
+              onEdit={() => toast.success("Screenshot editor opened")}
+              onRemove={() => setPreviewTicketAttachmentVisible(false)}
+            />
+          ) : (
+            <div className="flex min-h-16 items-center justify-between gap-3 px-2">
+              <p className="text-[12px] text-[var(--md-subtle)]">The attachment was removed from this preview.</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => setPreviewTicketAttachmentVisible(true)}>Restore</Button>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {id === "calendar-view" ? <div className="w-full min-w-[720px] scale-[.88]"><CalendarView events={previewCalendarSeed.events} ribbons={previewCalendarSeed.ribbons} timeZone="Europe/London" onRangeChange={() => undefined} onOpenEvent={() => toast.success("Meeting details opened")} onCreateAt={() => toast.success("Meeting drawer opened")} navigate={() => toast.success("Source record opened")} /></div> : null}
+
+      {id === "meeting-colour-picker" ? <div className="w-full max-w-[420px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><MeetingColourPicker value={previewMeetingColour} onChange={setPreviewMeetingColour} /></div> : null}
+
+      {id === "calendar-day-ribbon" ? <div className="w-full max-w-[420px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><p className="mb-3 text-[11px] font-medium text-[var(--md-subtle)]">Tuesday · Operational dates</p><div className="grid gap-2"><CalendarDayRibbon ribbon={previewCalendarSeed.ribbons[0]} navigate={() => toast.success("Booking opened")} /><CalendarDayRibbon ribbon={{ id: "preview-follow-up", kind: "crm_follow_up", title: "Follow up Northstar", at: previewCalendarSeed.slots[0], route: "/crm/leads", tone: "violet" }} navigate={() => toast.success("Lead opened")} /></div></div> : null}
+
+      {id === "public-brand-identity" ? <div className="flex flex-wrap items-center gap-8"><PublicBrandIdentity /><PublicBrandIdentity brand={{ displayName: "Northstar Freight", logoUrl: null, primaryColor: "#0E7D74", secondaryColor: "#164E49", backgroundColor: "#FFFFFF", surfaceColor: "#FFFFFF", textColor: "#0B1413", appearanceMode: "light", cornerStyle: "rounded", emailSignOff: "" }} /></div> : null}
+      {id === "availability-picker" ? <div className="w-full max-w-[560px]"><AvailabilityPicker slots={previewCalendarSeed.slots} selected={previewAvailabilitySlot} onSelect={setPreviewAvailabilitySlot} timeZone="Europe/London" /></div> : null}
+      {id === "verification-code-input" ? <div className="grid gap-6">
+        <div className="grid gap-2"><p className="text-[11px] font-medium uppercase tracking-[.07em] text-[var(--md-subtle)]">Default</p><VerificationCodeInput value={previewVerificationCode} onChange={setPreviewVerificationCode} /></div>
+        <div className="grid gap-2"><p className="text-[11px] font-medium uppercase tracking-[.07em] text-[var(--md-subtle)]">Large, as sign-in uses it</p><VerificationCodeInput size="lg" value={previewVerificationCode} onChange={setPreviewVerificationCode} className="gap-[var(--md-gap-lg)]" boxClassName="bg-white hover:bg-white focus:bg-white focus-visible:bg-white disabled:bg-white/72" /></div>
+      </div> : null}
+
+      {id === "meeting-time-picker" ? <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><MeetingTimePicker startAt={previewMeetingTime.startAt} endAt={previewMeetingTime.endAt} timeZone={previewMeetingZone} onChange={setPreviewMeetingTime} onTimeZoneChange={setPreviewMeetingZone} /></div> : null}
+
+      {id === "meeting-provider-select" ? <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><MeetingProviderSelect value={previewMeetingProvider} onChange={setPreviewMeetingProvider} connections={[{ id: "preview-google", provider: "google", primaryCalendar: true, status: "connected", displayName: "harry@databrain.co.uk", email: "harry@databrain.co.uk", lastSyncedAt: null, subscriptionExpiresAt: null, error: null, colour: "blue" }]} onConnect={() => toast.success("Settings → Integrations opened")} /></div> : null}
+
+      {id === "meeting-attendee-picker" ? <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><MeetingAttendeePicker value={previewMeetingAttendees} onChange={setPreviewMeetingAttendees} search={async (query) => ({ people: previewMeetingPeople.filter((person) => !query.trim() ? person.kind === "team" : [person.name, person.email, person.detail ?? ""].some((value) => value.toLowerCase().includes(query.trim().toLowerCase()))) })} /></div> : null}
+
+      {id === "working-hours-editor" ? <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3 shadow-[var(--md-shadow-line)]"><WorkingHoursEditor value={previewWorkingHours} onChange={setPreviewWorkingHours} /></div> : null}
+      {id === "booking-link-kind-picker" ? <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]"><BookingLinkKindPicker value={previewBookingKind} onChange={setPreviewBookingKind} /></div> : null}
+      {id === "booking-host-picker" ? <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]"><BookingHostPicker value={previewBookingHostIds} onChange={setPreviewBookingHostIds} kind="round_robin" provider="google_meet" load={loadPreviewBookingHosts} /></div> : null}
+      {id === "booking-question-builder" ? <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]"><BookingQuestionBuilder value={previewBookingForm} onChange={setPreviewBookingForm} /></div> : null}
+      {id === "meeting-attendee-status" ? <div className="w-full max-w-[460px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]"><div className="flex items-baseline justify-between gap-3 px-2"><p className="text-[12px] font-medium text-[var(--md-ink)]">5 attendees</p><MeetingResponseSummary participants={previewMeetingRoster} /></div><MeetingAttendeeList participants={previewMeetingRoster} maxVisible={3} className="mt-2" /><div className="mt-3 flex items-center justify-between gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2 text-[10.5px] tabular-nums text-[var(--md-subtle)]"><span>10:00–10:45 · compact mark for calendar blocks</span><MeetingResponseSummary participants={previewMeetingRoster} compact /></div></div> : null}
+
+      {id === "wizard-dialog" ? (
+        <div className="grid w-full max-w-[620px] place-items-center rounded-[var(--md-radius-xl)] bg-white/54 p-8 shadow-[var(--md-shadow-line)]">
+          <Button onClick={() => { setPreviewWizardStep("details"); setPreviewWizardOpen(true) }}>Open account wizard</Button>
+          <WizardDialog
+            open={previewWizardOpen}
+            onOpenChange={setPreviewWizardOpen}
+            title="New account"
+            description="Add the details the operations team needs to begin work."
+            steps={[
+              { id: "details", label: "Details", complete: true },
+              { id: "ownership", label: "Ownership" },
+              { id: "review", label: "Review" },
+            ]}
+            activeStepId={previewWizardStep}
+            onStepChange={setPreviewWizardStep}
+            submitLabel="Create account"
+            onSubmit={() => { setPreviewWizardOpen(false); toast.success("Preview account created") }}
+          >
+            {previewWizardStep === "details" ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Input aria-label="Account name" defaultValue="Northwind Components" />
+                <Input aria-label="Primary email" defaultValue="ops@northwind.example" />
+              </div>
+            ) : previewWizardStep === "ownership" ? (
+              <Select defaultValue="maya"><SelectTrigger aria-label="Account owner"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="maya">Maya Stone</SelectItem><SelectItem value="theo">Theo Grant</SelectItem></SelectContent></Select>
+            ) : (
+              <p className="text-[13px] leading-5 text-[var(--md-text)]">Northwind Components will be assigned to Maya Stone.</p>
+            )}
+          </WizardDialog>
+        </div>
+      ) : null}
+
+      {id === "side-drawer" ? (
+        <div className="grid w-full max-w-[620px] place-items-center rounded-[var(--md-radius-xl)] bg-white/54 p-8 shadow-[var(--md-shadow-line)]">
+          <Button onClick={() => setPreviewSideDrawerOpen(true)}>Open record drawer</Button>
+          <SideDrawer open={previewSideDrawerOpen} onClose={() => setPreviewSideDrawerOpen(false)} eyebrow="Account" title="Marlow Apparel">
+            <div className="grid gap-4 p-4">
+              <p className="text-[13px] leading-5 text-[var(--md-text)]">A focused detail surface that keeps the current register close at hand.</p>
+              <InlineField label="Owner" value="Maya Stone" readOnly />
+            </div>
+          </SideDrawer>
+        </div>
+      ) : null}
+
+      {id === "app-breadcrumbs" ? (
+        <div className="w-full max-w-[760px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <AppBreadcrumbs
+            route="/crm/leads/northstar-components/convert"
+            leafLabel="Northstar Components"
+            navigate={(path) => toast.success(`Navigate to ${path}`)}
+          />
         </div>
       ) : null}
 
       {id === "colours" ? (
         <div className="w-full max-w-[720px]">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {colourTokens.map(([label, token, hex]) => (
-              <div key={token} className="rounded-[var(--md-radius-lg)] bg-white/60 p-2 shadow-[var(--md-shadow-line)]">
-                <div className="h-20 rounded-[var(--md-radius-md)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.42)]" style={{ background: `var(${token})` }} />
-                <div className="mt-3 px-1 pb-1">
-                  <p className="text-[13px] font-medium text-[var(--md-ink)]">{label}</p>
-                  <p className="mt-1 font-mono text-[11px] text-[var(--md-text)]">{token}</p>
-                  <p className="mt-1 font-mono text-[11px] text-[var(--md-subtle)]">{hex}</p>
-                </div>
+            {colourTokens.map(([label, token]) => (
+              <ColourTokenSwatch key={token} label={label} token={token} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {id === "hugeicons-system" ? (
+        <div className="w-full max-w-[720px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div className="grid gap-3 sm:grid-cols-5">
+            {[
+              ["Home", Home03],
+              ["Dexter", AiBrain],
+              ["Warehouse", Forklift],
+              ["Appearance", Moon02],
+              ["Settings", Settings2],
+              ["Edit event", Pen01],
+            ].map(([label, Icon]) => (
+              <div key={label as string} className="grid min-h-24 place-items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+                <Icon className="size-6 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
+                <span className="text-[11px] font-medium text-[var(--md-ink)]">{t(label as string)}</span>
               </div>
             ))}
           </div>
+          <p className="mt-4 text-[12px] leading-5 text-[var(--md-text)]">{t("Every glyph inherits current colour, keeps a calm rounded stroke, and can participate in shared hover, pressed, loading, and morphing states.")}</p>
         </div>
       ) : null}
 
@@ -703,7 +2223,7 @@ function ComponentPreview({ id }: { id: string }) {
             {typographyRows.map(([spec, use, sample], index) => (
               <div key={spec} className="grid gap-3 border-b border-[rgba(11,20,19,0.06)] pb-5 last:border-b-0 last:pb-0 md:grid-cols-[150px_1fr]">
                 <div>
-                  <p className="font-mono text-[11px] text-[var(--md-subtle)]">{spec}</p>
+                  <p className="text-[11px] text-[var(--md-subtle)]">{spec}</p>
                   <p className="mt-1 text-[12px] text-[var(--md-text)]">{use}</p>
                 </div>
                 <p
@@ -736,60 +2256,180 @@ function ComponentPreview({ id }: { id: string }) {
         </Surface>
       ) : null}
 
+      {id === "quote-detail-controls" ? <QuoteDetailControlsPreview /> : null}
+      {id === "quote-cargo-editor" ? <QuoteCargoEditorPreview /> : null}
+      {id === "cargo-handling-editor" ? <QuoteCargoEditorPreview /> : null}
+      {id === "cargo-allocation-editor" ? <CargoAllocationEditorPreview /> : null}
+      {id === "booking-route-milestones" ? <BookingRouteMilestonesPreview /> : null}
+      {id === "booking-dangerous-goods" ? <BookingDangerousGoodsPreview /> : null}
+      {id === "booking-security-evidence" ? <BookingSecurityEvidencePreview /> : null}
+
       {id === "status-pill" ? (
-        <div className="flex w-full max-w-[560px] flex-wrap gap-[var(--md-gap-md)] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
-          <StatusPill tone="green">Cleared</StatusPill>
-          <StatusPill tone="amber">Under review</StatusPill>
-          <StatusPill tone="red">Action req.</StatusPill>
-          <StatusPill tone="blue">AI note</StatusPill>
-          <StatusPill tone="teal">Submitted</StatusPill>
-          <StatusPill tone="neutral">After hours</StatusPill>
+        <div className="grid w-full max-w-[640px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Workflow statuses</p><TablePillKindContext.Provider value="status"><div className="flex flex-wrap gap-2"><StatusPill tone="purple">New</StatusPill><StatusPill tone="orange">Contacted</StatusPill><StatusPill tone="blue">Qualified</StatusPill><StatusPill tone="amber">Nurturing</StatusPill><StatusPill tone="green">Converted</StatusPill><StatusPill tone="red">Disqualified</StatusPill></div></TablePillKindContext.Provider></div>
+          <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Descriptive attributes</p><TablePillKindContext.Provider value="attribute"><div className="flex flex-wrap gap-2"><StatusPill tone="teal">Ocean</StatusPill><StatusPill tone="blue">Customer</StatusPill><StatusPill tone="amber">Express</StatusPill><StatusPill tone="neutral">Standard</StatusPill></div></TablePillKindContext.Provider></div>
         </div>
       ) : null}
 
-      {id === "ai-edge-glow" ? (
-        <div className="flex w-full max-w-[820px] flex-col gap-3">
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-9 rounded-[var(--md-radius-md)] bg-white/64 px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/82"
-              onClick={() => setPreviewScreenGlow(true)}
-            >
-              {previewScreenGlow ? "Effect running" : "Trigger screen effect"}
-            </Button>
-          </div>
+      {id === "todo-completion-control" ? (
+        <div className="flex w-full max-w-[420px] items-center gap-3 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <TodoCompletionControl checked={previewTodoChecked} label={previewTodoChecked ? t("Reopen task") : t("Mark task complete")} onChange={setPreviewTodoChecked} />
+          <div><p className={cn("text-[13px] font-medium text-[var(--md-ink)]", previewTodoChecked && "line-through text-[var(--md-subtle)]")}>Review revised delivery plan</p><p className="mt-1 text-[12px] text-[var(--md-text)]">Click the circle to inspect the completion motion.</p></div>
+        </div>
+      ) : null}
 
-          <AIEdgeGlow className="min-h-[430px] w-full" contentClassName="p-[var(--md-gap-lg)] sm:p-[var(--md-page-stack-gap)]">
-            <div className="flex h-full flex-col justify-between rounded-[var(--md-radius-lg)] bg-white/28 p-[var(--md-gap-lg)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.38)] backdrop-blur-[2px] sm:p-[var(--md-page-stack-gap)]">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="size-8 rounded-[var(--md-radius-md)] bg-white/40 shadow-[var(--md-shadow-line)]" />
-                  <span className="h-3 w-28 rounded-full bg-[var(--md-ink)]/16" />
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="size-1.5 rounded-full bg-[var(--md-accent)]/70" />
-                  <span className="size-1.5 rounded-full bg-[var(--md-accent)]/50" />
-                  <span className="size-1.5 rounded-full bg-[var(--md-accent)]/35" />
-                </div>
-              </div>
+      {id === "todo-priority-pill" ? (
+        <div className="flex w-full max-w-[520px] flex-wrap items-center justify-center gap-2 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <TodoPriorityPill priority="low" /><TodoPriorityPill priority="medium" /><TodoPriorityPill priority="high" /><TodoPriorityPill priority="urgent" />
+        </div>
+      ) : null}
 
-              <div className="mx-auto grid w-full max-w-[560px] gap-2.5">
-                {[0, 1, 2, 3, 4].map((item) => (
-                  <div key={item} className="grid grid-cols-[22px_120px_1fr] items-center gap-4 rounded-[var(--md-radius-md)] bg-white/48 px-4 py-3 shadow-[var(--md-shadow-line)]">
-                    <span className="size-3 rounded-full bg-[var(--md-accent)]/62" />
-                    <span className="h-2 rounded-full bg-[var(--md-text)]/18" />
-                    <span className="h-2 rounded-full bg-[var(--md-ink)]/12" />
-                  </div>
-                ))}
-              </div>
+      {id === "todo-priority-picker" ? (
+        <div className="flex w-full max-w-[520px] items-center justify-center rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]"><TodoPriorityPicker value="high" ariaLabel="Priority" onValueChange={() => undefined} /></div>
+      ) : null}
 
-              <div className="flex items-center gap-3">
-                <span className="h-10 w-40 rounded-[var(--md-radius-md)] bg-[var(--md-accent)]/92 shadow-[var(--md-shadow-line)]" />
-                <span className="h-10 w-24 rounded-[var(--md-radius-md)] bg-white/36 shadow-[var(--md-shadow-line)]" />
-              </div>
+      {id === "todo-action-state-icon" ? (
+        <div className="flex w-full max-w-[520px] items-center justify-center gap-8 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
+          {(["idle","loading","success"] as const).map((state) => <div key={state} className="grid justify-items-center gap-2"><TodoActionStateIcon state={state} /><span className="text-[11px] capitalize text-[var(--md-text)]">{state}</span></div>)}
+        </div>
+      ) : null}
+
+      {id === "screening-outcome-pill" ? (
+        <div className="flex w-full max-w-[560px] flex-wrap items-center justify-center gap-2 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <ScreeningOutcomePill outcome="clear" />
+          <ScreeningOutcomePill outcome="possible_match" />
+          <ScreeningOutcomePill outcome="match" stale />
+        </div>
+      ) : null}
+
+      {id === "screening-list-freshness" ? (
+        <div className="grid w-full max-w-[760px] gap-6">
+          <ScreeningListFreshness
+            compact
+            list={{ loaded: true, sourceName: "UK Sanctions List", stale: false }}
+          />
+          <ScreeningListFreshness compact list={null} loading />
+          <ScreeningListFreshness compact list={{ loaded: true, sourceName: "UK Sanctions List", stale: true }} />
+        </div>
+      ) : null}
+
+      {id === "screening-match-row" ? (
+        <div className="w-full max-w-[640px] overflow-hidden rounded-[var(--md-radius-xl)] bg-white/60 shadow-[var(--md-shadow-line)]">
+          <ScreeningMatchRow match={{ groupId: "G-88", listedName: "ALFA SHIPPING LTD", matchKind: "exact", score: 1, regime: "Russia", groupType: "Entity", listedOn: "2022-03-01", ukRef: "RUS1234", country: "IR", listingNotes: "Involved in providing logistical support to the Russian government." }} />
+          <ScreeningMatchRow match={{ groupId: "G-88", listedName: "ALPHA SHIPPING", matchKind: "similar", score: 0.86, regime: "Russia", groupType: "Entity", listedOn: "2022-03-01", ukRef: "RUS1234", country: "IR", listingNotes: "Involved in providing logistical support to the Russian government." }} />
+        </div>
+      ) : null}
+
+      {id === "screening-match-list" ? (
+        <div className="w-full max-w-[640px] overflow-hidden rounded-[var(--md-radius-xl)] bg-white/60 shadow-[var(--md-shadow-line)]">
+          <ScreeningMatchList matches={[
+            "SHIPPING LTD", "SHIPPING", "TRADING", "LOGISTICS", "MARINE", "HOLDINGS", "INDUSTRIES",
+            "EXPORT", "AGENCY", "LINE", "GROUP", "PARTNERS", "SERVICES",
+          ].map((suffix, index) => ({
+            groupId: `G-${88 + index}`,
+            listedName: `ALFA ${suffix}`,
+            matchKind: index === 0 ? "exact" as const : "similar" as const,
+            score: index === 0 ? 1 : 0.86 - index * 0.002,
+            regime: index % 3 === 0 ? "Russia" : index % 3 === 1 ? "Iran" : "Belarus",
+            groupType: "Entity",
+            listedOn: index > 10 ? "2014-03-18" : "2022-03-01",
+            ukRef: `RUS${1234 + index}`,
+            country: "IR",
+            listingNotes: "Involved in providing logistical support to a designated government.",
+          }))} />
+        </div>
+      ) : null}
+
+      {id === "screening-result-summary" ? (
+        <div className="w-full max-w-[640px] overflow-hidden rounded-[var(--md-radius-xl)] bg-white/60 py-4 shadow-[var(--md-shadow-line)]">
+          <ScreeningResultSummary subjectName="ALFA SHIPPING LTD" country="IR" outcome="match" />
+        </div>
+      ) : null}
+
+      {id === "kbd" ? (
+        <div className="flex w-full max-w-[560px] flex-wrap items-center justify-center gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <Kbd>Ctrl</Kbd>
+          <Kbd>⌘K</Kbd>
+          <KbdGroup><Kbd>Ctrl</Kbd><Kbd>B</Kbd></KbdGroup>
+        </div>
+      ) : null}
+
+      {id === "shortcut-keys" ? (
+        <div className="grid w-full max-w-[560px] gap-3 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          {[
+            { label: "Search bookings and quotes", binding: chord("K", { mod: true }) },
+            { label: "New booking", binding: chord("B", { mod: true, shift: true }) },
+            { label: "Start dictation", binding: multiKeyChord(["H", "J"]) },
+            { label: "Go to Bookings", binding: sequence("G", "B") },
+            { label: "Summon Dexter", binding: pointerGesture({ mod: true }) },
+            { label: "Turned off", binding: null },
+          ].map((row) => (
+            <div key={row.label} className="flex items-center justify-between gap-4">
+              <span className="text-[13px] text-[var(--md-ink)]">{row.label}</span>
+              <ShortcutKeys binding={row.binding} emptyLabel="Off" />
             </div>
-          </AIEdgeGlow>
+          ))}
+        </div>
+      ) : null}
+
+      {id === "keyboard-shortcuts-panel" ? (
+        <div className="w-full max-w-[820px] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
+          <KeyboardShortcutsPanel />
+        </div>
+      ) : null}
+
+      {id === "dictation-status-pill" ? (
+        <div className="grid w-full max-w-[640px] place-items-center gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div className="grid min-h-[72px] place-items-center">
+            <DictationStatusPill
+              phase={previewDictationPhase}
+              level={0.72}
+              message={previewDictationPhase === "allowance"
+                ? t("Contact admin to increase usage")
+                : previewDictationPhase === "error"
+                  ? t("No clear audio detected")
+                  : undefined}
+            />
+          </div>
+          <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label={t("Dictation status preview")}>
+            {(["transcribing", "polishing", "complete", "allowance", "error"] as DictationStatusPhase[]).map((state) => (
+              <Button
+                key={state}
+                type="button"
+                size="sm"
+                variant={previewDictationPhase === state ? "default" : "outline"}
+                onClick={() => setPreviewDictationPhase(state)}
+              >
+                {t(state === "transcribing" ? "Transcribing" : state === "polishing" ? "Polishing" : state === "complete" ? "Complete" : state === "allowance" ? "Out of usage" : "Error")}
+              </Button>
+            ))}
+          </div>
+          <p className="max-w-[520px] text-center text-[11.5px] leading-5 text-[var(--md-subtle)]">{t("The bottom-centred pill is the only visible dictation feedback. Its width and indicator morph continuously between speaking, polishing, completion, allowance and failure states.")}</p>
+        </div>
+      ) : null}
+
+      {id === "dexter-summon-prompt" ? (
+        <div className="grid w-full max-w-[560px] place-items-center rounded-[var(--md-radius-xl)] bg-white/54 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div className="w-full max-w-[384px]">
+            <DexterSummonPrompt
+              target={summonPreviewTarget}
+              status={summonPreviewAnswer ? "done" : "ready"}
+              question={summonPreviewQuestion}
+              answer={summonPreviewAnswer}
+              error={null}
+              copied={false}
+              onQuestionChange={setSummonPreviewQuestion}
+              onSubmit={() =>
+                setSummonPreviewAnswer(
+                  "Marlow Freight is 14 days over its agreed terms on three invoices totalling €18,400. Two sailings are booked for next week, so worth a call before they load.",
+                )
+              }
+              onClose={() => setSummonPreviewAnswer("")}
+              onCopy={() => toast.success("Answer copied")}
+              onAskAnother={() => setSummonPreviewAnswer("")}
+              onContinueInDexter={() => toast.success("Opening this thread in the Dexter workspace")}
+            />
+          </div>
         </div>
       ) : null}
 
@@ -825,29 +2465,56 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "toast" ? (
-        <div className="relative flex min-h-[340px] w-full max-w-[760px] items-center justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,rgba(251,253,253,0.72),rgba(233,242,240,0.72))] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+        <div className="relative flex min-h-[300px] w-full max-w-[760px] items-start justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--md-surface)_72%,transparent),color-mix(in_srgb,var(--md-surface-tint)_72%,transparent))] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <Button
             type="button"
             variant="ghost"
-            className="h-10 rounded-[var(--md-radius-lg)] bg-white/70 px-4 text-[13px] font-medium shadow-[var(--md-shadow-line)]"
-            onClick={() =>
-              toast.success("Customer CSV prepared", {
-                description: "The export is ready for Northwind Forwarding.",
+            className="h-10 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-surface)_78%,transparent)] px-4 text-[13px] font-medium shadow-[var(--md-shadow-line)]"
+            onClick={() => {
+              toast.success(t("Customer CSV prepared"), {
+                description: t("The export is ready to download."),
               })
-            }
+              toast.warning(t("Declaration needs attention"), {
+                description: t("Two checks still need review."),
+              })
+              toast.info(t("New notification"), {
+                description: t("A booking was assigned to you."),
+              })
+            }}
           >
-            Trigger toast
+            {t("Trigger toast stack")}
           </Button>
 
-          <div className="pointer-events-none absolute bottom-6 right-6 w-[min(520px,calc(100%-48px))]">
-            <div data-type="success" className="md-toast flex items-start">
-              <div className="md-toast-icon shrink-0">
-                <Check className="size-4.5" strokeWidth={1.5} />
+          <div aria-hidden="true" className="md-toast-gallery-stack pointer-events-none absolute bottom-5 end-5 flex w-[min(520px,calc(100%-40px))] flex-col gap-2">
+            <div data-type="info" className="md-toast flex">
+              <div className="md-toast-icon shrink-0" data-icon="">
+                <img alt="" className="md-toast-status-art" data-toast-icon-kind="general" src={toastGeneralIcon} />
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="md-toast-title">Customer CSV prepared</p>
-                <p className="md-toast-description">The export is ready for Northwind Forwarding.</p>
+              <div className="min-w-0 flex-1" data-content="">
+                <p className="md-toast-title" data-title="">{t("New notification")}</p>
+                <p className="md-toast-description" data-description="">{t("A booking was assigned to you.")}</p>
               </div>
+              <button className="md-toast-close" tabIndex={-1} type="button"><span className="md-toast-dismiss-label">{t("Dismiss")}</span></button>
+            </div>
+            <div data-type="warning" className="md-toast flex">
+              <div className="md-toast-icon shrink-0" data-icon="">
+                <img alt="" className="md-toast-status-art" data-toast-icon-kind="warning" src={toastErrorIcon} />
+              </div>
+              <div className="min-w-0 flex-1" data-content="">
+                <p className="md-toast-title" data-title="">{t("Declaration needs attention")}</p>
+                <p className="md-toast-description" data-description="">{t("Two checks still need review.")}</p>
+              </div>
+              <button className="md-toast-close" tabIndex={-1} type="button"><span className="md-toast-dismiss-label">{t("Dismiss")}</span></button>
+            </div>
+            <div data-type="success" className="md-toast flex">
+              <div className="md-toast-icon shrink-0" data-icon="">
+                <img alt="" className="md-toast-status-art" data-toast-icon-kind="success" src={toastSuccessIcon} />
+              </div>
+              <div className="min-w-0 flex-1" data-content="">
+                <p className="md-toast-title" data-title="">{t("Customer CSV prepared")}</p>
+                <p className="md-toast-description" data-description="">{t("The export is ready to download.")}</p>
+              </div>
+              <button className="md-toast-close" tabIndex={-1} type="button"><span className="md-toast-dismiss-label">{t("Dismiss")}</span></button>
             </div>
           </div>
         </div>
@@ -955,13 +2622,14 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "sidebar" ? (
         <div className="grid w-full max-w-[660px] gap-4 sm:grid-cols-2">
           <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
-            <SidebarNavItem item={{ label: "Agent Dexter", icon: Sparkles }} accent="dexter" onClick={() => undefined} />
-            <SidebarNavItem item={{ label: "Home & Work", icon: galleryIcons.sidebar }} onClick={() => undefined} />
-            <SidebarNavItem item={{ label: "Operations", icon: Ship }} onClick={() => undefined} />
-            <SidebarNavItem item={{ label: "Sales & CRM", icon: galleryIcons["crm-pipeline-board"] }} onClick={() => undefined} />
+            <SidebarNavItem item={{ label: "Agent Dexter", icon: AiBrain }} accent="dexter" onClick={() => undefined} />
+            <SidebarNavItem item={{ label: "Home", icon: galleryIcons.sidebar }} onClick={() => undefined} affordance="branch" />
+            <SidebarNavItem item={{ label: "Operations", icon: Ship }} onClick={() => undefined} affordance="branch" />
+            <SidebarNavItem item={{ label: "Sales", icon: galleryIcons["crm-pipeline-board"] }} onClick={() => undefined} affordance="branch" />
+            <SidebarNavItem item={{ label: "CRM", icon: galleryIcons["crm-metrics-grid"] }} onClick={() => undefined} affordance="branch" />
           </div>
           <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
-            <SidebarNavItem item={{ label: "Agent Dexter", icon: Sparkles }} accent="dexter" onClick={() => undefined} />
+            <SidebarNavItem item={{ label: "Agent Dexter", icon: AiBrain }} accent="dexter" onClick={() => undefined} />
             <div className="mb-3 flex items-center gap-2 px-2 text-[12px] font-medium text-[var(--md-subtle)]">
               <ArrowLeft data-icon="inline-start" className="size-3.5" strokeWidth={1.2} />
               <span>Operations</span>
@@ -970,7 +2638,7 @@ function ComponentPreview({ id }: { id: string }) {
               item={{ label: "Bookings & jobs", icon: Ship }}
               onClick={() => undefined}
               expanded
-              trailing={<ChevronDown className="size-3.5 rotate-180" strokeWidth={1.2} />}
+              affordance="group"
             />
             <div className="mt-1 ps-4">
               <div className="rounded-[var(--md-radius-lg)] bg-white/40 p-1 shadow-[var(--md-shadow-line)]">
@@ -982,39 +2650,75 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "sidebar-item-menu" ? (
+        <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
+          <p className="mb-2 px-2 text-[11px] text-[var(--md-subtle)]">Right-click a row to pin, favourite or reorder it.</p>
+          {previewSidebarRows.map((row) => {
+            const pinned = previewSidebarPinnedIds.includes(row.id)
+            const favourite = previewSidebarFavouriteIds.includes(row.id)
+
+            return (
+              <SidebarItemMenu
+                key={row.id}
+                pinned={pinned}
+                favourite={favourite}
+                favouriteDisabled={!favourite && previewSidebarFavouriteIds.length >= 2}
+                onTogglePin={() =>
+                  setPreviewSidebarPinnedIds((current) =>
+                    current.includes(row.id) ? current.filter((entry) => entry !== row.id) : [...current, row.id],
+                  )
+                }
+                onToggleFavourite={() =>
+                  setPreviewSidebarFavouriteIds((current) =>
+                    current.includes(row.id)
+                      ? current.filter((entry) => entry !== row.id)
+                      : current.length < 2 ? [...current, row.id] : current,
+                  )
+                }
+                onReorder={() => undefined}
+              >
+                <SidebarNavItem
+                  item={{ label: row.label, icon: row.icon }}
+                  trailing={favourite
+                    ? <Star className="size-3 text-[var(--md-accent)]" fill="currentColor" strokeWidth={1.3} />
+                    : pinned ? <Pin className="size-3 -rotate-[32deg] text-[var(--md-accent)]" strokeWidth={1.6} /> : undefined}
+                  onClick={() => undefined}
+                />
+              </SidebarItemMenu>
+            )
+          })}
+        </div>
+      ) : null}
+
+      {id === "sidebar-arrange-canvas" ? (
+        <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] px-4 pb-4 pt-1 shadow-[var(--md-shadow-line)]">
+          <SidebarArrangeCanvas
+            items={previewSidebarRows}
+            order={previewArrangeOrder}
+            pinned={previewArrangePinned}
+            defaultOrder={previewSidebarOrder}
+            onSave={(next) => {
+              setPreviewArrangeOrder(next.order)
+              setPreviewArrangePinned(next.pinned)
+            }}
+            onCancel={() => undefined}
+          />
+        </div>
+      ) : null}
+
       {id === "theme-toggle" ? (
         <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
           <ThemeToggle className="bg-[var(--md-glass)]" />
         </div>
       ) : null}
 
-      {id === "paper-tray-stack" ? (
-        <div className="w-full max-w-[920px] overflow-hidden py-2">
-          <PaperTrayStack
-            trays={previewPaperTrays.slice(0, 2)}
-            selectedDocumentId={previewPaperDocumentId}
-            mobileTrayId={previewPaperTrays[0].id}
-            onSelectDocument={(document) => setPreviewPaperDocumentId(document.id)}
-            onFilesAdded={(_, files) => toast.success(`${files.length} file${files.length === 1 ? "" : "s"} ready to add`)}
-            onMoveDocument={() => toast.success("Document moved in preview")}
-          />
+      {id === "accent-picker" ? (
+        <div className="w-full max-w-[980px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
+          <AccentPicker />
         </div>
       ) : null}
 
-      {id === "document-viewer" ? (
-        <div className="grid min-h-[320px] w-full max-w-[520px] place-items-center rounded-[var(--md-radius-xl)] bg-white/55 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
-          <Button onClick={() => setPreviewPaperDocumentId(previewPaperTrays[0].documents[0].id)}>Open document viewer</Button>
-          <DocumentViewer
-            item={previewPaperDocument}
-            trays={previewPaperTrays}
-            currentTrayId={previewPaperDocumentTrayId}
-            onClose={() => setPreviewPaperDocumentId(null)}
-            onMove={(trayId) => toast.success(`Would move to ${previewPaperTrays.find((tray) => tray.id === trayId)?.name ?? "tray"}`)}
-            onRemove={() => setPreviewPaperDocumentId(null)}
-            onDownload={() => toast.success("Download preview started")}
-          />
-        </div>
-      ) : null}
+      {id === "pdf-document-viewer-dialog" ? <PdfDocumentViewerDialogPreview /> : null}
 
       {id === "document-workspace" ? (
         <div className="w-full max-w-[1120px]">
@@ -1022,9 +2726,39 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "document-extraction-progress" ? (
+        <div className="w-full max-w-[720px]">
+          <DocumentExtractionProgress
+            title="Preparing invoice lines"
+            detail="This may take a moment. You can review every line before applying it."
+            fileName="northwind-commercial-invoice.pdf"
+            pageCount={3}
+            previewUrl={previewDocumentPageUrl}
+            stages={previewExtractionStages}
+            activeStageId="extracting"
+            footnote="Nothing is added to the declaration until you approve it."
+            onCancel={() => toast.info("Would cancel the import")}
+          />
+        </div>
+      ) : null}
+
+      {id === "document-evidence-viewer" ? (
+        <div className="w-full max-w-[520px]">
+          <DocumentEvidenceViewerPreview />
+        </div>
+      ) : null}
+
+      {id === "suggested-update-review" ? <SuggestedUpdateReviewPreview /> : null}
+
       {id === "audit-timeline" ? (
         <div className="w-full max-w-[820px]">
           <AuditTimeline events={quoteAuditEvents} title="Audit and workflow" description="Quote changes and next actions" />
+        </div>
+      ) : null}
+
+      {id === "lifecycle-notes" ? (
+        <div className="w-full max-w-[820px]">
+          <LifecycleNotes subjectType="customs" subjectId="preview-declaration" previewState={previewLifecycleNotes} />
         </div>
       ) : null}
 
@@ -1067,7 +2801,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "pagination" ? (
         <div className="w-full max-w-[720px]">
           <div className="mb-3 grid gap-2">
-            {["Marlow Apparel Ltd", "Bauhaus Importe GmbH", "Black Forest Foods", "Pacific Goods Co", "Mediterranean Spice Trading"].map((customer) => (
+            {Array.from({ length: 57 }, (_, index) => `Sample customer ${String(index + 1).padStart(2, "0")}`).slice((previewPage - 1) * previewPageSize, previewPage * previewPageSize).map((customer) => (
               <div key={customer} className="flex h-12 items-center justify-between rounded-[var(--md-radius-lg)] bg-white/55 px-4 shadow-[var(--md-shadow-line)]">
                 <span className="text-[13px] font-medium text-[var(--md-ink)]">{customer}</span>
                 <span className="text-[12px] text-[var(--md-text)]">Active customer</span>
@@ -1076,8 +2810,8 @@ function ComponentPreview({ id }: { id: string }) {
           </div>
           <Pagination
             page={previewPage}
-            pageCount={Math.max(Math.ceil(customers.length / previewPageSize), 1)}
-            totalItems={customers.length}
+            pageCount={Math.max(Math.ceil(57 / previewPageSize), 1)}
+            totalItems={57}
             pageSize={previewPageSize}
             pageSizeOptions={[10, 20, 30, 50]}
             itemLabel="customers"
@@ -1156,10 +2890,10 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "date-range-picker" ? (
-        <div className="grid w-full max-w-[560px] gap-3 rounded-[var(--md-radius-xl)] bg-white/54 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+        <div className="grid w-full max-w-[620px] gap-4 rounded-[var(--md-radius-xl)] bg-white/54 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <div>
             <p className="text-[14px] font-medium text-[var(--md-ink)]">Collection dates</p>
-            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">A paired date range using one selector and highlighted in-between days.</p>
+            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">A paired range that can expand into a side-by-side comparison without losing context.</p>
           </div>
           <MultideckDateRangePicker
             value={previewDateRange}
@@ -1170,14 +2904,205 @@ function ComponentPreview({ id }: { id: string }) {
             startLabel="Cargo ready from"
             endLabel="Requested collection date"
             footerLabel="Selected collection dates"
+            comparison={{
+              enabled: previewDateComparisonEnabled,
+              value: previewDateComparisonRange,
+              onEnabledChange: setPreviewDateComparisonEnabled,
+              onChange: setPreviewDateComparisonRange,
+              options: [
+                { id: "previous-period", label: "Previous period", range: { start: "2026-05-14", end: "2026-05-24" } },
+                { id: "last-thirty", label: "Last 30 days", range: { start: "2026-04-25", end: "2026-05-24" } },
+                { id: "custom", label: "Custom", range: null },
+              ],
+            }}
+          />
+          <div className="grid gap-3 border-t border-[var(--md-border)] pt-4 sm:grid-cols-2">
+            <div className="grid gap-1.5">
+              <p className="text-[12px] font-medium text-[var(--md-ink)]">Single date</p>
+              <MultideckDatePicker value={previewSingleDate} onChange={setPreviewSingleDate} title="Expiry date" description="Pick the date this stock expires." />
+            </div>
+            <div className="grid gap-1.5">
+              <p className="text-[12px] font-medium text-[var(--md-ink)]">Date and time</p>
+              <MultideckDateTimePicker value={previewDateTime} onChange={setPreviewDateTime} title="Appointment" description="Pick the appointment date and time." />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {id === "inbox-thread-row" ? (
+        <div className="w-full max-w-[420px] rounded-[var(--md-radius-xl)] bg-white/50 p-2 shadow-[var(--md-shadow-line)]">
+          <div className="flex flex-col gap-0.5">
+            {previewInboxThreads.map((item) => (
+              <InboxThreadRow
+                key={item.id}
+                thread={{ ...item, starred: previewInboxStarred.has(item.id) }}
+                selected={item.id === previewInboxThreadId}
+                ownAddresses={["harry.phillips@northwind-forwarding.com"]}
+                selectionLayoutId="preview-inbox-thread-selection"
+                onSelect={() => setPreviewInboxThreadId(item.id)}
+                onToggleStar={() =>
+                  setPreviewInboxStarred((current) => {
+                    const next = new Set(current)
+                    if (next.has(item.id)) next.delete(item.id)
+                    else next.add(item.id)
+                    return next
+                  })
+                }
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {id === "email-delivery-status" ? (
+        <div className="flex w-full max-w-[520px] flex-wrap items-center justify-center gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <EmailDeliveryStatus
+            delivery={{
+              status: "sent",
+              sentAt: "2026-08-03T14:42:00.000Z",
+              deliveredAt: null,
+              openedAt: null,
+              repliedAt: null,
+              failedAt: null,
+              bouncedAt: null,
+              openTrackingEnabled: false,
+              confidence: "none",
+            }}
+          />
+          <EmailDeliveryStatus
+            delivery={{
+              status: "opened_estimated",
+              sentAt: "2026-08-03T14:42:00.000Z",
+              deliveredAt: null,
+              openedAt: "2026-08-03T14:48:00.000Z",
+              repliedAt: null,
+              failedAt: null,
+              bouncedAt: null,
+              openTrackingEnabled: true,
+              confidence: "estimated",
+            }}
+          />
+          <EmailDeliveryStatus
+            delivery={{
+              status: "bounced",
+              sentAt: "2026-08-03T14:42:00.000Z",
+              deliveredAt: null,
+              openedAt: null,
+              repliedAt: null,
+              failedAt: null,
+              bouncedAt: "2026-08-03T14:43:00.000Z",
+              openTrackingEnabled: true,
+              confidence: "confirmed",
+            }}
           />
         </div>
       ) : null}
 
+      {id === "email-message-renderer" ? (
+        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3.5 shadow-[var(--md-shadow-line)]">
+          <EmailMessageRenderer sanitizedHtml={previewEmailHtml} bodyText={null} />
+        </div>
+      ) : null}
+
+      {id === "thread-summary" ? (
+        <div className="grid w-full max-w-[620px] gap-3">
+          <div className="flex flex-wrap gap-2">
+            {[
+              { label: "Ready", value: previewInboxSummary },
+              { label: "Generating", value: { ...previewInboxSummary, status: "pending" as const, text: null } },
+              { label: "Out of date", value: { ...previewInboxSummary, status: "stale" as const } },
+              { label: "Failed", value: { ...previewInboxSummary, status: "failed" as const, text: null, error: "Dexter could not reach the model." } },
+              { label: "Not summarised", value: { status: "none" as const, text: null, keyPoints: [], sourceMessageIds: [], model: null, updatedAt: null, error: null } },
+            ].map((option) => (
+              <button
+                key={option.label}
+                type="button"
+                aria-pressed={previewSummaryState.status === option.value.status}
+                className={cn(
+                  "h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium shadow-[var(--md-shadow-line)] transition-[background-color,color] duration-150",
+                  previewSummaryState.status === option.value.status
+                    ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]"
+                    : "bg-[var(--md-surface)] text-[var(--md-text)] hover:bg-[var(--md-hover)]",
+                )}
+                onClick={() => setPreviewSummaryState(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {previewSummaryState.status === "none" ? (
+            <DexterActionPill
+              label="Summarise"
+              onClick={() => setPreviewSummaryState({ ...previewInboxSummary, status: "pending", text: null })}
+            />
+          ) : (
+            <ThreadSummary
+              summary={previewSummaryState}
+              sources={[
+                { messageId: "msg-1", label: "Claire Osei" },
+                { messageId: "msg-2", label: "Compliance team" },
+              ]}
+              onRegenerate={() => setPreviewSummaryState({ ...previewInboxSummary, status: "pending", text: null })}
+              onOpenSource={(messageId) => toast.success(`Would scroll to ${messageId}`)}
+            />
+          )}
+        </div>
+      ) : null}
+
+      {id === "mail-composer" ? (
+        <div className="w-full max-w-[620px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] py-3 shadow-[var(--md-shadow-line)]">
+          <MailComposer
+            state={previewComposer}
+            onStateChange={setPreviewComposer}
+            mailbox={previewMailboxes[0]}
+            status="idle"
+            error={null}
+            threadSubject="Dual-use licence for the Rotterdam consignment"
+            replyAudience={{
+              label: "Everyone on this message",
+              detail: "Multideck resolves the full list from the message you are replying to when it sends.",
+            }}
+            canSend={previewComposer.bodyText.trim().length > 0}
+            onSend={() => toast.success("Would send with mode and source message only")}
+            onSaveDraft={() => toast.success("Draft saved")}
+            onDiscard={() => setPreviewComposer((current) => ({ ...current, bodyText: "", presentation: "docked" }))}
+            onComposeWithDexter={() => toast.success("Dexter would prepare wording in place")}
+            dexterAction={previewComposer.mode === "reply" || previewComposer.mode === "reply_all" ? "reply" : "compose"}
+          />
+        </div>
+      ) : null}
+
+      {id === "toggle-group" ? (
+        <ToggleGroup type="single" defaultValue="bug" variant="outline" aria-label="Ticket type">
+          <ToggleGroupItem value="bug">Bug</ToggleGroupItem>
+          <ToggleGroupItem value="feature_request">Feature request</ToggleGroupItem>
+          <ToggleGroupItem value="question">Question</ToggleGroupItem>
+        </ToggleGroup>
+      ) : null}
       {id === "segmented-control" ? (
         <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-white/50 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <SegmentedControl options={bookingViewModes} value={previewBookingView} onChange={setPreviewBookingView} />
         </div>
+      ) : null}
+
+      {id === "choice-control" ? (
+        <div className="grid w-full max-w-[620px] gap-5 rounded-[var(--md-radius-xl)] bg-white/50 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div className="grid gap-2">
+            <span className="text-[12px] font-medium text-[var(--md-text)]">Two choices</span>
+            <ChoiceControl options={bookingViewModes} value={previewBookingView} onChange={setPreviewBookingView} ariaLabel="Booking view" />
+          </div>
+          <div className="grid gap-2">
+            <span className="text-[12px] font-medium text-[var(--md-text)]">Five or more choices</span>
+            <ChoiceControl options={["OCEAN", "AIR", "ROAD", "FAS", "FSA"]} value={previewChoiceMode} onChange={setPreviewChoiceMode} ariaLabel="Transport mode" />
+          </div>
+        </div>
+      ) : null}
+
+      {id === "checkbox" ? (
+        <label className="flex w-full max-w-[420px] cursor-pointer items-center gap-3 rounded-[var(--md-radius-xl)] bg-white/50 p-[var(--md-gap-xl)] text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
+          <Checkbox checked={previewCheckbox} onCheckedChange={(checked) => setPreviewCheckbox(checked === true)} />
+          Include customs documents
+        </label>
       ) : null}
 
       {id === "multi-select-menu" ? (
@@ -1190,6 +3115,18 @@ function ComponentPreview({ id }: { id: string }) {
               onValueChange={setPreviewTransportModes}
               placeholder="Select transport modes"
               label="Transport modes"
+            />
+            <span className="mt-3 text-[12px] font-medium text-[var(--md-text)]">Toolbar filter</span>
+            <MultiSelectMenu
+              variant="toolbar"
+              value={previewCalendarLayers}
+              options={[
+                { value: "Operational dates", label: "Operational dates", leading: <span className="flex h-3 w-8 overflow-hidden rounded-full ring-1 ring-[var(--md-line-strong)]"><span className="flex-1 bg-[var(--md-calendar-ribbon-sky-bg)]" /><span className="flex-1 bg-[var(--md-status-purple-bg)]" /></span> },
+                { value: "Personal events", label: "Personal events", leading: <span className="h-3 w-8 rounded-full bg-[var(--md-calendar-blue)] ring-1 ring-[var(--md-line-strong)]" /> },
+              ]}
+              onValueChange={setPreviewCalendarLayers}
+              label="Show on calendar"
+              className="justify-self-start"
             />
           </div>
         </div>
@@ -1225,14 +3162,23 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "data-table" ? (
+      {id === "data-table" || id === "table-export" ? (
         <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
           <DataTable
             columns={previewChargeColumns}
-            rows={previewChargeRows}
+            clientPagination
+            rows={previewPaginatedChargeRows.filter((row) => (previewTableView === "All" || row.sell > row.cost) && (!previewTableStatus || row.status === previewTableStatus) && (!previewTableSearch.trim() || `${row.id} ${row.description} ${row.supplier}`.toLowerCase().includes(previewTableSearch.trim().toLowerCase())))}
             getRowKey={(row) => row.id}
             storageKey="gallery-charge-table"
+            exportConfig={{ fileName: "example-charges", register: {
+              dateLabel: "Example charge created date", dateValue: (row) => row.createdAt,
+              scopeDescription: "Example data only. All records includes every example matching the current view and filters; this page includes only its paginated rows.",
+              loadAllRows: async () => previewPaginatedChargeRows.filter((row) => (previewTableView === "All" || row.sell > row.cost) && (!previewTableStatus || row.status === previewTableStatus) && (!previewTableSearch.trim() || `${row.id} ${row.description} ${row.supplier}`.toLowerCase().includes(previewTableSearch.trim().toLowerCase()))),
+            } }}
             ariaLabel="Quote charges preview"
+            toolbarTabs={<RegisterViewSwitch options={["All", "Profitable"] as const} value={previewTableView} onChange={setPreviewTableView} counts={{ All: previewPaginatedChargeRows.length, Profitable: previewPaginatedChargeRows.filter((row) => row.sell > row.cost).length }} ariaLabel="Charge view" compact />}
+            toolbarSearch={<RegisterSearchField value={previewTableSearch} onChange={setPreviewTableSearch} onClear={() => setPreviewTableSearch("")} label="Search charges" placeholder="Search charges…" />}
+            toolbarFilters={<RegisterFacetSelect label="Status" allLabel="All statuses" value={previewTableStatus} options={["Approved", "Review", "Blocked"].map((status) => ({ value: status, label: status }))} onChange={setPreviewTableStatus} className="w-[132px]" />}
           />
         </div>
       ) : null}
@@ -1244,10 +3190,16 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "quote-search-builder" ? (
-        <div className="w-full max-w-[1120px]">
-          <QuoteSearchBuilder
+        <div className="flex w-full max-w-[1120px] justify-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-4">
+          <AdvancedFilterPopover
+            fields={quoteSearchFieldOptions}
             value={previewQuoteSearch}
             onChange={setPreviewQuoteSearch}
+            storageKey="gallery-quote-filters"
+            label="Advanced search"
+            title="Advanced quote search"
+            itemLabel="quotes"
+            align="center"
           />
         </div>
       ) : null}
@@ -1263,7 +3215,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "warehouse-form-field" ? (
         <div className="grid w-full max-w-[520px] gap-4 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
           <WarehouseFormField label="Facility code" htmlFor="gallery-facility-code" required hint="A short unique code, e.g. FXT-DC1.">
-            <Input id="gallery-facility-code" dir="ltr" defaultValue="FXT-DC1" className="h-10 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]" />
+            <Input id="gallery-facility-code" dir="ltr" defaultValue="FXT-DC1" className="h-10 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" />
           </WarehouseFormField>
           <WarehouseFormField label="Facility type" required>
             <Select defaultValue="bonded">
@@ -1275,8 +3227,42 @@ function ComponentPreview({ id }: { id: string }) {
             </Select>
           </WarehouseFormField>
           <WarehouseFormField label="Country code" htmlFor="gallery-country" error="Country code must be a 2-letter ISO code.">
-            <Input id="gallery-country" dir="ltr" defaultValue="GBR" className="h-10 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]" />
+            <Input id="gallery-country" dir="ltr" defaultValue="GBR" className="h-10 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" />
           </WarehouseFormField>
+        </div>
+      ) : null}
+
+      {id === "warehouse-quantity-uom-field" ? (
+        <div className="w-full max-w-[420px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <WarehouseQuantityUomField label="Quantity to sample" value={previewWarehouseQuantity} onChange={setPreviewWarehouseQuantity} uomCode="KG" max={387.5} />
+        </div>
+      ) : null}
+
+      {id === "purchase-order-line-editor" ? (
+        <div className="w-full max-w-[980px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <PurchaseOrderLineEditor
+            lines={previewPurchaseOrderLines}
+            items={previewPurchaseOrderReference.items}
+            facilityId="gallery-facility"
+            customerOrgId="gallery-customer"
+            itemLoading={false}
+            itemsHaveMore={false}
+            onItemSearch={() => undefined}
+            onItemSelected={() => undefined}
+            onChange={setPreviewPurchaseOrderLines}
+          />
+        </div>
+      ) : null}
+
+      {id === "warehouse-object-summary" ? (
+        <div className="w-full max-w-[480px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <WarehouseObjectSummary unit={previewWarehouseObject} />
+        </div>
+      ) : null}
+
+      {id === "warehouse-exception-summary" ? (
+        <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <WarehouseExceptionSummary exception={previewWarehouseException} />
         </div>
       ) : null}
 
@@ -1312,6 +3298,18 @@ function ComponentPreview({ id }: { id: string }) {
             activeTab={previewCustomerTab}
             onChange={setPreviewCustomerTab}
           />
+          <Tabs defaultValue="control" className="mt-6">
+            <TabsList variant="line" aria-label={t("Booking detail sections")}>
+              <TabsTrigger value="control">{t("Control")}</TabsTrigger>
+              <TabsTrigger value="parties">{t("Parties")}</TabsTrigger>
+              <TabsTrigger value="route">{t("Route & schedule")}</TabsTrigger>
+              <TabsTrigger value="cargo">{t("Cargo & equipment")}</TabsTrigger>
+            </TabsList>
+            <TabsContent value="control"><p className="text-[13px] text-[var(--md-text)]">{t("Keep record controls separate from operational detail.")}</p></TabsContent>
+            <TabsContent value="parties"><p className="text-[13px] text-[var(--md-text)]">{t("Customer, payer, shipper and consignee.")}</p></TabsContent>
+            <TabsContent value="route"><p className="text-[13px] text-[var(--md-text)]">{t("Route legs and planned transport dates.")}</p></TabsContent>
+            <TabsContent value="cargo"><p className="text-[13px] text-[var(--md-text)]">{t("Cargo lines and mode-specific equipment.")}</p></TabsContent>
+          </Tabs>
         </div>
       ) : null}
 
@@ -1335,6 +3333,67 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "priority-queue" ? (
+        <div className="md-kpi-scope w-full max-w-[1120px]">
+          <DashboardPriorityQueue
+            items={previewPriorityItems}
+            operatorName="Amelia Rowe"
+            onOpenItem={(item) => toast.success(`${item.reference} opened`)}
+            onHandOverToDexter={(item) => toast.success(`${item.reference} handed over to Dexter`)}
+          />
+        </div>
+      ) : null}
+
+      {id === "performance-panel" ? (
+        <div className="md-kpi-scope w-full max-w-[1120px]">
+          <KpiStrip
+            kpis={previewPerformanceKpis}
+            selectedLabel={previewPerformanceKpis[0].label}
+            spark={false}
+            markerId="gallery-performance-rule"
+            className="mb-[var(--md-gap-lg)]"
+          />
+          <DashboardPerformancePanel
+            kpis={previewPerformanceKpis}
+            trends={previewPerformanceTrends}
+            metricLabel={previewPerformanceKpis[0].label}
+          />
+        </div>
+      ) : null}
+
+      {id === "breakdown-panel" ? (
+        <div className="grid w-full max-w-[720px] gap-[var(--md-gap-lg)] sm:grid-cols-2">
+          <DashboardBreakdownPanel
+            title="Mode mix"
+            subtitle="Live bookings by transport mode"
+            slices={[
+              { label: "Ocean", value: 12, color: "var(--md-accent)" },
+              { label: "Air", value: 6, color: "var(--md-blue)" },
+              { label: "Road", value: 3, color: "var(--md-green)" },
+            ]}
+            variant="segmented"
+            totalLabel="in transit"
+          />
+          <DashboardBreakdownPanel
+            title="Quote pipeline"
+            subtitle="Open quotes by workflow stage"
+            slices={[
+              { label: "Carrier pricing", value: 8, color: "var(--md-accent)" },
+              { label: "Awaiting customer", value: 5, color: "var(--md-accent-tint)" },
+              { label: "Internal review", value: 3, color: "var(--md-accent-glow-core)" },
+              { label: "Drafting", value: 1, color: "var(--md-blue)" },
+            ]}
+            variant="columns"
+          />
+        </div>
+      ) : null}
+
+      {id === "coverage-panel" ? (
+        <div className="w-full max-w-[420px]">
+          <DashboardCoveragePanel onViewQueue={(code) => toast.success(`${code} queue opened`)} />
+        </div>
+      ) : null}
+
       {id === "your-jobs-panel" ? (
         <div className="w-full max-w-[1120px]">
           <YourJobsPanel
@@ -1346,13 +3405,19 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "booking-advanced-search" ? (
-        <div className="w-full max-w-[1120px]">
-          <BookingAdvancedSearch
-            criteria={previewBookingSearchCriteria}
-            onCriteriaChange={setPreviewBookingSearchCriteria}
-            resultCount={previewBookingSearchCount}
+      {id === "booking-search-builder" ? (
+        <div className="flex w-full max-w-[1120px] justify-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-4">
+          <AdvancedFilterPopover
+            fields={previewBookingFilterFields}
+            value={previewBookingSearch}
+            onChange={setPreviewBookingSearch}
+            storageKey="gallery-booking-filters"
+            label="Advanced search"
+            title="Advanced booking search"
+            itemLabel="bookings"
+            countMatches={countPreviewBookingMatches}
             totalCount={bookings.length}
+            align="center"
           />
         </div>
       ) : null}
@@ -1361,9 +3426,7 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
           <BookingsTable
             rows={bookings.slice(0, 4)}
-            selectedIds={previewBookingSelectedIds}
             favouriteIds={previewFavouriteBookingIds}
-            onToggleBooking={togglePreviewBooking}
             onToggleFavourite={togglePreviewFavouriteBooking}
             onOpenBooking={(booking) => toast.success(`${booking.id} opened`)}
           />
@@ -1406,7 +3469,7 @@ function ComponentPreview({ id }: { id: string }) {
           <DomesticRoadKanbanBoard
             jobs={previewRoadJobs}
             favouriteIds={previewRoadFavouriteBookingIds}
-            onMoveJob={(jobId, stage) => setPreviewRoadJobs((current) => current.map((job) => job.id === jobId && job.stage !== stage ? { ...job, stage, ...roadJobStageStatus[stage] } : job))}
+            onMoveJob={(_jobId, _stage, orderedJobs) => setPreviewRoadJobs(orderedJobs)}
             onToggleFavourite={(job) => setPreviewRoadFavouriteBookingIds((current) => {
               const next = new Set(current)
               if (next.has(job.bookingId)) next.delete(job.bookingId)
@@ -1482,7 +3545,7 @@ function ComponentPreview({ id }: { id: string }) {
           <div className="w-full max-w-[420px] rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)]">
             <p className="text-[14px] font-medium text-[var(--md-ink)]">Graph data picker</p>
             <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">Used after a graph is dropped into a report or manual dashboard.</p>
-            <Button type="button" className="mt-4 h-10 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[var(--md-accent)]/88" onClick={() => setPreviewDataEditorOpen(true)}>
+            <Button type="button" className="mt-4 h-10 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/88" onClick={() => setPreviewDataEditorOpen(true)}>
               Open data editor
             </Button>
           </div>
@@ -1513,9 +3576,128 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "customs-readiness-review" ? (
+        <div className="w-full max-w-[760px]">
+          <CustomsReadinessReview
+            completeChecks={11}
+            emptyDescription="Ready for secure server integration checks."
+            emptyTitle="Current form checks passed"
+            issues={[{ key: "exporter_eori", label: "Exporter EORI", section: "Parties" }, { key: "commercial_invoice", label: "Attached commercial invoice", section: "Documents" }]}
+            percent={69}
+            renderFix={(issue, close) => <><label className="grid gap-1 text-[11px] text-[var(--md-text)]"><span>{issue.label}</span><Input defaultValue="" /></label><div className="mt-3 flex justify-end"><Button size="sm" onClick={close}>Confirm</Button></div></>}
+            totalChecks={16}
+          />
+        </div>
+      ) : null}
+
       {id === "booking-ask-panel" ? (
         <div className="h-[620px] w-full max-w-[380px]">
           <BookingAskPanel />
+        </div>
+      ) : null}
+
+      {id === "dexter-mention-input" ? (
+        <div className="w-full max-w-[760px] rounded-[var(--md-radius-xl)] bg-[var(--md-composer-panel-bg)] p-5 shadow-[var(--md-shadow-line)]">
+          <DexterMentionInput
+            value={previewDexterPrompt}
+            items={defaultDexterMentionItems}
+            selectedMentions={previewDexterMentions}
+            placeholder="Type @ to mention workspace context"
+            minHeight={76}
+            maxHeight={232}
+            canSend={Boolean(previewDexterPrompt.trim())}
+            onChange={setPreviewDexterPrompt}
+            onMentionsChange={setPreviewDexterMentions}
+            onSend={() => toast.success("Mention-aware prompt ready")}
+          />
+          <p className="mt-3 text-[11.5px] text-[var(--md-subtle)]">Type @, then use the arrow keys and Enter to add a reference.</p>
+        </div>
+      ) : null}
+
+      {id === "dexter-inline-citation" ? (
+        <div className="w-full max-w-[680px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 text-[13px] leading-6 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+          <p>
+            <DexterInlineCitation
+              href="/crm/leads/8f81256b-3f0a-4c48-9d95-bd40ec63dc66"
+              title="Northwind Logistics"
+            >
+              Northwind has a follow-up due today
+            </DexterInlineCitation>
+            . I would prioritise it before the afternoon quote review.
+          </p>
+        </div>
+      ) : null}
+
+      {id === "ai-prompt-morph" ? (
+        <div className="flex w-full max-w-[640px] justify-end rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <AiPromptMorph
+            id="gallery-ai-prompt"
+            open={previewAiPromptOpen}
+            value={previewAiPrompt}
+            placeholder="Describe the change…"
+            triggerLabel="Open AI prompt"
+            inputLabel="AI prompt"
+            closeLabel="Close AI prompt"
+            submitLabel="Send prompt"
+            submitDisabled={!previewAiPrompt.trim()}
+            onOpenChange={setPreviewAiPromptOpen}
+            onValueChange={setPreviewAiPrompt}
+            onSubmit={() => {
+              toast.success("Prompt ready")
+              setPreviewAiPromptOpen(false)
+            }}
+          />
+        </div>
+      ) : null}
+
+      {id === "dexter-email-attachment-card" ? (
+        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <DexterEmailAttachmentCard
+            attachment={{
+              id: "gallery-email-attachment",
+              provider: "gmail",
+              mailboxId: "gallery-mailbox",
+              threadId: "gallery-thread",
+              messageId: "gallery-message",
+              subject: "Booking confirmation · MD-22455",
+              fileName: "booking-confirmation.txt",
+              mimeType: "text/plain",
+              sizeBytes: 1_824,
+              sourceUrl: "/inbox?provider=gmail&mailbox=931169d1-3a01-4c57-ac36-290a559d21bc&thread=45b92d1f-4d13-4d79-80c1-4cb338c5d2de",
+            }}
+            loadAttachment={async () => {
+              const url = URL.createObjectURL(new Blob([
+                "Booking confirmation\nReference: MD-22455\nVessel: Aurora North\nStatus: Confirmed",
+              ], { type: "text/plain" }))
+              return { url, revoke: () => URL.revokeObjectURL(url) }
+            }}
+            variant="watch"
+            onAskDexter={() => toast.success("Attachment added to Dexter")}
+          />
+        </div>
+      ) : null}
+
+      {id === "dexter-email-compose-card" ? (
+        <div className="w-full max-w-[720px]">
+          <DexterEmailComposeCard
+            messageId="gallery-dexter-message"
+            preview
+            draft={{
+              id: "gallery-dexter-email-draft",
+              requestedAction: "create_draft",
+              mode: "reply",
+              mailboxId: "preview-mailbox",
+              threadId: "gallery-thread",
+              sourceMessageId: "gallery-source-message",
+              to: [{ address: "maya@pacificgoods.example", displayName: "Maya Chen" }],
+              cc: [],
+              bcc: [],
+              subject: "Re: Felixstowe handover",
+              bodyText: "Hi Maya,\n\nThanks for checking. The cleared documents are with the local team, and I’ll confirm the handover time as soon as the carrier updates the booking.\n\nBest,\nHarry",
+              trackOpens: false,
+              delivery: { status: "draft", sendRequestId: null, messageId: null, threadId: null, updatedAt: null },
+            }}
+          />
         </div>
       ) : null}
 
@@ -1523,14 +3705,155 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="w-full max-w-[760px]">
           <DexterPromptComposer
             value={previewDexterPrompt}
-            selectedSpecialist={previewDexterSpecialist}
+            selectedSpecialistId={previewDexterSpecialistId}
+            selectedModelId={previewDexterModelId}
+            accessMode={previewDexterAccessMode}
+            contextUsedTokens={40_000}
+            contextMaxTokens={128_000}
             attachments={previewDexterAttachments}
+            mentionItems={defaultDexterMentionItems}
+            selectedMentions={previewDexterMentions}
             onChange={setPreviewDexterPrompt}
-            onOpenAttachments={() => toast.success("Attachment palette opened")}
-            onOpenSpecialists={() => toast.success("Specialist picker opened")}
+            onMentionsChange={setPreviewDexterMentions}
+            onOpenAttachments={() => toast.success("File chooser opened")}
+            attachmentActionLabel="Upload files"
+            onSelectSpecialist={setPreviewDexterSpecialistId}
+            onSelectModel={setPreviewDexterModelId}
+            onAccessModeChange={setPreviewDexterAccessMode}
             onRemoveAttachment={togglePreviewDexterAttachment}
             onSend={() => toast.success("Dexter conversation started")}
           />
+        </div>
+      ) : null}
+
+      {id === "home-prompt-rail" ? (
+        <div className="w-full max-w-[620px]">
+          <HomePromptRail
+            suggestions={previewHomeSuggestions}
+            onPick={(prompt) => toast.success("Prompt handed to Dexter", { description: prompt })}
+          />
+        </div>
+      ) : null}
+
+      {id === "home-deck-panel" ? (
+        <div className="grid w-full max-w-[620px] grid-cols-2 gap-3">
+          <div className="aspect-[3/4]">
+            <HomeDeckPanel
+              title="My jobs"
+              count={2}
+              action={<HomeDeckAction onClick={() => toast.success("Scope switched")}>All</HomeDeckAction>}
+            >
+              {previewHomeJobs.map((job, index) => (
+                <HomeDeckRow key={job.id} index={index}>
+                  <button type="button" className={homeDeckRowButtonClass} onClick={() => toast.success(`${job.id} opened`)}>
+                    <span className="shrink-0 text-[12.5px] font-medium leading-4 tabular-nums text-[var(--md-ink)]" dir="ltr">{job.id}</span>
+                    <span className="min-w-0 flex-1 truncate text-[11.5px] leading-4 text-[var(--md-subtle)]">{job.customer}</span>
+                  </button>
+                </HomeDeckRow>
+              ))}
+            </HomeDeckPanel>
+          </div>
+          <div className="aspect-[3/4]">
+            <HomeDeckPanel variant="bare" title="Clocking off">
+              {previewHomeClocks.map((clock, index) => (
+                <HomeDeckTile key={clock.city} index={index} className={clock.tint}>
+                  <div className="flex items-baseline gap-2">
+                    <span aria-hidden="true" className={`size-1.5 shrink-0 translate-y-[-1px] rounded-full ${clock.dot}`} />
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium leading-4 text-[var(--md-ink)]">{clock.city}</span>
+                    <span className="shrink-0 text-[11.5px] leading-4 tabular-nums text-[var(--md-text)]">{clock.gap}</span>
+                  </div>
+                </HomeDeckTile>
+              ))}
+            </HomeDeckPanel>
+          </div>
+        </div>
+      ) : null}
+
+      {id === "home-dexter-launcher" ? (
+        <div className="w-full max-w-[760px]">
+          <HomeDexterLauncher
+            operatorName="Harry Phillips"
+            standfirst="Three jobs need you before today's cutoff."
+            suggestions={previewHomeSuggestions}
+            docked={false}
+            onDockedChange={() => undefined}
+            navigate={(path) => toast.success(`Navigate to ${path}`)}
+          />
+        </div>
+      ) : null}
+
+      {id === "watch-mode-aurora" ? (
+        <div className="relative h-[420px] w-full max-w-[820px] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-bg)] shadow-[var(--md-shadow-line)]">
+          <WatchModeAurora active />
+          <div className="relative z-10 flex h-full items-center justify-center px-6 text-center">
+            <div>
+              <BrainCircuit className="mx-auto size-6 text-[var(--md-accent)]" strokeWidth={1.35} />
+              <p className="mt-4 text-[20px] font-medium text-[var(--md-ink)]">What do you want me to watch?</p>
+              <p className="mt-2 text-[13px] text-[var(--md-text)]">A subtle, accent-matched mode cue rises from the bottom edge.</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {id === "dexter-live-reasoning" ? (
+        <div className="w-full max-w-[680px] py-1">
+          <Reasoning defaultOpen={false} isStreaming className="mb-0">
+            <ReasoningTrigger
+              className="min-h-8 text-[12.5px] font-medium text-[var(--md-text)] hover:text-[var(--md-ink)]"
+              getThinkingMessage={() => <span>Reasoning</span>}
+            />
+            <ReasoningContent className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">
+              {"Understanding your request\n\nChecking connected workspace data\n\nPreparing a grounded response"}
+            </ReasoningContent>
+          </Reasoning>
+        </div>
+      ) : null}
+
+      {id === "dexter-reasoning-summary" ? (
+        <div className="w-full max-w-[680px] py-1">
+          <Reasoning defaultOpen={false} isStreaming={false} className="mb-0">
+            <ReasoningTrigger
+              className="min-h-8 text-[12.5px] font-medium text-[var(--md-text)] hover:text-[var(--md-ink)]"
+              getThinkingMessage={() => <span>Reasoning summary</span>}
+            />
+            <ReasoningContent className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">
+              {"Matched the booking reference to the attached Marlow Apparel context.\n\nCompared the current milestones and exception data before preparing the answer."}
+            </ReasoningContent>
+          </Reasoning>
+        </div>
+      ) : null}
+
+      {id === "dexter-action-approval" ? (
+        <div className="w-full max-w-[680px]">
+          <DexterActionApproval
+            action={{
+              id: "preview-update-lead",
+              title: "Update Northwind Logistics",
+              description: "Change the lead status to Qualified and assign the next follow-up to 4 August.",
+              changes: [
+                { field: "status", value: "Qualified", before: "New", after: "Qualified", beforeKnown: true, kind: "changed" },
+                { field: "next follow up", value: "4 August 2026", before: null, after: "4 August 2026", beforeKnown: true, kind: "added" },
+              ],
+            }}
+            onDecision={(decision) => toast.success(decision === "approve" ? "Change approved" : "Change denied")}
+          />
+        </div>
+      ) : null}
+
+      {id === "context-usage-meter" ? (
+        <div className="flex w-full max-w-[360px] justify-center rounded-[var(--md-radius-xl)] bg-[var(--md-composer-panel-bg)] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <Context
+            usedTokens={40_000}
+            maxTokens={128_000}
+            label={t("Conversation context")}
+            description={t("How much of this chat Dexter can keep in mind.")}
+            locale={language}
+          >
+            <ContextTrigger className="md-composer-chip h-9 rounded-full px-2.5 text-[12.5px] text-[var(--md-text)]" />
+            <ContextContent side="top" sideOffset={10}>
+              <ContextContentHeader />
+            </ContextContent>
+          </Context>
         </div>
       ) : null}
 
@@ -1545,12 +3868,18 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "dexter-specialist-menu" ? (
-        <div className="w-full max-w-[760px] rounded-[var(--md-radius-xl)] bg-[rgba(11,20,19,0.16)] p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)] backdrop-blur-md">
-          <DexterSpecialistMenu
+        <div className="flex w-full max-w-[760px] justify-start rounded-[var(--md-radius-xl)] bg-[var(--md-composer-shell-bg)] p-[var(--md-gap-lg)] shadow-[var(--md-shadow-line)]">
+          <DexterRoleMenu
             specialists={defaultDexterSpecialists}
             selectedId={previewDexterSpecialistId}
             onSelect={setPreviewDexterSpecialistId}
           />
+        </div>
+      ) : null}
+
+      {id === "dexter-model-menu" ? (
+        <div className="flex w-full max-w-[760px] justify-start rounded-[var(--md-radius-xl)] bg-[var(--md-composer-inner-bg)] p-[var(--md-gap-lg)] shadow-[var(--md-shadow-line)]">
+          <DexterModelMenu selectedId={previewDexterModelId} onSelect={setPreviewDexterModelId} />
         </div>
       ) : null}
 
@@ -1563,6 +3892,7 @@ function ComponentPreview({ id }: { id: string }) {
             recommendedIds={["marlow", "md-22414", "ci-rev2"]}
             onQueryChange={setPreviewDexterAttachmentQuery}
             onToggle={togglePreviewDexterAttachment}
+            onUploadFiles={(files) => toast.success(`${files.length} local ${files.length === 1 ? "file" : "files"} selected`)}
           />
         </div>
       ) : null}
@@ -1583,15 +3913,31 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "dexter-monitor-card" ? (
-        <div className="w-full max-w-[420px]">
+        <div className="grid w-full max-w-[336px] gap-2.5">
           <DexterMonitorCard
             monitor={{
+              id: "gallery-monitor-fired",
               title: "Berth queue - MD-22479",
               body: "Watching Rotterdam congestion. Re-pings if ETA shifts more than 6h.",
-              meta: "since Wed 09:18",
-              detail: "last ping 36 min ago",
-              tone: "amber",
+              detail: "MD-22479 ETA moved from 04 Jun to 06 Jun.",
+              triggerCount: 2,
+              latestEvent: {
+                id: "gallery-monitor-event",
+                title: "ETA shifted",
+                body: "MD-22479 ETA moved from 04 Jun to 06 Jun.",
+                changed: {},
+                createdAt: new Date(Date.now() - 36 * 60_000).toISOString(),
+              },
             }}
+          />
+          <DexterMonitorCard
+            monitor={{
+              id: "gallery-monitor-armed",
+              title: "Marlow quote accepted",
+              body: "Alert me when a live quote for Marlow Apparel becomes accepted.",
+              detail: "No alerts yet",
+            }}
+            index={1}
           />
         </div>
       ) : null}
@@ -1604,14 +3950,57 @@ function ComponentPreview({ id }: { id: string }) {
           <div className="absolute inset-y-0 right-0 w-[min(580px,100%)]">
             <DexterMonitorDetailSheet
               monitor={{
+                id: "gallery-email-watch",
                 title: "Berth queue - MD-22479",
                 body: "Watching Rotterdam congestion. Re-pings if ETA shifts more than 6h.",
-                meta: "since Wed 09:18",
-                detail: "last ping 36 min ago",
-                tone: "amber",
+                detail: "Email from Maria Chen: Invoice for MD-22479",
+                ruleLabel: "Emails from maria@example.com that mention “MD-22479”.",
+                targetLabel: "MD-22479",
+                capability: "email",
+                status: "active",
+                healthStatus: "healthy",
+                lastSourceCheckAt: "2026-08-02T16:14:02Z",
+                triggerCount: 1,
+                latestEvent: {
+                  id: "gallery-watch-event",
+                  title: "Invoice received",
+                  body: "New matching email from Maria Chen: Invoice for MD-22479",
+                  changed: {},
+                  createdAt: "2026-08-02T16:13:29Z",
+                  context: {
+                    kind: "email",
+                    availability: "available",
+                    provider: "gmail",
+                    mailboxId: "gallery-mailbox",
+                    messageId: "gallery-message",
+                    threadId: "gallery-thread",
+                    senderName: "Maria Chen",
+                    senderEmail: "maria@example.com",
+                    subject: "Invoice for MD-22479",
+                    receivedAt: "2026-08-02T16:13:29Z",
+                    preview: "Please find the final supplier invoice attached for the Rotterdam shipment.",
+                    sourceUrl: "/inbox?provider=gmail&mailbox=gallery-mailbox&thread=gallery-thread",
+                    attachments: [{
+                      id: "gallery-email-attachment",
+                      provider: "gmail",
+                      mailboxId: "gallery-mailbox",
+                      messageId: "gallery-message",
+                      threadId: "gallery-thread",
+                      subject: "Invoice for MD-22479",
+                      fileName: "invoice-md-22479.pdf",
+                      mimeType: "application/pdf",
+                      sizeBytes: 284220,
+                      sourceUrl: "/inbox?provider=gmail&mailbox=gallery-mailbox&thread=gallery-thread",
+                    }],
+                  },
+                },
               }}
               floating={false}
               onClose={() => toast.success("Monitor detail closed")}
+              onAskEvent={() => toast.success("Update added to Dexter")}
+              onAskAttachment={() => toast.success("Attachment added to Dexter")}
+              onSetStatus={(status) => toast.success(`Watch ${status === "paused" ? "paused" : "resumed"}`)}
+              onDelete={() => toast.success("Watch deleted")}
             />
           </div>
         </div>
@@ -1690,31 +4079,141 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "crm-asset-folder-card" ? (
-        <div className="grid w-full max-w-[980px] gap-3 md:grid-cols-3">
-          {previewMarketingFolders.map((folder) => (
-            <CrmAssetFolderCard
+      {id === "drive-folder-tile" ? (
+        <div className="md-drive-grid w-full max-w-[760px]">
+          {previewDriveFolders.map((folder) => (
+            <DriveFolderTile
               key={folder.id}
               folder={folder}
-              selected={folder.id === previewMarketingFolderId}
-              onSelect={(nextFolder) => setPreviewMarketingFolderId(nextFolder.id)}
+              stats={previewDriveFolderStats.get(folder.id)}
+              renaming={previewDriveRenamingId === folder.id}
+              onOpen={(target) => toast.success(`${target.name} opened`)}
+              onRename={(target, name) => {
+                setPreviewDriveRenamingId(null)
+                toast.success(`${target.name} renamed to ${name}`)
+              }}
+              onStartRename={(target) => setPreviewDriveRenamingId(target.id)}
+              onCancelRename={() => setPreviewDriveRenamingId(null)}
+              onCustomise={(target) => toast.success(`${target.name} appearance opened`)}
+              onDelete={(target) => toast.success(`${target.name} delete confirmed`)}
             />
           ))}
         </div>
       ) : null}
 
-      {id === "crm-asset-row" ? (
-        <div className="w-full max-w-[920px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)]">
-          <div className="grid gap-1 rounded-[var(--md-radius-lg)] bg-white/62 p-1 shadow-[var(--md-shadow-line)]">
-            {previewMarketingAssets.map((asset) => (
-              <CrmAssetRow
-                key={asset.id}
-                asset={asset}
-                onOpen={(selectedAsset) => toast.success(`${selectedAsset.name} opened`)}
-              />
-            ))}
+      {id === "drive-file-tile" ? (
+        <div className="md-drive-grid w-full max-w-[760px]">
+          {previewDriveFiles.map((file, index) => (
+            <DriveFileTile
+              key={file.id}
+              file={file}
+              thumbnailUrl={null}
+              pending={index === previewDriveFiles.length - 1}
+              progress={0.42}
+              renaming={previewDriveRenamingId === file.id}
+              onOpen={(target) => toast.success(`${target.name} opened`)}
+              onRename={(target, name) => {
+                setPreviewDriveRenamingId(null)
+                toast.success(`${target.name} renamed to ${name}`)
+              }}
+              onStartRename={(target) => setPreviewDriveRenamingId(target.id)}
+              onCancelRename={() => setPreviewDriveRenamingId(null)}
+              onDownload={(target) => toast.success(`${target.name} downloaded`)}
+              onDelete={(target) => toast.success(`${target.name} delete confirmed`)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {id === "dot-grid-loader" ? (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid min-h-[132px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]">
+            <DotGridLoader label="Loading…" />
+          </div>
+          <div className="grid min-h-[132px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]">
+            <DotGridLoader />
+          </div>
+          <div className="grid min-h-[132px] place-items-center gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
+            <div className="flex h-8 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2.5 shadow-[var(--md-shadow-line)]">
+              <DotGridLoader size="sm" />
+              <span className="text-[12px] text-[var(--md-text)]">Toolbar size</span>
+            </div>
           </div>
         </div>
+      ) : null}
+
+      {id === "register-toolbar" ? (
+        <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
+          <div className="flex min-h-10 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 bg-[color-mix(in_srgb,var(--md-surface)_92%,transparent)] px-2 py-1 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)]">
+            <div className="flex min-w-0 items-center gap-2">
+              <RegisterViewSwitch
+                options={galleryRegisterViews}
+                value={galleryRegisterView}
+                onChange={setGalleryRegisterView}
+                counts={{ Stock: 33, Movements: 71, Exceptions: 13 }}
+                ariaLabel="Inventory view"
+              />
+              <RegisterToolbarDivider />
+              <button type="button" className={registerButtonClass}>New</button>
+            </div>
+            <div className="ms-auto flex min-w-[min(100%,560px)] flex-1 flex-wrap items-center justify-end gap-1.5">
+              <RegisterToolbarActions pending={galleryRegisterPending}>
+                <RegisterFacetSelect
+                  label="Condition"
+                  allLabel="All conditions"
+                  value={galleryRegisterCondition}
+                  options={[{ value: "available", label: "Available" }, { value: "quarantine", label: "Quarantine" }]}
+                  onChange={setGalleryRegisterCondition}
+                  className="w-[132px] sm:w-[150px]"
+                />
+                <RegisterSearchField
+                  value={galleryRegisterSearch}
+                  onChange={setGalleryRegisterSearch}
+                  onClear={() => setGalleryRegisterSearch("")}
+                  label="Search warehouse records"
+                  placeholder="SKU, pallet, batch"
+                />
+                <RegisterRefreshButton pending={galleryRegisterPending} onRefresh={() => setGalleryRegisterPending((current) => !current)} />
+              </RegisterToolbarActions>
+            </div>
+          </div>
+          <p className="px-3 py-6 text-center text-[12px] text-[var(--md-text)]">
+            The table body goes here. Press refresh to see the revalidation mark appear beside the filters.
+          </p>
+        </div>
+      ) : null}
+
+      {id === "context-menu" ? (
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <div
+              role="button"
+              tabIndex={0}
+              className="grid h-[132px] w-full max-w-[420px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] text-[13px] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background-color] duration-160 hover:bg-[var(--md-surface-tint)]"
+            >
+              Right-click anywhere in here
+            </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuItem onSelect={() => toast.success("Preview opened")}>
+              <Eye strokeWidth={1.3} />
+              Preview
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => toast.success("Rename started")}>
+              <Pencil strokeWidth={1.3} />
+              Rename
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => toast.success("Download started")}>
+              <Download strokeWidth={1.3} />
+              Download
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem variant="destructive" onSelect={() => toast.success("Delete confirmed")}>
+              <Trash2 strokeWidth={1.3} />
+              Delete
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
       ) : null}
 
       {id === "crm-contact-table" ? (
@@ -1727,39 +4226,74 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "contact-create-dialog" ? (
+        <div className="grid w-full max-w-[520px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-8 shadow-[var(--md-shadow-line)]">
+          <Button onClick={() => setPreviewContactCreateOpen(true)}>New contact</Button>
+          <ContactCreateDialog
+            open={previewContactCreateOpen}
+            onOpenChange={setPreviewContactCreateOpen}
+            accounts={[
+              { id: "preview-marlow", name: "Marlow Apparel" },
+              { id: "preview-northstar", name: "Northstar Components" },
+            ]}
+            onCreated={() => setPreviewContactCreateOpen(false)}
+          />
+        </div>
+      ) : null}
+
+      {id === "organisation-foundation-panel" ? (
+        <div className="w-full max-w-[1120px]">
+          <OrganisationFoundationPanel account={previewOrganisation} reference={previewOrganisationReference} onChange={setPreviewOrganisation} />
+        </div>
+      ) : null}
+
+      {id === "crm-lead-qualification-table" ? (
+        <div className="w-full max-w-[1240px]">
+          <CrmLeadQualificationTable
+            leads={previewCrmLeads}
+            onOpenLead={(lead) => setPreviewCrmLeadId(lead.id)}
+            emptyMessage="No leads have been recorded yet."
+          />
+        </div>
+      ) : null}
+
+      {id === "copyable-field" ? (
+        <div className="grid w-full max-w-[520px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-5 shadow-[var(--md-shadow-line)]">
+          <div>
+            <p className="text-[11px] font-medium text-[var(--md-subtle)]">Company email</p>
+            <CopyableField label="Company email" value="ops@northstar.example" className="mt-1">
+              <a href="mailto:ops@northstar.example" className="truncate text-[14px] font-medium text-[var(--md-accent)] hover:underline">
+                ops@northstar.example
+              </a>
+            </CopyableField>
+          </div>
+          <div>
+            <p className="text-[11px] font-medium text-[var(--md-subtle)]">Open opportunities</p>
+            <CopyableField label="Open opportunities" value="4" className="mt-1">
+              <p className="text-[14px] font-medium text-[var(--md-ink)]">4</p>
+            </CopyableField>
+          </div>
+          <div>
+            <p className="text-[11px] font-medium text-[var(--md-subtle)]">Address</p>
+            <CopyableField
+              label="Address"
+              value="Unit 14, Northgate Logistics Park, Trafford Way, Manchester M17 8QP, United Kingdom"
+              className="mt-1 max-w-full"
+              contentClassName="max-w-full"
+            >
+              <span className="break-words text-[14px] font-medium text-[var(--md-ink)]">
+                Unit 14, Northgate Logistics Park, Trafford Way, Manchester M17 8QP, United Kingdom
+              </span>
+            </CopyableField>
+          </div>
+        </div>
+      ) : null}
+
       {id === "crm-lead-detail-panel" ? (
-        <div className="grid w-full max-w-[980px] gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
-          <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-            <div className="px-5 py-4">
-              <SectionHeader title="Lead selector" meta="pick a lead to inspect the detail panel" />
-            </div>
-            <div className="px-5 pb-5">
-              <div className="grid gap-2">
-                {customers.slice(0, 4).map((customer) => (
-                  <button
-                    key={customer.id}
-                    type="button"
-                    className={cn(
-                      "grid grid-cols-[44px_1fr_auto] items-center gap-3 rounded-[var(--md-radius-lg)] bg-white/55 px-3 py-3 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/80",
-                      previewCrmLeadId === customer.id && "bg-white shadow-[inset_0_0_0_1px_rgba(14,125,116,0.24),0_0_0_3px_rgba(14,125,116,0.08)]",
-                    )}
-                    onClick={() => setPreviewCrmLeadId(customer.id)}
-                  >
-                    <CustomerAvatar initials={customer.initials} tone={customer.avatarTone} />
-                    <span className="min-w-0">
-                      <span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{customer.name}</span>
-                      <span className="block truncate text-[12px] text-[var(--md-text)]">{customer.location}</span>
-                    </span>
-                    <StatusPill tone={customer.status === "Premium" ? "teal" : customer.status === "Trial" ? "amber" : "neutral"}>{customer.status}</StatusPill>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </Surface>
+        <div className="w-full max-w-[1320px]">
           <CrmLeadDetailPanel
             lead={previewCrmLead}
-            onOpenCustomer={(lead) => toast.success(`${lead.name} opened in Customers`)}
-            onConvertToCustomer={(lead) => toast.success(`${lead.name} moved to Customers`)}
+            onStartQualification={(lead) => toast.success(`${lead.companyName} qualification opened`)}
           />
         </div>
       ) : null}
@@ -1778,7 +4312,13 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "crm-settings-builder" ? (
         <div className="w-full max-w-[1180px]">
-          <CrmSettingsBuilder />
+          <CrmSettingsBuilder pipelines={crmPipelineSettings} fields={crmLeadFieldSettings} />
+        </div>
+      ) : null}
+
+      {id === "crm-pipeline-editor" ? (
+        <div className="w-full max-w-[1380px]">
+          <CrmPipelineEditor pipelines={crmPipelineSettings} />
         </div>
       ) : null}
 
@@ -1887,8 +4427,212 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "usage-allowance-card" ? (
+        <div className="grid w-full max-w-[920px] grid-cols-[repeat(auto-fit,minmax(min(100%,224px),1fr))] gap-3">
+          {([
+            { id: "ai", label: "AI usage", description: "Dexter requests and AI-assisted work across this workspace.", unit: "percent", included: 100, used: 42, extra: 0, usedPercent: 42, enabled: true, dataState: "live", teamUsage: [
+              { userId: "elena", name: "Elena Moreno", email: "elena@example.com", initials: "EM", usage: 72 },
+              { userId: "marcus", name: "Marcus Chen", email: "marcus@example.com", initials: "MC", usage: 54 },
+              { userId: "priya", name: "Priya Shah", email: "priya@example.com", initials: "PS", usage: 38 },
+              { userId: "tom", name: "Tom Becker", email: "tom@example.com", initials: "TB", usage: 16 },
+            ] },
+            { id: "ocr", label: "OCR usage", description: "Pages read from PDFs and images. Includes 1,000 pages per plan user.", unit: "pages", included: 25000, used: 684, extra: 0, usedPercent: 2.74, enabled: true, dataState: "live", teamUsage: [
+              { userId: "priya", name: "Priya Shah", email: "priya@example.com", initials: "PS", usage: 286 },
+              { userId: "elena", name: "Elena Moreno", email: "elena@example.com", initials: "EM", usage: 224 },
+              { userId: "marcus", name: "Marcus Chen", email: "marcus@example.com", initials: "MC", usage: 174 },
+              { userId: "tom", name: "Tom Becker", email: "tom@example.com", initials: "TB", usage: 0 },
+            ] },
+            { id: "tracking", label: "Shipment tracking", description: "Shipments monitored through the workspace tracking service.", unit: "shipments", included: 250, used: 0, extra: 0, usedPercent: 0, enabled: true, dataState: "not_connected" },
+            { id: "documents", label: "Generated documents", description: "Operational documents created from approved Multideck templates.", unit: "documents", included: 2000, used: 2128, extra: 128, usedPercent: 106.4, enabled: true, dataState: "live" },
+          ] satisfies UsageAllowanceCategory[]).map((category) => <UsageAllowanceCard key={category.id} category={category} />)}
+        </div>
+      ) : null}
+
+      {id === "settings-progress-ring" ? (
+        <div className="grid w-full max-w-[820px] gap-4 rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)] sm:grid-cols-2">
+          <SettingsProgressRing value={86} label="Profile readiness" detail="Identity details are ready for customer-facing ownership." />
+          <SettingsProgressRing value={68} label="Monthly AI budget" detail="EUR 1,024 of EUR 1,500 used." tone="blue" />
+        </div>
+      ) : null}
+
+      {id === "iphone-device-frame" ? (
+        <Iphone className="w-full max-w-[260px] drop-shadow-[0_24px_34px_rgba(4,12,11,0.18)]">
+          <div className="flex min-h-full flex-col bg-[var(--md-ink)] px-6 pb-8 pt-20 text-white">
+            <span className="mx-auto size-16 rounded-full bg-[var(--md-accent)] shadow-[var(--md-shadow-line)]" />
+            <h3 className="mt-6 text-center text-[22px] font-medium">Let&apos;s stay in touch</h3>
+            <p className="mt-3 text-center text-[13px] leading-5 text-white/70">A real mobile surface can scroll inside the device frame.</p>
+            <div className="mt-8 grid gap-3 rounded-[var(--md-radius-xl)] bg-white/8 p-4">
+              <span className="text-[11px] text-white/65">Work email</span>
+              <span className="h-11 rounded-[var(--md-radius-lg)] bg-white/8 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]" />
+              <span className="mt-2 grid h-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[12px] font-medium">Share my details</span>
+            </div>
+          </div>
+        </Iphone>
+      ) : null}
+
+      {id === "card-miniature" ? (
+        <div className="grid w-full max-w-[860px] grid-cols-2 gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)] sm:grid-cols-4">
+          {(["classic", "editorial", "compact", "spotlight"] as const).map((layout) => (
+            <div key={layout} className="grid gap-1.5">
+              <div className="aspect-[2/3] overflow-hidden rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]">
+                <CardMiniature branding={{ ...previewCardBranding, layout }} />
+              </div>
+              <p className="px-0.5 text-[12px] text-[var(--md-subtle)]">{layout}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {id === "contact-card-style-picker" ? (
+        <div className="w-full max-w-[860px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <CardStylePresetPicker
+            branding={previewCardBranding}
+            onChange={(update) => setPreviewCardBranding((branding) => ({ ...branding, ...update }))}
+          />
+        </div>
+      ) : null}
+
+      {id === "contact-card-layout-picker" ? (
+        <div className="w-full max-w-[860px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <ContactCardLayoutPicker
+            branding={{ ...previewCardBranding, layout: previewContactLayout }}
+            value={previewContactLayout}
+            onChange={setPreviewContactLayout}
+          />
+        </div>
+      ) : null}
+
+      {id === "contact-card-qr-style-picker" ? (
+        <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <QrStylePicker
+            branding={previewCardBranding}
+            onChange={(update) => setPreviewCardBranding((branding) => ({ ...branding, ...update }))}
+          />
+        </div>
+      ) : null}
+
+      {id === "contact-card-social-links-editor" ? (
+        <div className="w-full max-w-[760px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <ContactCardSocialLinksEditor links={previewSocialLinks} onChange={setPreviewSocialLinks} />
+        </div>
+      ) : null}
+
+      {id === "automation-run-history" ? (
+        <div className="w-full max-w-[920px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <AutomationRunHistory runs={previewAutomationRuns} onRerun={async () => undefined} />
+        </div>
+      ) : null}
+
+      {id === "marketing-opt-in-control" ? (
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <MarketingOptInControl
+            checked={previewMarketingOptIn}
+            source="manual_override"
+            updatedAt="2026-08-03T14:30:00.000Z"
+            onCheckedChange={async (checked) => setPreviewMarketingOptIn(checked)}
+          />
+        </div>
+      ) : null}
+
+      {id === "score-explanation-popover" ? (
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-5 shadow-[var(--md-shadow-line)]">
+          <ScoreExplanationPopover
+            kind="health"
+            score={75}
+            explanation={{
+              summary: "Health is supported by stable shipment volumes and the latest account review.",
+              confidence: 0.82,
+              calculatedAt: "2026-08-25T08:00:00.000Z",
+              sources: [
+                { id: "activity:preview", kind: "activity", claim: "Quarterly review confirmed stable volumes", title: "Quarterly account review", href: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001#activity-preview", observedAt: "2026-08-24T10:00:00.000Z" },
+                { id: "shipment:preview", kind: "shipment", claim: "MD-22455 · Felixstowe → Rotterdam", title: "MD-22455", href: "/bookings/md-22455", observedAt: "2026-08-28T12:00:00.000Z" },
+              ],
+            }}
+            className="max-w-[220px] bg-[var(--md-surface)] px-3 py-2.5 shadow-[var(--md-shadow-line)]"
+          >
+            <span className="min-w-0">
+              <span className="block text-[11px] text-[var(--md-subtle)]">Health</span>
+              <span className="mt-1 block text-[18px] font-medium tabular-nums text-[var(--md-ink)]">75%</span>
+            </span>
+          </ScoreExplanationPopover>
+        </div>
+      ) : null}
+
+      {id === "phone-call-status" ? (
+        <div className="flex w-full max-w-[760px] flex-wrap items-center gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <PhoneCallOutcomePill outcome="answered" />
+          <PhoneCallOutcomePill outcome="missed" />
+          <PhoneCallMatchPill status="matched" />
+          <PhoneCallMatchPill status="review" />
+          <PhoneCallMatchPill status="unmatched" />
+          <PhoneCallTranscriptPill status="complete" />
+          <PhoneCallTranscriptPill status="partial" />
+        </div>
+      ) : null}
+
+      {id === "phone-call-metric-strip" ? (
+        <div className="w-full max-w-[1120px]"><PhoneCallMetricStrip metrics={previewPhoneCallMetrics} /></div>
+      ) : null}
+
+      {id === "phone-call-analysis-launcher" ? (
+        <div className="w-full max-w-[920px]"><PhoneCallAnalysisLauncher totalCalls={184} onAnalyse={(focus) => toast.success(`Dexter analysis opened · ${focus}`)} /></div>
+      ) : null}
+
+      {id === "phone-call-provider-health" ? (
+        <div className="w-full max-w-[620px]"><PhoneCallProviderHealth providers={previewPhoneCallProviders} /></div>
+      ) : null}
+
+      {id === "phone-call-volume-chart" ? (
+        <div className="w-full max-w-[920px]"><PhoneCallVolumeChart data={previewPhoneCallVolume} timezone="Europe/London" /></div>
+      ) : null}
+
+      {id === "phone-call-attention-list" ? (
+        <div className="w-full max-w-[620px]"><PhoneCallAttentionList items={previewPhoneCallAttention} onOpen={() => toast.success("Call review opened")} onViewAll={() => toast.success("Calls register opened")} /></div>
+      ) : null}
+
+      {id === "phone-call-reason-list" ? (
+        <div className="w-full max-w-[520px]"><PhoneCallReasonList reasons={previewPhoneCallReasons} /></div>
+      ) : null}
+
+      {id === "phone-call-coverage" ? (
+        <div className="w-full max-w-[520px]"><PhoneCallCoverage items={previewPhoneCallCoverage} /></div>
+      ) : null}
+
+      {id === "unified-phone-call-transcript" ? (
+        <div className="w-full max-w-[920px]">
+          <PhoneCallSourceBoundaryPreview />
+        </div>
+      ) : null}
+
+      {id === "phone-call-linked-record" ? (
+        <div className="w-full max-w-[920px]">
+          <PhoneCallLinkedRecordPreview />
+        </div>
+      ) : null}
+
+      {id === "phone-call-identity-match-review" ? (
+        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <PhoneCallIdentityMatchReview
+            call={previewPhoneCallMatch}
+            onLink={(candidate) => toast.success(`${candidate.name} selected for review`)}
+            onCreateContact={() => toast.success("Create-contact review opened")}
+            onLeaveUnmatched={() => toast.success("Call left unmatched")}
+          />
+        </div>
+      ) : null}
+
+      {id === "phone-call-suggested-actions" ? (
+        <div className="w-full max-w-[720px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <PhoneCallSuggestedActions
+            actions={previewPhoneCallActions}
+            leadCandidates={previewPhoneCallMatch.matchCandidates}
+            onReview={(action, decision) => toast.success(`${action.title} · ${decision}`)}
+          />
+        </div>
+      ) : null}
+
       {id === "auth-narrative-panel" ? (
-        <div className="relative h-[520px] w-full max-w-[620px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[#062420] shadow-[var(--md-shadow-line)]">
+        <div className="relative h-[520px] w-full max-w-[620px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-accent-abyss)] shadow-[var(--md-shadow-line)]">
           <div className="absolute left-1/2 top-0 h-[900px] w-[860px] origin-top -translate-x-1/2 scale-[0.56]">
             <FreightNarrative step="signin" componentPreview className="min-h-[900px] w-[860px]" />
           </div>

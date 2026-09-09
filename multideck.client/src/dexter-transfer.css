@@ -5,8 +5,7 @@
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.22),
       inset 0 0 0 1px rgba(255, 255, 255, 0.12),
-      0 0 0 1px rgba(6, 70, 62, 0.12),
-      0 10px 24px rgba(6, 70, 62, 0.18);
+      0 0 0 1px var(--md-accent-deep-a12);
     transition:
       box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
       transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -15,11 +14,7 @@
   .md-sidebar-dexter-item {
     isolation: isolate;
     background: var(--md-accent) !important;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.22),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.12),
-      0 0 0 1px rgba(6, 70, 62, 0.1),
-      0 7px 18px rgba(6, 70, 62, 0.15);
+    box-shadow: var(--md-shadow-line);
     transition:
       box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
       color 180ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -27,30 +22,15 @@
 
   .md-sidebar-dexter-item:hover,
   .md-sidebar-dexter-item:focus-visible {
-    background: var(--md-accent) !important;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.26),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-      0 0 0 1px rgba(6, 70, 62, 0.14),
-      0 10px 22px rgba(6, 70, 62, 0.2);
+    background: color-mix(in srgb, var(--md-accent) 88%, var(--md-hover)) !important;
   }
 
   .md-sidebar-scroll-region {
-    scrollbar-color: rgba(90, 103, 100, 0.16) transparent;
-    scrollbar-width: thin;
+    scrollbar-width: none;
   }
 
   .md-sidebar-scroll-region::-webkit-scrollbar {
-    width: 4px;
-  }
-
-  .md-sidebar-scroll-region::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .md-sidebar-scroll-region::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: rgba(90, 103, 100, 0.14);
+    display: none;
   }
 
   .md-sidebar-scroll-fade {
@@ -64,6 +44,12 @@
     mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.42) 44%, #000 100%);
     -webkit-backdrop-filter: blur(5px);
     -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.42) 44%, #000 100%);
+    transition: opacity 120ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: opacity;
+  }
+
+  .md-sidebar-scroll-fade[data-edge="top"] {
+    transform: rotate(180deg);
   }
 
   .md-dexter-pill:hover,
@@ -71,8 +57,7 @@
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.26),
       inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-      0 0 0 1px rgba(6, 70, 62, 0.16),
-      0 14px 30px rgba(6, 70, 62, 0.24);
+      0 0 0 1px var(--md-accent-deep-a16);
     transform: translateY(-1px);
   }
 
@@ -83,6 +68,7 @@
     border-radius: inherit;
     overflow: hidden;
     pointer-events: none;
+    contain: paint;
     transform: scale(1.04);
     transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
   }
@@ -92,6 +78,58 @@
   .md-dexter-pill__shader canvas {
     width: 100% !important;
     height: 100% !important;
+  }
+
+  .md-bloom-fallback {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse at 90% 112%, var(--md-bloom-b) 0%, var(--md-bloom-a) 22%, transparent 58%),
+      linear-gradient(118deg, var(--md-bloom-a), var(--md-bloom-c) 72%);
+  }
+
+  .md-bloom-fallback__glow,
+  .md-bloom-fallback__rays {
+    position: absolute;
+    pointer-events: none;
+  }
+
+  .md-bloom-fallback__glow {
+    inset: -42% -8% -75% 34%;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at center, color-mix(in oklab, var(--md-bloom-b) 78%, white) 0%, var(--md-bloom-a) 26%, transparent 68%);
+    filter: blur(2px);
+    opacity: 0.84;
+    animation: md-bloom-fallback-breathe 5.4s ease-in-out infinite alternate;
+  }
+
+  .md-bloom-fallback__rays {
+    width: max(58%, 190px);
+    aspect-ratio: 1;
+    inset-inline-end: -12%;
+    bottom: -210%;
+    border-radius: 50%;
+    background: repeating-conic-gradient(
+      from 8deg,
+      color-mix(in oklab, var(--md-bloom-b) 76%, white) 0deg 3.5deg,
+      color-mix(in oklab, var(--md-bloom-a) 82%, transparent) 3.5deg 7deg,
+      transparent 7deg 13deg
+    );
+    filter: blur(0.55px) saturate(1.08);
+    mask-image: radial-gradient(circle, black 0 48%, transparent 74%);
+    opacity: 0.68;
+    transform-origin: 50% 50%;
+    animation: md-bloom-fallback-turn 18s linear infinite;
+    -webkit-mask-image: radial-gradient(circle, black 0 48%, transparent 74%);
+  }
+
+  @keyframes md-bloom-fallback-turn {
+    to { transform: rotate(1turn); }
+  }
+
+  @keyframes md-bloom-fallback-breathe {
+    to { opacity: 1; transform: translate3d(-2%, -3%, 0) scale(1.08); }
   }
 
   .md-dexter-pill:hover .md-dexter-pill__shader,
@@ -104,7 +142,7 @@
     inset: 0;
     z-index: 1;
     border-radius: inherit;
-    background: linear-gradient(110deg, rgba(0, 34, 28, 0.38), rgba(0, 50, 43, 0.14) 56%, rgba(0, 20, 18, 0.34));
+    background: linear-gradient(110deg, var(--md-accent-veil-near), var(--md-accent-veil-mid) 56%, var(--md-accent-veil-far));
     pointer-events: none;
     transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
   }
@@ -134,6 +172,10 @@
     display: block;
     transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
     transition-delay: calc(var(--md-dexter-character-index) * 34ms);
+  }
+
+  .md-dexter-pill:hover .md-dexter-pill__slot-glyph,
+  .md-dexter-pill:focus-visible .md-dexter-pill__slot-glyph {
     will-change: transform;
   }
 
@@ -162,7 +204,8 @@
     width: 32px;
     height: 24px;
     overflow: hidden;
-    filter: brightness(1.12) saturate(1.18) drop-shadow(0 3px 7px rgba(6, 70, 62, 0.26));
+    contain: paint;
+    filter: brightness(1.12) saturate(1.18) drop-shadow(0 3px 7px var(--md-accent-deep-a26));
     mask-position: center;
     mask-repeat: no-repeat;
     mask-size: contain;
@@ -192,6 +235,11 @@
     .md-dexter-pill:hover .md-dexter-pill__shader,
     .md-dexter-pill:focus-visible .md-dexter-pill__shader {
       transform: scale(1.04);
+    }
+
+    .md-bloom-fallback__glow,
+    .md-bloom-fallback__rays {
+      animation: none;
     }
   }
 }

@@ -11,14 +11,18 @@ import {
   Check,
   ChevronDown,
   CircleGauge,
+  MoreHorizontal,
   Plus,
   Search,
   Trash2,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { StatusPill } from "@/components/multideck/status-pill"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
@@ -28,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 
@@ -79,6 +84,8 @@ export interface UnifiedQuoteChargeRow {
   sellRoe?: number
   costRoeSource?: QuoteChargeRoeSource
   sellRoeSource?: QuoteChargeRoeSource
+  calculationBasis?: string | null
+  quantity?: number | null
   baseCost?: number
   baseSell?: number
   profit?: number
@@ -214,6 +221,7 @@ function SearchablePartySelect({
   const { direction, t } = useLanguage()
   const listId = useId()
   const [open, setOpen] = useState(false)
+  const [tooltipOpen, setTooltipOpen] = useState(false)
   const [query, setQuery] = useState("")
   const options = useMemo(() => parties.filter((party) => partyCanBe(party, role)), [parties, role])
   const selected = options.find((party) => party.id === value)
@@ -224,28 +232,42 @@ function SearchablePartySelect({
   return (
     <Popover open={open} onOpenChange={(nextOpen) => {
       setOpen(nextOpen)
+      if (nextOpen) setTooltipOpen(false)
       if (!nextOpen) setQuery("")
     }}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          role="combobox"
-          aria-expanded={open}
-          aria-controls={listId}
-          aria-label={t(role === "supplier" ? "Select supplier" : "Select customer")}
-          disabled={disabled}
-          className="flex h-8 w-full min-w-0 items-center justify-between gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-start text-[11px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,box-shadow,opacity,transform] duration-160 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-field-bg-hover)] focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-55"
-        >
-          {selected ? (
-            <span data-i18n-skip dir="auto" className="min-w-0 truncate">
-              <span dir="ltr" className="font-medium text-[var(--md-ink)]">{selected.code}</span>
-              <span className="text-[var(--md-subtle)]"> · </span>
-              <span>{selected.name}</span>
-            </span>
-          ) : <span className="truncate text-[var(--md-subtle)]">{t(role === "supplier" ? "Select supplier" : "Select customer")}</span>}
-          <ChevronDown data-icon="inline-end" className="size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.35} />
-        </button>
-      </PopoverTrigger>
+      <Tooltip open={selected && !open ? tooltipOpen : false} onOpenChange={setTooltipOpen} delayDuration={260}>
+        <TooltipTrigger asChild>
+          <span className="block w-full min-w-0">
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                role="combobox"
+                aria-expanded={open}
+                aria-controls={listId}
+                aria-label={selected ? `${t(role === "supplier" ? "Supplier" : "Customer")} ${selected.code}, ${selected.name}` : t(role === "supplier" ? "Select supplier" : "Select customer")}
+                disabled={disabled}
+                className="flex h-8 w-full min-w-0 items-center justify-between gap-1.5 overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-start text-[11px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,box-shadow,opacity,transform] duration-160 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-field-bg-hover)] focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                {selected ? (
+                  <span data-i18n-skip dir="ltr" className="block min-w-0 flex-1 truncate font-medium text-[var(--md-ink)]">
+                    {selected.code}
+                  </span>
+                ) : <span className="truncate text-[var(--md-subtle)]">{t(role === "supplier" ? "Select supplier" : "Select customer")}</span>}
+                <ChevronDown data-icon="inline-end" className="size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.35} />
+              </button>
+            </PopoverTrigger>
+          </span>
+        </TooltipTrigger>
+        {selected ? (
+          <TooltipContent
+            side="top"
+            sideOffset={7}
+            className="rounded-[var(--md-radius-md)] bg-[var(--md-ink)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--md-surface)] shadow-[var(--md-shadow-lift)] motion-reduce:animate-none"
+          >
+            <span data-i18n-skip dir="auto">{selected.name}</span>
+          </TooltipContent>
+        ) : null}
+      </Tooltip>
       <PopoverContent
         align="start"
         sideOffset={5}
@@ -301,14 +323,12 @@ function CurrencySelect({
   currencies,
   label,
   onValueChange,
-  isCurrencyAvailable,
   disabled,
 }: {
   value: string
   currencies: readonly QuoteChargeCurrency[]
   label: string
   onValueChange: (currency: string) => void
-  isCurrencyAvailable?: (currency: string) => boolean
   disabled?: boolean
 }) {
   const { t } = useLanguage()
@@ -323,7 +343,7 @@ function CurrencySelect({
       </SelectTrigger>
       <SelectContent className="min-w-[210px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
         {currencies.map((currency) => (
-          <SelectItem key={currency.code} value={currency.code} disabled={isCurrencyAvailable ? !isCurrencyAvailable(currency.code) : false}>
+          <SelectItem key={currency.code} value={currency.code}>
             <span className="grid w-full min-w-0 grid-cols-[38px_42px_minmax(0,1fr)] items-center gap-2">
               <span data-i18n-skip dir="ltr" className="text-center font-medium text-[var(--md-accent)]">{currency.symbol}</span>
               <span data-i18n-skip dir="ltr" className="font-medium text-[var(--md-ink)]">{currency.code}</span>
@@ -499,10 +519,35 @@ function CalculatorResult({ label, value, detail }: { label: string; value: stri
   )
 }
 
-function ChargeCalculator() {
+function calculatorModeFromBasis(basis?: string | null): CalculatorMode {
+  const mode = basis?.startsWith("calculator:") ? basis.slice("calculator:".length) : ""
+  return mode === "chargeable" || mode === "volumetric" || mode === "measure" || mode === "percentage" ? mode : "chargeable"
+}
+
+function calculatorWasUsed(row: Pick<UnifiedQuoteChargeRow, "calculationBasis">) {
+  return Boolean(row.calculationBasis?.startsWith("calculator:"))
+}
+
+function calculatorModeLabel(mode: CalculatorMode) {
+  return mode === "chargeable"
+    ? "Chargeable weight"
+    : mode === "volumetric"
+      ? "Volumetric weight"
+      : mode === "measure"
+        ? "Measure conversion"
+        : "Percentage"
+}
+
+function ChargeCalculator({ row, readOnly, onApply }: {
+  row: ResolvedQuoteChargeRow
+  readOnly?: boolean
+  onApply: (patch: Pick<UnifiedQuoteChargeRow, "calculationBasis" | "quantity">) => void
+}) {
   const { t, language } = useLanguage()
-  const [mode, setMode] = useState<CalculatorMode>("chargeable")
-  const [actualWeight, setActualWeight] = useState("820")
+  const initialMode = calculatorModeFromBasis(row.calculationBasis)
+  const initialQuantity = calculatorWasUsed(row) && typeof row.quantity === "number" ? row.quantity : null
+  const [mode, setMode] = useState<CalculatorMode>(initialMode)
+  const [actualWeight, setActualWeight] = useState(String(initialMode === "chargeable" && initialQuantity !== null ? initialQuantity : 820))
   const [length, setLength] = useState("120")
   const [width, setWidth] = useState("80")
   const [height, setHeight] = useState("75")
@@ -525,6 +570,13 @@ function ChargeCalculator() {
   const percentageAmount = numberFromInput(percentageValue) * numberFromInput(percentageRate) / 100
   const afterPercentage = numberFromInput(percentageValue) + percentageAmount
   const compatibleUnits = (Object.keys(MEASURE_UNITS) as MeasureUnit[]).filter((unit) => MEASURE_UNITS[unit].dimension === fromUnit.dimension)
+  const result = mode === "chargeable"
+    ? chargeableWeight
+    : mode === "volumetric"
+      ? volumetricWeight
+      : mode === "measure"
+        ? convertedMeasure
+        : afterPercentage
 
   const updateMeasureFrom = (unit: MeasureUnit) => {
     setMeasureFrom(unit)
@@ -536,30 +588,26 @@ function ChargeCalculator() {
   }
 
   return (
-    <Surface padding="none" className="rounded-[var(--md-radius-2xl)] p-3">
-      <SectionHeader
-        title={t("Charge calculator")}
-        meta={t("Freight calculations stay beside the selected line.")}
-        action={(
-          <Select value={mode} onValueChange={(value) => setMode(value as CalculatorMode)}>
-            <SelectTrigger aria-label={t("Calculator type")} size="sm" className="h-8 w-[190px] max-w-[42vw] rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[11px] shadow-[var(--md-shadow-line)]">
-              <Calculator className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
-              <SelectItem value="chargeable">{t("Chargeable weight")}</SelectItem>
-              <SelectItem value="volumetric">{t("Volumetric weight")}</SelectItem>
-              <SelectItem value="measure">{t("Measure conversion")}</SelectItem>
-              <SelectItem value="percentage">{t("Percentage")}</SelectItem>
-            </SelectContent>
-          </Select>
-        )}
-      />
+    <div className="grid gap-4">
+      <DetailField label="Calculator type">
+        <Select value={mode} onValueChange={(value) => setMode(value as CalculatorMode)} disabled={readOnly}>
+          <SelectTrigger aria-label={t("Calculator type")} size="sm" className="h-9 w-full rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[12px] shadow-[var(--md-shadow-line)]">
+            <Calculator className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
+            <SelectItem value="chargeable">{t("Chargeable weight")}</SelectItem>
+            <SelectItem value="volumetric">{t("Volumetric weight")}</SelectItem>
+            <SelectItem value="measure">{t("Measure conversion")}</SelectItem>
+            <SelectItem value="percentage">{t("Percentage")}</SelectItem>
+          </SelectContent>
+        </Select>
+      </DetailField>
 
-      <div className="mt-3">
+      <div>
         {mode === "chargeable" ? (
           <div className="grid gap-2 sm:grid-cols-3">
-            <CalculatorNumberField label="Actual weight" value={actualWeight} onValueChange={setActualWeight} suffix="kg" />
+            <CalculatorNumberField label="Actual weight" value={actualWeight} onValueChange={setActualWeight} suffix="kg" readOnly={readOnly} />
             <CalculatorNumberField label="Volumetric weight" value={decimalText(volumetricWeight, language, 2)} onValueChange={() => undefined} suffix="kg" readOnly />
             <CalculatorResult label="Chargeable weight" value={`${decimalText(chargeableWeight, language, 2)} kg`} detail="The greater of actual and volumetric weight" />
           </div>
@@ -567,26 +615,26 @@ function ChargeCalculator() {
 
         {mode === "volumetric" ? (
           <div className="grid gap-2 sm:grid-cols-3">
-            <CalculatorNumberField label="Length" value={length} onValueChange={setLength} suffix="cm" />
-            <CalculatorNumberField label="Width" value={width} onValueChange={setWidth} suffix="cm" />
-            <CalculatorNumberField label="Height" value={height} onValueChange={setHeight} suffix="cm" />
-            <CalculatorNumberField label="Pieces" value={pieces} onValueChange={setPieces} />
-            <CalculatorNumberField label="Volumetric divisor" value={divisor} onValueChange={setDivisor} />
+            <CalculatorNumberField label="Length" value={length} onValueChange={setLength} suffix="cm" readOnly={readOnly} />
+            <CalculatorNumberField label="Width" value={width} onValueChange={setWidth} suffix="cm" readOnly={readOnly} />
+            <CalculatorNumberField label="Height" value={height} onValueChange={setHeight} suffix="cm" readOnly={readOnly} />
+            <CalculatorNumberField label="Pieces" value={pieces} onValueChange={setPieces} readOnly={readOnly} />
+            <CalculatorNumberField label="Volumetric divisor" value={divisor} onValueChange={setDivisor} readOnly={readOnly} />
             <CalculatorResult label="Volumetric weight" value={`${decimalText(volumetricWeight, language, 2)} kg`} detail="Dimensions use centimetres" />
           </div>
         ) : null}
 
         {mode === "measure" ? (
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_120px_120px_minmax(0,1fr)]">
-            <CalculatorNumberField label="Value" value={measureValue} onValueChange={setMeasureValue} />
+            <CalculatorNumberField label="Value" value={measureValue} onValueChange={setMeasureValue} readOnly={readOnly} />
             <DetailField label="From">
-              <Select value={measureFrom} onValueChange={(value) => updateMeasureFrom(value as MeasureUnit)}>
+              <Select value={measureFrom} onValueChange={(value) => updateMeasureFrom(value as MeasureUnit)} disabled={readOnly}>
                 <SelectTrigger aria-label={t("From unit")} size="sm" className="h-8 w-full rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[11px] shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
                 <SelectContent>{(Object.keys(MEASURE_UNITS) as MeasureUnit[]).map((unit) => <SelectItem key={unit} value={unit}><span data-i18n-skip dir="ltr">{unit}</span> · {t(MEASURE_UNITS[unit].label)}</SelectItem>)}</SelectContent>
               </Select>
             </DetailField>
             <DetailField label="To">
-              <Select value={measureTo} onValueChange={(value) => setMeasureTo(value as MeasureUnit)}>
+              <Select value={measureTo} onValueChange={(value) => setMeasureTo(value as MeasureUnit)} disabled={readOnly}>
                 <SelectTrigger aria-label={t("To unit")} size="sm" className="h-8 w-full rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[11px] shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
                 <SelectContent>{compatibleUnits.map((unit) => <SelectItem key={unit} value={unit}><span data-i18n-skip dir="ltr">{unit}</span> · {t(MEASURE_UNITS[unit].label)}</SelectItem>)}</SelectContent>
               </Select>
@@ -597,14 +645,21 @@ function ChargeCalculator() {
 
         {mode === "percentage" ? (
           <div className="grid gap-2 sm:grid-cols-4">
-            <CalculatorNumberField label="Base value" value={percentageValue} onValueChange={setPercentageValue} />
-            <CalculatorNumberField label="Percentage" value={percentageRate} onValueChange={setPercentageRate} suffix="%" />
+            <CalculatorNumberField label="Base value" value={percentageValue} onValueChange={setPercentageValue} readOnly={readOnly} />
+            <CalculatorNumberField label="Percentage" value={percentageRate} onValueChange={setPercentageRate} suffix="%" readOnly={readOnly} />
             <CalculatorResult label="Percentage amount" value={decimalText(percentageAmount, language, 2)} />
             <CalculatorResult label="Value after addition" value={decimalText(afterPercentage, language, 2)} />
           </div>
         ) : null}
       </div>
-    </Surface>
+
+      <DialogFooter className="mt-1">
+        <Button type="button" disabled={readOnly} onClick={() => onApply({ calculationBasis: `calculator:${mode}`, quantity: result })}>
+          <Check data-icon="inline-start" className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+          {t(calculatorWasUsed(row) ? "Update calculation" : "Save calculation")}
+        </Button>
+      </DialogFooter>
+    </div>
   )
 }
 
@@ -630,6 +685,7 @@ export function UnifiedQuoteChargesWorkspace({
     : currencies[0]?.code ?? suppliedBaseCurrency
   const exchangeRates = suppliedExchangeRates ?? (suppliedCurrencies ? [] : DEFAULT_EXCHANGE_RATES)
   const [internalSelectedRowId, setInternalSelectedRowId] = useState<string | null>(rows[0]?.id ?? null)
+  const [calculatorRowId, setCalculatorRowId] = useState<string | null>(null)
   const activeSelectedRowId = selectedRowId === undefined ? internalSelectedRowId : selectedRowId
 
   useEffect(() => {
@@ -750,7 +806,6 @@ export function UnifiedQuoteChargesWorkspace({
       width: 104,
       minWidth: 88,
       maxWidth: 160,
-      defaultPinned: true,
       canHide: false,
       resizable: true,
       sortValue: (row) => row.code,
@@ -772,7 +827,6 @@ export function UnifiedQuoteChargesWorkspace({
       width: 230,
       minWidth: 170,
       maxWidth: 420,
-      defaultPinned: true,
       resizable: true,
       sortValue: (row) => row.description,
       cell: (row) => (
@@ -800,9 +854,10 @@ export function UnifiedQuoteChargesWorkspace({
     {
       id: "cost",
       label: "Cost",
-      width: 132,
-      minWidth: 112,
-      maxWidth: 180,
+      kind: "number",
+      width: 100,
+      minWidth: 88,
+      maxWidth: 140,
       resizable: true,
       sortValue: (row) => row.cost,
       cellClassName: "text-end",
@@ -811,20 +866,24 @@ export function UnifiedQuoteChargesWorkspace({
     {
       id: "costCurrency",
       label: "Cost currency",
-      width: 120,
-      minWidth: 105,
-      maxWidth: 170,
+      width: 96,
+      minWidth: 88,
+      maxWidth: 128,
       resizable: true,
       sortValue: (row) => row.costCurrency,
-      cell: (row) => <CurrencySelect value={row.costCurrency} currencies={currencies} label="Cost currency" disabled={readOnly} isCurrencyAvailable={(currency) => rateFor(currency, "cost") !== null} onValueChange={(costCurrency) => {
+      cell: (row) => <CurrencySelect value={row.costCurrency} currencies={currencies} label="Cost currency" disabled={readOnly} onValueChange={(costCurrency) => {
         const costRoe = rateFor(costCurrency, "cost")
-        if (costRoe === null) return
-        updateRow(row.id, { costCurrency, costRoe, costRoeSource: "rate" })
+        updateRow(row.id, {
+          costCurrency,
+          costRoe: costRoe ?? 0,
+          costRoeSource: costRoe === null ? "manual" : "rate",
+        })
       }} />,
     },
     {
       id: "baseCost",
       label: "Base cost",
+      kind: "number",
       width: 126,
       minWidth: 110,
       resizable: true,
@@ -837,9 +896,10 @@ export function UnifiedQuoteChargesWorkspace({
     {
       id: "sell",
       label: "Sell",
-      width: 132,
-      minWidth: 112,
-      maxWidth: 180,
+      kind: "number",
+      width: 100,
+      minWidth: 88,
+      maxWidth: 140,
       resizable: true,
       sortValue: (row) => row.sell,
       cellClassName: "text-end",
@@ -848,20 +908,24 @@ export function UnifiedQuoteChargesWorkspace({
     {
       id: "sellCurrency",
       label: "Sell currency",
-      width: 120,
-      minWidth: 105,
-      maxWidth: 170,
+      width: 96,
+      minWidth: 88,
+      maxWidth: 128,
       resizable: true,
       sortValue: (row) => row.sellCurrency,
-      cell: (row) => <CurrencySelect value={row.sellCurrency} currencies={currencies} label="Sell currency" disabled={readOnly} isCurrencyAvailable={(currency) => rateFor(currency, "sell") !== null} onValueChange={(sellCurrency) => {
+      cell: (row) => <CurrencySelect value={row.sellCurrency} currencies={currencies} label="Sell currency" disabled={readOnly} onValueChange={(sellCurrency) => {
         const sellRoe = rateFor(sellCurrency, "sell")
-        if (sellRoe === null) return
-        updateRow(row.id, { sellCurrency, sellRoe, sellRoeSource: "rate" })
+        updateRow(row.id, {
+          sellCurrency,
+          sellRoe: sellRoe ?? 0,
+          sellRoeSource: sellRoe === null ? "manual" : "rate",
+        })
       }} />,
     },
     {
       id: "baseSell",
       label: "Base sell",
+      kind: "number",
       width: 126,
       minWidth: 110,
       resizable: true,
@@ -874,6 +938,7 @@ export function UnifiedQuoteChargesWorkspace({
     {
       id: "profit",
       label: "Profit",
+      kind: "number",
       width: 126,
       minWidth: 110,
       resizable: true,
@@ -886,12 +951,31 @@ export function UnifiedQuoteChargesWorkspace({
     {
       id: "customer",
       label: "Customer",
-      width: 220,
-      minWidth: 170,
-      maxWidth: 340,
+      width: 180,
+      minWidth: 150,
+      maxWidth: 280,
       resizable: true,
       sortValue: (row) => parties.find((party) => party.id === row.customerId)?.name ?? "",
+      cellClassName: "overflow-hidden",
       cell: (row) => <SearchablePartySelect value={row.customerId} parties={parties} role="customer" disabled={readOnly} onValueChange={(customerId) => updateRow(row.id, { customerId })} />,
+    },
+    {
+      id: "calculation",
+      label: "Calculation",
+      width: 126,
+      minWidth: 116,
+      maxWidth: 150,
+      kind: "status",
+      resizable: true,
+      sortValue: (row) => calculatorWasUsed(row) ? calculatorModeLabel(calculatorModeFromBasis(row.calculationBasis)) : "",
+      cellTitle: (row) => calculatorWasUsed(row)
+        ? `${t(calculatorModeLabel(calculatorModeFromBasis(row.calculationBasis)))} · ${decimalText(row.quantity ?? 0, language, 4)}`
+        : t("No calculator saved"),
+      cell: (row) => calculatorWasUsed(row) ? (
+        <StatusPill tone="teal" indicator={<Calculator className="size-3" strokeWidth={1.45} aria-hidden="true" />} className="h-6 whitespace-nowrap px-2 text-[10.5px]">
+          {t("Calculator used")}
+        </StatusPill>
+      ) : <span className="text-[var(--md-subtle)]">–</span>,
     },
     {
       id: "costRoe",
@@ -913,7 +997,43 @@ export function UnifiedQuoteChargesWorkspace({
       cellClassName: "text-end",
       cell: (row) => <RoeInput value={row.sellRoe} label="Sell rate of exchange" unavailable={!row.sellRateAvailable} disabled={readOnly} onValueChange={(sellRoe) => updateRow(row.id, { sellRoe, sellRoeSource: "manual" })} />,
     },
-  ], [baseCurrencyDefinition, currencies, currencyFor, language, parties, rateFor, readOnly, t, updateRow])
+    {
+      id: "actions",
+      label: "Actions",
+      width: 52,
+      minWidth: 52,
+      maxWidth: 52,
+      kind: "actions",
+      canHide: false,
+      canPin: false,
+      cell: (row) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={`${t("Line actions")} ${row.code || row.description}`}
+              className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] outline-none transition-[background-color,color,transform] duration-160 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] active:scale-[0.96] motion-reduce:transform-none"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <MoreHorizontal className="size-3.5" strokeWidth={1.45} aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-[210px]">
+            <DropdownMenuItem
+              disabled={readOnly && !calculatorWasUsed(row)}
+              onSelect={() => {
+                selectRow(row.id)
+                setCalculatorRowId(row.id)
+              }}
+            >
+              <Calculator className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.45} aria-hidden="true" />
+              {t(readOnly ? "View calculator" : calculatorWasUsed(row) ? "Edit calculator" : "Use calculator")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
+  ], [baseCurrencyDefinition, currencies, currencyFor, language, parties, rateFor, readOnly, selectRow, t, updateRow])
 
   const rateSummary = useMemo(() => {
     const relevant = exchangeRates.filter((rate) => rate.baseCurrency === baseCurrency)
@@ -950,6 +1070,7 @@ export function UnifiedQuoteChargesWorkspace({
   const selectedSupplier = selectedRow ? parties.find((party) => party.id === selectedRow.supplierId) : undefined
   const selectedCustomer = selectedRow ? parties.find((party) => party.id === selectedRow.customerId) : undefined
   const selectedMargin = selectedRow && selectedRow.baseSell !== 0 ? selectedRow.profit / selectedRow.baseSell * 100 : 0
+  const calculatorRow = calculatorRowId ? resolvedRows.find((row) => row.id === calculatorRowId) ?? null : null
 
   return (
     <div dir={direction} className={cn("grid min-w-0 gap-3", className)}>
@@ -962,13 +1083,7 @@ export function UnifiedQuoteChargesWorkspace({
         storageKey={storageKey}
         selectedRowKey={activeSelectedRowId}
         onRowClick={(row) => selectRow(row.id)}
-        toolbarLeading={(
-          <div className="flex min-w-0 items-center gap-2 px-1">
-            <span className="truncate text-[12px] font-medium text-[var(--md-ink)]">{t("Quote charges")}</span>
-            <span className="shrink-0 text-[10px] tabular-nums text-[var(--md-subtle)]">{rows.length} {t(rows.length === 1 ? "line" : "lines")}</span>
-          </div>
-        )}
-        toolbarActions={(
+        toolbarOptions={(
           <div className="flex min-w-0 items-center justify-end gap-1.5">
             <div
               title={t("Exchange-rate source and freshness")}
@@ -993,19 +1108,38 @@ export function UnifiedQuoteChargesWorkspace({
           <div className="mx-auto grid max-w-sm justify-items-center gap-2 px-4">
             <CircleGauge className="size-5 text-[var(--md-subtle)]" strokeWidth={1.25} aria-hidden="true" />
             <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("No charge lines yet")}</p>
-            <p className="text-[10.5px] leading-4 text-[var(--md-text)]">{t("Add the first cost and sell line for this quote.")}</p>
             {!readOnly ? <Button type="button" variant="outline" size="sm" onClick={addRow}><Plus data-icon="inline-start" />{t("Add charge")}</Button> : null}
           </div>
         )}
-        className="rounded-[var(--md-radius-xl)] !bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)] [&_th]:!bg-[var(--md-surface)] [&_td]:!bg-[var(--md-surface)] [&_tr[data-state=selected]_td]:!bg-[var(--md-selected-bg)]"
+        className="md-unified-quote-charges-table rounded-[var(--md-radius-xl)] !bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)] [&_th]:!bg-[var(--md-surface)] [&_td]:!bg-[var(--md-surface)] [&_tr[data-state=selected]_td]:!bg-[var(--md-selected-bg)]"
         tableClassName="text-[11px] [&_th]:h-9 [&_td]:h-11 [&_td]:px-2 [&_td]:py-1.5"
       />
 
-      <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
-        <Surface padding="none" className="rounded-[var(--md-radius-2xl)] p-3">
+      <Dialog open={Boolean(calculatorRow)} onOpenChange={(nextOpen) => { if (!nextOpen) setCalculatorRowId(null) }}>
+        <DialogContent className="max-h-[min(760px,calc(100svh-32px))] max-w-[760px] overflow-y-auto rounded-[var(--md-radius-2xl)]">
+          {calculatorRow ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>{t("Charge calculator")}</DialogTitle>
+                <DialogDescription data-i18n-skip dir="auto">{[calculatorRow.code, calculatorRow.description].filter(Boolean).join(" · ")}</DialogDescription>
+              </DialogHeader>
+              <ChargeCalculator
+                key={`${calculatorRow.id}-${calculatorRow.calculationBasis ?? "new"}`}
+                row={calculatorRow}
+                readOnly={readOnly}
+                onApply={(patch) => {
+                  updateRow(calculatorRow.id, patch)
+                  setCalculatorRowId(null)
+                }}
+              />
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Surface padding="none" className="rounded-[var(--md-radius-2xl)] p-3">
           <SectionHeader
             title={t("Selected line details")}
-            meta={selectedRow ? t("Edit the line and review its base-currency result.") : t("Select a charge line to inspect it.")}
           />
           {selectedRow ? (
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -1019,10 +1153,10 @@ export function UnifiedQuoteChargesWorkspace({
                 <div className="flex h-8 items-center justify-end px-2 text-[12px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip dir="ltr">{decimalText(selectedMargin, language, 1)}%</div>
               </DetailField>
               <DetailField label="Supplier">
-                <div data-i18n-skip dir="auto" className="flex h-8 min-w-0 items-center truncate text-[11px] text-[var(--md-ink)]">{selectedSupplier ? `${selectedSupplier.code} · ${selectedSupplier.name}` : "—"}</div>
+                <div data-i18n-skip dir="auto" className="flex h-8 min-w-0 items-center truncate text-[11px] text-[var(--md-ink)]">{selectedSupplier ? `${selectedSupplier.code} · ${selectedSupplier.name}` : "–"}</div>
               </DetailField>
               <DetailField label="Customer">
-                <div data-i18n-skip dir="auto" className="flex h-8 min-w-0 items-center truncate text-[11px] text-[var(--md-ink)]">{selectedCustomer ? `${selectedCustomer.code} · ${selectedCustomer.name}` : "—"}</div>
+                <div data-i18n-skip dir="auto" className="flex h-8 min-w-0 items-center truncate text-[11px] text-[var(--md-ink)]">{selectedCustomer ? `${selectedCustomer.code} · ${selectedCustomer.name}` : "–"}</div>
               </DetailField>
               <DetailField label="Base cost">
                 <div dir="ltr" className={cn("flex h-8 items-center justify-end font-medium", selectedRow.costRateAvailable ? "text-[12px] tabular-nums text-[var(--md-ink)]" : "text-[10px] text-[var(--md-red)]")}>
@@ -1042,13 +1176,10 @@ export function UnifiedQuoteChargesWorkspace({
             </div>
           ) : (
             <div className="mt-3 grid min-h-28 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-4 text-center shadow-[var(--md-shadow-line)]">
-              <p className="text-[11px] text-[var(--md-text)]">{t("Choose a row above to see supplier, customer, margin and base values.")}</p>
+              <p className="text-[11px] text-[var(--md-text)]">{t("Select a charge to view its details.")}</p>
             </div>
           )}
-        </Surface>
-
-        <ChargeCalculator />
-      </div>
+      </Surface>
     </div>
   )
 }

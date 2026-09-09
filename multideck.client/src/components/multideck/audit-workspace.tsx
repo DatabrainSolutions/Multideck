@@ -18,9 +18,10 @@ import {
   UserRound,
   X,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { AuditTimeline, type AuditTimelineEvent } from "@/components/multideck/audit-timeline"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { MultideckDateTimePicker } from "@/components/multideck/date-picker"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { Button } from "@/components/ui/button"
@@ -81,6 +82,7 @@ export type AuditWorkspaceProps = {
   records?: readonly QuoteAuditRecord[]
   title?: string
   description?: string
+  summaryDescription?: string
   defaultView?: QuoteAuditView
   view?: QuoteAuditView
   onViewChange?: (view: QuoteAuditView) => void
@@ -236,11 +238,11 @@ const eventTypeIcons: Record<QuoteAuditEventType, LucideIcon> = {
 
 const eventTypeClasses: Record<QuoteAuditEventType, string> = {
   record: "bg-[rgba(90,103,100,0.08)] text-[var(--md-text)] shadow-[0_0_0_1px_rgba(90,103,100,0.08)]",
-  pricing: "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] shadow-[0_0_0_1px_rgba(14,125,116,0.1)]",
+  pricing: "bg-[var(--md-accent-a10)] text-[var(--md-accent)] shadow-[0_0_0_1px_var(--md-accent-a10)]",
   routing: "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)] shadow-[0_0_0_1px_rgba(74,125,156,0.1)]",
   document: "bg-[rgba(90,103,100,0.08)] text-[var(--md-text)] shadow-[0_0_0_1px_rgba(90,103,100,0.08)]",
   approval: "bg-[rgba(221,138,43,0.1)] text-[var(--md-amber)] shadow-[0_0_0_1px_rgba(221,138,43,0.1)]",
-  communication: "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] shadow-[0_0_0_1px_rgba(14,125,116,0.1)]",
+  communication: "bg-[var(--md-accent-a10)] text-[var(--md-accent)] shadow-[0_0_0_1px_var(--md-accent-a10)]",
   booking: "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)] shadow-[0_0_0_1px_rgba(74,125,156,0.1)]",
 }
 
@@ -250,6 +252,8 @@ const emptyFilters: QuoteAuditFilters = {
   actor: "all",
   eventType: "all",
 }
+
+const auditFilterControlClass = "!h-10 text-[12px]"
 
 function parseFilterBoundary(value: string, includeMinuteEnd = false) {
   if (!value) return null
@@ -354,7 +358,6 @@ function DetailedAuditTable({ records }: { records: readonly QuoteAuditRecord[] 
       width: 190,
       minWidth: 176,
       maxWidth: 230,
-      defaultPinned: true,
       canHide: false,
       resizable: true,
       sortValue: (record) => new Date(record.timestamp).getTime(),
@@ -450,7 +453,7 @@ function DetailedAuditTable({ records }: { records: readonly QuoteAuditRecord[] 
         <span className="block min-w-0">
           <span className="block truncate font-medium text-[var(--md-ink)]">{t(record.actor)}</span>
           <span className="mt-0.5 block truncate text-[10px] text-[var(--md-subtle)]" dir="auto">
-            {record.sender ? record.sender : record.actorRole ? t(record.actorRole) : "—"}
+            {record.sender ? record.sender : record.actorRole ? t(record.actorRole) : "–"}
           </span>
         </span>
       ),
@@ -458,6 +461,7 @@ function DetailedAuditTable({ records }: { records: readonly QuoteAuditRecord[] 
     {
       id: "source",
       label: "Source",
+      kind: "attribute",
       width: 170,
       minWidth: 140,
       maxWidth: 260,
@@ -469,7 +473,7 @@ function DetailedAuditTable({ records }: { records: readonly QuoteAuditRecord[] 
 
   return (
     <>
-      <DataTable
+      <DataTable clientPagination
         ariaLabel="Detailed audit events table"
         columnsButtonLabel="Manage audit table columns"
         columns={columns}
@@ -479,14 +483,7 @@ function DetailedAuditTable({ records }: { records: readonly QuoteAuditRecord[] 
         selectedRowKey={selectedRecordId}
         onRowClick={(record) => setSelectedRecordId(record.id)}
         rowClassName={(record) => record.state === "current" ? "[&_td]:bg-[rgba(221,138,43,0.035)]" : ""}
-        toolbarLeading={(
-          <div className="flex min-w-0 items-center gap-2 px-1">
-            <ListTree className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
-            <span className="truncate text-[12px] font-medium text-[var(--md-ink)]">{t("Detailed audit log")}</span>
-            <span className="shrink-0 text-[10px] tabular-nums text-[var(--md-subtle)]">{records.length} {t("events")}</span>
-          </div>
-        )}
-        toolbarActions={(
+        toolbarOptions={(
           <span className="hidden truncate text-[10px] text-[var(--md-subtle)] lg:block">
             {t("Select a row to inspect the complete audit event.")}
           </span>
@@ -551,8 +548,8 @@ function DetailedAuditTable({ records }: { records: readonly QuoteAuditRecord[] 
                 {([
                   ["Field", selectedRecord.field],
                   ["Actor", selectedRecord.actor],
-                  ["Role", selectedRecord.actorRole ?? "—"],
-                  ["Sender", selectedRecord.sender ?? "—"],
+                  ["Role", selectedRecord.actorRole ?? "–"],
+                  ["Sender", selectedRecord.sender ?? "–"],
                   ["Source", selectedRecord.source],
                 ] as const).map(([label, value]) => (
                   <div key={label} className="grid grid-cols-[112px_minmax(0,1fr)] gap-3 py-3">
@@ -588,6 +585,7 @@ export function AuditWorkspace({
   records = QUOTE_AUDIT_SAMPLE_DATA,
   title = "Quote audit",
   description = "Review the operational summary or inspect every recorded change.",
+  summaryDescription = "A clear operational history of changes, decisions, and current actions.",
   defaultView = "summary",
   view,
   onViewChange,
@@ -654,7 +652,7 @@ export function AuditWorkspace({
     <div className={cn("min-w-0 space-y-[var(--md-page-stack-gap)]", className)}>
       <Surface padding="md" className="rounded-[var(--md-radius-xl)]">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <SectionHeader title={t(title)} meta={t(description)} />
+          <SectionHeader title={t(title)} meta={t(description)} className="min-w-0 flex-1" />
           <SegmentedControl
             options={["summary", "detailed"] as const}
             value={activeView}
@@ -674,36 +672,40 @@ export function AuditWorkspace({
 
         <div className="mt-4 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(170px,1fr)_minmax(170px,1fr)_minmax(150px,0.8fr)_minmax(150px,0.8fr)_auto] xl:items-end">
-            <label className="grid min-w-0 gap-1.5" htmlFor={`${filterId}-from`}>
+            <div className="grid min-w-0 gap-1.5">
               <span className="text-[10.5px] font-medium text-[var(--md-text)]">{t("From date and time")}</span>
-              <Input
-                id={`${filterId}-from`}
-                type="datetime-local"
+              <MultideckDateTimePicker
                 value={filters.from}
                 max={filters.to || undefined}
-                onChange={(event) => setFilters((current) => ({ ...current, from: event.target.value }))}
-                dir="ltr"
-                className="text-[12px]"
+                onChange={(from) => setFilters((current) => ({ ...current, from }))}
+                placeholder="From date"
+                title="From date and time"
+                description="Pick the start of the audit period."
+                defaultTime="00:00"
+                triggerClassName={auditFilterControlClass}
+                timeClassName={auditFilterControlClass}
               />
-            </label>
+            </div>
 
-            <label className="grid min-w-0 gap-1.5" htmlFor={`${filterId}-to`}>
+            <div className="grid min-w-0 gap-1.5">
               <span className="text-[10.5px] font-medium text-[var(--md-text)]">{t("To date and time")}</span>
-              <Input
-                id={`${filterId}-to`}
-                type="datetime-local"
+              <MultideckDateTimePicker
                 value={filters.to}
                 min={filters.from || undefined}
-                onChange={(event) => setFilters((current) => ({ ...current, to: event.target.value }))}
-                dir="ltr"
-                className="text-[12px]"
+                onChange={(to) => setFilters((current) => ({ ...current, to }))}
+                placeholder="To date"
+                title="To date and time"
+                description="Pick the end of the audit period."
+                defaultTime="23:59"
+                triggerClassName={auditFilterControlClass}
+                timeClassName={auditFilterControlClass}
               />
-            </label>
+            </div>
 
             <div className="grid min-w-0 gap-1.5">
               <label htmlFor={`${filterId}-actor`} className="text-[10.5px] font-medium text-[var(--md-text)]">{t("Actor or sender")}</label>
               <Select value={filters.actor} onValueChange={(actor) => setFilters((current) => ({ ...current, actor }))}>
-                <SelectTrigger id={`${filterId}-actor`} className="w-full min-w-0 text-[12px]" aria-label={t("Filter by actor or sender")}>
+                <SelectTrigger id={`${filterId}-actor`} className={cn(auditFilterControlClass, "w-full min-w-0")} aria-label={t("Filter by actor or sender")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -719,7 +721,7 @@ export function AuditWorkspace({
                 value={filters.eventType}
                 onValueChange={(eventType) => setFilters((current) => ({ ...current, eventType: eventType as QuoteAuditFilters["eventType"] }))}
               >
-                <SelectTrigger id={`${filterId}-event-type`} className="w-full min-w-0 text-[12px]" aria-label={t("Filter by event type")}>
+                <SelectTrigger id={`${filterId}-event-type`} className={cn(auditFilterControlClass, "w-full min-w-0")} aria-label={t("Filter by event type")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -738,7 +740,7 @@ export function AuditWorkspace({
               variant="ghost"
               onClick={resetFilters}
               disabled={!hasFilters}
-              className="w-full justify-center text-[12px] xl:w-auto"
+              className={cn(auditFilterControlClass, "w-full justify-center xl:w-auto")}
             >
               <FilterX className="size-3.5" strokeWidth={1.4} />
               {t("Clear filters")}
@@ -757,7 +759,7 @@ export function AuditWorkspace({
         <AuditTimeline
           events={summaryEvents}
           title={t("Audit summary")}
-          description={t("A clear operational history of changes, decisions, and current actions.")}
+          description={t(summaryDescription)}
         />
       ) : (
         <DetailedAuditTable records={detailedRecords} />

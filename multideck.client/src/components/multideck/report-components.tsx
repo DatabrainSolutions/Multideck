@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react"
 import {
+  AiBeautify,
   BarChart3,
   ChevronDown,
   ChevronLeft,
@@ -13,11 +14,10 @@ import {
   Map,
   Plus,
   Search,
-  Sparkles,
   Table2,
   TrendingUp,
   X,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -29,9 +29,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { cn } from "@/lib/utils"
-import type { GeneratedReport, GeneratedReportStatus, ReportTemplate } from "@/data/multideck-data"
+import type { GeneratedReport, GeneratedReportStatus, ReportTemplate } from "@/data/operational-data"
 import { StatusPill, toneToVar } from "./status-pill"
 import { Surface } from "./surface"
 import { ReportVisualizationBlock, type ChartDataPoint, type ChartSeries, type ReportVisualizationOptions, type VisualizationKind } from "./chart-components"
@@ -70,7 +71,7 @@ function PreviewBars({ bars = [[82, 38, 24], [64, 44, 30], [74, 52, 28]] }: { ba
       {bars.map((bar, index) => (
         <div key={`${bar.join("-")}-${index}`} className="flex h-3 overflow-hidden rounded-full bg-[rgba(90,103,100,0.1)]">
           <span className="bg-[var(--md-accent)]" style={{ width: `${bar[0]}%` }} />
-          <span className="bg-[rgba(14,125,116,0.38)]" style={{ width: `${bar[1]}%` }} />
+          <span className="bg-[var(--md-accent-a38)]" style={{ width: `${bar[1]}%` }} />
           <span className="bg-[rgba(90,103,100,0.12)]" style={{ width: `${bar[2]}%` }} />
         </div>
       ))}
@@ -149,8 +150,8 @@ export function ReportTemplateCard({
         <h3 className="text-[17px] font-medium leading-6 text-[var(--md-ink)]">{template.title}</h3>
         <p className="mt-1 text-[14px] leading-5 text-[var(--md-text)]">{template.description}</p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <span className="rounded-full bg-[rgba(14,125,116,0.1)] px-3 py-1 text-[12px] font-medium text-[var(--md-text)]">{template.cadence}</span>
-          <span className="rounded-full bg-[rgba(14,125,116,0.1)] px-3 py-1 text-[12px] font-medium text-[var(--md-text)]">{template.format}</span>
+          <span className="rounded-full bg-[var(--md-accent-a10)] px-3 py-1 text-[12px] font-medium text-[var(--md-text)]">{template.cadence}</span>
+          <span className="rounded-full bg-[var(--md-accent-a10)] px-3 py-1 text-[12px] font-medium text-[var(--md-text)]">{template.format}</span>
         </div>
       </div>
       <div className="mt-4 flex items-center justify-between border-t border-[rgba(11,20,19,0.06)] pt-4">
@@ -170,12 +171,12 @@ export function NewReportTemplateCard({ onCreate, className }: { onCreate?: () =
     <button
       type="button"
       className={cn(
-        "group flex min-h-[336px] flex-col items-center justify-center rounded-[var(--md-radius-xl)] border-0 border-dashed bg-transparent p-[var(--md-page-stack-gap)] text-center shadow-[inset_0_0_0_1px_rgba(90,103,100,0.16)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-white/24 hover:shadow-[inset_0_0_0_1px_rgba(14,125,116,0.22),0_0_0_3px_rgba(14,125,116,0.06)]",
+        "group flex min-h-[336px] flex-col items-center justify-center rounded-[var(--md-radius-xl)] border-0 border-dashed bg-transparent p-[var(--md-page-stack-gap)] text-center shadow-[inset_0_0_0_1px_rgba(90,103,100,0.16)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-white/24 hover:shadow-[inset_0_0_0_1px_var(--md-accent-a22),0_0_0_3px_var(--md-accent-a06)]",
         className,
       )}
       onClick={onCreate}
     >
-      <span className="grid size-[52px] place-items-center rounded-full bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] transition-transform duration-200 group-hover:scale-[1.03]">
+      <span className="grid size-[52px] place-items-center rounded-full bg-[var(--md-accent-a10)] text-[var(--md-accent)] transition-transform duration-200 group-hover:scale-[1.03]">
         <Plus className="size-5" strokeWidth={1.5} />
       </span>
       <span className="mt-[var(--md-page-section-gap)] text-[15px] font-medium text-[var(--md-ink)]">New template</span>
@@ -185,8 +186,7 @@ export function NewReportTemplateCard({ onCreate, className }: { onCreate?: () =
 }
 
 function ReportStatusPill({ status }: { status: GeneratedReportStatus }) {
-  const label = status === "Generating" ? "• Generating" : status
-  return <StatusPill tone={reportStatusTone[status]} className={cn(status === "Generating" && "gap-1 bg-[rgba(74,125,156,0.1)]")}>{label}</StatusPill>
+  return <StatusPill kind="status" tone={reportStatusTone[status]}>{status}</StatusPill>
 }
 
 export function GeneratedReportsTable({
@@ -200,65 +200,27 @@ export function GeneratedReportsTable({
   onDownload?: (report: GeneratedReport) => void
   className?: string
 }) {
-  return (
-    <Surface padding="none" className={cn("overflow-hidden rounded-[var(--md-radius-xl)]", className)}>
-      <Table className="min-w-[980px]">
-        <TableHeader>
-          <TableRow className="border-[rgba(11,20,19,0.07)] hover:bg-transparent">
-            <TableHead className="h-12 px-[var(--md-gap-xl)] text-[13px] font-medium text-[var(--md-text)]">Report</TableHead>
-            <TableHead className="h-12 px-[var(--md-gap-xl)] text-[13px] font-medium text-[var(--md-text)]">Scope</TableHead>
-            <TableHead className="h-12 px-[var(--md-gap-xl)] text-[13px] font-medium text-[var(--md-text)]">Period</TableHead>
-            <TableHead className="h-12 px-[var(--md-gap-xl)] text-[13px] font-medium text-[var(--md-text)]">Created</TableHead>
-            <TableHead className="h-12 px-[var(--md-gap-xl)] text-[13px] font-medium text-[var(--md-text)]">Status</TableHead>
-            <TableHead className="h-12 px-[var(--md-gap-xl)] text-right text-[13px] font-medium text-[var(--md-text)]">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {reports.map((report) => {
-            const isReady = report.status === "Ready"
-            return (
-              <TableRow key={report.id} className="h-[82px] border-[rgba(11,20,19,0.06)] hover:bg-[rgba(255,255,255,0.36)]">
-                <TableCell className="px-[var(--md-gap-xl)]">
-                  <p className="text-[15px] font-medium leading-5 text-[var(--md-ink)]">{report.title}</p>
-                  <p className="mt-1 text-[13px] text-[var(--md-text)]">{report.subtitle}</p>
-                </TableCell>
-                <TableCell className="px-[var(--md-gap-xl)] text-[14px] text-[var(--md-text)]">{report.scope}</TableCell>
-                <TableCell className="px-[var(--md-gap-xl)] text-[14px] font-medium text-[var(--md-ink)]">{report.period}</TableCell>
-                <TableCell className="px-[var(--md-gap-xl)] text-[14px] text-[var(--md-text)]">{report.created}</TableCell>
-                <TableCell className="px-[var(--md-gap-xl)]">
-                  <ReportStatusPill status={report.status} />
-                </TableCell>
-                <TableCell className="px-[var(--md-gap-xl)]">
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="h-9 rounded-[var(--md-radius-md)] bg-white/35 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65 disabled:text-[var(--md-subtle)]"
-                      disabled={!isReady}
-                      onClick={() => onView?.(report)}
-                    >
-                      <Eye data-icon="inline-start" strokeWidth={1.2} />
-                      View
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="h-9 rounded-[var(--md-radius-md)] bg-white/35 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65 disabled:text-[var(--md-subtle)]"
-                      disabled={!isReady}
-                      onClick={() => onDownload?.(report)}
-                    >
-                      <Download data-icon="inline-start" strokeWidth={1.2} />
-                      PDF
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
-    </Surface>
-  )
+  const columns = useMemo<DataTableColumn<GeneratedReport>[]>(() => [
+    { id: "report", label: "Report", kind: "long-text", width: 300, minWidth: 220, resizable: true, sortValue: (report) => report.title, cellTitle: (report) => `${report.title} · ${report.subtitle}`, cell: (report) => <div className="min-w-0"><p className="truncate text-[15px] font-medium leading-5 text-[var(--md-ink)]">{report.title}</p><p className="mt-1 truncate text-[13px] text-[var(--md-text)]">{report.subtitle}</p></div> },
+    { id: "scope", label: "Scope", kind: "attribute", width: 150, sortValue: (report) => report.scope, cell: (report) => <StatusPill kind="attribute" tone="blue">{report.scope}</StatusPill> },
+    { id: "period", label: "Period", kind: "date", width: 160, sortValue: (report) => report.period, cell: (report) => <span className="font-medium text-[var(--md-ink)]">{report.period}</span> },
+    { id: "created", label: "Created", kind: "date", width: 140, sortValue: (report) => report.created, cell: (report) => <span className="tabular-nums text-[var(--md-text)]">{report.created}</span> },
+    { id: "status", label: "Status", kind: "status", width: 130, sortValue: (report) => report.status, cell: (report) => <ReportStatusPill status={report.status} /> },
+    {
+      id: "actions",
+      label: "Actions",
+      kind: "actions",
+      width: 156,
+      canHide: false,
+      canPin: false,
+      cell: (report) => {
+        const isReady = report.status === "Ready"
+        return <div className="flex justify-end gap-1.5"><Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] disabled:text-[var(--md-subtle)]" disabled={!isReady} onClick={() => onView?.(report)}><Eye data-icon="inline-start" strokeWidth={1.2} />View</Button><Tooltip><TooltipTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label="Download PDF" className="size-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[var(--md-text)] opacity-0 shadow-[var(--md-shadow-line)] transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100" disabled={!isReady} onClick={() => onDownload?.(report)}><Download className="size-3.5" strokeWidth={1.2} /></Button></TooltipTrigger><TooltipContent>Download PDF</TooltipContent></Tooltip></div>
+      },
+    },
+  ], [onDownload, onView])
+
+  return <DataTable clientPagination ariaLabel="Generated reports" columnsButtonLabel="Manage report columns" columns={columns} rows={reports} getRowKey={(report) => report.id} storageKey="generated-reports" rowClassName="group/row h-[82px]" className={className} />
 }
 
 export function reportStatusStyle(status: GeneratedReportStatus): CSSProperties {
@@ -670,7 +632,7 @@ function MiniTable() {
     <span className="grid gap-2 p-4" aria-hidden="true">
       {[0, 1, 2].map((row) => (
         <span key={row} className="grid grid-cols-[1fr_0.7fr_0.45fr] gap-2">
-          <span className="h-2 rounded-full bg-[rgba(14,125,116,0.28)]" />
+          <span className="h-2 rounded-full bg-[var(--md-accent-a28)]" />
           <span className="h-2 rounded-full bg-[rgba(90,103,100,0.14)]" />
           <span className="h-2 rounded-full bg-[rgba(90,103,100,0.12)]" />
         </span>
@@ -741,14 +703,14 @@ export const monthlyReviewPages: ReportPage[] = [
     title: "Marlow Apparel Ltd",
     subtitle: "May 2026 · prepared June 1, 2026",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for Marlow Apparel Ltd",
+    footer: "Confidential – prepared for Marlow Apparel Ltd",
     pageNumber: 1,
     blocks: [
       {
         id: "summary",
         type: "summary",
         title: "Summary",
-        body: "A strong month: 38 bookings moved, on-time performance rose to 94.2%, and spend came in 3% under April. Two of three exceptions were resolved within a day. Watch AW26 volumes — early bookings suggest a 20% step up from September.",
+        body: "A strong month: 38 bookings moved, on-time performance rose to 94.2%, and spend came in 3% under April. Two of three exceptions were resolved within a day. Watch AW26 volumes – early bookings suggest a 20% step up from September.",
         tone: "teal",
       },
     ],
@@ -758,7 +720,7 @@ export const monthlyReviewPages: ReportPage[] = [
     label: "KPIs",
     title: "KPI overview",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for Marlow Apparel Ltd",
+    footer: "Confidential – prepared for Marlow Apparel Ltd",
     pageNumber: 2,
     blocks: [
       {
@@ -786,7 +748,7 @@ export const monthlyReviewPages: ReportPage[] = [
     label: "Bookings",
     title: "Booking movement",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for Marlow Apparel Ltd",
+    footer: "Confidential – prepared for Marlow Apparel Ltd",
     pageNumber: 3,
     blocks: [
       {
@@ -807,7 +769,7 @@ export const monthlyReviewPages: ReportPage[] = [
     label: "Exceptions",
     title: "Exceptions",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for Marlow Apparel Ltd",
+    footer: "Confidential – prepared for Marlow Apparel Ltd",
     pageNumber: 4,
     blocks: [
       {
@@ -827,7 +789,7 @@ export const monthlyReviewPages: ReportPage[] = [
     label: "Spend",
     title: "Spend summary",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for Marlow Apparel Ltd",
+    footer: "Confidential – prepared for Marlow Apparel Ltd",
     pageNumber: 5,
     blocks: [
       {
@@ -843,7 +805,7 @@ export const monthlyReviewPages: ReportPage[] = [
     label: "Appendix",
     title: "Appendix",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for Marlow Apparel Ltd",
+    footer: "Confidential – prepared for Marlow Apparel Ltd",
     pageNumber: 6,
     blocks: [
       {
@@ -869,14 +831,14 @@ export const monthlyTemplatePages: ReportPage[] = [
     title: "{Customer name}",
     subtitle: "{Period} · prepared {Run date}",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for {Customer name}",
+    footer: "Confidential – prepared for {Customer name}",
     pageNumber: 1,
     blocks: [
       {
         id: "written-summary",
         type: "summary",
         title: "Written summary",
-        body: "Dexter writes 3–4 sentences here on each run — volumes, on-time trend, exceptions worth a conversation, and what's coming next month.",
+        body: "Dexter writes 3–4 sentences here on each run – volumes, on-time trend, exceptions worth a conversation, and what's coming next month.",
         tone: "teal",
       },
     ],
@@ -886,7 +848,7 @@ export const monthlyTemplatePages: ReportPage[] = [
     label: "KPIs",
     title: "KPI overview",
     preparedBy: "Prepared by Northwind Forwarding",
-    footer: "Confidential — prepared for {Customer name}",
+    footer: "Confidential – prepared for {Customer name}",
     pageNumber: 2,
     blocks: [
       {
@@ -1198,7 +1160,7 @@ export const reportWidgets: ReportWidget[] = [
   { id: "mixed-chart", title: "Mixed chart", description: "Bar and line together", group: "Visualizations", type: "chart", visualization: "mixed", icon: <BarChart3 className="size-5" strokeWidth={1.2} /> },
   { id: "booking-table", title: "Booking table", description: "Every booking in period", group: "Lists & tables", type: "table", icon: <Table2 className="size-5" strokeWidth={1.2} /> },
   { id: "exception-log", title: "Exception log", description: "Issues & resolutions", group: "Lists & tables", type: "exception-log", icon: <FileText className="size-5" strokeWidth={1.2} /> },
-  { id: "written-summary", title: "Written summary", description: "Dexter narrative block", group: "Narrative", type: "summary", icon: <Sparkles className="size-5" strokeWidth={1.2} /> },
+  { id: "written-summary", title: "Written summary", description: "Dexter narrative block", group: "Narrative", type: "summary", icon: <AiBeautify className="size-5" strokeWidth={1.2} /> },
 ]
 
 export function ReportBlockView({
@@ -1237,7 +1199,7 @@ export function ReportBlockView({
       {block.type === "summary" ? (
         <div className="md-report-summary-block rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-[var(--md-page-stack-gap)]">
           <div className="md-report-summary-header flex items-center gap-3">
-            <Sparkles className="size-4 text-[var(--md-accent)]" strokeWidth={1.4} />
+            <AiBeautify className="size-4 text-[var(--md-accent)]" strokeWidth={1.4} />
             <h3 className="md-report-summary-title text-[15px] font-medium text-[var(--md-ink)]">{block.title}</h3>
           </div>
           <p className="md-report-summary-body mt-3 text-[15px] leading-7 text-[var(--md-text)]">{block.body}</p>
@@ -1414,7 +1376,7 @@ export function ReportBlockDataEditorDialog({
           </DialogClose>
           <Button
             type="button"
-            className="h-10 w-full rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_20px_rgba(14,125,116,0.18)] hover:bg-[var(--md-accent)]/88 sm:w-auto"
+            className="h-10 w-full rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_20px_var(--md-accent-a18)] hover:bg-[var(--md-accent)]/88 sm:w-auto"
             onClick={() => {
               onSave(applyReportBlockDataSelection(block, draft))
               onOpenChange(false)

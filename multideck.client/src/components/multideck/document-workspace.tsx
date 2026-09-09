@@ -1,19 +1,7 @@
-import { useId, useMemo, useState, type KeyboardEvent } from "react"
-import { FileImage, FileText, Grid2X2, List, X } from "lucide-react"
+import { useId, useMemo, useState } from "react"
+import { FileImage, FileText, Grid2X2, List, X } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
-  PaperDocumentFace,
-  type PaperDocumentAccent,
-  type TrayDocument,
-} from "@/components/multideck/paper-tray"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { Surface } from "@/components/multideck/surface"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
@@ -22,6 +10,8 @@ export type DocumentWorkspaceSource = "quote" | "customer" | "supplier" | "desti
 export type DocumentWorkspaceSourceFilter = "all" | DocumentWorkspaceSource
 export type DocumentWorkspaceView = "list" | "grid"
 export type DocumentWorkspacePreviewKind = "pdf" | "image" | "document"
+export type DocumentPreviewAccent = "teal" | "blue" | "green" | "amber" | "neutral"
+export type DocumentPreviewSampleType = "invoice" | "packing-list" | "inspection" | "arrival" | "certificate" | "bill-of-lading" | "customs" | "delivery-order" | "release"
 
 export type DocumentWorkspaceRelationship = {
   label: string
@@ -36,8 +26,8 @@ export type DocumentWorkspacePreview = {
   url?: string
   thumbnailUrl?: string
   reference?: string
-  accent?: PaperDocumentAccent
-  sampleType?: TrayDocument["sampleType"]
+  accent?: DocumentPreviewAccent
+  sampleType?: DocumentPreviewSampleType
 }
 
 export type DocumentWorkspaceDocument = {
@@ -180,25 +170,40 @@ export const documentWorkspaceSampleDocuments: readonly DocumentWorkspaceDocumen
   },
 ] as const
 
-function getFallbackMimeType(kind: DocumentWorkspacePreviewKind) {
-  if (kind === "pdf") return "application/pdf"
-  if (kind === "image") return "image/*"
-  return "application/octet-stream"
+type DocumentPreviewFaceItem = {
+  name: string
+  kind: "sample" | "pdf" | "image"
+  reference?: string
+  accent?: DocumentPreviewAccent
 }
 
-function toPaperDocument(document: DocumentWorkspaceDocument): TrayDocument {
+function toDocumentPreviewItem(document: DocumentWorkspaceDocument): DocumentPreviewFaceItem {
   return {
-    id: document.id,
     name: document.fileName,
     kind: document.preview.kind === "document" ? "sample" : document.preview.kind,
-    mimeType: document.preview.mimeType ?? getFallbackMimeType(document.preview.kind),
-    sizeLabel: document.preview.fileSize ?? "",
-    addedAt: document.uploadedAt,
     reference: document.preview.reference ?? document.relationship.reference,
-    url: document.preview.url,
-    sampleType: document.preview.sampleType,
     accent: document.preview.accent,
   }
+}
+
+function DocumentPreviewFace({ item, compact = false, className }: { item: DocumentPreviewFaceItem; compact?: boolean; className?: string }) {
+  const Icon = item.kind === "image" ? FileImage : FileText
+
+  return (
+    <div className={cn("md-document-preview-face", compact && "md-document-preview-face--compact", className)} data-accent={item.accent ?? "teal"}>
+      <div className="md-document-preview-face__masthead">
+        <span className="md-document-preview-face__mark"><Icon className="size-3.5" strokeWidth={1.2} aria-hidden="true" /></span>
+        <span className="md-document-preview-face__brand">MULTIDECK</span>
+        <span className="md-document-preview-face__ref" data-i18n-skip dir="ltr">{item.reference ?? "DOCUMENT"}</span>
+      </div>
+      <p className="md-document-preview-face__title" data-i18n-skip dir="ltr">{item.name}</p>
+      <div className="md-document-preview-face__lines" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+    </div>
+  )
 }
 
 function getDocumentIcon(document: DocumentWorkspaceDocument) {
@@ -249,8 +254,8 @@ function DocumentPreviewCanvas({
   }
 
   return (
-    <PaperDocumentFace
-      item={toPaperDocument(document)}
+    <DocumentPreviewFace
+      item={toDocumentPreviewItem(document)}
       compact={compact}
       className={cn(
         "w-full max-w-[440px] shadow-[0_16px_38px_rgba(42,52,50,0.12)]",
@@ -323,57 +328,19 @@ function DocumentList({
     return Number.isNaN(date.getTime()) ? value : dateFormatter.format(date)
   }
 
-  function handleRowKeyDown(event: KeyboardEvent<HTMLTableRowElement>, document: DocumentWorkspaceDocument) {
-    if (event.key !== "Enter" && event.key !== " ") return
-    event.preventDefault()
-    onSelect(document)
-  }
+  const columns = useMemo<DataTableColumn<DocumentWorkspaceDocument>[]>(() => [
+    { id: "file", label: "File name", kind: "long-text", width: 210, minWidth: 180, resizable: true, sortValue: (document) => document.fileName, cellTitle: (document) => document.fileName, cell: (document) => <DocumentIdentity document={document} /> },
+    { id: "description", label: "Description", kind: "long-text", width: 210, minWidth: 160, resizable: true, sortValue: (document) => document.description, cellTitle: (document) => t(document.description), cellClassName: "whitespace-normal", cell: (document) => <p className="line-clamp-2 text-[11px] leading-4 text-[var(--md-text)]">{t(document.description)}</p> },
+    { id: "source", label: "Source", kind: "attribute", width: 160, resizable: true, sortValue: (document) => document.relationship.label, cell: (document) => <DocumentSourceLabel document={document} /> },
+    { id: "type", label: "Type", kind: "attribute", width: 110, sortValue: (document) => document.documentType, cell: (document) => <span className="text-[11px] text-[var(--md-text)]">{t(document.documentType)}</span> },
+    { id: "uploaded", label: "Uploaded", kind: "date", width: 118, sortValue: (document) => document.uploadedAt, cell: (document) => <span className="text-[10.5px] tabular-nums text-[var(--md-text)]" data-i18n-skip dir="auto">{formatDate(document.uploadedAt)}</span> },
+    { id: "modified", label: "Modified", kind: "date", width: 118, sortValue: (document) => document.lastModifiedAt, cell: (document) => <span className="text-[10.5px] tabular-nums text-[var(--md-text)]" data-i18n-skip dir="auto">{formatDate(document.lastModifiedAt)}</span> },
+  ], [dateFormatter, t])
 
   return (
     <>
       <div className="hidden md:block">
-        <Table className="min-w-[760px] table-fixed" aria-label={t("Documents") }>
-          <TableHeader className="[&_tr]:border-0">
-            <TableRow className="border-0 bg-[var(--md-surface-soft)] shadow-[var(--md-stroke-bottom)] hover:bg-[var(--md-surface-soft)]">
-              <TableHead className="w-[25%] px-3 text-start text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("File name")}</TableHead>
-              <TableHead className="w-[25%] px-3 text-start text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("Description")}</TableHead>
-              <TableHead className="w-[18%] px-3 text-start text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("Source")}</TableHead>
-              <TableHead className="w-[12%] px-3 text-start text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("Type")}</TableHead>
-              <TableHead className="w-[10%] px-3 text-start text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("Uploaded")}</TableHead>
-              <TableHead className="w-[10%] px-3 text-start text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("Modified")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {documents.map((document) => {
-              const isSelected = selectedDocumentId === document.id
-
-              return (
-                <TableRow
-                  key={document.id}
-                  role="button"
-                  tabIndex={0}
-                  aria-selected={isSelected}
-                  data-state={isSelected ? "selected" : undefined}
-                  onClick={() => onSelect(document)}
-                  onKeyDown={(event) => handleRowKeyDown(event, document)}
-                  className={cn(
-                    "cursor-pointer border-0 shadow-[var(--md-stroke-bottom)] outline-none transition-[background-color,box-shadow] duration-200 focus-visible:relative focus-visible:z-10 focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
-                    isSelected ? "bg-[var(--md-selected-bg)] hover:bg-[var(--md-selected-bg)]" : "hover:bg-[var(--md-hover)]",
-                  )}
-                >
-                  <TableCell className="px-3 py-2.5"><DocumentIdentity document={document} /></TableCell>
-                  <TableCell className="px-3 py-2.5 align-top whitespace-normal">
-                    <p className="line-clamp-2 text-[11px] leading-4 text-[var(--md-text)]">{t(document.description)}</p>
-                  </TableCell>
-                  <TableCell className="px-3 py-2.5 align-top"><DocumentSourceLabel document={document} /></TableCell>
-                  <TableCell className="px-3 py-2.5 align-top text-[11px] text-[var(--md-text)]">{t(document.documentType)}</TableCell>
-                  <TableCell className="px-3 py-2.5 align-top text-[10.5px] text-[var(--md-text)]" data-i18n-skip dir="auto">{formatDate(document.uploadedAt)}</TableCell>
-                  <TableCell className="px-3 py-2.5 align-top text-[10.5px] text-[var(--md-text)]" data-i18n-skip dir="auto">{formatDate(document.lastModifiedAt)}</TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
+        <DataTable clientPagination ariaLabel="Documents" columnsButtonLabel="Manage document columns" columns={columns} rows={[...documents]} getRowKey={(document) => document.id} storageKey="document-workspace-list" selectedRowKey={selectedDocumentId} onRowClick={onSelect} rowAriaLabel={(document) => `Open ${document.fileName}`} minimumWidth={760} tableClassName="table-fixed" />
       </div>
 
       <ul className="divide-y divide-[var(--md-line)] md:hidden" aria-label={t("Documents")}>
@@ -387,7 +354,7 @@ function DocumentList({
                 aria-pressed={isSelected}
                 onClick={() => onSelect(document)}
                 className={cn(
-                  "w-full px-3 py-3 text-start outline-none transition-colors duration-200 focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+                  "w-full px-3 py-3 text-start outline-none transition-colors duration-200 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
                   isSelected ? "bg-[var(--md-selected-bg)]" : "hover:bg-[var(--md-hover)]",
                 )}
               >
@@ -439,7 +406,7 @@ function DocumentGrid({
               aria-pressed={isSelected}
               onClick={() => onSelect(document)}
               className={cn(
-                "group w-full min-w-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-2 text-start shadow-[var(--md-shadow-line)] outline-none transition-[background-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:bg-[var(--md-surface-soft)] hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+                "group w-full min-w-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-2 text-start shadow-[var(--md-shadow-line)] outline-none transition-[background-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:bg-[var(--md-surface-soft)] hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
                 isSelected && "bg-[var(--md-green-card-selected)] shadow-[var(--md-shadow-green-card-selected)]",
               )}
             >
@@ -473,6 +440,33 @@ function DocumentPreviewPanel({
   onClose: () => void
 }) {
   const { language, t } = useLanguage()
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState(false)
+  const pdfUrl = document.preview.kind === "pdf" ? document.preview.url : undefined
+
+  async function downloadPdf() {
+    if (!pdfUrl || downloading) return
+    setDownloading(true)
+    setDownloadError(false)
+    try {
+      const response = await fetch(pdfUrl, { signal: AbortSignal.timeout(60_000) })
+      if (!response.ok) throw new Error("PDF unavailable")
+      const blob = await response.blob()
+      if (!blob.size || !((await blob.slice(0, 5).text()) === "%PDF-")) throw new Error("Invalid PDF")
+      const url = URL.createObjectURL(blob)
+      const link = window.document.createElement("a")
+      link.href = url
+      link.download = document.fileName
+      window.document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch {
+      setDownloadError(true)
+    } finally {
+      setDownloading(false)
+    }
+  }
   const dateFormatter = useMemo(
     () => new Intl.DateTimeFormat(language, { day: "2-digit", month: "short", year: "numeric" }),
     [language],
@@ -505,6 +499,21 @@ function DocumentPreviewPanel({
           <X className="size-3.5" strokeWidth={1.4} />
         </Button>
       </div>
+
+      {document.preview.kind === "pdf" && (
+        <div className="flex flex-wrap items-center gap-2 px-3 pb-3">
+          {pdfUrl ? (
+            <Button asChild size="sm" variant="outline">
+              <a href={pdfUrl} target="_blank" rel="noopener noreferrer" aria-label={t("Open PDF in a new tab")}>{t("Open PDF")}</a>
+            </Button>
+          ) : <Button size="sm" variant="outline" disabled>{t("Open PDF")}</Button>}
+          <Button size="sm" variant="outline" disabled={!pdfUrl || downloading} onClick={downloadPdf} aria-busy={downloading}>
+            {t(downloading ? "Downloading…" : "Download PDF")}
+          </Button>
+          {!pdfUrl && <p className="w-full text-[12px] text-[var(--md-subtle)]">{t("PDF unavailable. Reload the record to try again.")}</p>}
+          {downloadError && <p role="alert" className="w-full text-[12px] text-[var(--md-red)]">{t("The PDF could not be downloaded. Try again, or reload the record to refresh access.")}</p>}
+        </div>
+      )}
 
       <div className="grid min-h-[360px] place-items-center overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-report-preview-bg)] p-4 shadow-[var(--md-shadow-line)] lg:min-h-[460px]">
         <DocumentPreviewCanvas document={document} />
@@ -597,7 +606,7 @@ export function DocumentWorkspace({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h2 id={titleId} className="text-[16px] font-medium text-[var(--md-ink)]">{t(title)}</h2>
-          <p className="mt-1 max-w-[660px] text-[12px] leading-5 text-[var(--md-text)]">{t(description)}</p>
+          {description ? <p className="mt-1 max-w-[660px] text-[12px] leading-5 text-[var(--md-text)]">{t(description)}</p> : null}
         </div>
 
         <div
@@ -650,7 +659,7 @@ export function DocumentWorkspace({
               aria-pressed={isActive}
               onClick={() => updateSource(filter)}
               className={cn(
-                "inline-flex h-7 items-center gap-1.5 rounded-[var(--md-radius-md)] px-2.5 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,color,box-shadow] duration-200 hover:bg-[var(--md-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+                "inline-flex h-7 items-center gap-1.5 rounded-[var(--md-radius-md)] px-2.5 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,color,box-shadow] duration-200 hover:bg-[var(--md-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
                 isActive ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]" : "bg-[var(--md-surface)]",
               )}
             >
@@ -687,7 +696,7 @@ export function DocumentWorkspace({
           )}
         </Surface>
 
-        {selectedDocument ? <DocumentPreviewPanel document={selectedDocument} onClose={() => updateSelection(null)} /> : null}
+        {selectedDocument ? <DocumentPreviewPanel key={`${selectedDocument.id}:${selectedDocument.preview.url ?? ""}`} document={selectedDocument} onClose={() => updateSelection(null)} /> : null}
       </div>
     </section>
   )

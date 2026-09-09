@@ -10,7 +10,7 @@ enabled = true
 port = 54321
 # Schemas to expose in your API. Tables, views and stored procedures in this schema will get API
 # endpoints. `public` and `graphql_public` schemas are included by default.
-schemas = ["public", "graphql_public"]
+schemas = ["public", "graphql_public", "document_api"]
 # Extra schemas to add to the search_path of every request.
 extra_search_path = ["public", "extensions"]
 # The maximum number of rows returns from a view, table, or stored procedure. Limits payload size
@@ -173,16 +173,16 @@ enable_refresh_token_rotation = true
 # Requires enable_refresh_token_rotation = true.
 refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
-enable_signup = true
+enable_signup = false
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
-enable_manual_linking = false
+enable_manual_linking = true
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
-minimum_password_length = 6
+minimum_password_length = 8
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
-password_requirements = ""
+password_requirements = "lower_upper_letters_digits"
 
 # Configure passkey sign-ins.
 # [auth.passkey]
@@ -218,14 +218,14 @@ web3 = 30
 
 [auth.email]
 # Allow/disallow new user signups via email to your project.
-enable_signup = true
+enable_signup = false
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
 enable_confirmations = false
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
-secure_password_change = false
+secure_password_change = true
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
 max_frequency = "1s"
 # Number of characters used in the email OTP.
@@ -382,6 +382,172 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
+[functions.create-support-ticket]
+verify_jwt = true
+
+[functions.support-ticket-callback]
+verify_jwt = false
+
+[functions.document-builder-workspace]
+verify_jwt = true
+
+[functions.render-document]
+verify_jwt = true
+
+[functions.document-studio]
+verify_jwt = true
+
+[functions.document-download]
+verify_jwt = true
+
+[functions.send-auth-email]
+verify_jwt = false
+
+[functions.accept-invitation]
+verify_jwt = false
+
+[functions.send-notification-email]
+verify_jwt = false
+
+[functions.agent-dexter]
+verify_jwt = true
+
+[functions.dexter-email-refine]
+verify_jwt = true
+
+[functions.dexter-email-compose]
+verify_jwt = true
+
+[functions.email-oauth]
+verify_jwt = false
+
+[functions.email-webhook]
+verify_jwt = false
+
+[functions.inbox-api]
+verify_jwt = true
+
+[functions.email-track]
+verify_jwt = false
+
+[functions.warehouse]
+verify_jwt = true
+
+[functions.calendar-api]
+verify_jwt = true
+
+# Public booking, verification, and participant-bound management tokens are
+# authenticated inside the function rather than by a workspace session.
+[functions.calendar-public]
+verify_jwt = false
+
+# OAuth callbacks and provider webhooks do not carry a Multideck user JWT.
+[functions.calendar-oauth]
+verify_jwt = false
+
+# Invoked with a tenant-local worker credential or the service-role JWT.
+[functions.calendar-worker]
+verify_jwt = false
+
+[functions.calendar-webhook]
+verify_jwt = false
+
+[functions.account]
+verify_jwt = true
+
+[functions.contact-card-profile]
+verify_jwt = false
+
+[functions.tenant-branding]
+verify_jwt = true
+
+[functions.team]
+verify_jwt = true
+
+[functions.developer-broadcasts]
+verify_jwt = true
+
+[functions.customers]
+verify_jwt = true
+
+[functions.finance]
+verify_jwt = true
+
+[functions.erpnext-connection-test]
+verify_jwt = true
+
+[functions.finance-subledger]
+verify_jwt = true
+
+[functions.finance-accruals]
+verify_jwt = true
+
+[functions.erpnext-webhook]
+verify_jwt = false
+
+[functions.rates-api]
+verify_jwt = true
+
+[functions.quotes-workflow]
+verify_jwt = true
+
+[functions.bookings-workflow]
+verify_jwt = true
+
+[functions.quote-response]
+verify_jwt = false
+
+# Invoked by tenant-local pg_cron. The function validates a separate random
+# Vault-backed secret before claiming any queued quote work.
+[functions.quote-intelligence-worker]
+verify_jwt = false
+
+[functions.admin-audit]
+verify_jwt = true
+
+# OAuth callbacks and provider notifications do not carry a Multideck JWT.
+# Both functions perform their own route-specific authentication and verification.
+# Invoked by tenant-local pg_cron. The function validates a separate random
+# Vault-backed secret before it reads any watch or mailbox data.
+[functions.email-watch-worker]
+verify_jwt = false
+
+# User calls are authorised inside the function. Tenant-local pg_cron uses a
+# separate Vault-backed worker secret for the monthly refresh check.
+[functions.dexter-writing-profile]
+verify_jwt = false
+
+[functions.customer-documents]
+verify_jwt = true
+
+[functions.customs-invoice-ocr]
+verify_jwt = true
+
+[functions.transcription]
+verify_jwt = true
+
+[functions.customs-invoice-preview-cleanup]
+verify_jwt = false
+
+[functions.icustoms-api]
+verify_jwt = true
+
+[functions.icustoms-webhook]
+verify_jwt = false
+
+# Provider callbacks and the tenant-local 3CX sync worker use route-specific
+# signatures/secrets. Browser routes still validate the Supabase user JWT.
+[functions.phone-calls]
+verify_jwt = false
+
+[functions.screening]
+verify_jwt = true
+
+# Invoked by tenant-local pg_cron. The function validates a separate random
+# Vault-backed secret before it downloads the government list.
+[functions.screening-list-worker]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
@@ -412,8 +578,17 @@ enabled = true
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+[functions.dexter-retention-cleanup]
+verify_jwt = false
 
-# Verifies dedicated Live signatures and App-owned customer grants in the handler.
+# Validates the main bearer and active company profile in the handler.
+[functions.training-session]
+verify_jwt = false
+
+[functions.report-export]
+verify_jwt = true
+
+# Verifies dedicated Live HMAC signatures and App-owned customer grants in the handler.
 [functions.live-company-gateway]
 verify_jwt = false
 

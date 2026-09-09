@@ -1,6 +1,6 @@
 import { useId } from "react"
 import { cn } from "@/lib/utils"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 import { StatusPill, toneToVar } from "./status-pill"
 import { Surface } from "./surface"
 

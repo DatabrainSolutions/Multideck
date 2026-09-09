@@ -1,0 +1,89 @@
+{
+  "checkedAt": "2026-09-07T09:00:07Z",
+  "sourceCommit": "04c9fa2",
+  "project": "aqtwypsuijxlnvtxpuxe",
+  "schemaSha256": "7086dee27a1ae010c9ca6d15fbabb97dd113292a4acea60b768a0637676a26f0",
+  "preflight": {
+    "fingerprints": [
+      {
+        "rows": 77,
+        "relation": "Job_Header",
+        "fingerprint": "1dd399889709f7f0b7d508b779930bdf"
+      },
+      {
+        "rows": 45,
+        "relation": "Job_Routing",
+        "fingerprint": "e51edb2cfbea046a0174ea07c05af212"
+      },
+      {
+        "rows": 38,
+        "relation": "CusQuote_Versions",
+        "fingerprint": "73ee68f0a8424f20165f7c54e6187e10"
+      }
+    ],
+    "milestoneRows": 0,
+    "registryConflicts": [
+      {
+        "registry": "domains",
+        "conflicts": 0
+      },
+      {
+        "registry": "actions",
+        "conflicts": 0
+      },
+      {
+        "registry": "watches",
+        "conflicts": 0
+      }
+    ],
+    "migrationIdentities": [
+      {
+        "name": "booking_route_cutoff_foundation",
+        "version": "20260906143817"
+      },
+      {
+        "name": "dexter_approval_request_role_compatibility",
+        "version": "20260906171016"
+      },
+      {
+        "name": "booking_save_complete_workspace_response",
+        "version": "20260906174532"
+      },
+      {
+        "name": "customer_account_finance_register",
+        "version": "20260907080245"
+      }
+    ],
+    "separateFinanceFunction": {
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+      "arguments": "p_company_id uuid, p_account_ids uuid[], p_include_accounting_sync boolean",
+      "definition_md5": "90ec980217e0828c7903917b6278a732"
+    }
+  },
+  "advisors": {
+    "count": 1555,
+    "INFO": 1314,
+    "WARN": 241,
+    "existingFindingsCertifiedResolved": false
+  },
+  "deployment": {
+    "id": "dpl_wXG81n8svqfnbVYAgDB7goEMq37r",
+    "commit": "314ffc24205ec0b90158615be6208ca60090b71e",
+    "state": "READY",
+    "alias": "dev.multideck.app"
+  },
+  "edgeSourceComparison": {
+    "downloadedFiles": 22,
+    "allMatchPreviousRelease": true,
+    "unexpectedDrift": [],
+    "bookingVersion": 40,
+    "dexterVersion": 160
+  },
+  "acceptedOriginal": {
+    "id": "44e4b47b-b9b3-42dd-ad76-30df16a4db66",
+    "fullRowMd5": "5568ecb6e055ac0bd7dead5561a79436"
+  },
+  "rehearsal": "populated_rehearsal_passed",
+  "hostedMilestoneLifecycleVerified": false,
+  "released": false
+}

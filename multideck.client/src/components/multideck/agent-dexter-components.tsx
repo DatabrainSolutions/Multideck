@@ -1,30 +1,100 @@
-import type { LucideIcon } from "lucide-react"
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
+import { SentIcon as SendHorizontalIcon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
+import type { LucideIcon } from "@/components/icons/hugeicons"
 import {
+  AiBrain,
   ArrowRight,
-  ArrowUp,
+  ArrowLeft,
   BarChart3,
   Boxes,
   Check,
+  ChevronDown,
+  CirclePause,
+  CirclePlay,
+  ExternalLink,
   FileText,
+  Hand,
+  Handshake,
+  LoaderCircle,
   MessageCircle,
   PackageCheck,
   Plus,
   Search,
   ShieldCheck,
-  Sparkles,
+  Trash2,
+  TriangleAlert,
+  Upload,
   Users,
   X,
   Zap,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
+import { createPortal } from "react-dom"
 import { Button } from "@/components/ui/button"
-import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
+import { Kbd, KbdGroup } from "@/components/ui/kbd"
+import {
+  Context,
+  ContextContent,
+  ContextContentHeader,
+  ContextTrigger,
+} from "@/components/ai-elements/context"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { DexterActionPill, SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
+import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
+import { ImageLightbox, type ImageLightboxControls } from "@/components/multideck/image-lightbox"
+import { ModelProviderGlyph, ModelStrengthMeter } from "@/components/multideck/model-glyphs"
+import { ProgressiveBlur } from "@/components/multideck/progressive-blur"
 import { cn } from "@/lib/utils"
-import type { StatusTone } from "@/data/multideck-data"
+import { findDexterMentionMatches } from "@/lib/dexter-mention-matcher"
+import type { StatusTone } from "@/data/operational-data"
+import { dexterModels, type DexterModel, type DexterModelId } from "@/data/dexter-models"
+import {
+  defaultDexterMentionItems,
+  type DexterMentionItem,
+  type DexterMentionType,
+} from "@/data/dexter-mentions"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { Surface } from "@/components/multideck/surface"
 import { useLanguage } from "@/i18n/language-provider"
+import type { DexterEmailAttachment, DexterPendingAction, DexterWatchEvent } from "@/lib/dexter-api"
+import { mdEaseOut, mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
 
 export type DexterSpecialistId = "auto" | "customs" | "customer" | "sales" | "ops" | "analytics"
+export type DexterAccessMode = "approve" | "full"
+export type DexterSlashCommand = {
+  id: string
+  command: string
+  label: string
+  description: string
+  group: "mode"
+  icon: LucideIcon
+  selected?: boolean
+  disabled?: boolean
+}
+
+function useSendShortcutModifier() {
+  const [modifier, setModifier] = useState<"⌘" | "Ctrl">("Ctrl")
+
+  useEffect(() => {
+    const navigatorWithPlatform = navigator as Navigator & {
+      userAgentData?: { platform?: string }
+    }
+    const platform = navigatorWithPlatform.userAgentData?.platform
+      ?? navigator.platform
+      ?? navigator.userAgent
+    setModifier(/Mac|iPhone|iPad|iPod/i.test(platform) ? "⌘" : "Ctrl")
+  }, [])
+
+  return modifier
+}
 
 export type DexterSpecialist = {
   id: DexterSpecialistId
@@ -36,11 +106,13 @@ export type DexterSpecialist = {
 
 export type DexterAttachment = {
   id: string
-  type: "customer" | "booking" | "document"
+  type: "customer" | "booking" | "document" | "uploaded_document" | "email_attachment" | "email_update"
   title: string
   meta: string
   tone: StatusTone
   icon: LucideIcon
+  /** Present only for local image uploads that can open without another request. */
+  previewUrl?: string
 }
 
 export type DexterHistoryItem = {
@@ -51,20 +123,35 @@ export type DexterHistoryItem = {
 }
 
 export type DexterMonitor = {
+  id?: string
   title: string
+  /** The rule in plain words. Reference only – the card shows `detail` instead. */
   body: string
-  meta: string
+  /** The humanised change, or the health message when the source is struggling. */
   detail: string
-  tone: StatusTone
+  status?: "active" | "paused"
+  capability?: string
+  targetLabel?: string | null
+  ruleLabel?: string
+  triggerCount?: number
+  lastTriggeredAt?: string | null
+  healthStatus?: "starting" | "healthy" | "degraded" | "error"
+  lastSourceCheckAt?: string | null
+  lastSuccessfulCheckAt?: string | null
+  healthMessage?: string | null
+  latestEvent?: DexterWatchEvent | null
+  action?: DexterPendingAction | null
 }
 
+export type { DexterMentionItem, DexterMentionType } from "@/data/dexter-mentions"
+
 const specialistTone: Record<DexterSpecialistId, string> = {
-  auto: "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]",
-  customs: "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]",
+  auto: "bg-[var(--md-accent-a10)] text-[var(--md-accent)]",
+  customs: "bg-[var(--md-accent-a10)] text-[var(--md-accent)]",
   customer: "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]",
   sales: "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]",
   ops: "bg-[rgba(90,103,100,0.1)] text-[var(--md-text)]",
-  analytics: "bg-[rgba(46,142,96,0.1)] text-[var(--md-green)]",
+  analytics: "bg-[var(--md-accent-a10)] text-[var(--md-green)]",
 }
 
 function AttachmentIcon({ attachment }: { attachment: DexterAttachment }) {
@@ -74,6 +161,57 @@ function AttachmentIcon({ attachment }: { attachment: DexterAttachment }) {
     <span className="grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
       <Icon className="size-3.5" strokeWidth={1.2} />
     </span>
+  )
+}
+
+function DexterImageAttachmentPreview({
+  attachment,
+  lightbox,
+  onRemove,
+}: {
+  attachment: DexterAttachment & { previewUrl: string }
+  lightbox: ImageLightboxControls
+  onRemove?: (id: string) => void
+}) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <motion.span
+      layout={!shouldReduceMotion}
+      initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.94 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.94 }}
+      transition={reduceMotion(Boolean(shouldReduceMotion), { type: "spring", duration: 0.28, bounce: 0 })}
+      className="grid w-16 gap-1.5"
+    >
+      <motion.button
+        ref={(node) => lightbox.registerTrigger(attachment.id, node)}
+        type="button"
+        layoutId={lightbox.layoutIdFor(attachment.id)}
+        aria-label={`${t("Open image preview")}: ${attachment.title}`}
+        title={t("Open image preview")}
+        whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+        transition={shouldReduceMotion ? { duration: 0 } : { layout: { type: "spring", duration: 0.28, bounce: 0 }, scale: { duration: 0.12 } }}
+        onClick={() => lightbox.open(attachment.id)}
+        className="size-16 overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)] outline-none ring-offset-2 ring-offset-[var(--md-composer-panel-bg)] hover:ring-1 hover:ring-[var(--md-accent-a20)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]"
+      >
+        <img src={attachment.previewUrl} alt="" className="size-full rounded-[var(--md-radius-lg)] object-cover" />
+      </motion.button>
+      {onRemove ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-lg"
+          aria-label={`${t("Remove")} ${attachment.title}`}
+          title={t("Remove attachment")}
+          onClick={() => onRemove(attachment.id)}
+          className="mx-auto rounded-[var(--md-radius-md)] text-[var(--md-red)] hover:bg-[var(--md-status-red-bg)] hover:text-[var(--md-status-red-ink)]"
+        >
+          <Trash2 className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+        </Button>
+      ) : null}
+    </motion.span>
   )
 }
 
@@ -89,7 +227,7 @@ export function DexterSpecialistChip({
   return (
     <button
       type="button"
-      className="inline-flex h-8 items-center gap-2 rounded-full bg-[rgba(14,125,116,0.08)] px-3 text-[13px] font-medium text-[var(--md-accent)] shadow-[0_0_0_1px_rgba(14,125,116,0.18)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-[rgba(14,125,116,0.12)]"
+      className="inline-flex h-8 items-center gap-2 rounded-full bg-[var(--md-accent-a08)] px-3 text-[13px] font-medium text-[var(--md-accent)] shadow-[0_0_0_1px_var(--md-accent-a18)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-[var(--md-accent-a12)]"
       onClick={onClick}
     >
       <Icon className="size-3.5" strokeWidth={1.2} />
@@ -98,112 +236,1287 @@ export function DexterSpecialistChip({
   )
 }
 
-export function DexterPromptComposer({
-  value,
-  selectedSpecialist,
-  attachments = [],
-  placeholder = "Ask anything - \"chase the late B/L on MD-22455\", \"quote 2 reefers to Ningbo\"...",
-  onChange,
-  onOpenAttachments,
-  onOpenSpecialists,
-  onRemoveAttachment,
-  onSend,
-  compact = false,
+/**
+ * A label that swaps in place. One spring on the whole word – a per-character
+ * stagger reads as a machine dealing out letters, which is the wrong register
+ * for confirming a choice the operator just made.
+ */
+function SwapLabel({ value, className }: { value: string; className?: string }) {
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <span className={cn("relative inline-grid min-w-0 text-start", className)}>
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.span
+          key={value}
+          className="min-w-0 truncate"
+          initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.84, filter: "blur(3px)" }}
+          animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+          exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.9, filter: "blur(3px)" }}
+          transition={
+            shouldReduceMotion
+              ? { duration: 0 }
+              : { type: "spring", stiffness: 540, damping: 26, mass: 0.58 }
+          }
+        >
+          {value}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  )
+}
+
+/** Pill widths follow their label on a spring, so a longer name never snaps. */
+function PillFrame({ children }: { children: ReactNode }) {
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <motion.div
+      className="inline-flex min-w-0 shrink-0"
+      layout={shouldReduceMotion ? false : true}
+      transition={{ layout: reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring) }}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+/**
+ * The role picker, sitting on the composer's shader header. A role changes
+ * which lane every following reply is answered in, so the trigger states the
+ * current one plainly and the menu explains what each lane covers.
+ */
+export function DexterRoleMenu({
+  specialists = defaultDexterSpecialists,
+  selectedId,
+  onSelect,
   className,
 }: {
-  value: string
-  selectedSpecialist: DexterSpecialist
-  attachments?: DexterAttachment[]
-  placeholder?: string
-  onChange: (value: string) => void
-  onOpenAttachments: () => void
-  onOpenSpecialists: () => void
-  onRemoveAttachment?: (id: string) => void
-  onSend: () => void
-  compact?: boolean
+  specialists?: DexterSpecialist[]
+  selectedId: DexterSpecialistId
+  onSelect: (id: DexterSpecialistId) => void
+  className?: string
+}) {
+  const { direction, t } = useLanguage()
+  const shouldReduceMotion = Boolean(useReducedMotion())
+  const [isOpen, setIsOpen] = useState(false)
+  const pickerId = useId()
+  const pickerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const focusRestoreTimeoutRef = useRef<number | null>(null)
+  const selected = specialists.find((specialist) => specialist.id === selectedId) ?? specialists[0]
+  const availableSpecialists = specialists.filter((specialist) => specialist.id !== selectedId)
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!pickerRef.current?.contains(event.target as Node)) setIsOpen(false)
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    return () => document.removeEventListener("pointerdown", handlePointerDown)
+  }, [isOpen])
+
+  useEffect(() => () => {
+    if (focusRestoreTimeoutRef.current !== null) {
+      window.clearTimeout(focusRestoreTimeoutRef.current)
+    }
+  }, [])
+
+  function closePicker({ restoreFocus = false } = {}) {
+    setIsOpen(false)
+    if (restoreFocus) {
+      if (focusRestoreTimeoutRef.current !== null) {
+        window.clearTimeout(focusRestoreTimeoutRef.current)
+      }
+      focusRestoreTimeoutRef.current = window.setTimeout(() => {
+        triggerRef.current?.focus()
+        focusRestoreTimeoutRef.current = null
+      }, 0)
+    }
+  }
+
+  function selectSpecialist(id: DexterSpecialistId) {
+    onSelect(id)
+    closePicker({ restoreFocus: true })
+  }
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={t("Change role")}
+            className={cn(
+              "md-composer-lead md-dexter-role-menu--compact group/role h-8 max-w-full items-center gap-1.5 rounded-full ps-2.5 pe-2 text-[13px] font-medium text-[var(--md-ink)]",
+              className,
+            )}
+          >
+            <SwapLabel value={t(selected.name)} className="max-w-[190px] font-medium text-white dark:text-[var(--md-ink)]" />
+            <ChevronDown className="md-composer-chip__caret size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" sideOffset={8} className="w-[min(280px,calc(100vw-32px))] p-1.5">
+          <DropdownMenuLabel className="px-2 pb-1.5 pt-1 text-[11px] font-normal text-[var(--md-subtle)]">
+            {t("Choose a role")}
+          </DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={selectedId} onValueChange={(next) => onSelect(next as DexterSpecialistId)}>
+            {specialists.map((specialist) => (
+              <DropdownMenuRadioItem
+                key={specialist.id}
+                value={specialist.id}
+                className="rounded-[var(--md-radius-md)] px-2.5 py-2 text-[13px]"
+              >
+                <span className="truncate">{t(specialist.name)}</span>
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <div
+        ref={pickerRef}
+        className={cn("md-dexter-role-menu--wide min-w-0 flex-1 items-center gap-1.5", className)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && isOpen) {
+            event.preventDefault()
+            closePicker({ restoreFocus: true })
+          }
+        }}
+      >
+        <PillFrame>
+          <button
+            ref={triggerRef}
+            type="button"
+            aria-label={t("Change role")}
+            aria-expanded={isOpen}
+            aria-controls={pickerId}
+            data-state={isOpen ? "open" : "closed"}
+            className="md-composer-lead group/role inline-flex h-8 max-w-full items-center gap-1.5 rounded-full ps-2.5 pe-2 text-[13px] font-medium text-[var(--md-ink)]"
+            onClick={() => setIsOpen((current) => !current)}
+          >
+            <SwapLabel value={t(selected.name)} className="max-w-[190px] font-medium text-white dark:text-[var(--md-ink)]" />
+            <ChevronDown className="md-composer-chip__caret size-3.5 shrink-0 text-[var(--md-subtle)] opacity-0 transition-opacity duration-200 group-hover/role:opacity-100 group-focus-visible/role:opacity-100" strokeWidth={1.4} />
+          </button>
+        </PillFrame>
+
+        <div
+          id={pickerId}
+          role="listbox"
+          aria-label={t("Choose a role")}
+          aria-hidden={!isOpen}
+          className="md-dexter-role-strip min-w-0 flex-1 overflow-x-auto py-1"
+        >
+          <AnimatePresence initial={false}>
+            {isOpen ? (
+              <motion.div
+                key="dexter-inline-roles"
+                className="flex min-w-max items-center gap-1.5"
+                initial={false}
+              >
+                {availableSpecialists.map((specialist, index) => {
+                  const Icon = specialist.icon
+                  const visualIndex = direction === "rtl"
+                    ? availableSpecialists.length - 1 - index
+                    : index
+
+                  return (
+                    <motion.button
+                      key={specialist.id}
+                      type="button"
+                      role="option"
+                      aria-selected={false}
+                      title={t(specialist.description)}
+                      custom={visualIndex}
+                      variants={{
+                        hidden: (itemIndex: number) => ({
+                          opacity: 0,
+                          y: 6,
+                          scale: 0.97,
+                          filter: "blur(5px)",
+                          transition: {
+                            duration: 0.14,
+                            delay: (availableSpecialists.length - 1 - itemIndex) * 0.022,
+                            ease: mdEaseOut,
+                          },
+                        }),
+                        visible: (itemIndex: number) => ({
+                          opacity: 1,
+                          y: 0,
+                          scale: 1,
+                          filter: "blur(0px)",
+                          transition: {
+                            duration: 0.22,
+                            delay: itemIndex * 0.038,
+                            ease: mdEaseOut,
+                          },
+                        }),
+                      }}
+                      initial={shouldReduceMotion ? false : "hidden"}
+                      animate="visible"
+                      exit={shouldReduceMotion ? undefined : "hidden"}
+                      transition={shouldReduceMotion ? { duration: 0 } : undefined}
+                      className="md-dexter-role-option inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[12.5px] font-medium text-white outline-none dark:text-[var(--md-ink)]"
+                      onClick={() => selectSpecialist(specialist.id)}
+                    >
+                      <Icon className="size-3.5 shrink-0" strokeWidth={1.3} aria-hidden="true" />
+                      <span>{t(specialist.name)}</span>
+                    </motion.button>
+                  )
+                })}
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+      </div>
+    </>
+  )
+}
+
+/**
+ * The engine picker. Vendor model names stay behind a job description – Fast,
+ * Smart, Worker – with the provider mark and a capability meter carrying the
+ * detail, so the choice is about the work rather than a version string.
+ */
+export function DexterModelMenu({
+  models = dexterModels,
+  selectedId,
+  onSelect,
+  className,
+}: {
+  models?: DexterModel[]
+  selectedId: DexterModelId
+  onSelect: (id: DexterModelId) => void
   className?: string
 }) {
   const { t } = useLanguage()
+  const selected = models.find((model) => model.id === selectedId) ?? models[0]
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={t("Change model")}
+          className={cn(
+            "md-composer-chip group/model inline-flex h-9 max-w-full items-center gap-2 rounded-full px-2.5 text-[13px] font-medium text-[var(--md-ink)]",
+            className,
+          )}
+        >
+          <ModelProviderGlyph
+            provider={selected.provider}
+            className="size-[15px] text-[var(--md-ink)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/model:scale-[1.08] motion-reduce:transition-none motion-reduce:group-hover/model:scale-100"
+          />
+          <SwapLabel value={t(selected.name)} className="max-w-[120px]" />
+          <SwapLabel value={t(selected.tag)} className="hidden max-w-[86px] font-normal text-[var(--md-subtle)] sm:inline-grid" />
+          {/* The same meter as the menu rows, so the reading the operator chose
+              stays on screen after the menu closes and the two agree. */}
+          <ModelStrengthMeter strength={selected.strength} size="sm" className="hidden md:inline-flex" />
+          <ChevronDown className="md-composer-chip__caret size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" sideOffset={10} className="w-[318px] p-1.5">
+        <DropdownMenuLabel className="pb-2 pt-1 text-[12px] font-medium text-[var(--md-ink)]">{t("Models")}</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={selectedId} onValueChange={(next) => onSelect(next as DexterModelId)}>
+          {models.map((model) => (
+            <DropdownMenuRadioItem
+              key={model.id}
+              value={model.id}
+              className="gap-3 rounded-[var(--md-radius-lg)] py-2 ps-2"
+            >
+              <ModelProviderGlyph provider={model.provider} className="mt-0.5 size-[17px] text-[var(--md-ink)]" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{t(model.name)}</span>
+                <span className="mt-0.5 block text-[11.5px] leading-4 text-[var(--md-text)]">{t(model.description)}</span>
+              </span>
+              <ModelStrengthMeter strength={model.strength} className="mt-0.5 shrink-0" />
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function DexterAccessModeToggle({
+  mode,
+  pendingMode = null,
+  onChange,
+  disabled = false,
+  className,
+}: {
+  mode: DexterAccessMode
+  pendingMode?: DexterAccessMode | null
+  onChange: (mode: DexterAccessMode) => void
+  disabled?: boolean
+  className?: string
+}) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const displayMode = pendingMode ?? mode
+  const isFullAccess = displayMode === "full"
+  const approveLabel = t("Approve")
+  const fullAccessLabel = t("Full access")
+  const label = isFullAccess ? fullAccessLabel : approveLabel
+  const description = isFullAccess
+    ? t("Full access for this conversation. Dexter can run explicitly requested allowlisted changes without asking again")
+    : t("Dexter asks before every workspace change")
+  const transition = shouldReduceMotion
+    ? { duration: 0 }
+    : { duration: 0.18, ease: [0.22, 1, 0.36, 1] as const }
+
+  return (
+    <motion.button
+      type="button"
+      role="switch"
+      aria-checked={isFullAccess}
+      aria-busy={Boolean(pendingMode)}
+      aria-label={`${label}. ${description}`}
+      title={description}
+      disabled={disabled}
+      layout="size"
+      transition={transition}
+      className={cn(
+        "md-composer-chip inline-flex h-9 w-fit shrink-0 items-center gap-2 rounded-full px-2.5 text-[12.5px] font-medium transition-[background-color,color,box-shadow] duration-200 disabled:cursor-progress",
+        isFullAccess
+          ? "bg-[rgba(209,78,78,0.11)] text-[var(--md-red)] shadow-[inset_0_0_0_1px_rgba(209,78,78,0.22)]"
+          : "text-[var(--md-ink)]",
+        className,
+      )}
+      onClick={() => onChange(isFullAccess ? "approve" : "full")}
+    >
+      <span className="relative grid size-[18px] shrink-0 place-items-center overflow-visible" aria-hidden="true">
+        <motion.span
+          className="absolute inset-0 grid place-items-center"
+          initial={false}
+          animate={isFullAccess
+            ? { opacity: 0, scale: 0.82, rotate: -14 }
+            : { opacity: 1, scale: 1, rotate: 0 }}
+          transition={transition}
+        >
+          <Hand className="size-4" strokeWidth={1.35} />
+        </motion.span>
+        <motion.span
+          className="absolute inset-0 grid place-items-center"
+          initial={false}
+          animate={isFullAccess
+            ? { opacity: 1, scale: 1, rotate: 0 }
+            : { opacity: 0, scale: 0.82, rotate: 14 }}
+          transition={transition}
+        >
+          <TriangleAlert className="size-4" strokeWidth={1.45} />
+        </motion.span>
+      </span>
+      <span className="shrink-0 whitespace-nowrap leading-5" aria-hidden="true">
+        {label}
+      </span>
+    </motion.button>
+  )
+}
+
+const mentionTypeLabels: Record<DexterMentionType, string> = {
+  email: "Email",
+  booking: "Booking",
+  customer: "Customer",
+  lead: "Lead",
+  deal: "Deal",
+  declaration: "Declaration",
+  page: "Page",
+  quote: "Quote",
+  document: "Document",
+  user: "Workspace user",
+  department: "Department",
+}
+
+export function DexterMentionText({
+  text,
+  items = defaultDexterMentionItems,
+}: {
+  text: string
+  items?: DexterMentionItem[]
+}) {
+  const { t } = useLanguage()
+  const parts = useMemo(() => {
+    if (!text.includes("@")) return [text]
+
+    const byTitle = new Map(items.map((item) => [item.title.toLocaleLowerCase(), item]))
+    const titles = [...byTitle.keys()]
+    if (titles.length === 0) return [text]
+
+    const nextParts: Array<string | DexterMentionItem> = []
+    let cursor = 0
+
+    for (const match of findDexterMentionMatches(text, titles)) {
+      const item = byTitle.get(match.title.toLocaleLowerCase())
+      if (!item) continue
+      if (match.start > cursor) nextParts.push(text.slice(cursor, match.start))
+      nextParts.push(item)
+      cursor = match.end
+    }
+
+    if (cursor < text.length) nextParts.push(text.slice(cursor))
+    return nextParts.length > 0 ? nextParts : [text]
+  }, [items, text])
+
+  return parts.map((part, index) => typeof part === "string"
+    ? part
+    : (
+      <span
+        key={`${part.type}:${part.id}:${index}`}
+        className="md-dexter-mention md-dexter-mention--static"
+        aria-label={`${t(mentionTypeLabels[part.type])}: ${part.title}`}
+      >
+        {part.logo ? <img src={part.logo} alt="" aria-hidden="true" /> : null}
+        {part.title}
+      </span>
+    ))
+}
+
+function readMentionEditorValue(node: HTMLElement) {
+  const snapshot = node.cloneNode(true) as HTMLElement
+  snapshot.querySelectorAll<HTMLElement>("[data-md-dexter-mention]").forEach((mention) => {
+    const title = mention.dataset.mentionTitle ?? mention.innerText
+    mention.replaceWith(document.createTextNode(`@${title}`))
+  })
+  return snapshot.innerText.replaceAll("\u00a0", " ").replace(/\n$/, "")
+}
+
+function insertPlainTextAtSelection(text: string) {
+  const selection = window.getSelection()
+  if (!selection?.rangeCount) return
+
+  const range = selection.getRangeAt(0)
+  range.deleteContents()
+  const textNode = document.createTextNode(text)
+  range.insertNode(textNode)
+  range.setStartAfter(textNode)
+  range.collapse(true)
+  selection.removeAllRanges()
+  selection.addRange(range)
+}
+
+export function DexterMentionInput({
+  value,
+  items = defaultDexterMentionItems,
+  commands = [],
+  selectedMentions,
+  placeholder,
+  minHeight,
+  maxHeight,
+  className,
+  canSend,
+  onChange,
+  onMentionsChange,
+  onUnavailableMention,
+  onCommand,
+  onSend,
+  animateProgrammaticMentions = false,
+  ariaLabel = "Message Dexter",
+  sendShortcut = "enter",
+}: {
+  value: string
+  items?: DexterMentionItem[]
+  commands?: DexterSlashCommand[]
+  selectedMentions: DexterMentionItem[]
+  placeholder: string
+  minHeight: number
+  maxHeight: number
+  className?: string
+  canSend: boolean
+  onChange: (value: string) => void
+  onMentionsChange: (mentions: DexterMentionItem[]) => void
+  onUnavailableMention?: (mention: DexterMentionItem) => void
+  onCommand?: (command: DexterSlashCommand) => void
+  onSend: (value: string) => void
+  /** Preserve real inline mention tokens when a controlled demo or restored draft changes the value. */
+  animateProgrammaticMentions?: boolean
+  ariaLabel?: string
+  sendShortcut?: "enter" | "mod-enter"
+}) {
+  const { direction, t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const editorRef = useRef<HTMLDivElement>(null)
+  const triggerRangeRef = useRef<Range | null>(null)
+  const lastEmittedValueRef = useRef("")
+  const listId = useId().replaceAll(":", "")
+  const [query, setQuery] = useState<string | null>(null)
+  const [menuKind, setMenuKind] = useState<"mention" | "command">("mention")
+  const [activeIndex, setActiveIndex] = useState(0)
+  const [announcement, setAnnouncement] = useState("")
+  const [menuPosition, setMenuPosition] = useState<{
+    left: number
+    width: number
+    top?: number
+    bottom?: number
+    placement: "top" | "bottom"
+  } | null>(null)
+
+  const results = useMemo(() => {
+    const normalizedQuery = query?.trim().toLocaleLowerCase() ?? ""
+    if (!normalizedQuery) {
+      const typeOrder: DexterMentionType[] = ["user", "department", "email", "booking", "customer", "lead", "deal", "declaration", "page", "quote", "document"]
+      const firstFromEachType = typeOrder.flatMap((type) => items.filter((item) => item.type === type).slice(0, 1))
+      const additionalItems = typeOrder.flatMap((type) => items.filter((item) => item.type === type).slice(1, 2))
+      return [...firstFromEachType, ...additionalItems].slice(0, 8)
+    }
+
+    return items
+      .map((item) => {
+        const title = item.title.toLocaleLowerCase()
+        const haystack = `${title} ${item.meta} ${item.keywords ?? ""} ${mentionTypeLabels[item.type]}`.toLocaleLowerCase()
+        const score = title === normalizedQuery
+          ? 0
+          : title.startsWith(normalizedQuery)
+            ? 1
+            : title.includes(normalizedQuery)
+              ? 2
+              : haystack.includes(normalizedQuery)
+                ? 3
+                : 4
+        return { item, score }
+      })
+      .filter(({ score }) => score < 4)
+      .sort((a, b) => a.score - b.score || a.item.title.localeCompare(b.item.title))
+      .slice(0, 8)
+      .map(({ item }) => item)
+  }, [items, query])
+
+  const commandResults = useMemo(() => {
+    if (menuKind !== "command") return []
+    const normalizedQuery = query?.trim().toLocaleLowerCase() ?? ""
+    return commands.filter((item) => {
+      if (!normalizedQuery) return true
+      return `${item.command} ${item.label} ${item.description}`.toLocaleLowerCase().includes(normalizedQuery)
+    }).slice(0, 12)
+  }, [commands, menuKind, query])
+
+  const menuResultCount = menuKind === "command" ? commandResults.length : results.length
+
+  useEffect(() => {
+    setActiveIndex(0)
+  }, [query])
+
+  useLayoutEffect(() => {
+    if (query === null) {
+      setMenuPosition(null)
+      return
+    }
+
+    function positionMenu() {
+      const editor = editorRef.current
+      if (!editor) return
+      const rect = editor.getBoundingClientRect()
+      const width = Math.min(rect.width, 620)
+      const left = direction === "rtl" ? rect.right - width : rect.left
+      const shouldOpenAbove = rect.top >= 320 || rect.top > window.innerHeight - rect.bottom
+      setMenuPosition(shouldOpenAbove
+        ? {
+            left,
+            width,
+            bottom: window.innerHeight - rect.top + 10,
+            placement: "top",
+          }
+        : {
+            left,
+            width,
+            top: rect.bottom + 10,
+            placement: "bottom",
+          })
+    }
+
+    positionMenu()
+    window.addEventListener("resize", positionMenu)
+    window.addEventListener("scroll", positionMenu, true)
+    return () => {
+      window.removeEventListener("resize", positionMenu)
+      window.removeEventListener("scroll", positionMenu, true)
+    }
+  }, [direction, query])
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current
+    if (!editor || value === lastEmittedValueRef.current) return
+
+    if (readMentionEditorValue(editor) !== value) {
+      const mentionByTitle = new Map(selectedMentions.map((mention) => [mention.title.toLocaleLowerCase(), mention]))
+      const matches = animateProgrammaticMentions && mentionByTitle.size > 0
+        ? findDexterMentionMatches(value, [...mentionByTitle.keys()])
+        : []
+
+      if (matches.length === 0) {
+        editor.replaceChildren(document.createTextNode(value))
+      } else {
+        const parts: Array<{ kind: "text"; value: string } | { kind: "mention"; item: DexterMentionItem }> = []
+        let cursor = 0
+        for (const match of matches) {
+          const mention = mentionByTitle.get(match.title.toLocaleLowerCase())
+          if (!mention) continue
+          if (match.start > cursor) parts.push({ kind: "text", value: value.slice(cursor, match.start) })
+          parts.push({ kind: "mention", item: mention })
+          cursor = match.end
+        }
+        if (cursor < value.length) parts.push({ kind: "text", value: value.slice(cursor) })
+
+        const currentNodes = [...editor.childNodes]
+        const canUpdateInPlace = currentNodes.length === parts.length && parts.every((part, index) => {
+          const node = currentNodes[index]
+          return part.kind === "text"
+            ? node?.nodeType === Node.TEXT_NODE
+            : node instanceof HTMLElement && node.dataset.mentionId === part.item.id
+        })
+
+        if (canUpdateInPlace) {
+          parts.forEach((part, index) => {
+            if (part.kind === "text" && currentNodes[index].textContent !== part.value) {
+              currentNodes[index].textContent = part.value
+            }
+          })
+        } else {
+          const fragment = document.createDocumentFragment()
+          let mentionIndex = 0
+          parts.forEach((part) => {
+            if (part.kind === "text") {
+              fragment.append(document.createTextNode(part.value))
+              return
+            }
+            const mention = document.createElement("span")
+            mention.className = "md-dexter-mention"
+            mention.dataset.mdDexterMention = "true"
+            mention.dataset.mentionId = part.item.id
+            mention.dataset.mentionType = part.item.type
+            mention.dataset.mentionTitle = part.item.title
+            mention.contentEditable = "false"
+            mention.setAttribute("aria-label", `${t(mentionTypeLabels[part.item.type])}: ${part.item.title}`)
+            mention.style.animationDelay = `${mentionIndex * 90}ms`
+            if (part.item.logo) {
+              const logo = document.createElement("img")
+              logo.src = part.item.logo
+              logo.alt = ""
+              logo.setAttribute("aria-hidden", "true")
+              mention.append(logo)
+            }
+            mention.append(document.createTextNode(part.item.title))
+            fragment.append(mention)
+            mentionIndex += 1
+          })
+          editor.replaceChildren(fragment)
+        }
+      }
+    }
+    lastEmittedValueRef.current = value
+    setQuery(null)
+    triggerRangeRef.current = null
+  }, [animateProgrammaticMentions, selectedMentions, t, value])
+
+  function syncSelectedMentions() {
+    const editor = editorRef.current
+    if (!editor) return
+
+    const presentIds = new Set(
+      [...editor.querySelectorAll<HTMLElement>("[data-md-dexter-mention]")]
+        .map((node) => node.dataset.mentionId)
+        .filter((id): id is string => Boolean(id)),
+    )
+    const nextMentions = selectedMentions.filter((mention) => presentIds.has(mention.id))
+    if (nextMentions.length !== selectedMentions.length) onMentionsChange(nextMentions)
+  }
+
+  function updateMentionTrigger() {
+    const editor = editorRef.current
+    const selection = window.getSelection()
+    if (!editor || !selection?.rangeCount || !selection.isCollapsed) {
+      setQuery(null)
+      triggerRangeRef.current = null
+      return
+    }
+
+    const range = selection.getRangeAt(0)
+    let textNode: Node | null = range.startContainer
+    let caretOffset = range.startOffset
+
+    // Chromium can report a collapsed contenteditable caret on the editor
+    // element between text nodes rather than inside the preceding text node.
+    // Resolve that boundary so @ search behaves the same for typing, dictation,
+    // and browser automation.
+    if (textNode.nodeType === Node.ELEMENT_NODE) {
+      const previousNode = textNode.childNodes[caretOffset - 1]
+      textNode = previousNode?.nodeType === Node.TEXT_NODE ? previousNode : null
+      caretOffset = textNode?.textContent?.length ?? 0
+    }
+
+    if (!textNode || textNode.nodeType !== Node.TEXT_NODE || !editor.contains(textNode)) {
+      setQuery(null)
+      triggerRangeRef.current = null
+      return
+    }
+
+    const textBeforeCaret = textNode.textContent?.slice(0, caretOffset) ?? ""
+    const commandTrigger = commands.length > 0 ? textBeforeCaret.match(/^\/([^\s/]*)$/u) : null
+    const mentionTrigger = textBeforeCaret.match(/(?:^|[\s([{])@([^\s@]*)$/u)
+    const trigger = commandTrigger ?? mentionTrigger
+    if (!trigger) {
+      setQuery(null)
+      triggerRangeRef.current = null
+      return
+    }
+
+    const mentionRange = document.createRange()
+    mentionRange.setStart(textNode, caretOffset - trigger[1].length - 1)
+    mentionRange.setEnd(textNode, caretOffset)
+    triggerRangeRef.current = mentionRange
+    setMenuKind(commandTrigger ? "command" : "mention")
+    setQuery(trigger[1])
+  }
+
+  function emitValue() {
+    const editor = editorRef.current
+    if (!editor) return
+    const nextValue = readMentionEditorValue(editor)
+    lastEmittedValueRef.current = nextValue
+    if (["/watch", "/chat"].includes(nextValue.trim().toLowerCase())) {
+      // These are mode switches, not prompt content. Clear the contenteditable
+      // synchronously so the command cannot linger while React changes modes.
+      editor.replaceChildren()
+      lastEmittedValueRef.current = ""
+    }
+    onChange(nextValue)
+  }
+
+  function selectMention(item: DexterMentionItem) {
+    if (item.disabled) {
+      setAnnouncement(t(item.meta))
+      setQuery(null)
+      onUnavailableMention?.(item)
+      return
+    }
+    const editor = editorRef.current
+    const selection = window.getSelection()
+    const triggerRange = triggerRangeRef.current
+    if (!editor || !selection || !triggerRange) return
+
+    triggerRange.deleteContents()
+    const mention = document.createElement("span")
+    mention.className = "md-dexter-mention"
+    mention.dataset.mdDexterMention = "true"
+    mention.dataset.mentionId = item.id
+    mention.dataset.mentionType = item.type
+    mention.dataset.mentionTitle = item.title
+    mention.contentEditable = "false"
+    mention.setAttribute("aria-label", `${t(mentionTypeLabels[item.type])}: ${item.title}`)
+    if (item.logo) {
+      const logo = document.createElement("img")
+      logo.src = item.logo
+      logo.alt = ""
+      logo.setAttribute("aria-hidden", "true")
+      mention.append(logo)
+    }
+    mention.append(document.createTextNode(item.title))
+
+    const spacer = document.createTextNode("\u00a0")
+    triggerRange.insertNode(spacer)
+    triggerRange.insertNode(mention)
+    triggerRange.setStartAfter(spacer)
+    triggerRange.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(triggerRange)
+
+    const nextMentions = selectedMentions.some((selected) => selected.id === item.id)
+      ? selectedMentions
+      : [...selectedMentions, item]
+    onMentionsChange(nextMentions)
+    setQuery(null)
+    triggerRangeRef.current = null
+    setAnnouncement(`${t("Mentioned")} ${t(mentionTypeLabels[item.type])} ${item.title}`)
+    emitValue()
+    editor.focus()
+  }
+
+  function selectCommand(item: DexterSlashCommand) {
+    if (item.disabled) return
+    const editor = editorRef.current
+    if (!editor) return
+    editor.replaceChildren()
+    lastEmittedValueRef.current = ""
+    setQuery(null)
+    triggerRangeRef.current = null
+    onChange("")
+    onCommand?.(item)
+    setAnnouncement(`${t("Command selected")}: ${item.command}`)
+    editor.focus()
+  }
+
+  function handleInput(_event: FormEvent<HTMLDivElement>) {
+    emitValue()
+    syncSelectedMentions()
+    updateMentionTrigger()
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const menuOpen = query !== null
+    if (menuOpen && menuResultCount > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault()
+        setActiveIndex((index) => (index + 1) % menuResultCount)
+        return
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault()
+        setActiveIndex((index) => (index - 1 + menuResultCount) % menuResultCount)
+        return
+      }
+      if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) {
+        event.preventDefault()
+        if (menuKind === "command") selectCommand(commandResults[activeIndex] ?? commandResults[0])
+        else selectMention(results[activeIndex] ?? results[0])
+        return
+      }
+    }
+
+    if (menuOpen && event.key === "Escape") {
+      event.preventDefault()
+      setQuery(null)
+      triggerRangeRef.current = null
+      return
+    }
+
+    const shouldSend = sendShortcut === "mod-enter"
+      ? event.key === "Enter" && (event.metaKey || event.ctrlKey)
+      : event.key === "Enter" && !event.shiftKey && !event.altKey
+    if (!shouldSend) return
+    event.preventDefault()
+    const liveValue = editorRef.current ? readMentionEditorValue(editorRef.current) : value
+    if (liveValue.trim()) onSend(liveValue)
+  }
+
+  function handlePaste(event: ClipboardEvent<HTMLDivElement>) {
+    event.preventDefault()
+    insertPlainTextAtSelection(event.clipboardData.getData("text/plain"))
+    emitValue()
+    updateMentionTrigger()
+  }
+
+  const activeResult = menuKind === "command" ? commandResults[activeIndex] : results[activeIndex]
+
+  const mentionMenu = typeof document !== "undefined"
+    ? createPortal(
+      <AnimatePresence initial={false}>
+        {query !== null && menuPosition ? (
+          <motion.div
+            id={listId}
+            role="listbox"
+            aria-label={t(menuKind === "command" ? "Dexter commands" : "Mention workspace context")}
+            className={cn(
+              "md-dexter-mention-menu fixed z-[100] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]",
+              menuKind === "command" ? "p-1" : "p-1.5",
+            )}
+            initial={shouldReduceMotion ? false : { opacity: 0, y: menuPosition.placement === "top" ? 7 : -7, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={shouldReduceMotion ? undefined : { opacity: 0, y: menuPosition.placement === "top" ? 4 : -4, scale: 0.99 }}
+            transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.panel)}
+            style={{
+              left: menuPosition.left,
+              width: menuPosition.width,
+              top: menuPosition.top,
+              bottom: menuPosition.bottom,
+              transformOrigin: menuPosition.placement === "top" ? "bottom center" : "top center",
+            }}
+          >
+            {menuKind === "mention" ? (
+              <div className="flex items-center justify-between gap-3 px-2.5 pb-1.5 pt-1">
+                <p className="text-[11.5px] font-medium text-[var(--md-subtle)]">{t("Mention workspace context")}</p>
+                <p className="hidden text-[11px] text-[var(--md-subtle)] sm:block">{t("Use arrows to choose · Enter to add")}</p>
+              </div>
+            ) : null}
+            <div className="md-scrollbar max-h-[276px] overflow-y-auto">
+              <LayoutGroup id={`dexter-mention-${listId}`}>
+                {menuKind === "command" ? commandResults.map((item, index) => {
+                  const Icon = item.icon
+                  const active = index === activeIndex
+                  const startsGroup = index === 0 || commandResults[index - 1]?.group !== item.group
+
+                  return (
+                    <div key={item.id}>
+                      {startsGroup ? <p className={cn("px-2 pb-0.5 text-[10px] font-medium leading-4 text-[var(--md-subtle)]", index === 0 ? "pt-0.5" : "pt-1")}>{t("Modes")}</p> : null}
+                      <button
+                        id={`${listId}-option-${index}`}
+                        type="button"
+                        role="option"
+                        aria-selected={!item.disabled && active}
+                        aria-disabled={item.disabled || undefined}
+                        aria-label={`${item.command} – ${t(item.label)}. ${t(item.description)}`}
+                        className={cn(
+                          "relative grid min-h-8 w-full grid-cols-[24px_minmax(0,1fr)] items-center gap-2 rounded-[var(--md-radius-md)] px-2 py-1 text-start outline-none",
+                          item.disabled && "opacity-55",
+                        )}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onMouseEnter={() => setActiveIndex(index)}
+                        onClick={() => selectCommand(item)}
+                      >
+                        {active && !item.disabled ? (
+                          <motion.span
+                            layoutId="active-command-result"
+                            aria-hidden="true"
+                            className="absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] shadow-[inset_0_0_0_1px_var(--md-accent-a18)]"
+                            transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
+                          />
+                        ) : null}
+                        <span className="relative grid size-6 place-items-center text-[var(--md-accent)]">
+                          <Icon className="size-[15px]" strokeWidth={1.5} aria-hidden="true" />
+                        </span>
+                        <span className="relative flex min-w-0 items-baseline gap-2">
+                          <span className="shrink-0 text-[12.5px] font-medium text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{item.command}</span>
+                          <span className="min-w-0 truncate text-[11.5px] text-[var(--md-subtle)]">{t(item.description)}</span>
+                          {item.selected ? <span className="sr-only">{t("Current")}</span> : null}
+                        </span>
+                      </button>
+                    </div>
+                  )
+                }) : results.map((item, index) => {
+                  const Icon = item.icon
+                  const active = index === activeIndex
+
+                  return (
+                    <button
+                      key={item.id}
+                      id={`${listId}-option-${index}`}
+                      type="button"
+                      role="option"
+                      aria-selected={!item.disabled && active}
+                      aria-disabled={item.disabled || undefined}
+                      className={cn(
+                        "relative grid min-h-12 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-start outline-none",
+                        item.disabled && "text-[var(--md-subtle)]",
+                      )}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setActiveIndex(index)}
+                      onClick={() => selectMention(item)}
+                    >
+                      {active && !item.disabled ? (
+                        <motion.span
+                          layoutId="active-mention-result"
+                          aria-hidden="true"
+                          className="absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] shadow-[inset_0_0_0_1px_var(--md-accent-a18)]"
+                          transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
+                        />
+                      ) : null}
+                      <span className="relative grid size-8 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-icon-well)] text-[var(--md-accent)]">
+                        {item.logo ? (
+                          <img src={item.logo} alt="" aria-hidden="true" className="size-[18px] object-contain" />
+                        ) : (
+                          <Icon className="size-4" strokeWidth={1.3} />
+                        )}
+                      </span>
+                      <span className="relative min-w-0">
+                        <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{item.title}</span>
+                        <span className="mt-0.5 block truncate text-[11.5px] text-[var(--md-subtle)]">{t(item.meta)}</span>
+                      </span>
+                      <span className="relative rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-2 py-1 text-[10.5px] font-medium text-[var(--md-text)]">
+                        {t(item.disabled && item.unavailableRoute ? "Settings" : mentionTypeLabels[item.type])}
+                      </span>
+                    </button>
+                  )
+                })}
+              </LayoutGroup>
+              {menuResultCount === 0 ? (
+                <div className="px-3 py-5 text-center">
+                  <p className="text-[13px] font-medium text-[var(--md-ink)]">{t(menuKind === "command" ? "No matching commands" : "No matching workspace items")}</p>
+                  <p className="mt-1 text-[11.5px] text-[var(--md-subtle)]">{t(menuKind === "command" ? "Try chat or watch." : "Try Gmail, Outlook, a booking or declaration reference, customer, lead, quote or page name.")}</p>
+                </div>
+              ) : null}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>,
+      document.body,
+    )
+    : null
+
+  return (
+    <div className="relative">
+      {mentionMenu}
+
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        role="combobox"
+        aria-label={t(ariaLabel)}
+        aria-autocomplete="list"
+        aria-expanded={query !== null}
+        aria-controls={query !== null ? listId : undefined}
+        aria-activedescendant={query !== null && activeResult ? `${listId}-option-${activeIndex}` : undefined}
+        aria-haspopup="listbox"
+        data-placeholder={t(placeholder)}
+        dir="auto"
+        className={cn(
+          "md-dexter-mention-editor w-full overflow-y-auto border-0 bg-transparent text-[15px] leading-6 text-[var(--md-ink)] outline-none",
+          className,
+        )}
+        style={{ minHeight, maxHeight }}
+        onInput={handleInput}
+        onKeyDown={handleKeyDown}
+        onKeyUp={(event) => {
+          if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(event.key)) return
+          updateMentionTrigger()
+        }}
+        onClick={updateMentionTrigger}
+        onPaste={handlePaste}
+      />
+      <span className="sr-only" aria-live="polite">{announcement}</span>
+    </div>
+  )
+}
+
+export function DexterPromptComposer({
+  value,
+  specialists = defaultDexterSpecialists,
+  selectedSpecialistId,
+  models = dexterModels,
+  selectedModelId,
+  accessMode,
+  pendingAccessMode = null,
+  contextUsedTokens = 0,
+  contextMaxTokens = 128_000,
+  attachments = [],
+  commands = [],
+  mentionItems = defaultDexterMentionItems,
+  selectedMentions,
+  placeholder = "Ask anything, @ a record, or / for a command",
+  onChange,
+  onMentionsChange,
+  onUnavailableMention,
+  onOpenAttachments,
+  attachmentActionLabel = "Attach context",
+  onSelectSpecialist,
+  onSelectModel,
+  onAccessModeChange,
+  isAccessModeChanging = false,
+  onCommand,
+  onRemoveAttachment,
+  onSend,
+  isSending = false,
+  mode = "chat",
+  compact = false,
+  animateProgrammaticMentions = false,
+  className,
+}: {
+  value: string
+  specialists?: DexterSpecialist[]
+  selectedSpecialistId: DexterSpecialistId
+  models?: DexterModel[]
+  selectedModelId: DexterModelId
+  accessMode: DexterAccessMode
+  pendingAccessMode?: DexterAccessMode | null
+  contextUsedTokens?: number
+  contextMaxTokens?: number
+  attachments?: DexterAttachment[]
+  commands?: DexterSlashCommand[]
+  mentionItems?: DexterMentionItem[]
+  selectedMentions?: DexterMentionItem[]
+  placeholder?: string
+  onChange: (value: string) => void
+  onMentionsChange?: (mentions: DexterMentionItem[]) => void
+  onUnavailableMention?: (mention: DexterMentionItem) => void
+  onOpenAttachments: () => void
+  attachmentActionLabel?: string
+  onSelectSpecialist: (id: DexterSpecialistId) => void
+  onSelectModel: (id: DexterModelId) => void
+  onAccessModeChange: (mode: DexterAccessMode) => void
+  isAccessModeChanging?: boolean
+  onCommand?: (command: DexterSlashCommand) => void
+  onRemoveAttachment?: (id: string) => void
+  onSend: (value?: string) => void
+  isSending?: boolean
+  /** Watch mode has one deterministic job, so it does not expose role routing. */
+  mode?: "chat" | "watch"
+  compact?: boolean
+  animateProgrammaticMentions?: boolean
+  className?: string
+}) {
+  const { language, t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const sendShortcutModifier = useSendShortcutModifier()
+  const [internalMentions, setInternalMentions] = useState<DexterMentionItem[]>([])
+  const canSend = value.trim().length > 0
+  const minRows = compact ? 52 : 76
+  const maxRows = compact ? 168 : 232
+  const activeMentions = selectedMentions ?? internalMentions
+  const handleMentionsChange = onMentionsChange ?? setInternalMentions
+  const imageLightboxItems = useMemo(() => attachments.flatMap((attachment) => attachment.previewUrl
+    ? [{ id: attachment.id, src: attachment.previewUrl, alt: attachment.title }]
+    : []), [attachments])
 
   return (
     <div
       className={cn(
-        "rounded-[22px] bg-[var(--md-surface)] p-1.5 shadow-[0_0_0_1px_rgba(14,125,116,0.36),0_18px_44px_rgba(42,52,50,0.12),inset_0_0_0_1px_rgba(255,255,255,0.92)]",
+        // `overflow-hidden` keeps the shared Dexter shader inside the shell's
+        // rounded top corners.
+        "md-composer md-composer-bloom relative overflow-hidden rounded-[26px]",
         className,
       )}
     >
-      <div className="flex min-h-[132px] flex-col rounded-[16px] bg-[var(--md-composer-inner-bg)] px-4 py-3 sm:px-5 sm:py-4">
-        {attachments.length > 0 ? (
-          <div className="mb-3 flex flex-wrap gap-2">
-            {attachments.map((attachment) => {
-              const Icon = attachment.icon
+      <span aria-hidden="true" className="md-composer-bloom__shader">
+        <SpectralBloomShader shape="composer" />
+      </span>
+      <span aria-hidden="true" className="md-composer-bloom__contrast" />
 
-              return (
-                <span
-                  key={attachment.id}
-                  className="inline-flex h-8 max-w-full items-center gap-2 rounded-[var(--md-radius-md)] bg-[rgba(14,125,116,0.08)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[0_0_0_1px_rgba(14,125,116,0.2)]"
-                >
-                  <Icon className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.2} />
-                  <span className="truncate">{attachment.title}</span>
-                  <span className="text-[var(--md-text)]">- {attachment.type}</span>
-                  {onRemoveAttachment ? (
-                    <button
-                      type="button"
-                      className="ml-0.5 rounded-full text-[var(--md-subtle)] hover:text-[var(--md-ink)]"
-                      onClick={() => onRemoveAttachment(attachment.id)}
-                      aria-label={`Remove ${attachment.title}`}
-                    >
-                      <X className="size-3" strokeWidth={1.3} />
-                    </button>
-                  ) : null}
-                </span>
-              )
-            })}
-          </div>
-        ) : null}
-
-        <textarea
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
-          className={cn(
-            "min-h-0 flex-1 resize-none border-0 bg-transparent text-[15px] leading-6 text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)]",
-            compact ? "min-h-[56px]" : "min-h-[78px]",
-          )}
-        />
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-9 rounded-full bg-white/70 px-3 text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white hover:text-[var(--md-ink)]"
-            onClick={onOpenAttachments}
-          >
-            <Plus data-icon="inline-start" strokeWidth={1.2} />
-            Attach
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-9 rounded-full bg-white/70 px-3 text-[13px] font-medium text-[var(--md-accent)] shadow-[0_0_0_1px_rgba(14,125,116,0.18)] hover:bg-white"
-            onClick={onOpenSpecialists}
-          >
-            <selectedSpecialist.icon data-icon="inline-start" strokeWidth={1.2} />
-            {selectedSpecialist.name}
-          </Button>
-          <span className="ml-auto hidden items-center gap-1 text-[12px] text-[var(--md-subtle)] sm:inline-flex">
-            <span className="text-[15px] leading-none">↵</span>
-            to send
+      <div className="md-dexter-role-container relative z-[2] flex h-[44px] min-w-0 items-center px-3 sm:px-3.5">
+        {mode === "watch" ? (
+          <span className="md-composer-lead inline-flex h-8 items-center rounded-full px-2.5 text-[13px] font-medium text-white dark:text-[var(--md-ink)]">
+            {t("Watcher")}
           </span>
-          <DexterActionPill
-            type="button"
-            icon={ArrowUp}
-            iconOnly
-            label={t("Send prompt")}
-            className="ms-auto size-10 min-w-0 rounded-[var(--md-radius-lg)] p-0 sm:ms-0"
-            onClick={onSend}
-            disabled={!value.trim()}
+        ) : (
+          <DexterRoleMenu specialists={specialists} selectedId={selectedSpecialistId} onSelect={onSelectSpecialist} />
+        )}
+      </div>
+
+      <div className="relative z-[2] mx-1.5 mb-1.5 rounded-[21px] bg-[var(--md-composer-panel-bg)] shadow-[inset_0_0_0_1px_var(--md-composer-panel-line)]">
+        <div className="flex flex-col px-4 pb-3 pt-3.5 sm:px-5 sm:pb-3.5">
+          <AnimatePresence initial={false}>
+            {attachments.length > 0 ? (
+              <motion.div
+                key="composer-attachments"
+                className="flex flex-wrap gap-2 overflow-hidden"
+                initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1, marginBottom: 12 }}
+                exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0, marginBottom: 0 }}
+                transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.panel)}
+              >
+                <ImageLightbox items={imageLightboxItems}>
+                  {(imageLightbox) => <AnimatePresence initial={false} mode="popLayout">
+                    {attachments.map((attachment) => {
+                      if (attachment.previewUrl) {
+                        return <DexterImageAttachmentPreview
+                          key={attachment.id}
+                          attachment={attachment as DexterAttachment & { previewUrl: string }}
+                          lightbox={imageLightbox}
+                          onRemove={onRemoveAttachment}
+                        />
+                      }
+                      const Icon = attachment.icon
+
+                      return (
+                        <motion.span
+                          key={attachment.id}
+                          layout={!shouldReduceMotion}
+                          initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.86 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.86 }}
+                          transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
+                          className="inline-flex h-8 max-w-full items-center gap-2 rounded-full bg-[var(--md-accent-a08)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[0_0_0_1px_var(--md-accent-a20)]"
+                        >
+                          <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} />
+                          <span className="truncate">{attachment.title}</span>
+                          <span className="hidden text-[var(--md-subtle)] sm:inline">
+                            {t(attachment.type === "uploaded_document" ? "Computer file" : attachment.type)}
+                          </span>
+                          {onRemoveAttachment ? (
+                            <button
+                              type="button"
+                              className="-me-1 grid size-5 shrink-0 place-items-center rounded-full text-[var(--md-subtle)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-90 motion-reduce:transition-none motion-reduce:active:scale-100"
+                              onClick={() => onRemoveAttachment(attachment.id)}
+                              aria-label={`${t("Remove")} ${attachment.title}`}
+                            >
+                              <X className="size-3" strokeWidth={1.4} />
+                            </button>
+                          ) : null}
+                        </motion.span>
+                      )
+                    })}
+                  </AnimatePresence>}
+                </ImageLightbox>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+
+          <DexterMentionInput
+            value={value}
+            items={mentionItems}
+            commands={commands}
+            selectedMentions={activeMentions}
+            placeholder={t(placeholder)}
+            minHeight={minRows}
+            maxHeight={maxRows}
+            canSend={canSend}
+            onChange={onChange}
+            onMentionsChange={handleMentionsChange}
+            onUnavailableMention={onUnavailableMention}
+            onCommand={onCommand}
+            onSend={(liveValue) => onSend(liveValue)}
+            animateProgrammaticMentions={animateProgrammaticMentions}
           />
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t(attachmentActionLabel)}
+              title={t(attachmentActionLabel)}
+              className="md-composer-chip size-9 shrink-0 rounded-full text-[var(--md-text)] hover:text-[var(--md-ink)]"
+              onClick={onOpenAttachments}
+            >
+              <Plus className="size-4" strokeWidth={1.4} />
+            </Button>
+            <PillFrame>
+              <DexterModelMenu models={models} selectedId={selectedModelId} onSelect={onSelectModel} />
+            </PillFrame>
+            <Context
+              usedTokens={contextUsedTokens}
+              maxTokens={contextMaxTokens}
+              label={t("Conversation context")}
+              description={t("How much of this chat Dexter can keep in mind.")}
+              locale={language}
+            >
+              <ContextTrigger className="md-composer-chip h-9 shrink-0 rounded-full px-2.5 text-[12.5px] text-[var(--md-text)] hover:text-[var(--md-ink)]" />
+              <ContextContent align="center" side="top" sideOffset={10}>
+                <ContextContentHeader />
+              </ContextContent>
+            </Context>
+            <div className="ms-auto flex shrink-0 items-center gap-2">
+              <DexterAccessModeToggle
+                mode={accessMode}
+                pendingMode={pendingAccessMode}
+                onChange={onAccessModeChange}
+                disabled={isSending || isAccessModeChanging}
+              />
+              <motion.div
+                className="flex shrink-0 items-center gap-2"
+                animate={{ scale: canSend ? 1 : 0.94, opacity: canSend ? 1 : 0.55 }}
+                transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
+              >
+                <span
+                  aria-hidden="true"
+                  title={`${sendShortcutModifier} + Enter`}
+                  className="hidden h-10 items-center rounded-[var(--md-radius-lg)] px-1.5 sm:inline-flex"
+                >
+                  <KbdGroup dir="ltr" data-i18n-skip>
+                    <Kbd>{sendShortcutModifier}</Kbd>
+                    <Kbd>↵</Kbd>
+                  </KbdGroup>
+                </span>
+                <DexterActionPill
+                  type="button"
+                  iconElement={
+                    <HugeiconsIcon
+                      aria-hidden="true"
+                      className="relative z-10 size-3.5 shrink-0"
+                      icon={SendHorizontalIcon}
+                      strokeWidth={1.25}
+                    />
+                  }
+                  iconOnly
+                  label={`${t("Send prompt")} (${sendShortcutModifier} + Enter)`}
+                  aria-keyshortcuts="Meta+Enter Control+Enter"
+                  className="size-10 min-w-0 rounded-full p-0"
+                  onClick={() => onSend()}
+                  disabled={!canSend || isSending}
+                />
+              </motion.div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -249,7 +1562,7 @@ export function DexterSpecialistPicker({
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-[14px] font-medium text-[var(--md-ink)]">{specialist.name}</span>
                   {specialist.label ? (
-                    <span className="rounded-full bg-[rgba(14,125,116,0.1)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--md-accent)]">
+                    <span className="rounded-full bg-[var(--md-accent-a10)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--md-accent)]">
                       {specialist.label}
                     </span>
                   ) : null}
@@ -265,54 +1578,6 @@ export function DexterSpecialistPicker({
   )
 }
 
-export function DexterSpecialistMenu({
-  specialists,
-  selectedId,
-  onSelect,
-  className,
-}: {
-  specialists: DexterSpecialist[]
-  selectedId: DexterSpecialistId
-  onSelect: (id: DexterSpecialistId) => void
-  className?: string
-}) {
-  return (
-    <Surface padding="sm" className={cn("max-h-[min(360px,calc(100vh-220px))] w-[300px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-composer-inner-bg)] backdrop-blur-xl", className)}>
-      <div className="px-2 py-2">
-        <p className="text-[12px] font-medium text-[var(--md-ink)]">Specialist</p>
-        <p className="mt-1 text-[11px] leading-4 text-[var(--md-text)]">Choose the lane for this reply.</p>
-      </div>
-      <div className="md-scrollbar mt-1 grid max-h-[292px] gap-1 overflow-y-auto pr-1">
-        {specialists.map((specialist) => {
-          const Icon = specialist.icon
-          const selected = specialist.id === selectedId
-
-          return (
-            <button
-              key={specialist.id}
-              type="button"
-              className={cn(
-                "grid grid-cols-[30px_1fr_16px] items-center gap-2 rounded-[var(--md-radius-md)] px-2 py-2 text-left transition-[background,color,box-shadow,opacity,transform] duration-200",
-                selected ? "bg-[var(--md-bg-strong)] shadow-[var(--md-shadow-line)]" : "hover:bg-[var(--md-hover)]",
-              )}
-              onClick={() => onSelect(specialist.id)}
-            >
-              <span className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)]", specialistTone[specialist.id])}>
-                <Icon className="size-3.5" strokeWidth={1.2} />
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{specialist.name}</span>
-                <span className="block truncate text-[11px] text-[var(--md-text)]">{specialist.description}</span>
-              </span>
-              {selected ? <Check className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.4} /> : null}
-            </button>
-          )
-        })}
-      </div>
-    </Surface>
-  )
-}
-
 export function DexterAttachmentPalette({
   query,
   items,
@@ -320,6 +1585,9 @@ export function DexterAttachmentPalette({
   recommendedIds = [],
   onQueryChange,
   onToggle,
+  onUploadFiles,
+  isUploading = false,
+  uploadError,
   onClose,
   className,
 }: {
@@ -329,9 +1597,14 @@ export function DexterAttachmentPalette({
   recommendedIds?: string[]
   onQueryChange: (value: string) => void
   onToggle: (id: string) => void
+  onUploadFiles?: (files: File[]) => void
+  isUploading?: boolean
+  uploadError?: string | null
   onClose?: () => void
   className?: string
 }) {
+  const { t } = useLanguage()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const filtered = items.filter((item) => `${item.title} ${item.meta} ${item.type}`.toLowerCase().includes(query.toLowerCase()))
   const recommended = recommendedIds
     .map((id) => items.find((item) => item.id === id))
@@ -350,17 +1623,56 @@ export function DexterAttachmentPalette({
         <input
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Search bookings, customers, documents..."
+          placeholder={t("Search bookings, customers, documents...")}
           className="min-w-0 flex-1 border-0 bg-transparent text-[16px] text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)]"
         />
         {onClose ? (
           <Button type="button" variant="ghost" size="icon-sm" className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)]" onClick={onClose}>
             <X className="size-4" strokeWidth={1.2} />
+            <span className="sr-only">{t("Close")}</span>
           </Button>
         ) : (
           <span className="rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-2 py-1 text-[11px] font-medium text-[var(--md-text)]">esc</span>
         )}
       </div>
+
+      {onUploadFiles ? (
+        <div className="px-5 pt-4">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,.txt,.csv,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp"
+            className="sr-only"
+            onChange={(event) => {
+              const files = Array.from(event.currentTarget.files ?? [])
+              event.currentTarget.value = ""
+              if (files.length) onUploadFiles(files)
+            }}
+          />
+          <button
+            type="button"
+            className="flex min-h-14 w-full items-center gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a08)] px-4 py-3 text-start shadow-[inset_0_0_0_1px_var(--md-accent-a16)] transition-[background-color,transform] duration-200 hover:bg-[var(--md-accent-a12)] active:scale-[0.995] disabled:cursor-wait disabled:opacity-70 motion-reduce:transition-none motion-reduce:active:scale-100"
+            disabled={isUploading}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
+              {isUploading
+                ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" strokeWidth={1.5} />
+                : <Upload className="size-4" strokeWidth={1.5} />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-medium text-[var(--md-ink)]">
+                {t(isUploading ? "Uploading document..." : "Upload from computer")}
+              </span>
+              <span className="mt-0.5 block text-[11.5px] text-[var(--md-text)]">
+                {t("PDF, Office, text, spreadsheet or image · up to 25 MB each")}
+              </span>
+            </span>
+          </button>
+          {uploadError ? <p role="alert" className="mt-2 text-[12px] text-[var(--md-red)]">{t(uploadError)}</p> : null}
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-2 px-5 py-3">
         {["All 12", "Bookings 6", "Customers 2", "Documents 4"].map((filter, index) => (
@@ -441,6 +1753,11 @@ export function DexterAttachmentPalette({
   )
 }
 
+/**
+ * The recent-conversation rail. One line per thread, because the titles are the
+ * prompts the operator typed and a two-line preview of their own words earns
+ * nothing – so the column can be narrow and the whole day fits without scrolling.
+ */
 export function DexterHistoryList({
   items,
   activeId,
@@ -452,36 +1769,52 @@ export function DexterHistoryList({
   onSelect: (id: string) => void
   onNew: () => void
 }) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+
   return (
-    <aside className="relative flex h-screen min-h-0 flex-col overflow-hidden bg-[var(--md-sidebar-bg)] shadow-[inset_-1px_0_0_rgba(11,20,19,0.07)]">
-      <div className="flex h-[72px] items-center justify-between gap-3 border-b border-[rgba(11,20,19,0.07)] px-5">
-        <h2 className="text-[18px] font-medium text-[var(--md-ink)]">History</h2>
-        <Button className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-white hover:bg-[var(--md-accent)]/90" onClick={onNew}>
-          <Plus data-icon="inline-start" strokeWidth={1.2} />
-          New
-        </Button>
+    <aside className="relative flex h-screen min-h-0 flex-col overflow-hidden bg-[var(--md-sidebar-bg)] shadow-[inset_-1px_0_0_rgba(11,20,19,0.055)]">
+      <div className="flex h-[60px] shrink-0 items-center justify-between gap-2 px-3.5">
+        <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{t("History")}</h2>
+        <button
+          type="button"
+          className="md-dexter-header-action -me-1 text-[12.5px] font-medium"
+          onClick={onNew}
+          title={t("New conversation")}
+          aria-label={t("New conversation")}
+        >
+          <Plus className="size-4 shrink-0" strokeWidth={1.5} />
+          <span className="md-dexter-header-action__label" aria-hidden="true">{t("New")}</span>
+        </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 md-scrollbar">
-        <p className="px-2 py-3 text-[12px] font-medium text-[var(--md-subtle)]">Today</p>
-        <div className="grid gap-1">
-          {items.map((item) => (
-            <button
+      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-4 md-scrollbar">
+        <p className="px-2 pb-1.5 pt-1 text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("Today")}</p>
+        <div className="grid min-w-0 gap-0.5">
+          {items.map((item, index) => (
+            <motion.button
               key={item.id}
               type="button"
               className={cn(
-                "rounded-[var(--md-radius-lg)] px-3 py-3 text-left transition-[background,color,box-shadow,opacity,transform] duration-200",
-                activeId === item.id ? "bg-white shadow-[var(--md-shadow-line)]" : "hover:bg-white/52",
+                "md-history-row grid h-8 min-w-0 grid-cols-[3px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-[var(--md-radius-lg)] pe-2 ps-1.5 text-start",
+                activeId === item.id
+                  ? "bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
+                  : "text-[var(--md-text)] hover:text-[var(--md-ink)]",
               )}
+              data-active={activeId === item.id ? "true" : undefined}
+              title={item.title}
+              initial={shouldReduceMotion ? false : { opacity: 0, x: -6 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={
+                shouldReduceMotion
+                  ? { duration: 0 }
+                  : { ...mdMotion.enter, delay: 0.08 + staggerRamp(index, 0.03) }
+              }
               onClick={() => onSelect(item.id)}
             >
-              <span className="flex items-start justify-between gap-3">
-                <span className="min-w-0">
-                  <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{item.title}</span>
-                  <span className="mt-1 block truncate text-[12px] text-[var(--md-text)]">{item.summary}</span>
-                </span>
-                <span className="shrink-0 text-[12px] text-[var(--md-subtle)]">{item.time}</span>
-              </span>
-            </button>
+              <span className="md-history-row__rail block h-3.5 w-[3px] rounded-full" aria-hidden="true" />
+              <span className="truncate text-[13px] font-medium">{item.title}</span>
+              <span className="md-history-row__time shrink-0 text-[11px] tabular-nums text-[var(--md-subtle)]">{item.time}</span>
+            </motion.button>
           ))}
         </div>
       </div>
@@ -489,75 +1822,237 @@ export function DexterHistoryList({
   )
 }
 
+type DexterWatchStateKey = "alert" | "attention" | "paused" | "watching"
+
+/** Rail order: what landed, then what needs looking at, then what is still armed. */
+const watchStateRank: Record<DexterWatchStateKey, number> = { alert: 0, attention: 1, watching: 2, paused: 3 }
+
+type DexterWatchState = {
+  key: DexterWatchStateKey
+  tone: StatusTone
+  label: string
+  /** Something landed that the operator has not opened yet. */
+  unread: boolean
+  /** The change itself, when there is one. Empty means the watch is still armed. */
+  news: string
+  /** When the change landed, for the rail's short stamp and the sheet's full one. */
+  at: string | null
+}
+
+/**
+ * One derivation of what a watch is doing, shared by the card and the detail
+ * sheet so the rail can never disagree with the pane it opens.
+ *
+ * `news` deliberately prefers the humanised change over the rule: the rule
+ * repeats the watch title almost word for word, and showing both is what made
+ * the old card read as three near-identical sentences.
+ */
+function dexterWatchState(monitor: DexterMonitor, t: (text: string) => string): DexterWatchState {
+  const status = monitor.status ?? "active"
+  const degraded = monitor.healthStatus === "degraded" || monitor.healthStatus === "error"
+  const unread = Boolean(monitor.latestEvent && !monitor.latestEvent.readAt)
+  const news = monitor.latestEvent || monitor.healthMessage ? monitor.detail : ""
+  const at = monitor.latestEvent?.createdAt ?? monitor.lastTriggeredAt ?? null
+
+  if (status === "paused") return { key: "paused", tone: "neutral", label: t("Paused"), unread: false, news, at }
+  if (degraded) return { key: "attention", tone: "amber", label: t("Needs attention"), unread, news, at }
+  if (monitor.latestEvent) {
+    return { key: "alert", tone: "amber", label: unread ? t("New") : t("Matched"), unread, news, at }
+  }
+  return { key: "watching", tone: "teal", label: t("Watching"), unread: false, news, at }
+}
+
+/**
+ * Short form on purpose: the rail is scanned, not read. The sheet shows the full
+ * timestamp for anyone who needs the exact moment.
+ */
+function dexterWatchStamp(value: string | null | undefined, language: string, t: (text: string) => string) {
+  if (!value) return ""
+  const time = new Date(value).getTime()
+  if (Number.isNaN(time)) return ""
+
+  const minutes = Math.round((time - Date.now()) / 60_000)
+  if (Math.abs(minutes) < 1) return t("just now")
+
+  const relative = new Intl.RelativeTimeFormat(language, { numeric: "auto", style: "narrow" })
+  if (Math.abs(minutes) < 60) return relative.format(minutes, "minute")
+  if (Math.abs(minutes) < 1440) return relative.format(Math.round(minutes / 60), "hour")
+  if (Math.abs(minutes) < 43_200) return relative.format(Math.round(minutes / 1440), "day")
+  return relative.format(Math.round(minutes / 43_200), "month")
+}
+
+/**
+ * One monitor, floating on the rail's wash rather than sitting in a panel.
+ *
+ * Read top to bottom it answers the three questions in the order an operator
+ * asks them: is anything up, what happened, and which watch said so. The change
+ * is the loud line – the watch's own name drops to the quiet line beneath it,
+ * because by the time you are reading a card you already know you set it.
+ */
 export function DexterMonitorCard({
   monitor,
+  index = 0,
+  active = false,
   onClick,
 }: {
   monitor: DexterMonitor
+  index?: number
+  /** Its detail pane is open, so the row holds a selected state. */
+  active?: boolean
   onClick?: () => void
 }) {
+  const { t, language } = useLanguage()
+  const state = dexterWatchState(monitor, t)
+  const stamp = dexterWatchStamp(state.at, language, t)
+
   return (
-    <button type="button" className="block w-full text-left" onClick={onClick}>
-      <Surface padding="md" className="rounded-[var(--md-radius-xl)] bg-[rgba(233,242,240,0.66)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:scale-[1.01] hover:bg-[rgba(233,242,240,0.86)]">
-      <div className="flex items-start gap-2">
-        <span className="mt-1 size-2.5 rounded-full" style={{ background: toneToVar(monitor.tone) }} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{monitor.title}</p>
-          <p className="mt-2 text-[12px] leading-5 text-[var(--md-text)]">{monitor.body}</p>
-        </div>
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-[rgba(11,20,19,0.05)] pt-3 text-[11px] text-[var(--md-subtle)]">
-        <span>{monitor.meta}</span>
-        <span>{monitor.detail}</span>
-      </div>
-      </Surface>
+    <button
+      type="button"
+      data-active={active ? "true" : undefined}
+      data-state={state.key}
+      data-unread={state.unread ? "true" : undefined}
+      aria-expanded={onClick ? active : undefined}
+      className="md-watch-card block w-full rounded-[16px] p-3.5 text-start"
+      style={{ "--md-watch-tone": toneToVar(state.tone), "--md-watch-delay": `${index * 0.9}s` } as CSSProperties}
+      onClick={onClick}
+    >
+      <span className="flex items-center gap-2 text-[11.5px] leading-none">
+        <span className="md-watch-dot shrink-0" aria-hidden="true" />
+        <span className="md-watch-card__state min-w-0 truncate font-medium">{state.label}</span>
+        {stamp ? (
+          <time className="ms-auto shrink-0 tabular-nums text-[var(--md-subtle)]" dateTime={state.at ?? undefined}>{stamp}</time>
+        ) : null}
+      </span>
+
+      <span className="mt-2.5 line-clamp-3 block break-words text-[13.5px] font-medium leading-[1.45] text-[var(--md-ink)]">
+        {state.news || monitor.title}
+      </span>
+
+      <span className="mt-2 flex min-w-0 items-center gap-1.5 text-[12px] leading-[1.5] text-[var(--md-text)]">
+        <span className="min-w-0 flex-1 truncate">{state.news ? monitor.title : t("Nothing has matched yet")}</span>
+        <ArrowRight className="md-watch-card__go size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.5} />
+      </span>
     </button>
   )
 }
 
+/**
+ * The watch rail. No panel colour and no dividing border: a wash that thickens
+ * toward the outer edge marks the zone, the header floats on a progressive blur
+ * so cards dissolve as they scroll under it, and the whole thing fades up on
+ * mount instead of appearing as a block.
+ */
 export function DexterMonitorStack({
   monitors,
+  activeId = null,
   onCollapse,
   onAsk,
   onSelectMonitor,
 }: {
   monitors: DexterMonitor[]
+  /** The open watcher, so the list shows which card the detail belongs to. */
+  activeId?: string | null
   onCollapse?: () => void
   onAsk?: () => void
   onSelectMonitor?: (monitor: DexterMonitor) => void
 }) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+
+  // Anything that landed outranks anything still armed. A watch that has never
+  // fired is, by definition, the one with nothing to say.
+  const { ordered, unreadCount } = useMemo(() => {
+    const entries = monitors
+      .map((monitor, index) => ({ monitor, index, state: dexterWatchState(monitor, t) }))
+      .sort((left, right) => {
+        if (left.state.unread !== right.state.unread) return left.state.unread ? -1 : 1
+        const byState = watchStateRank[left.state.key] - watchStateRank[right.state.key]
+        if (byState !== 0) return byState
+        const leftAt = left.state.at ? Date.parse(left.state.at) : 0
+        const rightAt = right.state.at ? Date.parse(right.state.at) : 0
+        if (leftAt !== rightAt) return rightAt - leftAt
+        return left.index - right.index
+      })
+
+    return {
+      ordered: entries.map((entry) => entry.monitor),
+      unreadCount: entries.filter((entry) => entry.state.unread).length,
+    }
+  }, [monitors, t])
+
   return (
-    <aside className="flex h-full min-h-0 flex-col border-l border-[var(--md-line)] bg-[var(--md-composer-inner-bg)]">
-      <div className="border-b border-[var(--md-line)] px-5 py-5">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-[17px] font-medium text-[var(--md-ink)]">
-            <span className="size-2 rounded-full bg-[var(--md-green)]" />
-            Watching for you
-          </h2>
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] text-[var(--md-text)]">{monitors.length} monitors</span>
-            {onCollapse ? (
-              <button
-                type="button"
-                className="inline-flex h-8 items-center gap-1 rounded-[var(--md-radius-md)] bg-white/55 px-2.5 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white hover:text-[var(--md-ink)]"
-                onClick={onCollapse}
-                aria-label="Collapse watching panel"
-              >
-                Collapse
-                <ArrowRight className="size-3" strokeWidth={1.2} />
-              </button>
-            ) : null}
-          </div>
+    <aside className="relative flex h-full min-h-0 flex-col">
+      <motion.span
+        aria-hidden="true"
+        className="md-watch-rail__wash"
+        initial={shouldReduceMotion ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.5, ease: mdEaseOut }}
+      />
+
+      <div className="md-scrollbar relative min-h-0 flex-1 overflow-y-auto px-4 pb-[76px] pt-[86px]">
+        <div className="grid gap-2.5">
+          {monitors.length === 0 ? (
+            <div className="rounded-[16px] bg-[var(--md-surface-tint)] px-4 py-5 text-[13px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+              <p className="font-medium text-[var(--md-ink)]">{t("Nothing is being watched yet")}</p>
+              <p className="mt-1.5">{t("Type /watch in Dexter, then describe the change that matters.")}</p>
+            </div>
+          ) : null}
+          {ordered.map((monitor, index) => (
+            <motion.div
+              key={monitor.id ?? `${monitor.title}-${index}`}
+              initial={shouldReduceMotion ? false : { opacity: 0, y: 10, filter: "blur(6px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+              transition={
+                shouldReduceMotion
+                  ? { duration: 0 }
+                  : { ...mdMotion.page, delay: 0.12 + staggerRamp(index, 0.055) }
+              }
+            >
+              <DexterMonitorCard
+                monitor={monitor}
+                index={index}
+                active={Boolean(monitor.id && activeId === monitor.id)}
+                onClick={() => onSelectMonitor?.(monitor)}
+              />
+            </motion.div>
+          ))}
         </div>
-        <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">Background monitors Dexter runs on your behalf. Pause anytime.</p>
       </div>
-      <div className="grid gap-3 overflow-y-auto p-4 md-scrollbar">
-        {monitors.map((monitor) => (
-          <DexterMonitorCard key={monitor.title} monitor={monitor} onClick={() => onSelectMonitor?.(monitor)} />
-        ))}
+
+      <ProgressiveBlur className="md-watch-rail__edge-blur" edge="top" tone="rail" height={88} tint="var(--md-bg-strong)" />
+      <ProgressiveBlur className="md-watch-rail__edge-blur" edge="bottom" tone="rail" height={72} offset={52} tint="var(--md-bg-strong)" />
+
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-[2] flex items-center gap-2 px-4 pt-[22px] max-sm:ps-[72px]">
+        <h2 className="flex min-w-0 items-center gap-2 text-[14px] font-medium text-[var(--md-ink)]">
+          <span className="md-dexter-live-dot shrink-0" aria-hidden="true" />
+          <span className="truncate">{t("Watching for you")}</span>
+        </h2>
+        {/* A raw total says nothing. What matters is whether any of them have
+            news, so the count only shouts when something is waiting. */}
+        {unreadCount ? (
+          <span className="md-watch-rail__badge shrink-0">{unreadCount} {t("new")}</span>
+        ) : (
+          <span className="shrink-0 text-[12px] tabular-nums text-[var(--md-subtle)]">{monitors.length}</span>
+        )}
+        {onCollapse ? (
+          <button
+            type="button"
+            className="md-dexter-header-action pointer-events-auto ms-auto max-sm:!hidden text-[12px] font-medium"
+            onClick={onCollapse}
+            title={t("Hide watchers")}
+            aria-label={t("Hide watchers")}
+          >
+            <span className="md-dexter-header-action__label" aria-hidden="true">{t("Hide")}</span>
+            <ArrowRight className="size-3.5 shrink-0" strokeWidth={1.5} />
+          </button>
+        ) : null}
+      </div>
+
+      <div className="absolute inset-x-0 bottom-0 z-[2] px-4 pb-4">
         <DexterActionPill
-          label="Ask Dexter to watch something else"
-          className="h-12 w-full rounded-[var(--md-radius-lg)] text-[13px]"
+          label={t("Watch something else")}
+          className="h-11 w-full rounded-[var(--md-radius-lg)] text-[12.5px]"
           onClick={onAsk}
         />
       </div>
@@ -565,135 +2060,411 @@ export function DexterMonitorStack({
   )
 }
 
+/** One viewport-contained surface. The fade is painted outside this width. */
+const watchRailWidth = 336
+const watchRailMinWidth = 288
+const watchShellMaxWidth = 840
+const watchDetailMinWidth = 360
+const watchMinThreadWidth = 420
+
+function useWatchRailWidths(detailOpen: boolean, collapsed: boolean) {
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === "undefined" ? 1440 : window.innerWidth,
+  )
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(document.documentElement.clientWidth || window.innerWidth)
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(onResize)
+    window.addEventListener("resize", onResize, { passive: true })
+    window.visualViewport?.addEventListener("resize", onResize, { passive: true })
+    observer?.observe(document.documentElement)
+    onResize()
+    return () => {
+      window.removeEventListener("resize", onResize)
+      window.visualViewport?.removeEventListener("resize", onResize)
+      observer?.disconnect()
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    setViewportWidth(document.documentElement.clientWidth || window.innerWidth)
+  }, [collapsed, detailOpen])
+
+  const isCompact = viewportWidth < 768
+  const availableBesideThread = Math.max(viewportWidth - watchMinThreadWidth, watchRailMinWidth)
+  const canShowBoth = !isCompact && availableBesideThread >= watchRailMinWidth + watchDetailMinWidth
+  const singlePaneWidth = isCompact ? viewportWidth : Math.min(560, availableBesideThread)
+  const expandedWidth = Math.min(watchShellMaxWidth, availableBesideThread)
+  const railWidth = Math.min(watchRailWidth, canShowBoth ? expandedWidth - watchDetailMinWidth : singlePaneWidth)
+  const detailWidth = canShowBoth ? expandedWidth - railWidth : singlePaneWidth
+  const resolvedRailWidth = isCompact ? viewportWidth : railWidth
+
+  return {
+    railWidth: resolvedRailWidth,
+    detailWidth: isCompact ? viewportWidth : detailWidth,
+    singlePane: !canShowBoth,
+    width: collapsed ? 0 : detailOpen && canShowBoth ? expandedWidth : detailOpen ? detailWidth : resolvedRailWidth,
+  }
+}
+
+/**
+ * The watcher rail: one glass surface floating over the thread, which widens
+ * leftwards to uncover a detail pane rather than pushing a second panel in.
+ *
+ * Width is the only thing that animates. The list is pinned to the surface's
+ * right edge and the detail sits immediately to its left, both absolutely
+ * positioned, so the reveal is the container's own clip travelling left – the
+ * cards never move, nothing reflows behind it, and there is no edge between the
+ * two halves to give the join away.
+ *
+ * Deliberately not a transform: the rail's veils use `backdrop-filter`, and an
+ * animated transform on an ancestor would start a new backdrop root and leave
+ * them sampling nothing.
+ */
+export function DexterWatchRail({
+  monitors,
+  activeMonitor,
+  collapsed = false,
+  onCollapse,
+  onSelectMonitor,
+  onCloseDetail,
+  onAsk,
+  onSetStatus,
+  onDelete,
+  onAskEvent,
+  onAskAttachment,
+}: {
+  monitors: DexterMonitor[]
+  activeMonitor: DexterMonitor | null
+  collapsed?: boolean
+  onCollapse?: () => void
+  /** Called with the picked monitor; the caller decides toggle vs. replace. */
+  onSelectMonitor?: (monitor: DexterMonitor) => void
+  onCloseDetail?: () => void
+  onAsk?: () => void
+  onSetStatus?: (monitor: DexterMonitor, status: "active" | "paused") => void
+  onDelete?: (monitor: DexterMonitor) => void
+  onAskEvent?: (monitor: DexterMonitor) => void
+  onAskAttachment?: (attachment: DexterEmailAttachment) => void
+}) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const detailOpen = activeMonitor !== null
+  const { railWidth, detailWidth, singlePane, width } = useWatchRailWidths(detailOpen, collapsed)
+
+  // The shell includes a transparent fade strip outside the real panel. Keeping
+  // it click-through lets the conversation remain usable in that strip; only
+  // the pinned content surface below accepts input.
+  return (
+    <motion.aside
+      className="md-watch-rail-shell fixed inset-y-0 end-0 z-50 lg:z-30"
+      data-detail={detailOpen ? "true" : undefined}
+      initial={false}
+      animate={{ width }}
+      transition={
+        shouldReduceMotion
+          ? { duration: 0 }
+          : // Slightly over-damped: a wide panel that overshoots reads as loose,
+            // and this one carries a chart the eye starts reading immediately.
+            { type: "spring", stiffness: 260, damping: 34, mass: 0.9 }
+      }
+      style={{ pointerEvents: "none" }}
+      aria-hidden={collapsed || undefined}
+    >
+      {/* The fade extends outside the rail width, so it must leave the render
+          tree when the rail closes. A zero-width shell alone would still leave
+          the 176px backdrop-filter strip visible over the conversation. */}
+      {!collapsed ? (
+        <span
+          aria-hidden="true"
+          className="md-watch-rail-surface pointer-events-none absolute inset-y-0 end-0"
+          style={{ insetInlineStart: -176 }}
+        />
+      ) : null}
+
+      {!collapsed && onCollapse ? (
+        <button
+          type="button"
+          className="md-dexter-header-action pointer-events-auto absolute start-4 top-4 z-[5] !grid size-11 place-items-center rounded-full text-[var(--md-ink)] sm:hidden"
+          onClick={onCollapse}
+          title={t("Hide watchers")}
+          aria-label={t("Hide watchers")}
+        >
+          <X className="size-4" strokeWidth={1.5} />
+        </button>
+      ) : null}
+
+      {!collapsed ? (
+        <div className="pointer-events-auto absolute inset-0 overflow-hidden">
+          <div className={cn("md-watch-rail-detail absolute inset-y-0 start-0", singlePane && activeMonitor && "z-[3]", !activeMonitor && "pointer-events-none")} style={{ width: detailWidth }}>
+            <AnimatePresence mode="popLayout" initial={false}>
+              {activeMonitor ? (
+                <motion.div
+                  key={activeMonitor.id ?? activeMonitor.title}
+                  className="h-full w-full"
+                  initial={shouldReduceMotion ? false : { opacity: 0, x: -14, filter: "blur(5px)" }}
+                  animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+                  exit={shouldReduceMotion ? undefined : { opacity: 0, x: -10, filter: "blur(4px)" }}
+                  transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.enter)}
+                >
+                  <DexterMonitorDetailSheet
+                    monitor={activeMonitor}
+                    floating={false}
+                    compactBack={singlePane}
+                    onClose={() => onCloseDetail?.()}
+                    onSetStatus={(status) => onSetStatus?.(activeMonitor, status)}
+                    onDelete={() => onDelete?.(activeMonitor)}
+                    onAskEvent={() => onAskEvent?.(activeMonitor)}
+                    onAskAttachment={onAskAttachment}
+                  />
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </div>
+
+          <div className={cn("md-watch-rail-list absolute inset-y-0 end-0", singlePane && activeMonitor && "invisible")} style={{ width: railWidth }}>
+            <DexterMonitorStack
+              monitors={monitors}
+              activeId={activeMonitor?.id ?? null}
+              onCollapse={onCollapse}
+              onSelectMonitor={onSelectMonitor}
+              onAsk={onAsk}
+            />
+          </div>
+        </div>
+      ) : null}
+    </motion.aside>
+  )
+}
+
 export function DexterMonitorDetailSheet({
   monitor,
   onClose,
+  onSetStatus,
+  onDelete,
+  onAskEvent,
+  onAskAttachment,
+  compactBack = false,
   floating = true,
 }: {
   monitor: DexterMonitor
   onClose: () => void
+  onSetStatus?: (status: "active" | "paused") => void
+  onDelete?: () => void
+  onAskEvent?: () => void
+  onAskAttachment?: (attachment: DexterEmailAttachment) => void
+  compactBack?: boolean
+  /**
+   * `false` embeds the sheet in a surface a caller already owns: no shadow, no
+   * edge, no background of its own. That is what keeps it from drawing a seam
+   * against the watcher list it expands out of.
+   */
   floating?: boolean
 }) {
-  const chartPoints = "0,88 44,82 88,80 132,72 176,68 220,56 264,52 308,35 352,30 396,18 440,22 484,50"
+  const { t, language } = useLanguage()
+  const status = monitor.status ?? "active"
+  const state = dexterWatchState(monitor, t)
+  const healthStatus = monitor.healthStatus ?? "starting"
+  const healthTone = healthStatus === "healthy"
+    ? "green"
+    : healthStatus === "starting" ? "neutral" : "amber"
+  const healthLabel = healthStatus === "healthy"
+    ? t("Email connection healthy")
+    : healthStatus === "starting"
+      ? t("Starting live checks")
+      : t("Email connection delayed")
+  const emailContext = monitor.latestEvent?.context?.kind === "email"
+    ? monitor.latestEvent.context
+    : null
+  const emailReadable = emailContext?.availability === "available"
+  // Only an email watch can lose its source. A deal or quote watch reaching this
+  // branch used to be told its email had been deleted, which is why a perfectly
+  // good stage change read as an error.
+  const emailLost = monitor.capability === "email" && Boolean(monitor.latestEvent) && !emailReadable
+  const sectionId = `watch-${monitor.id ?? "selected"}`
+  const stamp = dexterWatchStamp(state.at, language, t)
 
   return (
     <aside
       className={cn(
-        "flex flex-col bg-[var(--md-surface)] shadow-[-18px_0_40px_rgba(11,20,19,0.12),inset_1px_0_0_rgba(255,255,255,0.84)]",
-        floating ? "fixed inset-y-0 right-0 z-50 w-[min(580px,calc(100vw-24px))]" : "h-full w-full",
+        "flex flex-col",
+        floating
+          ? "fixed inset-y-0 right-0 z-50 w-[min(580px,calc(100vw-24px))] bg-[var(--md-surface)] shadow-[-18px_0_40px_rgba(11,20,19,0.12),inset_1px_0_0_rgba(255,255,255,0.84)]"
+          : "h-full w-full bg-transparent",
       )}
     >
-      <header className="border-b border-[rgba(11,20,19,0.07)] px-[var(--md-gap-xl)] py-[var(--md-page-stack-gap)]">
+      <header className="border-b border-[rgba(11,20,19,0.07)] px-[var(--md-gap-xl)] py-[var(--md-page-stack-gap)] max-sm:ps-[72px]">
         <div className="flex items-start justify-between gap-[var(--md-gap-lg)]">
           <div className="min-w-0">
-            <h2 className="flex items-center gap-2 text-[18px] font-medium text-[var(--md-ink)]">
-              <span className="size-2.5 rounded-full" style={{ background: toneToVar(monitor.tone) }} />
-              {monitor.title}
+            <h2 className="flex items-start gap-2.5 break-words text-[18px] font-medium leading-6 text-[var(--md-ink)]">
+              <span className="mt-[7px] size-2.5 shrink-0 rounded-full" style={{ background: toneToVar(state.tone) }} />
+              <span className="min-w-0">{monitor.title}</span>
             </h2>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-[var(--md-text)]">
-              <StatusPill tone="green">Active</StatusPill>
-              <StatusPill tone="amber">Fired once</StatusPill>
-              <span>checks every 30 min - last 36 min ago</span>
+            {/* Pills only. The old header also carried a sentence about how the
+                watch runs, which is reference, not status – it now lives with the
+                rest of the watch's definition further down. */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <StatusPill tone={status === "active" ? "green" : "neutral"}>{t(status === "active" ? "Active" : "Paused")}</StatusPill>
+              {monitor.capability === "email" && status === "active" ? <StatusPill tone={healthTone}>{healthLabel}</StatusPill> : null}
+              {monitor.triggerCount ? <StatusPill tone="amber">{monitor.triggerCount} {t(monitor.triggerCount === 1 ? "alert" : "alerts")}</StatusPill> : null}
             </div>
           </div>
-          <button type="button" className="rounded-full p-1 text-[var(--md-subtle)] hover:text-[var(--md-ink)]" onClick={onClose} aria-label="Close monitor detail">
-            <X className="size-4" strokeWidth={1.3} />
+          <button type="button" className="grid size-9 shrink-0 place-items-center rounded-full text-[var(--md-subtle)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]" onClick={onClose} aria-label={t(compactBack ? "Back to watches" : "Close monitor detail")}>
+            {compactBack ? <ArrowLeft className="size-4 rtl:rotate-180" strokeWidth={1.3} /> : <X className="size-4" strokeWidth={1.3} />}
           </button>
         </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-[var(--md-gap-xl)] py-[var(--md-page-stack-gap)] md-scrollbar">
-        <Surface padding="lg" className="rounded-[var(--md-radius-xl)] bg-[rgba(233,242,240,0.78)]">
-          <p className="flex items-center gap-2 text-[15px] font-medium text-[var(--md-ink)]">
-            <Sparkles className="size-4 text-[var(--md-accent)]" strokeWidth={1.2} />
-            Watching
-          </p>
-          <p className="mt-3 text-[14px] leading-7 text-[var(--md-ink)]">
-            Rotterdam terminal congestion for this booking. If the ETA shifts by more than <strong>6 hours</strong>, Dexter pings you and drafts a customer note - nothing sends without approval.
-          </p>
-        </Surface>
-
-        <div className="mt-4 flex flex-col gap-2">
-          {[
-            ["MD-22479 - Ningbo to Rotterdam", Boxes],
-            ["Northwind GmbH - Jonas Weber", Users],
-          ].map(([label, Icon]) => {
-            const RowIcon = Icon as LucideIcon
-
-            return (
-              <button key={label as string} type="button" className="inline-flex w-fit items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-bg-strong)] px-3 py-2 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
-                <RowIcon className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.2} />
-                {label as string}
-                <ArrowRight className="size-3 text-[var(--md-subtle)]" strokeWidth={1.2} />
-              </button>
-            )
-          })}
-        </div>
-
-        <Surface padding="lg" className="mt-[var(--md-page-stack-gap)] rounded-[var(--md-radius-xl)]">
-          <div className="flex items-start justify-between gap-[var(--md-gap-lg)]">
-            <div>
-              <p className="text-[14px] font-medium text-[var(--md-ink)]">Berth queue - last 7 days</p>
-              <p className="mt-1 text-[12px] text-[var(--md-text)]">hours waiting</p>
-            </div>
-            <p className="text-[18px] font-medium text-[var(--md-amber)]">28h</p>
+        {monitor.capability === "email" && status === "active" && healthStatus !== "healthy" ? (
+          <div role="status" className="mb-[var(--md-page-section-gap)] rounded-[var(--md-radius-lg)] bg-[rgba(221,138,43,0.10)] px-4 py-3 text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
+            <p className="font-medium">{healthLabel}</p>
+            <p className="mt-1 text-[var(--md-text)]">{t(monitor.healthMessage ?? "Dexter is retrying automatically. You do not need to recreate this watch.")}</p>
           </div>
-          <svg viewBox="0 0 484 150" className="mt-[var(--md-page-stack-gap)] h-[150px] w-full overflow-visible" role="img" aria-label="Berth queue last seven days">
-            <defs>
-              <linearGradient id="dexter-monitor-fill" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="rgba(221,138,43,0.22)" />
-                <stop offset="100%" stopColor="rgba(221,138,43,0)" />
-              </linearGradient>
-            </defs>
-            <line x1="0" x2="484" y1="74" y2="74" stroke="rgba(209,78,78,0.42)" strokeDasharray="4 6" />
-            <polygon points={`0,150 ${chartPoints} 484,150`} fill="url(#dexter-monitor-fill)" />
-            <polyline points={chartPoints} fill="none" stroke="var(--md-amber)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
-            <circle cx="484" cy="50" r="4" fill="var(--md-amber)" />
-          </svg>
-          <div className="flex justify-between text-[11px] text-[var(--md-subtle)]">
-            <span>Jun 5</span>
-            <span className="text-[var(--md-red)]">-- fires above this line</span>
-            <span>today</span>
-          </div>
-        </Surface>
+        ) : null}
 
-        <section className="mt-[var(--md-gap-xl)]">
-          <h3 className="text-[14px] font-medium text-[var(--md-text)]">Activity</h3>
-          <div className="mt-3 grid gap-4 border-l border-[rgba(90,103,100,0.22)] pl-4">
-            {[
-              ["Today 11:06", "Queue easing - 31h to 28h. No action needed.", "teal"],
-              ["Thu 06:40", "ETA shifted +8h - monitor fired.", "amber"],
-              ["Wed 14:02", "Queue 22h to 26h - within threshold, kept watching.", "neutral"],
-              ["Wed 09:18", "Created from thread \"At-risk customs this week\".", "neutral"],
-            ].map(([time, text, tone]) => (
-              <div key={time} className="relative">
-                <span className="absolute -left-[21px] top-1.5 size-2 rounded-full bg-[var(--md-surface)] shadow-[0_0_0_3px_var(--md-surface)]" style={{ background: tone === "amber" ? "var(--md-amber)" : tone === "teal" ? "var(--md-accent)" : "var(--md-subtle)" }} />
-                <p className="text-[12px] text-[var(--md-subtle)]">{time}</p>
-                <p className="mt-1 text-[13px] leading-5 text-[var(--md-ink)]">{text}</p>
+        {/* The change first, in plain words, at a size you can read from across
+            the desk. Everything else on this pane is context for it. */}
+        <section aria-labelledby={`${sectionId}-happened`}>
+          <h3 id={`${sectionId}-happened`} className="md-watch-sheet__heading">{t("What happened")}</h3>
+
+          {monitor.latestEvent ? (
+            <>
+              {/* A readable email says all of this better in the card below, so
+                  the summary line steps aside rather than saying it twice. */}
+              {emailReadable ? null : (
+                <>
+                  <p className="mt-2.5 break-words text-[15px] font-medium leading-[1.5] text-[var(--md-ink)]">
+                    {state.news || monitor.latestEvent.body}
+                  </p>
+                  {state.at ? (
+                    <p className="mt-1.5 text-[12px] text-[var(--md-subtle)]">
+                      <time dateTime={state.at}>{new Date(state.at).toLocaleString(language)}</time>
+                      {stamp ? <span> · {stamp}</span> : null}
+                    </p>
+                  ) : null}
+                </>
+              )}
+
+              {emailReadable && emailContext ? (
+                <div className="mt-3 min-w-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="break-words text-[14px] font-medium leading-5 text-[var(--md-ink)]">{emailContext.subject || t("No subject")}</p>
+                      <p className="mt-1 break-words text-[12px] text-[var(--md-text)]">
+                        <bdi dir="auto" data-i18n-skip>{emailContext.senderName || emailContext.senderEmail}</bdi>
+                        {emailContext.senderName && emailContext.senderEmail ? <span data-i18n-skip dir="ltr"> &lt;{emailContext.senderEmail}&gt;</span> : null}
+                      </p>
+                    </div>
+                    <time className="shrink-0 text-[11px] tabular-nums text-[var(--md-subtle)]" dateTime={emailContext.receivedAt}>
+                      {new Date(emailContext.receivedAt).toLocaleString(language)}
+                    </time>
+                  </div>
+                  {emailContext.preview ? (
+                    <p data-i18n-skip dir="auto" className="mt-3 line-clamp-6 whitespace-pre-wrap break-words text-[13px] leading-5 text-[var(--md-text)]">{emailContext.preview}</p>
+                  ) : <p className="mt-3 text-[13px] text-[var(--md-subtle)]">{t("No email preview is available.")}</p>}
+                  {emailContext.attachments.length ? (
+                    <div className="mt-4">
+                      <h4 className="text-[12px] font-medium text-[var(--md-text)]">{t("Attachments")}</h4>
+                      <div className="mt-2 grid min-w-0 gap-2">
+                        {emailContext.attachments.map((attachment) => (
+                          <DexterEmailAttachmentCard key={attachment.id} attachment={attachment} variant="watch" onAskDexter={onAskAttachment} />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {emailLost ? (
+                <div role="status" className="mt-4 rounded-[var(--md-radius-lg)] bg-[rgba(221,138,43,0.10)] px-4 py-3 text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
+                  <p className="font-medium">{t(emailContext?.availability === "reconnect_required" ? "Reconnect email to open this update" : "This email is no longer available")}</p>
+                  <p className="mt-1 text-[var(--md-text)]">{emailContext?.availability === "reconnect_required" ? t(emailContext.unavailableReason ?? monitor.latestEvent.body) : t("The email may have been deleted, moved to Spam or Bin, or you may no longer have access to it.")}</p>
+                </div>
+              ) : null}
+
+              {/* One action row for the whole update, so there is exactly one
+                  obvious next step rather than buttons buried in a sub-card. */}
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <Button type="button" size="sm" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[12px]" onClick={onAskEvent}>
+                  <MessageCircle className="size-3.5" strokeWidth={1.4} />
+                  {t("Ask Dexter about this update")}
+                </Button>
+                {emailReadable && emailContext?.sourceUrl ? (
+                  <Button asChild type="button" variant="ghost" size="sm" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[12px]">
+                    <a href={emailContext.sourceUrl} target="_blank" rel="noreferrer">
+                      {t("Open email")}
+                      <ExternalLink className="size-3.5" strokeWidth={1.4} />
+                    </a>
+                  </Button>
+                ) : null}
               </div>
-            ))}
-          </div>
+            </>
+          ) : (
+            <p className="mt-2.5 text-[14px] leading-6 text-[var(--md-text)]">{t("Nothing has matched yet. I’ll let you know when it does.")}</p>
+          )}
         </section>
 
-        <section className="mt-[var(--md-page-section-gap)]">
-          <h3 className="text-[14px] font-medium text-[var(--md-text)]">Conditions</h3>
-          <div className="mt-3 divide-y divide-[rgba(11,20,19,0.07)] text-[13px]">
-            <div className="flex justify-between gap-4 py-3">
-              <span className="text-[var(--md-text)]">Fires when</span>
-              <span className="font-medium text-[var(--md-ink)]">ETA shifts more than 6h</span>
-            </div>
-            <div className="flex justify-between gap-4 py-3">
-              <span className="text-[var(--md-text)]">Checks</span>
-              <span className="font-medium text-[var(--md-ink)]">Every 30 min - terminal feed + carrier API</span>
-            </div>
-          </div>
+        {monitor.action ? (
+          <section className="mt-[var(--md-page-section-gap)] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-4 shadow-[var(--md-shadow-line)]">
+            <p className="text-[12px] font-medium text-[var(--md-subtle)]">{t("Prepared action - approval required")}</p>
+            <h3 className="mt-2 text-[14px] font-medium text-[var(--md-ink)]">{monitor.action.title}</h3>
+            <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{monitor.action.description}</p>
+            <p className="mt-3 text-[12px] leading-5 text-[var(--md-subtle)]">{t("Dexter has not run this action. Open a chat and ask Dexter to review it before you approve anything.")}</p>
+          </section>
+        ) : null}
+
+        {/* Short enough to stay open. Collapsing it hid the one thing that
+            explains why the watch fired at all. Labels sit in their own column
+            so a long rule reads as a sentence instead of ragged right-aligned
+            text tucked against the pane edge. */}
+        <section className="mt-[var(--md-page-section-gap)]" aria-labelledby={`${sectionId}-rule`}>
+          <h3 id={`${sectionId}-rule`} className="md-watch-sheet__heading">{t("What I’m watching")}</h3>
+          <dl className="mt-3 grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)] gap-x-4 border-t border-[var(--md-line)] text-[13px] leading-[1.55]">
+            <dt className="border-b border-[var(--md-line)] py-3 text-[var(--md-text)]">{t("Looking for")}</dt>
+            <dd className="min-w-0 break-words border-b border-[var(--md-line)] py-3 font-medium text-[var(--md-ink)]">{monitor.ruleLabel ?? monitor.body}</dd>
+
+            <dt className="border-b border-[var(--md-line)] py-3 text-[var(--md-text)]">{t("How it checks")}</dt>
+            <dd className="min-w-0 break-words border-b border-[var(--md-line)] py-3 font-medium text-[var(--md-ink)]">
+              {t(monitor.capability === "email" ? "Your inbox is checked automatically" : "It checks whenever your connected data changes")}
+            </dd>
+
+            {monitor.targetLabel ? (
+              <>
+                <dt className="border-b border-[var(--md-line)] py-3 text-[var(--md-text)]">{t("Applies to")}</dt>
+                <dd className="min-w-0 break-words border-b border-[var(--md-line)] py-3 font-medium text-[var(--md-ink)]">{monitor.targetLabel}</dd>
+              </>
+            ) : null}
+
+            {monitor.lastSourceCheckAt ? (
+              <>
+                <dt className="border-b border-[var(--md-line)] py-3 text-[var(--md-text)]">{t("Last checked")}</dt>
+                <dd className="min-w-0 break-words border-b border-[var(--md-line)] py-3 font-medium tabular-nums text-[var(--md-ink)]">
+                  {new Date(monitor.lastSourceCheckAt).toLocaleString(language)}
+                </dd>
+              </>
+            ) : null}
+          </dl>
         </section>
       </div>
 
-      <footer className="grid grid-cols-[1fr_1.2fr_auto] gap-[var(--md-gap-md)] border-t border-[var(--md-line)] px-[var(--md-gap-xl)] py-[var(--md-gap-lg)]">
-        <Button variant="ghost" className="h-10 rounded-[var(--md-radius-md)] bg-white/60 text-[13px] shadow-[var(--md-shadow-line)]">Pause</Button>
-        <Button variant="ghost" className="h-10 rounded-[var(--md-radius-md)] bg-white/60 text-[13px] shadow-[var(--md-shadow-line)]">Edit conditions</Button>
-        <Button variant="ghost" className="h-10 rounded-[var(--md-radius-md)] bg-[rgba(209,78,78,0.08)] px-4 text-[13px] text-[var(--md-red)] shadow-[0_0_0_1px_rgba(209,78,78,0.16)]">Delete</Button>
+      <footer className="flex flex-wrap items-center justify-between gap-[var(--md-gap-md)] border-t border-[var(--md-line)] px-[var(--md-gap-xl)] py-[var(--md-gap-lg)]">
+        <Button
+          variant="ghost"
+          className="h-10 rounded-[var(--md-radius-md)] bg-white/60 px-4 text-[13px] shadow-[var(--md-shadow-line)]"
+          onClick={() => onSetStatus?.(status === "active" ? "paused" : "active")}
+        >
+          {status === "active" ? <CirclePause className="size-4" strokeWidth={1.4} /> : <CirclePlay className="size-4" strokeWidth={1.4} />}
+          {t(status === "active" ? "Pause this watch" : "Resume this watch")}
+        </Button>
+        <Button
+          variant="ghost"
+          className="h-10 rounded-[var(--md-radius-md)] px-3 text-[13px] text-[var(--md-subtle)] hover:bg-[rgba(209,78,78,0.08)] hover:text-[var(--md-red)]"
+          onClick={onDelete}
+        >
+          <Trash2 className="size-4" strokeWidth={1.4} />
+          {t("Delete")}
+        </Button>
       </footer>
     </aside>
   )
@@ -703,7 +2474,7 @@ export function DexterCustomerSnapshot() {
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-glass-strong)]">
       <div className="flex flex-wrap items-center gap-4 px-5 py-4">
-        <span className="grid size-9 place-items-center rounded-[var(--md-radius-md)] bg-[rgba(14,125,116,0.1)] text-[12px] font-medium text-[var(--md-accent)]">MA</span>
+        <span className="grid size-9 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] text-[12px] font-medium text-[var(--md-accent)]">MA</span>
         <div className="min-w-0 flex-1">
           <p className="text-[14px] font-medium text-[var(--md-ink)]">Marlow Apparel Ltd</p>
           <p className="mt-1 text-[12px] text-[var(--md-text)]">Customer since 2023 - contact Sandra Hale - next QBR Thu 14:00</p>
@@ -793,34 +2564,50 @@ export function DexterRiskTable() {
 
 export function DexterSuggestionGrid({
   onPick,
+  dealName,
+  bookingId,
 }: {
   onPick: (prompt: string, specialistId: DexterSpecialistId) => void
+  dealName?: string | null
+  bookingId?: string | null
 }) {
-  const suggestions = [
-    { title: "Triage my morning", body: "Which bookings need me first today?", icon: Zap, specialistId: "ops" as DexterSpecialistId },
-    { title: "Draft a quote", body: "Yantian to Felixstowe - 2x40HC - week 28", icon: PackageCheck, specialistId: "sales" as DexterSpecialistId },
-    { title: "Explain a delay", body: "Why is MD-22479 slipping in Rotterdam?", icon: BarChart3, specialistId: "analytics" as DexterSpecialistId },
-    { title: "Prep a customer review", body: "Summarize Marlow Apparel's last quarter", icon: MessageCircle, specialistId: "analytics" as DexterSpecialistId },
+  const { t } = useLanguage()
+  const personalised = [
+    dealName ? {
+      title: `${t("How can I close")} ${dealName}?`,
+      prompt: `${t("Review this deal and tell me the strongest next steps to close it")}: ${dealName}.`,
+      icon: Handshake,
+      specialistId: "sales" as DexterSpecialistId,
+    } : null,
+    bookingId ? {
+      title: `${t("Chase up information on")} ${bookingId}`,
+      prompt: `${t("Check what information is still missing and help me chase it up for booking")} ${bookingId}.`,
+      icon: MessageCircle,
+      specialistId: "ops" as DexterSpecialistId,
+    } : null,
+  ].filter((suggestion): suggestion is NonNullable<typeof suggestion> => Boolean(suggestion))
+  const standard = [
+    { title: t("Triage my morning"), prompt: t("Which bookings need me first today?"), icon: Zap, specialistId: "ops" as DexterSpecialistId },
+    { title: t("Draft a quote"), prompt: t("Draft a quote for my next priority opportunity."), icon: PackageCheck, specialistId: "sales" as DexterSpecialistId },
+    { title: t("Review at-risk bookings"), prompt: t("Show me the bookings most at risk and what I should do next."), icon: BarChart3, specialistId: "analytics" as DexterSpecialistId },
+    { title: t("Prepare a customer update"), prompt: t("Draft an update for the customer who most needs one today."), icon: MessageCircle, specialistId: "customer" as DexterSpecialistId },
   ]
+  const suggestions = [...personalised, ...standard].slice(0, 4)
 
   return (
-    <div className="grid gap-3 md:grid-cols-2">
+    <div className="flex flex-wrap justify-center gap-2" aria-label={t("Recommended actions")}>
       {suggestions.map((suggestion) => {
         const Icon = suggestion.icon
-        const prompt = `${suggestion.title}. ${suggestion.body}`
 
         return (
           <button
             key={suggestion.title}
             type="button"
-            className="grid grid-cols-[26px_1fr] items-start gap-3 rounded-[var(--md-radius-lg)] bg-white/70 px-5 py-4 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:scale-[1.01] hover:bg-white"
-            onClick={() => onPick(prompt, suggestion.specialistId)}
+            className="group inline-flex min-h-9 max-w-full items-center gap-2 rounded-full bg-[var(--md-surface)] px-3.5 py-2 text-start text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:-translate-y-px hover:bg-[var(--md-surface-raised)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a22)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--md-bg)] active:translate-y-0 motion-reduce:transform-none"
+            onClick={() => onPick(suggestion.prompt, suggestion.specialistId)}
           >
-            <Icon className="mt-1 size-4 text-[var(--md-accent)]" strokeWidth={1.2} />
-            <span>
-              <span className="block text-[14px] font-medium text-[var(--md-ink)]">{suggestion.title}</span>
-              <span className="mt-1 block text-[13px] text-[var(--md-text)]">{suggestion.body}</span>
-            </span>
+            <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.35} aria-hidden />
+            <span className="min-w-0 break-words" dir="auto">{suggestion.title}</span>
           </button>
         )
       })}
@@ -829,9 +2616,9 @@ export function DexterSuggestionGrid({
 }
 
 export const defaultDexterSpecialists: DexterSpecialist[] = [
-  { id: "auto", name: "Auto", label: "Default", description: "Dexter reads the request and routes it to the right specialist.", icon: Sparkles },
-  { id: "sales", name: "Sales & quoting", description: "Rates, quotes, margins, win-back drafts", icon: PackageCheck },
-  { id: "customs", name: "Customs & compliance", description: "HS codes, holds, licences, document checks", icon: ShieldCheck },
+  { id: "auto", name: "Auto", label: "Default", description: "Dexter reads the request and routes it to the right specialist.", icon: AiBrain },
+  { id: "sales", name: "Sales", description: "Rates, quotes, margins, win-back drafts", icon: PackageCheck },
+  { id: "customs", name: "Customs", description: "HS codes, holds, licences, document checks", icon: ShieldCheck },
   { id: "ops", name: "Ops & exceptions", description: "Delays, reroutes, terminals, carrier escalations", icon: Zap },
   { id: "customer", name: "Customer comms", description: "Updates and replies, in each customer's tone", icon: MessageCircle },
   { id: "analytics", name: "Analytics & reporting", description: "Trends, carrier scorecards, spend deep-dives", icon: BarChart3 },

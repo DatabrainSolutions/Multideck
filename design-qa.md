@@ -1,86 +1,56 @@
-# Design QA
+**Comparison target**
 
-Feature: Warehouse Calendar weekly hourly planner
+- Source visual truth path: `/Users/leewright/.codex/generated_images/01a0331f-1a15-7291-ae6c-56f29927ef4c/exec-a9a88851-a7e2-432d-b144-fb47db4a9605.png`
+- Implementation: `http://localhost:3000/bookings/ji0991132`, Chrome tab `1772487404`
+- Implementation screenshot path: Codex Computer Use capture attached to the active task (Chrome tab `1772487404`); the browser runtime did not export a filesystem copy.
+- Viewport: 1920 × 800 CSS px at device scale 1.
+- Source pixels: 1468 × 1071. Implementation capture: 1920 × 800 viewport capture at device scale 1.
+- Normalisation: compared by matching the booking workspace content region and desktop state; browser chrome was excluded from the judgement. The source is taller, so the lower Goods, Container details and Customer terms region was checked in a second focused viewport capture.
+- State: authenticated booking `JI0991132`, Details selected, unchanged persisted booking data. A temporary unsaved container row was added for interaction testing and discarded afterwards.
 
-Source visual truth:
-- `/var/folders/lb/stflsq1d6llcfy2t4f_q0ny40000gn/T/TemporaryItems/NSIRD_screencaptureui_bjJQeZ/Screenshot 2026-06-24 at 10.39.07 AM.png`
+**Findings**
 
-Implementation evidence:
-- Local URL: `http://localhost:3100/warehouse`
-- Week screenshot: `/tmp/multideck-warehouse-calendar-week-hourly.png`
-- Month screenshot: `/tmp/multideck-warehouse-calendar-month.png`
-- Event detail popover screenshot: `/tmp/multideck-warehouse-calendar-popover.png`
-- Full-view comparison: `/tmp/multideck-calendar-reference-vs-week.png`
-- Viewport: `1440x1100`
-- State: Warehouse page, Calendar tab, Week default; Month toggle also checked.
+- No actionable P0, P1 or P2 differences remain for the approved booking-only scope.
+- The existing Multideck sidebar and the Overview, Details, Documents, Customs, Finance, Notes and Audit tabs differ from the concept image intentionally. They are the live product navigation the user explicitly required to preserve.
+- The implementation follows the selected information flow: route summary, Job data, Customer/Shipper/Consignee, Route & service, Goods, Container details, then Customer terms. Goods and Container details use the full workspace width with no right rail.
 
-Checks:
-- Week is the default selected view.
-- Week view now uses a day-by-day hourly grid with a left time rail and day headers.
-- The grid exposes hour labels from 8 AM through 9 PM, matching the evening planning coverage in the reference.
-- Timed events are positioned by start and end time rather than displayed as generic day cards.
-- Wednesday overlap support is working: Aisle B cycle count, Marlow urgent relabel, and Bauhaus lamp QA overlap vertically and split into separate columns.
-- Customer colour coding is visible on event blocks and the customer key.
-- Calendar events are clickable and open a focused detail popover with customer, date, time, type, and reference.
-- Month view remains available from the same segmented toggle and keeps a compact overview of the month.
-- Typography, spacing, corners, and shadows stay inside the existing Multideck light design system instead of copying the screenshot's dark theme.
-- New visible labels are covered by the app language dictionary.
-- No new reusable gallery component was added because this is a product surface composition using existing controls.
+**Required fidelity surfaces**
 
-Patches made after QA:
-- Extended the week grid from 6 PM to 9 PM.
-- Tightened customer colours so Marlow and Mediterranean are easier to distinguish.
-- Reduced overlap-card chrome for cramped event columns.
-- Added click-to-inspect event detail popovers for narrow or overlapping calendar blocks.
-- Strengthened the event detail popover surface so it reads as an inspection panel over the calendar grid.
-- Polished German and French translations for the new calendar labels.
+- Fonts and typography: the implementation uses the existing Multideck sans-serif stack, restrained 10–13px workspace hierarchy and medium weights. Labels and values remained legible at the tested desktop viewport; no monospaced type was introduced.
+- Spacing and layout rhythm: the compact field density, full-width section order and nested radii follow the live Quotes/Bookings construction rather than importing the concept's alternate shell. No clipping or horizontal overflow was visible in the route strip or container row.
+- Colors and visual tokens: all fills, text, shadows, focus treatment, radii and brand accents use existing Multideck tokens. No one-off palette or sidebar styling was added.
+- Image quality and asset fidelity: no new raster assets were needed. The current Multideck logo and the existing icon library remain intact; no CSS art, emoji or replacement SVGs were introduced.
+- Copy and content: section names and field labels use the approved booking language, including `Route & service`, `Origin from`, `Destination to` and `Container details`. Live booking values are used rather than mock data.
 
-Focused region comparison:
-- Focused comparison was not needed beyond the full-view reference/implementation pair because the key fidelity requirement is structural: hourly grid, day columns, timed cards, overlap behaviour, and customer colour key. The browser test directly verifies those interaction and layout states.
+**Focused region evidence**
 
-Findings:
-- No actionable P0/P1/P2 findings remain.
-- P3 follow-up: if operators regularly handle dense multi-way overlaps, the next upgrade would be keyboard shortcuts for moving between events inside the week grid.
+- Route/header: verified the Origin → Destination → Mode → Direction → ETD → ETA strip at the top of Details.
+- Lower workflow: verified Goods above Container details and Customer terms, with the container table spanning the workspace width.
+- Interaction: added a container row, entered container data, confirmed the row exposed type/packages/weight/volume/seal controls, then discarded the unsaved test row.
+- Navigation: switched Overview → Details → Documents → Details and confirmed one correctly labelled tab panel remained active at a time.
+- Documents: verified the full-width Documents tab in Chrome with separate Quote documents, Job documents and Customs documents bands, each with its own count and empty state.
+- Browser console: checked after navigation and container interaction; no errors were reported.
 
-final result: passed
+**Comparison history**
 
----
+- Initial implementation review found the old split Details layout, no route summary strip, no editable container table and a redundant readiness block in Details.
+- Fixes applied: introduced the full-width Details flow, retained the live tabs, added the route summary, moved Goods and Container details into the main sequence, added container add/edit/remove handling and removed the readiness block from Details only.
+- Post-fix evidence: desktop full-view and focused lower-section captures showed the approved order, no right rail, no clipped fields and an editable container row. The Overview readiness content remains unchanged as requested.
 
-# Design QA
+**Implementation checklist**
 
-Feature: Quote Details compact field layout and sidebar preference persistence
+- [x] Preserve the existing sidebar and app shell.
+- [x] Preserve all existing booking workspace tabs and their wiring.
+- [x] Keep Booking ref and Quote ref locked.
+- [x] Make the remaining Details fields editable through the booking draft/save boundary.
+- [x] Place Goods, Container details and Customer terms in the full-width flow.
+- [x] Add and remove editable container rows without creating test records.
+- [x] Keep quote, job and Customs files visibly separated inside the existing Documents tab.
+- [x] Leave the existing sidebar and booking navigation unchanged while adding document grouping.
+- [x] Build successfully and pass focused booking/quote workflow tests.
 
-Source visual truth:
-- `/var/folders/lb/stflsq1d6llcfy2t4f_q0ny40000gn/T/codex-clipboard-b15ffb98-619b-4ab9-9853-182458c1d253.png`
+**Follow-up polish**
 
-Implementation evidence:
-- Local URL: `http://127.0.0.1:3000/quotes`, Details tab.
-- Implementation screenshot: `/tmp/multideck-quotes-details-fixed.png`.
-- Normalized side-by-side comparison: `/tmp/multideck-quotes-reference-vs-fixed.png`.
-- Browser viewport: `1800x1165` at device pixel ratio `1.1`; the reference browser chrome was cropped before comparison.
-
-Checks:
-- Fonts and typography retain the existing Multideck system treatment, compact 11px field labels, and restrained medium weights from the reference.
-- Spacing and layout now match the reference structure: labels sit beside their controls, party cards use dense horizontal rows, and Service and Goods fit cleanly above the fold.
-- All 18 rendered lookup controls were measured in the browser; every input and lookup button shares the same top position and height. No lookup button falls below its field.
-- Non-compact field grids now have a stable 76px label track fallback, so their three-column label/input/action structure cannot collapse when a page-level custom property is absent.
-- The newer neutral field contrast tokens remain intact and are applied consistently across text, select, and lookup controls.
-- No image assets were introduced or changed. Existing Nucleo/Lucide-style interface icons remain aligned and legible.
-- Copy and visible labels are unchanged, so the existing localisation coverage is preserved. Logical text alignment keeps the layout direction-safe for RTL.
-- Expanded sidebar state remained open at 220px after navigating Home -> Sales & CRM -> Quotes.
-- User-selected collapsed state remained at 56px after navigating Quotes -> Home. The sidebar was returned to its expanded state for handoff.
-- The production build passes. The only browser error observed was the existing Dashboard API connection check on Overview, unrelated to these UI changes.
-
-Patches made after QA:
-- Removed the party-card stacked field mode that caused labels and controls to split vertically.
-- Added a resilient label-column fallback to the shared CargoWise field primitives.
-- Removed route-driven sidebar collapsing from the app shell, leaving collapse state controlled by the user and persisted locally.
-
-Focused region comparison:
-- The side-by-side comparison focuses on Job data, party cards, Service & carrier, and Goods. This is the relevant fidelity region because the request concerns dense form alignment rather than the surrounding browser or page chrome.
-
-Findings:
-- No actionable P0/P1/P2 findings remain.
-- P3 follow-up: long live customer or carrier names will continue to truncate inside the compact fields, consistent with the source layout.
+- No open visual follow-up remains for the approved booking-only scope. The grouped document feed is migration-backed and remains local until the wider change set is approved for deployment.
 
 final result: passed

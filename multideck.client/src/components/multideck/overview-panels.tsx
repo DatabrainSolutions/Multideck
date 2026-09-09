@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from "react"
 import { AnimatePresence, LayoutGroup, motion } from "motion/react"
-import { ArrowLeft, ArrowRight, CalendarDays, ChevronDown, Loader2, Mail, Plus, ReceiptText, RefreshCw, Save, ShieldCheck, Ship, Sparkles, TriangleAlert } from "lucide-react"
+import { AiBrain, ArrowLeft, ArrowRight, BrainCircuit, CalendarDays, ChevronDown, Loader2, Mail, Plus, ReceiptText, RefreshCw, Save, ShieldCheck, Ship, TriangleAlert } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -22,11 +22,13 @@ import {
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { TableCell } from "@/components/ui/table"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useLanguage } from "@/i18n/language-provider"
 import type { LanguageCode } from "@/i18n/languages"
-import { getApiAuthSession } from "@/lib/api"
-import { getSupabaseSession } from "@/lib/supabase"
+import {
+  checkDashboardConnection,
+  createDashboardConnectionState,
+  type DashboardConnectionState,
+} from "@/lib/dashboard-connection"
 import { cn } from "@/lib/utils"
 import {
   activityItems,
@@ -43,7 +45,7 @@ import {
   type DashboardRange,
   type StatusTone,
   type TimezoneWorkItem,
-} from "@/data/multideck-data"
+} from "@/data/operational-data"
 import { useClockDisplayMode, type ClockDisplayMode } from "@/lib/user-preferences"
 import { AnimatedList } from "./animated-list"
 import { MultideckDateRangePicker, getDefaultDateRange } from "./date-picker"
@@ -51,6 +53,7 @@ import { DexterActionPill } from "./dexter-action-pill"
 import { MetricCard } from "./metric-card"
 import { SectionHeader, Surface } from "./surface"
 import { StatusPill, toneToVar } from "./status-pill"
+import { SegmentedControl } from "./workflow-components"
 
 const InteractiveBookingMap = lazy(() =>
   import("./interactive-booking-map").then((module) => ({
@@ -171,43 +174,8 @@ function getSnapshot(range: DashboardRange) {
   return dashboardSnapshots[range] ?? dashboardSnapshots.today
 }
 
-type DashboardConnectionStatus = "checking" | "connected" | "signed-out" | "error"
-
-type DashboardConnectionState = {
-  status: DashboardConnectionStatus
-  email: string | null
-}
-
-function createDashboardConnectionState(status: DashboardConnectionStatus, email: string | null = null): DashboardConnectionState {
-  return { status, email }
-}
-
-async function checkDashboardConnection(): Promise<DashboardConnectionState> {
-  try {
-    const session = await getSupabaseSession()
-
-    if (!session?.access_token) {
-      return createDashboardConnectionState("signed-out")
-    }
-
-    const apiSession = await getApiAuthSession(session.access_token)
-
-    if (!apiSession.authenticated) {
-      return createDashboardConnectionState("error")
-    }
-
-    return createDashboardConnectionState("connected", apiSession.user.email ?? session.user.email ?? null)
-  } catch (error) {
-    console.error("Dashboard API connection check failed", error)
-    return createDashboardConnectionState("error")
-  }
-}
-
 function getLanguageLocale(language: LanguageCode) {
-  if (language === "de") return "de-DE"
-  if (language === "fr") return "fr-FR"
-  if (language === "ar") return "ar-GB-u-ca-gregory"
-  return "en-GB"
+  return language
 }
 
 function getDateKey(date: Date) {
@@ -403,7 +371,7 @@ export function OverviewHero({
   }, [])
 
   const connectionToneClass = cn(
-    connectionState.status === "connected" && "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]",
+    connectionState.status === "connected" && "bg-[var(--md-accent-a10)] text-[var(--md-accent)]",
     connectionState.status === "checking" && "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]",
     (connectionState.status === "error" || connectionState.status === "signed-out") && "bg-[rgba(209,78,78,0.1)] text-[var(--md-red)]",
   )
@@ -453,13 +421,13 @@ export function OverviewHero({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <ToggleGroup type="single" value={range} onValueChange={(value) => value && onRangeChange(value as DashboardRange)} className="rounded-[var(--md-radius-lg)] bg-transparent p-0">
-          {dashboardRangeOptions.map((value) => (
-            <ToggleGroupItem key={value} value={value} className="h-10 rounded-[var(--md-radius-lg)] px-4 text-[13px] font-medium capitalize text-[var(--md-text)] data-[state=on]:bg-[var(--md-glass-strong)] data-[state=on]:text-[var(--md-ink)] data-[state=on]:shadow-[var(--md-shadow-line)]">
-              {dashboardSnapshots[value].label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        <SegmentedControl
+          options={dashboardRangeOptions}
+          value={range}
+          onChange={onRangeChange}
+          ariaLabel="Dashboard date range"
+          renderOption={(value) => dashboardSnapshots[value].label}
+        />
         <CustomDashboardRangePicker active={range === "custom"} customRange={customRange} onRangeChange={onRangeChange} onCustomRangeChange={onCustomRangeChange} />
         <Button
           type="button"
@@ -535,7 +503,7 @@ export function OverviewHero({
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white hover:bg-[var(--md-accent)]/88" disabled={!newDashboardName.trim()} onClick={createDashboard}>
+            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/88" disabled={!newDashboardName.trim()} onClick={createDashboard}>
               Create
             </Button>
           </DialogFooter>
@@ -575,7 +543,7 @@ export function MetricsGrid({
               layoutId={getDashboardDrilldownLayoutId(drilldownId)}
               layout
               type="button"
-              className="min-w-0 rounded-[var(--md-radius-xl)] text-left outline-none transition-transform duration-200 hover:scale-[1.01] focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.18)]"
+              className="min-w-0 rounded-[var(--md-radius-xl)] text-left outline-none transition-transform duration-200 hover:scale-[1.01] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a18)]"
               onClick={() => onOpenDrilldown?.(drilldownId)}
               transition={{ layout: { duration: 0.3, ease: [0.16, 1, 0.3, 1] } }}
             >
@@ -684,7 +652,7 @@ function TimezoneLeadCard({
         <div className="flex flex-wrap items-center gap-2">
           <span className="size-2.5 rounded-full" style={{ background: toneToVar(clock.tone) }} />
           <span className="text-[12px] font-medium uppercase text-[var(--md-accent)]">{city.code}</span>
-          <span className="rounded-full bg-[rgba(14,125,116,0.1)] px-2 py-1 text-[12px] font-medium text-[var(--md-accent)]">{clock.comparison}</span>
+          <span className="rounded-full bg-[var(--md-accent-a10)] px-2 py-1 text-[12px] font-medium text-[var(--md-accent)]">{clock.comparison}</span>
         </div>
         <div className={cn("mt-2 flex items-end gap-4", displayMode === "analogue" && "items-center")}>
           {displayMode === "analogue" ? <AnalogueClockFace time={clock.time} tone={clock.tone} size="lg" /> : null}
@@ -824,7 +792,7 @@ export function TimezoneWorkRow({ item }: { item: TimezoneWorkItem }) {
         className={cn(
           "h-9 justify-between rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium",
           item.tone === "green"
-            ? "bg-[var(--md-accent)] text-white hover:bg-[var(--md-accent)]/90"
+            ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/90"
             : "bg-white/58 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/78",
         )}
       >
@@ -946,7 +914,7 @@ function getMetricActionItems(metricLabel: string): DashboardActionItem[] {
   if (metricLabel === "Emails waiting") return dashboardEmailThreads
   if (metricLabel === "Quotes due" || metricLabel === "Quotes sent") return dashboardQuoteActions
   if (metricLabel === "Watched bookings") return dashboardWatchedBookingActions
-  if (metricLabel === "Your jobs") {
+  if (metricLabel === "Active jobs") {
     return operatorJobs.slice(0, 4).map((job) => ({
       title: `${job.bookingId} - ${job.customer}`,
       meta: job.task,
@@ -998,7 +966,7 @@ export function TimezoneFocusPanel({ selectedCode }: { selectedCode: string }) {
         </div>
         <div className="flex flex-col gap-3 bg-[var(--md-surface-tint)] px-5 py-4 md:flex-row md:items-center md:justify-between">
           <p className="text-[13px] leading-5 text-[var(--md-text)]">
-            <Sparkles className="mr-2 inline size-3.5 text-[var(--md-accent)]" strokeWidth={1.2} />
+            <AiBrain className="mr-2 inline size-3.5 text-[var(--md-accent)]" strokeWidth={1.2} />
             Dexter can quote the <span className="font-medium text-[var(--md-ink)]">{queue.readyToQuote} ready RFQs</span> and chase the <span className="font-medium text-[var(--md-ink)]">{queue.needAction} blockers</span> before the {city.city} cutoff.
           </p>
           <DexterActionPill label="Let Dexter handle it" className="h-9 min-w-[158px] px-4 text-[13px]" />
@@ -1025,7 +993,7 @@ function getDashboardDrilldownDetail(id: DashboardDrilldownId, range: DashboardR
       rows: [
         ["Current", metric.value],
         ["Status", metric.change],
-        ["Next step", metric.label === "Emails waiting" ? "Open the customer replies first" : metric.label === "Quotes due" ? "Send ready quotes before local cutoff" : metric.label === "Your jobs" ? "Work the due-soon tasks in order" : "Keep these starred bookings visible"],
+        ["Next step", metric.label === "Emails waiting" ? "Open the customer replies first" : metric.label === "Quotes due" ? "Send ready quotes before local cutoff" : metric.label === "Active jobs" ? "Work the due-soon tasks in order" : "Keep these starred bookings visible"],
       ],
     }
   }
@@ -1153,7 +1121,7 @@ export function DashboardDrilldownPanel({
                 detail.primaryAction.includes("Dexter") ? (
                   <DexterActionPill label={detail.primaryAction} className="h-9 min-w-[178px] px-3 text-[13px]" />
                 ) : (
-                  <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white hover:bg-[var(--md-accent)]/90">
+                  <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/90">
                     {detail.primaryAction}
                   </Button>
                 )
@@ -1180,7 +1148,7 @@ export function DashboardDrilldownPanel({
                           {item.secondaryAction}
                         </Button>
                       ) : null}
-                      <Button type="button" className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-white hover:bg-[var(--md-accent)]/90">
+                      <Button type="button" className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/90">
                         {item.action}
                       </Button>
                     </div>
@@ -1268,13 +1236,13 @@ export function LiveBookingsPanel() {
 function LiveBookingsMapFallback() {
   return (
     <div className="relative min-h-[310px] flex-1 overflow-hidden bg-[var(--md-bg-strong)]">
-      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.22),rgba(255,255,255,0)_48%,rgba(14,125,116,0.12))]" />
+      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.22),rgba(255,255,255,0)_48%,var(--md-accent-a12))]" />
       <div className="absolute left-5 top-5 flex items-center gap-2 rounded-[var(--md-radius-lg)] bg-white/58 px-3 py-2 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
         <span className="size-2 rounded-full bg-[var(--md-accent)]" />
         Loading live routes
       </div>
-      <div className="absolute inset-x-[8%] top-[46%] h-px rotate-[-7deg] bg-[rgba(14,125,116,0.18)]" />
-      <div className="absolute inset-x-[18%] top-[58%] h-px rotate-[9deg] bg-[rgba(14,125,116,0.12)]" />
+      <div className="absolute inset-x-[8%] top-[46%] h-px rotate-[-7deg] bg-[var(--md-accent-a18)]" />
+      <div className="absolute inset-x-[18%] top-[58%] h-px rotate-[9deg] bg-[var(--md-accent-a12)]" />
       {[
         { left: "20%", top: "42%", width: "7rem" },
         { left: "46%", top: "34%", width: "8rem" },
@@ -1309,8 +1277,8 @@ export function MorningDigestPanel({
     <Surface className="md-morning-digest-panel flex min-h-[320px] flex-col rounded-[var(--md-radius-xl)] p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
-          <span className="grid size-8 place-items-center rounded-full bg-[var(--md-accent)] text-white">
-            <Sparkles className="size-4" strokeWidth={1.2} />
+          <span className="grid size-8 place-items-center rounded-full bg-[var(--md-accent)] text-[var(--md-accent-ink)]">
+            <BrainCircuit className="size-4" strokeWidth={1.2} />
           </span>
           <h2 className="text-[15px] font-medium text-[var(--md-ink)]">Today's action list</h2>
         </div>
@@ -1368,18 +1336,20 @@ export function MorningDigestPanel({
 }
 
 export function ActivityPanel({ onOpenDrilldown }: { onOpenDrilldown?: (id: DashboardDrilldownId) => void }) {
+  const [activityView, setActivityView] = useState<"all" | "ai">("all")
+
   return (
     <Surface className="md-activity-panel flex min-h-[320px] flex-col">
       <SectionHeader
         title="Activity"
         action={
-          <ToggleGroup type="single" defaultValue="all" className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] p-0.5">
-            {["all", "ai"].map((value) => (
-              <ToggleGroupItem key={value} value={value} className="h-6 rounded-[var(--md-radius-sm)] px-2 text-[11px] uppercase data-[state=on]:bg-[var(--md-glass-strong)] data-[state=on]:shadow-[var(--md-shadow-line)]">
-                {value}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+          <SegmentedControl
+            options={["all", "ai"] as const}
+            value={activityView}
+            onChange={setActivityView}
+            ariaLabel="Activity view"
+            className="[&_button]:h-6 [&_button]:px-2 [&_button]:text-[11px] [&_button]:uppercase"
+          />
         }
       />
       <AnimatedList
@@ -1429,7 +1399,7 @@ export function QueueRow({
       <TableCell className="w-[110px] py-3 pl-0 text-[12px] font-medium text-[var(--md-ink)]">{item.id}</TableCell>
       <TableCell className="py-3 text-[13px] text-[var(--md-ink)]">{item.entry}</TableCell>
       <TableCell className="py-3 text-right">
-        <StatusPill tone={item.tone}>{item.status}</StatusPill>
+        <StatusPill kind="status" tone={item.tone}>{item.status}</StatusPill>
       </TableCell>
     </motion.tr>
   )

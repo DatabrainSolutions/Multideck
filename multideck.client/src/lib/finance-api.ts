@@ -1,5 +1,6 @@
-import { apiFetch } from "@/lib/api"
+import { edgeFetch } from "@/lib/api"
 import { getSupabaseSession } from "@/lib/supabase"
+import { invalidateCachedCrmResources, readCachedCrmResource } from "@/lib/crm-read-cache"
 
 export type ApiFinanceCurrency = {
   code: string
@@ -49,14 +50,16 @@ async function authenticatedFinanceGet<T>(path: string): Promise<T> {
   const session = await getSupabaseSession()
   if (!session?.access_token) throw new FinanceApiError("Sign in again to load finance rates.")
 
+  return readCachedCrmResource(session.user.id, `finance-reference:${path}`, () => loadFinanceReference<T>(path, session.access_token))
+}
+
+async function loadFinanceReference<T>(path: string, accessToken: string): Promise<T> {
+
   const controller = new AbortController()
   const timeoutId = window.setTimeout(() => controller.abort(), 8000)
 
   try {
-    const response = await apiFetch(path, {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-      signal: controller.signal,
-    })
+    const response = await edgeFetch("finance", path, accessToken, { signal: controller.signal })
 
     if (!response.ok) throw new FinanceApiError(await parseFinanceApiError(response))
     return response.json() as Promise<T>
@@ -70,13 +73,17 @@ async function authenticatedFinanceGet<T>(path: string): Promise<T> {
   }
 }
 
+export function invalidateFinanceReferenceReads() {
+  invalidateCachedCrmResources(null, ["finance-reference:", "quote-sources"])
+}
+
 export function listFinanceCurrencies() {
-  return authenticatedFinanceGet<ApiFinanceCurrenciesResponse>("/api/finance/currencies")
+  return authenticatedFinanceGet<ApiFinanceCurrenciesResponse>("/currencies")
 }
 
 export function getFinanceExchangeRates(baseCurrency: string) {
   const base = baseCurrency.trim().toUpperCase()
   return authenticatedFinanceGet<ApiFinanceExchangeRatesResponse>(
-    `/api/finance/exchange-rates?base=${encodeURIComponent(base)}`,
+    `/exchange-rates?base=${encodeURIComponent(base)}`,
   )
 }

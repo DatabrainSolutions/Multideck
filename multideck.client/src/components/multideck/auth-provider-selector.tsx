@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import type { Provider } from "@supabase/supabase-js"
-import { Check, KeyRound, Loader2, MailCheck } from "lucide-react"
+import { Check, KeyRound, Loader2, MailCheck } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import appleLogo from "@/assets/auth/apple.svg"
@@ -8,7 +8,7 @@ import facebookLogo from "@/assets/auth/facebook.svg"
 import googleLogo from "@/assets/auth/google.svg"
 import linkedinLogo from "@/assets/auth/linkedin.svg"
 import microsoftLogo from "@/assets/auth/microsoft.svg"
-import { supabase } from "@/lib/supabase"
+import { authSupabase, supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
 export type AuthProviderId = "google" | "passkey" | "linkedin_oidc" | "facebook" | "azure"
@@ -121,7 +121,7 @@ export function AuthProviderSelector({
             title={provider.label}
             className={cn(
               "group grid h-14 min-w-0 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-              "hover:-translate-y-px hover:bg-white hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-55",
+              "hover:-translate-y-px hover:bg-white hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-55",
             )}
             onClick={() => void onSelect?.(provider.id)}
           >
@@ -217,8 +217,8 @@ export function AuthIdentityManager({ preview = false, embedded = false }: { pre
 
     try {
       const [{ data: identitiesData, error: identitiesError }, { data: passkeyData, error: passkeyError }] = await Promise.all([
-        supabase.auth.getUserIdentities(),
-        supabase.auth.passkey.list(),
+        authSupabase!.auth.getUserIdentities(),
+        authSupabase!.auth.passkey.list(),
       ])
 
       if (identitiesError) throw identitiesError
@@ -252,7 +252,7 @@ export function AuthIdentityManager({ preview = false, embedded = false }: { pre
     setBusyProvider(provider)
 
     try {
-      const { error } = await supabase.auth.linkIdentity({
+      const { error } = await authSupabase!.auth.linkIdentity({
         provider: provider as Provider,
         options: {
           redirectTo: getIdentityRedirectUrl(),
@@ -289,7 +289,7 @@ export function AuthIdentityManager({ preview = false, embedded = false }: { pre
     setBusyProvider("passkey")
 
     try {
-      const { error } = await supabase.auth.registerPasskey()
+      const { error } = await authSupabase!.auth.registerPasskey()
       if (error) throw error
       await refreshMethods()
       toast.success("Passkey connected")

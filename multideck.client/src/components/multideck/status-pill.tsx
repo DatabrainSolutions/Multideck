@@ -1,34 +1,55 @@
-import type { ReactNode } from "react"
+import { createContext, useContext, type ReactNode } from "react"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 
-const toneClass: Record<StatusTone, string> = {
-  green: "bg-[rgba(14,125,116,0.1)] text-[var(--md-green)] shadow-[0_0_0_1px_rgba(14,125,116,0.1)]",
-  amber: "bg-[rgba(221,138,43,0.1)] text-[var(--md-amber)] shadow-[0_0_0_1px_rgba(221,138,43,0.1)]",
-  red: "bg-[rgba(209,78,78,0.1)] text-[var(--md-red)] shadow-[0_0_0_1px_rgba(209,78,78,0.1)]",
-  blue: "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)] shadow-[0_0_0_1px_rgba(74,125,156,0.1)]",
-  neutral: "bg-[rgba(90,103,100,0.08)] text-[var(--md-text)] shadow-[0_0_0_1px_rgba(90,103,100,0.08)]",
-  teal: "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] shadow-[0_0_0_1px_rgba(14,125,116,0.1)]",
-}
+export const TablePillKindContext = createContext<"status" | "attribute" | null>(null)
 
 export function StatusPill({
   tone = "neutral",
+  kind,
+  indicator,
   children,
   className,
 }: {
   tone?: StatusTone
+  /** Status and attribute pills share the established filled table treatment. */
+  kind?: "status" | "attribute"
+  indicator?: ReactNode | false
   children: ReactNode
   className?: string
 }) {
+  const tableKind = useContext(TablePillKindContext)
+  const resolvedKind = kind ?? tableKind ?? "status"
+  const showIndicator = indicator !== false && indicator != null
+
   return (
     <Badge
       variant="secondary"
-      className={cn("h-[21px] rounded-full px-[9px] text-[11.5px] font-medium leading-none tabular-nums", toneClass[tone], className)}
+      data-pill-kind={resolvedKind}
+      data-tone={tone}
+      data-table-pill="true"
+      className={cn(
+        "md-status-pill h-6 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-normal leading-none tabular-nums shadow-none",
+        tableToneClass[tone],
+        className,
+      )}
     >
+      {showIndicator ? indicator : null}
       {children}
     </Badge>
   )
+}
+
+const tableToneClass: Record<StatusTone, string> = {
+  green: "bg-[var(--md-status-green-bg)] text-[var(--md-status-green-ink)]",
+  amber: "bg-[var(--md-status-amber-bg)] text-[var(--md-status-amber-ink)]",
+  red: "bg-[var(--md-status-red-bg)] text-[var(--md-status-red-ink)]",
+  blue: "bg-[var(--md-status-blue-bg)] text-[var(--md-status-blue-ink)]",
+  orange: "bg-[var(--md-status-orange-bg)] text-[var(--md-status-orange-ink)]",
+  purple: "bg-[var(--md-status-purple-bg)] text-[var(--md-status-purple-ink)]",
+  teal: "bg-[var(--md-status-teal-bg)] text-[var(--md-status-teal-ink)]",
+  neutral: "bg-[var(--md-status-blue-bg)] text-[var(--md-status-blue-ink)]",
 }
 
 export function toneToVar(tone: StatusTone) {
@@ -37,7 +58,16 @@ export function toneToVar(tone: StatusTone) {
     amber: "var(--md-amber)",
     red: "var(--md-red)",
     blue: "var(--md-blue)",
+    orange: "var(--md-orange)",
+    purple: "var(--md-purple)",
     neutral: "var(--md-subtle)",
     teal: "var(--md-accent)",
   }[tone]
+}
+
+/** Stable category colour for neutral attribute pills. */
+export function attributeToneFor(value: string): StatusTone {
+  const palette: StatusTone[] = ["teal", "blue", "amber", "green", "red"]
+  const hash = Array.from(value).reduce((total, character) => ((total * 31) + character.codePointAt(0)!) >>> 0, 0)
+  return palette[hash % palette.length]
 }

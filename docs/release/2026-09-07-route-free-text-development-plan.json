@@ -1,0 +1,7 @@
+{
+  "projectId": "aqtwypsuijxlnvtxpuxe",
+  "status": "scoped route validator release; verify hosted persistence separately",
+  "migrations": [
+    { "file": "20260907153932_booking_route_free_text_location_validation.sql", "sha256": "aa488be84caee1a735ca11f39b6a654d5092a09b48aa51592cf93127a3dfdb54" }
+  ]
+}

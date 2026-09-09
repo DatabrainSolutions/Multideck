@@ -1,126 +1,286 @@
-import { ArrowLeft, Menu, MoreHorizontal, Plus, Upload, UserRoundPlus } from "lucide-react"
+import { useEffect, useState } from "react"
+import { ChevronDown, MapPinOff, Menu, MoreHorizontal, PackagePlus, Plus, Upload, UserRoundPlus } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useLanguage } from "@/i18n/language-provider"
-import type { LanguageCode } from "@/i18n/languages"
+import { dispatchTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 import { cn } from "@/lib/utils"
+import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
+import { openMeetingComposer } from "@/lib/meeting-composer-events"
+import { AppBreadcrumbs } from "./app-breadcrumbs"
 import { CommandInput } from "./command-input"
 import { AppSidebar } from "./app-sidebar"
-import { customers } from "@/data/multideck-data"
-
-function getTopBarDateLabel(language: LanguageCode, todayLabel: string) {
-  const locale: Record<LanguageCode, string> = {
-    "en-GB": "en-GB",
-    "en-US": "en-US",
-    de: "de-DE",
-    fr: "fr-FR",
-    ar: "ar-GB-u-ca-gregory",
-  }
-  const date = new Intl.DateTimeFormat(locale[language], {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  }).format(new Date())
-
-  return `${todayLabel} - ${date}`
-}
-
-const topBarBackButtonClass =
-  "-mx-2 flex min-w-0 items-center gap-3 rounded-[var(--md-radius-md)] px-2 py-1.5 text-[14px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white/42 hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.16)]"
 
 const topBarGhostActionClass =
-  "h-10 rounded-[var(--md-radius-lg)] bg-white/42 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+  "h-9 rounded-[var(--md-radius-lg)] bg-white/42 px-3 text-[12.5px] font-medium leading-none text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
 
 const topBarPrimaryActionClass =
-  "h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] hover:shadow-[0_14px_26px_rgba(14,125,116,0.18)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.16)]"
+  "h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[12.5px] font-medium leading-none text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] hover:shadow-[0_14px_26px_var(--md-accent-a18)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]"
 
 const topBarIconActionClass =
-  "rounded-[var(--md-radius-md)] bg-white/42 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+  "rounded-[var(--md-radius-md)] bg-white/42 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+
+const warehouseCreateActions: Partial<Record<string, { label: string; eventName: (typeof topBarActionEvents)[keyof typeof topBarActionEvents] }>> = {
+  "/warehouse/goods-in": { label: "New inbound order", eventName: topBarActionEvents.createWarehouseOrder },
+  "/warehouse/goods-out": { label: "New outbound order", eventName: topBarActionEvents.createWarehouseOrder },
+  "/warehouse/orders": { label: "New warehouse order", eventName: topBarActionEvents.createWarehouseOrder },
+  "/warehouse/facilities": { label: "New facility", eventName: topBarActionEvents.createWarehouseFacility },
+  "/warehouse/items": { label: "New item", eventName: topBarActionEvents.createWarehouseItem },
+  "/warehouse/locations": { label: "New location", eventName: topBarActionEvents.createWarehouseLocation },
+}
+
+type CrmCreateAction = {
+  label: string
+  eventName?: (typeof topBarActionEvents)[keyof typeof topBarActionEvents]
+  path?: string
+}
+
+const crmCreateActions: Partial<Record<string, CrmCreateAction>> = {
+  "/crm/leads": { label: "New lead", eventName: topBarActionEvents.createCrmLead },
+  "/crm/accounts": { label: "New company", eventName: topBarActionEvents.createCrmAccount },
+  "/crm/contacts": { label: "New contact", eventName: topBarActionEvents.createCrmContact },
+  "/crm/contact-cards": { label: "New card", eventName: topBarActionEvents.createCrmContactCard },
+  "/crm/deals": { label: "New deal", eventName: topBarActionEvents.createCrmDeal },
+}
+
+const ratesTopBarActions: Partial<Record<string, { importLabel: string; createLabel: string }>> = {
+  "/rates": { importLabel: "Import rates", createLabel: "New rate" },
+  "/rates/contracts": { importLabel: "Import contracts", createLabel: "New contract" },
+  "/rates/tariffs": { importLabel: "Import tariffs", createLabel: "New tariff" },
+}
+
+function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (path: string) => void }) {
+  const { t } = useLanguage()
+
+  if (route === "/warehouse/purchase-orders") {
+    return <Button aria-label={t("New expected receipt")} title={t("New expected receipt")} className={topBarPrimaryActionClass} onClick={() => navigate("/warehouse/purchase-orders/new")}><Plus data-icon="inline-start" strokeWidth={1.2} /><span className="hidden sm:inline">{t("New expected receipt")}</span></Button>
+  }
+
+  if (route === "/warehouse/inventory") {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button aria-label={t("New")} title={t("New")} className={topBarPrimaryActionClass}>
+            <Plus data-icon="inline-start" strokeWidth={1.2} />
+            <span className="hidden sm:inline">{t("New")}</span>
+            <ChevronDown className="size-3 opacity-70" strokeWidth={1.4} aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-[248px]">
+          <DropdownMenuItem onSelect={() => dispatchTopBarAction(topBarActionEvents.createWarehouseObject)}>
+            <PackagePlus className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+            {t("New pallet")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => dispatchTopBarAction(topBarActionEvents.reportWarehouseLocationEmpty)}>
+            <MapPinOff className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+            {t("Report a location empty")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
+
+  const action = warehouseCreateActions[route]
+  if (action) {
+    return (
+      <Button aria-label={t(action.label)} title={t(action.label)} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(action.eventName)}>
+        <Plus data-icon="inline-start" strokeWidth={1.2} />
+        <span className="hidden sm:inline">{t(action.label)}</span>
+      </Button>
+    )
+  }
+
+  if (route === "/warehouse" || route === "/warehouse/calendar") {
+    return (
+      <Button aria-label={t("New order")} title={t("New order")} className={topBarPrimaryActionClass} onClick={() => navigate("/warehouse/orders?create=1")}>
+        <Plus data-icon="inline-start" strokeWidth={1.2} />
+        <span className="hidden sm:inline">{t("New order")}</span>
+      </Button>
+    )
+  }
+
+  return null
+}
+
+function FinanceTopBarAction({ route, currentUser }: { route: string; currentUser?: AuthUserSummary | null }) {
+  const { t } = useLanguage()
+  if (/^\/finance\/(receivables|payables)\/documents\/[^/]+$/.test(route)) return null
+  if (route === "/finance/payables/intake") {
+    if (!hasPermission(currentUser, "Finance.Payables.Draft")) return null
+    return <Button aria-label={t("Add supplier documents")} title={t("Add supplier documents")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.importSupplierDocuments)}><Plus data-icon="inline-start" strokeWidth={1.2} /><span className="hidden sm:inline">{t("Add documents")}</span></Button>
+  }
+  if (route === "/finance/management/accruals-wip") {
+    if (!hasPermission(currentUser, "Finance.Management.Prepare")) return null
+    return <Button aria-label={t("Prepare period review")} title={t("Prepare period review")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.prepareAccrualWipReview)}><Plus data-icon="inline-start" strokeWidth={1.2} /><span className="hidden sm:inline">{t("Prepare period review")}</span></Button>
+  }
+  const actions = route.startsWith("/finance/receivables")
+    ? [
+      { label: "New sales invoice", permission: "Finance.Receivables.Draft", event: topBarActionEvents.createSalesInvoice },
+      { label: "New customer credit", permission: "Finance.Receivables.Draft", event: topBarActionEvents.createCustomerCredit },
+      { label: "Record customer receipt", permission: "Finance.Receivables.Cash", event: topBarActionEvents.recordCustomerReceipt },
+    ]
+    : route.startsWith("/finance/payables")
+      ? [
+        { label: "New purchase invoice", permission: "Finance.Payables.Draft", event: topBarActionEvents.createPurchaseInvoice },
+        { label: "New supplier credit", permission: "Finance.Payables.Draft", event: topBarActionEvents.createSupplierDebit },
+        { label: "Import supplier documents", permission: "Finance.Payables.Draft", event: topBarActionEvents.importSupplierDocuments },
+        { label: "Record supplier payment", permission: "Finance.Payables.Cash", event: topBarActionEvents.recordSupplierPayment },
+      ]
+      : route.startsWith("/finance/cash")
+        ? [
+          { label: "Record customer receipt", permission: "Finance.Receivables.Cash", event: topBarActionEvents.recordCustomerReceipt },
+          { label: "Record supplier payment", permission: "Finance.Payables.Cash", event: topBarActionEvents.recordSupplierPayment },
+        ]
+        : []
+  const available = actions.filter((action) => hasPermission(currentUser, action.permission))
+  if (!available.length) return null
+  const triggerLabel = route.startsWith("/finance/receivables") ? "New sales entry" : route.startsWith("/finance/payables") ? "New purchase entry" : "Record cash"
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button aria-label={t(triggerLabel)} title={t(triggerLabel)} className={topBarPrimaryActionClass}>
+          <Plus data-icon="inline-start" strokeWidth={1.2} />
+          <span className="hidden sm:inline">{t(triggerLabel)}</span>
+          <ChevronDown className="size-3 opacity-70" strokeWidth={1.4} aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[240px]">
+        {available.map((action) => <DropdownMenuItem key={action.event} onSelect={() => dispatchTopBarAction(action.event)}>{t(action.label)}</DropdownMenuItem>)}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
 
 export function TopBar({
   route,
   navigate,
+  currentUser,
 }: {
   route: string
   navigate: (path: string) => void
+  currentUser?: AuthUserSummary | null
 }) {
-  const isCustomerList = route === "/customers"
+  const partyRegisterType = route === "/customers" ? "customer" : route === "/suppliers" ? "supplier" : null
+  const isPartyRegister = partyRegisterType !== null
   const isCustomerDetail = route.startsWith("/customers/")
+  const isSupplierDetail = route.startsWith("/suppliers/")
+  const isPartyDetail = isCustomerDetail || isSupplierDetail
   const isCrmRoute = route.startsWith("/crm")
   const isCrmLeadDetail = /^\/crm\/leads\/[^/]+$/.test(route)
+  const isCrmAccountDetail = /^\/crm\/accounts\/[^/]+$/.test(route)
+  const isCrmLeadConversion = /^\/crm\/leads\/[^/]+\/convert$/.test(route)
   const isBookingList = route === "/bookings"
-  const isBookingWizard = route === "/bookings/new"
   const isRoadControl = route === "/road-control"
   const isRoadBooking = route === "/road-control/new"
   const isRoadJob = /^\/road-control\/[^/]+$/.test(route) && !isRoadBooking
   const isRoadRoute = isRoadControl || isRoadBooking || isRoadJob
-  const roadJobLabel = isRoadJob ? route.split("/").at(-1)?.toLocaleUpperCase() : undefined
   const isQuotes = route === "/quotes"
+  const isTodo = route === "/to-do"
+  const isCalendar = route === "/calendar"
+  const isBookingLinks = route === "/calendar/booking-links"
   const isWarehouse = route.startsWith("/warehouse")
-  const isReports = route === "/reports"
+  const isFinance = route.startsWith("/finance/")
+  const isStandaloneExportRegister = route === "/customs/standalone/export"
+  const isStandaloneImportRegister = route === "/customs/standalone/import"
+  const isReports = route === "/reports" || route === "/reports/history"
+  const isScheduledReports = route === "/reports/scheduled"
+  const isReportingRoute = isReports || isScheduledReports
   const isOperationalJobScreen = route === "/" || route.startsWith("/bookings") || route.startsWith("/quotes") || isRoadRoute || isWarehouse
-  const { language, t } = useLanguage()
-  const todayLabel = getTopBarDateLabel(language, t("Today"))
-  const crmRouteLabel: Record<string, string> = {
-    "/crm": "CRM",
-    "/crm/accounts": "Leads",
-    "/crm/leads": "Leads",
-    "/crm/contacts": "Contacts",
-    "/crm/deals": "Deals",
-    "/crm/emails": "Emails",
-    "/crm/lists": "Lists",
-    "/crm/marketing": "Marketing",
-    "/crm/activity": "Activity",
-    "/crm/settings": "CRM settings",
-  }
-  const warehouseRouteLabel: Record<string, string> = {
-    "/warehouse": "Dashboard",
-    "/warehouse/facilities": "Facilities",
-    "/warehouse/locations": "Locations",
-    "/warehouse/items": "Items",
-    "/warehouse/inventory": "Inventory",
-    "/warehouse/goods-in": "Goods in",
-    "/warehouse/goods-out": "Goods out",
-    "/warehouse/orders": "Orders",
-    "/warehouse/calendar": "Calendar",
-  }
-  const currentLead = isCrmLeadDetail ? customers.find((customer) => customer.id === route.split("/").at(-1)) : undefined
+  const crmCreateAction = crmCreateActions[route]
+  const canWriteCrm = hasPermission(currentUser, "CRM.Write")
+  const ratesTopBarAction = ratesTopBarActions[route]
+  const { direction, t } = useLanguage()
+  const [currentRecordName, setCurrentRecordName] = useState<string | null>(null)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    setCurrentRecordName(null)
+
+    async function loadRecordName() {
+      const leadMatch = route.match(/^\/crm\/leads\/([^/]+)(?:\/convert)?$/)
+      if (leadMatch) {
+        const { getLead } = await import("@/lib/lead-api")
+        return (await getLead(leadMatch[1])).companyName
+      }
+
+      const accountMatch = route.match(/^\/crm\/accounts\/([^/]+)$/)
+      const customerMatch = route.match(/^\/(?:customers|suppliers)\/([^/]+)$/)
+      if (accountMatch || customerMatch) {
+        const { getCustomer } = await import("@/lib/customer-api")
+        return (await getCustomer((accountMatch ?? customerMatch)![1])).name
+      }
+
+      const contactMatch = route.match(/^\/crm\/contacts\/([^/]+)$/)
+      if (contactMatch) {
+        const { getContact } = await import("@/lib/customer-api")
+        return (await getContact(contactMatch[1])).name
+      }
+
+      return null
+    }
+
+    void loadRecordName()
+      .then((name) => {
+        if (active) setCurrentRecordName(name)
+      })
+      .catch(() => {
+        // The breadcrumb keeps its user-friendly record-type fallback when the
+        // detail request fails; an opaque route identifier is never exposed.
+      })
+
+    return () => {
+      active = false
+    }
+  }, [route])
 
   return (
     <header className="sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-[var(--md-page-stack-gap)] flex min-h-[56px] items-center gap-[var(--md-gap-lg)] bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] py-[var(--md-gap-sm)] shadow-[var(--md-stroke-bottom)] backdrop-blur-xl">
-      <Sheet>
+      <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
         <SheetTrigger asChild>
-          <Button variant="ghost" size="icon" className={cn(topBarIconActionClass, "bg-[var(--md-glass-strong)] lg:hidden")}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t("Open navigation")}
+            title={t("Open navigation")}
+            className={cn(topBarIconActionClass, "bg-[var(--md-glass-strong)] lg:hidden")}
+          >
             <Menu data-icon="inline-start" strokeWidth={1.2} />
           </Button>
         </SheetTrigger>
         <SheetContent
-          side="left"
-          className="data-[side=left]:w-[min(var(--md-sidebar-width),calc(100vw-24px))] data-[side=left]:max-w-[var(--md-sidebar-width)] gap-0 border-0 bg-[var(--md-sidebar-bg)] p-0 shadow-[var(--md-shadow-lift)]"
+          side={direction === "rtl" ? "right" : "left"}
+          showCloseButton={false}
+          className="gap-0 border-0 bg-[var(--md-sidebar-bg)] p-0 shadow-[var(--md-shadow-lift)] data-[side=left]:w-[min(var(--md-sidebar-width),calc(100vw-24px))] data-[side=left]:max-w-[var(--md-sidebar-width)] data-[side=right]:w-[min(var(--md-sidebar-width),calc(100vw-24px))] data-[side=right]:max-w-[var(--md-sidebar-width)]"
         >
-          <SheetTitle className="sr-only">Multideck navigation</SheetTitle>
-          <SheetDescription className="sr-only">Mobile navigation for Multideck modules and boards.</SheetDescription>
-          <AppSidebar route={route} navigate={navigate} />
+          <SheetTitle className="sr-only">{t("Multideck navigation")}</SheetTitle>
+          <SheetDescription className="sr-only">{t("Mobile navigation for Multideck")}</SheetDescription>
+          <AppSidebar
+            route={route}
+            currentUser={currentUser}
+            navigate={(path) => {
+              setMobileSidebarOpen(false)
+              navigate(path)
+            }}
+            onRequestClose={() => setMobileSidebarOpen(false)}
+          />
         </SheetContent>
       </Sheet>
 
-      {isCustomerDetail ? (
+      {isPartyDetail ? (
         <>
-          <button type="button" className={topBarBackButtonClass} onClick={() => navigate("/customers")}>
-            <ArrowLeft className="size-4" strokeWidth={1.2} />
-            <span>Customers</span>
-          </button>
-          <span className="hidden text-[var(--md-subtle)] md:inline">/</span>
-          <p className="hidden text-[14px] font-medium text-[var(--md-ink)] md:block">Marlow Apparel Ltd</p>
+          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
           <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
               className={topBarGhostActionClass}
               onClick={() =>
                 toast.success("Share link copied", {
-                  description: "Marlow Apparel's account link is ready to send.",
+                  description: `${currentRecordName ?? (isSupplierDetail ? "Supplier" : "Customer")}'s account link is ready to send.`,
                 })
               }
             >
@@ -129,63 +289,98 @@ export function TopBar({
             <Button variant="ghost" size="icon" className={topBarIconActionClass}>
               <MoreHorizontal data-icon="inline-start" strokeWidth={1.2} />
             </Button>
-            <Button
+            {isCustomerDetail ? <Button
               className={topBarPrimaryActionClass}
               onClick={() => navigate("/bookings/new")}
             >
-              <span className="hidden sm:inline">New booking for Marlow</span>
+              <span className="hidden sm:inline">{currentRecordName ? `New booking for ${currentRecordName}` : "New booking"}</span>
               <span className="sm:hidden">New booking</span>
-            </Button>
+            </Button> : null}
           </div>
         </>
+      ) : isCrmLeadConversion ? (
+        <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 md:min-w-[210px]" />
       ) : isCrmLeadDetail ? (
         <>
-          <button type="button" className={topBarBackButtonClass} onClick={() => navigate("/crm/leads")}>
-            <ArrowLeft className="size-4" strokeWidth={1.2} />
-            <span>Leads</span>
-          </button>
-          <span className="hidden text-[var(--md-subtle)] md:inline">/</span>
-          <p className="hidden truncate text-[14px] font-medium text-[var(--md-ink)] md:block">{currentLead?.name ?? "Lead detail"}</p>
-          <div className="ml-auto flex items-center gap-2">
+          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
+          {currentRecordName ? <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
               className={topBarGhostActionClass}
-              onClick={() => toast.success("Activity logged", { description: `${currentLead?.name ?? "Lead"} has a new CRM note.` })}
+              onClick={() => openMeetingComposer({ source: "crm", linkedRecord: { type: "lead", id: route.split("/").at(-1)!, name: currentRecordName } })}
             >
-              Log activity
-            </Button>
-            <Button variant="ghost" size="icon" aria-label="More lead actions" className={topBarIconActionClass}>
-              <MoreHorizontal data-icon="inline-start" strokeWidth={1.2} />
+              {t("Book meeting")}
             </Button>
             <Button
               className={topBarPrimaryActionClass}
-              onClick={() => toast.success("Deal draft created", { description: `${currentLead?.name ?? "Lead"} is ready for quote and pricing setup.` })}
+              onClick={() => navigate(`${route}/convert`)}
             >
-              Convert to deal
+              {t("Convert to deal")}
             </Button>
-          </div>
+          </div> : null}
+        </>
+      ) : isCrmAccountDetail ? (
+        <>
+          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
+          {currentRecordName ? <div className="ml-auto flex items-center gap-2">
+            <Button
+              className={topBarPrimaryActionClass}
+              onClick={() => openMeetingComposer({ source: "crm", linkedRecord: { type: "account", id: route.split("/").at(-1)!, name: currentRecordName } })}
+            >
+              {t("Book meeting")}
+            </Button>
+          </div> : null}
         </>
       ) : (
         <>
-          {isRoadRoute ? (
-            <div className="hidden min-w-[210px] items-center gap-2 text-[14px] md:flex">
-              <button type="button" onClick={() => navigate("/bookings")} className="font-medium text-[var(--md-text)] transition-colors hover:text-[var(--md-accent)]">{t("Bookings & jobs")}</button>
-              <span className="text-[var(--md-subtle)]" aria-hidden="true">/</span>
-              {isRoadBooking || isRoadJob ? <button type="button" onClick={() => navigate("/road-control")} className="font-medium text-[var(--md-text)] transition-colors hover:text-[var(--md-accent)]">{t("Road control")}</button> : <p className="font-medium text-[var(--md-ink)]">{t("Road control")}</p>}
-              {isRoadBooking ? <><span className="text-[var(--md-subtle)]" aria-hidden="true">/</span><p className="font-medium text-[var(--md-ink)]">{t("New road job")}</p></> : null}
-              {isRoadJob ? <><span className="text-[var(--md-subtle)]" aria-hidden="true">/</span><p dir="ltr" className="font-medium text-[var(--md-ink)]">{roadJobLabel}</p></> : null}
-            </div>
-          ) : <p className="hidden min-w-[210px] text-[15px] font-medium text-[var(--md-text)] md:block">{t(isBookingList ? "Bookings" : isQuotes ? "Quotes" : isBookingWizard ? "New booking" : isCustomerList ? "Customers" : isWarehouse ? warehouseRouteLabel[route] ?? "Warehouse" : isCrmRoute ? crmRouteLabel[route] ?? (route.startsWith("/crm/leads/") ? "Lead detail" : route.startsWith("/crm/lists/") ? "List detail" : route.includes("/stats") ? "Email statistics" : route.includes("/edit") ? "Email editor" : "CRM") : isReports ? "Reports" : todayLabel)}</p>}
+          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="hidden min-w-[210px] md:block" />
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
-            <CommandInput placeholder={isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search leads, contacts, deals, emails, lists, or marketing..." : isReports ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
+            <CommandInput placeholder={isTodo ? t("Task, tag, job, quote or customer…") : isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isFinance ? t("Invoice, credit, payment, party or job...") : isPartyRegister ? `Search ${partyRegisterType}s, contacts, or bookings...` : isCrmRoute ? "Search calls, leads, companies, contacts, or deals..." : isReportingRoute ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
           </div>
-          {isBookingList ? (
+          {isTodo ? (
+            <Button aria-label={t("New task")} title={t("New task")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createTodoTask)}>
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("New task")}</span>
+            </Button>
+          ) : isCalendar ? (
+            <Button aria-label={t("New event")} title={t("New event")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createCalendarMeeting)}>
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("New event")}</span>
+            </Button>
+          ) : isBookingLinks ? (
+            <Button aria-label={t("New booking link")} title={t("New booking link")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createBookingLink)}>
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("New booking link")}</span>
+            </Button>
+          ) : ratesTopBarAction ? (
+            <>
+              <Button
+                variant="ghost"
+                className={cn("hidden sm:inline-flex", topBarGhostActionClass)}
+                onClick={() => dispatchTopBarAction(topBarActionEvents.importRates)}
+              >
+                <Upload data-icon="inline-start" strokeWidth={1.2} />
+                {t(ratesTopBarAction.importLabel)}
+              </Button>
+              <Button
+                aria-label={t(ratesTopBarAction.createLabel)}
+                title={t(ratesTopBarAction.createLabel)}
+                className={topBarPrimaryActionClass}
+                onClick={() => dispatchTopBarAction(topBarActionEvents.createRate)}
+              >
+                <Plus data-icon="inline-start" strokeWidth={1.2} />
+                <span className="hidden sm:inline">{t(ratesTopBarAction.createLabel)}</span>
+              </Button>
+            </>
+          ) : isBookingList ? (
             <>
               <Button variant="ghost" className={cn("hidden sm:inline-flex", topBarGhostActionClass)}>
                 <Upload data-icon="inline-start" strokeWidth={1.2} />
                 Import CSV
               </Button>
               <Button
+                aria-label="New booking"
+                title="New booking"
                 className={topBarPrimaryActionClass}
                 onClick={() => navigate("/bookings/new")}
               >
@@ -193,90 +388,81 @@ export function TopBar({
                 <span className="hidden sm:inline">New booking</span>
               </Button>
             </>
+          ) : isPartyRegister && canWriteCrm ? (
+            <Button
+              aria-label={`New ${partyRegisterType}`}
+              title={`New ${partyRegisterType}`}
+              className={topBarPrimaryActionClass}
+              onClick={() => dispatchTopBarAction(topBarActionEvents.createCrmAccount)}
+            >
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">New {partyRegisterType}</span>
+            </Button>
+          ) : isCrmRoute && crmCreateAction && canWriteCrm ? (
+            <>
+              <Button
+                aria-label={t(crmCreateAction.label)}
+                title={t(crmCreateAction.label)}
+                className={topBarPrimaryActionClass}
+                onClick={() => {
+                  if (crmCreateAction.eventName) {
+                    dispatchTopBarAction(crmCreateAction.eventName)
+                  } else if (crmCreateAction.path) {
+                    navigate(crmCreateAction.path)
+                  }
+                }}
+              >
+                <Plus data-icon="inline-start" strokeWidth={1.2} />
+                <span className="hidden sm:inline">{t(crmCreateAction.label)}</span>
+              </Button>
+            </>
+          ) : isQuotes ? (
+            <Button aria-label={t("New quote")} title={t("New quote")} className={topBarPrimaryActionClass} onClick={() => navigate("/quotes/new")}>
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("New quote")}</span>
+            </Button>
           ) : isWarehouse ? (
-            <>
-              <Button
-                className={topBarPrimaryActionClass}
-                onClick={() =>
-                  toast.success("Warehouse movement drafted", {
-                    description: "Choose goods in, goods out, adjustment, or transfer next.",
-                  })
-                }
-              >
-                <Plus data-icon="inline-start" strokeWidth={1.2} />
-                <span className="hidden sm:inline">{t("New pick")}</span>
-                <span className="sm:hidden">New</span>
-              </Button>
-            </>
-          ) : isCustomerList ? (
-            <>
-              <Button variant="ghost" className={cn("hidden sm:inline-flex", topBarGhostActionClass)}>
-                <Upload data-icon="inline-start" strokeWidth={1.2} />
-                Import
-              </Button>
-              <Button
-                className={topBarPrimaryActionClass}
-                onClick={() => window.dispatchEvent(new CustomEvent("multideck:create-customer"))}
-              >
-                <Plus data-icon="inline-start" strokeWidth={1.2} />
-                <span className="hidden sm:inline">New customer</span>
-              </Button>
-            </>
-          ) : isCrmRoute ? (
-            <>
-              <Button
-                variant="ghost"
-                className={cn("hidden sm:inline-flex", topBarGhostActionClass)}
-                onClick={() =>
-                  toast.success("CRM import opened", {
-                    description: "Add leads, contacts, deals, or relationship notes.",
-                  })
-                }
-              >
-                <Upload data-icon="inline-start" strokeWidth={1.2} />
-                Import
-              </Button>
-              <Button
-                className={topBarPrimaryActionClass}
-                onClick={() =>
-                  toast.success("CRM record draft created", {
-                    description: "Choose lead, contact, deal, or note next.",
-                  })
-                }
-              >
-                <Plus data-icon="inline-start" strokeWidth={1.2} />
-                <span className="hidden sm:inline">New CRM record</span>
-                <span className="sm:hidden">New</span>
-              </Button>
-            </>
+            <WarehouseTopBarAction route={route} navigate={navigate} />
+          ) : isFinance ? (
+            <FinanceTopBarAction route={route} currentUser={currentUser} />
+          ) : isStandaloneExportRegister ? (
+            <Button aria-label={t("New export declaration")} title={t("New export declaration")} className={topBarPrimaryActionClass} onClick={() => navigate("/customs/standalone/export/new")}>
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("New export declaration")}</span>
+            </Button>
+          ) : isStandaloneImportRegister ? (
+            <Button aria-label={t("New import declaration")} title={t("New import declaration")} className={topBarPrimaryActionClass} onClick={() => navigate("/customs/standalone/import/new")}>
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("New import declaration")}</span>
+            </Button>
           ) : isReports ? (
-            <>
-              <Button
-                variant="ghost"
-                className={cn("hidden sm:inline-flex", topBarGhostActionClass)}
-                onClick={() =>
-                  toast.success("Report schedules opened", {
-                    description: "Review cadence, recipients, and upcoming runs.",
-                  })
-                }
-              >
-                Schedules
-              </Button>
-              <Button
-                className={topBarPrimaryActionClass}
-                onClick={() =>
-                  toast.success("New report draft created", {
-                    description: "Choose a template, customer scope, and output format next.",
-                  })
-                }
-              >
-                <Plus data-icon="inline-start" strokeWidth={1.2} />
-                <span className="hidden sm:inline">New report</span>
-              </Button>
-            </>
+            <Button
+              aria-label={t("Create report")}
+              title={t("Create report")}
+              className={topBarPrimaryActionClass}
+              onClick={() => dispatchTopBarAction(topBarActionEvents.startReportDraft)}
+            >
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("Create report")}</span>
+            </Button>
+          ) : isScheduledReports ? (
+            <Button
+              aria-label={t("Set up scheduled report")}
+              title={t("Set up scheduled report")}
+              className={topBarPrimaryActionClass}
+              onClick={() => dispatchTopBarAction(topBarActionEvents.startReportSchedule)}
+            >
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("Set up scheduled report")}</span>
+            </Button>
+          ) : isRoadControl ? (
+            <Button aria-label={t("New road job")} title={t("New road job")} className={topBarPrimaryActionClass} onClick={() => navigate("/road-control/new")}>
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("New road job")}</span>
+            </Button>
           ) : (
             <>
-              {!isOperationalJobScreen ? (
+              {!isOperationalJobScreen && !isReportingRoute && !isCrmRoute ? (
                 <>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -295,13 +481,6 @@ export function TopBar({
                   </Button>
                 </>
               ) : null}
-              <Button
-                className={topBarPrimaryActionClass}
-                onClick={() => navigate(isRoadRoute ? "/road-control/new" : "/bookings/new")}
-              >
-                <Plus data-icon="inline-start" strokeWidth={1.2} />
-                <span className="hidden sm:inline">New booking</span>
-              </Button>
             </>
           )}
         </>

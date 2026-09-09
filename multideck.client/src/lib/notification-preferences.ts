@@ -1,5 +1,5 @@
 import type { LanguageCode } from "@/i18n/languages"
-import { supabase } from "@/lib/supabase"
+import { authSupabase, supabase } from "@/lib/supabase"
 
 export const notificationEventTypes = [
   "customs_hold",
@@ -9,6 +9,8 @@ export const notificationEventTypes = [
   "daily_digest",
   "quote_reminder",
   "product_updates",
+  "dexter_watch",
+  "lifecycle_note_mention",
 ] as const
 
 export type NotificationEventType = (typeof notificationEventTypes)[number]
@@ -26,13 +28,15 @@ export const defaultNotificationEmailPreferences: NotificationEmailPreferences =
   daily_digest: true,
   quote_reminder: true,
   product_updates: true,
+  dexter_watch: false,
+  lifecycle_note_mention: true,
   digestTime: "07:30",
   timezone: "Europe/London",
 }
 
 async function requireWorkspaceUserId() {
   if (!supabase) throw new Error("Supabase is not configured for this workspace.")
-  const { data: authData, error: authError } = await supabase.auth.getUser()
+  const { data: authData, error: authError } = await authSupabase!.auth.getUser()
   if (authError || !authData.user) throw authError ?? new Error("Authentication required.")
 
   const { data, error } = await supabase
@@ -52,6 +56,7 @@ export async function loadNotificationEmailPreferences() {
     .select("CommNotifPref_EventType,CommNotifPref_IsEnabled,CommNotifPref_QuietHoursJSON")
     .eq("CommNotifPref_UserID", userId)
     .eq("CommNotifPref_ChannelCode", "email")
+    .limit(notificationEventTypes.length)
   if (error) throw error
 
   const preferences = { ...defaultNotificationEmailPreferences }

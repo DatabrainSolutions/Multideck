@@ -1,0 +1,67 @@
+import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import test from "node:test"
+
+const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8")
+const migration = read("../migrations/20260904120000_calendar_external_event_rsvp.sql")
+const providerEvents = read("../functions/_shared/calendar-provider-events.ts")
+const calendarApi = read("../functions/calendar-api/index.ts")
+const calendarWorker = read("../functions/calendar-worker/index.ts")
+const dexter = read("../functions/agent-dexter/index.ts")
+const clientApi = read("../../multideck.client/src/lib/calendar-api.ts")
+const preview = read("../../multideck.client/src/lib/local-calendar-preview.ts")
+const popover = read("../../multideck.client/src/components/multideck/meeting-details-popover.tsx")
+
+test("provider mirrors retain only the calendar owner's RSVP state for private-safe presentation", () => {
+  assert.match(migration, /CALProviderEvent_ResponseCode" varchar\(20\)/)
+  assert.match(migration, /CALProviderEvent_IsOrganiser" boolean not null default false/)
+  assert.match(migration, /CK_CAL_ProviderEvents_response/)
+  assert.match(calendarWorker, /const ownerResponse = providerOwnerResponse\(payload, provider, providerAttendees\)/)
+  assert.match(calendarWorker, /CALProviderEvent_ResponseCode: ownerResponse\.response/)
+  assert.match(calendarWorker, /CALProviderEvent_IsOrganiser: ownerResponse\.isOrganiser/)
+  assert.match(calendarWorker, /isOrganizer,responseStatus,responseRequested/)
+  assert.match(calendarApi, /canEdit: connectionReady && organiser/)
+  assert.match(calendarApi, /canRespond: connectionReady && !organiser/)
+  assert.match(calendarApi, /rsvpResponse: response/)
+})
+
+test("Calendar RSVP is provider-first and uses native Google and Microsoft response semantics", () => {
+  assert.match(providerEvents, /export async function pushExternalEventResponse/)
+  assert.match(providerEvents, /attendeesOmitted: true/)
+  assert.match(providerEvents, /responseStatus: providerResponseStatus\(nextResponse\)/)
+  assert.match(providerEvents, /tentativelyAccept/)
+  assert.match(providerEvents, /JSON\.stringify\(\{ sendResponse: true \}\)/)
+  assert.ok(providerEvents.indexOf("if (!response.ok)") < providerEvents.lastIndexOf('CALProviderEvent_ResponseCode: nextResponse'))
+  assert.match(calendarApi, /path\[2\] === "response"/)
+  assert.match(calendarApi, /Calendar\.ManageOwn/)
+  assert.match(clientApi, /respondToExternalEvent/)
+  assert.match(preview, /respondToPreviewExternalEvent/)
+})
+
+test("the event details popover exposes a full-width accessible response control only to invitees", () => {
+  assert.match(popover, /external && event\.canRespond/)
+  assert.match(popover, />Going\?</)
+  assert.match(popover, /aria-label="Respond to invitation"/)
+  assert.match(popover, /"accepted", "Yes"/)
+  assert.match(popover, /"tentative", "Maybe"/)
+  assert.match(popover, /"declined", "No"/)
+  assert.match(popover, /aria-pressed=\{selected\}/)
+  assert.match(popover, /respondToExternalEvent\(event\.id, nextResponse\)/)
+  assert.match(popover, /mx-5 border-t border-\[var\(--md-border\)\] pt-3/)
+  assert.match(popover, /mt-2 flex w-full rounded-full.*p-1.*shadow-\[var\(--md-shadow-line\)\]/)
+  assert.match(popover, /min-w-0 flex-1 rounded-full/)
+  assert.ok(popover.indexOf('["accepted", "Yes"]') < popover.indexOf('["declined", "No"]'))
+  assert.ok(popover.indexOf('["declined", "No"]') < popover.indexOf('["tentative", "Maybe"]'))
+})
+
+test("Dexter and Watching for you keep parity with the RSVP capability", () => {
+  assert.match(migration, /external_event_rsvp/)
+  assert.match(migration, /multideck_dexter_action_respond_external_event/)
+  assert.match(migration, /respond_external_event/)
+  assert.match(migration, /AIDexterAction_HasExternalEffect/)
+  assert.match(migration, /CAL_ProviderEvents_ResponseWatchSignal/)
+  assert.match(migration, /old\."CALProviderEvent_ResponseCode" is not distinct from new\."CALProviderEvent_ResponseCode"/)
+  assert.match(calendarWorker, /processExternalEventResponseDelivery/)
+  assert.match(calendarWorker, /kind === "external_event_rsvp"/)
+  assert.match(dexter, /Use respond_external_event only when canRespond is true/)
+})

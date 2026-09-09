@@ -1,7 +1,8 @@
-import { getSupabaseSession } from "@/lib/supabase";
-const publicUrl=import.meta.env.VITE_SUPABASE_URL?.trim().replace(/\/$/,"")??"";
-const supabaseFunctionsUrl=publicUrl?`${publicUrl}/functions/v1`:"";
-const supabasePublicApiKey=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim()||import.meta.env.VITE_SUPABASE_ANON_KEY?.trim()||"";
+import {
+  getSupabaseSession,
+  supabaseFunctionsUrl,
+  supabasePublicApiKey,
+} from "@/lib/supabase";
 export type LiveCustomerGrant = {
   id: string;
   connection_id: string;

@@ -1,0 +1,7 @@
+{
+  "purpose": "Exact pending milestone pair for fresh development-schema rehearsal; not authority to bypass release gates",
+  "migrations": [
+    { "file": "20260906182852_booking_route_milestone_foundation.sql", "sha256": "17f1944513a798a9474f98984feeb1855e2c42f13e0213bc6ec90e6f16b358a5" },
+    { "file": "20260907075838_dexter_booking_milestone_parity.sql", "sha256": "b8c5871ae8f1259e544959f1060db4e941bb2d20888a9efc0c6a9b3f9480a846" }
+  ]
+}

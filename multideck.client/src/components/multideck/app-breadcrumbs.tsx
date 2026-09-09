@@ -1,0 +1,411 @@
+import { Fragment, type MouseEvent } from "react"
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
+import { useLanguage } from "@/i18n/language-provider"
+import { cn } from "@/lib/utils"
+
+type AppBreadcrumb = {
+  label: string
+  route?: string
+  preserveDirection?: boolean
+  localize?: boolean
+}
+
+const staticLeafLabels: Record<string, string> = {
+  "/agent-dexter": "Agent Dexter",
+  "/admin/users": "Users",
+  "/admin/usage": "Usage",
+  "/admin/ai-usage": "Usage",
+  "/admin/broadcast": "Broadcast",
+  "/admin/billing": "Billing",
+  "/admin/system-preferences": "System Preferences",
+  "/admin/activity": "Active log",
+  "/admin/detailed-log": "Detailed log",
+  "/admin/finance": "Finance",
+  "/bookings": "Bookings",
+  "/bookings/new": "New booking",
+  "/bookings/provisional": "Provisional booking",
+  "/calendar": "Calendar",
+  "/calendar/booking-links": "Booking links",
+  "/components": "Components",
+  "/crm": "CRM",
+  "/crm/phone-calls": "Phone calls",
+  "/crm/accounts": "Companies",
+  "/crm/contacts": "Contacts",
+  "/crm/deals": "Deals",
+  "/crm/leads": "Leads",
+  "/crm/drive": "Drive",
+  "/crm/settings": "CRM settings",
+  "/customers": "Customers",
+  "/suppliers": "Supplier accounts",
+  "/finance/receivables": "Sales ledger",
+  "/finance/receivables/approvals": "Receivables approvals",
+  "/finance/receivables/cash": "Customer receipts & allocation",
+  "/finance/receivables/credit-control": "Credit control & collections",
+  "/finance/payables": "Purchase ledger",
+  "/finance/payables/approvals": "Payables approvals",
+  "/finance/payables/cash": "Supplier payments & allocation",
+  "/finance/payables/intake": "Supplier document intake",
+  "/finance/cash": "Cash & allocations",
+  "/finance/cash/reconciliation": "Allocation & reconciliation",
+  "/finance/administration": "Finance administration",
+  "/finance/systems": "Integrations",
+  "/finance/currencies": "Currencies & FX",
+  "/finance/banks": "Bank accounts",
+  "/finance/ledger": "Nominal accounts",
+  "/finance/tax": "Tax & VAT",
+  "/finance/documents": "Document numbering & terms",
+  "/finance/mappings": "Accounts system mappings",
+  "/finance/compliance": "Compliance obligations",
+  "/finance/controls": "Posting controls & audit",
+  "/finance/reports": "Financial reports",
+  "/finance/management/accruals-wip": "Accruals & WIP",
+  "/playground/navigation": "Navigation lab",
+  "/to-do": "To Do list",
+  "/quotes": "Quotes",
+  "/reports": "Reports",
+  "/reports/scheduled": "Scheduled reports",
+  "/road-control": "Road control",
+  "/road-control/new": "New road job",
+  "/settings": "Settings",
+  "/warehouse": "Warehouse",
+  "/warehouse/calendar": "Calendar",
+  "/warehouse/facilities": "Facilities",
+  "/warehouse/goods-in": "Goods in",
+  "/warehouse/goods-out": "Goods out",
+  "/warehouse/inventory": "Inventory",
+  "/warehouse/items": "Items",
+  "/warehouse/locations": "Locations",
+  "/warehouse/orders": "Warehouse orders",
+  "/warehouse/purchase-orders": "Expected receipts",
+  "/warehouse/users": "Users",
+}
+
+const crmChildLabels: Record<string, string> = {
+  accounts: "Companies",
+  contacts: "Contacts",
+  deals: "Deals",
+  leads: "Leads",
+  "phone-calls": "Phone calls",
+  settings: "CRM settings",
+}
+
+const warehouseChildLabels: Record<string, string> = {
+  calendar: "Calendar",
+  facilities: "Facilities",
+  "goods-in": "Goods in",
+  "goods-out": "Goods out",
+  inventory: "Inventory",
+  items: "Items",
+  locations: "Locations",
+  orders: "Warehouse orders",
+  "purchase-orders": "Expected receipts",
+  users: "Users",
+}
+
+function referenceLabel(value: string) {
+  return decodeURIComponent(value).replaceAll("-", " ").replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+const opaqueReferencePattern = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{24,})$/i
+
+function friendlyReferenceLabel(value: string, fallback: string) {
+  const decoded = decodeURIComponent(value).trim()
+  return opaqueReferencePattern.test(decoded) ? fallback : referenceLabel(decoded)
+}
+
+function friendlyIdentifierLabel(value: string, fallback: string) {
+  const decoded = decodeURIComponent(value).trim()
+  return opaqueReferencePattern.test(decoded) ? fallback : decoded.toLocaleUpperCase()
+}
+
+function recordBreadcrumb(leafLabel: string | null | undefined, reference: string, fallback: string): AppBreadcrumb {
+  const name = leafLabel?.trim()
+  return name
+    ? { label: name, localize: false }
+    : { label: friendlyReferenceLabel(reference, fallback) }
+}
+
+function baseTrail(label: string): AppBreadcrumb[] {
+  return [{ label: "Home", route: "/" }, { label }]
+}
+
+export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null): AppBreadcrumb[] {
+  if (route === "/") return [{ label: "Home" }]
+
+  if (route === "/bookings/new" || route === "/bookings/provisional") {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Bookings", route: "/bookings" },
+      { label: staticLeafLabels[route] },
+    ]
+  }
+
+  if (route === "/calendar/booking-links") {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Calendar", route: "/calendar" },
+      { label: "Booking links" },
+    ]
+  }
+
+  if (route === "/road-control" || route === "/road-control/new") {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Bookings", route: "/bookings" },
+      ...(route === "/road-control/new" ? [{ label: "Road control", route: "/road-control" }] : []),
+      { label: staticLeafLabels[route] },
+    ]
+  }
+
+  if (route === "/reports/templates/monthly-client-review") {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Reports", route: "/reports" },
+      { label: "Report templates", route: "/reports" },
+      { label: "Monthly client review" },
+    ]
+  }
+
+  if (route === "/reports/scheduled") {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Reports", route: "/reports" },
+      { label: staticLeafLabels[route] },
+    ]
+  }
+
+  const crmLeadConversionMatch = route.match(/^\/crm\/leads\/([^/]+)\/convert$/)
+  if (crmLeadConversionMatch) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "CRM", route: "/crm" },
+      { label: "Leads", route: "/crm/leads" },
+      {
+        ...recordBreadcrumb(leafLabel, crmLeadConversionMatch[1], "Lead"),
+        route: route.replace(/\/convert$/, ""),
+      },
+      { label: "Convert to deal" },
+    ]
+  }
+
+  const crmLeadMatch = route.match(/^\/crm\/leads\/([^/]+)$/)
+  if (crmLeadMatch) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "CRM", route: "/crm" },
+      { label: "Leads", route: "/crm/leads" },
+      recordBreadcrumb(leafLabel, crmLeadMatch[1], "Lead"),
+    ]
+  }
+
+  const crmPhoneCallMatch = route.match(/^\/crm\/phone-calls\/([^/]+)$/)
+  if (crmPhoneCallMatch) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "CRM", route: "/crm" },
+      { label: "Phone calls", route: "/crm/phone-calls" },
+      recordBreadcrumb(leafLabel, crmPhoneCallMatch[1], "Call"),
+    ]
+  }
+
+  const crmAccountMatch = route.match(/^\/crm\/accounts\/([^/]+)$/)
+  if (crmAccountMatch) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "CRM", route: "/crm" },
+      { label: "Companies", route: "/crm/accounts" },
+      recordBreadcrumb(leafLabel, crmAccountMatch[1], "Company"),
+    ]
+  }
+
+  const crmContactMatch = route.match(/^\/crm\/contacts\/([^/]+)$/)
+  if (crmContactMatch) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "CRM", route: "/crm" },
+      { label: "Contacts", route: "/crm/contacts" },
+      recordBreadcrumb(leafLabel, crmContactMatch[1], "Contact"),
+    ]
+  }
+
+  const customerMatch = route.match(/^\/customers\/([^/]+)$/)
+  if (customerMatch) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Customers", route: "/customers" },
+      recordBreadcrumb(leafLabel, customerMatch[1], "Customer"),
+    ]
+  }
+
+  const supplierMatch = route.match(/^\/suppliers\/([^/]+)$/)
+  if (supplierMatch) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Supplier accounts", route: "/suppliers" },
+      recordBreadcrumb(leafLabel, supplierMatch[1], "Supplier"),
+    ]
+  }
+
+  const bookingMatch = route.match(/^\/bookings\/([^/]+)$/)
+  if (bookingMatch && !staticLeafLabels[route]) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Bookings", route: "/bookings" },
+      leafLabel?.trim()
+        ? { label: leafLabel.trim(), localize: false }
+        : { label: friendlyIdentifierLabel(bookingMatch[1], "Booking"), preserveDirection: !opaqueReferencePattern.test(bookingMatch[1]) },
+    ]
+  }
+
+  const quoteMatch = route.match(/^\/quotes\/([^/]+)$/)
+  if (quoteMatch) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Quotes", route: "/quotes" },
+      leafLabel?.trim()
+        ? { label: leafLabel.trim(), localize: false }
+        : { label: friendlyIdentifierLabel(quoteMatch[1], "Quote"), preserveDirection: !opaqueReferencePattern.test(quoteMatch[1]) },
+    ]
+  }
+
+  const roadJobMatch = route.match(/^\/road-control\/([^/]+)$/)
+  if (roadJobMatch && route !== "/road-control/new") {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Bookings", route: "/bookings" },
+      { label: "Road control", route: "/road-control" },
+      leafLabel?.trim()
+        ? { label: leafLabel.trim(), localize: false }
+        : { label: friendlyIdentifierLabel(roadJobMatch[1], "Road job"), preserveDirection: !opaqueReferencePattern.test(roadJobMatch[1]) },
+    ]
+  }
+
+  if (route === "/reports/new" || route === "/reports/history" || route.startsWith("/reports/edit/")) {
+    return [{ label: "Home", route: "/" }, { label: "Reports", route: "/reports" }, { label: route === "/reports/new" ? "New report" : route === "/reports/history" ? "Run history" : "Report editor" }]
+  }
+
+  const reportMatch = route.match(/^\/reports\/([^/]+)$/)
+  if (reportMatch) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Reports", route: "/reports" },
+      recordBreadcrumb(leafLabel, reportMatch[1], "Report"),
+    ]
+  }
+
+  const purchaseOrderMatch = route.match(/^\/warehouse\/purchase-orders\/([^/]+)$/)
+  if (purchaseOrderMatch) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Warehouse", route: "/warehouse" },
+      { label: "Expected receipts", route: "/warehouse/purchase-orders" },
+      { label: purchaseOrderMatch[1] === "new" ? "New expected receipt" : friendlyIdentifierLabel(purchaseOrderMatch[1], "Expected receipt"), preserveDirection: purchaseOrderMatch[1] !== "new" },
+    ]
+  }
+
+  if (route.startsWith("/crm/")) {
+    const child = route.split("/")[2]
+    return [
+      { label: "Home", route: "/" },
+      { label: "CRM", route: "/crm" },
+      { label: crmChildLabels[child] ?? referenceLabel(child) },
+    ]
+  }
+
+  if (route.startsWith("/warehouse/")) {
+    const child = route.split("/")[2]
+    return [
+      { label: "Home", route: "/" },
+      { label: "Warehouse", route: "/warehouse" },
+      { label: warehouseChildLabels[child] ?? referenceLabel(child) },
+    ]
+  }
+
+  if (route.startsWith("/finance/")) {
+    const documentMatch = route.match(/^\/finance\/(receivables|payables)\/documents\/[^/]+$/)
+    if (documentMatch) {
+      const registerRoute = documentMatch[1] === "receivables" ? "/finance/receivables" : "/finance/payables"
+      return [
+        { label: "Home", route: "/" },
+        { label: "Finance", route: "/finance/receivables" },
+        { label: documentMatch[1] === "receivables" ? "Sales ledger" : "Purchase ledger", route: registerRoute },
+        { label: leafLabel?.trim() || "Finance document", localize: !leafLabel?.trim() },
+      ]
+    }
+    return [
+      { label: "Home", route: "/" },
+      { label: "Finance", route: "/finance/receivables" },
+      { label: staticLeafLabels[route] ?? referenceLabel(route.split("/")[2]) },
+    ]
+  }
+
+  const staticLabel = staticLeafLabels[route]
+  if (staticLabel) return baseTrail(staticLabel)
+
+  const reference = route.split("/").filter(Boolean).at(-1) ?? "Home"
+  const name = leafLabel?.trim()
+  return name
+    ? [{ label: "Home", route: "/" }, { label: name, localize: false }]
+    : baseTrail(friendlyReferenceLabel(reference, "Details"))
+}
+
+export function AppBreadcrumbs({
+  route,
+  navigate,
+  leafLabel,
+  className,
+}: {
+  route: string
+  navigate?: (path: string) => void
+  leafLabel?: string | null
+  className?: string
+}) {
+  const { direction, t } = useLanguage()
+  const trail = getAppBreadcrumbTrail(route, leafLabel)
+
+  function handleNavigate(event: MouseEvent<HTMLAnchorElement>, path: string) {
+    if (!navigate || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    navigate(path)
+  }
+
+  return (
+    <Breadcrumb dir={direction} className={cn("min-w-0", className)}>
+      <BreadcrumbList className="flex-nowrap gap-1.5 text-[14px] font-medium text-[var(--md-text)]">
+        {trail.map((item, index) => {
+          const isCurrent = index === trail.length - 1
+          const label = item.localize === false || item.preserveDirection ? item.label : t(item.label)
+
+          return (
+            <Fragment key={`${item.route ?? "current"}-${item.label}-${index}`}>
+              {index > 0 ? <BreadcrumbSeparator className="hidden shrink-0 text-[var(--md-subtle)] sm:inline-flex" /> : null}
+              <BreadcrumbItem className={cn("min-w-0", !isCurrent && "hidden sm:inline-flex")}>
+                {isCurrent ? (
+                  <BreadcrumbPage
+                    dir={item.preserveDirection ? "ltr" : undefined}
+                    className="max-w-[220px] truncate font-medium text-[var(--md-ink)]"
+                  >
+                    {label}
+                  </BreadcrumbPage>
+                ) : (
+                  <BreadcrumbLink asChild className="truncate text-[var(--md-text)] hover:text-[var(--md-accent)]">
+                    <a href={item.route} onClick={(event) => handleNavigate(event, item.route!)}>
+                      {label}
+                    </a>
+                  </BreadcrumbLink>
+                )}
+              </BreadcrumbItem>
+            </Fragment>
+          )
+        })}
+      </BreadcrumbList>
+    </Breadcrumb>
+  )
+}

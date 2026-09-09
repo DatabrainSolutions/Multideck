@@ -1,0 +1,3523 @@
+/* Home dashboard. Every surface here is tuned for density first: the operator
+   should be able to read the whole day without scrolling past the fold. */
+
+@layer md-dashboard {
+  .md-dashboard {
+    /* The references this screen was rebuilt against all breathe: panels are
+       separated clearly rather than packed. Density still matters inside a
+       list, but not between the objects of the page. */
+    --md-dashboard-band-gap: var(--md-page-stack-gap);
+    --md-chart-grid: rgba(90, 103, 100, 0.14);
+    --md-dashboard-ring: 0 0 0 2px var(--md-accent-a20);
+    /* Neutral fills and rules, themed once here so nothing below hard-codes a
+       light-mode grey that would disappear or invert on a dark surface. */
+    --md-dashboard-track: rgba(90, 103, 100, 0.14);
+    --md-dashboard-hush: rgba(11, 20, 19, 0.05);
+    --md-dashboard-hush-hover: rgba(11, 20, 19, 0.075);
+  }
+
+  .md-dashboard-main {
+    min-width: 0;
+    container: md-dash / inline-size;
+  }
+
+  .dark .md-dashboard {
+    --md-chart-grid: rgba(182, 196, 189, 0.13);
+    --md-dashboard-track: rgba(182, 196, 189, 0.2);
+    --md-dashboard-hush: rgba(255, 255, 255, 0.055);
+    --md-dashboard-hush-hover: rgba(255, 255, 255, 0.085);
+  }
+
+  .md-dashboard-band + .md-dashboard-band,
+  .md-dashboard-band {
+    margin-top: var(--md-dashboard-band-gap);
+  }
+
+  /* Live bookings sits below the fold on most screens. Skipping its layout and
+     paint until it approaches the viewport keeps first paint cheap, and the
+     size hint stops the scrollbar from jumping when it does render. */
+  .md-dashboard-deferred {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 480px;
+  }
+
+  /* The lead band. Slightly taller panels and a heavier lift than anything
+     below, because this is the pair the operator is meant to work from. */
+  .md-dashboard-primary {
+    display: grid;
+    gap: var(--md-dashboard-band-gap);
+  }
+
+  @container md-dash (min-width: 900px) {
+    .md-dashboard-primary {
+      grid-template-columns: minmax(0, 1.06fr) minmax(400px, 0.94fr);
+    }
+
+    .md-dashboard-primary > * {
+      height: 396px;
+      min-height: 0;
+    }
+  }
+
+  .md-dashboard-primary > * {
+    box-shadow: var(--md-shadow-lift);
+  }
+
+  .md-dashboard-back {
+    display: inline-flex;
+    align-items: center;
+    height: 32px;
+    margin-bottom: var(--md-gap-md);
+    padding-inline: 12px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-glass);
+    box-shadow: var(--md-shadow-line);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--md-ink);
+    transition: background var(--md-motion), transform var(--md-motion-fast);
+  }
+
+  .md-dashboard-back:hover {
+    background: var(--md-glass-strong);
+    transform: translateX(-2px);
+  }
+
+  /* ── Shared panel typography ─────────────────────────────────────────── */
+
+  .md-panel-title {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.25;
+    color: var(--md-ink);
+  }
+
+  .md-panel-meta {
+    margin-top: 2px;
+    font-size: 11.5px;
+    line-height: 1.35;
+    color: var(--md-subtle);
+  }
+
+  .md-panel-eyebrow {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  /* ── Header ──────────────────────────────────────────────────────────── */
+
+  .md-dashboard-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--md-gap-md);
+    margin-bottom: 2px;
+  }
+
+  @container md-dash (min-width: 900px) {
+    .md-dashboard-header {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--md-gap-lg);
+    }
+  }
+
+  .md-dashboard-header-lead {
+    display: flex;
+    flex: 1;
+    align-items: flex-start;
+    gap: 13px;
+    min-width: 0;
+  }
+
+  .md-dashboard-header-copy {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .md-dashboard-header-dial {
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  @container md-dash (max-width: 520px) {
+    .md-dashboard-header-dial {
+      display: none;
+    }
+  }
+
+  .md-dashboard-greeting {
+    font-size: clamp(24px, 2.4vw, 30px);
+    font-weight: 500;
+    line-height: 1.15;
+    letter-spacing: -0.012em;
+    color: var(--md-ink);
+  }
+
+  /* The summary swaps on every range change. Reserving its height means the
+     rest of the page never shifts while the two lines crossfade. */
+  .md-dashboard-summary-shell {
+    position: relative;
+    min-height: 34px;
+    margin-top: 4px;
+    max-width: 62ch;
+  }
+
+  .md-dashboard-summary {
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--md-text);
+  }
+
+  .md-dashboard-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--md-gap-sm);
+  }
+
+  @container md-dash (min-width: 900px) {
+    .md-dashboard-header-actions {
+      flex-shrink: 0;
+      justify-content: flex-end;
+    }
+  }
+
+  .md-dashboard-header-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    padding-inline: 12px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-glass);
+    box-shadow: var(--md-shadow-line);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--md-ink);
+    transition:
+      background var(--md-motion),
+      box-shadow var(--md-motion),
+      transform var(--md-motion-fast);
+  }
+
+  .md-dashboard-header-control:hover {
+    background: var(--md-glass-strong);
+    box-shadow: var(--md-shadow-soft);
+  }
+
+  .md-dashboard-header-control:active {
+    transform: scale(0.982);
+  }
+
+  .md-dashboard-header-control-active {
+    background: var(--md-glass-strong);
+    color: var(--md-ink);
+  }
+
+  .md-dashboard-views {
+    min-width: 168px;
+    justify-content: space-between;
+  }
+
+  @container md-dash (max-width: 1360px) {
+    .md-dashboard-customise-text {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+  }
+
+  .md-dashboard-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding-inline: 11px;
+    border-radius: var(--md-radius-lg);
+    background: rgba(209, 78, 78, 0.1);
+    color: var(--md-red);
+    box-shadow: var(--md-shadow-line);
+    font-size: 12px;
+    font-weight: 500;
+    transition: background var(--md-motion), color var(--md-motion);
+  }
+
+  .md-dashboard-status-ok {
+    background: var(--md-accent-a10);
+    color: var(--md-accent);
+  }
+
+  .md-dashboard-status-checking {
+    background: rgba(74, 125, 156, 0.1);
+    color: var(--md-blue);
+  }
+
+  .md-dashboard-status-text {
+    letter-spacing: 0.01em;
+  }
+
+  /* ── Radials ─────────────────────────────────────────────────────────── */
+
+  .md-radial,
+  .md-arc {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+
+  /* Rotated so the sweep starts at twelve o'clock, which is what a dial implies. */
+  .md-radial-svg,
+  .md-arc-svg {
+    rotate: -90deg;
+  }
+
+  [dir="rtl"] .md-radial-svg,
+  [dir="rtl"] .md-arc-svg {
+    scale: -1 1;
+    rotate: 90deg;
+  }
+
+  .md-radial-center,
+  .md-arc-center {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    text-align: center;
+  }
+
+  .md-day-dial {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+  }
+
+  .md-day-dial-core {
+    display: grid;
+    place-items: center;
+  }
+
+  .md-day-dial-count {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: var(--md-ink);
+  }
+
+  .md-day-dial-off {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  .md-day-dial-copy {
+    min-width: 0;
+  }
+
+  .md-day-dial-label {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  .md-day-dial-detail {
+    margin-top: 2px;
+    font-size: 11.5px;
+    color: var(--md-text);
+  }
+
+  /* A nine-hour ladder. Past hours read solid, the rest recede – the same
+     information as the ring, at a glance, without another number. */
+  .md-day-dial-ticks {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 9px;
+    margin-top: 6px;
+  }
+
+  .md-day-dial-tick {
+    display: block;
+    width: 2px;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--md-subtle);
+    opacity: 0.24;
+    transform-origin: bottom center;
+    transition: background var(--md-motion), opacity var(--md-motion);
+  }
+
+  .md-day-dial-tick[data-past="true"] {
+    background: var(--md-accent);
+    opacity: 0.85;
+  }
+
+  .md-day-dial[data-state="closing"] .md-day-dial-tick[data-past="true"] {
+    background: var(--md-amber);
+  }
+
+  /* ── KPI strip ───────────────────────────────────────────────────────── */
+
+  /* Four metrics in a single row. Each cell carries the label, the figure, what
+     changed, and the shape of the trend – nothing else. */
+  .md-kpi-strip {
+    display: grid;
+    gap: var(--md-gap-sm);
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  @container md-dash (min-width: 560px) {
+    .md-kpi-strip {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 930px) {
+    .md-kpi-strip {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  /* Six metrics need a middle step of three, otherwise the row goes from two
+     columns straight to six and the figures collapse mid-range. */
+  @container md-dash (min-width: 560px) {
+    .md-kpi-strip[data-columns="6"] {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 1120px) {
+    .md-kpi-strip[data-columns="6"] {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+
+  /* Seven is prime, so there is no clean halfway split. Two, then four, then the
+     full row: four-plus-three reads as one band, where three-plus-three-plus-one
+     leaves an orphan. The middle step comes early because a compact cell only
+     needs about 150px – holding two columns to 780px would stack the band four
+     rows deep on a laptop. */
+  @container md-dash (min-width: 460px) {
+    .md-kpi-strip[data-columns="7"] {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 620px) {
+    .md-kpi-strip[data-columns="7"] {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 1120px) {
+    .md-kpi-strip[data-columns="7"] {
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+    }
+  }
+
+  /* A strip used outside the two dashboard shells still needs the container the
+     column queries above resolve against. */
+  .md-kpi-scope {
+    container: md-dash / inline-size;
+  }
+
+  /* ── Compact KPI band ────────────────────────────────────────────────────
+     Half the height of the standard cell: label and figure share one line, the
+     glyph moves inline, and the supporting sentence is carried in the markup for
+     assistive technology instead of on screen. Use it where the metrics are a
+     header band above the real work. */
+  .md-kpi-strip[data-density="compact"] {
+    gap: var(--md-gap-xs);
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-button {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    height: 54px;
+    padding: 0 12px;
+    border-radius: var(--md-radius-lg);
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-button:hover {
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-icon {
+    position: static;
+    flex-shrink: 0;
+    opacity: 0.9;
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-copy {
+    flex: 1 1 auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-button[data-has-icon="true"] .md-kpi-cell-label {
+    padding-inline-end: 0;
+  }
+
+  /* Sentence case at 11.5px rather than tracked-out caps: at seven across, an
+     uppercase "Ready to dispatch" runs out of room before the figure does. */
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-label {
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--md-text);
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-figure {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    column-gap: 6px;
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-value {
+    font-size: 19px;
+    letter-spacing: -0.01em;
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-marker {
+    inset-inline: 10px;
+  }
+
+  .md-kpi-cell {
+    position: relative;
+    min-width: 0;
+  }
+
+  .md-kpi-cell-button {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 112px;
+    min-width: 0;
+    padding: 14px 16px 15px;
+    border-radius: var(--md-radius-2xl);
+    background: var(--md-surface);
+    box-shadow: var(--md-shadow-soft);
+    text-align: start;
+    overflow: hidden;
+    outline: none;
+    transition: box-shadow var(--md-motion);
+  }
+
+  .md-kpi-cell-button:hover {
+    box-shadow: var(--md-shadow-lift);
+  }
+
+  /* The fallback lets the strip keep its focus ring on screens that are not one
+     of the two dashboards, which is where the token is declared. */
+  .md-kpi-cell-button:focus-visible {
+    box-shadow: var(--md-shadow-soft), var(--md-dashboard-ring, 0 0 0 2px var(--md-accent-a20));
+  }
+
+  /* A readout rather than a control: no pointer, no lift, no focus ring. */
+  .md-kpi-cell-button[data-static="true"] {
+    cursor: default;
+  }
+
+  /* The metric's subject, parked in the corner. No container: a tinted tile
+     here would read as a second object competing with the figure. */
+  .md-kpi-cell-icon {
+    position: absolute;
+    inset-block-start: 10px;
+    inset-inline-end: 11px;
+    display: grid;
+    place-items: center;
+    color: var(--md-kpi-accent, var(--md-accent));
+    opacity: 0.7;
+    transition: opacity var(--md-motion);
+  }
+
+  .md-kpi-cell-button:hover .md-kpi-cell-icon {
+    opacity: 1;
+  }
+
+  /* Keep the figure clear of the corner glyph. */
+  .md-kpi-cell-button[data-has-icon="true"] .md-kpi-cell-label {
+    padding-inline-end: 22px;
+  }
+
+  .md-kpi-cell-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .md-kpi-cell-label {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--md-text);
+  }
+
+  .md-kpi-cell-figure {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 9px;
+    row-gap: 5px;
+    min-width: 0;
+  }
+
+  /* The movement chip. Tinted rather than outlined, and the arrow carries the
+     direction so the colour is never the only signal. */
+  .md-kpi-cell-delta {
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    gap: 2px;
+    height: 18px;
+    padding-inline: 5px;
+    border-radius: 999px;
+    background: var(--md-dashboard-hush);
+    font-size: 10.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: var(--md-text);
+    white-space: nowrap;
+  }
+
+  .md-kpi-cell-delta-arrow {
+    font-size: 10px;
+    line-height: 1;
+  }
+
+  .md-kpi-cell-delta[data-direction="up"] {
+    background: color-mix(in srgb, var(--md-comparison-positive) 13%, transparent);
+    color: var(--md-comparison-positive);
+  }
+
+  .md-kpi-cell-delta[data-direction="down"] {
+    background: color-mix(in srgb, var(--md-comparison-negative) 13%, transparent);
+    color: var(--md-comparison-negative);
+  }
+
+  .md-kpi-cell-value {
+    font-size: 34px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-kpi-cell-detail {
+    grid-column: 1 / -1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    line-height: 15px;
+    color: var(--md-text);
+  }
+
+  .md-kpi-cell-detail-caption {
+    color: var(--md-subtle);
+  }
+
+  .md-kpi-cell-spark {
+    display: block;
+    flex-shrink: 0;
+    opacity: 0.8;
+    transition: opacity var(--md-motion);
+  }
+
+  .md-kpi-cell-button:hover .md-kpi-cell-spark,
+  .md-kpi-cell[data-selected="true"] .md-kpi-cell-spark {
+    opacity: 1;
+  }
+
+  /* The selected metric is the one the trend panel below is drawing. A rule
+     along the bottom edge says so without adding a box. */
+  .md-kpi-cell-marker {
+    position: absolute;
+    inset-inline: 12px;
+    inset-block-end: 0;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--md-kpi-accent, var(--md-accent));
+    transform-origin: left center;
+    scale: 0 1;
+    transition: scale var(--md-motion-panel);
+  }
+
+  [dir="rtl"] .md-kpi-cell-marker {
+    transform-origin: right center;
+  }
+
+  .md-kpi-cell[data-selected="true"] .md-kpi-cell-marker {
+    scale: 1 1;
+  }
+
+  .md-kpi-cell-expand {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-end: 8px;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--md-radius-sm);
+    background: var(--md-glass-strong);
+    color: var(--md-subtle);
+    box-shadow: var(--md-shadow-line);
+    opacity: 0;
+    outline: none;
+    transition: opacity var(--md-motion), color var(--md-motion);
+  }
+
+  .md-kpi-cell:hover .md-kpi-cell-expand,
+  .md-kpi-cell-expand:focus-visible {
+    opacity: 1;
+  }
+
+  .md-kpi-cell-expand:hover {
+    color: var(--md-ink);
+  }
+
+  .md-kpi-cell-expand:focus-visible {
+    box-shadow: var(--md-shadow-line), var(--md-dashboard-ring);
+  }
+
+  /* ── Dashboard grid ──────────────────────────────────────────────────────
+     Every band is a row of two, so no single object owns the full width on its
+     own. Below the wide breakpoint the rows stack, which is the same reading
+     order top to bottom. */
+
+  .md-dash-row {
+    display: grid;
+    gap: var(--md-dashboard-band-gap);
+    grid-template-columns: minmax(0, 1fr);
+    /* Panels take their own height. Stretching a short panel to match a tall
+       neighbour is what put a band of empty surface under the side cards; where
+       a column genuinely needs to fill, it stacks two panels instead. */
+    align-items: start;
+  }
+
+  @container md-dash (min-width: 1000px) {
+    /* The queue needs width for reference, task, customer, lane and deadline;
+       coverage needs only enough for a 24-hour track. */
+    .md-dash-row-work {
+      grid-template-columns: minmax(0, 1.9fr) minmax(300px, 1fr);
+    }
+
+    /* The chart and the table it explains need the room; the three supporting
+       breakdowns need only enough for a label and a bar. */
+    .md-dash-row-analysis {
+      grid-template-columns: minmax(0, 2.15fr) minmax(300px, 1fr);
+    }
+  }
+
+  .md-dash-row > * {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  /* The working row is the exception: the queue and coverage are both lists, so
+     matching their heights reads as one shelf rather than two ragged cards. The
+     row sets the height and each body flexes inside it – otherwise whichever
+     list is shorter hits its own cap first and leaves a band of empty surface
+     under it. */
+  @container md-dash (min-width: 1000px) {
+    .md-dash-row-work {
+      align-items: stretch;
+      height: 468px;
+    }
+
+    .md-dash-row-work > * {
+      height: 100%;
+    }
+
+    .md-queue-panel-body,
+    .md-coverage-rows {
+      max-height: none;
+    }
+  }
+
+  /* Two short panels filling a side column beside a tall neighbour. */
+  .md-dash-stack {
+    display: grid;
+    gap: var(--md-dashboard-band-gap);
+    align-content: start;
+    min-width: 0;
+  }
+
+  /* ── Breakdown panel ─────────────────────────────────────────────────────
+     A split of a total drawn as bars. Nothing here holds an aspect ratio, so
+     the panel is exactly as tall as its categories and never leaves dead space
+     beside a table. */
+
+  .md-breakdown-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--md-radius-2xl);
+    box-shadow: var(--md-shadow-soft);
+  }
+
+  .md-breakdown-head {
+    padding: 14px 16px 0;
+  }
+
+  .md-breakdown-body {
+    padding: 12px 16px 16px;
+  }
+
+  .md-breakdown-empty {
+    padding: 18px 16px 20px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--md-subtle);
+  }
+
+  /* ── Segmented: one bar carrying the whole total ─────────────────────── */
+
+  .md-breakdown-total {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    margin-bottom: 9px;
+  }
+
+  .md-breakdown-total-value {
+    font-size: 27px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-breakdown-total-label {
+    font-size: 11.5px;
+    color: var(--md-text);
+  }
+
+  .md-breakdown-stack {
+    display: flex;
+    gap: 2px;
+    height: 10px;
+    margin-bottom: 12px;
+  }
+
+  .md-breakdown-stack-segment {
+    display: block;
+    flex-basis: 0;
+    min-width: 3px;
+    border-radius: 999px;
+    transform-origin: center;
+  }
+
+  .md-breakdown-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .md-breakdown-legend li {
+    display: grid;
+    grid-template-columns: 8px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .md-breakdown-swatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+  }
+
+  .md-breakdown-legend-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--md-text);
+  }
+
+  .md-breakdown-legend-value {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-breakdown-legend-share {
+    min-width: 30px;
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  /* ── Ranked: a bar per category on a shared scale ────────────────────── */
+
+  .md-breakdown-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+  }
+
+  .md-breakdown-row-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 5px;
+  }
+
+  .md-breakdown-row-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--md-text);
+  }
+
+  .md-breakdown-row-value {
+    font-size: 12.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-breakdown-row-share {
+    min-width: 30px;
+    text-align: end;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-breakdown-track {
+    display: block;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--md-dashboard-track);
+    overflow: hidden;
+  }
+
+  .md-breakdown-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    transform-origin: left center;
+  }
+
+  [dir="rtl"] .md-breakdown-fill {
+    transform-origin: right center;
+  }
+
+  /* ── Columns: one upright bar per category ───────────────────────────── */
+
+  .md-breakdown-body-columns {
+    padding-block-start: 9px;
+  }
+
+  .md-breakdown-columns {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    align-items: stretch;
+    gap: 10px;
+    min-height: 118px;
+  }
+
+  .md-breakdown-columns li {
+    display: grid;
+    grid-template-rows: 16px minmax(58px, 1fr) auto;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .md-breakdown-column-value {
+    justify-self: center;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-breakdown-column-plot {
+    position: relative;
+    display: flex;
+    min-height: 58px;
+    align-items: flex-end;
+    justify-content: center;
+    box-shadow: inset 0 -1px 0 var(--md-line);
+  }
+
+  .md-breakdown-column-plot::before {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: 50%;
+    border-block-start: 1px dashed var(--md-line);
+    content: "";
+    opacity: 0.72;
+  }
+
+  .md-breakdown-column-bar {
+    position: relative;
+    z-index: 1;
+    display: block;
+    width: min(36px, 58%);
+    min-height: 3px;
+    border-radius: var(--md-radius-sm) var(--md-radius-sm) 2px 2px;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 5%, transparent);
+    transform-origin: center bottom;
+  }
+
+  .md-breakdown-column-label {
+    overflow-wrap: anywhere;
+    text-align: center;
+    font-size: 11px;
+    line-height: 1.25;
+    color: var(--md-text);
+  }
+
+  /* ── Coverage panel ──────────────────────────────────────────────────────
+     Every region's working window on one shared 24-hour track in the viewer's
+     own time, with a single "now" line across all of them. The rail this
+     replaced gave each city a ticking analogue face, a progress track and a
+     pulsing dot – eight animations to answer one question. */
+
+  .md-coverage-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--md-radius-2xl);
+    box-shadow: var(--md-shadow-lift);
+  }
+
+  .md-coverage-panel-head {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md-gap-md);
+    padding: 12px 16px 11px;
+    box-shadow: var(--md-stroke-bottom);
+  }
+
+  .md-coverage-now-badge {
+    flex-shrink: 0;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--md-dashboard-hush);
+    font-size: 11.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-coverage-plot {
+    /* The track column starts after the fixed code cell and ends before the
+       time and count cells. The "now" line and the axis are measured against
+       that same span, so all three are derived from one pair of values rather
+       than three hand-matched numbers that can drift apart. */
+    --md-coverage-track-start: 38px;
+    --md-coverage-track-end: 66px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    padding: 8px 16px 4px;
+  }
+
+  /* With sixteen regions the list can outgrow the queue beside it, so the rows
+     scroll and the hour axis stays anchored under them. */
+  .md-coverage-rows {
+    flex: 1;
+    min-height: 0;
+    max-height: 348px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* One line for the viewer's own moment, drawn across every row rather than
+     repeated per city. The rail gives the line a box the width of the tracks,
+     so its percentage lands on the same scale the bands are drawn on. */
+  .md-coverage-nowrail {
+    position: absolute;
+    inset-block: 8px 26px;
+    inset-inline: var(--md-coverage-track-start) var(--md-coverage-track-end);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .md-coverage-nowline {
+    position: absolute;
+    inset-block: 0;
+    width: 1px;
+    background: var(--md-accent);
+    opacity: 0.55;
+  }
+
+  .md-coverage-nowline::before {
+    content: "";
+    position: absolute;
+    inset-block-start: -3px;
+    inset-inline-start: -2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--md-accent);
+  }
+
+  .md-coverage-row {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) 40px 18px;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    height: 26px;
+    padding-inline: 0;
+    border-radius: var(--md-radius-sm);
+    text-align: start;
+    outline: none;
+    transition: background var(--md-motion);
+  }
+
+  .md-coverage-row:hover {
+    background: var(--md-dashboard-hush);
+  }
+
+  .md-coverage-row:focus-visible {
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-coverage-row-code {
+    font-size: 11.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-text);
+  }
+
+  .md-coverage-row[data-online="true"] .md-coverage-row-code {
+    color: var(--md-ink);
+  }
+
+  .md-coverage-track {
+    position: relative;
+    display: block;
+    height: 9px;
+    border-radius: 999px;
+    background: var(--md-dashboard-track);
+    overflow: hidden;
+  }
+
+  /* The window itself. Clocked-off regions keep their band so the shape of the
+     day still reads; it just loses its fill. */
+  .md-coverage-band {
+    position: absolute;
+    inset-block: 0;
+    border-radius: 999px;
+    background: var(--md-subtle);
+    opacity: 0.3;
+    transform-origin: left center;
+  }
+
+  [dir="rtl"] .md-coverage-band {
+    transform-origin: right center;
+  }
+
+  .md-coverage-row[data-online="true"] .md-coverage-band {
+    background: var(--md-accent);
+    opacity: 0.85;
+  }
+
+  .md-coverage-row[data-closing="true"] .md-coverage-band {
+    background: var(--md-amber);
+    opacity: 0.9;
+  }
+
+  .md-coverage-row-time {
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    color: var(--md-subtle);
+  }
+
+  .md-coverage-row[data-online="true"] .md-coverage-row-time {
+    color: var(--md-text);
+  }
+
+  .md-coverage-row-count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 16px;
+    height: 16px;
+    padding-inline: 3px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--md-amber) 18%, transparent);
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-amber-strong);
+  }
+
+  /* Holds the count column open so a region gaining work does not shuffle the
+     track width of every row above it. */
+  .md-coverage-row-count-spacer {
+    display: block;
+    width: 16px;
+    height: 16px;
+  }
+
+  .md-coverage-axis {
+    position: relative;
+    display: block;
+    height: 14px;
+    margin-inline-start: var(--md-coverage-track-start);
+    margin-inline-end: var(--md-coverage-track-end);
+    margin-top: 4px;
+  }
+
+  .md-coverage-axis > span {
+    position: absolute;
+    translate: -50% 0;
+    font-size: 9.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  [dir="rtl"] .md-coverage-axis > span {
+    translate: 50% 0;
+  }
+
+  .md-coverage-foot {
+    flex-shrink: 0;
+    padding: 6px 16px 12px;
+    font-size: 10.5px;
+    line-height: 1.4;
+    color: var(--md-subtle);
+  }
+
+  /* ── Mini bar spark ──────────────────────────────────────────────────────
+     A period as discrete ticks. Each bar is one transform, so a four-card row
+     costs forty scale animations and no path maths. */
+
+  .md-mini-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    width: 76px;
+  }
+
+  .md-mini-bar {
+    flex: 1;
+    height: 100%;
+    min-width: 2px;
+    border-radius: 999px;
+    transform-origin: bottom center;
+    opacity: 0.5;
+  }
+
+  .md-kpi-cell-button:hover .md-mini-bar,
+  .md-kpi-cell[data-selected="true"] .md-mini-bar {
+    opacity: 0.95;
+  }
+
+  /* ── Priority queue ──────────────────────────────────────────────────────
+     The dashboard's lead panel. Everything waiting on the operator, from any
+     register, in one list ranked by real deadline. The leading rule is the only
+     urgency device on a row: the screen this replaced gave every row its own
+     countdown ring and every panel its own gauge, so five small drawings
+     competed before a single word had been read. */
+
+  .md-queue-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--md-radius-xl);
+    box-shadow: var(--md-shadow-lift);
+  }
+
+  .md-queue-panel-head {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--md-gap-md);
+    padding: 12px 14px 11px;
+    box-shadow: var(--md-stroke-bottom);
+  }
+
+  .md-queue-panel-controls {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--md-gap-sm);
+  }
+
+  .md-queue-panel-reset {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding-inline: 9px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-dashboard-hush);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--md-text);
+    transition: background var(--md-motion), color var(--md-motion);
+  }
+
+  .md-queue-panel-reset:hover {
+    background: var(--md-dashboard-hush-hover);
+    color: var(--md-ink);
+  }
+
+  .md-queue-panel-body {
+    min-height: 0;
+    flex: 1;
+    /* Only used in the stacked layout; on a wide screen the row sets the
+       height and this body flexes to fill it. */
+    max-height: 392px;
+    overflow-y: auto;
+    padding: 0 0 8px;
+    overscroll-behavior: contain;
+  }
+
+  .md-queue-panel-empty {
+    padding: 28px 16px 32px;
+    max-width: 46ch;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--md-subtle);
+  }
+
+  /* ── Queue groups ────────────────────────────────────────────────────── */
+
+  .md-queue-group + .md-queue-group {
+    margin-top: 6px;
+  }
+
+  /* The label stays put while its own rows scroll under it, so a long queue
+     never leaves the operator looking at rows with no bucket. */
+  .md-queue-group-label {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 16px 3px;
+    background: var(--md-surface);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  .md-queue-group-count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 16px;
+    height: 15px;
+    padding-inline: 4px;
+    border-radius: 999px;
+    background: var(--md-dashboard-hush);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-text);
+  }
+
+  .md-queue-group[data-bucket="overdue"] .md-queue-group-label {
+    color: var(--md-red);
+  }
+
+  .md-queue-group[data-bucket="overdue"] .md-queue-group-count {
+    background: color-mix(in srgb, var(--md-red) 14%, transparent);
+    color: var(--md-red);
+  }
+
+  /* ── Queue row ───────────────────────────────────────────────────────── */
+
+  .md-queue-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 52px;
+    padding-inline-end: 10px;
+    transition: background var(--md-motion);
+  }
+
+  .md-queue-row:hover {
+    background: var(--md-dashboard-hush);
+  }
+
+  /* The one urgency device on the row. */
+  .md-queue-row-rule {
+    position: absolute;
+    inset-block: 8px;
+    inset-inline-start: 0;
+    width: 2px;
+    border-radius: 0 999px 999px 0;
+    background: var(--md-queue-tone, var(--md-subtle));
+    opacity: 0.45;
+    transition: opacity var(--md-motion);
+  }
+
+  [dir="rtl"] .md-queue-row-rule {
+    border-radius: 999px 0 0 999px;
+  }
+
+  .md-queue-row:hover .md-queue-row-rule,
+  .md-queue-row[data-overdue="true"] .md-queue-row-rule {
+    opacity: 1;
+  }
+
+  .md-queue-row[data-tone="red"] { --md-queue-tone: var(--md-red); }
+  .md-queue-row[data-tone="amber"] { --md-queue-tone: var(--md-amber); }
+  .md-queue-row[data-tone="green"] { --md-queue-tone: var(--md-green); }
+  .md-queue-row[data-tone="blue"] { --md-queue-tone: var(--md-blue); }
+  .md-queue-row[data-tone="teal"] { --md-queue-tone: var(--md-accent); }
+
+  .md-queue-row-open {
+    display: grid;
+    flex: 1;
+    /* Fixed deadline and status columns. Sizing them to content made every row
+       a different shape: a row reading "Departs Aug 5" pushed its status pill
+       far left of one reading "17:12", so the right-hand side of the panel was
+       ragged and neither column could be scanned down. */
+    grid-template-columns: 22px minmax(0, 1fr) 104px 132px;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 7px 10px 7px 14px;
+    text-align: start;
+    outline: none;
+  }
+
+  [dir="rtl"] .md-queue-row-open {
+    padding-inline: 14px 10px;
+  }
+
+  .md-queue-row-open:focus-visible .md-queue-row-task {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .md-queue-row-glyph {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--md-queue-tone, var(--md-subtle)) 12%, transparent);
+    color: var(--md-queue-tone, var(--md-subtle));
+  }
+
+  .md-queue-row-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .md-queue-row-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .md-queue-row-task-wrap {
+    position: relative;
+    min-width: 0;
+  }
+
+  .md-queue-row-task {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--md-ink);
+  }
+
+  .md-queue-row-strike {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline: 0;
+    height: 1px;
+    background: var(--md-ink);
+    scale: 0 1;
+    pointer-events: none;
+  }
+
+  .md-queue-row-ref {
+    flex-shrink: 0;
+    font-size: 11.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-queue-row-context {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    min-width: 0;
+    font-size: 11.5px;
+    line-height: 1.35;
+    color: var(--md-text);
+  }
+
+  .md-queue-row-customer {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .md-queue-row-lane {
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--md-subtle);
+  }
+
+  .md-queue-row-lane::before {
+    content: "·";
+    margin-inline-end: 7px;
+  }
+
+  .md-queue-row-due {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex-shrink: 0;
+    gap: 1px;
+    text-align: end;
+  }
+
+  .md-queue-row-due-value {
+    font-size: 12px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    color: var(--md-ink-soft);
+  }
+
+  .md-queue-row-due-gap {
+    font-size: 10.5px;
+    line-height: 1.3;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-queue-row[data-overdue="true"] .md-queue-row-due-value,
+  .md-queue-row[data-overdue="true"] .md-queue-row-due-gap {
+    color: var(--md-red);
+  }
+
+  /* Left-aligned inside its own fixed column, so the pills start on one line
+     down the panel regardless of how long each status word is. */
+  .md-queue-row-status {
+    justify-self: start;
+  }
+
+  @container md-dash (max-width: 900px) {
+    .md-queue-row-open {
+      grid-template-columns: 22px minmax(0, 1fr) 104px;
+    }
+
+    .md-queue-row-status {
+      display: none;
+    }
+  }
+
+  @container md-dash (max-width: 700px) {
+    .md-queue-row-lane {
+      display: none;
+    }
+  }
+
+  /* ── Row actions ─────────────────────────────────────────────────────── */
+
+  .md-queue-row-actions {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 2px;
+    opacity: 1;
+  }
+
+  /* Queue actions stay visible: these are work controls, not decorative row
+     affordances, and hiding them delayed scanning before every click. */
+
+  .md-queue-row-button {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-dashboard-hush);
+    color: var(--md-text);
+    outline: none;
+    transition: background var(--md-motion), color var(--md-motion);
+  }
+
+  .md-queue-row-button:hover {
+    background: var(--md-dashboard-hush-hover);
+    color: var(--md-ink);
+  }
+
+  .md-queue-row-button:focus-visible {
+    opacity: 1;
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-queue-row-button-done:hover {
+    background: color-mix(in srgb, var(--md-green) 16%, transparent);
+    color: var(--md-green);
+  }
+
+  .md-queue-row-button-dexter {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+      0 3px 8px var(--md-accent-deep-a18);
+  }
+
+  .md-queue-row-button-dexter:hover,
+  .md-queue-row-button-dexter:focus-visible {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.26),
+      0 4px 10px var(--md-accent-deep-a24);
+    transform: none;
+  }
+  /* ── Performance panel ───────────────────────────────────────────────────
+     One large plot with a head that names what is drawn. The metric row above
+     is its control; the travelling rule under the selected card is the only
+     thing that has to say so. */
+
+  .md-performance-panel {
+    overflow: hidden;
+    border-radius: var(--md-radius-2xl);
+    box-shadow: var(--md-shadow-soft);
+  }
+
+  .md-performance-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--md-gap-lg);
+    padding: 16px 20px 4px;
+  }
+
+  .md-performance-title {
+    margin-top: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 19px;
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: -0.012em;
+    color: var(--md-ink);
+  }
+
+  .md-performance-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 14px;
+    flex-shrink: 0;
+    padding-top: 3px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--md-text);
+  }
+
+  .md-performance-legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .md-performance-swatch {
+    width: 11px;
+    height: 2.5px;
+    flex-shrink: 0;
+    border-radius: 999px;
+    background: var(--md-performance-accent, var(--md-accent));
+  }
+
+  .md-performance-swatch-dashed {
+    background: repeating-linear-gradient(
+      to right,
+      var(--md-blue) 0 3px,
+      transparent 3px 6px
+    );
+  }
+
+  .md-performance-canvas {
+    padding: 4px 12px 14px;
+  }
+
+  /* ── Priority queue ──────────────────────────────────────────────────────
+     The dashboard's lead panel. Everything waiting on the operator, from any
+     register, in one list ranked by real deadline. The leading rule is the only
+     urgency device on a row: the screen this replaced gave every row its own
+     countdown ring and every panel its own gauge, so five small drawings
+     competed before a single word had been read. */
+
+  .md-queue-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--md-radius-xl);
+    box-shadow: var(--md-shadow-lift);
+  }
+
+  .md-queue-panel-head {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--md-gap-md);
+    padding: 12px 14px 11px;
+    box-shadow: var(--md-stroke-bottom);
+  }
+
+  .md-queue-panel-controls {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--md-gap-sm);
+  }
+
+  .md-queue-panel-reset {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding-inline: 9px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-dashboard-hush);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--md-text);
+    transition: background var(--md-motion), color var(--md-motion);
+  }
+
+  .md-queue-panel-reset:hover {
+    background: var(--md-dashboard-hush-hover);
+    color: var(--md-ink);
+  }
+
+  .md-queue-panel-body {
+    min-height: 0;
+    flex: 1;
+    /* Roughly six rows before the panel scrolls: enough that the urgent group
+       and the start of the next are both on screen without the page giving its
+       whole height to one list. */
+    max-height: 420px;
+    overflow-y: auto;
+    padding: 0 0 8px;
+    overscroll-behavior: contain;
+  }
+
+  .md-queue-panel-empty {
+    padding: 28px 16px 32px;
+    max-width: 46ch;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--md-subtle);
+  }
+
+  /* ── Queue groups ────────────────────────────────────────────────────── */
+
+  .md-queue-group + .md-queue-group {
+    margin-top: 6px;
+  }
+
+  /* The label stays put while its own rows scroll under it, so a long queue
+     never leaves the operator looking at rows with no bucket. */
+  .md-queue-group-label {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 16px 3px;
+    background: var(--md-surface);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  .md-queue-group-count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 16px;
+    height: 15px;
+    padding-inline: 4px;
+    border-radius: 999px;
+    background: var(--md-dashboard-hush);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-text);
+  }
+
+  .md-queue-group[data-bucket="overdue"] .md-queue-group-label {
+    color: var(--md-red);
+  }
+
+  .md-queue-group[data-bucket="overdue"] .md-queue-group-count {
+    background: color-mix(in srgb, var(--md-red) 14%, transparent);
+    color: var(--md-red);
+  }
+
+  /* ── Queue row ───────────────────────────────────────────────────────── */
+
+  .md-queue-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 52px;
+    padding-inline-end: 10px;
+    transition: background var(--md-motion);
+  }
+
+  .md-queue-row:hover {
+    background: var(--md-dashboard-hush);
+  }
+
+  /* The one urgency device on the row. */
+  .md-queue-row-rule {
+    position: absolute;
+    inset-block: 8px;
+    inset-inline-start: 0;
+    width: 2px;
+    border-radius: 0 999px 999px 0;
+    background: var(--md-queue-tone, var(--md-subtle));
+    opacity: 0.45;
+    transition: opacity var(--md-motion);
+  }
+
+  [dir="rtl"] .md-queue-row-rule {
+    border-radius: 999px 0 0 999px;
+  }
+
+  .md-queue-row:hover .md-queue-row-rule,
+  .md-queue-row[data-overdue="true"] .md-queue-row-rule {
+    opacity: 1;
+  }
+
+  .md-queue-row[data-tone="red"] { --md-queue-tone: var(--md-red); }
+  .md-queue-row[data-tone="amber"] { --md-queue-tone: var(--md-amber); }
+  .md-queue-row[data-tone="green"] { --md-queue-tone: var(--md-green); }
+  .md-queue-row[data-tone="blue"] { --md-queue-tone: var(--md-blue); }
+  .md-queue-row[data-tone="teal"] { --md-queue-tone: var(--md-accent); }
+
+  .md-queue-row-open {
+    display: grid;
+    flex: 1;
+    grid-template-columns: 22px minmax(0, 1fr) 104px 132px;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 7px 10px 7px 14px;
+    text-align: start;
+    outline: none;
+  }
+
+  [dir="rtl"] .md-queue-row-open {
+    padding-inline: 14px 10px;
+  }
+
+  .md-queue-row-open:focus-visible .md-queue-row-task {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .md-queue-row-glyph {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--md-queue-tone, var(--md-subtle)) 12%, transparent);
+    color: var(--md-queue-tone, var(--md-subtle));
+  }
+
+  .md-queue-row-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .md-queue-row-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .md-queue-row-task-wrap {
+    position: relative;
+    min-width: 0;
+  }
+
+  .md-queue-row-task {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--md-ink);
+  }
+
+  .md-queue-row-strike {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline: 0;
+    height: 1px;
+    background: var(--md-ink);
+    scale: 0 1;
+    pointer-events: none;
+  }
+
+  .md-queue-row-ref {
+    flex-shrink: 0;
+    font-size: 11.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-queue-row-context {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    min-width: 0;
+    font-size: 11.5px;
+    line-height: 1.35;
+    color: var(--md-text);
+  }
+
+  .md-queue-row-customer {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .md-queue-row-lane {
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--md-subtle);
+  }
+
+  .md-queue-row-lane::before {
+    content: "·";
+    margin-inline-end: 7px;
+  }
+
+  .md-queue-row-due {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex-shrink: 0;
+    gap: 1px;
+    text-align: end;
+  }
+
+  .md-queue-row-due-value {
+    font-size: 12px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    color: var(--md-ink-soft);
+  }
+
+  .md-queue-row-due-gap {
+    font-size: 10.5px;
+    line-height: 1.3;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-queue-row[data-overdue="true"] .md-queue-row-due-value,
+  .md-queue-row[data-overdue="true"] .md-queue-row-due-gap {
+    color: var(--md-red);
+  }
+
+  .md-queue-row-status {
+    flex-shrink: 0;
+    justify-self: start;
+  }
+
+  @container md-dash (max-width: 760px) {
+    .md-queue-row-status,
+    .md-queue-row-lane {
+      display: none;
+    }
+  }
+
+  /* ── Row actions ─────────────────────────────────────────────────────── */
+
+  .md-queue-row-actions {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 2px;
+    opacity: 1;
+  }
+
+  /* Queue actions stay visible: these are work controls, not decorative row
+     affordances, and hiding them delayed scanning before every click. */
+
+  .md-queue-row-button {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-dashboard-hush);
+    color: var(--md-text);
+    outline: none;
+    transition: background var(--md-motion), color var(--md-motion);
+  }
+
+  .md-queue-row-button:hover {
+    background: var(--md-dashboard-hush-hover);
+    color: var(--md-ink);
+  }
+
+  .md-queue-row-button-dexter {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+      0 3px 8px var(--md-accent-deep-a18);
+  }
+
+  .md-queue-row-button-dexter:hover,
+  .md-queue-row-button-dexter:focus-visible {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.26),
+      0 4px 10px var(--md-accent-deep-a24);
+    transform: none;
+  }
+
+  .md-queue-row-button:focus-visible {
+    opacity: 1;
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-queue-row-button-done:hover {
+    background: color-mix(in srgb, var(--md-green) 16%, transparent);
+    color: var(--md-green);
+  }
+  /* ── Performance panel ───────────────────────────────────────────────────
+     The four figures and the chart they describe as one object. The metric
+     strip is the chart's control, so the panel has one head, not two. */
+
+  .md-performance-panel {
+    overflow: hidden;
+    border-radius: var(--md-radius-xl);
+    box-shadow: var(--md-shadow-lift);
+  }
+
+  /* Inside the panel the cells are tabs, not free-floating tiles: they lose
+     their own surface and shadow and are separated by hairlines instead. */
+  .md-performance-metrics {
+    gap: 0;
+    box-shadow: var(--md-stroke-bottom);
+  }
+
+  .md-performance-metrics .md-kpi-cell-button {
+    height: 78px;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    transition: background var(--md-motion);
+  }
+
+  .md-performance-metrics .md-kpi-cell-button:hover {
+    background: var(--md-dashboard-hush);
+    box-shadow: none;
+  }
+
+  .md-performance-metrics .md-kpi-cell-button:focus-visible {
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-performance-metrics .md-kpi-cell + .md-kpi-cell .md-kpi-cell-button {
+    box-shadow: inset 1px 0 0 var(--md-line);
+  }
+
+  .md-performance-metrics .md-kpi-cell + .md-kpi-cell .md-kpi-cell-button:focus-visible {
+    box-shadow: inset 1px 0 0 var(--md-line), var(--md-dashboard-ring);
+  }
+
+  /* Below the widest breakpoint the cells wrap, and a left hairline on a cell
+     that has just started a new row would draw a stray mark. */
+  @container md-dash (max-width: 929px) {
+    .md-performance-metrics .md-kpi-cell + .md-kpi-cell .md-kpi-cell-button {
+      box-shadow: none;
+    }
+  }
+
+  .md-performance-metrics .md-kpi-cell[data-selected="true"] .md-kpi-cell-value {
+    color: var(--md-ink);
+  }
+
+  .md-performance-metrics .md-kpi-cell:not([data-selected="true"]) .md-kpi-cell-value {
+    color: var(--md-ink-soft);
+  }
+
+  /* One rule for the whole strip, travelling to whichever metric the chart is
+     drawing. It sits above the panel's bottom hairline. */
+  .md-kpi-cell-marker-travelling {
+    inset-inline: 16px;
+    height: 2.5px;
+    z-index: 1;
+    scale: 1 1;
+    transition: none;
+  }
+
+  .md-performance-chart {
+    padding: 12px 8px 8px;
+  }
+
+  .md-performance-chart-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md-gap-md);
+    padding-inline: 8px;
+    padding-bottom: 4px;
+  }
+
+  .md-performance-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--md-subtle);
+  }
+
+  .md-performance-legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .md-performance-swatch {
+    width: 10px;
+    height: 2px;
+    flex-shrink: 0;
+    border-radius: 999px;
+    background: var(--md-performance-accent, var(--md-accent));
+  }
+
+  .md-performance-swatch-dashed {
+    background: repeating-linear-gradient(
+      to right,
+      var(--md-subtle) 0 3px,
+      transparent 3px 6px
+    );
+  }
+
+  /* ── Chart chrome ────────────────────────────────────────────────────── */
+
+  .md-flush-spark {
+    width: 100%;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .md-area-chart-canvas:focus-visible {
+    border-radius: var(--md-radius-md);
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-area-chart-axis {
+    fill: var(--md-subtle);
+    font-size: 10px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    transition: fill var(--md-motion);
+  }
+
+  .md-area-chart-axis-current {
+    fill: var(--md-ink);
+    font-weight: 600;
+  }
+
+  .md-area-chart-axis-active {
+    fill: var(--md-ink);
+  }
+
+  .md-area-chart-tooltip-card {
+    translate: -50% 0;
+    min-width: 118px;
+    padding: 7px 9px 8px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-surface);
+    box-shadow: var(--md-shadow-lift);
+  }
+
+  .md-area-chart-tooltip-label {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  .md-area-chart-tooltip-value {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 3px;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .md-area-chart-tooltip-muted {
+    font-size: 12px;
+    color: var(--md-text);
+  }
+
+  .md-area-chart-tooltip-series {
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+
+  /* ── Live bookings ───────────────────────────────────────────────────── */
+
+  /* The board now shares a row with the action list, so it sizes its own rows
+     against the panel rather than the viewport. */
+  .md-live-board {
+    display: flex;
+    flex-direction: column;
+    min-height: 420px;
+    overflow: hidden;
+    border-radius: var(--md-radius-xl);
+    container: live-board / inline-size;
+  }
+
+  .md-live-board-head {
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    gap: var(--md-gap-sm);
+    padding: 12px 14px 11px;
+  }
+
+  @container live-board (min-width: 520px) {
+    .md-live-board-head {
+      flex-direction: row;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+  }
+
+  .md-live-board-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--md-gap-sm);
+  }
+
+  .md-live-pulse {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    margin-top: 6px;
+  }
+
+  .md-live-pulse-core {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--md-green);
+  }
+
+  .md-live-pulse-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    box-shadow: 0 0 0 2px var(--md-accent-a32);
+  }
+
+  .md-live-board-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    height: 100%;
+    /* Capped so a long book does not leave the panel beside it stranded at the
+       top of a very tall row. The list scrolls; the row stays a shelf. */
+    max-height: 436px;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding: 0 11px 12px;
+  }
+
+  .md-live-board-empty {
+    padding: 30px 4px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--md-subtle);
+  }
+
+  .md-live-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 9px 11px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-glass);
+    box-shadow: var(--md-shadow-line);
+    text-align: start;
+    outline: none;
+    transition: background var(--md-motion), box-shadow var(--md-motion);
+  }
+
+  @container live-board (min-width: 400px) {
+    .md-live-row {
+      grid-template-columns: 86px minmax(0, 1.5fr) auto;
+    }
+  }
+
+  @container live-board (min-width: 680px) {
+    /* The tail is a fixed column rather than `auto`, so ETA and the chevron sit
+       on one line down the table instead of drifting with the date's width. */
+    .md-live-row {
+      grid-template-columns: 92px minmax(0, 1.5fr) minmax(0, 1fr) 136px;
+    }
+  }
+
+  .md-live-row:hover {
+    background: var(--md-glass-strong);
+    box-shadow: var(--md-shadow-soft);
+  }
+
+  .md-live-row:focus-visible {
+    box-shadow: var(--md-shadow-line), var(--md-dashboard-ring);
+  }
+
+  .md-live-row-ref,
+  .md-live-row-lane,
+  .md-live-row-milestone {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .md-live-row-milestone {
+    display: none;
+  }
+
+  @container live-board (min-width: 680px) {
+    .md-live-row-milestone {
+      display: flex;
+    }
+  }
+
+  .md-live-row-id {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: var(--md-ink);
+  }
+
+  .md-live-row-mode,
+  .md-live-row-customer {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10.5px;
+    color: var(--md-subtle);
+  }
+
+  .md-live-row-lane-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+    color: var(--md-ink);
+  }
+
+  .md-live-row-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 5px;
+  }
+
+  .md-live-row-track {
+    display: block;
+    min-width: 0;
+    flex: 1;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--md-dashboard-track);
+    overflow: hidden;
+  }
+
+  .md-live-row-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--md-live-accent, var(--md-accent));
+    transform-origin: left center;
+    will-change: transform;
+  }
+
+  [dir="rtl"] .md-live-row-fill {
+    transform-origin: right center;
+  }
+
+  .md-live-row-percent {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-live-row-milestone-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    color: var(--md-text);
+  }
+
+  .md-live-row-tail {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 9px;
+  }
+
+  .md-live-row-eta {
+    flex: 1;
+    min-width: 0;
+    text-align: end;
+  }
+
+  .md-live-row-eta-label {
+    display: block;
+    font-size: 9.5px;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    color: var(--md-subtle);
+  }
+
+  .md-live-row-eta-value {
+    display: block;
+    margin-top: 3px;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-live-row-arrow {
+    flex-shrink: 0;
+    width: 13px;
+    height: 13px;
+    color: var(--md-subtle);
+    transition: translate var(--md-motion), color var(--md-motion);
+  }
+
+  [dir="rtl"] .md-live-row-arrow {
+    rotate: 180deg;
+  }
+
+  .md-live-row:hover .md-live-row-arrow {
+    translate: 3px 0;
+    color: var(--md-ink);
+  }
+
+  [dir="rtl"] .md-live-row:hover .md-live-row-arrow {
+    translate: -3px 0;
+  }
+
+  .md-live-map-fallback {
+    position: relative;
+    min-height: 320px;
+    flex: 1;
+    overflow: hidden;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-bg-strong);
+  }
+
+  .md-live-map-fallback-sheen {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0) 48%, var(--md-accent-a12));
+  }
+
+  .md-live-map-fallback-badge {
+    position: absolute;
+    inset-block-start: 20px;
+    inset-inline-start: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 11px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-glass);
+    box-shadow: var(--md-shadow-line);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--md-text);
+  }
+
+  /* ═══ CRM dashboard ═══════════════════════════════════════════════════════
+     The sales side of the same cockpit. It reuses the dashboard's tokens, KPI
+     strip and arrival cadence, so moving between /crm and the operations
+     overview does not feel like moving between two products.
+
+     Panels here are separated by a hairline stroke rather than an elevation
+     shadow: this screen is a single dense plane of numbers, and eight floating
+     cards on one page reads as clutter rather than depth. */
+
+  .md-crm-dashboard {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: clip;
+    container: md-dash / inline-size;
+  }
+
+  .md-crm-dashboard > *,
+  .md-crm-dashboard .md-crm-lead,
+  .md-crm-dashboard .md-crm-trio,
+  .md-crm-dashboard .md-kpi-strip {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .md-crm-dashboard .md-kpi-cell-button,
+  .md-crm-dashboard .md-kpi-cell-button:hover {
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-crm-dashboard .md-kpi-cell-button {
+    transition: background-color var(--md-motion);
+  }
+
+  .md-crm-dashboard .md-kpi-cell-button:hover {
+    background: var(--md-surface-soft);
+  }
+
+  .md-crm-dashboard .md-kpi-cell-button:focus-visible {
+    box-shadow: var(--md-shadow-line), var(--md-dashboard-ring);
+  }
+
+  /* Two bands of panels. The lead band gives the queue the wider half; the
+     support band splits evenly. */
+  .md-crm-lead,
+  .md-crm-trio {
+    display: grid;
+    gap: var(--md-page-stack-gap-compact);
+    align-items: stretch;
+  }
+
+  @container md-dash (min-width: 860px) {
+    .md-crm-lead {
+      grid-template-columns: minmax(300px, 0.82fr) minmax(0, 1.18fr);
+    }
+
+    .md-crm-trio {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 1180px) {
+    .md-crm-trio {
+      grid-template-columns: minmax(0, 1.24fr) minmax(0, 0.88fr) minmax(0, 0.88fr);
+    }
+  }
+
+  /* ── Panel shell ─────────────────────────────────────────────────────── */
+
+  .md-crm-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    padding: 0;
+    border-radius: var(--md-radius-xl);
+    background: var(--md-surface);
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-crm-panel-head {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md-gap-md);
+    padding: 12px 12px 8px 14px;
+  }
+
+  .md-crm-panel-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    color: var(--md-ink);
+  }
+
+  .md-crm-panel-link {
+    flex-shrink: 0;
+    height: 24px;
+    padding-inline: 8px;
+    border-radius: var(--md-radius-md);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--md-subtle);
+    transition-property: color, background-color, scale;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-panel-link:hover {
+    color: var(--md-ink);
+  }
+
+  .md-crm-panel-link:active {
+    scale: 0.96;
+  }
+
+  .md-crm-panel-link-arrow {
+    translate: 0 0;
+    transition: translate var(--md-motion-fast);
+  }
+
+  .md-crm-panel-link:hover .md-crm-panel-link-arrow {
+    translate: 2px 0;
+  }
+
+  [dir="rtl"] .md-crm-panel-link-arrow {
+    scale: -1 1;
+  }
+
+  /* ── Opportunity value gauge ─────────────────────────────────────────── */
+
+  .md-crm-gauge {
+    position: relative;
+    display: grid;
+    flex: 1;
+    place-items: center;
+    padding: 4px 14px 8px;
+  }
+
+  .md-crm-gauge-svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  /* One CSS one-shot per tick. Forty-six spring instances would be forty-six
+     JavaScript animations a frame; this is none, and the arc still lights up in
+     sequence. `backwards` holds the first frame through the delay so no tick is
+     ever painted at full opacity before its turn. */
+  .md-crm-gauge-tick {
+    opacity: 1;
+    animation: md-crm-tick-in 280ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    transition: opacity var(--md-motion-fast);
+  }
+
+  .md-crm-gauge-tick[data-dimmed="true"] {
+    opacity: 0.3;
+  }
+
+  .md-crm-gauge-centre {
+    position: absolute;
+    inset-block-start: 42%;
+    display: grid;
+    justify-items: center;
+    gap: 3px;
+    pointer-events: none;
+  }
+
+  .md-crm-gauge-value {
+    font-size: 30px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.025em;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-crm-gauge-caption {
+    font-size: 11px;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-legend {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 1px;
+    padding: 2px 10px 10px;
+  }
+
+  .md-crm-legend-row {
+    display: grid;
+    grid-template-columns: 7px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 8px;
+    border-radius: var(--md-radius-lg);
+    text-align: start;
+    outline: none;
+    transition-property: background-color, opacity;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-legend-row:hover {
+    background: var(--md-dashboard-hush);
+  }
+
+  .md-crm-legend-row:focus-visible {
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-crm-legend-row[data-dimmed="true"] {
+    opacity: 0.45;
+  }
+
+  .md-crm-legend-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+  }
+
+  .md-crm-legend-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--md-text);
+  }
+
+  .md-crm-legend-count,
+  .md-crm-legend-value {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .md-crm-legend-count {
+    font-size: 11px;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-legend-value {
+    min-width: 54px;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: end;
+    color: var(--md-ink);
+  }
+
+  /* ── The shared row ──────────────────────────────────────────────────── */
+
+  /* Panel radius 14 less the list's 4px inset gives the row 10 – concentric,
+     so the row never looks pinched inside its panel. */
+  .md-crm-list {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 4px 8px;
+    /* The rows own their layer work. Containing layout and paint stops a filter
+       change inside one panel from asking the whole page to re-lay-out. */
+    contain: layout paint;
+  }
+
+  /* Three fixed rails – glyph, body, and a right-hand block of a set width – so
+     pills, values and ages line up down the panel instead of stopping wherever
+     each row's text happens to end. Ragged right edges are most of what makes a
+     list of records look thrown together. */
+  .md-crm-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 12px;
+    border-radius: var(--md-radius-lg);
+    transition: background-color var(--md-motion-fast);
+  }
+
+  .md-crm-row[data-metered="true"] {
+    grid-template-columns: auto minmax(0, 1fr) 84px auto;
+  }
+
+  .md-crm-row[data-status-column="true"] {
+    grid-template-columns: 28px minmax(0, 1fr) 104px 70px;
+    min-height: 44px;
+    gap: 10px;
+    padding: 5px 10px;
+  }
+
+  .md-crm-row[data-openable="true"] {
+    cursor: pointer;
+  }
+
+  .md-crm-row-open-target {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+    outline: none;
+  }
+
+  .md-crm-row-open-target:focus-visible {
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-crm-row[data-openable="true"] > :not(.md-crm-row-open-target) {
+    position: relative;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .md-crm-row[data-openable="true"] > .md-crm-row-side[data-interactive="true"] {
+    z-index: 2;
+    pointer-events: auto;
+  }
+
+  .md-crm-row:hover {
+    background: var(--md-dashboard-hush);
+  }
+
+  .md-crm-row-glyph {
+    display: flex;
+    flex-shrink: 0;
+  }
+
+  /* A ringed disc rather than a tinted square. The ring is where the record's
+     tone lives now, which lets the row itself stay completely uncoloured until
+     the pointer is on it. */
+  .md-crm-avatar {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 11%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 24%, transparent);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--md-row-accent, var(--md-accent));
+    transition: box-shadow var(--md-motion-fast);
+  }
+
+  .md-crm-row:hover .md-crm-avatar {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 44%, transparent);
+  }
+
+  .md-crm-row-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .md-crm-row-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 17px;
+    letter-spacing: -0.006em;
+    color: var(--md-ink);
+  }
+
+  .md-crm-row-title-aside {
+    font-weight: 400;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-row-sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    line-height: 16px;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-meter {
+    display: block;
+    width: 100%;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--md-dashboard-track);
+    overflow: hidden;
+  }
+
+  .md-crm-meter-fill {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 55%, transparent),
+      var(--md-row-accent, var(--md-accent))
+    );
+    transform-origin: left center;
+  }
+
+  [dir="rtl"] .md-crm-meter-fill {
+    transform-origin: right center;
+    background: linear-gradient(
+      270deg,
+      color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 55%, transparent),
+      var(--md-row-accent, var(--md-accent))
+    );
+  }
+
+  .md-crm-row-side {
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 4px;
+    min-width: 88px;
+    text-align: end;
+  }
+
+  .md-crm-row-status {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  .md-crm-row[data-status-column="true"] .md-crm-row-side {
+    min-width: 0;
+  }
+
+  .md-crm-row[data-status-column="true"] .md-crm-avatar {
+    width: 28px;
+    height: 28px;
+  }
+
+  .md-crm-row-value {
+    font-size: 12.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-crm-row-age {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  /* The arrow is the row's only travelling part: hidden at rest, it steps out
+     from behind the age on hover so the row reads as a door, not a label. */
+  .md-crm-row-arrow {
+    opacity: 0;
+    translate: -4px 0;
+    transition-property: opacity, translate;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-row[data-openable="true"]:hover .md-crm-row-arrow,
+  .md-crm-row[data-openable="true"]:has(.md-crm-row-open-target:focus-visible) .md-crm-row-arrow {
+    opacity: 1;
+    translate: 0 0;
+  }
+
+  [dir="rtl"] .md-crm-row-arrow {
+    scale: -1 1;
+  }
+
+  /* ── Queue filters ───────────────────────────────────────────────────── */
+
+  .md-crm-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 0 14px 9px;
+  }
+
+  .md-crm-queue-columns {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 104px 70px;
+    gap: 10px;
+    padding: 0 14px 3px;
+  }
+
+  .md-crm-queue-status-label {
+    grid-column: 3;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 14px;
+    color: var(--md-subtle);
+  }
+
+  @media (max-width: 600px) {
+    .md-crm-row[data-status-column="true"],
+    .md-crm-queue-columns {
+      grid-template-columns: 28px minmax(0, 1fr) 92px 70px;
+      gap: 6px;
+    }
+
+    .md-crm-row[data-status-column="true"] {
+      padding-inline: 6px;
+    }
+
+    .md-crm-queue-columns {
+      padding-inline: 10px;
+    }
+
+    .md-crm-row-status .inline-flex {
+      max-width: 100%;
+      padding-inline: 7px;
+    }
+  }
+
+  .md-crm-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .md-crm-chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding-inline: 9px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-dashboard-hush);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--md-text);
+    outline: none;
+    transition-property: background-color, color, scale;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-chip:hover {
+    background: var(--md-dashboard-hush-hover);
+    color: var(--md-ink);
+  }
+
+  .md-crm-chip:active {
+    scale: 0.96;
+  }
+
+  .md-crm-chip:focus-visible {
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-crm-chip[aria-pressed="true"] {
+    color: var(--md-ink);
+  }
+
+  .md-crm-chip-indicator {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: var(--md-radius-lg);
+    background: color-mix(in srgb, var(--md-chip-accent, var(--md-accent)) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-chip-accent, var(--md-accent)) 28%, transparent);
+  }
+
+  .md-crm-chip-label,
+  .md-crm-chip-count {
+    position: relative;
+    z-index: 1;
+  }
+
+  .md-crm-chip-count {
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-chip[aria-pressed="true"] .md-crm-chip-count {
+    color: var(--md-chip-accent, var(--md-accent));
+  }
+
+  /* ── Leads by area: geographic heat map ─────────────────────────────── */
+
+  .md-crm-heat {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 9px;
+    padding: 0 14px 12px;
+  }
+
+  /* The plot is laid out in percentages against its own box, so the map
+     reflows with the panel and never needs measuring. */
+  .md-crm-heat-plot {
+    position: relative;
+    flex: 1;
+    min-height: 220px;
+    overflow: hidden;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-bg-strong);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 7%, transparent);
+  }
+
+  .md-crm-area-map {
+    z-index: 0;
+    background: var(--md-bg-strong);
+  }
+
+  .md-crm-area-map .leaflet-tile-pane {
+    filter: saturate(0.28) contrast(0.9) brightness(1.03);
+  }
+
+  .dark .md-crm-area-map .leaflet-tile-pane {
+    filter: invert(0.88) hue-rotate(160deg) saturate(0.22) brightness(0.54) contrast(1.15);
+  }
+
+  .md-crm-area-map .leaflet-interactive {
+    transition-property: fill-opacity, stroke-width;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-area-map .leaflet-interactive:hover,
+  .md-crm-area-map .leaflet-interactive:focus-visible {
+    fill-opacity: 0.92;
+    stroke-width: 2px;
+  }
+
+  .md-crm-area-map .leaflet-tooltip {
+    padding: 4px 7px;
+    border: 0;
+    border-radius: var(--md-radius-md);
+    background: color-mix(in srgb, var(--md-surface) 96%, transparent);
+    box-shadow: var(--md-shadow-line);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 16px;
+    white-space: nowrap;
+    color: var(--md-ink);
+    backdrop-filter: blur(12px);
+  }
+
+  .md-crm-area-map .leaflet-tooltip-top::before {
+    border-top-color: color-mix(in srgb, var(--md-surface) 92%, transparent);
+  }
+
+  .md-crm-area-map .leaflet-control-attribution {
+    padding: 2px 4px;
+    background: color-mix(in srgb, var(--md-surface) 78%, transparent);
+    font-size: 8px;
+    line-height: 11px;
+    color: var(--md-subtle);
+    backdrop-filter: blur(8px);
+  }
+
+  .md-crm-area-map .leaflet-control-attribution a {
+    color: var(--md-text);
+  }
+
+  [dir="rtl"] .md-crm-area-map {
+    direction: ltr;
+  }
+
+  .md-crm-heat-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-heat-foot-value {
+    font-variant-numeric: tabular-nums;
+    color: var(--md-text);
+  }
+
+  /* ── Activity feed ───────────────────────────────────────────────────── */
+
+  .md-crm-feed {
+    position: relative;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    padding: 0 14px 12px;
+  }
+
+  .md-crm-feed-spine {
+    position: absolute;
+    inset-block: 18px 26px;
+    inset-inline-start: 18px;
+    width: 1.5px;
+    border-radius: 999px;
+    background: var(--md-dashboard-track);
+  }
+
+  /* The timestamp sits on its own rail rather than under the subject: one
+     column of times reads as a timeline, a time under every line reads as a
+     paragraph. */
+  .md-crm-feed-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 9px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 8px 7px 0;
+    border-radius: var(--md-radius-lg);
+  }
+
+  .md-crm-feed-node {
+    position: relative;
+    z-index: 1;
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: var(--md-surface);
+    box-shadow: inset 0 0 0 2px var(--md-accent);
+    transition: box-shadow var(--md-motion-fast);
+  }
+
+  .md-crm-feed-row:hover .md-crm-feed-node {
+    box-shadow: inset 0 0 0 4.5px var(--md-accent);
+  }
+
+  .md-crm-feed-subject {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 17px;
+    color: var(--md-ink);
+  }
+
+  .md-crm-feed-when {
+    white-space: nowrap;
+    font-size: 10.5px;
+    line-height: 15px;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  /* ── Empty states ────────────────────────────────────────────────────── */
+
+  .md-crm-empty {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 26px 18px 30px;
+    text-align: center;
+  }
+
+  .md-crm-empty-glyph {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    margin-bottom: 5px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-dashboard-hush);
+    color: var(--md-subtle);
+  }
+
+  .md-crm-empty-title {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--md-ink);
+  }
+
+  .md-crm-empty-body {
+    max-width: 320px;
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--md-subtle);
+  }
+
+  /* ── Loading skeleton ────────────────────────────────────────────────── */
+
+  .md-crm-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: var(--md-page-stack-gap-compact);
+  }
+
+  .md-crm-skeleton-kpis {
+    display: grid;
+    gap: var(--md-gap-sm);
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  @container md-dash (min-width: 560px) {
+    .md-crm-skeleton-kpis {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 1120px) {
+    .md-crm-skeleton-kpis {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+
+  /* Sized to the real panels, so the swap to loaded content changes opacity
+     only – no reflow, no scroll jump. */
+  .md-crm-skeleton-block {
+    display: block;
+    border-radius: var(--md-radius-xl);
+    background: var(--md-surface);
+    box-shadow: var(--md-shadow-line);
+    animation: md-crm-skeleton-breathe 1600ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+
+  .md-crm-skeleton-kpi {
+    height: 84px;
+  }
+
+  .md-crm-skeleton-panel-lg {
+    height: 336px;
+  }
+
+  .md-crm-skeleton-panel {
+    height: 262px;
+  }
+
+  .md-crm-skeleton-still .md-crm-skeleton-block {
+    animation: none;
+    opacity: 0.72;
+  }
+}
+
+@keyframes md-crm-tick-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes md-crm-skeleton-breathe {
+  0%,
+  100% {
+    opacity: 0.58;
+  }
+
+  50% {
+    opacity: 0.92;
+  }
+}
+
+/* Nothing on this page should animate for operators who asked for stillness.
+   The transforms above are all decorative; the information is in the markup. */
+@media (prefers-reduced-motion: reduce) {
+  .md-dashboard *,
+  .md-dashboard *::before,
+  .md-dashboard *::after,
+  .md-crm-dashboard *,
+  .md-crm-dashboard *::before,
+  .md-crm-dashboard *::after,
+  .md-kpi-scope *,
+  .md-kpi-scope *::before,
+  .md-kpi-scope *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .md-dashboard-back:hover,
+  .md-kpi-cell-marker,
+  .md-queue-row-rule,
+  .md-queue-row-actions,
+  .md-live-row:hover .md-live-row-arrow,
+  .md-crm-row[data-openable="true"]:hover .md-crm-row-arrow,
+  .md-crm-panel-link:hover .md-crm-panel-link-arrow,
+  .md-crm-chip:active,
+  .md-crm-panel-link:active {
+    translate: 0 0;
+    scale: 1 1;
+    transform: none;
+  }
+
+  /* The arrow and the reason edge still respond to hover – only their travel
+     is removed, so the row keeps its static cue. */
+  .md-crm-row[data-openable="true"]:hover .md-crm-row-arrow,
+  .md-crm-row[data-openable="true"]:has(.md-crm-row-open-target:focus-visible) .md-crm-row-arrow {
+    opacity: 1;
+  }
+}
+
+@layer md-dashboard {
+  /* ── Mode chart ──────────────────────────────────────────────────────────
+     Several series on one axis, in the dashboard's own chart idiom so it reads
+     as a sibling of the trend plot rather than a report card dropped into a
+     side column. */
+
+  .md-mode-chart {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--md-radius-2xl);
+    box-shadow: var(--md-shadow-soft);
+  }
+
+  .md-mode-chart-head {
+    padding: 14px 16px 0;
+  }
+
+  .md-mode-chart-canvas {
+    position: relative;
+    min-width: 0;
+    padding: 6px 8px 0;
+  }
+
+  .md-mode-chart-tooltip-card {
+    min-width: 148px;
+  }
+
+  .md-mode-chart-tooltip-values {
+    display: grid;
+    gap: 3px;
+    margin-top: 6px;
+  }
+
+  .md-mode-chart-tooltip-values li {
+    display: grid;
+    grid-template-columns: 9px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--md-text);
+  }
+
+  .md-mode-chart-tooltip-values strong {
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-mode-chart-tooltip-swatch {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+  }
+
+  .md-mode-chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    padding: 2px 16px 14px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--md-text);
+  }
+
+  .md-mode-chart-legend li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .md-mode-chart-swatch {
+    width: 10px;
+    height: 2.5px;
+    flex-shrink: 0;
+    border-radius: 999px;
+  }
+}

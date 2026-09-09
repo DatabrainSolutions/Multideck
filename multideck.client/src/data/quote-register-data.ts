@@ -1,4 +1,4 @@
-import type { StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/operational-data"
 
 export type QuoteRegisterRecord = {
   reference: string
@@ -29,6 +29,7 @@ export type QuoteRegisterRecord = {
   shipperReference: string
   validity: string
   estimatedQuote: string
+  createdAt: string
   sellValue: number
   estimatedProfit: number
   estimatedCost: number
@@ -76,10 +77,11 @@ function quote(seed: QuoteSeed): QuoteRegisterRecord {
     operationsOwner: "Daniel Reed",
     quoteType: "Spot",
     direction: "Export",
-    customerPurchaseOrder: "—",
-    shipperReference: "—",
+    customerPurchaseOrder: "–",
+    shipperReference: "–",
     validity: "31 Jul 2026",
     estimatedQuote: "Today, 14:00",
+    createdAt: "21 Jul 2026 · 09:42",
     currency: "GBP",
     documentStatus: "Draft",
     priority: "Standard",
@@ -144,6 +146,7 @@ export const quoteRegisterRecords: QuoteRegisterRecord[] = [
     shipperReference: "CLT-SG-492",
     validity: "28 Jul 2026",
     estimatedQuote: "Today, 11:30",
+    createdAt: "22 Jul 2026 · 08:14",
     sellValue: 3327,
     estimatedProfit: 612.2,
     estimatedCost: 2714.8,
@@ -181,6 +184,7 @@ export const quoteRegisterRecords: QuoteRegisterRecord[] = [
     shipperReference: "AST-DXB-0719",
     validity: "24 Jul 2026",
     estimatedQuote: "Today, 10:45",
+    createdAt: "22 Jul 2026 · 08:31",
     sellValue: 0,
     estimatedProfit: 0,
     estimatedCost: 0,

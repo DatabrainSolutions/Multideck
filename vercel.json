@@ -1,7 +1,22 @@
 {
   "installCommand": "cd multideck.client && npm ci",
-  "buildCommand": "cd multideck.client && npm run build",
+  "buildCommand": "node build-deployment.mjs",
   "outputDirectory": "multideck.client/dist",
+  "headers": [
+    {
+      "source": "/.well-known/multideck-mobile.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=300"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    }
+  ],
   "redirects": [
     {
       "source": "/multideck.client",
@@ -16,7 +31,99 @@
   ],
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/auth",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/app",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/agent-dexter",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/components",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/crm/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/customers/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/inbox",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/documents/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/customs/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/paper-tray",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/quotes/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/reports/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/finance/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/settings",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/warehouse/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/bookings/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/calendar",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/calendar/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/book/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/meetings/manage/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/road-control/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/card/:path*",
       "destination": "/index.html"
     }
   ]

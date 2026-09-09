@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getWarehousePortalReference } from "@/lib/warehouse-api";
+import { getWarehousePortalReference } from "@/lib/warehouse";
 import {
   listLiveCustomerGrants,
   type LiveCustomerGrant,

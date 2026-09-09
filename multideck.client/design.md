@@ -114,7 +114,9 @@ Current Multideck components:
 - `LineChartCard`, `AreaChartCard`, `BarChartCard`, `StackedBarChartCard`, `DonutChartCard`, `FunnelChartCard`, `HeatmapChartCard`, `RadialGoalChartCard`, `ScatterChartCard`, and `MixedChartCard`: reusable report-ready visualization components.
 - `ReportVisualizationBlock`: report-builder adapter for chart variants such as single bars, comparison bars, pie charts with or without keys, and variable-step funnels.
 - `CommandInput`: search and jump entry point.
-- `SegmentedControl`: generic mutually-exclusive mode switch.
+- `SegmentedControl`: spring-animated mutually-exclusive mode switch for two to four short choices.
+- `ChoiceControl`: adaptive exclusive-choice control. Use a switch for a boolean, the segmented pill for two to four choices, and a dropdown for five or more.
+- `Checkbox`: independent multi-select control for rows, permissions, overrides, and checklist choices.
 - `FilterChips`: generic filter chip row with clear selected state.
 - `TabsRail`: generic tab rail for switching in-record sections.
 - `ShipmentRow`: live shipment row.
@@ -137,16 +139,15 @@ Component naming rule:
 - Screen-specific components are allowed only when the content is genuinely domain-specific, such as `CustomerDetailHero`, `ActiveShipmentsPanel`, or `PrimaryContactsPanel`.
 - Customer screens should pass customer data into generic primitives rather than creating parallel customer-only controls.
 
-## Language And Direction
+## English Product Copy
 
-Multideck must treat language support as a product-system requirement, not a later pass.
+Multideck product-authored copy is English only.
 
-- New screens and reusable components should work with the app-wide language system from the start.
-- User-facing copy should be localisable rather than trapped inside one-off hardcoded strings.
-- Layouts should remain calm and readable when text length changes between languages.
-- Arabic and other right-to-left languages must flip reading direction cleanly for navigation, sidebars, tables, forms, rows, and directional controls.
-- Inputs that contain emails, URLs, shipment IDs, codes, tracking numbers, or phone numbers should stay readable with direction-safe handling.
-- Any component added to the gallery should be checked in a non-English language, and in right-to-left mode when it has direction-sensitive layout.
+- Use British English by default, with the supported American English variant where regional spelling or formatting differs.
+- Do not add non-English interface translations or language choices.
+- Keep layouts calm and readable when English copy changes length.
+- Preserve user-entered names, addresses, messages, documents, and identifiers in their original form.
+- Any component added to the gallery should be checked in both supported English variants when regional formatting or spelling is relevant.
 
 ## Page Rules
 
@@ -198,6 +199,12 @@ Controls should be real:
 - Map controls pan and zoom the real route layer.
 - Copy action writes code snippets to clipboard.
 - Sidebar switches between Overview and Components.
+
+Canonical register behaviour:
+
+- Primary registers use `DataTable` for search, sorting, column visibility, resizing, pinning, ordering, and saved layouts.
+- Advanced filters open inline above the register and update results immediately; do not move this work into a modal with a separate Apply step.
+- Quotes and Bookings are the reference implementations for this shared register behaviour.
 
 ## Build Rule
 

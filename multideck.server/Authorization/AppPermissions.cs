@@ -37,6 +37,13 @@ public static class AppPermissions
         public static readonly PermissionDefinition Write = new("Reports.Write", "Reports", "Create and update reports", "Create report templates and publish report changes.");
     }
 
+    public static class Documents
+    {
+        public static readonly PermissionDefinition Read = new("Documents.Read", "Documents", "Read generated documents", "View generated document history and request secure downloads.");
+        public static readonly PermissionDefinition Generate = new("Documents.Generate", "Documents", "Generate documents", "Generate approved documents from authorised operational records.");
+        public static readonly PermissionDefinition Manage = new("Documents.Manage", "Documents", "Manage document templates", "Create, version, approve, publish, and retire document templates.", IsDangerous: true);
+    }
+
     public static class Warehouse
     {
         // Raw permission strings live here as consts so they can also be used in attribute arguments.
@@ -62,8 +69,11 @@ public static class AppPermissions
 
     public static class Settings
     {
-        public static readonly PermissionDefinition Read = new("Settings.Read", "Settings", "Read workspace settings", "View workspace preferences, branding, integrations, and billing settings.");
-        public static readonly PermissionDefinition Manage = new("Settings.Manage", "Settings", "Manage workspace settings", "Change workspace preferences, branding, integrations, and billing settings.");
+        public const string ReadValue = "Settings.Read";
+        public const string ManageValue = "Settings.Manage";
+
+        public static readonly PermissionDefinition Read = new(ReadValue, "Settings", "Read workspace settings", "View workspace preferences, branding, integrations, and billing settings.");
+        public static readonly PermissionDefinition Manage = new(ManageValue, "Settings", "Manage workspace settings", "Change workspace preferences, branding, integrations, and billing settings.");
     }
 
     public static class Integrations
@@ -74,10 +84,28 @@ public static class AppPermissions
         public static readonly PermissionDefinition Manage = new(ManageValue, "Integrations", "Manage integrations", "Create and update integrations, API keys, and webhook configuration.", IsDangerous: true);
     }
 
+    public static class Email
+    {
+        public const string ConnectValue = "Email.Connect";
+        public const string ReadValue = "Email.Read";
+        public const string SendValue = "Email.Send";
+        public const string ManageSharedValue = "Email.ManageShared";
+        public const string AiReadValue = "Email.AIRead";
+
+        public static readonly PermissionDefinition Connect = new(ConnectValue, "Email", "Connect email accounts", "Connect or revoke Gmail and Microsoft 365 accounts.", IsDangerous: true);
+        public static readonly PermissionDefinition Read = new(ReadValue, "Email", "Read email", "Read authorised personal, shared, and group mailboxes.");
+        public static readonly PermissionDefinition Send = new(SendValue, "Email", "Send email", "Compose, reply, reply all, and forward from authorised mailboxes.", IsDangerous: true);
+        public static readonly PermissionDefinition ManageShared = new(ManageSharedValue, "Email", "Manage shared mailboxes", "Manage users and send-as access for shared or group mailboxes.", IsDangerous: true);
+        public static readonly PermissionDefinition AiRead = new(AiReadValue, "Email", "Summarise email with AI", "Allow Luna to read an authorised thread for summarisation.", IsDangerous: true);
+    }
+
     public static class AgentDexter
     {
-        public static readonly PermissionDefinition Read = new("AgentDexter.Read", "Agent Dexter", "Read Agent Dexter settings", "View AI agent preferences, watchers, and approval rules.");
-        public static readonly PermissionDefinition Manage = new("AgentDexter.Manage", "Agent Dexter", "Manage Agent Dexter", "Change AI agent autonomy, watchers, and approval rules.");
+        public const string ReadValue = "AgentDexter.Read";
+        public const string ManageValue = "AgentDexter.Manage";
+
+        public static readonly PermissionDefinition Read = new(ReadValue, "Agent Dexter", "Read Agent Dexter settings", "View AI agent preferences, watchers, and approval rules.");
+        public static readonly PermissionDefinition Manage = new(ManageValue, "Agent Dexter", "Manage Agent Dexter", "Change AI agent autonomy, watchers, and approval rules.");
     }
 
     public static IReadOnlyList<PermissionDefinition> All { get; } =
@@ -93,6 +121,9 @@ public static class AppPermissions
         Quotes.Delete,
         Reports.Read,
         Reports.Write,
+        Documents.Read,
+        Documents.Generate,
+        Documents.Manage,
         Warehouse.Read,
         Warehouse.Write,
         Users.Read,
@@ -104,6 +135,11 @@ public static class AppPermissions
         Settings.Manage,
         Integrations.Read,
         Integrations.Manage,
+        Email.Connect,
+        Email.Read,
+        Email.Send,
+        Email.ManageShared,
+        Email.AiRead,
         AgentDexter.Read,
         AgentDexter.Manage,
     ];

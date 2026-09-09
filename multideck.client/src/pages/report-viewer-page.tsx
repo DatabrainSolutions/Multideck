@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { ArrowLeft, Download, Share2 } from "lucide-react"
+import { ArrowLeft, Download, Share2 } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { StatusPill } from "@/components/multideck/status-pill"
@@ -17,7 +17,7 @@ import {
   type ReportPage,
   type ReportWidget,
 } from "@/components/multideck/report-components"
-import { generatedReports } from "@/data/multideck-data"
+import { generatedReports } from "@/data/operational-data"
 
 export function ReportViewerPage({ navigate, reportId }: { navigate: (path: string) => void; reportId: string }) {
   const [pages, setPages] = useState<ReportPage[]>(monthlyReviewPages)
@@ -108,7 +108,7 @@ export function ReportViewerPage({ navigate, reportId }: { navigate: (path: stri
           </Button>
           <Button
             type="button"
-            className="h-11 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[14px] font-medium text-white shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent)]/88"
+            className="h-11 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[14px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent)]/88"
             onClick={() => toast.success("PDF prepared", { description: `${report.title} is ready to download.` })}
           >
             <Download data-icon="inline-start" strokeWidth={1.4} />

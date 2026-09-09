@@ -1,53 +1,64 @@
-# ═══════════════════════════════════════════════════════════
-# .NET
-# ═══════════════════════════════════════════════════════════
-**/bin/
-**/obj/
-**/out/
-*.user
-*.suo
-*.cache
-*.log
-
-# ═══════════════════════════════════════════════════════════
-# Node (for future client tooling)
-# ═══════════════════════════════════════════════════════════
 node_modules/
 dist/
 .vite/
 .npm-cache/
+**/bin/
+**/obj/
+**/out/
 .env
 .env.*
 !.env.example
-Multideck_Scope_v5.docx
 
-# ═══════════════════════════════════════════════════════════
-# Local tooling output
-# ═══════════════════════════════════════════════════════════
 .cursor/
 .playwright-cli/
 test-results/
 playwright-report/
 output/
+artifacts/
+outputs/
+tmp/
+work/
 
-# ═══════════════════════════════════════════════════════════
-# IDE / OS
-# ═══════════════════════════════════════════════════════════
 .vs/
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 nul
-/supabase/migrations/*
-!/supabase/migrations/20260625083908_warehouse_backend_foundation.sql
-!/supabase/migrations/20260625084450_warehouse_backend_seed_data.sql
-!/supabase/migrations/202607210001_warehouse_customer_portal.sql
-!/supabase/migrations/202607220001_document_storage_catalogue.sql
-!/supabase/migrations/202607220002_warehouse_customer_user_management.sql
-!/supabase/migrations/202607230001_use_supabase_document_storage.sql
-!/supabase/migrations/20260723101203_notification_email_preferences.sql
-!/supabase/migrations/20260723103000_optimize_notification_email_policies.sql
-!/supabase/migrations/20260723104500_dispatch_notification_emails.sql
-/supabase/.temp/
 .vercel
+
+/supabase/.temp/
+/multideck.server/Backend/supabase/.temp/
+/multideck.server/Backend/supabase/supabase/.temp/
+*.cache
+*.log
+Multideck_Scope_v5.docx
+
+# === Boost OS (managed by boostmyagent CLI) ===
+/.agents/skills/.boostmyagent-install.json
+/.agents/memory/
+/.agents/references/
+/.agents/hooks/
+/.agents/skills/audit/
+/.agents/skills/cost/
+/.agents/skills/design/
+/.agents/skills/explain/
+/.agents/skills/forget/
+/.agents/skills/health/
+/.agents/skills/mobile/
+/.agents/skills/new/
+/.agents/skills/next/
+/.agents/skills/os/
+/.agents/skills/pause/
+/.agents/skills/preflight/
+/.agents/skills/recall/
+/.agents/skills/remember/
+/.agents/skills/resume/
+/.agents/skills/security/
+/.agents/skills/spawn/
+/.agents/skills/sync/
+/.agents/skills/uninstall/
+/.agents/skills/update/
+/.agents/skills/vibe/
+/.agents/skills/whats-new/
+# === End Boost OS ===

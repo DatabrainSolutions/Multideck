@@ -1,13 +1,256 @@
+/* The bundler can hoist an imported `@layer components` block above Tailwind's
+   own layer statement, which registers `components` first and therefore lowest –
+   below `base`, so the preflight reset silently wins over any padding declared
+   in it. Declaring a dedicated layer up front pins the dashboard's styles above
+   `base` and `utilities` without disturbing the existing layer order. */
+@layer theme, base, components, utilities, md-dashboard;
+
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "./feature-workspaces.css";
+@import "./dashboard.css";
 
 @custom-variant dark (&:is(.dark *));
 
+@keyframes md-thinking-dot {
+  0%,
+  100% {
+    opacity: 0.12;
+    transform: scale(0.72);
+  }
+
+  10% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  18% {
+    opacity: 0.52;
+    transform: scale(0.9);
+  }
+
+  28% {
+    opacity: 0.24;
+    transform: scale(0.78);
+  }
+
+  40% {
+    opacity: 0.12;
+    transform: scale(0.72);
+  }
+}
+
+/* Public quotes never inherit an individual's appearance preference. The
+   light block is the fixed white-and-teal fallback; the dark block is used
+   only when the saved tenant brand explicitly requests a dark appearance. */
+.quote-response-shell[data-customer-theme="light"] {
+  --md-ink: #0b1413;
+  --md-text: #4f5b58;
+  --md-subtle: #687570;
+  --md-bg: #ffffff;
+  --md-sidebar-bg: #ffffff;
+  --md-surface: #ffffff;
+  --md-surface-soft: #f7f9f8;
+  --md-surface-tint: #eef1f0;
+  --md-hover: #e5eae8;
+  --md-line: #d7dedb;
+  --md-hairline: #e3e8e6;
+  --md-accent: #0e7d74;
+  --md-accent-hover: #0c7068;
+  --md-accent-a28: color-mix(in srgb, #0e7d74 28%, transparent);
+  --md-green: #0e7d74;
+  --md-red: #d14e4e;
+  --md-status-green-bg: #d1ffc8;
+  --md-status-green-ink: #0f5f00;
+  --md-status-amber-bg: #f2edb0;
+  --md-status-amber-ink: #746a00;
+  --md-status-red-bg: #ffc8c8;
+  --md-status-red-ink: #8b0000;
+  --md-pdf-stage: #e7ebe9;
+  --md-shadow-line: inset 0 0 0 1px var(--md-line);
+  --md-shadow-soft: 0 18px 50px rgba(11, 20, 19, 0.08), inset 0 0 0 1px rgba(11, 20, 19, 0.04);
+  --md-shadow-popover: 0 0 0 1px rgba(11, 20, 19, 0.1), 0 1px 2px rgba(11, 20, 19, 0.05), 0 10px 28px rgba(11, 20, 19, 0.1);
+  --md-stroke-bottom: inset 0 -1px 0 var(--md-hairline);
+  --background: var(--md-bg);
+  --foreground: var(--md-ink);
+  --card: var(--md-surface);
+  --popover: var(--md-surface);
+  --secondary: var(--md-surface-tint);
+  --muted: var(--md-surface-tint);
+  --muted-foreground: var(--md-text);
+  --border: var(--md-line);
+  --input: var(--md-line);
+  --ring: var(--md-accent);
+}
+
+.quote-response-shell[data-customer-theme="dark"] {
+  --md-ink: #f1f5f3;
+  --md-text: #bac2bf;
+  --md-subtle: #909b97;
+  --md-bg: #111315;
+  --md-sidebar-bg: #171a1c;
+  --md-surface: #1b1e20;
+  --md-surface-soft: #222527;
+  --md-surface-tint: #292d30;
+  --md-hover: #33383b;
+  --md-line: #363c3e;
+  --md-hairline: #2f3436;
+  --md-accent: #53b7aa;
+  --md-accent-hover: #63c7ba;
+  --md-accent-a28: color-mix(in srgb, #53b7aa 28%, transparent);
+  --md-green: #53b7aa;
+  --md-red: #e07373;
+  --md-status-green-bg: #031300;
+  --md-status-green-ink: #a8ff98;
+  --md-status-amber-bg: #2c2900;
+  --md-status-amber-ink: #fff68e;
+  --md-status-red-bg: #250000;
+  --md-status-red-ink: #ffa2a2;
+  --md-pdf-stage: #101214;
+  --md-shadow-line: inset 0 0 0 1px var(--md-line);
+  --md-shadow-soft: 0 18px 50px rgba(0, 0, 0, 0.24), inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+  --md-shadow-popover: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px rgba(0, 0, 0, 0.45);
+  --md-stroke-bottom: inset 0 -1px 0 var(--md-hairline);
+  --background: var(--md-bg);
+  --foreground: var(--md-ink);
+  --card: var(--md-surface);
+  --popover: var(--md-surface);
+  --secondary: var(--md-surface-tint);
+  --muted: var(--md-surface-tint);
+  --muted-foreground: var(--md-text);
+  --border: var(--md-line);
+  --input: var(--md-line);
+  --ring: var(--md-accent);
+}
+
+.md-thinking-dot {
+  opacity: 0.12;
+  transform: scale(0.72);
+  animation: md-thinking-dot 1450ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-thinking-dot {
+    animation: none;
+    opacity: 0.28;
+    transform: none;
+  }
+
+  .md-thinking-dot:nth-child(13) {
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------------ form validation */
+
+@keyframes md-field-invalid-nudge-a {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  28% {
+    translate: -3px 0;
+  }
+  56% {
+    translate: 2px 0;
+  }
+  78% {
+    translate: -1px 0;
+  }
+}
+
+@keyframes md-field-invalid-nudge-b {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  28% {
+    translate: -3px 0;
+  }
+  56% {
+    translate: 2px 0;
+  }
+  78% {
+    translate: -1px 0;
+  }
+}
+
+:where(
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"],
+  [data-slot="checkbox"],
+  [data-slot="switch"],
+  input:not([type="hidden"]),
+  textarea,
+  select
+)[aria-invalid="true"],
+  form:not([novalidate]) :where(input:not([type="hidden"]),
+  textarea,
+  select):user-invalid,
+  [data-field-invalid="true"] :where(
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"],
+  [data-slot="checkbox"],
+  [data-slot="switch"]
+) {
+  border-color: var(--md-red);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-red) 74%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--md-red) 13%, transparent);
+}
+
+:where(
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"],
+  input:not([type="hidden"]),
+  textarea,
+  select
+)[aria-invalid="true"],
+  form:not([novalidate]) :where(input:not([type="hidden"]),
+  textarea,
+  select):user-invalid,
+  [data-field-invalid="true"] :where(
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"]
+) {
+  background-color: color-mix(in srgb, var(--md-red) 4%, var(--md-field-bg));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-invalid-feedback="a"],
+  [data-field-invalid="true"] [data-slot][data-invalid-feedback="a"] {
+    animation: md-field-invalid-nudge-a 180ms ease-out;
+  }
+
+  [data-invalid-feedback="b"],
+  [data-field-invalid="true"] [data-slot][data-invalid-feedback="b"] {
+    animation: md-field-invalid-nudge-b 180ms ease-out;
+  }
+
+  form:not([novalidate]) :where(input:not([type="hidden"]),
+  textarea,
+  select):user-invalid:not([data-invalid-feedback]),
+  [data-field-invalid="true"] :where(
+    [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"],
+  [data-slot="checkbox"],
+  [data-slot="switch"]
+  ):not([data-invalid-feedback]) {
+    animation: md-field-invalid-nudge-a 180ms ease-out;
+  }
+}
+
 @theme inline {
-  --font-sans: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "SF Mono", "SFMono-Regular", ui-monospace, "Cascadia Code", monospace;
+  /* The colour emoji families are named last on purpose: a subject line or a
+     message preview that contains 🎉 must render it in colour rather than
+     falling through to a monochrome symbol glyph. */
+  --font-sans: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
   --font-heading: var(--font-sans);
 
   --color-background: var(--background);
@@ -50,6 +293,104 @@
   --radius-2xl: var(--md-radius-2xl);
 }
 
+/* The accent is one hue the whole product reads from. Every green surface – solid
+   fills, alpha washes, focus rings, selected rows, brand shadows and the Dexter
+   shader ramps – derives from the eight colours below, which `lib/accent-theme.ts`
+   rewrites when the operator picks a different accent in Settings.
+
+   Registering them as `<color>` is what makes the swap watchable: a transition on
+   these eight animates every `color-mix()` built on top of them in the same style
+   pass, so the app cross-fades as one surface instead of a few hundred properties
+   each easing on their own schedule. The initial values are the shipped teal, so
+   the tokens are already correct before any script runs. */
+@property --md-accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #0a7068;
+}
+
+@property --md-accent-hover {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #086f67;
+}
+
+@property --md-accent-ink {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ffffff;
+}
+
+@property --md-accent-tint {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #0d7d74;
+}
+
+@property --md-accent-deep {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #05463e;
+}
+
+@property --md-accent-abyss {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #062420;
+}
+
+/* The AI edge glow's three stops. Kept as their own colours rather than mixes of
+   the accent because each one raises chroma above the base, which no `color-mix()`
+   against white or black can do. */
+@property --md-accent-glow-core {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #088b82;
+}
+
+@property --md-accent-glow-bright {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #31b29f;
+}
+
+@property --md-accent-glow-warm {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #688e53;
+}
+
+/* Bright enough to read on the near-black brand panels in both themes. */
+@property --md-accent-lift {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #8dd3ca;
+}
+
+@property --md-accent-lift-strong {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #9eecdd;
+}
+
+@property --md-accent-lift-warm {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #7bdbac;
+}
+
+@property --md-selected-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #c8dcd6;
+}
+
+@property --md-selected-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #145b54;
+}
+
 :root {
   --md-ink: #0b1413;
   --md-ink-soft: #2a3432;
@@ -64,19 +405,86 @@
   --md-surface: #ffffff;
   --md-surface-soft: #f7f9f8;
   --md-surface-tint: #eef1f0;
+  /* Home's deck sits back from the page rather than lifting off it: a block a
+     shade greyer than the background, so four of them along the foot of the
+     screen read as one quiet band under the prompt. */
+  --md-deck-surface: #ebeded;
+  --md-table-pinned-bg: color-mix(in srgb, var(--md-accent) 7%, var(--md-surface));
+  --md-table-pinned-selected-bg: color-mix(in srgb, var(--md-accent) 14%, var(--md-surface));
   --md-field-bg: #e5e9e7;
   --md-field-bg-hover: #dfe5e2;
+  --md-field-locked-bg: color-mix(in srgb, var(--md-accent) 9%, var(--md-surface));
+  --md-field-locked-line: color-mix(in srgb, var(--md-accent) 42%, var(--md-surface));
   --md-selected-bg: #c8dcd6;
-  --md-selected-text: #155b54;
+  --md-selected-text: #145b54;
   --md-accent: #0a7068;
-  --md-green: #0a7068;
+  --md-accent-hover: #086f67;
+  --md-accent-ink: #ffffff;
+  --md-accent-tint: #0d7d74;
+  --md-accent-deep: #05463e;
+  --md-accent-abyss: #062420;
+  --md-accent-glow-core: #088b82;
+  --md-accent-glow-bright: #31b29f;
+  --md-accent-glow-warm: #688e53;
+  --md-accent-lift: #8dd3ca;
+  --md-accent-lift-strong: #9eecdd;
+  --md-accent-lift-warm: #7bdbac;
+  /* Kept as an alias so the long tail of `--md-green` references stays valid; the
+     accent has been the only green in the palette for a while. */
+  --md-green: var(--md-accent);
   --md-green-card: #f7f8f8;
   --md-green-card-hover: #f1f3f2;
   --md-green-card-selected: #e7ecea;
   --md-amber: #dd8a2b;
   --md-amber-strong: #b86108;
   --md-red: #d14e4e;
+  --md-comparison-positive: #19754f;
+  --md-comparison-negative: #c34854;
   --md-blue: #4a7d9c;
+  /* Filled table statuses from the approved Figma light-mode palette. */
+  --md-status-green-bg: #d1ffc8;
+  --md-status-green-ink: #0f5f00;
+  --md-status-amber-bg: #f2edb0;
+  --md-status-amber-ink: #746a00;
+  --md-status-red-bg: #ffc8c8;
+  --md-status-red-ink: #8b0000;
+  --md-status-blue-bg: #dcecea;
+  --md-status-blue-ink: #315f5b;
+  --md-status-teal-bg: #dcecea;
+  --md-status-teal-ink: #315f5b;
+  --md-status-orange-bg: #ffdac8;
+  --md-status-orange-ink: #984a00;
+  --md-status-purple-bg: #cec8ff;
+  --md-status-purple-ink: #29007e;
+  /* Calendar event colours are a bounded product palette, not tenant branding.
+     The first three pairs come directly from the approved Calendar Figma frame;
+     the remaining tones follow the same saturated fill + lighter icon recipe. */
+  --md-calendar-on-colour: #ffffff;
+  --md-calendar-teal: #1d9f74;
+  --md-calendar-teal-icon: #bfffea;
+  --md-calendar-amber: #d38900;
+  --md-calendar-amber-icon: #ffe7b9;
+  --md-calendar-blue: #1d519f;
+  --md-calendar-blue-icon: #c8deff;
+  --md-calendar-violet: #6848b8;
+  --md-calendar-violet-icon: #e6dcff;
+  --md-calendar-rose: #a83f68;
+  --md-calendar-rose-icon: #ffd8e6;
+  --md-calendar-red: #a94444;
+  --md-calendar-red-icon: #ffdada;
+  --md-calendar-cyan: #087f8f;
+  --md-calendar-cyan-icon: #c7f5fa;
+  --md-calendar-neutral: #eef1f0;
+  --md-calendar-neutral-ink: #0b1413;
+  --md-calendar-neutral-icon: #4f5b58;
+  --md-calendar-ribbon-sky-bg: #eaf3ff;
+  --md-calendar-ribbon-sky-ink: #174e8a;
+  --md-orange: #984a00;
+  --md-purple: #29007e;
+  --md-ai-cyan: #219ebc;
+  --md-ai-magenta: #c95ccb;
+  --md-ai-gold: #e5b73b;
+  --md-ai-orange: #f47c20;
   --md-line: rgba(11, 20, 19, 0.06);
   --md-line-strong: rgba(11, 20, 19, 0.08);
   --md-hover: rgba(11, 20, 19, 0.055);
@@ -87,8 +495,8 @@
   --md-avatar-bg: #dfd1ad;
   --md-job-card-bg: #f7f8f8;
   --md-job-card-hover: #f1f3f2;
-  --md-job-card-shadow: var(--md-premium-stroke), 0 10px 22px rgba(46, 142, 96, 0.1);
-  --md-job-card-hover-shadow: var(--md-premium-stroke), 0 14px 28px rgba(46, 142, 96, 0.13);
+  --md-job-card-shadow: var(--md-premium-stroke), 0 10px 22px var(--md-accent-a10);
+  --md-job-card-hover-shadow: var(--md-premium-stroke), 0 14px 28px var(--md-accent-a13);
   --md-clock-selected-bg: rgba(11, 20, 19, 0.06);
   --md-crm-stage-bg: #ffffff;
   --md-crm-deal-bg: #ffffff;
@@ -96,11 +504,21 @@
   --md-crm-deal-selected-bg: #ffffff;
   --md-crm-deal-shadow: var(--md-premium-stroke), 0 10px 24px rgba(42, 52, 50, 0.075);
   --md-crm-deal-hover-shadow: var(--md-premium-stroke), 0 16px 32px rgba(42, 52, 50, 0.1);
-  --md-crm-deal-selected-shadow: var(--md-premium-stroke), 0 0 0 3px rgba(14, 125, 116, 0.1), 0 14px 28px rgba(42, 52, 50, 0.09);
+  --md-crm-deal-selected-shadow: var(--md-premium-stroke), 0 0 0 3px var(--md-accent-a10), 0 14px 28px rgba(42, 52, 50, 0.09);
   --md-report-preview-bg: #f1f3f2;
   --md-report-preview-hover-bg: #e9edeb;
   --md-report-donut-hole: inset 0 0 0 8px #f1f3f2;
   --md-composer-inner-bg: rgba(255, 255, 255, 0.94);
+  /* The frame behind the shared Dexter shader. Kept a step deeper than the
+     prompt panel so the panel reads as lifted out of the agent treatment. */
+  --md-composer-shell-bg: #edf0ef;
+  /* Opaque on purpose: the shader belongs only to the header, never the
+     prompt field. */
+  --md-composer-panel-bg: #ffffff;
+  --md-composer-panel-line: rgba(11, 20, 19, 0.05);
+  --md-mention-bg: color-mix(in srgb, var(--md-accent-tint) 11%, #ffffff);
+  --md-mention-stroke: var(--md-accent-deep);
+  --md-mention-text: var(--md-accent-deep);
 
   --md-sidebar-width: 264px;
   --md-sidebar-collapsed-width: 56px;
@@ -129,13 +547,18 @@
   --md-stroke-left: inset 1px 0 0 rgba(255, 255, 255, 0.08), -1px 0 0 rgba(0, 0, 0, 0.04);
   --md-shadow-line: var(--md-premium-stroke);
   --md-shadow-soft: var(--md-premium-stroke), 0 12px 28px rgba(42, 52, 50, 0.08);
+  --md-shadow-popover: 0 0 0 1px rgba(11, 20, 19, 0.1), 0 1px 2px rgba(11, 20, 19, 0.05), 0 10px 28px rgba(11, 20, 19, 0.1);
   --md-shadow-lift: var(--md-premium-stroke), 0 18px 38px rgba(42, 52, 50, 0.14);
-  --md-shadow-green-card: var(--md-premium-stroke), 0 10px 24px rgba(14, 125, 116, 0.08);
-  --md-shadow-green-card-hover: var(--md-premium-stroke), 0 14px 30px rgba(14, 125, 116, 0.1);
-  --md-shadow-green-card-selected: var(--md-premium-stroke), 0 0 0 3px rgba(14, 125, 116, 0.13), 0 16px 34px rgba(14, 125, 116, 0.12);
+  --md-shadow-green-card: var(--md-premium-stroke), 0 10px 24px var(--md-accent-a08);
+  --md-shadow-green-card-hover: var(--md-premium-stroke), 0 14px 30px var(--md-accent-a10);
+  --md-shadow-green-card-selected: var(--md-premium-stroke), 0 0 0 3px var(--md-accent-a13), 0 16px 34px var(--md-accent-a12);
   --md-motion: 220ms cubic-bezier(0.22, 1, 0.36, 1);
   --md-motion-fast: 160ms cubic-bezier(0.22, 1, 0.36, 1);
   --md-motion-panel: 300ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* The summon dim. Light enough that the operator can still read the page they
+     are picking from – it marks focus, it does not replace the screen. */
+  --md-summon-scrim: rgba(11, 20, 19, 0.16);
 
   --background: var(--md-bg);
   --foreground: var(--md-ink);
@@ -186,19 +609,55 @@
   --md-surface: #1b1e20;
   --md-surface-soft: #222527;
   --md-surface-tint: #292d30;
+  --md-deck-surface: #0c0e0f;
+  --md-table-pinned-bg: color-mix(in srgb, var(--md-accent-deep) 52%, var(--md-surface));
+  --md-table-pinned-selected-bg: color-mix(in srgb, var(--md-accent-deep) 68%, var(--md-surface));
   --md-field-bg: #303538;
   --md-field-bg-hover: #373d40;
+  --md-field-locked-bg: color-mix(in srgb, var(--md-accent) 12%, var(--md-surface));
+  --md-field-locked-line: color-mix(in srgb, var(--md-accent) 48%, var(--md-surface));
   --md-selected-bg: #263b37;
   --md-selected-text: #b9e9df;
   --md-accent: #69d4c2;
-  --md-green: #69d4c2;
+  --md-accent-hover: #71dbc9;
+  --md-accent-ink: #08201c;
+  --md-accent-tint: #62cdbc;
+  --md-green: var(--md-accent);
   --md-green-card: #202426;
   --md-green-card-hover: #262a2d;
   --md-green-card-selected: #2c3233;
   --md-amber: #e5a34c;
   --md-amber-strong: #f0bb6c;
   --md-red: #e07373;
+  --md-comparison-positive: #72d9ad;
+  --md-comparison-negative: #ff8d98;
   --md-blue: #7fb0cf;
+  /* Filled table statuses from the approved Figma dark-mode palette. */
+  --md-status-green-bg: #031300;
+  --md-status-green-ink: #a8ff98;
+  --md-status-amber-bg: #2c2900;
+  --md-status-amber-ink: #fff68e;
+  --md-status-red-bg: #250000;
+  --md-status-red-ink: #ffa2a2;
+  --md-status-blue-bg: #002523;
+  --md-status-blue-ink: #adfffc;
+  --md-status-teal-bg: #002523;
+  --md-status-teal-ink: #adfffc;
+  --md-status-orange-bg: #251200;
+  --md-status-orange-ink: #ffb570;
+  --md-status-purple-bg: #0c0025;
+  --md-status-purple-ink: #dcccff;
+  --md-calendar-neutral: #292d30;
+  --md-calendar-neutral-ink: #f4f6f5;
+  --md-calendar-neutral-icon: #bac2bf;
+  --md-calendar-ribbon-sky-bg: #1c2d41;
+  --md-calendar-ribbon-sky-ink: #b7d8ff;
+  --md-orange: #ffb570;
+  --md-purple: #dcccff;
+  --md-ai-cyan: #38bdf8;
+  --md-ai-magenta: #e264e2;
+  --md-ai-gold: #f2c94c;
+  --md-ai-orange: #ff7a1a;
   --md-line: rgba(232, 241, 235, 0.08);
   --md-line-strong: rgba(232, 241, 235, 0.12);
   --md-hover: rgba(255, 255, 255, 0.065);
@@ -218,11 +677,19 @@
   --md-crm-deal-selected-bg: color-mix(in srgb, var(--md-surface-soft) 96%, transparent);
   --md-crm-deal-shadow: var(--md-premium-stroke), 0 12px 28px rgba(0, 0, 0, 0.24);
   --md-crm-deal-hover-shadow: var(--md-premium-stroke), 0 16px 34px rgba(0, 0, 0, 0.28);
-  --md-crm-deal-selected-shadow: var(--md-premium-stroke), 0 0 0 3px rgba(104, 199, 184, 0.1), 0 16px 34px rgba(0, 0, 0, 0.3);
+  --md-crm-deal-selected-shadow: var(--md-premium-stroke), 0 0 0 3px var(--md-accent-a10), 0 16px 34px rgba(0, 0, 0, 0.3);
   --md-report-preview-bg: color-mix(in srgb, var(--md-surface-soft) 86%, transparent);
   --md-report-preview-hover-bg: color-mix(in srgb, var(--md-surface-soft) 94%, transparent);
   --md-report-donut-hole: inset 0 0 0 8px color-mix(in srgb, var(--md-surface-soft) 94%, transparent);
   --md-composer-inner-bg: color-mix(in srgb, var(--md-surface-soft) 90%, transparent);
+  --md-composer-shell-bg: #131618;
+  --md-composer-panel-bg: #1e2123;
+  --md-composer-panel-line: rgba(255, 255, 255, 0.075);
+  --md-mention-bg: color-mix(in srgb, var(--md-accent-deep) 78%, var(--md-surface));
+  --md-mention-stroke: var(--md-accent);
+  --md-mention-text: var(--md-accent-lift-strong);
+  /* Charcoal needs a deeper dim to read as dimmed at all. */
+  --md-summon-scrim: rgba(0, 0, 0, 0.42);
   --md-premium-stroke: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.24);
   --md-premium-stroke-soft: var(--md-premium-stroke);
   --md-stroke-top: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 -1px 0 rgba(0, 0, 0, 0.24);
@@ -231,10 +698,11 @@
   --md-stroke-left: inset 1px 0 0 rgba(255, 255, 255, 0.08), -1px 0 0 rgba(0, 0, 0, 0.24);
   --md-shadow-line: var(--md-premium-stroke);
   --md-shadow-soft: var(--md-premium-stroke), 0 12px 28px rgba(0, 0, 0, 0.24);
+  --md-shadow-popover: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px rgba(0, 0, 0, 0.45);
   --md-shadow-lift: var(--md-premium-stroke), 0 18px 38px rgba(0, 0, 0, 0.3);
   --md-shadow-green-card: var(--md-premium-stroke), 0 14px 32px rgba(0, 0, 0, 0.26);
   --md-shadow-green-card-hover: var(--md-premium-stroke), 0 18px 40px rgba(0, 0, 0, 0.3);
-  --md-shadow-green-card-selected: var(--md-premium-stroke), 0 0 0 3px rgba(104, 199, 184, 0.16), 0 20px 46px rgba(0, 0, 0, 0.34);
+  --md-shadow-green-card-selected: var(--md-premium-stroke), 0 0 0 3px var(--md-accent-a16), 0 20px 46px rgba(0, 0, 0, 0.34);
 
   --background: var(--md-bg);
   --foreground: var(--md-ink);
@@ -264,13 +732,193 @@
   --sidebar-ring: var(--md-accent);
 }
 
+/* Accent washes, in the alphas the interface actually uses. These exist so the
+   components can say `var(--md-accent-a14)` instead of hard-coding a green, and
+   so a single accent swap reaches every one of them.
+
+   Declared for `.dark` as well as `:root`: an unregistered custom property is
+   substituted where it is declared, so a block that only targeted `:root` would
+   hand the light tint to anything nested under a `.dark` scope. */
+:root,
+  .dark {
+  --md-accent-a025: color-mix(in srgb, var(--md-accent-tint) 2.5%, transparent);
+  --md-accent-a035: color-mix(in srgb, var(--md-accent-tint) 3.5%, transparent);
+  --md-accent-a04: color-mix(in srgb, var(--md-accent-tint) 4%, transparent);
+  --md-accent-a055: color-mix(in srgb, var(--md-accent-tint) 5.5%, transparent);
+  --md-accent-a06: color-mix(in srgb, var(--md-accent-tint) 6%, transparent);
+  --md-accent-a07: color-mix(in srgb, var(--md-accent-tint) 7%, transparent);
+  --md-accent-a08: color-mix(in srgb, var(--md-accent-tint) 8%, transparent);
+  --md-accent-a09: color-mix(in srgb, var(--md-accent-tint) 9%, transparent);
+  --md-accent-a10: color-mix(in srgb, var(--md-accent-tint) 10%, transparent);
+  --md-accent-a11: color-mix(in srgb, var(--md-accent-tint) 11%, transparent);
+  --md-accent-a12: color-mix(in srgb, var(--md-accent-tint) 12%, transparent);
+  --md-accent-a13: color-mix(in srgb, var(--md-accent-tint) 13%, transparent);
+  --md-accent-a14: color-mix(in srgb, var(--md-accent-tint) 14%, transparent);
+  --md-accent-a15: color-mix(in srgb, var(--md-accent-tint) 15%, transparent);
+  --md-accent-a16: color-mix(in srgb, var(--md-accent-tint) 16%, transparent);
+  --md-accent-a18: color-mix(in srgb, var(--md-accent-tint) 18%, transparent);
+  --md-accent-a20: color-mix(in srgb, var(--md-accent-tint) 20%, transparent);
+  --md-accent-a22: color-mix(in srgb, var(--md-accent-tint) 22%, transparent);
+  --md-accent-a24: color-mix(in srgb, var(--md-accent-tint) 24%, transparent);
+  --md-accent-a26: color-mix(in srgb, var(--md-accent-tint) 26%, transparent);
+  --md-accent-a28: color-mix(in srgb, var(--md-accent-tint) 28%, transparent);
+  --md-accent-a32: color-mix(in srgb, var(--md-accent-tint) 32%, transparent);
+  --md-accent-a34: color-mix(in srgb, var(--md-accent-tint) 34%, transparent);
+  --md-accent-a35: color-mix(in srgb, var(--md-accent-tint) 35%, transparent);
+  --md-accent-a36: color-mix(in srgb, var(--md-accent-tint) 36%, transparent);
+  --md-accent-a38: color-mix(in srgb, var(--md-accent-tint) 38%, transparent);
+  --md-accent-a42: color-mix(in srgb, var(--md-accent-tint) 42%, transparent);
+  --md-accent-a44: color-mix(in srgb, var(--md-accent-tint) 44%, transparent);
+  --md-accent-a48: color-mix(in srgb, var(--md-accent-tint) 48%, transparent);
+  --md-accent-a55: color-mix(in srgb, var(--md-accent-tint) 55%, transparent);
+  --md-accent-a58: color-mix(in srgb, var(--md-accent-tint) 58%, transparent);
+  --md-accent-a65: color-mix(in srgb, var(--md-accent-tint) 65%, transparent);
+  --md-accent-a76: color-mix(in srgb, var(--md-accent-tint) 76%, transparent);
+
+  /* Brand-dark shadows. The Dexter pill casts light through its own colour, so it
+     needs a deeper source than the surface washes above. */
+  --md-accent-deep-a10: color-mix(in srgb, var(--md-accent-deep) 10%, transparent);
+  --md-accent-deep-a12: color-mix(in srgb, var(--md-accent-deep) 12%, transparent);
+  --md-accent-deep-a14: color-mix(in srgb, var(--md-accent-deep) 14%, transparent);
+  --md-accent-deep-a15: color-mix(in srgb, var(--md-accent-deep) 15%, transparent);
+  --md-accent-deep-a16: color-mix(in srgb, var(--md-accent-deep) 16%, transparent);
+  --md-accent-deep-a18: color-mix(in srgb, var(--md-accent-deep) 18%, transparent);
+  --md-accent-deep-a20: color-mix(in srgb, var(--md-accent-deep) 20%, transparent);
+  --md-accent-deep-a24: color-mix(in srgb, var(--md-accent-deep) 24%, transparent);
+  --md-accent-deep-a26: color-mix(in srgb, var(--md-accent-deep) 26%, transparent);
+
+  /* Veils darken the brand panels from underneath, so they are the accent walked
+     towards black rather than towards transparent. Nesting the mixes keeps them
+     tied to `--md-accent-deep`, which means they follow the accent for free
+     instead of needing three more registered colours. */
+  --md-accent-veil-near: color-mix(in srgb, color-mix(in srgb, var(--md-accent-deep) 48%, #000000) 38%, transparent);
+  --md-accent-veil-mid: color-mix(in srgb, color-mix(in srgb, var(--md-accent-deep) 71%, #000000) 14%, transparent);
+  --md-accent-veil-far: color-mix(in srgb, color-mix(in srgb, var(--md-accent-deep) 29%, #000000) 34%, transparent);
+  /* Hairline and drop shadow for the dark brand panels, which need a cast tinted
+     by the accent rather than plain black to sit on their own background. */
+  --md-accent-veil-ring-a12: color-mix(in srgb, color-mix(in srgb, var(--md-accent-deep) 44%, #000000) 12%, transparent);
+  --md-accent-veil-ring-a16: color-mix(in srgb, color-mix(in srgb, var(--md-accent-deep) 44%, #000000) 16%, transparent);
+  --md-accent-veil-cast-a18: color-mix(in srgb, color-mix(in srgb, var(--md-accent-deep) 60%, #000000) 18%, transparent);
+  /* One step below `--md-accent-abyss`, for panels that sit behind a lit shader. */
+  --md-accent-abyss-deep: color-mix(in srgb, var(--md-accent-abyss) 78%, #000000);
+}
+
+/* Authentication is a public brand surface, so it must not inherit an
+   operator's saved workspace theme or accent preference. Keep this scope local
+   to AuthFlow: the signed-in product remains free to use its chosen appearance. */
+.md-auth-light {
+  color-scheme: light;
+  --md-ink: #0b1413;
+  --md-ink-soft: #2a3432;
+  --md-text: #4f5b58;
+  --md-subtle: #687570;
+  --md-placeholder: #687570;
+  --md-hairline: #ccd4d1;
+  --md-bg: #f3f4f4;
+  --md-bg-strong: #eef1f0;
+  --md-surface: #ffffff;
+  --md-surface-soft: #f7f9f8;
+  --md-surface-tint: #eef1f0;
+  --md-deck-surface: #ebeded;
+  --md-field-bg: #e5e9e7;
+  --md-field-bg-hover: #dfe5e2;
+  --md-selected-bg: #c8dcd6;
+  --md-selected-text: #145b54;
+  --md-accent: #0a7068;
+  --md-accent-hover: #086f67;
+  --md-accent-ink: #ffffff;
+  --md-accent-tint: #0d7d74;
+  --md-accent-deep: #05463e;
+  --md-accent-abyss: #062420;
+  --md-accent-glow-core: #088b82;
+  --md-accent-glow-bright: #31b29f;
+  --md-accent-glow-warm: #688e53;
+  --md-accent-lift: #8dd3ca;
+  --md-accent-lift-strong: #9eecdd;
+  --md-accent-lift-warm: #7bdbac;
+  --md-green: var(--md-accent);
+  --md-amber: #dd8a2b;
+  --md-red: #d14e4e;
+  --md-line: rgba(11, 20, 19, 0.06);
+  --md-line-strong: rgba(11, 20, 19, 0.08);
+  --md-hover: rgba(11, 20, 19, 0.055);
+  --md-premium-stroke: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --md-shadow-line: var(--md-premium-stroke);
+  --md-shadow-soft: var(--md-premium-stroke), 0 12px 28px rgba(42, 52, 50, 0.08);
+  --md-shadow-popover: 0 0 0 1px rgba(11, 20, 19, 0.1), 0 1px 2px rgba(11, 20, 19, 0.05), 0 10px 28px rgba(11, 20, 19, 0.1);
+  --md-accent-a10: color-mix(in srgb, var(--md-accent-tint) 10%, transparent);
+  --md-accent-a12: color-mix(in srgb, var(--md-accent-tint) 12%, transparent);
+  --md-accent-a14: color-mix(in srgb, var(--md-accent-tint) 14%, transparent);
+  --md-accent-a16: color-mix(in srgb, var(--md-accent-tint) 16%, transparent);
+  --md-accent-a20: color-mix(in srgb, var(--md-accent-tint) 20%, transparent);
+  --md-accent-a42: color-mix(in srgb, var(--md-accent-tint) 42%, transparent);
+  --md-accent-a48: color-mix(in srgb, var(--md-accent-tint) 48%, transparent);
+  --background: var(--md-bg);
+  --foreground: var(--md-ink);
+  --card: var(--md-surface);
+  --card-foreground: var(--md-ink);
+  --primary: var(--md-accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--md-surface-tint);
+  --secondary-foreground: var(--md-ink);
+  --muted: var(--md-surface-tint);
+  --muted-foreground: var(--md-text);
+  --accent: var(--md-surface-tint);
+  --accent-foreground: var(--md-ink);
+  --border: var(--md-hairline);
+  --input: var(--md-hairline);
+  --ring: var(--md-accent);
+}
+
+/* Email marketing is a scanning surface: every delivery-status pill shares one
+   compact footprint so labels stay aligned down the register. */
+.md-email-status-pill {
+  justify-content: center;
+  text-align: center;
+}
+
+/* Every status and attribute pill uses the same flat operator-table treatment.
+   A single footprint keeps status language consistent across lists and detail views. */
+.md-status-pill[data-table-pill="true"] {
+  box-shadow: none;
+}
+
+/* Armed only while an accent change is in flight, then dropped. Leaving it on
+   would make the light/dark switch cross-fade its accent over half a second while
+   every other colour changed instantly, which reads as a lag rather than a fade. */
+:root[data-accent-shift] {
+  --md-accent-shift: 460ms cubic-bezier(0.32, 0.06, 0.2, 1);
+
+  transition:
+    --md-accent var(--md-accent-shift),
+    --md-accent-hover var(--md-accent-shift),
+    --md-accent-ink var(--md-accent-shift),
+    --md-accent-tint var(--md-accent-shift),
+    --md-accent-deep var(--md-accent-shift),
+    --md-accent-abyss var(--md-accent-shift),
+    --md-accent-glow-core var(--md-accent-shift),
+    --md-accent-glow-bright var(--md-accent-shift),
+    --md-accent-glow-warm var(--md-accent-shift),
+    --md-accent-lift var(--md-accent-shift),
+    --md-accent-lift-strong var(--md-accent-shift),
+    --md-accent-lift-warm var(--md-accent-shift),
+    --md-selected-bg var(--md-accent-shift),
+    --md-selected-text var(--md-accent-shift);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-accent-shift] {
+    transition: none;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
 
 html,
-body,
-#root {
+  body,
+  #root {
   min-height: 100%;
 }
 
@@ -291,49 +939,75 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+pre,
+  code,
+  kbd,
+  samp {
+  font-family: inherit;
+}
+
 h1,
-h2,
-h3,
-h4,
-[data-slot="card-title"],
-[data-slot="dialog-title"],
-[data-slot="sheet-title"],
-[data-slot="popover-title"] {
+  h2,
+  h3,
+  h4,
+  [data-slot="card-title"],
+  [data-slot="dialog-title"],
+  [data-slot="sheet-title"],
+  [data-slot="popover-title"] {
   text-wrap: balance;
 }
 
 p,
-li,
-[data-slot="card-description"],
-[data-slot="dialog-description"],
-[data-slot="sheet-description"],
-[data-slot="popover-description"] {
+  li,
+  [data-slot="card-description"],
+  [data-slot="dialog-description"],
+  [data-slot="sheet-description"],
+  [data-slot="popover-description"] {
   text-wrap: pretty;
 }
 
 body,
-button,
-input,
-textarea,
-select,
-[class~="premium-stroke"],
-[class~="premium-stroke-soft"],
-[class*="bg-[var(--md-"],
-[class*="text-[var(--md-"],
-[class*="shadow-[var(--md-shadow"] {
+  button,
+  input,
+  textarea,
+  select,
+  [class~="premium-stroke"],
+  [class~="premium-stroke-soft"],
+  [class*="bg-[var(--md-"],
+  [class*="text-[var(--md-"],
+  [class*="shadow-[var(--md-shadow"] {
   transition-duration: var(--md-motion);
   transition-property: background-color, border-color, box-shadow, color, opacity, transform, filter;
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* The pill hugs its label until the remove slot opens. Growing a zero-width
+   child lets the outer pill expand every frame without moving the label. */
+.md-company-type-remove-slot {
+  transition:
+    inline-size var(--md-motion-fast),
+    margin-inline-start var(--md-motion-fast),
+    opacity var(--md-motion-fast),
+    translate var(--md-motion-fast),
+    scale var(--md-motion-fast);
+}
+
+/* This unlayered rule intentionally wins over the app-wide button transition
+   above, which otherwise masks component timing. */
+.md-company-type-remove {
+  transition:
+    background-color var(--md-motion-fast),
+    scale var(--md-motion-fast);
+}
+
 input::placeholder,
-textarea::placeholder {
+  textarea::placeholder {
   color: var(--md-placeholder);
   opacity: var(--md-placeholder-opacity);
 }
 
 input::-webkit-input-placeholder,
-textarea::-webkit-input-placeholder {
+  textarea::-webkit-input-placeholder {
   color: var(--md-placeholder);
   opacity: var(--md-placeholder-opacity);
 }
@@ -375,27 +1049,30 @@ html[dir="rtl"] .border-l {
 }
 
 html[dir="rtl"] [data-icon="inline-start"],
-html[dir="rtl"] .lucide-arrow-left,
-html[dir="rtl"] .lucide-arrow-right,
-html[dir="rtl"] .lucide-chevron-left,
-html[dir="rtl"] .lucide-chevron-right {
+  html[dir="rtl"] .lucide-arrow-left,
+  html[dir="rtl"] .lucide-arrow-right,
+  html[dir="rtl"] .lucide-chevron-left,
+  html[dir="rtl"] .lucide-chevron-right {
   transform: scaleX(-1);
 }
 
 html[dir="rtl"] input,
-html[dir="rtl"] textarea {
+  html[dir="rtl"] textarea {
   unicode-bidi: plaintext;
 }
 
-button,
 input,
-textarea,
-select {
+  textarea,
+  select {
   font: inherit;
 }
 
 button {
   cursor: pointer;
+  font-family: inherit;
+  font-feature-settings: inherit;
+  font-variation-settings: inherit;
+  letter-spacing: inherit;
 }
 
 .md-dropdown-content {
@@ -441,7 +1118,7 @@ button {
 }
 
 .md-dropdown-option[data-highlighted],
-.md-dropdown-option:focus {
+  .md-dropdown-option:focus {
   background: var(--md-hover);
   color: var(--md-ink);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 5%, transparent);
@@ -455,21 +1132,21 @@ button {
 }
 
 .md-dropdown-option[data-state="checked"][data-highlighted],
-.md-dropdown-option[data-state="checked"]:focus {
+  .md-dropdown-option[data-state="checked"]:focus {
   background: color-mix(in srgb, var(--md-selected-bg) 84%, var(--md-accent));
   color: var(--md-selected-text);
   transform: scale(1.008);
 }
 
 .md-dropdown-option[data-variant="destructive"][data-highlighted],
-.md-dropdown-option[data-variant="destructive"]:focus {
+  .md-dropdown-option[data-variant="destructive"]:focus {
   background: color-mix(in srgb, var(--md-red) 10%, transparent);
   color: var(--md-red);
 }
 
 [data-slot="select-item"][data-state="checked"] [data-slot="select-item-indicator"],
-[data-slot="dropdown-menu-checkbox-item"][data-state="checked"] [data-slot="dropdown-menu-checkbox-item-indicator"],
-[data-slot="dropdown-menu-radio-item"][data-state="checked"] [data-slot="dropdown-menu-radio-item-indicator"] {
+  [data-slot="dropdown-menu-checkbox-item"][data-state="checked"] [data-slot="dropdown-menu-checkbox-item-indicator"],
+  [data-slot="dropdown-menu-radio-item"][data-state="checked"] [data-slot="dropdown-menu-radio-item-indicator"] {
   background: color-mix(in srgb, var(--md-accent) 12%, transparent);
   opacity: 1;
   transform: scale(1);
@@ -524,6 +1201,1201 @@ button {
   }
 }
 
+.md-sidebar-menu {
+  min-width: 196px;
+  max-width: min(20rem, calc(100vw - 24px));
+  will-change: transform, opacity, filter;
+}
+
+/* Ramps in quickly, overshoots by a hair, then eases into rest so the menu reads as alive. */
+.md-sidebar-menu[data-state="open"] {
+  animation: md-sidebar-menu-in 280ms cubic-bezier(0.19, 1, 0.22, 1) both;
+}
+
+.md-sidebar-menu[data-state="closed"] {
+  pointer-events: none;
+  animation: md-sidebar-menu-out 110ms cubic-bezier(0.55, 0, 1, 0.45) both;
+}
+
+.md-account-sheet[data-state="open"] {
+  animation: md-account-sheet-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: bottom center;
+}
+
+.md-account-sheet[data-state="closed"] {
+  animation: md-account-sheet-out 190ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: bottom center;
+}
+
+.md-sidebar-menu[data-state="open"] .md-sidebar-menu-item {
+  animation: md-sidebar-menu-item-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.md-sidebar-menu[data-state="open"] .md-sidebar-menu-item:nth-child(1) {
+  animation-delay: 34ms;
+}
+
+.md-sidebar-menu[data-state="open"] .md-sidebar-menu-item:nth-child(2) {
+  animation-delay: 74ms;
+}
+
+.md-sidebar-menu[data-state="open"] .md-sidebar-menu-item:nth-child(n + 3) {
+  animation-delay: 108ms;
+}
+
+.md-sidebar-menu-item__icon {
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Sidebar row affordance arrows ───────────────────────────────────────────
+   `branch` rows open another sidebar pane, `group` rows unfold in place. Both
+   sit in the same fixed 20px trailing slot, so the glyphs share one optical
+   column whatever the label says or how large the row's type is.
+
+   Nudge distance lives in custom properties, not in the rules, because the
+   arrow always leans the way it points: right for a branch, down for a closed
+   group, up once that group is open. RTL mirrors the horizontal component. */
+.md-nav-arrow {
+  --md-nav-arrow-x: 0px;
+  --md-nav-arrow-y: 0px;
+  display: grid;
+  place-items: center;
+  opacity: 0.5;
+  /* The row itself owns the pointer; the arrow must never re-trigger hover. */
+  pointer-events: none;
+  /* translate3d keeps the glyph on its own layer: a 2px slide across a 14px
+     icon shimmers if the browser repaints it instead of compositing. */
+  transform: translate3d(0, 0, 0);
+  will-change: transform, opacity;
+  /* Settling back to rest is the slow half of the ramp. A quick exit over a
+     distance this short reads as a snap, so the return coasts instead. */
+  transition:
+    opacity 280ms cubic-bezier(0.33, 0.02, 0.24, 1),
+    transform 320ms cubic-bezier(0.26, 0.03, 0.2, 1);
+}
+
+.md-nav-arrow__glyph {
+  display: grid;
+  place-items: center;
+  transform: rotate(0deg);
+  /* Closing is shorter than opening: the panel above is already collapsing, so
+     a lingering half-turn would still be moving after the content has gone. */
+  transition: transform 260ms cubic-bezier(0.34, 0.02, 0.2, 1);
+}
+
+.md-nav-arrow[data-affordance="branch"] {
+  --md-nav-arrow-x: 2.5px;
+}
+
+.md-nav-arrow[data-affordance="group"] {
+  --md-nav-arrow-y: 1.5px;
+}
+
+/* Arriving is the fast half: decelerating, so the acknowledgement lands at the
+   head of the ramp and the last pixel drifts in unhurried. */
+[data-sidebar-row]:hover .md-nav-arrow,
+  [data-sidebar-row]:focus-visible .md-nav-arrow {
+  opacity: 1;
+  transform: translate3d(var(--md-nav-arrow-x), var(--md-nav-arrow-y), 0);
+  transition:
+    opacity 170ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Press compresses hard and briefly past the hover offset. Releasing falls back
+   to the hover rule above, so the rebound is a 200ms glide, never a bounce. */
+[data-sidebar-row]:active .md-nav-arrow {
+  opacity: 1;
+  transform: translate3d(calc(var(--md-nav-arrow-x) * 2.2), calc(var(--md-nav-arrow-y) * 2.2), 0) scale(0.88);
+  transition:
+    opacity 90ms linear,
+    transform 110ms cubic-bezier(0.32, 0, 0.66, 1);
+}
+
+/* Opening leads with speed and coasts a long way into the stop, so the half
+   turn arrives with the unfolding panel rather than clicking into place. */
+[data-sidebar-row][aria-expanded="true"] .md-nav-arrow__glyph {
+  transform: rotate(180deg);
+  transition: transform 340ms cubic-bezier(0.22, 0.86, 0.2, 1);
+}
+
+/* Once open the glyph points up, so the hover lean follows it. */
+[data-sidebar-row][aria-expanded="true"] .md-nav-arrow[data-affordance="group"] {
+  --md-nav-arrow-y: -1.5px;
+}
+
+/* The chevron's own scaleX(-1) mirror lives on the svg, so only the slot's lean
+   needs flipping here. */
+html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
+  --md-nav-arrow-x: -2.5px;
+}
+
+.md-sidebar-menu-item[data-highlighted] .md-sidebar-menu-item__icon {
+  transform: translateY(-1px) scale(1.08);
+}
+
+/* ── Composer Dexter bloom ─────────────────────────────────────────────────
+   One full-shell canvas supplies both treatments: the visible header is the
+   fill, while the opaque prompt panel masks the centre and leaves the same
+   shader moving around its side and bottom gutters as a continuous stroke. */
+.md-composer-bloom {
+  isolation: isolate;
+  background: var(--md-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 0 0 1px var(--md-accent-deep-a16),
+    0 18px 44px rgba(42, 52, 50, 0.12);
+}
+
+.md-composer-bloom__shader {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+  contain: paint;
+  transform: scale(1.04);
+}
+
+.md-composer-bloom__shader,
+  .md-composer-bloom__shader > *,
+  .md-composer-bloom__shader canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.md-composer-bloom__contrast {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(110deg, var(--md-accent-veil-near), var(--md-accent-veil-mid) 56%, var(--md-accent-veil-far));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-composer-bloom__shader {
+    transform: none;
+  }
+}
+
+/* ── Composer chips ──────────────────────────────────────────────────────────
+   The role, model and attach controls. All three are the same object at
+   different widths, so the surface, the press and the caret lean are declared
+   once here instead of three times in Tailwind strings.
+
+   The chip sits on frosted glass because the role chip lives over the shader:
+   a flat fill would either wash the pattern out or lose its own edge. */
+.md-composer-chip {
+  position: relative;
+  background: color-mix(in srgb, var(--md-surface) 76%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 60%, transparent),
+    0 1px 2px rgba(11, 20, 19, 0.05),
+    0 0 0 1px rgba(11, 20, 19, 0.05);
+  backdrop-filter: blur(10px) saturate(1.4);
+  /* Arriving decelerates and leaving is shorter, so a chip never feels like it
+     rebounds off the cursor. */
+  transition:
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dark .md-composer-chip {
+  background: color-mix(in srgb, var(--md-surface) 66%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.09),
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.md-composer-chip:hover,
+  .md-composer-chip[data-state="open"] {
+  background: color-mix(in srgb, var(--md-surface) 94%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 80%, transparent),
+    0 2px 6px rgba(11, 20, 19, 0.07),
+    0 0 0 1px var(--md-accent-a18);
+}
+
+.dark .md-composer-chip:hover,
+  .dark .md-composer-chip[data-state="open"] {
+  background: color-mix(in srgb, var(--md-surface) 92%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.26),
+    0 0 0 1px var(--md-accent-a22);
+}
+
+.md-composer-chip:active {
+  scale: 0.972;
+  transition-duration: 90ms;
+}
+
+.md-composer-chip:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 80%, transparent),
+    0 0 0 3px var(--md-accent-a20);
+}
+
+/* The selected specialist rests directly on the Dexter bloom. Its glass surface
+   appears only when the control is reached for, keeping the header quiet while
+   the expanded specialist options retain their dark-glass treatment. */
+.md-composer-lead {
+  position: relative;
+  color: rgba(255, 255, 255, 0.96);
+  background: transparent;
+  box-shadow: none;
+  transition:
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-composer-lead:hover {
+  background: rgba(24, 29, 31, 0.9);
+  backdrop-filter: blur(12px) saturate(1.18);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+    0 3px 10px rgba(0, 0, 0, 0.24);
+}
+
+.md-composer-lead:active {
+  scale: 0.976;
+  transition-duration: 90ms;
+}
+
+.md-composer-lead:focus-visible {
+  outline: none;
+  background: rgba(24, 29, 31, 0.92);
+  box-shadow: 0 0 0 3px var(--md-accent-a20);
+}
+
+.md-composer-lead .md-composer-chip__caret {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.md-dexter-role-container {
+  container-type: inline-size;
+}
+
+.md-dexter-role-menu--compact {
+  display: inline-flex;
+}
+
+.md-dexter-role-menu--wide {
+  display: none;
+}
+
+@container (min-width: 700px) {
+  .md-dexter-role-menu--compact {
+    display: none;
+  }
+
+  .md-dexter-role-menu--wide {
+    display: flex;
+  }
+}
+
+.md-dexter-role-strip {
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent 100%);
+}
+
+.md-dexter-role-strip::-webkit-scrollbar {
+  display: none;
+}
+
+[dir="rtl"] .md-dexter-role-strip {
+  mask-image: linear-gradient(to left, #000 0, #000 calc(100% - 28px), transparent 100%);
+}
+
+.md-dexter-role-option {
+  color: rgba(255, 255, 255, 0.94);
+  background: rgba(22, 27, 29, 0.68);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(12px) saturate(1.18);
+  transition:
+    background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-dexter-role-option:hover {
+  background: rgba(31, 37, 39, 0.86);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 3px 10px rgba(0, 0, 0, 0.22);
+}
+
+.md-dexter-role-option:focus-visible {
+  background: rgba(31, 37, 39, 0.9);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 0 0 3px var(--md-accent-a24);
+}
+
+.md-composer-chip__caret {
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Opening leads fast and coasts into the stop, so the half turn lands with the
+   menu rather than clicking over before it. */
+.md-composer-chip[data-state="open"] .md-composer-chip__caret {
+  transform: rotate(180deg);
+  transition-timing-function: cubic-bezier(0.22, 0.86, 0.2, 1);
+  transition-duration: 300ms;
+}
+
+/* The prompt box itself brightens its ring while the caret is in the field –
+   the only cue that Enter is armed. */
+.md-composer {
+  transition: box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-composer:focus-within {
+  box-shadow:
+    0 0 0 1px var(--md-accent-a48),
+    0 22px 52px rgba(42, 52, 50, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.92);
+}
+
+.dark .md-composer:focus-within {
+  box-shadow:
+    0 0 0 1px var(--md-accent-a48),
+    0 22px 52px rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+/* ── Dexter inline mentions ──────────────────────────────────────────────────
+   A selected workspace object keeps the footprint of text, but becomes a
+   durable reference. Light mode uses the pale fill/deep edge pairing; dark mode
+   reverses that contrast so the edge remains lit against a deep accent fill. */
+.md-dexter-mention-editor {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  caret-color: var(--md-accent);
+}
+
+.md-dexter-mention-editor:empty::before {
+  color: var(--md-subtle);
+  content: attr(data-placeholder);
+  opacity: var(--md-placeholder-opacity);
+  pointer-events: none;
+}
+
+.md-dexter-mention {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline: 2px;
+  padding-inline: 6px;
+  border-radius: 7px;
+  background: var(--md-mention-bg);
+  box-shadow: inset 0 0 0 1px var(--md-mention-stroke);
+  color: var(--md-mention-text);
+  font-weight: 500;
+  line-height: 21px;
+  unicode-bidi: isolate;
+  vertical-align: 1px;
+  animation: md-dexter-mention-settle 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-dexter-mention > img {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+.md-dexter-mention::selection {
+  background: var(--md-accent-a32);
+}
+
+.md-dexter-mention--static {
+  animation: none;
+}
+
+.md-dexter-mention-menu {
+  box-shadow:
+    var(--md-premium-stroke),
+    0 18px 42px rgba(42, 52, 50, 0.16);
+}
+
+.dark .md-dexter-mention-menu {
+  box-shadow:
+    var(--md-premium-stroke),
+    0 20px 48px rgba(0, 0, 0, 0.38);
+}
+
+@keyframes md-dexter-mention-settle {
+  from {
+    opacity: 0.45;
+    transform: scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-composer-chip,
+  .md-composer-lead,
+  .md-composer-chip__caret,
+  .md-composer,
+  .md-dexter-mention {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ── Progressive blur veil ───────────────────────────────────────────────────
+   The band that dissolves whatever scrolls under a floating header or composer.
+   Three `backdrop-filter` passes with compounding radii, each masked to a
+   shallower depth than the last, plus a colour fade on top: near the edge the
+   sum of the three is a heavy blur landing on solid background, and by the far
+   side of the band every layer has already masked itself out, so the ramp has no
+   step in it and no hard line where it ends.
+
+   Radii and mask depths are the whole design here – they are tuned as a set. The
+   masks are written against a direction variable so one set of rules serves both
+   edges; `to bottom` starts the gradient at the top edge, `to top` at the bottom
+   one, which is the edge the veil is pinned to in each case.
+
+   Height and fade colour are read from custom properties *with fallbacks* rather
+   than declared here: these rules are unlayered, so a declaration in this block
+   would outrank the Tailwind arbitrary-property class a caller uses to override
+   it. Callers set `--md-progressive-blur-height` / `--md-progressive-blur-tint`.
+
+   Nothing in here animates or transitions, so the layers stay off the
+   compositor's dirty list and only re-rasterise when content behind them
+   actually moves. */
+.md-progressive-blur {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 1;
+  display: block;
+  height: var(--md-progressive-blur-height, 96px);
+}
+
+.md-progressive-blur[data-edge="top"] {
+  top: var(--md-progressive-blur-offset, 0px);
+  --md-progressive-blur-dir: to bottom;
+}
+
+.md-progressive-blur[data-edge="bottom"] {
+  bottom: var(--md-progressive-blur-offset, 0px);
+  --md-progressive-blur-dir: to top;
+}
+
+.md-progressive-blur > span {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.md-progressive-blur > span:nth-child(1) {
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
+  mask-image: linear-gradient(var(--md-progressive-blur-dir), #000 0, #000 54%, transparent 100%);
+  -webkit-mask-image: linear-gradient(var(--md-progressive-blur-dir), #000 0, #000 54%, transparent 100%);
+}
+
+.md-progressive-blur > span:nth-child(2) {
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  mask-image: linear-gradient(var(--md-progressive-blur-dir), #000 0, #000 28%, transparent 70%);
+  -webkit-mask-image: linear-gradient(var(--md-progressive-blur-dir), #000 0, #000 28%, transparent 70%);
+}
+
+.md-progressive-blur > span:nth-child(3) {
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  mask-image: linear-gradient(var(--md-progressive-blur-dir), #000 0, #000 10%, transparent 42%);
+  -webkit-mask-image: linear-gradient(var(--md-progressive-blur-dir), #000 0, #000 10%, transparent 42%);
+}
+
+/* The fade itself. `page` lands on the app background – text passing under the
+   band goes to nothing rather than to a blurred smear. `rail` leaves the colour
+   to the caller, for a band over a surface that is not the page. */
+.md-progressive-blur[data-tone="page"] .md-progressive-blur__tint {
+  background: linear-gradient(
+    var(--md-progressive-blur-dir),
+    var(--md-progressive-blur-tint, var(--md-bg)) 0,
+    /* Held near-solid across the first third: that is the strip the header's own
+       name and role sit on, and a ghost of a reply behind them is the one thing
+       that would make the band read as dirty rather than deep. */
+    var(--md-progressive-blur-tint, var(--md-bg)) 26%,
+    color-mix(in srgb, var(--md-progressive-blur-tint, var(--md-bg)) 82%, transparent) 46%,
+    color-mix(in srgb, var(--md-progressive-blur-tint, var(--md-bg)) 34%, transparent) 74%,
+    transparent 100%
+  );
+}
+
+.md-progressive-blur[data-tone="rail"] .md-progressive-blur__tint {
+  background: linear-gradient(
+    var(--md-progressive-blur-dir),
+    color-mix(in srgb, var(--md-progressive-blur-tint, var(--md-bg)) 94%, transparent) 0,
+    color-mix(in srgb, var(--md-progressive-blur-tint, var(--md-bg)) 88%, transparent) 30%,
+    color-mix(in srgb, var(--md-progressive-blur-tint, var(--md-bg)) 52%, transparent) 58%,
+    color-mix(in srgb, var(--md-progressive-blur-tint, var(--md-bg)) 18%, transparent) 78%,
+    transparent 100%
+  );
+}
+
+/* ── Dexter watch rail ───────────────────────────────────────────────────────
+   The monitor cards float on the page rather than sitting in a panel: no rail
+   background, no dividers, just a lifted surface each. Deliberately no
+   `backdrop-filter` – the cards sit on flat page background where frosting buys
+   nothing, and they scroll, so a per-card backdrop pass would re-rasterise on
+   every frame for no visible gain. The veil above them does the blurring. */
+.md-watch-card {
+  position: relative;
+  overflow: hidden;
+  /* Near-opaque on purpose. These cards sit over a blurred wash, and at the old
+     86% the body text picked up whatever was drifting behind the rail – the
+     glass belongs around the cards, not through the words. */
+  background-color: color-mix(in srgb, var(--md-surface) 96%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 70%, transparent),
+    0 1px 2px rgba(11, 20, 19, 0.04),
+    0 8px 20px rgba(42, 52, 50, 0.06),
+    0 0 0 1px rgba(11, 20, 19, 0.045);
+  /* Lift arrives on a decelerating curve and leaves faster, so a card never
+     feels like it bounces off the cursor on the way out. */
+  transition:
+    background-color 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    translate 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dark .md-watch-card {
+  background-color: color-mix(in srgb, var(--md-surface) 92%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    0 10px 26px rgba(0, 0, 0, 0.26);
+}
+
+/* An unread watch earns a tone-coloured edge and a warmer field. This is the
+   only thing in the rail that says "look here first", so nothing else in the
+   stack is allowed to use it. Carried on `background-image` and the inline-start
+   bar, both of which survive the `background-color` swaps hover and selection
+   make on top of them. */
+.md-watch-card[data-unread="true"]::before {
+  content: "";
+  position: absolute;
+  inset-block: 10px;
+  inset-inline-start: 0;
+  width: 3px;
+  border-start-end-radius: 999px;
+  border-end-end-radius: 999px;
+  background: var(--md-watch-tone, var(--md-accent));
+}
+
+.md-watch-card[data-unread="true"] {
+  background-image: linear-gradient(
+    to var(--md-watch-tint-dir, right),
+    color-mix(in srgb, var(--md-watch-tone, var(--md-accent)) 8%, transparent),
+    transparent 132px
+  );
+}
+
+[dir="rtl"] .md-watch-card {
+  --md-watch-tint-dir: left;
+}
+
+.dark .md-watch-card[data-unread="true"] {
+  background-image: linear-gradient(
+    to var(--md-watch-tint-dir, right),
+    color-mix(in srgb, var(--md-watch-tone, var(--md-accent)) 14%, transparent),
+    transparent 132px
+  );
+}
+
+/* The state word is the card's first line, so it is coloured only when there is
+   something to say. A rail of amber labels would flatten right back out. */
+.md-watch-card__state {
+  color: var(--md-subtle);
+}
+
+.md-watch-card[data-state="alert"] .md-watch-card__state,
+  .md-watch-card[data-state="attention"] .md-watch-card__state {
+  color: var(--md-watch-tone, var(--md-amber));
+}
+
+.md-watch-card:hover {
+  translate: 0 -2px;
+  background-color: color-mix(in srgb, var(--md-surface) 98%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 84%, transparent),
+    0 2px 4px rgba(11, 20, 19, 0.05),
+    0 16px 34px rgba(42, 52, 50, 0.1),
+    0 0 0 1px var(--md-accent-a14);
+}
+
+.dark .md-watch-card:hover {
+  background-color: color-mix(in srgb, var(--md-surface) 96%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 2px 6px rgba(0, 0, 0, 0.24),
+    0 18px 40px rgba(0, 0, 0, 0.32),
+    0 0 0 1px var(--md-accent-a18);
+}
+
+.md-watch-card:active {
+  translate: 0 -1px;
+  scale: 0.988;
+  transition-duration: 110ms;
+}
+
+/* The open card holds the lift rather than dropping back when the pointer moves
+   on to the detail pane it just opened – the pane has to be attributable to a
+   row, and it is the only thing marking which. */
+.md-watch-card[data-active="true"] {
+  translate: 0 -2px;
+  background-color: color-mix(in srgb, var(--md-surface) 100%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 86%, transparent),
+    0 2px 4px rgba(11, 20, 19, 0.05),
+    0 16px 34px rgba(42, 52, 50, 0.1),
+    0 0 0 1px var(--md-accent-a28);
+}
+
+.dark .md-watch-card[data-active="true"] {
+  background-color: color-mix(in srgb, var(--md-surface) 100%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 2px 6px rgba(0, 0, 0, 0.24),
+    0 18px 40px rgba(0, 0, 0, 0.32),
+    0 0 0 1px var(--md-accent-a32);
+}
+
+/* Open means "click again to close", so the affordance turns to face the list. */
+.md-watch-card[data-active="true"] .md-watch-card__go {
+  opacity: 1;
+  translate: 0 0;
+  rotate: 180deg;
+}
+
+.md-watch-card:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 84%, transparent),
+    0 0 0 3px var(--md-accent-a20);
+}
+
+/* The arrow only exists once a card is reached for. It slides from behind the
+   card's own metadata, so the reveal reads as the card opening rather than an
+   icon blinking on. */
+.md-watch-card__go {
+  opacity: 0;
+  translate: -4px 0;
+  rotate: 0deg;
+  transition:
+    opacity 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    translate 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    /* The half turn leads and coasts, so it lands with the pane rather than
+       clicking over before it has finished widening. */
+    rotate 300ms cubic-bezier(0.22, 0.86, 0.2, 1);
+}
+
+.md-watch-card:hover .md-watch-card__go,
+  .md-watch-card:focus-visible .md-watch-card__go {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* The dot's halo. Sits still by default; the breath is added back only for a
+   watch the operator has not opened yet (see `[data-unread]` below). */
+.md-watch-dot::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.2;
+}
+
+@keyframes md-watch-dot-breathe {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.86);
+  }
+
+  50% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+/* ── Dexter history rows ─────────────────────────────────────────────────────
+   One line each, so the rail can be narrow and still scan. The timestamp is
+   held in the layout at zero opacity rather than mounted on hover: revealing it
+   must not reflow the title mid-hover. */
+.md-history-row {
+  transition:
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The current row keeps its own solid fill on hover. These rules are unlayered,
+   so an unqualified `:hover` would outrank the Tailwind background the active row
+   carries and knock it back to a wash the moment the pointer crossed it. */
+.md-history-row:not([data-active="true"]):hover {
+  background: color-mix(in srgb, var(--md-surface) 62%, transparent);
+}
+
+.dark .md-history-row:not([data-active="true"]):hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.md-history-row:active {
+  scale: 0.986;
+  transition-duration: 90ms;
+}
+
+.md-history-row:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--md-accent-a36);
+}
+
+.md-history-row__time {
+  opacity: 0;
+  transition: opacity 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-history-row:hover .md-history-row__time,
+  .md-history-row:focus-visible .md-history-row__time,
+  .md-history-row[data-active="true"] .md-history-row__time {
+  opacity: 1;
+}
+
+/* The current row's marker grows out of the leading edge rather than appearing at
+   full height, so moving between rows reads as one mark travelling instead of two
+   blinking. `scaleY` only – nothing here reflows the title beside it. */
+.md-history-row__rail {
+  background: var(--md-accent);
+  transform: scaleY(0);
+  opacity: 0;
+  transition:
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-history-row[data-active="true"] .md-history-row__rail {
+  transform: scaleY(1);
+  opacity: 1;
+}
+
+/* ── Dexter watch rail shell ─────────────────────────────────────────────────
+   The conversation continues below this floating surface. A dedicated 176px
+   strip on the conversation-facing edge fades the glass itself, not just its
+   colour, so blur, saturation and tint arrive as one continuous material. */
+.md-watch-rail-shell {
+  --md-watch-glass-dir: to right;
+  --md-watch-glass-near: color-mix(in srgb, var(--md-surface) 18%, transparent);
+  --md-watch-glass-mid: color-mix(in srgb, var(--md-surface) 48%, transparent);
+  --md-watch-glass-far: color-mix(in srgb, var(--md-surface) 78%, transparent);
+}
+
+[dir="rtl"] .md-watch-rail-shell {
+  --md-watch-glass-dir: to left;
+}
+
+@media (max-width: 767px) {
+  .md-watch-rail-detail,
+  .md-watch-rail-list {
+    width: 100% !important;
+  }
+
+  .md-watch-rail-shell[data-detail="true"] .md-watch-rail-detail {
+    z-index: 3;
+  }
+
+  .md-watch-rail-shell[data-detail="true"] .md-watch-rail-list {
+    visibility: hidden;
+  }
+
+  .md-watch-rail-surface,
+  .md-watch-rail__edge-blur {
+    inset-inline-start: 0 !important;
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+  }
+}
+
+/* One material for fade, detail and list. The long, irregularly spaced ramp
+   avoids the visible knee created when tint, blur and mask all reach full
+   strength at the same short stop. */
+.md-watch-rail-surface {
+  background: linear-gradient(
+    var(--md-watch-glass-dir),
+    transparent 0,
+    color-mix(in srgb, var(--md-watch-glass-near) 32%, transparent) 30px,
+    color-mix(in srgb, var(--md-watch-glass-near) 72%, transparent) 66px,
+    var(--md-watch-glass-near) 94px,
+    color-mix(in srgb, var(--md-watch-glass-mid) 72%, transparent) 126px,
+    var(--md-watch-glass-mid) 152px,
+    var(--md-watch-glass-far) 176px,
+    var(--md-watch-glass-far) 100%
+  );
+  -webkit-backdrop-filter: blur(24px) saturate(1.18);
+  backdrop-filter: blur(24px) saturate(1.18);
+  mask-image: linear-gradient(
+    var(--md-watch-glass-dir),
+    transparent 0,
+    rgba(0, 0, 0, 0.025) 24px,
+    rgba(0, 0, 0, 0.09) 52px,
+    rgba(0, 0, 0, 0.22) 84px,
+    rgba(0, 0, 0, 0.46) 118px,
+    rgba(0, 0, 0, 0.74) 148px,
+    #000 176px
+  );
+  -webkit-mask-image: linear-gradient(
+    var(--md-watch-glass-dir),
+    transparent 0,
+    rgba(0, 0, 0, 0.025) 24px,
+    rgba(0, 0, 0, 0.09) 52px,
+    rgba(0, 0, 0, 0.22) 84px,
+    rgba(0, 0, 0, 0.46) 118px,
+    rgba(0, 0, 0, 0.74) 148px,
+    #000 176px
+  );
+}
+
+.dark .md-watch-rail-shell {
+  --md-watch-glass-near: color-mix(in srgb, var(--md-surface) 14%, transparent);
+  --md-watch-glass-mid: color-mix(in srgb, var(--md-surface) 42%, transparent);
+  --md-watch-glass-far: color-mix(in srgb, var(--md-surface) 66%, transparent);
+}
+
+/* ── Dexter watch rail ───────────────────────────────────────────────────────
+   A faint accent wash sits above the neutral glass. It contains no page colour,
+   so it cannot turn the translucent rail back into an opaque side panel. */
+.md-watch-rail__wash {
+  --md-watch-wash-dir: to right;
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: linear-gradient(
+    var(--md-watch-wash-dir),
+    transparent 0%,
+    var(--md-accent-a04) 46%,
+    var(--md-accent-a08) 100%
+  );
+  mask-image: linear-gradient(var(--md-watch-wash-dir), transparent 0%, rgba(0, 0, 0, 0.5) 34%, #000 100%);
+  -webkit-mask-image: linear-gradient(var(--md-watch-wash-dir), transparent 0%, rgba(0, 0, 0, 0.5) 34%, #000 100%);
+}
+
+[dir="rtl"] .md-watch-rail__wash {
+  --md-watch-wash-dir: to left;
+}
+
+/* The vertical scroll veils used to begin at the interactive column, creating
+   a second hard edge inside the wider glass fade. Extend them through the same
+   176px handover and mask that extension horizontally, so tint and blur reach
+   the watcher header without ever appearing as a rectangular band. */
+.md-watch-rail__edge-blur {
+  inset-inline-start: -176px;
+  mask-image: linear-gradient(var(--md-watch-glass-dir), transparent 0, #000 176px);
+  -webkit-mask-image: linear-gradient(var(--md-watch-glass-dir), transparent 0, #000 176px);
+}
+
+/* The severity dot doubles as the liveness cue. `currentColor` carries the tone
+   so the halo, the fill and the ring stay in step from one declaration. */
+.md-watch-dot {
+  position: relative;
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  color: var(--md-watch-tone, var(--md-accent));
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 15%, transparent);
+}
+
+/* Movement means news. Every card used to breathe, which made the whole rail
+   read as one loading state and told the eye nothing about where to land – only
+   an unopened watch pulses now, offset per card so two never beat in unison. */
+.md-watch-card[data-unread="true"] .md-watch-dot::after {
+  animation: md-watch-dot-breathe 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation-delay: var(--md-watch-delay, 0s);
+}
+
+/* Only shown when something is actually waiting, so it is allowed to be loud. */
+.md-watch-rail__badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding-inline: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--md-amber) 14%, transparent);
+  color: var(--md-amber);
+  font-size: 11.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-amber) 22%, transparent);
+}
+
+/* Section labels in the watch sheet: quiet, wide, and clearly not the content
+   under them, so the sheet reads as answers rather than one long paragraph. */
+.md-watch-sheet__heading {
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--md-subtle);
+}
+
+/* ── Dexter conversation header ──────────────────────────────────────────────
+   Name and role, floating on the veil. The actions hold their labels folded away
+   until the pointer arrives, so the band stays quiet at rest. */
+.md-dexter-header-action {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding-inline: 7px;
+  border-radius: 999px;
+  color: var(--md-text);
+  transition:
+    background-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-dexter-header-action:hover,
+  .md-dexter-header-action:focus-visible {
+  background: color-mix(in srgb, var(--md-surface) 76%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 62%, transparent),
+    0 1px 2px rgba(11, 20, 19, 0.05),
+    0 0 0 1px rgba(11, 20, 19, 0.04);
+  color: var(--md-ink);
+  outline: none;
+}
+
+.dark .md-dexter-header-action:hover,
+  .dark .md-dexter-header-action:focus-visible {
+  background: color-mix(in srgb, var(--md-surface) 84%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.09),
+    0 1px 2px rgba(0, 0, 0, 0.24);
+}
+
+.md-dexter-header-action:active {
+  scale: 0.96;
+  transition-duration: 90ms;
+}
+
+/* A quiet return point for long Dexter threads. It floats in the hand-off
+   between the conversation and composer, so it reads as navigation rather than
+   another composer action. The tinted blur keeps the control distinct while
+   allowing the conversation beneath it to remain spatially present. */
+.md-dexter-jump-to-latest {
+  -webkit-backdrop-filter: blur(18px) saturate(1.16);
+  backdrop-filter: blur(18px) saturate(1.16);
+  background: color-mix(in srgb, var(--md-surface) 74%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.54),
+    0 1px 2px rgba(11, 20, 19, 0.08),
+    0 10px 28px rgba(42, 52, 50, 0.14);
+  transition:
+    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-dexter-jump-to-latest:hover {
+  background: color-mix(in srgb, var(--md-surface) 88%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.68),
+    0 2px 4px rgba(11, 20, 19, 0.08),
+    0 14px 34px rgba(42, 52, 50, 0.18);
+}
+
+.md-dexter-jump-to-latest:focus-visible {
+  outline: 2px solid var(--md-accent);
+  outline-offset: 3px;
+}
+
+.dark .md-dexter-jump-to-latest {
+  background: color-mix(in srgb, var(--md-surface) 66%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.11),
+    0 1px 2px rgba(0, 0, 0, 0.28),
+    0 12px 32px rgba(0, 0, 0, 0.34);
+}
+
+.dark .md-dexter-jump-to-latest:hover {
+  background: color-mix(in srgb, var(--md-surface) 82%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    0 16px 38px rgba(0, 0, 0, 0.4);
+}
+
+@media (max-width: 760px), (hover: none) {
+  .md-dexter-user-actions {
+    pointer-events: auto;
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .md-dexter-jump-to-latest {
+    background: color-mix(in srgb, var(--md-surface) 96%, var(--md-bg));
+  }
+}
+
+/* `max-width` rather than a fixed width: the label's own text decides how far the
+   reveal travels, so a longer translation is never clipped mid-word. Only this
+   button's own box is affected – the header around it does not reflow. */
+.md-dexter-header-action__label {
+  display: block;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0;
+  transition:
+    max-width 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding-inline 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-dexter-header-action:hover .md-dexter-header-action__label,
+  .md-dexter-header-action:focus-visible .md-dexter-header-action__label {
+  max-width: 8rem;
+  padding-inline: 5px;
+  opacity: 1;
+}
+
+/* The one status cue left in the header: a slow breath while Dexter is working,
+   and nothing at all when it is idle. */
+.md-dexter-live-dot {
+  position: relative;
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--md-accent);
+  color: var(--md-accent);
+}
+
+.md-dexter-live-dot::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.24;
+  animation: md-watch-dot-breathe 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-watch-card,
+  .md-watch-card__go,
+  .md-history-row,
+  .md-history-row__rail,
+  .md-history-row__time,
+  .md-dexter-header-action,
+  .md-dexter-header-action__label,
+  .md-dexter-jump-to-latest {
+    transition: none !important;
+  }
+
+  .md-watch-card:hover,
+  .md-watch-card:active {
+    translate: none;
+    scale: none;
+  }
+
+  .md-watch-dot::after,
+  .md-watch-card[data-unread="true"] .md-watch-dot::after,
+  .md-dexter-live-dot::after {
+    animation: none;
+    opacity: 0.18;
+  }
+}
+
+@keyframes md-sidebar-menu-in {
+  0% {
+    opacity: 0;
+    filter: blur(5px);
+    transform: scale(0.9);
+  }
+
+  52% {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1.014);
+  }
+
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}
+
+@keyframes md-sidebar-menu-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.972);
+  }
+}
+
+@keyframes md-sidebar-menu-item-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -5px, 0) scale(0.988);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes md-account-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes md-account-sheet-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.992);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -539,15 +2411,19 @@ button {
   }
 
   .md-dropdown-content,
-  .md-dropdown-option {
+  .md-dropdown-option,
+  .md-sidebar-menu,
+  .md-sidebar-menu-item,
+  .md-account-sheet {
     animation: none !important;
     filter: none !important;
     transform: none !important;
   }
+
 }
 
 ::selection {
-  background: rgba(14, 125, 116, 0.16);
+  background: var(--md-accent-a16);
 }
 
 @layer base {
@@ -573,6 +2449,76 @@ button {
   .premium-stroke-soft {
     border: 1px solid transparent;
     box-shadow: var(--md-premium-stroke-soft);
+  }
+
+  .md-auto-populated-control[data-auto-populated="true"] {
+    border-color: var(--md-field-locked-line);
+    background-color: var(--md-accent-a10);
+    box-shadow:
+      inset 0 0 0 1px var(--md-field-locked-line),
+      0 1px 2px var(--md-accent-a06);
+  }
+
+  .md-auto-populated-control[data-auto-populated="true"]:hover,
+  .md-auto-populated-control[data-auto-populated="true"]:focus-visible {
+    background-color: var(--md-accent-a14);
+  }
+
+  @keyframes md-auto-populated-token-pop {
+    0% {
+      opacity: 0;
+      filter: blur(2.5px);
+      transform: translateZ(0) scale(0.72);
+    }
+    58% {
+      opacity: 1;
+      filter: blur(0);
+      transform: translateZ(0) scale(1.12);
+    }
+    100% {
+      opacity: 1;
+      filter: blur(0);
+      transform: translateZ(0) scale(1);
+    }
+  }
+
+  /* Comboboxes put the surface class on a wrapper; the reveal owns the input.
+     Mask glyphs without transitioning color or hiding a replacement reveal. */
+  [data-auto-population-revealing="true"] {
+    -webkit-text-fill-color: transparent;
+    caret-color: var(--md-ink);
+  }
+
+  .md-auto-populated-reveal {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    overflow: hidden;
+    pointer-events: none;
+    white-space: pre;
+  }
+
+  .md-auto-populated-reveal[data-multiline="true"] {
+    display: block;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .md-auto-populated-reveal__token {
+    display: inline-block;
+    flex: none;
+    transform-origin: center;
+    will-change: transform, opacity;
+    animation: md-auto-populated-token-pop 300ms cubic-bezier(0.22, 1, 0.36, 1) var(--md-auto-populated-stagger, 0ms) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .md-auto-populated-reveal__token {
+      animation: none;
+    }
   }
 
   [data-theme="dark"] .premium-stroke {
@@ -636,6 +2582,17 @@ button {
   .md-scrollbar::-webkit-scrollbar-thumb {
     background: rgba(90, 103, 100, 0.22);
     border-radius: 999px;
+  }
+
+  /* Tables remain horizontally scrollable by trackpad, touch and keyboard,
+     but the permanent scrollbar competes with dense register content. */
+  .md-table-scroll {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .md-table-scroll::-webkit-scrollbar {
+    display: none;
   }
 
   .dark .md-scrollbar {
@@ -767,7 +2724,7 @@ button {
 
   .md-booking-map .leaflet-control-zoom a:focus {
     outline: none;
-    box-shadow: inset 0 0 0 2px rgba(14, 125, 116, 0.18);
+    box-shadow: inset 0 0 0 2px var(--md-accent-a18);
   }
 
   .md-booking-map .leaflet-control-attribution {
@@ -839,189 +2796,331 @@ button {
   }
 
   .md-toaster {
-    --front-toast-offset: 24px;
+    --front-toast-offset: 16px;
   }
 
   .md-toast {
-    min-height: 68px;
-    gap: 12px;
+    --md-toast-control-rest: color-mix(in srgb, var(--md-surface-tint) 82%, var(--md-surface));
+    --md-toast-control-fill: color-mix(in srgb, var(--md-surface-tint) 68%, var(--md-surface));
+    width: 100%;
+    min-height: 48px;
+    align-items: center;
+    gap: 8px;
     border: 0;
     border-radius: var(--md-radius-xl);
-    padding: 16px 18px;
-    background: rgba(251, 253, 253, 0.92);
+    padding: 6px 9px;
+    background:
+      linear-gradient(118deg, transparent 0 11%, color-mix(in srgb, #ffffff 5%, transparent) 11% 21%, transparent 26%),
+      color-mix(in srgb, var(--md-surface) 94%, transparent);
     color: var(--md-ink);
-    box-shadow: var(--md-shadow-lift);
-    backdrop-filter: blur(20px);
+    box-shadow: var(--md-premium-stroke), 0 16px 42px rgba(17, 24, 23, 0.16);
+    backdrop-filter: blur(18px) saturate(118%);
+    transition:
+      transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      height 260ms cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   [data-sonner-toast].md-toast {
-    min-height: 68px !important;
-    align-items: flex-start !important;
-    gap: 12px !important;
+    min-height: 48px !important;
+    align-items: center !important;
+    gap: 8px !important;
     border: 0 !important;
     border-radius: var(--md-radius-xl) !important;
-    padding: 16px 18px !important;
-    background: rgba(251, 253, 253, 0.92) !important;
+    padding: 6px 9px !important;
+    background:
+      linear-gradient(118deg, transparent 0 11%, color-mix(in srgb, #ffffff 5%, transparent) 11% 21%, transparent 26%),
+      color-mix(in srgb, var(--md-surface) 94%, transparent) !important;
     color: var(--md-ink) !important;
-    box-shadow: var(--md-shadow-lift) !important;
-    backdrop-filter: blur(20px);
+    box-shadow: var(--md-premium-stroke), 0 16px 42px rgba(17, 24, 23, 0.16) !important;
+    backdrop-filter: blur(18px) saturate(118%);
+    transition:
+      transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      height 260ms cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
   }
 
-  .md-toast[data-type="success"] {
-    background: color-mix(in srgb, var(--md-green) 8%, rgba(251, 253, 253, 0.94));
+  [data-sonner-toast].md-toast[data-removed="true"] {
+    transition-duration: 160ms !important;
   }
 
-  [data-sonner-toast].md-toast[data-type="success"] {
-    background: color-mix(in srgb, var(--md-green) 8%, rgba(251, 253, 253, 0.94)) !important;
+  [data-sonner-toast].md-toast[data-expanded="false"][data-front="false"] {
+    box-shadow: var(--md-premium-stroke), 0 10px 30px rgba(17, 24, 23, 0.13) !important;
   }
 
-  .md-toast[data-type="info"],
-  .md-toast[data-type="loading"] {
-    background: color-mix(in srgb, var(--md-accent) 7%, rgba(251, 253, 253, 0.94));
-  }
-
-  [data-sonner-toast].md-toast[data-type="info"],
-  [data-sonner-toast].md-toast[data-type="loading"] {
-    background: color-mix(in srgb, var(--md-accent) 7%, rgba(251, 253, 253, 0.94)) !important;
-  }
-
-  .md-toast[data-type="warning"] {
-    background: color-mix(in srgb, var(--md-amber) 9%, rgba(251, 253, 253, 0.94));
-  }
-
-  [data-sonner-toast].md-toast[data-type="warning"] {
-    background: color-mix(in srgb, var(--md-amber) 9%, rgba(251, 253, 253, 0.94)) !important;
-  }
-
-  .md-toast[data-type="error"] {
-    background: color-mix(in srgb, var(--md-red) 8%, rgba(251, 253, 253, 0.94));
-  }
-
-  [data-sonner-toast].md-toast[data-type="error"] {
-    background: color-mix(in srgb, var(--md-red) 8%, rgba(251, 253, 253, 0.94)) !important;
+  [data-sonner-toaster][data-sonner-theme="dark"] .md-toast,
+  [data-theme="dark"] .md-toast,
+  .dark .md-toast {
+    background:
+      linear-gradient(118deg, transparent 0 11%, rgba(255, 255, 255, 0.04) 11% 21%, transparent 26%),
+      color-mix(in srgb, var(--md-surface) 93%, transparent) !important;
+    box-shadow: var(--md-premium-stroke), 0 18px 48px rgba(0, 0, 0, 0.38) !important;
   }
 
   .md-toast-icon {
-    width: 34px;
-    height: 34px;
-    border-radius: var(--md-radius-lg);
+    width: 28px;
+    height: 28px;
     display: grid;
     place-items: center;
-    background: rgba(255, 255, 255, 0.72);
-    color: var(--md-accent);
-    box-shadow: var(--md-shadow-line);
+    color: var(--md-text);
   }
 
   [data-sonner-toast].md-toast .md-toast-icon,
   [data-sonner-toast].md-toast [data-icon] {
-    width: 34px !important;
-    height: 34px !important;
+    order: 1;
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
     margin: 0 !important;
-    border-radius: var(--md-radius-lg) !important;
     display: grid !important;
     place-items: center !important;
     justify-content: center !important;
-    background: rgba(255, 255, 255, 0.72) !important;
-    color: var(--md-accent) !important;
-    box-shadow: var(--md-shadow-line) !important;
+    background: transparent !important;
+    color: var(--md-text) !important;
+    box-shadow: none !important;
+    overflow: visible;
   }
 
-  .md-toast[data-type="success"] .md-toast-icon {
-    color: var(--md-green);
+  .md-toast-status-art {
+    width: 34px;
+    height: 34px;
+    max-width: none;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
   }
 
-  [data-sonner-toast].md-toast[data-type="success"] .md-toast-icon,
-  [data-sonner-toast].md-toast[data-type="success"] [data-icon] {
-    color: var(--md-green) !important;
-  }
-
-  .md-toast[data-type="warning"] .md-toast-icon {
-    color: var(--md-amber);
-  }
-
-  [data-sonner-toast].md-toast[data-type="warning"] .md-toast-icon,
-  [data-sonner-toast].md-toast[data-type="warning"] [data-icon] {
-    color: var(--md-amber) !important;
-  }
-
-  .md-toast[data-type="error"] .md-toast-icon {
-    color: var(--md-red);
-  }
-
-  [data-sonner-toast].md-toast[data-type="error"] .md-toast-icon,
-  [data-sonner-toast].md-toast[data-type="error"] [data-icon] {
-    color: var(--md-red) !important;
+  .md-toast-status-art[data-toast-icon-kind="warning"] {
+    filter: hue-rotate(38deg) saturate(0.92) brightness(1.08);
   }
 
   [data-sonner-toast].md-toast [data-content] {
+    order: 2;
     min-width: 0;
+    flex: 1;
     gap: 3px !important;
   }
 
   .md-toast-title {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
-    line-height: 1.35;
+    line-height: 1.2;
     color: var(--md-ink);
   }
 
   [data-sonner-toast].md-toast .md-toast-title,
   [data-sonner-toast].md-toast [data-title] {
-    font-size: 14px !important;
+    font-size: 13px !important;
     font-weight: 500 !important;
-    line-height: 1.35 !important;
+    line-height: 1.2 !important;
     color: var(--md-ink) !important;
   }
 
   .md-toast-description {
-    margin-top: 3px;
-    font-size: 13px;
-    line-height: 1.45;
+    margin-top: 0;
+    font-size: 11px;
+    line-height: 1.25;
     color: var(--md-text);
   }
 
   [data-sonner-toast].md-toast .md-toast-description,
   [data-sonner-toast].md-toast [data-description] {
-    margin-top: 3px !important;
-    font-size: 13px !important;
-    line-height: 1.45 !important;
+    margin-top: 0 !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
     color: var(--md-text) !important;
   }
 
   .md-toast-action,
-  .md-toast-cancel {
-    height: 34px;
+  .md-toast-cancel,
+  .md-toast-close {
+    order: 3;
+    position: relative;
+    inset: auto;
+    min-width: 60px;
+    height: 30px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
     border-radius: var(--md-radius-md);
-    padding: 0 12px;
-    font-size: 12px;
+    padding: 0 10px;
+    font-size: 11px;
     font-weight: 500;
+    line-height: 1;
+    color: var(--md-ink);
+    background-color: var(--md-toast-control-rest);
+    background-image: linear-gradient(var(--md-toast-control-fill), var(--md-toast-control-fill));
+    background-repeat: no-repeat;
+    background-position: left center;
+    background-size: 100% 100%;
+    box-shadow: var(--md-shadow-line);
+    animation: md-toast-deplete var(--md-toast-duration, 5000ms) linear forwards;
+    transform: none;
+    transition:
+      box-shadow 150ms cubic-bezier(0.22, 1, 0.36, 1),
+      scale 150ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   [data-sonner-toast].md-toast [data-button],
-  [data-sonner-toast].md-toast [data-cancel] {
-    height: 34px !important;
+  [data-sonner-toast].md-toast [data-cancel],
+  [data-sonner-toast].md-toast [data-close-button] {
+    order: 3 !important;
+    position: relative !important;
+    inset: auto !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-shrink: 0 !important;
+    margin: 0 0 0 auto !important;
+    min-width: 60px !important;
+    width: auto !important;
+    height: 30px !important;
+    border: 0 !important;
     border-radius: var(--md-radius-md) !important;
-    padding: 0 12px !important;
-    font-size: 12px !important;
+    padding: 0 10px !important;
+    font-size: 11px !important;
     font-weight: 500 !important;
+    color: var(--md-ink) !important;
+    background-color: var(--md-toast-control-rest) !important;
+    background-image: linear-gradient(var(--md-toast-control-fill), var(--md-toast-control-fill)) !important;
+    background-repeat: no-repeat !important;
+    background-position: left center !important;
+    background-size: 100% 100%;
+    box-shadow: var(--md-shadow-line) !important;
+    animation: md-toast-deplete var(--md-toast-duration, 5000ms) linear forwards;
+    transform: none !important;
   }
 
-  .md-toast-action {
-    background: var(--md-ink);
-    color: #ffffff;
+  [dir="rtl"] [data-sonner-toast].md-toast [data-button],
+  [dir="rtl"] [data-sonner-toast].md-toast [data-cancel],
+  [dir="rtl"] [data-sonner-toast].md-toast [data-close-button] {
+    margin: 0 auto 0 0 !important;
   }
 
-  .md-toast-cancel {
-    background: rgba(255, 255, 255, 0.66);
-    color: var(--md-text);
-    box-shadow: var(--md-shadow-line);
+  .md-toast[data-type="success"] {
+    --md-toast-control-rest: #ecf8ef;
+    --md-toast-control-fill: #a9ddb7;
   }
 
-  .md-toast-close {
-    border: 0;
-    background: rgba(255, 255, 255, 0.72);
-    color: var(--md-text);
-    box-shadow: var(--md-shadow-line);
+  .md-toast[data-type="warning"] {
+    --md-toast-control-rest: #fff7df;
+    --md-toast-control-fill: #ffd77f;
+  }
+
+  .md-toast[data-type="error"] {
+    --md-toast-control-rest: #fceded;
+    --md-toast-control-fill: #f2b1b1;
+  }
+
+  .md-toast[data-type="info"],
+  .md-toast[data-type="normal"],
+  .md-toast[data-type="default"] {
+    --md-toast-control-rest: #fff7df;
+    --md-toast-control-fill: #ffd77f;
+  }
+
+  [data-sonner-toaster][data-sonner-theme="dark"] .md-toast,
+  [data-theme="dark"] .md-toast,
+  .dark .md-toast {
+    --md-toast-control-rest: #28302f;
+    --md-toast-control-fill: #3a4543;
+  }
+
+  [data-sonner-toaster][data-sonner-theme="dark"] .md-toast[data-type="success"],
+  [data-theme="dark"] .md-toast[data-type="success"],
+  .dark .md-toast[data-type="success"] {
+    --md-toast-control-rest: #102e27;
+    --md-toast-control-fill: #1f644f;
+  }
+
+  [data-sonner-toaster][data-sonner-theme="dark"] .md-toast[data-type="warning"],
+  [data-sonner-toaster][data-sonner-theme="dark"] .md-toast[data-type="info"],
+  [data-sonner-toaster][data-sonner-theme="dark"] .md-toast[data-type="normal"],
+  [data-sonner-toaster][data-sonner-theme="dark"] .md-toast[data-type="default"],
+  [data-theme="dark"] .md-toast[data-type="warning"],
+  [data-theme="dark"] .md-toast[data-type="info"],
+  [data-theme="dark"] .md-toast[data-type="normal"],
+  [data-theme="dark"] .md-toast[data-type="default"],
+  .dark .md-toast[data-type="warning"],
+  .dark .md-toast[data-type="info"],
+  .dark .md-toast[data-type="normal"],
+  .dark .md-toast[data-type="default"] {
+    --md-toast-control-rest: #332710;
+    --md-toast-control-fill: #76531b;
+  }
+
+  [data-sonner-toaster][data-sonner-theme="dark"] .md-toast[data-type="error"],
+  [data-theme="dark"] .md-toast[data-type="error"],
+  .dark .md-toast[data-type="error"] {
+    --md-toast-control-rest: #35191b;
+    --md-toast-control-fill: #7a2f35;
+  }
+
+  [data-sonner-toaster][data-sonner-theme="dark"] .md-toast [data-button],
+  [data-sonner-toaster][data-sonner-theme="dark"] .md-toast [data-cancel],
+  [data-sonner-toaster][data-sonner-theme="dark"] .md-toast [data-close-button],
+  [data-theme="dark"] .md-toast [data-button],
+  [data-theme="dark"] .md-toast [data-cancel],
+  [data-theme="dark"] .md-toast [data-close-button],
+  .dark .md-toast [data-button],
+  .dark .md-toast [data-cancel],
+  .dark .md-toast [data-close-button] {
+    color: #ffffff !important;
+  }
+
+  [data-sonner-toast].md-toast:has([data-action]) .md-toast-close {
+    display: none !important;
+  }
+
+  [data-sonner-toast].md-toast:hover .md-toast-action,
+  [data-sonner-toast].md-toast:hover .md-toast-cancel,
+  [data-sonner-toast].md-toast:hover .md-toast-close,
+  [data-sonner-toast].md-toast[data-expanded="true"] .md-toast-action,
+  [data-sonner-toast].md-toast[data-expanded="true"] .md-toast-cancel,
+  [data-sonner-toast].md-toast[data-expanded="true"] .md-toast-close {
+    animation-play-state: paused;
+  }
+
+  .md-toast-action:hover,
+  .md-toast-cancel:hover,
+  .md-toast-close:hover {
+    box-shadow: var(--md-shadow-soft) !important;
+  }
+
+  .md-toast-action:active,
+  .md-toast-cancel:active,
+  .md-toast-close:active {
+    scale: 0.96;
+  }
+
+  .md-toast-action:focus-visible,
+  .md-toast-cancel:focus-visible,
+  .md-toast-close:focus-visible {
+    outline: 2px solid var(--md-accent);
+    outline-offset: 2px;
+  }
+
+  @keyframes md-toast-deplete {
+    from {
+      background-size: 100% 100%;
+    }
+
+    to {
+      background-size: 0% 100%;
+    }
+  }
+
+  .md-toast-gallery-stack .md-toast-close {
+    background-color: var(--md-toast-control-rest) !important;
+    animation-iteration-count: infinite;
   }
 
   .md-ai-edge-glow {
@@ -1058,10 +3157,10 @@ button {
 
   .md-ai-edge-glow__wash {
     background:
-      radial-gradient(ellipse at 0% 0%, rgba(14, 125, 116, 0.34), transparent 38%),
-      radial-gradient(ellipse at 100% 100%, rgba(7, 139, 130, 0.36), transparent 36%),
-      radial-gradient(ellipse at 16% 100%, rgba(104, 142, 83, 0.24), transparent 30%),
-      linear-gradient(180deg, rgba(14, 125, 116, 0.12), transparent 24%, transparent 74%, rgba(14, 125, 116, 0.14));
+      radial-gradient(ellipse at 0% 0%, var(--md-accent-a34), transparent 38%),
+      radial-gradient(ellipse at 100% 100%, color-mix(in srgb, var(--md-accent-glow-core) 36%, transparent), transparent 36%),
+      radial-gradient(ellipse at 16% 100%, color-mix(in srgb, var(--md-accent-glow-warm) 24%, transparent), transparent 30%),
+      linear-gradient(180deg, var(--md-accent-a12), transparent 24%, transparent 74%, var(--md-accent-a14));
     opacity: calc(0.7 * var(--md-ai-edge-strength));
   }
 
@@ -1072,9 +3171,9 @@ button {
   .md-ai-edge-glow__signal {
     inset: -18%;
     background:
-      radial-gradient(ellipse at 12% 8%, rgba(49, 178, 159, 0.68), transparent 26%),
-      radial-gradient(ellipse at 92% 92%, rgba(5, 143, 135, 0.72), transparent 28%),
-      radial-gradient(ellipse at 14% 100%, rgba(119, 145, 84, 0.54), transparent 23%);
+      radial-gradient(ellipse at 12% 8%, color-mix(in srgb, var(--md-accent-glow-bright) 68%, transparent), transparent 26%),
+      radial-gradient(ellipse at 92% 92%, color-mix(in srgb, var(--md-accent-glow-core) 72%, transparent), transparent 28%),
+      radial-gradient(ellipse at 14% 100%, color-mix(in srgb, var(--md-accent-glow-warm) 54%, transparent), transparent 23%);
     filter: blur(28px) saturate(1.2);
     opacity: calc(0.58 * var(--md-ai-edge-strength));
     transform: translate3d(-1.8%, -0.8%, 0) scale(1.02);
@@ -1087,10 +3186,10 @@ button {
   .md-ai-edge-glow__frame {
     box-shadow:
       inset 0 0 0 1px rgba(255, 255, 255, 0.24),
-      inset 40px 0 64px rgba(14, 125, 116, 0.42),
-      inset -40px 0 64px rgba(14, 125, 116, 0.32),
-      inset 0 38px 66px rgba(80, 139, 103, 0.32),
-      inset 0 -50px 78px rgba(8, 139, 130, 0.54);
+      inset 40px 0 64px var(--md-accent-a42),
+      inset -40px 0 64px var(--md-accent-a32),
+      inset 0 38px 66px color-mix(in srgb, var(--md-accent-glow-warm) 32%, transparent),
+      inset 0 -50px 78px color-mix(in srgb, var(--md-accent-glow-core) 54%, transparent);
     filter: blur(8px);
     opacity: calc(0.9 * var(--md-ai-edge-strength));
     transform: scale(1.012);
@@ -1099,10 +3198,10 @@ button {
   .md-ai-edge-glow--screen .md-ai-edge-glow__frame {
     box-shadow:
       inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-      inset 54px 0 88px rgba(14, 125, 116, 0.44),
-      inset -54px 0 88px rgba(14, 125, 116, 0.34),
-      inset 0 48px 90px rgba(80, 139, 103, 0.34),
-      inset 0 -66px 110px rgba(8, 139, 130, 0.52);
+      inset 54px 0 88px var(--md-accent-a44),
+      inset -54px 0 88px var(--md-accent-a34),
+      inset 0 48px 90px color-mix(in srgb, var(--md-accent-glow-warm) 34%, transparent),
+      inset 0 -66px 110px color-mix(in srgb, var(--md-accent-glow-core) 52%, transparent);
     filter: blur(11px);
   }
 
@@ -1129,8 +3228,7 @@ button {
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.22),
       inset 0 0 0 1px rgba(255, 255, 255, 0.12),
-      0 0 0 1px rgba(6, 70, 62, 0.12),
-      0 10px 24px rgba(6, 70, 62, 0.18);
+      0 0 0 1px var(--md-accent-deep-a12);
     transition:
       box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
       transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -1139,11 +3237,7 @@ button {
   .md-sidebar-dexter-item {
     isolation: isolate;
     background: var(--md-accent) !important;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.22),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.12),
-      0 0 0 1px rgba(6, 70, 62, 0.1),
-      0 7px 18px rgba(6, 70, 62, 0.15);
+    box-shadow: var(--md-shadow-line);
     transition:
       box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
       color 180ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -1151,12 +3245,7 @@ button {
 
   .md-sidebar-dexter-item:hover,
   .md-sidebar-dexter-item:focus-visible {
-    background: var(--md-accent) !important;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.26),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-      0 0 0 1px rgba(6, 70, 62, 0.14),
-      0 10px 22px rgba(6, 70, 62, 0.2);
+    background: color-mix(in srgb, var(--md-accent) 88%, var(--md-hover)) !important;
   }
 
   .md-dexter-pill:hover,
@@ -1164,8 +3253,7 @@ button {
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.26),
       inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-      0 0 0 1px rgba(6, 70, 62, 0.16),
-      0 14px 30px rgba(6, 70, 62, 0.24);
+      0 0 0 1px var(--md-accent-deep-a16);
     transform: translateY(-1px);
   }
 
@@ -1197,7 +3285,7 @@ button {
     inset: 0;
     z-index: 1;
     border-radius: inherit;
-    background: linear-gradient(110deg, rgba(0, 34, 28, 0.38), rgba(0, 50, 43, 0.14) 56%, rgba(0, 20, 18, 0.34));
+    background: linear-gradient(110deg, var(--md-accent-veil-near), var(--md-accent-veil-mid) 56%, var(--md-accent-veil-far));
     pointer-events: none;
     transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
   }
@@ -1255,7 +3343,7 @@ button {
     width: 32px;
     height: 24px;
     overflow: hidden;
-    filter: brightness(1.12) saturate(1.18) drop-shadow(0 3px 7px rgba(6, 70, 62, 0.26));
+    filter: brightness(1.12) saturate(1.18) drop-shadow(0 3px 7px var(--md-accent-deep-a26));
     mask-position: center;
     mask-repeat: no-repeat;
     mask-size: contain;
@@ -1290,12 +3378,12 @@ button {
 
   .md-dexter-companion-panel {
     border: 0;
-    background: #fff;
-    box-shadow: var(--md-premium-stroke), -14px 0 28px rgba(42, 52, 50, 0.035);
+    background: color-mix(in srgb, var(--md-accent) 4%, #fff);
+    box-shadow: inset 1px 0 0 var(--md-accent-a14), -14px 0 28px var(--md-accent-a08);
   }
 
   .md-dexter-companion-header {
-    background: rgba(255, 255, 255, 0.98);
+    background: color-mix(in srgb, var(--md-accent) 7%, rgba(255, 255, 255, 0.98));
   }
 
   .md-dexter-companion-header::after {
@@ -1306,25 +3394,494 @@ button {
     bottom: -34px;
     height: 44px;
     pointer-events: none;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.72) 46%, rgba(255, 255, 255, 0) 100%);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--md-accent) 7%, rgba(255, 255, 255, 0.98)) 0%, color-mix(in srgb, var(--md-accent) 4%, rgba(255, 255, 255, 0.72)) 46%, rgba(255, 255, 255, 0) 100%);
   }
 
-  .md-dexter-chat-bubble {
+  .md-dexter-markdown {
     color: var(--md-ink);
-    box-shadow: 0 14px 34px rgba(42, 52, 50, 0.055);
+    font-size: 15.5px;
+    line-height: 1.68;
+    overflow-wrap: anywhere;
   }
 
-  .md-dexter-chat-bubble--user {
-    background: #f1f3f3;
+  .md-dexter-markdown > :first-child {
+    margin-top: 0;
   }
 
-  .md-dexter-chat-bubble--assistant {
-    background: rgba(255, 255, 255, 0.98);
+  .md-dexter-markdown > :last-child {
+    margin-bottom: 0;
+  }
+
+  .md-dexter-markdown p,
+  .md-dexter-markdown ul,
+  .md-dexter-markdown ol,
+  .md-dexter-markdown blockquote,
+  .md-dexter-markdown pre,
+  .md-dexter-markdown__table-wrap {
+    margin-block: 0.96rem;
+  }
+
+  .md-dexter-markdown p {
+    max-width: 68ch;
+    text-wrap: pretty;
+    white-space: normal;
+  }
+
+  .md-dexter-markdown > p + p {
+    margin-top: 1.08rem;
+  }
+
+  .md-dexter-markdown > p:first-child,
+  .md-dexter-markdown__h1 + p {
+    color: color-mix(in srgb, var(--md-ink) 92%, var(--md-text));
+    font-size: 16.25px;
+    line-height: 1.68;
+  }
+
+  .md-dexter-markdown__h1,
+  .md-dexter-markdown__h2,
+  .md-dexter-markdown__h3,
+  .md-dexter-markdown__h4 {
+    color: var(--md-ink);
+    font-weight: 500;
+    text-wrap: balance;
+  }
+
+  .md-dexter-markdown__h1 {
+    max-width: 30ch;
+    margin-block: 0 1rem;
+    font-size: clamp(24px, 2vw, 28px);
+    line-height: 1.16;
+    letter-spacing: -0.028em;
+  }
+
+  .md-dexter-markdown__h2 {
+    margin-block: 1.9rem 0.68rem;
+    font-size: 19px;
+    line-height: 1.3;
+    letter-spacing: -0.018em;
+  }
+
+  .md-dexter-markdown__h3 {
+    margin-block: 1.5rem 0.5rem;
+    font-size: 16px;
+    line-height: 1.4;
+    letter-spacing: -0.008em;
+  }
+
+  .md-dexter-markdown__h4 {
+    margin-block: 1rem 0.34rem;
+    color: var(--md-text);
+    font-size: 13px;
+    line-height: 1.45;
+    letter-spacing: 0;
+  }
+
+  .md-dexter-markdown ul,
+  .md-dexter-markdown ol {
+    padding-inline-start: 1.35rem;
+  }
+
+  .md-dexter-markdown ul {
+    list-style: disc;
+  }
+
+  .md-dexter-markdown ol {
+    list-style: decimal;
+  }
+
+  .md-dexter-markdown li {
+    max-width: 70ch;
+    padding-inline-start: 0.28rem;
+    line-height: 1.58;
+  }
+
+  .md-dexter-markdown li + li {
+    margin-top: 0.54rem;
+  }
+
+  .md-dexter-markdown li::marker {
+    color: var(--md-accent);
+  }
+
+  .md-dexter-markdown strong {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .md-dexter-markdown a {
+    color: var(--md-accent);
+    text-decoration: underline;
+    text-decoration-color: var(--md-accent-a36);
+    text-underline-offset: 3px;
+  }
+
+  .md-dexter-markdown a:hover {
+    text-decoration-color: currentColor;
+  }
+
+  .md-dexter-markdown blockquote {
+    max-width: 68ch;
+    border-inline-start: 2px solid var(--md-accent-a36);
+    border-radius: 0 var(--md-radius-md) var(--md-radius-md) 0;
+    background: var(--md-accent-a08);
+    padding: 0.78rem 0.95rem;
+    padding-inline-start: 1.05rem;
+    color: var(--md-text);
+  }
+
+  [dir="rtl"] .md-dexter-markdown blockquote {
+    border-radius: var(--md-radius-md) 0 0 var(--md-radius-md);
+  }
+
+  .md-dexter-markdown :not(pre) > code {
+    border-radius: var(--md-radius-sm);
+    background: var(--md-accent-a08);
+    padding: 0.12em 0.36em;
+    color: var(--md-ink);
+    font-size: 0.9em;
+  }
+
+  .md-dexter-markdown pre {
+    max-width: 100%;
+    overflow-x: auto;
+    border-radius: var(--md-radius-lg);
+    background: color-mix(in srgb, var(--md-ink) 5%, var(--md-surface));
+    padding: 0.9rem 1rem;
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-dexter-markdown pre code {
+    font-size: 12.5px;
+    line-height: 1.65;
+    white-space: pre;
+  }
+
+  .md-dexter-markdown__table-wrap {
+    container: dexter-table / inline-size;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-surface);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 11%, transparent),
+      0 1px 2px rgba(11, 20, 19, 0.04),
+      0 12px 28px rgba(42, 52, 50, 0.07);
+  }
+
+  .md-dexter-markdown__table-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .md-dexter-markdown__table {
+    width: 100%;
+    min-width: 560px;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: auto;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .md-dexter-markdown__table-wrap--dense table {
+    min-width: 940px;
+    table-layout: fixed;
+  }
+
+  .md-dexter-markdown input[type="checkbox"] {
+    margin-inline-end: 0.45rem;
+    accent-color: var(--md-accent);
+  }
+
+  .md-dexter-markdown th,
+  .md-dexter-markdown td {
+    border-bottom: 1px solid color-mix(in srgb, var(--md-ink) 8%, transparent);
+    padding: 0.68rem 0.78rem;
+    text-align: start;
+    vertical-align: middle;
+    overflow-wrap: break-word;
+  }
+
+  .md-dexter-markdown th + th,
+  .md-dexter-markdown td + td {
+    border-inline-start: 1px solid color-mix(in srgb, var(--md-ink) 6%, transparent);
+  }
+
+  .md-dexter-markdown th {
+    background: color-mix(in srgb, var(--md-accent) 6%, var(--md-surface-soft));
+    color: color-mix(in srgb, var(--md-ink) 72%, var(--md-subtle));
+    font-size: 11.75px;
+    font-weight: 500;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+
+  .md-dexter-markdown td {
+    max-width: 30ch;
+    color: color-mix(in srgb, var(--md-ink) 92%, var(--md-text));
+    line-height: 1.48;
+  }
+
+  .md-dexter-markdown td:first-child {
+    color: var(--md-ink);
+    font-weight: 600;
+  }
+
+  .md-dexter-markdown td[data-kind="status"] {
+    white-space: nowrap;
+  }
+
+  .md-dexter-markdown td[data-overdue="true"],
+  .md-dexter-markdown__record [data-overdue="true"] dd {
+    color: var(--md-red);
+  }
+
+  .md-dexter-markdown th[data-align="numeric"],
+  .md-dexter-markdown td[data-align="numeric"] {
+    min-width: 112px;
+    text-align: end;
+    white-space: nowrap;
+  }
+
+  .md-dexter-markdown__table-wrap--dense th:last-child,
+  .md-dexter-markdown__table-wrap--dense td:last-child {
+    min-width: 142px;
+  }
+
+  .md-dexter-markdown tbody tr {
+    background: var(--md-surface);
+    transition: background-color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-dexter-markdown tbody tr:nth-child(even) {
+    background: color-mix(in srgb, var(--md-ink) 1.8%, var(--md-surface));
+  }
+
+  .md-dexter-markdown tbody tr:hover {
+    background: color-mix(in srgb, var(--md-accent) 7%, var(--md-surface));
+  }
+
+  .md-dexter-markdown tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .md-dexter-markdown__records {
+    display: none;
+  }
+
+  .md-dexter-markdown__record {
+    border-radius: calc(var(--md-radius-lg) - 4px);
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--md-accent) 4%, var(--md-surface)),
+      var(--md-surface) 54%
+    );
+    padding: 1rem;
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 8%, transparent),
+      0 6px 16px rgba(42, 52, 50, 0.055);
+  }
+
+  .md-dexter-markdown__record + .md-dexter-markdown__record {
+    margin-top: 0.5rem;
+  }
+
+  .md-dexter-markdown__record-primary {
+    display: grid;
+    gap: 0.18rem;
+  }
+
+  .md-dexter-markdown__record-primary span,
+  .md-dexter-markdown__record dt {
+    color: var(--md-subtle);
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.35;
+  }
+
+  .md-dexter-markdown__record-primary strong {
+    min-width: 0;
+    color: var(--md-ink);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .md-dexter-markdown__record dl {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 0.72rem;
+  }
+
+  .md-dexter-markdown__record dl > div {
+    min-width: 0;
+    padding-block: 0.58rem;
+    padding-inline-end: 0.85rem;
+    border-top: 1px solid color-mix(in srgb, var(--md-ink) 6%, transparent);
+  }
+
+  .md-dexter-markdown__record dl > div:not(:nth-child(3n + 1)) {
+    padding-inline: 0.85rem 0;
+    border-inline-start: 1px solid color-mix(in srgb, var(--md-ink) 6%, transparent);
+  }
+
+  .md-dexter-markdown__record dd {
+    min-width: 0;
+    margin-top: 0.22rem;
+    color: color-mix(in srgb, var(--md-ink) 92%, var(--md-text));
+    font-size: 13px;
+    line-height: 1.48;
+    overflow-wrap: anywhere;
+  }
+
+  .md-dexter-markdown__record bdi,
+  .md-dexter-markdown__record a {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .md-dexter-markdown__record [data-align="numeric"] dd {
+    font-variant-numeric: tabular-nums;
+  }
+
+  @container dexter-table (max-width: 900px) {
+    .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__table-scroll {
+      display: none;
+    }
+
+    .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__records {
+      display: block;
+      padding: 0.5rem;
+    }
+  }
+
+  @container dexter-table (max-width: 700px) {
+    .md-dexter-markdown__table-scroll {
+      display: none;
+    }
+
+    .md-dexter-markdown__records {
+      display: block;
+      padding: 0.375rem;
+    }
+
+    .md-dexter-markdown__record,
+  .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__record {
+      border-radius: calc(var(--md-radius-lg) - 5px);
+      background: linear-gradient(
+        145deg,
+        color-mix(in srgb, var(--md-accent) 4%, var(--md-surface)),
+        var(--md-surface) 54%
+      );
+      padding: 0.9rem;
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 8%, transparent);
+    }
+
+    .md-dexter-markdown__record + .md-dexter-markdown__record,
+  .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__record + .md-dexter-markdown__record {
+      margin-top: 0.375rem;
+      border-top: 0;
+    }
+
+    .md-dexter-markdown__record dl {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .md-dexter-markdown__record dl > div:nth-child(3n + 1):not(:nth-child(odd)) {
+      padding-inline: 0.85rem 0;
+      border-inline-start: 1px solid color-mix(in srgb, var(--md-ink) 6%, transparent);
+    }
+
+    .md-dexter-markdown__record dl > div:nth-child(odd) {
+      padding-inline: 0 0.85rem;
+      border-inline-start: 0;
+    }
+  }
+
+  @container dexter-table (max-width: 520px) {
+    .md-dexter-markdown__record dl {
+      grid-template-columns: minmax(0, 1fr);
+      margin-top: 0.7rem;
+    }
+
+    .md-dexter-markdown__record dl > div,
+  .md-dexter-markdown__record dl > div:not(:nth-child(3n + 1)),
+  .md-dexter-markdown__record dl > div:nth-child(odd) {
+      padding-inline: 0;
+      border-inline-start: 0;
+      display: grid;
+      grid-template-columns: minmax(88px, 36%) minmax(0, 1fr);
+      align-items: start;
+      gap: 0.75rem;
+      padding-block: 0.62rem;
+    }
+
+    .md-dexter-markdown__record dd {
+      margin-top: 0;
+      text-align: start;
+    }
+
+    .md-dexter-markdown__record [data-align="numeric"] dd {
+      text-align: end;
+    }
+  }
+
+  @container dexter-table (max-width: 350px) {
+    .md-dexter-markdown__records {
+      padding: 0.25rem;
+    }
+
+    .md-dexter-markdown__record,
+  .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__record {
+      padding: 0.8rem;
+    }
+
+    .md-dexter-markdown__record dl > div,
+  .md-dexter-markdown__record dl > div:not(:nth-child(3n + 1)),
+  .md-dexter-markdown__record dl > div:nth-child(odd) {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.2rem;
+    }
+
+    .md-dexter-markdown__record [data-align="numeric"] dd {
+      text-align: start;
+    }
+  }
+
+  .md-dexter-markdown hr {
+    margin-block: 1rem;
+    border: 0;
+    border-top: 1px solid var(--md-line);
+  }
+
+  .md-dexter-markdown--streaming > :last-child::after {
+    content: "";
+    display: inline-block;
+    width: 1px;
+    height: 1em;
+    margin-inline-start: 0.28rem;
+    translate: 0 0.12em;
+    background: var(--md-accent);
+    animation: md-dexter-stream-caret 850ms ease-in-out infinite;
+  }
+
+  @keyframes md-dexter-stream-caret {
+    0%,
+  100% {
+      opacity: 0.25;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 
   .md-dexter-context-card {
-    background: rgba(247, 250, 249, 0.78);
-    box-shadow: 0 8px 20px rgba(42, 52, 50, 0.035);
+    background: var(--md-accent-a08);
+    box-shadow: inset 0 0 0 1px var(--md-accent-a14), 0 8px 20px var(--md-accent-a06);
   }
 
   .md-dexter-followup {
@@ -1354,39 +3911,47 @@ button {
   }
 
   .md-dexter-companion-composer-shell {
-    background: rgba(255, 255, 255, 0.98);
-    box-shadow: var(--md-premium-stroke), 0 14px 32px rgba(42, 52, 50, 0.05);
+    background: color-mix(in srgb, var(--md-accent) 6%, rgba(255, 255, 255, 0.98));
+    box-shadow: inset 0 0 0 1px var(--md-accent-a16), 0 14px 32px var(--md-accent-a08);
   }
 
   .md-dexter-companion-composer-inner {
     background: transparent;
   }
 
+  .md-dexter-companion-suggestions [aria-label] {
+    justify-content: flex-start;
+  }
+
+  .md-dexter-companion-suggestions button {
+    background: var(--md-accent-a08);
+    box-shadow: inset 0 0 0 1px var(--md-accent-a14);
+  }
+
+  .md-dexter-companion-suggestions button:hover {
+    background: var(--md-accent-a12);
+  }
+
   .dark .md-dexter-companion-panel {
-    background: rgb(15, 23, 21);
-    box-shadow: var(--md-premium-stroke), -14px 0 28px rgba(0, 0, 0, 0.2);
+    background: color-mix(in srgb, var(--md-accent) 9%, rgb(15, 23, 21));
+    box-shadow: inset 1px 0 0 var(--md-accent-a20), -14px 0 28px rgba(0, 0, 0, 0.2);
   }
 
   .dark .md-dexter-companion-header {
-    background: rgba(15, 23, 21, 0.96);
+    background: color-mix(in srgb, var(--md-accent) 11%, rgba(15, 23, 21, 0.96));
   }
 
   .dark .md-dexter-companion-header::after {
-    background: linear-gradient(180deg, rgba(15, 23, 21, 0.96) 0%, rgba(15, 23, 21, 0.72) 46%, rgba(15, 23, 21, 0) 100%);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--md-accent) 11%, rgba(15, 23, 21, 0.96)) 0%, color-mix(in srgb, var(--md-accent) 7%, rgba(15, 23, 21, 0.72)) 46%, rgba(15, 23, 21, 0) 100%);
   }
 
-  .dark .md-dexter-chat-bubble {
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
-  }
-
-  .dark .md-dexter-chat-bubble--user,
-  .dark .md-dexter-chat-bubble--assistant {
-    background: rgba(24, 34, 32, 0.76);
+  .dark .md-dexter-markdown pre {
+    background: color-mix(in srgb, var(--md-surface) 82%, black);
   }
 
   .dark .md-dexter-context-card,
   .dark .md-dexter-followup {
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--md-accent-a10);
   }
 
   .dark .md-dexter-followup:hover {
@@ -1402,7 +3967,7 @@ button {
   }
 
   .dark .md-dexter-companion-composer-shell {
-    background: rgba(24, 34, 32, 0.96);
+    background: color-mix(in srgb, var(--md-accent) 10%, rgba(24, 34, 32, 0.96));
     box-shadow:
       inset 0 0 0 1px rgba(255, 255, 255, 0.12),
       0 16px 36px rgba(0, 0, 0, 0.22);
@@ -1841,13 +4406,13 @@ button {
     }
 
     .md-dashboard-edit-tile .md-dashboard-drag-handle,
-    .md-dashboard-edit-tile .md-dashboard-tile-actions > button {
+  .md-dashboard-edit-tile .md-dashboard-tile-actions > button {
       width: 26px !important;
       height: 26px !important;
     }
 
     .md-dashboard-edit-tile .md-dashboard-drag-handle svg,
-    .md-dashboard-edit-tile .md-dashboard-tile-actions svg {
+  .md-dashboard-edit-tile .md-dashboard-tile-actions svg {
       width: 14px;
       height: 14px;
     }
@@ -1869,8 +4434,8 @@ button {
     }
 
     .md-dashboard-edit-tile .md-your-jobs-grid,
-    .md-dashboard-edit-tile .md-dashboard-metrics-grid,
-    .md-dashboard-edit-tile .md-report-kpi-grid {
+  .md-dashboard-edit-tile .md-dashboard-metrics-grid,
+  .md-dashboard-edit-tile .md-report-kpi-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
 
@@ -1884,17 +4449,17 @@ button {
     }
 
     .md-dashboard-edit-tile .md-morning-digest-items [role="option"],
-    .md-dashboard-edit-tile .md-activity-scroll [role="option"],
-    .md-dashboard-edit-tile .md-customs-table [role="option"],
-    .md-dashboard-edit-tile .md-report-spend-row {
+  .md-dashboard-edit-tile .md-activity-scroll [role="option"],
+  .md-dashboard-edit-tile .md-customs-table [role="option"],
+  .md-dashboard-edit-tile .md-report-spend-row {
       grid-template-columns: minmax(0, 1fr) !important;
       justify-items: start;
     }
 
     .md-dashboard-edit-tile .md-morning-digest-items [role="option"] > span,
-    .md-dashboard-edit-tile .md-activity-scroll [role="option"] > span,
-    .md-dashboard-edit-tile .md-customs-table [role="option"] > span,
-    .md-dashboard-edit-tile .md-customs-table [role="option"] > [data-slot="badge"] {
+  .md-dashboard-edit-tile .md-activity-scroll [role="option"] > span,
+  .md-dashboard-edit-tile .md-customs-table [role="option"] > span,
+  .md-dashboard-edit-tile .md-customs-table [role="option"] > [data-slot="badge"] {
       max-width: 100%;
     }
 
@@ -1905,15 +4470,15 @@ button {
 
   @container (max-width: 360px) {
     .md-dashboard-edit-tile .md-world-clock-grid,
-    .md-dashboard-edit-tile .md-your-jobs-grid,
-    .md-dashboard-edit-tile .md-dashboard-metrics-grid,
-    .md-dashboard-edit-tile .md-report-kpi-grid {
+  .md-dashboard-edit-tile .md-your-jobs-grid,
+  .md-dashboard-edit-tile .md-dashboard-metrics-grid,
+  .md-dashboard-edit-tile .md-report-kpi-grid {
       grid-template-columns: minmax(0, 1fr) !important;
     }
 
     .md-dashboard-edit-tile .md-world-clock-header,
-    .md-dashboard-edit-tile .md-your-jobs-header,
-    .md-dashboard-edit-tile .md-live-bookings-header {
+  .md-dashboard-edit-tile .md-your-jobs-header,
+  .md-dashboard-edit-tile .md-live-bookings-header {
       padding-left: 14px;
       padding-right: 14px;
     }
@@ -1923,14 +4488,14 @@ button {
     }
 
     .md-dashboard-edit-tile .md-live-bookings-header,
-    .md-dashboard-edit-tile .md-world-clock-header,
-    .md-dashboard-edit-tile .md-your-jobs-header {
+  .md-dashboard-edit-tile .md-world-clock-header,
+  .md-dashboard-edit-tile .md-your-jobs-header {
       gap: 10px;
     }
 
     .md-dashboard-edit-tile .md-report-chart-block,
-    .md-dashboard-edit-tile .md-report-table-block,
-    .md-dashboard-edit-tile .md-report-spend-block {
+  .md-dashboard-edit-tile .md-report-table-block,
+  .md-dashboard-edit-tile .md-report-spend-block {
       overflow-y: auto;
     }
   }
@@ -1942,7 +4507,7 @@ button {
     }
 
     .md-dashboard-edit-tile .md-your-jobs-grid,
-    .md-dashboard-edit-tile .md-dashboard-metrics-grid {
+  .md-dashboard-edit-tile .md-dashboard-metrics-grid {
       grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
     }
   }
@@ -2042,8 +4607,8 @@ button {
 
   @media (max-width: 640px) {
     .md-report-data-editor-preview .md-chart-visualization-shell,
-    .md-report-data-editor-preview .md-report-summary-block,
-    .md-report-data-editor-preview .md-report-spend-block {
+  .md-report-data-editor-preview .md-report-summary-block,
+  .md-report-data-editor-preview .md-report-spend-block {
       padding: 12px;
     }
 
@@ -2061,7 +4626,7 @@ button {
     }
 
     .md-report-data-editor-preview .md-chart-footer,
-    .md-report-data-editor-preview .md-chart-header p {
+  .md-report-data-editor-preview .md-chart-header p {
       display: none;
     }
 
@@ -2074,8 +4639,8 @@ button {
     }
 
     .md-report-data-editor-preview .md-report-kpi-card,
-    .md-report-data-editor-preview .md-report-table-header,
-    .md-report-data-editor-preview .md-report-table-row {
+  .md-report-data-editor-preview .md-report-table-header,
+  .md-report-data-editor-preview .md-report-table-row {
       padding: 12px;
     }
 
@@ -2108,7 +4673,7 @@ button {
 
   @keyframes md-ai-edge-breathe {
     0%,
-    100% {
+  100% {
       opacity: calc(0.78 * var(--md-ai-edge-strength));
       filter: blur(8px) saturate(1.08);
     }
@@ -2119,30 +4684,2016 @@ button {
     }
   }
 
+  /* Shared Kanban system ported from the Databrain OS source authority. */
+  .md-kanban-column {
+    display: grid;
+    align-content: start;
+    gap: 0;
+    min-width: 0;
+    padding: 0;
+    overflow: hidden;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-surface);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 9%, transparent),
+      0 1px 2px color-mix(in srgb, var(--md-ink) 4%, transparent),
+      0 10px 28px color-mix(in srgb, var(--md-ink) 4%, transparent);
+    transition:
+      background-color var(--md-motion-fast),
+      box-shadow var(--md-motion-fast);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .md-kanban-column[data-drop-target="true"] {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--md-kanban-status-color, var(--md-accent)) 46%, transparent),
+      0 1px 2px color-mix(in srgb, var(--md-ink) 4%, transparent),
+      0 14px 34px color-mix(in srgb, var(--md-kanban-status-color, var(--md-accent)) 14%, transparent);
+  }
+
+  .md-kanban-column[data-drop-target="true"] > [data-kanban-list] {
+    background: color-mix(in srgb, var(--md-kanban-status-color, var(--md-accent)) 5%, transparent);
+  }
+
+  .md-kanban-column > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    margin: 0;
+    padding: 11px 14px;
+    background: color-mix(in srgb, var(--md-surface-soft) 52%, var(--md-surface));
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--md-ink) 8%, transparent);
+  }
+
+  .md-kanban-column > header h2,
+  .md-kanban-column > header strong {
+    color: var(--md-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  .md-kanban-column > [data-kanban-list] {
+    display: grid;
+    align-content: start;
+    gap: 0;
+    min-height: 42px;
+    transition: background-color var(--md-motion-fast);
+  }
+
+  .md-kanban-card {
+    position: relative;
+    display: grid;
+    gap: 7px;
+    width: 100%;
+    min-width: 0;
+    padding: 12px 14px 13px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--md-ink);
+    text-align: start;
+    box-shadow: none;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: grab;
+    transition:
+      background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-kanban-card + .md-kanban-card {
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--md-ink) 8%, transparent);
+  }
+
+  .md-kanban-card:hover {
+    background: color-mix(in srgb, var(--md-ink) 2.5%, transparent);
+  }
+
+  .md-crm-deal-card {
+    background: color-mix(in srgb, var(--md-crm-deal-tone, var(--md-ink)) 1.6%, transparent);
+  }
+
+  .md-crm-deal-card:hover {
+    background: color-mix(in srgb, var(--md-crm-deal-tone, var(--md-ink)) 3.5%, transparent);
+  }
+
+  .md-kanban-card:focus-visible,
+  .md-kanban-card:has(.md-kanban-card__primary:focus-visible) {
+    z-index: 1;
+    outline: none;
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--md-accent) 48%, transparent);
+  }
+
+  .md-kanban-card__primary {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: start;
+    outline: none;
+  }
+
+  /* The lifted copy follows the pointer, so what stays behind is just the slot
+     the card will drop back into. */
+  .md-kanban-card[data-kanban-dragging="true"] {
+    opacity: 0.34;
+    transform: scale(0.9);
+    transform-origin: 50% 50%;
+    cursor: grabbing;
+  }
+
+  .md-kanban-card[data-kanban-dragging="true"]::after {
+    position: absolute;
+    inset: 4px 8px;
+    border: 1px dashed color-mix(in srgb, var(--md-ink) 22%, transparent);
+    border-radius: var(--md-radius-md);
+    content: "";
+  }
+
+  .md-kanban-empty {
+    min-height: 42px;
+    margin: 10px 14px 14px;
+    padding: 10px;
+    border-radius: var(--md-radius-md);
+    background: color-mix(in srgb, var(--md-ink) 3%, transparent);
+    color: var(--md-subtle);
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  /* The dragged card is the real card, lifted: it ramps up fast then settles, so
+     the pickup reads as weight rather than a pop. */
+  .md-kanban-drag-preview {
+    position: fixed;
+    pointer-events: none;
+    transform-origin: 50% 50%;
+    will-change: left, top, transform;
+    z-index: 90;
+  }
+
+  .md-kanban-drag-preview-card {
+    --md-kanban-lift-hairline: inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 10%, transparent);
+    --md-kanban-lift-rest: 0 2px 6px rgba(12, 20, 28, 0.1);
+    --md-kanban-lift-raised: 0 4px 10px rgba(12, 20, 28, 0.12), 0 24px 48px rgba(12, 20, 28, 0.2);
+    display: grid;
+    gap: 7px;
+    padding: 12px 14px 13px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-surface);
+    color: var(--md-ink);
+    box-shadow: var(--md-kanban-lift-hairline), var(--md-kanban-lift-raised);
+    transform: scale(1.04);
+    transform-origin: 50% 50%;
+    animation: md-kanban-drag-lift 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  [data-theme="dark"] .md-kanban-column {
+    background: var(--md-surface-soft);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, #ffffff 10%, transparent),
+      0 12px 30px rgba(0, 0, 0, 0.36);
+  }
+
+  [data-theme="dark"] .md-kanban-column[data-drop-target="true"] {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--md-kanban-status-color, var(--md-accent)) 54%, transparent),
+      0 14px 34px rgba(0, 0, 0, 0.4);
+  }
+
+  [data-theme="dark"] .md-kanban-column > header {
+    background: color-mix(in srgb, #ffffff 3%, transparent);
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, #ffffff 10%, transparent);
+  }
+
+  [data-theme="dark"] .md-kanban-card + .md-kanban-card {
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 9%, transparent);
+  }
+
+  [data-theme="dark"] .md-kanban-card:hover {
+    background: color-mix(in srgb, #ffffff 5%, transparent);
+  }
+
+  [data-theme="dark"] .md-kanban-drag-preview-card {
+    --md-kanban-lift-hairline: inset 0 0 0 1px color-mix(in srgb, #ffffff 14%, transparent);
+    --md-kanban-lift-rest: 0 2px 6px rgba(0, 0, 0, 0.34);
+    --md-kanban-lift-raised: 0 4px 12px rgba(0, 0, 0, 0.4), 0 26px 52px rgba(0, 0, 0, 0.52);
+    background: color-mix(in srgb, #ffffff 6%, var(--md-surface-soft));
+  }
+
+  [data-theme="dark"] .md-kanban-card[data-kanban-dragging="true"]::after {
+    border-color: color-mix(in srgb, #ffffff 26%, transparent);
+  }
+
+  @keyframes md-kanban-drag-lift {
+    from {
+      box-shadow: var(--md-kanban-lift-hairline), var(--md-kanban-lift-rest);
+      transform: scale(1);
+    }
+
+    to {
+      box-shadow: var(--md-kanban-lift-hairline), var(--md-kanban-lift-raised);
+      transform: scale(1.04);
+    }
+  }
+
   @media (max-width: 640px) {
     .md-toast {
-      min-height: 64px;
-      padding: 14px 15px;
+      min-height: 48px;
+      gap: 7px;
+      padding: 5px 8px;
+    }
+
+    [data-sonner-toast].md-toast {
+      min-height: 48px !important;
+      gap: 7px !important;
+      padding: 5px 8px !important;
+    }
+
+    [data-sonner-toast].md-toast .md-toast-icon,
+  [data-sonner-toast].md-toast [data-icon] {
+      width: 26px !important;
+      height: 26px !important;
+      min-width: 26px !important;
+    }
+
+    .md-toast-status-art {
+      width: 32px;
+      height: 32px;
+    }
+
+    [data-sonner-toast].md-toast .md-toast-title,
+  [data-sonner-toast].md-toast [data-title] {
+      font-size: 12.5px !important;
+    }
+
+    [data-sonner-toast].md-toast [data-button],
+  [data-sonner-toast].md-toast [data-cancel],
+  [data-sonner-toast].md-toast [data-close-button] {
+      min-width: 58px !important;
+      height: 28px !important;
+      padding-inline: 9px !important;
+      font-size: 10.5px !important;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .md-toast-action,
+  .md-toast-cancel,
+  .md-toast-close,
+  [data-sonner-toast].md-toast [data-button],
+  [data-sonner-toast].md-toast [data-cancel],
+  [data-sonner-toast].md-toast [data-close-button] {
+      animation: none !important;
+      background-size: 0% 100% !important;
+      transition-duration: 0.01ms !important;
+    }
+
+    .md-kanban-column,
+  .md-kanban-column > [data-kanban-list],
+  .md-kanban-card {
+      transition-duration: 0.01ms !important;
+    }
+
+    .md-kanban-drag-preview-card {
+      animation: none;
+      transform: none;
+    }
+
     .md-ai-edge-glow__signal,
-    .md-ai-edge-glow__frame {
+  .md-ai-edge-glow__frame {
       animation: none !important;
     }
 
     .md-dexter-pill,
-    .md-dexter-pill__shader,
-    .md-dexter-pill__contrast,
-    .md-dexter-pill__slot-glyph {
+  .md-dexter-pill__shader,
+  .md-dexter-pill__contrast,
+  .md-dexter-pill__slot-glyph {
       transition-duration: 0.01ms !important;
       transition-delay: 0ms !important;
     }
 
+    .md-dexter-markdown--streaming > :last-child::after {
+      animation: none;
+      opacity: 1;
+    }
+
     .md-dexter-pill:hover .md-dexter-pill__shader,
-    .md-dexter-pill:focus-visible .md-dexter-pill__shader {
+  .md-dexter-pill:focus-visible .md-dexter-pill__shader {
       transform: scale(1.04);
     }
+  }
+}
+
+/*
+ * Kanban spacing is intentionally unlayered. The imported component library
+ * registers its component layer before Tailwind's reset layer, which otherwise
+ * wins the cascade and zeroes the copied Databrain padding at runtime.
+ */
+.md-kanban-column > header {
+  padding: 11px 14px;
+}
+
+.md-kanban-card {
+  padding: 12px 14px 13px;
+  transition:
+    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-kanban-card[data-kanban-dragging="true"] {
+  opacity: 0.34;
+  transform: scale(0.9);
+  transform-origin: 50% 50%;
+}
+
+.md-kanban-card[data-kanban-dragging="true"]::after {
+  border: 1px dashed color-mix(in srgb, var(--md-ink) 22%, transparent);
+}
+
+.md-kanban-empty {
+  margin: 10px 14px 14px;
+  padding: 10px;
+}
+
+.md-kanban-drag-preview-card {
+  padding: 12px 14px 13px;
+}
+
+/* Settings workspace ------------------------------------------------------ */
+
+.md-settings-page {
+  isolation: isolate;
+}
+
+.md-settings-page::before {
+  position: fixed;
+  z-index: -1;
+  inset-block-start: -16rem;
+  inset-inline-end: -10rem;
+  width: 38rem;
+  height: 38rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--md-accent) 7%, transparent), transparent 68%);
+  content: "";
+  pointer-events: none;
+}
+
+.md-settings-panel {
+  transition:
+    box-shadow var(--md-motion),
+    background-color var(--md-motion);
+}
+
+.md-settings-panel:focus-within {
+  box-shadow:
+    var(--md-premium-stroke),
+    0 16px 34px rgba(42, 52, 50, 0.1);
+}
+
+.md-settings-progress-ring {
+  background:
+    conic-gradient(
+      var(--md-settings-progress-color) 0 var(--md-settings-progress),
+      var(--md-surface-tint) var(--md-settings-progress) 100%
+    );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-settings-progress-color) 12%, transparent),
+    0 8px 20px rgba(42, 52, 50, 0.08);
+}
+
+.md-settings-identity__orbit {
+  position: absolute;
+  inset-block-start: -10rem;
+  inset-inline-start: -7rem;
+  width: 24rem;
+  height: 24rem;
+  border: 1px solid color-mix(in srgb, var(--md-accent) 12%, transparent);
+  border-radius: 999px;
+  box-shadow:
+    0 0 0 2.5rem color-mix(in srgb, var(--md-accent) 2.5%, transparent),
+    0 0 0 5rem color-mix(in srgb, var(--md-accent) 1.8%, transparent);
+  pointer-events: none;
+}
+
+/* Sizing the preview bloom's canvas here keeps it off the React render path.
+   Deliberately inert: no transform and no transition, so ten canvases sitting on
+   the settings page cost nothing to hover across and never get promoted to ten
+   compositor layers. */
+.md-accent-card__shader,
+  .md-accent-card__shader > *,
+  .md-accent-card__shader canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.md-accent-card__shader {
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.md-accent-card__dexter {
+  isolation: isolate;
+}
+
+.md-settings-preview::after {
+  position: absolute;
+  inset: auto 1.25rem 1.25rem auto;
+  width: 5rem;
+  height: 5rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--md-accent) 8%, transparent), transparent 72%);
+  content: "";
+  pointer-events: none;
+}
+
+.md-settings-preview__row {
+  min-height: 2.5rem;
+  transition: min-height var(--md-motion);
+}
+
+.md-settings-preview[data-density="compact"] .md-settings-preview__row {
+  min-height: 2rem;
+}
+
+.md-settings-preview[data-density="roomy"] .md-settings-preview__row {
+  min-height: 3rem;
+}
+
+.md-settings-ai-stage__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--md-accent) 4.5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--md-accent) 4.5%, transparent) 1px, transparent 1px);
+  background-position: center;
+  background-size: 32px 32px;
+  mask-image: linear-gradient(to right, transparent, black 18%, black 82%, transparent);
+  pointer-events: none;
+}
+
+@media (max-width: 47.99rem) {
+  .md-settings-page::before {
+    width: 24rem;
+    height: 24rem;
+  }
+
+  .md-settings-identity__orbit {
+    inset-block-start: -11rem;
+    inset-inline-start: -9rem;
+  }
+}
+
+@media (pointer: coarse) {
+  [data-settings-page] button,
+  [data-settings-page] input,
+  [data-settings-page] select,
+  [data-settings-page] [role="combobox"] {
+    min-height: 44px;
+  }
+}
+
+.md-email-marketing-tabs {
+  scrollbar-width: none;
+}
+
+.md-email-marketing-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.md-email-marketing-tabs-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.md-email-marketing-tabs-fade {
+  position: absolute;
+  z-index: 2;
+  inset-block: 0.125rem;
+  inset-inline-end: 0;
+  width: 4rem;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    color-mix(in srgb, var(--md-bg) 16%, transparent) 28%,
+    color-mix(in srgb, var(--md-bg) 66%, transparent) 68%,
+    color-mix(in srgb, var(--md-bg) 98%, transparent) 100%
+  );
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  mask-image: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 0.42) 44%, #000 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 0.42) 44%, #000 100%);
+}
+
+[dir="rtl"] .md-email-marketing-tabs-fade {
+  background: linear-gradient(
+    to left,
+    transparent 0%,
+    color-mix(in srgb, var(--md-bg) 16%, transparent) 28%,
+    color-mix(in srgb, var(--md-bg) 66%, transparent) 68%,
+    color-mix(in srgb, var(--md-bg) 98%, transparent) 100%
+  );
+  mask-image: linear-gradient(to left, transparent 0%, rgba(0, 0, 0, 0.42) 44%, #000 100%);
+  -webkit-mask-image: linear-gradient(to left, transparent 0%, rgba(0, 0, 0, 0.42) 44%, #000 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-settings-preview__row,
+  .md-settings-panel {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Automation canvas
+   The grid is painted on the viewport rather than the transformed content, so
+   panning never repaints a growing surface and the dots stay a constant size
+   regardless of zoom.
+   -------------------------------------------------------------------------- */
+
+.md-automation-canvas {
+  background-image: radial-gradient(circle at 1px 1px, rgba(11, 20, 19, 0.09) 1px, transparent 0);
+  background-size: 22px 22px;
+}
+
+.dark .md-automation-canvas {
+  background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.08) 1px, transparent 0);
+}
+
+/* --------------------------------------------------------------------------
+   Dexter summon
+   The overlay that appears when an operator holds the platform modifier and
+   double-clicks something. Everything in this layer is driven by transforms and
+   two box sizes, so following a scroll or travelling between candidates stays on
+   the compositor and never asks the app to re-render.
+   -------------------------------------------------------------------------- */
+
+.md-summon-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  pointer-events: none;
+  isolation: isolate;
+}
+
+/* Shared geometry. The three tracking layers are positioned at the origin and
+   moved with `translate`, which is why they can share one set of springs. */
+.md-summon-spotlight,
+  .md-summon-halo,
+  .md-summon-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  /* Transform only. Hinting width and height would ask the compositor to reserve
+     for properties it cannot accelerate anyway, and these three are only in the
+     tree while the overlay is open. */
+  will-change: transform;
+}
+
+/* The dim is painted by one enormous spread on the cut-out itself. A single
+   element keeps the hole's rounded corners exact and avoids masking four
+   separate panels around it every frame.
+
+   Its fade is a CSS transition rather than an animation: one property, driven by
+   the phase on the layer, with nothing to orchestrate. */
+.md-summon-spotlight {
+  opacity: 0;
+  box-shadow: 0 0 0 100vmax var(--md-summon-scrim);
+  transition: opacity 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.md-summon-layer[data-phase="picking"] .md-summon-spotlight {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-summon-spotlight {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* Light cast by the ring, drawn as a sibling because the ring's own mask would
+   clip a glow away with its middle. */
+.md-summon-halo {
+  box-shadow:
+    0 0 0 1px var(--md-accent-a24),
+    0 0 12px var(--md-accent-a28),
+    0 16px 44px var(--md-accent-a26);
+}
+
+/* The ring is a shader with its middle cut out, so the accent bloom reads as the
+   element's own stroke rather than a box drawn on top of it.
+
+   The accent fill underneath matters: a 3px band shows only a sliver of the
+   shader, and the bloom's unlit stops are nearly black. On the accent the band
+   reads as a lit teal stroke; on nothing it reads as a dark outline. */
+.md-summon-ring {
+  padding: 3px;
+  background: var(--md-accent);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+  -webkit-mask-clip: content-box, border-box;
+  -webkit-mask-composite: xor;
+  mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+  mask-clip: content-box, border-box;
+  mask-composite: exclude;
+}
+
+.md-summon-ring__shader {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  contain: paint;
+}
+
+.md-summon-ring__shader > *,
+  .md-summon-ring__shader canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* The one part of the layer that is interactive, so it opts back in. */
+.md-summon-prompt-anchor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: auto;
+  will-change: transform;
+}
+
+.md-summon-prompt {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 0 0 1px var(--md-accent-deep-a16),
+    0 22px 52px rgba(11, 20, 19, 0.22);
+}
+
+/* The header chips sit on the shader, so they need their own frosted surface to
+   stay legible while the bloom moves underneath. */
+.md-summon-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 2px rgba(11, 20, 19, 0.08);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--md-ink);
+  backdrop-filter: blur(8px) saturate(1.3);
+}
+
+.dark .md-summon-chip {
+  background: color-mix(in srgb, var(--md-surface) 82%, transparent);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+}
+
+.md-summon-chip--fast {
+  color: var(--md-accent);
+  cursor: default;
+}
+
+.md-summon-input::placeholder {
+  opacity: 1;
+}
+
+/* The picking hint. Docked low and centred so it never covers the thing the
+   operator is aiming at. */
+.md-summon-hud {
+  position: fixed;
+  z-index: 200;
+  inset-inline: 0;
+  bottom: 22px;
+  margin-inline: auto;
+  display: flex;
+  width: fit-content;
+  max-width: calc(100vw - 32px);
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--md-glass-strong);
+  box-shadow: var(--md-shadow-lift);
+  backdrop-filter: blur(18px) saturate(1.4);
+  pointer-events: none;
+}
+
+/* The layer never takes pointer events, in any phase. The picker hit-tests with
+   `elementFromPoint`, and a layer that could be returned by that call would hide
+   the page underneath it from its own picker. Input is intercepted at the window
+   instead, and the crosshair is set on the document. */
+html.md-summon-picking,
+  html.md-summon-picking * {
+  cursor: crosshair !important;
+}
+
+html.md-summon-picking {
+  /* Stops a drag across the page from selecting text while an area is chosen. */
+  user-select: none;
+}
+
+/* --------------------------------------------------------------------------
+   Keyboard shortcut editor
+   -------------------------------------------------------------------------- */
+
+.md-shortcut-row {
+  transition: background-color var(--md-motion-fast);
+}
+
+.md-shortcut-row:hover {
+  background: var(--md-accent-a035);
+}
+
+.md-shortcut-value {
+  background: var(--md-field-bg);
+  box-shadow: var(--md-shadow-line);
+  transition:
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-shortcut-value:hover {
+  background: var(--md-field-bg-hover);
+  box-shadow: var(--md-shadow-line), 0 0 0 1px var(--md-accent-a18);
+}
+
+.md-shortcut-value:active {
+  scale: 0.985;
+}
+
+.md-shortcut-value:focus-visible {
+  outline: none;
+  box-shadow: var(--md-shadow-line), 0 0 0 3px var(--md-accent-a20);
+}
+
+/* The recorder announces that it has the keyboard: accent surface, accent edge,
+   and one slow breath so it reads as live without becoming a strobe. */
+.md-shortcut-well {
+  background: var(--md-accent-a08);
+  box-shadow: 0 0 0 1px var(--md-accent-a35);
+}
+
+.md-shortcut-well__pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 0 var(--md-accent-a28);
+  animation: md-shortcut-listening 2.1s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@keyframes md-shortcut-listening {
+  0% {
+    box-shadow: 0 0 0 0 var(--md-accent-a28);
+  }
+  70% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--md-accent-tint) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--md-accent-tint) 0%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-shortcut-well__pulse {
+    animation: none;
+  }
+
+  .md-shortcut-row,
+  .md-shortcut-value {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Inbox workspace
+   -------------------------------------------------------------------------- */
+
+/* Dexter summary uses the same full-fill bloom as the Dexter action and prompt
+   surfaces. A dark scrim sits between the canvas and copy so the moving colour
+   never competes with the operational text. */
+.md-dexter-summary {
+  color: white;
+  background: var(--md-accent-abyss);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 0 0 1px var(--md-accent-deep-a16),
+    0 12px 30px var(--md-accent-deep-a18);
+}
+
+.md-dexter-summary__shader {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+  contain: paint;
+  opacity: 0.9;
+  transform: scale(1.04);
+}
+
+.md-dexter-summary__shader,
+  .md-dexter-summary__shader > *,
+  .md-dexter-summary__shader canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.md-dexter-summary__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    112deg,
+    rgba(4, 12, 11, 0.82),
+    rgba(4, 12, 11, 0.69) 54%,
+    rgba(4, 12, 11, 0.76)
+  );
+}
+
+.md-dexter-summary[data-tone="warning"] .md-dexter-summary__scrim {
+  background: linear-gradient(112deg, rgba(25, 18, 7, 0.82), rgba(10, 13, 11, 0.7) 58%, rgba(14, 12, 8, 0.77));
+}
+
+.md-dexter-summary[data-tone="failed"] .md-dexter-summary__scrim {
+  background: linear-gradient(112deg, rgba(30, 8, 8, 0.84), rgba(12, 10, 10, 0.72) 58%, rgba(18, 8, 8, 0.78));
+}
+
+/* Button variants are declared after the Dexter component layer, so this
+   inbox-specific rule keeps the shader label readable in every interaction
+   state without changing the shared pill elsewhere. */
+.md-inbox-summarise,
+  .md-inbox-summarise:hover,
+  .md-inbox-summarise:focus-visible {
+  color: white !important;
+  background: var(--md-accent) !important;
+}
+
+.md-inbox-summarise {
+  transition-property: transform, box-shadow;
+  transition-duration: 360ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-inbox-summarise .md-dexter-pill__shader,
+  .md-inbox-summarise .md-dexter-pill__contrast {
+  transition-duration: 360ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-inbox-summarise .md-dexter-pill__slot-glyph {
+  transition-duration: 360ms;
+  transition-delay: calc(var(--md-dexter-character-index) * 20ms);
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The thread list keeps one scroll axis, so a message body can never take over
+   the page's scrolling. */
+[data-inbox-thread-row] {
+  scroll-margin-block: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-dexter-summary__shader {
+    transform: none;
+  }
+
+  .md-inbox-summarise,
+  .md-inbox-summarise .md-dexter-pill__shader,
+  .md-inbox-summarise .md-dexter-pill__contrast,
+  .md-inbox-summarise .md-dexter-pill__slot-glyph {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Settings → AI usage
+   The tab answers two questions: what did Dexter give back, and what is left.
+   The hero is deliberately dark in both themes – it carries a photographic
+   field image, and committing to one ink colour is what keeps the figures on
+   top legible without a heavier scrim.
+   -------------------------------------------------------------------------- */
+
+.md-ai-usage {
+  --md-ai-track: color-mix(in srgb, var(--md-text) 10%, transparent);
+  --md-ai-track-strong: color-mix(in srgb, var(--md-text) 14%, transparent);
+  --md-ai-hero-ink: #f2f7f2;
+  --md-ai-hero-text: rgba(233, 243, 234, 0.74);
+  --md-ai-hero-line: rgba(233, 243, 234, 0.16);
+  --md-ai-hero-track: rgba(233, 243, 234, 0.16);
+  --md-ai-hero-value: #9eecdd;
+  --md-ai-hero-cost: #f2c94c;
+  --md-ai-field-ink: #f2f7f2;
+  --md-ai-field-text: rgba(233, 243, 234, 0.74);
+  /* The chart is borrowed from the dashboard, which scopes its neutrals to
+     `.md-dashboard`; re-declare them here so the gridlines survive the move. */
+  --md-chart-grid: color-mix(in srgb, var(--md-text) 14%, transparent);
+  --md-dashboard-ring: 0 0 0 2px var(--md-accent-a20);
+}
+
+.md-ai-hero {
+  background:
+    linear-gradient(104deg, var(--md-accent-abyss) 0%, var(--md-accent-deep) 62%, color-mix(in srgb, var(--md-accent-glow-core) 32%, var(--md-accent-abyss)) 100%);
+  box-shadow: var(--md-premium-stroke), 0 18px 40px rgba(6, 36, 32, 0.22);
+}
+
+.md-ai-hero__image,
+  .md-ai-field-header__image {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* The field is used for its movement, not its hue. Blending it as luminosity
+     over the accent-derived base means the streaks survive while the colour
+     follows whichever accent the workspace has chosen – so the hero never
+     fights a plum or indigo theme. */
+  mix-blend-mode: luminosity;
+  opacity: 0.78;
+  filter: contrast(1.12);
+  pointer-events: none;
+  user-select: none;
+}
+
+.md-ai-hero__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  /* Heaviest under the headline, lightest on the far side, so the figures keep
+     a solid ground while the image stays visible where nothing sits on it. */
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--md-accent-abyss) 84%, transparent) 0%,
+      color-mix(in srgb, var(--md-accent-abyss) 46%, transparent) 44%,
+      color-mix(in srgb, var(--md-accent-abyss) 22%, transparent) 100%
+    ),
+    radial-gradient(120% 140% at 88% 6%, color-mix(in srgb, var(--md-accent-lift-strong) 14%, transparent), transparent 60%);
+  pointer-events: none;
+}
+
+/* A single slow pass of light while usage refreshes. It is opacity-and-transform
+   only, it never reflows the figures underneath, and it stops entirely when the
+   user has asked for less motion. */
+.md-ai-hero__sheen {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 42%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .md-ai-hero__sheen {
+    animation: md-ai-sheen 2.4s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+  }
+}
+
+@keyframes md-ai-sheen {
+  from {
+    transform: translate3d(-100%, 0, 0);
+  }
+
+  to {
+    transform: translate3d(340%, 0, 0);
+  }
+}
+
+.md-ai-glass {
+  background: rgba(11, 34, 30, 0.42);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow:
+    inset 0 0 0 1px rgba(233, 243, 234, 0.14),
+    0 12px 30px rgba(3, 20, 17, 0.28);
+}
+
+.md-ai-hero-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(233, 243, 234, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(233, 243, 234, 0.14);
+  color: var(--md-ai-hero-ink);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.md-ai-hero-chip--bright {
+  background: color-mix(in srgb, var(--md-accent-lift-strong) 20%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-accent-lift-strong) 34%, transparent);
+  color: var(--md-accent-lift-strong);
+}
+
+.md-ai-hero-chip__label {
+  color: var(--md-ai-hero-text);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+/* The scenario control sits on glass, so it borrows dark-surface tokens rather
+   than the page's light ones. */
+.md-ai-scenario {
+  --md-selected-bg: rgba(233, 243, 234, 0.16);
+  --md-selected-text: var(--md-ai-hero-ink);
+  background: rgba(4, 24, 21, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(233, 243, 234, 0.12);
+}
+
+.md-ai-scenario > button {
+  flex: 1 1 0;
+  color: var(--md-ai-hero-text);
+}
+
+.md-ai-scenario > button:hover {
+  color: var(--md-ai-hero-ink);
+}
+
+.md-ai-workings-toggle {
+  border-radius: var(--md-radius-sm);
+  transition: color var(--md-motion);
+}
+
+.md-ai-workings-toggle:hover {
+  color: var(--md-ai-hero-ink);
+}
+
+.md-ai-workings-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--md-accent-lift-strong) 60%, transparent);
+  outline-offset: 3px;
+}
+
+/* Height that animates without ever interpolating to `auto`. */
+.md-ai-workings {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-ai-workings[data-open] {
+  grid-template-rows: 1fr;
+}
+
+.md-ai-field-header {
+  background: linear-gradient(96deg, var(--md-accent-abyss) 0%, var(--md-accent-deep) 100%);
+  min-height: 96px;
+}
+
+.md-ai-field-header__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    96deg,
+    color-mix(in srgb, var(--md-accent-abyss) 90%, transparent) 8%,
+    color-mix(in srgb, var(--md-accent-abyss) 46%, transparent) 100%
+  );
+  pointer-events: none;
+}
+
+.md-ai-field-figure {
+  display: inline-flex;
+  align-items: baseline;
+  padding: 6px 12px;
+  border-radius: var(--md-radius-md);
+  background: rgba(233, 243, 234, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(233, 243, 234, 0.14);
+  color: var(--md-ai-field-ink);
+  font-size: 15px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Allowance meter -------------------------------------------------------- */
+
+.md-ai-allowance-meter {
+  background: var(--md-surface-soft);
+  box-shadow: inset 0 0 0 1px var(--md-line-strong);
+}
+
+.md-ai-allowance-meter__weave {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--md-text) 22%, transparent) 1px, transparent 1.2px);
+  background-size: 12px 12px;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.md-ai-allowance-meter__fill {
+  border-radius: var(--md-radius-lg);
+  background: linear-gradient(100deg, var(--md-accent), color-mix(in srgb, var(--md-accent) 62%, var(--md-blue)));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.md-ai-allowance-meter__projection {
+  border-start-end-radius: var(--md-radius-lg);
+  border-end-end-radius: var(--md-radius-lg);
+  background:
+    repeating-linear-gradient(
+      118deg,
+      color-mix(in srgb, var(--md-accent) 46%, transparent) 0 5px,
+      transparent 5px 10px
+    ),
+    color-mix(in srgb, var(--md-accent) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-accent) 26%, transparent);
+}
+
+/* Small months and fresh periods leave a fill only a few pixels wide. A floor
+   keeps "some usage" visually distinct from "none at all". */
+.md-ai-allowance-meter__fill {
+  min-width: 8px;
+}
+
+.md-ai-allowance-meter__pace {
+  width: 2px;
+  margin-inline-start: -1px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--md-ink) 52%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-surface) 70%, transparent);
+}
+
+.md-ai-key {
+  width: 12px;
+  height: 8px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.md-ai-key--used {
+  background: linear-gradient(100deg, var(--md-accent), color-mix(in srgb, var(--md-accent) 62%, var(--md-blue)));
+}
+
+.md-ai-key--projected {
+  background: repeating-linear-gradient(
+    118deg,
+    color-mix(in srgb, var(--md-accent) 42%, transparent) 0 3px,
+    transparent 3px 6px
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-accent) 26%, transparent);
+}
+
+.md-ai-key--pace {
+  width: 2px;
+  height: 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--md-ink) 52%, transparent);
+}
+
+/* Panels and rows -------------------------------------------------------- */
+
+.md-ai-panel {
+  transition: box-shadow var(--md-motion);
+}
+
+.md-ai-tile {
+  transition:
+    transform var(--md-motion),
+    box-shadow var(--md-motion);
+}
+
+.md-ai-tile:hover {
+  transform: translate3d(0, -2px, 0);
+  box-shadow: var(--md-premium-stroke), 0 16px 32px rgba(42, 52, 50, 0.11);
+}
+
+.md-ai-tile__icon {
+  transition: transform var(--md-motion);
+}
+
+.md-ai-tile:hover .md-ai-tile__icon {
+  transform: scale(1.05);
+}
+
+.md-ai-row {
+  transition: background-color var(--md-motion);
+}
+
+.md-ai-row:hover {
+  background: var(--md-hover);
+}
+
+.md-ai-ghost-button {
+  transition:
+    background-color var(--md-motion),
+    color var(--md-motion),
+    transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-ai-ghost-button:active {
+  transform: scale(0.97);
+}
+
+.md-ai-chart {
+  container-type: inline-size;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-ai-hero__sheen {
+    animation: none;
+  }
+
+  .md-ai-workings,
+  .md-ai-panel,
+  .md-ai-tile,
+  .md-ai-tile__icon,
+  .md-ai-row,
+  .md-ai-ghost-button {
+    transition-duration: 0.01ms;
+  }
+
+  .md-ai-tile:hover {
+    transform: none;
+  }
+}
+
+/* An amber projection reads as a warning without recolouring what has already
+   been spent – the used segment stays the accent it always was. */
+.md-ai-allowance-meter[data-pace="watch"] .md-ai-allowance-meter__projection {
+  background:
+    repeating-linear-gradient(
+      118deg,
+      color-mix(in srgb, var(--md-amber) 48%, transparent) 0 5px,
+      transparent 5px 10px
+    ),
+    color-mix(in srgb, var(--md-amber) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-amber) 28%, transparent);
+}
+
+.md-ai-allowance-meter[data-pace="over"] .md-ai-allowance-meter__projection {
+  background:
+    repeating-linear-gradient(
+      118deg,
+      color-mix(in srgb, var(--md-red) 48%, transparent) 0 5px,
+      transparent 5px 10px
+    ),
+    color-mix(in srgb, var(--md-red) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-red) 28%, transparent);
+}
+
+/* The panel is narrower than the dashboard the chart was built for, so the last
+   axis label would clip against the svg edge. The panel's own padding gives it
+   room once the svg stops cropping. */
+.md-ai-chart svg {
+  overflow: visible;
+}
+
+/* ------------------------------------------------------------------------ Drive
+   The company's private file workspace. Two tile shapes share one visual system:
+   a folder carries an operator-chosen colour, a file carries its own picture.
+
+   Folder colour reuses the ten accent presets, so a folder can never land on a
+   tone the product has not already checked for contrast in both themes. Both
+   members of the pair are written onto the element and CSS picks the one for the
+   current theme – that keeps the choice out of JavaScript, and means switching
+   theme cannot flash the wrong colour for a frame. */
+.md-drive-tone {
+  --md-drive-ink: var(--md-drive-ink-light);
+  --md-drive-wash: 7%;
+  --md-drive-wash-strong: 13%;
+  --md-drive-sheet: 15%;
+  --md-drive-edge: 14%;
+}
+
+:root.dark .md-drive-tone {
+  --md-drive-ink: var(--md-drive-ink-dark);
+  --md-drive-wash: 9%;
+  --md-drive-wash-strong: 15%;
+  --md-drive-sheet: 19%;
+  --md-drive-edge: 20%;
+}
+
+.md-drive-grid {
+  display: grid;
+  gap: var(--md-gap-md);
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+}
+
+/* --------------------------------------------------------------- folder tile */
+
+/* Two thin sheets sit behind the top edge, so the tile reads as something that
+   holds files rather than as another card. On hover they fan a couple of pixels
+   further out – the cheapest possible hint that there is something inside. */
+.md-drive-folder {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding-top: 6px;
+  text-align: start;
+  border-radius: var(--md-radius-xl);
+  outline: none;
+}
+
+.md-drive-folder__sheet {
+  position: absolute;
+  height: 14px;
+  border-start-start-radius: var(--md-radius-md);
+  border-start-end-radius: var(--md-radius-md);
+  transition: transform 340ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.md-drive-folder__sheet--back {
+  inset-inline: 18px;
+  top: 0;
+  background: color-mix(in srgb, var(--md-drive-ink) calc(var(--md-drive-sheet) * 0.5), var(--md-surface));
+}
+
+.md-drive-folder__sheet--front {
+  inset-inline: 10px;
+  top: 3px;
+  background: color-mix(in srgb, var(--md-drive-ink) var(--md-drive-sheet), var(--md-surface));
+}
+
+.md-drive-folder__body {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--md-radius-xl);
+  background: color-mix(in srgb, var(--md-drive-ink) var(--md-drive-wash), var(--md-surface));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-drive-ink) var(--md-drive-edge), transparent),
+    0 1px 2px rgba(11, 20, 19, 0.04);
+  transition:
+    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.md-drive-folder:hover .md-drive-folder__body,
+  .md-drive-folder:focus-visible .md-drive-folder__body {
+  background: color-mix(in srgb, var(--md-drive-ink) var(--md-drive-wash-strong), var(--md-surface));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-drive-ink) calc(var(--md-drive-edge) + 8%), transparent),
+    0 12px 26px color-mix(in srgb, var(--md-drive-ink) 14%, transparent);
+  transform: translate3d(0, -3px, 0);
+}
+
+.md-drive-folder:hover .md-drive-folder__sheet--back,
+  .md-drive-folder:focus-visible .md-drive-folder__sheet--back {
+  transform: translate3d(0, -3px, 0);
+}
+
+.md-drive-folder:hover .md-drive-folder__sheet--front,
+  .md-drive-folder:focus-visible .md-drive-folder__sheet--front {
+  transform: translate3d(0, -1.5px, 0);
+}
+
+.md-drive-folder:focus-visible .md-drive-folder__body {
+  outline: 2px solid color-mix(in srgb, var(--md-drive-ink) 62%, transparent);
+  outline-offset: 2px;
+}
+
+/* Presses are short and shallow: it should feel like the tile took the click, not
+   like it bounced. */
+.md-drive-folder[data-pressed="true"] .md-drive-folder__body {
+  transform: translate3d(0, -1px, 0) scale(0.985);
+  transition-duration: 110ms;
+}
+
+.md-drive-folder__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--md-radius-md);
+  color: var(--md-drive-ink);
+  background: color-mix(in srgb, var(--md-drive-ink) 13%, var(--md-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-drive-ink) 16%, transparent);
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1), background-color 200ms;
+}
+
+.md-drive-folder:hover .md-drive-folder__icon {
+  transform: scale(1.06);
+  background: color-mix(in srgb, var(--md-drive-ink) 19%, var(--md-surface));
+}
+
+/* ----------------------------------------------------------------- file tile */
+
+.md-drive-file {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  /* 4px against the tile's 14px radius puts the thumbnail on exactly 10px, so the
+     corners stay concentric instead of drifting apart. */
+  padding: 4px 4px 6px;
+  text-align: start;
+  border-radius: var(--md-radius-xl);
+  background: var(--md-surface);
+  box-shadow: var(--md-premium-stroke);
+  outline: none;
+  transition:
+    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.md-drive-file:hover,
+  .md-drive-file:focus-visible {
+  transform: translate3d(0, -3px, 0);
+  box-shadow: var(--md-premium-stroke), 0 14px 30px rgba(42, 52, 50, 0.11);
+}
+
+.md-drive-file:focus-visible {
+  outline: 2px solid var(--md-accent);
+  outline-offset: 2px;
+}
+
+.md-drive-file[data-pressed="true"] {
+  transform: translate3d(0, -1px, 0) scale(0.985);
+  transition-duration: 110ms;
+}
+
+.md-drive-thumb {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--md-radius-lg);
+  background: var(--md-surface-tint);
+  /* Its own paint layer, so a hovered thumbnail's zoom cannot invalidate the
+     whole grid. */
+  contain: paint;
+}
+
+.md-drive-thumb__layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 560ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+/* The seed is the ~1 KB preview carried on the row itself. It paints on the first
+   frame, blurred and slightly overscaled so its low resolution reads as depth of
+   field rather than as a broken image, and it stays underneath the real
+   thumbnail for good – there is nothing to remove, so nothing can flicker. */
+.md-drive-thumb__seed {
+  filter: blur(9px) saturate(1.06);
+  transform: scale(1.1);
+}
+
+.md-drive-thumb__image {
+  opacity: 0;
+  transition:
+    opacity 400ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 560ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.md-drive-thumb__image[data-loaded="true"] {
+  opacity: 1;
+}
+
+.md-drive-file:hover .md-drive-thumb__image[data-loaded="true"],
+  .md-drive-file:hover .md-drive-thumb__seed:only-child {
+  transform: scale(1.04);
+}
+
+/* Vector art and page renders are artwork on a sheet, not photography: cropping
+   them to fill the box would cut the logo in half. */
+.md-drive-thumb[data-fit="contain"] .md-drive-thumb__image {
+  object-fit: contain;
+  padding: 10px;
+}
+
+.md-drive-thumb[data-fit="contain"] {
+  background: color-mix(in srgb, var(--md-ink) 4%, var(--md-surface-soft));
+}
+
+.md-drive-thumb__glyph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--md-ink) 34%, transparent);
+  transition: transform 380ms cubic-bezier(0.16, 1, 0.3, 1), color 200ms;
+}
+
+.md-drive-file:hover .md-drive-thumb__glyph {
+  transform: scale(1.05);
+  color: color-mix(in srgb, var(--md-ink) 48%, transparent);
+}
+
+/* A pending tile starts with no picture at all – the preview is still being
+   rendered from the file. When the seed does land it eases in rather than
+   appearing, which is the one place in the grid where an image arrives into a box
+   that is already on screen. */
+.md-drive-thumb[data-pending="true"] .md-drive-thumb__seed {
+  animation: md-drive-seed-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes md-drive-seed-in {
+  from {
+    opacity: 0;
+    transform: scale(1.16);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+/* A pending upload keeps the same box the finished file will occupy, so nothing
+   moves when it lands. The sweep is the only thing that says "still working". */
+.md-drive-thumb[data-pending="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in srgb, var(--md-surface) 62%, transparent) 50%,
+    transparent 80%
+  );
+  animation: md-drive-sweep 1400ms cubic-bezier(0.5, 0.02, 0.5, 0.98) infinite;
+}
+
+@keyframes md-drive-sweep {
+  from {
+    transform: translate3d(-120%, 0, 0);
+  }
+  to {
+    transform: translate3d(120%, 0, 0);
+  }
+}
+
+.md-drive-progress-track {
+  stroke: color-mix(in srgb, var(--md-ink) 12%, transparent);
+}
+
+.md-drive-progress-value {
+  stroke: var(--md-accent);
+  /* Progress arrives in jumps from the network; easing the arc between them is
+     what makes it read as a continuous transfer. */
+  transition: stroke-dashoffset 320ms cubic-bezier(0.33, 0.8, 0.35, 1);
+}
+
+/* ------------------------------------------------------------------ dropzone */
+
+.md-drive-dropzone {
+  position: relative;
+  border-radius: var(--md-radius-2xl);
+  transition:
+    background-color 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-drive-dropzone[data-dragging="true"] {
+  background: color-mix(in srgb, var(--md-accent) 5%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--md-accent) 34%, transparent);
+}
+
+.md-drive-drop-hint {
+  animation: md-drive-drop-hint-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes md-drive-drop-hint-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/* ------------------------------------------------------------- colour swatch */
+
+.md-drive-swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--md-drive-ink);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 10%, transparent);
+  transition: transform 220ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.md-drive-swatch:hover {
+  transform: scale(1.12);
+}
+
+.md-drive-swatch[aria-checked="true"] {
+  transform: scale(1.06);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 10%, transparent),
+    0 0 0 2px var(--md-surface),
+    0 0 0 4px color-mix(in srgb, var(--md-drive-ink) 70%, transparent);
+}
+
+.md-drive-icon-choice {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--md-radius-lg);
+  color: var(--md-text);
+  transition:
+    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 220ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.md-drive-icon-choice:hover {
+  background: var(--md-hover);
+  color: var(--md-ink);
+}
+
+.md-drive-icon-choice[aria-checked="true"] {
+  color: var(--md-drive-ink);
+  background: color-mix(in srgb, var(--md-drive-ink) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-drive-ink) 26%, transparent);
+  transform: scale(1.04);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-drive-folder__sheet,
+  .md-drive-folder__body,
+  .md-drive-folder__icon,
+  .md-drive-file,
+  .md-drive-thumb__layer,
+  .md-drive-thumb__glyph,
+  .md-drive-swatch,
+  .md-drive-icon-choice,
+  .md-drive-dropzone,
+  .md-drive-progress-value {
+    transition-duration: 0.01ms;
+  }
+
+  .md-drive-folder:hover .md-drive-folder__body,
+  .md-drive-folder:hover .md-drive-folder__sheet--back,
+  .md-drive-folder:hover .md-drive-folder__sheet--front,
+  .md-drive-folder:hover .md-drive-folder__icon,
+  .md-drive-file:hover,
+  .md-drive-file:hover .md-drive-thumb__image[data-loaded="true"],
+  .md-drive-file:hover .md-drive-thumb__glyph {
+    transform: none;
+  }
+
+  .md-drive-thumb[data-pending="true"]::after,
+  .md-drive-thumb[data-pending="true"] .md-drive-thumb__seed,
+  .md-drive-drop-hint {
+    animation: none;
+  }
+}
+/* Every GPU effect keeps a textured painted frame underneath it. This layer is
+   synchronous, so a delayed WebGPU adapter, a restored tab, or a lost context
+   can never turn a shader surface into a flat or empty block. */
+[data-md-shader-fallback] {
+  isolation: isolate;
+}
+
+[data-md-shader-fallback]::after {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.24) 0 0.65px, transparent 0.85px);
+  background-size: 3px 3px;
+  content: "";
+  mix-blend-mode: soft-light;
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.md-crm-shader-fallback {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 112%, #5366e5 0%, #21174b 34%, #06030a 72%);
+}
+
+.md-crm-shader-fallback__plasma,
+.md-crm-shader-fallback__rings {
+  position: absolute;
+  inset: -38%;
+  pointer-events: none;
+}
+
+.md-crm-shader-fallback__plasma {
+  background:
+    radial-gradient(circle at 34% 68%, rgba(123, 166, 255, 0.88), transparent 28%),
+    radial-gradient(circle at 69% 72%, rgba(101, 76, 225, 0.82), transparent 33%);
+  filter: blur(12px);
+  opacity: 0.76;
+  animation: md-crm-fallback-drift 8s ease-in-out infinite alternate;
+}
+
+.md-crm-shader-fallback__rings {
+  background: repeating-conic-gradient(from 218deg at 50% 86%, rgba(184, 206, 255, 0.25) 0deg 2deg, transparent 2deg 11deg);
+  mask-image: radial-gradient(ellipse at 50% 86%, transparent 0 22%, black 34% 58%, transparent 76%);
+  opacity: 0.58;
+  animation: md-crm-fallback-turn 24s linear infinite;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 86%, transparent 0 22%, black 34% 58%, transparent 76%);
+}
+
+@keyframes md-crm-fallback-drift {
+  to { transform: translate3d(4%, -3%, 0) scale(1.06); }
+}
+
+@keyframes md-crm-fallback-turn {
+  to { transform: rotate(1turn); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-crm-shader-fallback__plasma,
+  .md-crm-shader-fallback__rings {
+    animation: none;
+  }
+}
+/* Push-to-talk never changes a field's appearance. One Figma-matched capsule
+   owns the whole status journey at the bottom of the viewport instead. */
+.md-dictation-status-dock {
+  position: fixed;
+  z-index: 220;
+  inset-inline: 0;
+  bottom: max(18px, calc(env(safe-area-inset-bottom) + 12px));
+  display: flex;
+  justify-content: center;
+  padding-inline: var(--md-page-pad);
+  pointer-events: none;
+}
+
+.md-dictation-status-pill {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  width: max-content;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  overflow: hidden;
+  padding-inline: 14px;
+  border-radius: 19px;
+  color: #ffffff;
+  background: var(--md-accent-tint);
+  box-shadow:
+    inset 0 0 7.8px color-mix(in srgb, var(--md-accent-lift-strong) 92%, #ffffff 8%),
+    0 10px 24px var(--md-accent-deep-a18);
+  isolation: isolate;
+}
+
+.dark .md-dictation-status-pill {
+  background: color-mix(in srgb, var(--md-accent-deep) 58%, var(--md-accent) 42%);
+}
+
+.md-dictation-status-pill[data-state="allowance"],
+.dark .md-dictation-status-pill[data-state="allowance"] {
+  background: color-mix(in srgb, var(--md-amber) 70%, #78350f 30%);
+  box-shadow:
+    inset 0 0 7.8px color-mix(in srgb, #fde68a 88%, #ffffff 12%),
+    0 10px 24px color-mix(in srgb, var(--md-amber) 24%, transparent);
+}
+
+.md-dictation-status-pill[data-state="error"],
+.dark .md-dictation-status-pill[data-state="error"] {
+  background: color-mix(in srgb, var(--md-red) 82%, #7f1d1d 18%);
+  box-shadow:
+    inset 0 0 7.8px color-mix(in srgb, #fecaca 86%, #ffffff 14%),
+    0 10px 24px color-mix(in srgb, var(--md-red) 22%, transparent);
+}
+
+.md-dictation-status-pill__label {
+  flex: none;
+  color: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.55;
+  white-space: nowrap;
+}
+
+.md-dictation-status-pill__indicator {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 24px;
+  height: 20px;
+}
+
+.md-dictation-status-pill__shape {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  border-radius: 999px;
+  background: #d9d9d9;
+  transform-origin: 50% 50%;
+}
+
+@media (max-width: 640px) {
+  .md-dictation-status-dock {
+    bottom: max(14px, calc(env(safe-area-inset-bottom) + 10px));
+  }
+}
+
+/* Mobile calendar details move as one full-height surface. */
+.md-calendar-mobile-details {
+  will-change: transform;
+}
+
+.md-calendar-mobile-details[data-state="open"] {
+  animation: md-calendar-mobile-details-in var(--md-motion-panel) both;
+}
+
+.md-calendar-mobile-details[data-state="closed"] {
+  animation: md-calendar-mobile-details-out var(--md-motion-fast) both;
+}
+
+@keyframes md-calendar-mobile-details-in {
+  from { transform: translate3d(100%, 0, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes md-calendar-mobile-details-out {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(100%, 0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-calendar-mobile-details[data-state] {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Operational ribbons are links, with a solid focus perimeter in either theme. */
+.md-calendar-day-ribbon {
+  touch-action: manipulation;
+}
+
+.md-calendar-day-ribbon:focus-visible {
+  outline: 2px solid var(--md-ink);
+  outline-offset: 2px;
+  text-decoration: underline;
+}
+
+@media (pointer: coarse) {
+  .md-calendar-day-ribbon {
+    min-height: 44px;
+  }
+}
+
+@media (forced-colors: active) {
+  .md-calendar-day-ribbon {
+    border: 1px solid LinkText;
+    color: LinkText;
+  }
+
+  .md-calendar-day-ribbon:focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+/* Ticket creation: compact choices and quiet, interruptible control feedback. */
+.support-ticket-form form {
+  gap: var(--md-gap-md);
+}
+
+.support-ticket-form details {
+  padding-block: var(--md-gap-xs);
+  padding-inline: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ticket-type-options {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  gap: var(--md-gap-xs);
+  padding: var(--md-gap-xs);
+  border-radius: var(--md-radius-lg);
+  background: var(--md-surface-soft);
+}
+
+.ticket-type-options .ticket-type-option {
+  position: relative;
+  isolation: isolate;
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: var(--md-radius-md);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--md-text);
+  background: transparent;
+  transition: color var(--md-motion-fast), scale var(--md-motion-fast);
+}
+
+.ticket-type-options .ticket-type-option:hover,
+.ticket-type-options .ticket-type-option[data-state="on"] {
+  color: var(--md-ink);
+}
+
+.ticket-type-options .ticket-type-option:active {
+  scale: 0.98;
+}
+
+.ticket-type-selection {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--md-surface);
+  box-shadow: var(--md-shadow-line);
+}
+
+.support-ticket-form [data-slot="input"],
+.support-ticket-form [data-slot="textarea"] {
+  background: var(--md-surface-soft);
+  font-weight: 400;
+}
+
+.support-ticket-form [data-slot="textarea"] {
+  field-sizing: fixed;
+  resize: vertical;
+  height: 80px;
+  min-height: 80px;
+  flex: 1;
+}
+
+.support-ticket-form [data-slot="input"]:hover,
+.support-ticket-form [data-slot="textarea"]:hover,
+.support-ticket-form [data-slot="input"]:focus-visible,
+.support-ticket-form [data-slot="textarea"]:focus-visible {
+  background: var(--md-field-bg-hover);
+}
+
+.support-ticket-surface [data-slot="button"] {
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.support-ticket-surface [data-slot="button"]:active {
+  scale: 0.98;
+}
+
+.support-ticket-surface [data-slot="button"] svg {
+  transition: transform var(--md-motion-fast);
+}
+
+.support-ticket-surface [data-slot="button"]:hover svg {
+  transform: translateY(-1px);
+}
+
+@media (max-width: 639px) {
+  .ticket-type-options .ticket-type-option,
+  .support-ticket-form [data-slot="button"],
+  .support-ticket-form [data-slot="input"] {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticket-type-options .ticket-type-option,
+  .support-ticket-surface [data-slot="button"],
+  .support-ticket-surface [data-slot="button"] svg {
+    transition: none;
+  }
+
+  .ticket-type-options .ticket-type-option:active,
+  .support-ticket-surface [data-slot="button"]:active {
+    scale: 1;
+  }
+
+  .support-ticket-surface [data-slot="button"]:hover svg {
+    transform: none;
   }
 }

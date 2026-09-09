@@ -1,11 +1,15 @@
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
-import { normaliseLocale, renderBrandedEmail, safeMultideckUrl } from "../_shared/email-template.ts"
+import { normaliseLocale, renderBrandedEmail } from "../_shared/email-template.ts"
+import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
+import { readConfiguredTenantBrand } from "../_shared/tenant-branding.ts"
 
 type NotificationRow = {
   CommNotif_ID: string
   CommNotif_UserID: string
   CommNotif_Title: string
   CommNotif_Body: string
+  CommNotif_TargetTable: string | null
+  CommNotif_TargetID: string | null
   CommNotif_MetadataJSON: Record<string, unknown> | null
 }
 
@@ -30,7 +34,7 @@ function secretsMatch(left: string | null, right: string | null) {
   return difference === 0
 }
 
-async function sendWithResend(to: string, subject: string, html: string, text: string) {
+async function sendWithResend(to: string, subject: string, html: string, text: string, idempotencyKey?: string) {
   const apiKey = Deno.env.get("RESEND_API_KEY")
   if (!apiKey) throw new Error("RESEND_API_KEY is not configured")
 
@@ -39,10 +43,12 @@ async function sendWithResend(to: string, subject: string, html: string, text: s
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
     },
+    signal: AbortSignal.timeout(15_000),
     body: JSON.stringify({
-      from: Deno.env.get("EMAIL_FROM") ?? "Multideck <support@multideck.app>",
-      reply_to: Deno.env.get("EMAIL_REPLY_TO") ?? "support@multideck.app",
+      from: MULTIDECK_EMAIL_FROM,
+      reply_to: MULTIDECK_EMAIL_REPLY_TO,
       to: [to],
       subject,
       html,
@@ -88,7 +94,7 @@ Deno.serve(async (request) => {
     const { data: currentWorkspaceUser, error: currentWorkspaceError } = authData.user
       ? await adminClient
         .from("cmp_Users")
-        .select("User_ID,User_Email,Auth_User_ID")
+        .select("User_ID,User_Email,Auth_User_ID,Company_ID")
         .eq("Auth_User_ID", authData.user.id)
         .single()
       : { data: null, error: null }
@@ -100,7 +106,8 @@ Deno.serve(async (request) => {
 
     if (requestBody.action === "test") {
       if (!authData.user || !currentWorkspaceUser) return json({ error: "A user session is required for test emails" }, 403)
-      const subject = "Your Multideck emails are ready"
+      const brand = await readConfiguredTenantBrand(adminClient, currentWorkspaceUser.Company_ID)
+      const subject = "Your branded notification emails are ready"
       const rendered = renderBrandedEmail({
         subject,
         preview: "Branded workspace email delivery is connected.",
@@ -114,6 +121,7 @@ Deno.serve(async (request) => {
         eyebrow: "Delivery test",
         footer: "Account security notices are always sent and cannot be disabled.",
         locale,
+        brand,
       })
       const delivery = await sendWithResend(currentWorkspaceUser.User_Email ?? authData.user.email, subject, rendered.html, rendered.text)
       return json({ delivered: true, id: delivery.id ?? null })
@@ -125,24 +133,26 @@ Deno.serve(async (request) => {
 
     const { data: notification, error: notificationError } = await adminClient
       .from("Comm_Notifications")
-      .select("CommNotif_ID,CommNotif_UserID,CommNotif_Title,CommNotif_Body,CommNotif_MetadataJSON")
+      .select("CommNotif_ID,CommNotif_UserID,CommNotif_Title,CommNotif_Body,CommNotif_MetadataJSON,CommNotif_TargetTable,CommNotif_TargetID")
       .eq("CommNotif_ID", requestBody.notificationId)
       .single<NotificationRow>()
     if (notificationError || !notification) return json({ error: "Notification not found" }, 404)
-    if (!isServiceRequest && !isDatabaseWebhook && notification.CommNotif_UserID !== currentWorkspaceUser?.User_ID) {
+    if (!isServiceRequest && !isDatabaseWebhook) {
       return json({ error: "Notification access denied" }, 403)
     }
 
     const { data: recipient, error: recipientError } = await adminClient
       .from("cmp_Users")
-      .select("User_ID,User_Email,Auth_User_ID")
+      .select("User_ID,User_Email,Auth_User_ID,Company_ID")
       .eq("User_ID", notification.CommNotif_UserID)
       .single()
     if (recipientError || !recipient?.User_Email) return json({ error: "Notification recipient not found" }, 404)
 
     const metadata = notification.CommNotif_MetadataJSON ?? {}
-    const eventType = String(metadata.event_type ?? "product_updates")
-    const { data: preference } = await adminClient
+    const previousDelivery = metadata.email_delivery as { resend_id?: string } | undefined
+    if (previousDelivery?.resend_id) return json({ delivered: true, id: previousDelivery.resend_id, skipped: "already_accepted" })
+    const eventType = String(metadata.event_type ?? (metadata.suggestion_id ? "document_parse" : "product_updates"))
+    const { data: preference, error: preferenceError } = await adminClient
       .from("Comm_UserNotificationPreferences")
       .select("CommNotifPref_IsEnabled")
       .eq("CommNotifPref_UserID", recipient.User_ID)
@@ -150,9 +160,27 @@ Deno.serve(async (request) => {
       .eq("CommNotifPref_EventType", eventType)
       .maybeSingle()
 
-    if (preference?.CommNotifPref_IsEnabled === false) return json({ delivered: false, skipped: "preference_disabled" })
+    if (preferenceError) throw new Error("Notification preferences could not be checked")
 
-    const actionUrl = safeMultideckUrl(metadata.action_url)
+    // Watch email is explicitly opt-in. A missing preference (for example on a
+    // newly provisioned user) must not silently turn a high-volume channel on.
+    if (
+      preference?.CommNotifPref_IsEnabled === false ||
+      ((eventType === "dexter_watch" || eventType === "document_parse") && preference?.CommNotifPref_IsEnabled !== true)
+    ) return json({ delivered: false, skipped: "preference_disabled" })
+
+    const configuredAppUrl = Deno.env.get("APP_URL")
+    if (!configuredAppUrl) throw new Error("Notification application URL is not configured")
+    const appOrigin = new URL(configuredAppUrl).origin
+    const suggestionId = metadata.suggestion_id ?? (notification.CommNotif_TargetTable === "AI_InboxSuggestedUpdates" ? notification.CommNotif_TargetID : null)
+    const recordPath = suggestionId ? `/inbox?view=suggested&suggestion=${encodeURIComponent(String(suggestionId))}`
+      : notification.CommNotif_TargetTable === "CRM_Leads" && notification.CommNotif_TargetID ? `/crm/leads/${encodeURIComponent(notification.CommNotif_TargetID)}` : "/app"
+    let actionUrl = `${appOrigin}${recordPath}`
+    try {
+      const candidate = new URL(String(metadata.action_url ?? metadata.url ?? recordPath), appOrigin)
+      if (candidate.origin === appOrigin && !candidate.username && !candidate.password) actionUrl = candidate.toString()
+    } catch { /* Keep the source record fallback. */ }
+    const brand = await readConfiguredTenantBrand(adminClient, recipient.Company_ID)
     const rendered = renderBrandedEmail({
       subject: notification.CommNotif_Title,
       preview: notification.CommNotif_Body,
@@ -163,28 +191,31 @@ Deno.serve(async (request) => {
       eyebrow: metadata.eyebrow ? String(metadata.eyebrow) : "Workspace update",
       footer: "You can change operational email preferences in Multideck settings.",
       locale,
+      brand,
     })
     const delivery = await sendWithResend(
       recipient.User_Email,
       notification.CommNotif_Title,
       rendered.html,
       rendered.text,
+      `notification/${notification.CommNotif_ID}`,
     )
 
-    await adminClient
+    const { error: receiptError } = await adminClient
       .from("Comm_Notifications")
       .update({
         CommNotif_MetadataJSON: {
           ...metadata,
           email_delivery: {
-            delivered_at: new Date().toISOString(),
+            accepted_at: new Date().toISOString(),
             resend_id: delivery.id ?? null,
           },
         },
       })
       .eq("CommNotif_ID", notification.CommNotif_ID)
 
-    return json({ delivered: true, id: delivery.id ?? null })
+    if (receiptError) throw new Error("Notification email acceptance could not be recorded")
+    return json({ delivered: true, accepted: true, id: delivery.id ?? null })
   } catch (error) {
     console.error("Notification email delivery failed", error)
     return json({ error: "Email delivery failed" }, 500)

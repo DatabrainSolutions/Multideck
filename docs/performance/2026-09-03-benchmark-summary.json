@@ -1,0 +1,3120 @@
+{
+  "quote-customer-autofill": {
+    "page": "Quotes",
+    "scenario": "Customer autofill",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 44.9,
+        "p95": 48.4
+      },
+      "savedMs": {
+        "median": 1129.3,
+        "p95": 1278.6
+      },
+      "apiRequests": {
+        "median": 4.0,
+        "p95": 4
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 12836.0,
+        "p95": 14906
+      },
+      "assetRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "foregroundApiRequests": {
+        "median": 4.0,
+        "p95": 4
+      },
+      "foregroundApiBytes": {
+        "median": 12836.0,
+        "p95": 14906
+      },
+      "backgroundApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "backgroundApiBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "assetBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 12836.0,
+        "p95": 14906
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 17.6,
+        "p95": 17.6
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 22.25,
+        "p95": 23
+      },
+      "savedMs": {
+        "median": 1121.35,
+        "p95": 1186.7
+      },
+      "apiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 3605.0,
+        "p95": 3609
+      },
+      "assetRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightRequests": {
+        "median": 0.5,
+        "p95": 1
+      },
+      "foregroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "foregroundApiBytes": {
+        "median": 3605.0,
+        "p95": 3609
+      },
+      "backgroundApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "backgroundApiBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "assetBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 3605.0,
+        "p95": 3609
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.25,
+        "p95": 18.6
+      }
+    }
+  },
+  "quote-supplier-autofill": {
+    "page": "Quotes",
+    "scenario": "Supplier autofill",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 36.2,
+        "p95": 39.6
+      },
+      "savedMs": {
+        "median": 1161.85,
+        "p95": 1416.1
+      },
+      "apiRequests": {
+        "median": 4.0,
+        "p95": 5
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 18474.5,
+        "p95": 20440
+      },
+      "assetRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightRequests": {
+        "median": 1.0,
+        "p95": 2
+      },
+      "foregroundApiRequests": {
+        "median": 4.0,
+        "p95": 4
+      },
+      "foregroundApiBytes": {
+        "median": 18474.5,
+        "p95": 20440
+      },
+      "backgroundApiRequests": {
+        "median": 0.0,
+        "p95": 1
+      },
+      "backgroundApiBytes": {
+        "median": 0.0,
+        "p95": 841
+      },
+      "assetBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 18474.5,
+        "p95": 20440
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 17.6,
+        "p95": 17.7
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 20.55,
+        "p95": 24.6
+      },
+      "savedMs": {
+        "median": 1058.8,
+        "p95": 1292.7
+      },
+      "apiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 3605.5,
+        "p95": 3608
+      },
+      "assetRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "foregroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "foregroundApiBytes": {
+        "median": 3605.0,
+        "p95": 3607
+      },
+      "backgroundApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "backgroundApiBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "assetBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 3605.5,
+        "p95": 3608
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.05,
+        "p95": 18.6
+      }
+    }
+  },
+  "quote-edit-save": {
+    "page": "Quotes",
+    "scenario": "Edit through Saved confirmation",
+    "primaryMetric": "savedMs",
+    "before": {
+      "usableMs": {
+        "median": 20.55,
+        "p95": 22.5
+      },
+      "savedMs": {
+        "median": 1087.8,
+        "p95": 1349.3
+      },
+      "apiRequests": {
+        "median": 4.0,
+        "p95": 4
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 24240.0,
+        "p95": 26244
+      },
+      "assetRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightRequests": {
+        "median": 0.5,
+        "p95": 1
+      },
+      "foregroundApiRequests": {
+        "median": 4.0,
+        "p95": 4
+      },
+      "foregroundApiBytes": {
+        "median": 24240.0,
+        "p95": 26077
+      },
+      "backgroundApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "backgroundApiBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "assetBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 24240.0,
+        "p95": 26244
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.05,
+        "p95": 18.6
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 16.3,
+        "p95": 16.8
+      },
+      "savedMs": {
+        "median": 1077.8,
+        "p95": 1279.7
+      },
+      "apiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 3605.0,
+        "p95": 3608
+      },
+      "assetRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightRequests": {
+        "median": 0.5,
+        "p95": 1
+      },
+      "foregroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "foregroundApiBytes": {
+        "median": 3605.0,
+        "p95": 3607
+      },
+      "backgroundApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "backgroundApiBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "assetBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 3605.0,
+        "p95": 3608
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.2,
+        "p95": 18.4
+      }
+    }
+  },
+  "home-cold-load": {
+    "page": "Home / shell",
+    "scenario": "Cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 911.55,
+        "p95": 1034.6
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 10.0,
+        "p95": 10
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 30472.0,
+        "p95": 30481
+      },
+      "assetRequests": {
+        "median": 39.0,
+        "p95": 39
+      },
+      "preflightRequests": {
+        "median": 11.0,
+        "p95": 11
+      },
+      "foregroundApiRequests": {
+        "median": 8.0,
+        "p95": 8
+      },
+      "foregroundApiBytes": {
+        "median": 27670.0,
+        "p95": 27675
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2802.0,
+        "p95": 2806
+      },
+      "assetBytes": {
+        "median": 1791569.0,
+        "p95": 1791607
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1822042.5,
+        "p95": 1822079
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.5,
+        "p95": 18.6
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 838.45,
+        "p95": 1041.8
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 9.0,
+        "p95": 9
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 29106.5,
+        "p95": 29115
+      },
+      "assetRequests": {
+        "median": 38.0,
+        "p95": 38
+      },
+      "preflightRequests": {
+        "median": 1.5,
+        "p95": 3
+      },
+      "foregroundApiRequests": {
+        "median": 7.0,
+        "p95": 7
+      },
+      "foregroundApiBytes": {
+        "median": 26305.0,
+        "p95": 26313
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2807
+      },
+      "assetBytes": {
+        "median": 1686351.5,
+        "p95": 1686387
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1715461.0,
+        "p95": 1715493
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 17.7,
+        "p95": 18.2
+      }
+    }
+  },
+  "bookings-cold-load": {
+    "page": "Bookings",
+    "scenario": "Register cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 1074.2,
+        "p95": 1186.5
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 7.0,
+        "p95": 7
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 11996.5,
+        "p95": 12003
+      },
+      "assetRequests": {
+        "median": 35.0,
+        "p95": 35
+      },
+      "preflightRequests": {
+        "median": 8.0,
+        "p95": 8
+      },
+      "foregroundApiRequests": {
+        "median": 5.0,
+        "p95": 5
+      },
+      "foregroundApiBytes": {
+        "median": 9194.0,
+        "p95": 9202
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2802.5,
+        "p95": 2804
+      },
+      "assetBytes": {
+        "median": 1775773.0,
+        "p95": 1775796
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1787769.5,
+        "p95": 1787794
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.5,
+        "p95": 18.6
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 1012.95,
+        "p95": 1363
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 6.0,
+        "p95": 6
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 10552.0,
+        "p95": 10561
+      },
+      "assetRequests": {
+        "median": 34.0,
+        "p95": 34
+      },
+      "preflightRequests": {
+        "median": 1.5,
+        "p95": 3
+      },
+      "foregroundApiRequests": {
+        "median": 4.0,
+        "p95": 4
+      },
+      "foregroundApiBytes": {
+        "median": 7750.0,
+        "p95": 7757
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2805
+      },
+      "assetBytes": {
+        "median": 1670551.0,
+        "p95": 1670587
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1681105.5,
+        "p95": 1681142
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 1
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 99
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.2,
+        "p95": 18.6
+      }
+    }
+  },
+  "crm-companies-cold-load": {
+    "page": "CRM",
+    "scenario": "Company directory cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 3302.95,
+        "p95": 3603.2
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 12.0,
+        "p95": 12
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 20838.0,
+        "p95": 20843
+      },
+      "assetRequests": {
+        "median": 26.0,
+        "p95": 26
+      },
+      "preflightRequests": {
+        "median": 13.0,
+        "p95": 13
+      },
+      "foregroundApiRequests": {
+        "median": 10.0,
+        "p95": 10
+      },
+      "foregroundApiBytes": {
+        "median": 18036.0,
+        "p95": 18041
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2802.0,
+        "p95": 2806
+      },
+      "assetBytes": {
+        "median": 1731982.0,
+        "p95": 1732015
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1752823.5,
+        "p95": 1752851
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.2,
+        "p95": 18.5
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 1651.7,
+        "p95": 2567.8
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 11.0,
+        "p95": 11
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 19392.5,
+        "p95": 19400
+      },
+      "assetRequests": {
+        "median": 25.0,
+        "p95": 25
+      },
+      "preflightRequests": {
+        "median": 2.5,
+        "p95": 5
+      },
+      "foregroundApiRequests": {
+        "median": 9.0,
+        "p95": 9
+      },
+      "foregroundApiBytes": {
+        "median": 16590.5,
+        "p95": 16596
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2805
+      },
+      "assetBytes": {
+        "median": 1626799.5,
+        "p95": 1626840
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1646194.0,
+        "p95": 1646237
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 2
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 281
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.2,
+        "p95": 18.6
+      }
+    }
+  },
+  "inbox-cold-load": {
+    "page": "Inbox",
+    "scenario": "Mailbox list cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 2028.95,
+        "p95": 2778.7
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 11.0,
+        "p95": 11
+      },
+      "duplicateApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "apiBytes": {
+        "median": 33834.5,
+        "p95": 33845
+      },
+      "assetRequests": {
+        "median": 17.0,
+        "p95": 17
+      },
+      "preflightRequests": {
+        "median": 12.0,
+        "p95": 12
+      },
+      "foregroundApiRequests": {
+        "median": 9.0,
+        "p95": 9
+      },
+      "foregroundApiBytes": {
+        "median": 31031.5,
+        "p95": 31039
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2802.0,
+        "p95": 2806
+      },
+      "assetBytes": {
+        "median": 1640891.0,
+        "p95": 1640928
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1674722.0,
+        "p95": 1674764
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.6,
+        "p95": 18.6
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 2009.35,
+        "p95": 2557.1
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 10.0,
+        "p95": 10
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 32404.5,
+        "p95": 32417
+      },
+      "assetRequests": {
+        "median": 17.0,
+        "p95": 17
+      },
+      "preflightRequests": {
+        "median": 4.0,
+        "p95": 5
+      },
+      "foregroundApiRequests": {
+        "median": 8.0,
+        "p95": 8
+      },
+      "foregroundApiBytes": {
+        "median": 29604.0,
+        "p95": 29613
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2808
+      },
+      "assetBytes": {
+        "median": 1638380.5,
+        "p95": 1638422
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1670792.0,
+        "p95": 1670819
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.1,
+        "p95": 18.4
+      }
+    }
+  },
+  "calendar-cold-load": {
+    "page": "Calendar",
+    "scenario": "Week view cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 1835.2,
+        "p95": 3091.7
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 8.0,
+        "p95": 8
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 24755.0,
+        "p95": 24853
+      },
+      "assetRequests": {
+        "median": 13.0,
+        "p95": 13
+      },
+      "preflightRequests": {
+        "median": 9.0,
+        "p95": 9
+      },
+      "foregroundApiRequests": {
+        "median": 6.0,
+        "p95": 6
+      },
+      "foregroundApiBytes": {
+        "median": 21952.5,
+        "p95": 22051
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2804
+      },
+      "assetBytes": {
+        "median": 1556021.0,
+        "p95": 1556047
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1580786.5,
+        "p95": 1580876
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "longTaskMs": {
+        "median": 63.0,
+        "p95": 69
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.25,
+        "p95": 18.4
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 1619.3,
+        "p95": 2285.4
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 6.0,
+        "p95": 6
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 13760.0,
+        "p95": 13763
+      },
+      "assetRequests": {
+        "median": 12.0,
+        "p95": 12
+      },
+      "preflightRequests": {
+        "median": 2.0,
+        "p95": 4
+      },
+      "foregroundApiRequests": {
+        "median": 4.0,
+        "p95": 4
+      },
+      "foregroundApiBytes": {
+        "median": 10955.5,
+        "p95": 10960
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2806
+      },
+      "assetBytes": {
+        "median": 1550524.5,
+        "p95": 1550554
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1564286.5,
+        "p95": 1564314
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 1
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 140
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.25,
+        "p95": 18.5
+      }
+    }
+  },
+  "calendar-meeting-composer": {
+    "page": "Calendar",
+    "scenario": "Open meeting composer",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 783.95,
+        "p95": 893.6
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 5077.0,
+        "p95": 5081
+      },
+      "assetRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "foregroundApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "foregroundApiBytes": {
+        "median": 5077.0,
+        "p95": 5081
+      },
+      "backgroundApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "backgroundApiBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "assetBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 5077.0,
+        "p95": 5081
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 1
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 53
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.6,
+        "p95": 18.6
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 571.05,
+        "p95": 914.2
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 1.0,
+        "p95": 2
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 1280.0,
+        "p95": 1283
+      },
+      "assetRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "foregroundApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "foregroundApiBytes": {
+        "median": 1280.0,
+        "p95": 1283
+      },
+      "backgroundApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "backgroundApiBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "assetBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1280.0,
+        "p95": 1283
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 1
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 84
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.4,
+        "p95": 18.6
+      }
+    }
+  },
+  "warehouse-inventory-cold-load": {
+    "page": "Warehouse",
+    "scenario": "Inventory cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 2058.7,
+        "p95": 2309.8
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 9.0,
+        "p95": 9
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 18678.5,
+        "p95": 18687
+      },
+      "assetRequests": {
+        "median": 37.0,
+        "p95": 37
+      },
+      "preflightRequests": {
+        "median": 10.0,
+        "p95": 10
+      },
+      "foregroundApiRequests": {
+        "median": 7.0,
+        "p95": 7
+      },
+      "foregroundApiBytes": {
+        "median": 15876.0,
+        "p95": 15883
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2802.0,
+        "p95": 2805
+      },
+      "assetBytes": {
+        "median": 1804432.5,
+        "p95": 1804461
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1823113.5,
+        "p95": 1823145
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.25,
+        "p95": 18.4
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 1970.65,
+        "p95": 3175.9
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 8.0,
+        "p95": 8
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 17234.0,
+        "p95": 17240
+      },
+      "assetRequests": {
+        "median": 36.0,
+        "p95": 36
+      },
+      "preflightRequests": {
+        "median": 5.0,
+        "p95": 6
+      },
+      "foregroundApiRequests": {
+        "median": 6.0,
+        "p95": 6
+      },
+      "foregroundApiBytes": {
+        "median": 14429.0,
+        "p95": 14436
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2807
+      },
+      "assetBytes": {
+        "median": 1699256.0,
+        "p95": 1699289
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1716489.5,
+        "p95": 1716525
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 3
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 387
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.6,
+        "p95": 18.6
+      }
+    }
+  },
+  "documents-with-previews-cold-load": {
+    "page": "Documents",
+    "scenario": "Cold load including previews",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 2935.5,
+        "p95": 5093
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 11.0,
+        "p95": 11
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 82701.0,
+        "p95": 82710
+      },
+      "assetRequests": {
+        "median": 25.0,
+        "p95": 25
+      },
+      "preflightRequests": {
+        "median": 12.0,
+        "p95": 12
+      },
+      "foregroundApiRequests": {
+        "median": 9.0,
+        "p95": 9
+      },
+      "foregroundApiBytes": {
+        "median": 79900.5,
+        "p95": 79908
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2802.0,
+        "p95": 2805
+      },
+      "assetBytes": {
+        "median": 4099955.5,
+        "p95": 4100182
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 4182653.0,
+        "p95": 4182877
+      },
+      "unfinishedRequests": {
+        "median": 3.0,
+        "p95": 3
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 2
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 143
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.1,
+        "p95": 18.4
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 2465.2,
+        "p95": 3882.3
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 10.0,
+        "p95": 10
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 81259.0,
+        "p95": 81270
+      },
+      "assetRequests": {
+        "median": 24.0,
+        "p95": 24
+      },
+      "preflightRequests": {
+        "median": 6.0,
+        "p95": 7
+      },
+      "foregroundApiRequests": {
+        "median": 8.0,
+        "p95": 8
+      },
+      "foregroundApiBytes": {
+        "median": 78458.5,
+        "p95": 78465
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2805
+      },
+      "assetBytes": {
+        "median": 4094277.0,
+        "p95": 4094483
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 4175538.0,
+        "p95": 4175742
+      },
+      "unfinishedRequests": {
+        "median": 3.0,
+        "p95": 3
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 2
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 119
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.3,
+        "p95": 18.5
+      }
+    }
+  },
+  "customs-export-register-cold-load": {
+    "page": "Customs",
+    "scenario": "Export register cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 1140.1,
+        "p95": 1501.3
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 8.0,
+        "p95": 8
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 12875.5,
+        "p95": 12882
+      },
+      "assetRequests": {
+        "median": 32.0,
+        "p95": 32
+      },
+      "preflightRequests": {
+        "median": 10.0,
+        "p95": 10
+      },
+      "foregroundApiRequests": {
+        "median": 6.0,
+        "p95": 6
+      },
+      "foregroundApiBytes": {
+        "median": 10073.0,
+        "p95": 10078
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2802.0,
+        "p95": 2805
+      },
+      "assetBytes": {
+        "median": 2121639.5,
+        "p95": 2121724
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 2134516.0,
+        "p95": 2134598
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 1
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 57
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.6,
+        "p95": 18.6
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 976.15,
+        "p95": 1224.5
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 7.0,
+        "p95": 7
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 11427.5,
+        "p95": 11434
+      },
+      "assetRequests": {
+        "median": 31.0,
+        "p95": 31
+      },
+      "preflightRequests": {
+        "median": 1.0,
+        "p95": 3
+      },
+      "foregroundApiRequests": {
+        "median": 5.0,
+        "p95": 5
+      },
+      "foregroundApiBytes": {
+        "median": 8625.5,
+        "p95": 8631
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2801.5,
+        "p95": 2805
+      },
+      "assetBytes": {
+        "median": 2016468.0,
+        "p95": 2016537
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 2027896.0,
+        "p95": 2027956
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 1
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 52
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.3,
+        "p95": 18.7
+      }
+    }
+  },
+  "rates-overview-cold-load": {
+    "page": "Rates",
+    "scenario": "Empty library cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 1519.3,
+        "p95": 1731.8
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 7.0,
+        "p95": 7
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 11517.5,
+        "p95": 11523
+      },
+      "assetRequests": {
+        "median": 14.0,
+        "p95": 14
+      },
+      "preflightRequests": {
+        "median": 8.0,
+        "p95": 8
+      },
+      "foregroundApiRequests": {
+        "median": 5.0,
+        "p95": 5
+      },
+      "foregroundApiBytes": {
+        "median": 8714.0,
+        "p95": 8719
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2806
+      },
+      "assetBytes": {
+        "median": 1574554.0,
+        "p95": 1574569
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1586069.0,
+        "p95": 1586088
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 1
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 57
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.35,
+        "p95": 18.6
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 1260.0,
+        "p95": 1596.5
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 6.0,
+        "p95": 6
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 10067.5,
+        "p95": 10074
+      },
+      "assetRequests": {
+        "median": 13.0,
+        "p95": 13
+      },
+      "preflightRequests": {
+        "median": 2.0,
+        "p95": 4
+      },
+      "foregroundApiRequests": {
+        "median": 4.0,
+        "p95": 4
+      },
+      "foregroundApiBytes": {
+        "median": 7265.5,
+        "p95": 7270
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2802.0,
+        "p95": 2806
+      },
+      "assetBytes": {
+        "median": 1568980.5,
+        "p95": 1569007
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1579047.5,
+        "p95": 1579081
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.35,
+        "p95": 18.6
+      }
+    }
+  },
+  "finance-currencies-cold-load": {
+    "page": "Finance",
+    "scenario": "Currencies and FX cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 2428.55,
+        "p95": 2840.1
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 8.0,
+        "p95": 8
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 35658.5,
+        "p95": 35668
+      },
+      "assetRequests": {
+        "median": 22.0,
+        "p95": 22
+      },
+      "preflightRequests": {
+        "median": 9.0,
+        "p95": 9
+      },
+      "foregroundApiRequests": {
+        "median": 6.0,
+        "p95": 6
+      },
+      "foregroundApiBytes": {
+        "median": 32857.0,
+        "p95": 32866
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2806
+      },
+      "assetBytes": {
+        "median": 1761648.5,
+        "p95": 1761665
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1797311.0,
+        "p95": 1797327
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 1.0,
+        "p95": 2
+      },
+      "longTaskMs": {
+        "median": 75.0,
+        "p95": 351
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.15,
+        "p95": 18.6
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 2123.15,
+        "p95": 3230.9
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 7.0,
+        "p95": 7
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 34209.0,
+        "p95": 34214
+      },
+      "assetRequests": {
+        "median": 22.0,
+        "p95": 22
+      },
+      "preflightRequests": {
+        "median": 3.0,
+        "p95": 5
+      },
+      "foregroundApiRequests": {
+        "median": 5.0,
+        "p95": 5
+      },
+      "foregroundApiBytes": {
+        "median": 31407.0,
+        "p95": 31412
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2802.0,
+        "p95": 2805
+      },
+      "assetBytes": {
+        "median": 1657355.0,
+        "p95": 1657379
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1691565.0,
+        "p95": 1691593
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 1.0,
+        "p95": 3
+      },
+      "longTaskMs": {
+        "median": 73.0,
+        "p95": 774
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.4,
+        "p95": 18.6
+      }
+    }
+  },
+  "dexter-home-cold-load": {
+    "page": "Dexter",
+    "scenario": "Home and watch summary cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 2310.05,
+        "p95": 3187.1
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 16.0,
+        "p95": 16
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 32552.5,
+        "p95": 32561
+      },
+      "assetRequests": {
+        "median": 30.0,
+        "p95": 30
+      },
+      "preflightRequests": {
+        "median": 17.0,
+        "p95": 17
+      },
+      "foregroundApiRequests": {
+        "median": 14.0,
+        "p95": 14
+      },
+      "foregroundApiBytes": {
+        "median": 29749.5,
+        "p95": 29757
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2804.0,
+        "p95": 2806
+      },
+      "assetBytes": {
+        "median": 2229568.5,
+        "p95": 2229600
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 2262118.5,
+        "p95": 2262159
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 3
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 358
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.6,
+        "p95": 18.6
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 2173.75,
+        "p95": 3286.8
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 15.0,
+        "p95": 15
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 31103.0,
+        "p95": 31110
+      },
+      "assetRequests": {
+        "median": 29.0,
+        "p95": 29
+      },
+      "preflightRequests": {
+        "median": 5.0,
+        "p95": 7
+      },
+      "foregroundApiRequests": {
+        "median": 13.0,
+        "p95": 13
+      },
+      "foregroundApiBytes": {
+        "median": 28300.5,
+        "p95": 28307
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2806
+      },
+      "assetBytes": {
+        "median": 2124401.5,
+        "p95": 2124421
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 2155502.0,
+        "p95": 2155528
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 4
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 845
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.0,
+        "p95": 33.2
+      }
+    }
+  },
+  "admin-activity-cold-load": {
+    "page": "Admin",
+    "scenario": "Activity cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 1486.15,
+        "p95": 2219.8
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 7.0,
+        "p95": 7
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 13309.0,
+        "p95": 13317
+      },
+      "assetRequests": {
+        "median": 17.0,
+        "p95": 17
+      },
+      "preflightRequests": {
+        "median": 8.0,
+        "p95": 8
+      },
+      "foregroundApiRequests": {
+        "median": 5.0,
+        "p95": 5
+      },
+      "foregroundApiBytes": {
+        "median": 10507.0,
+        "p95": 10512
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2802.5,
+        "p95": 2808
+      },
+      "assetBytes": {
+        "median": 1574054.5,
+        "p95": 1574076
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1587362.5,
+        "p95": 1587391
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 2
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 609
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.2,
+        "p95": 18.4
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 1553.85,
+        "p95": 2637
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 6.0,
+        "p95": 6
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 11867.0,
+        "p95": 11870
+      },
+      "assetRequests": {
+        "median": 16.0,
+        "p95": 16
+      },
+      "preflightRequests": {
+        "median": 4.0,
+        "p95": 4
+      },
+      "foregroundApiRequests": {
+        "median": 4.0,
+        "p95": 4
+      },
+      "foregroundApiBytes": {
+        "median": 9064.0,
+        "p95": 9068
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2805
+      },
+      "assetBytes": {
+        "median": 1569720.5,
+        "p95": 1569743
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1581583.5,
+        "p95": 1581609
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.5,
+        "p95": 4
+      },
+      "longTaskMs": {
+        "median": 35.0,
+        "p95": 1290
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.4,
+        "p95": 32
+      }
+    }
+  },
+  "profile-settings-cold-load": {
+    "page": "Settings",
+    "scenario": "Profile including images cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 1047.0,
+        "p95": 1436.6
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 9.0,
+        "p95": 9
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 13071.5,
+        "p95": 13078
+      },
+      "assetRequests": {
+        "median": 28.0,
+        "p95": 28
+      },
+      "preflightRequests": {
+        "median": 13.0,
+        "p95": 13
+      },
+      "foregroundApiRequests": {
+        "median": 7.0,
+        "p95": 7
+      },
+      "foregroundApiBytes": {
+        "median": 10270.0,
+        "p95": 10275
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2802.5,
+        "p95": 2805
+      },
+      "assetBytes": {
+        "median": 2284725.0,
+        "p95": 2284777
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 2297781.0,
+        "p95": 2297850
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 1
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 1
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 61
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.2,
+        "p95": 18.4
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 935.25,
+        "p95": 1049.2
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 8.0,
+        "p95": 8
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 11626.5,
+        "p95": 11634
+      },
+      "assetRequests": {
+        "median": 25.5,
+        "p95": 27
+      },
+      "preflightRequests": {
+        "median": 1.5,
+        "p95": 3
+      },
+      "foregroundApiRequests": {
+        "median": 6.0,
+        "p95": 6
+      },
+      "foregroundApiBytes": {
+        "median": 8823.5,
+        "p95": 8830
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2805
+      },
+      "assetBytes": {
+        "median": 1958738.5,
+        "p95": 2279213
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1970366.5,
+        "p95": 2290843
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.3,
+        "p95": 18.6
+      }
+    }
+  },
+  "public-booking-availability-cold-load": {
+    "page": "Public booking",
+    "scenario": "Brand and availability cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 1480.25,
+        "p95": 2462
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 7.0,
+        "p95": 7
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 12447.5,
+        "p95": 12456
+      },
+      "assetRequests": {
+        "median": 10.0,
+        "p95": 10
+      },
+      "preflightRequests": {
+        "median": 7.0,
+        "p95": 7
+      },
+      "foregroundApiRequests": {
+        "median": 6.0,
+        "p95": 6
+      },
+      "foregroundApiBytes": {
+        "median": 11606.0,
+        "p95": 11612
+      },
+      "backgroundApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "backgroundApiBytes": {
+        "median": 842.0,
+        "p95": 844
+      },
+      "assetBytes": {
+        "median": 1236281.0,
+        "p95": 1236285
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1248728.0,
+        "p95": 1248738
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 1.0,
+        "p95": 2
+      },
+      "longTaskMs": {
+        "median": 85.0,
+        "p95": 167
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.6,
+        "p95": 18.6
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 1425.6,
+        "p95": 1980
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 5.0,
+        "p95": 5
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 10170.0,
+        "p95": 10178
+      },
+      "assetRequests": {
+        "median": 9.0,
+        "p95": 9
+      },
+      "preflightRequests": {
+        "median": 3.0,
+        "p95": 4
+      },
+      "foregroundApiRequests": {
+        "median": 5.0,
+        "p95": 5
+      },
+      "foregroundApiBytes": {
+        "median": 10170.0,
+        "p95": 10178
+      },
+      "backgroundApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "backgroundApiBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "assetBytes": {
+        "median": 1230721.0,
+        "p95": 1230721
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1240891.0,
+        "p95": 1240899
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "longTaskMs": {
+        "median": 51.0,
+        "p95": 54
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.35,
+        "p95": 18.5
+      }
+    }
+  },
+  "quotes-register-cold-load": {
+    "page": "Quotes",
+    "scenario": "Register cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 1086.25,
+        "p95": 2267
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 7.0,
+        "p95": 7
+      },
+      "duplicateApiRequests": {
+        "median": 1.0,
+        "p95": 1
+      },
+      "apiBytes": {
+        "median": 12374.0,
+        "p95": 12379
+      },
+      "assetRequests": {
+        "median": 18.0,
+        "p95": 18
+      },
+      "preflightRequests": {
+        "median": 8.0,
+        "p95": 8
+      },
+      "foregroundApiRequests": {
+        "median": 5.0,
+        "p95": 5
+      },
+      "foregroundApiBytes": {
+        "median": 9571.0,
+        "p95": 9575
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2805
+      },
+      "assetBytes": {
+        "median": 1570033.5,
+        "p95": 1570069
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1582407.0,
+        "p95": 1582440
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 4
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 678
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.3,
+        "p95": 18.6
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 873.6,
+        "p95": 1204.3
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 6.0,
+        "p95": 6
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 10935.0,
+        "p95": 10941
+      },
+      "assetRequests": {
+        "median": 18.0,
+        "p95": 18
+      },
+      "preflightRequests": {
+        "median": 1.5,
+        "p95": 3
+      },
+      "foregroundApiRequests": {
+        "median": 4.0,
+        "p95": 4
+      },
+      "foregroundApiBytes": {
+        "median": 8133.0,
+        "p95": 8138
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2805
+      },
+      "assetBytes": {
+        "median": 1567956.0,
+        "p95": 1567982
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 1578891.0,
+        "p95": 1578924
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskMs": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.25,
+        "p95": 18.5
+      }
+    }
+  },
+  "quote-details-cold-load-fresh-tab": {
+    "page": "Quotes",
+    "scenario": "Details and directory cold load",
+    "primaryMetric": "usableMs",
+    "before": {
+      "usableMs": {
+        "median": 1590.95,
+        "p95": 1784.4
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 12.0,
+        "p95": 12
+      },
+      "duplicateApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "apiBytes": {
+        "median": 68908.0,
+        "p95": 68920
+      },
+      "assetRequests": {
+        "median": 40.0,
+        "p95": 40
+      },
+      "preflightRequests": {
+        "median": 2.5,
+        "p95": 5
+      },
+      "foregroundApiRequests": {
+        "median": 10.0,
+        "p95": 10
+      },
+      "foregroundApiBytes": {
+        "median": 66105.0,
+        "p95": 66114
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2806
+      },
+      "assetBytes": {
+        "median": 3015165.0,
+        "p95": 3015198
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 3084073.5,
+        "p95": 3084109
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 4.0,
+        "p95": 4
+      },
+      "longTaskMs": {
+        "median": 314.0,
+        "p95": 337
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.5,
+        "p95": 18.6
+      }
+    },
+    "after": {
+      "usableMs": {
+        "median": 1730.8,
+        "p95": 2779.7
+      },
+      "savedMs": null,
+      "apiRequests": {
+        "median": 11.0,
+        "p95": 11
+      },
+      "duplicateApiRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "apiBytes": {
+        "median": 62412.0,
+        "p95": 62419
+      },
+      "assetRequests": {
+        "median": 40.0,
+        "p95": 40
+      },
+      "preflightRequests": {
+        "median": 3.5,
+        "p95": 5
+      },
+      "foregroundApiRequests": {
+        "median": 9.0,
+        "p95": 9
+      },
+      "foregroundApiBytes": {
+        "median": 59608.0,
+        "p95": 59617
+      },
+      "backgroundApiRequests": {
+        "median": 2.0,
+        "p95": 2
+      },
+      "backgroundApiBytes": {
+        "median": 2803.0,
+        "p95": 2806
+      },
+      "assetBytes": {
+        "median": 2916260.0,
+        "p95": 2916278
+      },
+      "preflightBytes": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "totalBytes": {
+        "median": 2978666.0,
+        "p95": 2978692
+      },
+      "unfinishedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "failedRequests": {
+        "median": 0.0,
+        "p95": 0
+      },
+      "longTaskCount": {
+        "median": 3.0,
+        "p95": 3
+      },
+      "longTaskMs": {
+        "median": 343.0,
+        "p95": 357
+      },
+      "frameIntervalP95Ms": {
+        "median": 18.3,
+        "p95": 18.6
+      }
+    }
+  }
+}

@@ -15,21 +15,26 @@ import {
   RotateCcw,
   Ship,
   Sparkles,
+  TriangleAlert,
   Trash2,
   X,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Switch } from "@/components/ui/switch"
 import { MultideckDateRangePicker } from "@/components/multideck/date-picker"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { AutoPopulatedInput, AutoPopulatedTextarea, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
-import { bookings } from "@/data/multideck-data"
+import { bookings } from "@/data/operational-data"
 import { cn } from "@/lib/utils"
 
 type BookingSource = "quote" | "scratch" | "existing" | null
@@ -436,11 +441,11 @@ const fieldMotion = {
   visible: { opacity: 1, y: 0 },
 }
 
-const bookingStepSurfaceClass = "bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.12),0_18px_42px_rgba(14,125,116,0.08)]"
+const bookingStepSurfaceClass = "bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_var(--md-accent-a12),0_18px_42px_var(--md-accent-a08)]"
 const fieldBoundaryShadow = "shadow-[var(--md-shadow-line)]"
 const fieldControlClass = cn("!h-11 w-full min-w-0 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-field-bg)] px-3 text-[13px] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)]", fieldBoundaryShadow)
-const fieldPanelClass = "rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)]"
-const tablePanelClass = "overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)]"
+const fieldPanelClass = "rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[inset_0_0_0_1px_var(--md-accent-a13),0_10px_24px_var(--md-accent-a06)]"
+const tablePanelClass = "overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_var(--md-accent-a13),0_10px_24px_var(--md-accent-a06)]"
 
 const partyCompanies = [
   {
@@ -780,7 +785,12 @@ function FieldShell({
   const Shell = asDiv ? motion.div : motion.label
 
   return (
-    <Shell variants={fieldMotion} className="grid min-w-0 content-start gap-1.5" data-field-label={label}>
+    <Shell
+      variants={fieldMotion}
+      className="grid min-w-0 content-start gap-1.5"
+      data-field-label={label}
+      data-field-invalid={missing || undefined}
+    >
       <span className="flex min-h-[18px] items-center justify-between gap-3">
         <span className="text-[13px] font-medium text-[var(--md-ink)]">
           {label}
@@ -789,7 +799,14 @@ function FieldShell({
         {action ? <span className="flex items-center gap-1.5">{action}</span> : null}
       </span>
       {children}
-      {helper ? <span className="text-[12px] leading-5 text-[var(--md-text)]">{helper}</span> : null}
+      {missing ? (
+        <span className="flex items-start gap-1.5 text-[12px] leading-5 text-[var(--md-red)]">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.6} aria-hidden="true" />
+          This field is required.
+        </span>
+      ) : helper ? (
+        <span className="text-[12px] leading-5 text-[var(--md-text)]">{helper}</span>
+      ) : null}
     </Shell>
   )
 }
@@ -805,6 +822,8 @@ function TextField({
   missing,
   dir = "auto",
   action,
+  autoPopulated,
+  autoPopulationDescription,
 }: {
   label: string
   value: string
@@ -816,10 +835,12 @@ function TextField({
   missing?: boolean
   dir?: "auto" | "ltr"
   action?: ReactNode
+  autoPopulated?: boolean
+  autoPopulationDescription?: string
 }) {
   return (
     <FieldShell label={label} helper={helper} required={required} missing={missing} action={action}>
-      <Input
+      <AutoPopulatedInput
         type={type}
         value={value}
         placeholder={placeholder}
@@ -831,6 +852,8 @@ function TextField({
         )}
         dir={dir}
         aria-invalid={missing || undefined}
+        autoPopulated={autoPopulated}
+        autoPopulationDescription={autoPopulationDescription}
       />
     </FieldShell>
   )
@@ -908,11 +931,11 @@ function NumberStepperField({
             </AnimatePresence>
           </span>
         </div>
-        <div className="grid border-l border-[rgba(14,125,116,0.14)] bg-[rgba(14,125,116,0.04)]">
+        <div className="grid border-l border-[var(--md-accent-a14)] bg-[var(--md-accent-a04)]">
           <button
             type="button"
             aria-label={`Increase ${label}`}
-            className="grid place-items-center text-[var(--md-subtle)] transition-colors hover:bg-[rgba(14,125,116,0.08)] hover:text-[var(--md-accent)]"
+            className="grid place-items-center text-[var(--md-subtle)] transition-colors hover:bg-[var(--md-accent-a08)] hover:text-[var(--md-accent)]"
             onClick={() => updateBy(1)}
           >
             <ChevronUp className="size-3" strokeWidth={1.7} />
@@ -920,7 +943,7 @@ function NumberStepperField({
           <button
             type="button"
             aria-label={`Decrease ${label}`}
-            className="grid place-items-center border-t border-[rgba(14,125,116,0.14)] text-[var(--md-subtle)] transition-colors hover:bg-[rgba(14,125,116,0.08)] hover:text-[var(--md-accent)]"
+            className="grid place-items-center border-t border-[var(--md-accent-a14)] text-[var(--md-subtle)] transition-colors hover:bg-[var(--md-accent-a08)] hover:text-[var(--md-accent)]"
             onClick={() => updateBy(-1)}
           >
             <ChevronDown className="size-3" strokeWidth={1.7} />
@@ -937,16 +960,20 @@ function TextAreaField({
   onChange,
   placeholder,
   helper,
+  autoPopulated,
+  autoPopulationDescription,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   placeholder?: string
   helper?: string
+  autoPopulated?: boolean
+  autoPopulationDescription?: string
 }) {
   return (
     <FieldShell label={label} helper={helper}>
-      <Textarea
+      <AutoPopulatedTextarea
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
@@ -955,6 +982,8 @@ function TextAreaField({
           fieldBoundaryShadow,
         )}
         dir="auto"
+        autoPopulated={autoPopulated}
+        autoPopulationDescription={autoPopulationDescription}
       />
     </FieldShell>
   )
@@ -1048,6 +1077,8 @@ function ComboField({
   clearable,
   clearTone = "default",
   onClear,
+  autoPopulated,
+  autoPopulationDescription,
 }: {
   label: string
   value: string
@@ -1061,6 +1092,8 @@ function ComboField({
   clearable?: boolean
   clearTone?: "default" | "danger"
   onClear?: () => void
+  autoPopulated?: boolean
+  autoPopulationDescription?: string
 }) {
   const [open, setOpen] = useState(false)
   const normalizedValue = value.trim().toLowerCase()
@@ -1071,7 +1104,7 @@ function ComboField({
   return (
     <FieldShell label={label} required={required} missing={missing} action={action}>
       <div className="relative z-0 min-w-0 focus-within:z-50">
-        <Input
+        <AutoPopulatedInput
           value={value}
           placeholder={placeholder}
           onFocus={() => setOpen(true)}
@@ -1093,6 +1126,8 @@ function ComboField({
           role="combobox"
           aria-expanded={open && !disabled}
           aria-invalid={missing || undefined}
+          autoPopulated={autoPopulated}
+          autoPopulationDescription={autoPopulationDescription}
         />
         {clearable && value && !disabled ? (
           <button
@@ -1121,7 +1156,7 @@ function ComboField({
               <button
                 key={option}
                 type="button"
-                className="block w-full truncate rounded-[var(--md-radius-md)] px-2.5 py-2 text-left text-[13px] text-[var(--md-ink)] transition-colors hover:bg-[rgba(14,125,116,0.08)]"
+                className="block w-full truncate rounded-[var(--md-radius-md)] px-2.5 py-2 text-left text-[13px] text-[var(--md-ink)] transition-colors hover:bg-[var(--md-accent-a08)]"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   onChange(option)
@@ -1217,7 +1252,7 @@ function AddressLookupField({
               <button
                 key={`${record.company}-${record.office}`}
                 type="button"
-                className="grid w-full gap-1 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-left transition-colors hover:bg-[rgba(14,125,116,0.08)]"
+                className="grid w-full gap-1 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-left transition-colors hover:bg-[var(--md-accent-a08)]"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   onSelect(record.office)
@@ -1266,12 +1301,12 @@ function OptionGroup<T extends string>({
               aria-pressed={selected}
               className={cn(
                 "rounded-[var(--md-radius-lg)] bg-white/56 p-3 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/78",
-                selected && "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_14px_28px_rgba(14,125,116,0.22)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]",
+                selected && "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_14px_28px_var(--md-accent-a22)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]",
               )}
               onClick={() => onChange(option.value)}
             >
               <span className="flex items-center justify-between gap-3">
-                <span className={cn("text-[14px] font-medium text-[var(--md-ink)]", selected && "text-white")}>{option.title}</span>
+                <span className={cn("text-[14px] font-medium text-[var(--md-ink)]", selected && "text-[var(--md-accent-ink)]")}>{option.title}</span>
                 {selected ? (
                   <span className="grid size-6 place-items-center rounded-full bg-white text-[var(--md-accent)] shadow-[0_0_0_3px_rgba(255,255,255,0.16)]">
                     <Check className="size-3.5" strokeWidth={1.8} />
@@ -1297,21 +1332,16 @@ function ToggleTile({
   onChange: (checked: boolean) => void
 }) {
   return (
-    <motion.button
+    <motion.label
       variants={fieldMotion}
-      type="button"
-      aria-pressed={checked}
       className={cn(
-        "flex min-h-10 items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-1.5 text-left text-[13px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/78",
-        checked && "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_20px_rgba(14,125,116,0.18)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]",
+        "flex min-h-10 cursor-pointer items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-1.5 text-left text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white/78",
+        checked && "bg-[var(--md-accent-a08)]",
       )}
-      onClick={() => onChange(!checked)}
     >
       <span>{label}</span>
-      <span className={cn("grid size-5 place-items-center rounded-[var(--md-radius-sm)] bg-white shadow-[var(--md-shadow-line)]", checked && "text-[var(--md-accent)]")}>
-        {checked ? <Check className="size-3.5" strokeWidth={1.8} /> : null}
-      </span>
-    </motion.button>
+      <Switch checked={checked} onCheckedChange={onChange} aria-label={label} />
+    </motion.label>
   )
 }
 
@@ -1327,41 +1357,17 @@ function BrandedCheckbox({
   className?: string
 }) {
   return (
-    <motion.button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
+    <motion.label
       whileTap={{ scale: 0.98 }}
       className={cn(
-        "inline-flex min-h-8 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-left text-[12px] font-medium text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/82",
-        checked && "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_20px_rgba(14,125,116,0.18)] hover:bg-[#0b6f67]",
+        "inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-left text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/82",
+        checked && "text-[var(--md-ink)]",
         className,
       )}
-      onClick={() => onChange(!checked)}
     >
-      <span
-        className={cn(
-          "grid size-4 shrink-0 place-items-center rounded-[var(--md-radius-sm)] bg-white/82 text-transparent shadow-[var(--md-shadow-line)]",
-          checked && "text-[var(--md-accent)]",
-        )}
-        aria-hidden="true"
-      >
-        <AnimatePresence initial={false}>
-          {checked ? (
-            <motion.span
-              key="tick"
-              initial={{ opacity: 0, scale: 0.5, rotate: -12 }}
-              animate={{ opacity: 1, scale: 1, rotate: 0 }}
-              exit={{ opacity: 0, scale: 0.5, rotate: 12 }}
-              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <Check className="size-3" strokeWidth={2.2} />
-            </motion.span>
-          ) : null}
-        </AnimatePresence>
-      </span>
+      <Checkbox checked={checked} onCheckedChange={(next) => onChange(next === true)} aria-label={label} />
       <span className="min-w-0 whitespace-nowrap">{label}</span>
-    </motion.button>
+    </motion.label>
   )
 }
 
@@ -1372,7 +1378,7 @@ function DexterCodeHint() {
         <span
           tabIndex={0}
           aria-label="Dexter auto-population note"
-          className="grid size-6 place-items-center rounded-[var(--md-radius-md)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)] outline-none transition-[background,box-shadow,transform] hover:scale-[1.04] hover:bg-[rgba(14,125,116,0.16)] focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.22)]"
+          className="grid size-6 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)] outline-none transition-[background,box-shadow,transform] hover:scale-[1.04] hover:bg-[var(--md-accent-a16)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a22)]"
         >
           <Bot className="size-3.5" strokeWidth={1.5} />
         </span>
@@ -1413,8 +1419,8 @@ function CompactOptionGroup<T extends string>({
               className={cn(
                 "h-11 rounded-[var(--md-radius-xl)] px-4 text-[13px] font-medium transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01]",
                 selected
-                  ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_rgba(14,125,116,0.2)] hover:bg-[#0b6f67]"
-                  : "bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] hover:bg-white/82",
+                  ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_var(--md-accent-a20)] hover:bg-[var(--md-accent-hover)]"
+                  : "bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_var(--md-accent-a14),0_1px_1px_var(--md-accent-a04)] hover:bg-white/82",
               )}
               onClick={() => onChange(option)}
             >
@@ -1453,8 +1459,8 @@ function ModePicker({
               className={cn(
                 "h-11 rounded-[var(--md-radius-xl)] px-4 text-[13px] font-medium transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01]",
                 selected
-                  ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_rgba(14,125,116,0.2)] hover:bg-[#0b6f67]"
-                  : "bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] hover:bg-white/82",
+                  ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_var(--md-accent-a20)] hover:bg-[var(--md-accent-hover)]"
+                  : "bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_var(--md-accent-a14),0_1px_1px_var(--md-accent-a04)] hover:bg-white/82",
               )}
               onClick={() => onChange(mode)}
             >
@@ -1474,7 +1480,7 @@ function PartyRow({
   office,
   reference,
   companyMissing,
-  companyLocked,
+  companyAutoPopulated,
   actions,
   onCompanyReset,
   onCompanyChange,
@@ -1488,7 +1494,7 @@ function PartyRow({
   office: string
   reference: string
   companyMissing?: boolean
-  companyLocked?: boolean
+  companyAutoPopulated?: boolean
   actions?: ReactNode
   onCompanyReset: () => void
   onCompanyChange: (value: string) => void
@@ -1537,7 +1543,7 @@ function PartyRow({
       aria-label={`Add address for ${label}`}
       title={addAddressDisabled ? "Select a company first" : `Add address for ${label}`}
       disabled={addAddressDisabled}
-      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_var(--md-accent-a14),0_1px_1px_var(--md-accent-a04)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
       onClick={() => setAddressDialogOpen(true)}
     >
       <Plus className="size-3.5" strokeWidth={1.8} />
@@ -1550,7 +1556,7 @@ function PartyRow({
       aria-label={`Add contact for ${label}`}
       title={addContactDisabled ? "Select an office first" : `Add contact for ${label}`}
       disabled={addContactDisabled}
-      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_var(--md-accent-a14),0_1px_1px_var(--md-accent-a04)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
       onClick={() => setContactDialogOpen(true)}
     >
       <Plus className="size-3.5" strokeWidth={1.8} />
@@ -1579,7 +1585,8 @@ function PartyRow({
           placeholder="Select company"
           required={label !== "Notify Party"}
           missing={companyMissing}
-          disabled={companyLocked}
+          autoPopulated={companyAutoPopulated}
+          autoPopulationDescription="Copied from the selected customer. Edit this field to override it for this booking."
           clearable
           clearTone="danger"
           onClear={onCompanyReset}
@@ -1594,6 +1601,8 @@ function PartyRow({
           options={officeOptions}
           placeholder={company ? "Select office" : "Select company first"}
           action={addAddressButton}
+          autoPopulated={matchesAutoPopulation(office, officeOptions[0])}
+          autoPopulationDescription="Filled from the selected company. Edit this field to override it for this booking."
         />
         <ComboField
           label="Contact"
@@ -1602,6 +1611,8 @@ function PartyRow({
           options={contactOptions}
           placeholder={office ? "Select contact" : "Select office first"}
           action={addContactButton}
+          autoPopulated={matchesAutoPopulation(contact, contactOptions[0])}
+          autoPopulationDescription="Filled from the selected office. Edit this field to override it for this booking."
         />
         <TextField
           label="Reference"
@@ -1625,7 +1636,7 @@ function PartyRow({
             <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px]" onClick={() => setAddressDialogOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-white hover:bg-[#0b6f67]" disabled={!draftAddressName.trim()} onClick={saveAddress}>
+            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]" disabled={!draftAddressName.trim()} onClick={saveAddress}>
               Add address
             </Button>
           </DialogFooter>
@@ -1648,7 +1659,7 @@ function PartyRow({
             <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px]" onClick={() => setContactDialogOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-white hover:bg-[#0b6f67]" disabled={!draftContactName.trim()} onClick={saveContact}>
+            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]" disabled={!draftContactName.trim()} onClick={saveContact}>
               Add contact
             </Button>
           </DialogFooter>
@@ -1709,11 +1720,11 @@ function SourceChoiceCard({
       type="button"
       variants={optionMotion}
       whileTap={{ scale: 0.985 }}
-      className="group grid min-h-[148px] content-between gap-4 rounded-[var(--md-radius-2xl)] bg-[var(--md-surface-tint)] p-4 text-left shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)] transition-[background,box-shadow,transform] hover:scale-[1.01] hover:bg-white/82 hover:shadow-[inset_0_0_0_1px_rgba(14,125,116,0.2),0_14px_30px_rgba(14,125,116,0.1)]"
+      className="group grid min-h-[148px] content-between gap-4 rounded-[var(--md-radius-2xl)] bg-[var(--md-surface-tint)] p-4 text-left shadow-[inset_0_0_0_1px_var(--md-accent-a13),0_10px_24px_var(--md-accent-a06)] transition-[background,box-shadow,transform] hover:scale-[1.01] hover:bg-white/82 hover:shadow-[inset_0_0_0_1px_var(--md-accent-a20),0_14px_30px_var(--md-accent-a10)]"
       onClick={onClick}
     >
       <span className="grid gap-3">
-        <span className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
+        <span className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
           {icon}
         </span>
         <span className="grid gap-1.5">
@@ -1721,7 +1732,7 @@ function SourceChoiceCard({
           <span className="text-[13px] leading-5 text-[var(--md-text)]">{body}</span>
         </span>
       </span>
-      <span className="inline-flex h-8 w-fit items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_rgba(14,125,116,0.18)] transition-transform group-hover:scale-[1.02]">
+      <span className="inline-flex h-8 w-fit items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_var(--md-accent-a18)] transition-transform group-hover:scale-[1.02]">
         Select
         <ChevronRight className="size-3.5" strokeWidth={1.35} />
       </span>
@@ -1839,7 +1850,7 @@ function SourceDetailPanel({
                 aria-pressed={selected}
                 className={cn(
                   "grid gap-2 rounded-[var(--md-radius-lg)] bg-white/58 px-3 py-2.5 text-left shadow-[var(--md-shadow-line)] transition-[background,box-shadow,transform] hover:bg-white/82 sm:grid-cols-[96px_minmax(0,1fr)_auto] sm:items-center",
-                  selected && "bg-[rgba(14,125,116,0.1)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.35),0_8px_18px_rgba(14,125,116,0.08)]",
+                  selected && "bg-[var(--md-accent-a10)] shadow-[inset_0_0_0_1px_var(--md-accent-a35),0_8px_18px_var(--md-accent-a08)]",
                 )}
                 onClick={() => onApplyCustomerQuote(quote.id)}
               >
@@ -1918,7 +1929,7 @@ function SourceDetailPanel({
                 aria-pressed={selected}
                 className={cn(
                   "grid gap-3 rounded-[var(--md-radius-lg)] bg-white/58 px-3 py-3 text-left shadow-[var(--md-shadow-line)] transition-[background,box-shadow,transform] hover:bg-white/82 sm:grid-cols-[88px_minmax(0,1fr)_auto] sm:items-center",
-                  selected && "bg-[rgba(14,125,116,0.1)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.35),0_8px_18px_rgba(14,125,116,0.08)]",
+                  selected && "bg-[var(--md-accent-a10)] shadow-[inset_0_0_0_1px_var(--md-accent-a35),0_8px_18px_var(--md-accent-a08)]",
                 )}
                 onClick={() => onApplyExistingBooking(booking.id)}
               >
@@ -1972,13 +1983,13 @@ function BookingTypeMiniSteps({
             className={cn(
               "inline-flex h-8 items-center gap-2 rounded-[var(--md-radius-lg)] px-2.5 text-[12px] font-medium shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform]",
               active
-                ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_20px_rgba(14,125,116,0.18)]"
+                ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_20px_var(--md-accent-a18)]"
                 : "bg-white/58 text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/82",
               disabled && "cursor-not-allowed opacity-45",
             )}
             onClick={() => onStageChange(item.id)}
           >
-            <span className={cn("grid size-4 place-items-center rounded-full text-[10px]", active ? "bg-white text-[var(--md-accent)]" : "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]")}>
+            <span className={cn("grid size-4 place-items-center rounded-full text-[10px]", active ? "bg-white text-[var(--md-accent)]" : "bg-[var(--md-accent-a10)] text-[var(--md-accent)]")}>
               {item.complete ? <Check className="size-3" strokeWidth={1.8} /> : index + 1}
             </span>
             {item.label}
@@ -2027,7 +2038,7 @@ function WizardProgress({
         <StatusPill tone={completeCount >= requiredStepCount ? "green" : "teal"}>{completeCount}/{requiredStepCount} complete</StatusPill>
       </div>
       <div className="mt-3">
-        <div className="grid grid-cols-7 gap-1 rounded-full bg-[rgba(14,125,116,0.06)] p-1 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.1),0_1px_1px_rgba(14,125,116,0.04)]" aria-label="Booking progress">
+        <div className="grid grid-cols-7 gap-1 rounded-full bg-[var(--md-accent-a06)] p-1 shadow-[inset_0_0_0_1px_var(--md-accent-a10),0_1px_1px_var(--md-accent-a04)]" aria-label="Booking progress">
           {steps.map((step, index) => {
             const missing = index < requiredStepCount ? missingFieldsForStep(data, index).length : allMissingFields(data).length
             const active = index === activeStep
@@ -2042,15 +2053,15 @@ function WizardProgress({
                 aria-current={active ? "step" : undefined}
                 aria-label={`${step.name}${missing ? `, ${missing} missing` : ""}`}
                 className={cn(
-                  "relative h-2.5 min-w-0 overflow-hidden rounded-full bg-[rgba(90,103,100,0.14)] transition-[background,box-shadow,transform,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[rgba(14,125,116,0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.28)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                  active && "scale-y-125 shadow-[0_0_0_1px_rgba(14,125,116,0.18),0_8px_18px_rgba(14,125,116,0.14)]",
+                  "relative h-2.5 min-w-0 overflow-hidden rounded-full bg-[rgba(90,103,100,0.14)] transition-[background,box-shadow,transform,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-accent-a18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a28)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                  active && "scale-y-125 shadow-[0_0_0_1px_var(--md-accent-a18),0_8px_18px_var(--md-accent-a14)]",
                 )}
                 onClick={() => onStepChange(index)}
               >
                 <span
                   className={cn(
                     "block h-full rounded-full transition-[width,background] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                    active || complete ? "bg-[var(--md-accent)]" : visited ? "bg-[rgba(14,125,116,0.42)]" : "bg-transparent",
+                    active || complete ? "bg-[var(--md-accent)]" : visited ? "bg-[var(--md-accent-a42)]" : "bg-transparent",
                   )}
                   style={{ width: `${fill}%` }}
                 />
@@ -2070,7 +2081,7 @@ function WizardProgress({
                 type="button"
                 title={step.name}
                 className={cn(
-                  "flex min-w-0 items-center justify-center gap-1 py-0.5 text-center text-[10px] font-medium transition-[color,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.22)]",
+                  "flex min-w-0 items-center justify-center gap-1 py-0.5 text-center text-[10px] font-medium transition-[color,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a22)]",
                   active ? "text-[var(--md-accent)]" : "text-[var(--md-subtle)] hover:text-[var(--md-text)]",
                   complete && !active && "text-[var(--md-accent)]",
                 )}
@@ -2278,6 +2289,30 @@ function StepContent({
     })
   }, [activeStep, data.collectionAddress, data.deliveryAddress, data.mode, data.requestedCollectionDate, data.requestedDeliveryDate, data.transportLegs.length, transportDraft.fromName, transportDraft.toName])
 
+  const cargoColumns = useMemo<DataTableColumn<CargoLine>[]>(() => [
+    { id: "commodity", label: "Commodity", width: 230, minWidth: 180, kind: "long-text", cellTitle: (line) => line.commodity, cell: (line) => <span className="block truncate font-medium" title={line.commodity}>{line.commodity}</span> },
+    { id: "outer", label: "Outer", width: 126, minWidth: 108, kind: "attribute", cell: (line) => <span>{line.outerPackages} {line.outerPackageType}</span> },
+    { id: "inner", label: "Inner", width: 220, minWidth: 180, kind: "attribute", cell: (line) => <span>{line.innerPackages ? `${line.innerPackages} ${line.innerPackageType} per ${perOuterPackageLabel(line.outerPackageType)}` : "–"}</span> },
+    { id: "grossWeight", label: "Gross kg", width: 100, minWidth: 88, kind: "number", cell: (line) => line.grossWeight || "–" },
+    { id: "netWeight", label: "Net kg", width: 100, minWidth: 88, kind: "number", cell: (line) => line.netWeight || "–" },
+    { id: "volume", label: "CBM", width: 90, minWidth: 78, kind: "number", cell: (line) => line.volume || "–" },
+    { id: "dimensions", label: "Dimensions", width: 180, minWidth: 140, kind: "long-text", cellTitle: (line) => formatCargoDimensions(line), cell: (line) => <span className="block truncate text-[var(--md-text)]">{formatCargoDimensions(line) || "–"}</span> },
+    { id: "actions", label: "Actions", width: 52, minWidth: 52, kind: "actions", canHide: false, canPin: false, cell: (line) => <button type="button" aria-label={`Remove cargo line ${line.commodity}`} className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.08)]" onClick={() => removeCargoLine(line.id)}><Trash2 className="size-4" strokeWidth={1.6} /></button> },
+  ], [data.cargoLines])
+
+  const transportColumns = useMemo<DataTableColumn<TransportLeg>[]>(() => [
+    { id: "leg", label: "Leg", width: 110, minWidth: 96, kind: "attribute", cell: (leg) => <span className="font-medium">{data.transportLegs.findIndex((candidate) => candidate.id === leg.id) + 1}. {leg.mode}</span> },
+    { id: "type", label: "Type", width: 120, minWidth: 96, kind: "attribute", cell: (leg) => leg.legType || "–" },
+    { id: "from", label: "From", width: 170, minWidth: 140, kind: "identity", cell: (leg) => <span><strong className="font-medium">{leg.fromCode || "–"}</strong><span className="block text-[12px] text-[var(--md-text)]">{leg.fromName}{leg.fromCountry ? `, ${leg.fromCountry}` : ""}</span></span> },
+    { id: "to", label: "To", width: 170, minWidth: 140, kind: "identity", cell: (leg) => <span><strong className="font-medium">{leg.toCode || "–"}</strong><span className="block text-[12px] text-[var(--md-text)]">{leg.toName}{leg.toCountry ? `, ${leg.toCountry}` : ""}</span></span> },
+    { id: "carrier", label: "Carrier / line", width: 140, minWidth: 112, kind: "text", cell: (leg) => leg.carrier || "–" },
+    { id: "reference", label: "Reference", width: 130, minWidth: 104, kind: "text", cell: (leg) => leg.reference || "–" },
+    { id: "etd", label: "ETD", width: 108, minWidth: 96, kind: "date", cell: (leg) => leg.etd || "–" },
+    { id: "eta", label: "ETA", width: 108, minWidth: 96, kind: "date", cell: (leg) => leg.eta || "–" },
+    { id: "notes", label: "Notes", width: 220, minWidth: 160, kind: "long-text", cellTitle: (leg) => leg.notes || undefined, cell: (leg) => <span className="line-clamp-2 whitespace-normal">{leg.notes || "–"}</span> },
+    { id: "actions", label: "Actions", width: 52, minWidth: 52, kind: "actions", canHide: false, canPin: false, cell: (leg) => { const index = data.transportLegs.findIndex((candidate) => candidate.id === leg.id); return <button type="button" aria-label={`Remove route leg ${index + 1}`} className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.08)]" onClick={() => removeTransportLeg(leg.id)}><Trash2 className="size-4" strokeWidth={1.6} /></button> } },
+  ], [data.transportLegs])
+
   if (activeStep === 0) {
     const hasSourceMiniStep = data.source === "quote" || data.source === "existing"
     const sourceComplete = data.source === "quote" ? Boolean(data.quoteNumber.trim()) : data.source === "existing" ? Boolean(data.templateBookingId) : true
@@ -2470,6 +2505,10 @@ function StepContent({
             office={data.customerOffice}
             reference={data.customerReference}
             companyMissing={missing.has("Customer")}
+            companyAutoPopulated={Boolean(
+              (data.source === "quote" && data.quoteNumber && matchesAutoPopulation(data.customer, data.quoteCustomer))
+              || (data.source === "existing" && data.templateBookingId && matchesAutoPopulation(data.customer, data.bookingCustomer)),
+            )}
             actions={
               <CustomerRoleCheckboxes
                 isShipper={data.customerIsShipper}
@@ -2493,7 +2532,7 @@ function StepContent({
             office={data.shipperOffice}
             reference={data.supplierReference}
             companyMissing={missing.has("Shipper")}
-            companyLocked={data.customerIsShipper && Boolean(data.customer)}
+            companyAutoPopulated={data.customerIsShipper && matchesAutoPopulation(data.shipper, data.customer)}
             onCompanyReset={resetShipper}
             onCompanyChange={(value) => {
               update("shipper", value)
@@ -2510,7 +2549,7 @@ function StepContent({
             office={data.consigneeOffice}
             reference={data.consigneeReference}
             companyMissing={missing.has("Consignee")}
-            companyLocked={data.customerIsConsignee && Boolean(data.customer)}
+            companyAutoPopulated={data.customerIsConsignee && matchesAutoPopulation(data.consignee, data.customer)}
             onCompanyReset={resetConsignee}
             onCompanyChange={(value) => {
               update("consignee", value)
@@ -2526,7 +2565,7 @@ function StepContent({
             contact={data.notifyPartyContact}
             office={data.notifyPartyOffice}
             reference={data.notifyPartyReference}
-            companyLocked={data.customerIsNotifyParty && Boolean(data.customer)}
+            companyAutoPopulated={data.customerIsNotifyParty && matchesAutoPopulation(data.notifyParty, data.customer)}
             onCompanyReset={resetNotifyParty}
             onCompanyChange={(value) => {
               update("notifyParty", value)
@@ -2574,28 +2613,20 @@ function StepContent({
                   required
                   missing={missing.has("Collection address")}
                 />
-                <BrandedCheckbox
-                  label="Manually override address"
-                  checked={data.collectionAddressManual}
-                  onChange={(checked) => {
-                    if (checked && data.collectionAddress && addressRecordForOffice(data.collectionAddress)) {
-                      update("collectionAddress", fullAddressForOffice(data.collectionAddress))
-                    }
-                    update("collectionAddressManual", checked)
-                  }}
-                  className="w-fit"
-                />
                 <FieldShell label="Full address" required missing={missing.has("Collection address")}>
-                  <Textarea
+                  <AutoPopulatedTextarea
                     value={data.collectionAddressManual ? data.collectionAddress : fullAddressForOffice(data.collectionAddress)}
-                    onChange={(event) => update("collectionAddress", event.target.value)}
-                    readOnly={!data.collectionAddressManual}
+                    onChange={(event) => {
+                      update("collectionAddressManual", true)
+                      update("collectionAddress", event.target.value)
+                    }}
                     placeholder="Enter the full collection address"
+                    autoPopulated={!data.collectionAddressManual && Boolean(addressRecordForOffice(data.collectionAddress))}
+                    autoPopulationDescription="Filled from the selected shipper address. Edit this field to override it for this booking."
                     className={cn(
                       "min-h-[132px] rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface-tint)] px-3 py-2.5 text-[13px] leading-[18px]",
                       fieldBoundaryShadow,
                       missing.has("Collection address") && missingFieldClass,
-                      !data.collectionAddressManual && "text-[var(--md-text)]",
                     )}
                     dir="auto"
                     aria-invalid={missing.has("Collection address") || undefined}
@@ -2622,7 +2653,7 @@ function StepContent({
                 <TextField label="Collection reference" value={data.collectionReference} onChange={(value) => update("collectionReference", value)} placeholder="Gate pass, warehouse ref, supplier ref" dir="ltr" />
               </div>
             </div>
-            <TextAreaField label="Collection notes" value={data.accessRestrictions} onChange={(value) => update("accessRestrictions", value)} placeholder="Default notes from the collection address, editable for this booking" helper="Later this can default from the selected shipper office or warehouse record." />
+            <TextAreaField label="Collection notes" value={data.accessRestrictions} onChange={(value) => update("accessRestrictions", value)} placeholder="Default notes from the collection address, editable for this booking" helper="Later this can default from the selected shipper office or warehouse record." autoPopulated={matchesAutoPopulation(data.accessRestrictions, notesForOffice(data.collectionAddress))} autoPopulationDescription="Filled from the selected collection address. Edit this field to override it for this booking." />
           </motion.section>
 
           <motion.section variants={fieldMotion} className={cn(fieldPanelClass, "grid content-start gap-3")}>
@@ -2641,28 +2672,20 @@ function StepContent({
                   required
                   missing={missing.has("Delivery address")}
                 />
-                <BrandedCheckbox
-                  label="Manually override address"
-                  checked={data.deliveryAddressManual}
-                  onChange={(checked) => {
-                    if (checked && data.deliveryAddress && addressRecordForOffice(data.deliveryAddress)) {
-                      update("deliveryAddress", fullAddressForOffice(data.deliveryAddress))
-                    }
-                    update("deliveryAddressManual", checked)
-                  }}
-                  className="w-fit"
-                />
                 <FieldShell label="Full address" required missing={missing.has("Delivery address")}>
-                  <Textarea
+                  <AutoPopulatedTextarea
                     value={data.deliveryAddressManual ? data.deliveryAddress : fullAddressForOffice(data.deliveryAddress)}
-                    onChange={(event) => update("deliveryAddress", event.target.value)}
-                    readOnly={!data.deliveryAddressManual}
+                    onChange={(event) => {
+                      update("deliveryAddressManual", true)
+                      update("deliveryAddress", event.target.value)
+                    }}
                     placeholder="Enter the full delivery address"
+                    autoPopulated={!data.deliveryAddressManual && Boolean(addressRecordForOffice(data.deliveryAddress))}
+                    autoPopulationDescription="Filled from the selected consignee address. Edit this field to override it for this booking."
                     className={cn(
                       "min-h-[132px] rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface-tint)] px-3 py-2.5 text-[13px] leading-[18px]",
                       fieldBoundaryShadow,
                       missing.has("Delivery address") && missingFieldClass,
-                      !data.deliveryAddressManual && "text-[var(--md-text)]",
                     )}
                     dir="auto"
                     aria-invalid={missing.has("Delivery address") || undefined}
@@ -2689,7 +2712,7 @@ function StepContent({
                 <TextField label="Delivery reference" value={data.deliveryReference} onChange={(value) => update("deliveryReference", value)} placeholder="Booking slot, DC ref, customer ref" dir="ltr" />
               </div>
             </div>
-            <TextAreaField label="Delivery notes" value={data.bookingNotes} onChange={(value) => update("bookingNotes", value)} placeholder="Default notes from the delivery address, editable for this booking" helper="Later this can default from the selected consignee office or delivery record." />
+            <TextAreaField label="Delivery notes" value={data.bookingNotes} onChange={(value) => update("bookingNotes", value)} placeholder="Default notes from the delivery address, editable for this booking" helper="Later this can default from the selected consignee office or delivery record." autoPopulated={matchesAutoPopulation(data.bookingNotes, notesForOffice(data.deliveryAddress))} autoPopulationDescription="Filled from the selected delivery address. Edit this field to override it for this booking." />
           </motion.section>
         </FieldGroup>
       </StepShell>
@@ -2709,7 +2732,7 @@ function StepContent({
                 <p className="text-[14px] font-medium text-[var(--md-ink)]">Add cargo line</p>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Build the shipment from outer packages, inner packages, commodity and weights.</p>
               </div>
-              <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white hover:bg-[#0b6f67] disabled:opacity-45" disabled={!canAddCargoLine} onClick={addCargoLine}>
+              <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)] disabled:opacity-45" disabled={!canAddCargoLine} onClick={addCargoLine}>
                 <Plus className="size-4" strokeWidth={1.6} />
                 Add line
               </Button>
@@ -2767,46 +2790,7 @@ function StepContent({
               ) : null}
             </div>
 
-            <div className="overflow-x-auto md-scrollbar">
-              <table className="w-full min-w-[860px] border-t border-[rgba(11,20,19,0.06)] text-left">
-                <thead className="bg-white/42">
-                  <tr className="text-[11px] font-medium text-[var(--md-text)]">
-                    <th className="px-4 py-2">Commodity</th>
-                    <th className="px-3 py-2">Outer</th>
-                    <th className="px-3 py-2">Inner</th>
-                    <th className="px-3 py-2 text-right">Gross kg</th>
-                    <th className="px-3 py-2 text-right">Net kg</th>
-                    <th className="px-3 py-2 text-right">CBM</th>
-                    <th className="px-3 py-2">Dimensions</th>
-                    <th className="w-12 px-3 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.cargoLines.length ? data.cargoLines.map((line) => (
-                    <tr key={line.id} className="border-t border-[rgba(11,20,19,0.05)] text-[13px] text-[var(--md-ink)]">
-                      <td className="max-w-[230px] truncate px-4 py-3 font-medium" title={line.commodity}>{line.commodity}</td>
-                      <td className="px-3 py-3">{line.outerPackages} {line.outerPackageType}</td>
-                      <td className="px-3 py-3">{line.innerPackages ? `${line.innerPackages} ${line.innerPackageType} per ${perOuterPackageLabel(line.outerPackageType)}` : "-"}</td>
-                      <td className="px-3 py-3 text-right tabular-nums">{line.grossWeight || "-"}</td>
-                      <td className="px-3 py-3 text-right tabular-nums">{line.netWeight || "-"}</td>
-                      <td className="px-3 py-3 text-right tabular-nums">{line.volume || "-"}</td>
-                      <td className="max-w-[180px] truncate px-3 py-3 text-[var(--md-text)]" title={formatCargoDimensions(line)}>{formatCargoDimensions(line) || "-"}</td>
-                      <td className="px-3 py-2">
-                        <button type="button" aria-label={`Remove cargo line ${line.commodity}`} className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.08)]" onClick={() => removeCargoLine(line.id)}>
-                          <Trash2 className="size-4" strokeWidth={1.6} />
-                        </button>
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={8} className="px-4 py-10 text-center text-[13px] text-[var(--md-text)]">
-                        No cargo lines added yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <DataTable ariaLabel="Cargo lines" columns={cargoColumns} rows={data.cargoLines} getRowKey={(line) => line.id} minimumWidth={1100} showToolbar={false} showColumnManager={false} className="rounded-none shadow-none" emptyState={<p className="text-[13px] text-[var(--md-text)]">No cargo lines added yet.</p>} />
           </motion.section>
 
           <FieldGroup className="items-start lg:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
@@ -2871,7 +2855,7 @@ function StepContent({
                 <p className="text-[14px] font-medium text-[var(--md-ink)]">Add route leg</p>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Use UN/LOCODEs for ports and airport codes where relevant. Add legs for air-sea and sea-air routings.</p>
               </div>
-              <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white hover:bg-[#0b6f67] disabled:opacity-45" disabled={!canAddTransportLeg} onClick={addTransportLeg}>
+              <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)] disabled:opacity-45" disabled={!canAddTransportLeg} onClick={addTransportLeg}>
                 <Plus className="size-4" strokeWidth={1.6} />
                 Add leg
               </Button>
@@ -2888,9 +2872,9 @@ function StepContent({
                   <p className="text-[13px] font-medium text-[var(--md-ink)]">From</p>
                   <div className="grid gap-3">
                     <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)]">
-                      <TextField label="Code" value={transportDraft.fromCode} onChange={(value) => updateTransportDraft("fromCode", value.toUpperCase())} placeholder="CNSHA / PVG" dir="ltr" action={<DexterCodeHint />} />
-                      <TextField label="Name" value={transportDraft.fromName} onChange={(value) => updateTransportDraft("fromName", value)} placeholder="Shanghai" required missing={missing.has("First origin") && !data.transportLegs.length} />
-                      <TextField label="Country" value={transportDraft.fromCountry} onChange={(value) => updateTransportDraft("fromCountry", value)} placeholder="China" />
+                      <TextField label="Code" value={transportDraft.fromCode} onChange={(value) => updateTransportDraft("fromCode", value.toUpperCase())} placeholder="CNSHA / PVG" dir="ltr" action={<DexterCodeHint />} autoPopulated={matchesAutoPopulation(transportDraft.fromCode, collectionLocation.code)} autoPopulationDescription="Filled from the collection location. Edit this field to override it for this route leg." />
+                      <TextField label="Name" value={transportDraft.fromName} onChange={(value) => updateTransportDraft("fromName", value)} placeholder="Shanghai" required missing={missing.has("First origin") && !data.transportLegs.length} autoPopulated={matchesAutoPopulation(transportDraft.fromName, collectionLocation.name)} autoPopulationDescription="Filled from the collection location. Edit this field to override it for this route leg." />
+                      <TextField label="Country" value={transportDraft.fromCountry} onChange={(value) => updateTransportDraft("fromCountry", value)} placeholder="China" autoPopulated={matchesAutoPopulation(transportDraft.fromCountry, collectionLocation.country)} autoPopulationDescription="Filled from the collection location. Edit this field to override it for this route leg." />
                     </div>
                   </div>
                 </div>
@@ -2905,9 +2889,9 @@ function StepContent({
                   <p className="text-[13px] font-medium text-[var(--md-ink)]">To</p>
                   <div className="grid gap-3">
                     <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)]">
-                      <TextField label="Code" value={transportDraft.toCode} onChange={(value) => updateTransportDraft("toCode", value.toUpperCase())} placeholder="GBFXT / LHR" dir="ltr" action={<DexterCodeHint />} />
-                      <TextField label="Name" value={transportDraft.toName} onChange={(value) => updateTransportDraft("toName", value)} placeholder="Felixstowe" required missing={missing.has("Final destination") && !data.transportLegs.length} />
-                      <TextField label="Country" value={transportDraft.toCountry} onChange={(value) => updateTransportDraft("toCountry", value)} placeholder="United Kingdom" />
+                      <TextField label="Code" value={transportDraft.toCode} onChange={(value) => updateTransportDraft("toCode", value.toUpperCase())} placeholder="GBFXT / LHR" dir="ltr" action={<DexterCodeHint />} autoPopulated={matchesAutoPopulation(transportDraft.toCode, deliveryLocation.code)} autoPopulationDescription="Filled from the delivery location. Edit this field to override it for this route leg." />
+                      <TextField label="Name" value={transportDraft.toName} onChange={(value) => updateTransportDraft("toName", value)} placeholder="Felixstowe" required missing={missing.has("Final destination") && !data.transportLegs.length} autoPopulated={matchesAutoPopulation(transportDraft.toName, deliveryLocation.name)} autoPopulationDescription="Filled from the delivery location. Edit this field to override it for this route leg." />
+                      <TextField label="Country" value={transportDraft.toCountry} onChange={(value) => updateTransportDraft("toCountry", value)} placeholder="United Kingdom" autoPopulated={matchesAutoPopulation(transportDraft.toCountry, deliveryLocation.country)} autoPopulationDescription="Filled from the delivery location. Edit this field to override it for this route leg." />
                     </div>
                   </div>
                 </div>
@@ -2950,48 +2934,7 @@ function StepContent({
                 </Button>
               ) : null}
             </div>
-            <div className="overflow-x-auto md-scrollbar">
-              <table className="w-full min-w-[1080px] border-t border-[rgba(11,20,19,0.06)] text-left">
-                <thead className="bg-white/42">
-                  <tr className="text-[11px] font-medium text-[var(--md-text)]">
-                    <th className="px-4 py-2">Leg</th>
-                    <th className="px-3 py-2">Type</th>
-                    <th className="px-3 py-2">From</th>
-                    <th className="px-3 py-2">To</th>
-                    <th className="px-3 py-2">Carrier / line</th>
-                    <th className="px-3 py-2">Reference</th>
-                    <th className="px-3 py-2">ETD</th>
-                    <th className="px-3 py-2">ETA</th>
-                    <th className="px-3 py-2">Notes</th>
-                    <th className="w-12 px-3 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.transportLegs.length ? data.transportLegs.map((leg, index) => (
-                    <tr key={leg.id} className="border-t border-[rgba(11,20,19,0.05)] text-[13px] text-[var(--md-ink)]">
-                      <td className="px-4 py-3 font-medium">{index + 1}. {leg.mode}</td>
-                      <td className="px-3 py-3">{leg.legType || "-"}</td>
-                      <td className="px-3 py-3"><span className="font-medium">{leg.fromCode || "-"}</span><span className="block text-[12px] text-[var(--md-text)]">{leg.fromName}{leg.fromCountry ? `, ${leg.fromCountry}` : ""}</span></td>
-                      <td className="px-3 py-3"><span className="font-medium">{leg.toCode || "-"}</span><span className="block text-[12px] text-[var(--md-text)]">{leg.toName}{leg.toCountry ? `, ${leg.toCountry}` : ""}</span></td>
-                      <td className="px-3 py-3">{leg.carrier || "-"}</td>
-                      <td className="px-3 py-3">{leg.reference || "-"}</td>
-                      <td className="px-3 py-3">{leg.etd || "-"}</td>
-                      <td className="px-3 py-3">{leg.eta || "-"}</td>
-                      <td className="max-w-[220px] px-3 py-3"><span className="line-clamp-2">{leg.notes || "-"}</span></td>
-                      <td className="px-3 py-2">
-                        <button type="button" aria-label={`Remove route leg ${index + 1}`} className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.08)]" onClick={() => removeTransportLeg(leg.id)}>
-                          <Trash2 className="size-4" strokeWidth={1.6} />
-                        </button>
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={10} className="px-4 py-10 text-center text-[13px] text-[var(--md-text)]">No route legs added yet.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <DataTable ariaLabel="Route legs" columns={transportColumns} rows={data.transportLegs} getRowKey={(leg) => leg.id} minimumWidth={1220} showToolbar={false} showColumnManager={false} className="rounded-none shadow-none" emptyState={<p className="text-[13px] text-[var(--md-text)]">No route legs added yet.</p>} />
           </motion.section>
         </div>
       </StepShell>
@@ -3070,9 +3013,9 @@ function StepContent({
             </div>
           </div>
         ) : (
-          <div className="rounded-[var(--md-radius-xl)] bg-[rgba(46,142,96,0.1)] p-3 shadow-[inset_0_0_0_1px_rgba(46,142,96,0.24),0_0_0_1px_rgba(46,142,96,0.06)]">
+          <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)] p-3 shadow-[inset_0_0_0_1px_var(--md-accent-a24),0_0_0_1px_var(--md-accent-a06)]">
             <div className="flex items-center gap-3">
-              <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-green)] text-white">
+              <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-green)] text-[var(--md-accent-ink)]">
                 <Check className="size-4" strokeWidth={1.8} />
               </span>
               <div>
@@ -3094,7 +3037,7 @@ function StepContent({
             >
               <p className="text-[14px] font-medium text-[var(--md-ink)]">{title}</p>
               <p className="text-[13px] leading-5 text-[var(--md-text)]" dir="auto">{value}</p>
-              <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium text-[var(--md-accent)] hover:bg-[rgba(14,125,116,0.08)]" onClick={() => goToStep(index)}>
+              <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium text-[var(--md-accent)] hover:bg-[var(--md-accent-a08)]" onClick={() => goToStep(index)}>
                 Edit
               </Button>
             </motion.div>
@@ -3110,7 +3053,7 @@ function SuccessState({ data, navigate, onRestart }: { data: BookingWizardData; 
     <Surface padding="lg" className="overflow-hidden rounded-[var(--md-radius-2xl)]">
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
         <div>
-          <span className="grid size-12 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-white shadow-[0_18px_36px_rgba(14,125,116,0.22)]">
+          <span className="grid size-12 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[0_18px_36px_var(--md-accent-a22)]">
             <PackageCheck className="size-6" strokeWidth={1.45} />
           </span>
           <h1 className="mt-5 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">Booking created</h1>
@@ -3118,7 +3061,7 @@ function SuccessState({ data, navigate, onRestart }: { data: BookingWizardData; 
             {data.internalReference} is ready as a local prototype record. The flow can be restarted or the operator can return to the Bookings list.
           </p>
           <div className="mt-6 flex flex-wrap gap-2">
-            <Button className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[#0b6f67]" onClick={() => navigate("/bookings")}>
+            <Button className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]" onClick={() => navigate("/bookings")}>
               View bookings
             </Button>
             <Button variant="ghost" className="h-10 rounded-[var(--md-radius-lg)] bg-white/56 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/76" onClick={onRestart}>
@@ -3385,6 +3328,7 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
             : []
 
         if (sourceMissing.length) {
+          setFocusFieldLabel(sourceMissing[0])
           toast.warning("Select the source first", {
             description: sourceMissing.join(", "),
           })
@@ -3396,6 +3340,7 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
       }
 
       if (missingCurrent.length) {
+        setFocusFieldLabel(missingCurrent[0])
         toast.warning("Complete required fields first", {
           description: missingCurrent.slice(0, 3).join(", "),
         })
@@ -3486,7 +3431,7 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
                   {missingCurrent.length ? <p className="hidden text-[12px] font-medium text-[var(--md-amber)] md:block">{missingCurrent.length} required field{missingCurrent.length === 1 ? "" : "s"} still missing</p> : null}
                   <Button
                     type="button"
-                    className="h-10 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white hover:bg-[#0b6f67] sm:px-4"
+                    className="h-10 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)] sm:px-4"
                     onClick={goNext}
                     disabled={activeStep === steps.length - 1 && !canCreate}
                   >

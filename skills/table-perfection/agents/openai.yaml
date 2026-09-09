@@ -1,0 +1,4 @@
+interface:
+  display_name: "Table Perfection"
+  short_description: "Design and review purposeful data tables"
+  default_prompt: "Use $table-perfection to review this table and improve its columns, status treatments, actions, and toolbar."

@@ -1,24 +1,76 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowUpRight, Search, SlidersHorizontal, X } from "lucide-react"
+import { defaultPaginationPageSize } from "@/lib/pagination"
+import { collectExportPages } from "@/lib/table-export"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { ArrowUpRight, FlaskConical, LoaderCircle, RefreshCw, Search, X } from "@/components/icons/hugeicons"
+import { toast } from "sonner"
 
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
-import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
-import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
+import { RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { Pagination } from "@/components/multideck/pagination"
 import { Input } from "@/components/ui/input"
+import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
 import {
-  QuoteSearchBuilder,
-  countActiveQuoteConditions,
   createEmptyQuoteSearch,
-  quoteMatchesSearch,
+  quoteSearchFieldOptions,
   type QuoteSearchQuery,
-} from "@/components/multideck/quote-search-builder"
+} from "@/lib/quote-filters"
+import { filterQueryIsEmpty } from "@/lib/advanced-filters"
 import { StatusPill } from "@/components/multideck/status-pill"
-import { quoteRegisterRecords, type QuoteRegisterRecord } from "@/data/quote-register-data"
+import type { QuoteRegisterRecord } from "@/data/quote-register-data"
+import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
+import { type RegisterSort } from "@/lib/application-data-api"
+import { listSalesQuotesPage, subscribeSalesQuotes } from "@/lib/quote-api"
+import { createDevelopmentQuoteFixture } from "@/lib/quote-development-fixture"
+import type { AuthUserSummary } from "@/lib/auth-user"
 import { cn } from "@/lib/utils"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
+const quoteTableStorageKey = "quote-register"
+const quoteScopes = ["All", "Mine"] as const
+const defaultQuoteLoadError = "Quotes could not be loaded."
+type QuoteScope = (typeof quoteScopes)[number]
+
+function normaliseErrorMessage(message: string) {
+  return message.trim().replace(/[.!?]+$/u, "").toLocaleLowerCase()
+}
+
+function isRepeatedQuoteLoadError(error: string, translatedTitle: string) {
+  const normalisedError = normaliseErrorMessage(error)
+  return normalisedError === normaliseErrorMessage(defaultQuoteLoadError)
+    || normalisedError === normaliseErrorMessage(translatedTitle)
+}
+
+function withQuoteOwnerScope(query: QuoteSearchQuery, scope: QuoteScope, ownerName?: string | null): QuoteSearchQuery {
+  const owner = ownerName?.trim()
+  if (scope !== "Mine" || !owner) return query
+
+  return {
+    match: "all",
+    groups: [
+      ...query.groups,
+      {
+        id: "quote-owner-scope",
+        match: "any",
+        conditions: [
+          { id: "quote-sales-owner", field: "salesOwner", operator: "is", value: owner },
+          { id: "quote-operations-owner", field: "operationsOwner", operator: "is", value: owner },
+        ],
+      },
+    ],
+  }
+}
+
+function readSavedSort(storageKey: string, fallback: RegisterSort): RegisterSort {
+  if (typeof window === "undefined") return fallback
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(`multideck.table.${storageKey}`) ?? "null") as { sort?: RegisterSort | null } | null
+    return saved?.sort?.id && (saved.sort.direction === "asc" || saved.sort.direction === "desc") ? saved.sort : fallback
+  } catch {
+    return fallback
+  }
+}
 
 function formatDate(value: string, locale: string) {
   const parsed = new Date(`${value}T12:00:00Z`)
@@ -30,40 +82,102 @@ function ltrValue(value: ReactNode, className = "") {
   return <span data-i18n-skip dir="ltr" className={className}>{value}</span>
 }
 
-export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => void }) {
+export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path: string) => void; currentUser?: AuthUserSummary | null }) {
   const { language, t } = useLanguage()
   const [search, setSearch] = useState<QuoteSearchQuery>(createEmptyQuoteSearch)
-  const [quickSearch, setQuickSearch] = useState("")
-  const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false)
+  const [quickSearch, setQuickSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "")
+  const [scope, setScope] = useState<QuoteScope>("All")
+  const [debouncedQuickSearch, setDebouncedQuickSearch] = useState(quickSearch)
   const [page, setPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(10)
-  const [dexterOpen, setDexterOpen] = useState(false)
+  const [rowsPerPage, setRowsPerPage] = useState(defaultPaginationPageSize)
+  const [serverSort, setServerSort] = useState<RegisterSort | null>(() => readSavedSort(quoteTableStorageKey, { id: "updatedAt", direction: "desc" }))
+  const [quotes, setQuotes] = useState<QuoteRegisterRecord[]>([])
+  const [quoteTotal, setQuoteTotal] = useState(0)
+  const [availableQuoteTotal, setAvailableQuoteTotal] = useState(0)
+  const [quotesLoading, setQuotesLoading] = useState(true)
+  const [quotesError, setQuotesError] = useState<string | null>(null)
+  const [quoteRevision, setQuoteRevision] = useState(0)
+  const [creatingTestQuote, setCreatingTestQuote] = useState(false)
 
-  const filteredQuotes = useMemo(() => {
-    const quickQuery = quickSearch.trim().toLocaleLowerCase()
-    return quoteRegisterRecords.filter((quote) => {
-      if (!quoteMatchesSearch(quote, search)) return false
-      if (!quickQuery) return true
-      return Object.entries(quote)
-        .filter(([key]) => key !== "statusTone" && key !== "priorityTone")
-        .some(([, value]) => String(value ?? "").toLocaleLowerCase().includes(quickQuery))
+  useEffect(() => {
+    const timer = globalThis.setTimeout(() => setDebouncedQuickSearch(quickSearch), 250)
+    return () => globalThis.clearTimeout(timer)
+  }, [quickSearch])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setQuotesLoading(true)
+    setQuotesError(null)
+    void listSalesQuotesPage({
+      search: debouncedQuickSearch,
+      filterQuery: withQuoteOwnerScope(search, scope, currentUser?.name),
+      sort: serverSort,
+      limit: rowsPerPage,
+      offset: (page - 1) * rowsPerPage,
+    }, controller.signal).then((result) => {
+      setQuotes(result.rows)
+      setQuoteTotal(result.total)
+      setAvailableQuoteTotal(result.availableTotal)
+    }).catch((error) => {
+      if ((error as { name?: string })?.name !== "AbortError") {
+        setQuotesError(error instanceof Error ? error.message : defaultQuoteLoadError)
+      }
+    }).finally(() => {
+      if (!controller.signal.aborted) setQuotesLoading(false)
     })
-  }, [quickSearch, search])
-  const activeConditionCount = useMemo(() => countActiveQuoteConditions(search), [search])
-  const pageCount = Math.max(Math.ceil(filteredQuotes.length / rowsPerPage), 1)
-  const paginatedQuotes = filteredQuotes.slice((page - 1) * rowsPerPage, page * rowsPerPage)
+    return () => controller.abort()
+  }, [currentUser?.name, debouncedQuickSearch, page, quoteRevision, rowsPerPage, scope, search, serverSort])
 
-  useEffect(() => setPage(1), [rowsPerPage, search])
+  useEffect(() => subscribeSalesQuotes(() => setQuoteRevision((revision) => revision + 1)), [])
+
+  /** Lets the filter panel show how many quotes a draft would return before it is applied. */
+  const countDraftMatches = useCallback((draft: QuoteSearchQuery) => listSalesQuotesPage({
+    search: quickSearch,
+    filterQuery: withQuoteOwnerScope(draft, scope, currentUser?.name),
+    sort: serverSort,
+    limit: 1,
+    offset: 0,
+  }).then((result) => result.total), [currentUser?.name, quickSearch, scope, serverSort])
+  const pageCount = Math.max(Math.ceil(quoteTotal / rowsPerPage), 1)
+
+  function clearSearch() {
+    setQuickSearch("")
+    setSearch(createEmptyQuoteSearch())
+    setPage(1)
+  }
+
+  async function createTestQuote() {
+    if (creatingTestQuote) return
+    setCreatingTestQuote(true)
+    try {
+      const created = await createDevelopmentQuoteFixture()
+      toast.success(t("Test quote created"), { description: created.reference })
+      navigate(`/quotes/${created.reference.toLowerCase()}`)
+    } catch (error) {
+      toast.error(t("Test quote could not be created"), {
+        description: error instanceof Error ? error.message : t("Try again from the development workspace."),
+      })
+    } finally {
+      setCreatingTestQuote(false)
+    }
+  }
+
+  useEffect(() => setPage(1), [quickSearch, rowsPerPage, scope, search, serverSort])
   useEffect(() => {
     if (page > pageCount) setPage(pageCount)
   }, [page, pageCount])
+
+  const quotesErrorTitle = t(defaultQuoteLoadError)
+  const quotesErrorDetail = quotesError && !isRepeatedQuoteLoadError(quotesError, quotesErrorTitle)
+    ? quotesError
+    : null
 
   const columns = useMemo<DataTableColumn<QuoteRegisterRecord>[]>(() => {
     const textColumn = (
       id: keyof QuoteRegisterRecord,
       label: string,
       width: number,
-      options: { defaultHidden?: boolean; ltr?: boolean; cell?: (quote: QuoteRegisterRecord) => ReactNode } = {},
+      options: { defaultHidden?: boolean; kind?: DataTableColumn<QuoteRegisterRecord>["kind"]; ltr?: boolean; cell?: (quote: QuoteRegisterRecord) => ReactNode } = {},
     ): DataTableColumn<QuoteRegisterRecord> => ({
       id,
       label,
@@ -71,20 +185,23 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
       minWidth: Math.min(width, 110),
       maxWidth: Math.max(width + 120, 260),
       defaultHidden: options.defaultHidden,
+      kind: options.kind,
       resizable: true,
       sortValue: (quote) => quote[id] as string | number | null,
       cell: options.cell ?? ((quote) => options.ltr
-        ? ltrValue(String(quote[id] ?? "—"), "text-[12px] font-medium text-[var(--md-ink)]")
-        : <span className="text-[12px] text-[var(--md-text)]">{t(String(quote[id] ?? "—"))}</span>),
+        ? ltrValue(String(quote[id] ?? "–"), "text-[12px] font-medium text-[var(--md-ink)]")
+        : <span className="text-[12px] text-[var(--md-text)]">{t(String(quote[id] ?? "–"))}</span>),
     })
 
     const dateColumn = (id: "estimatedDeparture" | "estimatedArrival", label: string, defaultHidden = false) => textColumn(id, label, 142, {
       defaultHidden,
+      kind: "date",
       cell: (quote) => ltrValue(formatDate(quote[id], language), "text-[12px] font-medium text-[var(--md-text)] tabular-nums"),
     })
 
     const moneyColumn = (id: "sellValue" | "estimatedProfit" | "estimatedCost", label: string) => textColumn(id, label, 132, {
       defaultHidden: true,
+      kind: "number",
       cell: (quote) => ltrValue(
         new Intl.NumberFormat(language, { style: "currency", currency: quote.currency, maximumFractionDigits: 0 }).format(quote[id]),
         "text-[12px] font-medium tabular-nums text-[var(--md-ink)]",
@@ -101,7 +218,7 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
           </span>
         ),
       }),
-      textColumn("status", "Status", 132, { cell: (quote) => <StatusPill tone={quote.statusTone}>{t(quote.status)}</StatusPill> }),
+      textColumn("status", "Status", 132, { kind: "status", cell: (quote) => <StatusPill tone={quote.statusTone} indicator={false} className={cn(quote.status === "Accepted" && "bg-[var(--md-surface)] text-[var(--md-status-green-ink)] shadow-[var(--md-shadow-line)]")}>{t(quote.status)}</StatusPill> }),
       textColumn("customer", "Customer", 190),
       textColumn("origin", "Origin port / airport", 170, { ltr: true }),
       textColumn("destination", "Destination port / airport", 188, { ltr: true }),
@@ -138,42 +255,78 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
       }),
       textColumn("documentStatus", "Document status", 172, { defaultHidden: true }),
       textColumn("workflowStage", "Workflow stage", 176, { defaultHidden: true }),
-      textColumn("priority", "Priority", 116, { defaultHidden: true, cell: (quote) => <StatusPill tone={quote.priorityTone}>{t(quote.priority)}</StatusPill> }),
+      textColumn("priority", "Priority", 116, { defaultHidden: true, kind: "status", cell: (quote) => <StatusPill tone={quote.priorityTone}>{t(quote.priority)}</StatusPill> }),
       textColumn("quoteSource", "Quote source", 158, { defaultHidden: true }),
     ]
   }, [language, t])
 
   return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Quotes")} className="md-page md-page-stack">
-      <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <h1 className="text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Quotes")}</h1>
-          <p className="mt-2 max-w-2xl text-[14px] leading-6 text-[var(--md-text)]">
-            {t("Search, review and open every customer quote from one place.")}
-          </p>
+    <div className="md-page md-page-stack-compact">
+      <header className="min-w-0">
+        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-5">
+          <h1 className="shrink-0 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Quotes")}</h1>
+          <div className="min-w-0 text-[12px] leading-5">
+            <p className="font-medium text-[var(--md-text)]">
+              {t("Quote register")} · <span data-i18n-skip dir="ltr">{new Intl.NumberFormat(language).format(quoteTotal)}</span> {t("quotes")}
+            </p>
+          </div>
         </div>
-        <DexterActionPill onClick={() => setDexterOpen(true)} />
       </header>
 
-      {advancedSearchOpen ? <QuoteSearchBuilder value={search} onChange={setSearch} /> : null}
+      {quotesError ? (
+        <div role="alert" className="flex flex-col gap-3 rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium text-[var(--md-red)]">{quotesErrorTitle}</p>
+            <p className="mt-0.5 text-[12px] leading-5 text-[var(--md-text)]" dir="auto">
+              {quotesErrorDetail ?? t("The connection may have been interrupted. Try loading the register again.")}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0 self-start rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-3 text-[12px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] sm:self-auto"
+            onClick={() => setQuoteRevision((revision) => revision + 1)}
+          >
+            <RefreshCw data-icon="inline-start" className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+            {t("Try again")}
+          </Button>
+        </div>
+      ) : null}
 
       <DataTable
         ariaLabel="Quote register"
         columnsButtonLabel="Manage quote columns"
         columns={columns}
-        rows={paginatedQuotes}
+        rows={quotesLoading ? [] : quotes}
         getRowKey={(quote) => quote.reference}
-        storageKey="quote-register"
-        rowClassName="hover:bg-[var(--md-hover)]"
-        onRowClick={(quote) => navigate(`/quotes/${quote.reference.toLowerCase()}`)}
-        toolbarLeading={(
-          <div className="flex min-w-0 items-center gap-2 px-1.5">
-            <span className="text-[12px] font-medium text-[var(--md-ink)]">{t("Quote register")}</span>
-            <span className="text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{filteredQuotes.length}</span>
-          </div>
+        storageKey={quoteTableStorageKey}
+        exportConfig={{ fileName: "multideck-quotes", register: {
+          dateLabel: "Quote created date", dateValue: (quote) => quote.createdAt,
+          busy: quotesLoading || Boolean(quotesError) || quickSearch !== debouncedQuickSearch,
+          loadAllRows: (signal) => collectExportPages((page) => listSalesQuotesPage({
+            search: debouncedQuickSearch, filterQuery: withQuoteOwnerScope(search, scope, currentUser?.name), sort: serverSort, ...page,
+          }, signal), (quote) => quote.reference, signal),
+        } }}
+        serverSorting={{ value: serverSort, onChange: setServerSort }}
+        rowClassName={(quote) => cn(
+          "transition-colors",
+          quote.status === "Accepted"
+            ? "bg-[var(--md-status-green-bg)] hover:bg-[color-mix(in_srgb,var(--md-status-green-bg)_82%,var(--md-green))]"
+            : "hover:bg-[var(--md-hover)]",
         )}
-        toolbarActions={(
-          <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+        onRowClick={(quote) => navigate(`/quotes/${quote.reference.toLowerCase()}`)}
+        toolbarTabs={(
+          <RegisterViewSwitch
+            options={quoteScopes}
+            value={scope}
+            onChange={setScope}
+            ariaLabel={t("Quote ownership")}
+            compact
+          />
+        )}
+        toolbarSearch={(
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:flex-none sm:flex-nowrap">
             <div className="relative min-w-[128px] max-w-[280px] flex-1 sm:min-w-[200px] sm:flex-none">
               <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.35} aria-hidden="true" />
               <Input
@@ -183,42 +336,70 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
                 dir="auto"
                 aria-label={t("Search quotes")}
                 placeholder={t("Search quotes")}
-                className="h-8 rounded-[var(--md-radius-md)] border-0 bg-white ps-8 pe-8 text-[12px] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+                className="h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] ps-8 pe-8 text-base shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] md:text-[12px]"
                 onChange={(event) => setQuickSearch(event.target.value)}
               />
               {quickSearch ? (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon"
                   aria-label={t("Clear quick search")}
-                  className="absolute end-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] transition-[background,color,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.94]"
+                  className="absolute end-1 top-1/2 size-6 -translate-y-1/2 rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"
                   onClick={() => setQuickSearch("")}
                 >
                   <X className="size-3.5" strokeWidth={1.4} />
-                </button>
+                </Button>
               ) : null}
             </div>
-            <button
-              type="button"
-              aria-expanded={advancedSearchOpen}
-              className={cn(
-                "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,transform] duration-200 hover:bg-white hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-line)] active:scale-[0.97]",
-                advancedSearchOpen && "bg-white text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
-              )}
-              onClick={() => setAdvancedSearchOpen((current) => !current)}
-            >
-              <SlidersHorizontal className="size-3.5" strokeWidth={1.4} />
-              <span className="hidden lg:inline">{t("Advanced search")}</span>
-              {activeConditionCount ? <span className="grid min-w-4 place-items-center rounded-full bg-[rgba(14,125,116,0.11)] px-1 text-[10px] font-medium text-[var(--md-accent)]" data-i18n-skip>{activeConditionCount}</span> : null}
-            </button>
+            {import.meta.env.DEV ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={creatingTestQuote}
+                aria-label={t("Create a fully populated test quote")}
+                className="h-8 shrink-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-2.5 text-[11px] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"
+                onClick={() => void createTestQuote()}
+              >
+                {creatingTestQuote
+                  ? <LoaderCircle data-icon="inline-start" className="size-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.5} aria-hidden="true" />
+                  : <FlaskConical data-icon="inline-start" className="size-3.5" strokeWidth={1.45} aria-hidden="true" />}
+                {t(creatingTestQuote ? "Creating…" : "Create test quote")}
+              </Button>
+            ) : null}
           </div>
         )}
-        emptyState={(
+        toolbarFilters={(
+            <AdvancedFilterPopover
+              fields={quoteSearchFieldOptions}
+              value={search}
+              onChange={setSearch}
+              storageKey="quote-register"
+              label="Advanced search"
+              title="Advanced quote search"
+              itemLabel="quotes"
+              countMatches={countDraftMatches}
+              totalCount={availableQuoteTotal}
+            />
+        )}
+        emptyState={quotesLoading ? (
+          <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading quotes…" /></div>
+        ) : scope === "Mine" && !quickSearch && filterQueryIsEmpty(search) ? (
+          <div className="mx-auto grid max-w-sm place-items-center py-5 text-center">
+            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No quotes assigned to you")}</p>
+            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Quotes appear here when you are set as the sales or operations owner.")}</p>
+          </div>
+        ) : (
           <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
             <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
               <Search className="size-4" strokeWidth={1.3} />
             </span>
             <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t("No quotes match this search")}</p>
             <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Change or clear the search to see more quotes.")}</p>
+            <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-3 text-[12px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]" onClick={clearSearch}>
+              {t("Clear search")}
+            </Button>
           </div>
         )}
       />
@@ -226,13 +407,18 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
       <Pagination
         page={page}
         pageCount={pageCount}
-        totalItems={filteredQuotes.length}
+        totalItems={quoteTotal}
         pageSize={rowsPerPage}
         pageSizeOptions={rowsPerPageOptions}
+        loading={quotesLoading}
+        itemCount={quotes.length}
         itemLabel="quotes"
         onPageChange={setPage}
-        onPageSizeChange={setRowsPerPage}
+        onPageSizeChange={(nextRowsPerPage) => {
+          setRowsPerPage(nextRowsPerPage)
+          setPage(1)
+        }}
       />
-    </DexterDockedPage>
+    </div>
   )
 }
