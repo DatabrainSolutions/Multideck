@@ -658,20 +658,31 @@ const queueQuoteSave = createQuoteSaveQueue()
 const quoteIdsByReference = new Map<string, string>()
 if (typeof window !== "undefined") window.addEventListener(authenticatedAccessChangedEvent, () => quoteIdsByReference.clear())
 
-export async function saveQuoteWorkflow(quoteId: string | null, quote: QuoteSavePayload) {
+export async function saveQuoteWorkflow(quoteId: string | null, quote: QuoteSavePayload, expectedVersionId?: string, createVersion = false) {
   const session = await getSupabaseSession()
   if (!session?.user) throw new Error("Sign in again to save this quote.")
   const assertCurrent = captureAuthenticatedScope(session.user.id)
   const result = await queueQuoteSave(`${supabaseFunctionsUrl}:${session.user.id}:${quoteId ?? "new"}`, async () => {
     assertCurrent()
     invalidateQuoteWorkspaces()
-    const saved = await invoke<QuoteSaveResult>({ action: "save", quoteId, quote }, "The quote could not be saved.")
+    const saved = await invoke<QuoteSaveResult>({ action: "save", quoteId, quote, expectedVersionId, createVersion }, "The quote could not be saved.")
     assertCurrent()
     invalidateQuoteWorkspaces()
     invalidateRegisterPages("quotes:")
     invalidateRegisterPages("dashboard:")
     return saved
   })
+  return result
+}
+
+export async function discardQuoteDraft(quoteId: string, version: QuoteWorkflowVersion) {
+  const result = await invoke<{ restoredVersionId: string; restoredVersionNumber?: number }>({
+    action: "discard-draft", quoteId, versionId: version.CusQuoteVersion_ID,
+    expectedSnapshot: version.CusQuoteVersion_SnapshotJSON,
+  }, "The working draft could not be discarded.")
+  invalidateQuoteWorkspaces()
+  invalidateRegisterPages("quotes:")
+  invalidateRegisterPages("dashboard:")
   return result
 }
 

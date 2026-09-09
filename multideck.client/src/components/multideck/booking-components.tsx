@@ -3,6 +3,8 @@ import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type K
 import { createPortal } from "react-dom"
 import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
+import { CargoHandlingEditor } from "@/components/multideck/quote-details/cargo-handling-editor"
+import { readCargoHandling } from "@/lib/cargo-handling"
 import {
   AiBrain,
   Activity,
@@ -3546,8 +3548,7 @@ function BookingRecordDetails({
           <BookingCargoWiseAmountField label="Cargo line value" amount={cargoValue("declaredValue")} currency={cargoValue("declaredValueCurrency")} currencies={currencyOptions} editable={editable && Boolean(cargo)} onAmountChange={(nextAmount) => onCargoChange(cargoIndex, "declaredValue", nextAmount)} onCurrencyChange={(nextCurrency) => onCargoChange(cargoIndex, "declaredValueCurrency", nextCurrency)} />
           <BookingCargoWiseField label="Commodity" value={cargoValue("commodity", value(facts, "commodity"))} options={commodityOptions} searchable placeholder="Search commodities" {...editCargo(cargoIndex, "commodity")} />
           <BookingCargoWiseField label="Other handling" value={bookingCargoOtherHandling(knownCargo)} options={bookingOtherHandlingOptions} placeholder="Choose handling" allowCustom={false} {...editCargo(cargoIndex, "knownCargo")} />
-          <BookingCargoWiseField label="Hazardous" value={typeof cargo?.isHazardous === "boolean" ? (cargo.isHazardous ? "Yes" : "No") : ""} options={["Yes", "No"]} placeholder="Not recorded" emptyValue="Not recorded" allowCustom={false} {...editCargo(cargoIndex, "isHazardous")} />
-          <BookingCargoWiseField label="Temperature controlled" value={typeof cargo?.isTemperatureControlled === "boolean" ? (cargo.isTemperatureControlled ? "Yes" : "No") : ""} options={["Yes", "No"]} placeholder="Not recorded" emptyValue="Not recorded" allowCustom={false} {...editCargo(cargoIndex, "isTemperatureControlled")} />
+          {cargo ? <div className="sm:col-span-2 xl:col-span-4"><CargoHandlingEditor key={cargo.id || cargoIndex} value={cargo.handlingDetailsJson ?? (typeof cargo.cargoData?.handlingDetailsJson === "string" ? cargo.cargoData.handlingDetailsJson : JSON.stringify({ ...(cargo.isHazardous ? { hazardous: { tbc: true, details: {} } } : {}), ...(cargo.isTemperatureControlled ? { temperatureControlled: { tbc: true, details: {} } } : {}) }))} line={cargo} editable={editable} onChange={value => onCargoChange(cargoIndex, "handlingDetailsJson", value)} /></div> : null}
           {bookingCargoSafetyConflict(cargo, knownCargo) ? <p className="sm:col-span-2 xl:col-span-4 text-[12px] leading-5 text-[var(--md-text)]">{t("Earlier handling text mentions safety requirements that are not confirmed by this line's flags. Review the source documents before changing them.")} <span data-i18n-skip>{knownCargo}</span></p> : null}
           <div className="sm:col-span-2 xl:col-span-2 2xl:col-span-2">
             <BookingCargoWiseField label="Goods description" value={goodsDescription} placeholder="Describe the goods" {...editCargo(cargoIndex, "description")} />
@@ -5104,6 +5105,13 @@ export function BookingDetailWorkspace({
       // validates numeric range/scale; invalid input must not become a clear.
       const nextValue = safetyField ? value === "Yes" : value
       const nextCargo = { ...existing, [field]: nextValue, cargoData: { ...existing.cargoData, [field]: safetyField ? nextValue : value } }
+      if (field === "handlingDetailsJson") {
+        const handling = readCargoHandling(value)
+        nextCargo.isHazardous = Boolean(handling.hazardous)
+        nextCargo.isTemperatureControlled = Boolean(handling.temperatureControlled)
+        nextCargo.cargoData.isHazardous = nextCargo.isHazardous
+        nextCargo.cargoData.isTemperatureControlled = nextCargo.isTemperatureControlled
+      }
       if (safetyField || field === "knownCargo") {
         nextCargo.knownCargo = bookingCargoHandlingSummary(nextCargo, existing)
         nextCargo.cargoData.knownCargo = nextCargo.knownCargo

@@ -437,6 +437,11 @@ const editableInputTypes = new Set([
 ])
 
 /** Whether keystrokes at this element belong to the operator's typing. */
+export function isTypeaheadTarget(target: EventTarget | null): boolean {
+  return target instanceof Element
+    && Boolean(target.closest('[role="combobox"], [role="listbox"]'))
+}
+
 export function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false
 

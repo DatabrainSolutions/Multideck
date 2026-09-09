@@ -1,12 +1,12 @@
 // The version snapshot is authoritative. Keep decimal input as text and do not
 // turn legacy shipment summaries into allocations without an operator action.
-export const quoteCargoTextFields = ['description', 'commodity', 'packageType', 'hsCode', 'countryOfOrigin'] as const
+export const quoteCargoTextFields = ['description', 'commodity', 'packageType', 'hsCode', 'countryOfOrigin', 'handlingDetailsJson'] as const
 export const quoteCargoNumberFields = ['packageQuantity', 'grossWeightKg', 'netWeightKg', 'volumeCbm', 'chargeableWeightKg', 'length', 'width', 'height'] as const
 export type QuoteCargoLine = { id: string; lengthUnit: string; isHazardous: boolean; isTemperatureControlled: boolean }
   & Record<typeof quoteCargoTextFields[number] | typeof quoteCargoNumberFields[number], string>
 
 export function newQuoteCargoLine(): QuoteCargoLine {
-  return { id: crypto.randomUUID(), description: '', commodity: '', packageType: '', hsCode: '', countryOfOrigin: '',
+  return { id: crypto.randomUUID(), description: '', commodity: '', packageType: '', hsCode: '', countryOfOrigin: '', handlingDetailsJson: '',
     packageQuantity: '', grossWeightKg: '', netWeightKg: '', volumeCbm: '', chargeableWeightKg: '',
     length: '', width: '', height: '', lengthUnit: 'cm', isHazardous: false, isTemperatureControlled: false }
 }

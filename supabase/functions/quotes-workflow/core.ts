@@ -1,6 +1,6 @@
 import { normaliseMultideckAppOrigin } from "../_shared/multideck-app-origin.ts"
 
-export type QuoteWorkflowAction = "sources" | "workspace" | "intelligence" | "save" | "transition" | "open" | "readiness" | "convert" | "issue-options" | "issue-draft" | "issue-refine" | "issue-preview" | "issue" | "reference-settings" | "save-reference-settings" | "follow-up-settings" | "save-follow-up-settings" | "draft-reference-rule" | "branding"
+export type QuoteWorkflowAction = "discard-draft" | "sources" | "workspace" | "intelligence" | "save" | "transition" | "open" | "readiness" | "convert" | "issue-options" | "issue-draft" | "issue-refine" | "issue-preview" | "issue" | "reference-settings" | "save-reference-settings" | "follow-up-settings" | "save-follow-up-settings" | "draft-reference-rule" | "branding"
 export type QuoteExpiryPreset = 7 | 14 | 28 | 90 | "never"
 export type QuoteDeliveryMode = "standard" | "simple"
 
@@ -61,6 +61,7 @@ export function parseUuid(value: unknown, label: string) {
 }
 
 export function parseAction(value: unknown): QuoteWorkflowAction {
+  if (value === "discard-draft") return value
   if (["sources", "workspace", "intelligence", "save", "transition", "open", "readiness", "convert", "issue-options", "issue-draft", "issue-refine", "issue-preview", "issue", "reference-settings", "save-reference-settings", "follow-up-settings", "save-follow-up-settings", "draft-reference-rule", "branding"].includes(String(value))) {
     return value as QuoteWorkflowAction
   }

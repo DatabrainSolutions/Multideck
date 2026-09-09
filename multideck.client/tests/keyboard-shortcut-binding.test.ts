@@ -9,6 +9,7 @@ import {
   chord,
   isReservedBinding,
   isSequenceBinding,
+  isTypeaheadTarget,
   matchesPointerBinding,
   matchesStep,
   multiKeyChord,
@@ -23,6 +24,34 @@ import {
 function keyEvent(overrides: Partial<ShortcutKeyEvent> & { key: string }): ShortcutKeyEvent {
   return { code: undefined, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...overrides }
 }
+
+test("custom select triggers and nested options own typeahead, ordinary page elements do not", () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "Element")
+  class TestElement extends EventTarget {
+    readonly role: string
+    readonly parent?: TestElement
+    constructor(role: string, parent?: TestElement) {
+      super()
+      this.role = role
+      this.parent = parent
+    }
+    closest(selector: string): TestElement | null {
+      assert.equal(selector, '[role="combobox"], [role="listbox"]')
+      return ["combobox", "listbox"].includes(this.role) ? this : this.parent?.closest(selector) ?? null
+    }
+  }
+  Object.defineProperty(globalThis, "Element", { configurable: true, value: TestElement })
+  try {
+    assert.equal(isTypeaheadTarget(new TestElement("combobox")), true)
+    assert.equal(isTypeaheadTarget(new TestElement("listbox")), true)
+    assert.equal(isTypeaheadTarget(new TestElement("option", new TestElement("listbox"))), true)
+    assert.equal(isTypeaheadTarget(new TestElement("button")), false)
+    assert.equal(isTypeaheadTarget(null), false)
+  } finally {
+    if (original) Object.defineProperty(globalThis, "Element", original)
+    else Reflect.deleteProperty(globalThis, "Element")
+  }
+})
 
 test("a binding round-trips through its stored form", () => {
   const cases = [

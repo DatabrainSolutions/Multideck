@@ -2,7 +2,8 @@ import { useId, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Checkbox } from '@/components/ui/checkbox'
+import { CargoHandlingEditor } from './cargo-handling-editor'
+import { readCargoHandling } from '@/lib/cargo-handling'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { CompactCombobox, CompactFieldShell } from './quote-detail-fields'
 import { freightPackageTypeOptions } from '@/lib/freight-package-types'
@@ -85,7 +86,7 @@ export function QuoteCargoEditor({ lines, legacy, editable, chargeableWeight = t
                 <CompactCombobox label="Dimension unit" value={selected.lengthUnit} options={['cm', 'm', 'in'].map(value => ({ value, label: value }))} allowCustom={false} onValueChange={value => { if (value) patch({ lengthUnit: value }) }} width="full" />
               </> : <><dl className="text-[12px] leading-5"><dt>{t('Package type')}</dt><dd data-i18n-skip>{selected.packageType || '–'}</dd></dl><dl className="text-[12px] leading-5"><dt>{t('Dimension unit')}</dt><dd data-i18n-skip>{selected.lengthUnit}</dd></dl></>}
             </div>
-            <div className="flex flex-wrap gap-4">{(['isHazardous', 'isTemperatureControlled'] as const).map((key, index) => <label key={key} className="flex min-h-8 items-center gap-2 text-[12px]">{editable ? <Checkbox checked={selected[key]} onCheckedChange={checked => patch({ [key]: checked === true })} /> : <span>{t(selected[key] ? 'Yes' : 'No')} ·</span>}{t(index === 0 ? 'Hazardous' : 'Temperature controlled')}</label>)}</div>
+            <CargoHandlingEditor key={selected.id} value={selected.handlingDetailsJson || JSON.stringify({ ...(selected.isHazardous ? { hazardous: { tbc: true, details: {} } } : {}), ...(selected.isTemperatureControlled ? { temperatureControlled: { tbc: true, details: {} } } : {}) })} line={selected} editable={editable} onChange={handlingDetailsJson => { const handling = readCargoHandling(handlingDetailsJson); patch({ handlingDetailsJson, isHazardous: Boolean(handling.hazardous), isTemperatureControlled: Boolean(handling.temperatureControlled) }) }} />
           </div> : null}
         </div>
       )}

@@ -5,6 +5,7 @@ import { freightPackageTypeOptions } from "@/lib/freight-package-types"
 import { quoteWorkspaceFromVersion } from "@/lib/quote-version-presentation"
 import { quoteWorkspaceRoute } from "@/lib/quote-workspace-readiness"
 import { QuoteSubmittedDetails } from "@/components/multideck/quote-details/quote-submitted-details"
+import { discardQuoteDraft } from "@/lib/quote-workflow-api"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
@@ -3777,6 +3778,9 @@ function QuoteCompactSelect({
   const { t } = useLanguage()
   const id = useId()
   const normalized = options.map((option) => typeof option === "string" ? { value: option, label: option } : option)
+  if (disabled && value && !normalized.some((option) => option.value === value)) {
+    normalized.unshift({ value, label: value })
+  }
   const emptyValue = "__empty_quote_detail__"
   return (
     <CompactFieldShell label={label} htmlFor={id} width={width} required={required} invalid={invalid} className={className}>
@@ -4738,7 +4742,7 @@ function QuoteDetailsPanelV2({
       <CompactSectionShell
         title="Supplier & carrier options"
         meta="Multiple carrier services can sit beneath each supplier"
-        action={<div className="flex gap-1"><Button type="button" variant="ghost" size="sm" disabled={!editable} onClick={() => persistSupplierOptions([...supplierOptions, blankSupplierOption()])} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]"><Plus className="size-3" />{t("Add supplier")}</Button><Button type="button" size="sm" disabled={!supplierOptions.some((supplier) => supplier.supplierName.trim())} onClick={() => setRateRequestOpen(true)} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]"><Send className="size-3" />{t("Prepare rate requests")}</Button></div>}
+        action={<div className="flex gap-1"><Button type="button" variant="ghost" size="sm" disabled={!editable} onClick={() => persistSupplierOptions([...supplierOptions, blankSupplierOption()])} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]"><Plus className="size-3" />{t("Add supplier")}</Button><Button type="button" size="sm" disabled={!editable || !supplierOptions.some((supplier) => supplier.supplierName.trim())} onClick={() => setRateRequestOpen(true)} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]"><Send className="size-3" />{t("Prepare rate requests")}</Button></div>}
       >
         <div className="grid gap-1.5">
           {supplierOptions.map((supplier, supplierIndex) => {
@@ -4898,10 +4902,11 @@ function QuoteDetailsPanelV2({
           <QuoteCargoEditor lines={quote.cargoLines} editable={editable} chargeableWeight={fieldPolicy.chargeableWeight}
             legacy={{ description: quote.commodity || "", commodity: quote.commodity || "", packageQuantity: quote.packageQuantity || "", packageType: quote.packageType || "", grossWeightKg: quote.grossWeightKg || "", volumeCbm: quote.volumeCbm || "", chargeableWeightKg: quote.chargeableWeightKg || "", isHazardous: characteristics.hazardous, isTemperatureControlled: characteristics.temperatureControlled }}
             onChange={(cargoLines) => onQuotePatch({ cargoLines })} />
-          <div>
+          {!quote.cargoLines ? <div>
             <p className="mb-1.5 text-[10.5px] font-medium text-[var(--md-text)]">{t(quote.cargoLines ? "Shipment handling (in addition to line flags)" : "Cargo characteristics")}</p>
             <CargoCharacteristicsField value={characteristics} inherited={quoteCargoSafety(quote.cargoLines)} onChange={(value) => { onQuoteChange("cargoCharacteristics", cargoCharacteristicsToString(value)); onQuoteChange("knownCargo", value.hazardous ? "Hazardous" : "General merchandise") }} hazardousDetails={hazardousDetails} onHazardousDetailsChange={updateHazardousDetails} disabled={!editable} />
-          </div>
+          </div> : null}
+          {quote.cargoLines && [quote.hazardousUnNumber, quote.hazardousShippingName, quote.hazardousClass, quote.hazardousNotes].some(Boolean) ? <p className="text-[12px] text-[var(--md-text)]">{t("Earlier shipment-level hazardous details are retained. Review and assign them to the relevant cargo line; they have not been copied automatically.")} <span data-i18n-skip>{[quote.hazardousUnNumber, quote.hazardousShippingName, quote.hazardousClass, quote.hazardousNotes].filter(Boolean).join(" · ")}</span></p> : null}
         </div>
       </CompactSectionShell>
 
@@ -6028,6 +6033,7 @@ export function QuoteDetailPage({
   const [validationAttempted, setValidationAttempted] = useState(false)
   const [viewedVersionId, setViewedVersionId] = useState<string | null>(null)
   const [newVersionDialogOpen, setNewVersionDialogOpen] = useState(false)
+  const [discardDraftDialogOpen, setDiscardDraftDialogOpen] = useState(false)
   const [creatingVersion, setCreatingVersion] = useState(false)
   const [pendingCustomerChange, setPendingCustomerChange] = useState<PendingCustomerOrganisationChange | null>(null)
   const [creatingCustomerQuote, setCreatingCustomerQuote] = useState(false)
@@ -6590,7 +6596,7 @@ export function QuoteDetailPage({
         statusTone: "green" as StatusTone,
       }
       const nextCharges = strategy === "blank" ? [] : sourceCharges
-      const result = await saveQuoteWorkflow(currentQuoteId, quoteSavePayload(nextQuote, nextCharges, lookups))
+      const result = await saveQuoteWorkflow(currentQuoteId, quoteSavePayload(nextQuote, nextCharges, lookups), currentVersion?.CusQuoteVersion_ID, true)
       const sources = lookups ?? await getQuoteSources()
       const loadedWorkspace = await getQuoteWorkflow(result.reference, { fresh: true })
       applyLoadedWorkspace(loadedWorkspace, sources)
@@ -6616,7 +6622,7 @@ export function QuoteDetailPage({
     try {
       const sources = lookups ?? await getQuoteSources()
       if (isDirty) {
-        await saveQuoteWorkflow(sourceQuoteId, quoteSavePayload(sourceQuote, sourceCharges, sources))
+        await saveQuoteWorkflow(sourceQuoteId, quoteSavePayload(sourceQuote, sourceCharges, sources), currentVersion?.CusQuoteVersion_ID)
       }
       const nextQuote = newCustomerMasterQuote(sourceQuote, customerChange.patch, sourceQuoteId, sourceReference)
       const result = await saveQuoteWorkflow(null, quoteSavePayload(nextQuote, [], sources))
@@ -6660,8 +6666,31 @@ export function QuoteDetailPage({
     }
   }
 
+  async function discardWorkingDraft() {
+    if (!currentQuoteId || !currentVersion || currentVersionIsSubmitted || saving || transitioning || isDirty) return
+    setTransitioning(true)
+    if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current)
+    setWorkflowError("")
+    try {
+      await discardQuoteDraft(currentQuoteId, currentVersion)
+      quoteRequestGenerationRef.current += 1
+      // Keep autosave stopped even if the refresh fails after a successful discard.
+      failedSaveFingerprintRef.current = JSON.stringify([draftQuote, draftCharges])
+      const sources = lookups ?? await getQuoteSources()
+      const fresh = await getQuoteWorkflow(workspace?.quote.reference ?? savedQuote.id, { fresh: true })
+      applyLoadedWorkspace(fresh, sources)
+      setDiscardDraftDialogOpen(false)
+      setViewedVersionId(null)
+      setIssueNotice("Working draft discarded. Returned to the saved submitted version.")
+    } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "The draft could not be discarded. Reload to check its status.")
+    } finally {
+      setTransitioning(false)
+    }
+  }
+
   async function saveChanges() {
-    if (saveInFlightRef.current) return
+    if (saveInFlightRef.current || transitioning || !workspaceEditable) return
     const quoteSnapshot = draftQuote
     const chargeSnapshot = draftCharges
     const snapshotFingerprint = JSON.stringify([quoteSnapshot, chargeSnapshot])
@@ -6677,7 +6706,7 @@ export function QuoteDetailPage({
     }, 8000)
     try {
       const payload = quoteSavePayload(quoteSnapshot, chargeSnapshot, lookups)
-      const result = await saveQuoteWorkflow(currentQuoteId, payload)
+      const result = await saveQuoteWorkflow(currentQuoteId, payload, currentVersion?.CusQuoteVersion_ID)
       if (!isCurrent()) return
       setWorkflowError("")
       readinessRequestRef.current += 1
@@ -6712,6 +6741,7 @@ export function QuoteDetailPage({
       // quote draft the operator may already be editing.
       void getQuoteWorkflow(result.reference, { fresh: true })
         .then((fresh) => {
+          if (generation !== quoteRequestGenerationRef.current) return
           setWorkspace((current) => current ? {
             ...current,
             versions: fresh.versions,
@@ -7044,6 +7074,9 @@ export function QuoteDetailPage({
       return <Surface><p role="alert">{t("This version’s saved details are unavailable. Check Documents or reload the Quote; current details have not been substituted.")}</p></Surface>
     }
     if (viewingSubmittedVersion && presentedVersion && ["details", "overview", "charges"].includes(activeTab)) {
+      if (activeTab === "details") {
+        return <QuoteDetailsPanelV2 key={presentedVersion.CusQuoteVersion_ID} quote={presentedQuote} editable={false} requireCoreFields={false} validationAttempted={false} lookups={null} onQuoteChange={() => {}} onQuotePatch={() => {}} />
+      }
       return <QuoteSubmittedDetails key={`${presentedVersion.CusQuoteVersion_ID}:${activeTab}`} version={presentedVersion} reference={workspace?.quote.reference ?? ""} overview={activeTab === "overview"} chargesOnly={activeTab === "charges"} />
     }
     if (activeTab === "overview") {
@@ -7348,6 +7381,11 @@ export function QuoteDetailPage({
                     <TooltipContent>{t("More quote actions")}</TooltipContent>
                   </Tooltip>
                   <PopoverContent align="end" sideOffset={6} className="w-[min(300px,calc(100vw-24px))] rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-1.5 shadow-[var(--md-shadow-lift)]">
+                    {!currentVersionIsSubmitted && currentVersion && workspace?.versions.some((version) => version.CusQuoteVersion_IsSubmitted) && (
+                      <Button type="button" variant="ghost" className="w-full justify-start" disabled={saving || transitioning || isDirty || issuing} onClick={() => { setQuoteActionsOpen(false); setDiscardDraftDialogOpen(true) }}>
+                        {t("Discard working draft")}
+                      </Button>
+                    )}
                     <button
                       type="button"
                       className="flex min-h-11 w-full items-start gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-start outline-none transition-colors hover:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a14)]"
@@ -7540,6 +7578,19 @@ export function QuoteDetailPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog open={discardDraftDialogOpen} onOpenChange={(open) => { if (!transitioning) setDiscardDraftDialogOpen(open) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("Discard working draft?")}</DialogTitle>
+            <DialogDescription>{t("Its changes will leave the working-version list. You will return to the latest accepted version, or the latest submitted version if none was accepted. Sent PDFs and Booking data will not change. The discard is retained in Audit.")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button autoFocus variant="ghost" disabled={transitioning} onClick={() => setDiscardDraftDialogOpen(false)}>{t("Cancel")}</Button>
+            <Button disabled={saving || transitioning || isDirty || issuing} onClick={() => void discardWorkingDraft()}>{t(transitioning ? "Discarding…" : "Discard working draft")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={newVersionDialogOpen} onOpenChange={(open) => { if (!creatingVersion) setNewVersionDialogOpen(open) }}>
         <DialogContent className="rounded-[var(--md-radius-2xl)] sm:max-w-[560px]">
           <DialogHeader className="text-start">

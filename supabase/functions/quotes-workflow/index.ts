@@ -1797,8 +1797,20 @@ Deno.serve(async (request) => {
       const intelligence = await refreshQuoteIntelligence(admin, operator.companyId, String(quote.CusQuoteHeader_ID))
       return jsonResponse(request, intelligence ?? { state: "unavailable" })
     }
+    if (action === "discard-draft") {
+      const { data, error } = await admin.rpc("quote_workflow_discard_draft", {
+        caller_auth_user_id: userId,
+        requested_quote_id: parseUuid(body.quoteId, "Quote"),
+        requested_version_id: parseUuid(body.versionId, "Draft version"),
+        expected_snapshot: body.expectedSnapshot ?? null,
+      })
+      if (error || !data) throw error ?? new Error("Draft discard returned no result")
+      return jsonResponse(request, data)
+    }
     if (action === "save") {
       const payload = validateSavePayload(body.quote)
+      if (body.expectedVersionId) payload._expectedVersionId = parseUuid(body.expectedVersionId, "Expected version")
+      if (body.createVersion === true) payload._createVersion = true
       const quoteId = body.quoteId ? parseUuid(body.quoteId, "Quote") : null
       const { data, error } = await admin.rpc("quote_workflow_save_quote", { caller_auth_user_id: userId, requested_quote_id: quoteId, payload })
       if (error || !data) throw error ?? new Error("Quote save returned no result")

@@ -2258,6 +2258,7 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "quote-detail-controls" ? <QuoteDetailControlsPreview /> : null}
       {id === "quote-cargo-editor" ? <QuoteCargoEditorPreview /> : null}
+      {id === "cargo-handling-editor" ? <QuoteCargoEditorPreview /> : null}
       {id === "cargo-allocation-editor" ? <CargoAllocationEditorPreview /> : null}
       {id === "booking-route-milestones" ? <BookingRouteMilestonesPreview /> : null}
       {id === "booking-dangerous-goods" ? <BookingDangerousGoodsPreview /> : null}

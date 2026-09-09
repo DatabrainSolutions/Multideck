@@ -84,6 +84,7 @@ export type BookingSecurityEvidenceSave = {
 }
 
 export type BookingWorkflowCargo = {
+  handlingDetailsJson?: string | null
   /** Vehicle carried as cargo, never the transporting truck's registration. */
   vin?: string | null
   id?: string

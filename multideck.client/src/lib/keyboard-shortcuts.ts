@@ -25,6 +25,7 @@ import {
   bindingsEqual,
   bindingSurvivesTyping,
   isEditableTarget,
+  isTypeaheadTarget,
   isModifierOnlyEvent,
   keyNameFromEvent,
   matchesPointerBinding,
@@ -574,6 +575,12 @@ function handleKeyDown(event: KeyboardEvent) {
   if (event.defaultPrevented) return
   if (event.isComposing) return
   if (isModifierOnlyEvent(event)) return
+  // Custom selects own bare keys, including typeahead and arrow navigation.
+  // Let the control receive them before considering any page shortcut sequence.
+  if (!event.metaKey && !event.ctrlKey && !event.altKey && isTypeaheadTarget(event.target)) {
+    setPending(null, null)
+    return
+  }
   if (event.repeat) {
     if (suppressedEditableKey?.key === keyNameFromEvent(event)) event.preventDefault()
     return

@@ -64,13 +64,24 @@ const panelEnd=source.indexOf('    if (activeTab === "overview")',panelBodyStart
 assert.ok(panelStart>=0 && panelEnd>panelBodyStart)
 const panelModule={exports:{}}
 const panelCode=transformSync(`export function renderSelectedPanel(state,activeTab){
- const {viewingSubmittedVersion,viewedVersionWorkspace,presentedVersion}=state;
+ const {viewingSubmittedVersion,viewedVersionWorkspace,presentedVersion,presentedQuote}=state;
  const workspace={quote:{reference:'JQ20020'}};
  ${source.slice(panelBodyStart,panelEnd)}
  return 'Draft panel';
 }`,{loader:'tsx',jsx:'automatic',format:'cjs'}).code
-new Function('require','module','exports','QuoteSubmittedDetails','Surface','t',panelCode)(
- require,panelModule,panelModule.exports,QuoteSubmittedDetails,props=>React.createElement('section',props),value=>value)
+// Boundary fixture: verify the real page supplies the normal form with locked,
+// snapshot-only props. This is not browser coverage of individual controls.
+const lockedDetails = props => {
+ assert.equal(props.editable,false)
+ assert.equal(props.lookups,null)
+ assert.equal(props.requireCoreFields,false)
+ assert.equal(props.validationAttempted,false)
+ assert.equal(props.onQuoteChange('customer','MUTATION'),undefined)
+ assert.equal(props.onQuotePatch({customer:'MUTATION'}),undefined)
+ return React.createElement('section',null,'Submitted version ',JSON.stringify(props.quote))
+}
+new Function('require','module','exports','QuoteSubmittedDetails','QuoteDetailsPanelV2','Surface','t',panelCode)(
+ require,panelModule,panelModule.exports,QuoteSubmittedDetails,lockedDetails,props=>React.createElement('section',props),value=>value)
 export const renderSelectedPanel=(state,tab)=>renderToStaticMarkup(panelModule.exports.renderSelectedPanel(state,tab))
 
 export const makeVersion = (number, quote = {}) => ({ CusQuoteVersion_ID:`version-${number}`,CusQuoteVersion_Number:number,

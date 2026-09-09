@@ -1,6 +1,7 @@
 import toggleGroupSource from "@/components/ui/toggle-group.tsx?raw"
 import ticketAttachmentsSource from "@/components/multideck/ticket-attachments.tsx?raw"
 import quoteCargoEditorSource from "@/components/multideck/quote-details/quote-cargo-editor.tsx?raw"
+import cargoHandlingEditorSource from "@/components/multideck/quote-details/cargo-handling-editor.tsx?raw"
 import cargoAllocationEditorSource from "@/components/multideck/cargo-allocation-editor.tsx?raw"
 import bookingRouteMilestonesSource from "@/components/multideck/booking-route-milestones.tsx?raw"
 import bookingDangerousGoodsSource from "@/components/multideck/booking-dangerous-goods.tsx?raw"
@@ -246,8 +247,18 @@ export const galleryComponents = [
     description: "Select and edit individual goods lines without repeating a large form for every item.",
     details: "The parent owns draft saving and version permissions. Stable line identifiers survive editing and reordering; shipment goods value is separate. In read-only mode, full line details are readable text. Removing a line requires confirmation and never alters submitted history.",
     foundOn: [{ label: "New quote", route: "/quotes/new" }, { label: "Quotes", route: "/quotes" }, { label: "Components", route: "/components?component=quote-cargo-editor" }],
-    componentCode: quoteCargoEditorSource,
+    componentCode: quoteCargoEditorSource + '\n\n' + cargoHandlingEditorSource,
     usageCode: `const [lines, setLines] = useState([newQuoteCargoLine()])\n\n<QuoteCargoEditor\n  lines={lines}\n  editable={!submitted}\n  chargeableWeight={mode === "Air"}\n  onChange={setLines}\n/>`,
+  },
+  {
+    id: "cargo-handling-editor",
+    name: "Cargo Handling Editor",
+    category: "Forms",
+    description: "Per-line handling selections with explicit outstanding details.",
+    details: "Hazardous and temperature requirements use dialogs. Oversized uses cargo measurements; fragile and food-grade use the goods description. TBC permits Quote issue, not Booking operational readiness or completion. New lines start without selections.",
+    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=cargo-handling-editor" }],
+    componentCode: cargoHandlingEditorSource,
+    usageCode: `<CargoHandlingEditor value={line.handlingDetailsJson} line={line} editable={!submitted} onChange={handlingDetailsJson => updateLine({ handlingDetailsJson })} />`,
   },
   {
     id: "cargo-allocation-editor",

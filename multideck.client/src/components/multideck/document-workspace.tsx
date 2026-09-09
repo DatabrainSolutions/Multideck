@@ -440,6 +440,33 @@ function DocumentPreviewPanel({
   onClose: () => void
 }) {
   const { language, t } = useLanguage()
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState(false)
+  const pdfUrl = document.preview.kind === "pdf" ? document.preview.url : undefined
+
+  async function downloadPdf() {
+    if (!pdfUrl || downloading) return
+    setDownloading(true)
+    setDownloadError(false)
+    try {
+      const response = await fetch(pdfUrl, { signal: AbortSignal.timeout(60_000) })
+      if (!response.ok) throw new Error("PDF unavailable")
+      const blob = await response.blob()
+      if (!blob.size || !((await blob.slice(0, 5).text()) === "%PDF-")) throw new Error("Invalid PDF")
+      const url = URL.createObjectURL(blob)
+      const link = window.document.createElement("a")
+      link.href = url
+      link.download = document.fileName
+      window.document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch {
+      setDownloadError(true)
+    } finally {
+      setDownloading(false)
+    }
+  }
   const dateFormatter = useMemo(
     () => new Intl.DateTimeFormat(language, { day: "2-digit", month: "short", year: "numeric" }),
     [language],
@@ -472,6 +499,21 @@ function DocumentPreviewPanel({
           <X className="size-3.5" strokeWidth={1.4} />
         </Button>
       </div>
+
+      {document.preview.kind === "pdf" && (
+        <div className="flex flex-wrap items-center gap-2 px-3 pb-3">
+          {pdfUrl ? (
+            <Button asChild size="sm" variant="outline">
+              <a href={pdfUrl} target="_blank" rel="noopener noreferrer" aria-label={t("Open PDF in a new tab")}>{t("Open PDF")}</a>
+            </Button>
+          ) : <Button size="sm" variant="outline" disabled>{t("Open PDF")}</Button>}
+          <Button size="sm" variant="outline" disabled={!pdfUrl || downloading} onClick={downloadPdf} aria-busy={downloading}>
+            {t(downloading ? "Downloading…" : "Download PDF")}
+          </Button>
+          {!pdfUrl && <p className="w-full text-[12px] text-[var(--md-subtle)]">{t("PDF unavailable. Reload the record to try again.")}</p>}
+          {downloadError && <p role="alert" className="w-full text-[12px] text-[var(--md-red)]">{t("The PDF could not be downloaded. Try again, or reload the record to refresh access.")}</p>}
+        </div>
+      )}
 
       <div className="grid min-h-[360px] place-items-center overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-report-preview-bg)] p-4 shadow-[var(--md-shadow-line)] lg:min-h-[460px]">
         <DocumentPreviewCanvas document={document} />
@@ -654,7 +696,7 @@ export function DocumentWorkspace({
           )}
         </Surface>
 
-        {selectedDocument ? <DocumentPreviewPanel document={selectedDocument} onClose={() => updateSelection(null)} /> : null}
+        {selectedDocument ? <DocumentPreviewPanel key={`${selectedDocument.id}:${selectedDocument.preview.url ?? ""}`} document={selectedDocument} onClose={() => updateSelection(null)} /> : null}
       </div>
     </section>
   )
