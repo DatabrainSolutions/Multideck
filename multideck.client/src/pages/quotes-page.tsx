@@ -92,7 +92,6 @@ import {
 import { LifecycleNotes } from "@/components/multideck/lifecycle-notes"
 import {
   AmountCurrencyField,
-  CargoCharacteristicsField,
   CompactCombobox,
   CompactFieldRow,
   CompactFieldShell,
@@ -104,19 +103,17 @@ import {
 } from "@/components/multideck/quote-details/quote-detail-fields"
 import {
   EMPTY_CARGO_CHARACTERISTICS,
-  EMPTY_HAZARDOUS_DETAILS,
   EMPTY_RECURRENCE,
   getIncotermDefinition,
   INCOTERMS_2020,
   type CargoCharacteristics,
-  type HazardousDetails,
   type LocationOption,
   type LocationValue,
   type RecurrenceValue,
 } from "@/components/multideck/quote-details/quote-detail-model"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { calculateQuoteFreightDirection } from "@/lib/freight-direction"
-import { newQuoteCargoLine, quoteCargoSummary, quoteCargoSafety, quoteCargoHandlingSummary, readQuoteCargoLines, type QuoteCargoLine } from "@/lib/quote-cargo"
+import { newQuoteCargoLine, quoteCargoSummary, quoteCargoHandlingSummary, readQuoteCargoLines, type QuoteCargoLine } from "@/lib/quote-cargo"
 import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
 import { textareaSelectionAnchor, type TextareaSelection, type TextareaSelectionAnchor } from "@/lib/textarea-selection"
 import { formatQuoteLossReason, quoteCustomerDeclineReasons, quoteLossReasons } from "@/lib/quote-loss-reasons"
@@ -176,7 +173,6 @@ const quoteWorkspaceTabs: QuoteWorkspaceTab[] = ["overview", "details", "charges
 
 // Quote and Booking use the same package vocabulary; existing custom values remain valid.
 
-const commonFreightPackageTypeOptions = freightPackageTypeOptions.slice(0, 7)
 const freightPackageTypeSelectOptions = freightPackageTypeOptions.map((option) => ({
   value: option.value,
   label: `${option.value} · ${option.description}`,
@@ -4127,21 +4123,6 @@ function QuoteDetailsPanelV2({
     notes: quote.frequencyNotes || "",
   }
   const characteristics = cargoCharacteristicsFromQuote(quote)
-  const hazardousDetails: HazardousDetails = {
-    ...EMPTY_HAZARDOUS_DETAILS,
-    unNumber: quote.hazardousUnNumber ?? "",
-    properShippingName: quote.hazardousShippingName ?? "",
-    hazardClass: quote.hazardousClass ?? "",
-    packingGroup: (["I", "II", "III", "N/A"] as const).includes(quote.hazardousPackingGroup as "I") ? quote.hazardousPackingGroup as HazardousDetails["packingGroup"] : "",
-    packageCount: quote.packageQuantity ?? "",
-    packageType: quote.packageType ?? "",
-    netWeightKg: quote.hazardousNetWeightKg ?? "",
-    grossWeightKg: quote.grossWeightKg ?? "",
-    marinePollutant: quote.hazardousMarinePollutant === "Yes",
-    limitedQuantity: quote.hazardousLimitedQuantity === "Yes",
-    notes: quote.hazardousNotes || quote.hazardousEmergencyContact || "",
-  }
-
   function updateContainerRequests(nextRequests: QuoteContainerRequest[]) {
     const requests = nextRequests.slice(0, 20)
     onQuotePatch({
@@ -4287,22 +4268,6 @@ function QuoteDetailsPanelV2({
       frequencyTimesPerMonth: value.timesPerMonth,
       frequencyCount: value.totalOccurrences,
       frequencyNotes: value.notes,
-    })
-  }
-
-  function updateHazardousDetails(value: HazardousDetails) {
-    onQuotePatch({
-      hazardousUnNumber: value.unNumber,
-      hazardousShippingName: value.properShippingName,
-      hazardousClass: value.hazardClass,
-      hazardousPackingGroup: value.packingGroup,
-      packageQuantity: value.packageCount,
-      packageType: value.packageType,
-      hazardousNetWeightKg: value.netWeightKg,
-      grossWeightKg: value.grossWeightKg,
-      hazardousMarinePollutant: value.marinePollutant ? "Yes" : "No",
-      hazardousLimitedQuantity: value.limitedQuantity ? "Yes" : "No",
-      hazardousNotes: value.notes,
     })
   }
 
@@ -4881,34 +4846,6 @@ function QuoteDetailsPanelV2({
 
       <CompactSectionShell title="Goods">
         <div className="grid min-w-0 gap-4">
-          {!quote.cargoLines ? (
-            <div className="grid min-w-0 gap-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h4 className="text-[13px] font-medium text-[var(--md-ink)]">{t("Shipment totals")}</h4>
-                <span className="text-[11px] text-[var(--md-subtle)]">{t("Individual cargo lines have not been recorded")}</span>
-              </div>
-              <div className={cn("grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2", fieldPolicy.chargeableWeight ? "@min-[60rem]/quote-details:grid-cols-7" : "@min-[60rem]/quote-details:grid-cols-6")}>
-            <CompactCombobox label="Commodity" value={quote.commodity ?? ""} options={(lookups?.commodities ?? []).map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.code }))} onValueChange={(value) => onQuoteChange("commodity", value)} placeholder="Search or type commodity" disabled={!editable} width="full" className="sm:col-span-2" />
-            <QuoteCompactInput label="Packages / pieces" value={quote.packageQuantity ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("packageQuantity", value)} />
-            <CompactCombobox
-              label="Package type"
-              value={quote.packageType ?? ""}
-              options={freightPackageTypeOptions}
-              recommendedOptions={commonFreightPackageTypeOptions}
-              recommendedLabel="Common package types"
-              allLabel="All package types"
-              emptyLabel="No matching package types"
-              placeholder="Select or type package type"
-              onValueChange={(value) => onQuoteChange("packageType", value)}
-              disabled={!editable}
-              width="full"
-            />
-            <QuoteCompactInput label="Gross weight (kg)" value={quote.grossWeightKg ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("grossWeightKg", value)} />
-            <QuoteCompactInput label="Volume (CBM)" value={quote.volumeCbm ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("volumeCbm", value)} />
-            {fieldPolicy.chargeableWeight ? <QuoteCompactInput label="Chargeable weight (kg)" value={quote.chargeableWeightKg ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("chargeableWeightKg", value)} /> : null}
-              </div>
-            </div>
-          ) : null}
           <QuoteCargoEditor lines={quote.cargoLines} editable={editable} chargeableWeight={fieldPolicy.chargeableWeight}
             legacy={{ description: quote.commodity || "", commodity: quote.commodity || "", packageQuantity: quote.packageQuantity || "", packageType: quote.packageType || "", grossWeightKg: quote.grossWeightKg || "", volumeCbm: quote.volumeCbm || "", chargeableWeightKg: quote.chargeableWeightKg || "", isHazardous: characteristics.hazardous, isTemperatureControlled: characteristics.temperatureControlled }}
             onChange={(cargoLines) => onQuotePatch({ cargoLines })} />
@@ -4922,11 +4859,7 @@ function QuoteDetailsPanelV2({
             </div>
             {originIsUs ? <QuoteCompactSelect label="FMC TID" value={quote.fmcTid ?? ""} options={["Not required", "Required", "Pending"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("fmcTid", value)} /> : null}
           </div>
-          {!quote.cargoLines ? <div>
-            <p className="mb-1.5 text-[10.5px] font-medium text-[var(--md-text)]">{t(quote.cargoLines ? "Shipment handling (in addition to line flags)" : "Cargo characteristics")}</p>
-            <CargoCharacteristicsField value={characteristics} inherited={quoteCargoSafety(quote.cargoLines)} onChange={(value) => { onQuoteChange("cargoCharacteristics", cargoCharacteristicsToString(value)); onQuoteChange("knownCargo", value.hazardous ? "Hazardous" : "General merchandise") }} hazardousDetails={hazardousDetails} onHazardousDetailsChange={updateHazardousDetails} disabled={!editable} />
-          </div> : null}
-          {quote.cargoLines && [quote.hazardousUnNumber, quote.hazardousShippingName, quote.hazardousClass, quote.hazardousNotes].some(Boolean) ? <p className="text-[12px] text-[var(--md-text)]">{t("Earlier shipment-level hazardous details are retained. Review and assign them to the relevant cargo line; they have not been copied automatically.")} <span data-i18n-skip>{[quote.hazardousUnNumber, quote.hazardousShippingName, quote.hazardousClass, quote.hazardousNotes].filter(Boolean).join(" · ")}</span></p> : null}
+          {[quote.cargoCharacteristics, quote.hazardousUnNumber, quote.hazardousShippingName, quote.hazardousClass, quote.hazardousNotes].some(Boolean) ? <details className="text-[12px] text-[var(--md-text)]"><summary>{t("Earlier shipment handling retained")}</summary><dl className="grid gap-1 pt-2">{Object.entries({ "Cargo characteristics": quote.cargoCharacteristics, "UN number": quote.hazardousUnNumber, "Proper shipping name": quote.hazardousShippingName, "Hazard class": quote.hazardousClass, "Packing group": quote.hazardousPackingGroup, "Emergency contact": quote.hazardousEmergencyContact, "Net weight (kg)": quote.hazardousNetWeightKg, "Marine pollutant": quote.hazardousMarinePollutant, "Limited quantity": quote.hazardousLimitedQuantity, "Notes": quote.hazardousNotes }).filter(([, value]) => Boolean(value)).map(([label, value]) => <div key={label}><dt className="inline">{t(label)}: </dt><dd className="inline" data-i18n-skip>{value}</dd></div>)}</dl></details> : null}
         </div>
       </CompactSectionShell>
 

@@ -23,7 +23,7 @@ const fieldLabels = {
 const fieldGrid = 'grid min-w-0 gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr))]'
 
 /** A goods-list editor, not a complete Quote screen. Parent owns autosave/versioning. */
-export function QuoteCargoEditor({ lines, legacy, editable, chargeableWeight = true, onChange }: {
+export function QuoteCargoEditor({ lines: savedLines, legacy, editable, chargeableWeight = true, onChange }: {
   lines: QuoteCargoLine[] | undefined
   legacy?: Partial<QuoteCargoLine>
   editable: boolean
@@ -36,6 +36,10 @@ export function QuoteCargoEditor({ lines, legacy, editable, chargeableWeight = t
   const focusNewLine = useRef<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [removingId, setRemovingId] = useState<string | null>(null)
+  const [legacyTemplate] = useState(newQuoteCargoLine)
+  // Display old shipment totals in the same editor without changing a saved
+  // snapshot on mount. Only an operator edit materialises the draft cargo list.
+  const lines = savedLines ?? [{ ...legacyTemplate, ...legacy, id: legacyTemplate.id }]
   const patch = (lineId: string, change: Partial<QuoteCargoLine>) => {
     if (editable && lines) onChange(lines.map(line => line.id === lineId ? { ...line, ...change, id: line.id } : line))
   }
@@ -81,19 +85,9 @@ export function QuoteCargoEditor({ lines, legacy, editable, chargeableWeight = t
       }
     } },
   ]
-  if (!lines) return editable ? (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button type="button" variant="outline" size="sm" onClick={() => {
-        const empty = newQuoteCargoLine()
-        const line = { ...empty, ...legacy, id: empty.id }
-        focusNewLine.current = line.id
-        onChange([line]); setExpandedId(line.id)
-      }}><Plus className="size-3.5" />{t('Use individual cargo lines')}</Button>
-      <p className="text-[12px] leading-5 text-[var(--md-text)]">{t('Keep the current goods as one line, then add more. Submitted history stays unchanged.')}</p>
-    </div>
-  ) : null
   return (
     <section className="grid min-w-0 gap-3" aria-labelledby={`${id}-heading`} style={{ containerType: 'inline-size' }}>
+      {savedLines === undefined ? <p className="text-[12px] text-[var(--md-text)]">{t('Earlier shipment totals are shown together in one row; individual cargo allocations were not recorded.')}</p> : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 ref={heading} tabIndex={-1} id={`${id}-heading`} className="text-[13px] font-medium text-[var(--md-ink)]">{t('Cargo lines')} <span className="ms-1 text-[var(--md-subtle)]">{lines.length}</span></h3>
         {editable ? <Button type="button" variant="outline" size="sm" disabled={lines.length >= 500} title={lines.length >= 500 ? t('Maximum 500 cargo lines') : undefined} onClick={add}><Plus className="size-3.5" />{t('Add cargo line')}</Button> : <p className="text-[12px] text-[var(--md-text)]">{t('Saved version · read only')}</p>}
