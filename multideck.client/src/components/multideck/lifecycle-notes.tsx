@@ -654,7 +654,7 @@ export function LifecycleNotes({
                 <MessageSquareText className="mt-0.5 size-4 shrink-0 text-[var(--md-subtle)]" aria-hidden="true" />
                 <div>
                   <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No notes yet")}</p>
-                  <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Leave an update, decision or handover for your team.")}</p>
+                  {subjectType !== "booking" ? <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Leave an update, decision or handover for your team.")}</p> : null}
                 </div>
               </div>
             )}

@@ -91,6 +91,8 @@ import {
 } from "@/lib/unlocode-directory"
 import { LifecycleNotes } from "@/components/multideck/lifecycle-notes"
 import {
+  CargoWiseField,
+  CargoWiseGroup,
   AmountCurrencyField,
   CargoCharacteristicsField,
   CompactCombobox,
@@ -2606,75 +2608,6 @@ function QuoteAiOverviewPanel({ quote }: { quote: QuoteRecord }) {
   )
 }
 
-function CargoWiseField({
-  label,
-  value,
-  span = false,
-  compact = false,
-  fitValue = false,
-  compactLabel = "fixed",
-  compactPadding = "default",
-  editable = false,
-  className,
-  action,
-  onChange,
-}: {
-  label: string
-  value: string
-  span?: boolean
-  compact?: boolean
-  fitValue?: boolean
-  compactLabel?: "fixed" | "content" | "tight"
-  compactPadding?: "default" | "square"
-  editable?: boolean
-  className?: string
-  action?: ReactNode
-  onChange?: (value: string) => void
-}) {
-  const { t } = useLanguage()
-  const inputId = useId()
-
-  return (
-    <div className={cn(
-      "md-cargowise-field grid min-w-0 items-center",
-      compact
-        ? compactLabel === "content"
-          ? "grid-cols-[max-content_minmax(0,1fr)] gap-1"
-          : compactLabel === "tight"
-            ? "grid-cols-[44px_minmax(0,1fr)] gap-1"
-          : "grid-cols-[64px_minmax(0,1fr)] gap-1"
-        : "grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] gap-1.5",
-      span && "md:col-span-2",
-      className,
-    )}>
-      <label htmlFor={inputId} className={cn("min-w-0 whitespace-normal break-words text-[11px] font-medium leading-[1.15] text-[var(--md-text)]", compactLabel === "content" ? "text-start" : "text-end")}>{t(label)}</label>
-      <div className={cn("grid min-w-0", action && "grid-cols-[minmax(0,1fr)_auto] gap-0.5")}>
-        {editable ? <input
-          id={inputId}
-          data-i18n-skip
-          dir="auto"
-          value={value}
-          onChange={(event) => onChange?.(event.target.value)}
-          className={cn(
-            "min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
-            compact ? "min-h-7 px-1.5 py-1 leading-5" : "min-h-8 px-2 py-1.5 leading-5",
-            fitValue && "w-fit max-w-full",
-          )}
-        /> : <span id={inputId} data-i18n-skip dir="auto" className={cn(
-          "min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
-          compact
-            ? compactPadding === "square"
-              ? "min-h-7 p-1 leading-5"
-              : "min-h-7 px-1.5 py-1 leading-5"
-            : "min-h-8 px-2 py-1.5 leading-5",
-          fitValue && "w-fit max-w-full",
-        )}>{value || "–"}</span>}
-        {action}
-      </div>
-    </div>
-  )
-}
-
 function CargoWiseLookupField({
   label,
   value,
@@ -2926,39 +2859,6 @@ function CargoWiseActionStrip({ actions }: { actions: Array<{ label: string; ico
         </Button>
       ))}
     </div>
-  )
-}
-
-function CargoWiseGroup({
-  title,
-  children,
-  headerAction,
-  icon: Icon,
-  compact = false,
-  className,
-  contentClassName,
-}: {
-  title: string
-  children: ReactNode
-  headerAction?: ReactNode
-  icon?: typeof Search
-  compact?: boolean
-  className?: string
-  contentClassName?: string
-}) {
-  const { t } = useLanguage()
-
-  return (
-    <section className={cn("h-full overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", compact ? "p-2" : "p-2.5", className)}>
-      <div className={cn("flex min-w-0 items-center justify-between gap-2", compact ? "mb-1.5" : "mb-2")}>
-        <h3 className="flex min-w-0 items-center gap-1.5 text-[12px] font-medium leading-4 text-[var(--md-ink)]">
-          {Icon ? <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" /> : null}
-          <span>{t(title)}</span>
-        </h3>
-        {headerAction}
-      </div>
-      <div className={cn("grid", compact ? "gap-1.5" : "gap-2", contentClassName)}>{children}</div>
-    </section>
   )
 }
 
@@ -4601,15 +4501,15 @@ function QuoteDetailsPanelV2({
         {fieldPolicy.routingModeMismatch ? <p>{t("Mode review")}: {t("No planned routing leg uses the overall mode.")} {t("Check Mode in Job data and the planned routing legs. Nothing is changed automatically.")}</p> : null}
       </div>
       <CompactSectionShell title="Job data">
-        <div className="grid gap-2">
-          <div className={cn("grid min-w-0 gap-2 @min-[28rem]/quote-details:grid-cols-2", fieldPolicy.hblMode ? "@min-[52rem]/quote-details:grid-cols-[1.3fr_0.8fr_1.3fr_0.8fr_1fr]" : "@min-[52rem]/quote-details:grid-cols-[1.3fr_0.8fr_1.3fr_1fr]")}>
+        <div data-quote-job-grid className="grid gap-2 @min-[80rem]/quote-details:grid-cols-6">
+          <div className={cn("grid min-w-0 gap-2 @min-[80rem]/quote-details:contents @min-[28rem]/quote-details:grid-cols-2", fieldPolicy.hblMode ? "@min-[52rem]/quote-details:grid-cols-[1.3fr_0.8fr_1.3fr_0.8fr_1fr]" : "@min-[52rem]/quote-details:grid-cols-[1.3fr_0.8fr_1.3fr_1fr]")}>
             <QuoteCompactSelect label="Source" value={quote.source ?? ""} options={["NEW - New Shipper", "REN - Renewal", "REP - Repeat lane", "TND - Tender"]} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.source?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("source", value)} />
             <div ref={overallModeTriggerRef} tabIndex={-1} className="min-w-0"><QuoteCompactSelect label="Mode" value={quote.mode} options={modes} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.mode.trim()} disabled={!editable} dataOptions onChange={requestOverallMode} /></div>
             <QuoteCompactSelect label="Shipment type" value={shipmentTypeValue(quote.mode, quote.shipmentType, shipmentTypeChoicesForMode(quote.mode, shipmentTypes))} options={shipmentTypeChoicesForMode(quote.mode, shipmentTypes)} width="full" disabled={!editable} dataOptions onChange={(value) => onQuoteChange("shipmentType", value)} />
             {fieldPolicy.hblMode ? <QuoteCompactSelect label="HBL mode" value={quote.hblMode ?? ""} options={["CY/CFS", "CY/CY", "CFS/CFS", "Door/Door"]} width="full" disabled={!editable} onChange={(value) => onQuoteChange("hblMode", value)} /> : null}
             <QuoteCompactSelect label={calculatedDirection ? "Direction (auto)" : "Direction"} value={calculatedDirection ?? quote.direction ?? ""} options={["Export", "Import", "Domestic", "Cross trade"]} width="full" disabled={!editable || Boolean(calculatedDirection)} onChange={(value) => onQuoteChange("direction", value)} />
           </div>
-          <div className="grid min-w-0 gap-2 @min-[28rem]/quote-details:grid-cols-2 @min-[40rem]/quote-details:grid-cols-3 @min-[65rem]/quote-details:grid-cols-6">
+          <div className="grid min-w-0 gap-2 @min-[80rem]/quote-details:contents @min-[28rem]/quote-details:grid-cols-2 @min-[40rem]/quote-details:grid-cols-3 @min-[65rem]/quote-details:grid-cols-6">
             <QuoteCompactSelect label="Department" value={quote.department ?? ""} options={lookups?.departments.map((item) => item.name) ?? []} width="full" disabled={!editable} dataOptions onChange={(value) => { const item = lookups?.departments.find((department) => department.name === value); onQuoteChange("department", value); onQuoteChange("departmentId", item?.id ?? "") }} />
             <QuoteCompactSelect label="Branch" value={quote.branch ?? ""} options={lookups?.offices.map((item) => ({ value: item.code || item.name, label: item.code || item.name })) ?? []} width="full" disabled={!editable} dataOptions onChange={(value) => { const item = lookups?.offices.find((office) => (office.code || office.name) === value); onQuoteChange("branch", value); onQuoteChange("officeId", item?.id ?? "") }} />
             <QuoteCompactSelect label="Priority" value={quote.priority ?? ""} options={["Low", "Standard", "High", "Tender"]} width="full" disabled={!editable} onChange={(value) => onQuoteChange("priority", value)} />
@@ -4651,7 +4551,7 @@ function QuoteDetailsPanelV2({
               {containerRequests.map((request, index) => {
                 const rowInvalid = requireCoreFields && validationAttempted && (!request.quantity || !request.type.trim())
                 return (
-                  <div key={request.id} className="grid min-w-0 items-start gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(7rem,0.5fr)_minmax(11rem,1.15fr)_minmax(5rem,0.35fr)_minmax(10rem,0.8fr)_2rem_7.5rem]">
+                  <div key={request.id} className="grid min-w-0 items-start gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(7rem,0.5fr)_minmax(11rem,1.15fr)_minmax(5rem,0.35fr)_minmax(10rem,0.8fr)_2rem_7.5rem] @min-[80rem]/quote-details:grid-cols-[18rem_minmax(0,1fr)_6rem_12rem_2rem_7.5rem]">
                     {index === 0 ? (
                       <>
                         <QuoteCompactSelect label="Incoterms / scope" value={quote.incoterm} options={incotermOptions} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.incoterm.trim()} disabled={!editable} onChange={(value) => onQuoteChange("incoterm", value)} />
@@ -4711,7 +4611,7 @@ function QuoteDetailsPanelV2({
             </div>
           )}
           {incotermNotSupplied ? (
-            <div className="grid min-w-0 gap-2 sm:grid-cols-3" role="group" aria-label={t("Quoted operational scope")}>
+            <div className="grid min-w-0 gap-2 sm:grid-cols-3 @min-[80rem]/quote-details:grid-cols-6" role="group" aria-label={t("Quoted operational scope")}>
               <QuoteCompactSelect label="Collection" value={quote.collectionRequired ?? ""} options={[{ value: "No", label: "Not included" }, { value: "Yes", label: "Included" }]} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.collectionRequired?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("collectionRequired", value)} />
               <QuoteCompactSelect label="Delivery" value={quote.deliveryRequired ?? ""} options={[{ value: "No", label: "Not included" }, { value: "Yes", label: "Included" }]} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.deliveryRequired?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("deliveryRequired", value)} />
               <QuoteCompactSelect label="Customs clearance" value={quote.customsIncluded ?? ""} options={[{ value: "No", label: "Not included" }, { value: "Yes", label: "Included" }]} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customsIncluded?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("customsIncluded", value)} />
@@ -4721,12 +4621,12 @@ function QuoteDetailsPanelV2({
             <LocationFields mode={quote.mode} label="Origin from" value={originLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} />
             <LocationFields mode={quote.mode} label="Destination to" value={destinationLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} />
           </div>
-          <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(9rem,0.7fr)_minmax(10rem,0.72fr)_minmax(10rem,0.72fr)_minmax(10rem,0.7fr)_minmax(24rem,1.7fr)] xl:items-start">
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(9rem,0.7fr)_minmax(10rem,0.72fr)_minmax(10rem,0.72fr)_minmax(10rem,0.7fr)_minmax(24rem,1.7fr)] @min-[80rem]/quote-details:grid-cols-6 xl:items-start">
             <QuoteCompactInput label="Via" value={quote.via} width="full" disabled={!editable} onChange={(value) => onQuoteChange("via", value)} />
             <QuoteCompactDatePicker label="ETD" value={quote.estimatedDeparture ?? ""} disabled={!editable} onChange={(value) => routingLegs.length > 0 ? updateRoutingLeg(0, { estimatedDeparture: value }) : onQuotePatch({ estimatedDeparture: value, transitDays: quoteTransitDays(value, quote.estimatedArrival), transitUnit: "Days" })} />
             <QuoteCompactDatePicker label="ETA" value={quote.estimatedArrival ?? ""} minDate={quote.estimatedDeparture || undefined} disabled={!editable} onChange={(value) => routingLegs.length > 0 ? updateRoutingLeg(routingLegs.length - 1, { estimatedArrival: value }) : onQuotePatch({ estimatedArrival: value, transitDays: quoteTransitDays(quote.estimatedDeparture, value), transitUnit: "Days" })} />
             <NumberUnitField label="Transit time" value={{ value: quoteTransitDays(quote.estimatedDeparture, quote.estimatedArrival) || quote.transitDays || "", unit: "Days" }} units={[{ value: "Days", label: "Days" }]} width="full" disabled onChange={() => undefined} />
-            <RecurrenceBuilder value={recurrence} onChange={updateRecurrence} disabled={!editable} />
+            <div className="min-w-0 @min-[80rem]/quote-details:col-span-2"><RecurrenceBuilder value={recurrence} onChange={updateRecurrence} disabled={!editable} /></div>
           </div>
           {routingLegs.length > 0 ? (
             <div className="grid gap-1.5" role="group" aria-label={t("Planned routing legs")}>
@@ -7187,7 +7087,7 @@ export function QuoteDetailPage({
                   type="button"
                   aria-label={t(quoteRefCopied ? "Quote reference copied" : "Copy quote reference")}
                   title={t(quoteRefCopied ? "Copied" : "Copy quote reference")}
-                  className="group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] px-2 text-[14px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,transform] duration-200 hover:bg-[var(--md-accent-a16)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.985]"
+                  className="group inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] px-2 text-[14px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,transform] duration-200 hover:bg-[var(--md-accent-a16)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.985]"
                   onClick={() => void copyQuoteReference()}
                 >
                   <CopyFeedbackTransition
@@ -7203,7 +7103,7 @@ export function QuoteDetailPage({
                   />
                   <CopyStatusIcon copied={quoteRefCopied} iconClassName="size-3.5" className="shrink-0" />
                 </button>
-                <StatusPill kind="status" tone={activeQuote.statusTone} indicator={false} className="h-7 shrink-0 px-2 text-[11px]">{activeQuote.status}</StatusPill>
+                <StatusPill kind="status" tone={activeQuote.statusTone} indicator={false} className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2 text-[11px]">{activeQuote.status}</StatusPill>
                 {currentVersion ? (
                   <DropdownMenu modal={false}>
                     <DropdownMenuTrigger asChild>

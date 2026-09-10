@@ -163,7 +163,6 @@ export const sidebarAreas: SidebarArea[] = [
         children: [
           { label: "Bookings overview", icon: LayoutDashboard, route: "/bookings" },
           { label: "Road control", icon: Truck, route: "/road-control" },
-          { label: "Provisional booking", icon: Clock3, route: "/bookings/provisional" },
         ],
       },
       { id: "transport-planning", label: "Transport planning", icon: Plane },
@@ -328,7 +327,7 @@ export const sidebarPrimary: NavItem[] = [
 
 export const sidebarSecondary: NavItem[] = [
   { label: "Quotes", icon: ReceiptText, route: "/quotes" },
-  { label: "Pre-booking", icon: PackageCheck, route: "/bookings/provisional" },
+  { label: "New booking", icon: PackageCheck, route: "/bookings/new" },
   { label: "Customs", icon: ClipboardCheck },
   { label: "Reports", icon: ChartAnalysis, route: "/reports" },
   { label: "Components", icon: Component, route: "/components" },

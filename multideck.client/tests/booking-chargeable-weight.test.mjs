@@ -40,7 +40,7 @@ test('real cargo edit callback retains raw decimals and clears without changing 
   }
 })
 
-test('actual Save guard stops invalid line and override inputs and selects the failing field', async () => {
+test('autosave guard stops invalid weights and identifies the failing field without changing tabs', async () => {
   const component = readFileSync(new URL('../src/components/multideck/booking-components.tsx', import.meta.url), 'utf8')
   const start = component.indexOf('  async function saveDetails()')
   const end = component.indexOf('    const allocationIssue', start)
@@ -48,15 +48,20 @@ test('actual Save guard stops invalid line and override inputs and selects the f
   const guard = transformSync(component.slice(start, end) + '\nreturn "validated";\n}', { loader: 'tsx' }).code
   const create = new Function('bookingChargeableWeightError', 'draftWorkspace', `
     const draftBooking = {}, detailsDirty = true, savingDetails = false, loadedRecord = {workspace:{}};
+    const saveInFlightRef = {current:false}, canEditBooking = true, saveGenerationRef = {current:0}, failedSaveFingerprintRef = {current:null};
+    let error; const setSaveError = value => error = value, t = value => value;
     const asRecord = value => value || {};
     const recordText = (record,key) => record[key] == null ? '' : String(record[key]);
+    let activeTab; const setActiveTab = value => activeTab = value;
     let validation; const setWeightValidation = update => validation = update(validation);
     ${guard}
-    return {saveDetails, validation:()=>validation};`)
+    return {saveDetails, validation:()=>validation, activeTab:()=>activeTab, error:()=>error};`)
   for (const [weight, override, index] of [['bad', '', 0], ['1', '-2', null]]) {
     const editor = create(module.exports.bookingChargeableWeightError, { cargo: [{ description: 'Test', chargeableWeightKg: weight }], booking: { editableDetails: { chargeableWeightKg: override } } })
     assert.equal(await editor.saveDetails(), undefined)
     assert.deepEqual(editor.validation(), { attempt: 1, index })
+    assert.equal(editor.activeTab(), undefined)
+    assert.match(editor.error(), /Review the chargeable weight.*not saved/)
     await editor.saveDetails()
     assert.equal(editor.validation().attempt, 2)
   }

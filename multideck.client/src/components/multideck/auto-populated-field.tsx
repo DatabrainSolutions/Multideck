@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils"
 
 export type AutoPopulationStateProps = {
   autoPopulated?: boolean
+  /** null waits for an explicit autofill action; a new token permits changed values to reveal. */
+  autoPopulationEvent?: number | null
   autoPopulationDescription?: string
 }
 
@@ -104,9 +106,9 @@ function createAutoPopulationReveal(element: HTMLElement, value: string) {
   return cleanup
 }
 
-export function useAutoPopulationMorph<T extends HTMLElement>(active: boolean, value: unknown, forwardedRef?: Ref<T>) {
+export function useAutoPopulationMorph<T extends HTMLElement>(active: boolean, value: unknown, forwardedRef?: Ref<T>, autoPopulationEvent?: number | null) {
   const elementRef = useRef<T | null>(null)
-  const previousRef = useRef({ active: false, value: "" })
+  const previousRef = useRef({ value: "", event: autoPopulationEvent })
   const cleanupRef = useRef<(() => void) | null>(null)
   const mountedRef = useRef(false)
   const textValue = String(value ?? "")
@@ -114,14 +116,16 @@ export function useAutoPopulationMorph<T extends HTMLElement>(active: boolean, v
   // Hide the native text and install its reveal in the same paint as the new value.
   useLayoutEffect(() => {
     const previous = previousRef.current
-    previousRef.current = { active, value: textValue }
+    previousRef.current = { value: textValue, event: autoPopulationEvent }
     cleanupRef.current?.()
     cleanupRef.current = null
     if (!mountedRef.current) {
       mountedRef.current = true
       return
     }
-    if (!active || !textValue || (previous.active && previous.value === textValue)) return
+    // Source matching can arrive after lookup loading. It is provenance, not an autofill event.
+    if (!active || !textValue || previous.value === textValue) return
+    if (autoPopulationEvent !== undefined && (autoPopulationEvent === null || previous.event === autoPopulationEvent)) return
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
 
     const element = elementRef.current
@@ -132,7 +136,7 @@ export function useAutoPopulationMorph<T extends HTMLElement>(active: boolean, v
       cleanupRef.current?.()
       cleanupRef.current = null
     }
-  }, [active, textValue])
+  }, [active, textValue, autoPopulationEvent])
 
   return (element: T | null) => {
     elementRef.current = element
@@ -142,6 +146,7 @@ export function useAutoPopulationMorph<T extends HTMLElement>(active: boolean, v
 
 export function AutoPopulatedInput({
   autoPopulated = false,
+  autoPopulationEvent,
   autoPopulationDescription = "Filled from linked information. You can edit this value manually.",
   className,
   ref,
@@ -149,7 +154,7 @@ export function AutoPopulatedInput({
   ...props
 }: ComponentProps<typeof Input> & AutoPopulationStateProps) {
   const { t } = useLanguage()
-  const mergedRef = useAutoPopulationMorph<HTMLInputElement>(autoPopulated, value, ref)
+  const mergedRef = useAutoPopulationMorph<HTMLInputElement>(autoPopulated, value, ref, autoPopulationEvent)
 
   return (
     <div className="relative min-w-0">
@@ -167,6 +172,7 @@ export function AutoPopulatedInput({
 
 export function AutoPopulatedTextarea({
   autoPopulated = false,
+  autoPopulationEvent,
   autoPopulationDescription = "Filled from linked information. You can edit this value manually.",
   className,
   ref,
@@ -174,7 +180,7 @@ export function AutoPopulatedTextarea({
   ...props
 }: ComponentProps<typeof Textarea> & AutoPopulationStateProps) {
   const { t } = useLanguage()
-  const mergedRef = useAutoPopulationMorph<HTMLTextAreaElement>(autoPopulated, value, ref)
+  const mergedRef = useAutoPopulationMorph<HTMLTextAreaElement>(autoPopulated, value, ref, autoPopulationEvent)
 
   return (
     <div className="relative min-w-0">

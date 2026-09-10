@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
+import { routeScheduleParts } from '../src/lib/booking-route-schedule.ts'
 import { bookingRecordAvailability } from '../src/lib/booking-record-availability.ts'
 
 const require = createRequire(new URL('../package.json', import.meta.url))
@@ -53,7 +54,7 @@ function component(name, end, language, resultName = name) {
   // The actual product components and data-availability rule execute unchanged.
   const wrapper = ({ children }) => React.createElement('div', null, children)
   const mocks = {
-    React, useLanguage: () => ({ language, t: value => value }),
+    React, routeScheduleParts, CompactSectionShell: ({ title, children }) => React.createElement('section', null, React.createElement('h3', null, title), children), useLanguage: () => ({ language, t: value => value }),
     bookingRecordAvailability, Surface: wrapper, StatusPill: wrapper,
     AiBrain: () => null, Database: () => null, ChartBar: () => null,
     toneToVar: () => 'currentColor', Progress: wrapper,
@@ -75,21 +76,11 @@ test('record availability distinguishes absent data from an empty or populated s
 })
 
 for (const language of ['en-GB', 'en-US']) {
-  test(`${language}: route summary identifies planned dates without substituting an ETA`, () => {
+  test(`${language}: compact route summary retains origin, destination and mode`, () => {
     const View = component('BookingRouteSummary', 'BookingDetailHeader', language)
-    const booking = { mode: 'Rail', direction: 'Domestic', origin: 'Origin', destination: 'Destination',
-      departureDate: '2026-09-01', arrivalDate: '2026-09-02', eta: '2026-09-30' }
-    const render = routes => renderToStaticMarkup(React.createElement(View, { record: { booking, workspace: { routes } } }))
-    const html = render([{ plannedDepartureAt: '2026-09-07T23:30:00-02:00', plannedArrivalAt: '2026-09-09T12:00:00Z' }])
-    assert.match(html, /Planned departure/)
-    assert.match(html, /Planned arrival/)
-    assert.match(html, /08 Sept? 2026|Sep 08, 2026/)
-    assert.match(html, /09 Sept? 2026|Sep 09, 2026/)
-    assert.doesNotMatch(html, />ET[AD]</)
-    const missing = render([{ plannedDepartureAt: null, plannedArrivalAt: null }])
-    assert.doesNotMatch(missing, /2026/)
-    const noPlan = renderToStaticMarkup(React.createElement(View, { record: { booking: { ...booking, arrivalDate: '' } } }))
-    assert.doesNotMatch(noPlan, /30 Sept?|Sep 30/)
+    const html = renderToStaticMarkup(React.createElement(View, { record: { booking: { origin: 'GBFXT', destination: 'NLRTM', mode: 'Sea' } } }))
+    assert.match(html, /GBFXT/); assert.match(html, /NLRTM/); assert.match(html, /Sea/)
+    assert.doesNotMatch(html, /ETA|Planned arrival/)
   })
   test(`${language}: actual forecast view never turns status, carrier or dates into a probability`, () => {
     const View = component('BookingDexterForecastStatus', 'BookingOverviewSignals', language)
@@ -103,7 +94,7 @@ for (const language of ['en-GB', 'en-US']) {
     }
   })
   test(`${language}: actual context reads saved documents, declarations and charges independently`, () => {
-    const View = component('BookingAvailabilityInspector', 'bookingSignalAvailable', language)
+    const View = component('BookingAvailabilityInspector', 'BookingDecisionOverview', language)
     const record = { booking: {}, workspace: {
       documents: [{ id: 'accepted-pdf' }], declarations: [], charges: [],
     } }
@@ -117,20 +108,7 @@ for (const language of ['en-GB', 'en-US']) {
     assert.match(render({ booking: {} }), /Documents<\/p><div>Not loaded/)
     assert.match(render({ ...record, workspace: { ...record.workspace, documents: [] } }), /Documents<\/p><div>No records/)
   })
-  test(`${language}: recorded information is not presented as operational approval`, () => {
-    const View = component('bookingSignalAvailable', 'BookingDecisionOverview', language, 'BookingOperationalCoverage')
-    // This extraction starts with the production availability helper.
-    const coverageSource = source.slice(source.indexOf('function bookingSignalAvailable('), source.indexOf('function BookingDecisionOverview('))
-    assert.ok(coverageSource.includes('Field presence only;'))
-    assert.doesNotMatch(coverageSource, /"Ready"|"Not ready"|booking controls ready|Commercial close-out/)
-    for (const booking of [{}, { carrier: 'Carrier', currentLocation: 'Port', progress: 100,
-      departureDate: '2026-09-18', eta: '2026-10-18', value: '100', invoice: 'Invoice' }]) {
-      const html = renderToStaticMarkup(React.createElement(View, { record: { booking } }))
-      assert.match(html, /Booking information coverage/)
-      assert.match(html, /Field presence only; not departure clearance or financial close-out approval/)
-      assert.doesNotMatch(html, /Ready|Not ready|Operational readiness/)
-    }
-  })
+
 }
 
 test('Details document availability is derived and cannot be manually overwritten', () => {

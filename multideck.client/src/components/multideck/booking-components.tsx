@@ -1,13 +1,18 @@
+import { bookingLifecycle, bookingLifecycleLabel, type BookingLifecycle } from "@/lib/booking-lifecycle"
+import { bookingDraftConflicts, rebaseBookingDraft } from "@/lib/booking-draft"
+import { hasPermission } from "@/lib/auth-user"
 import "@/quotes-transfer.css"
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import { CargoHandlingEditor } from "@/components/multideck/quote-details/cargo-handling-editor"
+import { AutoPopulatedInput, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
 import { readCargoHandling } from "@/lib/cargo-handling"
 import {
   AiBrain,
   Activity,
+  ArrowLeft,
   ArrowDownToLine,
   ArrowRight,
   ArrowUpFromLine,
@@ -21,6 +26,7 @@ import {
   Database,
   ChevronDown,
   FileText,
+  Info,
   LayoutDashboard,
   List,
   MessageCircle,
@@ -50,12 +56,14 @@ import { MultideckDateRangePicker } from "@/components/multideck/date-picker"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverTrigger, PopoverClose } from "@/components/ui/popover"
+import { TableCell, TableRow } from "@/components/ui/table"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { CustomsReadinessReview, type CustomsReadinessReviewIssue } from "@/components/multideck/customs-readiness-review"
-import { CompactCombobox, type CompactComboboxOption } from "@/components/multideck/quote-details/quote-detail-fields"
+import { CargoWiseField, CargoWiseGroup, CompactFieldShell, CompactSectionShell, CompactCombobox, type CompactComboboxOption } from "@/components/multideck/quote-details/quote-detail-fields"
 import { filterLocationsForMode, type LocationOption } from "@/components/multideck/quote-details/quote-detail-model"
 import { LifecycleNotes } from "@/components/multideck/lifecycle-notes"
 import { cn } from "@/lib/utils"
@@ -79,7 +87,7 @@ import {
   type StatusTone,
 } from "@/data/operational-data"
 import { FilterChips, SegmentedControl, TabsRail } from "./workflow-components"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { StatusPill, attributeToneFor, toneToVar } from "./status-pill"
 import { Surface } from "./surface"
 import { AnimatedList } from "./animated-list"
@@ -88,6 +96,7 @@ import { bookingCargoOtherHandling, bookingCargoHandlingSummary, bookingCargoSaf
 import { bookingChargeableWeightSummary, bookingChargeableWeightError } from "@/lib/booking-chargeable-weight"
 import { analyseCargoAllocations, bookingCargoAllocationPayload } from "@/lib/booking-cargo-allocations"
 import { CargoAllocationEditor } from "./cargo-allocation-editor"
+import { BookingCustomerPanel } from "./booking-customer-panel"
 import { BookingRouteMilestones } from "./booking-route-milestones"
 import { BookingDangerousGoodsEditor } from "./booking-dangerous-goods"
 import { BookingSecurityEvidenceEditor } from "./booking-security-evidence"
@@ -343,6 +352,7 @@ function bookingWorkspaceRecord(workspace: BookingWorkflowWorkspace): BookingDet
     id: booking.bookingReference,
     workspace,
     booking: {
+      lifecycleStatus: booking.status,
       sourceId: booking.jobId,
       id: booking.bookingReference,
       customer: customerParty?.name ?? booking.customerName ?? "",
@@ -1288,87 +1298,23 @@ function BookingKanbanCardBody({ booking }: { booking: Booking }) {
 }
 
 function BookingRouteSummary({ record }: { record: BookingDetailRecord }) {
-  const { language, t } = useLanguage()
+  const { t } = useLanguage()
   const routes = record.workspace?.routes ?? []
-  const firstRoute = routes[0]
-  const lastRoute = routes.at(-1)
-  const formatDate = (value: string | null | undefined) => {
-    if (!value) return "–"
-    const date = new Date(value.length === 10 ? `${value}T12:00:00Z` : value)
-    return Number.isNaN(date.getTime())
-      ? value
-      : new Intl.DateTimeFormat(language, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(date)
-  }
-  const originFlag = bookingLocationFlag(record.booking.origin, firstRoute?.originUnlocode)
-  const destinationFlag = bookingLocationFlag(record.booking.destination, lastRoute?.destinationUnlocode)
-  const plannedDeparture = firstRoute ? firstRoute.plannedDepartureAt : record.booking.departureDate
-  const plannedArrival = lastRoute ? lastRoute.plannedArrivalAt : record.booking.arrivalDate
-  const legCount = Math.max(routes.length, 1)
-  const modeKey = bookingModeKey(record.booking.mode)
-  const ModeIcon = modeKey === "air" ? Plane : modeKey === "ocean" || modeKey === "sea" ? Ship : modeKey === "road" ? Truck : Route
-  const normalizedDirection = record.booking.direction.trim().toLocaleLowerCase()
-  const DirectionIcon = normalizedDirection === "import" ? ArrowDownToLine : normalizedDirection === "export" ? ArrowUpFromLine : Route
-
-  return (
-    <Surface
-      padding="none"
-      data-booking-route-summary
-      className="overflow-hidden rounded-[var(--md-radius-xl)] p-1.5 shadow-[var(--md-shadow-line)]"
-    >
-      <div className="grid min-w-0 gap-1.5 md:grid-cols-[minmax(260px,2.2fr)_minmax(92px,0.62fr)_minmax(104px,0.68fr)_minmax(128px,0.82fr)_minmax(128px,0.82fr)] md:items-stretch">
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-3 py-1.5 shadow-[var(--md-shadow-line)]">
-          <div className="flex min-w-0 items-center gap-2">
-            {originFlag ? <span className="shrink-0 text-[20px] leading-none" aria-hidden="true">{originFlag}</span> : null}
-            <div className="min-w-0">
-              <p className="text-[9.5px] font-medium text-[var(--md-subtle)]">{t("Origin")}</p>
-              <p className="truncate text-[12.5px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{record.booking.origin || "–"}</p>
-            </div>
-          </div>
-          <ArrowRight className="size-3.5 shrink-0 text-[var(--md-subtle)] rtl:rotate-180" strokeWidth={1.35} aria-hidden="true" />
-          <div className="flex min-w-0 items-center gap-2">
-            {destinationFlag ? <span className="shrink-0 text-[20px] leading-none" aria-hidden="true">{destinationFlag}</span> : null}
-            <div className="min-w-0">
-              <p className="text-[9.5px] font-medium text-[var(--md-subtle)]">{t("Destination")}</p>
-              <p className="truncate text-[12.5px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{record.booking.destination || "–"}</p>
-            </div>
-          </div>
-        </div>
-        <div className="flex min-h-11 items-center gap-2 rounded-[var(--md-radius-lg)] px-2.5 py-1.5 hover:bg-[var(--md-surface-soft)]">
-          <ModeIcon className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.35} aria-hidden="true" />
-          <div className="min-w-0">
-            <p className="text-[9.5px] font-medium text-[var(--md-subtle)]">{t("Mode")}</p>
-            <p className="truncate text-[11.5px] font-medium text-[var(--md-ink)]" data-i18n-skip>{record.booking.mode || "–"}</p>
-            {legCount > 1 ? <p className="text-[9.5px] text-[var(--md-subtle)]">{legCount} {t("routing steps")}</p> : null}
-          </div>
-        </div>
-        <div className="flex min-h-11 items-center gap-2 rounded-[var(--md-radius-lg)] px-2.5 py-1.5 hover:bg-[var(--md-surface-soft)]">
-          <DirectionIcon className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.35} aria-hidden="true" />
-          <div className="min-w-0">
-            <p className="text-[9.5px] font-medium text-[var(--md-subtle)]">{t("Direction")}</p>
-            <p className="mt-0.5 truncate text-[11.5px] font-medium text-[var(--md-ink)]">{t(record.booking.direction || "–")}</p>
-          </div>
-        </div>
-        <div className="flex min-h-11 items-center gap-2 rounded-[var(--md-radius-lg)] px-2.5 py-1.5 hover:bg-[var(--md-surface-soft)]">
-          <CalendarClock className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.35} aria-hidden="true" />
-          <div className="min-w-0">
-            <p className="text-[9.5px] font-medium text-[var(--md-subtle)]">{t("Planned departure")}</p>
-            <p className="truncate text-[11px] font-medium text-[var(--md-ink)]" data-i18n-skip>{formatDate(plannedDeparture)}</p>
-          </div>
-        </div>
-        <div className="flex min-h-11 items-center gap-2 rounded-[var(--md-radius-lg)] px-2.5 py-1.5 hover:bg-[var(--md-surface-soft)]">
-          <CalendarClock className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.35} aria-hidden="true" />
-          <div className="min-w-0">
-            <p className="text-[9.5px] font-medium text-[var(--md-subtle)]">{t("Planned arrival")}</p>
-            <p className="truncate text-[11px] font-medium text-[var(--md-ink)]" data-i18n-skip>{formatDate(plannedArrival)}</p>
-          </div>
-        </div>
-      </div>
-    </Surface>
-  )
+  const originFlag = bookingLocationFlag(record.booking.origin, routes[0]?.originUnlocode)
+  const destinationFlag = bookingLocationFlag(record.booking.destination, routes.at(-1)?.destinationUnlocode)
+  return <div data-booking-route-summary className="flex h-8 min-w-0 max-w-full items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] px-2.5 text-[11.5px] shadow-[var(--md-shadow-line)] lg:ms-auto">
+    <span className="flex min-w-0 items-center gap-1" title={`${t('Origin')}: ${record.booking.origin}`}><span aria-hidden="true">{originFlag}</span><span className="sr-only">{t('Origin')}: </span><span className="truncate" data-i18n-skip>{record.booking.origin || '–'}</span></span>
+    <ArrowRight className="size-3 shrink-0" aria-hidden="true" />
+    <span className="flex min-w-0 items-center gap-1" title={`${t('Destination')}: ${record.booking.destination}`}><span aria-hidden="true">{destinationFlag}</span><span className="sr-only">{t('Destination')}: </span><span className="truncate" data-i18n-skip>{record.booking.destination || '–'}</span></span>
+    <span className="shrink-0 text-[var(--md-subtle)]"><span className="sr-only">{t('Mode')}: </span>{record.booking.mode}</span>
+  </div>
 }
 
 function BookingDetailHeader({
   activeTab,
+  navigate,
+  savingDetails,
+  saveError,
   customsReadiness,
   detailsDirty,
   uploadingDocumentType,
@@ -1377,11 +1323,16 @@ function BookingDetailHeader({
   onDiscardDetails,
   onReviewCustoms,
   onSaveDetails,
+  onLifecycleChange,
+  canChangeLifecycle,
   onSendToCustoms,
   onTabChange,
   record,
 }: {
   activeTab: BookingDetailTab
+  navigate: (path: string) => void
+  savingDetails: boolean
+  saveError: string | null
   customsReadiness: BookingCustomsReadiness | null
   detailsDirty: boolean
   uploadingDocumentType: "commercial_invoice" | "packing_list" | null
@@ -1390,17 +1341,18 @@ function BookingDetailHeader({
   onDiscardDetails: () => void
   onReviewCustoms: () => void
   onSaveDetails: () => void
+  onLifecycleChange: (status: BookingLifecycle) => void
+  canChangeLifecycle: boolean
   onSendToCustoms: () => void
   onTabChange: (tab: BookingDetailTab) => void
   record: BookingDetailRecord
 }) {
   const { direction, t } = useLanguage()
-  const shouldReduceMotion = useReducedMotion()
-  const bookingTabControlId = useId()
   const [bookingRefCopied, setBookingRefCopied] = useState(false)
   const bookingCopyResetTimerRef = useRef<number | null>(null)
   const tabs = bookingDetailTabs.map((label) => ({ id: label, label: t(label) }))
-  const statusLabel = record.workspace?.booking.status ?? record.job?.status ?? record.booking.status
+  const statusCode = record.workspace?.booking.status ?? record.job?.status ?? record.booking.status
+  const statusLabel = bookingLifecycleLabel(statusCode)
   const headerStatusTone = record.workspace?.booking.status === "draft" ? "neutral" : record.job?.tone ?? record.booking.tone
   const sourceQuote = asRecord(record.workspace?.sourceQuote)
   const appliedQuoteVersion = Number(recordText(sourceQuote, "appliedVersionNumber"))
@@ -1423,59 +1375,20 @@ function BookingDetailHeader({
     }
   }
 
-  function moveBookingTabFocus(event: KeyboardEvent<HTMLButtonElement>, currentTab: BookingDetailTab) {
-    const currentIndex = bookingDetailTabs.indexOf(currentTab)
-    const previousKey = direction === "rtl" ? "ArrowRight" : "ArrowLeft"
-    const nextKey = direction === "rtl" ? "ArrowLeft" : "ArrowRight"
-    let nextIndex: number | null = null
-
-    if (event.key === previousKey) nextIndex = (currentIndex - 1 + bookingDetailTabs.length) % bookingDetailTabs.length
-    if (event.key === nextKey) nextIndex = (currentIndex + 1) % bookingDetailTabs.length
-    if (event.key === "Home") nextIndex = 0
-    if (event.key === "End") nextIndex = bookingDetailTabs.length - 1
-    if (nextIndex === null) return
-
-    event.preventDefault()
-    onTabChange(bookingDetailTabs[nextIndex])
-    const tabButtons = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
-    tabButtons?.[nextIndex]?.focus()
-  }
-
+  const tabIcons = { Overview: LayoutDashboard, Details: Route, Documents: FileText, Customs: ShieldCheck, Finance: CircleDollarSign, Notes: MessageCircle, Audit: Activity }
   const bookingTabs = (
-    <Surface padding="none" tone="soft" className="w-full min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]">
-      <div className="relative isolate flex w-max min-w-full items-center gap-1 overflow-x-auto" role="tablist" aria-label={t("Booking workspace")}>
-        {tabs.map((tab) => {
-          const selected = tab.id === activeTab
-          return (
-            <button
-              key={tab.id}
-              id={bookingTabId(tab.id as BookingDetailTab)}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              aria-controls={bookingTabPanelId(tab.id as BookingDetailTab)}
-              tabIndex={selected ? 0 : -1}
-              className={cn(
-                "group relative isolate h-8 min-w-[72px] flex-1 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[12px] font-medium text-[var(--md-text)] transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.985]",
-                selected && "text-[var(--md-accent-ink)] hover:text-[var(--md-accent-ink)]",
-              )}
-              onClick={() => onTabChange(tab.id as BookingDetailTab)}
-              onKeyDown={(event) => moveBookingTabFocus(event, tab.id as BookingDetailTab)}
-            >
-              {selected ? (
-                <motion.span
-                  aria-hidden="true"
-                  layoutId={`${bookingTabControlId}-active-segment`}
-                  className="absolute inset-0 -z-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16),var(--md-shadow-soft)] transition-colors duration-200 group-hover:bg-[var(--md-accent-hover)]"
-                  transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
-                />
-              ) : null}
-              <span className="relative z-10">{tab.label}</span>
-            </button>
-          )
-        })}
-      </div>
-    </Surface>
+    <Tabs value={activeTab} onValueChange={(value) => onTabChange(value as BookingDetailTab)}>
+      <Surface padding="none" tone="soft" className="min-w-0 w-full overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]">
+        <TabsList variant="line" aria-label={t("Booking workspace")} className="h-auto w-full max-w-full justify-start gap-1 overflow-x-auto bg-transparent p-0">
+          {tabs.map((tab) => {
+            const Icon = tabIcons[tab.id as BookingDetailTab]
+            return <TabsTrigger key={tab.id} value={tab.id} id={bookingTabId(tab.id as BookingDetailTab)} aria-controls={bookingTabPanelId(tab.id as BookingDetailTab)} className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]">
+              <Icon data-icon="inline-start" className="size-4" strokeWidth={1.3} />{tab.label}
+            </TabsTrigger>
+          })}
+        </TabsList>
+      </Surface>
+    </Tabs>
   )
 
   return (
@@ -1483,12 +1396,13 @@ function BookingDetailHeader({
       <div className="grid min-w-0 grid-rows-[auto_auto] gap-1.5">
         <section className="flex min-w-0 flex-col gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-3 py-1.5 shadow-[var(--md-shadow-line)] lg:flex-row lg:flex-nowrap lg:items-center lg:justify-between">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <Button type="button" variant="ghost" size="sm" onClick={() => navigate("/bookings")} className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-1.5 text-[11px] text-[var(--md-subtle)]" aria-label={t("Back to bookings")}><ArrowLeft className="size-3.5" aria-hidden="true" />{t("Bookings")}</Button>
             <h1 className="shrink-0 text-[14px] font-medium leading-5 text-[var(--md-ink)]">{t("Booking")}</h1>
             <button
               type="button"
               aria-label={t(bookingRefCopied ? "Booking reference copied" : "Copy booking reference")}
               title={t(bookingRefCopied ? "Copied" : "Copy booking reference")}
-              className="group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] px-2 text-[14px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,transform] duration-200 hover:bg-[var(--md-accent-a16)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.985]"
+              className="group inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] px-2 text-[14px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,transform] duration-200 hover:bg-[var(--md-accent-a16)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.985]"
               onClick={() => void copyBookingReference()}
             >
               <CopyFeedbackTransition
@@ -1504,9 +1418,18 @@ function BookingDetailHeader({
               />
               <CopyStatusIcon copied={bookingRefCopied} iconClassName="size-3.5" className="shrink-0" />
             </button>
-            <StatusPill kind="status" tone={headerStatusTone} className="h-7 shrink-0 px-2.5 text-[11.5px] font-medium">{t(statusLabel)}</StatusPill>
+            {record.workspace && bookingLifecycle(statusCode) ? (
+              <Select value={bookingLifecycle(statusCode)!} disabled={!canChangeLifecycle || !record.workspace.lifecycleSupported || savingDetails} onValueChange={value => onLifecycleChange(value as BookingLifecycle)}>
+                <SelectTrigger aria-label={t("Booking status")} title={!record.workspace.lifecycleSupported ? t("Booking status changes are awaiting a workspace update.") : t("Review and confirm a status change.")} className="h-8 w-[140px] shrink-0 rounded-[var(--md-radius-lg)] text-[11.5px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">{t("Provisional")}</SelectItem>
+                  <SelectItem value="open">{t("In progress")}</SelectItem>
+                  <SelectItem value="complete">{t("Complete")}</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : <StatusPill kind="status" tone={headerStatusTone} className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11.5px] font-medium">{t(statusLabel)}</StatusPill>}
             {record.workspace?.booking.sourceQuoteId ? (
-              <StatusPill kind="attribute" tone="teal" className="h-7 shrink-0 gap-1 px-2.5 text-[11px]">
+              <Button type="button" variant="ghost" onClick={() => navigate(`/quotes/${encodeURIComponent(bookingQuoteReference(record.workspace) || record.workspace!.booking.sourceQuoteId!)}`)} className="h-8 shrink-0 gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-2.5 text-[11px] shadow-[var(--md-shadow-line)]">
                 <span>{t("From quote")}</span>
                 <span data-i18n-skip dir="ltr" className="font-medium">{bookingQuoteReference(record.workspace) || "–"}</span>
                 {Number.isFinite(appliedQuoteVersion) && appliedQuoteVersion > 0 ? (
@@ -1517,19 +1440,11 @@ function BookingDetailHeader({
                       : <span data-i18n-skip dir="ltr">V{appliedQuoteVersion}</span>}
                   </>
                 ) : null}
-              </StatusPill>
+              </Button>
             ) : null}
           </div>
-          <span
-            data-booking-route
-            data-i18n-skip
-            dir="auto"
-            title={record.booking.route}
-            className="min-h-7 min-w-0 max-w-full truncate rounded-[calc(var(--md-radius-xl)-6px)] bg-[var(--md-field-bg)] px-2.5 py-1 text-[11.5px] font-medium leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] lg:ms-auto lg:max-w-[min(32%,320px)]"
-          >
-            {record.booking.route}
-          </span>
-          <div className="flex shrink-0 items-center gap-1 overflow-x-auto">
+          <BookingRouteSummary record={record} />
+          <div className="flex min-w-0 flex-wrap items-center gap-1 lg:shrink-0">
             {customsReadiness ? (
               <Button
                 variant="ghost"
@@ -1557,7 +1472,7 @@ function BookingDetailHeader({
                       "h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px] font-medium",
                       activeTab === "Documents" && "bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]",
                     )}
-                    disabled={!customsReadiness?.ready || sendingToCustoms}
+                    disabled={!customsReadiness?.ready || sendingToCustoms || detailsDirty || savingDetails}
                     onClick={onSendToCustoms}
                   >
                     <SendHorizontal data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
@@ -1596,31 +1511,13 @@ function BookingDetailHeader({
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
-            {activeTab === "Details" ? (
-              detailsDirty ? (
-                <>
-                  <Button variant="ghost" className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-[11px] font-medium shadow-[var(--md-shadow-line)]" onClick={onDiscardDetails}>
-                    <RotateCcw data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
-                    {t("Discard")}
-                  </Button>
-                  <Button className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px] font-medium" onClick={onSaveDetails}>
-                    <Save data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
-                    {t("Save")}
-                  </Button>
-                </>
-              ) : null
-            ) : null}
+            {savingDetails || saveError || detailsDirty ? <span role="status" className="text-[11px] text-[var(--md-subtle)]">{t(savingDetails ? "Saving…" : saveError ? "Not saved" : "Waiting to save…")}</span> : null}
+            {saveError && detailsDirty ? <><Button variant="ghost" size="sm" disabled={savingDetails} onClick={onDiscardDetails}>{t("Discard changes")}</Button><Button size="sm" disabled={savingDetails} onClick={onSaveDetails}>{t("Retry save")}</Button></> : null}
           </div>
         </section>
 
-        {activeTab === "Overview" ? (
-          <BookingOverviewSignals record={record} tabs={bookingTabs} />
-        ) : (
-          <div className="grid min-w-0 gap-2">
-            {bookingTabs}
-            {activeTab === "Details" ? <BookingRouteSummary record={record} /> : null}
-          </div>
-        )}
+        {bookingTabs}
+        {activeTab === "Overview" ? <BookingOverviewSignals record={record} /> : null}
       </div>
     </header>
   )
@@ -2208,6 +2105,10 @@ function bookingFieldOptions(options: readonly (string | BookingFieldOption)[], 
 }
 
 function BookingCargoWiseField({
+  className,
+  autoPopulated = false,
+  autoPopulationEvent,
+  autoPopulationDescription,
   allowCustom = true,
   editable = false,
   emptyValue = "–",
@@ -2225,6 +2126,10 @@ function BookingCargoWiseField({
   wrapValue = false,
   value,
 }: {
+  className?: string
+  autoPopulated?: boolean
+  autoPopulationEvent?: number | null
+  autoPopulationDescription?: string
   allowCustom?: boolean
   editable?: boolean
   emptyValue?: string
@@ -2247,15 +2152,14 @@ function BookingCargoWiseField({
   const normalizedOptions = options ? bookingFieldOptions(options, value) : []
 
   return (
-    <div className={cn(
-      "grid min-w-0 grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] items-center gap-1.5",
-      span && "md:col-span-2 xl:col-span-1 2xl:col-span-2",
-    )}>
-      <label htmlFor={editable && !(options && searchable) ? fieldId : undefined} className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</label>
-      {editable && onChange ? (
+    <CompactFieldShell label={label} htmlFor={editable && !(options && searchable) ? fieldId : undefined} width="full" className={cn(span && "md:col-span-2 xl:col-span-1 2xl:col-span-2", className)}>
+      {onChange ? (
         options && searchable ? (
           <CompactCombobox
             label={label}
+            autoPopulated={autoPopulated}
+            autoPopulationEvent={autoPopulationEvent}
+            autoPopulationDescription={autoPopulationDescription}
             value={value}
             options={normalizedOptions as CompactComboboxOption[]}
             onValueChange={onChange}
@@ -2267,8 +2171,8 @@ function BookingCargoWiseField({
             className="[&>div:first-child]:sr-only"
           />
         ) : options ? (
-          <Select value={value} onValueChange={onChange}>
-            <SelectTrigger id={fieldId} aria-label={t(label)} className="h-8 w-full min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-[11px] font-medium shadow-[var(--md-shadow-line)]">
+          <Select disabled={!editable} value={value} onValueChange={onChange}>
+            <SelectTrigger id={fieldId} aria-label={t(label)} className="h-8 w-full min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] px-2 text-[12px] font-medium shadow-[var(--md-shadow-line)]">
               <SelectValue placeholder={t(placeholder)} />
             </SelectTrigger>
             <SelectContent>
@@ -2276,8 +2180,12 @@ function BookingCargoWiseField({
             </SelectContent>
           </Select>
         ) : (
-          <Input
+          <AutoPopulatedInput
+            autoPopulated={autoPopulated}
+            autoPopulationEvent={autoPopulationEvent}
+            autoPopulationDescription={autoPopulationDescription}
             id={fieldId}
+            disabled={!editable}
             aria-label={t(label)}
             data-i18n-skip
             dir="auto"
@@ -2289,16 +2197,16 @@ function BookingCargoWiseField({
             maxLength={maxLength}
             value={value}
             onChange={(event) => onChange(event.target.value)}
-            className={cn("h-8 min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 font-medium shadow-[var(--md-shadow-line)]", inputMode === "decimal" ? "text-[16px] sm:text-[11px]" : "text-[11px]")}
+            className={cn("h-8 min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] px-2 font-medium shadow-[var(--md-shadow-line)]", inputMode === "decimal" ? "text-[16px] sm:text-[12px]" : "text-[12px]")}
           />
         )
       ) : (
-        <span data-i18n-skip dir="auto" title={value} className={cn("min-h-8 min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 py-1.5 text-[11px] font-medium leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]", wrapValue ? "whitespace-pre-wrap break-words [overflow-wrap:anywhere]" : "truncate")}>
+        <span data-i18n-skip dir="auto" title={value} className={cn("min-h-8 min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] px-2 py-1.5 text-[12px] font-medium leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]", wrapValue ? "whitespace-pre-wrap break-words [overflow-wrap:anywhere]" : "truncate")}>
           {value || t(emptyValue)}
         </span>
       )}
       {error ? <p id={`${fieldId}-error`} className="col-span-2 text-[12px] leading-5 text-[var(--md-text)]">{t(error)}</p> : null}
-    </div>
+    </CompactFieldShell>
   )
 }
 
@@ -2429,8 +2337,7 @@ function BookingCargoWiseAmountField({
   const normalizedCurrencies = bookingFieldOptions(currencies, currency)
 
   return (
-    <div className="grid min-w-0 grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] items-center gap-1.5">
-      <label htmlFor={editable ? amountId : undefined} className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</label>
+    <CompactFieldShell label={label} htmlFor={editable ? amountId : undefined} width="full">
       {editable ? (
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_72px] gap-1">
           <Input
@@ -2455,7 +2362,7 @@ function BookingCargoWiseAmountField({
           {[currency, amount].filter(Boolean).join(" ") || "–"}
         </span>
       )}
-    </div>
+    </CompactFieldShell>
   )
 }
 
@@ -2474,17 +2381,9 @@ function BookingCargoWiseGroup({
   contentClassName?: string
   action?: ReactNode
 }) {
-  const { t } = useLanguage()
-
-  return (
-    <section className={cn("h-full overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", compact ? "p-2" : "p-2.5", className)}>
-      <div className={cn("flex min-w-0 items-center justify-between gap-3", compact ? "mb-1.5" : "mb-2")}>
-        <h3 className="min-w-0 text-[12px] font-medium leading-4 text-[var(--md-ink)]">{t(title)}</h3>
-        {action}
-      </div>
-      <div className={cn("grid", compact ? "gap-1.5" : "gap-2", contentClassName)}>{children}</div>
-    </section>
-  )
+  return compact
+    ? <CargoWiseGroup title={title} compact headerAction={action} className={className} contentClassName={contentClassName}>{children}</CargoWiseGroup>
+    : <CompactSectionShell title={title} action={action} className={className} contentClassName={cn("grid gap-2", contentClassName)}>{children}</CompactSectionShell>
 }
 
 function BookingDexterForecastStatus() {
@@ -2496,21 +2395,21 @@ function BookingDexterForecastStatus() {
       <div className="grid gap-2">
         <p className="flex items-center gap-1.5 text-[12px] font-medium"><AiBrain className="size-3.5" strokeWidth={1.5} aria-hidden="true" />{t("Dexter forecast")}</p>
         <p className="text-[14px] font-medium">{t("Forecast unavailable")}</p>
-        <p className="text-[12px] leading-relaxed">{t("No validated arrival forecast is connected to this booking. Planned dates are not an on-time probability.")}</p>
+        <p className="text-[12px] leading-relaxed">{t("No arrival forecast is available. Planned dates are not an on-time probability.")}</p>
       </div>
     </Surface>
   )
 }
 
-function BookingOverviewSignals({ record, tabs }: { record: BookingDetailRecord; tabs: ReactNode }) {
+function BookingOverviewSignals({ record }: { record: BookingDetailRecord }) {
   const { t } = useLanguage()
   const bookingProgress = Math.max(0, Math.min(100, record.booking.progress))
   const bookingStages = [
     { id: "intake", label: "Booked", summary: "The booking and operational ownership have been recorded." },
     { id: "costing", label: "Origin", summary: "Origin handling and departure requirements are being completed." },
-    { id: "review", label: "Departed", summary: "The main movement has departed its origin." },
-    { id: "sent", label: "Destination", summary: "Arrival and destination handling are underway." },
-    { id: "outcome", label: "Released", summary: "Release, delivery and commercial close-out are complete." },
+    { id: "review", label: "Departed", summary: "Reported departure stage." },
+    { id: "sent", label: "Destination", summary: "Reported destination stage." },
+    { id: "outcome", label: "Released", summary: "Reported release stage." },
   ].map((stage, index) => {
     const progress = Math.max(0, Math.min(100, (bookingProgress - (index * 20)) * 5))
     return { ...stage, progress, state: progress >= 100 ? "done" : progress > 0 ? "current" : "todo" }
@@ -2524,11 +2423,9 @@ function BookingOverviewSignals({ record, tabs }: { record: BookingDetailRecord;
 
   return (
     <div className="grid items-stretch gap-2 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
-      <div className="md-quote-stage-stack grid min-h-0 grid-rows-[auto_auto_auto] gap-2">
-        {tabs}
-
+      <div className="md-quote-stage-stack grid min-h-0 grid-rows-[auto_auto] gap-2">
         <Surface padding="none" className="md-quote-stage-panel flex min-h-0 items-center rounded-[var(--md-radius-xl)] p-1.5">
-          <div className="md-quote-stage-panel__steps" role="list" aria-label={t("Booking progress")}>
+          <div className="md-quote-stage-panel__steps" role="list" aria-label={t("Operator-reported booking progress")}>
             {bookingStages.map((stage) => (
               <div
                 key={stage.id}
@@ -2563,7 +2460,7 @@ function BookingOverviewSignals({ record, tabs }: { record: BookingDetailRecord;
         </Surface>
 
         <Surface padding="none" className="md-quote-stage-metadata min-h-0 overflow-hidden rounded-[var(--md-radius-xl)] px-3 py-1.5">
-          <dl className="grid h-full grid-cols-4 items-center gap-3">
+          <dl className="grid h-full grid-cols-2 items-center gap-3 sm:grid-cols-4">
             {bookingMetadata.map((item) => (
               <div key={item.label} className="min-w-0">
                 <dt>{t(item.label)}</dt>
@@ -2642,68 +2539,7 @@ function BookingAvailabilityInspector({ record }: { record: BookingDetailRecord 
   )
 }
 
-function bookingSignalAvailable(value: string | number | null | undefined) {
-  const normalizedValue = String(value ?? "").trim()
-  return Boolean(normalizedValue && !/^(?:–|-|0|pending|not raised|not supplied|not available)$/i.test(normalizedValue))
-}
-
-function BookingOperationalCoverage({ record }: { record: BookingDetailRecord }) {
-  const { t } = useLanguage()
-  const hasCarrier = bookingSignalAvailable(record.booking.carrier) && !/pending/i.test(record.booking.carrier)
-  const groups = [
-    {
-      label: "Movement",
-      signals: [hasCarrier, bookingSignalAvailable(record.booking.currentLocation), record.booking.progress > 0],
-    },
-    {
-      label: "Schedule",
-      signals: [bookingSignalAvailable(record.booking.departureDate), bookingSignalAvailable(record.booking.arrivalDate)],
-    },
-    {
-      label: "Commercial references",
-      signals: [bookingSignalAvailable(record.booking.value), bookingSignalAvailable(record.booking.invoice)],
-    },
-  ].map((group) => {
-    const recordedSignals = group.signals.filter(Boolean).length
-    const score = Math.round((recordedSignals / group.signals.length) * 100)
-    const tone: StatusTone = score > 0 ? "teal" : "neutral"
-    const state = score === 100 ? "Recorded" : score > 0 ? "Partly recorded" : "Not recorded"
-    return { ...group, recordedSignals, score, state, tone }
-  })
-  const totalSignals = groups.reduce((total, group) => total + group.signals.length, 0)
-  const recordedSignals = groups.reduce((total, group) => total + group.recordedSignals, 0)
-
-  return (
-    <Surface padding="none" className="h-full min-w-0 overflow-hidden rounded-[var(--md-radius-xl)]">
-      <BookingSectionHeading
-        icon={<ChartBar className="size-4" strokeWidth={1.5} />}
-        title={t("Booking information coverage")}
-        meta={`${recordedSignals}/${totalSignals} · ${t("fields recorded")}`}
-      />
-      <p className="px-4 pt-3 text-[12px] leading-relaxed text-[var(--md-text)]">{t("Field presence only; not departure clearance or financial close-out approval.")}</p>
-      <div className="grid gap-4 px-4 py-4" role="group" aria-label={t("Booking information coverage")}>
-        {groups.map((group) => (
-          <div key={group.label} className="grid min-w-0 grid-cols-[minmax(108px,0.34fr)_minmax(0,1fr)_42px] items-center gap-3">
-            <div className="min-w-0">
-              <p className="truncate text-[11.5px] font-medium text-[var(--md-ink)]">{t(group.label)}</p>
-              <p className="mt-0.5 truncate text-[10px] text-[var(--md-subtle)]">{t(group.state)}</p>
-            </div>
-            <Progress
-              value={group.score}
-              aria-label={`${t(group.label)} ${group.score}%`}
-              dir="ltr"
-              className="h-2 rounded-full bg-[var(--md-line-strong)] [&>div]:bg-[var(--booking-signal-color)]"
-              style={{ "--booking-signal-color": toneToVar(group.tone) } as CSSProperties}
-            />
-            <span data-i18n-skip dir="ltr" className="text-end text-[11.5px] font-medium tabular-nums text-[var(--md-ink)]">{group.score}%</span>
-          </div>
-        ))}
-      </div>
-    </Surface>
-  )
-}
-
-function BookingDecisionOverview({ record }: { record: BookingDetailRecord }) {
+function BookingDecisionOverview({ record, onAssignCustomer }: { record: BookingDetailRecord; onAssignCustomer?: () => void }) {
   const { language, t } = useLanguage()
   const updatedDate = new Date(record.booking.updatedAt)
   const updatedAt = !record.booking.updatedAt
@@ -2716,42 +2552,42 @@ function BookingDecisionOverview({ record }: { record: BookingDetailRecord }) {
     <div className="grid gap-2">
       <div className="grid gap-2 lg:grid-cols-[1fr_1fr_0.9fr]">
         <BookingCargoWiseGroup title="Booking header" compact>
-          <div className="grid gap-1 min-[1500px]:grid-cols-2">
-            <BookingCargoWiseField label="Booking ref" value={record.booking.id} />
-            <BookingCargoWiseField label="Job ref" value={record.booking.jobRef} />
-            <BookingCargoWiseField label="Customer" value={record.booking.customer} />
-            <BookingCargoWiseField label="Owner" value={record.booking.owner} />
-            <BookingCargoWiseField label="Status" value={record.booking.status} />
-            <BookingCargoWiseField label="Updated" value={updatedAt} />
+          <div className="grid gap-1 md:grid-cols-2">
+            <CargoWiseField compact label="Booking ref" value={record.booking.id} />
+            <CargoWiseField compact label="Job ref" value={record.booking.jobRef} />
+            <CargoWiseField compact label="Customer" value={record.booking.customer} />
+            <CargoWiseField compact label="Owner" value={record.booking.owner} />
+            <CargoWiseField compact label="Status" value={record.booking.status} />
+            <CargoWiseField compact label="Updated" value={updatedAt} />
           </div>
         </BookingCargoWiseGroup>
 
         <BookingCargoWiseGroup title="Routing" compact>
-          <div className="grid gap-1 min-[1500px]:grid-cols-2">
-            <BookingCargoWiseField label="Mode" value={record.booking.mode} />
-            <BookingCargoWiseField label="Direction" value={record.booking.direction} />
-            <BookingCargoWiseField label="Origin" value={record.booking.origin} />
-            <BookingCargoWiseField label="Destination" value={record.booking.destination} />
-            <BookingCargoWiseField label="Planned departure" value={record.booking.departureDate} />
-            <BookingCargoWiseField label="Planned arrival" value={record.booking.arrivalDate} />
-            <BookingCargoWiseField label="Current location" value={record.booking.currentLocation} />
+          <div className="grid gap-1 md:grid-cols-2">
+            <CargoWiseField compact label="Mode" value={record.booking.mode} />
+            <CargoWiseField compact label="Direction" value={record.booking.direction} />
+            <CargoWiseField compact label="Origin" value={record.booking.origin} />
+            <CargoWiseField compact label="Destination" value={record.booking.destination} />
+            <CargoWiseField compact label="Planned departure" value={record.booking.departureDate} />
+            <CargoWiseField compact label="Planned arrival" value={record.booking.arrivalDate} />
+            <CargoWiseField compact label="Current location" value={record.booking.currentLocation} />
           </div>
         </BookingCargoWiseGroup>
 
         <BookingCargoWiseGroup title="Cargo & commercial" compact>
-          <div className="grid gap-1 min-[1500px]:grid-cols-2">
-            <BookingCargoWiseField label="Shipment" value={record.booking.shipmentType} />
-            <BookingCargoWiseField label="Equipment" value={record.booking.container} />
-            <BookingCargoWiseField label="Carrier" value={record.booking.carrier} />
-            <BookingCargoWiseField label="Vessel / flight" value={record.booking.vessel || t("Not supplied")} />
-            <BookingCargoWiseField label="Value" value={record.booking.value} />
-            <BookingCargoWiseField label="Invoice" value={record.booking.invoice || t("Not raised")} />
+          <div className="grid gap-1 md:grid-cols-2">
+            <CargoWiseField compact label="Shipment" value={record.booking.shipmentType} />
+            <CargoWiseField compact label="Equipment" value={record.booking.container} />
+            <CargoWiseField compact label="Carrier" value={record.booking.carrier} />
+            <CargoWiseField compact label="Vessel / flight" value={record.booking.vessel || t("Not supplied")} />
+            <CargoWiseField compact label="Value" value={record.booking.value} />
+            <CargoWiseField compact label="Invoice" value={record.booking.invoice || t("Not raised")} />
           </div>
         </BookingCargoWiseGroup>
       </div>
 
       <div className="grid gap-2 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
-        <BookingOperationalCoverage record={record} />
+        <BookingCustomerPanel customerId={record.workspace?.booking.customerId} customerName={record.booking.customer} contactId={record.workspace?.parties.find(party => party.role === "customer")?.contactId} onAssignCustomer={onAssignCustomer} />
         <aside aria-label={t("Booking context")}>
           <BookingAvailabilityInspector record={record} />
         </aside>
@@ -2786,7 +2622,7 @@ function BookingContainerDetails({
 }) {
   const { t } = useLanguage()
   const kinds = equipmentKinds ?? bookingEquipmentKindChoices({ mode, stage: "booking", hasContainers: containers.some((item) => bookingEquipmentPresentation(item.equipmentKind).key === "container") })
-  const columnLabels = ["Equipment no.", "Type", "Packages", "Package type", "Gross weight (kg)", "Volume (CBM)", "Seal no.", "Actions"] as const
+  const [expandedEquipment, setExpandedEquipment] = useState<number | null>(null)
   const fieldIdPrefix = useId()
   const pendingFocus = useRef<number | null>(null)
   const openingKindDialog = useRef(false)
@@ -2797,10 +2633,13 @@ function BookingContainerDetails({
   const [reclassifying, setReclassifying] = useState<{ index: number; item: BookingWorkflowContainer; kind: BookingEquipmentKind } | null>(null)
   useEffect(() => {
     if (pendingFocus.current !== null) {
-      document.getElementById(`${fieldIdPrefix}-${pendingFocus.current}-number`)?.focus()
+      setExpandedEquipment(pendingFocus.current)
+      const input = document.getElementById(`${fieldIdPrefix}-${pendingFocus.current}-number`)
+      if (!input) return
+      input.focus()
       if (kinds.length === 1) pendingFocus.current = null
     }
-  }, [containers.length, fieldIdPrefix, kinds.length])
+  }, [containers.length, fieldIdPrefix, kinds.length, expandedEquipment])
   function add(kind: BookingEquipmentKind) {
     if (!editable || !kinds.includes(kind)) return
     pendingFocus.current = containers.length
@@ -2837,14 +2676,28 @@ function BookingContainerDetails({
     >
       {!kinds.length ? <p className="text-xs leading-5 text-[var(--md-text)]">{t("Add a physical routing leg or choose a container service to record transport equipment. Existing records remain available below.")}</p> : null}
       {containers.length ? (
-        <div className="@container min-w-0">
-          <div aria-hidden="true" className="hidden grid-cols-[minmax(140px,1.05fr)_minmax(112px,0.82fr)_minmax(76px,0.5fr)_minmax(106px,0.72fr)_minmax(112px,0.74fr)_minmax(100px,0.64fr)_minmax(112px,0.76fr)_40px] items-center gap-2 bg-[var(--md-surface-soft)] px-2 py-1.5 @[64rem]:grid">
-            {columnLabels.map((label) => (
-              <span key={label} className="text-[10px] font-medium text-[var(--md-subtle)]">{t(label)}</span>
-            ))}
-          </div>
-          <div className="grid gap-1.5 pt-1.5">
-            {containers.map((container, index) => {
+        <div className="min-w-0" style={{ containerType: 'inline-size' }}>
+          <DataTable columns={[
+            { id: 'equipment', label: 'Equipment', kind: 'identity', width: 260, minWidth: 220, canHide: false, cell: item => {
+              const index = containers.indexOf(item)
+              return <button type="button" aria-expanded={expandedEquipment === index} aria-controls={expandedEquipment === index ? `${fieldIdPrefix}-${index}-details` : undefined} onClick={event => { event.stopPropagation(); setExpandedEquipment(current => current === index ? null : index) }} className="flex min-h-10 w-full items-center gap-2 text-start focus-visible:outline-2 focus-visible:outline-[var(--md-accent)]">
+                <ChevronDown className={cn('size-4 shrink-0 transition-transform motion-reduce:transition-none', expandedEquipment !== index && '-rotate-90')} aria-hidden="true" />
+                <span className="min-w-0 truncate" data-i18n-skip>{item.number || `${t(bookingEquipmentPresentation(item.equipmentKind).label)} ${index + 1}`}</span>
+              </button>
+            } },
+            { id: 'type', label: 'Type', width: 110, cell: item => item.type || '–' },
+            { id: 'packages', label: 'Packages', kind: 'number', width: 160, cell: item => [bookingContainerDataValue(item, 'packages'), bookingContainerDataValue(item, 'packageType')].filter(Boolean).join(' ') || '–' },
+            { id: 'weight', label: 'Weight (kg)', kind: 'number', width: 130, cell: item => item.grossWeightKg ?? '–' },
+            { id: 'volume', label: 'Volume (CBM)', kind: 'number', width: 130, cell: item => bookingContainerDataValue(item, 'volumeCbm') || '–' },
+            { id: 'seal', label: 'Seal no.', width: 150, cell: item => bookingContainerDataValue(item, 'sealNumber') || '–' },
+          ] satisfies DataTableColumn<BookingWorkflowContainer>[]}
+            rows={containers} getRowKey={item => item.id || `equipment-${containers.indexOf(item)}`} ariaLabel={t('Booking equipment')}
+            showToolbar={false} showColumnManager={false} enableSelectionExport={false} minimumWidth={900} tableClassName="table-fixed"
+            onRowClick={item => { const index = containers.indexOf(item); setExpandedEquipment(current => current === index ? null : index) }}
+            rowProps={item => ({ 'aria-expanded': expandedEquipment === containers.indexOf(item) })}
+            renderAfterRow={(container, visibleColumnCount) => {
+              const index = containers.indexOf(container)
+              if (expandedEquipment !== index) return null
               const equipment = bookingEquipmentPresentation(container.equipmentKind)
               const seaContainer = seaService && equipment.key === "container"
               const retainedVgm = container.verifiedGrossMassKg != null || Boolean(container.vgmMethod)
@@ -2852,7 +2705,7 @@ function BookingContainerDetails({
                 container.type ?? "",
                 ...equipment.types,
               ].filter(Boolean))]
-              const fieldClassName = "h-8 w-full min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-[11px] font-medium shadow-[var(--md-shadow-line)]"
+              const fieldClassName = "h-9 w-full min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-base sm:text-[12px] font-medium shadow-[var(--md-shadow-line)]"
               const fields = [
                 [equipment.numberLabel, "number", container.number ?? "", false],
                 [`${equipment.label} type`, "type", container.type ?? "", false],
@@ -2863,10 +2716,9 @@ function BookingContainerDetails({
                 ["Seal number", "sealNumber", bookingContainerDataValue(container, "sealNumber"), false],
               ] as const
               return (
-                <fieldset
-                  key={container.id ?? `container-${index}`}
-                  className="grid min-w-0 grid-cols-1 items-end gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-2 @[28rem]:grid-cols-2 @[44rem]:grid-cols-4 @[64rem]:grid-cols-[minmax(140px,1.05fr)_minmax(112px,0.82fr)_minmax(76px,0.5fr)_minmax(106px,0.72fr)_minmax(112px,0.74fr)_minmax(100px,0.64fr)_minmax(112px,0.76fr)_40px]"
-                >
+                <TableRow key={`${container.id ?? index}-details`} className="hover:bg-transparent"><TableCell colSpan={visibleColumnCount} className="bg-[var(--md-surface-soft)] p-0 whitespace-normal">
+                <div id={`${fieldIdPrefix}-${index}-details`} className="sticky start-0 w-[100cqw] max-w-[100cqw] p-3">
+                <fieldset className="@container grid min-w-0 grid-cols-1 items-end gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <legend className="px-1 text-xs font-medium text-[var(--md-ink)]">
                     <DropdownMenu><DropdownMenuTrigger asChild><Button id={`${fieldIdPrefix}-${index}-kind`} type="button" variant="ghost" disabled={!editable || !kinds.length} aria-label={`${t("Change equipment kind")} ${index + 1}: ${t(equipment.label)}`} className="min-h-8 gap-1 px-1 text-xs">{t(equipment.label)} {index + 1}<ChevronDown className="size-3" aria-hidden="true" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="start" onCloseAutoFocus={(event) => { if (openingKindDialog.current) { event.preventDefault(); openingKindDialog.current = false } }}>
@@ -2877,9 +2729,9 @@ function BookingContainerDetails({
                   {!kinds.includes(equipment.key as BookingEquipmentKind) ? <p className="col-span-full text-xs leading-5 text-[var(--md-text)]">{t("Retained equipment: this kind does not match the current routing/service. Review it before saving; no values have been changed automatically.")}</p> : null}
                   {fields.map(([label, field, fieldValue, decimal]) => (
                     <div key={field} className="grid min-w-0 gap-1 text-[11px] font-medium text-[var(--md-text)]">
-                      {field !== "type" ? <label htmlFor={`${fieldIdPrefix}-${index}-${field}`} className="@[64rem]:sr-only">{t(label)}</label> : null}
+                      {field !== "type" ? <label htmlFor={`${fieldIdPrefix}-${index}-${field}`} className="text-[var(--md-text)]">{t(label)}</label> : null}
                       {field === "type" ? (
-                        <CompactCombobox label={label} disabled={!editable} value={container.type ?? ""} options={typeOptions.map((option) => ({ value: option, label: option }))} allowCustom width="full" className="@[64rem]:[&>div:first-child]:sr-only" placeholder="Choose or type code" onValueChange={(value) => { if (editable) onChange(index, "type", value) }} />
+                        <CompactCombobox label={label} disabled={!editable} value={container.type ?? ""} options={typeOptions.map((option) => ({ value: option, label: option }))} allowCustom width="full"  placeholder="Choose or type code" onValueChange={(value) => { if (editable) onChange(index, "type", value) }} />
                       ) : <Input id={`${fieldIdPrefix}-${index}-${field}`} disabled={!editable} aria-label={t(label)} inputMode={decimal ? "decimal" : undefined} maxLength={field === "number" ? 50 : undefined} value={fieldValue} onChange={(event) => { if (editable) onChange(index, field, event.target.value) }} className={fieldClassName} />}
                     </div>
                   ))}
@@ -2908,10 +2760,10 @@ function BookingContainerDetails({
                     {seaContainer ? <p className="pb-2 text-[11px] leading-5 text-[var(--md-text)]">{t("Record VGM from the verified weighing evidence. Cargo weight is not automatically treated as VGM. Recording these values does not submit a VGM declaration.")}</p> : null}
                     {retainedVgm && equipment.key !== "container" ? <p className="text-xs leading-5 text-[var(--md-text)]">{t("Historical VGM values are retained for review, not treated as a declaration for this equipment kind.")}</p> : null}
                   </details>
-                </fieldset>
+                </fieldset></div></TableCell></TableRow>
               )
-            })}
-          </div>
+            }}
+          />
         </div>
       ) : (
         <div className="flex min-h-16 items-center justify-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 text-center shadow-[var(--md-shadow-line)]">
@@ -2921,20 +2773,42 @@ function BookingContainerDetails({
       )}
       <Dialog open={removing !== null} onOpenChange={(open) => { if (!open) setRemoving(null) }}>
         <DialogContent onOpenAutoFocus={(event) => { event.preventDefault(); cancelRef.current?.focus() }} onCloseAutoFocus={(event) => { event.preventDefault(); (removeFocus.current?.isConnected ? removeFocus.current : addRef.current)?.focus() }}>
-          <DialogHeader><DialogTitle>{t("Remove equipment from this Booking?")}</DialogTitle><DialogDescription>{t("This takes effect when you save the Booking. Saved equipment history is retained. Remove or reassign any cargo allocations before saving.")}</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{t("Remove equipment from this Booking?")}</DialogTitle><DialogDescription>{t("This removal saves automatically. Saved equipment history is retained. Remove or reassign cargo allocations first.")}</DialogDescription></DialogHeader>
           <p className="break-words text-sm">{removing ? `${bookingEquipmentPresentation(removing.item.equipmentKind).label} ${removing.index + 1} · ${removing.item.number || t("Number not recorded")}` : ""}</p>
           <DialogFooter><Button ref={cancelRef} variant="ghost" onClick={() => setRemoving(null)}>{t("Keep equipment")}</Button><Button disabled={!editable || !removing || containers[removing.index] !== removing.item} onClick={() => { if (editable && removing && containers[removing.index] === removing.item) { onRemove(removing.index); setRemoving(null) } }}>{t("Remove equipment")}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
       <Dialog open={reclassifying !== null} onOpenChange={(open) => { if (!open) setReclassifying(null) }}>
         <DialogContent onOpenAutoFocus={(event) => { event.preventDefault(); cancelRef.current?.focus() }} onCloseAutoFocus={(event) => { event.preventDefault(); (removeFocus.current?.isConnected ? removeFocus.current : addRef.current)?.focus() }}>
-          <DialogHeader><DialogTitle>{t("Change equipment kind?")}</DialogTitle><DialogDescription>{t("Review the equipment type, identifying number and cargo allocations for the new kind. Existing values will not be recalculated or cleared. The change and previous identity are recorded when you save; the Quote is unchanged.")}</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{t("Change equipment kind?")}</DialogTitle><DialogDescription>{t("Review the equipment type, identifying number and cargo allocations for the new kind. Existing values will not be recalculated or cleared. The change and previous identity are saved automatically; the Quote is unchanged.")}</DialogDescription></DialogHeader>
           <p className="break-words text-sm">{reclassifying ? `${bookingEquipmentPresentation(reclassifying.item.equipmentKind).label} → ${bookingEquipmentPresentation(reclassifying.kind).label}` : ""}</p>
           <DialogFooter><Button ref={cancelRef} variant="ghost" onClick={() => setReclassifying(null)}>{t("Keep current kind")}</Button><Button disabled={!editable || !reclassifying || containers[reclassifying.index] !== reclassifying.item || !kinds.includes(reclassifying.kind)} onClick={() => { if (editable && reclassifying && containers[reclassifying.index] === reclassifying.item && kinds.includes(reclassifying.kind)) { onChange(reclassifying.index, "equipmentKind", reclassifying.kind); setReclassifying(null) } }}>{t("Change kind and review")}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </BookingCargoWiseGroup>
   )
+}
+
+/** Supporting copy only: essential statuses and warnings stay beside their fields. */
+function BookingDetailsInfo({ label, children }: { label: string; children: ReactNode }) {
+  const { t } = useLanguage()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [open, setOpen] = useState(false)
+  const [tooltipOpen, setTooltipOpen] = useState(false)
+  return <Tooltip open={!open && tooltipOpen} onOpenChange={setTooltipOpen}>
+    <Popover open={open} onOpenChange={next => { setTooltipOpen(false); setOpen(next) }}>
+      <TooltipTrigger asChild><PopoverTrigger asChild>
+        <Button ref={triggerRef} type="button" variant="ghost" size="icon" onFocus={() => setTooltipOpen(true)} onBlur={() => setTooltipOpen(false)} aria-label={t(label)} className="size-9 shrink-0 text-[var(--md-subtle)] sm:size-8">
+          <Info className="size-4" aria-hidden="true" />
+        </Button>
+      </PopoverTrigger></TooltipTrigger>
+      <TooltipContent className="max-w-[min(24rem,calc(100vw-2rem))] text-xs leading-5">{children}</TooltipContent>
+      <PopoverContent onCloseAutoFocus={event => { event.preventDefault(); triggerRef.current?.focus() }} aria-label={t(label)} className="w-80 max-w-[calc(100vw-2rem)] text-xs leading-5">
+        {children}
+        <PopoverClose asChild><Button type="button" variant="ghost" size="sm" className="self-end">{t("Close")}</Button></PopoverClose>
+      </PopoverContent>
+    </Popover>
+  </Tooltip>
 }
 
 function BookingRecordDetails({
@@ -2956,8 +2830,8 @@ function BookingRecordDetails({
   onContainerChange,
   onContainerRemove,
   onDetailChange,
-  onPartyChange,
-  onOrganisationSelect,
+  onPartyChange: applyPartyChange,
+  onOrganisationSelect: applyOrganisation,
   onLocationSelect,
   onRouteAdd,
   onRouteChange,
@@ -2967,12 +2841,12 @@ function BookingRecordDetails({
   record,
   workspace,
 }: {
-  renderDangerousGoods?: (cargo: BookingWorkflowCargo) => ReactNode
+  renderDangerousGoods?: (cargo: BookingWorkflowCargo, renderHandling?: (entry: ReactNode, records: ReactNode, unsaved: boolean) => ReactNode) => ReactNode
   renderSecurityEvidence?: (cargo: BookingWorkflowCargo) => ReactNode
   renderMilestones?: (route: BookingWorkflowRoute) => ReactNode
   allocationEditor?: ReactNode
   allocationValidationAttempt?: number
-  weightValidation?: { attempt: number; index: number | null }
+  weightValidation?: { attempt: number; index: number | null; field?: "description" }
   currentUser?: AuthUserSummary | null
   editable: boolean
   locationDirectory: readonly UnlocodeDirectoryRecord[]
@@ -2997,8 +2871,25 @@ function BookingRecordDetails({
   workspace: BookingWorkflowWorkspace
 }) {
   const { language, t } = useLanguage()
-  const [detailSection, setDetailSection] = useState(allocationValidationAttempt ? "cargo" : "control")
-  useEffect(() => { if (allocationValidationAttempt) setDetailSection("cargo") }, [allocationValidationAttempt])
+  // These tokens exist only for deliberate actions in this Details session. Remounting starts quiet.
+  const [autoPopulationEvents, setAutoPopulationEvents] = useState<Record<string, number>>({})
+  function markAutoPopulation(role: string) {
+    setAutoPopulationEvents(current => ({ ...current, [role]: (current[role] ?? 0) + 1 }))
+  }
+  function onOrganisationSelect(role: BookingOrganisationRole, organisation: QuoteOrganisationOption) {
+    markAutoPopulation(role)
+    applyOrganisation(role, organisation)
+  }
+  function onPartyChange(role: string, field: keyof BookingWorkflowParty, value: string) {
+    if (field === "contactId") markAutoPopulation(role)
+    applyPartyChange(role, field, value)
+  }
+
+  const allocationSectionRef = useRef<HTMLDivElement>(null)
+  const goodsDescriptionRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (allocationValidationAttempt) allocationSectionRef.current?.focus()
+  }, [allocationValidationAttempt])
   const [selectedCargoIndex, setSelectedCargoIndex] = useState(0)
   const [removingCargoIndex, setRemovingCargoIndex] = useState<number | null>(null)
   const [pendingRouteMode, setPendingRouteMode] = useState<{ index: number; mode: string; route: BookingWorkflowRoute } | null>(null)
@@ -3013,14 +2904,13 @@ function BookingRecordDetails({
   const overrideWeightField = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!weightValidation) return
-    setDetailSection("cargo")
     if (weightValidation.index !== null) setSelectedCargoIndex(weightValidation.index)
   }, [weightValidation])
   useEffect(() => {
-    if (!weightValidation || detailSection !== "cargo" || (weightValidation.index !== null && cargoIndex !== weightValidation.index)) return
-    const frame = requestAnimationFrame(() => (weightValidation.index === null ? overrideWeightField : lineWeightField).current?.querySelector<HTMLInputElement>('input')?.focus())
+    if (!weightValidation || (weightValidation.index !== null && cargoIndex !== weightValidation.index)) return
+    const frame = requestAnimationFrame(() => (weightValidation.field === "description" ? goodsDescriptionRef : weightValidation.index === null ? overrideWeightField : lineWeightField).current?.querySelector<HTMLInputElement>('input')?.focus())
     return () => cancelAnimationFrame(frame)
-  }, [weightValidation, detailSection, cargoIndex])
+  }, [weightValidation, cargoIndex])
   const updatedDate = new Date(record.booking.updatedAt)
   const updatedAt = !record.booking.updatedAt
     ? t("Not available")
@@ -3028,7 +2918,7 @@ function BookingRecordDetails({
       ? record.booking.updatedAt
       : new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(updatedDate)
 
-  const unavailable = t("Not available in the booking register")
+  const unavailable = ""
   const quoteHandoff = bookingQuoteHandoff(workspace)
   const quote = quoteHandoff.quote
   const facts = quoteHandoff.facts
@@ -3044,7 +2934,7 @@ function BookingRecordDetails({
   const quoteType = recordText(editableDetails, "quoteType") || recordText(quote, "quoteType") || recordText(facts, "quoteType") || record.booking.direction
   const quoteReference = recordText(quote, "reference") || recordText(asRecord(workspace?.sourceQuote), "reference")
   const value = (source: Record<string, unknown>, key: string, fallback = "") => recordText(source, key) || fallback
-  const partyValue = (party: BookingWorkflowParty | undefined, key: keyof BookingWorkflowParty, fallback = "") => party?.[key] == null ? fallback : String(party[key])
+  const partyValue = (party: BookingWorkflowParty | undefined, key: keyof BookingWorkflowParty, fallback = "") => party ? String(party[key] ?? "") : fallback
   const cargoValue = (key: keyof NonNullable<typeof cargo>, fallback = "") => {
     if (!cargo) return ""
     // A deliberate clear must not reappear from the accepted Quote snapshot.
@@ -3075,7 +2965,23 @@ function BookingRecordDetails({
     onChange: (value: string) => onBookingChange(field, value),
   })
   const editDetail = (field: string) => ({ editable, onChange: (value: string) => onDetailChange(field, value) })
-  const editParty = (role: string, field: keyof BookingWorkflowParty) => ({ editable, onChange: (value: string) => onPartyChange(role, field, value) })
+  const editParty = (role: string, field: keyof BookingWorkflowParty) => {
+    const party = workspace.parties.find((item) => item.role.toLowerCase() === role)
+    const organisation = organisations.find((item) => item.id === party?.organisationId)
+    const address = organisation?.addresses.find((item) => item.id === party?.addressId) ?? organisation?.addresses[0]
+    const contact = organisation?.contacts.find((item) => item.id === party?.contactId) ?? organisation?.contacts[0]
+    const linkedValues: Partial<Record<keyof BookingWorkflowParty, string>> = {
+      identifierValue: organisation?.code, address: address?.address,
+      contactName: contact?.name, email: contact?.email ?? contact?.emails[0],
+    }
+    return {
+      editable,
+      onChange: (value: string) => onPartyChange(role, field, value),
+      autoPopulationEvent: autoPopulationEvents[role] ?? null,
+      autoPopulated: Boolean(organisation && matchesAutoPopulation(typeof party?.[field] === "string" ? party[field] as string : undefined, linkedValues[field])),
+      autoPopulationDescription: organisation ? `Filled from ${organisation.name}. Edit this field to override it for this booking.` : undefined,
+    }
+  }
   const editCargo = (index: number, field: keyof BookingWorkflowCargo) => ({ editable: editable && Boolean(cargo), onChange: (value: string) => onCargoChange(index, field, value) })
   const editRoute = (index: number, field: keyof BookingWorkflowRoute) => ({ editable, onChange: (value: string) => onRouteChange(index, field, value) })
   const organisations = lookups?.organisations ?? []
@@ -3151,7 +3057,6 @@ function BookingRecordDetails({
     }))
   const selectedOrganisation = (role: "customer" | "payer" | "shipper" | "consignee", party?: BookingWorkflowParty) => organisations.find((organisation) => (
     organisation.id === party?.organisationId
-    || organisation.name === party?.name
     || (role === "customer" && organisation.id === workspace.booking.customerId)
   ))
   const partyContactOptions = (organisation?: QuoteOrganisationOption): BookingFieldOption[] => (organisation?.contacts ?? []).map((contact) => ({
@@ -3201,16 +3106,10 @@ function BookingRecordDetails({
   }
 
   return (
-    <Tabs value={detailSection} onValueChange={setDetailSection} className="min-w-0 gap-[var(--md-page-stack-gap-compact)]">
+    <div data-booking-continuous-details className="@container/booking-details grid min-w-0 gap-2">
       <div role="status" className={fieldPolicy.routingModeMismatch ? "text-[12px] leading-5 text-[var(--md-text)]" : "sr-only"}>
-        {fieldPolicy.routingModeMismatch ? <p>{t("Mode review")}: {t("No routing step uses the overall mode.")} {t("Check Mode in Control and the steps in Route & schedule. Nothing is changed automatically.")}</p> : null}
+        {fieldPolicy.routingModeMismatch ? <p>{t("Mode review")}: {t("No routing step uses the overall mode.")} {t("Check Mode in Job data and the routing steps below. Nothing is changed automatically.")}</p> : null}
       </div>
-      <TabsList variant="line" aria-label={t("Booking detail sections")} className="w-full justify-start">
-        <TabsTrigger value="control">{t("Control")}</TabsTrigger>
-        <TabsTrigger value="parties">{t("Parties")}</TabsTrigger>
-        <TabsTrigger value="route">{t("Route & schedule")}</TabsTrigger>
-        <TabsTrigger value="cargo">{t("Cargo & equipment")}</TabsTrigger>
-      </TabsList>
       <Dialog open={pendingOverallMode !== null} onOpenChange={(open) => { if (!open) setPendingOverallMode(null) }}>
         <DialogContent onOpenAutoFocus={(event) => { event.preventDefault(); overallModeCancelRef.current?.focus() }} onCloseAutoFocus={(event) => { event.preventDefault(); (overallModeTriggerRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)") ?? overallModeTriggerRef.current)?.focus() }}>
           <DialogHeader><DialogTitle>{t("Change overall Booking mode?")}</DialogTitle><DialogDescription>{t("Existing routing steps keep their own modes, references, carriers and dates. An incompatible shipment type will be cleared for you to choose again. Cargo and equipment are retained; review them for the new mode. The Quote and existing documents will not change.")}</DialogDescription></DialogHeader>
@@ -3218,7 +3117,7 @@ function BookingRecordDetails({
           <DialogFooter><Button ref={overallModeCancelRef} variant="ghost" onClick={() => setPendingOverallMode(null)}>{t("Keep current mode")}</Button><Button disabled={!editable} onClick={confirmOverallMode}>{t("Change mode and review")}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-      <TabsContent value="control" className="grid gap-[var(--md-page-stack-gap-compact)]">
+      <div data-booking-detail-section="control" className="grid gap-2">
       <BookingCargoWiseGroup title="Job data">
         <div className="grid gap-3 xl:grid-cols-3">
           <div className="grid content-start gap-1.5">
@@ -3226,7 +3125,7 @@ function BookingRecordDetails({
             <div className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
               <BookingCargoWiseField label="Booking ref" value={record.booking.id} />
               <BookingCargoWiseField label="Job ref" value={record.booking.jobRef} {...editField("jobRef")} />
-              <BookingCargoWiseField label="Status" value={record.booking.status} options={["On track", "Delayed", "Exception"]} {...editField("status")} />
+              <BookingCargoWiseField label="Tracking status" value={record.booking.status} options={["On track", "Delayed", "Exception"]} {...editField("status")} />
               <BookingCargoWiseField label="Progress" value={detailValue("progress", `${record.booking.progress}%`)} options={bookingProgressOptions} {...editDetail("progress")} />
               <div ref={overallModeTriggerRef} tabIndex={-1}><BookingCargoWiseField label="Mode" value={record.booking.mode} options={modeOptions} placeholder="Choose mode" allowCustom={false} {...editField("mode")} onChange={requestOverallMode} /></div>
               <BookingCargoWiseField label="Quote type" value={quoteType} options={bookingDirectionOptions} placeholder="Choose quote type" allowCustom={false} {...editDetail("quoteType")} />
@@ -3262,25 +3161,15 @@ function BookingRecordDetails({
         </div>
       </BookingCargoWiseGroup>
 
-      <BookingCargoWiseGroup
-        title="Customer terms"
-        action={<span className="truncate text-[12px] text-[var(--md-subtle)]">{t("Billed to")} {partyValue(payer, "name", value(quotePayer, "name", record.booking.customer))}</span>}
-      >
-        <div className="grid gap-1.5 md:grid-cols-2">
-          <BookingCargoWiseField label="Terms and conditions" value={detailValue("termsAndConditions", (workspace.booking.sourceQuoteId ? value(quote, "terms") : "") || unavailable)} span {...editDetail("termsAndConditions")} />
-          <BookingCargoWiseField label="Subject to rate / space" value={detailValue("subjectToTerms", value(facts, "subjectToTerms") || unavailable)} span {...editDetail("subjectToTerms")} />
-          <BookingCargoWiseField label="Customer notes" value={detailValue("customerNotes", value(quote, "customerNotes") || workspace.booking.internalNotes || unavailable)} span {...editDetail("customerNotes")} />
-          <BookingCargoWiseField label="Response deadline" value={detailValue("responseDeadline", value(quote, "deadline") || workspace.booking.customerDeadline || unavailable)} {...editDetail("responseDeadline")} />
-        </div>
-      </BookingCargoWiseGroup>
-      </TabsContent>
 
-      <TabsContent value="parties" className="grid items-stretch gap-[var(--md-page-stack-gap-compact)] xl:grid-cols-2 2xl:grid-cols-4">
+      </div>
+
+      <div data-booking-detail-section="parties" className="grid items-stretch gap-2 xl:grid-cols-2 2xl:grid-cols-4">
         <BookingCargoWiseGroup title="Customer" className="[--md-field-label-width:64px]">
-          <BookingCargoWiseField label="Name" value={partyValue(customerParty, "name", record.booking.customer || value(quote, "customerName"))} options={organisationOptions("customer")} searchable placeholder="Search customers" span {...editParty("customer", "name")} onOptionSelect={(option) => {
+          <div data-booking-customer-select className="contents"><BookingCargoWiseField label="Name" value={partyValue(customerParty, "name", record.booking.customer || value(quote, "customerName"))} options={organisationOptions("customer")} searchable placeholder="Search customers" span {...editParty("customer", "name")} onOptionSelect={(option) => {
             const organisation = organisations.find((item) => item.id === option.id)
             if (organisation) onOrganisationSelect("customer", organisation)
-          }} />
+          }} /></div>
           <BookingCargoWiseField label="Code / ref" value={partyValue(customerParty, "identifierValue", value(facts, "clientCode", customer.customerCode ?? "") || record.booking.customerRef)} span {...editParty("customer", "identifierValue")} />
           <BookingCargoWiseField label="Address" value={partyValue(customerParty, "address", value(facts, "customerAddress", value(quote, "customerAddress")) || unavailable)} span {...editParty("customer", "address")} />
           <BookingCargoWiseField label="Contact" value={partyValue(customerParty, "contactName", value(facts, "customerContact", value(quote, "contactName")) || unavailable)} options={partyContactOptions(customerOrganisation)} searchable placeholder="Search contacts" span {...editParty("customer", "contactName")} onOptionSelect={(option) => {
@@ -3314,7 +3203,7 @@ function BookingRecordDetails({
           }} />
           <BookingCargoWiseField label="Email" value={partyValue(payer, "email", value(quotePayer, "email", value(facts, "payerEmail", value(quote, "contactEmail"))) || unavailable)} span {...editParty("payer", "email")} />
         </BookingCargoWiseGroup>
-        <BookingCargoWiseGroup title="Shipper" className="[--md-field-label-width:64px]">
+        <BookingCargoWiseGroup title="Shipper" className="[--md-field-label-width:64px]" action={<Button type="button" variant="ghost" size="sm" disabled={!editable || !customerOrganisation} onClick={() => customerOrganisation && onOrganisationSelect("shipper", customerOrganisation)} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]"><Copy className="size-3" aria-hidden="true" />{t("Use customer")}</Button>}>
           <BookingCargoWiseField label="Code" value={partyValue(shipper, "identifierValue", value(facts, "shipperCode"))} span {...editParty("shipper", "identifierValue")} />
           <BookingCargoWiseField label="Name" value={partyValue(shipper, "name", value(quote, "shipperName") || unavailable)} options={organisationOptions("shipper")} searchable placeholder="Search shippers" span {...editParty("shipper", "name")} onOptionSelect={(option) => {
             const organisation = organisations.find((item) => item.id === option.id)
@@ -3333,7 +3222,7 @@ function BookingRecordDetails({
             onPartyChange("shipper", "email", contact.email ?? contact.emails[0] ?? "")
           }} />
         </BookingCargoWiseGroup>
-        <BookingCargoWiseGroup title="Consignee" className="[--md-field-label-width:64px]">
+        <BookingCargoWiseGroup title="Consignee" className="[--md-field-label-width:64px]" action={<Button type="button" variant="ghost" size="sm" disabled={!editable || !customerOrganisation} onClick={() => customerOrganisation && onOrganisationSelect("consignee", customerOrganisation)} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]"><Copy className="size-3" aria-hidden="true" />{t("Use customer")}</Button>}>
           <BookingCargoWiseField label="Code" value={partyValue(consignee, "identifierValue", value(facts, "consigneeCode"))} span {...editParty("consignee", "identifierValue")} />
           <BookingCargoWiseField label="Name" value={partyValue(consignee, "name", value(quote, "consigneeName") || unavailable)} options={organisationOptions("consignee")} searchable placeholder="Search consignees" span {...editParty("consignee", "name")} onOptionSelect={(option) => {
             const organisation = organisations.find((item) => item.id === option.id)
@@ -3352,14 +3241,13 @@ function BookingRecordDetails({
             onPartyChange("consignee", "email", contact.email ?? contact.emails[0] ?? "")
           }} />
         </BookingCargoWiseGroup>
-      </TabsContent>
+      </div>
 
-      <TabsContent value="route" className="grid items-stretch gap-[var(--md-page-stack-gap-compact)]">
+      <div data-booking-detail-section="route" className="grid items-stretch gap-2">
         <BookingCargoWiseGroup title="Route & service">
-          <div className="grid gap-3 xl:grid-cols-2">
-            <div className="grid content-start gap-1.5">
-              <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Service")}</h4>
-              <div className="grid gap-1.5 md:grid-cols-2">
+          <div data-booking-service-grid className="grid gap-3 xl:grid-cols-2 @min-[80rem]/booking-details:grid-cols-6">
+            <div className="grid content-start gap-1.5 @min-[80rem]/booking-details:contents">
+              <div className="grid gap-1.5 md:grid-cols-2 @min-[80rem]/booking-details:contents">
                 <BookingCargoWiseField label="Shipment type" value={detailValue("shipmentType", record.booking.shipmentType)} options={shipmentTypeOptions} placeholder="Choose shipment type" allowCustom={false} {...editDetail("shipmentType")} />
                 <BookingCargoWiseField label="Equipment / load" value={record.booking.container} options={bookingEquipmentOptionsByMode[modeKey] ?? bookingEquipmentOptionsByMode.multimodal} placeholder="Choose equipment" {...editField("container")} />
                 {fieldPolicy.hblMode ? <BookingCargoWiseField label="HBL mode" value={detailValue("hblMode", value(facts, "hblMode"))} options={bookingHblModeOptions} placeholder="Choose HBL mode" allowCustom={false} {...editDetail("hblMode")} /> : null}
@@ -3374,14 +3262,13 @@ function BookingRecordDetails({
                 }} />
               </div>
             </div>
-            <div className="grid content-start gap-1.5">
-              <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Carrier & supplier")}</h4>
-              <div className="grid gap-1.5 md:grid-cols-2">
-                <BookingCargoWiseField label="Carrier" value={detailValue("carrierName", record.booking.carrier)} options={organisationOptions("carrier")} searchable placeholder="Search carriers" {...editDetail("carrierName")} onOptionSelect={(option) => {
+            <div className="grid content-start gap-1.5 @min-[80rem]/booking-details:contents">
+              <div className="grid gap-1.5 md:grid-cols-2 @min-[80rem]/booking-details:contents">
+                <BookingCargoWiseField className="@min-[80rem]/booking-details:col-span-2" label="Carrier" value={detailValue("carrierName", record.booking.carrier)} options={organisationOptions("carrier")} searchable placeholder="Search carriers" {...editDetail("carrierName")} onOptionSelect={(option) => {
                   const organisation = organisations.find((item) => item.id === option.id)
                   if (organisation) onOrganisationSelect("carrier", organisation)
                 }} />
-                <BookingCargoWiseField label="Supplier" value={workspace.booking.supplierName ?? ""} options={organisationOptions("supplier")} searchable placeholder="Search suppliers" editable={editable} onChange={() => undefined} onOptionSelect={(option) => {
+                <BookingCargoWiseField className="@min-[80rem]/booking-details:col-span-2" label="Supplier" value={workspace.booking.supplierName ?? ""} options={organisationOptions("supplier")} searchable placeholder="Search suppliers" editable={editable} onChange={() => undefined} onOptionSelect={(option) => {
                   const organisation = organisations.find((item) => item.id === option.id)
                   if (organisation) onOrganisationSelect("supplier", organisation)
                 }} />
@@ -3393,8 +3280,9 @@ function BookingRecordDetails({
           <div className="mt-3 grid gap-2">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h4 className="text-[11px] font-medium text-[var(--md-ink)]">{t("Routing steps")}</h4>
-                <p className="text-[10px] text-[var(--md-subtle)]">{t("Add each movement in journey order.")}</p>
+                <div className="flex items-center gap-1"><h4 className="text-[11px] font-medium text-[var(--md-ink)]">{t("Routing steps")}</h4>
+                  <BookingDetailsInfo label="About routing steps">{t("Record movements in journey order. References belong to each step. Saved previous references remain in the job audit history after a mode change.")}</BookingDetailsInfo>
+                </div>
               </div>
               <Button type="button" variant="ghost" disabled={!editable || workspace.routes.length >= 30} className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[11px] text-[var(--md-accent)]" onClick={onRouteAdd}>
                 <Plus className="size-3.5" strokeWidth={1.35} aria-hidden="true" />
@@ -3448,7 +3336,6 @@ function BookingRecordDetails({
                       <BookingRouteScheduleFields route={leg} editable={editable} onChange={(field, nextValue) => onRouteChange(index, field, nextValue)} />
                       {workspace.routeCutoffsSupported ? <BookingRouteCutoffFields route={leg} editable={editable} onChange={(field, value) => onRouteChange(index, field, value)} /> : null}
                     </div>
-                    <p className="mt-2 text-[12px] leading-relaxed text-[var(--md-text)]">{t("References belong to this routing step. A mode change requires review; saved previous references remain in the job audit history.")}</p>
                   </details> : null}
                   {renderMilestones?.(leg)}
                 </div>
@@ -3461,7 +3348,7 @@ function BookingRecordDetails({
           <DialogContent onOpenAutoFocus={(event) => { event.preventDefault(); routeModeCancelRef.current?.focus() }} onCloseAutoFocus={(event) => { event.preventDefault(); routeModeFocusRef.current?.focus() }}>
             <DialogHeader>
               <DialogTitle>{t("Change routing step mode?")}</DialogTitle>
-              <DialogDescription>{t("Master, house and carrier booking references, the generic transport service and carrier cut-offs will start blank. Saved previous values remain in audit history when you save. Review the carrier, schedule and mode-specific details before saving. The Quote and existing documents will not change.")}</DialogDescription>
+              <DialogDescription>{t("Master, house and carrier booking references, the generic transport service and carrier cut-offs will start blank. Previous values remain in audit history. Changes save automatically; review the carrier, schedule and mode-specific details. The Quote and existing documents will not change.")}</DialogDescription>
             </DialogHeader>
             <p className="text-[13px] font-medium">{t("Step")} {(pendingRouteMode?.index ?? 0) + 1}: {bookingWorkspaceMode(pendingRouteMode?.route.mode)} → {bookingWorkspaceMode(pendingRouteMode?.mode)}</p>
             <DialogFooter>
@@ -3479,11 +3366,13 @@ function BookingRecordDetails({
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </TabsContent>
-      <TabsContent value="cargo" className="grid gap-[var(--md-page-stack-gap-compact)]">
+      </div>
+      <div data-booking-detail-section="cargo" className="grid gap-2">
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
           <div className="flex items-center justify-between gap-3 px-3 py-2">
-            <h2 className="text-[13px] font-medium">{t("Cargo lines")} · {workspace.cargo.length}</h2>
+            <div className="flex items-center gap-1"><h2 className="text-[13px] font-medium">{t("Cargo lines")} · {workspace.cargo.length}</h2>
+              <BookingDetailsInfo label="About cargo values">{t("The quoted shipment value comes from the accepted quote. It is a reference total, not a distribution of value across cargo lines. Shipment goods value and cargo-line values are maintained separately; changing the shipment total does not redistribute line values. Equipment allocations are recorded separately in Cargo allocation.")}</BookingDetailsInfo>
+            </div>
             <Button variant="ghost" size="sm" disabled={!editable || workspace.cargo.length >= 200} onClick={() => { setSelectedCargoIndex(workspace.cargo.length); onCargoAdd() }}>
               <Plus className="size-3.5" aria-hidden="true" />{t("Add cargo line")}
             </Button>
@@ -3491,17 +3380,17 @@ function BookingRecordDetails({
           {recordText(facts, "goodsValue") !== "" ? (
             <div className="px-3 pb-3 text-[12px] text-[var(--md-text)]">
               <dl className="flex flex-wrap gap-x-2 gap-y-1">
-                <dt>{t("Quote goods value (shipment)")}</dt>
+                <dt>{t("Quoted shipment value")}</dt>
                 <dd data-i18n-skip className="font-medium text-[var(--md-ink)]">{[recordText(facts, "goodsValueCurrency"), recordText(facts, "goodsValue")].filter(Boolean).join(" ")}</dd>
               </dl>
-              <p className="mt-1">{t("From the accepted Quote snapshot, not an allocation to an individual cargo line.")}</p>
+              <p className="mt-1">{t("Reference only · not distributed to cargo lines")}</p>
             </div>
           ) : null}
           {workspace.booking.shipmentGoodsValue ? (
             <div className="grid gap-2 px-3 pb-3 sm:grid-cols-2 [--md-field-label-width:110px]">
               <BookingCargoWiseAmountField label="Shipment goods value" amount={workspace.booking.shipmentGoodsValue.amount ?? ""} currency={workspace.booking.shipmentGoodsValue.currency ?? ""} currencies={currencyOptions} editable={editable}
                 onAmountChange={(amount) => onDetailChange("shipmentGoodsValueAmount", amount)} onCurrencyChange={(currency) => onDetailChange("shipmentGoodsValueCurrency", currency)} />
-              <p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Current Booking total. Changing it does not redistribute cargo-line values.")}</p>
+              <p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Does not update cargo-line values.")}</p>
             </div>
           ) : null}
           <div role="region" aria-label={t("Cargo line comparison")} tabIndex={0} className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]">
@@ -3522,7 +3411,7 @@ function BookingRecordDetails({
               ))}</tbody>
             </table>
           </div>
-          {!workspace.cargo.length ? <p className="px-3 py-4 text-[12px] text-[var(--md-text)]">{t("No cargo lines yet. Add a line to describe the goods.")}</p> : null}
+          {!workspace.cargo.length ? <p className="px-3 py-4 text-[12px] text-[var(--md-text)]">{t("No cargo lines yet.")}</p> : null}
           {showChargeableWeight ? <div className="grid gap-2 px-3 py-3 text-[12px] sm:grid-cols-2">
             <div className="min-w-0">
               <dl className="flex flex-wrap gap-x-2 gap-y-1">
@@ -3534,12 +3423,14 @@ function BookingRecordDetails({
             </div>
             <div className="min-w-0">
               <div ref={overrideWeightField}><BookingCargoWiseField label="Shipment override (kg)" inputMode="decimal" error={weightValidation ? bookingChargeableWeightError(detailValue("chargeableWeightKg")) : undefined} value={detailValue("chargeableWeightKg")} {...editDetail("chargeableWeightKg")} /></div>
-              <p className="mt-1 text-[var(--md-text)]">{t("Separate Booking value; leave blank when no override is required. Does not allocate line weights or change the Quote or air waybill.")}</p>
+              <div className="flex items-center gap-1 text-[var(--md-text)]"><p>{t("Optional · does not change line weights")}</p>
+                <BookingDetailsInfo label="About shipment weight override">{t("Leave blank when no override is required. This separate booking value does not allocate line weights or change the quote or air waybill.")}</BookingDetailsInfo>
+              </div>
             </div>
           </div> : null}
         </Surface>
         <Dialog open={removingCargoIndex !== null} onOpenChange={(open) => { if (!open) setRemovingCargoIndex(null) }}>
-          <DialogContent><DialogHeader><DialogTitle>{t("Remove cargo line?")}</DialogTitle><DialogDescription>{t("This removes the line from the current booking when you save. Existing historical records are retained. Review any related equipment or customs allocations before saving.")}</DialogDescription></DialogHeader>
+          <DialogContent><DialogHeader><DialogTitle>{t("Remove cargo line?")}</DialogTitle><DialogDescription>{t("This removal saves automatically. Existing history is retained. Review related equipment and customs allocations first.")}</DialogDescription></DialogHeader>
             <DialogFooter><Button variant="outline" onClick={() => setRemovingCargoIndex(null)}>{t("Cancel")}</Button><Button onClick={() => { if (removingCargoIndex !== null) onCargoRemove(removingCargoIndex); setRemovingCargoIndex(null); setSelectedCargoIndex(0) }}>{t("Remove line")}</Button></DialogFooter>
           </DialogContent>
         </Dialog>
@@ -3548,10 +3439,10 @@ function BookingRecordDetails({
           <BookingCargoWiseAmountField label="Cargo line value" amount={cargoValue("declaredValue")} currency={cargoValue("declaredValueCurrency")} currencies={currencyOptions} editable={editable && Boolean(cargo)} onAmountChange={(nextAmount) => onCargoChange(cargoIndex, "declaredValue", nextAmount)} onCurrencyChange={(nextCurrency) => onCargoChange(cargoIndex, "declaredValueCurrency", nextCurrency)} />
           <BookingCargoWiseField label="Commodity" value={cargoValue("commodity", value(facts, "commodity"))} options={commodityOptions} searchable placeholder="Search commodities" {...editCargo(cargoIndex, "commodity")} />
           <BookingCargoWiseField label="Other handling" value={bookingCargoOtherHandling(knownCargo)} options={bookingOtherHandlingOptions} placeholder="Choose handling" allowCustom={false} {...editCargo(cargoIndex, "knownCargo")} />
-          {cargo ? <div className="sm:col-span-2 xl:col-span-4"><CargoHandlingEditor key={cargo.id || cargoIndex} value={cargo.handlingDetailsJson ?? (typeof cargo.cargoData?.handlingDetailsJson === "string" ? cargo.cargoData.handlingDetailsJson : JSON.stringify({ ...(cargo.isHazardous ? { hazardous: { tbc: true, details: {} } } : {}), ...(cargo.isTemperatureControlled ? { temperatureControlled: { tbc: true, details: {} } } : {}) }))} line={cargo} editable={editable} onChange={value => onCargoChange(cargoIndex, "handlingDetailsJson", value)} /></div> : null}
+          {cargo ? <div className="sm:col-span-2 xl:col-span-4">{renderDangerousGoods?.(cargo, (entry, records, unsaved) => <CargoHandlingEditor booking evidence={records} sourceEvidenceEntry={entry} unsaved={unsaved} onLineChange={(field, value) => onCargoChange(cargoIndex, field, value)} value={cargo.handlingDetailsJson ?? (typeof cargo.cargoData?.handlingDetailsJson === "string" ? cargo.cargoData.handlingDetailsJson : JSON.stringify({ ...(cargo.isHazardous ? { hazardous: { tbc: true, details: {} } } : {}), ...(cargo.isTemperatureControlled ? { temperatureControlled: { tbc: true, details: {} } } : {}) }))} line={cargo} editable={editable} onChange={value => onCargoChange(cargoIndex, "handlingDetailsJson", value)} />)}</div> : null}
           {bookingCargoSafetyConflict(cargo, knownCargo) ? <p className="sm:col-span-2 xl:col-span-4 text-[12px] leading-5 text-[var(--md-text)]">{t("Earlier handling text mentions safety requirements that are not confirmed by this line's flags. Review the source documents before changing them.")} <span data-i18n-skip>{knownCargo}</span></p> : null}
           <div className="sm:col-span-2 xl:col-span-2 2xl:col-span-2">
-            <BookingCargoWiseField label="Goods description" value={goodsDescription} placeholder="Describe the goods" {...editCargo(cargoIndex, "description")} />
+            <div ref={goodsDescriptionRef}><BookingCargoWiseField label="Goods description" value={goodsDescription} placeholder="Describe the goods" {...editCargo(cargoIndex, "description")} /></div>
           </div>
           <BookingCargoWiseField label="Packages / pieces" value={cargoValue("packageQuantity", value(facts, "packageQuantity"))} {...editCargo(cargoIndex, "packageQuantity")} />
           <BookingCargoWiseField label="Package type" value={cargoValue("packageType", value(facts, "packageType"))} options={[...freightPackageTypeOptions]} searchable {...editCargo(cargoIndex, "packageType")} />
@@ -3564,18 +3455,12 @@ function BookingRecordDetails({
           {showChargeableWeight ? <div ref={lineWeightField}><BookingCargoWiseField label="Line chargeable weight (kg)" inputMode="decimal" error={weightValidation ? bookingChargeableWeightError(cargo?.chargeableWeightKg) : undefined} value={cargoValue("chargeableWeightKg")} {...editCargo(cargoIndex, "chargeableWeightKg")} /></div> : null}
           <BookingCargoWiseField label="Customs included" value={recordText(editableDetails, "customsIncluded") || value(facts, "customsIncluded")} options={bookingCustomsIncludedOptions} placeholder="Choose" allowCustom={false} {...editDetail("customsIncluded")} />
           {fieldPolicy.vin ? <BookingCargoWiseField label="VIN" value={cargoValue("vin", cargoDataValue("vin"))} {...editCargo(cargoIndex, "vin")} /> : null}
-          {record.booking.customFields.length
-            ? record.booking.customFields.map((field, index) => (
-                <BookingCargoWiseField
-                  key={`${field.label}-${index}`}
-                  label={field.label === "Source" ? "Booking source" : field.label}
-                  value={detailValue(`customField:${field.label}`, field.value)}
-                  {...editDetail(`customField:${field.label}`)}
-                />
-              ))
-            : <BookingCargoWiseField label="Custom fields" value={detailValue("customFields", t("No additional fields recorded"))} span {...editDetail("customFields")} />}
+          {record.booking.customFields
+            .filter(field => !["Quote type", "Quote ref", "Customer PO", "Incoterms", "Source"].includes(field.label)
+              || Object.prototype.hasOwnProperty.call(editableDetails, `customField:${field.label}`))
+            .map((field, index) => <BookingCargoWiseField key={`${field.label}-${index}`} label={field.label === "Source" ? "Booking source" : field.label}
+              value={detailValue(`customField:${field.label}`, field.value)} {...editDetail(`customField:${field.label}`)} />)}
         </BookingCargoWiseGroup>
-        {cargo ? renderDangerousGoods?.(cargo) : null}
         {cargo ? renderSecurityEvidence?.(cargo) : null}
       {equipmentKinds.length > 0 || workspace.containers.length > 0 ? (
         <BookingContainerDetails
@@ -3591,9 +3476,20 @@ function BookingRecordDetails({
       ) : null}
 
       {allocationEditor && (equipmentKinds.length > 0 || workspace.containers.length > 0 || workspace.cargoAllocationState?.allocations.length || workspace.cargoAllocationState?.legacyUnquantifiedLinks.length)
-        ? <BookingCargoWiseGroup title="Cargo allocation">{allocationEditor}</BookingCargoWiseGroup> : null}
-      </TabsContent>
-    </Tabs>
+        ? <div ref={allocationSectionRef} tabIndex={-1} aria-label={t("Review cargo allocations")} className="min-w-0 focus-visible:outline-2 focus-visible:outline-[var(--md-accent)]"><BookingCargoWiseGroup title="Cargo allocation">{allocationEditor}</BookingCargoWiseGroup></div> : null}
+      </div>
+      <BookingCargoWiseGroup
+        title="Customer terms"
+        action={<span className="truncate text-[12px] text-[var(--md-subtle)]">{t("Billed to")} {partyValue(payer, "name", value(quotePayer, "name", record.booking.customer))}</span>}
+      >
+        <div className="grid gap-1.5 md:grid-cols-2">
+          <BookingCargoWiseField label="Terms and conditions" value={detailValue("termsAndConditions", (workspace.booking.sourceQuoteId ? value(quote, "terms") : "") || unavailable)} span {...editDetail("termsAndConditions")} />
+          <BookingCargoWiseField label="Subject to rate / space" value={detailValue("subjectToTerms", value(facts, "subjectToTerms") || unavailable)} span {...editDetail("subjectToTerms")} />
+          <BookingCargoWiseField label="Customer notes" value={detailValue("customerNotes", value(quote, "customerNotes") || workspace.booking.internalNotes || unavailable)} span {...editDetail("customerNotes")} />
+          <BookingCargoWiseField label="Response deadline" value={detailValue("responseDeadline", value(quote, "deadline") || workspace.booking.customerDeadline || unavailable)} {...editDetail("responseDeadline")} />
+        </div>
+      </BookingCargoWiseGroup>
+    </div>
   )
 }
 
@@ -3636,29 +3532,27 @@ function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) 
     const groups: Array<{
       category: BookingDocumentCategory
       title: string
-      description: string
+      description?: string
       empty: string
       icon: typeof FileText
     }> = [
       {
         category: "quote",
         title: "Quote documents",
-        description: "Customer-facing files carried forward from the accepted quote.",
-        empty: "No quote documents are linked to this booking yet.",
+        description: "From the accepted quote.",
+        empty: "No quote documents linked.",
         icon: FileText,
       },
       {
         category: "job",
         title: "Job documents",
-        description: "Operational files created or attached against this booking reference.",
-        empty: "No job documents are attached yet.",
+        empty: "No job documents attached.",
         icon: Paperclip,
       },
       {
         category: "customs",
         title: "Customs documents",
-        description: "Commercial, supporting and declaration files used by Customs.",
-        empty: "No Customs documents are attached yet.",
+        empty: "No customs documents attached.",
         icon: ShieldCheck,
       },
     ]
@@ -3678,18 +3572,6 @@ function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) 
 
     return (
       <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <div className="min-w-0">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Documents for this booking")}</p>
-            <p className="mt-0.5 text-[11px] text-[var(--md-text)]">
-              {t("Quote, job and Customs files stay connected to the same booking reference.")}
-            </p>
-          </div>
-          <p className="rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2.5 py-1 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-            <span data-i18n-skip>{documents.length}</span> {t(documents.length === 1 ? "document" : "documents")}
-          </p>
-        </div>
-
         {groups.map((group) => {
           const groupDocuments = documents.filter((document) => bookingDocumentCategory(document) === group.category)
           const GroupIcon = group.icon
@@ -3706,7 +3588,7 @@ function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) 
                   </span>
                   <div className="min-w-0">
                     <h2 className="text-[12px] font-medium text-[var(--md-ink)]">{t(group.title)}</h2>
-                    <p className="mt-0.5 text-[10.5px] leading-4 text-[var(--md-text)]">{t(group.description)}</p>
+                    {group.description ? <p className="mt-0.5 text-[10.5px] leading-4 text-[var(--md-text)]">{t(group.description)}</p> : null}
                   </div>
                 </div>
                 <span className="text-[10.5px] font-medium text-[var(--md-subtle)]">
@@ -3721,7 +3603,6 @@ function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) 
                       document.fileName && document.fileName !== document.title ? document.fileName : "",
                       formatFileSize(document.fileSizeBytes),
                       document.version != null ? `${t("Version")} ${document.version}` : "",
-                      document.isCurrent === false ? t("Superseded") : "",
                     ].filter(Boolean)
                     const status = document.isCurrent === false
                       ? "Superseded"
@@ -3982,6 +3863,7 @@ function BookingCustomsSourceEditor({
   if (view === "review") {
     return (
       <CustomsReadinessReview
+        compactHeader
         completeChecks={completeChecks}
         emptyDescription="Sending creates a job-related declaration for the Customs team. It does not submit anything to iCustoms or HMRC."
         emptyTitle="Ready for Customs handoff"
@@ -3991,7 +3873,7 @@ function BookingCustomsSourceEditor({
         percent={readinessPercent}
         renderFix={(issue, close) => {
           if (issue.key === "customs_department" || issue.key === "customs_operator") {
-            return <><p className="text-[12px] leading-5 text-[var(--md-text)]">{t("This requirement is controlled by the Customs team setup for the booking office.")}</p><div className="mt-3 flex justify-end"><Button type="button" size="sm" onClick={() => { close(); navigate("/admin/users") }}>{t("Open team settings")}</Button></div></>
+            return <><p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Set the Customs team for this booking office.")}</p><div className="mt-3 flex justify-end"><Button type="button" size="sm" onClick={() => { close(); navigate("/admin/users") }}>{t("Open team settings")}</Button></div></>
           }
           const fields = fixFields(issue)
           return <><h3 className="mb-3 text-[12px] font-medium text-[var(--md-ink)]">{t(issue.section ?? "Booking")}</h3>{fields}<div className="mt-3 flex justify-end pt-3"><Button type="button" size="sm" disabled={saving || Boolean(uploading)} onClick={() => { void saveSourceData().then((saved) => { if (saved) close() }) }}>{t(saving ? "Saving..." : "Confirm")}</Button></div></>
@@ -4001,7 +3883,7 @@ function BookingCustomsSourceEditor({
         totalChecks={totalChecks}
       >
         {customsError ? <p className="mt-4 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2 text-[12px] text-[var(--md-red)] shadow-[var(--md-shadow-line)]" role="alert">{customsError}</p> : null}
-        {!readiness && !customsError ? <p className="mt-4 text-[13px] text-[var(--md-text)]">{t("Checking the booking against Customs requirements...")}</p> : null}
+        {!readiness && !customsError ? <p className="mt-4 text-[13px] text-[var(--md-text)]">{t("Checking customs requirements...")}</p> : null}
         {readiness?.warnings.length ? <div className="mt-4 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2.5 shadow-[var(--md-shadow-line)]">{readiness.warnings.map((warning) => <p key={warning.key} className="text-[12px] text-[var(--md-text)]">{t(warning.label)}</p>)}</div> : null}
       </CustomsReadinessReview>
     )
@@ -4095,7 +3977,7 @@ function BookingCustomsWorkspace({
               <span className="text-[12px] text-[var(--md-text)]" data-i18n-skip>{declaration.mrn ?? t("MRN not assigned")}</span>
               <StatusPill tone={declaration.status === "rejected" ? "red" : declaration.status === "draft" ? "amber" : "green"}>{t(declaration.status)}</StatusPill>
             </button>
-          )) : <p className="py-7 text-center text-[13px] text-[var(--md-text)]">{t("No job-related declaration has been created yet.")}</p>}
+          )) : <p className="py-7 text-center text-[13px] text-[var(--md-text)]">{t("No declarations created.")}</p>}
         </div>
       </Surface> : null}
     </div>
@@ -4104,6 +3986,17 @@ function BookingCustomsWorkspace({
 
 function BookingFinanceWorkspace({ record }: { record: BookingDetailRecord }) {
   const { t } = useLanguage()
+  if (record.workspace && bookingLifecycle(record.workspace.booking.status) === "draft") {
+    return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
+      <h2 className="text-[14px] font-medium">{t("Finance starts when the booking is In progress")}</h2>
+      <p className="mt-2 text-[13px] text-[var(--md-text)]">{t("Provisional bookings represent possible intent. Confirm the booking details and save its status as In progress before adding charges, invoices or other financial records.")}</p>
+      {record.workspace.charges.length ? <details className="mt-3">
+        <summary className="cursor-pointer text-[12px] text-[var(--md-status-amber-ink)]">{t("Review retained charge records")}</summary>
+        <p className="my-2 text-[12px] text-[var(--md-text)]">{t("These existing records need Finance review. They have not been removed or changed.")}</p>
+        <BookingFactRows rows={record.workspace.charges.map((charge, index) => [charge.description || `${t("Charge")} ${index + 1}`, `${t("Cost")} ${charge.costLocal ?? "–"} · ${t("Sell")} ${charge.sellLocal ?? "–"}`] as const)} />
+      </details> : null}
+    </Surface>
+  }
   const liveCharges = record.workspace?.charges ?? []
   const liveChargeRows: Array<readonly [string, string]> = liveCharges.map((charge: BookingWorkflowCharge, index) => {
     const description = typeof charge.description === "string" && charge.description.trim()
@@ -4140,11 +4033,11 @@ function BookingFinanceWorkspace({ record }: { record: BookingDetailRecord }) {
           {liveChargeRows.length ? (
             <BookingFactRows rows={liveChargeRows} />
           ) : (
-            <p className="px-5 py-6 text-[12px] text-[var(--md-text)]">{t("No quote charges have been transferred to this booking yet.")}</p>
+            <p className="px-5 py-6 text-[12px] text-[var(--md-text)]">{t("No charges transferred from the quote.")}</p>
           )}
         </Surface>
       ) : (
-        <UnavailableBookingSection title="Cost ledger" detail="No supplier-cost or accounting feed is connected for this booking. The booking value above is the only finance field available in the register." />
+        <UnavailableBookingSection title="Cost ledger" detail="No cost or accounting feed is connected. Only the booking value is available." />
       )}
     </div>
   )
@@ -4171,7 +4064,7 @@ function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
                 <p className="text-[13px] font-medium leading-5 text-[var(--md-ink)]">{event.summary}</p>
                 <p className="mt-0.5 text-[12px] text-[var(--md-text)]">{event.actor || t("System")} · {t(event.type.replace(/_/g, " "))}</p>
                 {["route_mode_changed", "route_references_updated"].includes(event.type) ? <details className="mt-2 min-w-0">
-                  <summary className="cursor-pointer py-1 text-[12px] text-[var(--md-accent)] focus-visible:outline-2 focus-visible:outline-offset-2">{t("Review previous and current references")}</summary>
+                  <summary className="cursor-pointer py-1 text-[12px] text-[var(--md-accent)] focus-visible:outline-2 focus-visible:outline-offset-2">{t("Previous and current references")}</summary>
                   <div className="mt-2 grid min-w-0 gap-3 sm:grid-cols-2">
                     {(["beforeReferences", "afterReferences"] as const).map((key) => {
                       const metadata = asRecord(event.metadata)
@@ -4191,7 +4084,7 @@ function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
                   </div>
                 </details> : null}
                 {event.type === "route_cutoffs_updated" ? <details className="mt-2 min-w-0">
-                  <summary className="cursor-pointer py-1 text-xs text-[var(--md-accent)] focus-visible:outline-2 focus-visible:outline-offset-2">{t("Review previous and current cut-offs")}</summary>
+                  <summary className="cursor-pointer py-1 text-xs text-[var(--md-accent)] focus-visible:outline-2 focus-visible:outline-offset-2">{t("Previous and current cut-offs")}</summary>
                   <div className="mt-2 grid min-w-0 gap-3 sm:grid-cols-2">
                     {(["before", "after"] as const).map((key) => <div key={key} className="min-w-0 text-xs">
                       <p className="font-medium">{t(key === "before" ? "Previous" : "Current")}</p>
@@ -4211,7 +4104,6 @@ function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
       ) : (
         <div className="px-5 py-10 text-center">
           <h3 className="text-[15px] font-medium text-[var(--md-ink)]">{t("No activity recorded yet")}</h3>
-          <p className="mx-auto mt-2 max-w-[560px] text-[13px] leading-6 text-[var(--md-text)]">{t("Booking updates, document attachments and Customs handoffs will appear here.")}</p>
         </div>
       )}
     </Surface>
@@ -4528,6 +4420,7 @@ function BookingQuoteSyncReviewPanel({
 }
 
 function BookingDetailTabPage({
+  onAssignCustomer,
   renderDangerousGoods,
   renderSecurityEvidence,
   renderMilestones,
@@ -4564,12 +4457,13 @@ function BookingDetailTabPage({
   record,
   workspace,
 }: {
-  renderDangerousGoods?: (cargo: BookingWorkflowCargo) => ReactNode
+  onAssignCustomer: () => void
+  renderDangerousGoods?: (cargo: BookingWorkflowCargo, renderHandling?: (entry: ReactNode, records: ReactNode, unsaved: boolean) => ReactNode) => ReactNode
   renderSecurityEvidence?: (cargo: BookingWorkflowCargo) => ReactNode
   renderMilestones?: (route: BookingWorkflowRoute) => ReactNode
   allocationEditor?: ReactNode
   allocationValidationAttempt?: number
-  weightValidation?: { attempt: number; index: number | null }
+  weightValidation?: { attempt: number; index: number | null; field?: "description" }
   editable: boolean
   activeTab: BookingDetailTab
   bookingLookups: QuoteWorkflowSources | null
@@ -4606,7 +4500,7 @@ function BookingDetailTabPage({
   if (activeTab === "Finance") return <BookingFinanceWorkspace record={record} />
   if (activeTab === "Notes") return <LifecycleNotes subjectType="booking" subjectId={record.workspace?.booking.jobId ?? null} />
   if (activeTab === "Audit") return <BookingActivityWorkspace record={record} />
-  return <BookingDecisionOverview record={record} />
+  return <BookingDecisionOverview record={record} onAssignCustomer={editable ? onAssignCustomer : undefined} />
 }
 
 export function BookingAskPanel({
@@ -4766,8 +4660,9 @@ export function BookingDetailWorkspace({
   const [locationDirectory, setLocationDirectory] = useState<readonly UnlocodeDirectoryRecord[]>([])
   const [loadState, setLoadState] = useState<"loading" | "ready" | "not-found" | "error">("loading")
   const [savingDetails, setSavingDetails] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [allocationValidationAttempt, setAllocationValidationAttempt] = useState(0)
-  const [weightValidation, setWeightValidation] = useState<{ attempt: number; index: number | null }>()
+  const [weightValidation, setWeightValidation] = useState<{ attempt: number; index: number | null; field?: "description" }>()
   const [customsReadiness, setCustomsReadiness] = useState<BookingCustomsReadiness | null>(null)
   const [customsView, setCustomsView] = useState<BookingCustomsView>("source")
   const [customsError, setCustomsError] = useState<string | null>(null)
@@ -4781,6 +4676,58 @@ export function BookingDetailWorkspace({
   const [uploadingDocumentType, setUploadingDocumentType] = useState<"commercial_invoice" | "packing_list" | null>(null)
   const customsHandoffKeyRef = useRef<string | null>(null)
   const bookingDocumentInputRef = useRef<HTMLInputElement | null>(null)
+  const saveInFlightRef = useRef(false)
+  const failedSaveFingerprintRef = useRef<string | null>(null)
+  const saveGenerationRef = useRef(0)
+  const pendingNavigationRef = useRef<(() => void) | null>(null)
+  const [pendingNavigation, setPendingNavigation] = useState(false)
+  const [pendingLifecycle, setPendingLifecycle] = useState<BookingLifecycle | null>(null)
+  const [latestSavedReview, setLatestSavedReview] = useState<BookingWorkflowWorkspace | null>(null)
+  const [loadingLatest, setLoadingLatest] = useState(false)
+  const latestDraftRef = useRef({ draftBooking, draftWorkspace, record })
+  latestDraftRef.current = { draftBooking, draftWorkspace, record }
+  const detailsDirty = Boolean(record && ((draftBooking && JSON.stringify(draftBooking) !== JSON.stringify(record.booking)) || (draftWorkspace && JSON.stringify(draftWorkspace) !== JSON.stringify(record.workspace))))
+  const navigationDirtyRef = useRef(detailsDirty || savingDetails)
+  navigationDirtyRef.current = detailsDirty || savingDetails
+  const canEditBooking = hasPermission(currentUser, "Bookings.Write")
+  const draftFingerprint = JSON.stringify([draftBooking, draftWorkspace])
+
+  useEffect(() => {
+    if (loadState !== "ready" || !record?.workspace || !detailsDirty || savingDetails || applyingQuoteSync || !canEditBooking || failedSaveFingerprintRef.current === draftFingerprint) return
+    const timer = window.setTimeout(() => void saveDetails(), pendingNavigation ? 0 : 650)
+    return () => window.clearTimeout(timer)
+  }, [loadState, record, detailsDirty, draftFingerprint, savingDetails, applyingQuoteSync, canEditBooking, pendingNavigation])
+
+  useEffect(() => {
+    if (detailsDirty || savingDetails || !pendingNavigationRef.current) return
+    const proceed = pendingNavigationRef.current
+    pendingNavigationRef.current = null
+    setPendingNavigation(false)
+    proceed()
+  }, [detailsDirty, savingDetails])
+
+  useEffect(() => {
+    function beforeNavigate(event: Event) {
+      if (!navigationDirtyRef.current) return
+      event.preventDefault()
+      pendingNavigationRef.current = (event as CustomEvent<{ proceed: () => void }>).detail.proceed
+      setPendingNavigation(true)
+    }
+    function beforeUnload(event: BeforeUnloadEvent) {
+      if (!navigationDirtyRef.current) return
+      event.preventDefault()
+      event.returnValue = ""
+    }
+    window.addEventListener("multideck:before-navigate", beforeNavigate)
+    window.addEventListener("beforeunload", beforeUnload)
+    return () => {
+      window.removeEventListener("multideck:before-navigate", beforeNavigate)
+      window.removeEventListener("beforeunload", beforeUnload)
+    }
+  }, [detailsDirty, savingDetails])
+
+  useEffect(() => () => { saveGenerationRef.current += 1 }, [])
+
 
   function changeActiveTab(nextTab: BookingDetailTab) {
     setCustomsView("source")
@@ -4812,6 +4759,11 @@ export function BookingDetailWorkspace({
     let cancelled = false
     const normalizedId = bookingId.trim().toUpperCase()
 
+    saveGenerationRef.current += 1
+    saveInFlightRef.current = false
+    failedSaveFingerprintRef.current = null
+    setSavingDetails(false)
+    setSaveError(null)
     setActiveTab("Overview")
     setCustomsView("source")
     setRecord(null)
@@ -4904,11 +4856,7 @@ export function BookingDetailWorkspace({
   }
 
   const loadedRecord = record
-  const detailsDirty = Boolean(
-    draftBooking && JSON.stringify(draftBooking) !== JSON.stringify(loadedRecord.booking)
-      || draftWorkspace && JSON.stringify(draftWorkspace) !== JSON.stringify(loadedRecord.workspace),
-  )
-  const visibleRecord = activeTab === "Details" && draftBooking
+  const visibleRecord = draftBooking
     ? { ...loadedRecord, booking: draftBooking, workspace: draftWorkspace ?? loadedRecord.workspace }
     : loadedRecord
 
@@ -4945,11 +4893,21 @@ export function BookingDetailWorkspace({
       const parties = [...current.parties]
       const index = parties.findIndex((party) => party.role.toLowerCase() === normalizedRole)
       const existing = index >= 0 ? parties[index] : { role: normalizedRole, sequence: parties.length + 1 }
-      const next = { ...existing, [field]: value, rawSnapshot: { ...existing.rawSnapshot, [field]: value } }
+      // A manually changed name is an unlinked party until an account is selected.
+      // Never leave the previous account ID/code attached to a different displayed name.
+      const unlink = field === "name" && value !== existing.name
+      const identity = unlink ? { organisationId: null, addressId: null, contactId: null, identifierValue: "" } : {}
+      const next = { ...existing, ...identity, [field]: value, rawSnapshot: { ...existing.rawSnapshot, ...identity, [field]: value } }
       if (index >= 0) parties[index] = next
       else parties.push(next)
-      return { ...current, parties }
+      const booking = unlink && normalizedRole === "customer"
+        ? { ...current.booking, customerId: null, customerName: value, customerCode: "" }
+        : current.booking
+      return { ...current, booking, parties }
     })
+    if (role.toLowerCase() === "customer" && field === "name") {
+      setDraftBooking(current => current ? { ...current, customer: value, customerRef: "" } : current)
+    }
   }
 
   function selectDraftOrganisation(role: BookingOrganisationRole, organisation: QuoteOrganisationOption) {
@@ -5225,15 +5183,25 @@ export function BookingDetailWorkspace({
   }
 
   function discardDetails() {
+    failedSaveFingerprintRef.current = null
+    setSaveError(null)
     setDraftBooking(loadedRecord.booking)
     setDraftWorkspace(loadedRecord.workspace ?? null)
+  }
+
+  async function reviewLatestSaved() {
+    if (!loadedRecord.workspace || savingDetails) return
+    setLoadingLatest(true)
+    try { setLatestSavedReview(await getBookingWorkflow(loadedRecord.workspace.booking.bookingReference)) }
+    catch (reason) { setSaveError(reason instanceof Error ? reason.message : t("The saved booking could not be loaded.")) }
+    finally { setLoadingLatest(false) }
   }
 
   async function applySavedWorkspace(workspace: BookingWorkflowWorkspace) {
     const nextRecord = bookingWorkspaceRecord(workspace)
     setRecord(nextRecord)
-    setDraftBooking(nextRecord.booking)
-    setDraftWorkspace(workspace)
+    setDraftBooking(current => rebaseBookingDraft(nextRecord.booking, loadedRecord.booking, current ?? loadedRecord.booking))
+    setDraftWorkspace(current => rebaseBookingDraft(workspace, loadedRecord.workspace!, current ?? loadedRecord.workspace!))
     try {
       setCustomsReadiness(await getBookingCustomsReadiness(workspace.booking.jobId))
       setCustomsError(null)
@@ -5268,23 +5236,29 @@ export function BookingDetailWorkspace({
   }
 
   async function saveDetails() {
-    if (!draftBooking || !draftWorkspace || !detailsDirty || savingDetails || !loadedRecord.workspace) return
+    if (!draftBooking || !draftWorkspace || !detailsDirty || saveInFlightRef.current || !canEditBooking || !loadedRecord.workspace) return
+    const generation = saveGenerationRef.current
+    const snapshotFingerprint = JSON.stringify([draftBooking, draftWorkspace])
+    failedSaveFingerprintRef.current = snapshotFingerprint
+    setSaveError(null)
     const incompleteCargoIndex = draftWorkspace.cargo.findIndex((line) => !line.description?.trim())
     if (incompleteCargoIndex >= 0) {
-      toast.error(t("Goods description needed"), { description: t(`Add a description to cargo line ${incompleteCargoIndex + 1}, or remove that line before saving.`) })
+      setWeightValidation(current => ({ attempt: (current?.attempt ?? 0) + 1, index: incompleteCargoIndex, field: "description" }))
+      setSaveError(t(`Add a description to cargo line ${incompleteCargoIndex + 1}, or remove that line. Your edits are not saved yet.`))
       return
     }
     const workspace = draftWorkspace
     const invalidWeightIndex = workspace.cargo.findIndex(line => bookingChargeableWeightError(line.chargeableWeightKg))
     const invalidOverride = bookingChargeableWeightError(recordText(asRecord(workspace.booking.editableDetails), "chargeableWeightKg"))
     if (invalidWeightIndex >= 0 || invalidOverride) {
+      setSaveError(t("Review the chargeable weight. Your edits are not saved yet."))
       setWeightValidation(current => ({ attempt: (current?.attempt ?? 0) + 1, index: invalidWeightIndex >= 0 ? invalidWeightIndex : null }))
       return
     }
     const allocationIssue = analyseCargoAllocations(workspace.cargo, workspace.containers, workspace.routes, workspace.cargoAllocationState?.allocations ?? []).issues[0]
     if (allocationIssue) {
       setAllocationValidationAttempt(attempt => attempt + 1)
-      toast.error(t("Review cargo allocations"), { description: t(allocationIssue.message) })
+      setSaveError(t(allocationIssue.message))
       return
     }
     const route = workspace.routes[0] ?? {}
@@ -5318,10 +5292,12 @@ export function BookingDetailWorkspace({
       ? recordText(editableDetails, "responseDeadline")
       : workspace.booking.customerDeadline ?? null
     const calculatedDirection = calculatedDirectionForBooking(workspace, bookingLookups)
+    saveInFlightRef.current = true
     setSavingDetails(true)
     try {
       const savedWorkspace = await saveBookingWorkflow(workspace.booking.jobId, {
         ...bookingCargoAllocationPayload(workspace, loadedRecord.workspace),
+        expectedUpdatedAt: loadedRecord.workspace.booking.updatedAt,
         customerId: workspace.booking.customerId ?? null,
         carrierId: workspace.booking.carrierId ?? null,
         supplierId: workspace.booking.supplierId ?? null,
@@ -5366,20 +5342,38 @@ export function BookingDetailWorkspace({
         cargo: workspace.cargo,
         containers: workspace.containers,
       })
+      if (generation !== saveGenerationRef.current) return
       if (draftBooking.isFavourite !== loadedRecord.booking.isFavourite) {
         await setLiveJobStarred(savedWorkspace.booking.bookingReference, draftBooking.isFavourite)
       }
-      await applySavedWorkspace(savedWorkspace)
-      toast.success(t("Booking changes saved"), { description: t("The booking workspace has been updated.") })
+      if (generation !== saveGenerationRef.current) return
+      const savedRecord = bookingWorkspaceRecord(savedWorkspace)
+      const currentDraft = latestDraftRef.current
+      const nextBooking = rebaseBookingDraft(savedRecord.booking, draftBooking, currentDraft.draftBooking ?? draftBooking)
+      const nextWorkspace = rebaseBookingDraft(savedWorkspace, draftWorkspace, currentDraft.draftWorkspace ?? draftWorkspace)
+      setRecord(savedRecord)
+      setDraftBooking(nextBooking)
+      setDraftWorkspace(nextWorkspace)
+      failedSaveFingerprintRef.current = null
+      setSaveError(null)
+      // Secondary reads must not replace a draft or hold up the next save.
+      void getBookingCustomsReadiness(savedWorkspace.booking.jobId).then(readiness => {
+        if (generation === saveGenerationRef.current) { setCustomsReadiness(readiness); setCustomsError(null) }
+      }).catch(reason => {
+        if (generation === saveGenerationRef.current) setCustomsError(reason instanceof Error ? reason.message : t("Customs readiness could not be checked."))
+      })
     } catch (reason) {
-      toast.error(t("Booking could not be saved"), { description: reason instanceof Error ? reason.message : t("Your changes remain on screen. Try saving again.") })
+      if (generation !== saveGenerationRef.current) return
+      // Stop automatic retries after transport/concurrency failure; keep the complete latest draft.
+      failedSaveFingerprintRef.current = JSON.stringify([latestDraftRef.current.draftBooking, latestDraftRef.current.draftWorkspace])
+      setSaveError(reason instanceof Error ? reason.message : t("Your edits are not saved. Try again."))
     } finally {
-      setSavingDetails(false)
+      if (generation === saveGenerationRef.current) { saveInFlightRef.current = false; setSavingDetails(false) }
     }
   }
 
   async function sendToCustoms() {
-    if (!loadedRecord.workspace || !customsReadiness?.ready || sendingToCustoms) return
+    if (!loadedRecord.workspace || !customsReadiness?.ready || sendingToCustoms || detailsDirty || savingDetails) return
     customsHandoffKeyRef.current ??= crypto.randomUUID()
     setSendingToCustoms(true)
     try {
@@ -5439,8 +5433,17 @@ export function BookingDetailWorkspace({
   return (
     <main className="min-h-full bg-[var(--md-analytics-bg)] px-4 py-4 text-[var(--md-ink)] sm:px-5">
       <div className="grid w-full gap-2">
+        <Dialog open={Boolean(pendingLifecycle)} onOpenChange={open => { if (!open) setPendingLifecycle(null) }}><DialogContent><DialogHeader><DialogTitle>{t("Change booking status?")}</DialogTitle><DialogDescription>{t("Change this booking to")} {pendingLifecycle ? t(bookingLifecycleLabel(pendingLifecycle)) : ""}. {t("Required operational checks still apply. Financial records remain unavailable while provisional.")}</DialogDescription></DialogHeader><DialogFooter><Button variant="ghost" onClick={() => setPendingLifecycle(null)}>{t("Cancel")}</Button><Button disabled={savingDetails || detailsDirty || !canEditBooking} onClick={() => { const status = pendingLifecycle; setPendingLifecycle(null); if (status) setDraftWorkspace(current => current ? { ...current, booking: { ...current.booking, status } } : current) }}>{t("Confirm status change")}</Button></DialogFooter></DialogContent></Dialog>
+        <Dialog open={pendingNavigation && Boolean(saveError)} onOpenChange={open => { if (!open) { pendingNavigationRef.current = null; setPendingNavigation(false) } }}><DialogContent><DialogHeader><DialogTitle>{t("Booking changes are not saved")}</DialogTitle><DialogDescription>{saveError}</DialogDescription></DialogHeader><DialogFooter><Button variant="ghost" onClick={() => { pendingNavigationRef.current = null; setPendingNavigation(false) }}>{t("Keep editing")}</Button><Button variant="outline" onClick={discardDetails}>{t("Discard and leave")}</Button><Button onClick={() => void saveDetails()}>{t("Retry save")}</Button></DialogFooter></DialogContent></Dialog>
+        <Dialog open={Boolean(latestSavedReview)} onOpenChange={open => { if (!open) setLatestSavedReview(null) }}><DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{t("Review saved updates")}</DialogTitle><DialogDescription>{t("Your edits are retained. Continuing keeps your changes and incorporates other saved updates. Any conflicting values below will use your edit.")}</DialogDescription></DialogHeader>
+          {latestSavedReview && draftBooking ? <div className="overflow-x-auto"><table className="w-full text-left text-[12px]"><thead><tr><th className="p-2">{t("Field")}</th><th className="p-2">{t("Saved")}</th><th className="p-2">{t("Your edit")}</th></tr></thead><tbody>{bookingDraftConflicts({ booking: loadedRecord.booking, workspace: loadedRecord.workspace }, { booking: bookingWorkspaceRecord(latestSavedReview).booking, workspace: latestSavedReview }, { booking: draftBooking, workspace: draftWorkspace }).map(item => <tr key={item.field}><td className="p-2">{item.field}</td><td className="break-words p-2" data-i18n-skip>{item.saved}</td><td className="break-words p-2" data-i18n-skip>{item.draft}</td></tr>)}</tbody></table></div> : null}
+          <DialogFooter><Button variant="ghost" onClick={() => setLatestSavedReview(null)}>{t("Cancel")}</Button><Button disabled={savingDetails} onClick={() => { if (!latestSavedReview || !draftBooking || !draftWorkspace) return; const fresh = bookingWorkspaceRecord(latestSavedReview); setDraftBooking(rebaseBookingDraft(fresh.booking, loadedRecord.booking, draftBooking)); setDraftWorkspace(rebaseBookingDraft(latestSavedReview, loadedRecord.workspace!, draftWorkspace)); setRecord(fresh); setLatestSavedReview(null); failedSaveFingerprintRef.current = null; setSaveError(null) }}>{t("Keep my edits and retry")}</Button></DialogFooter></DialogContent>
+        </Dialog>
         <BookingDetailHeader
           activeTab={activeTab}
+          navigate={navigate}
+          savingDetails={savingDetails || applyingQuoteSync}
+          saveError={saveError}
           customsReadiness={customsReadiness}
           detailsDirty={detailsDirty}
           uploadingDocumentType={uploadingDocumentType}
@@ -5450,12 +5453,17 @@ export function BookingDetailWorkspace({
             setCustomsView("review")
             setActiveTab("Customs")
           }}
-          onSaveDetails={() => void saveDetails()}
+          canChangeLifecycle={hasPermission(currentUser, "Bookings.Write")}
+          onLifecycleChange={setPendingLifecycle}
+          onSaveDetails={() => { failedSaveFingerprintRef.current = null; void saveDetails() }}
           onSendToCustoms={() => void sendToCustoms()}
           onTabChange={changeActiveTab}
-          record={visibleRecord}
+          record={{ ...visibleRecord, workspace: draftWorkspace ?? visibleRecord.workspace }}
           sendingToCustoms={sendingToCustoms}
         />
+        {saveError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-status-red-bg)] px-3 py-2 text-[12px] text-[var(--md-status-red-ink)]">
+          <span>{saveError}</span><div className="flex gap-2"><Button variant="ghost" size="sm" onClick={() => changeActiveTab("Details")}>{t("Review details")}</Button><Button variant="ghost" size="sm" disabled={loadingLatest || savingDetails} onClick={() => void reviewLatestSaved()}>{t(loadingLatest ? "Loading…" : "Review saved updates")}</Button></div>
+        </div> : null}
         {quoteSyncReview ? (
           <BookingQuoteSyncReviewPanel
             busy={applyingQuoteSync}
@@ -5492,6 +5500,10 @@ export function BookingDetailWorkspace({
           data-booking-tab-panel
         >
           <BookingDetailTabPage
+            onAssignCustomer={() => {
+              changeActiveTab("Details")
+              requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-booking-customer-select] [role="combobox"], [data-booking-customer-select] input')?.focus())
+            }}
             renderSecurityEvidence={cargo => (
               freightFieldPolicy({ mode: loadedRecord.booking.mode, stage: "booking", legModes: loadedRecord.workspace!.routes.map(route => route.mode) }).air
               || Boolean(cargo.securityEvidence?.length)
@@ -5502,16 +5514,12 @@ export function BookingDetailWorkspace({
               bookingUpdatedAt={loadedRecord.workspace!.booking.updatedAt}
               cargo={cargo}
               events={loadedRecord.workspace!.events}
-              editable={!savingDetails && !applyingQuoteSync}
-              disabledReason={detailsDirty ? "Save or discard Booking changes before recording screening evidence." : undefined}
-              onSaved={workspace => {
-                const nextRecord = bookingWorkspaceRecord(workspace)
-                setRecord(nextRecord)
-                setDraftBooking(nextRecord.booking)
-                setDraftWorkspace(workspace)
-              }}
+              editable={canEditBooking && !savingDetails && !applyingQuoteSync}
+              disabledReason={detailsDirty ? "Wait for Booking changes to save before recording screening evidence." : undefined}
+              onSaved={applySavedWorkspace}
             /> : null}
-            renderDangerousGoods={cargo => <BookingDangerousGoodsEditor
+            renderDangerousGoods={(cargo, renderHandling) => <BookingDangerousGoodsEditor
+              renderHandling={renderHandling}
               key={cargo.id ?? "unsaved-cargo"}
               bookingId={loadedRecord.workspace!.booking.jobId}
               bookingReference={loadedRecord.workspace!.booking.bookingReference}
@@ -5519,14 +5527,9 @@ export function BookingDetailWorkspace({
               cargo={cargo}
               maritime={freightFieldPolicy({ mode: loadedRecord.booking.mode, stage: "booking", legModes: loadedRecord.workspace!.routes.map(route => route.mode) }).sea}
               events={loadedRecord.workspace!.events}
-              editable={!savingDetails && !applyingQuoteSync}
-              disabledReason={detailsDirty ? "Save or discard Booking changes before recording dangerous goods." : undefined}
-              onSaved={workspace => {
-                const nextRecord = bookingWorkspaceRecord(workspace)
-                setRecord(nextRecord)
-                setDraftBooking(nextRecord.booking)
-                setDraftWorkspace(workspace)
-              }}
+              editable={canEditBooking && !savingDetails && !applyingQuoteSync}
+              disabledReason={detailsDirty ? "Wait for Booking changes to save before recording dangerous goods." : undefined}
+              onSaved={applySavedWorkspace}
             />}
             renderMilestones={route => <BookingRouteMilestones
               bookingId={loadedRecord.workspace!.booking.jobId}
@@ -5535,23 +5538,19 @@ export function BookingDetailWorkspace({
               route={route}
               types={loadedRecord.workspace!.milestoneTypes}
               events={loadedRecord.workspace!.events}
-              editable={!savingDetails && !applyingQuoteSync}
-              disabledReason={detailsDirty ? "Save or discard Booking changes before recording a milestone." : undefined}
-              onSaved={workspace => {
-                const nextRecord = bookingWorkspaceRecord(workspace)
-                setRecord(nextRecord)
-                setDraftBooking(nextRecord.booking)
-                setDraftWorkspace(workspace)
-              }}
+              editable={canEditBooking && !savingDetails && !applyingQuoteSync}
+              disabledReason={detailsDirty ? "Wait for Booking changes to save before recording a milestone." : undefined}
+              onSaved={applySavedWorkspace}
             />}
-            editable={!savingDetails && !applyingQuoteSync}
+            editable={canEditBooking && !applyingQuoteSync}
             allocationValidationAttempt={allocationValidationAttempt}
             weightValidation={weightValidation}
             allocationEditor={draftWorkspace && (draftWorkspace.cargoAllocationState || draftWorkspace.containers.length) ? <CargoAllocationEditor
               cargo={draftWorkspace.cargo} equipment={draftWorkspace.containers} routes={draftWorkspace.routes}
               allocations={draftWorkspace.cargoAllocationState?.allocations}
               legacyLinks={draftWorkspace.cargoAllocationState?.legacyUnquantifiedLinks}
-              editable={!savingDetails && !applyingQuoteSync} validationAttempt={allocationValidationAttempt}
+              supportingInfo={<BookingDetailsInfo label="About cargo allocation">{t("Assign goods to equipment for the whole journey or a specific leg. Successive legs are balanced separately. Allocations record packages, weight and volume; they do not change container totals, VGM or the accepted quote.")}</BookingDetailsInfo>}
+              editable={canEditBooking && !savingDetails && !applyingQuoteSync} validationAttempt={allocationValidationAttempt}
               onChange={allocations => {
                 if (savingDetails || applyingQuoteSync) return
                 setDraftWorkspace(current => current?.cargoAllocationState ? { ...current, cargoAllocationState: { ...current.cargoAllocationState, allocations } } : current)

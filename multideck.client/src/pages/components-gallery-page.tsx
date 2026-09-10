@@ -12,6 +12,8 @@ import toastSuccessIcon from "@/assets/toasts/toast-success.png"
 import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Iphone } from "@/components/ui/iphone"
+import { BookingCustomerPanel, type BookingCustomer } from "@/components/multideck/booking-customer-panel"
+import { CargoHandlingEditor } from "@/components/multideck/quote-details/cargo-handling-editor"
 import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
 import { CargoAllocationEditor } from "@/components/multideck/cargo-allocation-editor"
 import { BookingRouteMilestones } from "@/components/multideck/booking-route-milestones"
@@ -98,6 +100,8 @@ import {
   CompactCombobox,
   CompactFieldRow,
   CompactSectionShell,
+  CargoWiseGroup,
+  CargoWiseField,
   IncotermField,
   LocationFields,
   NumberUnitField,
@@ -1630,6 +1634,9 @@ export function BookingDangerousGoodsPreview() {
     <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setEditable(!editable)}>{editable ? "Preview read-only" : "Return to editing"}</Button><Button variant="outline" onClick={() => setFailSave(!failSave)}>{failSave ? "Return to successful saves" : "Preview save failure"}</Button></div>
     <BookingDangerousGoodsEditor bookingId={workspace.booking.jobId} bookingReference={workspace.booking.bookingReference}
       bookingUpdatedAt={workspace.booking.updatedAt} cargo={workspace.cargo[0]} maritime events={workspace.events} editable={editable} onSaved={setWorkspace}
+      renderHandling={(entry, records) => <CargoHandlingEditor booking value={workspace.cargo[0].handlingDetailsJson} line={workspace.cargo[0]} editable={editable} evidence={records} sourceEvidenceEntry={entry}
+        onChange={handlingDetailsJson => setWorkspace(current => ({ ...current, cargo: [{ ...current.cargo[0], handlingDetailsJson }] }))}
+        onLineChange={(field, value) => setWorkspace(current => ({ ...current, cargo: [{ ...current.cargo[0], [field]: value }] }))} />}
       save={async payload => {
         if (failSave) throw new Error("Preview save failed. Your entries are retained.")
         const now = new Date().toISOString(), cargo = workspace.cargo[0]
@@ -1698,6 +1705,32 @@ function CargoAllocationEditorPreview() {
   </div>
 }
 
+const previewCustomer: BookingCustomer = {
+  id: "preview-customer", name: "Northstar Engineering", accountCode: "NORTH01", metadata: {},
+  address: { id: "preview-address", line1: null, line2: null, townCity: "Leeds", countyState: null, postZipCode: null, countryCode: "GB", mainEmail: "logistics@example.com", mainPhone: "+44 113 555 0100" },
+  engagement: { preferredChannel: "email", allowThankYouMessages: true, allowFollowupMessages: true, allowWhatsApp: false, doNotOverContact: true, minHoursBetweenNonUrgentMessages: 24, notes: "Include the purchase order reference in shipment updates." },
+  contacts: ["Alex Morgan", "Sam Taylor", "Jamie Patel", "Robin Clarke"].map((name, index) => ({ id: `preview-contact-${index}`, accountId: "preview-customer", accountName: "Northstar Engineering", name, email: `contact${index + 1}@example.com`, phone: index === 0 ? "+44 113 555 0101" : null, jobTitle: index === 0 ? "Logistics manager" : "Operations" } as BookingCustomer["contacts"][number])),
+}
+async function previewCustomerLoader(id: string) {
+  if (id === "error") throw new Error("Preview failure")
+  if (id === "loading") return new Promise<BookingCustomer>(() => {})
+  if (id === "sparse") return { ...previewCustomer, id, name: "Customer without saved details", address: null, engagement: null, contacts: [] }
+  return previewCustomer
+}
+function BookingCustomerPanelPreview() {
+  const [scenario, setScenario] = useState("preview-customer")
+  const [reduced, setReduced] = useState(false)
+  return <div className="grid w-full max-w-2xl gap-3"><div className="flex flex-wrap gap-2">{[["preview-customer", "Populated"], ["", "Unassigned"], ["sparse", "Missing details"], ["loading", "Loading"], ["error", "Error"]].map(([id, label]) => <Button key={id} variant={scenario === id ? "default" : "outline"} onClick={() => setScenario(id)}>{label}</Button>)}<Button variant="outline" aria-pressed={reduced} onClick={() => setReduced(!reduced)}>Reduced motion</Button></div><BookingCustomerPanel customerId={scenario} contactId="preview-contact-0" loadCustomer={previewCustomerLoader} reducedMotion={reduced} /></div>
+}
+
+function CargoHandlingEditorPreview() {
+  const [line, setLine] = useState(() => ({ ...newQuoteCargoLine(), description: "Machine parts" }))
+  const [booking, setBooking] = useState(true)
+  return <div className="grid w-full gap-3"><Button variant="outline" onClick={() => setBooking(!booking)}>{booking ? "Preview quote handling" : "Preview booking evidence rows"}</Button>
+    <CargoHandlingEditor booking={booking} value={line.handlingDetailsJson} line={line} editable onChange={handlingDetailsJson => setLine(current => ({ ...current, handlingDetailsJson }))} onLineChange={(field, value) => setLine(current => ({ ...current, [field]: value }))} />
+  </div>
+}
+
 function QuoteCargoEditorPreview() {
   const [lines, setLines] = useState(() => [{ ...newQuoteCargoLine(), description: "Machine parts", packageQuantity: "2", packageType: "Crates", grossWeightKg: "120.5" }, { ...newQuoteCargoLine(), description: "Spare seals", packageQuantity: "4", packageType: "Cartons", grossWeightKg: "18" }])
   const [editable, setEditable] = useState(true)
@@ -1730,6 +1763,7 @@ function QuoteDetailControlsPreview() {
   return (
     <CompactSectionShell title="Quote detail controls" meta="Content-shaped fields with linked freight data" className="w-full max-w-[980px]">
       <div className="grid gap-4">
+        <CargoWiseGroup title="Quote and booking summary" compact><div className="grid gap-1 sm:grid-cols-2"><CargoWiseField label="Origin" value="GBFXT" compact /><CargoWiseField label="Destination" value="NLRTM" compact /></div></CargoWiseGroup>
         <CompactFieldRow>
           <CompactCombobox label="Shipper" value={company} options={organisationOptions} recommendedOptions={[organisationOptions[0]]} recommendedLabel="Current, recent & related" allLabel="All organisations" onValueChange={setCompany} width="grow" />
           <NumberUnitField label="Transit time" value={transit} units={[{ value: "Hours", label: "Hours" }, { value: "Days", label: "Days" }, { value: "Weeks", label: "Weeks" }]} onChange={setTransit} />
@@ -2260,9 +2294,10 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "quote-detail-controls" ? <QuoteDetailControlsPreview /> : null}
       {id === "quote-cargo-editor" ? <QuoteCargoEditorPreview /> : null}
-      {id === "cargo-handling-editor" ? <QuoteCargoEditorPreview /> : null}
+      {id === "cargo-handling-editor" ? <CargoHandlingEditorPreview /> : null}
       {id === "cargo-allocation-editor" ? <CargoAllocationEditorPreview /> : null}
       {id === "booking-route-milestones" ? <BookingRouteMilestonesPreview /> : null}
+      {id === "booking-customer-panel" ? <BookingCustomerPanelPreview /> : null}
       {id === "booking-dangerous-goods" ? <BookingDangerousGoodsPreview /> : null}
       {id === "booking-security-evidence" ? <BookingSecurityEvidencePreview /> : null}
 
