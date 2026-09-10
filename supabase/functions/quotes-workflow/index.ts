@@ -1052,7 +1052,7 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
       ? admin.from("CRM_Leads").select("CRMLead_ID,CRMLead_CompanyName,CRMLead_PersonName,CRMLead_Email,CRMLead_ModeCode,CRMLead_DirectionCode,CRMLead_TradeLane").or(leadFilter).eq("CRMLead_IsDeleted", false).neq("CRMLead_StatusCode", "converted").order("CRMLead_UpdatedAt", { ascending: false }).limit(100)
       : Promise.resolve({ data: [], error: null }),
     accessibleOrganisationIds.length
-      ? admin.from("CRM_AccountProfiles").select("CRMAccount_OrgID,CRMAccount_PrimaryModeCode,CRMAccount_PrimaryTradeLane,CRMAccount_MetadataJSON").in("CRMAccount_OrgID", accessibleOrganisationIds).order("CRMAccount_UpdatedAt", { ascending: false }).limit(500)
+      ? admin.from("CRM_AccountProfiles").select("CRMAccount_OrgID,CRMAccount_PrimaryModeCode,CRMAccount_PrimaryTradeLane,CRMAccount_LifetimeValueCurrencyCode,CRMAccount_MetadataJSON").in("CRMAccount_OrgID", accessibleOrganisationIds).order("CRMAccount_UpdatedAt", { ascending: false }).limit(500)
       : noRows(),
     accessibleOrganisationIds.length
       ? admin.from("Org_Master").select("Org_id,Org_Name,Org_AccCode").in("Org_id", accessibleOrganisationIds).order("Org_Name").limit(500)
@@ -1124,6 +1124,10 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
   ])
   if (activeEmailResult.error || partyHistoryResult.error) throw activeEmailResult.error ?? partyHistoryResult.error
   const organisationNames = new Map((organisationResult.data ?? []).map((row) => [String(row.Org_id), String(row.Org_Name)]))
+  const currencyByOrganisation = new Map((accountResult.data ?? []).map((row) => {
+    const code = String(row.CRMAccount_LifetimeValueCurrencyCode || "").trim().toUpperCase()
+    return [String(row.CRMAccount_OrgID), /^[A-Z]{3}$/.test(code) ? code : null] as const
+  }))
   const quoteTermsByOrganisation = new Map((accountResult.data ?? []).map((row) => {
     const metadata = row.CRMAccount_MetadataJSON && typeof row.CRMAccount_MetadataJSON === "object" ? row.CRMAccount_MetadataJSON as Row : {}
     const quoteTerms = metadata.quoteTerms && typeof metadata.quoteTerms === "object" ? metadata.quoteTerms as Row : {}
@@ -1257,6 +1261,7 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
       id,
       code: String(row.Org_AccCode || ""),
       name: String(row.Org_Name),
+      currencyCode: currencyByOrganisation.get(id) ?? null,
       types: typesByOrganisation.get(id) ?? [],
       addresses: (addressesByOrganisation.get(id) ?? []).map((address) => ({
         id: String(address.OrgAdd_ID),
