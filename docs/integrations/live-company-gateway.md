@@ -140,3 +140,16 @@ Dexter event lifecycle and two-company deployment acceptance remain unverified.
 No migrations, Edge secrets, customer grants or deployments were applied to a
 hosted project. App main still requires its missing warehouse permission/WMS and
 Training schema prerequisites before this integration can run there.
+
+
+## Email-based company access (10 September 2026)
+
+This replaces the original manual-reference setup above. In App, open **Organisations > Companies > company > Multideck Live > Add customer access**. Enter the customer's existing Live login email, choose a full customer profile only if they have several, then choose warehouses and product/order permissions. Saving enables the App grant and saves the matching Live assignment automatically. Connection, user, key and grant references stay server-side. New customers need an invited, active Live customer account and full profile first. This operation sends no invitations and creates no Auth accounts.
+
+Apply App `20260910130500_live_customer_access_email.sql` and Live `20260910130000_app_managed_customer_access.sql`; deploy App `live-grant-admin` and Live `live-company-access`. App's server-only `LIVE_PORTAL_CONNECTION` pins the Live project reference, connection ID and existing key ID; its secret comes from `LIVE_GATEWAY_KEYS`. A reviewed Live connection must explicitly enable `app_access_enabled` (default false). Do not enable it merely because an arbitrary company registers a connection.
+
+Setup uses a separate `multideck-live-access-v1` HMAC protocol, fixed Live audience/path, bounded body, short timestamp window and persisted nonce. Exact-email lookup only resolves active customer membership and a full active profile within the connection's identity workspace. Admin-only, revoked, banned, ambiguous and foreign-workspace identities fail closed. App Auth, warehouse/user-management permissions and Training restrictions still apply. Browser-provided references never select the connection or subject in the email flow. Live probes the exact enabled App subject/grant, then rechecks identity and connection version in SQL before assignment.
+
+App persists pending/ready synchronisation. If the second save fails, **Finish Live setup** retries the saved grant without creating another grant. Versions prevent stale assignment updates. A Live administrator's disabled assignment is never silently re-enabled by App retries. Disabling in App remains available without Live or its integration key. Ready describes the last successful setup, not a continuous health or revocation check; warehouse requests check current access on both sides. Live Admin retains manual assignment and independent revocation controls for central administration.
+
+The existing explicit Dexter chat/Watching-for-you unsupported exception includes email-based access administration. This is not an assistant write or watch capability and adds no operational workflow.

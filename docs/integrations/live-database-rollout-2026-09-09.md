@@ -59,7 +59,7 @@ Earlier Git-triggered Live deployments were blocked by Vercel because the commit
 
 Availability confirmed: central `/auth` HTTP 200 with asset `index-lmYlxDcq.js`, demo redirect to the same page, Dev discovery HTTP 200, App grant and portal routes return sign-in-required responses, and the gateway rejects unsigned access. The Live client build passed; Edge checks and 40 tests passed before the owner clarified they would perform manual workflow testing. No further customer workflow tests were run, no operational records were created, and no customer grants were enabled.
 
-### Manual customer assignment
+### Original manual customer assignment (superseded below)
 
 1. In Live Admin, choose the existing customer user and full customer profile. Copy that user's Live reference. The **Company connections** screen already contains **Multideck Dev**; no secret entry is needed.
 2. In Dev App, open **Organisations → Companies** at `/crm/accounts`, select the intended company, and select its **Multideck Live** tab. Use connection reference `204c8ff8-5034-4bef-b8a0-4e95bc58d3c1`, that Live user reference and key identifier `dev-live-20260909`. Select the permitted warehouses and product/general-order/purchase-order actions, enable the grant, provide a reason, and save. Copy its grant reference.
@@ -76,3 +76,12 @@ Warehouse customer access and Multideck Live access are managed on each company 
 ## Dedicated Live tab, 10 September 2026
 
 Company records now place the grant workspace in a dedicated **Multideck Live** tab next to Setup. The duplicate legacy Warehouse customer access panel is removed from company records, and Overview no longer mounts either access workspace. Existing organisation IDs, grants, permissions and warehouse assignments are retained. Legacy signed-in warehouse users retain their existing account-management route pending migration; no accounts or authentication records are deleted by this UI change.
+
+
+## Email setup deployment, 10 September 2026
+
+Applied App `20260910130500_live_customer_access_email` to `aqtwypsuijxlnvtxpuxe` and Live `20260910130000_app_managed_customer_access` to `eofqgeffjbbjgadkzkrk`, recording migration history in the same transactions. Deployed Live `live-company-access` and App `live-grant-admin`. App now pins the existing Dev connection through server-only `LIVE_PORTAL_CONNECTION` and reuses its existing integration secret. Enabled App-managed setup only on the reviewed Multideck Dev connection (version 2), with an audit entry.
+
+The company tab now asks for the customer's existing Live email, optional choice of full customer profile, warehouses and actions. It automatically saves both sides. Technical references and the separate manual Live assignment step are removed from routine setup. Interrupted synchronisation shows **Finish Live setup**. New customers still need their invited Live customer account/profile; this release creates no users and sends no email.
+
+Local validation covers client build, App Auth/Training and partial-save handling, signed audience/subject checks, App probe denial, nonce replay, actual SQL cross-workspace/email/profile denials, stale versions, independent revocation, and browser RPC denial. Database DDL was also trialled with rollback before applying. No hosted customer workflow was exercised; the owner will test manually.

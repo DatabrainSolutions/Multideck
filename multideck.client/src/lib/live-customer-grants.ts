@@ -13,6 +13,10 @@ export type LiveCustomerGrant = {
   orders_enabled: boolean;
   purchase_orders_enabled: boolean;
   version: number;
+  email?: string | null;
+  live_customer_id?: number | null;
+  live_sync_status?: "ready" | "pending";
+  syncMessage?: string;
 };
 async function request<T>(
   customerId: string,
@@ -48,3 +52,9 @@ export const saveLiveCustomerGrant = (
   customerId: string,
   input: Record<string, unknown>,
 ) => request<LiveCustomerGrant>(customerId, input);
+
+export const lookupLiveCustomer = (customerId: string, email: string) =>
+  request<{ email: string; profiles: { id: number; name: string }[] }>(
+    customerId,
+    { action: "lookup", email },
+  );
