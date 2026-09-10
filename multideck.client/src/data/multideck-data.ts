@@ -277,7 +277,7 @@ export const galleryComponents = [
     id: "booking-customer-panel",
     name: "Booking Customer Panel",
     category: "Data display",
-    description: "Linked customer and saved preferences, with compact contact pills that open details in the same panel.",
+    description: "Linked customer and saved preferences, with compact contact pills that replace the company identity with contact details and icon actions in the same panel.",
     details: "Loads the exact customer through the authenticated CRM loader. Customer changes clear previous details. Contact drill-in preserves account context and returns focus to its pill. Supports unassigned, loading, denied and missing-information states; profile links open separately and email/phone actions remain user-operated.",
     foundOn: [{ label: "Booking Overview", route: "/bookings/je0991133" }, { label: "Components", route: "/components?component=booking-customer-panel" }],
     componentCode: bookingCustomerPanelSource,

@@ -55,6 +55,7 @@ test('contacts must belong to the account; selected contact leads; saved channel
   assert.ok(html.indexOf('Selected person') < html.indexOf('Second person'))
   assert.match(html, /View contact: Selected person/)
   const detail = harness({ id: 'a', data }, { customerId: 'a', contactId: 'selected' }).render({ customerId: 'a', contactId: 'selected' })
+  assert.doesNotMatch(detail, /Account a|\/crm\/accounts\/a/); assert.match(detail, /title="\+44 113 555 0101"/); assert.match(detail, /Call Selected person: \+44 113 555 0101/); assert.doesNotMatch(detail, />\+44 113 555 0101</);
   assert.match(detail, /tel:\+441135550101/); assert.match(detail, /\/crm\/contacts\/selected/); assert.match(detail, /Back to customer/)
 })
 test('contact links are data-only and reject injected headers or URL schemes', () => {

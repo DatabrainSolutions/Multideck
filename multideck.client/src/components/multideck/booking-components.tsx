@@ -23,7 +23,6 @@ import {
   CircleDollarSign,
   Container,
   Copy,
-  Database,
   ChevronDown,
   FileText,
   Info,
@@ -2057,7 +2056,7 @@ function BookingSectionHeading({ icon, title, meta }: { icon: ReactNode; title: 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 shadow-[var(--md-stroke-bottom)]">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">{icon}</span>
+        {icon ? <span className="grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">{icon}</span> : null}
         <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{title}</h2>
       </div>
       {meta ? <p className="text-[12px] text-[var(--md-subtle)]">{meta}</p> : null}
@@ -2525,8 +2524,8 @@ function BookingAvailabilityInspector({ record }: { record: BookingDetailRecord 
   ] as const
 
   return (
-    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-      <BookingSectionHeading icon={<Database className="size-4" strokeWidth={1.5} />} title={t("Saved workspace data")} />
+    <Surface padding="none" className="h-full overflow-hidden rounded-[var(--md-radius-xl)]">
+      <BookingSectionHeading icon={null} title={t("Saved workspace data")} />
       <div className="px-5 py-2">
         {rows.map(([label, state, tone]) => (
           <div key={label} className="flex items-center justify-between gap-4 py-3 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] first:shadow-none">
