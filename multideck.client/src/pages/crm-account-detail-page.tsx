@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils"
 import { CustomerApiError, getCustomer, getCustomerReference, updateAccount, updateAccountCompanyTypes, type AccountScoreExplanation, type ApiCustomerDetail, type CustomerReference, type UpdateAccountInput } from "@/lib/customer-api"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { CustomerWarehouseAccess } from "@/pages/customer-detail-page"
+import { CustomerLiveGrantWorkspace } from "@/pages/customer-live-grants-page"
 
 type CustomField = { id: string; label: string; value: string }
 type AccountDraft = UpdateAccountInput & { customFields: CustomField[] }
@@ -728,7 +729,8 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                 {!currentAccount.recentEmails.available ? <p className="border-t border-[var(--md-line)] px-4 py-2.5 text-[11.5px] leading-4 text-[var(--md-subtle)] sm:px-5">{t("Conversations are missing from this history – you need email access to include them.")}</p> : currentAccount.recentEmails.items.length === 0 && moments.length ? <p className="border-t border-[var(--md-line)] px-4 py-2.5 text-[11.5px] leading-4 text-[var(--md-subtle)] sm:px-5">{t("No recent emails are linked to this account or its contacts.")}</p> : null}
               </Panel>
 
-              <CustomerWarehouseAccess customerId={currentAccount.id} />
+              <CustomerWarehouseAccess key={`warehouse-${currentAccount.id}`} customerId={currentAccount.id} />
+              <CustomerLiveGrantWorkspace key={`live-${currentAccount.id}`} customerId={currentAccount.id} />
             </>
           ) : activeTab === "setup" ? (
             reference ? <OrganisationFoundationPanel

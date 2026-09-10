@@ -62,7 +62,12 @@ Availability confirmed: central `/auth` HTTP 200 with asset `index-lmYlxDcq.js`,
 ### Manual customer assignment
 
 1. In Live Admin, choose the existing customer user and full customer profile. Copy that user's Live reference. The **Company connections** screen already contains **Multideck Dev**; no secret entry is needed.
-2. In Dev App, open the intended customer's **Multideck Live access** section. Use connection reference `204c8ff8-5034-4bef-b8a0-4e95bc58d3c1`, that Live user reference and key identifier `dev-live-20260909`. Select the permitted warehouses and product/general-order/purchase-order actions, enable the grant, provide a reason, and save. Copy its grant reference.
+2. In Dev App, open **Organisations → Companies** at `/crm/accounts`, select the intended company, and use **Multideck Live access** on its **Overview** tab, alongside **Warehouse customer access**. Use connection reference `204c8ff8-5034-4bef-b8a0-4e95bc58d3c1`, that Live user reference and key identifier `dev-live-20260909`. Select the permitted warehouses and product/general-order/purchase-order actions, enable the grant, provide a reason, and save. Copy its grant reference.
 3. In Live Admin → **Company customer access**, select **Multideck Dev**, the same user and customer profile, paste the App grant reference, enable it, and save. The customer can then sign in at `https://multideck.live/warehouse`.
 
 Customer identity, operational customer and warehouse choices are deliberately left for the owner, who chose to test manually. Admin membership alone is not customer warehouse access.
+
+
+## Company record placement, 10 September 2026
+
+Warehouse customer access and Multideck Live access are managed on each company record under `/crm/accounts` → Overview. Both controls were removed from the separate Customers detail screen. The same organisation ID, existing permissions, grants and backend operations are reused. The warehouse access panel remounts when the selected company changes so its form state cannot carry into another company. No database migration or key reconfiguration is needed. The owner will perform manual workflow testing.
