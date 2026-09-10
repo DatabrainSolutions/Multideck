@@ -115,12 +115,7 @@ export function TaskAgentStack({
                   collapsed && 'justify-center',
                 )}
               >
-                <span className="relative">
-                  <TaskAgentIcon icon={agent.icon} />
-                  {agentHasUpdate(agent) ? (
-                    <span className="absolute end-0 top-0 size-1.5 rounded-full bg-[var(--md-accent)]" />
-                  ) : null}
-                </span>
+                <TaskAgentIcon icon={agent.icon} />
                 {!collapsed ? (
                   <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
                     <span className="block truncate text-[12px] font-medium leading-[14px] text-[var(--md-ink)]">{agent.name}</span>
